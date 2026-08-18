@@ -5,6 +5,7 @@ import type {
   RestoreResult,
   SerializationContribution,
 } from '@c4s/plugin-runtime';
+import { contentBytes } from '@c4s/plugin-runtime';
 import type { UiViewParam, UiViewParamLocation } from '../../types.js';
 import { uiViewPayloadUpgrades } from './upgrades.js';
 
@@ -18,6 +19,17 @@ export interface UiViewSnapshot {
   params: UiViewParam[];
   /** v0.1.59 (serializer 1.1.0, additive): referenced design-system slug, or null. */
   designSystemSlug: string | null;
+  /**
+   * The mockup — FULL CONTENT, `contentBearing` notwithstanding.
+   *
+   * The flag governs READS, not serialisation. Dropping the blob here would stop
+   * the entity file being the source of truth and would make
+   * `snapshot → restore → snapshot` lose the mockup, so it stays, literally and
+   * without trim. The snapshot and the full read record are the same shape apart
+   * from exactly this field: the record carries descriptors, the snapshot carries
+   * the content.
+   */
+  mockupHtml: string | null;
   tags: string[];
 }
 
@@ -31,6 +43,7 @@ function coerceUiView(raw: unknown): UiViewSnapshot {
     params: Array.isArray(r.params) ? (r.params as UiViewParam[]) : [],
     designSystemSlug:
       typeof r.designSystemSlug === 'string' && r.designSystemSlug ? r.designSystemSlug : null,
+    mockupHtml: typeof r.mockupHtml === 'string' ? r.mockupHtml : null,
     tags: Array.isArray(r.tags) ? (r.tags as string[]) : [],
   };
 }
@@ -100,6 +113,35 @@ function uiViewDiff(a: unknown, b: unknown, slug: string): EntityDiff {
   if (paramRemoved.length) changes.param_removed = paramRemoved;
   if (paramModified.length) changes.param_modified = paramModified;
   if (inChanged.length) changes.in_changed = inChanged;
+
+  /**
+   * The mockup, in BYTES — a sibling field, deliberately not a `meta_changes`
+   * entry.
+   *
+   * `meta_changes[].field` is a closed set of things with a readable `from`/`to`,
+   * and a blob of tens of kilobytes has neither. What a reader can use is whether
+   * it changed and by how much — a `{ fromBytes, toBytes }` sibling, in the shape
+   * the host's default diff gives a `contentBearing` field. This type OVERRIDES
+   * `diff`, so it does not get one for free and says it here instead — without
+   * which the mockup would vanish from release diffs silently, which is the one
+   * thing the flag must not cause.
+   *
+   * The KEY is `mockup_changed`, and it is authorial rather than derived: the
+   * spec names it, and this diff is hand-written, so nothing mechanical is
+   * deriving `mockupHtml_changed` for a consumer to match. That is the deliberate
+   * contrast with the read descriptors on the same field — `hasMockupHtml` and
+   * `mockupHtmlBytes` ARE derived, in one place, from the field's name.
+   *
+   * Reported for an appearance and a removal too: for content, "it appeared" and
+   * "it grew from nothing" are one event, and `{ fromBytes: 0, toBytes: n }` says
+   * it in the shape a reader already had to learn.
+   */
+  if (sa.mockupHtml !== sb.mockupHtml) {
+    changes.mockup_changed = {
+      fromBytes: contentBytes(sa.mockupHtml),
+      toBytes: contentBytes(sb.mockupHtml),
+    };
+  }
 
   // Tags
   const tagAdded = sb.tags.filter((t) => !sa.tags.includes(t));

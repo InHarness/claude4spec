@@ -135,7 +135,7 @@ function DatabaseTableListRoute(): JSX.Element {
     const needle = q.trim().toLowerCase();
     return data.filter((it) => {
       const matchesQuery =
-        !needle || it.name.toLowerCase().includes(needle) || it.slug.toLowerCase().includes(needle);
+        !needle || it.title.toLowerCase().includes(needle) || it.slug.toLowerCase().includes(needle);
       if (!matchesQuery) return false;
       if (selectedTags.length === 0) return true;
       const itemTags = it.tags ?? [];

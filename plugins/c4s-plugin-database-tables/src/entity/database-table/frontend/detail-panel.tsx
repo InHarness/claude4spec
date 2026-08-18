@@ -8,8 +8,8 @@
  * Props contract: `EntityDetailProps = { slug; onDeleted?; onRenamed? }`. The host
  * injects ONLY `slug`. `onDeleted?`/`onRenamed?` are optional panel→host
  * notifications; `onRenamed?(newSlug)` fires ONLY when a save actually moved the
- * slug (a rename goes exclusively through `newSlug`, never through editing `name`
- * alone). There is deliberately NO `onBack`, no `onOpenEntity`, no `onOpenPage`:
+ * slug (a rename goes exclusively through `newSlug`, never through editing
+ * `title` alone). There is deliberately NO `onBack`, no `onOpenEntity`, no `onOpenPage`:
  * back is the host breadcrumb, and cross-entity navigation goes through the
  * `useEditorBridge()` / `editorBridge` singleton.
  *
@@ -21,7 +21,8 @@
  * rapid edit-after-rename still PATCHes the right URL before the host remounts
  * the panel via `key={slug}`.
  *
- * This is the single real editing surface for a table: NAME, COLUMNS and INDEXES.
+ * This is the single real editing surface for a table: TITLE (which for this type
+ * IS the SQL identifier), COLUMNS and INDEXES.
  * `fk` is soft — pointing a column at a table that does not exist is a warning on
  * the mutation response, never a client-side error, so the editor never blocks it.
  *
@@ -99,12 +100,13 @@ type EntityDetailProps = {
 };
 
 /**
- * The editable shape of a table: its SQL name, its table-level prose, plus its two
- * ordered lists. `description` has to be in the draft AND in the PATCH body — it was
- * absent from both, so the field was invisible and unsavable even though
- * `UpdateDatabaseTableRequest` has accepted it all along.
+ * The editable shape of a table: its title — which for this type IS the SQL
+ * identifier — its table-level prose, plus its two ordered lists. `description`
+ * has to be in the draft AND in the PATCH body — it was absent from both, so the
+ * field was invisible and unsavable even though the update contract has accepted
+ * it all along.
  */
-type Draft = { name: string; description: string; columns: Column[]; indexes: Index[] };
+type Draft = { title: string; description: string; columns: Column[]; indexes: Index[] };
 
 const AUTOSAVE_DELAY_MS = 500;
 
@@ -1056,7 +1058,7 @@ const DatabaseTableDetailForm: FC<{
   const del = useDeleteDatabaseTable();
 
   const seed = (): Draft => ({
-    name: entity.name,
+    title: entity.title,
     description: entity.description ?? '',
     columns: entity.columns ?? [],
     indexes: entity.indexes ?? [],
@@ -1088,7 +1090,7 @@ const DatabaseTableDetailForm: FC<{
     if (!el) return;
     el.style.height = 'auto';
     el.style.height = `${el.scrollHeight}px`;
-  }, [draft.name]);
+  }, [draft.title]);
 
   /**
    * The last saved state, as a REF.
@@ -1107,8 +1109,8 @@ const DatabaseTableDetailForm: FC<{
   const pendingRef = useRef<Draft | null>(null);
 
   const scheduleSave = (next: Draft) => {
-    // A blank name would `slugify` to an empty slug.
-    if (!next.name.trim()) return;
+    // A blank title would `slugify` to an empty slug.
+    if (!next.title.trim()) return;
 
     /**
      * QUEUE, do not drop.
@@ -1127,24 +1129,29 @@ const DatabaseTableDetailForm: FC<{
      * A PATCH carries only what CHANGED, and that is a correctness requirement
      * rather than a bandwidth one.
      *
-     * Sending `name` unconditionally broke two things. It made every save a
-     * potential rename — the old code asked for `newSlug` whenever
-     * `slugify(name)` differed from the current slug, which is true of any
-     * entity whose slug legitimately diverges from its name (an explicit slug
-     * at create, a collision suffix inherited from the retired plugin, a name
+     * Sending the name field unconditionally broke two things. It made every
+     * save a potential rename — the old code asked for `newSlug` whenever the
+     * slugified name differed from the current slug, which is true of any entity
+     * whose slug legitimately diverges from its name (an explicit slug at
+     * create, a collision suffix inherited from the retired plugin, a name
      * edited in an earlier session). Editing a DESCRIPTION then moved the
      * entity's file and rewrote every page reference to it.
      *
-     * And it made inherited tables uneditable. The retired plugin validated
-     * `name` as a bare string, so a corpus can hold `order`, `group` or
+     * And it made inherited tables uneditable. The retired plugin validated the
+     * name as a bare string, so a corpus can hold `order`, `group` or
      * `user profile`; indexing from disk still bypasses validation, but the
-     * generated update schema now enforces `pattern` + `notReserved`. Resending
+     * generated update schema now enforces `kind: 'sql-identifier'`. Resending
      * an untouched illegal name turned every keystroke in the description into
      * a 400 with no way out of the panel.
+     *
+     * 0.2.27 — the rule weighs MORE since the name fields merged, not less: the
+     * field that must not be resent unconditionally is now the same field the
+     * author edits as the entity's label, so the temptation to just send it is
+     * exactly where the damage is.
      */
     const base = baselineRef.current;
     const body: DatabaseTableUpdateInput = {};
-    if (next.name !== base.name) body.name = next.name;
+    if (next.title !== base.title) body.title = next.title;
     if (next.description !== base.description) body.description = next.description;
     if (JSON.stringify(next.columns) !== JSON.stringify(base.columns)) body.columns = next.columns;
     if (JSON.stringify(next.indexes) !== JSON.stringify(base.indexes)) body.indexes = next.indexes;
@@ -1154,13 +1161,13 @@ const DatabaseTableDetailForm: FC<{
     if (Object.keys(body).length === 0) return;
 
     /**
-     * A rename is requested ONLY when the user edited the name AND the slug it
+     * A rename is requested ONLY when the user edited the title AND the slug it
      * derives to actually differs. Both halves matter: the first keeps an
-     * unrelated edit from renaming, the second keeps a cosmetic name edit
+     * unrelated edit from renaming, the second keeps a cosmetic title edit
      * (`order_items` → `Order_Items`) from a no-op rename.
      */
-    const nextSlug = slugify(next.name);
-    if (body.name !== undefined && nextSlug !== currentSlugRef.current) body.newSlug = nextSlug;
+    const nextSlug = slugify(next.title);
+    if (body.title !== undefined && nextSlug !== currentSlugRef.current) body.newSlug = nextSlug;
 
     update.mutate(
       { slug: currentSlugRef.current, body },
@@ -1168,7 +1175,7 @@ const DatabaseTableDetailForm: FC<{
         onSuccess: (saved) => {
           currentSlugRef.current = saved.slug;
           setBaseline({
-            name: saved.name,
+            title: saved.title,
             description: saved.description ?? '',
             columns: saved.columns ?? [],
             indexes: saved.indexes ?? [],
@@ -1220,9 +1227,9 @@ const DatabaseTableDetailForm: FC<{
       <div style={HEADER_WRAP_STYLE}>
         <textarea
           ref={titleRef}
-          value={draft.name}
-          onChange={(e) => patch({ name: e.target.value })}
-          placeholder="Name"
+          value={draft.title}
+          onChange={(e) => patch({ title: e.target.value })}
+          placeholder="Table name"
           aria-label="Table name"
           rows={1}
           style={TITLE_TEXTAREA_STYLE}
@@ -1311,7 +1318,7 @@ const DatabaseTableDetailForm: FC<{
         }
       >
         <p style={{ margin: 0 }}>
-          Delete <strong>{draft.name || entity.slug}</strong>? This can’t be undone.
+          Delete <strong>{draft.title || entity.slug}</strong>? This can’t be undone.
         </p>
       </Dialog>
     </DatabaseTableDetailShell>

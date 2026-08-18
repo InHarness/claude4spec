@@ -14,39 +14,39 @@ export const uiViewData: DataDeclaration = {
      * view.
      */
     title: {
-      kind: 'string',
+      type: 'string',
       required: true,
       maxLength: 200,
       description: 'Display name (e.g. "User Profile Screen")',
     },
     url: {
-      kind: 'string',
+      type: 'string',
       clearable: true,
       description: 'Route pattern (e.g. "/users/:id"). Null/omitted = modal/drawer without routing.',
     },
-    description: { kind: 'string', clearable: true },
+    description: { type: 'string', clearable: true },
     params: {
-      kind: 'collection',
+      type: 'collection',
       collection: 'value',
       item: {
-        kind: 'object',
+        type: 'object',
         fields: {
-          name: { kind: 'string', required: true, description: 'Parameter name (no `:` prefix)' },
+          name: { type: 'string', required: true, description: 'Parameter name (no `:` prefix)' },
           in: {
-            kind: 'enum',
+            type: 'enum',
             values: ['path', 'query', 'hash'],
             required: true,
             description: 'Where the param lives',
           },
-          type: { kind: 'string', description: 'Suggested value type (string|int|uuid|enum|...)' },
-          required: { kind: 'boolean' },
-          default: { kind: 'string' },
-          description: { kind: 'string' },
+          type: { type: 'string', description: 'Suggested value type (string|int|uuid|enum|...)' },
+          required: { type: 'boolean' },
+          default: { type: 'string' },
+          description: { type: 'string' },
         },
       },
     },
-    createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
-    updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+    createdAt: { type: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+    updatedAt: { type: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
     /**
      * The flag set that replaces a hand-written rename hook, a hand-written
      * nullable Zod field and a hand-written dangling-reference warning:
@@ -55,7 +55,7 @@ export const uiViewData: DataDeclaration = {
      * rather than blocks.
      */
     designSystemSlug: {
-      kind: 'string',
+      type: 'string',
       column: 'design_system_slug',
       ref: 'design-system',
       clearable: true,
@@ -63,6 +63,44 @@ export const uiViewData: DataDeclaration = {
       onDelete: 'leave-dangling',
       description:
         'Slug of a design-system this view uses (no FK; dangling allowed). Null = detach. Omit = unchanged.',
+    },
+    /**
+     * The screen's MOCKUP — a blob of HTML, and the corpus's second
+     * `contentBearing` field after `diagram.source`.
+     *
+     * On the entity rather than in a page for the reason the DSL moved out to
+     * `diagram.source`: the artefact runs to kilobytes, so carrying it in a read
+     * record would poison the context of every agent that reads a view, while
+     * storing it once lets every reader share it by slug. The flag is the whole
+     * mechanism — no read emits it on any surface (`select` included), it stays
+     * out of `search_entities` scope, and `get_field_content` issues it. None of
+     * that is code here; the host derives all of it from the flag.
+     *
+     * It ILLUSTRATES the view, it does not define it. Routing truth is `url` +
+     * `params[]`, so a mockup that disagrees with them is a legal state nobody
+     * validates — not even the client-side `url` ↔ `params` linter, which never
+     * reads this field.
+     *
+     * Nullable and `clearable`, unlike the required `diagram.source`: a view
+     * without a mockup is ordinary, and `update_entities({ mockupHtml: null })`
+     * is how one is removed. Omitting the field changes nothing, which is what
+     * keeps a title edit from wiping a mockup.
+     *
+     * Written literally — no HTML validation, no trim. A mockup half-finished
+     * mid-iteration is a legal state, and the generated write path has no
+     * per-type hook to catch it in anyway.
+     *
+     * LAST, like `designSystemSlug` before it: field order is column order and
+     * the baseline gate compares `PRAGMA table_info` positionally.
+     */
+    mockupHtml: {
+      type: 'string',
+      column: 'mockup_html',
+      clearable: true,
+      contentBearing: true,
+      description:
+        'HTML mockup of the screen. Content-bearing: reads never emit it — fetch it with ' +
+        'get_field_content. Null = no mockup; null in an update clears it, omitting it changes nothing.',
     },
   },
 };

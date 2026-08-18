@@ -346,7 +346,7 @@ export class RawEntityReader {
   readCollection(type: string, slug: string, field: string): unknown[] {
     const module = this.host.getEntity(type);
     const node = module?.data?.schema?.[field];
-    if (!module || !node || node.kind !== 'collection') return [];
+    if (!module || !node || node.type !== 'collection') return [];
     return readProjectionCollection(this.db, module, field, node, slug);
   }
 
@@ -357,7 +357,7 @@ export class RawEntityReader {
   countCollection(type: string, slug: string, field: string): number {
     const module = this.host.getEntity(type);
     const node = module?.data?.schema?.[field];
-    if (!module || !node || node.kind !== 'collection') return 0;
+    if (!module || !node || node.type !== 'collection') return 0;
     return countProjectionCollection(this.db, module, field, node, slug);
   }
 
@@ -534,7 +534,7 @@ export class RawEntityReader {
        */
       if (
         field === predicateFieldOf(module) &&
-        node.kind === 'enum' &&
+        node.type === 'enum' &&
         !node.values.includes('all') &&
         (Array.isArray(value) ? value.length === 1 && value[0] === 'all' : value === 'all')
       ) {
@@ -675,9 +675,9 @@ export class RawEntityReader {
       if (typeof value !== 'string') continue;
       const node = byColumn?.get(key);
       if (node) {
-        if (node.kind === 'object' || node.kind === 'record' || node.kind === 'collection') {
+        if (node.type === 'object' || node.type === 'record' || node.type === 'collection') {
           data[key] = safeJsonContainer(value);
-        } else if (node.kind === 'json') {
+        } else if (node.type === 'json') {
           /**
            * A `json` column is written by `encode`'s default branch, which is a
            * plain `JSON.stringify` — so unlike the container kinds above, its

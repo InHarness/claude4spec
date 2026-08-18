@@ -11,19 +11,19 @@ export const dtoData: DataDeclaration = {
      * name a member of a structure, not the structure.
      */
     title: {
-      kind: 'string',
+      type: 'string',
       required: true,
       maxLength: 200,
       description: 'DTO name (PascalCase, e.g. UserResponse)',
     },
-    description: { kind: 'string', clearable: true },
+    description: { type: 'string', clearable: true },
     fields: {
-      kind: 'collection',
+      type: 'collection',
       collection: 'value',
       item: {
-        kind: 'object',
+        type: 'object',
         fields: {
-          name: { kind: 'string', required: true },
+          name: { type: 'string', required: true },
           /**
            * Deliberately WITHOUT a `ref` flag. The value is polymorphic — either
            * a primitive type name or the slug of another DTO — so a `ref` would
@@ -31,18 +31,18 @@ export const dtoData: DataDeclaration = {
            * renamed away therefore degrades to a consistency-check warning
            * rather than to a dangling ref the host tries to repoint.
            */
-          type: { kind: 'string', required: true },
-          required: { kind: 'boolean', required: true },
-          description: { kind: 'string' },
+          type: { type: 'string', required: true },
+          required: { type: 'boolean', required: true },
+          description: { type: 'string' },
         },
       },
     },
     examples: {
-      kind: 'collection',
+      type: 'collection',
       collection: 'value',
       description: 'Named payload exemplars. Soft-validated. name unique within DTO.',
       item: {
-        kind: 'object',
+        type: 'object',
         fields: {
           /**
            * Uniqueness within a DTO is SOFT: no `keyFields`, so no junction and
@@ -51,11 +51,11 @@ export const dtoData: DataDeclaration = {
            * rejection.
            */
           name: {
-            kind: 'string',
+            type: 'string',
             required: true,
             description: 'Identifier unique within DTO (e.g. "minimal", "full", "edge-case")',
           },
-          summary: { kind: 'string' },
+          summary: { type: 'string' },
           /**
            * 0.2.9 (item 27) — was `record<string, string>`, which admitted
            * neither a number nor a nested object. An exemplar is a payload
@@ -64,14 +64,14 @@ export const dtoData: DataDeclaration = {
            * against `fields[]` at presentation time, never on the write path.
            */
           value: {
-            kind: 'json',
+            type: 'json',
             description: 'Payload as-is. Soft-validated against fields[] (warning only).',
           },
         },
       },
     },
-    createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
-    updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+    createdAt: { type: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+    updatedAt: { type: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
   },
 };
 

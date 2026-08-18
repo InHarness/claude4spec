@@ -24,8 +24,8 @@ const viewer: ProjectableModule = {
   type: 'viewer',
   data: {
     schema: {
-      title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-      themeSlug: { kind: 'string', ref: 'theme', onMissing: 'warn', onDelete: 'leave-dangling' },
+      title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
+      themeSlug: { type: 'string', ref: 'theme', onMissing: 'warn', onDelete: 'leave-dangling' },
     },
   },
 };
@@ -35,16 +35,16 @@ const route: ProjectableModule = {
   type: 'route',
   data: {
     schema: {
-      title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+      title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
       payloads: {
-        kind: 'collection',
+        type: 'collection',
         collection: 'value',
         keyFields: ['shape', 'relation'],
         item: {
-          kind: 'object',
+          type: 'object',
           fields: {
-            shape: { kind: 'string', required: true, ref: 'shape', column: 'shape_slug' },
-            relation: { kind: 'enum', values: ['request', 'response'], required: true },
+            shape: { type: 'string', required: true, ref: 'shape', column: 'shape_slug' },
+            relation: { type: 'enum', values: ['request', 'response'], required: true },
           },
         },
       },
@@ -62,27 +62,27 @@ const roster: ProjectableModule = {
   type: 'roster',
   data: {
     schema: {
-      title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+      title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
       // Embedded JSON: `["user-dto", "order-dto"]`.
       members: {
-        kind: 'collection',
+        type: 'collection',
         collection: 'value',
-        item: { kind: 'string', ref: 'shape', onDelete: 'leave-dangling' },
+        item: { type: 'string', ref: 'shape', onDelete: 'leave-dangling' },
       },
       // Embedded JSON: `{"primary": "user-dto"}` — the ref is the record VALUE.
-      byRole: { kind: 'record', key: { kind: 'string' }, value: { kind: 'string', ref: 'shape' } },
+      byRole: { type: 'record', key: { type: 'string' }, value: { type: 'string', ref: 'shape' } },
       // Embedded JSON, ref nested two levels below the field.
       meta: {
-        kind: 'object',
-        fields: { owner: { kind: 'object', fields: { shape: { kind: 'string', ref: 'shape' } } } },
+        type: 'object',
+        fields: { owner: { type: 'object', fields: { shape: { type: 'string', ref: 'shape' } } } },
       },
     },
   },
 };
 
 /** The referenced types, so the generated FKs have something to point at. */
-const theme: ProjectableModule = { type: 'theme', data: { schema: { title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' } } } };
-const shape: ProjectableModule = { type: 'shape', data: { schema: { title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' } } } };
+const theme: ProjectableModule = { type: 'theme', data: { schema: { title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' } } } };
+const shape: ProjectableModule = { type: 'shape', data: { schema: { title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' } } } };
 const ac: ProjectableModule = { type: 'ac', data: acData };
 
 function projectDb(modules: ProjectableModule[]): Database.Database {

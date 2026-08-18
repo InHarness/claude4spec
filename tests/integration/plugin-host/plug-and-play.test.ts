@@ -30,32 +30,32 @@ import type { Root } from '../../../src/shared/types.js';
 
 const sprocketData: DataDeclaration = {
   schema: {
-    title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-    name: { kind: 'string', required: true, description: 'What the sprocket is called.' },
+    title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
+    name: { type: 'string', required: true, description: 'What the sprocket is called.' },
     // An enum with a default — the host owes it both a CHECK-shaped validation
     // and the default on create.
-    grade: { kind: 'enum', values: ['draft', 'shipped', 'retired'], default: 'draft' },
-    teeth: { kind: 'number' },
-    notes: { kind: 'string', clearable: true },
+    grade: { type: 'enum', values: ['draft', 'shipped', 'retired'], default: 'draft' },
+    teeth: { type: 'number' },
+    notes: { type: 'string', clearable: true },
     // A ref at depth, inside an embedded value collection. Rename propagation
     // has to find this without anyone naming the pair.
     fitsWith: {
-      kind: 'collection',
+      type: 'collection',
       collection: 'value',
       unordered: true,
       description: 'DTOs this sprocket is compatible with.',
       item: {
-        kind: 'object',
+        type: 'object',
         fields: {
-          dto: { kind: 'string', required: true, ref: 'dto', onMissing: 'warn', onDelete: 'leave-dangling' },
-          note: { kind: 'string' },
+          dto: { type: 'string', required: true, ref: 'dto', onMissing: 'warn', onDelete: 'leave-dangling' },
+          note: { type: 'string' },
         },
       },
     },
     // A free-form map — the shape none of the six built-ins uses at top level.
-    dimensions: { kind: 'record', key: { kind: 'string' }, value: { kind: 'string' } },
-    createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
-    updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+    dimensions: { type: 'record', key: { type: 'string' }, value: { type: 'string' } },
+    createdAt: { type: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+    updatedAt: { type: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
   },
 };
 

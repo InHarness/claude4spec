@@ -166,10 +166,11 @@
     "title": "POST /api/ping"
   },
   "endpoint/post-api-ping/_stamped": true,
-  "ui-view.payloadVersion": 2,
+  "ui-view.payloadVersion": 3,
   "ui-view/users": {
     "description": null,
     "designSystemSlug": null,
+    "mockupHtml": null,
     "params": [
       {
         "in": "path",

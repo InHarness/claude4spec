@@ -29,7 +29,7 @@
 import { z } from 'zod';
 import type { ZodRawShape, ZodTypeAny } from 'zod';
 import type { DataDeclaration, FieldNode, ScalarNode } from '../../../shared/plugin-host/data-schema.js';
-import { SQL_RESERVED_WORDS } from '../../../shared/plugin-host/sql-reserved-words.js';
+import { checkValidator, validatorMessage } from '../../../shared/plugin-host/named-validators.js';
 import type { SlugPattern, SlugStep } from '../../../shared/plugin-host/slug-pattern.js';
 
 /**
@@ -63,18 +63,24 @@ function stringType(node: ScalarNode): z.ZodString {
      */
     out = out.max(node.maxLength, `must be at most ${node.maxLength} characters`);
   }
-  if (node.pattern !== undefined) {
+  if (node.kind !== undefined) {
     /**
-     * Compiled per generated schema, not per parse. `data-schema-validation`
-     * has already refused an uncompilable pattern at registration, so this
-     * cannot be the throw site.
+     * The named validator, applied as ONE refinement covering both of its rules.
+     *
+     * Both, rather than a shape check plus a membership check, because the two
+     * produce different messages for the same field and the caller should see
+     * the one that names what is actually wrong: "that word is reserved" tells
+     * an author what to do, while a shape mismatch on a well-shaped identifier
+     * tells them nothing. `data-schema-validation` has already refused an
+     * unknown validator name at registration, so this cannot be the throw site.
      */
-    out = out.regex(new RegExp(node.pattern), `must match ${node.pattern}`);
-  }
-  if (node.notReserved === 'sql') {
-    out = out.refine((v) => !SQL_RESERVED_WORDS.has(v.toLowerCase()), {
-      error: (iss) => `"${String(iss.input)}" is a reserved SQL word`,
-      params: { code: 'RESERVED_TABLE_NAME' },
+    const kind = node.kind;
+    out = out.refine((v) => checkValidator(kind, v) === null, {
+      error: (iss) => {
+        const value = String(iss.input);
+        return validatorMessage(kind, checkValidator(kind, value) ?? 'shape', value);
+      },
+      params: { code: 'INVALID_FIELD_KIND' },
     }) as unknown as z.ZodString;
   }
   return out;
@@ -82,7 +88,7 @@ function stringType(node: ScalarNode): z.ZodString {
 
 /** One field node → one zod type. Flags are applied by the callers below. */
 function nodeType(node: FieldNode): ZodTypeAny {
-  switch (node.kind) {
+  switch (node.type) {
     case 'string':
       return stringType(node);
     case 'number': {
@@ -223,12 +229,12 @@ function slugSourceFields(pattern: SlugPattern | undefined): Set<string> {
  * A leaf declaring both would have its own rule accepted at registration and
  * enforced nowhere.
  *
- * `t` is `nodeType(node)`'s output, which for `kind: 'string'` is always a
+ * `t` is `nodeType(node)`'s output, which for `type: 'string'` is always a
  * `ZodString`, so `.regex()` chains off it — that is what makes the composition
  * possible at all rather than needing a wrapper.
  */
 function nonBlankIfSlugSource(name: string, node: FieldNode, sources: Set<string>, t: ZodTypeAny): ZodTypeAny {
-  return node.kind === 'string' && sources.has(name)
+  return node.type === 'string' && sources.has(name)
     ? (t as z.ZodString).regex(/\S/, 'must not be blank')
     : t;
 }

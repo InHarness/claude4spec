@@ -16,7 +16,7 @@ export const endpointData: DataDeclaration = {
      * route; `get-orders-id` is the slug, and the pattern below still builds it.
      */
     title: {
-      kind: 'string',
+      type: 'string',
       required: true,
       maxLength: 200,
       computedDefault: [
@@ -50,16 +50,16 @@ export const endpointData: DataDeclaration = {
      * 400 naming the five values instead of a quietly different entity.
      */
     method: {
-      kind: 'enum',
+      type: 'enum',
       values: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
       required: true,
       description: 'HTTP method',
     },
-    path: { kind: 'string', required: true, description: 'URL path, e.g. /api/users/:id' },
-    summary: { kind: 'string', required: true, default: '' },
-    description: { kind: 'string', clearable: true },
-    createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
-    updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+    path: { type: 'string', required: true, description: 'URL path, e.g. /api/users/:id' },
+    summary: { type: 'string', required: true, default: '' },
+    description: { type: 'string', clearable: true },
+    createdAt: { type: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+    updatedAt: { type: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
     /**
      * The collection that GENERATES the `endpoint_dto` junction.
      *
@@ -76,7 +76,7 @@ export const endpointData: DataDeclaration = {
      * `dto` reproduces its enforced foreign key.
      */
     linkedDtos: {
-      kind: 'collection',
+      type: 'collection',
       collection: 'value',
       // Link order is not content, and the rows come back in insertion order —
       // so without this, relinking a DTO reorders the endpoint's file.
@@ -86,18 +86,18 @@ export const endpointData: DataDeclaration = {
       projectionTable: 'endpoint_dto',
       keyFields: ['dto', 'relation', 'statusCode'],
       item: {
-        kind: 'object',
+        type: 'object',
         fields: {
           dto: {
-            kind: 'string',
+            type: 'string',
             column: 'dto_slug',
             required: true,
             ref: 'dto',
             onMissing: 'warn',
             onDelete: 'leave-dangling',
           },
-          relation: { kind: 'enum', values: ['request', 'response', 'error'], required: true },
-          statusCode: { kind: 'number', column: 'status_code' },
+          relation: { type: 'enum', values: ['request', 'response', 'error'], required: true },
+          statusCode: { type: 'number', column: 'status_code' },
         },
       },
     },

@@ -21,6 +21,7 @@
  */
 
 import type { SlugPattern } from './slug-pattern.js';
+import { describeValidator, type ValidatorKind } from './named-validators.js';
 
 /**
  * Flags carried by every field node.
@@ -159,7 +160,7 @@ export interface FieldFlags {
 
 /** A leaf holding a single scalar. */
 export interface ScalarNode extends FieldFlags {
-  kind: 'string' | 'number' | 'boolean';
+  type: 'string' | 'number' | 'boolean';
   /**
    * NUMBER ONLY — the value must be an integer.
    *
@@ -206,50 +207,46 @@ export interface ScalarNode extends FieldFlags {
    */
   maxLength?: number;
   /**
-   * STRING ONLY — a regex the value must match.
+   * STRING ONLY — the value must pass a NAMED VALIDATOR from the host's registry
+   * (`./named-validators`). The third and last member of the value-constraint
+   * dictionary, beside `type: 'enum'` + `values` and `maxLength`.
    *
-   * A SOURCE STRING, not a `RegExp`: a declaration is pure data that has to
-   * survive being read, serialised and compared, and a live object survives none
-   * of that.
+   * The name resolves to HOST CODE, not to an expression in the declaration: the
+   * type says `kind: 'sql-identifier'`, and what that means is the host's to
+   * know. That boundary is the point of the axis. It replaces the pair this
+   * release removed — a raw `pattern` string and a `notReserved: 'sql'` flag —
+   * and replaces them without reopening them: `minLength` and `pattern` are not
+   * in the dictionary and are not coming. A field with a fixed format gets a
+   * named validator or it gets nothing.
    *
-   * ANCHOR IT YOURSELF. It is applied with zod's `.regex()`, which SEARCHES —
-   * `'[a-z]+'` accepts `'!!! nope ???'`. Every caller so far means `^…$`.
+   * Enforced on the INPUT schema, on both external doors, and never on a read:
+   * a violation is a `VALIDATION_ERROR` per item at write time, loud, with no
+   * silent truncation and no coercion.
    *
-   * Present for the same reason `integer` is: a type whose identifier must be a
-   * SQL identifier had no way to say so, and the only other place to put the
-   * rule — a per-type validation hook — does not exist on `EntityContribution`.
+   * NOT part of `data.integrity` and never reaching DDL — exactly like
+   * `maxLength`, and for the same reason: it is a domain truth about the value,
+   * not a shape the table enforces. No `CHECK` is generated.
    *
-   * Rejected on a non-string leaf rather than ignored, and rejected at
-   * registration when it does not compile, so a typo cannot surface later as a
-   * throw from deep inside router construction.
+   * DECLARING ONE over values that do not already pass is a breaking change and
+   * must go through a `payloadUpgrades` step. Unlike `maxLength`, truncation is
+   * not an option here: the step either rewrites the value or refuses.
+   *
+   * Rejected on a non-string leaf, and rejected at registration when the name is
+   * not in the registry, so a typo cannot surface later as a value that was
+   * never actually screened.
    */
-  pattern?: string;
-  /**
-   * STRING ONLY — the value may not be a reserved SQL word, compared
-   * case-insensitively against the same list the host screens its own generated
-   * identifiers with (`SQL_RESERVED_WORDS`).
-   *
-   * Deliberately NOT expressible as a `pattern`. A 123-alternative negative
-   * lookahead is unreviewable, is case-sensitive where the rule is not, and
-   * collapses a distinct failure — "that word is reserved", which tells the
-   * author what to do — into a generic shape mismatch that does not.
-   *
-   * A flag rather than a list on the declaration, because the list is the
-   * HOST's: a type transcribing its own copy drifts from the one the host
-   * actually enforces on the first keyword the host adds.
-   */
-  notReserved?: 'sql';
+  kind?: ValidatorKind;
 }
 
 /** A leaf constrained to a closed set of strings. Projects to `TEXT`, validated on write. */
 export interface EnumNode extends FieldFlags {
-  kind: 'enum';
+  type: 'enum';
   values: readonly string[];
 }
 
 /** A nested object with named fields. */
 export interface ObjectNode extends FieldFlags {
-  kind: 'object';
+  type: 'object';
   fields: Readonly<Record<string, FieldNode>>;
 }
 
@@ -294,7 +291,7 @@ export interface AxisSpec {
  *     Projects to a separate table; never embedded on the parent.
  */
 export interface CollectionNode extends FieldFlags {
-  kind: 'collection';
+  type: 'collection';
   collection: 'value' | 'keyed';
   item: FieldNode;
   /**
@@ -360,7 +357,7 @@ export interface CollectionNode extends FieldFlags {
  * the key schema declared there is nothing left to guess.
  */
 export interface RecordNode extends FieldFlags {
-  kind: 'record';
+  type: 'record';
   key: FieldNode;
   value: FieldNode;
 }
@@ -388,7 +385,7 @@ export interface RecordNode extends FieldFlags {
  * layer could act on. Filed against the brief as a `missing` patch.
  */
 export interface JsonNode extends FieldFlags {
-  kind: 'json';
+  type: 'json';
 }
 
 export type FieldNode = ScalarNode | EnumNode | ObjectNode | CollectionNode | RecordNode | JsonNode;
@@ -503,7 +500,7 @@ export function contentBearingKeys(name: string): { has: string; bytes: string }
 export const RESERVED_TITLE_FIELD = 'title';
 export const TITLE_MAX_LENGTH = 200;
 export const RESERVED_TITLE_DECLARATION: ScalarNode = {
-  kind: 'string',
+  type: 'string',
   required: true,
   maxLength: TITLE_MAX_LENGTH,
 };
@@ -563,7 +560,8 @@ export function selectableFieldsOf(schema: Readonly<Record<string, FieldNode>>):
 /** A value constraint as `describe_*` publishes it. */
 export type FieldConstraint =
   | { field: string; type: 'enum'; values: readonly string[] }
-  | { field: string; type: 'maxLength'; maxLength: number };
+  | { field: string; type: 'maxLength'; maxLength: number }
+  | { field: string; type: 'kind'; kind: ValidatorKind; describe: string };
 
 /**
  * Every value constraint the schema declares, flattened for `describe_*`.
@@ -575,9 +573,14 @@ export type FieldConstraint =
 export function constraintsOf(schema: Readonly<Record<string, FieldNode>>): FieldConstraint[] {
   const out: FieldConstraint[] = [];
   for (const [field, node] of Object.entries(schema)) {
-    if (node.kind === 'enum') out.push({ field, type: 'enum', values: node.values });
-    if (node.kind === 'string' && node.maxLength !== undefined) {
+    if (node.type === 'enum') out.push({ field, type: 'enum', values: node.values });
+    if (node.type === 'string' && node.maxLength !== undefined) {
       out.push({ field, type: 'maxLength', maxLength: node.maxLength });
+    }
+    // Published with its prose, not just its name: a caller that has never heard
+    // of `sql-identifier` still learns the rule before a write teaches it.
+    if (node.type === 'string' && node.kind !== undefined) {
+      out.push({ field, type: 'kind', kind: node.kind, describe: describeValidator(node.kind) });
     }
   }
   return out;
@@ -598,7 +601,7 @@ export function contentFieldsOf(
  * `keyFields` (see {@link CollectionNode.keyFields}).
  */
 export function hasProjectionTable(node: FieldNode): boolean {
-  if (node.kind !== 'collection') return false;
+  if (node.type !== 'collection') return false;
   return node.collection === 'keyed' || !!node.keyFields?.length;
 }
 
@@ -618,7 +621,7 @@ export function isEmbedded(node: FieldNode): boolean {
  * did not.
  */
 export function isKeyed(node: FieldNode): node is CollectionNode {
-  return node.kind === 'collection' && node.collection === 'keyed';
+  return node.type === 'collection' && node.collection === 'keyed';
 }
 
 /**
@@ -642,7 +645,7 @@ export function axesOf(node: FieldNode): readonly AxisSpec[] {
  * key is.
  */
 export function payloadFieldsOf(node: CollectionNode): readonly string[] {
-  if (node.item.kind !== 'object') return ['value'];
+  if (node.item.type !== 'object') return ['value'];
   const keys = new Set(node.keyFields ?? []);
   return Object.keys(node.item.fields).filter((name) => !keys.has(name));
 }
@@ -663,7 +666,7 @@ export function payloadFieldsOf(node: CollectionNode): readonly string[] {
  */
 export function sortKeyFieldsOf(node: CollectionNode): readonly string[] {
   if (node.keyFields?.length) return node.keyFields;
-  if (node.item.kind === 'object') return Object.keys(node.item.fields);
+  if (node.item.type === 'object') return Object.keys(node.item.fields);
   return [];
 }
 
@@ -676,8 +679,8 @@ export function walkSchema(
     for (const [name, node] of Object.entries(fields)) {
       const path = prefix ? `${prefix}.${name}` : name;
       visit(path, node, depth);
-      if (node.kind === 'object') walk(node.fields, path, depth + 1);
-      else if (node.kind === 'collection') {
+      if (node.type === 'object') walk(node.fields, path, depth + 1);
+      else if (node.type === 'collection') {
         // The item is the collection's own level, not a level below it: a
         // collection of objects nests exactly as deep as an object does. Counting
         // it twice would make `design-system.groups[].tokens[].value` read as
@@ -685,11 +688,11 @@ export function walkSchema(
         // fine.
         const itemPath = `${path}[]`;
         visit(itemPath, node.item, depth);
-        if (node.item.kind === 'object') walk(node.item.fields, itemPath, depth + 1);
-      } else if (node.kind === 'record') {
+        if (node.item.type === 'object') walk(node.item.fields, itemPath, depth + 1);
+      } else if (node.type === 'record') {
         visit(`${path}.$key`, node.key, depth + 1);
         visit(`${path}.$value`, node.value, depth + 1);
-        if (node.value.kind === 'object') walk(node.value.fields, `${path}.$value`, depth + 1);
+        if (node.value.type === 'object') walk(node.value.fields, `${path}.$value`, depth + 1);
       }
     }
   };

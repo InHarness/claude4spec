@@ -35,7 +35,7 @@ export const spreadsheetData: DataDeclaration = {
      * upgrade truncates the ones already stored (see `upgrades.ts`) rather than
      * leaving a value that would fail its own schema on the next unrelated edit.
      */
-    title: { kind: 'string', required: true, maxLength: 200, description: 'Human title of the sheet.' },
+    title: { type: 'string', required: true, maxLength: 200, description: 'Human title of the sheet.' },
     /**
      * `integer` + `min: 0` restore v1's `z.number().int().nonnegative()`, which
      * the first translation of this schema dropped.
@@ -53,7 +53,7 @@ export const spreadsheetData: DataDeclaration = {
      * than by the sheet's size.
      */
     nRows: {
-      kind: 'number',
+      type: 'number',
       column: 'n_rows',
       default: 0,
       integer: true,
@@ -61,7 +61,7 @@ export const spreadsheetData: DataDeclaration = {
       description: 'Row count. The `r` axis extent — authored, not derived from written cells.',
     },
     nCols: {
-      kind: 'number',
+      type: 'number',
       column: 'n_cols',
       default: 0,
       integer: true,
@@ -69,13 +69,13 @@ export const spreadsheetData: DataDeclaration = {
       description: 'Column count. The `c` axis extent — authored, not derived from written cells.',
     },
     headerRow: {
-      kind: 'boolean',
+      type: 'boolean',
       column: 'header_row',
       default: false,
       description: 'Row 1 holds column labels.',
     },
     headerCol: {
-      kind: 'boolean',
+      type: 'boolean',
       column: 'header_col',
       default: false,
       description: 'Column 1 holds row labels.',
@@ -95,7 +95,7 @@ export const spreadsheetData: DataDeclaration = {
      * field is part of the key would carry no content to address.
      */
     cells: {
-      kind: 'collection',
+      type: 'collection',
       collection: 'keyed',
       keyFields: ['r', 'c'],
       axes: [
@@ -106,16 +106,16 @@ export const spreadsheetData: DataDeclaration = {
       description:
         'Sparse cell index, 1-based. An empty value is not stored; writing an empty value deletes the key. Read by windows, never whole.',
       item: {
-        kind: 'object',
+        type: 'object',
         fields: {
-          r: { kind: 'number', required: true, description: 'Row, 1-based.' },
-          c: { kind: 'number', required: true, description: 'Column, 1-based.' },
-          value: { kind: 'string', description: 'Cell content. Inline markdown.' },
+          r: { type: 'number', required: true, description: 'Row, 1-based.' },
+          c: { type: 'number', required: true, description: 'Column, 1-based.' },
+          value: { type: 'string', description: 'Cell content. Inline markdown.' },
         },
       },
     },
-    createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
-    updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+    createdAt: { type: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+    updatedAt: { type: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
   },
 };
 

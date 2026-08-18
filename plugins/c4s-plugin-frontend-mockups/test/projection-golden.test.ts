@@ -26,7 +26,14 @@ import { applyProjection, generateProjectionDDL } from '../../../src/server/db/p
 import { uiViewData } from '../src/entity/ui-view/schema.js';
 import { designSystemData } from '../src/entity/design-system/schema.js';
 
-/** The DDL as the deleted `migrations.ts` files wrote it, byte for byte. */
+/**
+ * The DDL as the deleted `migrations.ts` files wrote it, byte for byte — plus the
+ * columns added since, each of which has to be added here deliberately.
+ *
+ * `ui_view.mockup_html` (0.2.27) is one of those: `contentBearing` excludes a
+ * field from READS, not from the projection, so the column exists exactly as the
+ * diagram's `source` does. Nullable, because a mockup is optional and clearable.
+ */
 const RETIRED_DDL: Record<string, string> = {
   'ui-view': `
     CREATE TABLE IF NOT EXISTS ui_view (
@@ -37,7 +44,8 @@ const RETIRED_DDL: Record<string, string> = {
       params TEXT NOT NULL DEFAULT '[]',
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-      design_system_slug TEXT
+      design_system_slug TEXT,
+      mockup_html TEXT
     );
   `,
   'design-system': `

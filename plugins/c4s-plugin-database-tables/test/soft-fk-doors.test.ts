@@ -17,12 +17,12 @@ describe('database-table — the doors a user actually reaches', () => {
 
   beforeEach(async () => {
     t = await createTestApp();
-    await t.crud.create('database-table', { name: 'orders', columns: [] }, 'user');
+    await t.crud.create('database-table', { title: 'orders', columns: [] }, 'user');
   });
   afterEach(() => t.cleanup());
 
   const withFk = (table: string) => ({
-    name: 'order_items',
+    title: 'order_items',
     columns: [{ name: 'order_id', type: 'uuid', fk: { table, column: 'id' } }],
   });
 
@@ -61,23 +61,26 @@ describe('database-table — the doors a user actually reaches', () => {
   });
 
   /**
-   * A name the retired plugin accepted (it validated `name` as a bare string)
+   * A name the retired plugin accepted (it validated the name as a bare string)
    * must still be READABLE. Indexing bypasses the generated schema on purpose —
    * refusing it would make the type unable to adopt its own history — and the
    * editor must not resend an untouched illegal name and lock the user out.
+   *
+   * Unchanged by the 0.2.27 merge except in which field carries it: the value is
+   * now the reserved `title`, screened by `kind: 'sql-identifier'`.
    */
   it('indexes a table whose inherited name is a reserved word', async () => {
     await expect(
-      t.crud.create('database-table', { name: 'order', columns: [] }, 'user'),
+      t.crud.create('database-table', { title: 'order', columns: [] }, 'user'),
     ).resolves.toBeTruthy();
     expect(
-      t.db.prepare('SELECT name FROM database_table WHERE slug = ?').get('order'),
-    ).toEqual({ name: 'order' });
+      t.db.prepare('SELECT title FROM database_table WHERE slug = ?').get('order'),
+    ).toEqual({ title: 'order' });
   });
 
-  it('lets an inherited illegal name be edited WITHOUT resending the name', async () => {
+  it('lets an inherited illegal name be edited WITHOUT resending the title', async () => {
     // Exactly what the detail panel now sends: only the fields that changed.
-    await t.crud.create('database-table', { name: 'order', columns: [] }, 'user');
+    await t.crud.create('database-table', { title: 'order', columns: [] }, 'user');
     const res = await request(t.app)
       .patch('/api/database-tables/order')
       .send({ description: 'Customer orders.' });
@@ -85,7 +88,7 @@ describe('database-table — the doors a user actually reaches', () => {
     // …while resending it still refuses, which is what makes the omission matter.
     const resend = await request(t.app)
       .patch('/api/database-tables/order')
-      .send({ name: 'order', description: 'x' });
+      .send({ title: 'order', description: 'x' });
     expect(resend.status).toBe(400);
   });
 });

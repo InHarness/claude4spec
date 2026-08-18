@@ -14,27 +14,27 @@ import { nodeSchema, recordSchema, searchablePaths } from './json-schema.js';
 
 const DATA: DataDeclaration = {
   schema: {
-    name: { kind: 'string', required: true },
-    description: { kind: 'string', clearable: true },
-    status: { kind: 'enum', values: ['active', 'deprecated'], default: 'active' },
-    caption: { kind: 'string', transientInput: true },
-    id: { kind: 'number', localSurrogate: true },
-    designSystemSlug: { kind: 'string', ref: 'design-system' },
+    name: { type: 'string', required: true },
+    description: { type: 'string', clearable: true },
+    status: { type: 'enum', values: ['active', 'deprecated'], default: 'active' },
+    caption: { type: 'string', transientInput: true },
+    id: { type: 'number', localSurrogate: true },
+    designSystemSlug: { type: 'string', ref: 'design-system' },
     params: {
-      kind: 'collection',
+      type: 'collection',
       collection: 'value',
-      item: { kind: 'object', fields: { name: { kind: 'string', required: true } } },
+      item: { type: 'object', fields: { name: { type: 'string', required: true } } },
     },
-    tokens: { kind: 'record', key: { kind: 'string' }, value: { kind: 'string' } },
+    tokens: { type: 'record', key: { type: 'string' }, value: { type: 'string' } },
   },
 };
 
 describe('nodeSchema', () => {
   it('maps every node kind, including the record branch reflection could not see', () => {
-    expect(nodeSchema({ kind: 'string' })).toEqual({ type: 'string' });
-    expect(nodeSchema({ kind: 'number' })).toEqual({ type: 'number' });
-    expect(nodeSchema({ kind: 'boolean' })).toEqual({ type: 'boolean' });
-    expect(nodeSchema({ kind: 'enum', values: ['a', 'b'] })).toEqual({ type: 'string', enum: ['a', 'b'] });
+    expect(nodeSchema({ type: 'string' })).toEqual({ type: 'string' });
+    expect(nodeSchema({ type: 'number' })).toEqual({ type: 'number' });
+    expect(nodeSchema({ type: 'boolean' })).toEqual({ type: 'boolean' });
+    expect(nodeSchema({ type: 'enum', values: ['a', 'b'] })).toEqual({ type: 'string', enum: ['a', 'b'] });
     expect(nodeSchema(DATA.schema.tokens!)).toEqual({
       type: 'object',
       propertyNames: { type: 'string' },
@@ -46,8 +46,8 @@ describe('nodeSchema', () => {
     // The flag means "an update may set this to null", which is the same
     // statement as "null is in this field's domain". A field that is merely
     // optional is absent, not null.
-    expect(nodeSchema({ kind: 'string', clearable: true })).toEqual({ type: ['string', 'null'] });
-    expect(nodeSchema({ kind: 'string' })).toEqual({ type: 'string' });
+    expect(nodeSchema({ type: 'string', clearable: true })).toEqual({ type: ['string', 'null'] });
+    expect(nodeSchema({ type: 'string' })).toEqual({ type: 'string' });
   });
 
   it('carries a collection item schema rather than a bare array', () => {
@@ -90,8 +90,8 @@ describe('recordSchema', () => {
     const withStamps = {
       schema: {
         ...DATA.schema,
-        createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
-        updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+        createdAt: { type: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+        updatedAt: { type: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
       },
     } as DataDeclaration;
     const schema = recordSchema({ type: 'widget', data: withStamps });
@@ -105,7 +105,7 @@ describe('recordSchema', () => {
     // Widening `type` alone left the cleared value passing the type keyword and
     // failing the enum keyword — unsatisfiable for the one value the flag exists
     // to permit.
-    expect(nodeSchema({ kind: 'enum', values: ['a', 'b'], clearable: true })).toEqual({
+    expect(nodeSchema({ type: 'enum', values: ['a', 'b'], clearable: true })).toEqual({
       type: ['string', 'null'],
       enum: ['a', 'b', null],
     });

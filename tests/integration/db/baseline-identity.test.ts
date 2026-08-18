@@ -199,6 +199,22 @@ const withoutNewTables = (schema: Record<string, TableShape>): Record<string, Ta
   Object.fromEntries(Object.entries(schema).filter(([table]) => !NEW_SINCE_LEGACY.has(table)));
 
 /**
+ * Columns a type declared AFTER the historical chain was frozen, appended to the
+ * legacy side so the rest of the table still compares strictly.
+ *
+ * The table-level twin above removes a whole table from the comparison; this is
+ * the narrower case, and it is listed column by column for the same reason: a
+ * column appearing that nobody meant to add must still fail this gate. The
+ * generator appends, so the expected position is the end.
+ *
+ * `ui_view.mockup_html` (0.2.27) — the mockup. `contentBearing` keeps a field out
+ * of READS, not out of the projection.
+ */
+const NEW_COLUMNS_SINCE_LEGACY: Record<string, Array<Record<string, unknown>>> = {
+  ui_view: [{ name: 'mockup_html', type: 'TEXT', notnull: 0, dflt_value: null, pk: 0 }],
+};
+
+/**
  * The reserved column, in the position the generator emits it: first among the
  * declared fields, i.e. straight after `slug`.
  */
@@ -227,9 +243,10 @@ function applyExpectedDeltas(schema: Record<string, TableShape>): Record<string,
       table === 'endpoint_dto'
         ? withoutRenamed
         : [withoutRenamed[0], TITLE_COLUMN, ...withoutRenamed.slice(1)];
+    const withAdded = [...withTitle, ...(NEW_COLUMNS_SINCE_LEGACY[table] ?? [])];
     out[table] = {
       ...shape,
-      columns: withTitle.map((c, cid) => {
+      columns: withAdded.map((c, cid) => {
         const col = c as { pk: number; notnull: number };
         // `cid` is positional and every insertion shifts it, so it is restamped
         // rather than compared as authored.

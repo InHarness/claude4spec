@@ -317,6 +317,49 @@ export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] =
       'host adds.',
   },
   {
+    release: '0.2.27',
+    slot: "ScalarNode.kind (and the FieldNode discriminator, now `type`)",
+    kind: 'slot-added',
+    summary:
+      'The value-constraint dictionary closes at three: `type: \'enum\'` + ' +
+      '`values`, `maxLength`, and `kind: <name>` — a NAMED VALIDATOR resolved ' +
+      'from a host registry (`named-validators`), whose only entry today is ' +
+      '`sql-identifier` and whose first consumer is `database-table.title`. The ' +
+      'name resolves to host CODE, not to an expression in the declaration: the ' +
+      'type says which rule, the host knows what it means. It REPLACES ' +
+      '`ScalarNode.pattern` and `ScalarNode.notReserved`, both removed here, and ' +
+      'replaces them without reopening them — `minLength` and `pattern` are not ' +
+      'in the dictionary and are not coming, so a field with a fixed format gets ' +
+      'a named validator or nothing. Adding an entry to the registry is a Host ' +
+      'API change on the same footing as adding a field flag, because the host ' +
+      'has to learn to honour it. Enforced on the input schema through both ' +
+      'external doors, never on a read, and never reaching DDL — like ' +
+      '`maxLength`, and unlike `maxLength`, a migration over failing values must ' +
+      'rewrite or refuse rather than truncate. The rename that made room for it ' +
+      '(`FieldNode`\'s variant discriminator `kind` → `type`) is the same change ' +
+      'seen from the declaration side: the specification always wrote ' +
+      '`type: "enum"`, and the `kind`-discriminated union was implementation ' +
+      'invention occupying a contract-reserved word. Absorbed into the 2.0.0 ' +
+      'baseline under the stabilisation rule — no published plugins, so a ' +
+      'breaking declaration change breaks nobody.',
+  },
+  {
+    release: '0.2.27',
+    slot: 'reserved `title` — floor, not ceiling',
+    kind: 'behaviour-changed',
+    summary:
+      'A type may now declare NARROWING constraints beside the reserved title ' +
+      'instead of matching the host declaration exactly, and may omit ' +
+      '`computedDefault` entirely. The host still fixes `type: \'string\'`, ' +
+      '`required: true` and `maxLength: 200`, and still refuses any attempt to ' +
+      'drop or widen them; what changes is that "exactly this" becomes "at least ' +
+      'this". Without it a type whose name IS its identifier could not say so, ' +
+      'because the rule would have had to go on every other type\'s title or ' +
+      'nowhere. A type with nothing to derive a title from declares no default ' +
+      'and a write without one fails input validation, which is the honest ' +
+      'outcome rather than a gap.',
+  },
+  {
     release: '0.2.13',
     slot: 'ref / onMissing on a nested or embedded field',
     kind: 'behaviour-changed',

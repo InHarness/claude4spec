@@ -31,33 +31,33 @@ const widget: WritableModule = {
   payloadVersion: 1,
   data: {
     schema: {
-      title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-      label: { kind: 'string', required: true },
+      title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
+      label: { type: 'string', required: true },
       links: {
-        kind: 'collection',
+        type: 'collection',
         collection: 'value',
         projectionTable: 'widget_link',
         keyFields: ['target', 'relation'],
         item: {
-          kind: 'object',
+          type: 'object',
           fields: {
-            target: { kind: 'string', column: 'target_slug', required: true },
-            relation: { kind: 'enum', values: ['a', 'b'], required: true },
-            statusCode: { kind: 'number', column: 'status_code' },
-            enabled: { kind: 'boolean' },
+            target: { type: 'string', column: 'target_slug', required: true },
+            relation: { type: 'enum', values: ['a', 'b'], required: true },
+            statusCode: { type: 'number', column: 'status_code' },
+            enabled: { type: 'boolean' },
           },
         },
       },
       // A scalar item: one synthetic `value` column, and it must read back as a
       // bare list rather than a list of one-key objects.
       notes: {
-        kind: 'collection',
+        type: 'collection',
         collection: 'value',
         keyFields: ['value'],
-        item: { kind: 'string' },
+        item: { type: 'string' },
       },
-      createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
-      updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+      createdAt: { type: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+      updatedAt: { type: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
     },
   },
 };

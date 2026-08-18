@@ -20,4 +20,24 @@ export function uiViewPayloadV1ToV2(payload: SnapshotData): SnapshotData {
   return p;
 }
 
-export const uiViewPayloadUpgrades = [uiViewPayloadV1ToV2];
+/**
+ * `ui-view` payload v2 → v3: the view gains `mockupHtml`, explicitly absent.
+ *
+ * Written as `null` rather than left off. The field is `clearable`, so `null`
+ * already means "no mockup" everywhere else in the contract, and a payload where
+ * the key is present-and-null says the same thing the projection, the snapshot
+ * and the read record all say. Leaving the key out would make "not migrated yet"
+ * and "no mockup" the same shape, which is exactly the ambiguity a version marker
+ * exists to remove.
+ *
+ * Idempotent, and never overwrites: a payload that somehow already carries a
+ * mockup keeps it.
+ */
+export function uiViewPayloadV2ToV3(payload: SnapshotData): SnapshotData {
+  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) return payload;
+  const p = { ...(payload as Record<string, unknown>) };
+  if (!('mockupHtml' in p)) p.mockupHtml = null;
+  return p;
+}
+
+export const uiViewPayloadUpgrades = [uiViewPayloadV1ToV2, uiViewPayloadV2ToV3];

@@ -112,7 +112,7 @@ function rowFor(deps: DiscoveryDeps, type: string, slug: string): EntityRow {
  */
 function titleOf(deps: DiscoveryDeps, type: string, raw: RawEntity | null | undefined): string {
   if (!raw) return '';
-  const column = columnOf(RESERVED_TITLE_FIELD, deps.host.getEntity(type)?.data?.schema?.title ?? { kind: 'string' });
+  const column = columnOf(RESERVED_TITLE_FIELD, deps.host.getEntity(type)?.data?.schema?.title ?? { type: 'string' });
   const value = raw.data[RESERVED_TITLE_FIELD] ?? raw.data[column];
   return typeof value === 'string' && value !== '' ? value : raw.slug;
 }

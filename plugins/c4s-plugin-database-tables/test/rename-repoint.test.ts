@@ -22,11 +22,11 @@ describe('database-table — rename repoints soft foreign keys', () => {
 
   beforeEach(async () => {
     t = await createTestApp();
-    await t.crud.create('database-table', { name: 'orders', columns: [] }, 'user');
+    await t.crud.create('database-table', { title: 'orders', columns: [] }, 'user');
     await t.crud.create(
       'database-table',
       {
-        name: 'order_items',
+        title: 'order_items',
         columns: [
           { name: 'order_id', type: 'uuid', fk: { table: 'orders', column: 'id' } },
           { name: 'sku', type: 'text' },
@@ -37,7 +37,7 @@ describe('database-table — rename repoints soft foreign keys', () => {
     await t.crud.create(
       'database-table',
       {
-        name: 'shipments',
+        title: 'shipments',
         columns: [{ name: 'order_id', type: 'uuid', fk: { table: 'orders', column: 'id' } }],
       },
       'user',
@@ -56,7 +56,7 @@ describe('database-table — rename repoints soft foreign keys', () => {
   it('repoints every referencing column when the target is renamed', async () => {
     const res = await request(t.app)
       .patch('/api/database-tables/orders')
-      .send({ name: 'sales_orders', newSlug: 'sales-orders' });
+      .send({ title: 'sales_orders', newSlug: 'sales-orders' });
     expect(res.status).toBe(200);
 
     // Both referrers follow, and nothing had to know about `database-table`.
@@ -67,25 +67,28 @@ describe('database-table — rename repoints soft foreign keys', () => {
   it('leaves a column with no fk alone', async () => {
     await request(t.app)
       .patch('/api/database-tables/orders')
-      .send({ name: 'sales_orders', newSlug: 'sales-orders' });
+      .send({ title: 'sales_orders', newSlug: 'sales-orders' });
     expect(fkOf('order-items', 'sku')).toBeUndefined();
   });
 
   /**
-   * THE CONTRACT. `name` is the SQL identifier; the slug is derived from it ONCE,
-   * at create. Editing the name later is not a rename — if it were, every typo
-   * fix would move a slug that pages and foreign keys point at.
+   * THE CONTRACT. `title` is the SQL identifier; the slug is derived from it
+   * ONCE, at create. Editing the title later is not a rename — if it were, every
+   * typo fix would move a slug that pages and foreign keys point at.
+   *
+   * The rule survived the 0.2.27 field merge unchanged, because it rests on the
+   * slug being create-time and not on WHICH field seeded it.
    */
-  it('does NOT move the slug when only `name` is edited', async () => {
+  it('does NOT move the slug when only `title` is edited', async () => {
     const res = await request(t.app)
       .patch('/api/database-tables/orders')
-      .send({ name: 'sales_orders' });
+      .send({ title: 'sales_orders' });
     expect(res.status).toBe(200);
 
-    const row = t.db.prepare('SELECT slug, name FROM database_table WHERE slug = ?').get('orders') as
-      | { slug: string; name: string }
+    const row = t.db.prepare('SELECT slug, title FROM database_table WHERE slug = ?').get('orders') as
+      | { slug: string; title: string }
       | undefined;
-    expect(row?.name).toBe('sales_orders');
+    expect(row?.title).toBe('sales_orders');
     expect(row?.slug).toBe('orders');
     // …and therefore nothing was repointed.
     expect(fkOf('order-items', 'order_id')).toBe('orders');

@@ -20,7 +20,7 @@ export const acData: DataDeclaration = {
      * title is a label. Collapsing them would truncate the criterion itself.
      */
     title: {
-      kind: 'string',
+      type: 'string',
       required: true,
       maxLength: 200,
       computedDefault: [
@@ -30,17 +30,17 @@ export const acData: DataDeclaration = {
       description: 'Label. Defaults to the first 200 characters of `text`.',
     },
     text: {
-      kind: 'string',
+      type: 'string',
       required: true,
       description: 'Observable behavior the AC asserts. One sentence is best.',
     },
     kind: {
-      kind: 'enum',
+      type: 'enum',
       values: ['requirement', 'edge-case'],
       default: 'requirement',
       description: 'requirement (default) | edge-case',
     },
-    status: { kind: 'enum', values: ['active', 'deprecated'], default: 'active' },
+    status: { type: 'enum', values: ['active', 'deprecated'], default: 'active' },
     /**
      * A value collection WITHOUT `keyFields`, so it stays embedded JSON — the
      * shape it has always had. `slug` carries `ref: '$type'`: the target type is
@@ -50,23 +50,23 @@ export const acData: DataDeclaration = {
      * `onEntityRenamed` hook it replaces.
      */
     verifies: {
-      kind: 'collection',
+      type: 'collection',
       collection: 'value',
       // Assignment order is not content — two ACs verifying the same set must
       // snapshot identically regardless of the order they were linked in.
       unordered: true,
       description: 'Entities this AC verifies. Reported broken if entity does not exist; not blocking.',
       item: {
-        kind: 'object',
+        type: 'object',
         fields: {
-          type: { kind: 'string', required: true },
-          slug: { kind: 'string', required: true, ref: '$type', onMissing: 'warn', onDelete: 'leave-dangling' },
+          type: { type: 'string', required: true },
+          slug: { type: 'string', required: true, ref: '$type', onMissing: 'warn', onDelete: 'leave-dangling' },
         },
       },
     },
-    description: { kind: 'string', clearable: true },
-    createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
-    updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+    description: { type: 'string', clearable: true },
+    createdAt: { type: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+    updatedAt: { type: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
   },
   // Reproduces idx_ac_status / idx_ac_kind from the retired migration. Both are
   // hints: the host may answer them differently without ac being re-authored.

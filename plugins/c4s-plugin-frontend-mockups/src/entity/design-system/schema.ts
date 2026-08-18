@@ -13,7 +13,7 @@ import type { DataDeclaration, FieldNode, SlugPattern } from '@c4s/plugin-runtim
  * host does not interpret this value at all.
  */
 const tokenValue: FieldNode = {
-  kind: 'json',
+  type: 'json',
   // A token without a value is not a token. The retired hand-written
   // `tokenSchema` had it mandatory, and `required` has to be restated here
   // because the flag travels on the NODE — swapping `record` for `json` dropped
@@ -34,14 +34,14 @@ export const designSystemData: DataDeclaration = {
      * structure, not the entity, and `title` is reserved for the entity alone.
      */
     title: {
-      kind: 'string',
+      type: 'string',
       required: true,
       maxLength: 200,
       description: 'Display name (e.g. "Brand 2026")',
     },
-    description: { kind: 'string', clearable: true },
+    description: { type: 'string', clearable: true },
     groups: {
-      kind: 'collection',
+      type: 'collection',
       collection: 'value',
       description: 'Token groups (default []).',
       // A group's identity is its name, so reordering groups is a noop — but an
@@ -49,12 +49,12 @@ export const designSystemData: DataDeclaration = {
       // deliberately NOT unordered: a sm/md/xl scale's order is documentation.
       unordered: true,
       item: {
-        kind: 'object',
+        type: 'object',
         fields: {
-          name: { kind: 'string', required: true },
-          tier: { kind: 'enum', values: ['primitive', 'semantic'], required: true },
+          name: { type: 'string', required: true },
+          tier: { type: 'enum', values: ['primitive', 'semantic'], required: true },
           tokens: {
-            kind: 'collection',
+            type: 'collection',
             collection: 'value',
             // A group carries its token list, even when empty — the retired
             // hand-written `groupSchema` had it mandatory. Restated because
@@ -62,17 +62,17 @@ export const designSystemData: DataDeclaration = {
             // reads it for a nested collection.
             required: true,
             item: {
-              kind: 'object',
+              type: 'object',
               fields: {
-                name: { kind: 'string', required: true, description: 'Token name, unique within the design system' },
+                name: { type: 'string', required: true, description: 'Token name, unique within the design system' },
                 type: {
-                  kind: 'string',
+                  type: 'string',
                   required: true,
                   description:
                     'TokenType (color|dimension|fontSize|...|typography|shadow). Best-effort, not hard-validated.',
                 },
                 value: tokenValue,
-                description: { kind: 'string' },
+                description: { type: 'string' },
               },
             },
           },
@@ -80,24 +80,24 @@ export const designSystemData: DataDeclaration = {
       },
     },
     modes: {
-      kind: 'collection',
+      type: 'collection',
       collection: 'value',
       // Same rule as `groups`; `overrides` stays authored.
       unordered: true,
       description: 'Theme modes — token override sets (default []).',
       item: {
-        kind: 'object',
+        type: 'object',
         fields: {
-          name: { kind: 'string', required: true },
+          name: { type: 'string', required: true },
           overrides: {
-            kind: 'collection',
+            type: 'collection',
             collection: 'value',
             // Same rule as `groups[].tokens` above.
             required: true,
             item: {
-              kind: 'object',
+              type: 'object',
               fields: {
-                token: { kind: 'string', required: true },
+                token: { type: 'string', required: true },
                 value: tokenValue,
               },
             },
@@ -105,8 +105,8 @@ export const designSystemData: DataDeclaration = {
         },
       },
     },
-    createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
-    updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+    createdAt: { type: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+    updatedAt: { type: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
   },
 };
 

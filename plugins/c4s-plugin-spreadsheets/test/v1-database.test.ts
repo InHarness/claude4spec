@@ -101,19 +101,27 @@ describe('upgrading a database that ran c4s-plugin-spreadsheets 0.0.6', () => {
      * new column onto the existing table rather than needing a migration for it,
      * and the VALUE arrives when the entity files are re-read (the payload
      * upgrade moves `name` into it).
+     *
+     * `name` LEAVES in the same pass (0.2.27). The v1 column stopped being a
+     * projection of any declared field the moment the payload upgrade moved its
+     * value into `title`, and leaving it behind is not free: it is `NOT NULL`,
+     * the write path binds only declared columns, and the rebuild that fills
+     * `title` is exactly what would have failed on it.
      */
     expect(result.alteredColumns).toEqual([
       'spreadsheet.title',
       'spreadsheet.created_at',
       'spreadsheet.updated_at',
+      'spreadsheet.name',
     ]);
 
-    // And the sheet's own data is intact.
-    const row = db.prepare(`SELECT name, n_rows FROM spreadsheet WHERE slug = ?`).get('pliki-external') as {
-      name: string;
+    // And the sheet's own data is intact — the ROWS survive adoption; only the
+    // column whose field no longer exists is gone.
+    const row = db.prepare(`SELECT slug, n_rows FROM spreadsheet WHERE slug = ?`).get('pliki-external') as {
+      slug: string;
       n_rows: number;
     };
-    expect(row).toEqual({ name: 'external/', n_rows: 2 });
+    expect(row).toEqual({ slug: 'pliki-external', n_rows: 2 });
   });
 
   it('a cell write lands in the NEW table, not the legacy one', () => {

@@ -38,7 +38,7 @@ function collectionFields(type: string): string[] {
     ?.schema;
   if (!schema) return [];
   return Object.entries(schema)
-    .filter(([, node]) => node?.kind === 'collection')
+    .filter(([, node]) => node?.type === 'collection')
     .map(([name]) => name);
 }
 

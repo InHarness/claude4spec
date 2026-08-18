@@ -18,8 +18,8 @@ import type { RawEntity } from '../discovery/raw-entity-reader.js';
 import type { BackendModule } from '../core/plugin-host/types.js';
 
 const SCHEMA: Record<string, FieldNode> = {
-  title: { kind: 'string', required: true, maxLength: 200 },
-  body: { kind: 'string', contentBearing: true },
+  title: { type: 'string', required: true, maxLength: 200 },
+  body: { type: 'string', contentBearing: true },
 };
 
 function entity(data: Record<string, unknown>): RawEntity {
@@ -169,7 +169,7 @@ describe('contentBearing — load-time validation', () => {
   it('rejects a contentOperation that resolves to no operation', () => {
     const module = moduleWith();
     (module.data!.schema as Record<string, FieldNode>).body = {
-      kind: 'string',
+      type: 'string',
       contentBearing: true,
       contentOperation: 'read_the_body',
     };

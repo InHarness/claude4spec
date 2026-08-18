@@ -32,7 +32,7 @@ import { bindingColumnOf, projectionTableOf, type ProjectableModule } from './pr
 
 /** The item's named fields, or the single synthetic `value` column of a scalar item. */
 export function itemFieldsOf(node: CollectionNode): Array<[string, FieldNode]> {
-  return node.item.kind === 'object'
+  return node.item.type === 'object'
     ? Object.entries(node.item.fields)
     : [['value', node.item]];
 }
@@ -49,7 +49,7 @@ export function itemFieldsOf(node: CollectionNode): Array<[string, FieldNode]> {
  */
 export function decodeColumn(node: FieldNode, value: unknown): unknown {
   if (value === null || value === undefined) return null;
-  switch (node.kind) {
+  switch (node.type) {
     case 'boolean':
       return !!value;
     case 'number':
@@ -158,7 +158,7 @@ export function readProjectionCollection(
     // A scalar item projects to one `value` column and comes back as the bare
     // value — `['a','b']`, not `[{value:'a'},{value:'b'}]`. The collection has
     // to read back as the shape that was written into it.
-    if (node.item.kind !== 'object') return decodeColumn(node.item, row[columns[0]!]);
+    if (node.item.type !== 'object') return decodeColumn(node.item, row[columns[0]!]);
     const out: Record<string, unknown> = {};
     fields.forEach(([name, n], i) => {
       out[name] = decodeColumn(n, row[columns[i]!]);

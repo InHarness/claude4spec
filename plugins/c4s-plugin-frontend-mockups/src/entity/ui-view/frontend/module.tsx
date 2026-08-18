@@ -206,7 +206,10 @@ export const uiViewFrontendModule: FrontendModule = {
   type: UI_VIEW_TYPE,
   data: uiViewData,
   slugPattern: uiViewSlugPattern,
-  payloadVersion: 1,
+  // Mirrors the backend contribution (`entity/ui-view/index.ts`); the two
+  // declaring different versions is how a frontend quietly reads a shape the
+  // server no longer writes.
+  payloadVersion: 3,
   label: UI_VIEW_LABEL,
   labelPlural: UI_VIEW_LABEL_PLURAL,
   displayOrder: UI_VIEW_DISPLAY_ORDER,

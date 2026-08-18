@@ -129,7 +129,8 @@ describe('design-system REST + ui-view relation', () => {
     // Both moved in 0.2.22, when `name` became the reserved `title`: ui-view
     // 1 → 2, design-system 2 → 3 (its v1 step is the token `description: null`
     // that only ever existed in the file).
-    expect(t.host.getEntity('ui-view')?.payloadVersion).toBe(2);
+    // 3 since 0.2.27 — `mockupHtml` joined the payload.
+    expect(t.host.getEntity('ui-view')?.payloadVersion).toBe(3);
     expect(t.host.getEntity('design-system')?.payloadVersion).toBe(3);
 
     const snap = t.host.snapshot('ui-view', t.rawReader.getEntity('ui-view', view.body.data.slug), t.rawReader) as {

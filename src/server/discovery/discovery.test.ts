@@ -47,9 +47,9 @@ import matter from 'gray-matter';
  */
 const WIDGET_DATA: DataDeclaration = {
   schema: {
-    title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-    format: { kind: 'enum', values: ['mermaid', 'd2'], required: true, default: 'mermaid' },
-    source: { kind: 'string', required: true, default: '' },
+    title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
+    format: { type: 'enum', values: ['mermaid', 'd2'], required: true, default: 'mermaid' },
+    source: { type: 'string', required: true, default: '' },
   },
 };
 

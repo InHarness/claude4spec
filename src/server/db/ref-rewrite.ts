@@ -73,7 +73,7 @@ function refMatches(node: FieldNode, renamedType: string, siblingType: unknown):
  *
  * The ref test happens on the node ITSELF, before any recursion, so it is reached
  * wherever a `ref` can be declared and not only on an object's named fields — a
- * collection of bare slugs (`item: {kind:'string', ref:'dto'}`) and a record whose
+ * collection of bare slugs (`item: {type: 'string', ref:'dto'}`) and a record whose
  * VALUES are slugs both carry the flag on a node that has no field name at all.
  * `subtreeHasRef` admits those, so anything it admits has to be rewritable here or
  * the rename reports success having changed nothing.
@@ -94,7 +94,7 @@ function rewriteValue(
     return { value, changed: false };
   }
 
-  if (node.kind === 'collection') {
+  if (node.type === 'collection') {
     if (!Array.isArray(value)) return { value, changed: false };
     let changed = false;
     const items = value.map((item) => {
@@ -105,7 +105,7 @@ function rewriteValue(
     return { value: changed ? items : value, changed };
   }
 
-  if (node.kind === 'record') {
+  if (node.type === 'record') {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return { value, changed: false };
     let changed = false;
     const out: Record<string, unknown> = {};
@@ -126,7 +126,7 @@ function rewriteValue(
     return { value: changed ? out : value, changed };
   }
 
-  if (node.kind === 'object') {
+  if (node.type === 'object') {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return { value, changed: false };
     const record = value as Record<string, unknown>;
     // This object's own `type` field, if any, discriminates every `$type` ref
@@ -191,9 +191,9 @@ function rewriteJsonColumn(
 /** True when any node in this subtree satisfies `pred` — the cheap prefilter before touching SQL. */
 function subtreeHasRef(node: FieldNode, pred: (ref: string) => boolean): boolean {
   if (node.ref && pred(node.ref)) return true;
-  if (node.kind === 'collection') return subtreeHasRef(node.item, pred);
-  if (node.kind === 'record') return subtreeHasRef(node.value, pred);
-  if (node.kind === 'object') {
+  if (node.type === 'collection') return subtreeHasRef(node.item, pred);
+  if (node.type === 'record') return subtreeHasRef(node.value, pred);
+  if (node.type === 'object') {
     return Object.values(node.fields).some((child) => subtreeHasRef(child, pred));
   }
   return false;
@@ -251,7 +251,7 @@ export function rewriteRefsForRename(
       // name. A collection of bare slugs therefore stays embedded JSON and is
       // handled by branch (3) — there is no such thing as a scalar projection row
       // to rewrite here.
-      if (collection.item.kind !== 'object') continue;
+      if (collection.item.type !== 'object') continue;
 
       for (const [itemField, itemNode] of Object.entries(collection.item.fields)) {
         const column = columnOf(itemField, itemNode);
@@ -298,7 +298,7 @@ export function rewriteRefsForRename(
     // (2) A scalar ref sitting directly on the entity row is one UPDATE. A
     // top-level `$type` ref resolves against the row's own `type` column, and is
     // skipped when the schema declares no such sibling — see `refMatches`.
-    if (node.kind !== 'collection' && node.kind !== 'object' && node.kind !== 'record') {
+    if (node.type !== 'collection' && node.type !== 'object' && node.type !== 'record') {
       let scope = '';
       const params: string[] = [oldSlug];
       if (node.ref === '$type') {

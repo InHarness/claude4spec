@@ -47,7 +47,7 @@ describe('VersionService.restore', () => {
       getEntity: () => ({
         type: 'dto',
         payloadVersion: 1,
-        data: { schema: { name: { kind: 'string' } } },
+        data: { schema: { name: { type: 'string' } } },
       }),
       getEntityService: () => null,
     } as unknown as PluginHost;

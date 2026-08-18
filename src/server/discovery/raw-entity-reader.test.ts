@@ -149,10 +149,10 @@ describe('RawEntityReader.count — the declared predicate, resolved internally'
       type: 'ac',
       data: {
         schema: {
-          title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-          text: { kind: 'string', required: true },
-          status: { kind: 'enum', values: ['active', 'deprecated'], default: 'active' },
-          caption: { kind: 'string', transientInput: true },
+          title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
+          text: { type: 'string', required: true },
+          status: { type: 'enum', values: ['active', 'deprecated'], default: 'active' },
+          caption: { type: 'string', transientInput: true },
         },
       },
       systemPrompt: { roleNoun: 'ac', ...(defaultPredicate ? { defaultPredicate } : {}) },
@@ -238,7 +238,7 @@ describe('RawEntityReader.count — the declared predicate, resolved internally'
       db.prepare('INSERT INTO ac VALUES (?,?,?,?)').run('b', 't', 'active', 0);
       const module = {
         type: 'ac',
-        data: { schema: { text: { kind: 'string' }, pinned: { kind: 'boolean' } } },
+        data: { schema: { text: { type: 'string' }, pinned: { type: 'boolean' } } },
         systemPrompt: { roleNoun: 'ac' },
       } as unknown as ReturnType<ProjectPluginHost['getEntity']>;
       const reader = new RawEntityReader(db, {
@@ -273,10 +273,10 @@ describe('hydrate — decoding is driven by the declared kind', () => {
       type: 'diagram',
       data: {
         schema: {
-          title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-          format: { kind: 'enum', values: ['mermaid', 'd2'], default: 'mermaid' },
-          source: { kind: 'string', required: true },
-          params: { kind: 'collection', collection: 'value', item: { kind: 'string' } },
+          title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
+          format: { type: 'enum', values: ['mermaid', 'd2'], default: 'mermaid' },
+          source: { type: 'string', required: true },
+          params: { type: 'collection', collection: 'value', item: { type: 'string' } },
         },
       },
     } as unknown as ReturnType<ProjectPluginHost['getEntity']>;

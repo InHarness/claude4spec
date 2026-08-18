@@ -20,9 +20,10 @@ import { databaseTableSystemPrompt } from './system-prompt.js';
  * `migrations`, no `service`, no `crud`, no `routes`, no `mcpServer`: the host
  * derives the projection from `data.schema`, the write path and its soft-FK
  * warnings from the `ref` flags, the create/update zod shapes (including the
- * identifier rule, via `pattern` + `notReserved`) from the same declaration,
- * snapshot/restore and the diff from the schema walk, rename repointing from
- * `ref` + `newSlug`, and `/api/database-tables` from `pathPrefix` + `data`.
+ * identifier rule, via the named validator `kind: 'sql-identifier'`) from the
+ * same declaration, snapshot/restore and the diff from the schema walk, rename
+ * repointing from `ref` + `newSlug`, and `/api/database-tables` from
+ * `pathPrefix` + `data`.
  *
  * v1 wrote all of that by hand — two migrations, a 636-line service, a CRUD
  * adapter, a 196-line zod module, a 188-line router and a 345-line MCP server —
@@ -30,13 +31,15 @@ import { databaseTableSystemPrompt } from './system-prompt.js';
  * database tables. `deriveIndexName` and the three serializer views are what
  * genuinely were, and those came across.
  *
- * `payloadVersion: 1` — the FIRST version, not a new one, and that is the whole
- * adoption story. The file format is inherited unchanged: the `.json` files the
- * retired plugins wrote across six projects are read in place, never converted,
- * so there is no upgrade step and nothing to migrate from. (Registration
- * requires the field; `spreadsheet` is at 2 because its port genuinely did
- * change the payload — dense cells became sparse — and carries the upgrade to
- * prove it. Nothing of the sort happens here.)
+ * `payloadVersion: 3` — 1 was the inherited format, read in place; 2 started
+ * writing `title` alongside `name`; 3 is the name-field MERGE (`name` goes, the
+ * reserved `title` takes over its role). The merge is numbered 3 rather than
+ * folded into 2 because 2 already SHIPPED, in 0.2.22: every project opened since
+ * is stamped 2, the chain fires only below the envelope's version, and a
+ * redefined 2 would never reach them. A version number stamps a shape, and one
+ * number cannot mean two shapes. The adoption story that made this type start at
+ * 1 still holds for version 1 itself: the `.json` files the retired plugins
+ * wrote across six projects were read unconverted.
  *
  * NO `slugConflict: 'suffix'`, unlike `spreadsheet`. Two sheets called
  * "Q1 report" is ordinary; two tables called `order_items` in one schema is a
@@ -46,7 +49,7 @@ export const databaseTableEntity: EntityContribution = {
   type: DATABASE_TABLE_TYPE,
   data: databaseTableData,
   slugPattern: databaseTableSlugPattern,
-  payloadVersion: 2,
+  payloadVersion: 3,
   label: DATABASE_TABLE_LABEL,
   labelPlural: DATABASE_TABLE_LABEL_PLURAL,
   displayOrder: DATABASE_TABLE_DISPLAY_ORDER,

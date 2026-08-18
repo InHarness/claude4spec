@@ -52,6 +52,7 @@ import {
 } from '../../../shared/plugin-host/slug-pattern.js';
 import { PluginManifestError } from './manifest-adapter.js';
 import { SQL_RESERVED_WORDS } from '../../../shared/plugin-host/sql-reserved-words.js';
+import { VALIDATOR_KINDS, isValidatorKind } from '../../../shared/plugin-host/named-validators.js';
 
 /**
  * snake_case only — stricter than the bare-identifier rule in
@@ -183,11 +184,11 @@ function checkAxes(
       );
       continue;
     }
-    const coordinate = node.item.kind === 'object' ? node.item.fields[axis.key] : undefined;
-    if (coordinate && coordinate.kind !== 'number') {
+    const coordinate = node.item.type === 'object' ? node.item.fields[axis.key] : undefined;
+    if (coordinate && coordinate.type !== 'number') {
       fail(
         type,
-        `keyed collection "${path}" axis key "${axis.key}" is declared as '${coordinate.kind}' — ` +
+        `keyed collection "${path}" axis key "${axis.key}" is declared as '${coordinate.type}' — ` +
           `a window is a numeric range over it, so it must be a number`,
       );
     }
@@ -202,11 +203,11 @@ function checkAxes(
       );
       continue;
     }
-    if (extent.kind !== 'number') {
+    if (extent.type !== 'number') {
       fail(
         type,
         `keyed collection "${path}" axis extent "${axis.extent}" is declared as ` +
-          `'${extent.kind}' — a dimension is a count, so it must be a number`,
+          `'${extent.type}' — a dimension is a count, so it must be a number`,
       );
     }
     if (!isEmbedded(extent)) {
@@ -243,13 +244,13 @@ function checkNodes(type: string, schema: DataDeclaration['schema']): void {
      * constraint is being enforced, and the whole point of the flags is that the
      * declaration is the contract.
      */
-    if (node.kind !== 'number') {
+    if (node.type !== 'number') {
       for (const flag of ['integer', 'min', 'max'] as const) {
         if ((node as unknown as Record<string, unknown>)[flag] !== undefined) {
           fail(
             type,
-            `"${path}" is a ${node.kind}, but carries \`${flag}\` — the numeric bounds apply to ` +
-              `\`kind: 'number'\` only. Silently ignoring it would leave a constraint the author ` +
+            `"${path}" is a ${node.type}, but carries \`${flag}\` — the numeric bounds apply to ` +
+              `\`type: 'number'\` only. Silently ignoring it would leave a constraint the author ` +
               `believes is enforced`,
           );
         }
@@ -266,35 +267,35 @@ function checkNodes(type: string, schema: DataDeclaration['schema']): void {
      * as the numeric ones: a `pattern` sitting on a boolean is an author who
      * believes a shape is enforced.
      */
-    if (node.kind !== 'string') {
-      for (const flag of ['pattern', 'notReserved'] as const) {
+    if (node.type !== 'string') {
+      for (const flag of ['kind'] as const) {
         if ((node as unknown as Record<string, unknown>)[flag] !== undefined) {
           fail(
             type,
-            `"${path}" is a ${node.kind}, but carries \`${flag}\` — the string constraints apply ` +
-              `to \`kind: 'string'\` only. Silently ignoring it would leave a constraint the ` +
+            `"${path}" is a ${node.type}, but carries \`${flag}\` — the string constraints apply ` +
+              `to \`type: 'string'\` only. Silently ignoring it would leave a constraint the ` +
               `author believes is enforced`,
           );
         }
       }
-    } else if (node.pattern !== undefined) {
+    } else if (node.kind !== undefined) {
       /**
-       * Compiled HERE so a typo fails at registration, naming the type and the
-       * field. `crud-schema-gen` compiles it once per generated schema, which is
-       * router-construction time — far from the declaration, with no type name
-       * in the message, and only for the types whose routers get built.
+       * Resolved HERE so an unknown name fails at registration, naming the type
+       * and the field. A validator name that resolves to nothing is worse than a
+       * typo in a pattern: the value would pass every write untouched while the
+       * declaration claims it is screened.
        */
-      try {
-        new RegExp(node.pattern);
-      } catch (err) {
+      if (!isValidatorKind(node.kind)) {
         fail(
           type,
-          `"${path}" declares a \`pattern\` that does not compile: ${(err as Error).message}`,
+          `"${path}" declares \`kind: '${String(node.kind)}'\`, which is not a registered ` +
+            `validator. Known validators: ${VALIDATOR_KINDS.join(', ')}. The registry is the ` +
+            `HOST's — a name it does not know screens nothing`,
         );
       }
     }
 
-    if (node.kind === 'collection') {
+    if (node.type === 'collection') {
       const declared = (node as { collection?: unknown }).collection;
       if (declared !== 'value' && declared !== 'keyed') {
         fail(
@@ -308,7 +309,7 @@ function checkNodes(type: string, schema: DataDeclaration['schema']): void {
         fail(type, `keyed collection "${path}" must declare keyFields — the key IS its address`);
       }
       if (node.keyFields?.length) {
-        if (node.item.kind !== 'object') {
+        if (node.item.type !== 'object') {
           fail(type, `collection "${path}" declares keyFields but its item is not an object`);
         } else {
           for (const key of node.keyFields) {
@@ -323,7 +324,7 @@ function checkNodes(type: string, schema: DataDeclaration['schema']): void {
       // reporting the axes first would bury it.
       if (declared === 'keyed') checkAxes(type, schema, path, node);
     }
-    if (node.kind === 'record' && node.value.kind === 'collection') {
+    if (node.type === 'record' && node.value.type === 'collection') {
       fail(type, `"${path}" nests a collection inside a record — not projectable`);
     }
   });
@@ -346,7 +347,7 @@ function checkNodes(type: string, schema: DataDeclaration['schema']): void {
     if (!hasProjectionTable(node)) continue;
     const item = (node as CollectionNode).item;
     const itemFields: Array<[string, FieldNode]> =
-      item.kind === 'object' ? Object.entries(item.fields) : [['value', item]];
+      item.type === 'object' ? Object.entries(item.fields) : [['value', item]];
     for (const [itemName, itemNode] of itemFields) {
       columns.push({
         column: columnOf(itemName, itemNode),
@@ -572,17 +573,33 @@ function checkReservedTitle(type: string, schema: DataDeclaration['schema']): vo
     fail(
       type,
       `the reserved \`${RESERVED_TITLE_FIELD}\` field is required in Host API 2.0.0 — declare ` +
-        `\`${RESERVED_TITLE_FIELD}: { kind: 'string', required: true, maxLength: ${TITLE_MAX_LENGTH} }\`. ` +
+        `\`${RESERVED_TITLE_FIELD}: { type: 'string', required: true, maxLength: ${TITLE_MAX_LENGTH} }\`. ` +
         `It is the single source of the entity's label, its slug and its identity search scope; ` +
         `derive it from another field with \`computedDefault\` when the author supplies none`,
     );
   }
-  if (node.kind !== 'string' || node.required !== true || node.maxLength !== TITLE_MAX_LENGTH) {
+  /**
+   * The host sets the FLOOR for `title`, not the ceiling.
+   *
+   * `type: 'string'`, `required: true` and `maxLength: 200` are the host's and
+   * nobody may drop or widen them — that is what makes "a title never needs
+   * shortening at read time" a fact rather than a hope. What a type MAY do is
+   * narrow further from the value-constraint dictionary: `database-table` binds
+   * its title to `kind: 'sql-identifier'` because for that type the instance's
+   * name and its technical identifier are one thing. Narrowing only; a type
+   * cannot relax what the host fixed.
+   *
+   * `computedDefault` is likewise optional rather than expected. A type with
+   * nothing to derive a title FROM declares none, and a write without a title
+   * then fails input validation — which is the honest outcome, not a gap.
+   */
+  if (node.type !== 'string' || node.required !== true || node.maxLength !== TITLE_MAX_LENGTH) {
     fail(
       type,
-      `the reserved \`${RESERVED_TITLE_FIELD}\` field must be declared exactly ` +
-        `\`{ kind: 'string', required: true, maxLength: ${TITLE_MAX_LENGTH} }\` — the bound is the ` +
-        `HOST's, which is what makes "a title never needs shortening at read time" a fact`,
+      `the reserved \`${RESERVED_TITLE_FIELD}\` field must declare at least ` +
+        `\`{ type: 'string', required: true, maxLength: ${TITLE_MAX_LENGTH} }\` — the bound is the ` +
+        `HOST's, which is what makes "a title never needs shortening at read time" a fact. A type ` +
+        `may add NARROWING constraints beside it, but may not drop or widen these`,
     );
   }
   if (node.contentBearing) {
@@ -600,14 +617,14 @@ function checkReservedTitle(type: string, schema: DataDeclaration['schema']): vo
  */
 function checkValueConstraints(type: string, schema: DataDeclaration['schema']): void {
   walkSchema(schema, (path, node) => {
-    if (node.kind === 'string') {
+    if (node.type === 'string') {
       if (node.maxLength !== undefined && (!Number.isInteger(node.maxLength) || node.maxLength <= 0)) {
         fail(type, `field "${path}" declares maxLength ${String(node.maxLength)} — must be a positive integer`);
       }
       return;
     }
     if ((node as { maxLength?: number }).maxLength !== undefined) {
-      fail(type, `field "${path}" declares maxLength on a ${node.kind} leaf — it is a STRING constraint`);
+      fail(type, `field "${path}" declares maxLength on a ${node.type} leaf — it is a STRING constraint`);
     }
   });
 }

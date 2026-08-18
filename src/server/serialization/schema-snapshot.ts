@@ -133,9 +133,9 @@ function normalizeCollection(node: CollectionNode, value: unknown): unknown {
   if (!Array.isArray(value)) return value;
   let items: unknown[] = value;
 
-  if (node.item.kind === 'object') {
+  if (node.item.type === 'object') {
     const nested = Object.entries(node.item.fields).filter(
-      ([, f]) => f.kind === 'collection',
+      ([, f]) => f.type === 'collection',
     ) as Array<[string, CollectionNode]>;
     if (nested.length) {
       items = items.map((entry) => {
@@ -171,17 +171,17 @@ export function snapshotFromSchema(
   const out: Record<string, unknown> = { slug: entity.slug };
 
   for (const [name, node] of emitted(schema)) {
-    if (node.kind === 'collection' && hasProjectionTable(node)) {
+    if (node.type === 'collection' && hasProjectionTable(node)) {
       const items = reader.readCollection(module.type, entity.slug, name);
       out[name] = isKeyed(node) ? normalizeKeyed(node, items) : normalizeCollection(node, items);
       continue;
     }
     const raw = entity.data[columnOf(name, node)];
     if (raw === undefined || raw === null) {
-      out[name] = node.default ?? (node.kind === 'collection' ? [] : null);
+      out[name] = node.default ?? (node.type === 'collection' ? [] : null);
       continue;
     }
-    out[name] = node.kind === 'collection' ? normalizeCollection(node, raw) : raw;
+    out[name] = node.type === 'collection' ? normalizeCollection(node, raw) : raw;
   }
 
   // Tags are host-owned rather than declared, so they are appended rather than

@@ -106,7 +106,7 @@ export interface ProjectionWriteDeps {
  */
 function encode(node: FieldNode, value: unknown): string | number | null {
   if (value === null || value === undefined) return null;
-  switch (node.kind) {
+  switch (node.type) {
     case 'boolean':
       return value ? 1 : 0;
     case 'number':
@@ -139,7 +139,7 @@ function encode(node: FieldNode, value: unknown): string | number | null {
 function absentValue(node: FieldNode): string | number | null {
   if (node.default !== undefined) return encode(node, node.default);
   if (node.computedDefault === 'now') return new Date().toISOString();
-  if (node.kind === 'collection') return '[]';
+  if (node.type === 'collection') return '[]';
   return null;
 }
 
@@ -163,7 +163,7 @@ function valueFor(node: FieldNode, present: boolean, raw: unknown): string | num
 }
 
 function enumViolation(node: FieldNode, value: unknown): string | null {
-  if (node.kind !== 'enum' || value === null || value === undefined) return null;
+  if (node.type !== 'enum' || value === null || value === undefined) return null;
   return node.values.includes(value as string)
     ? null
     : `expected one of ${node.values.join(', ')}, got '${String(value)}'`;
@@ -610,13 +610,13 @@ function walkRefs(db: Database, node: FieldNode, value: unknown, path: string, o
     return;
   }
 
-  if (node.kind === 'collection') {
+  if (node.type === 'collection') {
     if (!Array.isArray(value)) return;
     value.forEach((item, i) => walkRefs(db, node.item, item, `${path}[${i}]`, out));
     return;
   }
 
-  if (node.kind === 'record') {
+  if (node.type === 'record') {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return;
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
       walkRefs(db, node.value, v, `${path}.${k}`, out);
@@ -624,7 +624,7 @@ function walkRefs(db: Database, node: FieldNode, value: unknown, path: string, o
     return;
   }
 
-  if (node.kind === 'object') {
+  if (node.type === 'object') {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return;
     const record = value as Record<string, unknown>;
     for (const [name, child] of Object.entries(node.fields)) {
@@ -751,7 +751,7 @@ function pruneBeyondExtents(db: Database, module: WritableModule, slug: string):
   const binding = bindingColumnOf(module);
 
   for (const [field, node] of Object.entries(schema)) {
-    if (node.kind !== 'collection' || !isKeyed(node)) continue;
+    if (node.type !== 'collection' || !isKeyed(node)) continue;
     const collection = node as CollectionNode;
     const axes = axesOf(collection);
     if (!axes.length) continue;
@@ -803,7 +803,7 @@ function syncProjectionTable(
 
   const item = node.item;
   const itemFields: Array<[string, FieldNode]> =
-    item.kind === 'object' ? Object.entries(item.fields) : [['value', item]];
+    item.type === 'object' ? Object.entries(item.fields) : [['value', item]];
   const columns = [binding, ...itemFields.map(([name, n]) => columnOf(name, n))];
   const insert = db.prepare(
     `INSERT INTO ${table} (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
@@ -848,7 +848,7 @@ function syncProjectionTable(
 
   for (const entry of items) {
     const row: Record<string, unknown> =
-      item.kind === 'object' ? ((entry as Record<string, unknown>) ?? {}) : { value: entry };
+      item.type === 'object' ? ((entry as Record<string, unknown>) ?? {}) : { value: entry };
 
     const key = keyOf(row);
     if (seen.has(key)) {
@@ -927,7 +927,7 @@ function syncProjectionTable(
  * item — the same rule `projection-read.ts#itemFieldsOf` reads back with.
  */
 function itemFieldEntries(node: CollectionNode): Array<[string, FieldNode]> {
-  return node.item.kind === 'object'
+  return node.item.type === 'object'
     ? Object.entries(node.item.fields)
     : [['value', node.item]];
 }
@@ -935,7 +935,7 @@ function itemFieldEntries(node: CollectionNode): Array<[string, FieldNode]> {
 /** The columns forming a keyed item's address, in declared axis order. */
 function keyColumnsOf(node: CollectionNode): string[] {
   return (node.keyFields ?? []).map((key) =>
-    node.item.kind === 'object' && node.item.fields[key]
+    node.item.type === 'object' && node.item.fields[key]
       ? columnOf(key, node.item.fields[key] as FieldNode)
       : key,
   );
@@ -1257,7 +1257,7 @@ export function reconcileKeyedCollection(
   }
   const items = value;
   const rows: Array<Record<string, unknown>> = items.map((entry) =>
-    node.item.kind === 'object'
+    node.item.type === 'object'
       ? ((entry as Record<string, unknown>) ?? {})
       : { value: entry },
   );
@@ -1366,7 +1366,7 @@ export function writeKeyedWindow(
   if (entries.length === 0) return { applied: false };
 
   const rows: Array<Record<string, unknown>> = entries.map((entry) =>
-    node.item.kind === 'object' ? entry : { value: entry },
+    node.item.type === 'object' ? entry : { value: entry },
   );
 
   requireWithinExtents(db, module, slug, field, node, rows);
@@ -1593,7 +1593,7 @@ export function mutateAxis(
 /** The declared keyed collection behind a field name, or a loud error. */
 function requireKeyed(module: WritableModule, field: string): CollectionNode {
   const node = module.data?.schema?.[field];
-  if (!node || node.kind !== 'collection' || node.collection !== 'keyed') {
+  if (!node || node.type !== 'collection' || node.collection !== 'keyed') {
     throw new DomainError(
       'VALIDATION',
       `${module.type}.${field} is not a keyed collection`,
@@ -1604,7 +1604,7 @@ function requireKeyed(module: WritableModule, field: string): CollectionNode {
 
 /** The projection column carrying an axis's coordinate. */
 function keyColumnAt(node: CollectionNode, axis: AxisSpec): string {
-  return node.item.kind === 'object' && node.item.fields[axis.key]
+  return node.item.type === 'object' && node.item.fields[axis.key]
     ? columnOf(axis.key, node.item.fields[axis.key] as FieldNode)
     : axis.key;
 }

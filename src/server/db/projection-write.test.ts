@@ -37,26 +37,26 @@ const widget: WritableModule = {
   payloadVersion: 1,
   data: {
     schema: {
-      title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-      label: { kind: 'string', required: true },
-      size: { kind: 'enum', values: ['s', 'm', 'l'], default: 'm' },
-      active: { kind: 'boolean', default: true },
-      meta: { kind: 'object', fields: { note: { kind: 'string' } } },
-      notes: { kind: 'collection', collection: 'value', item: { kind: 'string' } },
+      title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
+      label: { type: 'string', required: true },
+      size: { type: 'enum', values: ['s', 'm', 'l'], default: 'm' },
+      active: { type: 'boolean', default: true },
+      meta: { type: 'object', fields: { note: { type: 'string' } } },
+      notes: { type: 'collection', collection: 'value', item: { type: 'string' } },
       links: {
-        kind: 'collection',
+        type: 'collection',
         collection: 'value',
         keyFields: ['target'],
         item: {
-          kind: 'object',
+          type: 'object',
           fields: {
-            target: { kind: 'string', required: true },
-            rank: { kind: 'number' },
+            target: { type: 'string', required: true },
+            rank: { type: 'number' },
           },
         },
       },
-      createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
-      updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+      createdAt: { type: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+      updatedAt: { type: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
     },
   },
 };
@@ -170,7 +170,7 @@ describe('upsertProjectionRow — system fields belong to the host', () => {
     const bare: WritableModule = {
       type: 'widget',
       payloadVersion: 1,
-      data: { schema: { label: { kind: 'string', required: true } } },
+      data: { schema: { label: { type: 'string', required: true } } },
     };
     const db = projected(bare);
     expect(() =>
@@ -215,12 +215,12 @@ describe('keyed collections', () => {
     payloadVersion: 1,
     data: {
       schema: {
-        title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-        name: { kind: 'string', required: true },
-        nRows: { kind: 'number', column: 'n_rows', default: 0 },
-        nCols: { kind: 'number', column: 'n_cols', default: 0 },
+        title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
+        name: { type: 'string', required: true },
+        nRows: { type: 'number', column: 'n_rows', default: 0 },
+        nCols: { type: 'number', column: 'n_cols', default: 0 },
         cells: {
-          kind: 'collection',
+          type: 'collection',
           collection: 'keyed',
           keyFields: ['r', 'c'],
           axes: [
@@ -228,15 +228,15 @@ describe('keyed collections', () => {
             { key: 'c', extent: 'nCols' },
           ],
           item: {
-            kind: 'object',
+            type: 'object',
             fields: {
-              r: { kind: 'number', required: true },
-              c: { kind: 'number', required: true },
-              value: { kind: 'string' },
+              r: { type: 'number', required: true },
+              c: { type: 'number', required: true },
+              value: { type: 'string' },
             },
           },
         },
-        updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+        updatedAt: { type: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
       },
     },
   };
@@ -289,16 +289,16 @@ describe('keyed collections', () => {
       ...grid,
       data: {
         schema: {
-          title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+          title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
 ...grid.data!.schema,
           cells: {
             ...(grid.data!.schema.cells as never as Record<string, unknown>),
             item: {
-              kind: 'object',
+              type: 'object',
               fields: {
-                r: { kind: 'number', required: true },
-                c: { kind: 'number', required: true },
-                value: { kind: 'number' },
+                r: { type: 'number', required: true },
+                c: { type: 'number', required: true },
+                value: { type: 'number' },
               },
             },
           } as never,
@@ -520,10 +520,10 @@ describe('keyed collections', () => {
     ...grid,
     data: {
       schema: {
-        title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+        title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
 ...grid.data!.schema,
         cells: {
-          kind: 'collection',
+          type: 'collection',
           collection: 'keyed',
           keyFields: ['r', 'c'],
           axes: [
@@ -531,12 +531,12 @@ describe('keyed collections', () => {
             { key: 'c', extent: 'nCols' },
           ],
           item: {
-            kind: 'object',
+            type: 'object',
             fields: {
-              r: { kind: 'number', required: true },
-              c: { kind: 'number', required: true },
-              value: { kind: 'string' },
-              note: { kind: 'string' },
+              r: { type: 'number', required: true },
+              c: { type: 'number', required: true },
+              value: { type: 'string' },
+              note: { type: 'string' },
             },
           },
         },
@@ -798,24 +798,24 @@ describe('the generic junction door keeps the per-type guarantees', () => {
     payloadVersion: 1,
     data: {
       schema: {
-        title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-        label: { kind: 'string', required: true },
+        title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
+        label: { type: 'string', required: true },
         links: {
-          kind: 'collection',
+          type: 'collection',
           collection: 'value',
           projectionTable: 'widget_link',
           keyFields: ['target', 'relation'],
           item: {
-            kind: 'object',
+            type: 'object',
             fields: {
-              target: { kind: 'string', column: 'target_slug', required: true },
-              relation: { kind: 'enum', values: ['request', 'response'], required: true },
-              statusCode: { kind: 'number', column: 'status_code' },
+              target: { type: 'string', column: 'target_slug', required: true },
+              relation: { type: 'enum', values: ['request', 'response'], required: true },
+              statusCode: { type: 'number', column: 'status_code' },
             },
           },
         },
-        createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
-        updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+        createdAt: { type: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+        updatedAt: { type: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
       },
     },
   };
@@ -881,27 +881,27 @@ describe('dangling refs — anywhere the declaration puts one', () => {
     payloadVersion: 1,
     data: {
       schema: {
-        title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-        name: { kind: 'string', required: true },
+        title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
+        name: { type: 'string', required: true },
         columns: {
-          kind: 'collection',
+          type: 'collection',
           collection: 'value',
           item: {
-            kind: 'object',
+            type: 'object',
             fields: {
-              name: { kind: 'string' },
+              name: { type: 'string' },
               fk: {
-                kind: 'object',
+                type: 'object',
                 fields: {
-                  table: { kind: 'string', ref: 'tabley', onMissing: 'warn', onDelete: 'leave-dangling' },
-                  column: { kind: 'string' },
+                  table: { type: 'string', ref: 'tabley', onMissing: 'warn', onDelete: 'leave-dangling' },
+                  column: { type: 'string' },
                 },
               },
             },
           },
         },
-        createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
-        updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+        createdAt: { type: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+        updatedAt: { type: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
       },
     },
   };
@@ -971,18 +971,18 @@ describe('dangling refs — anywhere the declaration puts one', () => {
       payloadVersion: 1,
       data: {
         schema: {
-          title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-          label: { kind: 'string', required: true },
+          title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
+          label: { type: 'string', required: true },
           links: {
-            kind: 'collection',
+            type: 'collection',
             collection: 'value',
             keyFields: ['target'],
             projectionTable: 'linksy_link',
             item: {
-              kind: 'object',
+              type: 'object',
               fields: {
                 target: {
-                  kind: 'string',
+                  type: 'string',
                   required: true,
                   ref: 'linksy',
                   onMissing: 'warn',
@@ -991,8 +991,8 @@ describe('dangling refs — anywhere the declaration puts one', () => {
               },
             },
           },
-          createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
-          updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+          createdAt: { type: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+          updatedAt: { type: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
         },
       },
     };
@@ -1010,17 +1010,17 @@ describe('dangling refs — anywhere the declaration puts one', () => {
       payloadVersion: 1,
       data: {
         schema: {
-          title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-          label: { kind: 'string', required: true },
+          title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
+          label: { type: 'string', required: true },
           designSystemSlug: {
-            kind: 'string',
+            type: 'string',
             column: 'design_system_slug',
             ref: 'viewy',
             onMissing: 'warn',
             onDelete: 'leave-dangling',
           },
-          createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
-          updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+          createdAt: { type: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+          updatedAt: { type: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
         },
       },
     };
@@ -1047,21 +1047,21 @@ describe('dangling refs — polymorphic refs are excluded', () => {
     payloadVersion: 1,
     data: {
       schema: {
-        title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-        text: { kind: 'string', required: true },
+        title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
+        text: { type: 'string', required: true },
         verifies: {
-          kind: 'collection',
+          type: 'collection',
           collection: 'value',
           item: {
-            kind: 'object',
+            type: 'object',
             fields: {
-              type: { kind: 'string' },
-              slug: { kind: 'string', ref: '$type', onMissing: 'warn' },
+              type: { type: 'string' },
+              slug: { type: 'string', ref: '$type', onMissing: 'warn' },
             },
           },
         },
-        createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
-        updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+        createdAt: { type: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+        updatedAt: { type: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
       },
     },
   };
@@ -1082,9 +1082,9 @@ describe('dangling refs — polymorphic refs are excluded', () => {
       payloadVersion: 1,
       data: {
         schema: {
-          title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+          title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
 ...acLike.data!.schema,
-          owner: { kind: 'string', column: 'owner', ref: 'aclike', onMissing: 'warn' },
+          owner: { type: 'string', column: 'owner', ref: 'aclike', onMissing: 'warn' },
         },
       },
     };

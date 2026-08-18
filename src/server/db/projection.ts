@@ -46,7 +46,7 @@ export interface ProjectableModule {
 
 /** SQLite storage class for a logical node. */
 function sqlType(node: FieldNode): string {
-  switch (node.kind) {
+  switch (node.type) {
     case 'number':
       // No REAL: every numeric field in the six built-in types is a count, a
       // status code or a coordinate. A type needing floats declares `number` and
@@ -71,7 +71,7 @@ function defaultClause(node: FieldNode): string | null {
   }
   // An embedded collection is never NULL — absent means empty, and a reader that
   // has to distinguish `NULL` from `'[]'` is a reader with two empty cases.
-  if (node.kind === 'collection') return `DEFAULT '[]'`;
+  if (node.type === 'collection') return `DEFAULT '[]'`;
   return null;
 }
 
@@ -89,7 +89,7 @@ export function isNotNull(node: FieldNode): boolean {
     node.required === true ||
     node.default !== undefined ||
     node.computedDefault !== undefined ||
-    node.kind === 'collection'
+    node.type === 'collection'
   );
 }
 
@@ -147,7 +147,7 @@ function projectionTableDDL(
   const indexed: string[][] = [[binding]];
 
   const itemFields: Array<[string, FieldNode]> =
-    item.kind === 'object' ? Object.entries(item.fields) : [['value', item]];
+    item.type === 'object' ? Object.entries(item.fields) : [['value', item]];
 
   for (const [itemName, itemNode] of itemFields) {
     const column = columnOf(itemName, itemNode);
@@ -166,7 +166,7 @@ function projectionTableDDL(
 
   if (node.keyFields?.length) {
     const keyColumns = node.keyFields.map((key) =>
-      item.kind === 'object' && item.fields[key] ? columnOf(key, item.fields[key]) : snakeCase(key),
+      item.type === 'object' && item.fields[key] ? columnOf(key, item.fields[key]) : snakeCase(key),
     );
     columns.push(`UNIQUE(${[binding, ...keyColumns].join(', ')})`);
   }
@@ -308,15 +308,119 @@ function addMissingColumns(
 }
 
 /**
+ * Columns the host owns, which are never a projection of a declared field and so
+ * must never be read as one that went away.
+ *
+ * `slug` is the row's identity and comes from the envelope, not from
+ * `data.schema`. A collection's projection row additionally carries its binding
+ * column back to the parent and its ordinal.
+ *
+ * A FLOOR, NOT THE RULE. These names are what the six legacy tables happen to
+ * carry; the sparing that MATTERS is derived from the declaration instead —
+ * `localSurrogate` and `transientInput` fields are excluded from `isEmbedded`,
+ * so their columns must be added back by the caller. A type declaring a
+ * surrogate as `column: 'row_id'` is spared by that derivation, not by this set.
+ */
+const HOST_OWNED_COLUMNS = new Set(['slug', 'id', 'ord']);
+
+/** Declared-but-unprojected fields: present in the schema, absent from `isEmbedded`. */
+function unprojectedColumns(schema: Record<string, FieldNode>): string[] {
+  return Object.entries(schema)
+    .filter(([, node]) => node.localSurrogate || node.transientInput)
+    .map(([name, node]) => columnOf(name, node));
+}
+
+/**
+ * Drop columns the schema no longer declares.
+ *
+ * THE OTHER HALF OF "THE PROJECTION IS GENERATED". A generator that adds but
+ * never removes does not compute `schema → DDL`; it computes a function of the
+ * database's history, so two installs of one project diverge physically and the
+ * regeneration this module claims is idempotent is not.
+ *
+ * It is also, concretely, a broken upgrade. A removed field's column keeps its
+ * `NOT NULL` while the write path binds only DECLARED columns, so the very next
+ * `indexAll()` fails with `NOT NULL constraint failed` — inside the single
+ * rebuild transaction, which rolls the whole rebuild back and serves the project
+ * from a permanently stale index. 0.2.27 removes `database-table.name` and would
+ * have done exactly that to every existing project.
+ *
+ * SAFE BECAUSE THE FILES ARE THE TRUTH. Dropping a projection column destroys no
+ * authored data: the column is derived, the entity files are authoritative, and
+ * `indexAll()` refills from them immediately after. That is the same reasoning
+ * that lets this module's docblock name "drop the table and rebuild" as the
+ * recovery for anything it cannot do in place — this is the narrower, cheaper
+ * version of that.
+ *
+ * Bounded twice, and both bounds are the contract's: never a host-owned column,
+ * and never a table the generator did not create (the caller only ever passes it
+ * generated tables).
+ *
+ * NEVER FATAL. SQLite refuses `DROP COLUMN` for a column an index or a
+ * table-level `UNIQUE` still mentions, and this runs at `ProjectContext`
+ * construction — an escaping throw does not degrade the index, it stops the
+ * project OPENING, which is strictly worse than the stale column the drop exists
+ * to remove. Generated indexes are dropped first (they are regenerated from the
+ * current declaration on this same boot, so removing one is free); anything left
+ * standing — a `UNIQUE` in the table definition, which only a rebuild can
+ * rewrite — leaves the column in place and says so.
+ */
+function dropUndeclaredColumns(db: Database, table: string, declared: Set<string>): string[] {
+  if (!tableExists(db, table)) return [];
+  const dropped: string[] = [];
+  for (const column of existingColumns(db, table)) {
+    if (declared.has(column) || HOST_OWNED_COLUMNS.has(column)) continue;
+    dropIndexesMentioning(db, table, column);
+    try {
+      db.exec(`ALTER TABLE ${table} DROP COLUMN ${column};`);
+      dropped.push(`${table}.${column}`);
+    } catch (err) {
+      console.warn(
+        `[projection] ${table}.${column} is no longer declared but could not be dropped: ` +
+          `${(err as Error).message} — leaving it in place. If it is NOT NULL, the index ` +
+          `rebuild will fail on it and the table needs recreating.`,
+      );
+    }
+  }
+  return dropped;
+}
+
+/**
+ * Drop the generated indexes that mention a column, so its `DROP COLUMN` can go
+ * through.
+ *
+ * Only `origin: 'c'` — an index this module CREATEd, and re-CREATEs from the
+ * current `data.access` hints on the very same boot. An index SQLite owns
+ * (`origin: 'u'`, a table-level `UNIQUE`; `'pk'`, the primary key) is left
+ * alone: dropping it would silently discard a constraint the declaration still
+ * asks for, and the caller handles the resulting refusal.
+ */
+function dropIndexesMentioning(db: Database, table: string, column: string): void {
+  const indexes = db.prepare(`PRAGMA index_list(${table})`).all() as Array<{
+    name: string;
+    origin: string;
+  }>;
+  for (const index of indexes) {
+    if (index.origin !== 'c') continue;
+    const columns = db.prepare(`PRAGMA index_info(${index.name})`).all() as Array<{
+      name: string | null;
+    }>;
+    if (!columns.some((c) => c.name === column)) continue;
+    db.exec(`DROP INDEX IF EXISTS ${index.name};`);
+  }
+}
+
+/**
  * Additive reconciliation for tables that already exist — the parent row AND
  * every projection table.
  *
  * `CREATE TABLE IF NOT EXISTS` no-ops on an existing table, so a field ADDED to
  * a schema would otherwise never reach an existing database — the type would
- * write a column that is not there. `ALTER TABLE ADD COLUMN` closes exactly that
- * gap and nothing wider: a REMOVED or RETYPED field is left alone here and
- * resolved by the rebuild, because those are the changes that need the files to
- * be re-read rather than the table to be edited.
+ * write a column that is not there. `ALTER TABLE ADD COLUMN` closes that gap, and
+ * `DROP COLUMN` closes its mirror image: a field REMOVED from the schema leaves a
+ * column behind that the write path never binds, and if it was `NOT NULL` the
+ * next rebuild fails on it. A RETYPED field is still left to the rebuild — that
+ * one genuinely needs the files re-read rather than the table edited.
  *
  * Projection tables are reconciled too, and must be. An earlier revision covered
  * only the parent, which left a field added to a table-backed collection
@@ -333,23 +437,38 @@ function addMissingColumns(
 function reconcileColumns(db: Database, module: ProjectableModule): string[] {
   const schema = module.data?.schema;
   if (!schema) return [];
-  const added: string[] = [];
+  const changed: string[] = [];
+
+  const declaredColumns = (fields: Array<[string, FieldNode]>) =>
+    new Set(fields.map(([name, node]) => columnOf(name, node)));
 
   const embedded = Object.entries(schema).filter(([, node]) => isEmbedded(node));
-  added.push(...addMissingColumns(db, mainTableOf(module), embedded));
+  const mainTable = mainTableOf(module);
+  changed.push(...addMissingColumns(db, mainTable, embedded));
+  const mainDeclared = declaredColumns(embedded);
+  for (const column of unprojectedColumns(schema)) mainDeclared.add(column);
+  changed.push(...dropUndeclaredColumns(db, mainTable, mainDeclared));
 
   for (const [name, node] of Object.entries(schema)) {
     if (!hasProjectionTable(node)) continue;
     const collection = node as CollectionNode;
     const item = collection.item;
     const itemFields: Array<[string, FieldNode]> =
-      item.kind === 'object' ? Object.entries(item.fields) : [['value', item]];
-    added.push(
-      ...addMissingColumns(db, projectionTableOf(module, name, collection), itemFields),
-    );
+      item.type === 'object' ? Object.entries(item.fields) : [['value', item]];
+    const table = projectionTableOf(module, name, collection);
+    changed.push(...addMissingColumns(db, table, itemFields));
+    /**
+     * A projection row's binding column back to its parent is host-owned, like
+     * `slug` — it is not a projection of any declared item field, so it must be
+     * spared explicitly or the first boot would drop the junction's own key.
+     */
+    const declared = declaredColumns(itemFields);
+    declared.add(bindingColumnOf(module));
+    for (const axis of collection.keyFields ?? []) declared.add(snakeCase(axis));
+    changed.push(...dropUndeclaredColumns(db, table, declared));
   }
 
-  return added;
+  return changed;
 }
 
 /**

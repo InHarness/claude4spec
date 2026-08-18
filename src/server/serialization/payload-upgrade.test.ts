@@ -12,10 +12,10 @@ import {
 import type { FieldNode } from '../../shared/plugin-host/data-schema.js';
 
 const SCHEMA: Record<string, FieldNode> = {
-  name: { kind: 'string', required: true },
-  status: { kind: 'enum', values: ['active', 'archived'], required: true, default: 'active' },
-  createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
-  note: { kind: 'string' },
+  name: { type: 'string', required: true },
+  status: { type: 'enum', values: ['active', 'archived'], required: true, default: 'active' },
+  createdAt: { type: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+  note: { type: 'string' },
 };
 
 function moduleAt(version: number, steps: Array<(p: unknown) => unknown> = []): UpgradableModule {

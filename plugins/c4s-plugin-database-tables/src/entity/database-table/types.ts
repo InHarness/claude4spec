@@ -35,12 +35,14 @@ export interface Index {
 export interface DatabaseTable {
   slug: string;
   /**
-   * 0.2.22 — the reserved label, and this type is the only one where it sits
-   * BESIDE `name` rather than replacing it: `name` is the SQL identifier code is
-   * generated from, `title` is what a person reads. It starts as a copy.
+   * 0.2.27 — the reserved label, and for this type it IS the SQL identifier.
+   *
+   * It sat beside a separate `name` until the corpus was asked: across 22
+   * entities the two were equal character for character, never once different.
+   * The field that was supposed to hold a human label never held one, so it is
+   * gone and this one carries both roles.
    */
   title: string;
-  name: string;
   description?: string | null;
   columns: Column[];
   indexes: Index[];
@@ -67,7 +69,6 @@ export interface DatabaseTable {
 export interface DatabaseTableListItem {
   slug: string;
   title: string;
-  name: string;
   description?: string | null;
   columns?: Column[];
   indexes?: Index[];
@@ -85,7 +86,7 @@ export interface DatabaseTableListQuery {
 
 /** `columns` is REQUIRED on create — omitting it is a 400, not an empty table. */
 export interface DatabaseTableCreateInput {
-  name: string;
+  title: string;
   columns: Column[];
   indexes?: Index[];
   description?: string;
@@ -93,7 +94,7 @@ export interface DatabaseTableCreateInput {
 }
 
 export interface DatabaseTableUpdateInput {
-  name?: string;
+  title?: string;
   /** A sibling of the payload, not a field of it. Sent ONLY when the slug actually moves. */
   newSlug?: string;
   columns?: Column[];

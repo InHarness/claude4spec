@@ -131,3 +131,23 @@ export type {
   ScalarNode,
 } from '../../shared/plugin-host/data-schema.js';
 export type { SlugPattern, SlugStep } from '../../shared/plugin-host/slug-pattern.js';
+/**
+ * 0.2.27 — the named-validator registry, for `payloadUpgrades` steps.
+ *
+ * A migration onto a field that has just gained a validator has to ask whether a
+ * stored value passes, and must refuse rather than repair when it does not. The
+ * host owns the rule; a plugin transcribing it drifts on the first keyword the
+ * host adds.
+ */
+export { checkValidator, validatorMessage } from '../../shared/plugin-host/named-validators.js';
+/**
+ * 0.2.27 — the UTF-8 byte count behind every `contentBearing` descriptor.
+ *
+ * Needed by a type that OVERRIDES `diff` and declares a content-bearing field:
+ * the host's default diff reports `<field>_changed: { fromBytes, toBytes }`, and
+ * an override has to produce the same numbers the read descriptors advertise. A
+ * second implementation would disagree the first time a mockup held a character
+ * outside ASCII — `.length` counts UTF-16 units, not bytes.
+ */
+export { contentBytes } from '../../shared/plugin-host/data-schema.js';
+export type { ValidatorKind, ValidatorFailure } from '../../shared/plugin-host/named-validators.js';

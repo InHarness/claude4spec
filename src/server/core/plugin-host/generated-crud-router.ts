@@ -72,11 +72,11 @@ const RESERVED_QUERY_KEYS = new Set(['search', 'tags', 'tagFilter', 'limit', 'of
 
 /** `'3'` → `3`, `'true'` → `true` — a query string carries no types of its own. */
 function coerceFilterValue(node: FieldNode, raw: string): string | number | boolean | undefined {
-  if (node.kind === 'number') {
+  if (node.type === 'number') {
     const n = Number(raw);
     return Number.isFinite(n) ? n : undefined;
   }
-  if (node.kind === 'boolean') {
+  if (node.type === 'boolean') {
     if (raw === 'true') return true;
     if (raw === 'false') return false;
     return undefined;
@@ -107,7 +107,7 @@ function queryFilters(module: BackendModule, q: Record<string, unknown>): Record
     // Own properties only — `?valueOf=1` must not resolve to `Object.prototype`.
     if (!Object.hasOwn(schema, key)) continue;
     const node = schema[key]!;
-    if (!isEmbedded(node) || node.kind === 'json') continue;
+    if (!isEmbedded(node) || node.type === 'json') continue;
     const values = raw
       .split(',')
       .filter(Boolean)

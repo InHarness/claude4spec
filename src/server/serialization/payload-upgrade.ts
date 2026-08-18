@@ -140,7 +140,7 @@ export function classifyGap(
 
     const value = filled[name];
     if (value !== undefined && value !== null) {
-      if (node.kind === 'enum' && !node.values.includes(value as string)) {
+      if (node.type === 'enum' && !node.values.includes(value as string)) {
         return {
           filled,
           warnings,

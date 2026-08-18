@@ -47,10 +47,10 @@ const reader = { count: () => 0 } as unknown as RawEntityReader;
  */
 const WITH_COLLECTIONS = {
   schema: {
-    title: { kind: 'string', required: true, default: 'Untitled' },
+    title: { type: 'string', required: true, default: 'Untitled' },
     // `keyFields` is what moves a VALUE collection off the row (hasProjectionTable).
-    links: { kind: 'collection', collection: 'value', keyFields: ['name'], item: { kind: 'string' } },
-    cells: { kind: 'collection', collection: 'keyed', item: { kind: 'string' } },
+    links: { type: 'collection', collection: 'value', keyFields: ['name'], item: { type: 'string' } },
+    cells: { type: 'collection', collection: 'keyed', item: { type: 'string' } },
   },
 } as unknown as BackendModule['data'];
 

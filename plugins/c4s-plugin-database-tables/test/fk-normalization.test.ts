@@ -76,9 +76,9 @@ describe.each(CORPORA)('fk normalisation — %s', (corpus) => {
 
 describe('fk normalisation — what it refuses to touch', () => {
   const files = {
-    orders: { name: 'orders', columns: [] },
+    orders: { title: 'orders', columns: [] },
     'order-items': {
-      name: 'order_items',
+      title: 'order_items',
       columns: [
         { name: 'a', fk: { table: 'orders', column: 'id' } }, // already resolves
         { name: 'b', fk: { table: 'order_items', column: 'id' } }, // spelling only

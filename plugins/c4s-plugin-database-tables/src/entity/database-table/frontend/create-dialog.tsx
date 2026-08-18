@@ -71,7 +71,7 @@ export const DatabaseTableCreateDialog: FC<DatabaseTableCreateDialogProps> = ({ 
     // `columns` is REQUIRED by the create contract — an omitted key is a 400
     // (`VALIDATION_ERROR / columns: Required`), not an empty table. The dialog
     // shapes no columns, so it sends the empty list explicitly.
-    create.mutate({ name: name.trim(), columns: [] }, { onSuccess: handleClose });
+    create.mutate({ title: name.trim(), columns: [] }, { onSuccess: handleClose });
   };
 
   return (

@@ -85,7 +85,7 @@ function projectedCollections(
   if (!schema || !collections) return {};
   const out: Record<string, unknown> = {};
   for (const [name, node] of Object.entries(schema)) {
-    if (node.kind !== 'collection' || isEmbedded(node)) continue;
+    if (node.type !== 'collection' || isEmbedded(node)) continue;
     if (select && !select.includes(name)) continue;
     out[name] = isKeyed(node)
       ? { count: collections.countCollection(entity.type, entity.slug, name) }
