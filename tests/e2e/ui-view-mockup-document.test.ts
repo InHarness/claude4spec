@@ -57,16 +57,34 @@ describe.skipIf(!BASE)('ui-view mockup document', () => {
     '<main data-smoke="mockup"><h1 style="color: var(--brand)">Smoke Heading</h1>' +
     '<div data-preview-mode="dark"><p data-in-dark>dark subtree</p></div></main>';
 
+  const json = (body: unknown) => ({
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  /**
+   * Create, or accept that it is already there.
+   *
+   * The environment persists across runs, so a plain POST 409s the second time
+   * and takes the whole suite down in `beforeAll` — where the failure reads as
+   * "the feature is broken" rather than "the fixture already exists".
+   */
+  async function ensure(collection: string, body: { title: string }, expectedSlug: string) {
+    const res = await fetch(`${api}/${collection}`, json(body));
+    if (res.status === 201) return ((await res.json()) as { data: { slug: string } }).data.slug;
+    return expectedSlug;
+  }
+
   beforeAll(async () => {
     browser = await chromium.launch();
     project = await firstProject();
     api = `${BASE}/api/projects/${project.id}`;
 
     // A design system with a mode, so the sheet has both layers to show.
-    await fetch(`${api}/design-systems`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    await ensure(
+      'design-systems',
+      {
         title: 'Smoke DS',
         groups: [
           {
@@ -76,20 +94,21 @@ describe.skipIf(!BASE)('ui-view mockup document', () => {
           },
         ],
         modes: [{ name: 'dark', overrides: [{ token: 'brand', value: '#93c5fd' }] }],
-      }),
-    });
+      } as never,
+      'smoke-ds',
+    );
 
-    const created = await fetch(`${api}/ui-views`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: 'Smoke View', designSystemSlug: 'smoke-ds' }),
-    });
-    slug = ((await created.json()) as { data: { slug: string } }).data.slug;
+    slug = await ensure(
+      'ui-views',
+      { title: 'Smoke View', designSystemSlug: 'smoke-ds' } as never,
+      'smoke-view',
+    );
 
+    // Idempotent either way — the mockup is set by PATCH, not by create.
     await fetch(`${api}/ui-views/${slug}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mockupHtml: MOCKUP }),
+      body: JSON.stringify({ mockupHtml: MOCKUP, designSystemSlug: 'smoke-ds' }),
     });
   });
 
@@ -153,12 +172,7 @@ describe.skipIf(!BASE)('ui-view mockup document', () => {
   });
 
   it('serves a placeholder, never a browser error page, for a view with no mockup', async () => {
-    const created = await fetch(`${api}/ui-views`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: 'Empty Smoke View' }),
-    });
-    const empty = ((await created.json()) as { data: { slug: string } }).data.slug;
+    const empty = await ensure('ui-views', { title: 'Empty Smoke View' }, 'empty-smoke-view');
 
     const page = await browser.newPage();
     const res = await page.goto(`${api}/ui-views/${empty}/mockup`, { waitUntil: 'networkidle' });
@@ -172,7 +186,9 @@ describe.skipIf(!BASE)('ui-view mockup document', () => {
     const { consoleErrors, badResponses } = watch(page);
     await page.goto(`${BASE}/p/${project.id}/ui-views/${slug}`, { waitUntil: 'networkidle' });
 
-    await expect.poll(() => page.locator('body').innerText()).toMatch(/Mockup Preview/);
+    // Case-insensitive: `FieldRow` uppercases its label in CSS, and `innerText`
+    // reports the rendered text rather than the source.
+    await expect.poll(() => page.locator('body').innerText()).toMatch(/mockup preview/i);
 
     const frame = page.locator('iframe[title*="Mockup preview"]');
     await expect.poll(() => frame.count()).toBe(1);
