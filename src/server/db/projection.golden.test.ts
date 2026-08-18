@@ -247,6 +247,50 @@ describe('projection generator — reconciling an existing database', () => {
   });
 
   /**
+   * SQLite refuses `DROP COLUMN` while an index mentions the column. The index
+   * in question is one THIS module created from a `data.access` hint, and the
+   * hint that asked for it is gone along with the field, so the index is dead
+   * too — dropping it is not a loss, it is the same regeneration.
+   */
+  it('drops the generated index that would block the column', () => {
+    const db = new Database(':memory:');
+    applyProjection(db, MODULES);
+    db.exec(`ALTER TABLE ac ADD COLUMN legacy_note TEXT`);
+    db.exec(`CREATE INDEX idx_ac_legacy_note ON ac(legacy_note)`);
+
+    applyProjection(db, MODULES);
+    expect(columnsOf(db, 'ac').map((c) => c.name)).not.toContain('legacy_note');
+    expect(
+      db
+        .prepare(`SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?`)
+        .get('idx_ac_legacy_note'),
+    ).toBeUndefined();
+    db.close();
+  });
+
+  /**
+   * A column SQLite will not release keeps the project OPENABLE. This runs at
+   * `ProjectContext` construction, so a throw here is not a degraded index —
+   * it is a project that will not open, which is worse than the stale column
+   * the drop exists to remove.
+   */
+  it('leaves a column it cannot drop rather than failing the boot', () => {
+    const db = new Database(':memory:');
+    applyProjection(db, MODULES);
+    // The real table, plus an undeclared column held by a table-level UNIQUE —
+    // the one form of constraint only a full table rebuild could rewrite.
+    const { sql } = db
+      .prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'ac'`)
+      .get() as { sql: string };
+    db.exec(`DROP TABLE ac`);
+    db.exec(sql.replace(/\)\s*$/, ',\n  gone TEXT,\n  UNIQUE(gone)\n)'));
+
+    expect(() => applyProjection(db, MODULES)).not.toThrow();
+    expect(columnsOf(db, 'ac').map((c) => c.name)).toContain('gone');
+    db.close();
+  });
+
+  /**
    * The two exclusions, both the contract's. `slug` is the row's identity and
    * comes from the envelope rather than from `data.schema`; a keyed collection's
    * projection row carries its binding column back to the parent. Neither is a

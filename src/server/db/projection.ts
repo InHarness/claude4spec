@@ -313,10 +313,22 @@ function addMissingColumns(
  *
  * `slug` is the row's identity and comes from the envelope, not from
  * `data.schema`. A collection's projection row additionally carries its binding
- * column back to the parent and its ordinal. The `id` local surrogate is excluded
- * by its own flag, one layer up.
+ * column back to the parent and its ordinal.
+ *
+ * A FLOOR, NOT THE RULE. These names are what the six legacy tables happen to
+ * carry; the sparing that MATTERS is derived from the declaration instead —
+ * `localSurrogate` and `transientInput` fields are excluded from `isEmbedded`,
+ * so their columns must be added back by the caller. A type declaring a
+ * surrogate as `column: 'row_id'` is spared by that derivation, not by this set.
  */
 const HOST_OWNED_COLUMNS = new Set(['slug', 'id', 'ord']);
+
+/** Declared-but-unprojected fields: present in the schema, absent from `isEmbedded`. */
+function unprojectedColumns(schema: Record<string, FieldNode>): string[] {
+  return Object.entries(schema)
+    .filter(([, node]) => node.localSurrogate || node.transientInput)
+    .map(([name, node]) => columnOf(name, node));
+}
 
 /**
  * Drop columns the schema no longer declares.
@@ -343,16 +355,59 @@ const HOST_OWNED_COLUMNS = new Set(['slug', 'id', 'ord']);
  * Bounded twice, and both bounds are the contract's: never a host-owned column,
  * and never a table the generator did not create (the caller only ever passes it
  * generated tables).
+ *
+ * NEVER FATAL. SQLite refuses `DROP COLUMN` for a column an index or a
+ * table-level `UNIQUE` still mentions, and this runs at `ProjectContext`
+ * construction — an escaping throw does not degrade the index, it stops the
+ * project OPENING, which is strictly worse than the stale column the drop exists
+ * to remove. Generated indexes are dropped first (they are regenerated from the
+ * current declaration on this same boot, so removing one is free); anything left
+ * standing — a `UNIQUE` in the table definition, which only a rebuild can
+ * rewrite — leaves the column in place and says so.
  */
 function dropUndeclaredColumns(db: Database, table: string, declared: Set<string>): string[] {
   if (!tableExists(db, table)) return [];
   const dropped: string[] = [];
   for (const column of existingColumns(db, table)) {
     if (declared.has(column) || HOST_OWNED_COLUMNS.has(column)) continue;
-    db.exec(`ALTER TABLE ${table} DROP COLUMN ${column};`);
-    dropped.push(`${table}.${column}`);
+    dropIndexesMentioning(db, table, column);
+    try {
+      db.exec(`ALTER TABLE ${table} DROP COLUMN ${column};`);
+      dropped.push(`${table}.${column}`);
+    } catch (err) {
+      console.warn(
+        `[projection] ${table}.${column} is no longer declared but could not be dropped: ` +
+          `${(err as Error).message} — leaving it in place. If it is NOT NULL, the index ` +
+          `rebuild will fail on it and the table needs recreating.`,
+      );
+    }
   }
   return dropped;
+}
+
+/**
+ * Drop the generated indexes that mention a column, so its `DROP COLUMN` can go
+ * through.
+ *
+ * Only `origin: 'c'` — an index this module CREATEd, and re-CREATEs from the
+ * current `data.access` hints on the very same boot. An index SQLite owns
+ * (`origin: 'u'`, a table-level `UNIQUE`; `'pk'`, the primary key) is left
+ * alone: dropping it would silently discard a constraint the declaration still
+ * asks for, and the caller handles the resulting refusal.
+ */
+function dropIndexesMentioning(db: Database, table: string, column: string): void {
+  const indexes = db.prepare(`PRAGMA index_list(${table})`).all() as Array<{
+    name: string;
+    origin: string;
+  }>;
+  for (const index of indexes) {
+    if (index.origin !== 'c') continue;
+    const columns = db.prepare(`PRAGMA index_info(${index.name})`).all() as Array<{
+      name: string | null;
+    }>;
+    if (!columns.some((c) => c.name === column)) continue;
+    db.exec(`DROP INDEX IF EXISTS ${index.name};`);
+  }
 }
 
 /**
@@ -390,7 +445,9 @@ function reconcileColumns(db: Database, module: ProjectableModule): string[] {
   const embedded = Object.entries(schema).filter(([, node]) => isEmbedded(node));
   const mainTable = mainTableOf(module);
   changed.push(...addMissingColumns(db, mainTable, embedded));
-  changed.push(...dropUndeclaredColumns(db, mainTable, declaredColumns(embedded)));
+  const mainDeclared = declaredColumns(embedded);
+  for (const column of unprojectedColumns(schema)) mainDeclared.add(column);
+  changed.push(...dropUndeclaredColumns(db, mainTable, mainDeclared));
 
   for (const [name, node] of Object.entries(schema)) {
     if (!hasProjectionTable(node)) continue;
