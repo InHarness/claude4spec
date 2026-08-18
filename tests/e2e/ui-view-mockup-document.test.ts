@@ -181,29 +181,83 @@ describe.skipIf(!BASE)('ui-view mockup document', () => {
     await page.close();
   });
 
-  it('shows the preview frame on the ui-view detail page', async () => {
+  /**
+   * The tab strip, which is where the preview lives.
+   *
+   * It shipped as a 420px `FieldRow` inside the detail form and moved to its
+   * own view in the same release; this case is what keeps that from silently
+   * regressing into "the section is gone". A view is a ROUTE here, so the
+   * assertions are on the URL as much as on the pixels.
+   */
+  it('switches DETAILS → PREVIEW → HISTORY from the topbar', async () => {
     const page = await browser.newPage();
     const { consoleErrors, badResponses } = watch(page);
     await page.goto(`${BASE}/p/${project.id}/ui-views/${slug}`, { waitUntil: 'networkidle' });
 
-    // Case-insensitive: `FieldRow` uppercases its label in CSS, and `innerText`
-    // reports the rendered text rather than the source.
-    await expect.poll(() => page.locator('body').innerText()).toMatch(/mockup preview/i);
+    // All three segments, and no leftover inline section on the detail form.
+    for (const label of ['Details', 'Preview', 'History']) {
+      await expect.poll(() => page.getByRole('button', { name: label, exact: true }).count()).toBe(1);
+    }
+    expect(await page.locator('iframe[title*="Mockup preview"]').count()).toBe(0);
+
+    await page.getByRole('button', { name: 'Preview', exact: true }).click();
+    await expect.poll(() => new URL(page.url()).pathname).toMatch(/\/ui-views\/[^/]+\/preview$/);
 
     const frame = page.locator('iframe[title*="Mockup preview"]');
     await expect.poll(() => frame.count()).toBe(1);
 
     // Defense-in-depth, and it must stay narrow: same-origin would undo the point.
-    const sandbox = await frame.getAttribute('sandbox');
-    expect(sandbox).toBe('allow-scripts allow-forms allow-modals');
+    expect(await frame.getAttribute('sandbox')).toBe('allow-scripts allow-forms allow-modals');
 
     // The frame actually painted the mockup, rather than sitting there empty.
     await expect
       .poll(() => page.frameLocator('iframe[title*="Mockup preview"]').locator('h1').innerText())
       .toMatch(/Smoke Heading/);
 
+    await page.getByRole('button', { name: 'History', exact: true }).click();
+    await expect.poll(() => new URL(page.url()).pathname).toMatch(/\/ui-views\/[^/]+\/history$/);
+    await expect.poll(() => frame.count()).toBe(0);
+
     expect(consoleErrors).toEqual([]);
     expect(badResponses).toEqual([]);
+    await page.close();
+  });
+
+  /**
+   * A deep link, because the active tab is derived from the URL and from
+   * nothing else. If it were held in component state this would land on the
+   * detail form with the wrong segment lit.
+   */
+  it('opens the preview tab directly by URL', async () => {
+    const page = await browser.newPage();
+    const { consoleErrors, badResponses } = watch(page);
+    await page.goto(`${BASE}/p/${project.id}/ui-views/${slug}/preview`, { waitUntil: 'networkidle' });
+
+    await expect
+      .poll(() => page.getByRole('button', { name: 'Preview', exact: true }).getAttribute('aria-pressed'))
+      .toBe('true');
+    await expect
+      .poll(() => page.frameLocator('iframe[title*="Mockup preview"]').locator('h1').innerText())
+      .toMatch(/Smoke Heading/);
+
+    expect(consoleErrors).toEqual([]);
+    expect(badResponses).toEqual([]);
+    await page.close();
+  });
+
+  /** The tab is never disabled — most views have no mockup, and that is normal. */
+  it('keeps the preview tab usable for a view with no mockup', async () => {
+    const empty = await ensure('ui-views', { title: 'Empty Smoke View' }, 'empty-smoke-view');
+    const page = await browser.newPage();
+    await page.goto(`${BASE}/p/${project.id}/ui-views/${empty}/preview`, { waitUntil: 'networkidle' });
+
+    const tab = page.getByRole('button', { name: 'Preview', exact: true });
+    await expect.poll(() => tab.isDisabled()).toBe(false);
+    await expect
+      .poll(() =>
+        page.frameLocator('iframe[title*="Mockup preview"]').locator('[data-mockup-placeholder]').count(),
+      )
+      .toBe(1);
     await page.close();
   });
 });

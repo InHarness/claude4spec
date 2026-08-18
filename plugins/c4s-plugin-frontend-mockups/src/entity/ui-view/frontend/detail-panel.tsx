@@ -8,7 +8,6 @@ import { ActionButton } from '@c4s/plugin-runtime/ui';
 import { Badge } from '@c4s/plugin-runtime/ui';
 import { GroupedRelationPicker } from '@c4s/plugin-runtime/ui';
 import { useEntityDraftEditor } from '../../../frontend-kit/useEntityDraftEditor.js';
-import { API_BASE } from '../../../frontend-kit/api-core.js';
 import {
   useDeleteUiView,
   useUiView,
@@ -394,12 +393,6 @@ export function UiViewDetail({
         </datalist>
 
         <div className="mt-6">
-        <FieldRow label="Mockup Preview" align="start">
-          <MockupPreview slug={view.slug} version={view.updatedAt} />
-        </FieldRow>
-        </div>
-
-        <div className="mt-6">
         <FieldRow label="Find references" align="start">
           {refs.length === 0 ? (
             <div className="text-[12.5px]" style={{ color: 'var(--c-subtle)' }}>
@@ -586,51 +579,5 @@ function DesignSystemSelect({
       onAdd={(_group, id) => onChange(id)}
       onRemove={() => onChange(null)}
     />
-  );
-}
-
-/**
- * The mockup document, in a frame.
- *
- * The `src` is the document route — the same address a person can paste into
- * the address bar, which is a REQUIREMENT and not a side effect. Isolation when
- * that happens comes from the route's `Content-Security-Policy: sandbox`
- * response header and from nothing else; the `sandbox` ATTRIBUTE below is
- * defense-in-depth, because an attribute only exists inside an `<iframe>` and
- * says nothing about a top-level open.
- *
- * Deliberately WITHOUT `allow-same-origin`: the document is agent-authored HTML
- * served from our own origin, so it gets an opaque one. `allow-forms` and
- * `allow-modals` are kept for the same reason the header keeps them — without
- * them a mockup with a form or a `confirm()` breaks in silence.
- *
- * Rendered whenever the view exists. There is no client-side empty state: a
- * view with no mockup still answers `200` with a placeholder, so the empty
- * state shows up INSIDE the frame rather than as a browser error page.
- */
-/**
- * `version` is a REMOUNT KEY, not decoration.
- *
- * `mockupHtml` is agent-written and not editable in this panel, so it changes
- * under a mounted frame. React keeps the same `<iframe>` element as long as
- * `src` is unchanged, and the browser then makes no request at all — which is
- * why the route's `Cache-Control: no-store` cannot help here. Keying on
- * `updatedAt` forces a fresh element, and with it a fresh GET.
- */
-function MockupPreview({ slug, version }: { slug: string; version: string }) {
-  return (
-    <div
-      className="rounded-md overflow-hidden"
-      style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)' }}
-    >
-      <iframe
-        key={`${slug}:${version}`}
-        title={`Mockup preview: ${slug}`}
-        src={`${API_BASE}/ui-views/${encodeURIComponent(slug)}/mockup`}
-        sandbox="allow-scripts allow-forms allow-modals"
-        className="w-full border-0 bg-white"
-        style={{ height: 420 }}
-      />
-    </div>
   );
 }
