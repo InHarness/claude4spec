@@ -38,11 +38,20 @@ interface Props {
    * needs anyway.
    */
   views?: readonly EntityView[];
+  /**
+   * View-specific controls, rendered in the topbar to the left of the switcher.
+   *
+   * An opaque node on purpose: this bar is vendored kit shared by both types in
+   * the envelope, so it must not learn what any one view's action DOES. The
+   * `preview` view passes its "open the mockup top-level" link through here
+   * (0.2.28); every other route omits it.
+   */
+  actions?: React.ReactNode;
 }
 
 const crumbLinkClass = 'inline-flex items-center gap-1.5 rounded px-1 -mx-1 transition';
 
-export function EntityBreadcrumbBar({ type, slug, name, view, views }: Props) {
+export function EntityBreadcrumbBar({ type, slug, name, view, views, actions }: Props) {
   const navigate = useNavigate();
   // Always a METHOD call. `getAvailable` reads `this.modules`, so pulling it
   // into a local — the obvious way to write a cast once — silently unbinds the
@@ -79,6 +88,7 @@ export function EntityBreadcrumbBar({ type, slug, name, view, views }: Props) {
         </span>
       </div>
       <span className="flex-1" />
+      {actions}
       {(views?.length ?? 2) > 1 && (
         <EntityViewSwitcher type={type} slug={slug} view={view} views={views} />
       )}

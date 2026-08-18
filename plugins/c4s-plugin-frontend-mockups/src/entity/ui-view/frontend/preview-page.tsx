@@ -26,8 +26,18 @@
  * segment that flickers while the record loads.
  */
 
+import { ExternalLink } from 'lucide-react';
 import { API_BASE } from '../../../frontend-kit/api-core.js';
 import { useUiView } from './hooks.js';
+
+/**
+ * Built once, for both the frame and the link — they must never drift apart.
+ * Root-absolute (`API_BASE` is `/api/projects/<id>`), so it resolves the same
+ * as an `href` from anywhere in the route space as it does as an iframe `src`.
+ */
+function mockupUrl(slug: string): string {
+  return `${API_BASE}/ui-views/${encodeURIComponent(slug)}/mockup`;
+}
 
 export function UiViewPreview({ slug }: { slug: string }) {
   const { data: view } = useUiView(slug);
@@ -43,10 +53,44 @@ export function UiViewPreview({ slug }: { slug: string }) {
         // fresh element, and with it a fresh GET.
         key={`${slug}:${view?.updatedAt ?? ''}`}
         title={`Mockup preview: ${slug}`}
-        src={`${API_BASE}/ui-views/${encodeURIComponent(slug)}/mockup`}
+        src={mockupUrl(slug)}
         sandbox="allow-scripts allow-forms allow-modals"
         className="flex-1 w-full border-0 bg-white"
       />
     </div>
+  );
+}
+
+/**
+ * "Open" — the same document, top-level, in a new tab.
+ *
+ * An anchor rather than a button calling `window.open`: middle-click,
+ * cmd-click, "open in new window" and "copy link address" all come for free,
+ * and no popup blocker weighs in. `rel` is belt-and-braces — the opened
+ * document is agent-authored HTML and never gets a handle back here.
+ *
+ * This is the case the isolation contract was written for. The frame's
+ * `sandbox` ATTRIBUTE does not travel with the link — an attribute only exists
+ * inside an `<iframe>` — so the opaque origin the new tab gets comes from the
+ * route's `Content-Security-Policy: sandbox` response header, and from nothing
+ * else.
+ *
+ * Styled like an inactive `SegmentButton` but deliberately NOT inside the
+ * switcher's `ButtonGroup`: it is an action, not a view, and a segment there
+ * would carry an `aria-pressed` that claims otherwise.
+ */
+export function UiViewOpenExternal({ slug }: { slug: string }) {
+  return (
+    <a
+      href={mockupUrl(slug)}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="Open the mockup in a new tab"
+      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[12px] font-medium transition"
+      style={{ color: 'var(--c-ink)', border: '1px solid transparent' }}
+    >
+      <ExternalLink size={12} />
+      Open
+    </a>
   );
 }

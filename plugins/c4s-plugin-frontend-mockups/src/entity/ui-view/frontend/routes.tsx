@@ -28,7 +28,7 @@ import { Pane, RouteBody } from '../../../frontend-kit/route-shell.js';
 import { useUiView } from './hooks.js';
 import { UiViewsList } from './list-page.js';
 import { UiViewDetail } from './detail-panel.js';
-import { UiViewPreview } from './preview-page.js';
+import { UiViewOpenExternal, UiViewPreview } from './preview-page.js';
 import { EntityVersionHistoryView } from '@c4s/plugin-runtime/ui';
 import type { EntityView } from '../../../frontend-kit/EntityViewSwitcher.js';
 
@@ -107,6 +107,9 @@ function UiViewPreviewRoute() {
         name={uiView?.title}
         view="preview"
         views={UI_VIEW_VIEWS}
+        // Only this view. The action opens the document the frame below shows,
+        // so it has no meaning on the detail form or the history timeline.
+        actions={<UiViewOpenExternal slug={slug} />}
       />
       <UiViewPreview slug={slug} />
     </Pane>

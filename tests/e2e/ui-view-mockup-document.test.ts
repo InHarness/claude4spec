@@ -240,6 +240,29 @@ describe.skipIf(!BASE)('ui-view mockup document', () => {
       .poll(() => page.frameLocator('iframe[title*="Mockup preview"]').locator('h1').innerText())
       .toMatch(/Smoke Heading/);
 
+    /**
+     * The "Open" action, and the top-level open it performs.
+     *
+     * An anchor, so the attributes are worth pinning: a `target` that got lost
+     * would navigate the app away instead of opening a tab, and a missing
+     * `noopener` would hand agent-authored HTML a handle back to us.
+     */
+    const open = page.getByRole('link', { name: 'Open', exact: true });
+    await expect.poll(() => open.getAttribute('href')).toMatch(
+      new RegExp(`/ui-views/${slug}/mockup$`),
+    );
+    expect(await open.getAttribute('target')).toBe('_blank');
+    expect(await open.getAttribute('rel')).toMatch(/noopener/);
+
+    const [popup] = await Promise.all([page.waitForEvent('popup'), open.click()]);
+    await popup.waitForLoadState('networkidle');
+    await expect.poll(() => popup.locator('h1').innerText()).toMatch(/Smoke Heading/);
+
+    // The whole point of opening it this way: no `<iframe>` is involved, so the
+    // opaque origin can only have come from the response HEADER.
+    expect(await popup.evaluate(() => window.origin)).toBe('null');
+    await popup.close();
+
     expect(consoleErrors).toEqual([]);
     expect(badResponses).toEqual([]);
     await page.close();
