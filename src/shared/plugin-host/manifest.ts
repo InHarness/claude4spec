@@ -366,14 +366,27 @@ export interface PluginManifest {
   /** node/host engine constraints. */
   engines?: PluginEngines;
   /**
-   * REQUIRED teardown hook, symmetric to backend mount — a required slot from
-   * the `1.0.0` baseline. The hot-reload pipeline calls it on the OLD version
-   * before registering the new one; without it a reload would leave duplicated
-   * slots (MCP server, Express routes, editor extensions, zustand slice). Must
-   * be idempotent and non-throwing — a thrown error is logged as a warning and
-   * never blocks the reload.
+   * OPTIONAL teardown hook — for the plugin's OWN resources only: a timer, a
+   * watcher, an open connection. Those can be allocated in exactly one place,
+   * the imperative `backend.mount`, which is invisible to the host and so is
+   * reachable by nothing else. A package using only declarative slots does not
+   * declare this at all.
+   *
+   * It is NOT how a plugin's capability comes down. Entity types, commands,
+   * settings and skills are unwired by the HOST — `registry.unregisterPlugin(name)`
+   * fanning out over the envelope's `contributedTypes[]`, plus the
+   * `ProjectContext` rebuild for the mounted side (Express routes, MCP
+   * factories, DI services). An `onUnregister` that tries to unwire any of that
+   * is a BUG: it duplicates the host's work.
+   *
+   * The hot-reload pipeline calls it on the OLD version, before the host-owned
+   * `unregisterPlugin`. Should be idempotent; a throw is logged as a warning and
+   * never blocks the reload — in particular it cannot hold up the host's step.
+   *
+   * 0.2.29: degraded from required to optional. Additive, so `HOST_API_VERSION`
+   * stays `2.0.0` and there is no `migrations[]` entry.
    */
-  onUnregister(): void;
+  onUnregister?(): void;
   contributes: {
     entities?: EntityContribution[];
     /**

@@ -4,13 +4,17 @@ import { reloadPlugin } from './loader.js';
 import { PluginRegistryImpl } from './registry.js';
 import type { PluginManifest } from '../../../shared/plugin-host/manifest.js';
 
-/** A plugin contributing one entity type + a spy-able onUnregister. */
-function pluginV(version: string, onUnregister: () => void = () => {}): PluginManifest {
+/**
+ * A plugin contributing one entity type + a spy-able onUnregister. Pass
+ * `undefined` for the hook to get a manifest that does not declare the slot at
+ * all — since 0.2.29 that is the normal shape of a declarative package.
+ */
+function pluginV(version: string, onUnregister: (() => void) | undefined = () => {}): PluginManifest {
   return {
     name: '@c4s/reloadable',
     version,
     hostApiVersion: '^2.0.0',
-    onUnregister,
+    ...(onUnregister !== undefined ? { onUnregister } : {}),
     contributes: {
       entities: [
         {
@@ -42,7 +46,7 @@ function seams(mod: unknown) {
 }
 
 describe('M33 — reloadPlugin (base hot-reload pipeline)', () => {
-  it('tears down the old version (onUnregister) then registers the new one', async () => {
+  it('calls the OLD version\'s onUnregister, then unregisters host-side, then registers the new one', async () => {
     const registry = new PluginRegistryImpl();
     const oldTeardown = vi.fn();
     registry.registerPlugin(pluginV('1.0.0', oldTeardown));
@@ -112,6 +116,52 @@ describe('M33 — reloadPlugin (base hot-reload pipeline)', () => {
     expect(rec.migration?.targetHostApiVersion).toBe('2.0.0');
     expect(oldTeardown).not.toHaveBeenCalled();
     expect(registry.listPluginRecords()[0]?.version).toBe('1.0.0');
+    warn.mockRestore();
+  });
+
+  it('reloads a package that declares NO onUnregister, leaving no duplicated slots', async () => {
+    // 0.2.29 (b): the guarantee against duplicated slots used to rest on every
+    // plugin implementing the hook correctly. It now rests on the host's step,
+    // which runs regardless — so a package with no lifecycle at all must reload
+    // just as cleanly.
+    const registry = new PluginRegistryImpl();
+    registry.registerPlugin(pluginV('1.0.0', undefined));
+    const first = registry.getAvailable('thing');
+
+    const rec = await reloadPlugin(
+      registry,
+      '@c4s/reloadable',
+      seams({ manifest: pluginV('2.0.0', undefined) }),
+    );
+
+    expect(rec).toMatchObject({ status: 'loaded', manifestVersion: '2.0.0' });
+    // Exactly one record and exactly one module for the type — not two of either.
+    expect(registry.listPluginRecords()).toHaveLength(1);
+    expect(registry.listPluginRecords()[0]?.version).toBe('2.0.0');
+    expect(registry.listAvailable().filter((m) => m.type === 'thing')).toHaveLength(1);
+    // And it is the NEW module, not the one the first registration left behind.
+    expect(registry.getAvailable('thing')).not.toBe(first);
+  });
+
+  it('a throwing onUnregister is a warning, not a block — the host step still runs', async () => {
+    // 0.2.29 (c): step 2a cannot hold up step 2b. A plugin whose teardown throws
+    // must still be unregistered and replaced, or one faulty package could pin a
+    // stale version in the pool forever.
+    const registry = new PluginRegistryImpl();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    registry.registerPlugin(
+      pluginV('1.0.0', () => {
+        throw new Error('teardown boom');
+      }),
+    );
+
+    const rec = await reloadPlugin(registry, '@c4s/reloadable', seams({ manifest: pluginV('2.0.0') }));
+
+    expect(rec).toMatchObject({ status: 'loaded', manifestVersion: '2.0.0' });
+    expect(registry.listPluginRecords()).toHaveLength(1);
+    expect(registry.listPluginRecords()[0]?.version).toBe('2.0.0');
+    expect(registry.listAvailable().filter((m) => m.type === 'thing')).toHaveLength(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('teardown boom'));
     warn.mockRestore();
   });
 });

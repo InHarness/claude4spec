@@ -16,6 +16,13 @@ import { apiContractCommands } from './capabilities/commands.js';
  * (`endpoint` declares `dependsOn: ['dto']`). Nothing depends on that — the
  * host topologically sorts — but a reader should not have to check.
  *
+ * No `onUnregister`: the slot is optional since 0.2.29 and covers only a
+ * plugin's OWN resources (a timer, a watcher, a connection from the imperative
+ * `backend.mount`). The two services here hold none — every resource they touch
+ * belongs to the `ProjectContext` the host disposes itself — and unwiring the
+ * envelope's own types or commands is the host's job, via
+ * `registry.unregisterPlugin(name)`.
+ *
  * The package is trusted by virtue of living in the host repo: it is discovered
  * from `plugins/*`, outside the `trustProjectPlugins` gate that covers only the
  * project-local overlay.
@@ -37,11 +44,4 @@ export const manifest: PluginManifest = {
     entities: [dtoEntity, endpointEntity],
     commands: apiContractCommands,
   },
-  /**
-   * Nothing to tear down. The two services hold no timers, watchers or open
-   * handles — every resource they touch belongs to the `ProjectContext` the
-   * host disposes itself. Declared explicitly rather than omitted so a future
-   * subscription has an obvious home.
-   */
-  onUnregister: () => {},
 };

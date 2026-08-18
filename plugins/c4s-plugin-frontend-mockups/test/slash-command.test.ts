@@ -69,15 +69,14 @@ describe('the manifest as a whole', () => {
     expect(manifest.hostApiVersion).toBe('^2.0.0');
   });
 
-  it('declares onUnregister — an empty no-op is the correct implementation here', () => {
-    // The slot is required; a NON-empty body would be the surprise. Teardown of
-    // routes, sidebar entries, commands and system-prompt contributions belongs
-    // to `registry.unregisterPlugin()` plus the ProjectContext rebuild. This
-    // package holds no timer, watcher or connection of its own.
-    expect(typeof manifest.onUnregister).toBe('function');
-    expect(() => {
-      manifest.onUnregister!();
-      manifest.onUnregister!();
-    }).not.toThrow();
+  it('declares NO onUnregister — teardown of its capability is the host\'s', () => {
+    // 0.2.29 inverted this. The slot is optional and exists solely for a
+    // plugin's OWN resources — a timer, a watcher, a connection, allocatable
+    // only in the imperative `backend.mount`. This package is purely
+    // declarative and holds none, so DECLARING the hook would be the surprise:
+    // unwiring the sidebar entries, commands and system-prompt contributions
+    // belongs to `registry.unregisterPlugin()` plus the ProjectContext rebuild,
+    // and duplicating that work here is explicitly a bug.
+    expect(manifest.onUnregister).toBeUndefined();
   });
 });

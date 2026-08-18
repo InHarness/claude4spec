@@ -294,9 +294,18 @@ export interface ReloadPluginOptions {
  * Atomicity: the failure modes the brief names "old stays" — import failure,
  * missing manifest export, incompatible major — are all checked BEFORE any
  * teardown, so the previously-registered version remains registered and the
- * caller surfaces a warning. Only once a fresh, compatible manifest is in hand
- * do we tear the old version down (`unregisterPlugin` → its `onUnregister`) and
- * register the new one — the brief's "onUnregister old, then register new".
+ * caller surfaces a warning.
+ *
+ * 0.2.29 — once a fresh, compatible manifest IS in hand, the pipeline is:
+ *   1. cache-bust the dynamic import (above)
+ *   2a. PLUGIN, optional — the OLD instance's `onUnregister`, if it declared one,
+ *       releasing only its own `backend.mount` resources. A throw is a warning.
+ *   2b. HOST, unconditional — `registry.unregisterPlugin(name)`, unwiring the
+ *       envelope's capability over `contributedTypes[]`. 2a must never block 2b:
+ *       a faulty plugin hook cannot hold up the host's own teardown.
+ *   3. re-`registerPlugin`
+ *   4. rebuild the `ProjectContext` (the caller's job — only there do the Express
+ *      routes and MCP factories come down) + broadcast WS `plugin:reloaded`.
  *
  * Returns the per-package record (`loaded` / `skipped` / `failed`). Never throws.
  */
@@ -353,6 +362,19 @@ export async function reloadPlugin(
     return { ...named, status: 'failed', code: 'PLUGIN_INVALID_MANIFEST', reason };
   }
   // Fresh, compatible, valid: tear the old version down, then register the new.
+  // 2a — the OLD, mounted instance's hook (the one that actually allocated any
+  // resources in `backend.mount`); the freshly imported manifest has mounted
+  // nothing yet. Optional, so most packages skip this entirely.
+  const previous = registry.listPluginRecords().find((r) => r.name === manifest.name);
+  try {
+    previous?.onUnregister?.();
+  } catch (err) {
+    // Warning only — step 2b runs regardless.
+    console.warn(
+      `[plugin-loader] onUnregister of "${manifest.name}" threw: ${(err as Error).message} (continuing)`,
+    );
+  }
+  // 2b — host-owned and unconditional.
   registry.unregisterPlugin(manifest.name);
   registry.registerPlugin(manifest);
 

@@ -19,12 +19,19 @@ import { frontendMockupCommands } from './capabilities/commands.js';
  * serializer, and a `PLUGIN_HOST_API_MISMATCH` line in the log as the only
  * evidence, while the entity files sit on disk with nothing able to read them.
  *
- * `onUnregister` is an intentional EMPTY no-op, like the other three envelopes.
- * The slot exists for resources the host cannot see — timers, watchers, the
- * plugin's own subscriptions — and this package holds none. Everything the
- * envelope contributes is dropped by the host: `registry.unregisterPlugin()`
- * removes the record (and with it both `entityModules` and the `commands`), and
- * rebuilding the `ProjectContext` takes down the routes and any MCP factories.
+ * Unregistration is the HOST's: `registry.unregisterPlugin(name)` fans out over
+ * this envelope's `contributedTypes[]`, so BOTH types come off the registry at
+ * once, and with them — because every one of those consumers reads by PULL — the
+ * ELEMENTS sidebar entries, the slash commands and the system-prompt
+ * contribution (`roleNoun` / `narrativeBlock`). The routes and MCP server
+ * factories come down separately, on the `ProjectContext` rebuild.
+ *
+ * This envelope therefore declares NO `onUnregister`. Since 0.2.29 the slot is
+ * optional and exists only for a plugin's OWN resources — a timer, a watcher, an
+ * open connection, allocatable solely in the imperative `backend.mount` — and
+ * this package is purely declarative, so it holds none. Unwiring its own types
+ * or commands here would be a bug: it would duplicate the host's work.
+ *
  * That teardown is per-ENVELOPE and takes both types down at once — which is the
  * registration axis. It is not the activation axis: `config.entities` still
  * whitelists a single type, so deactivating `ui-view` leaves `design-system`
@@ -40,5 +47,4 @@ export const manifest: PluginManifest = {
     entities: [designSystemEntity, uiViewEntity],
     commands: frontendMockupCommands,
   },
-  onUnregister: () => {},
 };

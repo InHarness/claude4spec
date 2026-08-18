@@ -273,13 +273,12 @@ export async function loadProjectOverlay(
       });
     }
     commands.push(...(manifest.contributes?.commands ?? []));
+    // 0.2.29 — the slot is OPTIONAL and its absence is the normal case, so no
+    // warning: a declarative overlay package holds no resource of its own. When
+    // it IS declared it goes into `teardowns`, which is the legitimate
+    // own-resources teardown (see `dispose` below).
     if (typeof manifest.onUnregister === 'function') {
-      const fn = manifest.onUnregister.bind(manifest);
-      teardowns.push(fn);
-    } else {
-      console.warn(
-        `[overlay-loader] plugin "${manifest.name}" — required slot onUnregister is missing; using a no-op teardown`,
-      );
+      teardowns.push(manifest.onUnregister.bind(manifest));
     }
     records.push({
       ...base,
@@ -290,10 +289,11 @@ export async function loadProjectOverlay(
   }
 
   // Node's ESM registry caches modules by URL — a true unload is not possible.
-  // dispose() runs each plugin's `onUnregister` (M33 teardown) then
-  // drops the host-side references (mirrors clearMcpFactories); a rebuild
-  // re-imports (cached) fresh manifests. Stateful native handles, if a plugin
-  // opens any, are the plugin's own teardown responsibility.
+  // dispose() runs each plugin's optional `onUnregister` — its OWN resources,
+  // the only thing that hook is for since 0.2.29 — then drops the host-side
+  // references (mirrors clearMcpFactories); a rebuild re-imports (cached) fresh
+  // manifests. Dropping those references is the host's half, and it happens
+  // whether or not any plugin declared a hook.
   const dispose = () => {
     for (const teardown of teardowns) {
       try {

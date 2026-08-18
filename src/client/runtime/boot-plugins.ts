@@ -84,6 +84,15 @@ async function registerProjectPluginCommands(): Promise<void> {
   if (!PROJECT_ID) return;
   try {
     const { commands } = await metaApi.pluginCommands();
+    // 0.2.29 — `registerPluginCommands` REPLACES the whole `plugin-cmd:`
+    // namespace, so a malformed 200 (no `commands` array) would wipe every
+    // plugin trigger from the slash menu and then throw into the catch below,
+    // leaving the menu emptier than before the refetch. Only a well-formed list
+    // is allowed to stand in for the current state of the pool.
+    if (!Array.isArray(commands)) {
+      console.warn('[plugin-host] /_meta/plugin-commands returned no command list; keeping the current set');
+      return;
+    }
     registerPluginCommands(commands);
   } catch (err) {
     console.warn('[plugin-host] failed to fetch plugin commands', err);

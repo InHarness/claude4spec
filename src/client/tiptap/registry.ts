@@ -103,6 +103,36 @@ export function registerEditorExtension(reg: EditorExtensionRegistration): void 
   else REGISTRY.push(reg);
 }
 
+/**
+ * 0.2.29 — drop every registration whose name starts with `prefix`.
+ *
+ * `registerEditorExtension` only ever upserts, which makes this module a PUSH
+ * cache: once a plugin's entries land here nothing takes them out again. That is
+ * fine while plugins only ever arrive, but a plugin can also LEAVE the pool —
+ * the host unwires it with `registry.unregisterPlugin(name)`, and every SERVER-
+ * side consumer notices because they all read by pull. The client's push caches
+ * do not: a departed package's slash commands would stay in the menu until a
+ * full page reload.
+ *
+ * So the plugin-command layer re-registers by REPLACE rather than merge, and
+ * this is the removal half of it. Prefix-scoped on purpose — `plugin-cmd:` is
+ * owned entirely by `pluginCommands.ts`, so clearing it cannot touch a built-in
+ * or an entity-borne extension, which register under their own bare names.
+ *
+ * KNOWN GAP, deliberately left: this closes the slash-command cache only. The
+ * XML embed-tag sets in `extensions/xmlNodes.ts` (`registerXmlEntityType`) are
+ * the same add-only shape with no removal path, so a departed plugin's
+ * `<its-type .../>` keeps parsing as a native embed — with nothing left to
+ * render it — until a page reload. Removing those safely needs a rule for who
+ * owns an unprefixed tag name, since plugins and built-ins share that namespace;
+ * filed as a patch on this brief rather than guessed at here.
+ */
+export function unregisterEditorExtensionsByPrefix(prefix: string): void {
+  for (let i = REGISTRY.length - 1; i >= 0; i--) {
+    if (REGISTRY[i]!.name.startsWith(prefix)) REGISTRY.splice(i, 1);
+  }
+}
+
 export function getEditorExtensions(
   ctx: RegistryContext,
   scope: ExtensionScope = 'full',

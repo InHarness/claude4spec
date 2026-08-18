@@ -8,8 +8,8 @@
  * pipeline mutates it via `registerPlugin` / `unregisterPlugin` and then
  * invalidates dependent `ProjectContext`s (axis B). The registry additionally
  * retains a per-plugin {@link RegisteredPluginRecord} so the host can surface
- * non-entity capabilities (settings/commands) and the reload pipeline can call
- * the old version's `onUnregister` before re-registering.
+ * non-entity capabilities (settings/commands) and so `unregisterPlugin` can
+ * unwire the whole envelope by dropping one record.
  */
 
 import type {
@@ -136,18 +136,15 @@ export class PluginRegistryImpl implements PluginRegistry {
       ...(manifest.contributes.writingStyles ?? []).map(validateWritingStyle),
     ];
 
-    // `onUnregister` is a required slot from the HOST_API 1.0.0 baseline. A
-    // runtime manifest missing it is not crashed over — warn (parity with L8
-    // slot validation) and substitute a no-op so the reload pipeline still works.
-    let onUnregister: () => void;
-    if (typeof manifest.onUnregister === 'function') {
-      onUnregister = () => manifest.onUnregister();
-    } else {
-      console.warn(
-        `[plugin-registry] plugin "${manifest.name}" — required slot onUnregister is missing; using a no-op teardown`,
-      );
-      onUnregister = () => {};
-    }
+    // 0.2.29 — `onUnregister` is an OPTIONAL slot, and its absence is the NORMAL
+    // case: a purely declarative package holds no resource of its own to release.
+    // So no warning and no substituted no-op — the record simply carries
+    // `undefined`, and the reload pipeline's `?.()` skips the step. What used to
+    // justify the warning (a reload leaving duplicated slots) is now the host's
+    // job in `unregisterPlugin` + the ProjectContext rebuild, which run whether
+    // or not the plugin declared anything.
+    const onUnregister: (() => void) | undefined =
+      typeof manifest.onUnregister === 'function' ? () => manifest.onUnregister!() : undefined;
 
     const settings: PluginSettingsModule = manifest.contributes.settings ?? [];
     const commands: PluginCommandContribution[] = manifest.contributes.commands ?? [];
@@ -185,15 +182,25 @@ export class PluginRegistryImpl implements PluginRegistry {
     this.plugins.set(record.name, record);
   }
 
+  /**
+   * 0.2.29 — the mirror of `registerPlugin`, and the HOST's half of teardown.
+   * Deliberately does NOT call `record.onUnregister()`: that hook is the
+   * plugin's own-resources teardown and the reload pipeline calls it first, on
+   * the OLD instance, so that even a throwing hook cannot hold up this step.
+   *
+   * The fan-out backwards over `contributedTypes[]` is the two statements below:
+   * the entity modules are deleted by type, and deleting the record takes the
+   * skills, the settings descriptor and the commands with it (every one of those
+   * is pull-read off the record, never pushed anywhere). Config VALUES under
+   * `config.plugins[<name>]` live in the config file and are not touched here.
+   *
+   * Mounted things — Express routes, MCP factories, DI services — are NOT
+   * removed here; they come down on the `ProjectContext` rebuild.
+   */
   unregisterPlugin(name: string): void {
     const record = this.plugins.get(name);
+    // Idempotency lives here: an unknown name is a no-op, not an error.
     if (!record) return;
-    try {
-      record.onUnregister();
-    } catch (err) {
-      // Idempotent + non-throwing by contract — a throw is a warning, never a block.
-      console.warn(`[plugin-registry] onUnregister of "${name}" threw: ${(err as Error).message}`);
-    }
     for (const module of record.entityModules) {
       // Only drop the module if it is STILL the one this plugin contributed — a
       // later same-typed registration (another base plugin contributing the same

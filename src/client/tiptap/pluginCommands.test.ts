@@ -40,6 +40,31 @@ describe('M33 — plugin command routing', () => {
     warn.mockRestore();
   });
 
+  it('re-registering a shrunken list drops the departed plugin\'s command (replace, not merge)', () => {
+    // 0.2.29 — the editor extension registry is a push cache, not a pull-read
+    // consumer: `registerEditorExtension` upserts and never removes. So when the
+    // host unregisters a plugin, every server-side consumer notices, but a
+    // departed package's trigger would sit in the slash menu until a full page
+    // reload. `registerPluginCommands` therefore replaces the whole
+    // `plugin-cmd:` namespace rather than merging into it.
+    registerPluginCommands([
+      { name: 'stays', trigger: 'stays', label: 'Stays', popoverKind: 'stays' },
+      { name: 'departs', trigger: 'departs', label: 'Departs', popoverKind: 'departs' },
+    ]);
+    expect(getRegisteredSlashCommands().map((c) => c.id)).toEqual(
+      expect.arrayContaining(['stays', 'departs']),
+    );
+
+    // The plugin contributing `departs` left the pool; /_meta/plugin-commands
+    // now returns only the survivor.
+    registerPluginCommands([{ name: 'stays', trigger: 'stays', label: 'Stays', popoverKind: 'stays' }]);
+    const ids = getRegisteredSlashCommands().map((c) => c.id);
+    expect(ids).toContain('stays');
+    expect(ids).not.toContain('departs');
+    // Exactly one entry — a replace must not leave a duplicate behind either.
+    expect(ids.filter((id) => id === 'stays')).toHaveLength(1);
+  });
+
   it('invokeSlash dispatches a generic popover event for a plugin command (no id switch)', async () => {
     dispatched.length = 0;
     await invokeSlash(
