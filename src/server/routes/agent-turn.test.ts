@@ -258,6 +258,31 @@ describe('runAgentTurn — ask context posture (0.1.79)', () => {
   });
 });
 
+describe('runAgentTurn — patch thread posture (0.2.30)', () => {
+  it('leaves a patch thread with plan_mode=false unrestricted, so a banka spawned from a plan-mode parent keeps Write/Edit/Bash', async () => {
+    // The other half of the no-inheritance rule (dispatcher side:
+    // transagent-dispatcher.test.ts). `patch` declares no `force-plan` posture,
+    // so the turn follows the thread flag — and a child created without
+    // `planMode` carries false, whatever the parent had.
+    hoisted.events = [
+      { type: 'text_delta', text: 'patched' },
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps } = makeDeps();
+    const input = makeInput();
+    (input.thread as unknown as { contextType: string; patchPath: string | null }).contextType =
+      'patch';
+    (input.thread as unknown as { contextType: string; patchPath: string | null }).patchPath =
+      'patches/p.md';
+
+    await runAgentTurn(deps, input);
+
+    // planMode=false ⇒ the adapter is handed no READONLY_BUILTINS allow-list and
+    // no MUTATING_BUILTINS ban, i.e. the full built-in toolset.
+    expect(hoisted.lastExecute?.planMode).toBe(false);
+  });
+});
+
 describe('runAgentTurn — entity-tools mcpServers wiring (M13, 0-1-112-to-0-1-113)', () => {
   it('chat thread: entity-tools (from pluginHost.buildMcpServers) reaches adapter.execute mcpServers', async () => {
     hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];

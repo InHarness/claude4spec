@@ -135,6 +135,12 @@ export class ChatService {
       /** 0.1.69 Transagents: set to mark this thread as a hidden child banka. */
       parentThreadId?: string | null;
       spawnedByToolUseId?: string | null;
+      /**
+       * 0.2.30: plan-mode posture, written AT INSERT (never inherited from a
+       * parent thread) — `runTransagent({ planMode })` reaches the column
+       * through here. Absent ⇒ false, exactly like a hand-created thread.
+       */
+      planMode?: boolean;
     } = {},
   ): ChatThread {
     const id = nanoid(12);
@@ -143,6 +149,7 @@ export class ChatService {
     const patchPath = opts.patchPath ?? null;
     const parentThreadId = opts.parentThreadId ?? null;
     const spawnedByToolUseId = opts.spawnedByToolUseId ?? null;
+    const planMode = opts.planMode ?? false;
     // Invariant L2: context_type='brief' ⇒ brief_path IS NOT NULL.
     if (contextType === 'brief' && !briefPath) {
       throw new DomainError('VALIDATION', "context_type='brief' requires brief_path");
@@ -153,10 +160,10 @@ export class ChatService {
     }
     this.db
       .prepare(
-        `INSERT INTO chat_thread (id, title, context_type, brief_path, patch_path, parent_thread_id, spawned_by_tool_use_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO chat_thread (id, title, context_type, brief_path, patch_path, parent_thread_id, spawned_by_tool_use_id, plan_mode)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(id, title, contextType, briefPath, patchPath, parentThreadId, spawnedByToolUseId);
+      .run(id, title, contextType, briefPath, patchPath, parentThreadId, spawnedByToolUseId, planMode ? 1 : 0);
     return this.getThreadRow(id);
   }
 
