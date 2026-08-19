@@ -733,8 +733,9 @@ export async function runAgentTurn(
     /**
      * Are the servers we advertised actually bound?
      *
-     * `scope` is what makes the two production signatures tell themselves apart
-     * from the outside — the property the brief asks for as acceptance evidence.
+     * The message is what makes the two production signatures tell themselves
+     * apart from the outside — today they are indistinguishable, which is itself
+     * half the defect. `context` says WHERE the check ran.
      * One unbound server among healthy ones is a different failure from the
      * whole set going dark at once, and the message says which happened.
      */
