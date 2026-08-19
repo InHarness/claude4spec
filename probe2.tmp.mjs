@@ -1,0 +1,14 @@
+import { chromium } from 'playwright';
+const BASE='http://localhost:3300';
+const p=(await (await fetch(`${BASE}/api/workspace`)).json()).projects[0];
+const url=`${BASE}/api/projects/${p.id}/mcp-tools/alpha-read-page`;
+const b=await chromium.launch(); const page=await b.newPage({viewport:{width:1440,height:1000}});
+const writes=[];
+page.on('request',r=>{ if(!['GET','HEAD','OPTIONS'].includes(r.method()) && /mcp-tools/.test(r.url())) writes.push(`${r.method()} ${r.url()} ${JSON.stringify(r.postData()).slice(0,200)}`); });
+await page.goto(`${BASE}/p/${p.id}/mcp-tools/alpha-read-page`,{waitUntil:'networkidle'});
+await page.waitForTimeout(2500);
+const prose=await page.evaluate(()=>[...document.querySelectorAll('.prose-spec')].map(e=>e.innerText));
+console.log('prose text after open:',JSON.stringify(prose));
+console.log('writes:',writes);
+console.log('description now:',JSON.stringify((await (await fetch(url)).json()).data.description));
+await b.close();

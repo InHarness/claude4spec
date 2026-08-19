@@ -51,6 +51,22 @@ function DocEditorImpl({ value, onChange, readOnly, placeholder }: DocEditorProp
   // drift can't drop the caret. Recording on apply too keeps a `value` that
   // returns to an earlier string from being stranded.
   const lastSyncedRef = useRef<string | null>(null);
+  /**
+   * Has the incoming `value` reached the document yet?
+   *
+   * The editor is created with `content: ''` and only receives `value` in the
+   * effect below, one commit later. Between those two moments tiptap emits an
+   * update for the empty document — and `onChange('')` reaching a panel that
+   * autosaves is not a redundant write, it is DATA LOSS: opening an entity
+   * PATCHes its description away, no console error, no failing request, nothing
+   * on screen to notice. Confirmed on the shipped `dto` panel, which wiped a
+   * description to `null` on a plain page view.
+   *
+   * So nothing is emitted upward until the document actually holds `value`.
+   * After that every update is the user's and is passed on unchanged — including
+   * clearing the field, which stays a legitimate edit.
+   */
+  const seededRef = useRef(false);
   const extensions = useMemo(
     () => [
       StarterKit.configure({ heading: { levels: [2, 3, 4, 5, 6] } }),
@@ -76,6 +92,9 @@ function DocEditorImpl({ value, onChange, readOnly, placeholder }: DocEditorProp
       attributes: { class: 'prose-spec focus:outline-none' },
     },
     onUpdate: ({ editor }) => {
+      // Pre-seed updates describe the empty placeholder document, not the
+      // user's content — see `seededRef`.
+      if (!seededRef.current) return;
       const md = editor.storage.markdown.getMarkdown() as string;
       lastSyncedRef.current = md;
       onChange(md);
@@ -90,12 +109,20 @@ function DocEditorImpl({ value, onChange, readOnly, placeholder }: DocEditorProp
   useEffect(() => {
     if (!editor) return;
     // Already reflected in the doc (our own echo, or a value we just applied) —
-    // don't rebuild under the caret.
-    if (value === lastSyncedRef.current) return;
+    // don't rebuild under the caret. Each of these arms still marks the document
+    // as seeded: "the doc already holds `value`" is exactly what they assert.
+    if (value === lastSyncedRef.current) {
+      seededRef.current = true;
+      return;
+    }
     const current = editor.storage.markdown.getMarkdown() as string;
-    if (current === value) return;
+    if (current === value) {
+      seededRef.current = true;
+      return;
+    }
     lastSyncedRef.current = value;
     editor.commands.setContent(value, false);
+    seededRef.current = true;
   }, [editor, value]);
 
   const ambientBridge = useEditorBridge();
