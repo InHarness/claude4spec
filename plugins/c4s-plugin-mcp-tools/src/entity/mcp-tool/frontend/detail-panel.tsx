@@ -338,6 +338,26 @@ const ReferencesField: FC<{ slug: string }> = ({ slug }) => {
   );
 };
 
+/**
+ * `updatedAt` reaches the client in one of TWO spellings, and the canonical
+ * panels only handle one of them.
+ *
+ * They all write `new Date(updatedAt.replace(' ', 'T') + 'Z')`, which is right
+ * for SQLite's `YYYY-MM-DD HH:MM:SS` and wrong for the full ISO string the API
+ * returns today — appending a second `Z` yields `Invalid Date`, which is what
+ * every entity detail panel in this build currently prints. Reported upstream;
+ * accepting both spellings here rather than reproducing the bug for symmetry.
+ */
+function formatUpdatedAt(raw: unknown): string {
+  const text = String(raw ?? '');
+  if (!text) return 'never';
+  const iso = text.includes('T') ? text : `${text.replace(' ', 'T')}Z`;
+  const at = new Date(iso);
+  return Number.isNaN(at.getTime())
+    ? text
+    : at.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
 function messageOf(error: unknown): string | null {
   if (!error) return null;
   return error instanceof Error ? error.message : 'Update failed';
@@ -457,13 +477,7 @@ export const McpToolDetail: FC<EntityDetailProps> = ({ slug, onDeleted, onRename
         >
           <span className="font-mono">{tool.slug}</span>
           <span>·</span>
-          <span>
-            updated{' '}
-            {new Date(String(tool.updatedAt).replace(' ', 'T') + 'Z').toLocaleString(undefined, {
-              dateStyle: 'medium',
-              timeStyle: 'short',
-            })}
-          </span>
+          <span>updated {formatUpdatedAt(tool.updatedAt)}</span>
           {update.isPending && (
             <span style={{ color: 'var(--c-accent-ink, var(--c-accent))' }}>saving…</span>
           )}
