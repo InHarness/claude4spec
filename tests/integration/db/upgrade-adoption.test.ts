@@ -92,12 +92,12 @@ describe('upgrading a pre-0.2.2 database', () => {
       //
       //    `created` is not empty, and must not be: a type this database predates
       //    has no table to adopt, so creating one is the correct outcome rather
-      //    than a rebuild. `spreadsheet` shipped after this legacy schema was
-      //    frozen. What matters is that nothing the legacy chain DID write is in
-      //    the list.
+      //    than a rebuild. `spreadsheet` and `mcp_tool` both shipped after this
+      //    legacy schema was frozen. What matters is that nothing the legacy
+      //    chain DID write is in the list.
       const legacyTables = ['dto', 'endpoint', 'ac'];
       expect(result.created).not.toEqual(expect.arrayContaining(legacyTables));
-      expect(result.created).toEqual(['spreadsheet']);
+      expect(result.created).toEqual(['mcp_tool', 'spreadsheet']);
       /**
        * 0.2.22 — the adopted tables gain the reserved `title` column, and that
        * is the point of `reconcileColumns`: a legacy database reaches the new

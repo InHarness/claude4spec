@@ -105,6 +105,33 @@ export interface EntityListRowProps {
 }
 export declare const EntityListRow: ComponentType<EntityListRowProps>;
 
+/**
+ * Groups are formed by the CONSUMER and laid out here — the kit renders, it does
+ * not compute. There is deliberately no `groupBy` prop: which key a type groups
+ * on, and what an item belonging to no group means, are entity semantics.
+ *
+ * Flat rendering is not a mode of this component. A consumer offering a "Flat
+ * list" toggle renders its ordinary flat list instead.
+ */
+export interface GroupedEntityListGroup<T> {
+  /** Stable identity — the React key, never displayed. */
+  key: string;
+  label: ReactNode;
+  items: T[];
+}
+export interface GroupedEntityListProps<T> {
+  groups: GroupedEntityListGroup<T>[];
+  renderRow: (item: T, index: number) => ReactNode;
+  /** Drawn when there is nothing to show at all. */
+  emptyState?: ReactNode;
+  /**
+   * Drawn inside a group holding no items. Omitting it SKIPS empty groups, which
+   * is the default; supplying it is how a consumer keeps an empty group visible.
+   */
+  emptyGroupState?: ReactNode;
+}
+export declare const GroupedEntityList: <T>(props: GroupedEntityListProps<T>) => ReactNode;
+
 export interface TagBarProps {
   tags: Tag[];
   tagFilter: string[];

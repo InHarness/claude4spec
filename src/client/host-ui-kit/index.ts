@@ -40,6 +40,11 @@ export { Pagination, type PaginationProps } from './list/Pagination.js';
 export { EmptyState, type EmptyStateProps } from './list/EmptyState.js';
 export { TagFilterBar, type TagBarProps } from './list/TagFilterBar.js';
 export { EntityListRow, type EntityListRowProps } from './list/EntityListRow.js';
+export {
+  GroupedEntityList,
+  type GroupedEntityListProps,
+  type GroupedEntityListGroup,
+} from './list/GroupedEntityList.js';
 
 // Actions & states (experimental)
 export { ActionButton, type ActionButtonProps, type ActionButtonVariant } from './actions/ActionButton.js';
