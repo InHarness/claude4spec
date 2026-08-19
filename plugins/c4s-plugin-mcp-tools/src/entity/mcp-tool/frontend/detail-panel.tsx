@@ -10,14 +10,16 @@
  *   scroller → `FieldGrid maxWidth={740}`
  *     meta strip   slug · updated · saving/edited · Delete
  *     title        entity icon + a borderless 22px input
- *     Tags         first under the title, always — as in `dto` / `database-table`
+ *     Tags         first under the title, always, and unlabelled — flush left
  *     Description  second, full width, a `DocEditor` under its own heading
+ *     Server       third, then the Contract block
  *     `FieldRow`s  label in a fixed 140px column, value on the right
  *     `mt-6`       is the section break; there is no Card and no Section
  *
- * The one departure from `FieldRow` is the description, and for one reason: a
- * `FieldRow` spends a fixed 140px on a label, which is the right trade for a
- * short value and the wrong one for the longest prose on the screen.
+ * The two departures from `FieldRow` are the tags and the description, for the
+ * same reason: a `FieldRow` spends a fixed 140px on a label, which is the right
+ * trade for a short value and the wrong one for the longest prose on the screen
+ * — or for a strip of chips that says what it is by looking like one.
  *
  * The breadcrumb and the Details/History switcher are deliberately NOT here —
  * they live in the route wrapper (`EntityBreadcrumbBar`), which is what lets both
@@ -519,14 +521,15 @@ export const McpToolDetail: FC<EntityDetailProps> = ({ slug, onDeleted, onRename
         ) : null}
 
         {/*
-          Tags come FIRST, before anything domain-specific — the same position
-          they hold in `dto` and `database-table`. They are the one field on this
-          screen that is not about MCP at all: they are how an author groups the
-          record and how a page embeds it.
+          Tags come FIRST, before anything domain-specific, and with NO label —
+          flush left, the way `database-table` and every host built-in render
+          them. A chip strip says what it is by looking like one, and a `TAGS`
+          column would spend 140px announcing it.
+
+          They are also the one field on this screen that is not about MCP at
+          all: they are how an author groups the record and how a page embeds it.
         */}
-        <FieldRow label="Tags" align="start">
-          <TagsField slug={tool.slug} />
-        </FieldRow>
+        <TagsField slug={tool.slug} />
 
         {/*
           ── THE DESCRIPTION ─────────────────────────────────────────────
@@ -556,6 +559,23 @@ export const McpToolDetail: FC<EntityDetailProps> = ({ slug, onDeleted, onRename
         </div>
 
         {/*
+          `Server` sits between the description and the contract because that is
+          what it is: not prose, and not part of what the tool DOES — a grouping
+          label that happens to be half of `mcp__{server}__{name}`.
+        */}
+        <div className="mt-6">
+          <FieldRow label="Server">
+            <input
+              value={draft.server}
+              onChange={(e) => patch({ server: e.target.value })}
+              style={MONO_INPUT}
+              spellCheck={false}
+            />
+            <Hint>The {'{server}'} of mcp__{'{server}'}__{'{name}'}, and half of the slug.</Hint>
+          </FieldRow>
+        </div>
+
+        {/*
           ── THE CONTRACT ────────────────────────────────────────────────
           Everything in this block transfers verbatim into the tool definition in
           code. The heading says so, because that is the fact a reader needs
@@ -567,17 +587,7 @@ export const McpToolDetail: FC<EntityDetailProps> = ({ slug, onDeleted, onRename
             note="transferred verbatim into the tool definition"
           />
 
-          <FieldRow label="Server">
-            <input
-              value={draft.server}
-              onChange={(e) => patch({ server: e.target.value })}
-              style={MONO_INPUT}
-              spellCheck={false}
-            />
-            <Hint>The {'{server}'} of mcp__{'{server}'}__{'{name}'}, and half of the slug.</Hint>
-          </FieldRow>
-
-          <div className="mt-4">
+          <div>
             <FieldRow label="Parameters" align="start">
               <ParamsEditor params={draft.params} onChange={(params) => patch({ params })} />
             </FieldRow>

@@ -15,11 +15,18 @@
  * ships none. `busy` blocks resubmit, `error` renders the failure and the modal
  * STAYS open; on success it closes and the list refetches.
  *
- * THE FIELDS ARE THE CREATE CONTRACT AND NOTHING MORE: `name`, `server`,
- * `description` are exactly what the generated schema requires. `params[]` is
- * shaped afterwards in the detail panel — a parameter list is iterative work that
- * does not belong in a modal, and the spec does not require it here. `slug` is
- * not an input: it is derived once, server-side, from `server` and `name`.
+ * THE FIELDS ARE `name` AND `server`, AND NOTHING MORE — the two halves of
+ * `mcp__{server}__{name}`, which is also the two halves of the slug. They are
+ * the only values that must exist before the record does.
+ *
+ * `description` is deliberately NOT here, even though the schema marks it
+ * required. It is the longest prose on the type and it is written in the detail
+ * panel, in a full-width markdown editor, with the parameters and the return
+ * shape in view; a three-line box in a modal invites a placeholder sentence
+ * written to get past the dialog, which then reaches the model as if it were a
+ * description. The record is created with an empty one and filled in next door.
+ * `params[]` is left to the same screen for the same reason. `slug` is not an
+ * input at all: it is derived once, server-side, from `server` and `name`.
  *
  */
 
@@ -54,7 +61,6 @@ export const McpToolCreateDialog: FC<McpToolCreateDialogProps> = ({
 }) => {
   const [name, setName] = useState('');
   const [server, setServer] = useState(initialServer ?? '');
-  const [description, setDescription] = useState('');
   const create = useCreateMcpTool();
 
   // Stable identity: the kit `Dialog`'s focus effect keys on `onClose`, so an
@@ -63,11 +69,10 @@ export const McpToolCreateDialog: FC<McpToolCreateDialogProps> = ({
     create.reset();
     setName('');
     setServer(initialServer ?? '');
-    setDescription('');
     onClose();
   }, [onClose, create.reset, initialServer]);
 
-  const ready = name.trim() && server.trim() && description.trim();
+  const ready = name.trim() && server.trim();
 
   const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -79,7 +84,10 @@ export const McpToolCreateDialog: FC<McpToolCreateDialogProps> = ({
       {
         name: name.trim(),
         server: server.trim(),
-        description: description.trim(),
+        // `description` is required by the generated schema but has no minimum
+        // length, so the record starts with an empty one and is described in the
+        // detail panel. Omitting the key entirely would be rejected.
+        description: '',
       },
       { onSuccess: handleClose },
     );
@@ -126,20 +134,6 @@ export const McpToolCreateDialog: FC<McpToolCreateDialogProps> = ({
             required
             autoFocus={Boolean(initialServer)}
             style={{ ...INPUT_STYLE, fontFamily: 'var(--font-mono, monospace)' }}
-          />
-        </FormField>
-        {/*
-          Required at create, and rightly so: a tool whose `description` is filled
-          in later is a tool that reached the model with nothing to go on.
-        */}
-        <FormField label="Description">
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="What the tool does and when to use it."
-            required
-            rows={3}
-            style={{ ...INPUT_STYLE, resize: 'vertical' }}
           />
         </FormField>
       </FormShell>

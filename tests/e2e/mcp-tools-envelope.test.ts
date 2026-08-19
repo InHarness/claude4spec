@@ -263,11 +263,15 @@ describe.skipIf(!BASE)('mcp-tool — the envelope end to end', () => {
       .poll(() => page.locator('.prose-spec').first().innerText())
       .toMatch(/Read one specification page by path\./);
     // Tags first under the title, description second — the order this panel is
-    // supposed to hold. `indexOf` on the rendered text is enough: both labels
-    // are unique on the screen.
+    // supposed to hold. The tag strip carries no label, so the anchor is the
+    // picker's own "+ tag" affordance rather than a heading; that is also what
+    // makes this assertion fail if a `TAGS` label ever comes back and pushes the
+    // strip somewhere else.
     await expect.poll(async () => {
-      const text = await page.locator('body').innerText();
-      return text.indexOf('Tags') < text.indexOf('Description');
+      const text = (await page.locator('body').innerText()).toLowerCase();
+      const tags = text.indexOf('+ tag');
+      const description = text.indexOf('description');
+      return tags >= 0 && description >= 0 && tags < description;
     }).toBe(true);
     await expect.poll(body(page)).toMatch(/Parameters/i);
     // The one parameter this tool declares, in the params editor.
