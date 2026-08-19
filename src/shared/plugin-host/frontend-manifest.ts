@@ -153,6 +153,7 @@ export const PLUGIN_RUNTIME_UI_EXPORT_NAMES = [
   'EmptyState',
   'TagFilterBar',
   'EntityListRow',
+  'GroupedEntityList',
   // Actions & states (experimental)
   'ActionButton',
   'ActionBar',

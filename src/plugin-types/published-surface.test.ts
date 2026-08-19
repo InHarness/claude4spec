@@ -71,6 +71,7 @@ const PUBLISHED_PLUGIN_RUNTIME_UI_NAMES = [
   'EmptyState',
   'TagFilterBar',
   'EntityListRow',
+  'GroupedEntityList',
   'ActionButton',
   'ActionBar',
   'Badge',

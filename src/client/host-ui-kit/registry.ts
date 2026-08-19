@@ -18,6 +18,7 @@ import { Pagination } from './list/Pagination.js';
 import { EmptyState } from './list/EmptyState.js';
 import { TagFilterBar } from './list/TagFilterBar.js';
 import { EntityListRow } from './list/EntityListRow.js';
+import { GroupedEntityList } from './list/GroupedEntityList.js';
 import { ActionButton } from './actions/ActionButton.js';
 import { ActionBar } from './actions/ActionBar.js';
 import { Badge } from './actions/Badge.js';
@@ -88,6 +89,7 @@ export const UI_KIT_CATALOG: UiKitComponentEntry[] = [
   entry('EmptyState', 'list', EmptyState),
   entry('TagFilterBar', 'list', TagFilterBar),
   entry('EntityListRow', 'list', EntityListRow),
+  entry('GroupedEntityList', 'list', GroupedEntityList),
   entry('ActionButton', 'actions', ActionButton),
   entry('ActionBar', 'actions', ActionBar),
   entry('Badge', 'actions', Badge),

@@ -1,0 +1,96 @@
+/**
+ * M05 — route-level navigation helpers for this module's own screens.
+ *
+ * This resolves the router path for an entity `type` + `slug` and is DISTINCT from
+ * `editorBridge.openEntity` (`@c4s/plugin-runtime`): the bridge is the host
+ * singleton for cross-surface / cross-plugin navigation, whereas this stays inside
+ * the plugin's `RouteTreeFragment` and never crosses the Host API boundary. The
+ * detail-route prefix is resolved HERE (not inlined at call sites) so a derived
+ * plugin with several entity types extends one map instead of hunting for
+ * `\`${PREFIX}/$slug\`` template literals.
+ *
+ * The `@tanstack/react-router` boundary is intentionally opaque in the Host API
+ * (`RouteTreeFragment` works with `AnyRoute = unknown`), so `Navigate` is a loose
+ * structural view of the router's `navigate`.
+ */
+
+import { clientPluginHost } from '@c4s/plugin-runtime';
+import { MCP_TOOL_PATH_PREFIX, MCP_TOOL_TYPE } from '../../../identity.js';
+
+/** Loose-typed view of the host router's `navigate` (routes are opaque in the contract). */
+export type Navigate = (opts: { to: string; params?: Record<string, string>; replace?: boolean }) => void;
+
+/** Router mount prefix per entity `type`. A derived plugin adds its own types here. */
+const PATH_PREFIX_BY_TYPE: Record<string, string> = {
+  [MCP_TOOL_TYPE]: MCP_TOOL_PATH_PREFIX,
+};
+
+/**
+ * Navigate to an entity's detail screen (`<prefix>/:slug`) by `type` + `slug`.
+ * `replace` swaps the history entry (used after a rename so Back does not return to
+ * the stale slug). Unknown types throw — a misconfigured route is a bug, not a silent no-op.
+ */
+export function navigateToEntity(
+  navigate: Navigate,
+  type: string,
+  slug: string,
+  opts?: { replace?: boolean },
+): void {
+  const prefix = PATH_PREFIX_BY_TYPE[type];
+  if (!prefix) throw new Error(`navigateToEntity: unknown entity type "${type}"`);
+  navigate({ to: `${prefix}/$slug`, params: { slug }, replace: opts?.replace });
+}
+
+/**
+ * Navigate to an entity's history screen (`<prefix>/:slug/history`) by `type` + `slug`.
+ * Same `replace` semantics as `navigateToEntity` — pass `{ replace: true }` after a
+ * restore so Back does not return to the stale history view.
+ */
+export function navigateToEntityHistory(
+  navigate: Navigate,
+  type: string,
+  slug: string,
+  opts?: { replace?: boolean },
+): void {
+  const prefix = PATH_PREFIX_BY_TYPE[type];
+  if (!prefix) throw new Error(`navigateToEntityHistory: unknown entity type "${type}"`);
+  navigate({ to: `${prefix}/$slug/history`, params: { slug }, replace: opts?.replace });
+}
+
+/**
+ * Navigate to ANY entity type, resolving its route prefix from the HOST rather
+ * than from the map above.
+ *
+ * The map above is this plugin's own business — it knows `mcp-tool` and nothing
+ * else, which is correct for its own screens. This function serves a different
+ * caller: an entity chip inside a `DocEditor` description, whose target is
+ * whatever the author linked, including types contributed by packages that do
+ * not exist yet. A type with no module (deactivated, or never installed)
+ * resolves to nothing and the click is a no-op — the same thing the host does.
+ *
+ * `clientPluginHost.getEntity(...)` stays a METHOD call. It reads `this`, so
+ * pulling it into a local to cast it once unbinds the receiver and throws on
+ * first render.
+ */
+export function toEntity(navigate: Navigate, type: string, slug: string): void {
+  const mod = clientPluginHost.getEntity(type) ?? clientPluginHost.getAvailable(type);
+  if (!mod?.pathPrefix) return;
+  navigate({ to: `${mod.pathPrefix}/$slug`, params: { slug } });
+}
+
+/**
+ * Navigate to a page anchor — the other half of the editor bridge. `pages` is
+ * the host's default root for sections.
+ */
+export function toSection(
+  navigate: Navigate,
+  pagePath: string,
+  anchor: string,
+  rootId = 'pages',
+): void {
+  (navigate as unknown as (opts: Record<string, unknown>) => void)({
+    to: '/space/$rootId/$',
+    params: { rootId, _splat: pagePath },
+    hash: `anchor-${anchor}`,
+  });
+}
