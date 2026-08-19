@@ -10,10 +10,12 @@ import { withStability } from '../stability.js';
  * first. L12's rule is that a component present in the catalog has no
  * host-internal twin, and a plugin may keep its own markup only when it is used
  * in ONE place AND its shape follows from that one entity. A grouped list fails
- * both tests: `/mcp-tools` groups by the mirror tag `srv-*`, and `/acs` groups
- * by the dominant `mNN` / `entity-*` tag — the same anatomy (section heading,
- * rows beneath, a toggle back to flat) specified twice, for two unrelated types.
- * Built inside either one, the second would have copied it.
+ * both tests: `/mcp-tools` groups by its `server` FIELD, and `/acs` groups by
+ * the dominant `mNN` / `entity-*` TAG — the same anatomy (section heading, rows
+ * beneath, a toggle back to flat) specified twice, for two unrelated types that
+ * do not even group on the same kind of thing. Built inside either one, the
+ * second would have copied it — and the props would have grown a `groupBy` that
+ * had to speak both dialects.
  *
  * THE BOUNDARY, which is the reason the props look thin: THE KIT RENDERS, IT
  * DOES NOT COMPUTE. Which key to group on, what a group is called, how groups

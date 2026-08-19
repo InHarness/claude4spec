@@ -25,7 +25,7 @@
  * Layout comes from the kit's `GroupedEntityList`; WHICH groups exist and what
  * they are called is computed here, in `grouping.ts`. That split is the L12 rule
  * "the kit renders, it does not compute" - a `groupBy` prop on the catalog
- * component would have pulled this type's tag semantics into the host.
+ * component would have pulled this type's own semantics into the host.
  *
  * `?group=flat` carries the toggle. It is in the URL rather than in local state
  * or `localStorage` because it is part of "what I am looking at" and a colleague
@@ -66,7 +66,7 @@ import { McpToolListRow } from './list-row.js';
 import { McpToolCreateDialog } from './create-dialog.js';
 import { McpToolDetail } from './detail-panel.js';
 import { EntityBreadcrumbBar } from '../../../frontend-kit/EntityBreadcrumbBar.js';
-import { groupByServerTag } from './grouping.js';
+import { groupByServer } from './grouping.js';
 
 const Pane: FC<{ children: ReactNode }> = ({ children }) => (
   <main style={{ flex: 1, minWidth: 0, height: '100%', overflow: 'auto', background: 'var(--c-bg)' }}>
@@ -153,7 +153,7 @@ function McpToolListRoute(): JSX.Element {
     });
   }, [data, q, selectedTags, tagMode]);
 
-  const groups = useMemo(() => (grouped ? groupByServerTag(filtered) : []), [grouped, filtered]);
+  const groups = useMemo(() => (grouped ? groupByServer(filtered) : []), [grouped, filtered]);
 
   const openTool = useCallback(
     (item: McpTool) => navigateToEntity(navigate, MCP_TOOL_TYPE, item.slug),

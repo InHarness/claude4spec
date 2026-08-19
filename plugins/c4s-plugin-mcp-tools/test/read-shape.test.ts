@@ -35,7 +35,7 @@ describe('mcp-tool — the shape the frontend reads', () => {
         readOnlyHint: true,
         destructiveHint: false,
         logic: 'Resolve the path, refuse anything escaping the root, then read.',
-        tags: ['srv-claude4spec'],
+        tags: ['protocol'],
       })
       .expect(201);
   });
@@ -77,11 +77,17 @@ describe('mcp-tool — the shape the frontend reads', () => {
     expect(tool).not.toHaveProperty('logicBytes');
   });
 
-  /** The list groups on this, so it has to be on the payload the list reads. */
-  it('carries the mirror tag on the list payload', async () => {
+  /**
+   * A page embeds a subset of this type with `<tagged_list tags="…"/>`, which
+   * resolves through the module's `listByTags` slot — so the tags an author
+   * assigned have to survive onto the LIST payload, not just the detail read.
+   * They are ordinary tags: the list screen groups by the `server` field and
+   * never looks at them.
+   */
+  it('carries assigned tags on the list payload', async () => {
     const res = await request(t.app).get('/api/mcp-tools').expect(200);
     const [tool] = res.body.data as Array<{ tags?: string[] }>;
-    expect(tool.tags).toContain('srv-claude4spec');
+    expect(tool.tags).toContain('protocol');
   });
 
   it('derives the title without being asked for one', async () => {

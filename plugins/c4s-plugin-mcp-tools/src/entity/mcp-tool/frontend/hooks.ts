@@ -47,8 +47,8 @@ export function useCreateMcpTool() {
     onSuccess: (tool: McpTool) => {
       qc.invalidateQueries({ queryKey: keys.all });
       qc.invalidateQueries({ queryKey: keys.detail(tool.slug) });
-      // The create path assigns the `srv-{server}` mirror tag, so the tag
-      // registry the list groups by has just changed.
+      // A create may carry tags, which auto-create missing ones — so the tag
+      // catalogue and its per-type counts can both have moved.
       qc.invalidateQueries({ queryKey: ['tags'] });
     },
   });

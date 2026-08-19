@@ -41,7 +41,7 @@ import {
   useTags,
 } from '@c4s/plugin-runtime';
 import { ActionButton, FieldGrid, FieldRow, TagPicker } from '@c4s/plugin-runtime/ui';
-import { MCP_TOOL_TYPE, serverTagFor } from '../../../identity.js';
+import { MCP_TOOL_TYPE } from '../../../identity.js';
 import { confirmDestructive, toast } from '../../../frontend-kit/host-events.js';
 import { useEntityDraftEditor } from '../../../frontend-kit/useEntityDraftEditor.js';
 import type { McpTool, McpToolHint, McpToolParam } from '../types.js';
@@ -229,17 +229,13 @@ const ParamsEditor: FC<{
  * via `useEntityTags` (tag SLUGS), written via `useAssignTags` (whole-set, takes
  * tag NAMES, auto-creates missing ones) and `useRemoveEntityTag`.
  *
- * `expectedServerTag` is the one piece of type-specific behaviour here: the panel
- * WARNS when the mirror tag does not match the `server` field. It does not fix it
- * and does not block the write — the brief's position is that this pair is author
- * discipline, and silently rewriting a tag under the author would be a different
- * and worse behaviour than telling them. Without the warning the failure is
- * invisible: the tool simply stops appearing in its server's embedded list.
+ * Nothing here is type-specific, and that is the point. An earlier revision made
+ * this field police a `srv-{server}` tag mirroring the `server` field, warning
+ * when the two disagreed. The mirror is gone: a tag is what an author picks to
+ * embed a list with, and deriving one from a field turned a deliberate choice
+ * into a rule that nothing could validate and that drifted silently.
  */
-const TagsField: FC<{ slug: string; expectedServerTag: string }> = ({
-  slug,
-  expectedServerTag,
-}) => {
+const TagsField: FC<{ slug: string }> = ({ slug }) => {
   const catalog = useTags();
   const entityTags = useEntityTags(MCP_TOOL_TYPE, slug);
   const assign = useAssignTags();
@@ -254,7 +250,6 @@ const TagsField: FC<{ slug: string; expectedServerTag: string }> = ({
 
   const nameBySlug = new Map((catalog.data ?? []).map((t) => [t.slug, t] as const));
   const currentNames = entityTags.data.map((s) => nameBySlug.get(s)?.name ?? s);
-  const hasMirrorTag = entityTags.data.includes(expectedServerTag);
 
   const handleToggle = (tagSlug: string) => {
     if (entityTags.data!.includes(tagSlug)) {
@@ -287,12 +282,6 @@ const TagsField: FC<{ slug: string; expectedServerTag: string }> = ({
         onCreate={handleCreate}
         variant="collapsed"
       />
-      {hasMirrorTag ? null : (
-        <p role="alert" className="text-[11.5px] mt-1" style={{ color: 'var(--c-red, #c45a3b)' }}>
-          Missing the mirror tag <code>{expectedServerTag}</code> — this tool will not appear in
-          its server’s embedded list. Nothing validates this pair; add the tag above.
-        </p>
-      )}
       {error ? (
         <p role="alert" className="text-[11.5px] mt-1" style={{ color: 'var(--c-red, #c45a3b)' }}>
           {error}
@@ -530,11 +519,11 @@ export const McpToolDetail: FC<EntityDetailProps> = ({ slug, onDeleted, onRename
             style={MONO_INPUT}
             spellCheck={false}
           />
-          <Hint>Mirrored as the tag {serverTagFor(draft.server || '…')}</Hint>
+          <Hint>The {'{server}'} of mcp__{'{server}'}__{'{name}'}, and half of the slug.</Hint>
         </FieldRow>
 
         <FieldRow label="Tags" align="start">
-          <TagsField slug={tool.slug} expectedServerTag={serverTagFor(draft.server)} />
+          <TagsField slug={tool.slug} />
         </FieldRow>
 
         {/*

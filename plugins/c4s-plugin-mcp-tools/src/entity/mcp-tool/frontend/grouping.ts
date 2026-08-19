@@ -1,17 +1,16 @@
-import { SERVER_TAG_PREFIX, serverFromTag } from '../../../identity.js';
 import type { McpTool } from '../types.js';
 
 /**
- * Heading shown for tools carrying no `srv-*` tag.
+ * Heading for a record whose `server` is blank.
  *
- * They are GROUPED, not dropped. A tool whose mirror tag is missing has already
- * fallen out of its server's embedded list — that is the silent failure this type
- * lives with — and hiding it from the one screen that could reveal the problem
- * would make the silence total. `/acs` does the same thing under "Project-level".
+ * `server` is `required`, but the generated input schema accepts an empty
+ * string, so a blank one is reachable through the API. The reason this bucket
+ * exists is purely that a group heading with no text is unreadable — it is NOT a
+ * consistency check wearing a different hat.
  */
-export const UNGROUPED_LABEL = 'No server tag';
+export const UNGROUPED_LABEL = 'No server';
 
-/** Stable key for that bucket. Not a tag slug — no tag may collide with it. */
+/** Stable key for that bucket. Leading space keeps it distinct from any name. */
 export const UNGROUPED_KEY = ' ungrouped';
 
 export interface ServerGroup {
@@ -21,46 +20,40 @@ export interface ServerGroup {
 }
 
 /**
- * Group tools by their `srv-*` MIRROR TAG, not by the `server` field.
+ * Group tools by their `server` field.
  *
- * By the tag, deliberately, even though the field is right there and always
- * populated. The tag is what the page-embedding mechanism filters on, so grouping
- * by it makes this screen show exactly what a server's page will show — including
- * the discrepancies. Grouping by the field instead would render a tidy, correct
- * list and hide the one failure mode the type actually has.
+ * A flat list of MCP tools is close to unreadable — names repeat across servers
+ * (`read_page`, `list`, `get`) and the identifier a reader is matching against is
+ * `mcp__{server}__{name}`, whose first half would otherwise appear only as a
+ * muted column. Grouping puts the server where it belongs: once, as a heading.
  *
- * A tool carrying two `srv-*` tags appears under each. That is not tidied up
- * here: it is a real authoring mistake with a real consequence (the tool shows up
- * in two servers' lists), and this screen is where it should be visible.
+ * The field IS the grouping. An earlier revision grouped by a `srv-{server}`
+ * tag mirroring this field, so that a page could embed one server's tools with
+ * `<tagged_list tags="srv-…"/>`. That mirror is gone: the server name is a loose
+ * label, embedding is done on tags an author chooses deliberately, and the two
+ * have nothing to do with each other. Reading the field directly is also what
+ * makes a tag/field disagreement unrepresentable — there is now only one value.
  *
- * Group order is alphabetical by server, with the ungrouped bucket last — it is
- * an exception bucket, and an exception belongs at the end, not sorted into the
- * middle by whatever its label happens to start with.
+ * Group order is alphabetical by server, with the blank bucket last.
  */
-export function groupByServerTag(tools: McpTool[]): ServerGroup[] {
+export function groupByServer(tools: McpTool[]): ServerGroup[] {
   const byServer = new Map<string, McpTool[]>();
   const ungrouped: McpTool[] = [];
 
   for (const tool of tools) {
-    const servers = (tool.tags ?? [])
-      .filter((t) => t.startsWith(SERVER_TAG_PREFIX))
-      .map(serverFromTag)
-      .filter((s): s is string => Boolean(s));
-
-    if (servers.length === 0) {
+    const server = (tool.server ?? '').trim();
+    if (!server) {
       ungrouped.push(tool);
       continue;
     }
-    for (const server of servers) {
-      const bucket = byServer.get(server);
-      if (bucket) bucket.push(tool);
-      else byServer.set(server, [tool]);
-    }
+    const bucket = byServer.get(server);
+    if (bucket) bucket.push(tool);
+    else byServer.set(server, [tool]);
   }
 
   const groups: ServerGroup[] = [...byServer.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([server, items]) => ({ key: `${SERVER_TAG_PREFIX}${server}`, label: server, items }));
+    .map(([server, items]) => ({ key: server, label: server, items }));
 
   if (ungrouped.length > 0) {
     groups.push({ key: UNGROUPED_KEY, label: UNGROUPED_LABEL, items: ungrouped });

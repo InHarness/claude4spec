@@ -21,18 +21,12 @@
  * does not belong in a modal, and the spec does not require it here. `slug` is
  * not an input: it is derived once, server-side, from `server` and `name`.
  *
- * IT ALSO ASSIGNS THE MIRROR TAG. `srv-{server}` is the one value in this type
- * that nothing validates — `check_consistency` cannot see it, because a tag is
- * not a reference — and a mismatch is silent: the tool vanishes from its server's
- * embedded list while the entity still exists. Deriving it here from the typed
- * `server` is not validation, and does not pretend to be; it just means the
- * ordinary path cannot produce the mismatch in the first place.
  */
 
 import type { CSSProperties, FC, FormEvent } from 'react';
 import { useCallback, useState } from 'react';
 import { ActionButton, Dialog, FormField, FormShell } from '@c4s/plugin-runtime/ui';
-import { MCP_TOOL_LABEL, serverTagFor } from '../../../identity.js';
+import { MCP_TOOL_LABEL } from '../../../identity.js';
 import { useCreateMcpTool } from './hooks.js';
 
 export interface McpToolCreateDialogProps {
@@ -78,13 +72,14 @@ export const McpToolCreateDialog: FC<McpToolCreateDialogProps> = ({
   const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!ready || create.isPending) return;
-    const serverValue = server.trim();
+    // No tags. Tagging an mcp-tool is an ordinary, deliberate authoring act —
+    // the same as for every other entity type — not something the create path
+    // derives from a field.
     create.mutate(
       {
         name: name.trim(),
-        server: serverValue,
+        server: server.trim(),
         description: description.trim(),
-        tags: [serverTagFor(serverValue)],
       },
       { onSuccess: handleClose },
     );

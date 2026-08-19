@@ -70,15 +70,16 @@ export const mcpToolData: DataDeclaration = {
      * The server the tool belongs to — the `{server}` of `mcp__{server}__{name}`,
      * and an input to the slug pattern.
      *
-     * STRUCTURAL, and mirrored into a `srv-{server}` tag because list embedding
-     * filters by tag and never by field value. See `identity.ts` for why nothing
-     * validates that pair.
+     * A loose grouping label, and nothing more. It is deliberately NOT mirrored
+     * into a tag: tags are what an author picks to embed a list with, and tying
+     * them to a field would make the field a second, unvalidated source of truth
+     * for a decision the author had already made.
      */
     server: {
       type: 'string',
       required: true,
       maxLength: 60,
-      description: 'MCP server this tool belongs to. Mirrored into a `srv-{server}` tag.',
+      description: 'MCP server this tool belongs to; the `{server}` of `mcp__{server}__{name}`.',
     },
 
     /**

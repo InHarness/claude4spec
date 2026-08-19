@@ -19,9 +19,9 @@ import { chromium, type Browser, type Page } from 'playwright';
  * and both are invisible to the unit suite because they are decisions made while
  * rendering:
  *
- *   1. The GROUPED list. `/mcp-tools` groups by the `srv-*` mirror tag by
- *      default and flattens on a toggle carried in the URL. This is the first
- *      grouped list in the product, drawn by a brand-new kit component.
+ *   1. The GROUPED list. `/mcp-tools` groups by the `server` field by default
+ *      and flattens on a toggle carried in the URL. This is the first grouped
+ *      list in the product, drawn by a brand-new kit component.
  *   2. The THREE-STATE hint. An undeclared annotation must not render as a
  *      declared `false`. The value crosses SQLite (integer), the entity file
  *      (integer) and JSON before reaching a renderer, and a declared `false`
@@ -68,8 +68,12 @@ describe.skipIf(!BASE)('mcp-tool — the envelope end to end', () => {
   let api: string;
 
   /**
-   * Two servers and one untagged tool: the smallest corpus in which grouping is
-   * observable at all, and in which the ungrouped bucket exists.
+   * Three servers, one of them holding a single tool: the smallest corpus in
+   * which grouping is observable at all AND in which heading order is checkable.
+   *
+   * One tool carries an ordinary tag and the others carry none, which is the
+   * point — tags are an author's deliberate choice here, and grouping must not
+   * consult them either way.
    */
   const TOOLS = [
     {
@@ -81,24 +85,23 @@ describe.skipIf(!BASE)('mcp-tool — the envelope end to end', () => {
       readOnlyHint: true,
       destructiveHint: false,
       logic: 'Resolve the path, refuse anything escaping the root, then read.',
-      tags: ['srv-alpha'],
+      tags: ['protocol'],
     },
     {
       name: 'write_page',
       server: 'alpha',
       description: 'Replace the body of one page.',
       params: [],
-      tags: ['srv-alpha'],
     },
     {
       name: 'list_envs',
       server: 'beta',
       description: 'List every environment currently up.',
       params: [],
-      tags: ['srv-beta'],
     },
-    // No mirror tag, deliberately: this is the record that must stay VISIBLE.
-    { name: 'orphan_tool', server: 'gamma', description: 'A tool whose mirror tag is missing.' },
+    // A third server holding exactly one tool — the group that proves heading
+    // order is by server name and not by how many tools a server happens to have.
+    { name: 'solo_tool', server: 'gamma', description: 'The only tool of its server.' },
   ];
 
   beforeAll(async () => {
@@ -152,12 +155,11 @@ describe.skipIf(!BASE)('mcp-tool — the envelope end to end', () => {
     await expect.poll(body(page)).toMatch(/list_envs/);
 
     /**
-     * THE FAILURE THIS SCREEN EXISTS TO SURFACE. A tool with no `srv-*` tag has
-     * already dropped out of its server's embedded list; dropping it here too
-     * would make the failure total. It gets its own heading instead.
+     * The third server, and the assertion that grouping reads the FIELD: nothing
+     * tagged this tool, and it still lands under a heading of its own.
      */
-    await expect.poll(body(page)).toMatch(/No server tag/i);
-    await expect.poll(body(page)).toMatch(/orphan_tool/);
+    await expect.poll(body(page)).toMatch(/gamma/);
+    await expect.poll(body(page)).toMatch(/solo_tool/);
 
     expect(consoleErrors, 'console errors').toEqual([]);
     expect(badResponses, 'responses >= 400').toEqual([]);

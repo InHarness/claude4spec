@@ -25,7 +25,5 @@ export const mcpToolSystemPrompt: SystemPromptContribution = {
     'is one sentence in `logic`, never a table. `logic` describes the inside of the tool and is ' +
     'never sent to a model. `returns` describes the PAYLOAD, never the `content[]`/`isError` ' +
     'envelope, and `sampleReturn` is filled ONLY when the return is nested or carries an array of ' +
-    'objects. An empty annotation hint means the server declares nothing — it is not `false`. ' +
-    'Every record must also carry the tag `srv-{server}` matching its `server` field: nothing ' +
-    'validates that pair, and a mismatch silently drops the tool from its server’s list.',
+    'objects. An empty annotation hint means the server declares nothing — it is not `false`.',
 };

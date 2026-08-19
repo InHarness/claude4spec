@@ -1,6 +1,6 @@
 /**
  * Render slot `renderRow` — a row of an EMBEDDED list inside page content or the
- * agent chat. This is the slot the `<tagged_list type="mcp-tool" tags="srv-…"/>`
+ * agent chat. This is the slot the `<tagged_list type="mcp-tool" tags="…"/>`
  * directive draws through, which for this type is the primary way a tool is ever
  * seen: a server's page embeds its whole tool list rather than describing it.
  *

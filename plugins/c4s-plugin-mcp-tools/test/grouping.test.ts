@@ -1,19 +1,24 @@
 /**
  * The list screen's grouping — the part the kit deliberately does not compute.
  *
- * Grouping is done on the `srv-*` MIRROR TAG rather than on the `server` field,
- * even though the field is always populated and always correct. The tag is what
- * a page's embedded tool list filters on, so grouping by it makes this screen
- * show what a server's page will show — discrepancies included. Grouping by the
- * field instead would render a tidy list that hides the one failure mode this
- * type actually has.
+ * Grouping is done on the `server` FIELD. An earlier revision grouped on a
+ * `srv-{server}` tag mirroring that field, so that a page could embed one
+ * server's tools with `<tagged_list tags="srv-…"/>`; that mirror is gone. The
+ * server name is a loose label, embedding is done on tags an author picks
+ * deliberately, and the two are unrelated.
+ *
+ * What that buys is visible in what this file no longer has to test. Four cases
+ * retired with the mirror — a tool tagged for a server it does not claim, a tool
+ * carrying two server tags, a tool carrying none, and a tag that merely looks
+ * like a server tag. None of them is a state that can be constructed any more:
+ * with one value there is nothing to disagree with.
  */
 
 import { describe, expect, it } from 'vitest';
-import { UNGROUPED_LABEL, groupByServerTag } from '../src/entity/mcp-tool/frontend/grouping.js';
+import { UNGROUPED_LABEL, groupByServer } from '../src/entity/mcp-tool/frontend/grouping.js';
 import type { McpTool } from '../src/entity/mcp-tool/types.js';
 
-const tool = (name: string, server: string, tags: string[]): McpTool =>
+const tool = (name: string, server: string): McpTool =>
   ({
     slug: `${server}-${name}`,
     title: `${server} · ${name}`,
@@ -21,20 +26,15 @@ const tool = (name: string, server: string, tags: string[]): McpTool =>
     server,
     description: 'x',
     params: [],
-    tags,
   }) as McpTool;
 
 const shape = (tools: McpTool[]) =>
-  groupByServerTag(tools).map((g) => [g.label, g.items.map((i) => i.name)] as const);
+  groupByServer(tools).map((g) => [g.label, g.items.map((i) => i.name)] as const);
 
-describe('groupByServerTag', () => {
+describe('groupByServer', () => {
   it('buckets tools under their server and sorts the servers alphabetically', () => {
     expect(
-      shape([
-        tool('write', 'zeta', ['srv-zeta']),
-        tool('read', 'alpha', ['srv-alpha']),
-        tool('list', 'alpha', ['srv-alpha']),
-      ]),
+      shape([tool('write', 'zeta'), tool('read', 'alpha'), tool('list', 'alpha')]),
     ).toEqual([
       ['alpha', ['read', 'list']],
       ['zeta', ['write']],
@@ -42,58 +42,28 @@ describe('groupByServerTag', () => {
   });
 
   it('preserves the incoming order of tools inside a group', () => {
-    expect(shape([tool('b', 's', ['srv-s']), tool('a', 's', ['srv-s'])])).toEqual([
-      ['s', ['b', 'a']],
-    ]);
+    expect(shape([tool('b', 's'), tool('a', 's')])).toEqual([['s', ['b', 'a']]]);
   });
 
-  it('ignores tags that are not mirror tags', () => {
-    expect(shape([tool('read', 'alpha', ['entity-mcp-tool', 'srv-alpha', 'm39'])])).toEqual([
-      ['alpha', ['read']],
-    ]);
-  });
-
-  /**
-   * THE FAILURE THIS SCREEN EXISTS TO SURFACE. A tool whose mirror tag is missing
-   * has already dropped out of its server's embedded list — that is the silent
-   * consequence the brief names. Dropping it here too would make the silence
-   * total, so it gets a bucket of its own instead.
-   */
-  it('keeps a tool with no mirror tag visible under its own heading', () => {
-    expect(shape([tool('read', 'alpha', []), tool('write', 'beta', ['srv-beta'])])).toEqual([
-      ['beta', ['write']],
-      [UNGROUPED_LABEL, ['read']],
-    ]);
+  /** Tags exist and are ordinary; the grouping must not look at them at all. */
+  it('ignores tags entirely, however server-ish they look', () => {
+    const tagged = { ...tool('read', 'alpha'), tags: ['srv-beta', 'entity-mcp-tool'] } as McpTool;
+    expect(shape([tagged])).toEqual([['alpha', ['read']]]);
   });
 
   /**
-   * Grouping follows the TAG, not the field — so a tool tagged for a server it
-   * does not claim appears under the tag's server. That is not a bug being
-   * reproduced: it is what the server's page will actually render, which is the
-   * whole reason to group by the tag.
+   * `server` is `required`, but the generated input schema accepts an empty
+   * string, so a blank one is reachable. It gets a bucket because a heading with
+   * no text is unreadable — not as a consistency check in disguise.
    */
-  it('follows the tag when the tag and the server field disagree', () => {
-    expect(shape([tool('read', 'alpha', ['srv-beta'])])).toEqual([['beta', ['read']]]);
-  });
-
-  /** Two mirror tags means two appearances — a real mistake with a real effect. */
-  it('shows a doubly-tagged tool under both servers rather than picking one', () => {
-    expect(shape([tool('read', 'alpha', ['srv-alpha', 'srv-beta'])])).toEqual([
-      ['alpha', ['read']],
-      ['beta', ['read']],
+  it('collects blank-server tools under their own heading, sorted last', () => {
+    expect(shape([tool('x', 'zeta'), tool('y', '   '), tool('z', '')])).toEqual([
+      ['zeta', ['x']],
+      [UNGROUPED_LABEL, ['y', 'z']],
     ]);
-  });
-
-  /** The exception bucket sorts LAST, never alphabetically into the middle. */
-  it('puts the ungrouped bucket last even when its label would sort first', () => {
-    const labels = groupByServerTag([
-      tool('x', 'zeta', ['srv-zeta']),
-      tool('y', 'anything', []),
-    ]).map((g) => g.label);
-    expect(labels).toEqual(['zeta', UNGROUPED_LABEL]);
   });
 
   it('returns nothing for an empty list rather than an empty bucket', () => {
-    expect(groupByServerTag([])).toEqual([]);
+    expect(groupByServer([])).toEqual([]);
   });
 });

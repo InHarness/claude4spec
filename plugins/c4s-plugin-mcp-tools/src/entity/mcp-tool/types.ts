@@ -38,9 +38,10 @@ export interface McpTool {
   openWorldHint?: McpToolHint;
   logic?: string | null;
   /**
-   * Tag slugs, carried on every generated read. Load-bearing for this type
-   * rather than decorative: the `srv-{server}` mirror tag in here is what the
-   * list groups by and what a page's embedded tool list filters on.
+   * Tag slugs, carried on every generated read. Ordinary tags with no meaning
+   * special to this type: they are what a page's embedded list filters on, and
+   * an author assigns them deliberately. The list screen groups by the `server`
+   * FIELD, never by a tag.
    */
   tags?: string[];
   createdAt?: string;
