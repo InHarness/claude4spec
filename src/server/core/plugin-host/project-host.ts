@@ -30,6 +30,23 @@ import type {
 import { RawEntityReader } from '../../discovery/raw-entity-reader.js';
 import { diffEntity, restoreEntity, snapshotEntity } from '../../serialization/snapshot.js';
 
+/**
+ * A factory handed back a server it had already handed back in the same
+ * composition. Named, because the only useful report here is WHICH plugin —
+ * the failure it prevents (an `McpServer` bound twice, tool results silently
+ * gone for the whole mounted set) is invisible from the symptom.
+ */
+export class McpServerReuseError extends Error {
+  constructor(
+    message: string,
+    /** The server name whose factory returned the repeat. */
+    public readonly serverName: string,
+  ) {
+    super(message);
+    this.name = 'McpServerReuseError';
+  }
+}
+
 export class ProjectPluginHostImpl implements ProjectPluginHost {
   private activeTypes: Set<string> | null = null; // null = all active
   private unknownTypes: string[] = [];
@@ -202,9 +219,35 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
    * a plugin's own `mount()` calling `registerMcpServer` directly — the latter
    * bypasses `manifest-adapter` entirely, which is exactly how a hand-rolled
    * `{name, version, tools}` descriptor reached the adapter in the wild.
+   *
+   * One instance under two names is refused rather than skipped, because the
+   * damage is not confined to the offending plugin. An `McpServer` binds to
+   * exactly one transport: mounting the same instance twice makes the second
+   * `connect()` reject with 'Already connected to a transport', the SDK swallows
+   * that into a debug log and STILL advertises the server, and `_onclose` aborts
+   * the in-flight handlers of the first binding. The whole map shares one
+   * execute, so `brief-tools` goes dark alongside the offender and tool calls
+   * return no `tool_result` at all.
+   *
+   * `strict` says whether that refusal is fatal, and only the MOUNT path passes
+   * it. The other caller (`mcp/surface.ts`, composing the external read surface)
+   * reads `.tools` off these handles and never connects them, so it carries none
+   * of the transport hazard — and it runs inside an Express handler, where
+   * throwing would take the process down over a fault that cannot hurt it. There
+   * it degrades to a warning, per this method's usual posture.
+   *
+   * NOTE the limit of what this can see: `seen*` is scoped to ONE call, so it
+   * catches one instance registered under two names. A factory that memoizes and
+   * returns the same server on EVERY call looks fine here — each call gets a
+   * consistent map — and is caught at the mount instead, by `assertFreshMount`
+   * in `runAgentTurn`, which remembers across the queries of a turn.
    */
-  buildMcpServers(): Array<{ name: string; server: McpServerFactory }> {
+  buildMcpServers(opts: { strict?: boolean } = {}): Array<{ name: string; server: McpServerFactory }> {
     const out: Array<{ name: string; server: McpServerFactory }> = [];
+    // Identity, not equality: two structurally identical handles built by two
+    // `createMcpServer` calls are fine — the same object twice is not.
+    const seenHandles = new Set<object>();
+    const seenInstances = new Set<object>();
     for (const [name, factory] of this.mcpServerFactories) {
       let server: unknown;
       try {
@@ -247,7 +290,23 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
         );
         continue;
       }
-      out.push({ name, server: server as McpServerFactory });
+      const handle = server as McpServerFactory & { server?: unknown };
+      const instance = (handle.config as { instance?: unknown } | undefined)?.instance;
+      const repeated =
+        seenHandles.has(handle) || (instance != null && typeof instance === 'object' && seenInstances.has(instance));
+      if (repeated) {
+        const message =
+          `[plugin-host] MCP server "${name}" — factory returned a server already returned for ` +
+          `another server in this composition. Each factory must build a FRESH server per call ` +
+          `(an McpServer binds to exactly one transport; a shared instance silently kills tool ` +
+          `results for the whole mounted set). Fix the plugin to stop memoizing its handle.`;
+        if (opts.strict) throw new McpServerReuseError(message, name);
+        console.warn(`${message} Skipping this server.`);
+        continue;
+      }
+      if (instance != null && typeof instance === 'object') seenInstances.add(instance);
+      seenHandles.add(handle);
+      out.push({ name, server: handle as McpServerFactory });
     }
     return out;
   }

@@ -222,6 +222,50 @@ describe('surface memoization', () => {
     expect(after.toolNames).not.toContain('get_overview');
   });
 
+  /**
+   * Brief `0-2-35-to-next` item 3c. The memoized declarations carry HANDLERS,
+   * and those close over the services captured on the FIRST compose. "A config
+   * change builds a new host" describes one way the context is rebuilt, not all
+   * of them — rebuild it without a config change and the host key survives while
+   * `briefService` is replaced, leaving cached handlers writing through a
+   * service that belongs to a disposed context.
+   */
+  it('recomposes when briefService is replaced under the SAME host', async () => {
+    const host = pluginHostWith([], []);
+    const dead = {
+      getBrief: async () => ({ path: 'b.md', body: 'dead', hash: 'h', frontmatter: {} }),
+    } as unknown as ExternalSurfaceDeps['briefService'];
+    const live = {
+      getBrief: async () => ({ path: 'b.md', body: 'live', hash: 'h', frontmatter: {} }),
+    } as unknown as ExternalSurfaceDeps['briefService'];
+
+    // `brief` is the profile that mounts brief-tools at all.
+    const first = composeExternalSurface(
+      stubDeps({ profile: 'brief', pluginHost: host, briefService: dead }),
+    );
+    const second = composeExternalSurface(
+      stubDeps({ profile: 'brief', pluginHost: host, briefService: live }),
+    );
+
+    expect(second).not.toBe(first);
+
+    // Identity of the surface is the cheap half; what matters is that the
+    // handler reaches the CURRENT service, not the first composition's.
+    const getBrief = second.byName.get('get_brief');
+    expect(getBrief).toBeDefined();
+    const out = JSON.stringify(await getBrief!.handler({ brief: 'b.md' }, {}));
+    expect(out).toContain('live');
+    expect(out).not.toContain('dead');
+  });
+
+  it('still hits the cache when the same briefService comes back', () => {
+    const host = pluginHostWith([], []);
+    const briefService = {} as ExternalSurfaceDeps['briefService'];
+    const first = composeExternalSurface(stubDeps({ pluginHost: host, briefService }));
+    const second = composeExternalSurface(stubDeps({ pluginHost: host, briefService }));
+    expect(second).toBe(first);
+  });
+
   it('is dropped by the test seam, so a recomposition can be exercised', () => {
     const host = pluginHostWith([], []);
     const first = composeExternalSurface(stubDeps({ pluginHost: host }));
