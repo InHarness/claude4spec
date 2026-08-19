@@ -116,6 +116,28 @@ describe('the seeded catalog', () => {
     }
   });
 
+  /**
+   * `find_references` used to declare `ENTITY_NOT_FOUND` / `MISSING_TARGET`,
+   * and neither is reachable: `discovery/ops/references.ts` raises
+   * `INVALID_ARGUMENT` for a missing `target`, a missing page key or an
+   * unknown `rootId`, and `INVALID_TYPE` for an unknown entity type. A target
+   * nothing cites is a SUCCESS with `total: 0`, which is why no `*_NOT_FOUND`
+   * belongs on this operation at all — declaring one tells an agent to expect
+   * an error where it will get an empty list.
+   */
+  it('declares only the error codes find_references can actually raise', () => {
+    const op = CATALOG.get('find_references');
+    expect(op).toBeDefined();
+    // Exactly the shared read-operation set — no per-operation additions.
+    expect([...op!.errorCodes].sort()).toEqual([
+      'INDEX_NOT_MATERIALIZED',
+      'INVALID_ARGUMENT',
+      'INVALID_TYPE',
+    ]);
+    expect(op!.errorCodes).not.toContain('ENTITY_NOT_FOUND');
+    expect(op!.errorCodes).not.toContain('MISSING_TARGET');
+  });
+
   it('every declared opClass is one the profile registry knows', () => {
     for (const op of CATALOG.list()) {
       expect(KNOWN_OPERATION_CLASSES).toContain(op.opClass);

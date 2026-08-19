@@ -228,7 +228,17 @@ export function registerCoreOperations(): void {
       path: z.string().optional(),
       includeTagMatches: z.boolean().optional().describe('Default false. Merges `<tagged_list/>` / `<tagged_list_mixed/>` matches into the result.'),
       ...paging,
-    }, ['ENTITY_NOT_FOUND', 'MISSING_TARGET']),
+      /**
+       * No extra error codes: the base `READ_CODES` already name everything
+       * `discovery/ops/references.ts` can raise. This used to declare
+       * `ENTITY_NOT_FOUND` and `MISSING_TARGET` on top, and neither is
+       * reachable — a missing `target`, a missing page key and an unknown
+       * `rootId` are all `INVALID_ARGUMENT`, an unknown entity type is
+       * `INVALID_TYPE`, and a target nothing cites is a SUCCESS with
+       * `total: 0`. Declaring a `*_NOT_FOUND` told an agent to expect an
+       * error exactly where it gets an empty list.
+       */
+    }),
   );
 
   CATALOG.register(
