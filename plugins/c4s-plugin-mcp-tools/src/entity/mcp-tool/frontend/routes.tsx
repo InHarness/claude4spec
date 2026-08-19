@@ -44,6 +44,7 @@ import {
   EntityListHeader,
   type EntityListHeaderProps,
   EntityListLayout,
+  EntityVersionHistoryView,
   GroupedEntityList,
   LoadingState,
   TagFilterBar,
@@ -57,13 +58,14 @@ import {
   MCP_TOOL_TYPE,
 } from '../../../identity.js';
 import type { McpTool } from '../types.js';
-import { useMcpToolList } from './hooks.js';
-import { navigateToEntity, navigateToEntityHistory } from './navigation.js';
+import { useGetBySlug, useMcpToolList } from './hooks.js';
+import { navigateToEntity } from './navigation.js';
 import type { Navigate } from './navigation.js';
 import { McpToolIcon } from './icon.js';
 import { McpToolListRow } from './list-row.js';
 import { McpToolCreateDialog } from './create-dialog.js';
-import { McpToolDetail, McpToolHistory } from './detail-panel.js';
+import { McpToolDetail } from './detail-panel.js';
+import { EntityBreadcrumbBar } from '../../../frontend-kit/EntityBreadcrumbBar.js';
 import { groupByServerTag } from './grouping.js';
 
 const Pane: FC<{ children: ReactNode }> = ({ children }) => (
@@ -249,44 +251,51 @@ function McpToolListRoute(): JSX.Element {
   );
 }
 
-type EntityView = 'details' | 'history';
-
-function buildOnSwitchView(navigate: Navigate, slug: string) {
-  return (view: EntityView, opts?: { replace?: boolean }) => {
-    if (view === 'history') navigateToEntityHistory(navigate, MCP_TOOL_TYPE, slug, opts);
-    else navigateToEntity(navigate, MCP_TOOL_TYPE, slug, opts);
-  };
-}
-
+/**
+ * The detail and history ROUTE WRAPPERS.
+ *
+ * The breadcrumb and the Details/History switcher live HERE, above the view,
+ * exactly as `ac`, `dto`, `endpoint` and `ui-view` place them. That is what lets
+ * the two views share one frame without either of them owning it, and it is why
+ * the panel below is a form and nothing else — no shell, no tabs, no back button.
+ */
 function McpToolDetailRoute(): JSX.Element {
   const navigate = useNavigate() as Navigate;
   const params = useParams({ strict: false }) as { slug?: string };
   const slug = String(params.slug ?? '');
+  // The crumb wants the tool's wire name; this is the same cached query the
+  // panel reads, so it costs no extra request and falls back to the slug until
+  // the record lands.
+  const { data: tool } = useGetBySlug(slug);
   return (
     <Pane>
+      <EntityBreadcrumbBar slug={slug} name={tool?.name} view="details" />
       <McpToolDetail
         key={slug}
         slug={slug}
-        onBackToList={() => navigate({ to: MCP_TOOL_PATH_PREFIX })}
         onDeleted={() => navigate({ to: MCP_TOOL_PATH_PREFIX })}
         onRenamed={(newSlug) => navigateToEntity(navigate, MCP_TOOL_TYPE, newSlug, { replace: true })}
-        onSwitchView={buildOnSwitchView(navigate, slug)}
       />
     </Pane>
   );
 }
 
 function McpToolHistoryRoute(): JSX.Element {
-  const navigate = useNavigate() as Navigate;
   const params = useParams({ strict: false }) as { slug?: string };
   const slug = String(params.slug ?? '');
+  const navigate = useNavigate() as Navigate;
   return (
     <Pane>
-      <McpToolHistory
-        key={slug}
+      <EntityBreadcrumbBar slug={slug} view="history" />
+      {/*
+        History is NOT composed here: it is the host's shared
+        `EntityVersionHistoryView`, given nothing but `type` + `slug` — one
+        component for host and plugins, so the view cannot drift per entity type.
+      */}
+      <EntityVersionHistoryView
+        type={MCP_TOOL_TYPE}
         slug={slug}
-        onBackToList={() => navigate({ to: MCP_TOOL_PATH_PREFIX })}
-        onSwitchView={buildOnSwitchView(navigate, slug)}
+        onRestored={() => navigateToEntity(navigate, MCP_TOOL_TYPE, slug, { replace: true })}
       />
     </Pane>
   );

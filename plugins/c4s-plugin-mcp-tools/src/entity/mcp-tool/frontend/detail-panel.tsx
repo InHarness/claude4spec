@@ -1,18 +1,23 @@
 /**
  * `detailPanel` — the required frontend slot, and the only one that is a SCREEN.
  * Chip / card / row are pure embeds; the list is a composition. This panel is the
- * one surface that resolves an entity, holds a draft, calls mutations and draws
- * loading / absent / data.
+ * one surface that resolves an entity, holds a draft and calls mutations.
  *
- * Props contract: the host injects ONLY `slug`. `onDeleted?` / `onRenamed?` are
- * panel→host notifications; `onBackToList` / `onSwitchView` are plugin-internal
- * wiring supplied by the route wrapper, the one layer holding `useNavigate`.
+ * ANATOMY. This is the established shape of an entity detail panel in this repo
+ * — `ac`, `dto`, `endpoint`, `ui-view` and `design-system` are the same file with
+ * the domain swapped, and this is that file for `mcp-tool`:
  *
- * The panel calls `useGetBySlug(slug)` itself and discriminates three states:
- * `undefined` → loading, `null` → not found, otherwise the editable form. The
- * WRITE side is the plugin's — the host ships no save path — so saving is
- * `useUpdateMcpTool` on a debounce (live autosave, no Save button), with a
- * `currentSlugRef` tracking the live slug across renames.
+ *   scroller → `FieldGrid maxWidth={740}`
+ *     meta strip   slug · updated · saving/edited · Delete
+ *     title        entity icon + a borderless 22px input
+ *     `FieldRow`s  label in a fixed 140px column, value on the right
+ *     `mt-6`       is the section break; there is no Card and no Section
+ *
+ * The breadcrumb and the Details/History switcher are deliberately NOT here —
+ * they live in the route wrapper (`EntityBreadcrumbBar`), which is what lets both
+ * views share one frame without either owning it. Autosave is the shared
+ * `useEntityDraftEditor` (500 ms, no Save button); deleting goes through the
+ * host's `confirmDestructive` + `toast` events rather than a local `Dialog`.
  *
  * THE ONE LAYOUT REQUIREMENT THAT IS NOT COSMETIC. The CONTRACT block
  * (`description`, `params[]`, `returns`, `sampleReturn`, the hints) is visually
@@ -20,19 +25,14 @@
  * entity/L3 boundary is visible to a human: everything above the separator
  * transfers verbatim into a tool definition in code, and everything below it does
  * not travel at all. A panel that interleaves them teaches the wrong thing on
- * every read.
- *
- * Details and History are TWO SIBLING ROUTES, not an in-panel tab, so History is
- * deep-linkable and Back does not land on a stale view. History itself is NOT
- * composed here: it is the host's shared `EntityVersionHistoryView`, given
- * nothing but `type` + `slug` — one component for host and plugins, so the view
- * cannot drift per entity type.
+ * every read. The separation is a heading plus a real rule — not a bordered card,
+ * which nothing else in this UI uses and which would therefore read as decoration.
  *
  * Colours are `var(--c-*)` tokens only, never literals.
  */
 
 import type { CSSProperties, FC, ReactNode } from 'react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Trash } from 'lucide-react';
 import {
   useAssignTags,
   useEntityTags,
@@ -42,62 +42,64 @@ import {
 } from '@c4s/plugin-runtime';
 import {
   ActionButton,
-  Dialog,
-  DetailPanelShell,
-  EmptyState,
-  EntityVersionHistoryView,
-  LoadingState,
-  SegmentedControlTabs,
+  DocEditor,
+  FieldGrid,
+  FieldRow,
   TagPicker,
 } from '@c4s/plugin-runtime/ui';
-import { MCP_TOOL_LABEL_PLURAL, MCP_TOOL_TYPE, serverTagFor } from '../../../identity.js';
+import { MCP_TOOL_TYPE, serverTagFor } from '../../../identity.js';
+import { confirmDestructive, toast } from '../../../frontend-kit/host-events.js';
+import { useEntityDraftEditor } from '../../../frontend-kit/useEntityDraftEditor.js';
 import type { McpTool, McpToolHint, McpToolParam } from '../types.js';
 import { MCP_TOOL_HINTS } from '../types.js';
 import { readHint } from './summary.js';
+import { McpToolIcon } from './icon.js';
 import { useDeleteMcpTool, useGetBySlug, useUpdateMcpTool } from './hooks.js';
-
-const AUTOSAVE_DELAY_MS = 500;
-
-type EntityView = 'details' | 'history';
-type SwitchView = (view: EntityView, opts?: { replace?: boolean }) => void;
 
 export interface EntityDetailProps {
   slug: string;
   onDeleted?: () => void;
   onRenamed?: (newSlug: string) => void;
-  onBackToList?: () => void;
-  onSwitchView?: SwitchView;
 }
 
-const MUTED: CSSProperties = { fontSize: 12.5, color: 'var(--c-muted)' };
+/**
+ * The one control style this panel defines. The kit ships no Input component, so
+ * every panel of this generation styles its own — borderless where the value is
+ * short, hairline-bordered where it is a real text box (`ui-view` does the same
+ * for its URL field). Sizes are the kit's: 13.5 for values, 12.5/11 for meta.
+ */
 const INPUT: CSSProperties = {
   width: '100%',
   boxSizing: 'border-box',
-  padding: '6px 8px',
-  fontSize: 13,
-  borderRadius: 6,
+  padding: '4px 8px',
+  fontSize: 13.5,
+  borderRadius: 4,
   border: '1px solid var(--c-hair)',
-  background: 'var(--c-panel)',
+  background: 'transparent',
   color: 'var(--c-ink)',
+  outline: 'none',
 };
 const MONO_INPUT: CSSProperties = { ...INPUT, fontFamily: 'var(--font-mono, monospace)' };
-const SECTION_LABEL: CSSProperties = {
-  fontSize: 11,
-  fontWeight: 600,
-  letterSpacing: '0.06em',
-  textTransform: 'uppercase',
-  color: 'var(--c-muted)',
-};
 
-const Row: FC<{ label: string; children: ReactNode; hint?: string }> = ({
-  label,
-  children,
-  hint,
-}) => (
-  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-    <label style={SECTION_LABEL}>{label}</label>
+/** The uppercase mono heading that opens the Contract and Logic sections. */
+const SectionHeading: FC<{ title: string; note: string }> = ({ title, note }) => (
+  <div className="flex items-baseline gap-2 mb-3">
+    <span
+      className="font-mono text-[11px] uppercase tracking-wider"
+      style={{ color: 'var(--c-subtle)' }}
+    >
+      {title}
+    </span>
+    <span className="text-[11.5px]" style={{ color: 'var(--c-subtle)' }}>
+      {note}
+    </span>
+  </div>
+);
+
+/** The muted one-liner under a control that needs a word of guidance. */
+const Hint: FC<{ children: ReactNode }> = ({ children }) => (
+  <div className="text-[11.5px] mt-1" style={{ color: 'var(--c-subtle)' }}>
     {children}
-    {hint ? <span style={{ fontSize: 11.5, color: 'var(--c-subtle)' }}>{hint}</span> : null}
   </div>
 );
 
@@ -120,12 +122,10 @@ const HintControl: FC<{
     <button
       type="button"
       onClick={() => onChange(next)}
+      className="rounded text-[11.5px] px-2 py-0.5"
       style={{
-        padding: '2px 8px',
-        fontSize: 11.5,
-        borderRadius: 5,
         border: '1px solid var(--c-hair)',
-        background: state === id ? 'var(--c-accent-soft)' : 'var(--c-panel)',
+        background: state === id ? 'var(--c-accent-soft)' : 'transparent',
         color: state === id ? 'var(--c-ink)' : 'var(--c-muted)',
         fontWeight: state === id ? 600 : 400,
       }}
@@ -134,9 +134,11 @@ const HintControl: FC<{
     </button>
   );
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <span style={{ fontSize: 12.5, color: 'var(--c-ink)', minWidth: 96 }}>{label}</span>
-      <div style={{ display: 'flex', gap: 4 }}>
+    <div className="flex items-center gap-2">
+      <span className="text-[12.5px]" style={{ color: 'var(--c-ink)', minWidth: 96 }}>
+        {label}
+      </span>
+      <div className="flex gap-1">
         {option('undeclared', 'Not declared', null)}
         {option('yes', 'Yes', true)}
         {option('no', 'No', false)}
@@ -145,7 +147,11 @@ const HintControl: FC<{
   );
 };
 
-/** The `params[]` editor — the flat reading of `inputSchema`. */
+/**
+ * The `params[]` editor — the flat reading of `inputSchema`. Local, like `dto`'s
+ * `fields[]` editor: the kit has no table component, and a parameter row is this
+ * type's own shape.
+ */
 const ParamsEditor: FC<{
   params: McpToolParam[];
   onChange: (next: McpToolParam[]) => void;
@@ -154,28 +160,23 @@ const ParamsEditor: FC<{
     onChange(params.map((p, j) => (j === i ? { ...p, ...part } : p)));
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <div className="flex flex-col gap-1.5">
       {params.length === 0 ? (
         /*
           An empty list is a LEGAL and common state — an operation taking only a
           slug — so it says so rather than rendering nothing, which would read as
           "not described yet".
         */
-        <span style={MUTED}>No parameters. This is a legal state, not a gap.</span>
+        <div className="text-[12.5px]" style={{ color: 'var(--c-subtle)' }}>
+          No parameters. This is a legal state, not a gap.
+        </div>
       ) : null}
 
       {params.map((p, i) => (
         <div
           key={i}
-          style={{
-            display: 'flex',
-            gap: 6,
-            alignItems: 'flex-start',
-            padding: 6,
-            borderRadius: 6,
-            border: '1px solid var(--c-hair)',
-            background: 'var(--c-panel)',
-          }}
+          className="flex items-center gap-1.5 rounded-md px-2 py-1.5"
+          style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)' }}
         >
           <input
             value={p.name}
@@ -196,7 +197,8 @@ const ParamsEditor: FC<{
             style={{ ...INPUT, flex: 1 }}
           />
           <label
-            style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11.5, paddingTop: 6 }}
+            className="flex items-center gap-1 text-[11.5px]"
+            style={{ color: 'var(--c-muted)' }}
           >
             <input
               type="checkbox"
@@ -205,15 +207,19 @@ const ParamsEditor: FC<{
             />
             req
           </label>
-          <ActionButton
-            label="✕"
-            variant="ghost"
+          <button
+            type="button"
             onClick={() => onChange(params.filter((_, j) => j !== i))}
-          />
+            className="rounded px-1"
+            style={{ color: 'var(--c-muted)' }}
+            title="Remove parameter"
+          >
+            ✕
+          </button>
         </div>
       ))}
 
-      <div>
+      <div className="flex">
         <ActionButton
           label="Add parameter"
           variant="secondary"
@@ -224,15 +230,10 @@ const ParamsEditor: FC<{
   );
 };
 
-function messageOf(error: unknown): string | null {
-  if (!error) return null;
-  return error instanceof Error ? error.message : 'Update failed';
-}
-
 /**
- * Tags — host-owned, no plugin column. Read via `useEntityTags` (tag SLUGS),
- * written via `useAssignTags` (whole-set, takes tag NAMES, auto-creates missing
- * ones) and `useRemoveEntityTag`.
+ * Tags — host-owned, no plugin column, so they are NOT part of the draft: read
+ * via `useEntityTags` (tag SLUGS), written via `useAssignTags` (whole-set, takes
+ * tag NAMES, auto-creates missing ones) and `useRemoveEntityTag`.
  *
  * `expectedServerTag` is the one piece of type-specific behaviour here: the panel
  * WARNS when the mirror tag does not match the `server` field. It does not fix it
@@ -250,7 +251,12 @@ const TagsField: FC<{ slug: string; expectedServerTag: string }> = ({
   const assign = useAssignTags();
   const removeTag = useRemoveEntityTag();
 
-  if (entityTags.data === undefined) return <span style={MUTED}>Loading tags…</span>;
+  if (entityTags.data === undefined)
+    return (
+      <div className="text-[12.5px]" style={{ color: 'var(--c-subtle)' }}>
+        Loading tags…
+      </div>
+    );
 
   const nameBySlug = new Map((catalog.data ?? []).map((t) => [t.slug, t] as const));
   const currentNames = entityTags.data.map((s) => nameBySlug.get(s)?.name ?? s);
@@ -288,16 +294,13 @@ const TagsField: FC<{ slug: string; expectedServerTag: string }> = ({
         variant="collapsed"
       />
       {hasMirrorTag ? null : (
-        <p
-          role="alert"
-          style={{ fontSize: 11.5, color: 'var(--c-red)', marginTop: 4 }}
-        >
+        <p role="alert" className="text-[11.5px] mt-1" style={{ color: 'var(--c-red, #c45a3b)' }}>
           Missing the mirror tag <code>{expectedServerTag}</code> — this tool will not appear in
           its server’s embedded list. Nothing validates this pair; add the tag above.
         </p>
       )}
       {error ? (
-        <p role="alert" style={{ fontSize: 11.5, color: 'var(--c-red)' }}>
+        <p role="alert" className="text-[11.5px] mt-1" style={{ color: 'var(--c-red, #c45a3b)' }}>
           {error}
         </p>
       ) : null}
@@ -305,383 +308,335 @@ const TagsField: FC<{ slug: string; expectedServerTag: string }> = ({
   );
 };
 
-const ReferencesSection: FC<{ slug: string }> = ({ slug }) => {
+const ReferencesField: FC<{ slug: string }> = ({ slug }) => {
   const references = useReferences(MCP_TOOL_TYPE, slug);
   const hits = references.data ?? [];
-  if (references.isLoading) return <LoadingState lines={2} />;
   if (hits.length === 0)
-    return <div style={{ fontSize: 12.5, color: 'var(--c-subtle)' }}>Not referenced by any page.</div>;
+    return (
+      <div className="text-[12.5px]" style={{ color: 'var(--c-subtle)' }}>
+        Not referenced by any page.
+      </div>
+    );
   return (
-    <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+    <ul
+      className="rounded-md"
+      style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)' }}
+    >
       {hits.map((ref, i) => (
         <li
           key={`${ref.pagePath}:${ref.line}:${i}`}
-          style={{
-            display: 'flex',
-            gap: 6,
-            padding: '4px 0',
-            fontSize: 12.5,
-            borderTop: i === 0 ? 'none' : '1px solid var(--c-hair)',
-          }}
+          className="px-3 py-1.5 text-[12.5px] flex items-center gap-2"
+          style={{ borderTop: i === 0 ? 'none' : '1px solid var(--c-hair)' }}
         >
-          <span style={{ fontFamily: 'var(--font-mono, monospace)' }}>{ref.pagePath}</span>
-          <span style={{ color: 'var(--c-muted)' }}>:{ref.line}</span>
-          <span style={{ flex: 1 }} />
-          <span style={{ color: 'var(--c-muted)' }}>{ref.tagType}</span>
+          <span className="font-mono" style={{ color: 'var(--c-ink)' }}>
+            {ref.pagePath}
+          </span>
+          <span className="text-[10.5px] font-mono" style={{ color: 'var(--c-subtle)' }}>
+            :{ref.line}
+          </span>
+          <span className="flex-1" />
+          <span className="text-[10.5px] font-mono" style={{ color: 'var(--c-subtle)' }}>
+            {ref.tagType}
+          </span>
         </li>
       ))}
     </ul>
   );
 };
 
-/** Shared frame between the Details and History routes. */
-const McpToolDetailShell: FC<{
-  slug: string;
-  activeView: EntityView;
-  onBackToList?: () => void;
-  onSwitchView?: SwitchView;
-  children: ReactNode;
-}> = ({ slug, activeView, onBackToList, onSwitchView, children }) => (
-  <DetailPanelShell
-    breadcrumb={[{ label: MCP_TOOL_LABEL_PLURAL, onClick: onBackToList }, { label: slug }]}
-    actions={
-      <SegmentedControlTabs
-        tabs={[
-          { id: 'details', label: 'Details' },
-          { id: 'history', label: 'History' },
-        ]}
-        active={activeView}
-        onChange={(id) => {
-          const next: EntityView = id === 'history' ? 'history' : 'details';
-          if (next === activeView) return;
-          onSwitchView?.(next);
-        }}
-      />
-    }
-  >
-    {children}
-  </DetailPanelShell>
-);
+function messageOf(error: unknown): string | null {
+  if (!error) return null;
+  return error instanceof Error ? error.message : 'Update failed';
+}
 
-export const McpToolHistory: FC<{
-  slug: string;
-  onBackToList?: () => void;
-  onSwitchView?: SwitchView;
-}> = ({ slug, onBackToList, onSwitchView }) => (
-  <McpToolDetailShell
-    slug={slug}
-    activeView="history"
-    onBackToList={onBackToList}
-    onSwitchView={onSwitchView}
-  >
-    <EntityVersionHistoryView
-      type={MCP_TOOL_TYPE}
-      slug={slug}
-      onRestored={() => onSwitchView?.('details', { replace: true })}
-    />
-  </McpToolDetailShell>
-);
+interface Draft {
+  name: string;
+  server: string;
+  description: string;
+  params: McpToolParam[];
+  returns: string;
+  sampleReturn: string;
+  readOnlyHint: McpToolHint;
+  destructiveHint: McpToolHint;
+  idempotentHint: McpToolHint;
+  openWorldHint: McpToolHint;
+  logic: string;
+}
 
-export const McpToolDetail: FC<EntityDetailProps> = ({
-  slug,
-  onDeleted,
-  onRenamed,
-  onBackToList,
-  onSwitchView,
-}) => {
-  const { data: entity } = useGetBySlug(slug);
+/** Module-level and pure — `useEntityDraftEditor` requires a stable reference. */
+function toDraft(t: McpTool): Draft {
+  return {
+    name: t.name,
+    server: t.server,
+    description: t.description,
+    params: t.params ?? [],
+    returns: t.returns ?? '',
+    sampleReturn: t.sampleReturn ?? '',
+    readOnlyHint: t.readOnlyHint ?? null,
+    destructiveHint: t.destructiveHint ?? null,
+    idempotentHint: t.idempotentHint ?? null,
+    openWorldHint: t.openWorldHint ?? null,
+    logic: t.logic ?? '',
+  };
+}
 
-  if (entity === undefined)
-    return (
-      <McpToolDetailShell
-        slug={slug}
-        activeView="details"
-        onBackToList={onBackToList}
-        onSwitchView={onSwitchView}
-      >
-        <LoadingState lines={6} />
-      </McpToolDetailShell>
-    );
-
-  if (entity === null)
-    return (
-      <McpToolDetailShell
-        slug={slug}
-        activeView="details"
-        onBackToList={onBackToList}
-        onSwitchView={onSwitchView}
-      >
-        <EmptyState title="Not found" hint={<code>{slug}</code>} />
-      </McpToolDetailShell>
-    );
-
-  return (
-    <McpToolDetailShell
-      slug={slug}
-      activeView="details"
-      onBackToList={onBackToList}
-      onSwitchView={onSwitchView}
-    >
-      <McpToolDetailForm entity={entity} onDeleted={onDeleted} onRenamed={onRenamed} />
-    </McpToolDetailShell>
-  );
-};
-
-const McpToolDetailForm: FC<{
-  entity: McpTool;
-  onDeleted?: () => void;
-  onRenamed?: (newSlug: string) => void;
-}> = ({ entity, onDeleted, onRenamed }) => {
-  const [draft, setDraft] = useState<McpTool>(entity);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+export const McpToolDetail: FC<EntityDetailProps> = ({ slug, onDeleted, onRenamed }) => {
+  const { data: tool, isLoading, error } = useGetBySlug(slug);
   const update = useUpdateMcpTool();
   const remove = useDeleteMcpTool();
 
-  const debounceRef = useRef<number | null>(null);
-  const currentSlugRef = useRef(entity.slug);
-
-  // The host remounts this form with `key={slug}`, so a slug change means a
-  // different entity; this only resyncs when the server sends a newer record.
-  useEffect(() => {
-    setDraft(entity);
-    currentSlugRef.current = entity.slug;
-  }, [entity.slug, entity.updatedAt]);
-
-  useEffect(
-    () => () => {
-      if (debounceRef.current) window.clearTimeout(debounceRef.current);
-    },
-    [],
-  );
-
-  const save = useCallback(
-    (next: McpTool) => {
-      update.mutate(
-        {
-          slug: currentSlugRef.current,
-          body: {
-            name: next.name,
-            server: next.server,
-            description: next.description,
-            params: next.params ?? [],
-            returns: next.returns ?? null,
-            sampleReturn: next.sampleReturn ?? null,
-            readOnlyHint: next.readOnlyHint ?? null,
-            destructiveHint: next.destructiveHint ?? null,
-            idempotentHint: next.idempotentHint ?? null,
-            openWorldHint: next.openWorldHint ?? null,
-            logic: next.logic ?? null,
-          },
+  const { draft, dirty, patch } = useEntityDraftEditor<McpTool, Draft>({
+    entity: tool,
+    toDraft,
+    save: async (current, entity) => {
+      const updated = await update.mutateAsync({
+        slug: entity.slug,
+        body: {
+          name: current.name,
+          server: current.server,
+          description: current.description,
+          params: current.params,
+          // A cleared optional is `null`, never `''` — the schema marks these
+          // `clearable`, and an empty string would file "undescribed" as
+          // "described as nothing".
+          returns: current.returns || null,
+          sampleReturn: current.sampleReturn || null,
+          readOnlyHint: current.readOnlyHint ?? null,
+          destructiveHint: current.destructiveHint ?? null,
+          idempotentHint: current.idempotentHint ?? null,
+          openWorldHint: current.openWorldHint ?? null,
+          logic: current.logic || null,
         },
-        {
-          onSuccess: (saved) => {
-            if (saved.slug !== currentSlugRef.current) {
-              currentSlugRef.current = saved.slug;
-              onRenamed?.(saved.slug);
-            }
-          },
-        },
-      );
+      });
+      if (updated.slug !== entity.slug) onRenamed?.(updated.slug);
+      return updated;
     },
-    [update, onRenamed],
-  );
+  });
 
-  const edit = (part: Partial<McpTool>) => {
-    const next = { ...draft, ...part };
-    setDraft(next);
-    if (debounceRef.current) window.clearTimeout(debounceRef.current);
-    debounceRef.current = window.setTimeout(() => save(next), AUTOSAVE_DELAY_MS);
-  };
+  async function handleDelete() {
+    if (!tool) return;
+    const ok = await confirmDestructive({
+      title: 'Delete this tool?',
+      body: `Delete ${tool.slug}? The description of the tool goes with it; the tool itself, wherever it is mounted, is untouched.`,
+      confirmLabel: 'Delete',
+    });
+    if (!ok) return;
+    try {
+      await remove.mutateAsync({ slug: tool.slug });
+      onDeleted?.();
+      toast.success(`MCP tool ${tool.slug} deleted`);
+    } catch (err) {
+      toast.error((err as Error).message);
+    }
+  }
 
-  const error = messageOf(update.error);
+  if (isLoading && !tool)
+    return (
+      <div className="p-8 text-[13px]" style={{ color: 'var(--c-subtle)' }}>
+        Loading MCP tool…
+      </div>
+    );
+  if (error)
+    return (
+      <div className="p-8 text-[13px]" style={{ color: 'var(--c-red)' }}>
+        Failed to load: {(error as Error).message}
+      </div>
+    );
+  // `useGetBySlug` turns a 404 into `null` on purpose, so this arm is reachable
+  // and says which slug missed rather than rendering an empty screen.
+  if (tool === null)
+    return (
+      <div className="p-8 text-[13px]" style={{ color: 'var(--c-subtle)' }}>
+        No MCP tool at <code>{slug}</code>.
+      </div>
+    );
+  if (!tool || !draft) return null;
+
+  const saveError = messageOf(update.error);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 900 }}>
-      {/* ── Identity ─────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', gap: 12 }}>
-        <div style={{ flex: '0 0 40%' }}>
-          <Row
-            label="Server"
-            hint={`Mirrored as the tag ${serverTagFor(draft.server || '…')}`}
-          >
-            <input
-              value={draft.server}
-              onChange={(e) => edit({ server: e.target.value })}
-              style={MONO_INPUT}
-            />
-          </Row>
-        </div>
-        <div style={{ flex: 1 }}>
-          {/*
-            Editing `name` does NOT move the slug — the pattern runs at create
-            only. Said out loud here because the opposite is the natural guess.
-          */}
-          <Row label="Name" hint="Editing this does not rename the entity; the slug is fixed at create.">
-            <input
-              value={draft.name}
-              onChange={(e) => edit({ name: e.target.value })}
-              style={MONO_INPUT}
-            />
-          </Row>
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={MUTED}>
-          <code>{currentSlugRef.current}</code>
-        </span>
-        <span style={MUTED}>
-          {update.isPending ? 'Saving…' : entity.updatedAt ? `Updated ${entity.updatedAt}` : ''}
-        </span>
-        <span style={{ flex: 1 }} />
-        <ActionButton label="Delete" variant="ghost" onClick={() => setConfirmDelete(true)} />
-      </div>
-
-      {error ? (
-        <p role="alert" style={{ fontSize: 12, color: 'var(--c-red)' }}>
-          {error}
-        </p>
-      ) : null}
-
-      {/*
-        ── THE CONTRACT ────────────────────────────────────────────────
-        Everything in this block transfers verbatim into the tool definition in
-        code. The heading says so, because that is the fact a reader needs before
-        deciding what may be written here.
-      */}
-      <section
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 14,
-          padding: 14,
-          borderRadius: 8,
-          border: '1px solid var(--c-hair)',
-          background: 'var(--c-card)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-          <span style={SECTION_LABEL}>Contract</span>
-          <span style={{ fontSize: 11.5, color: 'var(--c-subtle)' }}>
-            transferred verbatim into the tool definition
+    <div className="flex-1 overflow-auto nice-scroll">
+      <FieldGrid maxWidth={740}>
+        <div
+          className="flex items-center gap-2 mb-1 text-[11px]"
+          style={{ color: 'var(--c-subtle)' }}
+        >
+          <span className="font-mono">{tool.slug}</span>
+          <span>·</span>
+          <span>
+            updated{' '}
+            {new Date(String(tool.updatedAt).replace(' ', 'T') + 'Z').toLocaleString(undefined, {
+              dateStyle: 'medium',
+              timeStyle: 'short',
+            })}
           </span>
+          {update.isPending && (
+            <span style={{ color: 'var(--c-accent-ink, var(--c-accent))' }}>saving…</span>
+          )}
+          {!update.isPending && dirty && (
+            <span style={{ color: 'var(--c-accent-ink, var(--c-accent))' }}>edited</span>
+          )}
+          <span className="flex-1" />
+          <button
+            onClick={handleDelete}
+            className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px]"
+            style={{ color: 'var(--c-red, #c45a3b)' }}
+            title="Delete"
+          >
+            <Trash size={11} /> Delete
+          </button>
         </div>
 
-        <Row label="Description" hint="Goes to the model. No spec anchors, page names or module numbers.">
-          <textarea
-            value={draft.description}
-            onChange={(e) => edit({ description: e.target.value })}
-            rows={3}
-            style={{ ...INPUT, resize: 'vertical' }}
+        {/*
+          The title is `name` — the tool's identifier on the wire, and the only
+          field of this type that reads as the record's name. Editing it does NOT
+          move the slug: the pattern runs once, at create. That is said in the
+          meta line rather than under the control, because it is a fact about the
+          slug sitting three inches to the left, not about this input.
+        */}
+        <div className="flex items-center gap-2 mt-2 mb-1">
+          <McpToolIcon size={22} style={{ color: 'var(--c-accent)' }} />
+          <input
+            value={draft.name}
+            onChange={(e) => patch({ name: e.target.value })}
+            className="flex-1 bg-transparent outline-none font-mono"
+            style={{ fontSize: 22, fontWeight: 600, color: 'var(--c-ink)' }}
+            placeholder="tool_name"
+            spellCheck={false}
           />
-        </Row>
-
-        <Row label="Parameters">
-          <ParamsEditor params={draft.params ?? []} onChange={(params) => edit({ params })} />
-        </Row>
-
-        <Row label="Returns" hint="The payload only — never the content[] / isError envelope.">
-          <textarea
-            value={draft.returns ?? ''}
-            onChange={(e) => edit({ returns: e.target.value })}
-            rows={2}
-            style={{ ...INPUT, resize: 'vertical' }}
-          />
-        </Row>
-
-        <Row
-          label="Sample return"
-          hint="Only for a return that is nested or carries an array of objects. A flat return belongs in Returns."
-        >
-          <textarea
-            value={draft.sampleReturn ?? ''}
-            onChange={(e) => edit({ sampleReturn: e.target.value })}
-            rows={3}
-            style={{ ...MONO_INPUT, resize: 'vertical' }}
-          />
-        </Row>
-
-        <Row
-          label="Annotations"
-          hint="Hints, not guarantees — a client must treat them as untrusted. No gate may rest on them."
-        >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {MCP_TOOL_HINTS.map(({ key, label }) => (
-              <HintControl
-                key={key}
-                label={label}
-                value={draft[key] as McpToolHint}
-                onChange={(next) => edit({ [key]: next } as Partial<McpTool>)}
-              />
-            ))}
-          </div>
-        </Row>
-      </section>
-
-      {/*
-        ── THE LOGIC ───────────────────────────────────────────────────
-        Below its own separator, and outside the contract card, because none of
-        this travels: it is not part of the tool definition and is never sent to
-        a model. The visual break is the only place this boundary is legible to a
-        human, which is why it is a real separation and not a heading.
-      */}
-      <div style={{ borderTop: '1px solid var(--c-hair)', paddingTop: 16 }}>
-        <Row
-          label="Logic"
-          hint="How the tool works inside — steps, validations, refusal conditions. Never sent to the model. Max 1000 characters."
-        >
-          <textarea
-            value={draft.logic ?? ''}
-            onChange={(e) => edit({ logic: e.target.value })}
-            rows={6}
-            style={{ ...INPUT, resize: 'vertical' }}
-          />
-        </Row>
-        <div style={{ marginTop: 4, fontSize: 11, color: 'var(--c-subtle)' }}>
-          {(draft.logic ?? '').length} / 1000
         </div>
-      </div>
+        <div className="text-[11px] mb-2" style={{ color: 'var(--c-subtle)' }}>
+          Renaming the tool does not rename the entity — the slug is fixed at create.
+        </div>
 
-      <Row label="Tags">
-        <TagsField slug={currentSlugRef.current} expectedServerTag={serverTagFor(draft.server)} />
-      </Row>
+        {saveError ? (
+          <p role="alert" className="text-[12px]" style={{ color: 'var(--c-red, #c45a3b)' }}>
+            {saveError}
+          </p>
+        ) : null}
 
-      <Row label="Referenced by">
-        <ReferencesSection slug={currentSlugRef.current} />
-      </Row>
+        <FieldRow label="Server">
+          <input
+            value={draft.server}
+            onChange={(e) => patch({ server: e.target.value })}
+            style={MONO_INPUT}
+            spellCheck={false}
+          />
+          <Hint>Mirrored as the tag {serverTagFor(draft.server || '…')}</Hint>
+        </FieldRow>
 
-      <Dialog
-        open={confirmDelete}
-        onClose={() => setConfirmDelete(false)}
-        title="Delete this tool?"
-        size="sm"
-        footer={
-          <>
-            <ActionButton label="Cancel" variant="ghost" onClick={() => setConfirmDelete(false)} />
-            <ActionButton
-              label={remove.isPending ? 'Deleting…' : 'Delete'}
-              variant="primary"
-              disabled={remove.isPending}
-              onClick={() =>
-                remove.mutate(
-                  { slug: currentSlugRef.current },
-                  {
-                    onSuccess: () => {
-                      setConfirmDelete(false);
-                      onDeleted?.();
-                    },
-                  },
-                )
-              }
+        <FieldRow label="Tags" align="start">
+          <TagsField slug={tool.slug} expectedServerTag={serverTagFor(draft.server)} />
+        </FieldRow>
+
+        {/*
+          ── THE CONTRACT ────────────────────────────────────────────────
+          Everything in this block transfers verbatim into the tool definition in
+          code. The heading says so, because that is the fact a reader needs
+          before deciding what may be written here.
+        */}
+        <div className="mt-6">
+          <SectionHeading
+            title="Contract"
+            note="transferred verbatim into the tool definition"
+          />
+
+          {/*
+            Plain textareas, not `DocEditor`, and deliberately: these three
+            strings travel VERBATIM into a tool definition, and a markdown editor
+            would introduce formatting nobody asked for. `logic` below, which is
+            prose for a human and never leaves this app, does get the editor.
+          */}
+          <FieldRow label="Description" align="start">
+            <textarea
+              value={draft.description}
+              onChange={(e) => patch({ description: e.target.value })}
+              rows={3}
+              style={{ ...INPUT, resize: 'vertical' }}
             />
-          </>
-        }
-      >
-        <p style={{ fontSize: 13, color: 'var(--c-ink)' }}>
-          <code>{currentSlugRef.current}</code> will be removed. The description of the tool goes
-          with it; the tool itself, wherever it is mounted, is untouched.
-        </p>
-      </Dialog>
+            <Hint>Goes to the model. No spec anchors, page names or module numbers.</Hint>
+          </FieldRow>
+
+          <div className="mt-4">
+            <FieldRow label="Parameters" align="start">
+              <ParamsEditor params={draft.params} onChange={(params) => patch({ params })} />
+            </FieldRow>
+          </div>
+
+          <div className="mt-4">
+            <FieldRow label="Returns" align="start">
+              <textarea
+                value={draft.returns}
+                onChange={(e) => patch({ returns: e.target.value })}
+                rows={2}
+                style={{ ...INPUT, resize: 'vertical' }}
+              />
+              <Hint>The payload only — never the content[] / isError envelope.</Hint>
+            </FieldRow>
+          </div>
+
+          <div className="mt-4">
+            <FieldRow label="Sample return" align="start">
+              <textarea
+                value={draft.sampleReturn}
+                onChange={(e) => patch({ sampleReturn: e.target.value })}
+                rows={3}
+                style={{ ...MONO_INPUT, resize: 'vertical' }}
+              />
+              <Hint>
+                Only for a return that is nested or carries an array of objects. A flat return
+                belongs in Returns.
+              </Hint>
+            </FieldRow>
+          </div>
+
+          <div className="mt-4">
+            <FieldRow label="Annotations" align="start">
+              <div className="flex flex-col gap-1.5">
+                {MCP_TOOL_HINTS.map(({ key, label }) => (
+                  <HintControl
+                    key={key}
+                    label={label}
+                    value={draft[key] as McpToolHint}
+                    onChange={(next) => patch({ [key]: next } as Partial<Draft>)}
+                  />
+                ))}
+              </div>
+              <Hint>
+                Hints, not guarantees — a client must treat them as untrusted. No gate may rest
+                on them.
+              </Hint>
+            </FieldRow>
+          </div>
+        </div>
+
+        {/*
+          ── THE LOGIC ───────────────────────────────────────────────────
+          Below a real rule, because none of this travels: it is not part of the
+          tool definition and is never sent to a model. The visual break is the
+          only place this boundary is legible to a human, which is why it is a
+          separation and not just another heading.
+        */}
+        <div className="mt-6 pt-6" style={{ borderTop: '1px solid var(--c-hair)' }}>
+          <SectionHeading title="Logic" note="never sent to the model" />
+          <FieldRow label="Logic" align="start">
+            <DocEditor
+              value={draft.logic}
+              onChange={(md) => patch({ logic: md })}
+              placeholder="How the tool works inside — steps, validations, refusal conditions…"
+            />
+            <Hint>
+              Never sent to the model. Max 1000 characters — {draft.logic.length} / 1000.
+            </Hint>
+          </FieldRow>
+        </div>
+
+        <div className="mt-6">
+          <FieldRow label="Find references" align="start">
+            <ReferencesField slug={tool.slug} />
+          </FieldRow>
+        </div>
+      </FieldGrid>
     </div>
   );
 };
