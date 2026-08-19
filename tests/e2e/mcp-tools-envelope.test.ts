@@ -212,9 +212,21 @@ describe.skipIf(!BASE)('mcp-tool — the envelope end to end', () => {
     await expect.poll(body(page)).toMatch(/Logic/i);
     await expect.poll(body(page)).toMatch(/Never sent to the model/i);
 
-    // The contract's own fields.
-    await expect.poll(body(page)).toMatch(/Read one specification page by path\./);
+    // The contract's own fields. `description` and the parameter rows are
+    // EDITABLE, so they live in form controls — and `innerText` never returns a
+    // control's value. Reading them the way a user sees them means asking the
+    // control, not the document; asserting on body text here passes vacuously
+    // for a heading and fails for the value it was meant to check.
+    await expect
+      .poll(() =>
+        page.locator('textarea').evaluateAll((els) =>
+          (els as HTMLTextAreaElement[]).map((e) => e.value),
+        ),
+      )
+      .toContain('Read one specification page by path.');
     await expect.poll(body(page)).toMatch(/Parameters/i);
+    // The one parameter this tool declares, in the params editor.
+    await expect.poll(() => page.locator('input[value="path"]').count()).toBeGreaterThan(0);
 
     expect(consoleErrors, 'console errors').toEqual([]);
     expect(badResponses, 'responses >= 400').toEqual([]);
