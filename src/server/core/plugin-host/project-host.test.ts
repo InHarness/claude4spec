@@ -181,8 +181,17 @@ describe('buildMcpServers — one malformed plugin must not kill the turn', () =
       'other-tools': () => memoized,
     });
 
-    expect(() => host.buildMcpServers()).toThrow(/other-tools/);
-    expect(() => host.buildMcpServers()).toThrow(/fresh/i);
+    // Fatal only on the MOUNT path. The external read surface composes from the
+    // same method, never connects the handles, and runs where a throw would take
+    // the process down — so there it degrades to a warning, as everything else
+    // in this method does.
+    expect(() => host.buildMcpServers({ strict: true })).toThrow(/other-tools/);
+    expect(() => host.buildMcpServers({ strict: true })).toThrow(/fresh/i);
+
+    const warn = silenceWarn();
+    expect(host.buildMcpServers().map((e) => e.name)).toEqual(['endpoint-tools', 'memoizing-tools']);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('other-tools'));
+    warn.mockRestore();
   });
 
   it('lets two structurally identical handles through — identity is what matters', () => {

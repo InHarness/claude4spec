@@ -182,19 +182,29 @@ export { AgentTurnError, type AgentTurnErrorCode } from '../../shared/agent-turn
 const MCP_TOOL_PREFIX = 'mcp__';
 
 /**
- * Did this `tool_result` carry nothing back?
+ * Is this `tool_result` the synthesized "no output at all" placeholder?
  *
- * The empty case reaches us as a synthesized placeholder rather than as an
- * empty string — verbatim from the production row this release is built on:
- * `"(mcp__brief-tools__update_brief completed with no output)"`. It is produced
- * above the adapter, so it is matched by shape rather than imported; a blank
- * summary counts too.
+ * Matched by SHAPE, deliberately narrowly. The placeholder is produced above the
+ * adapter, verbatim from the production row this release is built on:
+ * `"(mcp__brief-tools__update_brief completed with no output)"`.
+ *
+ * A blank or absent summary is NOT enough. `UnifiedEvent.tool_result.summary`
+ * carries the tool's full content, and a `tool_use_summary`-derived event can
+ * legitimately arrive with none — so treating empty as "no output" would arm a
+ * fatal check on healthy turns. Only the placeholder means "the handler never
+ * ran and there is nothing at all to show".
  */
 export function isNoOutputSummary(summary: string | undefined | null): boolean {
-  if (summary == null) return true;
-  const trimmed = summary.trim();
-  if (trimmed === '') return true;
-  return /^\(.*\bno output\b.*\)$/i.test(trimmed);
+  if (summary == null) return false;
+  return /^\(.*\bcompleted with no output\b.*\)$/i.test(summary.trim());
+}
+
+/** `mcp__<server>__<tool>` → `<server>`, or null if it is not an MCP tool. */
+export function mcpServerOfTool(toolName: string | undefined | null): string | null {
+  if (!toolName?.startsWith('mcp__')) return null;
+  const rest = toolName.slice('mcp__'.length);
+  const sep = rest.indexOf('__');
+  return sep > 0 ? rest.slice(0, sep) : null;
 }
 
 type TurnEvent = { type: string } & Record<string, unknown>;
@@ -690,16 +700,17 @@ export async function runAgentTurn(
      *    the 'Already connected to a transport' rejection, and rebuilding per
      *    execute means a repeat can only be a memoizing factory. Prevention,
      *    and the only guard that can act before damage is done.
-     * 2. `assertMountedBindingsLive` — check the binding the SDK would not
+     * 2. `assertMountedServerWasReachable` — check the binding the SDK would not
      *    report on. `Protocol` exposes `get transport()`, so "advertised but
      *    unbound" is directly observable rather than inferred.
      *
-     * The second one is deliberately NOT a probe at query start. sdk-type
-     * servers are connected lazily, so "unbound" is a perfectly normal state
-     * until something has to reach one — probing early turns every healthy turn
-     * into a fatal error. It runs on the evidence instead: an MCP tool call that
-     * came back with no output at all, which is precisely when a live binding
-     * was required and precisely the signature in the production data.
+     * The second one is deliberately NOT a probe at a fixed moment. sdk-type
+     * servers connect lazily and are ALL unbound again after `Query.cleanup()`,
+     * so "unbound" is a normal state both before the first call and after the
+     * last one — probing at query start (or trusting a bare snapshot at the end)
+     * turns healthy turns into fatal errors. It runs on evidence instead: an MCP
+     * call that came back with no output at all, judged against whether that
+     * server was ever seen bound during this query.
      *
      * Both throw from inside the turn's `try`, so the catch maps them to
      * `AgentTurnError('AGENT_ERROR')` and `emit`s an `error` event — visible on
@@ -731,40 +742,72 @@ export async function runAgentTurn(
     };
 
     /**
-     * Are the servers we advertised actually bound?
+     * Which servers have been SEEN bound at least once during this query.
      *
-     * The message is what makes the two production signatures tell themselves
-     * apart from the outside — today they are indistinguishable, which is itself
-     * half the defect. `context` says WHERE the check ran.
-     * One unbound server among healthy ones is a different failure from the
-     * whole set going dark at once, and the message says which happened.
+     * This set is what keeps the check honest against the SDK's own teardown.
+     * `Query.cleanup()` closes every sdk transport and clears its map, and
+     * `Protocol._onclose` nulls the binding — so once a query ends, EVERY
+     * instance reads as unbound. Events can still be draining out of the
+     * adapter at that point, so a late `tool_result` would otherwise look
+     * exactly like a total mount failure and kill a turn that had already
+     * succeeded. A server that was reachable earlier is not a failed mount,
+     * whatever its binding says afterwards.
      */
-    const assertMountedBindingsLive = (
-      servers: Record<string, McpServerConfig>,
-      context: string,
-    ): void => {
-      const advertised: string[] = [];
-      const unbound: string[] = [];
+    const everBound = new Set<string>();
+
+    /** Records currently-live bindings. Cheap: a handful of servers. */
+    const sampleBindings = (servers: Record<string, McpServerConfig>): void => {
       for (const [name, config] of Object.entries(servers)) {
         const instance = instanceOf(config);
-        if (!instance) continue;
-        advertised.push(name);
-        // `McpServer` wraps the protocol `Server`, which exposes the live
-        // transport. Absent => `connect()` never completed (or `_onclose` ran).
-        const bound = (instance as { server?: { transport?: unknown } }).server?.transport;
-        if (bound == null) unbound.push(name);
+        if (instance && (instance as { server?: { transport?: unknown } }).server?.transport != null) {
+          everBound.add(name);
+        }
       }
-      if (unbound.length === 0) return;
-      const whole = unbound.length === advertised.length && advertised.length > 1;
+    };
+
+    /**
+     * An MCP call came back with nothing. Was its server ever actually mounted?
+     *
+     * Scoped to the ONE server the call named — an empty result from
+     * `brief-tools` says nothing about `release-tools`, and blaming a bystander
+     * was how this failure stayed unreadable in the first place. The report then
+     * says whether that server alone went dark or the whole advertised set did,
+     * which is the property that makes the two production signatures tell
+     * themselves apart from the outside.
+     *
+     * Known limit: an instance shared with a CONCURRENT turn still reads as
+     * bound here, because the binding it carries is the other turn's. That case
+     * is caught before it happens — by `assertFreshMount` within a turn, and by
+     * the host refusing a repeat instance within a composition — not here.
+     */
+    const assertMountedServerWasReachable = (
+      servers: Record<string, McpServerConfig>,
+      serverName: string,
+      toolName: string,
+    ): void => {
+      // Reachable at some point in this query ⇒ not a mount failure. Whatever
+      // emptied this particular result, it was not "advertised but unbound".
+      if (everBound.has(serverName)) return;
+      const config = servers[serverName];
+      const instance = config ? instanceOf(config) : null;
+      // Not one of ours (no live instance) — nothing to assert about.
+      if (!instance) return;
+      if ((instance as { server?: { transport?: unknown } }).server?.transport != null) return;
+
+      const advertised = Object.entries(servers)
+        .filter(([, c]) => instanceOf(c) != null)
+        .map(([n]) => n);
+      const live = advertised.filter((n) => everBound.has(n));
+      const allDark = live.length === 0;
       throw new Error(
-        whole
-          ? `MCP mount failed: ALL ${advertised.length} mounted servers are advertised but unbound ` +
-            `(${unbound.join(', ')}) at ${context}. The whole tool surface is dark for this turn; ` +
-            `tool calls would return no result at all.`
-          : `MCP mount failed: server${unbound.length > 1 ? 's' : ''} "${unbound.join('", "')}" ` +
-            `${unbound.length > 1 ? 'are' : 'is'} advertised but unbound at ${context}, while ` +
-            `${advertised.length - unbound.length} other server(s) mounted cleanly. Calls to ` +
-            `${unbound.length > 1 ? 'those servers' : 'that server'} would return no result at all.`,
+        allDark
+          ? `MCP mount failed: the whole mounted set is dark — none of the ${advertised.length} ` +
+            `advertised server(s) (${advertised.join(', ')}) ever bound to a transport. ` +
+            `\`${toolName}\` returned no result at all, and every other MCP tool this turn ` +
+            `would do the same.`
+          : `MCP mount failed: server "${serverName}" is advertised but never bound to a ` +
+            `transport, while ${live.length} other server(s) mounted cleanly (${live.join(', ')}). ` +
+            `\`${toolName}\` returned no result at all; the rest of the tool surface is healthy.`,
       );
     };
 
@@ -862,7 +905,8 @@ export async function runAgentTurn(
        * rather than mounted empty.
        */
       const pluginEntries = deps.pluginHost
-        .buildMcpServers()
+        // `strict`: this is the mount, where a repeat instance is fatal.
+        .buildMcpServers({ strict: true })
         .filter(({ name }) =>
           ctx.mcp.pluginServers === 'release-only' ? BRIEF_ALLOWED_PLUGIN_MCP.has(name) : true,
         );
@@ -1084,6 +1128,10 @@ export async function runAgentTurn(
           case 'tool_use': {
             if (event.toolName?.startsWith(MCP_TOOL_PREFIX) && event.toolUseId) {
               mcpToolUseNames.set(event.toolUseId, event.toolName);
+              // Sampled HERE because this is the moment a healthy server is
+              // necessarily bound: the model is calling it. What this records is
+              // what the check below trusts.
+              sampleBindings(mountedForQuery);
             }
             const taskId = event.subagentTaskId ?? null;
             if (taskId) flushSubBuf(taskId);
@@ -1123,8 +1171,9 @@ export async function runAgentTurn(
              * and names whether one server or the whole set went dark.
              */
             const mcpToolName = mcpToolUseNames.get(event.toolUseId);
-            if (mcpToolName && isNoOutputSummary(event.summary)) {
-              assertMountedBindingsLive(mountedForQuery, `empty tool_result for ${mcpToolName}`);
+            const mcpServerName = mcpServerOfTool(mcpToolName);
+            if (mcpServerName && mcpToolName && isNoOutputSummary(event.summary)) {
+              assertMountedServerWasReachable(mountedForQuery, mcpServerName, mcpToolName);
             }
             const taskId = event.subagentTaskId ?? null;
             deps.chatService.markToolUseComplete(thread.id, event.toolUseId);

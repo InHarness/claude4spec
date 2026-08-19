@@ -44,6 +44,8 @@ const hoisted = vi.hoisted(() => ({
    * mount guard reports on.
    */
   onExecute: null as ((opts: Record<string, unknown>) => void) | null,
+  /** Runs before each event is yielded — lets a test change the world mid-stream. */
+  beforeEvent: null as ((event: Record<string, unknown>, opts: Record<string, unknown>) => void) | null,
 }));
 
 vi.mock('@inharness-ai/agent-adapters', async (importOriginal) => {
@@ -56,7 +58,10 @@ vi.mock('@inharness-ai/agent-adapters', async (importOriginal) => {
         hoisted.lastExecute = opts;
         hoisted.executes.push(opts);
         hoisted.onExecute?.(opts);
-        for (const e of hoisted.events) yield e;
+        for (const e of hoisted.events) {
+          hoisted.beforeEvent?.(e, opts);
+          yield e;
+        }
       },
     }),
   };
@@ -76,6 +81,7 @@ afterEach(() => {
   hoisted.agent = undefined;
   hoisted.executes = [];
   hoisted.onExecute = null;
+  hoisted.beforeEvent = null;
 });
 
 interface Recorded {
@@ -842,7 +848,7 @@ describe('runAgentTurn — mounting is loud (0-2-35-to-next)', () => {
     // No onExecute: nothing ever binds, exactly like a whole set going dark.
     const { deps } = makeDeps();
 
-    await expect(runAgentTurn(deps, makeInput())).rejects.toThrow(/ALL \d+ mounted servers/i);
+    await expect(runAgentTurn(deps, makeInput())).rejects.toThrow(/whole mounted set is dark/i);
   });
 
   it('distinguishes ONE dark server from the whole set going dark (signature A vs B)', async () => {
@@ -854,9 +860,54 @@ describe('runAgentTurn — mounting is loud (0-2-35-to-next)', () => {
     // the "indistinguishable from the outside" half of the defect.
     const err = await runAgentTurn(deps, makeInput()).catch((e: Error) => e);
     expect(err).toBeInstanceOf(Error);
-    expect((err as Error).message).toMatch(/"plan-tools" is advertised but unbound/);
+    expect((err as Error).message).toMatch(/"plan-tools" is advertised but never bound/);
     expect((err as Error).message).toMatch(/other server\(s\) mounted cleanly/);
-    expect((err as Error).message).not.toMatch(/ALL \d+ mounted servers/i);
+    expect((err as Error).message).not.toMatch(/whole mounted set is dark/i);
+  });
+
+  it('blames the server the call named, not a healthy bystander', async () => {
+    // An empty result from brief-tools says nothing about release-tools. Blaming
+    // a bystander is how this failure stayed unreadable in the first place.
+    hoisted.events = emptyMcpCallEvents('mcp__c4s-tools__ask');
+    hoisted.onExecute = bindAllExcept('plan-tools');
+    const { deps } = makeDeps();
+
+    // plan-tools is dark, but the call went to c4s-tools, which is bound.
+    await expect(runAgentTurn(deps, makeInput())).resolves.toBeDefined();
+  });
+
+  it('survives the SDK tearing its transports down while events still drain', async () => {
+    // `Query.cleanup()` closes every sdk transport and clears the map, so after
+    // a query ends EVERY instance reads as unbound. A late empty tool_result
+    // must not be mistaken for a total mount failure and kill a turn that
+    // already succeeded.
+    hoisted.events = emptyMcpCallEvents();
+    hoisted.onExecute = bindAll;
+    // The call is issued while everything is bound; the SDK tears the transports
+    // down before its result reaches us.
+    hoisted.beforeEvent = (event, opts) => {
+      if (event.type !== 'tool_result') return;
+      for (const config of Object.values((opts.mcpServers ?? {}) as Record<string, { instance?: unknown }>)) {
+        const instance = config.instance as { server?: { transport?: unknown } } | undefined;
+        if (instance?.server) instance.server.transport = undefined;
+      }
+    };
+    const { deps } = makeDeps();
+
+    await expect(runAgentTurn(deps, makeInput())).resolves.toBeDefined();
+  });
+
+  it('a blank summary is not the no-output placeholder', async () => {
+    // `tool_result.summary` carries the tool's full content and can legitimately
+    // be empty; only the synthesized placeholder means "the handler never ran".
+    hoisted.events = [
+      { type: 'tool_use', toolName: 'mcp__plan-tools__update_plan', toolUseId: 'u1', input: {} },
+      { type: 'tool_result', toolUseId: 'u1', summary: '', isError: false },
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps } = makeDeps();
+
+    await expect(runAgentTurn(deps, makeInput())).resolves.toBeDefined();
   });
 
   it('the error reaches the client as an `error` event, not just as a rejection', async () => {
@@ -915,7 +966,9 @@ describe('runAgentTurn — mounting is loud (0-2-35-to-next)', () => {
       { name: 'release-tools', server: { config: { type: 'sdk', name: 'release-tools', instance: shared } } },
     ];
 
-    await expect(runAgentTurn(deps, makeInput())).rejects.toThrow(/SAME instance already mounted/i);
+    await expect(runAgentTurn(deps, makeInput())).rejects.toThrow(
+      /SAME instance already mounted|already returned for another server/i,
+    );
   });
 
   it('releases the thread when the mount fails — no 409 wedge, no pinned context', async () => {

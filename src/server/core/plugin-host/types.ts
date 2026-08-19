@@ -574,7 +574,13 @@ export interface ProjectPluginHost {
    * call produces brand-new instances, so neither concurrent turns nor
    * successive queries of one turn collide on a shared transport.
    */
-  buildMcpServers(): Array<{ name: string; server: McpServerFactory }>;
+  /**
+   * `strict` — refuse a repeat server instance with a thrown
+   * `McpServerReuseError` instead of skipping it with a warning. Passed by the
+   * MOUNT path only (`runAgentTurn`), where a shared instance darkens the whole
+   * map; the external read surface never connects these handles.
+   */
+  buildMcpServers(opts?: { strict?: boolean }): Array<{ name: string; server: McpServerFactory }>;
 
   /**
    * 0.2.13 — the type-specific operations of `:type`, read from the SAME factory
