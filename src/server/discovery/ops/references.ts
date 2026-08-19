@@ -100,6 +100,15 @@ async function entityReferences(
   if (!deps.host.getEntity(input.type)) {
     throw invalidType(input.type, deps.host.listEntities().map((m) => m.type));
   }
+  // A known type with no slug sweeps for the entity named `undefined` and finds
+  // nothing — read as "nothing references this", the answer that authorizes a
+  // delete. Refuse it for the same reason the unknown type above is refused.
+  if (!input.slug) {
+    throw invalidArgument(
+      'find_references({ target: "entity" }) requires a slug',
+      `find_references({ target: "entity", type: "${input.type}", slug: "<slug>" })`,
+    );
+  }
 
   const source: PagesSource = {
     listPages: async () => await pages.readAll(scanned),
@@ -140,6 +149,20 @@ async function sectionReferences(
   scanned: RootSet['all'],
   anchor: string,
 ): Promise<ReferenceHit[]> {
+  /**
+   * The discriminator alone is not the argument. `parseLinks` leaves `anchor`
+   * undefined for every anchorless `@page.md` link, so a missing anchor matched
+   * all of them and answered "here is who cites this section" with every plain
+   * page link in the project — a confident wrong answer with a large `total`,
+   * which is the exact failure mode the `page` variant's key check exists to
+   * prevent. Same guard, same shape.
+   */
+  if (!anchor) {
+    throw invalidArgument(
+      'find_references({ target: "section" }) requires an anchor',
+      'find_references({ target: "section", anchor: "<anchor>" }); list_sections reports the anchors of a page',
+    );
+  }
   const out: ReferenceHit[] = [];
   for (const page of await pages.readAll(scanned)) {
     for (const tag of parseXmlTagsExcludingCode(page.body)) {

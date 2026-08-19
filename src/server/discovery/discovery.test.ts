@@ -1090,6 +1090,37 @@ describe('discovery core', () => {
   });
 
   /**
+   * The discriminator is not the argument. Each variant needs its own key, and
+   * a missing one used to fail differently per variant: `page` refused, `entity`
+   * answered "no consumers", and `section` answered with EVERY anchorless page
+   * link in the project — the worst of the three, because it is a large,
+   * confident, wrong `total` rather than a suspicious empty one.
+   */
+  it('find_references({ target: "section" }) without an anchor refuses instead of matching every anchorless link', async () => {
+    // Two plain `@page` links, no anchors anywhere: the old `link.anchor ===
+    // undefined` comparison reported both as citations of the missing section.
+    await writePage('pages', 'a.md', '# A\n\nSee @b.md and @c.md.\n');
+    const c = core([pagesRoot()]);
+
+    await expect(
+      c.findReferences({ target: 'section' } as Parameters<typeof c.findReferences>[0]),
+    ).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+      hint: expect.stringContaining('anchor'),
+    });
+  });
+
+  it('find_references({ target: "entity" }) without a slug refuses instead of reporting no consumers', async () => {
+    const c = core([pagesRoot()]);
+    await expect(
+      c.findReferences({ target: 'entity', type: 'widget' } as Parameters<typeof c.findReferences>[0]),
+    ).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+      hint: expect.stringContaining('slug'),
+    });
+  });
+
+  /**
    * One slug is a lookup and wants the whole record; many slugs are a list and
    * want a row each. A flat `single_element` default made a view-less batch as
    * wide as N detail records — enough to hit the budget and come back truncated

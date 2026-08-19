@@ -55,9 +55,10 @@ export function buildTransagentToolsServer(ctx: TransagentToolsContext): Capture
       'On failure the tool_result is `isError` with a flat `{ error, code }`. Codes:',
       '  - ABORTED / TIMEOUT / AGENT_UNAVAILABLE / AGENT_ERROR — the CHILD turn ended that way.',
       '    ABORTED means a human stopped it; AGENT_UNAVAILABLE means it never started (retryable).',
-      '  - NOT_FOUND — `threadId` names no thread, or none of yours.',
-      '  - INVALID_ARGS — the arguments do not describe a runnable child (e.g.',
-      "    contextType='patch' without payload.patchPath).",
+      '  - NOT_FOUND — `threadId` names no thread.',
+      '  - INVALID_ARGS — the arguments do not describe a runnable child: contextType=\'patch\'',
+      "    without payload.patchPath, or a `threadId` that is someone else's child, not yours.",
+      '  - INTERNAL — this server faulted; not a child-turn outcome, and not retryable as-is.',
       'A failed child keeps its last good summary: read it back with runTransagent({ threadId }).',
     ].join('\n'),
     {
