@@ -35,7 +35,7 @@
  * unstated), so the choice is recorded here and filed back as a patch.
  */
 
-import type { FC, ReactNode } from 'react';
+import type { FC } from 'react';
 import { useCallback, useMemo, useState } from 'react';
 import { createRoute, useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import {
@@ -66,13 +66,8 @@ import { McpToolListRow } from './list-row.js';
 import { McpToolCreateDialog } from './create-dialog.js';
 import { McpToolDetail } from './detail-panel.js';
 import { EntityBreadcrumbBar } from '../../../frontend-kit/EntityBreadcrumbBar.js';
+import { Pane, RouteBody } from '../../../frontend-kit/route-shell.js';
 import { groupByServer } from './grouping.js';
-
-const Pane: FC<{ children: ReactNode }> = ({ children }) => (
-  <main style={{ flex: 1, minWidth: 0, height: '100%', overflow: 'auto', background: 'var(--c-bg)' }}>
-    {children}
-  </main>
-);
 
 /**
  * The icon slots are typed `LucideIcon` on the host side; the header prop wants
@@ -267,8 +262,11 @@ function McpToolDetailRoute(): JSX.Element {
   // panel reads, so it costs no extra request and falls back to the slug until
   // the record lands.
   const { data: tool } = useGetBySlug(slug);
+  // `RouteBody`, not `Pane`: the panel's description is a `DocEditor`, and
+  // without the ambient bridge every entity chip inside it — here and, via the
+  // process-wide singleton, elsewhere — silently stops navigating.
   return (
-    <Pane>
+    <RouteBody navigate={navigate}>
       <EntityBreadcrumbBar slug={slug} name={tool?.name} view="details" />
       <McpToolDetail
         key={slug}
@@ -276,7 +274,7 @@ function McpToolDetailRoute(): JSX.Element {
         onDeleted={() => navigate({ to: MCP_TOOL_PATH_PREFIX })}
         onRenamed={(newSlug) => navigateToEntity(navigate, MCP_TOOL_TYPE, newSlug, { replace: true })}
       />
-    </Pane>
+    </RouteBody>
   );
 }
 

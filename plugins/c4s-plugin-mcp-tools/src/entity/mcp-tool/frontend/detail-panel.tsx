@@ -10,8 +10,14 @@
  *   scroller → `FieldGrid maxWidth={740}`
  *     meta strip   slug · updated · saving/edited · Delete
  *     title        entity icon + a borderless 22px input
+ *     Tags         first under the title, always — as in `dto` / `database-table`
+ *     Description  second, full width, a `DocEditor` under its own heading
  *     `FieldRow`s  label in a fixed 140px column, value on the right
  *     `mt-6`       is the section break; there is no Card and no Section
+ *
+ * The one departure from `FieldRow` is the description, and for one reason: a
+ * `FieldRow` spends a fixed 140px on a label, which is the right trade for a
+ * short value and the wrong one for the longest prose on the screen.
  *
  * The breadcrumb and the Details/History switcher are deliberately NOT here —
  * they live in the route wrapper (`EntityBreadcrumbBar`), which is what lets both
@@ -19,13 +25,13 @@
  * `useEntityDraftEditor` (500 ms, no Save button); deleting goes through the
  * host's `confirmDestructive` + `toast` events rather than a local `Dialog`.
  *
- * THE ONE LAYOUT REQUIREMENT THAT IS NOT COSMETIC. The CONTRACT block
- * (`description`, `params[]`, `returns`, `sampleReturn`, the hints) is visually
- * separated from LOGIC, which sits below its own rule. This is the only place the
- * entity/L3 boundary is visible to a human: everything above the separator
- * transfers verbatim into a tool definition in code, and everything below it does
- * not travel at all. A panel that interleaves them teaches the wrong thing on
- * every read. The separation is a heading plus a real rule — not a bordered card,
+ * THE ONE LAYOUT REQUIREMENT THAT IS NOT COSMETIC. Everything that reaches the
+ * model — the description, then the CONTRACT block (`server`, `params[]`,
+ * `returns`, `sampleReturn`, the hints) — is visually separated from LOGIC,
+ * which sits below its own rule. This is the only place the entity/L3 boundary
+ * is visible to a human: everything above the separator transfers verbatim into
+ * a tool definition in code, and everything below it does not travel at all. A
+ * panel that interleaves them teaches the wrong thing on every read. The separation is a heading plus a real rule — not a bordered card,
  * which nothing else in this UI uses and which would therefore read as decoration.
  *
  * Colours are `var(--c-*)` tokens only, never literals.
@@ -40,7 +46,7 @@ import {
   useRemoveEntityTag,
   useTags,
 } from '@c4s/plugin-runtime';
-import { ActionButton, FieldGrid, FieldRow, TagPicker } from '@c4s/plugin-runtime/ui';
+import { ActionButton, DocEditor, FieldGrid, FieldRow, TagPicker } from '@c4s/plugin-runtime/ui';
 import { MCP_TOOL_TYPE } from '../../../identity.js';
 import { confirmDestructive, toast } from '../../../frontend-kit/host-events.js';
 import { useEntityDraftEditor } from '../../../frontend-kit/useEntityDraftEditor.js';
@@ -512,19 +518,42 @@ export const McpToolDetail: FC<EntityDetailProps> = ({ slug, onDeleted, onRename
           </p>
         ) : null}
 
-        <FieldRow label="Server">
-          <input
-            value={draft.server}
-            onChange={(e) => patch({ server: e.target.value })}
-            style={MONO_INPUT}
-            spellCheck={false}
-          />
-          <Hint>The {'{server}'} of mcp__{'{server}'}__{'{name}'}, and half of the slug.</Hint>
-        </FieldRow>
-
+        {/*
+          Tags come FIRST, before anything domain-specific — the same position
+          they hold in `dto` and `database-table`. They are the one field on this
+          screen that is not about MCP at all: they are how an author groups the
+          record and how a page embeds it.
+        */}
         <FieldRow label="Tags" align="start">
           <TagsField slug={tool.slug} />
         </FieldRow>
+
+        {/*
+          ── THE DESCRIPTION ─────────────────────────────────────────────
+          Second under the title, and the full width of the grid rather than a
+          `FieldRow` — a `FieldRow` spends 140px on a label this field does not
+          need, and this is the longest prose on the screen. That is the shape
+          `database-table` gives its description: heading above, editor below.
+
+          `DocEditor`, not a textarea. An earlier revision argued the opposite —
+          that this string travels verbatim into a tool definition, so a markdown
+          editor would add formatting nobody asked for. Tool descriptions ARE
+          markdown in practice and the model reads them as such, so the editor is
+          the right control; what survives from that argument is the narrower
+          caution below, about what the field must NOT contain.
+        */}
+        <div className="mt-6">
+          <SectionHeading title="Description" note="goes to the model verbatim" />
+          <DocEditor
+            value={draft.description}
+            onChange={(md) => patch({ description: md })}
+            placeholder="What the tool does, and when a model should reach for it…"
+          />
+          <Hint>
+            No spec anchors, page names or module numbers — a description that needs the
+            specification to be understood is not one a model can act on. Max 2000 characters.
+          </Hint>
+        </div>
 
         {/*
           ── THE CONTRACT ────────────────────────────────────────────────
@@ -538,20 +567,14 @@ export const McpToolDetail: FC<EntityDetailProps> = ({ slug, onDeleted, onRename
             note="transferred verbatim into the tool definition"
           />
 
-          {/*
-            Plain textareas, not `DocEditor`, and deliberately: these three
-            strings travel VERBATIM into a tool definition, and a markdown editor
-            would introduce formatting nobody asked for. `logic` below, which is
-            prose for a human and never leaves this app, does get the editor.
-          */}
-          <FieldRow label="Description" align="start">
-            <textarea
-              value={draft.description}
-              onChange={(e) => patch({ description: e.target.value })}
-              rows={3}
-              style={{ ...INPUT, resize: 'vertical' }}
+          <FieldRow label="Server">
+            <input
+              value={draft.server}
+              onChange={(e) => patch({ server: e.target.value })}
+              style={MONO_INPUT}
+              spellCheck={false}
             />
-            <Hint>Goes to the model. No spec anchors, page names or module numbers.</Hint>
+            <Hint>The {'{server}'} of mcp__{'{server}'}__{'{name}'}, and half of the slug.</Hint>
           </FieldRow>
 
           <div className="mt-4">

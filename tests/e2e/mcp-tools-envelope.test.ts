@@ -250,22 +250,68 @@ describe.skipIf(!BASE)('mcp-tool — the envelope end to end', () => {
     await expect.poll(body(page)).toMatch(/Logic/i);
     await expect.poll(body(page)).toMatch(/Never sent to the model/i);
 
-    // The contract's own fields. `description` and the parameter rows are
-    // EDITABLE, so they live in form controls — and `innerText` never returns a
-    // control's value. Reading them the way a user sees them means asking the
-    // control, not the document; asserting on body text here passes vacuously
-    // for a heading and fails for the value it was meant to check.
+    // The contract's own fields. These are EDITABLE, so they live in controls —
+    // and `innerText` never returns a control's value. Reading them the way a
+    // user sees them means asking the control, not the document; asserting on
+    // body text passes vacuously for a heading and fails for the value it was
+    // meant to check.
+    //
+    // `description` is a `DocEditor`, so the control is a contenteditable and
+    // not a `textarea`: it renders into `.prose-spec`, which is also the proof
+    // that the rich editor mounted at all rather than falling back to a box.
     await expect
-      .poll(() =>
-        page.locator('textarea').evaluateAll((els) =>
-          (els as HTMLTextAreaElement[]).map((e) => e.value),
-        ),
-      )
-      .toContain('Read one specification page by path.');
+      .poll(() => page.locator('.prose-spec').first().innerText())
+      .toMatch(/Read one specification page by path\./);
+    // Tags first under the title, description second — the order this panel is
+    // supposed to hold. `indexOf` on the rendered text is enough: both labels
+    // are unique on the screen.
+    await expect.poll(async () => {
+      const text = await page.locator('body').innerText();
+      return text.indexOf('Tags') < text.indexOf('Description');
+    }).toBe(true);
     await expect.poll(body(page)).toMatch(/Parameters/i);
     // The one parameter this tool declares, in the params editor.
     await expect.poll(() => page.locator('input[value="path"]').count()).toBeGreaterThan(0);
 
+    expect(consoleErrors, 'console errors').toEqual([]);
+    expect(badResponses, 'responses >= 400').toEqual([]);
+    await page.close();
+  });
+
+  /**
+   * Opening a record must not change it.
+   *
+   * This is the one regression that leaves no trace a normal check would catch:
+   * no console error, no response >= 400, nothing wrong on screen. The panel
+   * autosaves without a Save button, and `DocEditor` normalises its content
+   * through tiptap — so an editor that emits its normalised spelling on mount
+   * turns every VISIT into a write: a new version, a new `updatedAt`, a line in
+   * the release diff, for a record nobody edited.
+   */
+  it('writes nothing when a tool is merely opened', async () => {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    const { consoleErrors, badResponses } = watch(page);
+
+    const writes: string[] = [];
+    page.on('request', (req) => {
+      const method = req.method();
+      if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return;
+      // The onboarding PATCH in `firstProject` is not on this page, but tag and
+      // config traffic could be — only entity writes are the subject here.
+      if (/\/api\/projects\/[^/]+\/mcp-tools/.test(req.url())) writes.push(`${method} ${req.url()}`);
+    });
+
+    await page.goto(`${BASE}/p/${project.id}/mcp-tools/alpha-read-page`, {
+      waitUntil: 'networkidle',
+    });
+    await expect.poll(body(page)).toMatch(/alpha-read-page/);
+    await expect.poll(() => page.locator('.prose-spec').count()).toBeGreaterThan(0);
+
+    // Past the 500 ms autosave debounce, with margin: a write scheduled at mount
+    // has had every chance to fire by now.
+    await page.waitForTimeout(2000);
+
+    expect(writes, 'entity writes on a plain view').toEqual([]);
     expect(consoleErrors, 'console errors').toEqual([]);
     expect(badResponses, 'responses >= 400').toEqual([]);
     await page.close();

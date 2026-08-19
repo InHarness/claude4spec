@@ -45,6 +45,22 @@ export function useEntityDraftEditor<E, D>({ entity, toDraft, save }: Options<E,
   // mirroring the pre-refactor closure semantics exactly.
   async function runSave(current: D) {
     if (!entity) return;
+    /**
+     * A draft identical to the last saved state is not a save.
+     *
+     * This copy diverges from the one in `c4s-plugin-api-contracts`, which has
+     * no such guard — deliberately, and the reason is the description editor.
+     * `DocEditor` runs its content through tiptap, so it can emit an `onChange`
+     * carrying a normalised spelling of what was already stored; under an
+     * autosaving panel with no diff, merely OPENING a record would then write it
+     * — a new version, a new `updatedAt`, a line in the release diff, for a
+     * visit. `database-table`'s hand-rolled autosave has the same protection
+     * (`if (Object.keys(body).length === 0) return`); the shared helper did not.
+     *
+     * It also covers the ordinary case that motivated it there: a debounce timer
+     * firing on an edit the author typed and then undid.
+     */
+    if (JSON.stringify(current) === baselineRef.current) return;
     try {
       const updated = await save(current, entity);
       baselineRef.current = JSON.stringify(toDraft(updated));

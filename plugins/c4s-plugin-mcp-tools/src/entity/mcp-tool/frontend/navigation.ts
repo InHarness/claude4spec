@@ -14,6 +14,7 @@
  * structural view of the router's `navigate`.
  */
 
+import { clientPluginHost } from '@c4s/plugin-runtime';
 import { MCP_TOOL_PATH_PREFIX, MCP_TOOL_TYPE } from '../../../identity.js';
 
 /** Loose-typed view of the host router's `navigate` (routes are opaque in the contract). */
@@ -54,4 +55,42 @@ export function navigateToEntityHistory(
   const prefix = PATH_PREFIX_BY_TYPE[type];
   if (!prefix) throw new Error(`navigateToEntityHistory: unknown entity type "${type}"`);
   navigate({ to: `${prefix}/$slug/history`, params: { slug }, replace: opts?.replace });
+}
+
+/**
+ * Navigate to ANY entity type, resolving its route prefix from the HOST rather
+ * than from the map above.
+ *
+ * The map above is this plugin's own business — it knows `mcp-tool` and nothing
+ * else, which is correct for its own screens. This function serves a different
+ * caller: an entity chip inside a `DocEditor` description, whose target is
+ * whatever the author linked, including types contributed by packages that do
+ * not exist yet. A type with no module (deactivated, or never installed)
+ * resolves to nothing and the click is a no-op — the same thing the host does.
+ *
+ * `clientPluginHost.getEntity(...)` stays a METHOD call. It reads `this`, so
+ * pulling it into a local to cast it once unbinds the receiver and throws on
+ * first render.
+ */
+export function toEntity(navigate: Navigate, type: string, slug: string): void {
+  const mod = clientPluginHost.getEntity(type) ?? clientPluginHost.getAvailable(type);
+  if (!mod?.pathPrefix) return;
+  navigate({ to: `${mod.pathPrefix}/$slug`, params: { slug } });
+}
+
+/**
+ * Navigate to a page anchor — the other half of the editor bridge. `pages` is
+ * the host's default root for sections.
+ */
+export function toSection(
+  navigate: Navigate,
+  pagePath: string,
+  anchor: string,
+  rootId = 'pages',
+): void {
+  (navigate as unknown as (opts: Record<string, unknown>) => void)({
+    to: '/space/$rootId/$',
+    params: { rootId, _splat: pagePath },
+    hash: `anchor-${anchor}`,
+  });
 }
