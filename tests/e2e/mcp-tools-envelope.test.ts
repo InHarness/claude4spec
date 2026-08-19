@@ -48,6 +48,16 @@ async function firstProject(): Promise<WorkspaceProject> {
   return project;
 }
 
+/**
+ * The slug the host derives at create: `{slugify(server)}-{slugify(name)}`. Kept
+ * here so a re-seed can address a record it did not create.
+ */
+function slugFor(tool: { server: string; name: string }): string {
+  const part = (v: string) =>
+    v.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return `${part(tool.server)}-${part(tool.name)}`;
+}
+
 /** Console errors and >=400 responses, collected for the whole page lifetime. */
 function watch(page: Page) {
   const consoleErrors: string[] = [];
@@ -115,10 +125,30 @@ describe.skipIf(!BASE)('mcp-tool — the envelope end to end', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(tool),
       });
-      // 409 means a previous run of this suite already seeded it — fine.
-      if (!res.ok && res.status !== 409) {
-        throw new Error(`seeding ${tool.server}/${tool.name} failed: ${res.status} ${await res.text()}`);
+      if (res.ok) continue;
+
+      /*
+        A 409 means the slug is taken — an environment reused across runs. It is
+        NOT enough to shrug and continue: what is already there may not be what
+        this suite asserts. A record left over from an earlier run, or edited by
+        hand while someone was looking at the screen, will fail assertions that
+        are perfectly correct about the code. So the existing record is written
+        back to the intended state instead of being trusted.
+      */
+      if (res.status === 409) {
+        const patch = await fetch(`${api}/${slugFor(tool)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(tool),
+        });
+        if (!patch.ok) {
+          throw new Error(
+            `re-seeding ${tool.server}/${tool.name} failed: ${patch.status} ${await patch.text()}`,
+          );
+        }
+        continue;
       }
+      throw new Error(`seeding ${tool.server}/${tool.name} failed: ${res.status} ${await res.text()}`);
     }
   });
   afterAll(async () => {
@@ -147,9 +177,15 @@ describe.skipIf(!BASE)('mcp-tool — the envelope end to end', () => {
     await expect.poll(body(page)).toMatch(/MCP Tools/);
     await expect.poll(body(page)).toMatch(/\d+\s+results?/i);
 
-    // The group headings ARE the server names, and both servers are present.
-    await expect.poll(body(page)).toMatch(/alpha/);
-    await expect.poll(body(page)).toMatch(/beta/);
+    /*
+      The group headings ARE the server names. Case-INSENSITIVE, and that matters:
+      the headings are uppercased by the kit, so a case-sensitive /alpha/ does not
+      match one. It used to pass anyway, because every tool carried a lowercase
+      `srv-alpha` tag chip — i.e. the assertion was green on the tag it was meant
+      to be independent of. Dropping the mirror tag exposed that.
+    */
+    await expect.poll(body(page)).toMatch(/alpha/i);
+    await expect.poll(body(page)).toMatch(/beta/i);
     // The tools themselves, drawn under them.
     await expect.poll(body(page)).toMatch(/read_page/);
     await expect.poll(body(page)).toMatch(/list_envs/);
@@ -158,7 +194,7 @@ describe.skipIf(!BASE)('mcp-tool — the envelope end to end', () => {
      * The third server, and the assertion that grouping reads the FIELD: nothing
      * tagged this tool, and it still lands under a heading of its own.
      */
-    await expect.poll(body(page)).toMatch(/gamma/);
+    await expect.poll(body(page)).toMatch(/gamma/i);
     await expect.poll(body(page)).toMatch(/solo_tool/);
 
     expect(consoleErrors, 'console errors').toEqual([]);
