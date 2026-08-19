@@ -125,11 +125,23 @@ const referenceRenderers: Record<string, ToolRenderer> = {
     },
   },
   find_references: {
+    /**
+     * `find_references` takes a discriminated `target` — an entity, a section
+     * or a page. This summary read `type`/`slug` unconditionally, which are
+     * absent on two of the three variants, so a section or page sweep rendered
+     * as the literal "Find refs to ? ?" in the panel.
+     */
     summary(i, r) {
-      const { type, slug } = cx(i).input;
+      const { target, type, slug, anchor, rootId, path } = cx(i).input;
       const { result } = cx2(i, r);
       const refs = Array.isArray(result?.references) ? (result!.references as unknown[]).length : undefined;
-      const base = `Find refs to ${type ?? '?'} ${slug ?? '?'}`;
+      const subject =
+        target === 'section'
+          ? `section ${anchor ?? '?'}`
+          : target === 'page'
+            ? `page ${rootId ?? '?'}/${path ?? '?'}`
+            : `${type ?? '?'} ${slug ?? '?'}`;
+      const base = `Find refs to ${subject}`;
       return typeof refs === 'number' ? `${base} (${refs})` : base;
     },
   },

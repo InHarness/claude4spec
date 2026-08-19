@@ -232,7 +232,7 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
 
   const listSections = op(
     'list_sections',
-    'List sections, either of one page — { by: "page", rootId, path } — or the single section an anchor names — { by: "anchor", anchor }. Every row carries its `size`, so the volume of a section is knowable BEFORE fetching it. There is no fuzzy heading search here: to find a section by text, call search_pages and then list_sections({ by: "anchor" }) on the hit. Calling without `by` returns INVALID_ARGUMENT listing both variants.',
+    'List sections, either of one page — { by: "page", rootId, path } — or the single section an anchor names — { by: "anchor", anchor }, which also reports `is_known` for an anchor that does not exist. An unknown anchor is NOT an error: it answers 200 with an empty list and `is_known: false`, which is what makes this the way to VALIDATE an anchor before citing it. Every row carries its `size`, so the volume of a section is knowable BEFORE fetching it. There is no fuzzy heading search here: to find a section by text, call search_pages and then list_sections({ by: "anchor" }) on the hit. Calling without `by` returns INVALID_ARGUMENT listing both variants.',
     {
       by: z.enum(['page', 'anchor']).optional().describe('Identity regime; required'),
       rootId: z.string().optional().describe('With by:"page" — which root'),

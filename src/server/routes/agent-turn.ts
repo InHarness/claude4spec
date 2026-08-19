@@ -169,17 +169,13 @@ export function cancelPendingForRequest(
   }
 }
 
-/** Typed blad tury — pozwala konsumentom (headless `ask`) zmapowac powod
- *  zakonczenia na status HTTP. Te same kody co SSE `event: error`. */
-export class AgentTurnError extends Error {
-  constructor(
-    public code: 'ABORTED' | 'TIMEOUT' | 'AGENT_UNAVAILABLE' | 'AGENT_ERROR',
-    message: string,
-  ) {
-    super(message);
-    this.name = 'AgentTurnError';
-  }
-}
+/**
+ * Typed blad tury. The class moved to `shared/agent-turn.ts` when
+ * `runTransagent` had to narrow on it too — re-exported here so the many
+ * existing `from './agent-turn.js'` importers keep working.
+ */
+import { AgentTurnError } from '../../shared/agent-turn.js';
+export { AgentTurnError, type AgentTurnErrorCode } from '../../shared/agent-turn.js';
 
 type TurnEvent = { type: string } & Record<string, unknown>;
 

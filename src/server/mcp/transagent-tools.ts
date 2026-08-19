@@ -20,6 +20,7 @@ import { z } from 'zod';
 import { toolError } from '../operations/envelope.js';
 import type { TransagentDispatcher } from '../services/transagent-dispatcher.js';
 import { DomainError } from '../services/tags.js';
+import { AgentTurnError } from '../../shared/agent-turn.js';
 
 /** Tool name as the SDK reports it (`mcp__<server>__<tool>`) — used by the
  *  agent-turn loop to correlate the tool_use event with the dispatcher. */
@@ -51,6 +52,14 @@ export function buildTransagentToolsServer(ctx: TransagentToolsContext): Capture
       'payload key. It is NOT inherited: omit it and the child runs unrestricted even if YOU are in',
       'plan mode. It is ignored when continuing an existing child via `threadId` — a banka\'s posture',
       'is fixed when it is created.',
+      'On failure the tool_result is `isError` with a flat `{ error, code }`. Codes:',
+      '  - ABORTED / TIMEOUT / AGENT_UNAVAILABLE / AGENT_ERROR — the CHILD turn ended that way.',
+      '    ABORTED means a human stopped it; AGENT_UNAVAILABLE means it never started (retryable).',
+      '  - NOT_FOUND — `threadId` names no thread.',
+      '  - INVALID_ARGS — the arguments do not describe a runnable child: contextType=\'patch\'',
+      "    without payload.patchPath, or a `threadId` that is someone else's child, not yours.",
+      '  - INTERNAL — this server faulted; not a child-turn outcome, and not retryable as-is.',
+      'A failed child keeps its last good summary: read it back with runTransagent({ threadId }).',
     ].join('\n'),
     {
       contextType: z.enum(['brief', 'chat', 'patch']),
@@ -79,11 +88,9 @@ export function buildTransagentToolsServer(ctx: TransagentToolsContext): Capture
         // Non-abort child failure collapses upward as the parent's tool_result
         // isError { code, message }. The last good summary remains readable via
         // runTransagent({ threadId }).
-        // The shared envelope — flat `{ error, code }`, per item 3. `AGENT_ERROR`
-        // stays the default: a child turn that failed is not this server faulting.
-        const code = err instanceof DomainError ? err.code : 'AGENT_ERROR';
+        const { code, hint } = transagentErrorCode(err);
         const message = err instanceof Error ? err.message : String(err);
-        return toolError(code, message);
+        return toolError(code, message, hint);
       }
     },
   );
@@ -92,4 +99,37 @@ export function buildTransagentToolsServer(ctx: TransagentToolsContext): Capture
     name: 'transagent-tools',
     tools: [runTransagent],
   });
+}
+
+/**
+ * The tool's error taxonomy, and the reason it is not just `err.code`.
+ *
+ * Three kinds of failure arrive here and they used to collapse into one. A
+ * CHILD TURN that was aborted or timed out throws `AgentTurnError`, which is
+ * not a `DomainError` — so `ABORTED` and `TIMEOUT` both reached the parent as
+ * a flat `AGENT_ERROR`, and a parent agent could not tell "the user stopped
+ * it" from "the child genuinely failed". Those codes pass through verbatim
+ * now, `AGENT_UNAVAILABLE` included: a child that never started is a fourth
+ * outcome, and folding it into `AGENT_ERROR` would lose the one that is worth
+ * retrying. `ask` already exposes it for the same reason.
+ *
+ * The dispatcher's own `VALIDATION` is renamed to `INVALID_ARGS` at this
+ * boundary rather than at the source. `VALIDATION` is the repo-wide service
+ * code for a bad argument (tags, entities, everything); `INVALID_ARGS` is
+ * what THIS tool's contract documents. Renaming it in the service would
+ * change a vocabulary shared by callers that have nothing to do with bankas.
+ *
+ * `contextType` outside `brief|chat|patch` deliberately stays a zod rejection
+ * rather than `INVALID_ARGS`: the schema is a `z.enum`, and loosening it to
+ * `z.string()` so this function could reject it by hand would trade a
+ * protocol-level guarantee for a spelling.
+ */
+function transagentErrorCode(err: unknown): { code: string; hint?: string } {
+  if (err instanceof AgentTurnError) return { code: err.code };
+  if (err instanceof DomainError) {
+    return { code: err.code === 'VALIDATION' ? 'INVALID_ARGS' : err.code, hint: err.hint };
+  }
+  // Default stays `AGENT_ERROR` rather than `INTERNAL`: a child turn that
+  // failed is not this server faulting.
+  return { code: 'AGENT_ERROR' };
 }
