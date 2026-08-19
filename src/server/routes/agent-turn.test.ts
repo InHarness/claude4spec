@@ -37,6 +37,13 @@ const hoisted = vi.hoisted(() => ({
   // 0.1.103: lets tests control cfg.agent.{allowedPaths,disallowedPaths} without
   // a real config.json on disk — undefined mirrors "nothing configured".
   agent: undefined as { allowedPaths?: string[]; disallowedPaths?: string[] } | undefined,
+  /**
+   * Stands in for what the SDK does to an sdk-type server: bind it to a
+   * transport. Runs inside `execute`, before any event is yielded, so a test can
+   * decide which servers came up and which stayed dark — the difference the
+   * mount guard reports on.
+   */
+  onExecute: null as ((opts: Record<string, unknown>) => void) | null,
 }));
 
 vi.mock('@inharness-ai/agent-adapters', async (importOriginal) => {
@@ -48,6 +55,7 @@ vi.mock('@inharness-ai/agent-adapters', async (importOriginal) => {
       execute: async function* execute(opts: Record<string, unknown>) {
         hoisted.lastExecute = opts;
         hoisted.executes.push(opts);
+        hoisted.onExecute?.(opts);
         for (const e of hoisted.events) yield e;
       },
     }),
@@ -67,6 +75,7 @@ import { runAgentTurn, type AgentTurnDeps, type AgentTurnInput } from './agent-t
 afterEach(() => {
   hoisted.agent = undefined;
   hoisted.executes = [];
+  hoisted.onExecute = null;
 });
 
 interface Recorded {
@@ -782,5 +791,186 @@ describe('runAgentTurn — adapter warnings reach the user (C21)', () => {
     expect(messages.map((m) => m.role)).toEqual(['user', 'assistant', 'warning', 'assistant']);
     expect(messages[1]!.text).toBe('Before. ');
     expect(messages[3]!.text).toBe('After.');
+  });
+});
+
+/**
+ * Brief `0-2-35-to-next` — a failed MCP mount must be loud and fatal.
+ *
+ * The production signature these pin: `tool_use` and `tool_result` in the same
+ * second, `{"summary":"(mcp__brief-tools__update_brief completed with no
+ * output)"}`, the handler never entered, and nobody — model or user — told
+ * anything. The SDK swallows a rejected `connect()` and advertises the server
+ * anyway, so the turn has to notice on its own.
+ */
+describe('runAgentTurn — mounting is loud (0-2-35-to-next)', () => {
+  /** Marks every mounted server bound, as a healthy SDK connect would. */
+  function bindAll(opts: Record<string, unknown>): void {
+    for (const config of Object.values((opts.mcpServers ?? {}) as Record<string, { instance?: unknown }>)) {
+      const instance = config.instance as { server?: { transport?: unknown } } | undefined;
+      if (instance) instance.server = { transport: {} };
+    }
+  }
+
+  /** Binds everything EXCEPT `except` — one server dark among healthy ones. */
+  function bindAllExcept(except: string) {
+    return (opts: Record<string, unknown>): void => {
+      const servers = (opts.mcpServers ?? {}) as Record<string, { instance?: unknown }>;
+      for (const [name, config] of Object.entries(servers)) {
+        const instance = config.instance as { server?: { transport?: unknown } } | undefined;
+        if (instance) instance.server = { transport: name === except ? undefined : {} };
+      }
+    };
+  }
+
+  /** A turn whose single MCP call comes back with nothing — the observed defect. */
+  function emptyMcpCallEvents(toolName = 'mcp__plan-tools__update_plan') {
+    return [
+      { type: 'tool_use', toolName, toolUseId: 'u1', input: {} },
+      {
+        type: 'tool_result',
+        toolUseId: 'u1',
+        summary: `(${toolName} completed with no output)`,
+        isError: false,
+      },
+      { type: 'result', sessionId: 's1' },
+    ];
+  }
+
+  it('an empty MCP tool_result with every server unbound kills the turn (signature B)', async () => {
+    hoisted.events = emptyMcpCallEvents();
+    // No onExecute: nothing ever binds, exactly like a whole set going dark.
+    const { deps } = makeDeps();
+
+    await expect(runAgentTurn(deps, makeInput())).rejects.toThrow(/ALL \d+ mounted servers/i);
+  });
+
+  it('distinguishes ONE dark server from the whole set going dark (signature A vs B)', async () => {
+    hoisted.events = emptyMcpCallEvents();
+    hoisted.onExecute = bindAllExcept('plan-tools');
+    const { deps } = makeDeps();
+
+    // Signature A names the single server and says the others mounted cleanly —
+    // the "indistinguishable from the outside" half of the defect.
+    const err = await runAgentTurn(deps, makeInput()).catch((e: Error) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toMatch(/"plan-tools" is advertised but unbound/);
+    expect((err as Error).message).toMatch(/other server\(s\) mounted cleanly/);
+    expect((err as Error).message).not.toMatch(/ALL \d+ mounted servers/i);
+  });
+
+  it('the error reaches the client as an `error` event, not just as a rejection', async () => {
+    hoisted.events = emptyMcpCallEvents();
+    const { deps } = makeDeps();
+    const events: Array<Record<string, unknown>> = [];
+    const input = makeInput();
+    input.onEvent = (e) => events.push(e as unknown as Record<string, unknown>);
+
+    await runAgentTurn(deps, input).catch(() => {});
+
+    const errorEvent = events.find((e) => e.type === 'error');
+    expect(errorEvent).toBeDefined();
+    expect(String(errorEvent?.error)).toMatch(/MCP mount failed/);
+  });
+
+  it('leaves a healthy turn alone — bound servers, empty result, no abort', async () => {
+    // An empty result with LIVE bindings is not a mount failure. Per-call
+    // observability is deliberately another brief's subject; this must not
+    // become a second, speculative failure mode.
+    hoisted.events = emptyMcpCallEvents();
+    hoisted.onExecute = bindAll;
+    const { deps } = makeDeps();
+
+    await expect(runAgentTurn(deps, makeInput())).resolves.toBeDefined();
+  });
+
+  it('never probes a healthy turn that makes no MCP call', async () => {
+    // sdk-type servers connect lazily, so "unbound" is normal until a call has
+    // to reach one. A turn with no MCP traffic must never trip the guard.
+    hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+
+    await expect(runAgentTurn(deps, makeInput())).resolves.toBeDefined();
+  });
+
+  it('a non-MCP tool returning no output is not a mount failure', async () => {
+    hoisted.events = [
+      { type: 'tool_use', toolName: 'Bash', toolUseId: 'u1', input: {} },
+      { type: 'tool_result', toolUseId: 'u1', summary: '(Bash completed with no output)', isError: false },
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps } = makeDeps();
+
+    await expect(runAgentTurn(deps, makeInput())).resolves.toBeDefined();
+  });
+
+  it('refuses to mount the same McpServer instance twice in one turn', async () => {
+    hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    // A memoizing factory: one instance handed out under two names. Mounting it
+    // twice is the 'Already connected to a transport' rejection the SDK hides.
+    const shared = { server: {} };
+    (deps.pluginHost as unknown as { buildMcpServers: () => unknown }).buildMcpServers = () => [
+      { name: 'entity-tools', server: { config: { type: 'sdk', name: 'entity-tools', instance: shared } } },
+      { name: 'release-tools', server: { config: { type: 'sdk', name: 'release-tools', instance: shared } } },
+    ];
+
+    await expect(runAgentTurn(deps, makeInput())).rejects.toThrow(/SAME instance already mounted/i);
+  });
+
+  it('releases the thread when the mount fails — no 409 wedge, no pinned context', async () => {
+    // The register/release pair now spans exactly one try/finally, so a throw
+    // during setup can no longer strand an `activeAdapters` entry. A stranded
+    // entry means `POST /api/chat` answers 409 STREAM_IN_PROGRESS for that
+    // thread and `hasInFlightTurn()` pins the ProjectContext — until restart.
+    hoisted.events = emptyMcpCallEvents();
+    const { deps } = makeDeps();
+
+    await runAgentTurn(deps, makeInput()).catch(() => {});
+
+    expect(deps.activeAdapters.size).toBe(0);
+  });
+});
+
+/**
+ * Brief `0-2-35-to-next` item 2 — L3's "the profile is the only hard gate" has
+ * to be true of the WHOLE server map. The six inline servers used to be written
+ * in after `gateServers` had run.
+ */
+describe('runAgentTurn — the profile gate covers the inline servers too', () => {
+  async function mountedFor(contextType: string): Promise<string[]> {
+    hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    // The rig is built without a workspace, and workspace-tools mounts only when
+    // one is present — supply it, since it is the server these tests are about.
+    (deps as unknown as { listWorkspaceProjects: () => unknown }).listWorkspaceProjects = () => ({
+      projects: [],
+    });
+    const input = makeInput();
+    (input.thread as unknown as { contextType: string }).contextType = contextType;
+    await runAgentTurn(deps, input);
+    return Object.keys((hoisted.lastExecute?.mcpServers ?? {}) as Record<string, unknown>).sort();
+  }
+
+  it('keeps the inline servers a profile admits — they pass THROUGH the gate, not around it', async () => {
+    // Every inline tool's catalog opClass matches the coarse flag that mounts
+    // its server, so routing them through the gate drops nothing.
+    expect(await mountedFor('chat')).toEqual(
+      ['c4s-tools', 'plan-tools', 'transagent-tools', 'workspace-tools'].sort(),
+    );
+  });
+
+  it('workspace-tools survives the gate for every profile — list_projects is read-class', async () => {
+    for (const contextType of ['chat', 'ask', 'patch']) {
+      expect(await mountedFor(contextType)).toContain('workspace-tools');
+    }
+  });
+
+  it('ask still gets neither the peer nor the delegation server', async () => {
+    // The recursion guard is a property of the profile, and it survives the move
+    // of the inline servers to the gated side of the map.
+    const mounted = await mountedFor('ask');
+    expect(mounted).not.toContain('c4s-tools');
+    expect(mounted).not.toContain('transagent-tools');
   });
 });

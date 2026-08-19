@@ -166,6 +166,35 @@ describe('buildMcpServers — one malformed plugin must not kill the turn', () =
     return vi.spyOn(console, 'warn').mockImplementation(() => {});
   }
 
+  /**
+   * Brief `0-2-35-to-next` item 3b. This is the ONE failure here that is fatal
+   * rather than skipped, and the asymmetry is the point: a plugin that returns a
+   * repeat instance does not merely lose its own tools — an McpServer binds to
+   * exactly one transport, so the shared map goes dark for everyone, brief-tools
+   * included, and the symptom is tool calls with no result at all.
+   */
+  it('throws, naming the plugin, when a factory returns an instance already returned', () => {
+    const memoized = validInstance('memoizing-tools');
+    const host = hostWith({
+      'endpoint-tools': () => validInstance('endpoint-tools'),
+      'memoizing-tools': () => memoized,
+      'other-tools': () => memoized,
+    });
+
+    expect(() => host.buildMcpServers()).toThrow(/other-tools/);
+    expect(() => host.buildMcpServers()).toThrow(/fresh/i);
+  });
+
+  it('lets two structurally identical handles through — identity is what matters', () => {
+    // Two separate `createMcpServer` calls can look alike; only the same object
+    // twice is the transport-binding hazard.
+    const host = hostWith({
+      'a-tools': () => ({ server: {}, config: { type: 'sdk' } }),
+      'b-tools': () => ({ server: {}, config: { type: 'sdk' } }),
+    });
+    expect(host.buildMcpServers()).toHaveLength(2);
+  });
+
   it('passes a well-formed McpServerInstance through untouched', () => {
     const instance = validInstance('ok-tools');
     const host = hostWith({ 'ok-tools': () => instance });

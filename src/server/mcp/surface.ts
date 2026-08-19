@@ -254,30 +254,58 @@ export interface ExternalSurface {
  * servers and registering their zod schemas, measured at ~5.7 ms. Paying that on
  * every tool invocation is pure waste when nothing has changed.
  *
- * The host object is the right key precisely because of how invalidation works
+ * The host object is MOST of the key, because of how invalidation usually works
  * here: a plugin activated or deactivated goes through a config change, which
  * invalidates the `ProjectContext`, which builds a NEW `ProjectPluginHost`. So a
  * changed pool is a changed key, and an unchanged pool is a cache hit — the
  * lazy-rebuild semantics are preserved rather than traded away for the speed.
  *
- * A `WeakMap`, so a disposed context's entry goes with it.
+ * It is not ALL of the key, and assuming it was is what this second level fixes.
+ * The memoized `McpToolDeclaration`s carry HANDLERS, and those handlers close
+ * over the services captured on the first compose — `briefService` above all
+ * (see `sourceServers` below, and the `const { briefService } = ctx` every
+ * brief-tools handler closes over). "A config change builds a new host" is a
+ * statement about ONE way the context is rebuilt, not about all of them: rebuild
+ * the context without a config change and the host key can survive while
+ * `briefService` is replaced, leaving cached handlers writing through a service
+ * belonging to a disposed context. That is a mount-layer failure with no handler
+ * execution and no error — the empty `tool_result` this release exists to end.
+ *
+ * So the key is (host, briefService, profile): the service identity changes on
+ * every context rebuild, config change or not.
+ *
+ * `WeakMap`s at both object levels, so a disposed context's entry goes with it.
  */
-const SURFACE_CACHE = new WeakMap<ProjectPluginHost, Map<ChatContextType, ExternalSurface>>();
+const SURFACE_CACHE = new WeakMap<
+  ProjectPluginHost,
+  WeakMap<BriefService, Map<ChatContextType, ExternalSurface>>
+>();
 
 export function composeExternalSurface(deps: ExternalSurfaceDeps): ExternalSurface {
-  const cached = SURFACE_CACHE.get(deps.pluginHost)?.get(deps.profile);
+  const cached = SURFACE_CACHE.get(deps.pluginHost)?.get(deps.briefService)?.get(deps.profile);
   if (cached) return cached;
   const surface = composeUncached(deps);
-  let byProfile = SURFACE_CACHE.get(deps.pluginHost);
+  let byService = SURFACE_CACHE.get(deps.pluginHost);
+  if (!byService) {
+    byService = new WeakMap();
+    SURFACE_CACHE.set(deps.pluginHost, byService);
+  }
+  let byProfile = byService.get(deps.briefService);
   if (!byProfile) {
     byProfile = new Map();
-    SURFACE_CACHE.set(deps.pluginHost, byProfile);
+    byService.set(deps.briefService, byProfile);
   }
   byProfile.set(deps.profile, surface);
   return surface;
 }
 
-/** Test seam: drop the memo for one host, to exercise a recomposition directly. */
+/**
+ * Test seam: drop the memo for one host, to exercise a recomposition directly.
+ *
+ * Drops every `briefService` generation under that host — the seam is "forget
+ * this host", and a caller that wanted one generation gone can just pass a new
+ * service.
+ */
 export function __invalidateSurfaceCache(host: ProjectPluginHost): void {
   SURFACE_CACHE.delete(host);
 }

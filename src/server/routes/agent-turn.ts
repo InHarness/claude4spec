@@ -25,6 +25,7 @@ import type { PatchWriteDeps } from '../services/patch-write.js';
 import { buildBriefToolsServer } from '../mcp/brief-tools.js';
 import { buildC4sToolsServer } from '../mcp/c4s-tools.js';
 import { buildWorkspaceToolsServer } from '../mcp/workspace-tools.js';
+import type { McpServerFactory } from '../../shared/plugin-host/mcp.js';
 import { gateServers, pluginServerNamesFor } from '../operations/profile-gate.js';
 import { BRIEF_ALLOWED_PLUGIN_MCP } from '../operations/profiles.js';
 import type { ListProjectsResult } from '../workspace/list-projects.js';
@@ -177,6 +178,25 @@ export function cancelPendingForRequest(
 import { AgentTurnError } from '../../shared/agent-turn.js';
 export { AgentTurnError, type AgentTurnErrorCode } from '../../shared/agent-turn.js';
 
+/** Every MCP tool the model sees is namespaced `mcp__<server>__<tool>`. */
+const MCP_TOOL_PREFIX = 'mcp__';
+
+/**
+ * Did this `tool_result` carry nothing back?
+ *
+ * The empty case reaches us as a synthesized placeholder rather than as an
+ * empty string — verbatim from the production row this release is built on:
+ * `"(mcp__brief-tools__update_brief completed with no output)"`. It is produced
+ * above the adapter, so it is matched by shape rather than imported; a blank
+ * summary counts too.
+ */
+export function isNoOutputSummary(summary: string | undefined | null): boolean {
+  if (summary == null) return true;
+  const trimmed = summary.trim();
+  if (trimmed === '') return true;
+  return /^\(.*\bno output\b.*\)$/i.test(trimmed);
+}
+
 type TurnEvent = { type: string } & Record<string, unknown>;
 
 export interface AgentTurnInput {
@@ -319,20 +339,6 @@ export async function runAgentTurn(
     emitter.emit('event', event);
     bufferForReplay(event);
   };
-  // Rejestracja PO zdefiniowaniu `emit` — kolejka (out-of-band `POST/DELETE
-  // /api/chat/queue/...`) używa go do broadcastu `queue_updated`/`queue_cleared`.
-  deps.activeAdapters.set(thread.id, {
-    requestId,
-    adapter,
-    emitter,
-    replay,
-    emit,
-    // 0.1.69 Transagents: lets the abort cascade find this turn's children (when
-    // this turn IS a child, parentThreadId is set from the row).
-    parentThreadId: thread.parentThreadId,
-  });
-  emit({ type: 'connected', requestId, threadId: thread.id });
-
   // 0.1.69 Transagents: race-free correlation between the SDK's
   // `tool_use(runTransagent)` id and the dispatcher. The loop pushes the id when
   // it observes the tool_use event; the dispatcher (invoked from the MCP handler)
@@ -420,7 +426,34 @@ export async function runAgentTurn(
     }
   };
 
+  /**
+   * Registration lives INSIDE the try, and that placement is load-bearing.
+   *
+   * `finally` below is the only thing that removes this entry, so every
+   * statement that can throw between the `set` and the `try` was a permanent
+   * leak: the thread keeps an `activeAdapters` entry with no turn behind it, so
+   * `POST /api/chat` answers 409 STREAM_IN_PROGRESS forever and
+   * `hasInFlightTurn()` pins the whole `ProjectContext` against eviction — the
+   * "wedged until the process restarts" state, reachable from any throw during
+   * setup. Registering here makes the register/release pair span exactly one
+   * try/finally.
+   *
+   * Still AFTER `emit` is defined — the out-of-band queue routes (`POST/DELETE
+   * /api/chat/queue/...`) broadcast `queue_updated`/`queue_cleared` through it.
+   */
   try {
+    deps.activeAdapters.set(thread.id, {
+      requestId,
+      adapter,
+      emitter,
+      replay,
+      emit,
+      // 0.1.69 Transagents: lets the abort cascade find this turn's children (when
+      // this turn IS a child, parentThreadId is set from the row).
+      parentThreadId: thread.parentThreadId,
+    });
+    emit({ type: 'connected', requestId, threadId: thread.id });
+
     deps.chatService.addMessage(
       thread.id,
       'user',
@@ -640,6 +673,101 @@ export async function runAgentTurn(
     const pluginServerNames = pluginServerNamesFor(deps.pluginHost.listEntities().map((m) => m.type));
 
     /**
+     * MOUNTING IS LOUD — the two guards that make a failed mount fatal.
+     *
+     * Everything below the SDK boundary is silent by construction:
+     * `connectSdkMcpServer` does `t.connect(r).catch(o => debugLog(o))` and then
+     * advertises the server regardless, so a rejected `connect()` produces a
+     * tool the model can call and can never reach. The observable result is a
+     * `tool_result` with no output, in the same second as the `tool_use`, with
+     * the handler never entered. There is no "advertised but broken" state worth
+     * keeping: a server we cannot guarantee is reachable must abort the turn.
+     *
+     * Since the SDK reports nothing, the failure is caught from both sides:
+     *
+     * 1. `assertFreshMount` — BEFORE the mount, refuse to hand the adapter an
+     *    instance already mounted in this turn. Re-mounting a live instance IS
+     *    the 'Already connected to a transport' rejection, and rebuilding per
+     *    execute means a repeat can only be a memoizing factory. Prevention,
+     *    and the only guard that can act before damage is done.
+     * 2. `assertMountedBindingsLive` — check the binding the SDK would not
+     *    report on. `Protocol` exposes `get transport()`, so "advertised but
+     *    unbound" is directly observable rather than inferred.
+     *
+     * The second one is deliberately NOT a probe at query start. sdk-type
+     * servers are connected lazily, so "unbound" is a perfectly normal state
+     * until something has to reach one — probing early turns every healthy turn
+     * into a fatal error. It runs on the evidence instead: an MCP tool call that
+     * came back with no output at all, which is precisely when a live binding
+     * was required and precisely the signature in the production data.
+     *
+     * Both throw from inside the turn's `try`, so the catch maps them to
+     * `AgentTurnError('AGENT_ERROR')` and `emit`s an `error` event — visible on
+     * the live stream, in the replay buffer for a re-joining client, and as a
+     * non-2xx for headless callers.
+     */
+    const mountedInstances = new Set<object>();
+
+    /** The live `McpServer` behind an adapter config, if it carries one. */
+    const instanceOf = (config: McpServerConfig): object | null => {
+      const candidate = (config as { instance?: unknown }).instance;
+      return typeof candidate === 'object' && candidate !== null ? candidate : null;
+    };
+
+    const assertFreshMount = (servers: Record<string, McpServerConfig>): void => {
+      for (const [name, config] of Object.entries(servers)) {
+        const instance = instanceOf(config);
+        if (!instance) continue;
+        if (mountedInstances.has(instance)) {
+          throw new Error(
+            `MCP mount failed: server "${name}" was rebuilt as the SAME instance already mounted ` +
+              `in this turn. An McpServer binds to exactly one transport, so mounting it twice ` +
+              `leaves tool calls with no result at all. Its factory must return a fresh server ` +
+              `per call.`,
+          );
+        }
+        mountedInstances.add(instance);
+      }
+    };
+
+    /**
+     * Are the servers we advertised actually bound?
+     *
+     * `scope` is what makes the two production signatures tell themselves apart
+     * from the outside — the property the brief asks for as acceptance evidence.
+     * One unbound server among healthy ones is a different failure from the
+     * whole set going dark at once, and the message says which happened.
+     */
+    const assertMountedBindingsLive = (
+      servers: Record<string, McpServerConfig>,
+      context: string,
+    ): void => {
+      const advertised: string[] = [];
+      const unbound: string[] = [];
+      for (const [name, config] of Object.entries(servers)) {
+        const instance = instanceOf(config);
+        if (!instance) continue;
+        advertised.push(name);
+        // `McpServer` wraps the protocol `Server`, which exposes the live
+        // transport. Absent => `connect()` never completed (or `_onclose` ran).
+        const bound = (instance as { server?: { transport?: unknown } }).server?.transport;
+        if (bound == null) unbound.push(name);
+      }
+      if (unbound.length === 0) return;
+      const whole = unbound.length === advertised.length && advertised.length > 1;
+      throw new Error(
+        whole
+          ? `MCP mount failed: ALL ${advertised.length} mounted servers are advertised but unbound ` +
+            `(${unbound.join(', ')}) at ${context}. The whole tool surface is dark for this turn; ` +
+            `tool calls would return no result at all.`
+          : `MCP mount failed: server${unbound.length > 1 ? 's' : ''} "${unbound.join('", "')}" ` +
+            `${unbound.length > 1 ? 'are' : 'is'} advertised but unbound at ${context}, while ` +
+            `${advertised.length - unbound.length} other server(s) mounted cleanly. Calls to ` +
+            `${unbound.length > 1 ? 'those servers' : 'that server'} would return no result at all.`,
+      );
+    };
+
+    /**
      * ONE `McpServer` SET PER `adapter.execute` — NOT per turn.
      *
      * An MCP `McpServer` binds to exactly one transport: `Protocol.connect`
@@ -732,38 +860,71 @@ export async function runAgentTurn(
        * apply to MCP at all. A server left with no admitted tools is dropped
        * rather than mounted empty.
        */
-      const pluginMcpEntries = gateServers(
+      const pluginEntries = deps.pluginHost
+        .buildMcpServers()
+        .filter(({ name }) =>
+          ctx.mcp.pluginServers === 'release-only' ? BRIEF_ALLOWED_PLUGIN_MCP.has(name) : true,
+        );
+
+      /**
+       * The INLINE servers, as gate input rather than as post-gate assignments.
+       *
+       * They used to be written into the map after `gateServers` had run, which
+       * made L3's "the profile is the only hard gate" false for half the map:
+       * six servers reached the model governed solely by the coarse `ctx.mcp.*`
+       * flags, with their per-tool declarations never consulted. They carry
+       * `.tools` from `createMcpServer` exactly like a plugin's server does, so
+       * there was never a reason they could not be gated — only an ordering.
+       *
+       * Nothing is expected to DROP as a result: each inline tool's catalog
+       * `opClass` matches the coarse flag that mounts it (`get_brief` /
+       * `update_brief` / `file_patch` are `brief`, plan tools are `plan`, `ask`
+       * is `peer`, `list_projects` is `read`), and `mcpServerSetForProfile`
+       * derives those flags from the same class sets the gate reads. The point
+       * is that the two can no longer drift apart in silence: widen a profile
+       * without widening the catalog and the gate now has the final word.
+       *
+       * `list_projects` (workspace-tools) stays mounted for every context type
+       * for the reason it always was — it is read-class, which every profile
+       * admits, and neither alternative home's gate (the peer-consultation
+       * recursion guard on `c4s-tools`, the release-only narrowing of the plugin
+       * pool for `brief`) has anything to do with workspace discovery. It now
+       * reaches that outcome THROUGH the gate rather than around it.
+       *
+       * Ordering is load-bearing: inline entries come last, so a name collision
+       * with a plugin server resolves to the inline one, exactly as the previous
+       * overwrite-by-key assignment did.
+       */
+      const inlineEntries: Array<{ name: string; server: McpServerFactory }> = [];
+      if (planTools) inlineEntries.push({ name: 'plan-tools', server: planTools });
+      if (briefTools) inlineEntries.push({ name: 'brief-tools', server: briefTools });
+      if (patchTools) inlineEntries.push({ name: 'patch-tools', server: patchTools });
+      if (c4sTools) inlineEntries.push({ name: 'c4s-tools', server: c4sTools });
+      if (transagentTools)
+        inlineEntries.push({ name: 'transagent-tools', server: transagentTools });
+      if (workspaceTools) inlineEntries.push({ name: 'workspace-tools', server: workspaceTools });
+
+      /**
+       * ONE gate call, producing the final map. There is deliberately no second
+       * place in this function where a server can enter it.
+       */
+      const gated = gateServers(
         thread.contextType,
-        deps.pluginHost
-          .buildMcpServers()
-          .filter(({ name }) =>
-            ctx.mcp.pluginServers === 'release-only' ? BRIEF_ALLOWED_PLUGIN_MCP.has(name) : true,
-          ),
+        [...pluginEntries, ...inlineEntries],
         // Which of the survivors are a PLUGIN's own surface. For a profile that
         // admits no writes, an undeclared tool on one of those is denied rather
         // than waved through — the host cannot vouch for what it never wrote.
+        // Inline servers are host-owned and are not in this set.
         pluginServerNames,
-      )
+      );
+
+      const mcpServers: Record<string, McpServerConfig> = Object.fromEntries(
         // 0.2.2: `McpServerFactory.config` is deliberately `unknown` — the host
         // only forwards it. THIS is the adapter boundary where it is re-widened to
         // the vendor's config type, and the only place in the host that needs to.
-        .map(({ name, server }) => [name, server.config as McpServerConfig] as const);
-      const mcpServers: Record<string, McpServerConfig> = Object.fromEntries(pluginMcpEntries);
-      if (planTools) mcpServers['plan-tools'] = planTools.config;
-      if (briefTools) mcpServers['brief-tools'] = briefTools.config;
-      if (patchTools) mcpServers['patch-tools'] = patchTools.config;
-      if (c4sTools) mcpServers['c4s-tools'] = c4sTools.config;
-      if (transagentTools) mcpServers['transagent-tools'] = transagentTools.config;
-      /**
-       * 0.2.13 — M31's `list_projects`, mounted for EVERY context type.
-       *
-       * Unconditional because it is a read-class operation, which every profile
-       * admits, and because the alternative homes both carry a gate that has
-       * nothing to do with it: `c4s-tools` is withheld from `ask`/`brief` by the
-       * peer-consultation recursion guard, and the plugin pool is narrowed to
-       * release-tools for `brief`. Workspace discovery must not inherit either.
-       */
-      if (workspaceTools) mcpServers['workspace-tools'] = workspaceTools.config;
+        gated.map(({ name, server }) => [name, server.config as McpServerConfig] as const),
+      );
+      assertFreshMount(mcpServers);
       return mcpServers;
     };
 
@@ -814,14 +975,23 @@ export async function runAgentTurn(
     let currentSessionId: string | undefined = thread.lastSessionId ?? undefined;
 
     const consume = async (execPrompt: string): Promise<void> => {
+      // Called HERE, per invocation — never hoisted into a variable this closure
+      // captures across queries. That distinction is the entire fix. Held in a
+      // local only so the binding check below can look at THIS query's set.
+      const mountedForQuery = buildMcpServersForExecute();
       const stream = adapter.execute({
         ...baseExecuteArgs,
-        // Called HERE, per invocation — never hoisted into a variable this closure
-        // captures. That distinction is the entire fix.
-        mcpServers: buildMcpServersForExecute(),
+        mcpServers: mountedForQuery,
         prompt: execPrompt,
         resumeSessionId: currentSessionId,
       });
+      /**
+       * `tool_use` id → tool name, for THIS query's MCP calls only.
+       *
+       * The binding check below needs to know that an empty `tool_result`
+       * belonged to an MCP tool, and the result event carries only the id.
+       */
+      const mcpToolUseNames = new Map<string, string>();
       const observed = input.consoleObserver
         ? observeStream(stream, [input.consoleObserver])
         : stream;
@@ -911,6 +1081,9 @@ export async function runAgentTurn(
             break;
           }
           case 'tool_use': {
+            if (event.toolName?.startsWith(MCP_TOOL_PREFIX) && event.toolUseId) {
+              mcpToolUseNames.set(event.toolUseId, event.toolName);
+            }
             const taskId = event.subagentTaskId ?? null;
             if (taskId) flushSubBuf(taskId);
             else flushMainBuf();
@@ -932,6 +1105,26 @@ export async function runAgentTurn(
             break;
           }
           case 'tool_result': {
+            /**
+             * THE SIGNATURE, caught at the only moment it is actually visible.
+             *
+             * An MCP call that comes back with no output at all is the symptom
+             * this release exists to end: same-second `tool_use`/`tool_result`,
+             * handler never entered, nobody told. Checking the bindings HERE —
+             * rather than speculatively at query start — is what keeps the guard
+             * honest: the SDK connects its sdk-type servers lazily, so "not yet
+             * bound" is a normal state right up until a call has to reach one.
+             * By the time an empty result exists, a live binding was required.
+             *
+             * If the bindings are live the call failed somewhere else and this
+             * says nothing (per-call observability is deliberately out of scope,
+             * being specified separately). If they are not, the turn dies loudly
+             * and names whether one server or the whole set went dark.
+             */
+            const mcpToolName = mcpToolUseNames.get(event.toolUseId);
+            if (mcpToolName && isNoOutputSummary(event.summary)) {
+              assertMountedBindingsLive(mountedForQuery, `empty tool_result for ${mcpToolName}`);
+            }
             const taskId = event.subagentTaskId ?? null;
             deps.chatService.markToolUseComplete(thread.id, event.toolUseId);
             const row = deps.chatService.addMessage(

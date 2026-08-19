@@ -112,4 +112,32 @@ describe('update_brief — the guard is the operation\'s, not the caller\'s disc
     expect(res.isError).toBe(false);
     expect(Object.keys(res.body)).toEqual(['newHash']);
   });
+
+  /**
+   * Brief `0-2-35-to-next` item 6 — M21 (anchor `lwiojpht`) declares three
+   * outcomes for this operation, and the production failure delivered a FOURTH
+   * one the contract never named: nothing at all. Whatever happens, the caller
+   * gets a payload it can act on; "completed with no output" is not an outcome.
+   */
+  it('answers every declared outcome with a payload — never with nothing', async () => {
+    const cases: Array<[string, Record<string, unknown>]> = [
+      ['success', { expectedHash: STORED_HASH }],
+      ['conflict', { expectedHash: 'stale'.padEnd(64, '0') }],
+      ['validation', { expectedHash: '   ' }],
+    ];
+    for (const [label, args] of cases) {
+      const res = await client.callTool({
+        name: 'update_brief',
+        arguments: { brief: 'b.md', action: 'append', content: 'more', ...args },
+      });
+      const blocks = res.content as Array<{ type: string; text?: string }>;
+      expect(blocks.length, `${label}: no content block`).toBeGreaterThan(0);
+      const text = blocks[0]?.text ?? '';
+      expect(text.trim(), `${label}: empty content block`).not.toBe('');
+      const body = JSON.parse(text) as Record<string, unknown>;
+      // Either the success payload or a named code — never an empty object.
+      expect(Object.keys(body).length, `${label}: empty payload`).toBeGreaterThan(0);
+      expect(body.newHash ?? body.code, `${label}: neither newHash nor code`).toBeDefined();
+    }
+  });
 });

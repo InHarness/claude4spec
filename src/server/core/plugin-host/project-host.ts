@@ -30,6 +30,23 @@ import type {
 import { RawEntityReader } from '../../discovery/raw-entity-reader.js';
 import { diffEntity, restoreEntity, snapshotEntity } from '../../serialization/snapshot.js';
 
+/**
+ * A factory handed back a server it had already handed back in the same
+ * composition. Named, because the only useful report here is WHICH plugin —
+ * the failure it prevents (an `McpServer` bound twice, tool results silently
+ * gone for the whole mounted set) is invisible from the symptom.
+ */
+export class McpServerReuseError extends Error {
+  constructor(
+    message: string,
+    /** The server name whose factory returned the repeat. */
+    public readonly serverName: string,
+  ) {
+    super(message);
+    this.name = 'McpServerReuseError';
+  }
+}
+
 export class ProjectPluginHostImpl implements ProjectPluginHost {
   private activeTypes: Set<string> | null = null; // null = all active
   private unknownTypes: string[] = [];
@@ -202,9 +219,26 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
    * a plugin's own `mount()` calling `registerMcpServer` directly — the latter
    * bypasses `manifest-adapter` entirely, which is exactly how a hand-rolled
    * `{name, version, tools}` descriptor reached the adapter in the wild.
+   *
+   * "Fresh" is enforced, not assumed — and THAT failure is fatal, unlike every
+   * other one here. A factory that memoizes its handle hands the same
+   * `McpServer` to two `adapter.execute` calls, and an `McpServer` binds to
+   * exactly one transport: the second `connect()` rejects with 'Already
+   * connected to a transport', the SDK swallows the rejection into a debug log
+   * and STILL advertises the server, and `_onclose` aborts the in-flight
+   * handlers of the first binding. The damage is not confined to the offending
+   * plugin — the whole map shares one execute, so `brief-tools` goes dark
+   * alongside it, and the symptom is a tool call that returns no `tool_result`
+   * at all. Degrading to "its tools are missing" is the right posture for a
+   * broken plugin; it is the WRONG posture for a plugin that silently breaks
+   * everyone else's tools, which is why this one throws.
    */
   buildMcpServers(): Array<{ name: string; server: McpServerFactory }> {
     const out: Array<{ name: string; server: McpServerFactory }> = [];
+    // Identity, not equality: two structurally identical handles built by two
+    // `createMcpServer` calls are fine — the same object twice is not.
+    const seenHandles = new Set<object>();
+    const seenInstances = new Set<object>();
     for (const [name, factory] of this.mcpServerFactories) {
       let server: unknown;
       try {
@@ -247,7 +281,31 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
         );
         continue;
       }
-      out.push({ name, server: server as McpServerFactory });
+      const handle = server as McpServerFactory & { server?: unknown };
+      const instance = (handle.config as { instance?: unknown } | undefined)?.instance;
+      if (seenHandles.has(handle)) {
+        throw new McpServerReuseError(
+          `[plugin-host] MCP server "${name}" — factory returned an instance already returned ` +
+            `for another server in this composition. Each factory must build a FRESH server per ` +
+            `call (an McpServer binds to exactly one transport; a shared instance silently kills ` +
+            `tool results for the whole mounted set). Fix the plugin to stop memoizing its handle.`,
+          name,
+        );
+      }
+      if (instance != null && typeof instance === 'object') {
+        if (seenInstances.has(instance)) {
+          throw new McpServerReuseError(
+            `[plugin-host] MCP server "${name}" — factory returned an McpServer instance already ` +
+              `mounted under a different name in this composition. Each factory must build a FRESH ` +
+              `server per call (an McpServer binds to exactly one transport; a shared instance ` +
+              `silently kills tool results for the whole mounted set).`,
+            name,
+          );
+        }
+        seenInstances.add(instance);
+      }
+      seenHandles.add(handle);
+      out.push({ name, server: handle as McpServerFactory });
     }
     return out;
   }
