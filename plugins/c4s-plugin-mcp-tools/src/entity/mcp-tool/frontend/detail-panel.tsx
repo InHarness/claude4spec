@@ -40,19 +40,13 @@ import {
   useRemoveEntityTag,
   useTags,
 } from '@c4s/plugin-runtime';
-import {
-  ActionButton,
-  DocEditor,
-  FieldGrid,
-  FieldRow,
-  TagPicker,
-} from '@c4s/plugin-runtime/ui';
+import { ActionButton, FieldGrid, FieldRow, TagPicker } from '@c4s/plugin-runtime/ui';
 import { MCP_TOOL_TYPE, serverTagFor } from '../../../identity.js';
 import { confirmDestructive, toast } from '../../../frontend-kit/host-events.js';
 import { useEntityDraftEditor } from '../../../frontend-kit/useEntityDraftEditor.js';
 import type { McpTool, McpToolHint, McpToolParam } from '../types.js';
 import { MCP_TOOL_HINTS } from '../types.js';
-import { readHint } from './summary.js';
+import { readHint, toWritableHint } from './summary.js';
 import { McpToolIcon } from './icon.js';
 import { useDeleteMcpTool, useGetBySlug, useUpdateMcpTool } from './hooks.js';
 
@@ -372,10 +366,10 @@ function toDraft(t: McpTool): Draft {
     params: t.params ?? [],
     returns: t.returns ?? '',
     sampleReturn: t.sampleReturn ?? '',
-    readOnlyHint: t.readOnlyHint ?? null,
-    destructiveHint: t.destructiveHint ?? null,
-    idempotentHint: t.idempotentHint ?? null,
-    openWorldHint: t.openWorldHint ?? null,
+    readOnlyHint: toWritableHint(t.readOnlyHint as McpToolHint | 0 | 1),
+    destructiveHint: toWritableHint(t.destructiveHint as McpToolHint | 0 | 1),
+    idempotentHint: toWritableHint(t.idempotentHint as McpToolHint | 0 | 1),
+    openWorldHint: toWritableHint(t.openWorldHint as McpToolHint | 0 | 1),
     logic: t.logic ?? '',
   };
 }
@@ -619,11 +613,24 @@ export const McpToolDetail: FC<EntityDetailProps> = ({ slug, onDeleted, onRename
         */}
         <div className="mt-6 pt-6" style={{ borderTop: '1px solid var(--c-hair)' }}>
           <SectionHeading title="Logic" note="never sent to the model" />
+          {/*
+            A textarea, not `DocEditor`, and this one is a deliberate departure
+            from the other panels of this generation — they give their long prose
+            field the markdown editor.
+
+            `DocEditor` normalises its content through tiptap and emits `onChange`
+            on MOUNT when the normalisation differs from the stored string. Under
+            an autosaving panel that means merely OPENING a tool writes it: a new
+            version, a new `updatedAt`, a line in the release diff, for a visit.
+            `logic` is a capped 1000 characters of implementation prose, so the
+            editor buys formatting nobody needs at the price of a write per view.
+          */}
           <FieldRow label="Logic" align="start">
-            <DocEditor
+            <textarea
               value={draft.logic}
-              onChange={(md) => patch({ logic: md })}
-              placeholder="How the tool works inside — steps, validations, refusal conditions…"
+              onChange={(e) => patch({ logic: e.target.value })}
+              rows={6}
+              style={{ ...INPUT, resize: 'vertical' }}
             />
             <Hint>
               Never sent to the model. Max 1000 characters — {draft.logic.length} / 1000.

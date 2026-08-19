@@ -19,6 +19,24 @@ export function readHint(value: McpToolHint | 0 | 1): 'yes' | 'no' | 'undeclared
   return value ? 'yes' : 'no';
 }
 
+/**
+ * The same three states, but as a value ready to be WRITTEN BACK.
+ *
+ * `readHint` answers "what do I render"; this answers "what do I send". They are
+ * separate because the asymmetry between the two directions is real and cost a
+ * bug: the read payload carries a declared hint as the SQLite integer `0`/`1`,
+ * while the generated INPUT schema demands a real boolean and rejects a number
+ * outright. Echoing a value straight from a read into an update is therefore a
+ * 400 — and under an autosaving panel that meant the first edit to any field of
+ * a tool with a declared hint failed, with the hint itself untouched.
+ *
+ * `null` stays `null`. It is the third state, not a falsy second one, and
+ * coercing it to `false` here would declare an annotation the server never made.
+ */
+export function toWritableHint(value: McpToolHint | 0 | 1): McpToolHint {
+  return value === null || value === undefined ? null : Boolean(value);
+}
+
 /** The hints a server actually declared, in render order. Absent ones drop out. */
 export function declaredHints(tool: McpTool): Array<{ label: string; value: boolean }> {
   const out: Array<{ label: string; value: boolean }> = [];
