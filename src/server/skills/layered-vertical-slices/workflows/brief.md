@@ -1,6 +1,6 @@
 # Brief workflow (release brief generation)
 
-Use this when **the active context is a brief thread** and you have just been called via `Skill("layered-vertical-slices")`.
+Use this when **the active context is a brief thread** and you have just been called via `load_skill_file("layered-vertical-slices")`.
 
 The brief artifact is consumed by **two audiences** — a human in the claude4spec UI, and a coding agent in another terminal that has only the raw bytes of the file. The second audience is load-bearing: everything below serves it.
 

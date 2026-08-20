@@ -1,6 +1,6 @@
 # Patch workflow (folding a filed deviation back into the spec)
 
-Use this when **the active context is a patch thread** and you have just been called via `Skill("layered-vertical-slices")`.
+Use this when **the active context is a patch thread** and you have just been called via `load_skill_file("layered-vertical-slices")`.
 
 A patch is feedback a coding agent recorded in its own repository while implementing a brief: it found the specification diverged from reality and wrote down what it hit. The `<current_patch>` block carries it verbatim — that is *what* to fix. This file is *how*, for this specification's layout.
 
