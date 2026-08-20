@@ -65,10 +65,18 @@ type MCPOp = 'create' | 'update' | 'delete';
  */
 const DEGRADED_SECTION_CHARS = 2_000;
 
+/*
+ * The wording distinguishes the two mechanisms on purpose. Saying "lost their
+ * payload" of everything would be wrong for a section — its `content` is still
+ * there, only shorter — and a consumer told its sections were dropped would
+ * refetch work it already has.
+ */
 const HEAVY_RETRY_HINT =
-  'response budget exceeded — items past the cut kept their identity and lost their payload (`truncated: true`). ' +
-  'Retry narrower: pass `entityTypes` to restrict the entity dimension, lower `limit`, advance `offset` to reach ' +
-  'the items that degraded, or call again with `summaryOnly: true` for the identity map of the whole delta.';
+  'response budget exceeded — every item past the cut is still here, marked `truncated: true`: entities kept ' +
+  'their identity and lost `before`/`after` entirely, sections kept `content` cut short as text. Nothing was ' +
+  'omitted, so an item ABSENT from this response is one that did not change. Retry narrower: pass `entityTypes` ' +
+  'to restrict the entity dimension, lower `limit`, advance `offset` to reach the items that degraded, or call ' +
+  'again with `summaryOnly: true` for the identity map of the whole delta.';
 
 /**
  * Project a raw delta, applying the response budget on the way out.
