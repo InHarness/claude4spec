@@ -4,6 +4,7 @@ import { resolvePagination } from './index.js';
 import { DomainError } from '../../services/tags.js';
 import type { RawDelta, RawDeltaPageChange, SpecSnapshot } from '../../../shared/entities.js';
 import type { IncludeFilter, MCPEntityDelta, MCPPageDelta } from './types.js';
+import { DEFAULT_BUDGET_CHARS } from '../../discovery/budget.js';
 
 // ── Fixture: a release snapshot with N entities and M pages (all op:create) ──
 function snapshot(entityCount: number, pageCount: number): SpecSnapshot {
@@ -167,15 +168,31 @@ describe('projectReleaseDiff — summaryOnly + pagination (0.1.71)', () => {
     ]);
   });
 
-  it('summaryOnly:true ignores limit/offset (the probe-map stays complete)', () => {
+  it('summaryOnly:true ignores limit (the probe-map stays complete)', () => {
+    const { raw, from, to } = diffFixture();
+    const out = projectReleaseDiff(raw, from, to, DIFF_INCLUDE, { summaryOnly: true, limit: 1 });
+    expect(out.entities).toHaveLength(4);
+    expect(out.pages).toHaveLength(2);
+    // Nothing degraded, so the envelope stays quiet.
+    expect(out.truncationHint).toBeUndefined();
+  });
+
+  /**
+   * 0.2.40 — `offset` is the ONE window control light mode honours, because it
+   * is the cursor `truncationHint` points at when the identity map itself does
+   * not fit. A hint telling the caller to resume from an offset the operation
+   * ignored would be unfollowable.
+   */
+  it('summaryOnly:true honours offset as the resume cursor', () => {
     const { raw, from, to } = diffFixture();
     const out = projectReleaseDiff(raw, from, to, DIFF_INCLUDE, {
       summaryOnly: true,
       limit: 1,
       offset: 2,
     });
-    expect(out.entities).toHaveLength(4);
-    expect(out.pages).toHaveLength(2);
+    expect(out.total).toEqual({ entities: 4, pages: 2 });
+    expect(out.entities).toHaveLength(2); // 4 total, resumed at 2
+    expect(out.pages).toHaveLength(0); // 2 total, resumed past the end
   });
 
   it('heavy mode windows entities[]/pages[] independently; total is the pre-window count', () => {
@@ -253,5 +270,165 @@ describe('resolvePagination — validation (0.1.70)', () => {
     }
     expect(caught).toBeInstanceOf(DomainError);
     expect((caught as DomainError).code).toBe('INVALID_PAGINATION');
+  });
+});
+
+
+/**
+ * 0.2.40 — the response budget on `release_diff` / `release_show`.
+ *
+ * The hole these close: an over-budget delta used to be handed over oversized,
+ * and the consumer had no way to tell a payload that fell out from a thing that
+ * never changed. Every assertion below is about that distinction being
+ * observable.
+ */
+describe('release budget — explicit degradation (0.2.40)', () => {
+  /** A snapshot whose entity payloads are deliberately far past the budget. */
+  function fatSnapshot(entityCount: number, chars: number): SpecSnapshot {
+    return {
+      release: {
+        id: 9,
+        name: 'v9',
+        description: 'fat',
+        createdBy: 'agent',
+        createdAt: '2026-08-20T00:00:00.000Z',
+      },
+      serializer_versions: {},
+      entities: Array.from({ length: entityCount }, (_, i) => ({
+        type: 'endpoint',
+        slug: `fat${i}`,
+        op: 'create' as const,
+        data: { name: `Fat ${i}`, blob: 'z'.repeat(chars) },
+      })),
+      pages: [],
+    };
+  }
+
+  function fatRaw(entityCount: number): RawDelta {
+    return {
+      from: { id: 8, name: 'v8' },
+      to: { id: 9, name: 'v9' },
+      entities: Array.from({ length: entityCount }, (_, i) => ({
+        type: 'endpoint',
+        slug: `fat${i}`,
+        op: 'created' as const,
+      })),
+      pages: [],
+    } as unknown as RawDelta;
+  }
+
+  const ENTITIES_ONLY = { include: ['entities'] as IncludeFilter[] };
+
+  it('[ac:ac-release-diff-ponad-budzet-element-z-t] every over-budget item is returned marked, never omitted, and the envelope says how to retry', () => {
+    const count = 6;
+    // Each payload is a third of the budget, so the window cannot hold all six.
+    const to = fatSnapshot(count, Math.floor(DEFAULT_BUDGET_CHARS / 3));
+    const out = projectReleaseDiff(fatRaw(count), null, to, ENTITIES_ONLY, { limit: count });
+
+    const entities = out.entities as MCPEntityDelta[];
+    // NOTHING is dropped: the window asked for six and six came back.
+    expect(entities).toHaveLength(count);
+    expect(entities.map((e) => e.slug)).toEqual(['fat0', 'fat1', 'fat2', 'fat3', 'fat4', 'fat5']);
+    // The ones past the cut kept their identity and lost their payload.
+    const degraded = entities.filter((e) => e.truncated === true);
+    expect(degraded.length).toBeGreaterThan(0);
+    for (const e of degraded) {
+      expect(e.after).toBeUndefined();
+      expect(e.before).toBeUndefined();
+      expect(e.slug).toBeTruthy();
+      expect(e.op).toBe('create');
+    }
+    // The retry instruction lives on the envelope, and ONLY there.
+    expect(out.truncationHint).toContain('summaryOnly');
+    expect(out.truncationHint).toMatch(/entityTypes|limit|offset/);
+    for (const e of entities) expect(e).not.toHaveProperty('truncationHint');
+  });
+
+  it('[ac:ac-gwarancja-pierwszej-pozycji-w-release] the first item keeps its payload even when it alone busts the budget', () => {
+    // One entity, three times the whole budget: a single-item call is already
+    // the smallest possible retry, so degrading it would be a dead end.
+    const to = fatSnapshot(2, DEFAULT_BUDGET_CHARS * 3);
+    const out = projectReleaseDiff(fatRaw(2), null, to, ENTITIES_ONLY, { limit: 2 });
+
+    const entities = out.entities as MCPEntityDelta[];
+    expect(entities[0]!.truncated).toBeUndefined();
+    expect(entities[0]!.after).toBeDefined();
+    // ...and the second one, which had no room left at all, still came back.
+    expect(entities[1]!.truncated).toBe(true);
+    expect(entities).toHaveLength(2);
+  });
+
+  it('[ac:ac-gwarancja-pierwszej-pozycji-w-release] release_show never returns an empty window because one row was large', () => {
+    const out = projectSpecSnapshot(snapshot(8, 6), { include: ['entities'] }, { limit: 8 });
+    expect((out.entities ?? []).length).toBeGreaterThan(0);
+    expect(out.total).toEqual({ entities: 8 });
+  });
+
+  it('[ac:ac-summaryonly-jest-gwarantowanym-dnem-d] summaryOnly fits any delta: it pages the identity map instead of losing rows', () => {
+    // 4000 identity rows — the map itself is what busts the budget here.
+    const count = 4000;
+    const to = fatSnapshot(count, 0);
+    const out = projectReleaseDiff(fatRaw(count), null, to, ENTITIES_ONLY, { summaryOnly: true });
+
+    expect(out.total).toEqual({ entities: count });
+    const shown = (out.entities ?? []).length;
+    expect(shown).toBeGreaterThan(0);
+    expect(shown).toBeLessThan(count);
+    // The response actually fits.
+    expect(JSON.stringify(out).length).toBeLessThanOrEqual(DEFAULT_BUDGET_CHARS * 1.1);
+    // And the hint names the cursor to resume from — which light mode honours.
+    expect(out.truncationHint).toContain(`offset: ${shown}`);
+
+    const next = projectReleaseDiff(fatRaw(count), null, to, ENTITIES_ONLY, {
+      summaryOnly: true,
+      offset: shown,
+    });
+    // Resuming continues where the first call stopped: no row is lost, only postponed.
+    expect((next.entities as Array<{ slug: string }>)[0]!.slug).toBe(`fat${shown}`);
+  });
+
+  it('[ac:ac-asymetria-ciecia-snapshot-encji-wypad] the cut follows the payload: an entity snapshot drops whole, a section body is cut as text', () => {
+    const big = 'x'.repeat(DEFAULT_BUDGET_CHARS);
+    const rawPages = [
+      { path: 'pages/a.md', op: 'created', added_sections: [{ anchor: 'aaaaaa11', heading: 'A', content: big }], removed_sections: [], modified_sections: [], moved_sections: [], frontmatter_diff: null, xml_refs_diff: null },
+      { path: 'pages/b.md', op: 'created', added_sections: [{ anchor: 'bbbbbb22', heading: 'B', content: big }], removed_sections: [], modified_sections: [], moved_sections: [], frontmatter_diff: null, xml_refs_diff: null },
+    ];
+    const raw = {
+      from: { id: 8, name: 'v8' },
+      to: { id: 9, name: 'v9' },
+      entities: [
+        { type: 'endpoint', slug: 'fat0', op: 'created' as const },
+        { type: 'endpoint', slug: 'fat1', op: 'created' as const },
+      ],
+      pages: rawPages,
+    } as unknown as RawDelta;
+    const to = {
+      ...fatSnapshot(2, DEFAULT_BUDGET_CHARS),
+      pages: rawPages.map((p) => ({ path: p.path, op: 'create' as const, data: {} })),
+    };
+
+    const out = projectReleaseDiff(raw, null, to, { include: ['entities', 'pages'] }, { limit: 2 });
+
+    // Entity side: the snapshot is GONE, not shortened — half a serialized
+    // record is malformed data, not a smaller record.
+    const degradedEntity = (out.entities as MCPEntityDelta[]).find((e) => e.truncated === true)!;
+    expect(degradedEntity.after).toBeUndefined();
+    expect(degradedEntity.before).toBeUndefined();
+
+    // Section side: `content` is STILL THERE, just shorter — and marked.
+    const degradedSection = (out.pages as MCPPageDelta[])
+      .flatMap((p) => p.sections)
+      .find((s) => s.truncated === true)!;
+    expect(degradedSection).toBeDefined();
+    expect(typeof degradedSection.content).toBe('string');
+    expect(degradedSection.content!.length).toBeGreaterThan(0);
+    expect(degradedSection.content!.length).toBeLessThan(big.length);
+    expect(degradedSection.anchor).toBeTruthy();
+  });
+
+  it('a delta that fits carries no marker at all — absence of `truncated` is a guarantee', () => {
+    const out = projectReleaseDiff(fatRaw(2), null, fatSnapshot(2, 10), ENTITIES_ONLY, { limit: 2 });
+    expect(out.truncationHint).toBeUndefined();
+    for (const e of out.entities as MCPEntityDelta[]) expect(e.truncated).toBeUndefined();
   });
 });

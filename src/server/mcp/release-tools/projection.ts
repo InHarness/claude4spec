@@ -15,6 +15,11 @@ import type {
   SpecSnapshotPageRow,
 } from '../../../shared/entities.js';
 import { parseSections } from '../../services/file-serializer.js';
+import {
+  applyItemBudget,
+  DEFAULT_BUDGET_CHARS,
+  fitToBudget,
+} from '../../discovery/budget.js';
 import type {
   EntitySnapshot,
   EntityTypeFilter,
@@ -48,6 +53,32 @@ type MCPOp = 'create' | 'update' | 'delete';
  * well as wrong; the caller's optional `entityTypes` filter is the real one.
  */
 
+/**
+ * How much of a degraded section body survives as text.
+ *
+ * Deliberately far below `DEFAULT_BUDGET_CHARS`: this slice is what a section
+ * gets once the response has ALREADY run out of room, so sizing it at the whole
+ * budget would defeat the cut it exists to implement. It is big enough to show
+ * what kind of change the section carries — the first hunks, with their
+ * `<before_change>` / `<after_change>` tags intact — and small enough that a
+ * page full of them still leaves the envelope answerable.
+ */
+const DEGRADED_SECTION_CHARS = 2_000;
+
+const HEAVY_RETRY_HINT =
+  'response budget exceeded — items past the cut kept their identity and lost their payload (`truncated: true`). ' +
+  'Retry narrower: pass `entityTypes` to restrict the entity dimension, lower `limit`, advance `offset` to reach ' +
+  'the items that degraded, or call again with `summaryOnly: true` for the identity map of the whole delta.';
+
+/**
+ * Project a raw delta, applying the response budget on the way out.
+ *
+ * The budget is spent across BOTH dimensions in order (entities, then pages),
+ * not halved between them: the caller paid for one response, and a fixed split
+ * would degrade a small pages dimension to make room for entities that never
+ * arrived. Each dimension keeps its own first item whole, which is a superset
+ * of the "first item of the response never degrades" guarantee.
+ */
 export function projectReleaseDiff(
   raw: RawDelta,
   fromSnap: SpecSnapshot | null,
@@ -59,21 +90,123 @@ export function projectReleaseDiff(
   const limit = options?.limit ?? DEFAULT_PAGE_LIMIT;
   const offset = options?.offset ?? 0;
   const out: MCPReleaseDiff = { from: raw.from, to: raw.to, total: {} };
+  const hints: string[] = [];
+  let spent = 0;
+  const remaining = (): number => Math.max(DEFAULT_BUDGET_CHARS - spent, 0);
+  const charge = (value: unknown): void => {
+    spent += JSON.stringify(value)?.length ?? 0;
+  };
 
   // Compute the FULL filtered delta first, record `total` on it, THEN branch:
-  // light (`summaryOnly`) strips to identifiers and ignores the window; heavy
-  // slices `entities[]`/`pages[]` independently by the same `limit`/`offset`.
+  // light (`summaryOnly`) strips to identifiers; heavy slices
+  // `entities[]`/`pages[]` independently by the same `limit`/`offset`.
   if (opts.include.includes('entities')) {
     const full = projectEntities(raw.entities, fromSnap, toSnap, opts.entityTypes);
     out.total!.entities = full.length;
-    out.entities = summaryOnly ? full.map(toEntityLight) : full.slice(offset, offset + limit);
+    if (summaryOnly) {
+      const light = full.map(toEntityLight);
+      const { items, hint } = budgetLightMap(light, offset, remaining(), 'entities');
+      out.entities = items;
+      if (hint) hints.push(hint);
+    } else {
+      const budgeted = applyItemBudget(
+        full.slice(offset, offset + limit),
+        degradeEntity,
+        HEAVY_RETRY_HINT,
+        remaining(),
+      );
+      out.entities = budgeted.items;
+      if (budgeted.truncated) hints.push(HEAVY_RETRY_HINT);
+    }
+    charge(out.entities);
   }
   if (opts.include.includes('pages')) {
     const full = projectPages(raw.pages, fromSnap, toSnap);
     out.total!.pages = full.length;
-    out.pages = summaryOnly ? full.map(toPageLight) : full.slice(offset, offset + limit);
+    if (summaryOnly) {
+      const light = full.map(toPageLight);
+      const { items, hint } = budgetLightMap(light, offset, remaining(), 'pages');
+      out.pages = items;
+      if (hint) hints.push(hint);
+    } else {
+      const budgeted = applyItemBudget(
+        full.slice(offset, offset + limit),
+        degradePage,
+        HEAVY_RETRY_HINT,
+        remaining(),
+      );
+      out.pages = budgeted.items;
+      if (budgeted.truncated) hints.push(HEAVY_RETRY_HINT);
+    }
+    charge(out.pages);
   }
+  if (hints.length > 0) out.truncationHint = [...new Set(hints)].join(' ');
   return out;
+}
+
+/**
+ * The guaranteed floor. `summaryOnly` still answers with the WHOLE map — that
+ * is the contract the brief-author probe stands on, and `limit` is still
+ * ignored here — but a map big enough to bust the budget now PAGES instead of
+ * being handed over oversized.
+ *
+ * `offset` is honoured (and only here does it mean anything in light mode)
+ * because it is the cursor the hint points at: an instruction to resume from an
+ * offset the operation ignores would be unfollowable. Rows are never
+ * impoverished, only postponed — a light row is already nothing but identity
+ * and `op`, so there is no half of it left to drop.
+ */
+function budgetLightMap<T>(
+  all: readonly T[],
+  offset: number,
+  budgetChars: number,
+  dimension: 'entities' | 'pages',
+): { items: T[]; hint?: string } {
+  const window = all.slice(offset);
+  const items = fitToBudget(window, budgetChars);
+  if (items.length === window.length) return { items };
+  return {
+    items,
+    hint:
+      `the ${dimension} identity map does not fit in one response — ` +
+      `continue with \`offset: ${offset + items.length}\` (\`total\` reports the full count). No row was dropped, only postponed.`,
+  };
+}
+
+/**
+ * An entity past the budget loses `before`/`after` WHOLE.
+ *
+ * Not shortened: an entity snapshot is a serialized record whose shape is the
+ * information, and half of one is malformed data wearing the shape of a record.
+ * A consumer parsing it would not get less — it would get something wrong.
+ */
+function degradeEntity(e: MCPEntityDelta): MCPEntityDelta {
+  const { before: _before, after: _after, ...identity } = e;
+  return { ...identity, truncated: true };
+}
+
+/**
+ * A page past the budget keeps every section and every `content`, cut as TEXT.
+ *
+ * The opposite choice to `degradeEntity`, and for the opposite reason: a section
+ * body is prose with inline diff tags, and a prefix of it is still prose with
+ * inline diff tags — the same kind of data, less of it. A `moved` section has no
+ * `content` to cut and is left exactly as it is.
+ */
+function degradePage(p: MCPPageDelta): MCPPageDelta {
+  return {
+    ...p,
+    sections: p.sections.map((section) => {
+      if (section.content === undefined || section.content.length <= DEGRADED_SECTION_CHARS) {
+        return section;
+      }
+      return {
+        ...section,
+        content: section.content.slice(0, DEGRADED_SECTION_CHARS),
+        truncated: true,
+      };
+    }),
+  };
 }
 
 /** Strip a heavy entity delta to its light identifier form (`summaryOnly: true`). */
@@ -231,8 +364,33 @@ export function projectSpecSnapshot(
     },
     total: {},
   };
-  // limit/offset apply independently to each list; `total` is the full count
-  // after include/entityTypes filtering but before the window is sliced.
+  /*
+   * limit/offset apply independently to each list; `total` is the full count
+   * after include/entityTypes filtering but before the window is sliced.
+   *
+   * 0.2.40 — and the response BUDGET applies on top, spent across both lists in
+   * order, exactly as in `projectReleaseDiff`. Degradation here can only ever be
+   * a narrower window: a row is already nothing but identity, so there is no
+   * heavy half to shed and no per-row marker that would mean anything. What the
+   * caller needs is the cursor, which is what `truncationHint` carries.
+   */
+  const hints: string[] = [];
+  let spent = 0;
+  const remaining = (): number => Math.max(DEFAULT_BUDGET_CHARS - spent, 0);
+  const windowOf = <T,>(all: readonly T[], dimension: 'entities' | 'pages'): T[] => {
+    const requested = all.slice(offset, offset + limit);
+    const items = fitToBudget(requested, remaining());
+    if (items.length < requested.length) {
+      hints.push(
+        `the ${dimension} window was cut short by the response budget — ` +
+          `continue with \`offset: ${offset + items.length}\`, or ask for a smaller \`limit\` ` +
+          `(\`total\` reports the full count).`,
+      );
+    }
+    spent += JSON.stringify(items)?.length ?? 0;
+    return items;
+  };
+
   if (opts.include.includes('entities')) {
     const entities = raw.entities
       .filter((e) => e.op !== 'delete')
@@ -243,13 +401,14 @@ export function projectSpecSnapshot(
         name: extractEntityName(e.data as EntitySnapshot, e.slug),
       }));
     out.total.entities = entities.length;
-    out.entities = entities.slice(offset, offset + limit);
+    out.entities = windowOf(entities, 'entities');
   }
   if (opts.include.includes('pages')) {
     const pages = raw.pages.filter((p) => p.op !== 'delete').map((p) => ({ path: p.path }));
     out.total.pages = pages.length;
-    out.pages = pages.slice(offset, offset + limit);
+    out.pages = windowOf(pages, 'pages');
   }
+  if (hints.length > 0) out.truncationHint = hints.join(' ');
   return out;
 }
 

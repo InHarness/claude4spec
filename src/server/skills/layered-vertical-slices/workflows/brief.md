@@ -143,12 +143,15 @@ At any real release size, reading the diff head-on is how this turn fails: the h
    - `from_release === null` → an *initial* brief: every entry is `op: 'create'`. Frame it as "the project starts here", not as a delta.
    - `frontmatter.roots` non-empty → the brief is SCOPED. Pass the same `roots` to every `release_diff` call and to every subagent. It filters pages only; entities are never root-filtered.
 3. **Partition.** Split the map into disjoint slices covering EVERY slug and path, deletes included — by `entityTypes`, and/or by `limit`/`offset` windows (heavy mode defaults to `limit: 5`, so a bare call returns a fraction and reports the rest in `total`). Completeness is on you: a missed slice is a silently incomplete brief, and nothing downstream will catch it.
-4. **Fan out.** One `diff-explore` subagent per slice, in parallel. Give each the `from`/`to`, the `roots` if scoped, and its exact window. It reads the heavy diff and returns a distillate — the facts worth inlining (signatures, field shapes, SQL, paths), not the raw dump. A diff small enough to fit may skip this and be read directly.
+4. **Fan out.** One `diff-explore` subagent per slice, in parallel. Give each the `from`/`to`, the `roots` if scoped, and its exact window. It reads the heavy diff and returns a distillate — the facts worth inlining (signatures, field shapes, SQL, paths), not the raw dump. **The bulk stays there.** You consume the map from step 2 and these distillates, and nothing else: raw `before`/`after`/`content` must not enter your context by any path, including a heavy `release_diff` you call yourself.
 5. **Filter and compose** per §A–§D below.
+
+**When a slice comes back marked.** `release_diff` says so when it could not fit: an item past the response budget keeps its identity and gains `truncated: true` (an entity dropping `before`/`after` whole, a section keeping `content` cut as text), and the envelope carries `truncationHint`. That marker is load-bearing — **absence of an item from `entities[]`/`sections[]` means "it did not change", and nothing else.** A slice carrying `truncated` is incomplete: follow the hint down (narrow `entityTypes`, lower `limit`, advance `offset`) until it clears, with `summaryOnly: true` as the guaranteed floor. Reaching for the SDK's on-disk dump is a convenience of last resort, not the way to recover from this.
 
 Interpret each entry by its `op` — these rules bind you and every distillate you accept:
 
-- `op: 'update'` → compare `before` vs `after`; both are full snapshots, so there is nothing to fetch.
+- `truncated: true` on an entry → **check this FIRST, before the `op` rules below.** The entry changed, but its payload did not fit; the rules below do not apply to it until you have re-fetched it in a narrower window.
+- `op: 'update'` → compare `before` vs `after`; both are full snapshots (absent `truncated`), so there is nothing to fetch.
 - `op: 'create'` → `after` carries the content to inline.
 - `op: 'delete'` → only `before` exists. Say what disappeared; usually nothing replaced it.
 - page `sections[i]` → use `before`/`after` raw markdown. There is no `line_diff` in this payload. `op: 'move'` has neither field (position changed, content did not) — drop it unless the ordering itself is user-visible.

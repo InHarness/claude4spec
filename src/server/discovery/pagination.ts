@@ -11,7 +11,7 @@
  * one.
  */
 
-import { DEFAULT_BUDGET_CHARS } from './budget.js';
+import { fitToBudget } from './budget.js';
 import { invalidArgument } from './errors.js';
 
 /** Applied when a caller passes no `limit`. Per-operation, never global-∞. */
@@ -101,19 +101,15 @@ export function resolvePageRequest(
  * empty list because one row is enormous tells the caller nothing and gives it
  * nowhere to go. One oversized row plus `truncated: true` at least identifies
  * the row.
+ *
+ * 0.2.40 — the width cut itself lives in `fitToBudget`, so the release
+ * projection can apply the identical rule to a window it slices itself without
+ * re-deriving this loop (and drifting from it).
  */
 export function paginate<T>(sorted: readonly T[], req: PageRequest, defaultLimit: number): Page<T> {
   const { limit, offset } = resolvePageRequest(req, defaultLimit);
   const requested = sorted.slice(offset, offset + limit);
-
-  const items: T[] = [];
-  let chars = 0;
-  for (const item of requested) {
-    const size = JSON.stringify(item)?.length ?? 0;
-    if (items.length > 0 && chars + size > DEFAULT_BUDGET_CHARS) break;
-    items.push(item);
-    chars += size;
-  }
+  const items = fitToBudget(requested);
 
   return {
     items,

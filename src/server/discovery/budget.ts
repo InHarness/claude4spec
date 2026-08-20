@@ -84,6 +84,33 @@ export function applyItemBudget<T>(
   return cut ? { items: kept, truncated: true, truncationHint: hint } : { items: kept, truncated: false };
 }
 
+/**
+ * Budget over items the COLLECTION chose, where dropping a row is honest —
+ * `paginate`'s width cut, and the same cut over a window some other operation
+ * sliced itself.
+ *
+ * The opposite half of `applyItemBudget`: there the caller named the keys, so
+ * every one must be answered and the overflow loses only its expensive half.
+ * Here the caller asked for "a window", and a shorter window is a truthful
+ * answer to that — provided the operation SAYS the window was shortened, which
+ * is the returned count's job.
+ *
+ * The FIRST item is kept whatever it costs, for the same reason as everywhere
+ * else in this module: an empty answer identifies nothing and leaves no smaller
+ * request to make.
+ */
+export function fitToBudget<T>(items: readonly T[], budgetChars = DEFAULT_BUDGET_CHARS): T[] {
+  const kept: T[] = [];
+  let spent = 0;
+  for (const item of items) {
+    const cost = JSON.stringify(item)?.length ?? 0;
+    if (kept.length && spent + cost > budgetChars) break;
+    kept.push(item);
+    spent += cost;
+  }
+  return kept;
+}
+
 /** Same rule for one long string (a page body, a section body). */
 export function truncateText(
   text: string,
