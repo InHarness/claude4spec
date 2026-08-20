@@ -179,6 +179,102 @@ describe('buildSystemPrompt — M37 <project_skill> is the writing-style slot (0
   });
 });
 
+describe('buildSystemPrompt — <available_skills> (0.2.36)', () => {
+  const LISTING = [
+    { slug: 'house-rules', description: 'always on' },
+    { slug: 'writing-style-author', description: 'authors styles' },
+  ];
+
+  it.each(['chat', 'patch', 'ask', 'brief'] as const)(
+    'is emitted in the %s context, carrying every listed skill\'s description',
+    (contextType) => {
+      const out = build({ contextType, brief: null, availableSkills: LISTING });
+      expect(out).toContain('<skill slug="house-rules" description="always on"/>');
+      expect(out).toContain('<skill slug="writing-style-author" description="authors styles"/>');
+    },
+  );
+
+  it.each(['chat', 'patch', 'ask', 'brief'] as const)(
+    'renders in the %s context even with an EMPTY listing — the concept is not conditional',
+    (contextType) => {
+      // An absent block is indistinguishable from a host that has no notion of
+      // skills, which is a different and wronger thing to say than "none here".
+      const out = build({ contextType, brief: null, availableSkills: [] });
+      expect(out).toContain('<available_skills>');
+      expect(out).not.toContain('<skill slug=');
+    },
+  );
+
+  it.each(['chat', 'patch', 'ask', 'brief'] as const)(
+    'forbids the native Skill() tool and Read in the %s context',
+    (contextType) => {
+      const out = build({ contextType, brief: null, availableSkills: LISTING });
+      const block = /<available_skills>([\s\S]*?)<\/available_skills>/.exec(out)?.[1] ?? '';
+      expect(block).toContain('load_skill_file(slug)');
+      expect(block).toContain('Never open a skill with the native Skill() tool and never read one with Read');
+    },
+  );
+
+  it.each(['chat', 'patch', 'ask', 'brief'] as const)(
+    'lands immediately BEFORE <project_skill> in the %s context',
+    (contextType) => {
+      // The order is load-bearing: <available_skills> carries the convention for
+      // opening a skill, <project_skill> issues an instruction to open one. Reversed,
+      // the model is told to make a call before anything says what that call is.
+      const out = build({
+        contextType,
+        brief: null,
+        availableSkills: LISTING,
+        writingStyleSkill: { slug: 'house-style', title: 'House Style' },
+      });
+      const listingIdx = out.indexOf('<available_skills>');
+      const closeIdx = out.indexOf('</available_skills>');
+      const skillIdx = out.indexOf('<project_skill');
+      expect(listingIdx).toBeGreaterThanOrEqual(0);
+      expect(skillIdx).toBeGreaterThan(listingIdx);
+      // IMMEDIATELY before: the two blocks are adjacent parts, nothing in between.
+      expect(out.slice(closeIdx + '</available_skills>'.length, skillIdx).trim()).toBe('');
+    },
+  );
+
+  it.each(['chat', 'patch', 'ask', 'brief'] as const)(
+    'advertises the skill-tools mount in the %s context\'s <tooling>',
+    (contextType) => {
+      const out = build({ contextType, brief: null });
+      expect(out).toContain('<mcp name="skill-tools">load_skill_file</mcp>');
+    },
+  );
+
+  it('leaks no skill CONTENT into the prompt — only slugs, titles and descriptions', () => {
+    // The grep-check the release rests its budget claim on. A description is the
+    // whole cost of a skill now; a body reaching this string would be the old
+    // delivery channel back by another route.
+    const out = build({
+      contextType: 'chat',
+      availableSkills: [{ slug: 'house-rules', description: 'always on' }],
+      writingStyleSkill: { slug: 'house-style', title: 'House Style' },
+    });
+    expect(out).not.toContain('# How to write specifications');
+    expect(out).not.toContain('workflows/brief.md contents');
+    expect(out).toContain('slug="house-rules"');
+    expect(out).toContain('slug="house-style"');
+  });
+});
+
+describe('buildSystemPrompt — <project_skill> points at load_skill_file (0.2.36)', () => {
+  it('never instructs the model to call the native Skill() tool', () => {
+    for (const contextType of ['chat', 'patch', 'ask', 'brief'] as const) {
+      const out = build({
+        contextType,
+        brief: null,
+        writingStyleSkill: { slug: 'house-style', title: 'House Style' },
+      });
+      expect(out).toContain('call load_skill_file("house-style")');
+      expect(out).not.toMatch(/call Skill\("house-style"\)/);
+    }
+  });
+});
+
 describe('buildSystemPrompt — <interaction_context> (0.2.19)', () => {
   it('is emitted in every context type, carrying the type as an attribute', () => {
     for (const contextType of ['chat', 'brief', 'patch', 'ask'] as const) {
@@ -278,9 +374,16 @@ describe('buildSystemPrompt — <tooling> entity-tools (M13)', () => {
       tagCount: 0,
       sectionCount: 0,
     });
-    // Only the always-present entity-tools + reference-tools lines — no extra <mcp> from the dto type.
+    // Only the always-present entity-tools + reference-tools + skill-tools lines —
+    // no extra <mcp> from the dto type. `skill-tools` (0.2.36) is unconditional for
+    // the same reason `<available_skills>` is: the writing style attaches to every
+    // context type, so its read channel cannot be gated by any of them.
     const mcpLines = (out.match(/<mcp name="[^"]+">/g) ?? []).map((m) => m);
-    expect(mcpLines).toEqual(['<mcp name="entity-tools">', '<mcp name="reference-tools">']);
+    expect(mcpLines).toEqual([
+      '<mcp name="entity-tools">',
+      '<mcp name="reference-tools">',
+      '<mcp name="skill-tools">',
+    ]);
   });
 });
 
@@ -339,6 +442,19 @@ describe('subagentsFor (0.1.67)', () => {
       const tools = subagentsFor(ct, entityHost)[0].tools ?? [];
       expect(tools).not.toContain('Agent');
       expect(tools).not.toContain('Task');
+    }
+  });
+
+  it('0.2.36: no subagent may list the native Skill tool', () => {
+    // Layer 3 of the block. A subagent does NOT inherit its parent's
+    // `disallowedTools`, so its `tools` allow-list is the only place `Skill` can be
+    // denied to it — the same rule, for the same reason, as the standing ban on
+    // `runTransagent`: both are primitives for entering another context. A subagent
+    // that needs a skill's content gets `mcp__skill-tools__load_skill_file`, the
+    // same channel as its parent.
+    for (const ct of ['chat', 'brief', 'patch', 'ask'] as const) {
+      const tools = subagentsFor(ct, entityHost)[0].tools ?? [];
+      expect(tools).not.toContain('Skill');
     }
   });
 

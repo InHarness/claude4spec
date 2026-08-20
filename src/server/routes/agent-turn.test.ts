@@ -431,24 +431,25 @@ describe('runAgentTurn — M37 per-context skill injection', () => {
       },
     };
     const skillResolver = {
-      resolve: () => [],
+      resolveWritingStyle: () => null,
       // Mirrors the real resolveForContext, which since 0.2.19 takes the CONTEXT
       // TYPE and reads the attach list off the registry itself: `chat` attaches
       // `writing-style-author`, every other type attaches nothing hardcoded. An
       // unknown slug degrades (bundled roots only rescan at server boot, so a slug
-      // missing from a running process's cache must not fail every turn). The
-      // active writing style, if any, is appended last.
+      // missing from a running process's cache must not fail every turn).
+      //
+      // 0.2.36: it answers METADATA — a `listing` for `<available_skills>` and the
+      // writing style as its OWN field, never as a listing row.
       resolveForContext: (contextType: string) => {
         const attach = contextType === 'chat' ? ['writing-style-author'] : [];
-        const toInline = (slug: string) => {
-          const r = skillRegistry.resolve(slug);
-          return { name: slug, description: r.metadata.description, content: r.content, files: r.files, metadata: { title: r.metadata.title, version: 1, language: 'en', scope: r.metadata.scope } };
+        const styleSlug = Object.entries(skills).find(([, s]) => s.scope === 'writing-style')?.[0];
+        const listing = attach
+          .filter((slug) => slug in skills && slug !== styleSlug)
+          .map((slug) => ({ slug, description: skills[slug]!.description }));
+        return {
+          listing,
+          writingStyle: styleSlug ? { slug: styleSlug, title: skills[styleSlug]!.title } : null,
         };
-        const out = attach.flatMap((slug) => (slug in skills ? [toInline(slug)] : []));
-        for (const [slug, s] of Object.entries(skills)) {
-          if (s.scope === 'writing-style' && !out.some((o) => o.name === slug)) out.push(toInline(slug));
-        }
-        return out;
       },
     };
     return { skillRegistry, skillResolver };
@@ -463,9 +464,13 @@ describe('runAgentTurn — M37 per-context skill injection', () => {
 
     await runAgentTurn(deps, input);
 
-    const skillNames = ((hoisted.lastExecute?.skills ?? []) as Array<{ name: string }>).map((s) => s.name);
-    expect(skillNames).toEqual([]);
-    expect(String(hoisted.lastExecute?.systemPrompt)).not.toContain('<project_skill');
+    // 0.2.36: nothing is materialized — `skills` is not passed to execute at all.
+    expect(hoisted.lastExecute).not.toHaveProperty('skills');
+    const prompt = String(hoisted.lastExecute?.systemPrompt);
+    expect(prompt).not.toContain('<project_skill');
+    // The block is still emitted, empty: an absent one would be indistinguishable
+    // from a host with no concept of skills.
+    expect(prompt).toContain('<available_skills>');
   });
 
   it('patch thread: gets its identity from <interaction_context>, not from a skill', async () => {
@@ -480,7 +485,7 @@ describe('runAgentTurn — M37 per-context skill injection', () => {
     expect(String(hoisted.lastExecute?.systemPrompt)).toContain('<interaction_context type="patch">');
   });
 
-  it('chat thread: writing-style-author is in inlineSkills but produces NO <project_skill> block', async () => {
+  it('chat thread: writing-style-author is a listing row, NOT a <project_skill> block', async () => {
     hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
     const { deps } = makeDeps();
     Object.assign(deps, fakeSkillDeps({
@@ -491,9 +496,12 @@ describe('runAgentTurn — M37 per-context skill injection', () => {
 
     await runAgentTurn(deps, input);
 
-    const skillNames = ((hoisted.lastExecute?.skills ?? []) as Array<{ name: string }>).map((s) => s.name);
-    expect(skillNames).toContain('writing-style-author');
-    expect(String(hoisted.lastExecute?.systemPrompt)).not.toContain('<project_skill slug="writing-style-author"');
+    const prompt = String(hoisted.lastExecute?.systemPrompt);
+    expect(prompt).toContain('<skill slug="writing-style-author" description="authors styles"/>');
+    expect(prompt).not.toContain('<project_skill slug="writing-style-author"');
+    // The listing carries the description and NOTHING of the body: that is the
+    // release's budget claim, and the only assertion that can falsify it.
+    expect(prompt).not.toContain('writing-style-author body');
   });
 
   it('the active writing style is the one skill that gets the <project_skill> block', async () => {
@@ -523,9 +531,9 @@ describe('runAgentTurn — M37 per-context skill injection', () => {
     const result = await runAgentTurn(deps, input);
 
     expect(result.answer).toBe('ok');
-    const skillNames = ((hoisted.lastExecute?.skills ?? []) as Array<{ name: string }>).map((s) => s.name);
-    expect(skillNames).not.toContain('writing-style-author');
-    expect(String(hoisted.lastExecute?.systemPrompt)).not.toContain('<project_skill');
+    const prompt = String(hoisted.lastExecute?.systemPrompt);
+    expect(prompt).not.toContain('<skill slug="writing-style-author"');
+    expect(prompt).not.toContain('<project_skill');
   });
 });
 
@@ -1009,8 +1017,17 @@ describe('runAgentTurn — the profile gate covers the inline servers too', () =
     // Every inline tool's catalog opClass matches the coarse flag that mounts
     // its server, so routing them through the gate drops nothing.
     expect(await mountedFor('chat')).toEqual(
-      ['c4s-tools', 'plan-tools', 'transagent-tools', 'workspace-tools'].sort(),
+      ['c4s-tools', 'plan-tools', 'skill-tools', 'transagent-tools', 'workspace-tools'].sort(),
     );
+  });
+
+  it('0.2.36: skill-tools mounts in ALL FOUR context types, `brief` included', async () => {
+    // The one server with no `ctx.mcp.*` dimension behind it and no catalog row.
+    // `brief` is the case that matters: that frame runs with the FS built-ins off,
+    // so `load_skill_file` is its ONLY route to a style's `workflows/brief.md`.
+    for (const contextType of ['chat', 'brief', 'patch', 'ask']) {
+      expect(await mountedFor(contextType)).toContain('skill-tools');
+    }
   });
 
   it('workspace-tools survives the gate for every profile — list_projects is read-class', async () => {

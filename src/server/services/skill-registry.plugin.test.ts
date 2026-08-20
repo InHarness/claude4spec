@@ -54,7 +54,12 @@ describe('SkillRegistry — plugin writing styles (M15 phase 2)', () => {
 
     const resolved = registry.resolve('terse');
     expect(resolved.content).toBe('# Terse\nBe brief.');
-    expect(resolved.files).toEqual({ 'examples/a.md': 'x' });
+    // 0.2.36: a contribution's `Record<path, string>` is widened on ingest into the
+    // metric-carrying record `load_skill_file`'s manifest is built from. Contributed
+    // files are text by construction — they are strings in a JS module.
+    expect(resolved.files).toEqual({
+      'examples/a.md': { path: 'examples/a.md', bytes: 1, lines: 1, isText: true, content: 'x' },
+    });
   });
 
   it('a user style (project/global) wins over a same-slug plugin style', () => {
