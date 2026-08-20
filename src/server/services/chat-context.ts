@@ -172,10 +172,24 @@ export interface SystemPromptInput {
    * It replaces `forcedSkills: {slug,title}[]`, which was a list because forcing
    * was modelled as a property of a SKILL (`injection: 'forced'`) rather than of
    * the writing-style SLOT. Every other skill — the hardcoded contextual ones and
-   * the plugin fan-out — rides `inlineSkills` alone, and the model opens it via
-   * `Skill(<slug>)` if the description warrants it.
+   * the plugin fan-out — rides `availableSkills` alone, and the model opens it via
+   * `load_skill_file(<slug>)` if the description warrants it.
    */
   writingStyleSkill?: { slug: string; title: string } | null;
+  /**
+   * 0.2.36: the skill LISTING — `{ slug, description }` per attached skill, from
+   * `SkillResolver.resolveForContext`. Rendered as `<available_skills>`, which is
+   * emitted UNCONDITIONALLY in every context type, empty list included.
+   *
+   * This field replaced no field: before it, the prompt said nothing about skills
+   * at all, because their bodies were shipped to the model out of band via
+   * `adapter.execute({ skills })`. Now the prompt is the ONLY carrier of the fact
+   * that skills exist, and `load_skill_file` is the only carrier of their content.
+   *
+   * A description is all the model gets to decide with, so it is the whole cost of
+   * a skill in the prompt — one line, where it used to be a whole `SKILL.md`.
+   */
+  availableSkills?: { slug: string; description: string }[];
   /**
    * 0.2.19: body of the `<interaction_context type="…">` block — the domain rules of
    * this thread's interaction type, owned by the genre's module (M21/M23/M11) and
@@ -472,7 +486,7 @@ You do NOT have filesystem access (no Read/Write/Edit/Glob/Grep/Bash). Brief con
 const PLAN_MODE = `<claude4spec_plan_mode>
 Plan Mode is ACTIVE. Investigate and propose — do not modify.
 
-The plan you draft must conform to the project skill referenced in <project_skill/>. Before drafting or updating the plan, ensure Skill(slug) has been called this turn — its conventions (module/layer structure, naming, file layout, quality rules) constrain every line of the plan. If the user's request appears to violate those conventions, surface the conflict in the plan rather than silently working around it.
+The plan you draft must conform to the project skill referenced in <project_skill/>. Before drafting or updating the plan, ensure load_skill_file(slug) has been called this turn — its conventions (module/layer structure, naming, file layout, quality rules) constrain every line of the plan. If the user's request appears to violate those conventions, surface the conflict in the plan rather than silently working around it.
 
 Forbidden (mutating):
   - Built-in: ${CLAUDE_CODE_MUTATING_BUILTINS.join(', ')}
@@ -527,6 +541,13 @@ function buildTooling(pluginHost: ProjectPluginHost, planToolsAvailable: boolean
     // to the one reader that decides what to call.
     `  <mcp name="reference-tools">create_tag, update_tag, delete_tag, list_tags, tag_entity, untag_entity, find_references, check_consistency, list_pages, search_pages, list_sections, get_sections, get_page</mcp>`,
   );
+  /**
+   * 0.2.36 — unconditional, for the same reason `<available_skills>` is: the
+   * writing style attaches to EVERY context type, so the channel that reads its
+   * body cannot be gated by any of them. There is no `McpServerSet` dimension
+   * behind this line; `skill-tools` mounts like `workspace-tools` does.
+   */
+  lines.push(`  <mcp name="skill-tools">load_skill_file</mcp>`);
   if (planToolsAvailable) {
     lines.push(`  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version</mcp>`);
   }
@@ -709,14 +730,54 @@ function buildInteractionContext(contextType: ChatContextType, interactionRules?
   return [`<interaction_context ${attrs({ type: contextType })}>`, body, `</interaction_context>`].join('\n');
 }
 
+/**
+ * `<available_skills>` — the listing, plus the channel rule that governs all of it.
+ *
+ * ## Always emitted, empty or not
+ *
+ * A project with no skills still gets the block, carrying only the instruction. An
+ * ABSENT block is indistinguishable from a host that has no concept of skills,
+ * which is a different and wronger thing to tell the model than "this project has
+ * none": the first invites it to look for skills some other way, the second closes
+ * the question.
+ *
+ * ## Why the instruction is here and not in the tool description
+ *
+ * The two prohibitions — never `Skill()`, never `Read` — are about tools this
+ * block does not own, so they cannot live in `load_skill_file`'s own description.
+ * The native `Skill` tool stays in the toolset and the SDK discovers skills of its
+ * own through `settingSources` (`~/.claude/skills`), so without this line the
+ * model has two channels to one concept, one of which reaches a different set of
+ * documents. This is layer 1 of a three-layer block; layer 2
+ * (`disallowedTools: ['Skill']` per turn) waits on a field `@inharness-ai/agent-adapters`
+ * does not yet expose, and layer 3 is the `SubagentDefinition.tools` allow-lists,
+ * which name no `Skill` and must not start to.
+ *
+ * The builder knows nothing about where the listing came from or how a package is
+ * laid out — it renders slugs, descriptions and a fixed rule.
+ */
+function buildAvailableSkills(entries: { slug: string; description: string }[]): string {
+  const lines = [`<available_skills>`];
+  for (const e of entries) {
+    lines.push(`  ${selfClose('skill', attrs({ slug: e.slug, description: e.description }))}`);
+  }
+  lines.push(
+    `  Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.`,
+    `  Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("${entries[0]?.slug ?? 'some-skill'}", "workflows/brief.md").`,
+    `  Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.`,
+    `</available_skills>`,
+  );
+  return lines.join('\n');
+}
+
 function buildProjectSkill(ws: { slug: string; title: string }): string {
   return [
     `<project_skill ${attrs({ slug: ws.slug, title: ws.title })}>`,
     `Skill "${ws.title}" (slug "${ws.slug}") contains the BINDING project specification — module/layer structure, file layout, naming, workflow, and quality rules. Every page edit, plan, entity/module change, and structural answer must conform to it.`,
     ``,
     `Required behavior:`,
-    `  1. Before your first tool call in this thread, call Skill("${ws.slug}").`,
-    `  2. Re-call Skill("${ws.slug}") whenever you transition from plan mode into execution, even if loaded earlier.`,
+    `  1. Before your first tool call in this thread, call load_skill_file("${ws.slug}").`,
+    `  2. Re-call load_skill_file("${ws.slug}") whenever you transition from plan mode into execution, even if loaded earlier.`,
     `  3. Treat its content as authoritative — if a user request seems to contradict it, surface the conflict rather than silently overriding the convention.`,
     `</project_skill>`,
   ].join('\n');
@@ -837,6 +898,7 @@ function buildBriefSystemPrompt(input: {
   brief: Brief | null;
   annotations: Annotation[];
   writingStyleSkill: { slug: string; title: string } | null;
+  availableSkills: { slug: string; description: string }[];
   interactionRules?: string;
   conversationalLanguage?: string;
 }): string {
@@ -855,6 +917,12 @@ function buildBriefSystemPrompt(input: {
       `<tooling>`,
       `  <mcp name="brief-tools">get_brief, update_brief</mcp>`,
       `  <mcp name="release-tools">get_release, get_release_diff, list_releases</mcp>`,
+      // 0.2.36: present HERE above all. This frame runs with the FS built-ins off,
+      // which is precisely why a style pointing at `workflows/brief.md` could not
+      // open it under the old delivery channel. This line is the fix being
+      // advertised. The main frame slots the same line between `reference-tools`
+      // and `plan-tools`; this frame carries neither neighbour, so it goes last.
+      `  <mcp name="skill-tools">load_skill_file</mcp>`,
       `</tooling>`,
     ].join('\n'),
   );
@@ -864,6 +932,9 @@ function buildBriefSystemPrompt(input: {
   if (input.conversationalLanguage) {
     parts.push(buildConversationalLanguage(input.conversationalLanguage));
   }
+  // 0.2.36: unconditional, and immediately BEFORE <project_skill>. The order is
+  // load-bearing — see the note at the main frame's identical pair.
+  parts.push(buildAvailableSkills(input.availableSkills));
   // M37 (0.2.19): at most ONE <project_skill> block, for the active writing style — the
   // sole occupant of that slot. With no style selected the agent has no methodology for
   // the genre, but it still has its identity, its posture and the self-containment
@@ -1007,6 +1078,7 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
     workspaceProjects = [],
     workspaceName,
     writingStyleSkill = null,
+    availableSkills = [],
     interactionRules,
     specLanguage,
     conversationalLanguage,
@@ -1028,6 +1100,7 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
       brief,
       annotations,
       writingStyleSkill,
+      availableSkills,
       interactionRules,
       conversationalLanguage,
     });
@@ -1083,10 +1156,21 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
     parts.push(buildWorkspaceProjects(workspaceName ?? '', workspaceProjects));
   }
 
+  /**
+   * 0.2.36 — unconditional, and IMMEDIATELY BEFORE `<project_skill>`.
+   *
+   * The order is the point, not a tidiness preference. `<available_skills>` carries
+   * the CONVENTION for opening a skill; `<project_skill>` issues an instruction to
+   * open one. Emitted the other way round, the model would be told to call
+   * `load_skill_file("…")` before anything had explained what that is or that it is
+   * the only channel.
+   */
+  parts.push(buildAvailableSkills(availableSkills));
+
   // M37 (0.2.19): at most ONE <project_skill> block, and only ever for the active
   // writing style. Every other skill of this turn — the hardcoded contextual ones and
-  // the unconditional plugin fan-out — rides `inlineSkills` alone; whether to open one
-  // is the model's call, made from its description via `Skill(<slug>)`.
+  // the unconditional plugin fan-out — is a listing row above; whether to open one is
+  // the model's call, made from its description via `load_skill_file(<slug>)`.
   if (writingStyleSkill) {
     parts.push(buildProjectSkill(writingStyleSkill));
   }

@@ -3,7 +3,6 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import matter from 'gray-matter';
-import type { InlineSkill } from '@inharness-ai/agent-adapters';
 import type { PluginSkillContribution, WritingStyleContribution } from '../../shared/plugin-host/manifest.js';
 import type { ChatContextType } from '../../shared/entities.js';
 import { CONTEXT_TYPE_REGISTRY } from './chat-context.js';
@@ -40,6 +39,33 @@ export interface SkillRoot {
   source: SkillSource;
 }
 
+/**
+ * One file of a skill package, as the registry holds it in memory.
+ *
+ * 0.2.36 split what used to be a bare `Record<path, string>` into a record with
+ * METRICS, because the package is no longer delivered wholesale — it is served
+ * one named file at a time by `load_skill_file`, and the model has to be able to
+ * see what a subfile COSTS before it pays for it. `bytes`/`lines` are exactly
+ * the manifest that operation emits.
+ *
+ * A non-text file now SURVIVES the scan with `isText: false` instead of being
+ * dropped. The two states are not the same fact: a dropped file is
+ * indistinguishable from one the author never wrote, while `isText: false` says
+ * "it is in the package, and this channel will not serve it" — which is what the
+ * `NOT_TEXT` refusal needs to be predictable rather than surprising. Its
+ * `content` stays empty; nothing ever serves the bytes of a binary.
+ */
+export interface SkillPackageFile {
+  /** POSIX-relative to the package dir — the `file` argument of `load_skill_file`. */
+  path: string;
+  bytes: number;
+  /** 0 for a non-text file. */
+  lines: number;
+  isText: boolean;
+  /** '' for a non-text file. */
+  content: string;
+}
+
 export interface ResolvedSkill {
   metadata: SkillMetadata;
   content: string;
@@ -52,8 +78,26 @@ export interface ResolvedSkill {
    * `files`, so anything the style keeps beside `SKILL.md` (notably
    * `workflows/*.md`, the sole home of genre methodology since 0.2.19) has to
    * reach the agent through here.
+   *
+   * 0.2.36: this structure NEVER LEAVES THE PROCESS IN ONE PIECE. `load_skill_file`
+   * emits either the manifest (metrics only) or one named subfile; there is no
+   * caller that receives the map. It stopped riding `InlineSkill.files` into a
+   * library tmpdir, which is what made the whole package a prompt-budget item.
    */
-  files: Record<string, string>;
+  files: Record<string, SkillPackageFile>;
+}
+
+/**
+ * What the prompt is allowed to know about a skill: its name and what it is for.
+ *
+ * The whole of 0.2.36 in one type. The listing a turn renders is metadata; the
+ * BODY is fetched on demand through `load_skill_file`, so a skill costs one line
+ * of prompt instead of a whole `SKILL.md` — and the unconditional plugin fan-out
+ * stops being a context-budget risk.
+ */
+export interface SkillListingEntry {
+  slug: string;
+  description: string;
 }
 
 const SUPPORTED_VERSION = 1;
@@ -224,7 +268,15 @@ export class SkillRegistry {
       path: '',
     };
     this.pluginMeta.set(c.slug, metadata);
-    this.pluginResolved.set(c.slug, { metadata, content: c.content.trimStart(), files: c.files ?? {} });
+    // A plugin contributes `Record<path, string>` (the manifest contract, unchanged
+    // — see `PluginSkillContribution`); the registry holds `SkillPackageFile`. A
+    // contributed file is text by construction: it is a string in a JS module, so
+    // there is no binary case to represent here.
+    this.pluginResolved.set(c.slug, {
+      metadata,
+      content: c.content.trimStart(),
+      files: toPackageFiles(c.files ?? {}),
+    });
     this.lastScanAt = 0; // invalidate so the next read rebuilds with this plugin folded in
   }
 
@@ -325,26 +377,29 @@ export class SkillRegistry {
 }
 
 /**
- * Maps a resolved skill onto the `InlineSkill` shape the agent adapter expects.
- * `scope` travels in `metadata` so the caller (agent-turn.ts) can pick the active
- * writing style out of the resolved list without a second registry lookup —
- * `scope: 'writing-style'` is the unambiguous signal, and since 0.2.19 the only
- * one that matters: the writing style is the sole skill that earns a
- * `<project_skill>` block, every other skill rides `inlineSkills` alone.
+ * `toInlineSkill` lived here until 0.2.36.
+ *
+ * It existed to hand the adapter a whole skill package per turn. Nothing does
+ * that any more: the prompt names skills (`SkillListingEntry`) and
+ * `load_skill_file` serves their content, so there is no `InlineSkill` left to
+ * build. Recorded rather than silently deleted because its absence is the
+ * release — a re-appearing converter would be the materialization channel coming
+ * back.
  */
-export function toInlineSkill(skill: ResolvedSkill): InlineSkill {
-  return {
-    name: skill.metadata.slug,
-    description: skill.metadata.description,
-    content: skill.content,
-    files: skill.files,
-    metadata: {
-      version: skill.metadata.version,
-      language: skill.metadata.language,
-      title: skill.metadata.title,
-      scope: skill.metadata.scope,
-    },
-  };
+
+/**
+ * What `resolveForContext` hands a turn: the listing that becomes
+ * `<available_skills>`, and the at-most-one writing style that becomes
+ * `<project_skill>`.
+ *
+ * They are separate fields rather than one list with a flag because they answer
+ * different questions — "what may I open" versus "what is BINDING here" — and the
+ * writing style is deliberately absent from `listing`: it already has a block of
+ * its own that says considerably more than a listing row would.
+ */
+export interface ContextSkills {
+  listing: SkillListingEntry[];
+  writingStyle: { slug: string; title: string } | null;
 }
 
 export class SkillResolver {
@@ -354,104 +409,113 @@ export class SkillResolver {
   ) {}
 
   /**
+   * The active writing style's METADATA, or `null`.
+   *
    * Resolved per query — `readConfig` reads `.claude4spec/config.json` from disk
    * each call, so editing config.json between turns takes effect on the next
-   * `POST /api/chat`. Returns `[]` when no style is active or registry doesn't
-   * know the slug (defensive — startup validation should catch the latter).
+   * `POST /api/chat`. Returns `null` when no style is active or the registry
+   * doesn't know the slug (defensive — startup validation should catch the latter).
+   *
+   * 0.2.36: metadata, not content. It used to return `InlineSkill[]` — a
+   * one-element list carrying the whole `SKILL.md` and every package file — for a
+   * caller that read two fields off it. The body now arrives through
+   * `load_skill_file`, so loading it here would be a per-turn disk read nobody
+   * consumes.
    */
-  resolve(): InlineSkill[] {
+  resolveWritingStyle(): SkillMetadata | null {
     const slug = readConfig(this.cwd).writingStyle;
-    if (slug === null) return [];
+    if (slug === null) return null;
     if (!this.registry.has(slug)) {
       console.warn(`[skill] config.writingStyle="${slug}" not in registry, skipping`);
-      return [];
+      return null;
     }
-    const skill = this.registry.resolve(slug);
-    if (skill.metadata.scope !== 'writing-style') {
-      console.warn(`[skill] config.writingStyle="${slug}" has scope="${skill.metadata.scope}", skipping`);
-      return [];
+    const meta = this.registry.list().find((m) => m.slug === slug);
+    if (!meta) return null;
+    if (meta.scope !== 'writing-style') {
+      console.warn(`[skill] config.writingStyle="${slug}" has scope="${meta.scope}", skipping`);
+      return null;
     }
-    return [toInlineSkill(skill)];
+    return meta;
   }
 
   /**
-   * M37: per-context-type resolution, called once per agent turn. Since 0.2.19 the
-   * result is the union of THREE sources, deduped by slug and ordered:
+   * M37: per-context-type resolution, called once per agent turn.
+   *
+   * 0.2.36 changed WHAT this produces, not where it looks. The three sources are
+   * unchanged:
    *
    *   1. `CONTEXT_TYPE_REGISTRY[contextType].attachInternalSkills` — the hardcoded
    *      contextual slugs. This catalogue is down to a single entry
    *      (`writing-style-author`, chat only); `brief-author` and `patch-implementer`
    *      are gone, and with them the idea that a mode's identity is a skill.
-   *   2. NEW — the unconditional plugin fan-out: every `source: 'plugin'`,
+   *   2. The unconditional plugin fan-out: every `source: 'plugin'`,
    *      `scope: 'contextual'` skill, attached to EVERY context type with no
-   *      selection, no config entry and no opt-out. This is now the main producer of
+   *      selection, no config entry and no opt-out. This is the main producer of
    *      contextual entries.
-   *   3. The active writing style (`resolve()`), kept last so it stays the trailing
-   *      entry, and the only one the prompt builder gives a `<project_skill>` block.
+   *   3. The active writing style — returned SEPARATELY, and deliberately NOT in
+   *      `listing`: it is the one skill with a `<project_skill>` block of its own.
    *
-   * Content is always resolved through `resolve(slug)`, i.e. through the precedence
-   * chain `project > global > plugin > bundled`. That is deliberate and is what makes
-   * a same-slug user-authored skill override a plugin contextual skill's BODY while
-   * leaving the attachment itself intact.
+   * What changed is that none of this calls `registry.resolve()` any more. The
+   * resolver assembles METADATA — `{ slug, description }` — and nothing else. The
+   * precedence chain (`project > global > plugin > bundled`) still decides which
+   * body a slug names, but it decides it later, inside `load_skill_file`, against
+   * the LIVE registry rather than against a copy frozen into the first turn's
+   * prompt. That is why a skill edited mid-thread takes effect on the next call
+   * and not on the next thread.
+   *
+   * The scope-normalization the old version did (reporting every contextual entry
+   * as `scope: 'contextual'` whatever its file said, so a user override could not
+   * be mistaken for the active style) is no longer needed: `listing` carries no
+   * scope at all, and the style travels in its own field where it cannot be
+   * confused with anything.
    *
    * An unknown `attachInternalSkills` slug is warned and skipped rather than
-   * thrown — even though these slugs come from the code-level
-   * `CONTEXT_TYPE_REGISTRY` and every entry is meant to name an always-present
-   * package-bundled skill, `SkillRegistry`'s bundled roots are scanned ONCE at
-   * server boot and never rescanned (see `load()`/`rebuild()` above). That means
-   * there is an inherent window on every real deploy — new code shipped, server
-   * not yet restarted — where a newly bundled skill exists on disk but not in
-   * the live process's cache. Throwing here would turn that ordinary, transient
-   * window into a hard per-request failure for every turn of the affected
-   * context type until the process restarts (this happened for real once — a
-   * throw here took down every `chat` turn against a dev server started before
-   * `writing-style-author` was added). Degrading gracefully and logging is the
-   * right tradeoff; a genuinely broken/missing bundled skill is better caught by
-   * a startup-time check than by every in-flight request paying for it.
+   * thrown — the bundled roots are scanned ONCE at boot, so on every real deploy
+   * there is a window (new code shipped, server not yet restarted) where a newly
+   * bundled skill exists on disk but not in the live process's cache. Throwing
+   * would turn that transient window into a hard per-request failure for every
+   * turn of the affected context type until restart (this happened for real once).
    */
-  resolveForContext(contextType: ChatContextType): InlineSkill[] {
-    const out: InlineSkill[] = [];
-    // The active writing style is resolved FIRST but pushed LAST. Its slug is
-    // excluded from the two contextual sources below, because both report their
-    // entries as `contextual` and `dedupeBySlug` keeps the first: a style that
-    // also appears as a contextual attachment would otherwise be dropped, leaving
-    // the turn with no `scope: 'writing-style'` entry and hence no
-    // `<project_skill>` block for a style the project did select.
-    const style = this.resolve();
-    const styleSlugs = new Set(style.map((s) => s.name));
+  resolveForContext(contextType: ChatContextType): ContextSkills {
+    const style = this.resolveWritingStyle();
+    const listing: SkillListingEntry[] = [];
+    // The style is excluded from both contextual sources. It has its own block;
+    // a duplicate listing row would advertise the one skill that is not optional
+    // as though it were.
+    const styleSlug = style?.slug;
+
     for (const slug of CONTEXT_TYPE_REGISTRY[contextType].attachInternalSkills) {
-      if (styleSlugs.has(slug)) continue;
-      if (!this.registry.has(slug)) {
+      if (slug === styleSlug) continue;
+      const meta = this.registry.list().find((m) => m.slug === slug);
+      if (!meta) {
         console.warn(`[skill] attachInternalSkills slug "${slug}" not in registry, skipping`);
         continue;
       }
-      // Reported as `contextual` for the same reason the fan-out below does it: a
-      // user root may only author `writing-style`-scoped skills, so a user override
-      // of a bundled contextual slug carries that scope in its file and would
-      // otherwise be mistaken for the active writing style.
-      const resolved = this.registry.resolve(slug);
-      out.push(toInlineSkill({ ...resolved, metadata: { ...resolved.metadata, scope: 'contextual' } }));
+      listing.push({ slug: meta.slug, description: meta.description });
     }
-    // Source 2 — the unconditional plugin fan-out. `distinctBySlug` because the
-    // contribution list is not deduped; `resolve()` then applies precedence, so what
-    // actually reaches the agent may be a user-authored body under the same slug.
-    //
-    // The resolved entry is reported with `scope: 'contextual'` whatever the winning
-    // FILE says. It is here because a plugin contributed it as contextual, and that is
-    // what it is in this turn — while a user override of such a slug has to be authored
-    // as `scope: writing-style` (a contextual skill in a user root is ignored,
-    // package-only). Passing that file's scope through would make the override look
-    // like the active writing style to the prompt builder, which would then hand it the
-    // one `<project_skill>` slot the user never selected it for.
+
     for (const meta of distinctBySlug(
       this.registry.listPluginContributions().filter((s) => s.scope === 'contextual'),
     )) {
-      if (styleSlugs.has(meta.slug)) continue;
-      const resolved = this.registry.resolve(meta.slug);
-      out.push(toInlineSkill({ ...resolved, metadata: { ...resolved.metadata, scope: 'contextual' } }));
+      if (meta.slug === styleSlug) continue;
+      /**
+       * The DESCRIPTION comes from the winning entry, not from the contribution.
+       *
+       * `listPluginContributions()` reports what a plugin pushed; `list()` reports
+       * what precedence actually resolved for that slug. Those differ exactly when
+       * a user authored a same-slug override — and since the description is now the
+       * only thing the model has to decide whether to open the skill, advertising
+       * the plugin's while `load_skill_file` serves the user's body would describe
+       * one document and hand over another.
+       */
+      const winning = this.registry.list().find((m) => m.slug === meta.slug) ?? meta;
+      listing.push({ slug: winning.slug, description: winning.description });
     }
-    out.push(...style);
-    return dedupeBySlug(out);
+
+    return {
+      listing: dedupeBySlug(listing),
+      writingStyle: style ? { slug: style.slug, title: style.title } : null,
+    };
   }
 }
 
@@ -462,15 +526,14 @@ export function distinctBySlug(skills: SkillMetadata[]): SkillMetadata[] {
 }
 
 /**
- * First entry per skill name, order preserved. The three sources of
+ * First entry per slug, order preserved. The contextual sources of
  * `resolveForContext` can legitimately name the same slug — a plugin contextual skill
- * whose slug also sits in `attachInternalSkills`, or a plugin style that is also the
- * active writing style — and handing the adapter the same skill twice is at best waste
- * and at worst a contradictory duplicate in the prompt.
+ * whose slug also sits in `attachInternalSkills` — and listing it twice would offer
+ * the model two rows addressing one document.
  */
-export function dedupeBySlug(skills: InlineSkill[]): InlineSkill[] {
+export function dedupeBySlug(skills: SkillListingEntry[]): SkillListingEntry[] {
   const seen = new Set<string>();
-  return skills.filter((s) => (seen.has(s.name) ? false : (seen.add(s.name), true)));
+  return skills.filter((s) => (seen.has(s.slug) ? false : (seen.add(s.slug), true)));
 }
 
 export function findSkillsDir(): string {
@@ -609,15 +672,38 @@ function parseFrontmatter(slug: string, skillPath: string, source: SkillSource, 
  */
 const MAX_SKILL_FILE_BYTES = 256 * 1024;
 const SKIPPED_DIRS = new Set(['node_modules']);
-function loadSkillFiles(skillDir: string): Record<string, string> {
-  const out: Record<string, string> = {};
+function loadSkillFiles(skillDir: string): Record<string, SkillPackageFile> {
+  const out: Record<string, SkillPackageFile> = {};
   if (!fs.existsSync(skillDir)) return out;
   walkDir(skillDir, '', out);
   delete out['SKILL.md'];
   return out;
 }
 
-function walkDir(absDir: string, relPrefix: string, out: Record<string, string>): void {
+/** The in-memory record for one package file. Kept next to the loader so the plugin
+ *  path (`addPluginSkill`) and the disk path cannot disagree about the shape. */
+export function toPackageFiles(files: Record<string, string>): Record<string, SkillPackageFile> {
+  const out: Record<string, SkillPackageFile> = {};
+  for (const [rel, content] of Object.entries(files)) {
+    out[rel] = {
+      path: rel,
+      bytes: Buffer.byteLength(content, 'utf8'),
+      lines: countLines(content),
+      isText: true,
+      content,
+    };
+  }
+  return out;
+}
+
+/** Lines as a reader counts them: a trailing newline does not open a further line. */
+function countLines(content: string): number {
+  if (content === '') return 0;
+  const n = content.split('\n').length;
+  return content.endsWith('\n') ? n - 1 : n;
+}
+
+function walkDir(absDir: string, relPrefix: string, out: Record<string, SkillPackageFile>): void {
   const entries = fs.readdirSync(absDir, { withFileTypes: true });
   for (const entry of entries) {
     const absChild = path.join(absDir, entry.name);
@@ -633,11 +719,28 @@ function walkDir(absDir: string, relPrefix: string, out: Record<string, string>)
       continue;
     }
     const buf = fs.readFileSync(absChild);
+    /**
+     * 0.2.36: a binary file is RECORDED, not dropped.
+     *
+     * It used to vanish with a console warn, which made "this skill has no
+     * `diagram.png`" and "this channel will not serve you `diagram.png`" the same
+     * observation from the model's side. Now it appears in the manifest with
+     * `isText: false` and a `load_skill_file` against it refuses with `NOT_TEXT` —
+     * a refusal the model could see coming. The content is never read into memory
+     * for these: nothing serves it.
+     */
     if (!isUtf8Text(buf)) {
-      console.warn(`[skill] ${relChild}: not valid UTF-8 text, skipping`);
+      out[relChild] = { path: relChild, bytes: buf.byteLength, lines: 0, isText: false, content: '' };
       continue;
     }
-    out[relChild] = buf.toString('utf8');
+    const content = buf.toString('utf8');
+    out[relChild] = {
+      path: relChild,
+      bytes: buf.byteLength,
+      lines: countLines(content),
+      isText: true,
+      content,
+    };
   }
 }
 

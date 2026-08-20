@@ -172,25 +172,29 @@ describe('axis A, continued — the envelope contributes a SKILL, not only types
     expect(skills.list().find((s) => s.slug === SKILL)?.source).toBe('plugin');
   });
 
-  it.each(CONTEXTS)('rides inlineSkills in the %s context, with no attachInternalSkills entry', (contextType) => {
+  it.each(CONTEXTS)('rides the %s context\'s skill listing, with no attachInternalSkills entry', (contextType) => {
+    // 0.2.36: the fan-out reaches the prompt as a LISTING ROW, not as a delivered
+    // package. The attachment is unchanged; only what it costs is.
     const resolver = new SkillResolver(skillRegistryWith(registry, tmp), tmp);
-    expect(resolver.resolveForContext(contextType).map((s) => s.name)).toContain(SKILL);
+    expect(resolver.resolveForContext(contextType).listing.map((s) => s.slug)).toContain(SKILL);
   });
 
   it.each(CONTEXTS)('never earns a <project_skill/> in %s — forcing belongs to the writing-style slot', (contextType) => {
-    // `agent-turn` picks the ONE skill that gets the block by `metadata.scope ===
-    // 'writing-style'`, not by list position. So this is the assertion that keeps a
-    // contextual plugin skill from being forced into a turn the model was meant to
-    // open it in on its own — and it has to hold WITH a style active, which is the
-    // only configuration where a second `writing-style` entry could hide.
+    // 0.2.36: the block's occupant is a FIELD of its own (`writingStyle`), fed by
+    // `config.writingStyle` alone — a contextual plugin skill cannot reach it by
+    // carrying a scope. This has to hold WITH a style active, the only configuration
+    // where a second writing-style entry could hide.
     fs.writeFileSync(
       path.join(tmp, '.claude4spec', 'config.json'),
       JSON.stringify({ writingStyle: STYLE }),
     );
     try {
-      const resolved = new SkillResolver(skillRegistryWith(registry, tmp), tmp).resolveForContext(contextType);
-      expect(resolved.find((s) => s.name === SKILL)?.metadata?.scope).toBe('contextual');
-      expect(resolved.filter((s) => s.metadata?.scope === 'writing-style').map((s) => s.name)).toEqual([STYLE]);
+      const { listing, writingStyle } = new SkillResolver(
+        skillRegistryWith(registry, tmp),
+        tmp,
+      ).resolveForContext(contextType);
+      expect(listing.map((s) => s.slug)).toContain(SKILL);
+      expect(writingStyle?.slug).toBe(STYLE);
     } finally {
       fs.writeFileSync(path.join(tmp, '.claude4spec', 'config.json'), JSON.stringify({ writingStyle: null }));
     }
@@ -214,7 +218,7 @@ describe('axis A, continued — the envelope contributes a SKILL, not only types
 
     const resolver = new SkillResolver(skillRegistryWith(registry, tmp), tmp);
     for (const contextType of CONTEXTS) {
-      expect(resolver.resolveForContext(contextType).map((s) => s.name)).not.toContain(SKILL);
+      expect(resolver.resolveForContext(contextType).listing.map((s) => s.slug)).not.toContain(SKILL);
     }
   });
 });

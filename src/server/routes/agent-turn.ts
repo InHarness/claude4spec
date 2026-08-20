@@ -20,6 +20,7 @@ import type { PagesService } from '../services/pages.js';
 import type { TagsService } from '../services/tags.js';
 import type { SectionsService } from '../services/sections.js';
 import { buildPlanToolsServer } from '../mcp/plan-tools.js';
+import { buildSkillToolsServer } from '../mcp/skill-tools.js';
 import { createPatchToolsServer } from '../mcp/patch-tools.js';
 import type { PatchWriteDeps } from '../services/patch-write.js';
 import { buildBriefToolsServer } from '../mcp/brief-tools.js';
@@ -85,6 +86,8 @@ export interface AgentTurnDeps {
   releaseService: ReleaseService;
   pageVersions: FileVersionService;
   skillResolver: SkillResolver;
+  /** 0.2.36: the live registry `skill-tools` reads through. Separate from the resolver
+   *  because `load_skill_file` serves the WHOLE registry, not one context's listing. */
   skillRegistry: SkillRegistry;
   ws: WsEmitter;
   cwd: string;
@@ -541,18 +544,19 @@ export async function runAgentTurn(
       }
     }
 
-    // M37: per-context skill resolution — the resolver takes the context type itself and
-    // unions the three sources (hardcoded contextual slugs from M05 dim 1, the
-    // unconditional fan-out of plugin contextual skills, the active writing style).
-    const inlineSkills = deps.skillResolver.resolveForContext(thread.contextType);
-    // The active writing style is identified by `scope: 'writing-style'` — an
-    // unambiguous signal independent of list position. It is the ONE skill that earns a
-    // <project_skill> block; everything else in `inlineSkills` is opened by the model on
-    // demand via Skill(slug), so there is nothing else to classify here.
-    const resolvedStyle = inlineSkills.find((s) => s.metadata?.scope === 'writing-style');
-    const writingStyleSkill = resolvedStyle
-      ? { slug: resolvedStyle.name, title: String(resolvedStyle.metadata?.title ?? resolvedStyle.name) }
-      : null;
+    /**
+     * M37: per-context skill resolution — the resolver takes the context type itself
+     * and unions the three sources (hardcoded contextual slugs from M05 dim 1, the
+     * unconditional fan-out of plugin contextual skills, the active writing style).
+     *
+     * 0.2.36: it returns METADATA. `listing` becomes the `<available_skills>` block
+     * and `writingStyle` the single `<project_skill>` block — the two are separate
+     * fields rather than one list to classify, so nothing here has to infer which
+     * entry is binding from a `scope` marker. No skill CONTENT is loaded on this
+     * path at all; the model fetches it through `skill-tools` if it wants it.
+     */
+    const { listing: availableSkills, writingStyle: writingStyleSkill } =
+      deps.skillResolver.resolveForContext(thread.contextType);
 
     const pageCount = isBriefFrame ? 0 : countPages(await deps.pagesService.listTree());
     // 0.1.51: language directives travel the same path as writingStyle — read from
@@ -605,6 +609,9 @@ export async function runAgentTurn(
       workspaceProjects: ctx.mcp.c4sTools ? (deps.listWorkspacePeers?.() ?? []) : [],
       workspaceName: deps.workspaceName,
       writingStyleSkill,
+      // 0.2.36: the prompt is now the ONLY carrier of the fact that skills exist —
+      // `adapter.execute` is handed no `skills` field below.
+      availableSkills,
       // M05 m05ctxreg dim 6 (0.2.19): domain rules of this interaction type, owned by
       // the genre's module and rendered verbatim as <interaction_context type="…">.
       interactionRules: ctx.interactionRules,
@@ -871,6 +878,22 @@ export async function runAgentTurn(
       // excluded — a consulted peer cannot consult another).
       const c4sTools = ctx.mcp.c4sTools ? buildC4sToolsServer(deps.workspaceName) : null;
 
+      /**
+       * 0.2.36 skill-tools: `load_skill_file`, the only channel to a skill's content.
+       *
+       * UNCONDITIONAL, and no `ctx.mcp.*` dimension gates it — deliberately the same
+       * treatment `workspace-tools` gets, for a stronger version of the same reason.
+       * The writing style attaches to EVERY context type, so the operation that reads
+       * its body cannot be gated by any of them; `brief` above all, since that is the
+       * frame whose FS built-ins are off and which therefore has no fallback at all.
+       *
+       * It carries no L3 catalog row (its subject is a prompt asset, not
+       * specification content). `profile-gate` passes an undeclared tool on a
+       * host-owned server through for every profile, so "outside the catalog" and
+       * "reachable from all four profiles" are the same fact here rather than two.
+       */
+      const skillTools = buildSkillToolsServer(deps.skillRegistry);
+
       // 0.2.13 workspace-tools: M31's `list_projects`. No registry dimension gates
       // it — see the note at its mount below. Absent only when the deps were built
       // without a workspace (the hand-rolled test rigs).
@@ -948,6 +971,7 @@ export async function runAgentTurn(
       if (transagentTools)
         inlineEntries.push({ name: 'transagent-tools', server: transagentTools });
       if (workspaceTools) inlineEntries.push({ name: 'workspace-tools', server: workspaceTools });
+      inlineEntries.push({ name: 'skill-tools', server: skillTools });
 
       /**
        * ONE gate call, producing the final map. There is deliberately no second
@@ -998,7 +1022,16 @@ export async function runAgentTurn(
       // NOTE: no `mcpServers` here on purpose — see `buildMcpServersForExecute`.
       // It is the one execute argument that must NOT be shared across the turn's
       // queries, so it is built inside `consume` below rather than captured here.
-      skills: inlineSkills,
+      /**
+       * NOTE: no `skills` here either, and its absence is the whole of 0.2.36.
+       *
+       * `RuntimeExecuteParams.skills` materializes each inline skill's package into
+       * a library tmpdir for the model to open with the native `Skill()` tool. That
+       * made the read channel a function of the sandbox: a `brief` turn runs with
+       * the FS built-ins off, so a style pointing at `workflows/brief.md` could not
+       * open the file it was pointing at. Nothing from the M37 registry touches disk
+       * now — the prompt names skills, `skill-tools` serves them.
+       */
       // 0.1.67 m05ctxreg: inject the per-context read-only explorer subagent. Mapped onto the
       // SDK's `options.agents`; does NOT narrow the parent's toolset (no allowedTools).
       subagents: subagentsFor(thread.contextType, deps.pluginHost),
