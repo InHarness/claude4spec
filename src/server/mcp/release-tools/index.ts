@@ -1,6 +1,6 @@
 /**
  * MCP server `release-tools` — exposes M17 release operations to agents
- * (chat, external MCP clients). Mirrors `m17mcp001`: 5 tools — create, list,
+ * (chat, external MCP clients). Mirrors `m17mcpprj`: 5 tools — create, list,
  * show, diff, update. `release_restore` is intentionally absent (decyzja 9 +
  * `m17open01` open #3 — restore is human-initiated only).
  *

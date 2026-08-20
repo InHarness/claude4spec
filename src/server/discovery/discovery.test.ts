@@ -1404,6 +1404,100 @@ describe('discovery core', () => {
     expect(flagged).not.toContain('m99');
   });
 
+  /**
+   * Rule 14 — a tag entities carry that no embed selects on.
+   *
+   * The rule exists because a tag is only worth assigning where something reads
+   * it; it is OFF by default because a tag is ALSO a plain filter axis
+   * (`list_entities({tags})`) and an author's own search handle, so on a corpus
+   * that never adopted the convention every one of those would read as a defect.
+   */
+  describe('rule 14 — tags without a consumer', () => {
+    async function setConsistency(value: Record<string, string>): Promise<void> {
+      await fs.mkdir(path.join(cwd, '.claude4spec'), { recursive: true });
+      await fs.writeFile(
+        path.join(cwd, '.claude4spec', 'config.json'),
+        JSON.stringify({ consistency: value }),
+        'utf-8',
+      );
+    }
+
+    function tagWidget(tag: string, slug = 'flow'): void {
+      db.prepare(`INSERT OR IGNORE INTO tag (slug, name) VALUES (?, ?)`).run(tag, tag);
+      db.prepare(
+        `INSERT INTO entity_tag (entity_type, entity_slug, tag_slug) VALUES ('widget', ?, ?)`,
+      ).run(slug, tag);
+    }
+
+    beforeEach(() => {
+      db.prepare(`INSERT INTO widget (slug, format, source) VALUES ('flow', 'mermaid', 'graph TD')`).run();
+    });
+
+    it('says nothing until the project turns it on', async () => {
+      const before = await core([pagesRoot()]).checkConsistency({});
+      tagWidget('srv-legacy');
+      const after = await core([pagesRoot()]).checkConsistency({});
+
+      expect(after.tagsWithoutConsumer).toEqual([]);
+      // Not merely an empty bucket — an unconfigured project's counters do not
+      // move either, so the rule cannot be felt without being asked for.
+      expect(after.summary).toEqual(before.summary);
+    });
+
+    it('reports the tag, how many entities carry it, and at the configured severity', async () => {
+      tagWidget('srv-legacy');
+      tagWidget('srv-legacy', 'flow2');
+      db.prepare(`INSERT INTO widget (slug, format, source) VALUES ('flow2', 'mermaid', 'graph TD')`).run();
+      await setConsistency({ requireTagConsumer: 'warn' });
+
+      const report = await core([pagesRoot()]).checkConsistency({});
+
+      expect(report.tagsWithoutConsumer).toEqual([
+        { tag: 'srv-legacy', entityCount: 2, severity: 'warn' },
+      ]);
+      expect(report.summary.warnings).toBeGreaterThanOrEqual(1);
+    });
+
+    it('a tag some tagged_list embed names is consumed, wherever that embed sits', async () => {
+      tagWidget('used');
+      await writePage('pages', 'catalog.md', '# Catalog\n\n<tagged_list type="widget" tags="used"/>\n');
+      await setConsistency({ requireTagConsumer: 'error' });
+
+      const report = await core([pagesRoot()]).checkConsistency({});
+
+      expect(report.tagsWithoutConsumer).toEqual([]);
+    });
+
+    /**
+     * The exemption that keeps the rule from contradicting the report two
+     * buckets down: `entity-{slug}` and `mNN` on an AC have a consumer, it is
+     * just rules 10/11 rather than an embed. Unconditional — those tags mean
+     * what they mean whether or not those rules are switched on to say so.
+     */
+    it('exempts the AC tags whose consumer is a rule rather than an embed', async () => {
+      applyProjection(db, [widgetModule(), acBackendModule]);
+      db.prepare(
+        `INSERT INTO ac (slug, title, text, status) VALUES ('ac-x', 'X', 'X happens', 'active')`,
+      ).run();
+      // `topic` rides along as the control: it proves the AC's tags reach the
+      // rule at all, so the two exemptions below are an exemption rather than a
+      // type the sweep never looked at.
+      for (const tag of ['entity-flow', 'm16', 'topic']) {
+        db.prepare(`INSERT OR IGNORE INTO tag (slug, name) VALUES (?, ?)`).run(tag, tag);
+        db.prepare(
+          `INSERT INTO entity_tag (entity_type, entity_slug, tag_slug) VALUES ('ac', 'ac-x', ?)`,
+        ).run(tag);
+      }
+      await setConsistency({ requireTagConsumer: 'warn' });
+
+      const report = await core([pagesRoot()], [widgetModule(), acBackendModule]).checkConsistency({});
+
+      expect(report.tagsWithoutConsumer).toEqual([
+        { tag: 'topic', entityCount: 1, severity: 'warn' },
+      ]);
+    });
+  });
+
   it('check_consistency severity filters by ROW, not by bucket', async () => {
     // The AC-coverage buckets carry a per-row severity from config, so filtering
     // them wholesale made `severity: "error"` return an empty list while

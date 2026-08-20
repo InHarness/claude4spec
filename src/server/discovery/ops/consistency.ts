@@ -27,6 +27,22 @@ import type { PageSource } from '../page-source.js';
 import type { RootSet } from '../roots.js';
 import type { CheckConsistencyInput, ConsistencyReport, DiscoveryDeps } from '../types.js';
 
+/**
+ * Rule 14 — a tag nobody embeds.
+ *
+ * NOT `orphanedEntityTags`, which is rule 2 and means something else entirely:
+ * an `entity_tag` row pointing at a slug that no longer exists — a dangling
+ * ASSIGNMENT. This is the opposite end of the same edge: the assignment is
+ * sound, the far side is what is missing. Folding the two into one bucket would
+ * give a reader two unrelated defects under one name.
+ */
+interface TagWithoutConsumerRow {
+  tag: string;
+  /** How many entities carry it — the size of the edit if the tag is retired. */
+  entityCount: number;
+  severity: ConsistencySeverity;
+}
+
 interface BrokenReferenceRow {
   rootId: string;
   pagePath: string;
@@ -53,6 +69,7 @@ const RULES: Record<string, { id: number; bucket: string }> = {
   'unknown-type': { id: 12, bucket: 'brokenReferences' },
   'invalid-tag-reference': { id: 4, bucket: 'invalidTagReferences' },
   'duplicate-anchor': { id: 13, bucket: 'duplicateAnchors' },
+  'tag-without-consumer': { id: 14, bucket: 'tagsWithoutConsumer' },
 };
 
 /** Buckets whose every row is an error, regardless of configuration. */
@@ -131,6 +148,14 @@ export async function checkConsistency(
       (r) => r.anchor,
     ),
   );
+
+  /**
+   * Every tag slug NAMED by a `tagged_list` / `tagged_list_mixed` embed, filled
+   * by the same attribute walk that feeds `invalidTagReferences` below. Rule 14
+   * is the complement of that set against the tags entities actually carry, so
+   * it costs one `Set` and no extra pass over the pages.
+   */
+  const consumedTags = new Set<string>();
 
   const brokenReferences: BrokenReferenceRow[] = [];
   const invalidTagReferences: Array<{ rootId: string; pagePath: string; tagType: string; tag: string; line: number }> = [];
@@ -214,7 +239,11 @@ export async function checkConsistency(
 
         if (tag.kind === 'tagged_list' || tag.kind === 'tagged_list_mixed') {
           for (const t of (tag.attrs.tags ?? '').split(',').map((x) => x.trim()).filter(Boolean)) {
-            if (!tagSlugs.has(t))
+            // Recorded BEFORE the existence check: an embed naming a tag that
+            // does not exist is already reported as rule 4, and counting it as a
+            // consumer too would report the same page twice under two names.
+            if (tagSlugs.has(t)) consumedTags.add(t);
+            else
               invalidTagReferences.push({ rootId: root.id, pagePath: page.path, tagType: tag.kind, tag: t, line: tag.line });
           }
           const candidateTypes =
@@ -291,8 +320,8 @@ export async function checkConsistency(
    * it), and `classifyVerifies` is a free function over the host.
    */
   const acModule = host.getEntity('ac');
+  const config = readConfig(deps.projectDir);
   if (acModule) {
-    const config = readConfig(deps.projectDir);
     const requireAcCoverage = config.consistency.requireAcCoverage;
     const requireModuleAc = config.consistency.requireModuleAc;
     const activeAcs = readActiveAcs(reader);
@@ -355,6 +384,46 @@ export async function checkConsistency(
     }
   }
 
+  /**
+   * Rule 14 — tags carried by entities that no embed selects on.
+   *
+   * OFF unless configured, and off is the default: a tag is also a plain filter
+   * axis for `list_entities({tags})` and for an author's own searches, so "no
+   * embed names it" is a smell, not a broken edge. Projects that have adopted
+   * the convention — a tag is assigned where it has a consumer — turn it on and
+   * get the stale ones listed; projects that have not stay silent.
+   *
+   * TWO SHAPES OF TAG ARE EXEMPT, because their consumer is a rule rather than
+   * an embed: `entity-{slug}` on an AC is what rule 10 reads as coverage, and
+   * `mNN` on an AC is what rule 11 reads as a module's criterion. Reporting them
+   * would be the rule contradicting its own report two buckets down — and the
+   * exemption is unconditional, because those tags mean what they mean whether
+   * or not rules 10/11 are switched on to say so.
+   */
+  const tagsWithoutConsumer: TagWithoutConsumerRow[] = [];
+  const requireTagConsumer = config.consistency.requireTagConsumer;
+  if (requireTagConsumer !== 'off') {
+    const acTagMap = acModule ? entityTags[acModule.type] : undefined;
+    const ruleConsumed = new Set<string>();
+    for (const tags of acTagMap?.values() ?? []) {
+      for (const t of tags) if (t.startsWith('entity-') || /^m\d{2}$/.test(t)) ruleConsumed.add(t);
+    }
+    const carriers = new Map<string, number>();
+    for (const tagMap of Object.values(entityTags)) {
+      for (const tags of tagMap.values()) {
+        for (const t of tags) carriers.set(t, (carriers.get(t) ?? 0) + 1);
+      }
+    }
+    for (const [tag, entityCount] of [...carriers].sort((a, b) => a[0].localeCompare(b[0]))) {
+      if (consumedTags.has(tag) || ruleConsumed.has(tag)) continue;
+      // A tag an entity carries that the tag registry never declared is a
+      // dangling ASSIGNMENT — M18's orphan rule, not this one. Reporting it here
+      // would tell an author to find a consumer for a tag that does not exist.
+      if (!tagSlugs.has(tag)) continue;
+      tagsWithoutConsumer.push({ tag, entityCount, severity: requireTagConsumer });
+    }
+  }
+
   // Section-indexed roots the reference sweep above did NOT cover.
   for (const root of roots.sectionIndexed()) {
     if (scanned.some((r) => r.id === root.id)) continue;
@@ -376,6 +445,7 @@ export async function checkConsistency(
     brokenAcVerifies,
     entitiesWithoutAcCoverage,
     modulesWithoutAc,
+    tagsWithoutConsumer,
   };
 
   // Counts are taken BEFORE any filter or cut, so `summary` describes the
@@ -387,13 +457,19 @@ export async function checkConsistency(
   const acWarnings =
     entitiesWithoutAcCoverage.filter((e) => e.severity === 'warn').length +
     modulesWithoutAc.filter((m) => m.severity === 'warn').length;
+  // Rule 14 carries its severity per row exactly like rules 10/11, so it splits
+  // across both counters rather than belonging to either.
   const errors =
     brokenReferences.length +
     invalidTagReferences.length +
     brokenExtensionReferences.length +
     duplicateAnchors.length +
-    acErrors;
-  const warnings = unreferencedEntities.length + acWarnings;
+    acErrors +
+    tagsWithoutConsumer.filter((t) => t.severity === 'error').length;
+  const warnings =
+    unreferencedEntities.length +
+    acWarnings +
+    tagsWithoutConsumer.filter((t) => t.severity === 'warn').length;
 
   const report: ConsistencyReport = {
     brokenReferenceCounts: countBy(brokenReferences, (r) => r.category),
