@@ -431,4 +431,96 @@ describe('release budget — explicit degradation (0.2.40)', () => {
     expect(out.truncationHint).toBeUndefined();
     for (const e of out.entities as MCPEntityDelta[]) expect(e.truncated).toBeUndefined();
   });
+
+  /**
+   * `offset` is ONE parameter over TWO dimensions, so a light response that
+   * starves one of them hands back a cursor nobody can follow: told to resume
+   * at the entities' offset, a caller carries it onto the pages map and skips
+   * every page row in between — postponed rows that never arrive, which is the
+   * silent loss this whole release exists to abolish.
+   */
+  it('[ac:ac-summaryonly-jest-gwarantowanym-dnem-d] summaryOnly does not starve the second dimension, and its hint is followable', () => {
+    const count = 4000;
+    const raw = {
+      ...fatRaw(count),
+      pages: Array.from({ length: count }, (_, i) => ({
+        path: `pages/very/long/path/to/page-${i}.md`,
+        op: 'created',
+        added_sections: [],
+        removed_sections: [],
+        modified_sections: [],
+        moved_sections: [],
+        frontmatter_diff: null,
+        xml_refs_diff: null,
+      })),
+    } as unknown as RawDelta;
+    const out = projectReleaseDiff(raw, null, fatSnapshot(count, 0), DIFF_INCLUDE, {
+      summaryOnly: true,
+    });
+
+    const entities = (out.entities ?? []).length;
+    const pages = (out.pages ?? []).length;
+    // Neither dimension is reduced to a token row by the other's spending.
+    expect(entities).toBeGreaterThan(100);
+    expect(pages).toBeGreaterThan(100);
+    expect(JSON.stringify(out).length).toBeLessThanOrEqual(DEFAULT_BUDGET_CHARS * 1.1);
+
+    // Each cursor is valid on ITS OWN dimension, and the hint says to page one
+    // dimension at a time rather than carrying a cursor across both.
+    expect(out.truncationHint).toContain('include');
+    const resumed = projectReleaseDiff(raw, null, fatSnapshot(count, 0), { include: ['pages'] }, {
+      summaryOnly: true,
+      offset: pages,
+    });
+    expect((resumed.pages as Array<{ path: string }>)[0]!.path).toContain(`page-${pages}.md`);
+  });
+
+  /**
+   * The per-section cut does not bound a PAGE: a page carries as many sections
+   * as it has, so without a whole-page ceiling a degraded window still comes
+   * back oversized — wearing a `truncated` marker that says the budget was
+   * applied while the response proves it was not.
+   */
+  it('[ac:ac-release-diff-ponad-budzet-element-z-t] a degraded page is bounded as a whole, not only section by section', () => {
+    const body = 'y'.repeat(5_000);
+    const page = (path: string) => ({
+      path,
+      op: 'created',
+      added_sections: Array.from({ length: 200 }, (_, i) => ({
+        anchor: `a${String(i).padStart(7, '0')}`,
+        heading: `H${i}`,
+        content: body,
+      })),
+      removed_sections: [],
+      modified_sections: [],
+      moved_sections: [],
+      frontmatter_diff: null,
+      xml_refs_diff: null,
+    });
+    const raw = {
+      from: { id: 8, name: 'v8' },
+      to: { id: 9, name: 'v9' },
+      entities: [],
+      pages: [page('pages/a.md'), page('pages/b.md'), page('pages/c.md'), page('pages/d.md')],
+    } as unknown as RawDelta;
+
+    const out = projectReleaseDiff(raw, null, fatSnapshot(0, 0), { include: ['pages'] }, {
+      limit: 4,
+    });
+
+    // Every page and every section is still there — degradation, not dropping.
+    const pages = out.pages as MCPPageDelta[];
+    expect(pages).toHaveLength(4);
+    for (const p of pages) expect(p.sections).toHaveLength(200);
+    expect(out.truncationHint).toBeDefined();
+    /*
+     * The first page is exempt, as everywhere else in this module: a
+     * single-page window is already the smallest retry, so "ask for less"
+     * would be unfollowable. Every page AFTER it is what this asserts, and
+     * before the whole-page ceiling each of them alone ran to a megabyte.
+     */
+    for (const p of pages.slice(1)) {
+      expect(JSON.stringify(p).length).toBeLessThan(DEFAULT_BUDGET_CHARS / 2);
+    }
+  });
 });

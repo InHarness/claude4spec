@@ -40,7 +40,8 @@
 import type { Database } from 'better-sqlite3';
 import { invalidArgument } from '../errors.js';
 import type { PageSource } from '../page-source.js';
-import { DEFAULT_LIMITS, paginate } from '../pagination.js';
+import { DEFAULT_LIMITS, resolvePageRequest } from '../pagination.js';
+import { fitToBudget } from '../budget.js';
 import type { RootSet } from '../roots.js';
 import type { SearchPageHit, SearchPagesInput, SearchPagesResult } from '../types.js';
 
@@ -131,7 +132,6 @@ export async function searchPages(
             sortLine: section ? section.start : line,
             matchCount: 0,
             matchLines: [],
-            lines,
           };
           bySection.set(key, acc);
         }
@@ -153,7 +153,21 @@ export async function searchPages(
     return { mode: 'count', total: ordered.length, matches };
   }
 
-  const rows: SearchPageHit[] = ordered.map((acc) => {
+  /*
+   * Slice BEFORE rendering, which is why this does not call `paginate`.
+   *
+   * `paginate` takes an already-rendered array, and rendering is the expensive
+   * half here: a query matching five hundred sections would cut five hundred
+   * hits' worth of hunks out of the page bodies and then throw all but twenty
+   * away. The window is the only part anyone reads, so it is the only part
+   * built. The budget rule is unchanged — `fitToBudget` is the same width cut
+   * `paginate` applies, over the same window it would have produced.
+   */
+  const { limit, offset } = resolvePageRequest(input, DEFAULT_LIMITS.searchPages);
+  const window = ordered.slice(offset, offset + limit);
+  const rows: SearchPageHit[] = [];
+  const readBodyLines = makeBodyReader(pages);
+  for (const acc of window) {
     const row: SearchPageHit = {
       kind: acc.kind,
       rootId: acc.rootId,
@@ -163,12 +177,31 @@ export async function searchPages(
       ...(acc.headingPath !== undefined ? { headingPath: acc.headingPath } : {}),
       matchCount: acc.matchCount,
     };
-    if (mode !== 'hits') return row;
-    const { hunks, omittedChars } = buildHunks(acc, context);
-    return { ...row, hunks, omittedChars };
-  });
-
-  const page = paginate(rows, input, DEFAULT_LIMITS.searchPages);
+    if (mode !== 'hits') {
+      rows.push(row);
+      continue;
+    }
+    /*
+     * The body is re-read rather than retained.
+     *
+     * An accumulator holding its page's `lines` would keep the full text of
+     * every page that matched alive for the whole scan — a search for a common
+     * word across every root would hold the entire corpus in memory at once,
+     * where the operation used to hold a couple of hundred characters per hit.
+     * Only the window is ever rendered, so only the window's pages are needed,
+     * and adjacent sections of one page share the read below.
+     */
+    const body = await readBodyLines(acc.rootId, acc.path);
+    const { hunks, omittedChars } = buildHunks(acc, context, body);
+    rows.push({ ...row, hunks, omittedChars });
+  }
+  const items = fitToBudget(rows);
+  const page = {
+    items,
+    total: ordered.length,
+    hasMore: offset + items.length < ordered.length,
+    truncated: items.length < rows.length,
+  };
   return mode === 'hits' ? { ...page, mode: 'hits' } : { ...page, mode: 'map' };
 }
 
@@ -183,8 +216,6 @@ interface HitAccumulator {
   matchCount: number;
   /** 1-based line numbers of the matches, ascending. Only filled in `hits` mode. */
   matchLines: number[];
-  /** The page's lines, for cutting hunks out of. Never returned. */
-  lines: string[];
 }
 
 /**
@@ -214,11 +245,15 @@ function compareHits(a: HitAccumulator, b: HitAccumulator): number {
  * twice would spend the ceiling on a copy and make `omittedChars` a lie about
  * how much of the section the caller has actually seen.
  */
-function buildHunks(acc: HitAccumulator, context: number): { hunks: string[]; omittedChars: number } {
+function buildHunks(
+  acc: HitAccumulator,
+  context: number,
+  lines: readonly string[],
+): { hunks: string[]; omittedChars: number } {
   const spans: Array<{ start: number; end: number }> = [];
   for (const line of acc.matchLines) {
     const start = Math.max(line - context, 1);
-    const end = Math.min(line + context, acc.lines.length);
+    const end = Math.min(line + context, lines.length);
     const last = spans[spans.length - 1];
     // `<= last.end + 1` merges ADJACENT spans too, not only overlapping ones —
     // a one-line gap between two blocks is noise, not structure.
@@ -228,12 +263,34 @@ function buildHunks(acc: HitAccumulator, context: number): { hunks: string[]; om
 
   let omittedChars = 0;
   const hunks = spans.map((span) => {
-    const text = acc.lines.slice(span.start - 1, span.end).join('\n');
+    const text = lines.slice(span.start - 1, span.end).join('\n');
     if (text.length <= MAX_HUNK_CHARS) return text;
     omittedChars += text.length - MAX_HUNK_CHARS;
     return text.slice(0, MAX_HUNK_CHARS);
   });
   return { hunks, omittedChars };
+}
+
+/**
+ * One-entry cache, which is all the ordering needs: hits are enumerated by
+ * `(rootId, path, …)`, so every section of a page arrives consecutively and a
+ * page is read exactly once per window.
+ */
+function makeBodyReader(pages: PageSource): (rootId: string, path: string) => Promise<string[]> {
+  let last: { key: string; lines: string[] } | null = null;
+  return async (rootId, path) => {
+    const key = `${rootId} ${path}`;
+    if (last?.key === key) return last.lines;
+    let lines: string[] = [];
+    try {
+      lines = (await pages.readBody(rootId, path)).split('\n');
+    } catch {
+      // The page was readable moments ago during the scan; if it is not now,
+      // the hit's identity still stands — it just comes back without hunks.
+    }
+    last = { key, lines };
+    return lines;
+  };
 }
 
 function resolveContext(raw: number | undefined): number {
@@ -326,13 +383,29 @@ function assertMatchableWithinOneLine(pattern: string): void {
       'search for the first line alone, then follow the anchor with get_sections to read across it',
     );
   }
+  const probeSource = neutralise(pattern);
   for (const { probe, what } of LINE_CROSSING) {
-    if (!probe.test(pattern)) continue;
+    if (!probe.test(probeSource)) continue;
     throw invalidArgument(
       `regex contains ${what}, which cannot match: search_pages matches one LINE at a time, so a pattern spanning a line boundary silently finds nothing`,
       'search for one line alone, then follow the anchor with get_sections to read across the boundary',
     );
   }
+}
+
+/**
+ * Strip the two constructs that make a `\n` in the source harmless, so the
+ * probes above only fire on a pattern that really reaches for a line boundary.
+ *
+ * A NEGATED class is the reason this exists: `[^\n]` is the standard idiom for
+ * "anything WITHIN this line", so refusing `^[^\n]*TODO` rejects the most
+ * line-oriented pattern there is — a guard against false negatives producing a
+ * false refusal instead. An ESCAPED BACKSLASH is the other: in `\\n` the `n` is
+ * a literal letter, and the pattern is searching prose for a backslash-n
+ * sequence, which appears on one line like any other text.
+ */
+function neutralise(pattern: string): string {
+  return pattern.replace(/\\\\/g, '').replace(/\[\^(?:\\.|[^\]\\])*\]/g, '');
 }
 
 async function safeList(pages: PageSource, rootId: string): Promise<string[]> {

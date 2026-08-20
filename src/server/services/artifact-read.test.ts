@@ -3,6 +3,7 @@ import {
   applyArtifactRange,
   budgetArtifactContent,
   readArtifactWindow,
+  windowBody,
   ARTIFACT_FAMILY_ERROR_CODES,
 } from './artifact-read.js';
 import { artifactRegistry, type ArtifactKind } from './artifact-registry.js';
@@ -106,6 +107,41 @@ describe('artifact read family — one window, one taxonomy (0.2.40)', () => {
     // absence is now a written `n/a` with a reason someone can pick up.
     expect(artifactRegistry.brief.readFamily.search).toMatch(/^n\/a — /);
     expect(artifactRegistry.brief.readFamily.search).toContain('search_briefs');
+  });
+
+  /**
+   * The window used to be handed to `gray-matter` a second time, and a window is
+   * an arbitrary line slice: its first line is `---` far more often than one
+   * would guess — the frontmatter's own closing fence is the natural start of a
+   * second page, and a thematic break in the body is `---` too. Re-parsing then
+   * either swallowed real body text into frontmatter or threw a raw YAML error
+   * out of a perfectly valid read.
+   */
+  describe('[ac:ac-get-brief-ma-okno-odczytu-range-i-jaw] the window is returned, not re-parsed', () => {
+    const file = ['---', 'type: brief', 'to_release: 0.2.40', '---', '', '# Title', 'prose', '', '---', '', 'after the break', 'tail'].join('\n');
+
+    it('a window starting on a body-level thematic break keeps every line it selected', () => {
+      // Line 9 is the `---` in the BODY. The old code read it as the opening
+      // fence of a frontmatter block and consumed the lines under it as YAML.
+      const windowed = applyArtifactRange(file, { start: 9, end: 12 }, { kind: 'brief', path: 'b.md' });
+      expect(windowBody(file, windowed, 9)).toBe('---\n\nafter the break\ntail');
+    });
+
+    it("a window starting on the frontmatter's closing fence loses no body line", () => {
+      const windowed = applyArtifactRange(file, { start: 4, end: 7 }, { kind: 'brief', path: 'b.md' });
+      // Line 4 IS the closing fence, so exactly that one line is frontmatter.
+      expect(windowBody(file, windowed, 4)).toBe('\n# Title\nprose');
+    });
+
+    it('a window that starts at line 1 still has the frontmatter block stripped from its body', () => {
+      const windowed = applyArtifactRange(file, { start: 1, end: 7 }, { kind: 'brief', path: 'b.md' });
+      expect(windowBody(file, windowed, 1)).toBe('\n# Title\nprose');
+    });
+
+    it('a file with no frontmatter has nothing stripped from any window', () => {
+      const plain = ['# Title', 'a', 'b'].join('\n');
+      expect(windowBody(plain, plain, 1)).toBe(plain);
+    });
   });
 
   it('narrowing happens before measuring, so a small window of a huge file is not reported truncated', () => {

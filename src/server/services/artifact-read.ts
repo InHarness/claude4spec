@@ -124,3 +124,42 @@ export function readArtifactWindow(
 export function artifactReadFamily(kind: ArtifactKind): (typeof artifactRegistry)[ArtifactKind]['readFamily'] {
   return artifactRegistry[kind].readFamily;
 }
+
+/**
+ * The `body` of a WINDOW, computed instead of re-parsed.
+ *
+ * The obvious implementation — `matter(window).content` — is wrong in two ways,
+ * both reachable from an ordinary read. A window is an arbitrary line slice, so
+ * its first line is frequently `---`: the frontmatter's own closing delimiter is
+ * the natural start of a second page, and a body-level thematic break is `---`
+ * too. `matter` then reads that as the START of a frontmatter block and either
+ * swallows real body text into `data` (silent loss) or throws a raw YAML parser
+ * error that surfaces as a 500 on a request that was perfectly valid.
+ *
+ * A window has no frontmatter to strip in the first place: the block belongs to
+ * the file, and `frontmatter` is already parsed from the whole file above. So
+ * the only question is how many of the window's own leading lines fall inside
+ * that block, which is arithmetic — `startLine` against the block's extent.
+ */
+export function windowBody(whole: string, windowed: string, startLine: number): string {
+  const fmLines = frontmatterLineCount(whole);
+  if (fmLines === 0 || startLine > fmLines) return windowed;
+  const drop = fmLines - startLine + 1;
+  return windowed.split('\n').slice(drop).join('\n');
+}
+
+/**
+ * How many lines the leading `---` block occupies, 0 when there is none.
+ *
+ * Deliberately literal: only a file whose very first line is exactly the fence
+ * has frontmatter, which is the same rule `gray-matter` applies at position 0 —
+ * the divergence this helper exists to avoid is at every OTHER position.
+ */
+function frontmatterLineCount(whole: string): number {
+  const lines = whole.split('\n');
+  if ((lines[0] ?? '').trim() !== '---') return 0;
+  for (let i = 1; i < lines.length; i++) {
+    if ((lines[i] ?? '').trim() === '---') return i + 1;
+  }
+  return 0;
+}

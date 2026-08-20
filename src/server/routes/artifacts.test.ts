@@ -200,6 +200,36 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
         expect(JSON.stringify(res.body)).toContain('lines');
       });
 
+      it('[ac:ac-rodzina-odczytu-artefaktu-wspolna-tak] a window opening on a `---` line is served, not re-parsed as frontmatter', async () => {
+        await writeArtifact(
+          'brief',
+          'sep.md',
+          {
+            type: 'brief',
+            source: 'analysis',
+            from_release: null,
+            to_release: null,
+            generated_at: '2026-01-01T00:00:00.000Z',
+            generator_version: 'test',
+            implemented: false,
+          },
+          // A thematic break, then a line that is not valid YAML. Handing this
+          // window back to gray-matter read the break as an opening fence and
+          // turned a valid read into a 500 out of a YAML parser.
+          ['intro', '', '---', '', 'a: b: c', 'tail'].join('\n') + '\n',
+        );
+        const whole = await request(app).get('/api/artifacts/brief/sep.md');
+        // The LAST `---` is the thematic break in the body; the first two are
+        // the frontmatter fences.
+        const breakLine = whole.body.data.content.split('\n').lastIndexOf('---') + 1;
+
+        const res = await request(app).get(`/api/artifacts/brief/sep.md?range=${breakLine}:${breakLine + 3}`);
+        expect(res.status).toBe(200);
+        expect(res.body.data.content.split('\n')[0]).toBe('---');
+        // The body is the window itself — no line silently eaten as frontmatter.
+        expect(res.body.data.body).toContain('a: b: c');
+      });
+
       it('a malformed ?range is refused rather than ignored', async () => {
         // Ignoring it would answer with the whole file to a caller who asked
         // for a window precisely because the whole file is too much.

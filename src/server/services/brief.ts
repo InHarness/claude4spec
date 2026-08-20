@@ -35,7 +35,7 @@ import type { ChatService } from './chat.js';
 import type { ReleaseService } from './release.js';
 import type { PagesFrontmatterIndexer } from './pages-frontmatter-indexer.js';
 import { DomainError } from './tags.js';
-import { readArtifactWindow, type ArtifactRange } from './artifact-read.js';
+import { readArtifactWindow, windowBody, type ArtifactRange } from './artifact-read.js';
 import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 
 const GENERATOR_VERSION = 'brief-author@0.1';
@@ -211,16 +211,15 @@ export class BriefService {
       return { path, frontmatter, body: parsed.content, content, hash };
     }
     /*
-     * Re-parse the WINDOW, not the file: a window that starts past line 1 has no
-     * frontmatter block, and `matter` correctly reports the whole slice as body.
-     * `frontmatter` above stays parsed from the whole file — it is small,
-     * always useful, and a caller reading the tail of a brief should not lose
-     * the answer to "which brief is this".
+     * The window is NOT re-parsed — see `windowBody`. `frontmatter` above stays
+     * parsed from the whole file: it is small, always useful, and a caller
+     * reading the tail of a brief should not lose the answer to "which brief is
+     * this".
      */
     return {
       path,
       frontmatter,
-      body: matter(windowed.content).content,
+      body: windowBody(content, windowed.content, opts?.range?.start ?? 1),
       content: windowed.content,
       hash,
       ...(windowed.truncated

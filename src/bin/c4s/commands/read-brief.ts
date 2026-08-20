@@ -112,6 +112,6 @@ export const readBriefCommand: CliCommandContribution = {
   name: 'read-brief',
   operation: 'get_brief',
   executionMode: 'server-delegating',
-  errorCodes: [...SERVER_DELEGATING_CODES, 'INVALID_ARGS', 'BRIEF_NOT_FOUND'],
+  errorCodes: [...SERVER_DELEGATING_CODES, 'INVALID_ARGS', 'INVALID_ARGUMENT', 'BRIEF_NOT_FOUND'],
   handler: runReadBrief,
 };

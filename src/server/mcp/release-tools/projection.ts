@@ -81,11 +81,22 @@ const HEAVY_RETRY_HINT =
 /**
  * Project a raw delta, applying the response budget on the way out.
  *
- * The budget is spent across BOTH dimensions in order (entities, then pages),
- * not halved between them: the caller paid for one response, and a fixed split
- * would degrade a small pages dimension to make room for entities that never
- * arrived. Each dimension keeps its own first item whole, which is a superset
- * of the "first item of the response never degrades" guarantee.
+ * In the HEAVY path the budget is spent across both dimensions in order
+ * (entities, then pages), not halved between them: the caller paid for one
+ * response, and a fixed split would degrade a small pages dimension to make
+ * room for entities that never arrived. Nothing becomes unreachable that way,
+ * because the heavy path never drops a row — the overflow only degrades, in
+ * place, marked.
+ *
+ * The LIGHT path (`summaryOnly`) splits instead, and must. There a row past the
+ * budget is POSTPONED, and the only way to reach it is `offset` — one parameter
+ * shared by both dimensions. Spending in order starves the second dimension to
+ * a single row while the first consumes the budget, so the two hints name two
+ * different offsets and the caller can follow at most one of them; advancing to
+ * the entities' cursor would skip the postponed pages permanently and silently,
+ * which is the exact failure the whole release is written against. An equal
+ * share keeps each dimension's cursor independently followable, and the hint
+ * says to page one dimension at a time.
  */
 export function projectReleaseDiff(
   raw: RawDelta,
@@ -101,6 +112,9 @@ export function projectReleaseDiff(
   const hints: string[] = [];
   let spent = 0;
   const remaining = (): number => Math.max(DEFAULT_BUDGET_CHARS - spent, 0);
+  /** The light path's equal share — see the note on postponement above. */
+  const lightDims = opts.include.filter((d) => d === 'entities' || d === 'pages').length;
+  const lightShare = Math.floor(DEFAULT_BUDGET_CHARS / Math.max(lightDims, 1));
   const charge = (value: unknown): void => {
     spent += JSON.stringify(value)?.length ?? 0;
   };
@@ -113,7 +127,7 @@ export function projectReleaseDiff(
     out.total!.entities = full.length;
     if (summaryOnly) {
       const light = full.map(toEntityLight);
-      const { items, hint } = budgetLightMap(light, offset, remaining(), 'entities');
+      const { items, hint } = budgetLightMap(light, offset, lightShare, 'entities');
       out.entities = items;
       if (hint) hints.push(hint);
     } else {
@@ -133,7 +147,7 @@ export function projectReleaseDiff(
     out.total!.pages = full.length;
     if (summaryOnly) {
       const light = full.map(toPageLight);
-      const { items, hint } = budgetLightMap(light, offset, remaining(), 'pages');
+      const { items, hint } = budgetLightMap(light, offset, lightShare, 'pages');
       out.pages = items;
       if (hint) hints.push(hint);
     } else {
@@ -175,9 +189,19 @@ function budgetLightMap<T>(
   if (items.length === window.length) return { items };
   return {
     items,
+    /*
+     * The hint names `include` as well as `offset`, and that is not padding:
+     * `offset` is ONE parameter over two dimensions, so a cursor is only
+     * followable while a single dimension is in play. Told merely to advance,
+     * a caller paging a two-dimension response would carry the entities'
+     * cursor onto the pages map and skip the very rows this hint exists to
+     * promise are still reachable.
+     */
     hint:
       `the ${dimension} identity map does not fit in one response — ` +
-      `continue with \`offset: ${offset + items.length}\` (\`total\` reports the full count). No row was dropped, only postponed.`,
+      `continue with \`include: ['${dimension}'], offset: ${offset + items.length}\` ` +
+      `(\`total\` reports the full count; \`offset\` is shared by both dimensions, so page one at a time). ` +
+      `No row was dropped, only postponed.`,
   };
 }
 
@@ -194,6 +218,21 @@ function degradeEntity(e: MCPEntityDelta): MCPEntityDelta {
 }
 
 /**
+ * The whole-page ceiling for a degraded page.
+ *
+ * The per-section cut alone does not bound a page: a page delta carries as many
+ * sections as the page has, so a window of four pages with two hundred modified
+ * sections each still returns well over a megabyte while reporting that the
+ * budget was applied — the precise oversized response this release exists to
+ * prevent, now wearing a `truncated` marker. The entity side never has this
+ * problem because it drops payloads whole; the section side cuts, so the cut
+ * has to compose. Sections are served in order until the ceiling is reached and
+ * the remainder keep their identity with `content` emptied — still every
+ * section, still marked, never a page that outgrows its own degradation.
+ */
+const DEGRADED_PAGE_CHARS = 8_000;
+
+/**
  * A page past the budget keeps every section and every `content`, cut as TEXT.
  *
  * The opposite choice to `degradeEntity`, and for the opposite reason: a section
@@ -202,17 +241,18 @@ function degradeEntity(e: MCPEntityDelta): MCPEntityDelta {
  * `content` to cut and is left exactly as it is.
  */
 function degradePage(p: MCPPageDelta): MCPPageDelta {
+  let budget = DEGRADED_PAGE_CHARS;
   return {
     ...p,
     sections: p.sections.map((section) => {
-      if (section.content === undefined || section.content.length <= DEGRADED_SECTION_CHARS) {
+      if (section.content === undefined) return section;
+      const allowance = Math.min(DEGRADED_SECTION_CHARS, budget);
+      if (section.content.length <= allowance) {
+        budget -= section.content.length;
         return section;
       }
-      return {
-        ...section,
-        content: section.content.slice(0, DEGRADED_SECTION_CHARS),
-        truncated: true,
-      };
+      budget -= allowance;
+      return { ...section, content: section.content.slice(0, allowance), truncated: true };
     }),
   };
 }

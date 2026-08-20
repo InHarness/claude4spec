@@ -338,7 +338,15 @@ export interface SearchPageHit {
   kind: 'section' | 'page';
   rootId: string;
   path: string;
-  /** Absent iff the root carries no section index — identity degrades to the page. */
+  /**
+   * Present iff `kind` is `'section'`. Two different situations produce a
+   * `'page'` hit, and only one of them is about the root: an unindexed root has
+   * no sections at all, and an INDEXED root still has prose that lives outside
+   * every section — the lines above the first heading, and any heading the
+   * indexer left without an anchor. A consumer that reads "indexed root" as
+   * "anchor guaranteed" passes `undefined` into `get_sections`; `kind` is the
+   * discriminator, and it is on every row for that reason.
+   */
   anchor?: string;
   heading?: string;
   /** The ancestor chain including this heading, as `list_sections` reports it. */

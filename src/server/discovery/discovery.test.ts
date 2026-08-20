@@ -1610,6 +1610,39 @@ describe('discovery core', () => {
       return core([pagesRoot()]);
     }
 
+    /**
+     * The refusal exists to stop a false negative, so refusing a pattern that
+     * matches perfectly well is the same failure inverted — and `[^\n]` is the
+     * canonical WITHIN-line idiom, the very thing this operation does.
+     */
+    it('a within-line negated class is answered, not refused — the guard aims at line-CROSSING patterns', async () => {
+      const c = await threeSectionPage();
+      const result = await c.searchPages({ regex: '^[^\\n]*needle', mode: 'count' });
+      if (result.mode !== 'count') throw new Error('unreachable');
+      expect(result.matches).toBe(3);
+
+      // The genuinely line-crossing sibling is still refused.
+      await expect(c.searchPages({ regex: 'needle[\\s\\S]*beta' })).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+      });
+    });
+
+    /**
+     * A match can fall outside every section on an INDEXED root — above the
+     * first heading, or under one the indexer gave no anchor. The row says so
+     * with `kind`, which is why a consumer must branch on `kind` and not on
+     * "this root has an index, so `anchor` is guaranteed".
+     */
+    it('a match outside every section of an indexed root comes back as a `page` hit with no anchor', async () => {
+      const c = await threeSectionPage();
+      const result = await c.searchPages({ query: 'Top' });
+      if (result.mode === 'count') throw new Error('unreachable');
+      const row = result.items[0]!;
+      expect(row.kind).toBe('page');
+      expect(row.anchor).toBeUndefined();
+      expect(row.path).toBe('a.md');
+    });
+
     it('defaults to `map`, not `hits` — the cheap rung is what you get for not choosing', async () => {
       const c = await threeSectionPage();
       const result = await c.searchPages({ query: 'needle' });

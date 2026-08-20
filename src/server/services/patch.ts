@@ -32,7 +32,7 @@ import type { FileSerializer } from './file-serializer.js';
 import type { ChatService } from './chat.js';
 import type { PagesFrontmatterIndexer } from './pages-frontmatter-indexer.js';
 import { DomainError } from './tags.js';
-import { readArtifactWindow, type ArtifactRange } from './artifact-read.js';
+import { readArtifactWindow, windowBody, type ArtifactRange } from './artifact-read.js';
 import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 import { ConflictError } from './brief.js';
 
@@ -166,7 +166,10 @@ export class PatchService {
       { kind: 'patch', path: relPath },
       Math.floor(DEFAULT_BUDGET_CHARS / 2),
     );
-    const body = windowed.content === content ? parsed.content : matter(windowed.content).content;
+    const body =
+      windowed.content === content
+        ? parsed.content
+        : windowBody(content, windowed.content, opts?.range?.start ?? 1);
     return {
       path: relPath,
       title: extractTitle(parsed.content, frontmatter, relPath),
