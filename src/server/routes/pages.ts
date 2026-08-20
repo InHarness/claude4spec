@@ -1,7 +1,14 @@
 import { Router, type Request, type Response } from 'express';
 import type { PagesService } from '../services/pages.js';
 import type { SelfWriteMarker } from '../fs/sources.js';
-import { createPage, deletePage, updatePage } from '../services/page-write.js';
+import {
+  createPage,
+  deletePage,
+  updatePage,
+  type PageDiffDeps,
+  type SectionWriteDeps,
+  type TextEdit,
+} from '../services/page-write.js';
 import type { FileVersionService } from '../services/file-version.js';
 import type { Root } from '../../shared/types.js';
 import type { DiscoveryCore } from '../discovery/types.js';
@@ -95,6 +102,17 @@ export function pagesRouter(
    * the hand-rolled test rigs keep compiling; a real project always passes it.
    */
   rootIds: () => string[] = () => [],
+  /**
+   * 0.2.37: the section-side deps the DIFFERENTIAL branch of `update_page`
+   * needs for its `ANCHOR_LOSS` guard — the very same object `page-tools` is
+   * built from, so the two channels ask the same question of the same index.
+   *
+   * Optional for the reason `sectionsRouter`'s is: the hand-rolled rigs that
+   * mount this router for its read routes have no discovery core to hand over.
+   * Absent, the guard degrades to report-only rather than lying about who cites
+   * what.
+   */
+  writeDeps?: SectionWriteDeps,
 ): Router {
   // mergeParams so the mount-level `:rootId` is visible inside this router.
   const router = Router({ mergeParams: true });
@@ -310,6 +328,57 @@ export function pagesRouter(
             ...(body.expectedHash !== undefined ? { expectedHash: body.expectedHash } : {}),
           },
           'user',
+        ),
+      );
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * 0.2.37 — `PATCH`, the DIFFERENTIAL rendering of `update_page`, on the same
+   * path as the `PUT` above.
+   *
+   * Two REST routes for one catalog operation, which the L3 rule now allows
+   * exactly here: the two input modes have disjoint HTTP semantics — `PUT` sets
+   * a target state, `PATCH` modifies an existing one — and both call the SAME
+   * core function and answer the same shape. It is one entity in two
+   * renderings, not two operations, and the moment either handler decides
+   * something the other does not, that claim stops being true.
+   */
+  router.patch('/*', async (req, res, next) => {
+    try {
+      const rt = resolve(req, res);
+      if (!rt) return;
+      const relPath = (req.params as Record<string, string>)[0];
+      if (!relPath) return res.status(400).json({ error: 'missing path' });
+      const body = (req.body ?? {}) as {
+        textEdits?: TextEdit[];
+        expectedHash?: string;
+        dropAnchors?: string[];
+      };
+      /**
+       * `textEdits` is forwarded even when absent, so the core answers the
+       * "neither body nor textEdits" refusal rather than this adapter inventing
+       * one of its own. An empty array reaches the core too — it refuses that
+       * with the operative message, which is more than a transport-level
+       * rejection would say.
+       */
+      const diffDeps: PageDiffDeps = {
+        ...(writeDeps ?? {}),
+        sectionIndexed: rt.root.sectionIndexed,
+      };
+      res.json(
+        await updatePage(
+          rt,
+          {
+            path: relPath,
+            textEdits: (body.textEdits ?? []) as TextEdit[],
+            ...(body.expectedHash !== undefined ? { expectedHash: body.expectedHash } : {}),
+            ...(Array.isArray(body.dropAnchors) ? { dropAnchors: body.dropAnchors } : {}),
+          },
+          'user',
+          diffDeps,
         ),
       );
     } catch (err) {

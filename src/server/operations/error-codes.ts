@@ -79,6 +79,19 @@ export const STATUS_FOR_CODE: Record<string, number> = {
    */
   ANCHOR_LOSS: 400,
   /**
+   * 0.2.37 (M02/M06) — the differential write's own two refusals.
+   *
+   * Both are 400 for the reason stated one comment above: they are
+   * DETERMINISTIC. A `find` that matched nothing matches nothing on the retry
+   * too, and a count that came out wrong comes out wrong again — no amount of
+   * re-reading the page changes either answer. The repair is in the REQUEST
+   * (fix the pattern, or fix the declaration), which is what the 400 class
+   * means here. Sending them as 409 would tell a client to do the one thing
+   * that cannot help.
+   */
+  FIND_NOT_FOUND: 400,
+  MATCH_COUNT_MISMATCH: 400,
+  /**
    * 0.2.13 — reached HTTP with `POST /api/patches`. It existed before only as a
    * CLI/core code (`core/briefs/types.ts`), because filing a patch was an
    * fs-scoped CLI operation with no server route; the route made the same

@@ -455,3 +455,144 @@ describe('PUT /api/sections — the rest rendering of update_sections', () => {
     }
   });
 });
+
+/**
+ * 0.2.37 — `PATCH /api/pages/:rootId/*`, the second REST rendering of
+ * `update_page`.
+ *
+ * The claim under test is the one the L3 rule rests on: this route and the `PUT`
+ * beside it call the SAME core function and answer the SAME shape, differing
+ * only in how the body describes the new content. So the cases here are about
+ * the mapping and the status rendering — whether the substitution itself is
+ * correct is settled over real pages in `page-write.test.ts`.
+ */
+describe('PATCH /api/pages/:rootId/* — the differential rendering of update_page', () => {
+  const PAGE = ['# Doc', '', 'alpha beta', ''].join('\n');
+
+  function appWithPageWrites(referents: Record<string, Array<{ page: string }>> = {}) {
+    const { core } = recordingCore();
+    const app = express();
+    app.use(express.json());
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-patch-page-'));
+    const pages = new PagesService(dir, 'pages', 'mainspec');
+    fs.mkdirSync(path.join(dir, 'pages'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'pages', 'a.md'), PAGE, 'utf-8');
+    const root: PageRootRuntime = {
+      root: { id: 'mainspec', dir: 'pages', sectionIndexed: true, referenceValidated: true } as never,
+      pages,
+      writer: null,
+    };
+    const writeDeps = {
+      sections: { getByAnchor: () => null },
+      resolveRoot: (id: string) => (id === 'mainspec' ? root : undefined),
+      findSectionReferents: async (anchor: string) => referents[anchor] ?? [],
+    };
+    app.use(
+      '/api/pages/:rootId',
+      pagesRouter((id) => (id === 'mainspec' ? root : undefined), null, core, () => ['mainspec'], writeDeps as never),
+    );
+    return { app, pages, dir };
+  }
+
+  const hashOf = (dir: string) =>
+    import('node:crypto').then((c) =>
+      c.createHash('sha256').update(fs.readFileSync(path.join(dir, 'pages', 'a.md'), 'utf-8'), 'utf-8').digest('hex'),
+    );
+
+  it('substitutes and answers UpdatePageResponse — hash, version, changedAnchors, replacements', async () => {
+    const { app, dir } = appWithPageWrites();
+    try {
+      const res = await request(app)
+        .patch('/api/pages/mainspec/a.md')
+        .send({ textEdits: [{ find: 'alpha', replaceWith: 'ALPHA' }], expectedHash: await hashOf(dir) })
+        .expect(200);
+      expect(res.body).toMatchObject({ replacements: 1, version: expect.any(Number) });
+      expect(res.body.hash).toEqual(expect.any(String));
+      expect(res.body.changedAnchors).toBeInstanceOf(Array);
+      expect(fs.readFileSync(path.join(dir, 'pages', 'a.md'), 'utf-8')).toContain('ALPHA beta');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a stale expectedHash is 409 PAGE_CONFLICT carrying currentHash — same as PUT', async () => {
+    const { app, dir } = appWithPageWrites();
+    try {
+      const res = await request(app)
+        .patch('/api/pages/mainspec/a.md')
+        .send({ textEdits: [{ find: 'alpha', replaceWith: 'X' }], expectedHash: 'b'.repeat(64) })
+        .expect(409);
+      expect(res.body.error.code).toBe('PAGE_CONFLICT');
+      expect(res.body.currentHash).toEqual(await hashOf(dir));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a pattern that matches nothing is 400 FIND_NOT_FOUND with the normalization diagnosis', async () => {
+    const { app, dir } = appWithPageWrites();
+    try {
+      const res = await request(app)
+        .patch('/api/pages/mainspec/a.md')
+        .send({ textEdits: [{ find: 'alpha  beta', replaceWith: 'X' }], expectedHash: await hashOf(dir) })
+        .expect(400);
+      expect(res.body.error.code).toBe('FIND_NOT_FOUND');
+      expect(res.body.error.details[0].matchesAfterWhitespaceNormalization).toBe(1);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a wrong count is 400 MATCH_COUNT_MISMATCH', async () => {
+    const { app, dir } = appWithPageWrites();
+    try {
+      const res = await request(app)
+        .patch('/api/pages/mainspec/a.md')
+        .send({ textEdits: [{ find: 'alpha', replaceWith: 'X', expectedMatches: 2 }], expectedHash: await hashOf(dir) })
+        .expect(400);
+      expect(res.body.error.code).toBe('MATCH_COUNT_MISMATCH');
+      expect(res.body.error.details[0]).toMatchObject({ expectedMatches: 2, actualMatches: 1 });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('an empty textEdits reaches the core, which says what the bounds are', async () => {
+    const { app, dir } = appWithPageWrites();
+    try {
+      const res = await request(app)
+        .patch('/api/pages/mainspec/a.md')
+        .send({ textEdits: [], expectedHash: await hashOf(dir) })
+        .expect(400);
+      expect(res.body.error.code).toBe('INVALID_ARGUMENT');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('an unknown root is 404 ROOT_NOT_FOUND, inherited from PUT', async () => {
+    const { app, dir } = appWithPageWrites();
+    try {
+      const res = await request(app).patch('/api/pages/typo/a.md').send({ textEdits: [] }).expect(404);
+      expect(res.body.error.code).toBe('ROOT_NOT_FOUND');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('leaves PUT alone — the literal mode still takes a whole body', async () => {
+    const { app, dir } = appWithPageWrites();
+    try {
+      const res = await request(app)
+        .put('/api/pages/mainspec/a.md')
+        .send({ body: '# Doc\n\nreplaced\n', expectedHash: await hashOf(dir) })
+        .expect(200);
+      // The two routes answer the same shape; only `replacements` is mode-specific.
+      expect(res.body.replacements).toBeUndefined();
+      expect(res.body.hash).toEqual(expect.any(String));
+      expect(fs.readFileSync(path.join(dir, 'pages', 'a.md'), 'utf-8')).toContain('replaced');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

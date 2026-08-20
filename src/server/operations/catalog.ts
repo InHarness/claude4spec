@@ -62,6 +62,21 @@ export type ChannelName = 'internal' | 'cli' | 'mcp' | 'rest';
  * it. Channel parity is the expectation; `na` is the exception and has to carry
  * its reason in writing, because "this channel doesn't have it" is exactly the
  * kind of gap that used to go unnoticed for a release at a time.
+ *
+ * ## One operation MAY render onto two REST routes (0.2.37)
+ *
+ * A `direct` cell says the channel renders the operation itself; it does not say
+ * the rendering is a single route. Where two input modes have disjoint HTTP
+ * semantics — `PUT` sets a target state, `PATCH` modifies an existing one,
+ * `POST` performs an act — one operation may legitimately be reachable at both,
+ * as `update_page` is since 0.2.37.
+ *
+ * The conditions are strict, and they are what keeps this from being a hole in
+ * "one function per operation": both routes must call the SAME core function and
+ * answer the SAME response shape, differing only in how the request body
+ * describes the new content. That is one entity in two renderings, not two
+ * operations — and the moment either route decides something the other does not,
+ * the claim is false and the drift is back.
  */
 export type ChannelCell =
   /** The channel renders this operation itself. */
@@ -74,6 +89,27 @@ export type ChannelCell =
 export const direct = (): ChannelCell => ({ kind: 'direct' });
 export const via = (operation: string, reason: string): ChannelCell => ({ kind: 'via', operation, reason });
 export const na = (reason: string): ChannelCell => ({ kind: 'na', reason });
+
+/**
+ * How the caller describes the new content of a write — declared once, honoured
+ * by every channel.
+ *
+ * 0.2.37 makes this MANDATORY for any operation that writes a file (enforced in
+ * {@link OperationCatalog.register}), and the enforcement is the point.
+ * Differential writing arrived on two operations and not on the other five, and
+ * before this field the other five said nothing at all — leaving a caller to
+ * infer "no diff mode" from an absence, which is indistinguishable from an
+ * oversight. Silence here is a specification error, exactly as an absent channel
+ * cell is, and for the same reason: the gaps that go unnoticed for a release at
+ * a time are always the ones nobody had to write down.
+ *
+ *  - `literal`       — full new text of the addressed range, and only that.
+ *  - `diff`          — substitutions only.
+ *  - `literal+diff`  — both offered, mutually exclusive per call.
+ *  - `n/a`           — the operation writes a file but takes no content from the
+ *                      caller (a delete, a frontmatter flag, a spawned turn).
+ */
+export type ContentInputMode = 'literal' | 'diff' | 'literal+diff' | 'n/a';
 
 /** `workspace` operations address the registry; everything else addresses one project. */
 export type OperationScope = 'project' | 'workspace';
@@ -144,6 +180,12 @@ export interface OperationDeclaration {
    * in their `summary` — they are not transactional.
    */
   readonly idempotent: boolean;
+  /**
+   * REQUIRED of every operation whose `sideEffects` include `'file'`. See
+   * {@link ContentInputMode} — an omission is a declaration error, not a
+   * default of "no differential mode".
+   */
+  readonly contentInput?: ContentInputMode;
   /** All four cells required. */
   readonly channels: Readonly<Record<ChannelName, ChannelCell>>;
   /**
@@ -202,6 +244,18 @@ export class OperationCatalog {
           `operation '${op.name}' has no '${channel}' cell — declare 'direct', 'via' or 'na' with a reason`,
         );
       }
+    }
+    /**
+     * The same class of check as the channel cells above, on the same grounds:
+     * a write that does not say how its content is described is a row a reader
+     * cannot answer a question from. Keyed on the `'file'` side effect rather
+     * than on `opClass`, because that is what "writes content somewhere" means
+     * here and it needs no second list to be kept in sync with this one.
+     */
+    if (op.sideEffects.includes('file') && op.contentInput === undefined) {
+      throw new OperationCatalogError(
+        `operation '${op.name}' writes a file but does not declare 'contentInput' — say 'literal', 'diff', 'literal+diff' or 'n/a'`,
+      );
     }
     this.byName.set(op.name, op);
     return op;

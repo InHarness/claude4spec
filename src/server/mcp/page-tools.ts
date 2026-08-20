@@ -9,6 +9,8 @@ import {
   updateSections,
   type PageWriteTarget,
   type SectionWriteDeps,
+  type PageDiffDeps,
+  type TextEdit,
   type UpdateSectionsInput,
 } from '../services/page-write.js';
 
@@ -47,6 +49,16 @@ import {
 export interface PageToolsDeps extends SectionWriteDeps {
   /** Root ids the caller may address, for the error that lists them. */
   rootIds: () => string[];
+  /**
+   * 0.2.37 — whether a root keeps a section index, for `update_page`'s
+   * differential branch. On a root without one the `ANCHOR_LOSS` guard is
+   * skipped outright rather than run against nothing.
+   *
+   * Optional so existing rigs keep compiling; absent reads as "indexed", which
+   * is the conservative half of the choice — the guard then still needs a
+   * referent lookup before it can refuse anything.
+   */
+  isSectionIndexed?: (rootId: string) => boolean;
 }
 
 export function createPageToolsServer(deps: PageToolsDeps): CapturedMcpServer {
@@ -74,6 +86,18 @@ export function createPageToolsServer(deps: PageToolsDeps): CapturedMcpServer {
     return rt;
   };
 
+  /**
+   * The differential branch's extra deps, assembled from what this server was
+   * already given. `sections` and `findSectionReferents` come straight from
+   * `SectionWriteDeps`, so the guard `update_sections` runs and the guard
+   * `update_page` runs are literally the same lookup.
+   */
+  const diffDeps = (rootId: string): PageDiffDeps => ({
+    sections: deps.sections,
+    ...(deps.findSectionReferents ? { findSectionReferents: deps.findSectionReferents } : {}),
+    ...(deps.isSectionIndexed ? { sectionIndexed: deps.isSectionIndexed(rootId) } : {}),
+  });
+
   const rootIdParam = z
     .string()
     .describe('Page root id. Part of a page\'s identity — `(rootId, path)` — not a filter.');
@@ -90,6 +114,35 @@ export function createPageToolsServer(deps: PageToolsDeps): CapturedMcpServer {
       'REQUIRED. sha256 of the full file as you last read it (the `hash` from get_page or a previous write). ' +
         'Missing → INVALID_ARGUMENT; mismatch → PAGE_CONFLICT carrying the current hash.',
     );
+
+  /**
+   * 0.2.37 — the differential payload, described identically for both tools
+   * because it IS the same shape. Two descriptions of one contract is how the
+   * four channels used to drift.
+   */
+  const textEditsParam = z
+    .array(
+      z.object({
+        find: z
+          .string()
+          .describe(
+            'Searched LITERALLY, byte for byte — no regex, no whitespace normalization. ' +
+              'Copy it out of what you just read. Zero hits → FIND_NOT_FOUND, whose envelope tells you ' +
+              'whether the pattern would have matched with whitespace collapsed (it usually would: ' +
+              'mis-transcribed indentation is the common cause).',
+          ),
+        replaceWith: z.string().describe('Inserted in place of every hit. "" deletes the matched text.'),
+        expectedMatches: z
+          .union([z.number().int().min(1), z.literal('all')])
+          .optional()
+          .describe(
+            'How many hits you expect. OMITTING IT MEANS EXACTLY 1 — not "any number". ' +
+              'Pass "all" to substitute every occurrence without committing to a count. ' +
+              'Anything else → MATCH_COUNT_MISMATCH, which answers with the real count and each hit as anchor + line.',
+          ),
+      }),
+    )
+    .min(1);
 
   const createPageTool = mcpTool(
     'create_page',
@@ -131,31 +184,57 @@ export function createPageToolsServer(deps: PageToolsDeps): CapturedMcpServer {
 
   const updatePageTool = mcpTool(
     'update_page',
-    'Write a page in full — body and optional frontmatter. Creates it if absent, so this is the create-or-replace primitive; `update_sections` is the punctual variant.',
+    [
+      'Write a page. Creates it if absent, so this is the create-or-replace primitive; `update_sections` is the section-scoped variant.',
+      'TWO MODES, EXACTLY ONE PER CALL. Literal: `body` (the complete markdown, plus optional `frontmatter`). Differential: `textEdits`, a list of literal find/replaceWith substitutions. Sending both, or neither, is INVALID_ARGUMENT — a write with no description of its new content is a mistake, not an empty write.',
+      '`expectedHash` is REQUIRED in BOTH modes.',
+      'DIFFERENTIAL SCOPE IS THE WHOLE FILE — frontmatter and the preamble above the first heading included. It is the only punctual write that reaches text no anchor addresses, or any text at all on a root with no section index.',
+      'The batch is a SET, not a sequence: every `find` is matched against the file as it stands BEFORE the call, so substitutions never cascade and order never matters. Matches may not overlap or contain one another (INVALID_ARGUMENT).',
+      'NOT IDEMPOTENT in differential mode. Repeating a successful call with a refreshed expectedHash answers FIND_NOT_FOUND, because the text you looked for is gone — treat it like `delete`, not like `replace`. Literal `body` mode stays idempotent.',
+      'ANCHOR LOSS: if a `find` swallows an `<!-- anchor: … -->` comment that something cites, the write is refused with ANCHOR_LOSS (400) naming each anchor and who cites it. Name those anchors in `dropAnchors` to go ahead; every entry there must lie inside a fragment your patterns actually match (otherwise INVALID_ARGUMENT). The guard does not exist in `body` mode, and does not run on a root without a section index.',
+      'Returns { hash, version, changedAnchors }, plus `replacements` in differential mode. The page itself does not come back — read it if you need to see the result.',
+    ].join('\n'),
     {
       rootId: rootIdParam,
       path: pathParam,
-      body: z.string().describe('The complete markdown body, frontmatter excluded.'),
+      body: z
+        .string()
+        .optional()
+        .describe('LITERAL MODE: the complete markdown body, frontmatter excluded. Mutually exclusive with textEdits.'),
       frontmatter: z
         .record(z.string(), z.unknown())
         .optional()
-        .describe('Replaces the frontmatter wholesale when given; omit to write a page without any.'),
+        .describe('LITERAL MODE only — replaces the frontmatter wholesale; omit to write a page without any.'),
+      textEdits: textEditsParam
+        .optional()
+        .describe('DIFFERENTIAL MODE: substitutions applied to the whole file. Mutually exclusive with body.'),
+      dropAnchors: z
+        .array(z.string())
+        .optional()
+        .describe(
+          'DIFFERENTIAL MODE only — anchors this write is allowed to destroy. Required only for swallowed anchors ' +
+            'that are CITED elsewhere; without them the write is refused with ANCHOR_LOSS.',
+        ),
       expectedHash: expectedHashParam,
     },
     async (args) => {
       try {
+        const rootId = String(args.rootId);
         return ok(
           await updatePage(
-            target(String(args.rootId)),
+            target(rootId),
             {
               path: String(args.path),
-              body: String(args.body),
+              ...(args.body !== undefined ? { body: String(args.body) } : {}),
               ...(args.frontmatter !== undefined
                 ? { frontmatter: args.frontmatter as Record<string, unknown> }
                 : {}),
+              ...(args.textEdits !== undefined ? { textEdits: args.textEdits as TextEdit[] } : {}),
+              ...(Array.isArray(args.dropAnchors) ? { dropAnchors: args.dropAnchors as string[] } : {}),
               ...(args.expectedHash !== undefined ? { expectedHash: String(args.expectedHash) } : {}),
             },
             'agent',
+            diffDeps(rootId),
           ),
           'update_page',
         );
@@ -182,13 +261,16 @@ export function createPageToolsServer(deps: PageToolsDeps): CapturedMcpServer {
     'update_sections',
     [
       'Edit one or more sections of ONE page, addressed by anchor. Read-modify-write of the whole page under the hood — a convenience over update_page, not a separate store.',
-      'Actions: `replace` (swap the body), `append` (add at the end of the body), `insert_after` (add after the section and its subsections), `delete` (remove heading, anchor and body). `content` is required for all but `delete`.',
+      'Actions: `replace` (swap the body), `append` (add at the end of the body), `insert_after` (add after the section and its subsections), `delete` (remove heading, anchor and body), `edit` (substitute literal fragments inside the subtree). `content` is required for replace/append/insert_after and FORBIDDEN for delete and edit; `textEdits` is required for `edit` and forbidden for the other four — either way round it is INVALID_ARGUMENT.',
+      '`edit` matches LITERALLY, byte for byte, inside the addressed subtree only. One `edit` entry may carry many substitutions; do not repeat an anchor to get a second one — a repeated anchor in a batch is refused as ambiguous. Omitting `expectedMatches` means EXACTLY 1. Zero hits → FIND_NOT_FOUND (with a whitespace-normalization diagnosis); wrong count → MATCH_COUNT_MISMATCH (with each hit as anchor + line).',
+      'SECTION SCOPE VS PAGE SCOPE: `update_page` with `textEdits` covers everything this covers, since a literal `find` can be made unique page-wide. The section scope buys two things — a shorter `find`, needing no disambiguating context, and a narrower space to hit by accident. Use the section when the target sits in one known section; use the page when it crosses sections or lies outside all of them.',
+      '`edit` is NOT idempotent, and one `edit` costs the WHOLE BATCH its idempotence, because the batch is all-or-nothing. Replaying a successful one answers FIND_NOT_FOUND. An `edit` nested inside a section another entry replaces or deletes is refused (INVALID_ARGUMENT) — split them into separate calls.',
       'A section is its SUBTREE, not the prose under its heading: `replace` on a `##` carrying three `###` replaces all four sections, and `delete` removes all four. To change only the parent preamble, reproduce the subsections in `content` or edit them separately.',
       'ANCHOR LOSS: because of that, replace/delete destroy the anchor comments of the subsections they span. If a destroyed anchor is cited anywhere (`<section_ref/>` or a `page.md#anchor` link) the WHOLE batch is refused with ANCHOR_LOSS (400), listing each anchor, its heading text and who cites it. To go ahead anyway, name those anchors in `dropAnchors`; to keep them, put their `<!-- anchor: … -->` comments in `content`. Dropping an UNCITED anchor is never refused — it is just reported.',
       'All anchors must be on the SAME page (else INVALID_ARGUMENT), and no anchor may appear twice (INVALID_ARGUMENT).',
       'TRANSACTIONAL — unlike every other batch here, there is no partial success: either all edits land or none do. They apply bottom-up regardless of the order you list them, so earlier edits never shift later ones.',
       '`expectedHash` is the PAGE hash and guards the whole batch — which is the point of batching: editing sections one call at a time makes your own hash stale after the first one.',
-      'Returns { path, hash, version, results: [{ anchor, action, affectedAnchors, droppedAnchors }] }, results in the order you gave the edits. `droppedAnchors` is filled on SUCCESS too — it is how you see what identities a write cost, so there is no dry-run mode to ask for.',
+      'Returns { path, hash, version, results: [{ anchor, action, affectedAnchors, droppedAnchors }] }, results in the order you gave the edits; an `edit` row also carries `replacements`. `droppedAnchors` is filled on SUCCESS too — it is how you see what identities a write cost, so there is no dry-run mode to ask for. For `edit` it is measured over the fragments your patterns matched, not over the whole subtree.',
     ].join('\n'),
     {
       expectedHash: expectedHashParam,
@@ -196,13 +278,18 @@ export function createPageToolsServer(deps: PageToolsDeps): CapturedMcpServer {
         .array(
           z.object({
             anchor: z.string().describe('The section anchor, from get_sections / list_sections.'),
-            action: z.enum(['replace', 'append', 'insert_after', 'delete']),
+            action: z.enum(['replace', 'append', 'insert_after', 'delete', 'edit']),
             content: z
               .string()
               .optional()
               .describe(
                 'The text this edit contributes, heading line EXCLUDED — exactly the shape get_sections returns. ' +
-                  'Required for replace / append / insert_after; omitted for delete.',
+                  'Required for replace / append / insert_after; forbidden for delete and edit.',
+              ),
+            textEdits: textEditsParam
+              .optional()
+              .describe(
+                'Action `edit` only, and required there — the literal substitutions to run inside this subtree.',
               ),
           }),
         )
@@ -214,8 +301,8 @@ export function createPageToolsServer(deps: PageToolsDeps): CapturedMcpServer {
         .describe(
           'Anchors this batch is allowed to destroy. Required only for dropped anchors that are CITED elsewhere — ' +
             'without them the batch is refused with ANCHOR_LOSS. Every entry must be an anchor inside a section the ' +
-            'edits address (otherwise INVALID_ARGUMENT); listing more than the batch actually drops is fine, so a ' +
-            'repeated call can send the same list unchanged.',
+            'edits address — or, for an `edit`, inside a fragment its patterns match (otherwise INVALID_ARGUMENT); ' +
+            'listing more than the batch actually drops is fine, so a repeated call can send the same list unchanged.',
         ),
     },
     async (args) => {

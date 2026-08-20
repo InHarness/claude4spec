@@ -9,6 +9,15 @@ import type { SectionsService } from './sections.js';
 import { parseHeadings } from './section-indexer.js';
 import { ConflictError } from './brief.js';
 import { DomainError } from './tags.js';
+import {
+  applyTextEdits,
+  type MatchPosition,
+  type MatchRange,
+  type PositionResolver,
+  type TextEdit,
+} from './text-edits.js';
+
+export type { TextEdit } from './text-edits.js';
 
 /**
  * M02 / M06 — the page write path, as ONE function per operation.
@@ -93,10 +102,43 @@ export interface CreatePageInput {
   content?: string;
 }
 
+/**
+ * `update_page` takes its new content in exactly ONE of two ways, and 0.2.37's
+ * hard rule is that it must be one and not the other:
+ *
+ *  - LITERAL — `body` (plus optional `frontmatter`): the complete new text.
+ *  - DIFFERENTIAL — `textEdits`: a list of literal substitutions applied to the
+ *    file as it stands.
+ *
+ * Both at once, or neither, is `INVALID_ARGUMENT`. Neither is not a no-op: a
+ * write with no description of its new content is a call the caller got wrong,
+ * and answering it with silence hides that.
+ *
+ * `expectedHash` is required in BOTH modes — see {@link assertUnchanged}.
+ */
 export interface UpdatePageInput {
   path: string;
-  body: string;
+  /** LITERAL mode. The complete markdown body, frontmatter excluded. */
+  body?: string;
+  /** LITERAL mode only — replaces the frontmatter wholesale. */
   frontmatter?: Record<string, unknown>;
+  /**
+   * DIFFERENTIAL mode. Substitutions are matched against the WHOLE FILE,
+   * frontmatter and the preamble above the first heading included — which is
+   * what makes this the only punctual write available when the target sits
+   * outside every section, or on a root with no section index at all.
+   */
+  textEdits?: TextEdit[];
+  /**
+   * DIFFERENTIAL mode only — the anchors this call is allowed to destroy.
+   *
+   * Inherited from `update_sections`, deliberately: a `find` that swallows an
+   * `<!-- anchor: … -->` comment breaks every citation of it just as thoroughly
+   * as a `replace` over the same lines, so the same guard has to cover it. The
+   * literal `body` mode has no such guard and never had one — it rewrites the
+   * page wholesale, where "which anchors did you mean to keep" has no answer.
+   */
+  dropAnchors?: string[];
   expectedHash?: string;
 }
 
@@ -121,14 +163,26 @@ export interface UpdatePageInput {
  * of the section's OWN text (before the first descendant heading), because
  * appending to a parent underneath its last grandchild would be adding to a
  * different section than the one addressed.
+ *
+ * 0.2.37 adds a fifth, and it is the one that does NOT fit the paragraph above:
+ *
+ *  - `edit`         — literal substitutions inside the subtree. NOT idempotent,
+ *                     and the only action that takes `textEdits` instead of
+ *                     `content`.
+ *
+ * The four whole-section actions are aimed at a SUBTREE; `edit` is aimed at the
+ * FRAGMENTS its patterns match. That distinction is not cosmetic — it decides
+ * which anchors an edit may be declared to drop and which ones trip
+ * `ANCHOR_LOSS`, so it is carried all the way through `scopeOf` below.
  */
-export type SectionEditAction = 'replace' | 'append' | 'insert_after' | 'delete';
+export type SectionEditAction = 'replace' | 'append' | 'insert_after' | 'delete' | 'edit';
 
 export const SECTION_EDIT_ACTIONS: readonly SectionEditAction[] = [
   'replace',
   'append',
   'insert_after',
   'delete',
+  'edit',
 ];
 
 export interface SectionEdit {
@@ -140,10 +194,27 @@ export interface SectionEdit {
    * round-trip is lossless. See {@link updateSections} for why the heading is
    * not part of it.
    *
-   * Required for every action but `delete`, which addresses a section and
-   * carries nothing.
+   * Required for `replace` / `append` / `insert_after`. Forbidden for `delete`,
+   * which addresses a section and carries nothing, and for `edit`, which
+   * describes its change in {@link SectionEdit.textEdits} instead.
    */
   content?: string;
+  /**
+   * `edit` only, and REQUIRED there — the literal substitutions to run inside
+   * the addressed subtree.
+   *
+   * One `edit` item may carry N substitutions and perform all of them in a
+   * single batch entry. That is the whole reason the field is a list: repeating
+   * the same anchor to get a second substitution is not merely wasteful, it is
+   * refused, because a duplicated anchor in one batch is ambiguous.
+   *
+   * Scope is the SUBTREE, not the page. Against `update_page`'s page-wide
+   * differential mode this buys exactly two things — a shorter `find`, since it
+   * needs no disambiguating context, and a narrower space to hit by accident.
+   * Reach for the section scope when the target sits in one known section, and
+   * for the page scope when it crosses sections or lies outside all of them.
+   */
+  textEdits?: TextEdit[];
 }
 
 export interface UpdateSectionsInput {
@@ -192,6 +263,15 @@ export interface UpdatePageResult {
   version: number;
   /** Anchors added, removed, or whose section text changed. See {@link anchorDelta}. */
   changedAnchors: string[];
+  /**
+   * DIFFERENTIAL mode only — how many substitutions landed.
+   *
+   * Absent from a literal write, where there is nothing to count. Under
+   * `expectedMatches: "all"` it is the one thing in the answer the caller could
+   * not have worked out for itself, which is exactly the echo-free rule's test
+   * for what a write is allowed to report.
+   */
+  replacements?: number;
 }
 
 /** One edit's outcome inside an {@link UpdateSectionsResult}. */
@@ -213,8 +293,14 @@ export interface SectionEditResult {
    * what a write cost in identities reads it off the write itself.
    *
    * Empty for `append` / `insert_after`, which never span a subtree.
+   *
+   * For `edit` this is measured over the MATCHED FRAGMENTS rather than the
+   * addressed subtree — a substitution destroys the identities its patterns
+   * swallowed, not everything that happened to sit under the heading it aimed at.
    */
   droppedAnchors: string[];
+  /** `edit` only — how many substitutions this entry performed. */
+  replacements?: number;
 }
 
 /**
@@ -350,20 +436,88 @@ export async function createPage(
   return { rootId: target.pages.rootId, path: relPath, hash: written.hash, anchors: written.anchors };
 }
 
+/**
+ * What the DIFFERENTIAL branch of `update_page` needs and the literal one does
+ * not: a way to find out who cites an anchor, and whether this root has a
+ * section index at all.
+ *
+ * A separate, optional parameter rather than fields on {@link PageWriteTarget}
+ * because `update_page` has always been answerable with nothing but a target —
+ * the hand-rolled test rigs and `create_page`/`delete_page` still are — and the
+ * guard is only reachable on the one branch that can trip it. Structurally a
+ * superset of `SectionWriteDeps` minus `resolveRoot`, so a caller that already
+ * built one passes `{ ...sectionWriteDeps, sectionIndexed }`.
+ */
+export interface PageDiffDeps {
+  /** For the heading text in an `ANCHOR_LOSS` report. Absent → the anchor alone. */
+  sections?: SectionsService;
+  /** See {@link SectionWriteDeps.findSectionReferents}. Absent → report-only, cannot refuse. */
+  findSectionReferents?: (anchor: string) => Promise<SectionReferent[]>;
+  /**
+   * The addressed root's `sectionIndexed` flag.
+   *
+   * `false` skips the guard OUTRIGHT — not "runs it and finds nothing". Without
+   * a section index there is no set of anchors to measure a loss against, so
+   * `dropAnchors` is a parameter with no meaning on such a root, and a guard
+   * that cannot see anything must not pretend it looked.
+   */
+  sectionIndexed?: boolean;
+}
+
 export async function updatePage(
   target: PageWriteTarget,
   input: UpdatePageInput,
   actor: WriteActor,
+  diffDeps?: PageDiffDeps,
 ): Promise<UpdatePageResult> {
   const relPath = input.path;
   if (!relPath) throw new DomainError('VALIDATION', 'path required');
-  if (typeof input.body !== 'string') throw new DomainError('VALIDATION', 'body required');
+
+  /**
+   * The disjunction, checked before anything else touches the disk.
+   *
+   * "Neither" is refused rather than treated as an empty write: a call that
+   * describes no new content is a caller mistake, and the shape of the mistake
+   * (forgot the payload / sent the wrong field name) is invisible from a
+   * successful no-op.
+   */
+  const hasBody = typeof input.body === 'string';
+  const hasEdits = input.textEdits !== undefined;
+  if (hasBody && hasEdits) {
+    throw new DomainError(
+      'INVALID_ARGUMENT',
+      'body and textEdits are mutually exclusive — exactly one describes the new content',
+      'send `body` to replace the page wholesale, or `textEdits` to substitute fragments of it',
+    );
+  }
+  if (!hasBody && !hasEdits) {
+    throw new DomainError(
+      'INVALID_ARGUMENT',
+      'one of body or textEdits is required',
+      'send `body` (the complete new markdown) or `textEdits` (literal find/replaceWith substitutions)',
+    );
+  }
+  if (hasBody && input.dropAnchors !== undefined) {
+    throw new DomainError(
+      'INVALID_ARGUMENT',
+      'dropAnchors applies to textEdits only',
+      'a whole-page `body` write has no anchor-loss guard to override',
+    );
+  }
+
+  // The guard runs identically on both branches — see `assertUnchanged`.
   await assertUnchanged(target, relPath, input.expectedHash);
+
   // Read BEFORE writing: the delta is against what was on disk, and this doubles
   // as create-or-replace, so "no page yet" means every anchor is an addition.
   const before = sectionDigests(await bodyOnDisk(target.pages, relPath));
+
+  if (hasEdits) {
+    return await updatePageByTextEdits(target, relPath, input, actor, before, diffDeps);
+  }
+
   const written = await commit(target, relPath, actor, {
-    body: input.body,
+    body: input.body as string,
     ...(input.frontmatter !== undefined ? { frontmatter: input.frontmatter } : {}),
   });
   return {
@@ -371,6 +525,86 @@ export async function updatePage(
     version: written.version,
     changedAnchors: anchorDelta(before, written.digests),
   };
+}
+
+/**
+ * The differential branch.
+ *
+ * Substitution runs over the FULL FILE — frontmatter, the preamble above the
+ * first heading, everything — and not over the body the section machinery works
+ * in. That is the branch's reason for existing: it is the only punctual write
+ * that can reach text no anchor addresses.
+ *
+ * The write itself still goes through `commit` with a body and frontmatter,
+ * because `PagesService.write` is the one door onto disk and re-serializing
+ * through gray-matter is what keeps the caller's next `expectedHash` honest.
+ */
+async function updatePageByTextEdits(
+  target: PageWriteTarget,
+  relPath: string,
+  input: UpdatePageInput,
+  actor: WriteActor,
+  before: Map<string, string>,
+  diffDeps: PageDiffDeps | undefined,
+): Promise<UpdatePageResult> {
+  const fullBefore = await fileOnDisk(target.pages, relPath);
+  const bodyBefore = matter(fullBefore).content;
+  const applied = applyTextEdits(fullBefore, input.textEdits ?? [], pagePositionResolver(fullBefore));
+  const parsed = matter(applied.text);
+
+  /**
+   * The guard, on the same terms `update_sections` states them — and BEFORE the
+   * write, so a refusal leaves the file byte-identical.
+   *
+   * Skipped whole on a root with no section index: `sectionIndexed === false`
+   * means there are no anchors recorded to lose. An ABSENT flag is treated as
+   * "indexed", because the rigs that pass no deps at all also pass no referent
+   * lookup, and the guard below then degrades to report-only on its own.
+   */
+  if (diffDeps?.sectionIndexed !== false) {
+    await assertNoUndeclaredAnchorLoss({
+      linesBefore: bodyBefore.split('\n'),
+      linesAfter: parsed.content.split('\n'),
+      touchedSpans: bodyLineSpans(fullBefore, bodyBefore, applied.matchRanges),
+      declared: input.dropAnchors ?? [],
+      deps: diffDeps,
+      strangerHint: 'dropAnchors may only name anchors inside the fragments your textEdits match',
+    });
+  }
+
+  const written = await commit(target, relPath, actor, {
+    body: parsed.content,
+    ...(Object.keys(parsed.data).length > 0 ? { frontmatter: parsed.data } : {}),
+  });
+  return {
+    hash: written.hash,
+    version: written.version,
+    changedAnchors: anchorDelta(before, written.digests),
+    replacements: applied.replacements,
+  };
+}
+
+/**
+ * Positions for a `MATCH_COUNT_MISMATCH` raised inside one section.
+ *
+ * The anchor is known outright — it is the section the caller addressed — and
+ * the line is counted within the subtree, which is the frame the caller was
+ * looking at when it wrote the pattern.
+ */
+function subtreePositionResolver(anchor: string): PositionResolver {
+  return (offset, sourceText): MatchPosition => ({
+    anchor,
+    line: sourceText.slice(0, offset).split('\n').length,
+  });
+}
+
+/** A page's full bytes as they currently stand, or empty when it is not there yet. */
+async function fileOnDisk(pages: PagesService, relPath: string): Promise<string> {
+  try {
+    return await fs.readFile(path.join(pages.root, relPath), 'utf-8');
+  } catch {
+    return '';
+  }
 }
 
 /** A page's body as it currently stands, or empty when it is not there yet. */
@@ -513,6 +747,128 @@ export class AnchorLossError extends DomainError {
     this.name = 'AnchorLossError';
     this.details = details;
   }
+}
+
+/** A half-open run of 0-based line indices touched by a substitution. */
+interface LineSpan {
+  from: number;
+  to: number;
+}
+
+/**
+ * Which lines a set of character spans covers, translated from the FULL FILE's
+ * offsets into the BODY's line numbering.
+ *
+ * The translation exists because the two halves of a differential write live in
+ * different coordinate systems on purpose: substitution is deliberately blind to
+ * frontmatter boundaries (that is what lets it reach the preamble), while every
+ * anchor question is asked in body lines, the only place headings exist. A span
+ * that lands entirely inside the frontmatter simply covers no body line.
+ */
+function bodyLineSpans(fullText: string, bodyText: string, ranges: readonly MatchRange[]): LineSpan[] {
+  const bodyStart = fullText.length - bodyText.length;
+  const lineAt = (offset: number) => fullText.slice(0, offset).split('\n').length - 1;
+  const bodyFirstLine = lineAt(bodyStart);
+  return ranges.map((r) => ({
+    from: lineAt(r.start) - bodyFirstLine,
+    to: lineAt(r.end) - bodyFirstLine,
+  }));
+}
+
+/**
+ * The anchors whose IDENTITY LINE falls inside one of the spans — the anchor
+ * comment when a heading has one, the heading line itself when it does not.
+ *
+ * Identity line rather than "anywhere in the section", and the difference is the
+ * whole point of a differential write's narrower scope: substituting a word in
+ * the middle of a section touches no identity at all, so it neither drops an
+ * anchor nor earns the right to declare one droppable. An anchor is at risk from
+ * exactly one thing — a `find` that swallows the comment carrying it.
+ */
+function anchorsInLineSpans(lines: string[], spans: readonly LineSpan[]): string[] {
+  const covered = (line: number) => spans.some((s) => line >= s.from && line <= s.to);
+  const out: string[] = [];
+  for (const h of parseHeadings(lines)) {
+    if (!h.anchor || out.includes(h.anchor)) continue;
+    if (covered(h.anchorLineIndex ?? h.lineIndex)) out.push(h.anchor);
+  }
+  return out;
+}
+
+/**
+ * The `ANCHOR_LOSS` guard as `update_page`'s differential branch needs it.
+ *
+ * Deliberately the same three decisions `updateSections` makes inline — dropped
+ * is decided BY THE INDEX (absent from the after-state, not "the text changed"),
+ * a declared anchor outside every touched span is a stranger and refused, and an
+ * undeclared drop only refuses when something actually cites it. Two guards that
+ * merely resembled each other would be the drift this release is not here to
+ * add; the section path keeps its inline version because it has per-edit
+ * attribution to preserve, which this branch has no equivalent of.
+ */
+async function assertNoUndeclaredAnchorLoss(args: {
+  linesBefore: string[];
+  linesAfter: string[];
+  touchedSpans: readonly LineSpan[];
+  declared: readonly string[];
+  deps: PageDiffDeps | undefined;
+  strangerHint: string;
+}): Promise<void> {
+  const scope = anchorsInLineSpans(args.linesBefore, args.touchedSpans);
+  const onPage = new Set(sectionRanges(args.linesBefore).map((r) => r.anchor));
+  const inScope = new Set(scope);
+
+  const stranger = args.declared.find((a) => onPage.has(a) && !inScope.has(a));
+  if (stranger !== undefined) {
+    throw new DomainError(
+      'INVALID_ARGUMENT',
+      `dropAnchors names '${stranger}', which none of this write's matched fragments contains`,
+      args.strangerHint,
+    );
+  }
+
+  const survivors = new Set(sectionRanges(args.linesAfter).map((r) => r.anchor));
+  const declared = new Set(args.declared);
+  const undeclared = scope.filter((a) => !survivors.has(a) && !declared.has(a));
+  if (undeclared.length === 0 || !args.deps?.findSectionReferents) return;
+
+  const losses: AnchorLoss[] = [];
+  for (const anchor of undeclared) {
+    const referencedBy = await args.deps.findSectionReferents(anchor);
+    if (referencedBy.length === 0) continue;
+    losses.push({
+      anchor,
+      headingText: args.deps.sections?.getByAnchor(anchor)?.headingText ?? '',
+      referencedBy,
+    });
+  }
+  if (losses.length > 0) throw new AnchorLossError(losses);
+}
+
+/**
+ * Positions for a `MATCH_COUNT_MISMATCH` on a whole page: anchor plus line,
+ * never a byte offset.
+ *
+ * An offset is not a place a caller can go and look, and the answer exists so
+ * they CAN look — they are being told their pattern hit somewhere they did not
+ * expect. The innermost containing section wins, since the deepest heading is
+ * the one that actually names the text; a hit above the first heading (or inside
+ * the frontmatter) honestly reports no anchor rather than borrowing the page's.
+ */
+function pagePositionResolver(fullText: string): PositionResolver {
+  const bodyText = matter(fullText).content;
+  const bodyFirstLine = fullText.slice(0, fullText.length - bodyText.length).split('\n').length - 1;
+  const ranges = sectionRanges(bodyText.split('\n'));
+  return (offset): MatchPosition => {
+    const fullLine = fullText.slice(0, offset).split('\n').length - 1;
+    const bodyLine = fullLine - bodyFirstLine;
+    const containing = ranges.filter((r) => bodyLine >= r.lineStart - 1 && bodyLine < r.lineEnd);
+    const innermost = containing.reduce<{ anchor: string; lineStart: number } | null>(
+      (best, r) => (best === null || r.lineStart > best.lineStart ? r : best),
+      null,
+    );
+    return { anchor: innermost?.anchor ?? null, line: fullLine + 1 };
+  };
 }
 
 /**
@@ -737,8 +1093,38 @@ export async function updateSections(
         `unknown action '${edit.action}' — expected one of ${SECTION_EDIT_ACTIONS.join(' | ')}`,
       );
     }
-    if (edit.action !== 'delete' && typeof edit.content !== 'string') {
-      throw new DomainError('VALIDATION', `edit for '${edit.anchor}' requires content for action '${edit.action}'`);
+    /**
+     * The action decides WHICH field describes the change, and 0.2.37 makes the
+     * mapping exhaustive in both directions. Sending the other field is refused
+     * rather than ignored: a caller who sent `content` to an `edit` believes it
+     * did something, and a silent drop is how it finds out much later that it
+     * did not.
+     */
+    if (edit.action === 'edit') {
+      if (edit.content !== undefined) {
+        throw new DomainError(
+          'INVALID_ARGUMENT',
+          `edit for '${edit.anchor}' takes textEdits, not content — action 'edit' substitutes fragments, it does not replace the section`,
+        );
+      }
+      if (!Array.isArray(edit.textEdits) || edit.textEdits.length === 0) {
+        throw new DomainError(
+          'INVALID_ARGUMENT',
+          `edit for '${edit.anchor}' requires a non-empty textEdits for action 'edit'`,
+          'each entry is { find, replaceWith, expectedMatches? }',
+        );
+      }
+    } else {
+      if (edit.textEdits !== undefined) {
+        throw new DomainError(
+          'INVALID_ARGUMENT',
+          `edit for '${edit.anchor}' carries textEdits, which only action 'edit' accepts`,
+          `action '${edit.action}' describes its new content in \`content\``,
+        );
+      }
+      if (edit.action !== 'delete' && typeof edit.content !== 'string') {
+        throw new DomainError('VALIDATION', `edit for '${edit.anchor}' requires content for action '${edit.action}'`);
+      }
     }
     /**
      * Two edits to one anchor in one batch is refused rather than folded.
@@ -856,7 +1242,35 @@ export async function updateSections(
    * anchor comment with it. `replace` does not: the heading and its anchor
    * comment survive the splice, only the body below them is overwritten.
    */
+  /**
+   * An `edit` nested inside another entry's subtree is refused, and only `edit`
+   * is: the bottom-up walk already makes `replace`-inside-`replace` well
+   * defined, because a whole-section action states its result outright and the
+   * outer one simply wins. A substitution states a CHANGE instead, so an outer
+   * entry that overwrites the same lines leaves the caller with no answer to
+   * "did my substitution survive?" — and, worse, a `replacements` count in the
+   * result reporting work that was then thrown away.
+   */
+  const rangeByAnchor = new Map(sectionRanges(lines).map((r) => [r.anchor, r]));
+  for (const { edit } of located) {
+    if (edit.action !== 'edit') continue;
+    const mine = rangeByAnchor.get(edit.anchor)!;
+    const container = located.find(({ edit: other }) => {
+      if (other.anchor === edit.anchor) return false;
+      const theirs = rangeByAnchor.get(other.anchor);
+      return !!theirs && theirs.lineStart < mine.lineStart && theirs.lineEnd >= mine.lineEnd;
+    });
+    if (container) {
+      throw new DomainError(
+        'INVALID_ARGUMENT',
+        `edit on '${edit.anchor}' lies inside the section '${container.edit.anchor}' that another entry in this batch ${container.edit.action}s`,
+        'split them into separate calls, or fold the substitution into the outer entry\'s content',
+      );
+    }
+  }
+
   const scopeOf = new Map<string, string[]>();
+  const replacementsOf = new Map<string, number>();
   for (const { edit } of order) {
     const range = liveRangeOf(lines, edit.anchor);
     if (!range) {
@@ -865,6 +1279,32 @@ export async function updateSections(
         `anchor '${edit.anchor}' was removed by an earlier edit in the same batch`,
         currentHash,
       );
+    }
+    if (edit.action === 'edit') {
+      /**
+       * The subtree, heading line excluded — the same span `replace` overwrites,
+       * so an `edit` can no more swallow its own anchor comment than a `replace`
+       * can. Descendants' anchors are inside it and ARE at risk, which is what
+       * the scope below is measured for.
+       */
+      const subtreeText = lines.slice(range.lineStart, range.lineEnd).join('\n');
+      const applied = applyTextEdits(subtreeText, edit.textEdits ?? [], subtreePositionResolver(edit.anchor));
+      replacementsOf.set(edit.anchor, applied.replacements);
+      /**
+       * Scope from the MATCHED FRAGMENTS, not from the addressed subtree — the
+       * one place `edit` parts company with the other four actions. A
+       * substitution three headings down destroys nothing above it, so naming
+       * those anchors in `dropAnchors` would be declaring a loss this entry
+       * cannot cause.
+       */
+      const lineAt = (o: number) => subtreeText.slice(0, o).split('\n').length - 1;
+      const spans = applied.matchRanges.map((r) => ({
+        from: range.lineStart + lineAt(r.start),
+        to: range.lineStart + lineAt(r.end),
+      }));
+      scopeOf.set(edit.anchor, anchorsInLineSpans(lines, spans));
+      lines.splice(range.lineStart, range.lineEnd - range.lineStart, ...applied.text.split('\n'));
+      continue;
     }
     const inRange = sectionRanges(lines)
       .filter((r) => r.lineStart > range.lineStart && r.lineStart < range.lineEnd)
@@ -966,6 +1406,8 @@ export async function updateSections(
       action: edit.action,
       affectedAnchors: affected.filter((a) => a !== edit.anchor),
       droppedAnchors: droppedOf.get(edit.anchor) ?? [],
+      // Only `edit` has a count; the other four rows stay the shape they were.
+      ...(edit.action === 'edit' ? { replacements: replacementsOf.get(edit.anchor) ?? 0 } : {}),
     })),
   };
 }
@@ -1009,6 +1451,14 @@ function applySectionEdit(
        * coincides with `append`.
        */
       lines.splice(range.lineEnd, 0, ...body);
+      return;
+    case 'edit':
+      /**
+       * Unreachable: `updateSections` applies a substitution itself, because it
+       * needs the engine's match ranges for the anchor scope and its count for
+       * the result row — neither of which survives a splicer that returns void.
+       * The case is here so the switch stays exhaustive over the action union.
+       */
       return;
     case 'delete': {
       /**

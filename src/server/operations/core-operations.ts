@@ -44,7 +44,7 @@
  */
 
 import { z } from 'zod';
-import { CATALOG, direct, na, via, type OperationDeclaration } from './catalog.js';
+import { CATALOG, direct, na, via, type ContentInputMode, type OperationDeclaration } from './catalog.js';
 
 /**
  * The field projection, on the operations that return whole records.
@@ -299,6 +299,13 @@ export function registerCoreOperations(): void {
     },
     errorCodes: ['BRIEF_NOT_FOUND', 'VALIDATION', 'PATCH_WRITE_FAILED'],
     sideEffects: ['file', 'db'],
+    /**
+     * 0.2.37 — `literal`, and a differential mode is not merely absent here, it
+     * is out of the question. A patch PROPOSES A NEW ARTEFACT; the server
+     * authors the file. There is no prior text for a `find` to match, so the
+     * question the field asks has only one answer this operation can give.
+     */
+    contentInput: 'literal',
     // Two filings of the same drift produce two files — `desc` drives the slug.
     idempotent: false,
     channels: {
@@ -339,6 +346,14 @@ export function registerCoreOperations(): void {
     inputSchema,
     errorCodes: ['INVALID_TYPE', 'VALIDATION', ...extraCodes],
     sideEffects: ['file', 'db', 'ui-notify'],
+    /**
+     * 0.2.37 — `data` carries the FULL VALUE of every field it changes,
+     * `contentBearing` fields with long text payloads included. The partial
+     * update an entity mutation offers is partial BY FIELD, never inside a
+     * field's content, so there is nothing differential about it. A natural
+     * extension, but a separate change with its own owner.
+     */
+    contentInput: 'literal',
     idempotent,
     channels: fullParity(),
   });
@@ -385,6 +400,8 @@ export function registerCoreOperations(): void {
       inputSchema,
       errorCodes: ['VALIDATION', 'NOT_FOUND'],
       sideEffects: ['file', 'db', 'ui-notify'],
+      // A tag is a name and a colour; there is no content to describe either way.
+      contentInput: 'n/a',
       idempotent,
       channels: fullParity(),
     });
@@ -419,6 +436,7 @@ export function registerCoreOperations(): void {
     inputSchema: z.ZodRawShape,
     idempotent: boolean,
     extraCodes: readonly string[],
+    contentInput: ContentInputMode,
   ): OperationDeclaration => ({
     name,
     summary,
@@ -431,6 +449,7 @@ export function registerCoreOperations(): void {
     // token and its reactions are driven to completion before the caller is
     // answered, which is what re-indexes the page and pushes it to open editors.
     sideEffects: ['file', 'db', 'ui-notify'],
+    contentInput,
     idempotent,
     channels: fullParity(),
   });
@@ -454,6 +473,22 @@ export function registerCoreOperations(): void {
       ),
   };
 
+  /**
+   * 0.2.37 — the differential payload, declared ONCE and shared by both
+   * operations that take it. The naming is locked at this layer and binds every
+   * future differential operation: `replaceWith` (not `replace`, already a
+   * section action), `textEdits` (not `edits`, already the section batch), and
+   * `expectedMatches` (not `expect`, an echo of `expectedHash`).
+   */
+  const textEdit = z.object({
+    find: z.string().min(1).describe('Matched literally, byte for byte. No regex, no whitespace normalization.'),
+    replaceWith: z.string().describe('Inserted in place of every hit; "" deletes the matched text.'),
+    expectedMatches: z
+      .union([z.number().int().min(1), z.literal('all')])
+      .optional()
+      .describe('Omitted means EXACTLY ONE. "all" substitutes every hit without declaring a count.'),
+  });
+
   CATALOG.register(
     pageWrite(
       'create_page',
@@ -462,16 +497,42 @@ export function registerCoreOperations(): void {
       // A second call with the same address is PAGE_EXISTS, not a no-op.
       false,
       ['PAGE_EXISTS', 'ROOT_NOT_FOUND'],
+      // There is nothing on the page yet to substitute fragments of.
+      'literal',
     ),
   );
 
+  /**
+   * 0.2.37 — TWO modes, and the row has to carry both.
+   *
+   * `idempotent` stays `true` and is now a half-truth the summary has to
+   * repair: the literal branch is idempotent, the differential branch is not
+   * (replaying it answers `FIND_NOT_FOUND`, the `delete` class of behaviour).
+   * The field is one boolean per operation and the honest reading of it is "the
+   * operation as declared can be repeated", which the default mode can. The
+   * asymmetry is spelt out in the summary and in every channel's description
+   * rather than hidden behind a flag that has no third value.
+   *
+   * This is also the first row whose `rest` cell renders onto TWO routes —
+   * `PUT` for the literal mode, `PATCH` for the differential one. See the
+   * `ChannelCell` doc in `catalog.ts` for the conditions that permits.
+   */
   CATALOG.register(
     pageWrite(
       'update_page',
-      'Write a page in full — body plus optional frontmatter. Create-or-replace: absent pages are created, which is how the editor saves a new one.',
-      { rootId: z.string(), path: z.string(), body: z.string(), frontmatter: z.record(z.string(), z.unknown()).optional(), ...expectedHash },
+      'Write a page: EITHER in full (`body` plus optional `frontmatter`) OR differentially (`textEdits` — literal find/replaceWith substitutions over the whole file, frontmatter included). Exactly one of the two per call; both or neither is INVALID_ARGUMENT. Create-or-replace in the literal mode, which is how the editor saves a new page. The differential mode is NOT idempotent — replaying it answers FIND_NOT_FOUND — and inherits M06\'s ANCHOR_LOSS guard, overridable with `dropAnchors`.',
+      {
+        rootId: z.string(),
+        path: z.string(),
+        body: z.string().optional(),
+        frontmatter: z.record(z.string(), z.unknown()).optional(),
+        textEdits: textEdit.array().min(1).optional(),
+        dropAnchors: z.array(z.string()).optional(),
+        ...expectedHash,
+      },
       true,
-      ['PAGE_CONFLICT', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT'],
+      ['PAGE_CONFLICT', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT', 'FIND_NOT_FOUND', 'MATCH_COUNT_MISMATCH', 'ANCHOR_LOSS'],
+      'literal+diff',
     ),
   );
 
@@ -482,20 +543,23 @@ export function registerCoreOperations(): void {
       { rootId: z.string(), path: z.string() },
       true,
       ['ROOT_NOT_FOUND'],
+      // A delete names a page and carries no content at all.
+      'n/a',
     ),
   );
 
   CATALOG.register(
     pageWrite(
       'update_sections',
-      'Edit one or more sections of ONE page, addressed by anchor. A convenience over update_page — read-modify-write of the whole page with the same primitive — not a separate store, and not a structural gap in the model. TRANSACTIONAL: the single exception to the partial-success rule, because every edit rewrites the same file. Applied bottom-up whatever order they arrive in.',
+      'Edit one or more sections of ONE page, addressed by anchor. A convenience over update_page — read-modify-write of the whole page with the same primitive — not a separate store, and not a structural gap in the model. Five actions: `replace`/`append`/`insert_after` take `content`, `delete` takes neither, and `edit` (0.2.37) takes `textEdits` — literal substitutions inside the addressed subtree. TRANSACTIONAL: the single exception to the partial-success rule, because every edit rewrites the same file. Applied bottom-up whatever order they arrive in.',
       {
         ...expectedHash,
         edits: z.array(
           z.object({
             anchor: z.string(),
-            action: z.enum(['replace', 'append', 'insert_after', 'delete']),
+            action: z.enum(['replace', 'append', 'insert_after', 'delete', 'edit']),
             content: z.string().optional(),
+            textEdits: textEdit.array().min(1).optional(),
           }),
         ).min(1),
         dropAnchors: z.array(z.string()).optional(),
@@ -507,7 +571,16 @@ export function registerCoreOperations(): void {
       // actually drops is legal precisely so the idempotent actions stay
       // idempotent when the declaration is replayed verbatim.
       false,
-      ['SECTION_NOT_FOUND', 'PAGE_CONFLICT', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT', 'ANCHOR_LOSS'],
+      [
+        'SECTION_NOT_FOUND',
+        'PAGE_CONFLICT',
+        'ROOT_NOT_FOUND',
+        'INVALID_ARGUMENT',
+        'ANCHOR_LOSS',
+        'FIND_NOT_FOUND',
+        'MATCH_COUNT_MISMATCH',
+      ],
+      'literal+diff',
     ),
   );
 
@@ -554,6 +627,14 @@ export function registerCoreOperations(): void {
     },
     errorCodes: ['NOT_FOUND', 'MISSING_TITLE', 'PLAN_CONFLICT', 'VALIDATION', 'INVALID_ARGUMENT'],
     sideEffects: ['file', 'db', 'ui-notify'],
+    /**
+     * 0.2.37 — full content of the addressed range in `content`; this version
+     * offers no differential mode. The extension is natural — the plan's action
+     * vocabulary has exactly the shape `update_sections` had before `edit` was
+     * added to it — but it is a separate change with its own owner, and saying
+     * so is the point of this field existing.
+     */
+    contentInput: 'literal',
     idempotent: false,
     channels: fullParity(),
   });
@@ -592,6 +673,8 @@ export function registerCoreOperations(): void {
     // No `db`: a frontmatter-only plan write deliberately records no
     // `file_version` row, so the plan's version history is untouched.
     sideEffects: ['file', 'ui-notify'],
+    // A boolean flag in frontmatter — the caller supplies no content at all.
+    contentInput: 'n/a',
     idempotent: true,
     channels: {
       internal: direct(),
@@ -674,6 +757,14 @@ export function registerCoreOperations(): void {
     },
     errorCodes: ['BRIEF_NOT_FOUND', 'BRIEF_CONFLICT', 'VALIDATION'],
     sideEffects: ['file', 'db', 'ui-notify'],
+    /**
+     * 0.2.37 — full content in `content`; no differential mode in this version.
+     * A brief is, alongside a plan, the obvious second consumer of the pattern —
+     * same action vocabulary, same read-modify-write shape — but adopting it is
+     * a change of its own, and this row now says so out loud instead of leaving
+     * the absence to be inferred.
+     */
+    contentInput: 'literal',
     idempotent: false,
     channels: fullParity(),
   });
@@ -733,6 +824,14 @@ export function registerCoreOperations(): void {
       inputSchema,
       errorCodes: opClass === 'write' ? ['NOT_FOUND', 'VALIDATION'] : ['NOT_FOUND'],
       sideEffects: opClass === 'write' ? ['file', 'db', 'ui-notify'] : ['none'],
+      /**
+       * 0.2.37 — `literal`, declared on the host's behalf for the rows a plugin
+       * contributes. A plugin's write takes the full value of what it sets (a
+       * cell, a column, a row); the differential vocabulary is M02/M06's and is
+       * not offered here. A plugin that wanted to offer one would need a row of
+       * its own saying so, which is exactly what this field is for.
+       */
+      contentInput: 'literal',
       idempotent,
       channels: {
         internal: direct(),
@@ -809,6 +908,12 @@ export function registerCoreOperations(): void {
     },
     errorCodes: ['AGENT_ERROR', 'STREAM_IN_PROGRESS'],
     sideEffects: ['file', 'db', 'ui-notify'],
+    /**
+     * A turn writes files, but its caller hands over an instruction, not
+     * content — whatever lands on disk is the child's doing, through the write
+     * operations' own rows. There is nothing here for a `find` to address.
+     */
+    contentInput: 'n/a',
     idempotent: false,
     channels: {
       internal: via('runTransagent', 'the tool of the M05 `transagent-tools` server — the spec names the operation `run_turn`, the code names its rendering `runTransagent`'),
@@ -877,6 +982,12 @@ export function registerCoreOperations(): void {
       inputSchema,
       errorCodes: ['VALIDATION', 'NOT_FOUND'],
       sideEffects,
+      /**
+       * 0.2.37 — a release write names and freezes a snapshot; the content it
+       * captures comes off the specification, never out of the request. Nothing
+       * for a caller to describe either way.
+       */
+      contentInput: 'n/a',
       idempotent: opClass === 'read',
       channels: {
         internal: direct(),
