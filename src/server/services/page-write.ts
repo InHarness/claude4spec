@@ -497,6 +497,20 @@ export async function updatePage(
       'send `body` (the complete new markdown) or `textEdits` (literal find/replaceWith substitutions)',
     );
   }
+  if (hasEdits && input.frontmatter !== undefined) {
+    /**
+     * `frontmatter` belongs to the literal mode. Accepting it here and quietly
+     * dropping it would be the failure `update_sections` refuses by name a few
+     * hundred lines down: a caller who sent a field believes it did something.
+     * The differential mode CAN reach frontmatter — by matching its text, which
+     * is the whole point of substituting over the full file.
+     */
+    throw new DomainError(
+      'INVALID_ARGUMENT',
+      'frontmatter belongs to a literal write',
+      'substitute the frontmatter text with a `textEdits` entry, or send `body` + `frontmatter` instead',
+    );
+  }
   if (hasBody && input.dropAnchors !== undefined) {
     throw new DomainError(
       'INVALID_ARGUMENT',
@@ -550,7 +564,23 @@ async function updatePageByTextEdits(
   const fullBefore = await fileOnDisk(target.pages, relPath);
   const bodyBefore = matter(fullBefore).content;
   const applied = applyTextEdits(fullBefore, input.textEdits ?? [], pagePositionResolver(fullBefore));
-  const parsed = matter(applied.text);
+  /**
+   * Substitution is blind to the frontmatter fence it may have just written
+   * through, so a `replaceWith` can leave YAML that does not parse. That is a
+   * deterministic mistake in the request — the same class as `FIND_NOT_FOUND` —
+   * and answering `500 INTERNAL` would tell the caller to retry a call that can
+   * only fail again. The file is untouched either way: this precedes `commit`.
+   */
+  let parsed: matter.GrayMatterFile<string>;
+  try {
+    parsed = matter(applied.text);
+  } catch (err) {
+    throw new DomainError(
+      'INVALID_ARGUMENT',
+      `the substituted text no longer parses as a markdown page: ${(err as Error).message}`,
+      'your textEdits rewrote the YAML frontmatter into something invalid — check quoting and indentation in `replaceWith`',
+    );
+  }
 
   /**
    * The guard, on the same terms `update_sections` states them — and BEFORE the
@@ -1243,27 +1273,39 @@ export async function updateSections(
    * comment survive the splice, only the body below them is overwritten.
    */
   /**
-   * An `edit` nested inside another entry's subtree is refused, and only `edit`
-   * is: the bottom-up walk already makes `replace`-inside-`replace` well
-   * defined, because a whole-section action states its result outright and the
-   * outer one simply wins. A substitution states a CHANGE instead, so an outer
-   * entry that overwrites the same lines leaves the caller with no answer to
-   * "did my substitution survive?" — and, worse, a `replacements` count in the
-   * result reporting work that was then thrown away.
+   * An `edit` that NESTS with another entry — either direction — is refused, and
+   * only `edit` is: the bottom-up walk already makes `replace`-inside-`replace`
+   * well defined, because a whole-section action states its result outright and
+   * the outer one simply wins.
+   *
+   * A substitution states a CHANGE instead, and both directions break it. With
+   * the `edit` inside, an outer entry overwrites the same lines and the caller
+   * has no answer to "did my substitution survive?" — and a `replacements` count
+   * reporting work that was then thrown away. With the `edit` outside, the inner
+   * entry splices FIRST, so the `find` would be matched against text this same
+   * batch just wrote: a pattern that never existed in the page the caller read
+   * could match, and one that did could vanish into `FIND_NOT_FOUND`. Either way
+   * the order of the batch would start to matter, which is exactly what
+   * `applyTextEdits` promises it never does.
    */
   const rangeByAnchor = new Map(sectionRanges(lines).map((r) => [r.anchor, r]));
   for (const { edit } of located) {
     if (edit.action !== 'edit') continue;
     const mine = rangeByAnchor.get(edit.anchor)!;
-    const container = located.find(({ edit: other }) => {
+    const clash = located.find(({ edit: other }) => {
       if (other.anchor === edit.anchor) return false;
       const theirs = rangeByAnchor.get(other.anchor);
-      return !!theirs && theirs.lineStart < mine.lineStart && theirs.lineEnd >= mine.lineEnd;
+      if (!theirs) return false;
+      const insideThem = theirs.lineStart < mine.lineStart && theirs.lineEnd >= mine.lineEnd;
+      const aroundThem = mine.lineStart < theirs.lineStart && mine.lineEnd >= theirs.lineEnd;
+      return insideThem || aroundThem;
     });
-    if (container) {
+    if (clash) {
+      const theirs = rangeByAnchor.get(clash.edit.anchor)!;
+      const relation = theirs.lineStart < mine.lineStart ? 'lies inside' : 'encloses';
       throw new DomainError(
         'INVALID_ARGUMENT',
-        `edit on '${edit.anchor}' lies inside the section '${container.edit.anchor}' that another entry in this batch ${container.edit.action}s`,
+        `edit on '${edit.anchor}' ${relation} the section '${clash.edit.anchor}' that another entry in this batch ${clash.edit.action}s`,
         'split them into separate calls, or fold the substitution into the outer entry\'s content',
       );
     }

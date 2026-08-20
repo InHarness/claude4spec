@@ -1480,6 +1480,53 @@ describe('differential writes — textEdits', () => {
     expect(err.code).toBe('INVALID_ARGUMENT');
   });
 
+  /**
+   * The differential mode CAN reach frontmatter — by substituting its text. What
+   * it cannot do is take a `frontmatter` object, and accepting one only to drop
+   * it would answer 200 to a change that never happened.
+   */
+  it('refuses a frontmatter object alongside textEdits rather than silently dropping it', async () => {
+    await index('doc.md', nested, { title: 'Old Title' });
+    const err = await updatePage(
+      target,
+      {
+        path: 'doc.md',
+        textEdits: [{ find: 'teh', replaceWith: 'the', expectedMatches: 'all' }],
+        frontmatter: { title: 'New Title' },
+        expectedHash: await hashOfPage(),
+      },
+      'agent',
+      diffDeps(),
+    ).catch((e) => e);
+    expect(err.code).toBe('INVALID_ARGUMENT');
+    expect(err.message).toMatch(/frontmatter/);
+    expect((await pages.read('doc.md')).frontmatter.title).toBe('Old Title');
+  });
+
+  /**
+   * Substitution is blind to the fence it writes through, so a caller can leave
+   * YAML that does not parse. That is a deterministic mistake in the request —
+   * answering INTERNAL would invite a retry of a call that can only fail again.
+   */
+  it('answers INVALID_ARGUMENT, not INTERNAL, when a substitution corrupts the frontmatter', async () => {
+    await index('doc.md', nested, { title: 'Old Title' });
+    const before = await pages.read('doc.md');
+    const err = await updatePage(
+      target,
+      {
+        path: 'doc.md',
+        textEdits: [{ find: 'Old Title', replaceWith: 'unbalanced: "quote' }],
+        expectedHash: await hashOfPage(),
+      },
+      'agent',
+      diffDeps(),
+    ).catch((e) => e);
+    expect(err.code).toBe('INVALID_ARGUMENT');
+    // The refusal precedes the write, so the page is byte-identical.
+    expect((await pages.read('doc.md')).frontmatter.title).toBe('Old Title');
+    expect((await pages.read('doc.md')).body).toBe(before.body);
+  });
+
   // ── update_page, the happy path ─────────────────────────────────────────
 
   it('substitutes fragments and reports how many landed', async () => {
@@ -1699,6 +1746,29 @@ describe('differential writes — textEdits', () => {
     ).catch((e) => e);
     expect(err.code).toBe('INVALID_ARGUMENT');
     expect(err.message).toMatch(/lies inside/);
+  });
+
+  /**
+   * The mirror of the case above, and the worse one: bottom-up ordering splices
+   * the inner entry FIRST, so an unguarded outer `edit` would match against text
+   * this same batch just wrote — the one thing `applyTextEdits` promises never
+   * happens.
+   */
+  it('refuses an edit that encloses a section another entry replaces', async () => {
+    await index('doc.md', nested);
+    const err = await updateSections(
+      deps(),
+      {
+        expectedHash: await hashOfPage(),
+        edits: [
+          { anchor: anchorOf('Child one'), action: 'replace', content: 'FRESHLY WRITTEN\n' },
+          { anchor: anchorOf('Parent'), action: 'edit', textEdits: [{ find: 'FRESHLY', replaceWith: 'X' }] },
+        ],
+      },
+      'agent',
+    ).catch((e) => e);
+    expect(err.code).toBe('INVALID_ARGUMENT');
+    expect(err.message).toMatch(/encloses/);
   });
 
   it('a substitution that touches no anchor comment drops nothing', async () => {

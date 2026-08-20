@@ -570,6 +570,25 @@ describe('PATCH /api/pages/:rootId/* — the differential rendering of update_pa
     }
   });
 
+  /**
+   * The adapter forwards `textEdits` verbatim rather than defaulting it to `[]`,
+   * so a PATCH that describes no change at all is refused for what it forgot to
+   * say — not for the shape of an array it never sent.
+   */
+  it('a PATCH with no textEdits at all is refused by the core disjunction, not by the array bound', async () => {
+    const { app, dir } = appWithPageWrites();
+    try {
+      const res = await request(app)
+        .patch('/api/pages/mainspec/a.md')
+        .send({ expectedHash: await hashOf(dir) })
+        .expect(400);
+      expect(res.body.error.code).toBe('INVALID_ARGUMENT');
+      expect(res.body.error.message).toMatch(/one of body or textEdits/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('an unknown root is 404 ROOT_NOT_FOUND, inherited from PUT', async () => {
     const { app, dir } = appWithPageWrites();
     try {

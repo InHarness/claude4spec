@@ -358,11 +358,12 @@ export function pagesRouter(
         dropAnchors?: string[];
       };
       /**
-       * `textEdits` is forwarded even when absent, so the core answers the
-       * "neither body nor textEdits" refusal rather than this adapter inventing
-       * one of its own. An empty array reaches the core too — it refuses that
-       * with the operative message, which is more than a transport-level
-       * rejection would say.
+       * `textEdits` is forwarded VERBATIM — present when the caller sent it,
+       * absent when it did not — so the core answers every refusal rather than
+       * this adapter inventing one of its own. Substituting `[]` for an absent
+       * field would look harmless and would silently retire the core's "neither
+       * body nor textEdits" branch, leaving an empty PATCH to be refused for the
+       * shape of its array instead of for what it forgot to say.
        */
       const diffDeps: PageDiffDeps = {
         ...(writeDeps ?? {}),
@@ -373,7 +374,7 @@ export function pagesRouter(
           rt,
           {
             path: relPath,
-            textEdits: (body.textEdits ?? []) as TextEdit[],
+            ...(body.textEdits !== undefined ? { textEdits: body.textEdits as TextEdit[] } : {}),
             ...(body.expectedHash !== undefined ? { expectedHash: body.expectedHash } : {}),
             ...(Array.isArray(body.dropAnchors) ? { dropAnchors: body.dropAnchors } : {}),
           },
