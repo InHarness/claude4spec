@@ -734,8 +734,16 @@ export function registerCoreOperations(): void {
     // The `brief` profile makes this REQUIRED — see `profiles.ts`. An external
     // connection has no ambient brief, and silently defaulting to "the" brief is
     // how a patch gets filed against the wrong one.
-    inputSchema: { path: z.string().optional().describe('Brief path relative to briefsDir. Required on an external connection.') },
-    errorCodes: ['BRIEF_NOT_FOUND', 'VALIDATION'],
+    inputSchema: {
+      path: z.string().optional().describe('Brief path relative to briefsDir. Required on an external connection.'),
+      range: z
+        .object({ start: z.number().int().positive(), end: z.number().int().positive() })
+        .optional()
+        .describe(
+          '0.2.40 — 1-based inclusive line window. Unconditionally allowed: an artifact never enters `section_index`, so there is no `sectionIndexed` gate and no second way to resume a large read. A `start` past the end of the file is INVALID_ARGUMENT stating the size.',
+        ),
+    },
+    errorCodes: ['BRIEF_NOT_FOUND', 'VALIDATION', 'INVALID_ARGUMENT'],
     sideEffects: ['none'],
     idempotent: true,
     channels: fullParity(),

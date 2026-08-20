@@ -186,7 +186,8 @@ Plugins (M33 — server-delegating: reports the SERVER host's loader, not a seco
 
 Brief/patch (M11 — server-delegating, like every read above):
   list-briefs [--limit N] [--offset M] [--status implemented|pending]
-  read-brief <brief-path>           <brief-path> relative to briefsDir
+  read-brief <brief-path> [--range <from>:<to>]
+                                    <brief-path> relative to briefsDir; --range is a 1-based inclusive line window
   file-patch --brief <brief-path> --desc <s> [--kind drift|missing|incorrect|clarification]
              [--body-file <f>]      body from --body-file or stdin; the SERVER writes the
                                     file under patchesDir and mints its slug

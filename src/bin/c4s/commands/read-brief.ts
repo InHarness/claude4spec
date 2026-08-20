@@ -3,15 +3,21 @@ import { delegateGet } from '../delegate.js';
 import { AgentError, encodeArtifactPath } from '../../../core/agent/http.js';
 import { CliError, type CliErrorCode } from '../errors.js';
 import { writeOutput } from '../output.js';
+import { optionalString } from '../args.js';
 import { SERVER_DELEGATING_CODES, type CliCommandContribution } from '../registry.js';
 
 /**
- *   c4s read-brief <brief-path> [--format json|text]
+ *   c4s read-brief <brief-path> [--range <from>:<to>] [--format json|text]
  *
  * `<brief-path>` is relative to `briefsDir` — parity with the `--brief` argument
  * elsewhere.
  *
  * 0.2.13 — `server-delegating`, over `GET /api/artifacts/brief/<path>`.
+ *
+ * 0.2.40 — `--range` is the artifact read family's window, spelled exactly as
+ * `c4s get-page --range`. It is unconditionally available: a brief never enters
+ * `section_index`, so a line window is the only way to read a large one through,
+ * and there is no root kind for it to be gated on.
  */
 export async function runReadBrief(args: ParsedArgs): Promise<void> {
   const briefPath = args.positional[0];
@@ -40,14 +46,31 @@ export async function runReadBrief(args: ParsedArgs): Promise<void> {
    */
   try {
     const encoded = encodeArtifactPath(briefPath);
-    const brief = (await delegateGet(args, `/artifacts/brief/${encoded}`)) as {
+    const range = parseRange(optionalString(args, 'range'));
+    const brief = (await delegateGet(args, `/artifacts/brief/${encoded}`, {
+      ...(range ? { range: `${range.start}:${range.end}` } : {}),
+    })) as {
       frontmatter: unknown;
       body: string;
       content: string;
+      truncated?: true;
+      truncationHint?: string;
     };
     // The same three fields the filesystem reader answered with, in the same
     // order: a caller piping this into `jq '.body'` must not have to change.
-    writeOutput({ frontmatter: brief.frontmatter, body: brief.body, content: brief.content }, args);
+    // `truncated`/`truncationHint` join them only when something was cut — a
+    // reader that never hits the budget sees the payload it always saw.
+    writeOutput(
+      {
+        frontmatter: brief.frontmatter,
+        body: brief.body,
+        content: brief.content,
+        ...(brief.truncated
+          ? { truncated: brief.truncated, truncationHint: brief.truncationHint }
+          : {}),
+      },
+      args,
+    );
   } catch (err) {
     // The artifact route 404s as the generic NOT_FOUND. This command's entire
     // domain is one brief path, so it answers with the brief-specific code —
@@ -69,6 +92,20 @@ export async function runReadBrief(args: ParsedArgs): Promise<void> {
     }
     throw err;
   }
+}
+
+/** `--range 1:200` → `{ start: 1, end: 200 }`. 1-based and inclusive, like the core's. */
+function parseRange(raw: string | undefined): { start: number; end: number } | undefined {
+  if (raw === undefined) return undefined;
+  const m = /^(\d+):(\d+)$/.exec(raw);
+  if (!m) {
+    throw new CliError(
+      'INVALID_ARGS',
+      `--range must be '<from>:<to>', got '${raw}'`,
+      '--range 1:400 — 1-based and inclusive',
+    );
+  }
+  return { start: Number(m[1]), end: Number(m[2]) };
 }
 
 export const readBriefCommand: CliCommandContribution = {

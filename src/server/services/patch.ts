@@ -32,6 +32,8 @@ import type { FileSerializer } from './file-serializer.js';
 import type { ChatService } from './chat.js';
 import type { PagesFrontmatterIndexer } from './pages-frontmatter-indexer.js';
 import { DomainError } from './tags.js';
+import { readArtifactWindow, type ArtifactRange } from './artifact-read.js';
+import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 import { ConflictError } from './brief.js';
 
 export interface PatchServiceDeps {
@@ -85,8 +87,14 @@ export interface PatchDetail {
   body: string;
   /** Full file content (frontmatter + body, byte-faithful). */
   content: string;
-  /** sha256 hex of `content` — used for optimistic concurrency. */
+  /** sha256 hex of the WHOLE file — used for optimistic concurrency, unaffected by `range`. */
   hash: string;
+  /**
+   * 0.2.40 — present IFF `content` was cut by the response budget (the artifact
+   * read family's shared marker). `truncationHint` always points at `range`.
+   */
+  truncated?: true;
+  truncationHint?: string;
 }
 
 /**
@@ -127,7 +135,17 @@ export class PatchService {
 
   // ─── Reads ───────────────────────────────────────────────────────────────
 
-  async getPatch(relPath: string): Promise<PatchDetail> {
+  /**
+   * 0.2.40 — the artifact read family's window: `range` is a 1-based inclusive
+   * line window, unconditionally allowed (no `sectionIndexed` gate — a patch never
+   * enters `section_index`), and a `start` past the end of the file is
+   * `INVALID_ARGUMENT` STATING the size. The mechanism is shared with brief and
+   * plan in `artifact-read.ts`; this kind declares a value for it, it does not
+   * implement a variant of it.
+   *
+   * `hash` stays the digest of the whole file — see `readArtifactWindow`.
+   */
+  async getPatch(relPath: string, opts?: { range?: ArtifactRange }): Promise<PatchDetail> {
     if (!(await this.deps.patchesPages.exists(relPath))) {
       throw new DomainError('NOT_FOUND', `patch '${relPath}' not found`);
     }
@@ -141,13 +159,24 @@ export class PatchService {
         `file '${relPath}' is not a patch (frontmatter.type=${JSON.stringify(frontmatter.type)})`,
       );
     }
+    const hash = hashContent(content);
+    const windowed = readArtifactWindow(
+      content,
+      opts?.range,
+      { kind: 'patch', path: relPath },
+      Math.floor(DEFAULT_BUDGET_CHARS / 2),
+    );
+    const body = windowed.content === content ? parsed.content : matter(windowed.content).content;
     return {
       path: relPath,
       title: extractTitle(parsed.content, frontmatter, relPath),
       frontmatter,
-      body: parsed.content,
-      content,
-      hash: hashContent(content),
+      body,
+      content: windowed.content,
+      hash,
+      ...(windowed.truncated
+        ? { truncated: windowed.truncated, truncationHint: windowed.truncationHint }
+        : {}),
     };
   }
 

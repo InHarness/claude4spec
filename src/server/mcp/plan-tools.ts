@@ -47,6 +47,19 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
   const pathParam = explicit
     ? { path: z.string().describe('Plan path relative to plansDir, from list_plans.') }
     : {};
+  /**
+   * 0.2.40 — the artifact read family's window, identical in shape to
+   * `get_brief`'s and to `get_page.range`, and — like `get_brief`'s —
+   * unconditionally allowed, because a plan never enters `section_index`.
+   */
+  const rangeParam = {
+    range: z
+      .object({ start: z.number().int().positive(), end: z.number().int().positive() })
+      .optional()
+      .describe(
+        '1-based inclusive line window onto the plan. Always allowed. A `start` past the end of the file is INVALID_ARGUMENT stating the file size.',
+      ),
+  };
   const requirePath = (raw: unknown): string => {
     if (typeof raw === 'string' && raw !== '') return raw;
     throw new DomainError(
@@ -70,12 +83,13 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
     explicit
       ? 'Read a plan by path (latest content, version). Use list_plans to find one.'
       : 'Get the current plan attached to this thread (latest content, version). Returns { plan: null } if the thread has no plan yet. Use to inspect plan state before updating.',
-    pathParam,
+    { ...pathParam, ...rangeParam },
     async (args) => {
       try {
+        const range = args.range as { start: number; end: number } | undefined;
         const plan = explicit
-          ? await planService.getByPath(requirePath(args.path))
-          : await planService.getByThread(threadId);
+          ? await planService.getByPath(requirePath(args.path), { range })
+          : await planService.getByThread(threadId, { range });
         if (!plan) return ok({ plan: null }, 'get_plan');
         return ok({
           plan: {
@@ -93,6 +107,9 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
             hash: plan.hash,
             createdAt: plan.createdAt,
             updatedAt: plan.updatedAt,
+            ...(plan.truncated
+              ? { truncated: plan.truncated, truncationHint: plan.truncationHint }
+              : {}),
           },
         }, 'get_plan');
       } catch (err) {

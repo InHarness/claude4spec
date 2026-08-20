@@ -53,6 +53,8 @@ import type { FileSerializer } from './file-serializer.js';
 import type { ChatService } from './chat.js';
 import type { PagesFrontmatterIndexer } from './pages-frontmatter-indexer.js';
 import { DomainError } from './tags.js';
+import { readArtifactWindow, type ArtifactRange } from './artifact-read.js';
+import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 import { ConflictError } from './brief.js';
 import { hashContent, toIso } from './artifact-content.js';
 
@@ -194,7 +196,17 @@ export class PlanService {
 
   // ─── Reads ───────────────────────────────────────────────────────────────
 
-  async getByPath(planPath: string): Promise<Plan> {
+  /**
+   * 0.2.40 — the artifact read family's window: `range` is a 1-based inclusive
+   * line window, unconditionally allowed (no `sectionIndexed` gate — a plan never
+   * enters `section_index`), and a `start` past the end of the file is
+   * `INVALID_ARGUMENT` STATING the size. The mechanism is shared with brief and
+   * plan in `artifact-read.ts`; this kind declares a value for it, it does not
+   * implement a variant of it.
+   *
+   * `hash` stays the digest of the whole file — see `readArtifactWindow`.
+   */
+  async getByPath(planPath: string, opts?: { range?: ArtifactRange }): Promise<Plan> {
     if (!(await this.deps.plansPages.exists(planPath))) {
       throw new DomainError('NOT_FOUND', `plan '${planPath}' not found`);
     }
@@ -208,22 +220,31 @@ export class PlanService {
         `file '${planPath}' is not a plan (frontmatter.type=${JSON.stringify(frontmatter.type)})`,
       );
     }
+    const windowed = readArtifactWindow(
+      raw,
+      opts?.range,
+      { kind: 'plan', path: planPath },
+      Math.floor(DEFAULT_BUDGET_CHARS / 2),
+    );
     return {
       path: planPath,
       frontmatter,
-      body: parsed.content,
-      content: raw,
+      body: windowed.content === raw ? parsed.content : matter(windowed.content).content,
+      content: windowed.content,
       hash: hashContent(raw),
+      ...(windowed.truncated
+        ? { truncated: windowed.truncated, truncationHint: windowed.truncationHint }
+        : {}),
       currentVersion: this.currentVersionFor(planPath),
       createdAt: toIso(frontmatter.created_at),
       updatedAt: this.deps.pageVersions.getLatestForPath(planPath, undefined, PLAN_ROOT_MARKER)?.createdAt ?? toIso(frontmatter.created_at),
     };
   }
 
-  async getByThread(threadId: string): Promise<Plan | null> {
+  async getByThread(threadId: string, opts?: { range?: ArtifactRange }): Promise<Plan | null> {
     const planPath = this.deps.chatService.getThreadPlanPath(threadId);
     if (!planPath) return null;
-    return this.getByPath(planPath);
+    return this.getByPath(planPath, opts);
   }
 
   /**

@@ -42,12 +42,43 @@ export interface ExplicitBriefToolsContext {
   target: 'explicit';
 }
 
-/** The `brief` argument of the explicit mode, described once for both tools. */
+/**
+ * The path argument of the explicit mode, described once for both tools.
+ *
+ * 0.2.40 — the field is `path`, which is what the operation catalog and every
+ * other channel have always called it; `brief` is still ACCEPTED so no existing
+ * caller breaks, but it is no longer what the schema advertises. The two names
+ * for one field were a drift between the catalog row and its MCP rendering, and
+ * an agent reading the catalog was writing a call the tool rejected.
+ */
 const EXPLICIT_BRIEF_ARG = {
-  brief: z
+  path: z
     .string()
+    .optional()
     .describe(
       'Path of the brief relative to `briefsDir`, e.g. `0-2-12-to-0-2-13.md`. Required: this connection has no thread, so there is no default brief. List the candidates with the brief artifact read operations.',
+    ),
+  brief: z
+    .string()
+    .optional()
+    .describe('Deprecated alias for `path`, accepted for compatibility. Pass `path`.'),
+};
+
+/**
+ * The read window, shared shape with `get_page.range` — 1-based, inclusive.
+ *
+ * Unconditionally allowed, with no `sectionIndexed` gate: a brief never enters
+ * `section_index`, so `list_sections` + `get_sections` is not a second way to
+ * resume a large read the way it is for a page. `range` is the only one, which
+ * is exactly why it had to exist — before it, a brief past the response budget
+ * simply could not be read through.
+ */
+const BRIEF_RANGE_ARG = {
+  range: z
+    .object({ start: z.number().int().positive(), end: z.number().int().positive() })
+    .optional()
+    .describe(
+      '1-based inclusive line window onto the brief. Always allowed. A `start` past the end of the file is INVALID_ARGUMENT stating the file size.',
     ),
 };
 
@@ -84,11 +115,12 @@ export function buildBriefToolsServer(
    */
   const resolveBrief = (args: Record<string, unknown>): string => {
     if (!explicit) return ambientBriefPath!;
-    const raw = typeof args.brief === 'string' ? args.brief.trim() : '';
+    const named = typeof args.path === 'string' ? args.path : args.brief;
+    const raw = typeof named === 'string' ? named.trim() : '';
     if (raw === '') {
       throw new DomainError(
         'VALIDATION',
-        'brief is required: this connection has no thread, so there is no default brief to fall back on',
+        'path is required: this connection has no thread, so there is no default brief to fall back on',
       );
     }
     return raw;
@@ -98,17 +130,23 @@ export function buildBriefToolsServer(
     'get_brief',
     [
       explicit
-        ? 'Read the full current state of the brief named by `brief`.'
-        : 'Read the full current state of the brief attached to this thread.',
+        ? 'Read the current state of the brief named by `path`.'
+        : 'Read the current state of the brief attached to this thread.',
       'Returns { frontmatter, body, content, hash }. Use `hash` as `expectedHash`',
-      'in the next `update_brief` call to detect concurrent edits.',
+      'in the next `update_brief` call to detect concurrent edits — it is always the',
+      'digest of the WHOLE file, including when `range` narrowed what came back.',
+      'Pass `range: { start, end }` to read a 1-based inclusive line window; it is',
+      'always allowed (a brief has no section index, so a window is the only way to',
+      'resume). A brief over the response budget read WITHOUT `range` comes back',
+      '`truncated: true` with a `truncationHint` naming the range to use.',
       'Brief lives on disk under `briefsDir`; you do NOT have filesystem access',
       '(no Read/Write/Edit) — this tool is the only way to read brief content.',
     ].join(' '),
-    explicit ? { ...EXPLICIT_BRIEF_ARG } : {},
+    explicit ? { ...EXPLICIT_BRIEF_ARG, ...BRIEF_RANGE_ARG } : { ...BRIEF_RANGE_ARG },
     async (args) => {
       try {
-        const brief = await briefService.getBrief(resolveBrief(args));
+        const range = args.range as { start: number; end: number } | undefined;
+        const brief = await briefService.getBrief(resolveBrief(args), { range });
         return ok(brief, 'get_brief');
       } catch (err) {
         return fail(err);

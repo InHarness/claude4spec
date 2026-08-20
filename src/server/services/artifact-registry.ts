@@ -35,6 +35,30 @@ export interface ArtifactBinding {
   threadColumn: string;
 }
 
+/**
+ * 0.2.40 — the four positions of the artifact READ family.
+ *
+ * The rule is not "every kind must have all four". It is that every kind must
+ * DECLARE A VALUE for all four — and `'n/a — <reason>'` is a legal, sufficient
+ * value. An asymmetry between kinds is a specification error when, and only
+ * when, it is unwritten: a missing `search_briefs` that nobody recorded is
+ * indistinguishable from one nobody noticed. Written down, it is a known gap
+ * with a reason attached, which is a thing a plan can pick up.
+ *
+ * These strings are documentation with a test behind it (see the architecture
+ * suite), not dispatch data. Nothing branches on them.
+ */
+export interface ArtifactReadFamily {
+  /** Paginated listing, filtered by the execution flag in `frontmatterContract`. */
+  list: string;
+  /** Content + frontmatter + hash, plus a `range` line window with NO `sectionIndexed` gate. */
+  getWithWindow: string;
+  /** Content search; a hit's identity is `(rootId, path, line)`, with no anchor. */
+  search: string;
+  /** `truncated` per item, `truncationHint` per envelope. */
+  responseBudget: string;
+}
+
 export interface ArtifactRegistryEntry {
   kind: ArtifactKind;
   /** BootConfig key holding this artifact's directory. */
@@ -51,6 +75,8 @@ export interface ArtifactRegistryEntry {
   sectionIndexed: false;
   /** WS event kind broadcast on a change to this artifact's mount (see PagesFrontmatterIndexer.broadcastRootChange). */
   changedEvent: 'briefs:changed' | 'patches:changed' | 'plans:changed';
+  /** 0.2.40 — the four positions of the read family. Every kind declares all four. */
+  readFamily: ArtifactReadFamily;
 }
 
 export const artifactRegistry: Record<ArtifactKind, ArtifactRegistryEntry> = {
@@ -69,6 +95,14 @@ export const artifactRegistry: Record<ArtifactKind, ArtifactRegistryEntry> = {
     anchorInjection: false,
     sectionIndexed: false,
     changedEvent: 'briefs:changed',
+    readFamily: {
+      list: 'c4s list-briefs (cli) + GET /api/artifacts/brief (rest), filtered by frontmatter.implemented',
+      getWithWindow: 'get_brief({ path?, range? }) — line window, no sectionIndexed gate',
+      search:
+        'n/a — no search operation exists for briefs in any channel; a named GAP, not a decision. ' +
+        'search_briefs and list_briefs coverage on the agent channels (internal/mcp) are an open <todo> for a separate plan.',
+      responseBudget: 'truncated: true per item + truncationHint pointing unconditionally at range',
+    },
   },
   patch: {
     kind: 'patch',
@@ -87,6 +121,12 @@ export const artifactRegistry: Record<ArtifactKind, ArtifactRegistryEntry> = {
     anchorInjection: false,
     sectionIndexed: false,
     changedEvent: 'patches:changed',
+    readFamily: {
+      list: 'GET /api/artifacts/patch (rest), filtered by frontmatter.applied',
+      getWithWindow: 'GET /api/artifacts/patch/<path> (rest) — the same range window; no MCP read tool (file_patch is write-only)',
+      search: 'n/a — no search operation exists for patches in any channel; same gap as brief.',
+      responseBudget: 'truncated: true per item + truncationHint pointing unconditionally at range',
+    },
   },
   // 0.1.127 (brief 0-1-126-to-0-1-127): plan diverges from brief/patch on two
   // axes — binding is `attach` (N threads -> 1 plan file, optional, no fixed
@@ -113,5 +153,11 @@ export const artifactRegistry: Record<ArtifactKind, ArtifactRegistryEntry> = {
     anchorInjection: true,
     sectionIndexed: false,
     changedEvent: 'plans:changed',
+    readFamily: {
+      list: 'list_plans (mcp) + GET /api/artifacts/plan (rest), filtered by frontmatter.applied',
+      getWithWindow: 'get_plan({ range? }) (mcp) + GET /api/artifacts/plan/<path> (rest) — the same range window',
+      search: 'n/a — no search operation exists for plans in any channel; same gap as brief.',
+      responseBudget: 'truncated: true per item + truncationHint pointing unconditionally at range',
+    },
   },
 };

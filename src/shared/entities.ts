@@ -738,8 +738,14 @@ export interface Plan {
   body: string;
   /** Full file content (frontmatter + body, byte-faithful) — mirrors Brief/Patch. */
   content: string;
-  /** sha256 hex of `content` — used for optimistic concurrency. */
+  /** sha256 hex of the WHOLE file — used for optimistic concurrency, unaffected by `range`. */
   hash: string;
+  /**
+   * 0.2.40 — present IFF `content` was cut by the response budget (the artifact
+   * read family's shared marker). `truncationHint` always points at `range`.
+   */
+  truncated?: true;
+  truncationHint?: string;
   /** Derived from `file_version` (MAX(version) for this path under rootId='plan'), not a stored column. */
   currentVersion: number;
   createdAt: string;
@@ -859,8 +865,22 @@ export interface Brief {
   body: string;
   /** Full file content (frontmatter + body, byte-faithful). */
   content: string;
-  /** sha256 hex of `content` — used for optimistic concurrency. */
+  /**
+   * sha256 hex of the WHOLE file — used for optimistic concurrency.
+   *
+   * Not of `content` when `content` is a window: `expectedHash` is compared
+   * against the file on disk, so a window's hash would fail every write made
+   * with it, and the value itself would not say which of the two it is.
+   */
   hash: string;
+  /**
+   * 0.2.40 — present IFF `content` was cut by the response budget. `body` and
+   * `content` are then a prefix of what was asked for, and `truncationHint`
+   * says how to read the rest.
+   */
+  truncated?: true;
+  /** How to fetch what is missing — always a `range` window, the only way a brief resumes. */
+  truncationHint?: string;
 }
 
 export interface BriefCreateRequest {
@@ -930,10 +950,13 @@ export interface ArtifactResponse {
   /** Parsed YAML frontmatter — kind-specific fields (source/status/patch_kind/...) live here. */
   frontmatter: Record<string, unknown>;
   body: string;
-  /** Full file content (frontmatter + body, byte-faithful). */
+  /** Full file content (frontmatter + body, byte-faithful) — or the requested `?range=` window. */
   content: string;
-  /** sha256 hex of `content` — used for optimistic concurrency. */
+  /** sha256 hex of the WHOLE file — used for optimistic concurrency, unaffected by `?range=`. */
   hash: string;
+  /** 0.2.40 — present IFF `content` was cut by the response budget; the hint names the `range` to retry with. */
+  truncated?: true;
+  truncationHint?: string;
 }
 
 /**
