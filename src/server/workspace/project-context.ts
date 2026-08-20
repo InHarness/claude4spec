@@ -846,7 +846,11 @@ async function buildInner(
       })),
   };
   pluginHost.registerMcpServer('page-tools', () =>
-    createPageToolsServer({ ...sectionWriteDeps, rootIds: () => [...rootById.keys()] }),
+    createPageToolsServer({
+      ...sectionWriteDeps,
+      rootIds: () => [...rootById.keys()],
+      isSectionIndexed: (rootId) => rootById.get(rootId)?.root.sectionIndexed ?? true,
+    }),
   );
 
   // M13: generic write-side CRUD server for every active entity type — the
@@ -1095,7 +1099,10 @@ async function buildInner(
    * root id and the operation answers `ROOT_NOT_FOUND`.
    */
   router.use('/pages', crossRootPagesRouter(discovery));
-  router.use('/pages/:rootId', pagesRouter(resolveRoot, pageVersions, discovery, () => [...rootById.keys()]));
+  router.use(
+    '/pages/:rootId',
+    pagesRouter(resolveRoot, pageVersions, discovery, () => [...rootById.keys()], sectionWriteDeps),
+  );
   router.use('/static/:rootId', staticRouter(resolveStatic));
   router.use('/tags', tagsRouter(tagsService, referencesService, discovery));
   router.use('/references', referencesRouter(pluginHost, referencesService, discovery, discoveryForRoots));

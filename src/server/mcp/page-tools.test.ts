@@ -65,6 +65,67 @@ describe('page-tools', () => {
     return { isError: res.isError === true, body: JSON.parse(text) as Record<string, any> };
   }
 
+  /**
+   * 0.2.37 — the differential mode over the MCP adapter.
+   *
+   * The engine has its own tests and the core has its own; what only this
+   * adapter can get wrong is whether it forwards the new fields at all. A tool
+   * whose schema accepts `textEdits` and whose handler drops them looks like a
+   * success and writes nothing.
+   */
+  describe('update_page — the differential mode', () => {
+    async function seed(body: string) {
+      const created = await call('create_page', { rootId: 'pages', path: 'a.md', content: body });
+      return created.body.hash as string;
+    }
+
+    it('forwards textEdits and answers with the replacement count', async () => {
+      const hash = await seed('# A\n\nalpha beta\n');
+      const res = await call('update_page', {
+        rootId: 'pages',
+        path: 'a.md',
+        textEdits: [{ find: 'alpha', replaceWith: 'ALPHA' }],
+        expectedHash: hash,
+      });
+      expect(res.isError).toBe(false);
+      expect(res.body.replacements).toBe(1);
+      expect((await pages.read('a.md')).body).toContain('ALPHA beta');
+    });
+
+    it('keeps the refusal actionable — FIND_NOT_FOUND survives the envelope with its details', async () => {
+      const hash = await seed('# A\n\n  alpha   beta\n');
+      const res = await call('update_page', {
+        rootId: 'pages',
+        path: 'a.md',
+        textEdits: [{ find: 'alpha beta', replaceWith: 'X' }],
+        expectedHash: hash,
+      });
+      expect(res.isError).toBe(true);
+      expect(res.body.code).toBe('FIND_NOT_FOUND');
+      expect(res.body.details[0].matchesAfterWhitespaceNormalization).toBe(1);
+    });
+
+    it('refuses body and textEdits in the same call', async () => {
+      const hash = await seed('# A\n\nalpha\n');
+      const res = await call('update_page', {
+        rootId: 'pages',
+        path: 'a.md',
+        body: '# A\n',
+        textEdits: [{ find: 'alpha', replaceWith: 'X' }],
+        expectedHash: hash,
+      });
+      expect(res.isError).toBe(true);
+      expect(res.body.code).toBe('INVALID_ARGUMENT');
+    });
+
+    it('still accepts the literal mode it always had', async () => {
+      const hash = await seed('# A\n\nalpha\n');
+      const res = await call('update_page', { rootId: 'pages', path: 'a.md', body: '# A2', expectedHash: hash });
+      expect(res.isError).toBe(false);
+      expect(res.body.replacements).toBeUndefined();
+    });
+  });
+
   it('carries the four operations of the page write path, and nothing else', async () => {
     // A fifth tool here would be a capability the catalog has no row for, which
     // the profile gate would then wave through on the strength of this being a

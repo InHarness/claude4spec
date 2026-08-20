@@ -34,6 +34,42 @@ const decl = (over: Partial<OperationDeclaration> = {}): OperationDeclaration =>
 });
 
 describe('operation catalog — declaration rules', () => {
+  /**
+   * 0.2.37 — the same class of rule as the missing-cell one below, and here for
+   * the same reason: an operation that writes a file without saying how its
+   * content is described leaves a reader inferring "no differential mode" from
+   * an absence, which is indistinguishable from someone having forgotten.
+   */
+  it('rejects a file-writing declaration that does not declare contentInput', () => {
+    const cat = new OperationCatalog();
+    const broken = decl({ name: 'update_thing', opClass: 'write', sideEffects: ['file', 'db'] });
+    expect(() => cat.register(broken)).toThrow(OperationCatalogError);
+    expect(() => cat.register(broken)).toThrow(/does not declare 'contentInput'/);
+  });
+
+  it('leaves operations with no file side effect free of the requirement', () => {
+    const cat = new OperationCatalog();
+    expect(() => cat.register(decl({ sideEffects: ['db'] }))).not.toThrow();
+  });
+
+  it('every registered file-writing operation declares one', () => {
+    const writesFiles = CATALOG.list().filter((op) => op.sideEffects.includes('file'));
+    // A guard against the guard: if this ever comes back empty the assertion
+    // below would pass while proving nothing.
+    expect(writesFiles.length).toBeGreaterThan(5);
+    for (const op of writesFiles) {
+      expect(op.contentInput, op.name).toBeDefined();
+    }
+  });
+
+  it('the two operations that got a differential mode declare it, and the four that did not say so', () => {
+    expect(CATALOG.require('update_page').contentInput).toBe('literal+diff');
+    expect(CATALOG.require('update_sections').contentInput).toBe('literal+diff');
+    for (const name of ['update_plan', 'update_entities', 'update_brief', 'file_patch']) {
+      expect(CATALOG.require(name).contentInput, name).toBe('literal');
+    }
+  });
+
   it('rejects a declaration missing a channel cell', () => {
     const cat = new OperationCatalog();
     const broken = decl({

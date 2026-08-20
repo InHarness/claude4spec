@@ -1328,3 +1328,494 @@ describe('update_sections — the anchor-loss guard', () => {
     expect(res.results[0]!.droppedAnchors).toContain(childOne);
   });
 });
+
+/**
+ * 0.2.37 — the DIFFERENTIAL write, on both operations that got one.
+ *
+ * The rig is the anchor-loss rig above, rebuilt rather than shared, because
+ * these cases need the same three real things it needs — a real section index,
+ * a real referent sweep, and real anchor injection — and half of what is
+ * asserted here is that the guard those give access to behaves identically on
+ * the new path.
+ */
+describe('differential writes — textEdits', () => {
+  let cwd: string;
+  let db: Database.Database;
+  let pages: PagesService;
+  let sections: SectionsService;
+  let indexer: SectionIndexerService | undefined;
+  let injection: WatchSubscriber | undefined;
+  let target: PageWriteTarget;
+  let core: DiscoveryCore;
+
+  beforeEach(async () => {
+    registerExtensionReferenceType({ tag: 'section_ref', attrOrder: ['anchor'] });
+    indexer = undefined;
+    injection = undefined;
+    cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-text-edits-'));
+    db = createTestDb();
+    pages = new PagesService(cwd, 'pages', 'pages');
+    await pages.ensureRoot();
+    sections = new SectionsService(db);
+    target = { pages, writer: null };
+    core = createDiscoveryCore({
+      reader: new RawEntityReader(db, host),
+      db,
+      host,
+      serialization: new SerializationEngine(host),
+      roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true, ...DEFAULT_PAGES_ROOT_PROPS }],
+      projectDir: cwd,
+      packageVersion: 'test',
+    });
+  });
+
+  afterEach(async () => {
+    db.close();
+    await fs.rm(cwd, { recursive: true, force: true });
+  });
+
+  const findSectionReferents = async (anchor: string) =>
+    (await findReferencesAll(core, { target: 'section' as const, anchor })).map((hit) => ({
+      page: hit.pagePath,
+      ...(hit.anchor !== undefined ? { anchor: hit.anchor } : {}),
+    }));
+
+  const deps = () => ({
+    sections,
+    resolveRoot: (id: string) => (id === 'pages' ? target : undefined),
+    findSectionReferents,
+  });
+
+  const diffDeps = () => ({ sections, findSectionReferents });
+
+  async function hashOfPage(relPath = 'doc.md'): Promise<string> {
+    const { createHash } = await import('node:crypto');
+    const raw = await fs.readFile(path.join(pages.root, relPath), 'utf-8');
+    return createHash('sha256').update(raw, 'utf-8').digest('hex');
+  }
+
+  async function index(relPath: string, content: string, frontmatter?: Record<string, unknown>): Promise<void> {
+    await pages.write(relPath, { body: content, ...(frontmatter ? { frontmatter } : {}) });
+    indexer ??= new SectionIndexerService(db, new Map([['pages', { pages }]]), { broadcast: () => {} } as never, host);
+    injection ??= indexer.anchorInjectionSubscriber(() => {});
+    await indexer.indexPage('pages', relPath);
+    await injection!.onChange('context:test', 'pages:pages', relPath, 'external');
+    await indexer.indexPage('pages', relPath);
+  }
+
+  function anchorOf(heading: string): string {
+    const row = db.prepare('SELECT anchor FROM section_index WHERE heading_text = ?').get(heading) as
+      | { anchor: string }
+      | undefined;
+    if (!row) throw new Error(`no indexed section titled ${heading}`);
+    return row.anchor;
+  }
+
+  const nested = [
+    '# Doc',
+    '',
+    '## Parent',
+    '',
+    'PARENT BODY with a typo: teh word',
+    '',
+    '### Child one',
+    '',
+    'CHILD ONE BODY',
+    '',
+    '### Child two',
+    '',
+    'CHILD TWO BODY',
+    '',
+    '## Sibling',
+    '',
+    'SIBLING BODY, teh again',
+    '',
+  ].join('\n');
+
+  async function citeWithTag(anchor: string, relPath = 'cites.md'): Promise<void> {
+    await index(relPath, ['# Cites', '', `<section_ref anchor="${anchor}"/>`, ''].join('\n'));
+  }
+
+  // ── update_page, the disjunction ────────────────────────────────────────
+
+  it('refuses body and textEdits together — exactly one describes the new content', async () => {
+    await index('doc.md', nested);
+    const err = await updatePage(
+      target,
+      { path: 'doc.md', body: 'x', textEdits: [{ find: 'a', replaceWith: 'b' }], expectedHash: await hashOfPage() },
+      'agent',
+    ).catch((e) => e);
+    expect(err.code).toBe('INVALID_ARGUMENT');
+    expect(err.message).toMatch(/mutually exclusive/);
+  });
+
+  it('refuses neither of them — a write with no content description is a mistake, not a no-op', async () => {
+    await index('doc.md', nested);
+    const before = (await pages.read('doc.md')).body;
+    const err = await updatePage(target, { path: 'doc.md', expectedHash: await hashOfPage() }, 'agent').catch(
+      (e) => e,
+    );
+    expect(err.code).toBe('INVALID_ARGUMENT');
+    expect((await pages.read('doc.md')).body).toBe(before);
+  });
+
+  it('demands expectedHash in the differential branch too', async () => {
+    await index('doc.md', nested);
+    const err = await updatePage(
+      target,
+      { path: 'doc.md', textEdits: [{ find: 'teh', replaceWith: 'the', expectedMatches: 'all' }] },
+      'agent',
+    ).catch((e) => e);
+    expect(err.code).toBe('INVALID_ARGUMENT');
+    expect(err.message).toMatch(/expectedHash/);
+  });
+
+  it('refuses dropAnchors on a whole-body write — that branch has no guard to override', async () => {
+    await index('doc.md', nested);
+    const err = await updatePage(
+      target,
+      { path: 'doc.md', body: 'x', dropAnchors: ['whatever'], expectedHash: await hashOfPage() },
+      'agent',
+    ).catch((e) => e);
+    expect(err.code).toBe('INVALID_ARGUMENT');
+  });
+
+  /**
+   * The differential mode CAN reach frontmatter — by substituting its text. What
+   * it cannot do is take a `frontmatter` object, and accepting one only to drop
+   * it would answer 200 to a change that never happened.
+   */
+  it('refuses a frontmatter object alongside textEdits rather than silently dropping it', async () => {
+    await index('doc.md', nested, { title: 'Old Title' });
+    const err = await updatePage(
+      target,
+      {
+        path: 'doc.md',
+        textEdits: [{ find: 'teh', replaceWith: 'the', expectedMatches: 'all' }],
+        frontmatter: { title: 'New Title' },
+        expectedHash: await hashOfPage(),
+      },
+      'agent',
+      diffDeps(),
+    ).catch((e) => e);
+    expect(err.code).toBe('INVALID_ARGUMENT');
+    expect(err.message).toMatch(/frontmatter/);
+    expect((await pages.read('doc.md')).frontmatter.title).toBe('Old Title');
+  });
+
+  /**
+   * Substitution is blind to the fence it writes through, so a caller can leave
+   * YAML that does not parse. That is a deterministic mistake in the request —
+   * answering INTERNAL would invite a retry of a call that can only fail again.
+   */
+  it('answers INVALID_ARGUMENT, not INTERNAL, when a substitution corrupts the frontmatter', async () => {
+    await index('doc.md', nested, { title: 'Old Title' });
+    const before = await pages.read('doc.md');
+    const err = await updatePage(
+      target,
+      {
+        path: 'doc.md',
+        textEdits: [{ find: 'Old Title', replaceWith: 'unbalanced: "quote' }],
+        expectedHash: await hashOfPage(),
+      },
+      'agent',
+      diffDeps(),
+    ).catch((e) => e);
+    expect(err.code).toBe('INVALID_ARGUMENT');
+    // The refusal precedes the write, so the page is byte-identical.
+    expect((await pages.read('doc.md')).frontmatter.title).toBe('Old Title');
+    expect((await pages.read('doc.md')).body).toBe(before.body);
+  });
+
+  // ── update_page, the happy path ─────────────────────────────────────────
+
+  it('substitutes fragments and reports how many landed', async () => {
+    await index('doc.md', nested);
+    const res = await updatePage(
+      target,
+      {
+        path: 'doc.md',
+        textEdits: [{ find: 'teh', replaceWith: 'the', expectedMatches: 'all' }],
+        expectedHash: await hashOfPage(),
+      },
+      'agent',
+      diffDeps(),
+    );
+    expect(res.replacements).toBe(2);
+    const body = (await pages.read('doc.md')).body;
+    expect(body).toContain('the word');
+    expect(body).not.toContain('teh');
+  });
+
+  /**
+   * The branch's whole reason for existing: frontmatter and the preamble are
+   * text no anchor addresses, so no section-scoped write can reach them.
+   */
+  it('reaches the FRONTMATTER, which no section-scoped write can address', async () => {
+    await index('doc.md', nested, { title: 'Old Title', status: 'draft' });
+    await updatePage(
+      target,
+      { path: 'doc.md', textEdits: [{ find: 'Old Title', replaceWith: 'New Title' }], expectedHash: await hashOfPage() },
+      'agent',
+      diffDeps(),
+    );
+    expect((await pages.read('doc.md')).frontmatter.title).toBe('New Title');
+  });
+
+  it('is not idempotent — a replay with a refreshed hash answers FIND_NOT_FOUND', async () => {
+    await index('doc.md', nested);
+    const edits = [{ find: 'SIBLING BODY', replaceWith: 'SIBLING TEXT' }];
+    await updatePage(target, { path: 'doc.md', textEdits: edits, expectedHash: await hashOfPage() }, 'agent', diffDeps());
+
+    const err = await updatePage(
+      target,
+      { path: 'doc.md', textEdits: edits, expectedHash: await hashOfPage() },
+      'agent',
+      diffDeps(),
+    ).catch((e) => e);
+    expect(err.code).toBe('FIND_NOT_FOUND');
+  });
+
+  it('answers MATCH_COUNT_MISMATCH with anchor + line, never a byte offset', async () => {
+    await index('doc.md', nested);
+    const err = await updatePage(
+      target,
+      { path: 'doc.md', textEdits: [{ find: 'teh', replaceWith: 'the' }], expectedHash: await hashOfPage() },
+      'agent',
+      diffDeps(),
+    ).catch((e) => e);
+    expect(err.code).toBe('MATCH_COUNT_MISMATCH');
+    expect(err.details[0].actualMatches).toBe(2);
+    expect(err.details[0].positions[0]).toEqual({ anchor: anchorOf('Parent'), line: expect.any(Number) });
+  });
+
+  // ── update_page, the inherited guard ────────────────────────────────────
+
+  it('refuses with ANCHOR_LOSS when a find swallows a CITED anchor comment', async () => {
+    await index('doc.md', nested);
+    const childOne = anchorOf('Child one');
+    await citeWithTag(childOne);
+    const body = (await pages.read('doc.md')).body;
+    const swallow = body.slice(body.indexOf(`<!-- anchor: ${childOne} -->`), body.indexOf('CHILD ONE BODY'));
+
+    const err = await updatePage(
+      target,
+      { path: 'doc.md', textEdits: [{ find: swallow, replaceWith: '' }], expectedHash: await hashOfPage() },
+      'agent',
+      diffDeps(),
+    ).catch((e) => e);
+
+    expect(err.code).toBe('ANCHOR_LOSS');
+    expect(err.details).toEqual([
+      { anchor: childOne, headingText: 'Child one', referencedBy: [expect.objectContaining({ page: 'cites.md' })] },
+    ]);
+    // Refused BEFORE the write — the file must be untouched.
+    expect((await pages.read('doc.md')).body).toBe(body);
+  });
+
+  it('lets the same write through once the anchor is declared in dropAnchors', async () => {
+    await index('doc.md', nested);
+    const childOne = anchorOf('Child one');
+    await citeWithTag(childOne);
+    const body = (await pages.read('doc.md')).body;
+    const swallow = body.slice(body.indexOf(`<!-- anchor: ${childOne} -->`), body.indexOf('CHILD ONE BODY'));
+
+    const res = await updatePage(
+      target,
+      {
+        path: 'doc.md',
+        textEdits: [{ find: swallow, replaceWith: '' }],
+        dropAnchors: [childOne],
+        expectedHash: await hashOfPage(),
+      },
+      'agent',
+      diffDeps(),
+    );
+    expect(res.replacements).toBe(1);
+  });
+
+  it('refuses a dropAnchors entry outside every matched fragment', async () => {
+    await index('doc.md', nested);
+    const err = await updatePage(
+      target,
+      {
+        path: 'doc.md',
+        textEdits: [{ find: 'SIBLING BODY', replaceWith: 'X' }],
+        dropAnchors: [anchorOf('Child two')],
+        expectedHash: await hashOfPage(),
+      },
+      'agent',
+      diffDeps(),
+    ).catch((e) => e);
+    expect(err.code).toBe('INVALID_ARGUMENT');
+    expect(err.message).toMatch(/matched fragments/);
+  });
+
+  /**
+   * Without a section index there is no set of anchors to measure a loss
+   * against, so the guard is skipped OUTRIGHT rather than run against nothing.
+   */
+  it('skips the guard entirely on a root with sectionIndexed = false', async () => {
+    await index('doc.md', nested);
+    const childOne = anchorOf('Child one');
+    await citeWithTag(childOne);
+    const body = (await pages.read('doc.md')).body;
+    const swallow = body.slice(body.indexOf(`<!-- anchor: ${childOne} -->`), body.indexOf('CHILD ONE BODY'));
+
+    const res = await updatePage(
+      target,
+      { path: 'doc.md', textEdits: [{ find: swallow, replaceWith: '' }], expectedHash: await hashOfPage() },
+      'agent',
+      { ...diffDeps(), sectionIndexed: false },
+    );
+    expect(res.replacements).toBe(1);
+  });
+
+  // ── update_sections, the `edit` action ──────────────────────────────────
+
+  it('substitutes inside the addressed subtree and reports replacements on that row only', async () => {
+    await index('doc.md', nested);
+    const res = await updateSections(
+      deps(),
+      {
+        expectedHash: await hashOfPage(),
+        edits: [
+          { anchor: anchorOf('Parent'), action: 'edit', textEdits: [{ find: 'teh', replaceWith: 'the' }] },
+          { anchor: anchorOf('Sibling'), action: 'append', content: 'MORE\n' },
+        ],
+      },
+      'agent',
+    );
+    expect(res.results[0]).toMatchObject({ action: 'edit', replacements: 1 });
+    expect(res.results[1]!.replacements).toBeUndefined();
+    const body = (await pages.read('doc.md')).body;
+    // Scoped to the subtree: `Sibling`'s own "teh" is untouched.
+    expect(body).toContain('the word');
+    expect(body).toContain('SIBLING BODY, teh again');
+  });
+
+  it('refuses content on an edit, and textEdits on any other action', async () => {
+    await index('doc.md', nested);
+    const withContent = await updateSections(
+      deps(),
+      {
+        expectedHash: await hashOfPage(),
+        edits: [{ anchor: anchorOf('Parent'), action: 'edit', content: 'x', textEdits: [{ find: 'a', replaceWith: 'b' }] }],
+      },
+      'agent',
+    ).catch((e) => e);
+    expect(withContent.code).toBe('INVALID_ARGUMENT');
+
+    const withEdits = await updateSections(
+      deps(),
+      {
+        expectedHash: await hashOfPage(),
+        edits: [{ anchor: anchorOf('Parent'), action: 'replace', content: 'x', textEdits: [{ find: 'a', replaceWith: 'b' }] }],
+      },
+      'agent',
+    ).catch((e) => e);
+    expect(withEdits.code).toBe('INVALID_ARGUMENT');
+  });
+
+  it('refuses an edit with no textEdits at all', async () => {
+    await index('doc.md', nested);
+    const err = await updateSections(
+      deps(),
+      { expectedHash: await hashOfPage(), edits: [{ anchor: anchorOf('Parent'), action: 'edit' }] },
+      'agent',
+    ).catch((e) => e);
+    expect(err.code).toBe('INVALID_ARGUMENT');
+  });
+
+  /**
+   * The outer entry would overwrite the very lines the substitution produced,
+   * leaving `replacements` reporting work that was then thrown away.
+   */
+  it('refuses an edit nested inside a section another entry replaces', async () => {
+    await index('doc.md', nested);
+    const err = await updateSections(
+      deps(),
+      {
+        expectedHash: await hashOfPage(),
+        edits: [
+          { anchor: anchorOf('Child one'), action: 'edit', textEdits: [{ find: 'CHILD ONE BODY', replaceWith: 'X' }] },
+          { anchor: anchorOf('Parent'), action: 'replace', content: 'FLATTENED\n' },
+        ],
+      },
+      'agent',
+    ).catch((e) => e);
+    expect(err.code).toBe('INVALID_ARGUMENT');
+    expect(err.message).toMatch(/lies inside/);
+  });
+
+  /**
+   * The mirror of the case above, and the worse one: bottom-up ordering splices
+   * the inner entry FIRST, so an unguarded outer `edit` would match against text
+   * this same batch just wrote — the one thing `applyTextEdits` promises never
+   * happens.
+   */
+  it('refuses an edit that encloses a section another entry replaces', async () => {
+    await index('doc.md', nested);
+    const err = await updateSections(
+      deps(),
+      {
+        expectedHash: await hashOfPage(),
+        edits: [
+          { anchor: anchorOf('Child one'), action: 'replace', content: 'FRESHLY WRITTEN\n' },
+          { anchor: anchorOf('Parent'), action: 'edit', textEdits: [{ find: 'FRESHLY', replaceWith: 'X' }] },
+        ],
+      },
+      'agent',
+    ).catch((e) => e);
+    expect(err.code).toBe('INVALID_ARGUMENT');
+    expect(err.message).toMatch(/encloses/);
+  });
+
+  it('a substitution that touches no anchor comment drops nothing', async () => {
+    await index('doc.md', nested);
+    await citeWithTag(anchorOf('Child one'));
+    const res = await updateSections(
+      deps(),
+      {
+        expectedHash: await hashOfPage(),
+        edits: [{ anchor: anchorOf('Parent'), action: 'edit', textEdits: [{ find: 'CHILD ONE BODY', replaceWith: 'X' }] }],
+      },
+      'agent',
+    );
+    expect(res.results[0]!.droppedAnchors).toEqual([]);
+  });
+
+  it('refuses with ANCHOR_LOSS when an edit swallows a cited descendant anchor', async () => {
+    await index('doc.md', nested);
+    const childOne = anchorOf('Child one');
+    await citeWithTag(childOne);
+    const body = (await pages.read('doc.md')).body;
+    const swallow = body.slice(body.indexOf(`<!-- anchor: ${childOne} -->`), body.indexOf('CHILD ONE BODY'));
+
+    const err = await updateSections(
+      deps(),
+      {
+        expectedHash: await hashOfPage(),
+        edits: [{ anchor: anchorOf('Parent'), action: 'edit', textEdits: [{ find: swallow, replaceWith: '' }] }],
+      },
+      'agent',
+    ).catch((e) => e);
+    expect(err.code).toBe('ANCHOR_LOSS');
+    expect(err.details[0].anchor).toBe(childOne);
+  });
+
+  it('an edit costs the WHOLE batch its idempotence — the replay refuses transactionally', async () => {
+    await index('doc.md', nested);
+    const edits = [
+      { anchor: anchorOf('Parent'), action: 'edit' as const, textEdits: [{ find: 'teh', replaceWith: 'the' }] },
+      { anchor: anchorOf('Sibling'), action: 'replace' as const, content: 'REPLACED\n' },
+    ];
+    await updateSections(deps(), { expectedHash: await hashOfPage(), edits }, 'agent');
+    const after = (await pages.read('doc.md')).body;
+
+    const err = await updateSections(deps(), { expectedHash: await hashOfPage(), edits }, 'agent').catch((e) => e);
+    expect(err.code).toBe('FIND_NOT_FOUND');
+    // All or nothing: the `replace` half did not land either.
+    expect((await pages.read('doc.md')).body).toBe(after);
+  });
+});
