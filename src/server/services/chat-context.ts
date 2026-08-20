@@ -172,8 +172,8 @@ export interface SystemPromptInput {
    * It replaces `forcedSkills: {slug,title}[]`, which was a list because forcing
    * was modelled as a property of a SKILL (`injection: 'forced'`) rather than of
    * the writing-style SLOT. Every other skill — the hardcoded contextual ones and
-   * the plugin fan-out — rides `inlineSkills` alone, and the model opens it via
-   * `Skill(<slug>)` if the description warrants it.
+   * the plugin fan-out — rides `availableSkills` alone, and the model opens it via
+   * `load_skill_file(<slug>)` if the description warrants it.
    */
   writingStyleSkill?: { slug: string; title: string } | null;
   /**
@@ -486,7 +486,7 @@ You do NOT have filesystem access (no Read/Write/Edit/Glob/Grep/Bash). Brief con
 const PLAN_MODE = `<claude4spec_plan_mode>
 Plan Mode is ACTIVE. Investigate and propose — do not modify.
 
-The plan you draft must conform to the project skill referenced in <project_skill/>. Before drafting or updating the plan, ensure Skill(slug) has been called this turn — its conventions (module/layer structure, naming, file layout, quality rules) constrain every line of the plan. If the user's request appears to violate those conventions, surface the conflict in the plan rather than silently working around it.
+The plan you draft must conform to the project skill referenced in <project_skill/>. Before drafting or updating the plan, ensure load_skill_file(slug) has been called this turn — its conventions (module/layer structure, naming, file layout, quality rules) constrain every line of the plan. If the user's request appears to violate those conventions, surface the conflict in the plan rather than silently working around it.
 
 Forbidden (mutating):
   - Built-in: ${CLAUDE_CODE_MUTATING_BUILTINS.join(', ')}

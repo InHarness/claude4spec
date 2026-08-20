@@ -273,6 +273,23 @@ describe('buildSystemPrompt — <project_skill> points at load_skill_file (0.2.3
       expect(out).not.toMatch(/call Skill\("house-style"\)/);
     }
   });
+
+  it('does not tell plan mode to call Skill(slug) either', () => {
+    // <claude4spec_plan_mode> reaches every `ask` turn (force-plan) and every
+    // plan-mode chat/patch turn, so a leftover Skill(slug) there contradicts the
+    // <available_skills> rule inside the very same prompt.
+    for (const contextType of ['chat', 'patch', 'ask'] as const) {
+      const out = build({
+        contextType,
+        brief: null,
+        planMode: true,
+        writingStyleSkill: { slug: 'house-style', title: 'House Style' },
+      });
+      expect(out).toContain('ensure load_skill_file(slug) has been called this turn');
+      // Every remaining `Skill(` is the empty-argument prohibition itself.
+      expect(out).not.toMatch(/Skill\((?!\))/);
+    }
+  });
 });
 
 describe('buildSystemPrompt — <interaction_context> (0.2.19)', () => {

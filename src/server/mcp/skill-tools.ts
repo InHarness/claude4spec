@@ -185,7 +185,11 @@ export function buildSkillToolsServer(registry: SkillRegistry): CapturedMcpServe
           );
         }
 
-        const entry = resolved.files[file];
+        // `hasOwn`, not truthiness: a plain object literal inherits
+        // `constructor`/`toString`/`valueOf`, so `files['constructor']` would
+        // otherwise hand back an inherited function and answer NOT_TEXT for a
+        // path the manifest never listed.
+        const entry = Object.hasOwn(resolved.files, file) ? resolved.files[file] : undefined;
         if (!entry) {
           const paths = Object.keys(resolved.files).sort();
           throw new DomainError(

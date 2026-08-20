@@ -168,6 +168,23 @@ describe('skill-tools — load_skill_file', () => {
       expect(body.hint).toBe('available paths: NOTES.md, workflows/brief.md');
     });
 
+    it.each(['constructor', 'toString', 'valueOf', 'hasOwnProperty'])(
+      'SKILL_FILE_NOT_FOUND for "%s", an inherited Object.prototype member',
+      async (file) => {
+        // The package map is a plain object literal, so a lookup by truthiness
+        // would resolve these to inherited functions and answer NOT_TEXT about a
+        // path the manifest never listed.
+        const root = writeSkill('house-style');
+        fs.writeFileSync(path.join(root.dir, 'house-style', 'NOTES.md'), 'y');
+        await mount(SkillRegistry.load([root]));
+
+        const { isError, body } = await call({ slug: 'house-style', file });
+        expect(isError).toBe(true);
+        expect(body.code).toBe('SKILL_FILE_NOT_FOUND');
+        expect(body.hint).toBe('available paths: NOTES.md');
+      },
+    );
+
     it.each([
       ['a ".." segment', 'workflows/../../etc/passwd'],
       ['an absolute POSIX path', '/etc/passwd'],
