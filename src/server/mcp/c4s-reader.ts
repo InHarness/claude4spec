@@ -443,7 +443,7 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
 
   const checkConsistency = op(
     'check_consistency',
-    'Run the consistency rules over every reference-validated root and every active type: broken embeds by category, unreferenced entities, invalid tag references, broken section refs, broken AC verifies, coverage rules, duplicate anchors (rule 13 — one anchor comment on two headings; the row lists every location). Filter with `severity` ("error" | "warning"), `rule` (number or name) or `limit` (a per-section cap) — `summary` always carries the FULL counts, so a filtered report still says what it hid. This is also the right home for disk-versus-index drift; that is not a mode of a page-listing tool.',
+    'Run the consistency rules over every reference-validated root and every active type: broken embeds by category, unreferenced entities, invalid tag references, broken section refs, broken AC verifies, coverage rules, duplicate anchors (rule 13 — one anchor comment on two headings; the row lists every location), tags no embed consumes (rule 14 — config-flagged). Filter with `severity` ("error" | "warning"), `rule` (number or name) or `limit` (a per-section cap) — `summary` always carries the FULL counts, so a filtered report still says what it hid. This is also the right home for disk-versus-index drift; that is not a mode of a page-listing tool.',
     {
       severity: z.enum(['error', 'warning']).optional().describe('Keep only rows of this severity'),
       rule: z.union([z.string(), z.number()]).optional().describe('Rule number or name'),

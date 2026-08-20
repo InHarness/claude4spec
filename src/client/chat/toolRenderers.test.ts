@@ -30,8 +30,8 @@ describe('toolRenderers — find_references summary', () => {
   });
 
   it('names the full page key for target: "page"', () => {
-    const out = summarize({ target: 'page', rootId: 'pages', path: 'mcp/mcp-c4s-reader.md' });
-    expect(out).toBe('Find refs to page pages/mcp/mcp-c4s-reader.md');
+    const out = summarize({ target: 'page', rootId: 'pages', path: 'modules/m39-discovery-core/L3-spec-operations.md' });
+    expect(out).toBe('Find refs to page pages/modules/m39-discovery-core/L3-spec-operations.md');
     expect(out).not.toContain('?');
   });
 

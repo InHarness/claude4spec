@@ -169,6 +169,17 @@ export type ConsistencySeverity = 'off' | 'warn' | 'error';
 export interface ConsistencyConfig {
   requireAcCoverage?: ConsistencySeverity;
   requireModuleAc?: ConsistencySeverity;
+  /**
+   * 0.2.35 — rule 14 (`tag-without-consumer`): a tag carried by entities that no
+   * `<tagged_list>` embed anywhere selects on.
+   *
+   * OFF BY DEFAULT, like its two neighbours and for a sharper reason: a tag is
+   * also a free-form filter axis (`list_entities({tags})`), so "nothing embeds
+   * it" is a smell an author opts into hearing about, not a defect the host may
+   * assert on a corpus that never agreed to the convention. Additive — no
+   * `$schemaVersion` bump.
+   */
+  requireTagConsumer?: ConsistencySeverity;
 }
 
 export interface AgentConfig {
@@ -217,6 +228,7 @@ export interface NormalizedGitSyncConfig {
 export interface NormalizedConsistencyConfig {
   requireAcCoverage: ConsistencySeverity;
   requireModuleAc: ConsistencySeverity;
+  requireTagConsumer: ConsistencySeverity;
 }
 
 export interface NormalizedAgentConfig {
@@ -324,7 +336,7 @@ export function defaults(cwd: string): NormalizedConfig {
       switchAfterRelease: false,
     },
     // Consistency gates report only when explicitly turned on.
-    consistency: { requireAcCoverage: 'off', requireModuleAc: 'off' },
+    consistency: { requireAcCoverage: 'off', requireModuleAc: 'off', requireTagConsumer: 'off' },
     // M33 phase 3: no plugin settings until a plugin writes some.
     plugins: {},
   };
@@ -819,6 +831,14 @@ function validate(raw: unknown): Partial<Config> {
         );
       }
       consistency.requireModuleAc = cr.requireModuleAc as ConsistencySeverity;
+    }
+    if ('requireTagConsumer' in cr) {
+      if (typeof cr.requireTagConsumer !== 'string' || !validSev.has(cr.requireTagConsumer)) {
+        throw new Error(
+          `config.json: field 'consistency.requireTagConsumer' expected 'off' | 'warn' | 'error', got ${JSON.stringify(cr.requireTagConsumer)}`,
+        );
+      }
+      consistency.requireTagConsumer = cr.requireTagConsumer as ConsistencySeverity;
     }
     out.consistency = consistency;
   }

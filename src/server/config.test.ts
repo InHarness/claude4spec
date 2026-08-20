@@ -552,7 +552,7 @@ describe('config — central default normalizer (C23, 0.2.8)', () => {
       commitTarget: { mode: 'current', branch: null, template: null, base: null },
       switchAfterRelease: false,
     });
-    expect(cfg.consistency).toEqual({ requireAcCoverage: 'off', requireModuleAc: 'off' });
+    expect(cfg.consistency).toEqual({ requireAcCoverage: 'off', requireModuleAc: 'off', requireTagConsumer: 'off' });
     expect(cfg.plugins).toEqual({});
   });
 
