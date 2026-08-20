@@ -167,11 +167,22 @@ export function registerCoreOperations(): void {
   );
 
   CATALOG.register(
-    coreRead('search_pages', 'Full-text search within one page root, indexed and paged.', {
-      rootId: z.string(),
-      query: z.string(),
-      ...paging,
-    }, ['ROOT_NOT_FOUND']),
+    coreRead(
+      'search_pages',
+      'Search the prose of the pages by phrase (`query`) or regex (`regex`) — cross-root by default; `rootId` only NARROWS. A hit is a SECTION (a page, on a root with no section index), carrying `matchCount`; matches are lines. Modes are a cost ladder: `count` (totals), `map` (identity rows, the DEFAULT), `hits` (adds `hunks[]` + `omittedChars`). Enumeration order is `(rootId, path, line_start)` with a declared tie-break, so a full `limit`/`offset` traversal returns each hit exactly once.',
+      {
+        rootId: z.string().optional(),
+        query: z.string().optional(),
+        regex: z.string().optional(),
+        mode: z.enum(['count', 'map', 'hits']).optional(),
+        pathInclude: z.string().optional(),
+        pathExclude: z.string().optional(),
+        anchors: z.array(z.string()).optional(),
+        context: z.number().int().nonnegative().optional(),
+        ...paging,
+      },
+      ['ROOT_NOT_FOUND', 'INVALID_ARGUMENT'],
+    ),
   );
 
   CATALOG.register(

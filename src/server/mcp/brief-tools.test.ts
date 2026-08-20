@@ -53,7 +53,7 @@ describe('update_brief — the guard is the operation\'s, not the caller\'s disc
   async function update(args: Record<string, unknown>) {
     const res = await client.callTool({
       name: 'update_brief',
-      arguments: { brief: 'b.md', action: 'append', content: 'more', ...args },
+      arguments: { path: 'b.md', action: 'append', content: 'more', ...args },
     });
     const text = (res.content as Array<{ type: string; text?: string }>)[0]?.text ?? '{}';
     return { isError: res.isError === true, body: JSON.parse(text) as Record<string, any> };
@@ -65,7 +65,7 @@ describe('update_brief — the guard is the operation\'s, not the caller\'s disc
     // the tool definition the agent reads.
     const res = await client.callTool({
       name: 'update_brief',
-      arguments: { brief: 'b.md', action: 'append', content: 'more' },
+      arguments: { path: 'b.md', action: 'append', content: 'more' },
     });
     expect(res.isError).toBe(true);
     const text = (res.content as Array<{ type: string; text?: string }>)[0]?.text ?? '';
@@ -129,7 +129,7 @@ describe('update_brief — the guard is the operation\'s, not the caller\'s disc
     for (const [label, args] of cases) {
       const res = await client.callTool({
         name: 'update_brief',
-        arguments: { brief: 'b.md', action: 'append', content: 'more', ...args },
+        arguments: { path: 'b.md', action: 'append', content: 'more', ...args },
       });
       const blocks = res.content as Array<{ type: string; text?: string }>;
       expect(blocks.length, `${label}: no content block`).toBeGreaterThan(0);
@@ -210,15 +210,23 @@ describe('get_brief — the read window (0.2.40)', () => {
   });
 
   /**
-   * The catalog row and every other channel have always called this field
-   * `path`; only the MCP rendering called it `brief`. `path` is now what the
-   * schema advertises, and `brief` keeps working so no existing caller breaks.
+   * 0.2.40, breaking: the field is `path`, not `brief`.
+   *
+   * The catalog row, REST and the CLI have always called it `path`; only this
+   * rendering called it `brief`, so an agent that read the catalog wrote a call
+   * the tool refused as missing an argument. It stays REQUIRED — which is why
+   * the old spelling is not kept alongside it: a schema cannot say "one of
+   * these two", and demoting both to optional would weaken the advertised
+   * contract on the one operation that exists to stop an external connection
+   * being handed a default brief.
    */
-  it('accepts `path`, and still accepts the legacy `brief` alias', async () => {
+  it('requires `path`, and refuses a call that names no brief at all', async () => {
     expect((await get({ path: 'b.md' })).isError).toBe(false);
-    expect((await get({ brief: 'b.md' })).isError).toBe(false);
-    const { isError, body } = await get({});
-    expect(isError).toBe(true);
-    expect(body.code).toBe('VALIDATION');
+    // Refused by the SCHEMA, before the handler runs — which is the point of
+    // keeping it required rather than accepting two spellings and checking one
+    // of them by hand.
+    const refused = await client.callTool({ name: 'get_brief', arguments: {} });
+    expect(refused.isError).toBe(true);
+    expect(JSON.stringify(refused.content)).toContain('path');
   });
 });

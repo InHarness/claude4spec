@@ -196,9 +196,9 @@ describe('discovery commands on the CLI', () => {
       seen = [];
       stdout = '';
       reply = { items: [], total: 0, hasMore: false };
-      await runSearchPages(args('search-pages', '--query', 'budget', '--root-id', 'pages', '--mode', 'pages'));
+      await runSearchPages(args('search-pages', '--query', 'budget', '--root-id', 'pages', '--mode', 'map'));
       // CROSS-ROOT: no root segment, `--root-id` only narrows.
-      expect(called()).toBe('/pages/search?q=budget&rootId=pages&mode=pages');
+      expect(called()).toBe('/pages/search?q=budget&rootId=pages&mode=map');
 
       seen = [];
       stdout = '';

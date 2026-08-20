@@ -13,7 +13,7 @@
  *
  * `explicit` — 0.2.13, for the external MCP surface. A connection has no
  * thread, so there is no ambient brief to close over, and the tools take a
- * REQUIRED `brief` argument instead. The distinction is not cosmetic: falling
+ * REQUIRED `path` argument instead. The distinction is not cosmetic: falling
  * back to "the" brief on a channel that never had one is how an update lands in
  * a file the caller did not name. `PROFILES.brief.requiresExplicitBriefTarget`
  * is what selects this mode, and it exists so that the fallback cannot be
@@ -45,23 +45,28 @@ export interface ExplicitBriefToolsContext {
 /**
  * The path argument of the explicit mode, described once for both tools.
  *
- * 0.2.40 — the field is `path`, which is what the operation catalog and every
- * other channel have always called it; `brief` is still ACCEPTED so no existing
- * caller breaks, but it is no longer what the schema advertises. The two names
- * for one field were a drift between the catalog row and its MCP rendering, and
- * an agent reading the catalog was writing a call the tool rejected.
+ * 0.2.40 — the field is `path`. BREAKING: it was `brief`.
+ *
+ * The catalog row, the REST route and the CLI have always called this `path`;
+ * only the MCP rendering called it `brief`. One field under two names is not a
+ * cosmetic inconsistency here — the catalog is what an agent reads to learn the
+ * call, so it was being taught to write `{ path }` against a tool that accepted
+ * only `{ brief }` and refused it as a missing argument.
+ *
+ * It stays REQUIRED, and that is why the fix is a rename rather than an alias
+ * accepted alongside the old name: `required` is enforced by the schema, and a
+ * schema cannot express "one of these two". Demoting both to optional to keep
+ * the old spelling working would move the guarantee into the handler and leave
+ * the advertised contract saying something weaker than the truth — on the one
+ * operation whose whole point is that an external connection must NAME its
+ * brief rather than be given a default one.
  */
 const EXPLICIT_BRIEF_ARG = {
   path: z
     .string()
-    .optional()
     .describe(
       'Path of the brief relative to `briefsDir`, e.g. `0-2-12-to-0-2-13.md`. Required: this connection has no thread, so there is no default brief. List the candidates with the brief artifact read operations.',
     ),
-  brief: z
-    .string()
-    .optional()
-    .describe('Deprecated alias for `path`, accepted for compatibility. Pass `path`.'),
 };
 
 /**
@@ -108,15 +113,14 @@ export function buildBriefToolsServer(
   /**
    * The one place the two addressing modes differ at runtime.
    *
-   * In `explicit` mode the zod schema already marks `brief` required, so a
+   * In `explicit` mode the zod schema already marks `path` required, so a
    * client that omits it is rejected before the handler runs. This guard is for
    * what the schema cannot express — a present-but-empty string — and it fails
    * the same way, naming the field, rather than resolving to `briefsDir` itself.
    */
   const resolveBrief = (args: Record<string, unknown>): string => {
     if (!explicit) return ambientBriefPath!;
-    const named = typeof args.path === 'string' ? args.path : args.brief;
-    const raw = typeof named === 'string' ? named.trim() : '';
+    const raw = typeof args.path === 'string' ? args.path.trim() : '';
     if (raw === '') {
       throw new DomainError(
         'VALIDATION',

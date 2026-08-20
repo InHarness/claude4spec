@@ -253,7 +253,7 @@ describe('surface memoization', () => {
     // handler reaches the CURRENT service, not the first composition's.
     const getBrief = second.byName.get('get_brief');
     expect(getBrief).toBeDefined();
-    const out = JSON.stringify(await getBrief!.handler({ brief: 'b.md' }, {}));
+    const out = JSON.stringify(await getBrief!.handler({ path: 'b.md' }, {}));
     expect(out).toContain('live');
     expect(out).not.toContain('dead');
   });

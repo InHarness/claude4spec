@@ -290,12 +290,19 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
 
   const searchPages = op(
     'search_pages',
-    'Search the prose of the pages, by phrase (`query`) or by regex (`regex`) — the replacement for grepping the specification, and the one search the entity graph cannot stand in for, because it looks for exactly what fell OUT of the graph (a bare HTTP path, a DTO name mentioned in running text). Three modes: "hits" (default) returns matches, "pages" returns which pages match and how often, "count" returns only a total. A hit on a section-indexed root comes back as an `anchor`; on a plain root as (rootId, path, line).',
+    'Search the prose of the pages, by phrase (`query`) or by regex (`regex`) — the replacement for grepping the specification, and the one search the entity graph cannot stand in for, because it looks for exactly what fell OUT of the graph (a bare HTTP path, a DTO name mentioned in running text). THREE MODES, a ladder of cost: "count" returns only the totals; "map" (DEFAULT) returns identity rows `{ rootId, path, anchor, heading, headingPath, matchCount }` with no prose; "hits" adds `hunks[]` + `omittedChars`. There is no fourth rung and no "pages" mode — to read a section, take the `anchor` from a map row and call get_sections. A HIT IS A SECTION, a MATCH is a line: several matches in one section collapse into ONE hit carrying `matchCount`, and no two hits share an `anchor`. On a root with no section index a hit collapses per PAGE and carries no `anchor`. Results enumerate in `(rootId, path, line_start)` order with a declared tie-break, so paging with `limit`/`offset` returns every hit exactly once. There is no `score` and no line number. THREE COST VALVES, coarse to sharp: `rootId`, then `pathInclude`/`pathExclude` (regexes over the page path, applied BEFORE the file is opened), then `anchors` (scan only these sections). A `regex` that could only match across a line boundary (`\\n`, `[\\s\\S]`, an inline flag group) is refused with INVALID_ARGUMENT rather than answered with zero hits — a silent false negative is worse than an error.',
     {
-      query: z.string().optional().describe('Phrase to look for'),
-      regex: z.string().optional().describe('Regular expression; first-class, not a fallback'),
-      rootId: z.string().optional().describe('Restrict to one root; omit to search all of them'),
-      mode: z.enum(['hits', 'pages', 'count']).optional().describe('Shape of the answer; default "hits"'),
+      query: z.string().optional().describe('Phrase to look for; case-insensitive substring, matches inside words too. A UI-grade instrument — prefer `regex` for precision.'),
+      regex: z.string().optional().describe('Regular expression; the DEFAULT instrument here, not a fallback. Matched per line, case-insensitively.'),
+      rootId: z.string().optional().describe('Valve 1 — restrict to one root; omit to search all of them'),
+      mode: z
+        .enum(['count', 'map', 'hits'])
+        .optional()
+        .describe('Shape of the answer; default "map". Pass "hits" explicitly when you need the prose.'),
+      pathInclude: z.string().optional().describe('Valve 2 — regex over the page path; non-matching pages are rejected before being opened'),
+      pathExclude: z.string().optional().describe('Valve 2 — regex over the page path; matching pages are rejected before being opened'),
+      anchors: z.array(z.string()).optional().describe('Valve 3, sharpest — limit the scan to these sections'),
+      context: z.number().int().nonnegative().optional().describe('Lines of context around each match in "hits" mode. Overlapping windows merge into one block; no line is emitted twice.'),
       ...pageShape,
     },
     (discovery, args) =>
@@ -303,7 +310,11 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
         query: optionalString(args.query),
         regex: optionalString(args.regex),
         rootId: optionalString(args.rootId),
-        mode: args.mode as 'hits' | 'pages' | 'count' | undefined,
+        mode: args.mode as 'count' | 'map' | 'hits' | undefined,
+        pathInclude: optionalString(args.pathInclude),
+        pathExclude: optionalString(args.pathExclude),
+        anchors: args.anchors as string[] | undefined,
+        context: optionalNumber(args.context),
         limit: optionalNumber(args.limit),
         offset: optionalNumber(args.offset),
       }),

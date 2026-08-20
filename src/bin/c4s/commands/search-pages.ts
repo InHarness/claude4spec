@@ -10,12 +10,17 @@ import type { CliCommandContribution } from '../registry.js';
  * I have the text" path.
  *
  *   c4s search-pages (--query <q> | --regex <r>) [--root-id <id>]
- *                    [--mode hits|pages|count] [--limit <n>] [--offset <n>]
+ *                    [--mode count|map|hits] [--path-include <re>] [--path-exclude <re>]
+ *                    [--anchors <a1,a2>] [--context <n>] [--limit <n>] [--offset <n>]
  *
  * A hit on a section-indexed root carries an `anchor`, which is what makes
  * `list-sections --by anchor` and `get-sections` reachable from a phrase. On a
- * root without a section index it degrades to `(rootId, path, line)` — a
- * DISCRIMINATED union, so the two are never confused for one another.
+ * root without a section index it collapses per PAGE and carries no anchor.
+ *
+ * 0.2.40 — `--mode pages` is GONE and the default is `map`, not `hits`. A
+ * script that relied on the old default now gets identity rows instead of prose
+ * and must pass `--mode hits` to get it back; one that passed `--mode pages` is
+ * refused outright rather than quietly answered with something else.
  *
  * 0.2.13 — `server-delegating`, over `GET /api/pages/search`. Cross-root, so it
  * mounts WITHOUT a root segment (`--root-id` only narrows it) — and ahead of
@@ -36,10 +41,17 @@ export async function runSearchPages(args: ParsedArgs): Promise<void> {
   }
 
   const rawMode = optionalString(args, 'mode');
-  if (rawMode !== undefined && rawMode !== 'hits' && rawMode !== 'pages' && rawMode !== 'count') {
-    throw new CliError('INVALID_ARGS', `--mode must be 'hits', 'pages' or 'count', got '${rawMode}'`);
+  if (rawMode !== undefined && rawMode !== 'hits' && rawMode !== 'map' && rawMode !== 'count') {
+    throw new CliError(
+      'INVALID_ARGS',
+      `--mode must be 'count', 'map' or 'hits', got '${rawMode}'`,
+      rawMode === 'pages'
+        ? "'pages' was removed in 0.2.40 — use 'map' for identity rows, then get-sections on an anchor to read one"
+        : "the ladder is count (totals) -> map (identity, the default) -> hits (adds prose)",
+    );
   }
   const rootId = optionalString(args, 'root-id');
+  const context = optionalString(args, 'context');
 
   writeOutput(
     await delegateGet(args, '/pages/search', {
@@ -47,6 +59,10 @@ export async function runSearchPages(args: ParsedArgs): Promise<void> {
       regex,
       rootId,
       mode: rawMode,
+      pathInclude: optionalString(args, 'path-include'),
+      pathExclude: optionalString(args, 'path-exclude'),
+      anchors: optionalString(args, 'anchors'),
+      context,
       ...paginationFrom(args),
     }),
     args,

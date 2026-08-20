@@ -135,16 +135,19 @@ describe('MCP over HTTP', () => {
   });
 
   describe('the brief profile has no ambient brief', () => {
-    it('makes `brief` a required argument rather than defaulting to one', async () => {
+    // 0.2.40 — the field is `path`, renamed from `brief` to match the catalog
+    // row and every other channel. It stays REQUIRED, which is the property
+    // this test is actually about.
+    it('makes `path` a required argument rather than defaulting to a brief', async () => {
       const client = await connect('?profile=brief');
       const tool = (await client.listTools()).tools.find((t) => t.name === 'update_brief')!;
-      expect(tool.inputSchema.required).toContain('brief');
+      expect(tool.inputSchema.required).toContain('path');
 
       // The failure names the missing field. A fallback to "the" brief would
       // have written to a file the caller never named.
       const failed = await client.callTool({ name: 'update_brief', arguments: { action: 'append', content: 'x' } });
       expect(failed.isError).toBe(true);
-      expect(JSON.stringify(failed.content)).toContain('brief');
+      expect(JSON.stringify(failed.content)).toContain('path');
     });
   });
 

@@ -164,7 +164,8 @@ Pages and sections (a page is (rootId, path); an anchor is globally unique):
   get-page --root-id <id> --path <p> [--range <from:to>]
                                     the page as authored, XML tags untouched; --range is
                                     accepted only on a root without a section index
-  search-pages (--query <q> | --regex <r>) [--root-id <id>] [--mode hits|pages|count]
+  search-pages (--query <q> | --regex <r>) [--root-id <id>] [--mode count|map|hits]
+               [--path-include <re>] [--path-exclude <re>] [--anchors <a1,a2>] [--context <n>]
                                     hits on an indexed root carry an anchor
 
 Pagination (every list command above):
