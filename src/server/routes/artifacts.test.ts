@@ -152,6 +152,69 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
       );
     });
 
+    /**
+     * 0.2.40 — the artifact read family's window, over REST.
+     *
+     * Channel parity is the point: the same `range` that `get_brief` takes over
+     * MCP has to exist here, or a brief too large to answer in one response is
+     * unreadable from every channel but one.
+     */
+    describe('the read window (0.2.40)', () => {
+      beforeEach(async () => {
+        await writeArtifact(
+          'brief',
+          'long.md',
+          {
+            type: 'brief',
+            source: 'analysis',
+            from_release: null,
+            to_release: null,
+            generated_at: '2026-01-01T00:00:00.000Z',
+            generator_version: 'test',
+            implemented: false,
+          },
+          Array.from({ length: 20 }, (_, i) => `line ${i + 1}`).join('\n') + '\n',
+        );
+      });
+
+      it('[ac:ac-get-brief-ma-okno-odczytu-range-i-jaw] ?range narrows the content, and nothing gates it', async () => {
+        const whole = await request(app).get('/api/artifacts/brief/long.md');
+        const windowed = await request(app).get('/api/artifacts/brief/long.md?range=1:4');
+
+        expect(windowed.status).toBe(200);
+        expect(windowed.body.data.content.split('\n')).toHaveLength(4);
+        expect(windowed.body.data.content.length).toBeLessThan(whole.body.data.content.length);
+      });
+
+      it('the hash stays the WHOLE file’s, so a windowed read still arms expectedHash', async () => {
+        const whole = await request(app).get('/api/artifacts/brief/long.md');
+        const windowed = await request(app).get('/api/artifacts/brief/long.md?range=5:6');
+        // A hash of the window would fail every write made with it, and the
+        // value itself would not say which of the two it is.
+        expect(windowed.body.data.hash).toBe(whole.body.data.hash);
+      });
+
+      it('[ac:ac-rodzina-odczytu-artefaktu-wspolna-tak] a range past the end of the file refuses, stating the size', async () => {
+        const res = await request(app).get('/api/artifacts/brief/long.md?range=900:999');
+        expect(res.status).toBe(400);
+        expect(JSON.stringify(res.body)).toContain('lines');
+      });
+
+      it('a malformed ?range is refused rather than ignored', async () => {
+        // Ignoring it would answer with the whole file to a caller who asked
+        // for a window precisely because the whole file is too much.
+        const res = await request(app).get('/api/artifacts/brief/long.md?range=nonsense');
+        expect(res.status).toBe(400);
+      });
+
+      it('omitting ?range returns the whole artifact, as it always did', async () => {
+        const res = await request(app).get('/api/artifacts/brief/long.md');
+        expect(res.status).toBe(200);
+        expect(res.body.data.content.split('\n').length).toBeGreaterThan(19);
+        expect(res.body.data.truncated).toBeUndefined();
+      });
+    });
+
     it('GET /api/artifacts/brief lists with frontmatter + hash + updatedAt, filtered by ?implemented=', async () => {
       const all = await request(app).get('/api/artifacts/brief');
       expect(all.status).toBe(200);
