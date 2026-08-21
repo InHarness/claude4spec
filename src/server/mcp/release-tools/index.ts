@@ -107,7 +107,7 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
 
   const releaseShow = mcpTool(
     'release_show',
-    "Show a release's identification surface (release metadata + lists of entity slugs/page paths present at the release). Returns `MCPSpecSnapshot` — IDENTIFICATION only, not full entity/page data. To inspect the data, call `release_diff` (with this release as `to` and any earlier release — or `null` — as `from`). Accepts numeric id or release name. Filters: `include` (defaults to ['pages','entities']) trims the dimensions returned; `entityTypes` restricts entity types. Brief versions (`file_version.kind='brief'`) are excluded from `pages` (L2 invariant).",
+    "Show a release's identification surface (release metadata + lists of entity slugs/page paths present at the release). Returns `MCPSpecSnapshot` — IDENTIFICATION only, not full entity/page data. To inspect the data, call `release_diff` (with this release as `to` and any earlier release — or `null` — as `from`). Accepts numeric id or release name. Filters: `include` (defaults to ['pages','entities']) trims the dimensions returned; `entityTypes` restricts entity types. Brief versions (`file_version.kind='brief'`) are excluded from `pages` (L2 invariant). RESPONSE BUDGET: a window cut short by the budget reports `truncationHint` naming the next `offset`; rows here are identity-only, so degradation is always a narrower window and never a poorer row.",
     {
       idOrName: z.union([z.string(), z.number()]).describe('Numeric id or release name'),
       include: z
@@ -152,7 +152,7 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
 
   const releaseDiff = mcpTool(
     'release_diff',
-    "Compute a SELF-CONTAINED structured diff between two releases. Heavy mode (default): each entity carries full `before`/`after` snapshots (per plugin's serializer); each modified section carries full `before`/`after` raw markdown. `entities[]`/`pages[]` are paginated independently by `limit`/`offset` (default 5), and `total: { entities?, pages? }` reports the full count after `include`/`entityTypes` filters, before the window. Light mode (`summaryOnly: true`): returns a delta MAP — `total` + identifiers `{ type, slug, name, op }` per entity and `{ path, op }` per page (incl. `op:'delete'`), WITHOUT `before`/`after`/`content`; the map is FULL and ignores `limit`/`offset`. Intended use: probe with `summaryOnly: true` to learn what changed, then fan out the heavy slices (`entityTypes` and/or `limit`/`offset`) to subagents. Pass `from: null` for the initial brief (synthetic empty `from`; all entries become `op:'create'` with `before` omitted). `from === to` returns an empty diff. There is NO `line_diff`.",
+    "Compute a SELF-CONTAINED structured diff between two releases. Heavy mode (default): each entity carries full `before`/`after` snapshots (per plugin's serializer); each modified section carries full `before`/`after` raw markdown. `entities[]`/`pages[]` are paginated independently by `limit`/`offset` (default 5), and `total: { entities?, pages? }` reports the full count after `include`/`entityTypes` filters, before the window. Light mode (`summaryOnly: true`): returns a delta MAP — `total` + identifiers `{ type, slug, name, op }` per entity and `{ path, op }` per page (incl. `op:'delete'`), WITHOUT `before`/`after`/`content`; the map is FULL and ignores `limit`. It is the guaranteed floor of degradation: for a map too large to fit in one response it PAGES from `offset` (never dropping a row) and says so via `truncationHint`. RESPONSE BUDGET: an item that does not fit is NEVER silently omitted — it comes back with its identity and `truncated: true`, an entity losing `before`/`after` WHOLE and a section keeping `content` cut as TEXT, while the envelope's `truncationHint` says how to retry. Absence from `entities[]`/`pages[]` therefore means one thing only: that thing did not change. Do NOT assume `op:'update'` implies `before`/`after` — check `truncated` first. Intended use: probe with `summaryOnly: true` to learn what changed, then fan out the heavy slices (`entityTypes` and/or `limit`/`offset`) to subagents. Pass `from: null` for the initial brief (synthetic empty `from`; all entries become `op:'create'` with `before` omitted). `from === to` returns an empty diff. There is NO `line_diff`.",
     {
       fromIdOrName: z
         .union([z.string(), z.number(), z.null()])
@@ -176,7 +176,7 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
         .boolean()
         .optional()
         .describe(
-          'Default false. true = light delta-map: only `total` + identifiers `{ type, slug, name, op }` / `{ path, op }` (incl. deletes), no before/after/content. Full lists — ignores limit/offset.',
+          'Default false. true = light delta-map: only `total` + identifiers `{ type, slug, name, op }` / `{ path, op }` (incl. deletes), no before/after/content. Full lists — ignores `limit`. `offset` IS honoured, as the resume cursor for a map too big for one response (`truncationHint` names the next offset).',
         ),
       roots: z
         .array(z.string())
@@ -194,7 +194,7 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
         .number()
         .optional()
         .describe(
-          'Window offset applied independently to entities[] and pages[] (heavy mode only). Default 0. Beyond total → empty list + total. Negative → 400 INVALID_PAGINATION.',
+          'Window offset applied independently to entities[] and pages[]. Default 0. Beyond total → empty list + total. Negative → 400 INVALID_PAGINATION. In light mode (`summaryOnly: true`) this is the resume cursor for an identity map that does not fit in one response.',
         ),
     },
     async (args) => {

@@ -164,7 +164,8 @@ Pages and sections (a page is (rootId, path); an anchor is globally unique):
   get-page --root-id <id> --path <p> [--range <from:to>]
                                     the page as authored, XML tags untouched; --range is
                                     accepted only on a root without a section index
-  search-pages (--query <q> | --regex <r>) [--root-id <id>] [--mode hits|pages|count]
+  search-pages (--query <q> | --regex <r>) [--root-id <id>] [--mode count|map|hits]
+               [--path-include <re>] [--path-exclude <re>] [--anchors <a1,a2>] [--context <n>]
                                     hits on an indexed root carry an anchor
 
 Pagination (every list command above):
@@ -186,7 +187,8 @@ Plugins (M33 — server-delegating: reports the SERVER host's loader, not a seco
 
 Brief/patch (M11 — server-delegating, like every read above):
   list-briefs [--limit N] [--offset M] [--status implemented|pending]
-  read-brief <brief-path>           <brief-path> relative to briefsDir
+  read-brief <brief-path> [--range <from>:<to>]
+                                    <brief-path> relative to briefsDir; --range is a 1-based inclusive line window
   file-patch --brief <brief-path> --desc <s> [--kind drift|missing|incorrect|clarification]
              [--body-file <f>]      body from --body-file or stdin; the SERVER writes the
                                     file under patchesDir and mints its slug

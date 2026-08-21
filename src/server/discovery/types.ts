@@ -304,19 +304,65 @@ export interface SearchPagesInput {
   query?: string;
   regex?: string;
   rootId?: string;
-  mode?: 'hits' | 'pages' | 'count';
+  /**
+   * The cost ladder. 0.2.40 — `'pages'` is GONE and the default is `'map'`.
+   *
+   * `count` answers how much there is, `map` answers where it is, `hits` answers
+   * what it says. There is no fourth rung: "give me the section" is
+   * `get_sections`, called with an anchor this handed back.
+   */
+  mode?: 'count' | 'map' | 'hits';
+  /** Valve 2 — regex over the page PATH; a non-match is rejected before the file is opened. */
+  pathInclude?: string;
+  /** Valve 2 — regex over the page PATH; a match is rejected before the file is opened. */
+  pathExclude?: string;
+  /** Valve 3, the sharpest — restrict the scan to these sections. */
+  anchors?: string[];
+  /** Lines of context around each match in `hits` mode. Overlapping windows merge; no line twice. */
+  context?: number;
   limit?: number;
   offset?: number;
 }
 
-export type SearchPageHit =
-  | { kind: 'section'; rootId: string; anchor: string; path: string; line: number; fragment: string; score: number }
-  | { kind: 'line'; rootId: string; path: string; line: number; fragment: string; score: number };
+/**
+ * One hit is one SECTION (or, on a root with no section index, one PAGE). The
+ * unit of a MATCH is still a line, and `matchCount` is how many of them fell
+ * inside this hit — so two hits never share an `anchor`.
+ *
+ * There is deliberately no `score` and no line number. `score` was positional
+ * rather than relevant, and ranking by it collided so often that it made
+ * `offset` unreliable; the line number belonged to the per-line hit this
+ * replaces, and a section's own coordinates are what `get_sections` answers.
+ */
+export interface SearchPageHit {
+  kind: 'section' | 'page';
+  rootId: string;
+  path: string;
+  /**
+   * Present iff `kind` is `'section'`. Two different situations produce a
+   * `'page'` hit, and only one of them is about the root: an unindexed root has
+   * no sections at all, and an INDEXED root still has prose that lives outside
+   * every section — the lines above the first heading, and any heading the
+   * indexer left without an anchor. A consumer that reads "indexed root" as
+   * "anchor guaranteed" passes `undefined` into `get_sections`; `kind` is the
+   * discriminator, and it is on every row for that reason.
+   */
+  anchor?: string;
+  heading?: string;
+  /** The ancestor chain including this heading, as `list_sections` reports it. */
+  headingPath?: string[];
+  matchCount: number;
+  /** `hits` mode only: the matching lines with `context` around them, merged. */
+  hunks?: string[];
+  /** `hits` mode only: characters dropped by the per-hunk ceiling. */
+  omittedChars?: number;
+}
 
 export type SearchPagesResult =
   | (Page<SearchPageHit> & { mode: 'hits' })
-  | (Page<{ rootId: string; path: string; matchCount: number }> & { mode: 'pages' })
-  | { mode: 'count'; total: number };
+  | (Page<SearchPageHit> & { mode: 'map' })
+  /** `total` is HITS (so it agrees with the rungs above); `matches` is lines. */
+  | { mode: 'count'; total: number; matches: number };
 
 export interface SearchEntitiesInput {
   type: string;

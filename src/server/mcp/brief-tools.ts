@@ -13,7 +13,7 @@
  *
  * `explicit` — 0.2.13, for the external MCP surface. A connection has no
  * thread, so there is no ambient brief to close over, and the tools take a
- * REQUIRED `brief` argument instead. The distinction is not cosmetic: falling
+ * REQUIRED `path` argument instead. The distinction is not cosmetic: falling
  * back to "the" brief on a channel that never had one is how an update lands in
  * a file the caller did not name. `PROFILES.brief.requiresExplicitBriefTarget`
  * is what selects this mode, and it exists so that the fallback cannot be
@@ -42,12 +42,48 @@ export interface ExplicitBriefToolsContext {
   target: 'explicit';
 }
 
-/** The `brief` argument of the explicit mode, described once for both tools. */
+/**
+ * The path argument of the explicit mode, described once for both tools.
+ *
+ * 0.2.40 — the field is `path`. BREAKING: it was `brief`.
+ *
+ * The catalog row, the REST route and the CLI have always called this `path`;
+ * only the MCP rendering called it `brief`. One field under two names is not a
+ * cosmetic inconsistency here — the catalog is what an agent reads to learn the
+ * call, so it was being taught to write `{ path }` against a tool that accepted
+ * only `{ brief }` and refused it as a missing argument.
+ *
+ * It stays REQUIRED, and that is why the fix is a rename rather than an alias
+ * accepted alongside the old name: `required` is enforced by the schema, and a
+ * schema cannot express "one of these two". Demoting both to optional to keep
+ * the old spelling working would move the guarantee into the handler and leave
+ * the advertised contract saying something weaker than the truth — on the one
+ * operation whose whole point is that an external connection must NAME its
+ * brief rather than be given a default one.
+ */
 const EXPLICIT_BRIEF_ARG = {
-  brief: z
+  path: z
     .string()
     .describe(
       'Path of the brief relative to `briefsDir`, e.g. `0-2-12-to-0-2-13.md`. Required: this connection has no thread, so there is no default brief. List the candidates with the brief artifact read operations.',
+    ),
+};
+
+/**
+ * The read window, shared shape with `get_page.range` — 1-based, inclusive.
+ *
+ * Unconditionally allowed, with no `sectionIndexed` gate: a brief never enters
+ * `section_index`, so `list_sections` + `get_sections` is not a second way to
+ * resume a large read the way it is for a page. `range` is the only one, which
+ * is exactly why it had to exist — before it, a brief past the response budget
+ * simply could not be read through.
+ */
+const BRIEF_RANGE_ARG = {
+  range: z
+    .object({ start: z.number().int().positive(), end: z.number().int().positive() })
+    .optional()
+    .describe(
+      '1-based inclusive line window onto the brief. Always allowed. A `start` past the end of the file is INVALID_ARGUMENT stating the file size.',
     ),
 };
 
@@ -77,18 +113,18 @@ export function buildBriefToolsServer(
   /**
    * The one place the two addressing modes differ at runtime.
    *
-   * In `explicit` mode the zod schema already marks `brief` required, so a
+   * In `explicit` mode the zod schema already marks `path` required, so a
    * client that omits it is rejected before the handler runs. This guard is for
    * what the schema cannot express — a present-but-empty string — and it fails
    * the same way, naming the field, rather than resolving to `briefsDir` itself.
    */
   const resolveBrief = (args: Record<string, unknown>): string => {
     if (!explicit) return ambientBriefPath!;
-    const raw = typeof args.brief === 'string' ? args.brief.trim() : '';
+    const raw = typeof args.path === 'string' ? args.path.trim() : '';
     if (raw === '') {
       throw new DomainError(
         'VALIDATION',
-        'brief is required: this connection has no thread, so there is no default brief to fall back on',
+        'path is required: this connection has no thread, so there is no default brief to fall back on',
       );
     }
     return raw;
@@ -98,17 +134,23 @@ export function buildBriefToolsServer(
     'get_brief',
     [
       explicit
-        ? 'Read the full current state of the brief named by `brief`.'
-        : 'Read the full current state of the brief attached to this thread.',
+        ? 'Read the current state of the brief named by `path`.'
+        : 'Read the current state of the brief attached to this thread.',
       'Returns { frontmatter, body, content, hash }. Use `hash` as `expectedHash`',
-      'in the next `update_brief` call to detect concurrent edits.',
+      'in the next `update_brief` call to detect concurrent edits — it is always the',
+      'digest of the WHOLE file, including when `range` narrowed what came back.',
+      'Pass `range: { start, end }` to read a 1-based inclusive line window; it is',
+      'always allowed (a brief has no section index, so a window is the only way to',
+      'resume). A brief over the response budget read WITHOUT `range` comes back',
+      '`truncated: true` with a `truncationHint` naming the range to use.',
       'Brief lives on disk under `briefsDir`; you do NOT have filesystem access',
       '(no Read/Write/Edit) — this tool is the only way to read brief content.',
     ].join(' '),
-    explicit ? { ...EXPLICIT_BRIEF_ARG } : {},
+    explicit ? { ...EXPLICIT_BRIEF_ARG, ...BRIEF_RANGE_ARG } : { ...BRIEF_RANGE_ARG },
     async (args) => {
       try {
-        const brief = await briefService.getBrief(resolveBrief(args));
+        const range = args.range as { start: number; end: number } | undefined;
+        const brief = await briefService.getBrief(resolveBrief(args), { range });
         return ok(brief, 'get_brief');
       } catch (err) {
         return fail(err);

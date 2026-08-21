@@ -11,6 +11,7 @@ import type {
   ArtifactThreadListItem,
 } from '../../shared/entities.js';
 import { DomainError } from '../services/tags.js';
+import type { ArtifactRange } from '../services/artifact-read.js';
 
 /**
  * M36 — generic REST family replacing the per-kind `/api/briefs/*`/`/api/patches/*`
@@ -38,7 +39,7 @@ import { DomainError } from '../services/tags.js';
  */
 interface ArtifactKindAdapter {
   list(query: Record<string, unknown>): ArtifactListItem[];
-  get(path: string): Promise<ArtifactResponse>;
+  get(path: string, range?: ArtifactRange): Promise<ArtifactResponse>;
   updateContent(path: string, content: string, expectedHash: string): Promise<ArtifactResponse>;
   updateFrontmatter(path: string, frontmatter: Record<string, unknown>): Promise<ArtifactResponse>;
   createThread(path: string, name?: string | null): Promise<{ threadId: string }>;
@@ -88,9 +89,16 @@ function buildBriefAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
         updatedAt: item.lastModifiedAt,
       }));
     },
-    async get(path) {
-      const b = await briefs.getBrief(path);
-      return { path: b.path, frontmatter: b.frontmatter, body: b.body, content: b.content, hash: b.hash };
+    async get(path, range) {
+      const b = await briefs.getBrief(path, { range });
+      return {
+        path: b.path,
+        frontmatter: b.frontmatter,
+        body: b.body,
+        content: b.content,
+        hash: b.hash,
+        ...(b.truncated ? { truncated: b.truncated, truncationHint: b.truncationHint } : {}),
+      };
     },
     async updateContent(path, content, expectedHash) {
       await briefs.updateContent({ path, content, expectedHash, changedBy: 'user' });
@@ -124,9 +132,16 @@ function buildPatchAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
         updatedAt: item.lastModified,
       }));
     },
-    async get(path) {
-      const p = await patches.getPatch(path);
-      return { path: p.path, frontmatter: p.frontmatter, body: p.body, content: p.content, hash: p.hash };
+    async get(path, range) {
+      const p = await patches.getPatch(path, { range });
+      return {
+        path: p.path,
+        frontmatter: p.frontmatter,
+        body: p.body,
+        content: p.content,
+        hash: p.hash,
+        ...(p.truncated ? { truncated: p.truncated, truncationHint: p.truncationHint } : {}),
+      };
     },
     async updateContent(path, content, expectedHash) {
       const p = await patches.updateContent({ path, content, expectedHash });
@@ -160,9 +175,16 @@ function buildPlanAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
         updatedAt: item.updatedAt,
       }));
     },
-    async get(path) {
-      const p = await plans.getByPath(path);
-      return { path: p.path, frontmatter: p.frontmatter, body: p.body, content: p.content, hash: p.hash };
+    async get(path, range) {
+      const p = await plans.getByPath(path, { range });
+      return {
+        path: p.path,
+        frontmatter: p.frontmatter,
+        body: p.body,
+        content: p.content,
+        hash: p.hash,
+        ...(p.truncated ? { truncated: p.truncated, truncationHint: p.truncationHint } : {}),
+      };
     },
     async updateContent(path, content, expectedHash) {
       await plans.updateContent({ path, content, expectedHash, changedBy: 'user' });
@@ -210,6 +232,26 @@ function extractPath(params: unknown): string {
   const splat = (params as Record<string, string>)[0];
   if (!splat) throw new DomainError('VALIDATION', 'missing artifact path');
   return splat;
+}
+
+/**
+ * `?range=<start>:<end>` — the artifact read family's line window, in the same
+ * `from:to` spelling `c4s get-page --range` already uses. Rejected loudly rather
+ * than ignored: a window silently dropped would answer with the whole file, and
+ * a caller asking for a window because the file is too big would get exactly the
+ * response it was trying to avoid.
+ */
+function parseRangeQuery(raw: unknown): ArtifactRange | undefined {
+  if (raw === undefined || raw === '') return undefined;
+  const m = /^(\d+):(\d+)$/.exec(String(raw));
+  if (!m) {
+    throw new DomainError(
+      'INVALID_ARGUMENT',
+      `?range must be '<start>:<end>' (1-based, inclusive), got ${JSON.stringify(String(raw))}`,
+      'e.g. ?range=1:400',
+    );
+  }
+  return { start: Number(m[1]), end: Number(m[2]) };
 }
 
 /** `?limit`/`?offset` with the family's defaults; anything non-numeric is a 400. */
@@ -379,7 +421,7 @@ export function artifactsRouter(deps: ArtifactsRouterDeps): Router {
       // call; they now all use `GET .../threads` (which pages properly), so
       // merging it meant a second chat_thread scan per detail fetch whose
       // result nothing read — and one silently capped at the default limit.
-      res.json({ data: await adapters[kind].get(path) });
+      res.json({ data: await adapters[kind].get(path, parseRangeQuery(req.query.range)) });
     } catch (err) {
       next(err);
     }

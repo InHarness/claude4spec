@@ -3,6 +3,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { buildBriefToolsServer } from './brief-tools.js';
 import { ConflictError, type BriefService } from '../services/brief.js';
+import { DomainError } from '../services/tags.js';
 
 /**
  * The concurrency guard on `update_brief`, which the tool declared and did not
@@ -52,7 +53,7 @@ describe('update_brief — the guard is the operation\'s, not the caller\'s disc
   async function update(args: Record<string, unknown>) {
     const res = await client.callTool({
       name: 'update_brief',
-      arguments: { brief: 'b.md', action: 'append', content: 'more', ...args },
+      arguments: { path: 'b.md', action: 'append', content: 'more', ...args },
     });
     const text = (res.content as Array<{ type: string; text?: string }>)[0]?.text ?? '{}';
     return { isError: res.isError === true, body: JSON.parse(text) as Record<string, any> };
@@ -64,7 +65,7 @@ describe('update_brief — the guard is the operation\'s, not the caller\'s disc
     // the tool definition the agent reads.
     const res = await client.callTool({
       name: 'update_brief',
-      arguments: { brief: 'b.md', action: 'append', content: 'more' },
+      arguments: { path: 'b.md', action: 'append', content: 'more' },
     });
     expect(res.isError).toBe(true);
     const text = (res.content as Array<{ type: string; text?: string }>)[0]?.text ?? '';
@@ -128,7 +129,7 @@ describe('update_brief — the guard is the operation\'s, not the caller\'s disc
     for (const [label, args] of cases) {
       const res = await client.callTool({
         name: 'update_brief',
-        arguments: { brief: 'b.md', action: 'append', content: 'more', ...args },
+        arguments: { path: 'b.md', action: 'append', content: 'more', ...args },
       });
       const blocks = res.content as Array<{ type: string; text?: string }>;
       expect(blocks.length, `${label}: no content block`).toBeGreaterThan(0);
@@ -139,5 +140,93 @@ describe('update_brief — the guard is the operation\'s, not the caller\'s disc
       expect(Object.keys(body).length, `${label}: empty payload`).toBeGreaterThan(0);
       expect(body.newHash ?? body.code, `${label}: neither newHash nor code`).toBeDefined();
     }
+  });
+});
+
+/**
+ * 0.2.40 — `get_brief` gains the artifact family's read window.
+ *
+ * The hole it closes: a brief larger than the response budget had no second way
+ * to be read. Pages have one (`list_sections` + `get_sections`), but a brief
+ * never enters `section_index`, so without `range` the tail of a large brief was
+ * simply unreachable through the only channel allowed to read it.
+ */
+describe('get_brief — the read window (0.2.40)', () => {
+  const FILE = ['---', 'type: brief', '---', '# Brief', '', 'alpha', 'beta', 'gamma'].join('\n');
+  let seenRange: unknown;
+  let client: Client;
+
+  beforeEach(async () => {
+    seenRange = 'NOT_CALLED';
+    const briefService = {
+      getBrief: async (path: string, opts?: { range?: { start: number; end: number } }) => {
+        seenRange = opts?.range;
+        const range = opts?.range;
+        const lines = FILE.split('\n');
+        if (range && range.start > lines.length) {
+          throw new DomainError(
+            'INVALID_ARGUMENT',
+            `range starts at line ${range.start} but brief '${path}' has ${lines.length} lines`,
+          );
+        }
+        const content = range ? lines.slice(range.start - 1, range.end).join('\n') : FILE;
+        return { path, frontmatter: { type: 'brief' }, body: content, content, hash: 'h'.repeat(64) };
+      },
+    } as unknown as BriefService;
+
+    const { server } = buildBriefToolsServer({ briefService, target: 'explicit' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    client = new Client({ name: 'test-client', version: '0.0.0' });
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+  });
+
+  async function get(args: Record<string, unknown>) {
+    const res = await client.callTool({ name: 'get_brief', arguments: args });
+    const text = (res.content as Array<{ type: string; text?: string }>)[0]?.text ?? '{}';
+    return { isError: res.isError === true, body: JSON.parse(text) as Record<string, any> };
+  }
+
+  it('[ac:ac-get-brief-ma-okno-odczytu-range-i-jaw] forwards range and returns the window — no sectionIndexed gate refuses it', () => {
+    return get({ path: 'b.md', range: { start: 6, end: 7 } }).then(({ isError, body }) => {
+      expect(isError).toBe(false);
+      expect(seenRange).toEqual({ start: 6, end: 7 });
+      expect(body.content).toBe('alpha\nbeta');
+    });
+  });
+
+  it('[ac:ac-rodzina-odczytu-artefaktu-wspolna-tak] a range past the end of the file refuses with INVALID_ARGUMENT stating the size', async () => {
+    const { isError, body } = await get({ path: 'b.md', range: { start: 900, end: 999 } });
+    expect(isError).toBe(true);
+    expect(body.code).toBe('INVALID_ARGUMENT');
+    expect(body.error).toContain('8 lines');
+  });
+
+  it('omitting range reads the whole brief, as it always did', async () => {
+    const { isError, body } = await get({ path: 'b.md' });
+    expect(isError).toBe(false);
+    expect(seenRange).toBeUndefined();
+    expect(body.content).toBe(FILE);
+  });
+
+  /**
+   * 0.2.40, breaking: the field is `path`, not `brief`.
+   *
+   * The catalog row, REST and the CLI have always called it `path`; only this
+   * rendering called it `brief`, so an agent that read the catalog wrote a call
+   * the tool refused as missing an argument. It stays REQUIRED — which is why
+   * the old spelling is not kept alongside it: a schema cannot say "one of
+   * these two", and demoting both to optional would weaken the advertised
+   * contract on the one operation that exists to stop an external connection
+   * being handed a default brief.
+   */
+  it('requires `path`, and refuses a call that names no brief at all', async () => {
+    expect((await get({ path: 'b.md' })).isError).toBe(false);
+    // Refused by the SCHEMA, before the handler runs — which is the point of
+    // keeping it required rather than accepting two spellings and checking one
+    // of them by hand.
+    const refused = await client.callTool({ name: 'get_brief', arguments: {} });
+    expect(refused.isError).toBe(true);
+    expect(JSON.stringify(refused.content)).toContain('path');
   });
 });

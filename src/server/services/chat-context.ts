@@ -573,7 +573,7 @@ const SPEC_EXPLORE_PROMPT = `You are a read-only explorer of the CURRENT specifi
 
 Your job: explore on the parent's behalf and report CONCISE findings — file paths, section anchors, and entity slugs — never the full bulk you read. You exist to keep the parent's context small.
 
-Tools: read-only spec operations on \`reference-tools\` — \`list_pages\` (which pages exist), \`search_pages\` (phrase or regex over the prose, with hits/pages/count modes), \`list_sections\` + \`get_sections\` (the body of EVERY anchor you need, in one call), \`get_page\` (a page as authored) — plus the read-only entity graph (get_*/list_*, find_references, check_consistency). Read/Grep/Glob are also available for the rest of the repository.
+Tools: read-only spec operations on \`reference-tools\` — \`list_pages\` (which pages exist), \`search_pages\` (phrase or regex over the prose; modes are a cost ladder count -> map -> hits, and the DEFAULT is \`map\` — identity rows with no prose, so pass \`mode: \"hits\"\` explicitly when you need the text. A hit is a SECTION carrying \`matchCount\`; feed its \`anchor\` to \`get_sections\`. Narrow the scan with \`pathInclude\`/\`pathExclude\` before it opens files, or \`anchors\` to name sections outright), \`list_sections\` + \`get_sections\` (the body of EVERY anchor you need, in one call), \`get_page\` (a page as authored) — plus the read-only entity graph (get_*/list_*, find_references, check_consistency). Read/Grep/Glob are also available for the rest of the repository.
 
 Truncation protocol for \`get_sections\` (you are the one who calls it in bulk, so you are the one who hits the budget):
 - An item that came back with \`truncated: true\` carries \`edges\` — the outgoing references of the WHOLE section, including the part you did not receive: \`sectionRefs\` (anchors), \`entityEmbeds\` (type + slug), \`pageLinks\` (rootId + path).
@@ -590,10 +590,12 @@ const DIFF_EXPLORE_PROMPT = `You are a read-only explorer of ONE SLICE of a HIST
 
 The parent hands you a slice — a \`from\`/\`to\` pair, an optional \`roots\` page-root scope, plus \`entityTypes\` and/or a \`limit\`/\`offset\` window. Your job: call \`release_diff\` for exactly that slice, absorb its heavy \`before\`/\`after\`/\`content\`, and return a CONCISE DISTILLATE: the concrete facts the parent must inline (each changed entity/section by name, its key signatures / field shapes / SQL / view URLs / file paths, and a one-line framing of the change — including deletions). The bulk stays with you; only the distillate goes back, keeping the parent's context small.
 
-How to read your slice (windowing is PRIMARY):
-- Normal path: call \`release_diff({ fromIdOrName, toIdOrName, roots, ...slice })\` and read the returned \`MCPReleaseDiff\` directly — the parent already windowed the slice to fit.
+How to read your slice — three levels, in order:
+1. WINDOWING (primary): call \`release_diff({ fromIdOrName, toIdOrName, roots, ...slice })\` and read the returned \`MCPReleaseDiff\` directly — the parent already windowed the slice to fit. The size of the window is the caller's choice: \`entityTypes\` / \`limit\` / \`offset\`.
+2. EXPLICIT DEGRADATION: the operation TELLS you when it could not fit. An item past the budget comes back with its identity and \`truncated: true\` — an entity having lost \`before\`/\`after\` entirely, a section with \`content\` cut as text — and the envelope carries \`truncationHint\` naming the retry. When you see that marker, the slice you are holding is INCOMPLETE: follow the hint down (narrow \`entityTypes\`, lower \`limit\`, advance \`offset\`) and, if nothing else fits, \`summaryOnly: true\`, which is the guaranteed floor. Never report a truncated slice as if it were whole — absence of an item means "unchanged", and only the marker distinguishes that from "it did not fit".
+3. LAST RESORT: if a slice is still too large and the SDK dumps the tool result to disk, \`Read\` that dump file. This is now a convenience, not the recovery path — level 2 is. Do not otherwise touch the filesystem.
+
 - \`roots\` scope: if the parent gave you \`roots\`, pass it through verbatim on EVERY \`release_diff\` call — it narrows the PAGES dimension to the brief's scope. Dropping it silently widens the diff to all releasable roots and leaks out-of-scope pages into the brief.
-- Fallback ONLY when a single slice is still too large and the SDK dumps the tool result to disk: \`Read\` that dump file. Do not otherwise touch the filesystem.
 
 Tools: \`release-tools\` MCP (\`release_diff\`; \`release_show\` / \`release_list\` available but rarely needed) and Read/Grep/Glob — the latter ONLY for a release-diff dump file the SDK wrote to disk.
 

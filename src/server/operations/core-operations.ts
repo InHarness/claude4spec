@@ -167,11 +167,22 @@ export function registerCoreOperations(): void {
   );
 
   CATALOG.register(
-    coreRead('search_pages', 'Full-text search within one page root, indexed and paged.', {
-      rootId: z.string(),
-      query: z.string(),
-      ...paging,
-    }, ['ROOT_NOT_FOUND']),
+    coreRead(
+      'search_pages',
+      'Search the prose of the pages by phrase (`query`) or regex (`regex`) — cross-root by default; `rootId` only NARROWS. A hit is a SECTION (a page, on a root with no section index), carrying `matchCount`; matches are lines. Modes are a cost ladder: `count` (totals), `map` (identity rows, the DEFAULT), `hits` (adds `hunks[]` + `omittedChars`). Enumeration order is `(rootId, path, line_start)` with a declared tie-break, so a full `limit`/`offset` traversal returns each hit exactly once.',
+      {
+        rootId: z.string().optional(),
+        query: z.string().optional(),
+        regex: z.string().optional(),
+        mode: z.enum(['count', 'map', 'hits']).optional(),
+        pathInclude: z.string().optional(),
+        pathExclude: z.string().optional(),
+        anchors: z.array(z.string()).optional(),
+        context: z.number().int().nonnegative().optional(),
+        ...paging,
+      },
+      ['ROOT_NOT_FOUND', 'INVALID_ARGUMENT'],
+    ),
   );
 
   CATALOG.register(
@@ -734,8 +745,16 @@ export function registerCoreOperations(): void {
     // The `brief` profile makes this REQUIRED — see `profiles.ts`. An external
     // connection has no ambient brief, and silently defaulting to "the" brief is
     // how a patch gets filed against the wrong one.
-    inputSchema: { path: z.string().optional().describe('Brief path relative to briefsDir. Required on an external connection.') },
-    errorCodes: ['BRIEF_NOT_FOUND', 'VALIDATION'],
+    inputSchema: {
+      path: z.string().optional().describe('Brief path relative to briefsDir. Required on an external connection.'),
+      range: z
+        .object({ start: z.number().int().positive(), end: z.number().int().positive() })
+        .optional()
+        .describe(
+          '0.2.40 — 1-based inclusive line window. Unconditionally allowed: an artifact never enters `section_index`, so there is no `sectionIndexed` gate and no second way to resume a large read. A `start` past the end of the file is INVALID_ARGUMENT stating the size.',
+        ),
+    },
+    errorCodes: ['BRIEF_NOT_FOUND', 'VALIDATION', 'INVALID_ARGUMENT'],
     sideEffects: ['none'],
     idempotent: true,
     channels: fullParity(),

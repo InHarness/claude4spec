@@ -29,6 +29,18 @@ export interface MCPReleaseDiff {
    */
   entities?: MCPEntityDelta[] | MCPEntityDeltaLight[];
   pages?: MCPPageDelta[] | MCPPageDeltaLight[];
+  /**
+   * 0.2.40 — present IFF anything in this response degraded under the response
+   * budget. A sentence saying HOW to retry: narrow `entityTypes`, lower `limit`,
+   * drop to `summaryOnly`, advance `offset`.
+   *
+   * The instruction lives ONLY here, at the envelope. An item carries the bare
+   * `truncated` flag and nothing else, because the remedy is a property of the
+   * CALL, not of the row that happened to be first past the line — duplicating
+   * it per item would multiply one instruction by the number of things it
+   * applies to and invite them to drift apart.
+   */
+  truncationHint?: string;
 }
 
 /** Light delta-map entry (`summaryOnly: true`) — identifier + op, no `before`/`after`. */
@@ -50,8 +62,22 @@ export interface MCPEntityDelta {
   slug: string;
   name: string;
   op: 'create' | 'update' | 'delete';
+  /** Omitted for `op: 'create'`, AND when this item degraded under the response budget (then `truncated: true`). */
   before?: EntitySnapshot;
+  /** Omitted for `op: 'delete'`, AND when this item degraded under the response budget (then `truncated: true`). */
   after?: EntitySnapshot;
+  /**
+   * 0.2.40 — present IFF `before`/`after` fell out under the response budget.
+   *
+   * This is what separates "the entity changed, its payload did not fit" from
+   * "the entity did not change" — the latter never appears in `entities[]` at
+   * all. Without the marker the two are the same observation, and a brief built
+   * on that observation would state a release did less than it did.
+   *
+   * A consumer may therefore NOT infer `op === 'update'` implies `before` and
+   * `after`. Check `truncated` first.
+   */
+  truncated?: true;
 }
 
 export interface MCPPageDelta {
@@ -77,6 +103,9 @@ export interface MCPSectionDelta {
    * `<after_change>new</after_change>` przy dodanych; literalne wystąpienia
    * tych tagów w treści są escape'owane jako encje XML). Pomijane wyłącznie
    * dla pure-move'a; w pozostałych przypadkach obecne.
+   *
+   * 0.2.40 — pod presją budżetu odpowiedzi pole ZOSTAJE, ale jest ucięte
+   * TEKSTOWO; sygnalizuje to `truncated`.
    */
   content?: string;
   /**
@@ -85,6 +114,18 @@ export interface MCPSectionDelta {
    * update'u — `content` obecne z tagami, `moved` pominięte.
    */
   moved?: true;
+  /**
+   * 0.2.40 — present IFF `content` was cut TEXTUALLY by the response budget.
+   * The line-diff is then incomplete; continue with a smaller window.
+   *
+   * Deliberately the OPPOSITE mechanism to `MCPEntityDelta.truncated`, and the
+   * asymmetry follows the kind of payload rather than being an inconsistency: a
+   * section body is text, and shorter text is still the same kind of data, so it
+   * is cut and kept. An entity snapshot is a serialized record, and half of one
+   * is not a smaller record — it is malformed data wearing the shape of a
+   * record — so it is dropped whole instead.
+   */
+  truncated?: true;
 }
 
 export interface MCPSpecSnapshot {
@@ -103,6 +144,18 @@ export interface MCPSpecSnapshot {
   total: { entities?: number; pages?: number };
   entities?: { type: string; slug: string; name: string }[];
   pages?: { path: string }[];
+  /**
+   * 0.2.40 — present IFF a dimension was cut short by the response budget.
+   * Points at `offset` / `limit`.
+   *
+   * There is deliberately NO per-item `truncated` here, unlike `MCPReleaseDiff`.
+   * A row of this snapshot is already identity-only, so there is no heavy half
+   * to shed: degradation can only ever be a narrower WINDOW, never a poorer row,
+   * and a marker on an item would describe a loss that cannot happen. Absence of
+   * a row here means "outside the window" — readable from `total` + `offset` —
+   * not "unchanged", which is the diff's problem and the diff's marker.
+   */
+  truncationHint?: string;
 }
 
 export type IncludeFilter = 'pages' | 'entities';

@@ -168,7 +168,7 @@ describe('discovery core over the real section indexer', () => {
       ['---', 'title: Y', 'order: 9', '---', '', '# Top', '', '## Hay', '', 'a needle here', ''].join('\n'),
     );
 
-    const result = await core.searchPages({ query: 'needle' });
+    const result = await core.searchPages({ query: 'needle', mode: 'hits' });
     if (result.mode !== 'hits') throw new Error('expected hit mode');
 
     expect(result.items[0]).toMatchObject({ kind: 'section', anchor: anchorOf('Hay') });

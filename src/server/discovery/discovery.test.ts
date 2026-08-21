@@ -299,8 +299,8 @@ describe('discovery core', () => {
       await writePage('pages', 'c.md', 'needle here\n');
       const c = core([pagesRoot()]);
 
-      const first = await c.searchPages({ query: 'needle', limit: 2, offset: 0 });
-      const second = await c.searchPages({ query: 'needle', limit: 2, offset: 2 });
+      const first = await c.searchPages({ query: 'needle', mode: 'hits', limit: 2, offset: 0 });
+      const second = await c.searchPages({ query: 'needle', mode: 'hits', limit: 2, offset: 2 });
       if (first.mode !== 'hits' || second.mode !== 'hits') throw new Error('expected hit mode');
 
       const key = (h: (typeof first.items)[number]) => `${h.rootId}:${h.path}:${h.line}`;
@@ -653,7 +653,7 @@ describe('discovery core', () => {
       await indexPageLikeTheIndexer('pages', 'pages', 'fm2.md');
       const c = core([pagesRoot()]);
 
-      const result = await c.searchPages({ query: 'needle' });
+      const result = await c.searchPages({ query: 'needle', mode: 'hits' });
       if (result.mode !== 'hits') throw new Error('expected hit mode');
 
       // A hit whose line is measured in raw-file coordinates falls outside the
@@ -1585,17 +1585,208 @@ describe('discovery core', () => {
     expect(Object.keys(result.types)).toEqual(['widget']);
   });
 
+  /**
+   * 0.2.40 — the search_pages rework. Every case here is a contract the
+   * previous shape either got wrong or left unstated.
+   */
+  describe('search_pages — the reworked contract (0.2.40)', () => {
+    async function threeSectionPage(): Promise<DiscoveryCore> {
+      // Two matches inside ONE section, one inside another.
+      await writePage(
+        'pages',
+        'a.md',
+        [
+          '# Top', // 1
+          '## Alpha', // 2
+          'needle here', // 3
+          'and needle again', // 4
+          '## Beta', // 5
+          'a needle in beta', // 6
+          '', // 7
+        ].join('\n'),
+      );
+      indexSection({ rootId: 'pages', anchor: 'aaaaaa11', page: 'a.md', heading: 'Alpha', start: 2, end: 4 });
+      indexSection({ rootId: 'pages', anchor: 'bbbbbb22', page: 'a.md', heading: 'Beta', start: 5, end: 7 });
+      return core([pagesRoot()]);
+    }
+
+    /**
+     * The refusal exists to stop a false negative, so refusing a pattern that
+     * matches perfectly well is the same failure inverted — and `[^\n]` is the
+     * canonical WITHIN-line idiom, the very thing this operation does.
+     */
+    it('a within-line negated class is answered, not refused — the guard aims at line-CROSSING patterns', async () => {
+      const c = await threeSectionPage();
+      const result = await c.searchPages({ regex: '^[^\\n]*needle', mode: 'count' });
+      if (result.mode !== 'count') throw new Error('unreachable');
+      expect(result.matches).toBe(3);
+
+      // The genuinely line-crossing sibling is still refused.
+      await expect(c.searchPages({ regex: 'needle[\\s\\S]*beta' })).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+      });
+    });
+
+    /**
+     * A match can fall outside every section on an INDEXED root — above the
+     * first heading, or under one the indexer gave no anchor. The row says so
+     * with `kind`, which is why a consumer must branch on `kind` and not on
+     * "this root has an index, so `anchor` is guaranteed".
+     */
+    it('a match outside every section of an indexed root comes back as a `page` hit with no anchor', async () => {
+      const c = await threeSectionPage();
+      const result = await c.searchPages({ query: 'Top' });
+      if (result.mode === 'count') throw new Error('unreachable');
+      const row = result.items[0]!;
+      expect(row.kind).toBe('page');
+      expect(row.anchor).toBeUndefined();
+      expect(row.path).toBe('a.md');
+    });
+
+    it('defaults to `map`, not `hits` — the cheap rung is what you get for not choosing', async () => {
+      const c = await threeSectionPage();
+      const result = await c.searchPages({ query: 'needle' });
+      expect(result.mode).toBe('map');
+      if (result.mode !== 'map') throw new Error('unreachable');
+      // Identity only: no prose is carried by the default answer.
+      for (const row of result.items) {
+        expect(row.hunks).toBeUndefined();
+        expect(row.omittedChars).toBeUndefined();
+      }
+    });
+
+    it('a hit is a SECTION and a match is a LINE: two matches in one section collapse, carrying matchCount', async () => {
+      const c = await threeSectionPage();
+      const result = await c.searchPages({ query: 'needle' });
+      if (result.mode === 'count') throw new Error('unreachable');
+
+      expect(result.items).toHaveLength(2);
+      const alpha = result.items.find((h) => h.anchor === 'aaaaaa11')!;
+      expect(alpha.matchCount).toBe(2);
+      expect(alpha.heading).toBe('Alpha');
+      expect(alpha.headingPath).toEqual(['Alpha']);
+      expect(result.items.find((h) => h.anchor === 'bbbbbb22')!.matchCount).toBe(1);
+
+      // The invariant behind the collapse: no two hits ever share an anchor.
+      const anchors = result.items.map((h) => h.anchor);
+      expect(new Set(anchors).size).toBe(anchors.length);
+    });
+
+    it('count reports both sums — hits (comparable with the rungs above) and matching lines', async () => {
+      const c = await threeSectionPage();
+      const result = await c.searchPages({ query: 'needle', mode: 'count' });
+      if (result.mode !== 'count') throw new Error('expected count mode');
+      expect(result.total).toBe(2); // two sections
+      expect(result.matches).toBe(3); // three lines
+    });
+
+    it('`pages` is no longer a mode — the ladder has exactly three rungs', async () => {
+      const c = await threeSectionPage();
+      const result = await c.searchPages({ query: 'needle', mode: 'pages' as never });
+      // Not a crash and not a fourth shape: an unknown value simply is not one
+      // of the three, and the operation answers on the rung it does have.
+      expect(['count', 'map', 'hits']).toContain(result.mode);
+    });
+
+    it('a full limit/offset traversal returns every hit exactly once, in the declared order', async () => {
+      await writePage('pages', 'b.md', ['## One', 'needle', '## Two', 'needle', '## Three', 'needle', ''].join('\n'));
+      indexSection({ rootId: 'pages', anchor: 'cccccc31', page: 'b.md', heading: 'One', start: 1, end: 2 });
+      indexSection({ rootId: 'pages', anchor: 'cccccc32', page: 'b.md', heading: 'Two', start: 3, end: 4 });
+      indexSection({ rootId: 'pages', anchor: 'cccccc33', page: 'b.md', heading: 'Three', start: 5, end: 6 });
+      const c = core([pagesRoot()]);
+
+      const seen: string[] = [];
+      for (let offset = 0; offset < 3; offset++) {
+        const page = await c.searchPages({ query: 'needle', limit: 1, offset });
+        if (page.mode === 'count') throw new Error('unreachable');
+        for (const row of page.items) seen.push(row.anchor!);
+      }
+      // Each exactly once, and in (rootId, path, line_start) order.
+      expect(seen).toEqual(['cccccc31', 'cccccc32', 'cccccc33']);
+    });
+
+    it('rejects a regex that could only match across a line boundary, rather than answering zero hits', async () => {
+      const c = await threeSectionPage();
+      for (const regex of ['foo\\nbar', 'foo[\\s\\S]*bar', '(?s)foo.*bar', '(?i)needle']) {
+        await expect(c.searchPages({ query: undefined, regex })).rejects.toMatchObject({
+          code: 'INVALID_ARGUMENT',
+        });
+      }
+      // A pattern that CAN match a line is untouched — including `(?:` groups,
+      // which are not inline flag groups however much they look like one.
+      const ok = await c.searchPages({ regex: '(?:nee)dle' });
+      if (ok.mode === 'count') throw new Error('unreachable');
+      expect(ok.items.length).toBeGreaterThan(0);
+    });
+
+    it('the path valves reject a page before it is opened', async () => {
+      await writePage('pages', 'keep/a.md', ['## A', 'needle', ''].join('\n'));
+      await writePage('pages', 'drop/b.md', ['## B', 'needle', ''].join('\n'));
+      indexSection({ rootId: 'pages', anchor: 'dddddd41', page: 'keep/a.md', heading: 'A', start: 1, end: 2 });
+      indexSection({ rootId: 'pages', anchor: 'dddddd42', page: 'drop/b.md', heading: 'B', start: 1, end: 2 });
+      const c = core([pagesRoot()]);
+
+      const included = await c.searchPages({ query: 'needle', pathInclude: '^keep/' });
+      if (included.mode === 'count') throw new Error('unreachable');
+      expect(included.items.map((h) => h.path)).toEqual(['keep/a.md']);
+
+      const excluded = await c.searchPages({ query: 'needle', pathExclude: '^drop/' });
+      if (excluded.mode === 'count') throw new Error('unreachable');
+      expect(excluded.items.map((h) => h.path)).toEqual(['keep/a.md']);
+    });
+
+    it('the anchors valve narrows the scan to the named sections', async () => {
+      const c = await threeSectionPage();
+      const result = await c.searchPages({ query: 'needle', anchors: ['bbbbbb22'] });
+      if (result.mode === 'count') throw new Error('unreachable');
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]!.anchor).toBe('bbbbbb22');
+    });
+
+    it('overlapping context windows merge into one block — no line is emitted twice', async () => {
+      const c = await threeSectionPage();
+      const result = await c.searchPages({ query: 'needle', mode: 'hits', context: 2 });
+      if (result.mode !== 'hits') throw new Error('expected hits mode');
+
+      const alpha = result.items.find((h) => h.anchor === 'aaaaaa11')!;
+      // Two matches on adjacent lines with two lines of context each: ONE hunk,
+      // not two overlapping ones.
+      expect(alpha.hunks).toHaveLength(1);
+      const occurrences = alpha.hunks![0]!.split('needle here').length - 1;
+      expect(occurrences).toBe(1);
+      expect(alpha.omittedChars).toBe(0);
+    });
+
+    it('hits carry hunks; map does not — that is the whole difference between the rungs', async () => {
+      const c = await threeSectionPage();
+      const hits = await c.searchPages({ query: 'needle', mode: 'hits' });
+      if (hits.mode !== 'hits') throw new Error('expected hits mode');
+      const alpha = hits.items.find((h) => h.anchor === 'aaaaaa11')!;
+      expect(alpha.hunks!.join('\n')).toContain('needle');
+      // Same identity as the map row would carry, plus the prose.
+      expect(alpha).toMatchObject({ kind: 'section', path: 'a.md', matchCount: 2 });
+    });
+  });
+
   it('search_pages degrades hit identity on a root with no section index', async () => {
     await writePage('pages', 'a.md', ['# T', '<!-- anchor: abcdef12 -->', 'needle', ''].join('\n'));
     await writePage('notes', 'n.md', 'needle\n');
     indexSection({ rootId: 'pages', anchor: 'abcdef12', page: 'a.md', heading: 'T', start: 1, end: 4 });
     const c = core([pagesRoot(), flatRoot()]);
 
-    const result = await c.searchPages({ query: 'needle' });
+    const result = await c.searchPages({ query: 'needle', mode: 'hits' });
     if (result.mode !== 'hits') throw new Error('expected hit mode');
 
     expect(result.items.find((h) => h.rootId === 'pages')).toMatchObject({ kind: 'section', anchor: 'abcdef12' });
-    expect(result.items.find((h) => h.rootId === 'notes')).toMatchObject({ kind: 'line', path: 'n.md' });
+    /*
+     * 0.2.40 — the unindexed root collapses per PAGE, not per line, and carries
+     * no anchor at all. Before, its hit was `(rootId, path, line)` — effectively
+     * one hit per matching line, which made a common term on a flat root drown
+     * out every section hit beside it.
+     */
+    const flat = result.items.find((h) => h.rootId === 'notes')!;
+    expect(flat).toMatchObject({ kind: 'page', path: 'n.md', matchCount: 1 });
+    expect(flat.anchor).toBeUndefined();
   });
 });
 

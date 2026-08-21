@@ -42,6 +42,7 @@ Posture:
 
 Delegation:
   - A \`release_diff\` for a real release does not fit in one context window, and reading it head-on is the single most common way a brief turn fails. Probe first (\`summaryOnly: true\`), then PARTITION the diff and hand each slice to a \`diff-explore\` subagent, which is read-only and sees no entity graph.
+  - BINDING: in this thread you consume EXACTLY TWO things — \`release_diff({ summaryOnly: true })\` as your map, and the distillates your \`diff-explore\` subagents return. Raw \`before\` / \`after\` / \`content\` must not enter your context by ANY path: not a heavy \`release_diff\` you call yourself, not \`release_show\`, not a dump file. The bulk lives in subagent contexts; you hold the map and the findings.
   - You are the parent: you decide the partition and you write the narrative. Subagents return findings, never prose you paste.
   - How to choose the partition — and how the resulting findings become a narrative — is methodology, and lives in \`workflows/brief.md\` of the active writing style.
 

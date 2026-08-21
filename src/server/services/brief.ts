@@ -35,6 +35,8 @@ import type { ChatService } from './chat.js';
 import type { ReleaseService } from './release.js';
 import type { PagesFrontmatterIndexer } from './pages-frontmatter-indexer.js';
 import { DomainError } from './tags.js';
+import { readArtifactWindow, windowBody, type ArtifactRange } from './artifact-read.js';
+import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 
 const GENERATOR_VERSION = 'brief-author@0.1';
 
@@ -145,7 +147,27 @@ export class BriefService {
 
   // ─── Reads ───────────────────────────────────────────────────────────────
 
-  async getBrief(path: string): Promise<Brief> {
+  /**
+   * 0.2.40 — `range` is a line window onto the brief's raw content, and the
+   * response budget applies on top of it.
+   *
+   * There is NO `sectionIndexed` gate, unlike `get_page`: a brief never enters
+   * `section_index`, so the second way of resuming a large read
+   * (`list_sections` + `get_sections`) does not exist for it and `range` is the
+   * only one. That is also why the hint is unconditional — there is no other
+   * call it could propose.
+   *
+   * `hash` stays the digest of the WHOLE file, exactly as `get_page` hashes
+   * before narrowing: it is what `update_brief` compares `expectedHash`
+   * against, so a hash of a window would fail every write that used it, and the
+   * caller could not tell from the value which of the two it holds.
+   *
+   * The content budget is HALF the response budget because the payload carries
+   * the text twice — `content` is the file, `body` is the same text with the
+   * frontmatter removed. That duplication predates this window; halving the
+   * budget is what keeps the envelope inside it anyway.
+   */
+  async getBrief(path: string, opts?: { range?: ArtifactRange }): Promise<Brief> {
     if (!(await this.deps.briefsPages.exists(path))) {
       /**
        * The hint is the repair path, and it used to exist.
@@ -177,12 +199,32 @@ export class BriefService {
     // 0.1.69: legacy briefs predate `source` — default to 'release-diff' at parse
     // time so the field is always present downstream (DTO, immutability diffing).
     if (frontmatter.source !== 'analysis') frontmatter.source = 'release-diff';
+
+    const hash = hashContent(content);
+    const windowed = readArtifactWindow(
+      content,
+      opts?.range,
+      { kind: 'brief', path },
+      Math.floor(DEFAULT_BUDGET_CHARS / 2),
+    );
+    if (windowed.content === content) {
+      return { path, frontmatter, body: parsed.content, content, hash };
+    }
+    /*
+     * The window is NOT re-parsed — see `windowBody`. `frontmatter` above stays
+     * parsed from the whole file: it is small, always useful, and a caller
+     * reading the tail of a brief should not lose the answer to "which brief is
+     * this".
+     */
     return {
       path,
       frontmatter,
-      body: parsed.content,
-      content,
-      hash: hashContent(content),
+      body: windowBody(content, windowed.content, opts?.range?.start ?? 1),
+      content: windowed.content,
+      hash,
+      ...(windowed.truncated
+        ? { truncated: windowed.truncated, truncationHint: windowed.truncationHint }
+        : {}),
     };
   }
 

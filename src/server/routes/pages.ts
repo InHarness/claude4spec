@@ -43,9 +43,9 @@ export interface PageRootRuntime {
  * `/pages/:rootId/search` already carries inside its own router.
  *
  * Distinct from that per-root `/search`, which stays what it is: a `q`-only file
- * scan shaped for the UI. This one is the catalog operation — `regex`,
- * `hits`/`pages`/`count` modes, paging, and an anchor on every hit that falls
- * inside an indexed section.
+ * scan shaped for the UI. This one is the catalog operation — `regex`, the
+ * `count`/`map`/`hits` ladder, the three cost valves, paging, and an anchor on
+ * every hit that falls inside an indexed section.
  */
 /**
  * `?range=1:200` → `{ start: 1, end: 200 }`, 1-based and inclusive.
@@ -70,16 +70,29 @@ export function crossRootPagesRouter(discovery: DiscoveryCore): Router {
       const regex =
         typeof req.query.regex === 'string' && req.query.regex !== '' ? req.query.regex : undefined;
       const rootId = typeof req.query.rootId === 'string' && req.query.rootId !== '' ? req.query.rootId : undefined;
+      /*
+       * 0.2.40 — `pages` is no longer a mode. An unreadable value is still
+       * DROPPED rather than substituted: the transport inventing a default is
+       * how two channels end up disagreeing about what "no mode" means, and the
+       * core owns that answer (it is now `map`).
+       */
       const mode =
-        req.query.mode === 'hits' || req.query.mode === 'pages' || req.query.mode === 'count'
+        req.query.mode === 'hits' || req.query.mode === 'map' || req.query.mode === 'count'
           ? req.query.mode
           : undefined;
+      const str = (raw: unknown): string | undefined =>
+        typeof raw === 'string' && raw !== '' ? raw : undefined;
+      const anchors = str(req.query.anchors)?.split(',').filter(Boolean);
       res.json(
         await discovery.searchPages({
           ...(query !== undefined ? { query } : {}),
           ...(regex !== undefined ? { regex } : {}),
           ...(rootId !== undefined ? { rootId } : {}),
           ...(mode !== undefined ? { mode } : {}),
+          ...(str(req.query.pathInclude) !== undefined ? { pathInclude: str(req.query.pathInclude) } : {}),
+          ...(str(req.query.pathExclude) !== undefined ? { pathExclude: str(req.query.pathExclude) } : {}),
+          ...(anchors && anchors.length > 0 ? { anchors } : {}),
+          ...(nonNegativeInt(req.query.context) !== undefined ? { context: nonNegativeInt(req.query.context) } : {}),
           ...(positiveInt(req.query.limit) !== undefined ? { limit: positiveInt(req.query.limit) } : {}),
           ...(nonNegativeInt(req.query.offset) !== undefined ? { offset: nonNegativeInt(req.query.offset) } : {}),
         }),
