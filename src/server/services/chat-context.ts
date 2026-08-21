@@ -436,7 +436,7 @@ When the request includes \`<annotations>\`, treat them as the primary context f
 const PLAN_TOOLS_USAGE = `<plan_tools_usage>
 plan-tools MCP server is scoped automatically to this thread (no threadId param):
   - get_plan — read current plan state
-  - update_plan (action: replace | append | insert_after_section) — edit the plan
+  - update_plan (content | textEdits | edits) — edit the plan
   - list_plan_versions, get_plan_version — inspect history
 Inside plan_mode: persist the plan via update_plan instead of writing it as prose.
 Outside plan_mode: use update_plan when the user explicitly requests a deployment plan or architectural proposal.

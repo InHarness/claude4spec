@@ -62,10 +62,14 @@ describe('operation catalog — declaration rules', () => {
     }
   });
 
-  it('the two operations that got a differential mode declare it, and the four that did not say so', () => {
+  it('the three operations that got a differential mode declare it, and the three that did not say so', () => {
     expect(CATALOG.require('update_page').contentInput).toBe('literal+diff');
     expect(CATALOG.require('update_sections').contentInput).toBe('literal+diff');
-    for (const name of ['update_plan', 'update_entities', 'update_brief', 'file_patch']) {
+    // 0.2.43: `update_plan` joined them. `update_brief` deliberately did NOT —
+    // the shape it was copied from moved on without it, and migrating briefs is
+    // a separate change with its own owner.
+    expect(CATALOG.require('update_plan').contentInput).toBe('literal+diff');
+    for (const name of ['update_entities', 'update_brief', 'file_patch']) {
       expect(CATALOG.require(name).contentInput, name).toBe('literal');
     }
   });

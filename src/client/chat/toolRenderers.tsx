@@ -456,11 +456,27 @@ const entityToolsRenderers: Record<string, ToolRenderer> = {
 
 // --- Plan tools (4) ---
 
-const PLAN_ACTION_LABEL: Record<string, string> = {
-  replace: 'replace',
-  append: 'append',
-  insert_after_section: 'insert',
-};
+/**
+ * 0.2.43 — a call is summarised by its input VARIANT, not by a top-level action,
+ * because there is no longer a top-level action to read. The three variants are
+ * mutually exclusive by contract, so the first one present is the one made.
+ */
+function planVariantOf(input: Record<string, unknown>): { label: string; detail: string } {
+  const edits = Array.isArray(input.edits) ? (input.edits as Array<Record<string, unknown>>) : null;
+  if (edits) {
+    const actions = [...new Set(edits.map((e) => String(e.action ?? '?')))].join(', ');
+    return { label: 'edits', detail: `${edits.length} section${edits.length === 1 ? '' : 's'} — ${actions}` };
+  }
+  const textEdits = Array.isArray(input.textEdits) ? input.textEdits : null;
+  if (textEdits) {
+    return {
+      label: 'textEdits',
+      detail: `${textEdits.length} substitution${textEdits.length === 1 ? '' : 's'}`,
+    };
+  }
+  if (typeof input.content === 'string') return { label: 'content', detail: 'whole plan' };
+  return { label: '?', detail: '' };
+}
 
 const planRenderers: Record<string, ToolRenderer> = {
   get_plan: { summary: () => 'Read plan' },
@@ -478,19 +494,42 @@ const planRenderers: Record<string, ToolRenderer> = {
   },
   update_plan: {
     summary(i) {
-      const { action, changeSummary } = cx(i).input;
-      const label = PLAN_ACTION_LABEL[String(action ?? '')] ?? String(action ?? '?');
+      const { input } = cx(i);
+      const { label } = planVariantOf(input);
+      const changeSummary = input.changeSummary;
       return changeSummary ? `Plan ${label}: ${changeSummary}` : `Plan ${label}`;
     },
     renderInput(i) {
-      const { action, changeSummary, anchor, heading, content } = cx(i).input;
-      const label = PLAN_ACTION_LABEL[String(action ?? '')] ?? String(action ?? '?');
-      const text = typeof content === 'string' ? content : '';
+      const { input } = cx(i);
+      const { label, detail } = planVariantOf(input);
+      const edits = Array.isArray(input.edits) ? (input.edits as Array<Record<string, unknown>>) : null;
+      const textEdits = Array.isArray(input.textEdits)
+        ? (input.textEdits as Array<Record<string, unknown>>)
+        : null;
+      const text = typeof input.content === 'string' ? input.content : '';
       const preview = text.length > 320 ? `${text.slice(0, 320)}…` : text;
+      const codeBlock = (body: string) => (
+        <pre
+          className="font-mono text-[11.5px] scroll-thin"
+          style={{
+            background: 'var(--c-panel)',
+            color: 'var(--c-ink)',
+            padding: '6px 8px',
+            borderRadius: 4,
+            margin: 0,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+            maxHeight: 160,
+            overflow: 'auto',
+          }}
+        >
+          {body}
+        </pre>
+      );
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {kv(
-            'Action',
+            'Variant',
             <span
               className="font-mono text-[11px] px-1.5 py-[1px] rounded-sm"
               style={{
@@ -502,43 +541,58 @@ const planRenderers: Record<string, ToolRenderer> = {
               {label}
             </span>,
           )}
-          {changeSummary ? kv('Summary', String(changeSummary)) : null}
-          {anchor ? kv('Anchor', mono(String(anchor))) : null}
-          {heading ? kv('Heading', String(heading)) : null}
-          {preview
+          {detail ? kv('Scope', detail) : null}
+          {input.changeSummary ? kv('Summary', String(input.changeSummary)) : null}
+          {edits
             ? kv(
-                'Body',
-                <pre
-                  className="font-mono text-[11.5px] scroll-thin"
-                  style={{
-                    background: 'var(--c-panel)',
-                    color: 'var(--c-ink)',
-                    padding: '6px 8px',
-                    borderRadius: 4,
-                    margin: 0,
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-word',
-                    maxHeight: 160,
-                    overflow: 'auto',
-                  }}
-                >
-                  {preview}
-                </pre>,
+                'Sections',
+                codeBlock(
+                  edits
+                    .map((e) => `${String(e.action ?? '?')} ${String(e.anchor ?? '?')}`)
+                    .join('\n'),
+                ),
               )
             : null}
+          {textEdits
+            ? kv('Find', codeBlock(textEdits.map((t) => String(t.find ?? '')).join('\n---\n')))
+            : null}
+          {preview ? kv('Body', codeBlock(preview)) : null}
         </div>
       );
     },
     renderResult(r) {
       const { result } = cx2({}, r);
-      const planPath = result?.planPath;
+      /**
+       * `path`, not `planPath`. The tool has answered `path` since 0.2.15 (every
+       * other operation calls it that) while this reader still looked for the old
+       * name, so the link silently never rendered.
+       */
+      const planPath = result?.path;
       const version = result?.version;
       if (typeof planPath !== 'string' || typeof version !== 'number') return null;
+      const results = Array.isArray(result?.results) ? (result.results as Array<Record<string, unknown>>) : [];
+      const dropped = results.flatMap((row) =>
+        Array.isArray(row.droppedAnchors) ? (row.droppedAnchors as string[]) : [],
+      );
+      const replacements = results.reduce(
+        (n, row) => n + (typeof row.replacements === 'number' ? row.replacements : 0),
+        0,
+      );
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <div className="text-[12px]" style={{ color: 'var(--c-ink)' }}>
             Updated to v{version}
           </div>
+          {replacements > 0 ? (
+            <div className="text-[11.5px]" style={{ color: 'var(--c-subtle)' }}>
+              {replacements} substitution{replacements === 1 ? '' : 's'}
+            </div>
+          ) : null}
+          {dropped.length > 0 ? (
+            <div className="text-[11.5px]" style={{ color: 'var(--c-subtle)' }}>
+              dropped anchors: {dropped.join(', ')}
+            </div>
+          ) : null}
           <Link
             to="/plans/$planPath"
             params={{ planPath }}

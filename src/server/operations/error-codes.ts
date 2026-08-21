@@ -108,6 +108,15 @@ export const STATUS_FOR_CODE: Record<string, number> = {
   UNKNOWN_ARTIFACT_KIND: 404,
   // 0.1.127 M10 Plans (filesystem-backed)
   PLAN_CONFLICT: 409,
+  /**
+   * 0.2.43 — a write that names a plan path nothing resolves to.
+   *
+   * 404 and distinct from the generic `NOT_FOUND` a plan READ answers with,
+   * because a write is where the caller is about to lose its edit to a typo:
+   * the envelope carries this project's plan paths so the retry has somewhere to
+   * go, which a bare "not found" does not.
+   */
+  PLAN_NOT_FOUND: 404,
   PLAN_INVALID_FRONTMATTER: 400,
   MISSING_TITLE: 400,
   THREAD_NOT_ATTACHED_TO_PLAN: 400,

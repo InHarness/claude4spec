@@ -615,37 +615,75 @@ export function registerCoreOperations(): void {
 
   CATALOG.register({
     name: 'update_plan',
-    summary: 'Edit a plan — replace, append, or insert after a section. The first update in a thread with no plan requires `title` and creates the file; the slug is slugify(title) and immutable thereafter.',
+    summary:
+      "Edit a plan through EXACTLY ONE of three input variants: `content` (the whole plan, literally), `textEdits` (literal substitutions counted over the whole plan), or `edits` (a transactional section batch addressed by anchor, with the same five actions as update_sections). More than one variant, or none, is INVALID_ARGUMENT. The first update in a thread with no plan requires `title` and creates the file; the slug is slugify(title) and immutable thereafter.",
     scope: 'project',
     mediation: 'direct',
     opClass: 'plan',
     inputSchema: {
       path: z.string().optional(),
       title: z.string().optional().describe('Required when the thread has no plan yet — this call creates it.'),
-      // 0.2.15: named `action`, matching every rendering. The row said `mode`,
-      // which no channel ever accepted.
-      action: z.enum(['replace', 'append', 'insert_after_section']),
-      content: z.string(),
+      /**
+       * 0.2.43 — the top-level `action` is GONE, and so are `anchor` and
+       * `heading`. A call names a VARIANT instead, and the action dictionary
+       * moved inside `edits[]` where it grew from three values to five.
+       *
+       * All three are `.optional()` here for the reason `expectedHash` is: "one
+       * of three, and exactly one" is not a zod shape. The enforcement is
+       * `selectPlanVariant`, run before any I/O, so no channel can be laxer.
+       */
+      content: z.string().optional(),
+      textEdits: textEdit.array().min(1).optional(),
+      edits: z
+        .array(
+          z.object({
+            anchor: z.string(),
+            action: z.enum(['replace', 'append', 'insert_after', 'delete', 'edit']),
+            content: z.string().optional(),
+            textEdits: textEdit.array().min(1).optional(),
+          }),
+        )
+        .min(1)
+        .optional(),
       /**
        * 0.2.15 — required by the operation on every call EXCEPT the first one in
        * a thread, which creates the plan and has nothing to be stale against.
        * A zod shape cannot say "required unless", so the enforcement lives in
        * `PlanService.update`; `.optional()` here would otherwise read as the
        * guard being optional, which it is not.
+       *
+       * 0.2.43 — computed over the WHOLE plan in every variant, a batch touching
+       * a single section included. The hash is never narrowed to a subtree.
        */
       expectedHash: z.string().optional().describe('REQUIRED except on the call that creates the plan.'),
       changeSummary: z.string(),
     },
-    errorCodes: ['NOT_FOUND', 'MISSING_TITLE', 'PLAN_CONFLICT', 'VALIDATION', 'INVALID_ARGUMENT'],
+    errorCodes: [
+      'PLAN_NOT_FOUND',
+      'MISSING_TITLE',
+      'PLAN_CONFLICT',
+      'VALIDATION',
+      'INVALID_ARGUMENT',
+      'SECTION_NOT_FOUND',
+      'AMBIGUOUS_ANCHOR',
+      'FIND_NOT_FOUND',
+      'MATCH_COUNT_MISMATCH',
+      'IMMUTABLE_FIELD',
+    ],
     sideEffects: ['file', 'db', 'ui-notify'],
     /**
-     * 0.2.37 — full content of the addressed range in `content`; this version
-     * offers no differential mode. The extension is natural — the plan's action
-     * vocabulary has exactly the shape `update_sections` had before `edit` was
-     * added to it — but it is a separate change with its own owner, and saying
-     * so is the point of this field existing.
+     * 0.2.43 — the differential mode the 0.2.37 row said was "a separate change
+     * with its own owner". This is that change: `textEdits` at the top level and
+     * inside an `edits[]` entry, with the same engine and the same naming as the
+     * page tools.
      */
-    contentInput: 'literal',
+    contentInput: 'literal+diff',
+    /**
+     * `content` and a batch `replace` repeat harmlessly; `delete`, `edit` and
+     * `textEdits` do not, so the operation as a whole cannot claim to be — the
+     * same half-truth `update_page` carries, spelt out in the summary and in
+     * every channel's description rather than hidden behind a boolean.
+     */
     idempotent: false,
     channels: fullParity(),
   });
