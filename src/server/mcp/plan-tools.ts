@@ -1,7 +1,8 @@
 import { createMcpServer, mcpTool, type CapturedMcpServer } from '../plugin-runtime/index.js';
 import { z } from 'zod';
-import type { PlanAction } from '../../shared/entities.js';
 import type { PlanService } from '../services/plan.js';
+import type { PlanSectionEdit } from '../services/plan-write.js';
+import type { TextEdit } from '../services/text-edits.js';
 import type { FileVersionService } from '../services/file-version.js';
 import { PLAN_ROOT_MARKER } from '../../shared/types.js';
 import { toolFailure, toolSuccess } from '../operations/envelope.js';
@@ -38,7 +39,6 @@ export interface PlanToolsContext {
   pageVersions: FileVersionService;
 }
 
-const AGENT_ACTIONS = z.enum(['replace', 'append', 'insert_after_section']);
 
 export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
   const { threadId, planService, pageVersions } = ctx;
@@ -118,28 +118,82 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
     }
   );
 
+  /**
+   * 0.2.43 — the differential payload, described in the SAME words as
+   * `page-tools`' `textEditsParam`. Two descriptions of one contract is how the
+   * channels used to drift, and the whole reason this shape was copied from the
+   * page tools is that an agent should not have to learn a second edit grammar.
+   */
+  const textEditsParam = z
+    .array(
+      z.object({
+        find: z
+          .string()
+          .describe(
+            'Searched LITERALLY, byte for byte — no regex, no whitespace normalization. ' +
+              'Copy it out of what you just read. Zero hits → FIND_NOT_FOUND, whose envelope tells you ' +
+              'whether the pattern would have matched with whitespace collapsed (it usually would: ' +
+              'mis-transcribed indentation is the common cause).',
+          ),
+        replaceWith: z.string().describe('Inserted in place of every hit. "" deletes the matched text.'),
+        expectedMatches: z
+          .union([z.number().int().min(1), z.literal('all')])
+          .optional()
+          .describe(
+            'How many hits you expect. OMITTING IT MEANS EXACTLY 1 — not "any number". ' +
+              'Pass "all" to substitute every occurrence without committing to a count. ' +
+              'Anything else → MATCH_COUNT_MISMATCH, which answers with the real count and each hit as line.',
+          ),
+      }),
+    )
+    .min(1);
+
   const updatePlan = mcpTool(
     'update_plan',
     [
       'Create or update the deployment plan attached to this thread.',
-      'Hybrid write tool with three actions:',
-      '- replace: full rewrite of the plan (provide full markdown in `content`).',
-      '- append: append a fragment at the end of the plan (separator added automatically).',
-      '- insert_after_section: insert a fragment after a target section (body of that section ends before the next heading of equal/higher level). Requires `anchor` or `heading`. Fails with SECTION_NOT_FOUND when the target matches nothing, AMBIGUOUS_HEADING when a `heading` matches several sections, and AMBIGUOUS_ANCHOR when an `anchor` does — an anchor names exactly one section, so a duplicate is a defect to fix in the plan, not a target to guess at.',
-      'Section anchors (nanoid-8 HTML comments) are auto-injected into new headings before persisting, unique within THIS plan file — a plan anchor equal to some page section anchor is not a collision, because the two live in separate stores and are resolved separately. A duplicate anchor pasted in by hand does not block the write; it only makes insert_after_section against it ambiguous.',
-      'On the FIRST call in a thread (no plan attached yet), `title` is REQUIRED — it creates the plan file (slug = slugify(title), immutable — a later title change edits frontmatter only, it never renames the file). Omitting `title` on the first call fails with MISSING_TITLE.',
-      '`expectedHash` is REQUIRED on every call EXCEPT that first, creating one: pass the `hash` from get_plan or from your previous update_plan. Omitting it fails INVALID_ARGUMENT; a stale value fails PLAN_CONFLICT (409) carrying the current hash. A plan has several concurrent writers (this thread, the UI, an attach), so a write without the guard silently drops someone else\'s edit.',
-      'Returns { path, version, hash } — the hash to arm your next call. The plan content does not come back; you already have it.',
-      'Each call captures a new version in the shared file_version log.',
+      'THREE INPUT VARIANTS, EXACTLY ONE PER CALL. More than one, or none, is INVALID_ARGUMENT.',
+      '- `content`: the complete plan markdown. The create-or-replace primitive — this is what writes a plan that does not exist yet.',
+      '- `textEdits`: literal find/replaceWith substitutions counted over the WHOLE plan.',
+      '- `edits`: a section batch, one entry per section, addressed by `anchor` (from get_plan).',
+      'Batch actions: `replace` / `append` / `insert_after` take `content`; `delete` takes neither; `edit` takes `textEdits` — literal substitutions inside the addressed subtree ALONE, which is where its match counts differ from the top-level variant\'s.',
+      'A SECTION IS ITS SUBTREE. `replace` on a `##` carrying three `###` rewrites all four; `delete` removes all four with their anchors. The `droppedAnchors` of each result row names what went, on success as well as on refusal.',
+      'The batch is TRANSACTIONAL and its ORDER DOES NOT MATTER: entries are applied bottom-up whatever order you send, one rejected entry means nothing at all is written (no version, no event), and two orderings of the same batch produce identical text. A repeated anchor is INVALID_ARGUMENT — one `edit` entry carries a LIST of substitutions, so a second entry is never the way to ask for a second one. An `edit` inside a section this same batch replaces or deletes is INVALID_ARGUMENT too.',
+      'Sections are addressed by ANCHOR ONLY. `heading` is gone: an unknown anchor is SECTION_NOT_FOUND with no append-at-end fallback, and an anchor duplicated inside the plan is AMBIGUOUS_ANCHOR.',
+      'On the FIRST call in a thread (no plan attached yet), `title` is REQUIRED — it creates the plan file (slug = slugify(title), immutable — a later title change edits frontmatter only, it never renames the file). Omitting `title` fails MISSING_TITLE in every variant, before any anchor is resolved. On an empty plan only `content` can succeed: `edits` answers SECTION_NOT_FOUND and `textEdits` FIND_NOT_FOUND, and neither leaves a plan file behind.',
+      '`expectedHash` is REQUIRED on every call EXCEPT that first, creating one: pass the `hash` from get_plan or from your previous update_plan. It is the hash of the WHOLE plan in all three variants, a batch touching one section included. Omitting it fails INVALID_ARGUMENT; a stale value fails PLAN_CONFLICT (409) carrying the current hash. A plan has several concurrent writers (this thread, the UI, an attach), so a write without the guard silently drops someone else\'s edit.',
+      '`changeSummary` is ONE per call, however many edits the call carries — and so is the `file_version` entry.',
+      'Returns { path, version, hash, results } — the hash arms your next call. Each `results` row is { anchor, action, affectedAnchors, droppedAnchors, replacements? }, in the order you GAVE the edits, not the order they were applied; `replacements` appears only where a literal match ran. Whole-plan variants answer with one row whose `anchor` and `action` are null. The plan content does not come back; you already have it.',
+      'IDEMPOTENCE: `content` and a batch `replace` repeat harmlessly (same text, new version number). `delete` repeated answers SECTION_NOT_FOUND, `edit`/`textEdits` answer FIND_NOT_FOUND, and `append`/`insert_after` duplicate their content.',
       'Available in plan_mode=true (preferred) and plan_mode=false.',
       'This tool cannot change `applied` — use `mark_plan_applied`.',
     ].join('\n'),
     {
       ...pathParam,
-      action: AGENT_ACTIONS,
-      content: z.string(),
-      anchor: z.string().optional(),
-      heading: z.string().optional(),
+      content: z
+        .string()
+        .optional()
+        .describe('VARIANT 1: the complete plan markdown. Mutually exclusive with textEdits and edits.'),
+      textEdits: textEditsParam
+        .optional()
+        .describe('VARIANT 2: substitutions counted over the whole plan. Mutually exclusive with content and edits.'),
+      edits: z
+        .array(
+          z.object({
+            anchor: z.string().describe('From get_plan. The only way to address a section — `heading` no longer exists.'),
+            action: z.enum(['replace', 'append', 'insert_after', 'delete', 'edit']),
+            content: z
+              .string()
+              .optional()
+              .describe('Required for replace/append/insert_after. Forbidden for delete and edit.'),
+            textEdits: textEditsParam
+              .optional()
+              .describe('Required for action `edit`, forbidden for the other four. Counted inside this section\'s subtree only.'),
+          }),
+        )
+        .min(1)
+        .optional()
+        .describe('VARIANT 3: a transactional section batch. Mutually exclusive with content and textEdits.'),
       title: z.string().optional(),
       /**
        * Optional in the SCHEMA, required by the OPERATION on every call but the
@@ -158,14 +212,18 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
     },
     async (args) => {
       try {
-        const action = args.action as PlanAction;
         const result = await planService.update({
           threadId,
           ...(explicit ? { planPath: requirePath(args.path) } : {}),
-          action,
-          content: String(args.content ?? ''),
-          anchor: typeof args.anchor === 'string' ? args.anchor : undefined,
-          heading: typeof args.heading === 'string' ? args.heading : undefined,
+          /**
+           * Forwarded only when PRESENT. Defaulting any of the three would make
+           * every call carry two variants and refuse itself — "exactly one" is a
+           * property of what the caller sent, so an absent field has to stay
+           * absent all the way to the validator.
+           */
+          ...(args.content !== undefined ? { content: String(args.content) } : {}),
+          ...(args.textEdits !== undefined ? { textEdits: args.textEdits as TextEdit[] } : {}),
+          ...(args.edits !== undefined ? { edits: args.edits as PlanSectionEdit[] } : {}),
           title: typeof args.title === 'string' ? args.title : undefined,
           expectedHash: typeof args.expectedHash === 'string' ? args.expectedHash : undefined,
           changeSummary: String(args.changeSummary ?? ''),
@@ -173,16 +231,14 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
         });
         /**
          * 0.2.15 (echo-free) — the address of the effect, the timeline, and the
-         * one unpredictable delta.
-         *
-         * `planPath` became `path` (every other operation calls it that),
-         * `currentVersion` went (it duplicated `version`), and `hash` arrived
-         * because the caller cannot arm its next `expectedHash` without it.
+         * one unpredictable delta. 0.2.43 adds `results`, which is the rest of
+         * that delta: which anchors moved and which ones the write took with it.
          */
         return ok({
           path: result.plan.path,
           version: result.version,
           hash: result.hash,
+          results: result.results,
         }, 'update_plan');
       } catch (err) {
         return fail(err);

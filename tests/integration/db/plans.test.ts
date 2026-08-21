@@ -117,7 +117,6 @@ describe('PlanService anchor injection', () => {
     await h.service.update({
       threadId: 'thread-1',
       title: 'Anchor injection plan',
-      action: 'replace',
       content: '## First section\n\nbody text\n\n### Nested section\n\nmore body',
       changedBy: 'agent',
     });
@@ -138,7 +137,6 @@ describe('PlanService anchor injection', () => {
     // Drugi zapis tej samej treści (z już obecnymi kotwicami) nie dubluje kotwic.
     await h.service.update({
       threadId: 'thread-1',
-      action: 'replace',
       expectedHash: await currentHash(h, 'thread-1'),
       content: saved,
       changedBy: 'user',
@@ -161,7 +159,6 @@ describe('PlanService anchor injection', () => {
     await h.service.update({
       threadId: 'thread-dup',
       title: 'Anchor uniqueness plan',
-      action: 'replace',
       content: headings.join('\n\n'),
       changedBy: 'agent',
     });
@@ -184,7 +181,7 @@ async function currentHash(harness: Harness, threadId: string): Promise<string> 
   return plan.hash;
 }
 
-describe('PlanService.update — insert_after_section against a duplicated anchor', () => {
+describe('PlanService.update — a section batch against a duplicated anchor', () => {
   let h: Harness;
 
   beforeEach(async () => {
@@ -198,7 +195,7 @@ describe('PlanService.update — insert_after_section against a duplicated ancho
   /**
    * A duplicate is only reachable by hand-writing or pasting one — generation cannot
    * produce it. It does NOT block the write (soft validation, as for pages); it only
-   * makes a targeted insert ambiguous, and guessing a side would silently put the
+   * makes a targeted edit ambiguous, and guessing a side would silently put the
    * fragment in the wrong section.
    */
   it('saves a plan carrying a duplicated anchor, then refuses to insert against it with AMBIGUOUS_ANCHOR', async () => {
@@ -208,7 +205,6 @@ describe('PlanService.update — insert_after_section against a duplicated ancho
     await h.service.update({
       threadId: 'thread-amb',
       title: 'Ambiguous anchor plan',
-      action: 'replace',
       content:
         `<!-- anchor: ${dup} -->\n## First\n\nfirst body\n\n` +
         `<!-- anchor: ${dup} -->\n## Second\n\nsecond body`,
@@ -222,10 +218,8 @@ describe('PlanService.update — insert_after_section against a duplicated ancho
     await expect(
       h.service.update({
         threadId: 'thread-amb',
-        action: 'insert_after_section',
         expectedHash: await currentHash(h, 'thread-amb'),
-        anchor: dup,
-        content: 'injected fragment',
+        edits: [{ anchor: dup, action: 'insert_after', content: 'injected fragment' }],
         changedBy: 'agent',
       }),
     ).rejects.toMatchObject({ code: 'AMBIGUOUS_ANCHOR' });
@@ -237,22 +231,20 @@ describe('PlanService.update — insert_after_section against a duplicated ancho
     await h.service.update({
       threadId: 'thread-one',
       title: 'Unique anchor plan',
-      action: 'replace',
       content: '<!-- anchor: aaaa1111 -->\n## Only\n\nonly body\n\n## Tail\n\ntail body',
       changedBy: 'user',
     });
 
     await h.service.update({
       threadId: 'thread-one',
-      action: 'insert_after_section',
       expectedHash: await currentHash(h, 'thread-one'),
-      anchor: 'aaaa1111',
-      content: 'injected fragment',
+      edits: [{ anchor: 'aaaa1111', action: 'insert_after', content: 'injected fragment' }],
       changedBy: 'agent',
     });
 
     const saved = await soleStoredBody(h);
-    // Landed inside the target section — before the next heading, not at the end of file.
+    // Landed after the target section's whole subtree — before the next `##`, not at
+    // the end of the file. (`insert_after`'s end rule, inherited from update_sections.)
     expect(saved.indexOf('injected fragment')).toBeLessThan(saved.indexOf('## Tail'));
   });
 
@@ -262,7 +254,6 @@ describe('PlanService.update — insert_after_section against a duplicated ancho
     await h.service.update({
       threadId: 'thread-none',
       title: 'Missing anchor plan',
-      action: 'replace',
       content: '## Only\n\nonly body',
       changedBy: 'user',
     });
@@ -270,10 +261,8 @@ describe('PlanService.update — insert_after_section against a duplicated ancho
     await expect(
       h.service.update({
         threadId: 'thread-none',
-        action: 'insert_after_section',
         expectedHash: await currentHash(h, 'thread-none'),
-        anchor: 'zzzz9999',
-        content: 'injected fragment',
+        edits: [{ anchor: 'zzzz9999', action: 'insert_after', content: 'injected fragment' }],
         changedBy: 'agent',
       }),
     ).rejects.toMatchObject({ code: 'SECTION_NOT_FOUND' });
@@ -286,7 +275,6 @@ describe('PlanService.update — insert_after_section against a duplicated ancho
     await h.service.update({
       threadId: 'thread-read',
       title: 'Duplicate read plan',
-      action: 'replace',
       content:
         `<!-- anchor: ${dup} -->\n## First\n\nfirst body\n\n` +
         `<!-- anchor: ${dup} -->\n## Second\n\nsecond body`,
@@ -298,6 +286,51 @@ describe('PlanService.update — insert_after_section against a duplicated ancho
     const hit = await h.service.getByAnchor(dup);
     expect(hit).not.toBeNull();
     expect(hit!.threadId).toBe('thread-read');
+  });
+});
+
+describe('PlanService.update — a plan larger than the read budget', () => {
+  let h: Harness;
+
+  beforeEach(async () => {
+    h = await setup();
+  });
+
+  afterEach(async () => {
+    await teardown(h);
+  });
+
+  /**
+   * 0.2.43 — the write path reads the WHOLE plan, never the budgeted read.
+   *
+   * `getByPath` caps its answer at the response budget while still hashing the
+   * whole file, so an edit composed against that answer would pass the
+   * `expectedHash` guard and then write the truncation back. Differential edits
+   * make partial writes routine, so a long plan must survive a one-line change.
+   */
+  it('keeps everything past the response budget when a textEdits call rewrites one line', async () => {
+    seedThread(h.db, 'thread-big');
+
+    const filler = Array.from({ length: 3000 }, (_, i) => `line ${i} of ordinary plan prose`).join('\n');
+    const body = `## Head\n\nneedle here\n\n${filler}\n\n## Tail\n\nthe very last words\n`;
+    expect(body.length).toBeGreaterThan(60_000);
+
+    await h.service.update({ threadId: 'thread-big', title: 'Big plan', content: body, changedBy: 'user' });
+
+    await h.service.update({
+      threadId: 'thread-big',
+      expectedHash: await currentHash(h, 'thread-big'),
+      textEdits: [{ find: 'needle here', replaceWith: 'NEEDLE FOUND' }],
+      changedBy: 'agent',
+    });
+
+    // Raw bytes, not `soleStoredBody` — that helper reads through `getByPath`,
+    // whose answer is budgeted and would hide the very truncation under test.
+    const files = await h.plansPages.listMarkdownFiles();
+    const saved = await readPlanFile(h, files[0]!);
+    expect(saved).toContain('NEEDLE FOUND');
+    expect(saved).toContain('the very last words');
+    expect(saved).toContain('line 2999 of ordinary plan prose');
   });
 });
 
@@ -323,7 +356,6 @@ describe('PlanService.getByAnchor', () => {
     await h.service.update({
       threadId: 'thread-1',
       title: 'Anchor resolve plan',
-      action: 'replace',
       content: '## First section\n\nbody text',
       changedBy: 'agent',
     });
@@ -341,7 +373,6 @@ describe('PlanService.getByAnchor', () => {
     await h.service.update({
       threadId: 'thread-1',
       title: 'Only section plan',
-      action: 'replace',
       content: '## Only section\n\nbody',
       changedBy: 'agent',
     });
@@ -372,7 +403,6 @@ describe('PlanService.listPlans', () => {
     await h.service.update({
       threadId: 'seed-old',
       title: 'Old plan',
-      action: 'replace',
       content: 'old',
       changedBy: 'agent',
     });
@@ -388,7 +418,6 @@ describe('PlanService.listPlans', () => {
     await h.service.update({
       threadId: 'thread-1',
       title: 'Fresh plan',
-      action: 'replace',
       content: 'fresh',
       changedBy: 'agent',
     });
@@ -436,14 +465,12 @@ describe('PlanService.update — concurrent first-time creation (regression)', (
       h.service.update({
         threadId: 'thread-a',
         title: 'Race Plan',
-        action: 'replace',
         content: 'content from thread A',
         changedBy: 'agent',
       }),
       h.service.update({
         threadId: 'thread-b',
         title: 'Race Plan',
-        action: 'replace',
         content: 'content from thread B',
         changedBy: 'agent',
       }),
@@ -463,12 +490,17 @@ describe('PlanService.update — concurrent first-time creation (regression)', (
   });
 });
 
-describe('PlanService.updateContent — broadcasts plans:changed (regression)', () => {
+describe('PlanService.updateContent — broadcasts plan:updated with changedBy user', () => {
   it('a body-only save (no frontmatter change) still broadcasts, so other open tabs/viewers refresh', async () => {
     // Regression: the indexer only broadcasts `plans:changed` when
     // *frontmatter* differs — a body-only PlanEditor save (the common case)
     // used to emit nothing at all, leaving every other viewer of this plan
     // silently stale until manual reload.
+    //
+    // 0.2.43: the event is `plan:updated`, not the coarser `plans:changed`. The
+    // editor's save is the `content` variant made by a user, not a different
+    // kind of write, so it publishes what plan writes publish — and it says who
+    // made it. `threadId` is null because the editor is not a thread.
     const broadcast = vi.fn();
     const h = await setup({ broadcast });
     try {
@@ -476,7 +508,6 @@ describe('PlanService.updateContent — broadcasts plans:changed (regression)', 
       await h.service.update({
         threadId: 'thread-1',
         title: 'Broadcast plan',
-        action: 'replace',
         content: 'original body',
         changedBy: 'agent',
       });
@@ -489,7 +520,13 @@ describe('PlanService.updateContent — broadcasts plans:changed (regression)', 
         changedBy: 'user',
       });
 
-      expect(broadcast).toHaveBeenCalledWith({ kind: 'plans:changed', path: plan.path });
+      expect(broadcast).toHaveBeenCalledWith({
+        kind: 'plan:updated',
+        planPath: plan.path,
+        threadId: null,
+        version: 2,
+        changedBy: 'user',
+      });
     } finally {
       await teardown(h);
     }
@@ -513,7 +550,6 @@ describe('M40 — plan anchor injection has one implementation and two triggers'
     await h.service.update({
       threadId: 't-sync',
       title: 'Sync plan',
-      action: 'replace',
       content: '## Alpha\n\ntext\n\n## Beta\n\nmore\n',
       changedBy: 'agent',
     });
@@ -524,10 +560,8 @@ describe('M40 — plan anchor injection has one implementation and two triggers'
     // No timer advanced, no sleep: the very next call resolves that anchor.
     await h.service.update({
       threadId: 't-sync',
-      action: 'insert_after_section',
       expectedHash: await currentHash(h, 't-sync'),
-      anchor,
-      content: 'inserted body\n',
+      edits: [{ anchor: anchor!, action: 'insert_after', content: 'inserted body\n' }],
       changedBy: 'agent',
     });
     expect(await soleStoredBody(h)).toContain('inserted body');
@@ -536,8 +570,8 @@ describe('M40 — plan anchor injection has one implementation and two triggers'
   /**
    * 0.2.15 — the guard that makes a plan safe to have several writers.
    *
-   * The rationale is specific to plans: an agent turn, a `user_edit` from the
-   * UI and an N:1 model attach all write the same file, so last-write-wins here
+   * The rationale is specific to plans: an agent turn, a save from the plan
+   * editor and an N:1 model attach all write the same file, so last-write-wins here
    * loses authored content rather than merely reordering it.
    */
   it('requires expectedHash on an existing plan, and refuses a stale one with PLAN_CONFLICT', async () => {
@@ -545,7 +579,6 @@ describe('M40 — plan anchor injection has one implementation and two triggers'
     await h.service.update({
       threadId: 't-guard',
       title: 'Guarded plan',
-      action: 'replace',
       content: 'original body\n',
       changedBy: 'agent',
     });
@@ -556,7 +589,6 @@ describe('M40 — plan anchor injection has one implementation and two triggers'
     await expect(
       h.service.update({
         threadId: 't-guard',
-        action: 'replace',
         content: 'unguarded overwrite\n',
         changedBy: 'agent',
       }),
@@ -566,7 +598,6 @@ describe('M40 — plan anchor injection has one implementation and two triggers'
     const conflict = await h.service
       .update({
         threadId: 't-guard',
-        action: 'replace',
         expectedHash: 'b'.repeat(64),
         content: 'stale overwrite\n',
         changedBy: 'agent',
@@ -582,7 +613,6 @@ describe('M40 — plan anchor injection has one implementation and two triggers'
     // caller can chain writes without a read between them.
     const ok = await h.service.update({
       threadId: 't-guard',
-      action: 'replace',
       expectedHash: await currentHash(h, 't-guard'),
       content: 'guarded overwrite\n',
       changedBy: 'agent',
@@ -592,7 +622,6 @@ describe('M40 — plan anchor injection has one implementation and two triggers'
     await expect(
       h.service.update({
         threadId: 't-guard',
-        action: 'replace',
         expectedHash: ok.hash,
         content: 'chained\n',
         changedBy: 'agent',
@@ -625,7 +654,6 @@ describe('PlanService — the `applied` flag (0.2.14)', () => {
       await h.service.update({
         threadId: 'thread-1',
         title: 'Fresh plan',
-        action: 'replace',
         content: 'body',
         changedBy: 'agent',
       });
@@ -667,7 +695,6 @@ describe('PlanService — the `applied` flag (0.2.14)', () => {
       await h.service.update({
         threadId: 'thread-1',
         title: 'Marked plan',
-        action: 'replace',
         content: 'body',
         changedBy: 'agent',
       });
@@ -705,7 +732,6 @@ describe('PlanService — the `applied` flag (0.2.14)', () => {
       await h.service.update({
         threadId: 'thread-1',
         title: 'Idempotent plan',
-        action: 'replace',
         content: 'body',
         changedBy: 'agent',
       });
@@ -730,7 +756,6 @@ describe('PlanService — the `applied` flag (0.2.14)', () => {
       await h.service.update({
         threadId: 'thread-1',
         title: 'Versionless plan',
-        action: 'replace',
         content: 'body',
         changedBy: 'agent',
       });
@@ -761,7 +786,6 @@ describe('PlanService — the `applied` flag (0.2.14)', () => {
       await h.service.update({
         threadId: 'thread-1',
         title: 'Old title',
-        action: 'replace',
         content: 'body',
         changedBy: 'agent',
       });
@@ -782,5 +806,219 @@ describe('PlanService — the `applied` flag (0.2.14)', () => {
     } finally {
       await teardown(h);
     }
+  });
+});
+
+/**
+ * 0.2.43 — the three input variants, at the level where the filesystem is real.
+ *
+ * The pure half of the batch engine (ordering, subtree rules, match scopes)
+ * lives in `src/server/services/plan-write.test.ts`; what is here is everything
+ * that needed a plan file, a version log and an event emitter to be true.
+ */
+describe('PlanService.update — three input variants', () => {
+  let h: Harness;
+
+  beforeEach(async () => {
+    h = await setup();
+  });
+
+  afterEach(async () => {
+    await teardown(h);
+  });
+
+  const SEED = '## Alpha\n\nalpha body\n\n## Beta\n\nbeta body\n';
+
+  async function seedPlan(threadId: string): Promise<{ anchors: string[]; hash: string }> {
+    seedThread(h.db, threadId);
+    await h.service.update({ threadId, title: `Plan ${threadId}`, content: SEED, changedBy: 'agent' });
+    const body = await soleStoredBody(h);
+    return {
+      anchors: [...body.matchAll(new RegExp(ANCHOR_PATTERN_SOURCE, 'g'))].map((m) => m[1]!),
+      hash: await currentHash(h, threadId),
+    };
+  }
+
+  it('refuses a call carrying no variant before it has looked at anything', async () => {
+    seedThread(h.db, 't-none');
+    await expect(
+      h.service.update({ threadId: 't-none', title: 'X', changedBy: 'agent' }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    // Nothing was created by the refusal.
+    expect(h.service.listPlans()).toHaveLength(0);
+  });
+
+  /**
+   * MISSING_TITLE is checked FIRST, in every variant. A thread with no plan has
+   * no sections either, so answering `SECTION_NOT_FOUND` would send the caller
+   * hunting for an anchor when what it actually failed to send was a name.
+   */
+  it.each([
+    ['content', { content: 'x' }],
+    ['textEdits', { textEdits: [{ find: 'x', replaceWith: 'y' }] }],
+    ['edits', { edits: [{ anchor: 'aaaa1111', action: 'replace' as const, content: 'x' }] }],
+  ])('answers MISSING_TITLE for the %s variant on a thread with no plan', async (name, variant) => {
+    seedThread(h.db, `t-title-${name}`);
+    await expect(
+      h.service.update({ threadId: `t-title-${name}`, ...variant, changedBy: 'agent' }),
+    ).rejects.toMatchObject({ code: 'MISSING_TITLE' });
+    expect(h.service.listPlans()).toHaveLength(0);
+  });
+
+  /**
+   * On an EMPTY plan only `content` can succeed — and the two that cannot must
+   * refuse before a filename is reserved, or every rejected call would leave an
+   * orphan plan behind.
+   */
+  it('answers SECTION_NOT_FOUND for a batch against a plan that does not exist yet, and creates nothing', async () => {
+    seedThread(h.db, 't-empty-batch');
+    await expect(
+      h.service.update({
+        threadId: 't-empty-batch',
+        title: 'Empty batch plan',
+        edits: [{ anchor: 'aaaa1111', action: 'append', content: 'x' }],
+        changedBy: 'agent',
+      }),
+    ).rejects.toMatchObject({ code: 'SECTION_NOT_FOUND' });
+    expect(h.service.listPlans()).toHaveLength(0);
+    expect(h.db.prepare('SELECT COUNT(*) AS n FROM file_version').get()).toMatchObject({ n: 0 });
+  });
+
+  it('answers FIND_NOT_FOUND for textEdits against a plan that does not exist yet, and creates nothing', async () => {
+    seedThread(h.db, 't-empty-diff');
+    await expect(
+      h.service.update({
+        threadId: 't-empty-diff',
+        title: 'Empty diff plan',
+        textEdits: [{ find: 'anything', replaceWith: 'x' }],
+        changedBy: 'agent',
+      }),
+    ).rejects.toMatchObject({ code: 'FIND_NOT_FOUND' });
+    expect(h.service.listPlans()).toHaveLength(0);
+  });
+
+  it('counts a top-level textEdits over the WHOLE plan', async () => {
+    const { hash } = await seedPlan('t-diff');
+    const res = await h.service.update({
+      threadId: 't-diff',
+      expectedHash: hash,
+      textEdits: [{ find: 'body', replaceWith: 'text', expectedMatches: 2 }],
+      changeSummary: 'rename body to text',
+      changedBy: 'agent',
+    });
+    expect(res.results).toEqual([
+      { anchor: null, action: null, affectedAnchors: expect.any(Array), droppedAnchors: [], replacements: 2 },
+    ]);
+    const body = await soleStoredBody(h);
+    expect(body).toContain('alpha text');
+    expect(body).toContain('beta text');
+  });
+
+  it('answers one results row with a null anchor and a null action for the content variant', async () => {
+    const { hash } = await seedPlan('t-content');
+    const res = await h.service.update({
+      threadId: 't-content',
+      expectedHash: hash,
+      content: '## Only\n\njust this\n',
+      changeSummary: 'rewrite',
+      changedBy: 'agent',
+    });
+    expect(res.results).toHaveLength(1);
+    expect(res.results[0]).toMatchObject({ anchor: null, action: null });
+    expect(res.results[0]!.replacements).toBeUndefined();
+  });
+
+  /**
+   * A batch is ALL OR NOTHING, and "nothing" has to mean the file, the version
+   * log and the event stream alike — a caller told its batch was refused must
+   * not find half of it applied, or a version row asserting that something was.
+   */
+  it('writes nothing at all when one entry of a batch is refused', async () => {
+    const broadcast = vi.fn();
+    const hh = await setup({ broadcast });
+    try {
+      seedThread(hh.db, 't-atomic');
+      await hh.service.update({ threadId: 't-atomic', title: 'Atomic plan', content: SEED, changedBy: 'agent' });
+      const before = await soleStoredBody(hh);
+      const anchors = [...before.matchAll(new RegExp(ANCHOR_PATTERN_SOURCE, 'g'))].map((m) => m[1]!);
+      const versionBefore = (await hh.service.getByThread('t-atomic'))!.currentVersion;
+      broadcast.mockClear();
+
+      await expect(
+        hh.service.update({
+          threadId: 't-atomic',
+          expectedHash: await currentHash(hh, 't-atomic'),
+          edits: [
+            { anchor: anchors[0]!, action: 'replace', content: 'rewritten alpha' },
+            { anchor: 'zzzz9999', action: 'append', content: 'to nowhere' },
+          ],
+          changeSummary: 'half-good batch',
+          changedBy: 'agent',
+        }),
+      ).rejects.toMatchObject({ code: 'SECTION_NOT_FOUND' });
+
+      expect(await soleStoredBody(hh)).toBe(before);
+      expect((await hh.service.getByThread('t-atomic'))!.currentVersion).toBe(versionBefore);
+      expect(broadcast).not.toHaveBeenCalled();
+    } finally {
+      await teardown(hh);
+    }
+  });
+
+  /**
+   * One call is one act: N sections edited together are one version carrying one
+   * `changeSummary`, not N of either.
+   */
+  it('captures exactly one version and one changeSummary for a batch touching two sections', async () => {
+    const { anchors, hash } = await seedPlan('t-batch');
+    const versionBefore = (await h.service.getByThread('t-batch'))!.currentVersion;
+    const res = await h.service.update({
+      threadId: 't-batch',
+      expectedHash: hash,
+      edits: [
+        { anchor: anchors[1]!, action: 'append', content: 'more beta' },
+        { anchor: anchors[0]!, action: 'replace', content: 'new alpha' },
+      ],
+      changeSummary: 'one summary for two sections',
+      changedBy: 'agent',
+    });
+    expect(res.version).toBe(versionBefore + 1);
+    // `results` comes back in the order GIVEN, not the bottom-up order applied.
+    expect(res.results.map((r) => r.anchor)).toEqual([anchors[1], anchors[0]]);
+    const summaries = h.db
+      .prepare('SELECT change_summary FROM file_version ORDER BY version')
+      .all() as Array<{ change_summary: string | null }>;
+    expect(summaries.filter((s) => s.change_summary === 'one summary for two sections')).toHaveLength(1);
+  });
+
+  it('arms the next call with the hash it returns', async () => {
+    const { hash } = await seedPlan('t-chain');
+    const first = await h.service.update({
+      threadId: 't-chain',
+      expectedHash: hash,
+      content: '## One\n\nfirst\n',
+      changedBy: 'agent',
+    });
+    // No read in between: the returned hash IS the guard for the next write.
+    await h.service.update({
+      threadId: 't-chain',
+      expectedHash: first.hash,
+      content: '## Two\n\nsecond\n',
+      changedBy: 'agent',
+    });
+    expect(await soleStoredBody(h)).toContain('second');
+  });
+
+  it('answers PLAN_NOT_FOUND, naming the plans it does have, for an explicit path that resolves to nothing', async () => {
+    await seedPlan('t-known');
+    await expect(
+      h.service.update({
+        threadId: 't-known',
+        planPath: 'no-such-plan.md',
+        expectedHash: 'whatever',
+        content: 'x',
+        changedBy: 'agent',
+      }),
+    ).rejects.toMatchObject({ code: 'PLAN_NOT_FOUND' });
   });
 });

@@ -702,12 +702,17 @@ export interface ClearedQueueResponse {
 
 // --- M10: Plans (filesystem-backed as of 0.1.127 — see brief 0-1-126-to-0-1-127) ---
 
-export type PlanAction =
-  | 'replace'
-  | 'append'
-  | 'insert_after_section'
-  | 'user_edit'
-  | 'system_duplicate';
+/**
+ * 0.2.43 — `PlanAction` is GONE, and with it `insert_after_section`, `user_edit`
+ * and `system_duplicate`.
+ *
+ * `update_plan` no longer takes a top-level action at all: a call names one of
+ * three input variants, and the five SECTION actions it may carry inside
+ * `edits[]` live with the engine that applies them (`PlanEditAction` in
+ * `server/services/plan-write.ts`). `user_edit` went because the difference it
+ * encoded — the editor's save versus an agent's write — is `changedBy`, not a
+ * different kind of write; `system_duplicate` had no caller left.
+ */
 export type PlanChangedBy = 'agent' | 'user' | 'system';
 
 /** Reserved frontmatter keys set at file-creation time, immutable from the claude4spec side. `title` and `applied` are mutable. */

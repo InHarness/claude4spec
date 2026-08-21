@@ -34,13 +34,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import matter from 'gray-matter';
 import { customAlphabet } from 'nanoid';
-import type {
-  Plan,
-  PlanAction,
-  PlanChangedBy,
-  PlanFrontmatter,
-  PlanListItem,
-} from '../../shared/entities.js';
+import type { Plan, PlanChangedBy, PlanFrontmatter, PlanListItem } from '../../shared/entities.js';
 import { PLAN_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
 import { PLAN_ROOT_MARKER } from '../../shared/types.js';
 import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
@@ -57,6 +51,15 @@ import { readArtifactWindow, windowBody, type ArtifactRange } from './artifact-r
 import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 import { ConflictError } from './brief.js';
 import { hashContent, toIso } from './artifact-content.js';
+import { anchorDelta, sectionDigests, sectionRanges } from './section-text.js';
+import {
+  applyPlanBatch,
+  selectPlanVariant,
+  type PlanEditPayload,
+  type PlanEditResult,
+  type PlanSectionEdit,
+} from './plan-write.js';
+import { applyTextEdits, type TextEdit } from './text-edits.js';
 
 // Generator stays strict 8 (per M06 spec `15u7sazr` — auto-inject contract).
 const nanoid8 = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8);
@@ -93,10 +96,20 @@ export interface PlanUpdateInput {
    * given, the thread binding is neither read nor written.
    */
   planPath?: string;
-  action: PlanAction;
-  content: string;
-  anchor?: string;
-  heading?: string;
+  /**
+   * 0.2.43 — EXACTLY ONE of `content` / `textEdits` / `edits`, which is what
+   * replaced the old top-level `action` dictionary.
+   *
+   * Optional in this TYPE because "exactly one of three" is not a shape a
+   * TypeScript field can carry; the enforcement is {@link selectPlanVariant},
+   * run before anything touches the plan file so a malformed call can neither
+   * create a plan nor bump a version.
+   */
+  content?: string;
+  /** Literal substitutions counted over the WHOLE plan. See {@link PlanUpdateInput.content}. */
+  textEdits?: TextEdit[];
+  /** A transactional section batch, one entry per section. See {@link PlanUpdateInput.content}. */
+  edits?: PlanSectionEdit[];
   /** Required on the first call in a thread (creates the file) — MISSING_TITLE otherwise. */
   title?: string;
   /**
@@ -110,9 +123,9 @@ export interface PlanUpdateInput {
    * plan — lives in {@link PlanService.update}, so it applies to every channel
    * rather than to whichever one remembered to check.
    *
-   * A plan has SEVERAL concurrent writers (an agent turn, a `user_edit` from the
-   * UI, an N:1 model attach), which is precisely why last-write-wins was losing
-   * content quietly here and is tolerated for, say, a tag assignment.
+   * A plan has SEVERAL concurrent writers (an agent turn, a save from the plan
+   * editor, an N:1 model attach), which is precisely why last-write-wins was
+   * losing content quietly here and is tolerated for, say, a tag assignment.
    */
   expectedHash?: string;
   changeSummary?: string;
@@ -123,12 +136,33 @@ export interface PlanUpdateResult {
   plan: Plan;
   version: number;
   /**
+   * 0.2.43 — one row per edit for the `edits` variant, in the order the caller
+   * GAVE them (not the bottom-up order they were applied in); a single row with
+   * `anchor: null` for the two whole-plan variants.
+   *
+   * The plan's content is deliberately not among them: a write answers with the
+   * address of its effect and the deltas the caller could not predict, never
+   * with an echo of what it just sent.
+   */
+  results: PlanEditResult[];
+  /**
    * 0.2.15 — sha256 of the content just written. The caller needs it to arm the
    * NEXT call's `expectedHash`; without it every write would have to be followed
    * by a read, and the window between the two is exactly the race the guard
    * exists to close.
    */
   hash: string;
+}
+
+/** What {@link composePlanBody} produces: the new body, plus what the response needs. */
+interface ComposedPlanBody {
+  body: string;
+  /** Per addressed anchor, the anchors its range covered before the splice. */
+  scopeOf: Map<string, string[]>;
+  /** Per addressed anchor of an `edit`, how many substitutions it made. */
+  replacementsOf: Map<string, number>;
+  /** The top-level `textEdits` variant's total, which addresses no anchor. */
+  replacements?: number;
 }
 
 export interface PlanUpdateContentOpts {
@@ -207,19 +241,7 @@ export class PlanService {
    * `hash` stays the digest of the whole file — see `readArtifactWindow`.
    */
   async getByPath(planPath: string, opts?: { range?: ArtifactRange }): Promise<Plan> {
-    if (!(await this.deps.plansPages.exists(planPath))) {
-      throw new DomainError('NOT_FOUND', `plan '${planPath}' not found`);
-    }
-    const abs = this.absPath(planPath);
-    const raw = await fs.readFile(abs, 'utf-8');
-    const parsed = matter(raw);
-    const frontmatter = (parsed.data ?? {}) as PlanFrontmatter;
-    if (frontmatter.type !== 'plan') {
-      throw new DomainError(
-        'PLAN_INVALID_FRONTMATTER',
-        `file '${planPath}' is not a plan (frontmatter.type=${JSON.stringify(frontmatter.type)})`,
-      );
-    }
+    const { raw, parsed, frontmatter } = await this.loadFile(planPath);
     const windowed = readArtifactWindow(
       raw,
       opts?.range,
@@ -242,6 +264,54 @@ export class PlanService {
       createdAt: toIso(frontmatter.created_at),
       updatedAt: this.deps.pageVersions.getLatestForPath(planPath, undefined, PLAN_ROOT_MARKER)?.createdAt ?? toIso(frontmatter.created_at),
     };
+  }
+
+  /**
+   * 0.2.43 — the same plan, WHOLE: the read every write path takes.
+   *
+   * {@link getByPath} answers a reader, so it passes the file through
+   * `readArtifactWindow` and caps a large plan at the response budget. That is
+   * right for an answer and destructive for a write. `hash` is the digest of the
+   * whole file either way, so the `expectedHash` guard passes on a truncated
+   * body; composing against it would then write the truncation back, and a plan
+   * over the budget would silently lose its tail on its first edit — with a
+   * `file_version` row asserting the edit was the change. Differential edits
+   * make partial writes the normal path, so this is not a corner: every path
+   * that composes new bytes from the old ones reads through here.
+   */
+  private async readForWrite(planPath: string): Promise<Plan> {
+    const { raw, parsed, frontmatter } = await this.loadFile(planPath);
+    return {
+      path: planPath,
+      frontmatter,
+      body: parsed.content,
+      content: raw,
+      hash: hashContent(raw),
+      currentVersion: this.currentVersionFor(planPath),
+      createdAt: toIso(frontmatter.created_at),
+      updatedAt:
+        this.deps.pageVersions.getLatestForPath(planPath, undefined, PLAN_ROOT_MARKER)?.createdAt ??
+        toIso(frontmatter.created_at),
+    };
+  }
+
+  /** Existence, bytes and frontmatter validation — shared by both reads above. */
+  private async loadFile(
+    planPath: string,
+  ): Promise<{ raw: string; parsed: matter.GrayMatterFile<string>; frontmatter: PlanFrontmatter }> {
+    if (!(await this.deps.plansPages.exists(planPath))) {
+      throw new DomainError('NOT_FOUND', `plan '${planPath}' not found`);
+    }
+    const raw = await fs.readFile(this.absPath(planPath), 'utf-8');
+    const parsed = matter(raw);
+    const frontmatter = (parsed.data ?? {}) as PlanFrontmatter;
+    if (frontmatter.type !== 'plan') {
+      throw new DomainError(
+        'PLAN_INVALID_FRONTMATTER',
+        `file '${planPath}' is not a plan (frontmatter.type=${JSON.stringify(frontmatter.type)})`,
+      );
+    }
+    return { raw, parsed, frontmatter };
   }
 
   async getByThread(threadId: string, opts?: { range?: ArtifactRange }): Promise<Plan | null> {
@@ -337,10 +407,25 @@ export class PlanService {
   }
 
   /**
-   * MCP `update_plan` handler logic. First call in a thread (`plan_path IS
-   * NULL`) requires `title`, creates the file (`slug = slugify(title)`,
-   * disambiguated on collision, then immutable) and attaches the thread.
-   * Subsequent calls compose against the existing content and overwrite.
+   * The `update_plan` operation — 0.2.43's three input variants, one write.
+   *
+   * First call in a thread (`plan_path IS NULL`) requires `title`, creates the
+   * file (`slug = slugify(title)`, disambiguated on collision, then immutable)
+   * and attaches the thread. Subsequent calls compose against the existing
+   * content and overwrite.
+   *
+   * ## Order of the gates, which is part of the contract
+   *
+   * 1. **Variant selection**, before any I/O at all: exactly one of `content` /
+   *    `textEdits` / `edits`, and a batch whose shape is internally consistent.
+   * 2. **`MISSING_TITLE`**, before anchors are resolved — in EVERY variant. A
+   *    thread with no plan and no title cannot be answered with
+   *    `SECTION_NOT_FOUND`; it has not got as far as having sections.
+   * 3. **The hash guard**, then the composition, then one write.
+   *
+   * Nothing is written until the whole composition has succeeded in memory, so a
+   * batch is all-or-nothing: one rejected entry means no file change, no
+   * `file_version` row and no `plan:updated`.
    *
    * The whole read-modify-write cycle runs inside {@link withLock}, keyed by
    * the target plan path (or by thread while the plan doesn't exist yet) —
@@ -350,24 +435,19 @@ export class PlanService {
    * would otherwise silently clobber each other.
    */
   async update(input: PlanUpdateInput): Promise<PlanUpdateResult> {
-    const {
-      threadId,
-      planPath: addressed,
-      action,
-      content,
-      anchor,
-      heading,
-      title,
-      expectedHash,
-      changeSummary,
-      changedBy,
-    } = input;
+    const { threadId, planPath: addressed, title, expectedHash, changeSummary, changedBy } = input;
+    /**
+     * Before the lock, before the filesystem, before anything: a call that names
+     * two variants or none is a mistake in the REQUEST, and answering it must
+     * not have cost a plan file or a version row.
+     */
+    const payload = selectPlanVariant(input);
     /**
      * An explicitly addressed plan must EXIST — this path does not create one.
      * Creation is thread-bound by design (§7: "a plan is born only from a
      * thread"), so a channel with no thread can edit plans and not mint them.
      */
-    if (addressed !== undefined) await this.getByPath(addressed);
+    if (addressed !== undefined) await this.requirePlan(addressed);
     const lockKey = addressed ?? this.deps.chatService.getThreadPlanPath(threadId) ?? `thread:${threadId}`;
 
     return this.withLock(lockKey, async () => {
@@ -378,8 +458,23 @@ export class PlanService {
       if (!existingPath) {
         const trimmedTitle = title?.trim();
         if (!trimmedTitle) {
-          throw new DomainError('MISSING_TITLE', 'title is required on the first update_plan call in a thread');
+          throw new DomainError(
+            'MISSING_TITLE',
+            'title is required on the first update_plan call in a thread',
+            'pass `title` — it names the plan and fixes its filename for good',
+          );
         }
+        /**
+         * Composed against an EMPTY plan, and composed BEFORE `allocatePath`.
+         *
+         * Only `content` can succeed here: `edits` addresses sections that a
+         * plan with no text does not have (`SECTION_NOT_FOUND`, whatever the
+         * action), and `textEdits` looks for fragments that are not there
+         * (`FIND_NOT_FOUND`). Both refusals have to happen before a filename is
+         * reserved, or a rejected call would leave an orphan plan behind — the
+         * same failure mode the `target: 'explicit'` mount was introduced to fix.
+         */
+        const composed = composePlanBody('', payload);
         const base = slugify(trimmedTitle) || 'plan';
         // v0.1.129 fix: the OUTER lock (keyed `thread:${threadId}`) only
         // serializes calls from the SAME thread — it does nothing when two
@@ -391,9 +486,9 @@ export class PlanService {
         // resource — the slug `base` every racing candidate is derived from —
         // so only genuinely colliding titles serialize; different titles
         // never look at the same candidates and proceed unblocked.
-        const { planPath, version, plan } = await this.withLock(`new-plan:${base}`, async () => {
+        const { planPath, version, plan, finalContent } = await this.withLock(`new-plan:${base}`, async () => {
           const allocated = await this.allocatePath(base);
-          const finalContent = injectAnchors(composeContent('', action, content, anchor, heading));
+          const injected = injectAnchors(composed.body);
           const frontmatter: PlanFrontmatter = {
             type: 'plan',
             title: trimmedTitle,
@@ -404,7 +499,7 @@ export class PlanService {
             // first byte. Pre-0.2.14 files without the key still read `false`.
             applied: false,
           };
-          const fullContent = matter.stringify(finalContent, frontmatter as Record<string, unknown>);
+          const fullContent = matter.stringify(injected, frontmatter as Record<string, unknown>);
           const abs = this.absPath(allocated);
           await fs.mkdir(path.dirname(abs), { recursive: true });
           this.deps.plansWatcher.suppress(allocated);
@@ -423,14 +518,20 @@ export class PlanService {
             planPath: allocated,
             version: this.currentVersionFor(allocated),
             plan: await this.getByPath(allocated),
+            finalContent: injected,
           };
         });
         this.deps.chatService.attachPlanToThread(threadId, planPath);
         this.deps.ws.broadcast({ kind: 'plan:updated', planPath, threadId, version, changedBy });
-        return { plan, version, hash: plan.hash };
+        return {
+          plan,
+          version,
+          hash: plan.hash,
+          results: buildPlanResults(payload, '', finalContent, composed),
+        };
       }
 
-      const current = await this.getByPath(existingPath);
+      const current = await this.readForWrite(existingPath);
       /**
        * 0.2.15 — the guard, enforced HERE rather than in each channel's schema.
        *
@@ -445,6 +546,10 @@ export class PlanService {
        * caller a moment ago. Substituting `current.hash` here would satisfy every
        * schema and every test while guarding nothing at all — the value has to
        * come from the caller's own earlier read to mean anything.
+       *
+       * 0.2.43 — the hash is of the WHOLE plan in all three variants, a batch
+       * touching one section included. A guard narrowed to a subtree would let
+       * two callers agree on a section while disagreeing about the file.
        */
       if (typeof expectedHash !== 'string' || expectedHash.length === 0) {
         throw new DomainError(
@@ -456,32 +561,106 @@ export class PlanService {
       if (expectedHash !== current.hash) {
         throw new ConflictError('PLAN_CONFLICT', 'plan changed since last read', current.hash);
       }
-      const finalContent = injectAnchors(composeContent(current.body, action, content, anchor, heading));
-      const fullContent = matter.stringify(finalContent, current.frontmatter as Record<string, unknown>);
-      const abs = this.absPath(existingPath);
-      this.deps.plansWatcher.suppress(existingPath);
-      await fs.writeFile(abs, fullContent, 'utf-8');
-      await this.deps.pageVersions.recordVersion(
-        existingPath,
-        'update',
-        toFileChangedBy(changedBy),
-        undefined,
-        this.deps.plansSerializer,
-        PLAN_ROOT_MARKER,
+      const composed = composePlanBody(current.body, payload);
+      const finalContent = injectAnchors(composed.body);
+      const { version, plan } = await this.persist({
+        planPath: existingPath,
+        body: finalContent,
+        frontmatter: current.frontmatter,
         changeSummary,
-      );
-      await this.deps.frontmatterIndexer.indexPage(PLAN_ROOT_MARKER, existingPath);
-
-      const version = this.currentVersionFor(existingPath);
-      const plan = await this.getByPath(existingPath);
+        changedBy,
+      });
       this.deps.ws.broadcast({ kind: 'plan:updated', planPath: existingPath, threadId, version, changedBy });
-      return { plan, version, hash: plan.hash };
+      return {
+        plan,
+        version,
+        hash: plan.hash,
+        results: buildPlanResults(payload, current.body, finalContent, composed),
+      };
     });
   }
 
+  /**
+   * The write tail every plan write shares: suppress the watcher, write, capture
+   * ONE `file_version` row, re-index.
+   *
+   * One row per CALL, not per edit — a batch touching five sections is one
+   * version carrying one `changeSummary`, because it is one act.
+   */
+  private async persist(args: {
+    planPath: string;
+    body: string;
+    frontmatter: PlanFrontmatter;
+    changeSummary?: string;
+    changedBy: PlanChangedBy;
+  }): Promise<{ version: number; plan: Plan }> {
+    const fullContent = matter.stringify(args.body, args.frontmatter as Record<string, unknown>);
+    return this.persistRaw({ ...args, fullContent });
+  }
+
+  /** {@link persist}, for a caller that already holds the full file bytes. */
+  private async persistRaw(args: {
+    planPath: string;
+    fullContent: string;
+    changeSummary?: string;
+    changedBy: PlanChangedBy;
+  }): Promise<{ version: number; plan: Plan }> {
+    const abs = this.absPath(args.planPath);
+    this.deps.plansWatcher.suppress(args.planPath);
+    await fs.writeFile(abs, args.fullContent, 'utf-8');
+    await this.deps.pageVersions.recordVersion(
+      args.planPath,
+      'update',
+      toFileChangedBy(args.changedBy),
+      undefined,
+      this.deps.plansSerializer,
+      PLAN_ROOT_MARKER,
+      args.changeSummary,
+    );
+    await this.deps.frontmatterIndexer.indexPage(PLAN_ROOT_MARKER, args.planPath);
+    return { version: this.currentVersionFor(args.planPath), plan: await this.getByPath(args.planPath) };
+  }
+
+  /**
+   * The write path's "does this plan exist" check — `PLAN_NOT_FOUND`, and it
+   * carries the plans of this project.
+   *
+   * A read answers a wrong path with the generic `NOT_FOUND`; a write is where
+   * the caller is about to lose its edit to a typo, so the refusal names the
+   * alternatives instead of leaving it to guess which of `list_plans`' paths it
+   * meant.
+   */
+  private async requirePlan(planPath: string): Promise<Plan> {
+    if (!(await this.deps.plansPages.exists(planPath))) {
+      const known = this.listPlans().map((p) => p.path);
+      throw new DomainError(
+        'PLAN_NOT_FOUND',
+        `plan '${planPath}' not found`,
+        known.length > 0 ? `this project's plans: ${known.join(', ')}` : 'this project has no plans yet',
+      );
+    }
+    return this.getByPath(planPath);
+  }
+
+
+  /**
+   * The plan EDITOR's save — `PUT /api/artifacts/plan/:path/content`.
+   *
+   * 0.2.43 — this is the `content` variant, made by a user instead of an agent,
+   * and it is no longer a code path of its own. The old action dictionary carried
+   * a `user_edit` value for exactly this; that value is gone, because the
+   * distinction it encoded is `changedBy`, not a different kind of write. What
+   * stays here rather than moving into {@link update} is the two things the
+   * editor's payload has and an agent's has not: FULL FILE bytes (frontmatter
+   * included, hence the immutability check) and no thread to address the plan by.
+   *
+   * The write tail is {@link persistRaw} — the same one {@link update} uses — so
+   * a save from the editor and a write from an agent capture the same kind of
+   * `file_version` row and land through the same watcher suppression.
+   */
   async updateContent(opts: PlanUpdateContentOpts): Promise<{ newHash: string }> {
     return this.withLock(opts.path, async () => {
-      const current = await this.getByPath(opts.path);
+      const current = await this.readForWrite(opts.path);
       if (typeof opts.expectedHash === 'string' && opts.expectedHash !== current.hash) {
         throw new ConflictError('PLAN_CONFLICT', 'plan changed since last read', current.hash, current.content);
       }
@@ -493,25 +672,31 @@ export class PlanService {
       if (violated.length > 0) {
         throw new DomainError('IMMUTABLE_FIELD', `cannot mutate immutable frontmatter keys: ${violated.join(', ')}`);
       }
-      const abs = this.absPath(opts.path);
-      this.deps.plansWatcher.suppress(opts.path);
-      await fs.writeFile(abs, opts.content, 'utf-8');
-      await this.deps.pageVersions.recordVersion(
-        opts.path,
-        'update',
-        toFileChangedBy(opts.changedBy),
-        undefined,
-        this.deps.plansSerializer,
-        PLAN_ROOT_MARKER,
-        opts.changeSummary,
-      );
-      await this.deps.frontmatterIndexer.indexPage(PLAN_ROOT_MARKER, opts.path);
-      // v0.1.129 fix: the indexer only broadcasts `plans:changed` when
-      // *frontmatter* changes; a body-only save (the common editor case) would
-      // otherwise emit nothing and leave every OTHER open tab/viewer on this
-      // plan silently stale — mirrors brief.ts's updateContent, which
-      // broadcasts `briefs:changed` explicitly for the exact same reason.
-      this.deps.ws.broadcast({ kind: 'plans:changed', path: opts.path });
+      const { version } = await this.persistRaw({
+        planPath: opts.path,
+        fullContent: opts.content,
+        changeSummary: opts.changeSummary,
+        changedBy: opts.changedBy,
+      });
+      /**
+       * 0.2.43 — `plan:updated` carrying `changedBy: 'user'`, where this used to
+       * broadcast `plans:changed`.
+       *
+       * Same reason the narrower event was added in v0.1.129 (a body-only save
+       * emits nothing from the frontmatter indexer, leaving every other viewer
+       * silently stale) — but the editor's save is a plan write like any other,
+       * so it publishes the event plan writes publish, and consumers stop having
+       * to know which door a change came through. `threadId` is null: the editor
+       * is not a thread, and naming whichever one attached last would be a
+       * plausible-looking attribution that is simply false.
+       */
+      this.deps.ws.broadcast({
+        kind: 'plan:updated',
+        planPath: opts.path,
+        threadId: null,
+        version,
+        changedBy: opts.changedBy,
+      });
       return { newHash: hashContent(opts.content) };
     });
   }
@@ -538,7 +723,7 @@ export class PlanService {
    */
   async updateFrontmatter(opts: PlanUpdateFrontmatterOpts): Promise<Plan> {
     return this.withLock(opts.path, async () => {
-      const current = await this.getByPath(opts.path);
+      const current = await this.readForWrite(opts.path);
       const next: PlanFrontmatter = { ...current.frontmatter };
       if (opts.patch.title !== undefined && opts.patch.title !== current.frontmatter.title) {
         next.title = opts.patch.title;
@@ -646,101 +831,85 @@ export class PlanService {
   }
 }
 
-function composeContent(prior: string, action: PlanAction, input: string, anchor?: string, heading?: string): string {
-  switch (action) {
-    case 'replace':
-    case 'user_edit':
-    case 'system_duplicate':
-      return input;
-    case 'append': {
-      if (prior.trim().length === 0) return input;
-      const sep = prior.endsWith('\n') ? '\n' : '\n\n';
-      return `${prior}${sep}${input}`;
+/**
+ * The plan body this call wants, composed in memory from the body it has.
+ *
+ * One function for the three variants, so the difference between them is
+ * visible in ten lines rather than spread over the service. The `edits` case is
+ * the batch engine in `plan-write.ts`; the other two are the whole plan, which
+ * is why their scope maps come back empty.
+ */
+function composePlanBody(prior: string, payload: PlanEditPayload): ComposedPlanBody {
+  switch (payload.variant) {
+    case 'content':
+      return { body: payload.content, scopeOf: new Map(), replacementsOf: new Map() };
+    case 'textEdits': {
+      /**
+       * Counted over the WHOLE plan — the scope trap worth remembering. The same
+       * patterns inside an `edits[]` entry are counted over that section's
+       * subtree alone, so one pattern can be a legal single match in one variant
+       * and a `MATCH_COUNT_MISMATCH` in the other.
+       */
+      const applied = applyTextEdits(prior, payload.textEdits);
+      return {
+        body: applied.text,
+        scopeOf: new Map(),
+        replacementsOf: new Map(),
+        replacements: applied.replacements,
+      };
     }
-    case 'insert_after_section': {
-      if (!anchor && !heading) {
-        throw new DomainError('MISSING_TARGET', 'insert_after_section requires anchor or heading');
-      }
-      return insertAfterSection(prior, input, anchor, heading);
+    case 'edits': {
+      const outcome = applyPlanBatch(prior, payload.edits);
+      return { body: outcome.body, scopeOf: outcome.scopeOf, replacementsOf: outcome.replacementsOf };
     }
   }
 }
 
-function insertAfterSection(prior: string, fragment: string, anchor?: string, heading?: string): string {
-  const lines = prior.split('\n');
+/**
+ * `results[]` — one row per edit given, or one row for the whole plan.
+ *
+ * `affectedAnchors` is the anchor delta of the whole write, filtered of the row's
+ * own anchor: attributing a change to the individual edit that caused it is not
+ * possible after the fact (the edits share a file and their effects overlap), and
+ * pretending otherwise would be a more confident answer than the data supports.
+ *
+ * `droppedAnchors` IS attributable, because each one is measured inside the single
+ * range that edit overwrote — and it is reported on SUCCESS, not only on refusal:
+ * a `replace` on a `##` section carrying three `###` children takes all four
+ * anchors with it, and the caller has no other way to learn that.
+ */
+function buildPlanResults(
+  payload: PlanEditPayload,
+  priorBody: string,
+  finalBody: string,
+  composed: ComposedPlanBody,
+): PlanEditResult[] {
+  const affected = anchorDelta(sectionDigests(priorBody), sectionDigests(finalBody));
+  const survivors = new Set(sectionRanges(finalBody.split('\n')).map((r) => r.anchor));
 
-  let targetLine = -1;
-  let targetLevel = -1;
-  const matches: Array<{ line: number; level: number }> = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!;
-    const m = line.match(PLAN_HEADING_RE);
-    if (!m) continue;
-    const level = m[1]!.length;
-    const text = m[2]!.trim();
-
-    if (anchor) {
-      const prev = i > 0 ? lines[i - 1]! : '';
-      const anchorMatch = prev.match(ANCHOR_RE);
-      if (anchorMatch && anchorMatch[1] === anchor) {
-        // Do NOT break: an anchor names exactly one section, so a second hit is a
-        // duplicate the write-path must refuse rather than silently resolve. Reads
-        // stay first-occurrence (see `getByAnchor`); only this mutation is strict.
-        matches.push({ line: i, level });
-      }
-    } else if (heading) {
-      if (text === heading.trim()) {
-        matches.push({ line: i, level });
-      }
-    }
+  if (payload.variant !== 'edits') {
+    return [
+      {
+        /** No section was addressed — the variant's scope IS the plan. */
+        anchor: null,
+        /** No section action either — see {@link PlanEditResult.action}. */
+        action: null,
+        affectedAnchors: affected,
+        droppedAnchors: sectionRanges(priorBody.split('\n'))
+          .map((r) => r.anchor)
+          .filter((a) => !survivors.has(a)),
+        ...(payload.variant === 'textEdits' ? { replacements: composed.replacements ?? 0 } : {}),
+      },
+    ];
   }
 
-  if (targetLine === -1 && anchor) {
-    if (matches.length > 1) {
-      throw new DomainError(
-        'AMBIGUOUS_ANCHOR',
-        `anchor "${anchor}" matches ${matches.length} sections`,
-      );
-    }
-    if (matches.length === 1) {
-      targetLine = matches[0]!.line;
-      targetLevel = matches[0]!.level;
-    }
-  }
-
-  if (targetLine === -1 && heading && !anchor) {
-    if (matches.length === 0) {
-      throw new DomainError('SECTION_NOT_FOUND', `section with heading "${heading}" not found`);
-    }
-    if (matches.length > 1) {
-      throw new DomainError('AMBIGUOUS_HEADING', `heading "${heading}" matches ${matches.length} sections`);
-    }
-    targetLine = matches[0]!.line;
-    targetLevel = matches[0]!.level;
-  }
-
-  if (targetLine === -1) {
-    throw new DomainError(
-      'SECTION_NOT_FOUND',
-      anchor ? `section with anchor "${anchor}" not found` : `section not found`,
-    );
-  }
-
-  let endLine = lines.length;
-  for (let i = targetLine + 1; i < lines.length; i++) {
-    const m = lines[i]!.match(PLAN_HEADING_RE);
-    if (m && m[1]!.length <= targetLevel) {
-      endLine = i;
-      break;
-    }
-  }
-
-  const before = lines.slice(0, endLine).join('\n');
-  const after = lines.slice(endLine).join('\n');
-  const separator = before.endsWith('\n\n') ? '' : before.endsWith('\n') ? '\n' : '\n\n';
-  const afterSep = after.length > 0 ? '\n\n' : '';
-  return `${before}${separator}${fragment}${afterSep}${after}`.replace(/\n{3,}/g, '\n\n');
+  return payload.edits.map((edit) => ({
+    anchor: edit.anchor,
+    action: edit.action,
+    affectedAnchors: affected.filter((a) => a !== edit.anchor),
+    droppedAnchors: (composed.scopeOf.get(edit.anchor) ?? []).filter((a) => !survivors.has(a)),
+    ...(edit.action === 'edit' ? { replacements: composed.replacementsOf.get(edit.anchor) ?? 0 } : {}),
+  }));
 }
 
 /**
