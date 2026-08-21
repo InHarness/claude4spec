@@ -763,3 +763,217 @@ describe('PlanService — the `applied` flag (0.2.14)', () => {
     }
   });
 });
+
+/**
+ * 0.2.43 — the three input variants, at the level where the filesystem is real.
+ *
+ * The pure half of the batch engine (ordering, subtree rules, match scopes)
+ * lives in `src/server/services/plan-write.test.ts`; what is here is everything
+ * that needed a plan file, a version log and an event emitter to be true.
+ */
+describe('PlanService.update — three input variants', () => {
+  let h: Harness;
+
+  beforeEach(async () => {
+    h = await setup();
+  });
+
+  afterEach(async () => {
+    await teardown(h);
+  });
+
+  const SEED = '## Alpha\n\nalpha body\n\n## Beta\n\nbeta body\n';
+
+  async function seedPlan(threadId: string): Promise<{ anchors: string[]; hash: string }> {
+    seedThread(h.db, threadId);
+    await h.service.update({ threadId, title: `Plan ${threadId}`, content: SEED, changedBy: 'agent' });
+    const body = await soleStoredBody(h);
+    return {
+      anchors: [...body.matchAll(new RegExp(ANCHOR_PATTERN_SOURCE, 'g'))].map((m) => m[1]!),
+      hash: await currentHash(h, threadId),
+    };
+  }
+
+  it('refuses a call carrying no variant before it has looked at anything', async () => {
+    seedThread(h.db, 't-none');
+    await expect(
+      h.service.update({ threadId: 't-none', title: 'X', changedBy: 'agent' }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    // Nothing was created by the refusal.
+    expect(h.service.listPlans()).toHaveLength(0);
+  });
+
+  /**
+   * MISSING_TITLE is checked FIRST, in every variant. A thread with no plan has
+   * no sections either, so answering `SECTION_NOT_FOUND` would send the caller
+   * hunting for an anchor when what it actually failed to send was a name.
+   */
+  it.each([
+    ['content', { content: 'x' }],
+    ['textEdits', { textEdits: [{ find: 'x', replaceWith: 'y' }] }],
+    ['edits', { edits: [{ anchor: 'aaaa1111', action: 'replace' as const, content: 'x' }] }],
+  ])('answers MISSING_TITLE for the %s variant on a thread with no plan', async (name, variant) => {
+    seedThread(h.db, `t-title-${name}`);
+    await expect(
+      h.service.update({ threadId: `t-title-${name}`, ...variant, changedBy: 'agent' }),
+    ).rejects.toMatchObject({ code: 'MISSING_TITLE' });
+    expect(h.service.listPlans()).toHaveLength(0);
+  });
+
+  /**
+   * On an EMPTY plan only `content` can succeed — and the two that cannot must
+   * refuse before a filename is reserved, or every rejected call would leave an
+   * orphan plan behind.
+   */
+  it('answers SECTION_NOT_FOUND for a batch against a plan that does not exist yet, and creates nothing', async () => {
+    seedThread(h.db, 't-empty-batch');
+    await expect(
+      h.service.update({
+        threadId: 't-empty-batch',
+        title: 'Empty batch plan',
+        edits: [{ anchor: 'aaaa1111', action: 'append', content: 'x' }],
+        changedBy: 'agent',
+      }),
+    ).rejects.toMatchObject({ code: 'SECTION_NOT_FOUND' });
+    expect(h.service.listPlans()).toHaveLength(0);
+    expect(h.db.prepare('SELECT COUNT(*) AS n FROM file_version').get()).toMatchObject({ n: 0 });
+  });
+
+  it('answers FIND_NOT_FOUND for textEdits against a plan that does not exist yet, and creates nothing', async () => {
+    seedThread(h.db, 't-empty-diff');
+    await expect(
+      h.service.update({
+        threadId: 't-empty-diff',
+        title: 'Empty diff plan',
+        textEdits: [{ find: 'anything', replaceWith: 'x' }],
+        changedBy: 'agent',
+      }),
+    ).rejects.toMatchObject({ code: 'FIND_NOT_FOUND' });
+    expect(h.service.listPlans()).toHaveLength(0);
+  });
+
+  it('counts a top-level textEdits over the WHOLE plan', async () => {
+    const { hash } = await seedPlan('t-diff');
+    const res = await h.service.update({
+      threadId: 't-diff',
+      expectedHash: hash,
+      textEdits: [{ find: 'body', replaceWith: 'text', expectedMatches: 2 }],
+      changeSummary: 'rename body to text',
+      changedBy: 'agent',
+    });
+    expect(res.results).toEqual([
+      { anchor: null, action: null, affectedAnchors: expect.any(Array), droppedAnchors: [], replacements: 2 },
+    ]);
+    const body = await soleStoredBody(h);
+    expect(body).toContain('alpha text');
+    expect(body).toContain('beta text');
+  });
+
+  it('answers one results row with a null anchor and a null action for the content variant', async () => {
+    const { hash } = await seedPlan('t-content');
+    const res = await h.service.update({
+      threadId: 't-content',
+      expectedHash: hash,
+      content: '## Only\n\njust this\n',
+      changeSummary: 'rewrite',
+      changedBy: 'agent',
+    });
+    expect(res.results).toHaveLength(1);
+    expect(res.results[0]).toMatchObject({ anchor: null, action: null });
+    expect(res.results[0]!.replacements).toBeUndefined();
+  });
+
+  /**
+   * A batch is ALL OR NOTHING, and "nothing" has to mean the file, the version
+   * log and the event stream alike — a caller told its batch was refused must
+   * not find half of it applied, or a version row asserting that something was.
+   */
+  it('writes nothing at all when one entry of a batch is refused', async () => {
+    const broadcast = vi.fn();
+    const hh = await setup({ broadcast });
+    try {
+      seedThread(hh.db, 't-atomic');
+      await hh.service.update({ threadId: 't-atomic', title: 'Atomic plan', content: SEED, changedBy: 'agent' });
+      const before = await soleStoredBody(hh);
+      const anchors = [...before.matchAll(new RegExp(ANCHOR_PATTERN_SOURCE, 'g'))].map((m) => m[1]!);
+      const versionBefore = (await hh.service.getByThread('t-atomic'))!.currentVersion;
+      broadcast.mockClear();
+
+      await expect(
+        hh.service.update({
+          threadId: 't-atomic',
+          expectedHash: await currentHash(hh, 't-atomic'),
+          edits: [
+            { anchor: anchors[0]!, action: 'replace', content: 'rewritten alpha' },
+            { anchor: 'zzzz9999', action: 'append', content: 'to nowhere' },
+          ],
+          changeSummary: 'half-good batch',
+          changedBy: 'agent',
+        }),
+      ).rejects.toMatchObject({ code: 'SECTION_NOT_FOUND' });
+
+      expect(await soleStoredBody(hh)).toBe(before);
+      expect((await hh.service.getByThread('t-atomic'))!.currentVersion).toBe(versionBefore);
+      expect(broadcast).not.toHaveBeenCalled();
+    } finally {
+      await teardown(hh);
+    }
+  });
+
+  /**
+   * One call is one act: N sections edited together are one version carrying one
+   * `changeSummary`, not N of either.
+   */
+  it('captures exactly one version and one changeSummary for a batch touching two sections', async () => {
+    const { anchors, hash } = await seedPlan('t-batch');
+    const versionBefore = (await h.service.getByThread('t-batch'))!.currentVersion;
+    const res = await h.service.update({
+      threadId: 't-batch',
+      expectedHash: hash,
+      edits: [
+        { anchor: anchors[1]!, action: 'append', content: 'more beta' },
+        { anchor: anchors[0]!, action: 'replace', content: 'new alpha' },
+      ],
+      changeSummary: 'one summary for two sections',
+      changedBy: 'agent',
+    });
+    expect(res.version).toBe(versionBefore + 1);
+    // `results` comes back in the order GIVEN, not the bottom-up order applied.
+    expect(res.results.map((r) => r.anchor)).toEqual([anchors[1], anchors[0]]);
+    const summaries = h.db
+      .prepare('SELECT change_summary FROM file_version ORDER BY version')
+      .all() as Array<{ change_summary: string | null }>;
+    expect(summaries.filter((s) => s.change_summary === 'one summary for two sections')).toHaveLength(1);
+  });
+
+  it('arms the next call with the hash it returns', async () => {
+    const { hash } = await seedPlan('t-chain');
+    const first = await h.service.update({
+      threadId: 't-chain',
+      expectedHash: hash,
+      content: '## One\n\nfirst\n',
+      changedBy: 'agent',
+    });
+    // No read in between: the returned hash IS the guard for the next write.
+    await h.service.update({
+      threadId: 't-chain',
+      expectedHash: first.hash,
+      content: '## Two\n\nsecond\n',
+      changedBy: 'agent',
+    });
+    expect(await soleStoredBody(h)).toContain('second');
+  });
+
+  it('answers PLAN_NOT_FOUND, naming the plans it does have, for an explicit path that resolves to nothing', async () => {
+    await seedPlan('t-known');
+    await expect(
+      h.service.update({
+        threadId: 't-known',
+        planPath: 'no-such-plan.md',
+        expectedHash: 'whatever',
+        content: 'x',
+        changedBy: 'agent',
+      }),
+    ).rejects.toMatchObject({ code: 'PLAN_NOT_FOUND' });
+  });
+});
