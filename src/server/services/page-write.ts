@@ -5,7 +5,6 @@ import type { SelfWriteMarker, WriteActor } from '../fs/sources.js';
 import type { FileVersionService } from './file-version.js';
 import type { PagesService } from './pages.js';
 import type { SectionsService } from './sections.js';
-import { parseHeadings } from './section-indexer.js';
 import { ConflictError } from './brief.js';
 import { DomainError } from './tags.js';
 import {

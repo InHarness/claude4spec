@@ -209,6 +209,26 @@ describe('applyPlanBatch — the edit action', () => {
     ).toThrow(/encloses/);
   });
 
+  it('refuses an edit that encloses a section the same batch APPENDS to', () => {
+    // Not only `replace`/`delete`: the child splices first either way, so the
+    // parent's `find` would be matched against text this same batch wrote.
+    expect(() =>
+      applyPlanBatch(PLAN, [
+        { anchor: 'aaaa0002', action: 'append', content: 'brand new body line' },
+        { anchor: 'aaaa0001', action: 'edit', textEdits: [{ find: 'body', replaceWith: 'text', expectedMatches: 'all' }] },
+      ]),
+    ).toThrow(/encloses/);
+  });
+
+  it('refuses an edit nested inside a section the same batch inserts after', () => {
+    expect(() =>
+      applyPlanBatch(PLAN, [
+        { anchor: 'aaaa0001', action: 'insert_after', content: 'tail' },
+        { anchor: 'aaaa0002', action: 'edit', textEdits: [{ find: 'child body', replaceWith: 'x' }] },
+      ]),
+    ).toThrow(/lies inside/);
+  });
+
   it('scopes an edit to its MATCHED fragments, not to the subtree it was aimed at', () => {
     // The substitution lands in Alpha's own prose, nowhere near the child's
     // anchor comment — so it puts no anchor at risk.
@@ -216,5 +236,17 @@ describe('applyPlanBatch — the edit action', () => {
       { anchor: 'aaaa0001', action: 'edit', textEdits: [{ find: 'alpha body', replaceWith: 'x' }] },
     ]);
     expect(out.scopeOf.get('aaaa0001')).toEqual([]);
+  });
+});
+
+describe('applyPlanBatch — delete takes the anchor comment however it is spaced', () => {
+  it('removes a comment separated from its heading by a blank line', () => {
+    // `parseHeadings` resolves an anchor across blank lines, so a delete that
+    // only looked at the line directly above would leave the comment behind —
+    // and every deep link to the removed section would keep resolving.
+    const spaced = PLAN.replace('<!-- anchor: aaaa0001 -->\n## Alpha', '<!-- anchor: aaaa0001 -->\n\n## Alpha');
+    const out = applyPlanBatch(spaced, [{ anchor: 'aaaa0001', action: 'delete' }]);
+    expect(out.body).not.toContain('aaaa0001');
+    expect(anchorsOf(out.body)).toEqual(['bbbb0001']);
   });
 });

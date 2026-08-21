@@ -233,15 +233,23 @@ export function applySectionEdit(
     case 'delete': {
       /**
        * The heading and the anchor comment go too — a section whose heading
-       * survived would not have been deleted. The anchor comment sits on the
-       * line above the heading when there is one, so the cut starts one line
-       * earlier in that case.
+       * survived would not have been deleted, and an anchor comment left behind
+       * keeps every deep link to the removed section resolving.
+       *
+       * Which comment belongs to this heading is `parseHeadings`' question, and
+       * the answer is "the first non-blank line above" — blank lines between the
+       * two are ordinary in a hand-edited file. Matching only `headingIdx - 1`
+       * would recognize fewer anchors than the indexer does, which is precisely
+       * the second answer that helper exists to prevent.
        */
       const headingIdx = range.lineStart - 1;
-      const anchorIdx =
-        headingIdx > 0 && /^\s*<!--\s*anchor:/.test(lines[headingIdx - 1] ?? '')
-          ? headingIdx - 1
-          : headingIdx;
+      let anchorIdx = headingIdx;
+      for (let j = headingIdx - 1; j >= 0; j--) {
+        const above = (lines[j] ?? '').trim();
+        if (above === '') continue;
+        if (/^<!--\s*anchor:/.test(above)) anchorIdx = j;
+        break;
+      }
       lines.splice(anchorIdx, range.lineEnd - anchorIdx);
       return;
     }

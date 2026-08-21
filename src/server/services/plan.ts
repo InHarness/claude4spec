@@ -241,19 +241,7 @@ export class PlanService {
    * `hash` stays the digest of the whole file — see `readArtifactWindow`.
    */
   async getByPath(planPath: string, opts?: { range?: ArtifactRange }): Promise<Plan> {
-    if (!(await this.deps.plansPages.exists(planPath))) {
-      throw new DomainError('NOT_FOUND', `plan '${planPath}' not found`);
-    }
-    const abs = this.absPath(planPath);
-    const raw = await fs.readFile(abs, 'utf-8');
-    const parsed = matter(raw);
-    const frontmatter = (parsed.data ?? {}) as PlanFrontmatter;
-    if (frontmatter.type !== 'plan') {
-      throw new DomainError(
-        'PLAN_INVALID_FRONTMATTER',
-        `file '${planPath}' is not a plan (frontmatter.type=${JSON.stringify(frontmatter.type)})`,
-      );
-    }
+    const { raw, parsed, frontmatter } = await this.loadFile(planPath);
     const windowed = readArtifactWindow(
       raw,
       opts?.range,
@@ -276,6 +264,54 @@ export class PlanService {
       createdAt: toIso(frontmatter.created_at),
       updatedAt: this.deps.pageVersions.getLatestForPath(planPath, undefined, PLAN_ROOT_MARKER)?.createdAt ?? toIso(frontmatter.created_at),
     };
+  }
+
+  /**
+   * 0.2.43 — the same plan, WHOLE: the read every write path takes.
+   *
+   * {@link getByPath} answers a reader, so it passes the file through
+   * `readArtifactWindow` and caps a large plan at the response budget. That is
+   * right for an answer and destructive for a write. `hash` is the digest of the
+   * whole file either way, so the `expectedHash` guard passes on a truncated
+   * body; composing against it would then write the truncation back, and a plan
+   * over the budget would silently lose its tail on its first edit — with a
+   * `file_version` row asserting the edit was the change. Differential edits
+   * make partial writes the normal path, so this is not a corner: every path
+   * that composes new bytes from the old ones reads through here.
+   */
+  private async readForWrite(planPath: string): Promise<Plan> {
+    const { raw, parsed, frontmatter } = await this.loadFile(planPath);
+    return {
+      path: planPath,
+      frontmatter,
+      body: parsed.content,
+      content: raw,
+      hash: hashContent(raw),
+      currentVersion: this.currentVersionFor(planPath),
+      createdAt: toIso(frontmatter.created_at),
+      updatedAt:
+        this.deps.pageVersions.getLatestForPath(planPath, undefined, PLAN_ROOT_MARKER)?.createdAt ??
+        toIso(frontmatter.created_at),
+    };
+  }
+
+  /** Existence, bytes and frontmatter validation — shared by both reads above. */
+  private async loadFile(
+    planPath: string,
+  ): Promise<{ raw: string; parsed: matter.GrayMatterFile<string>; frontmatter: PlanFrontmatter }> {
+    if (!(await this.deps.plansPages.exists(planPath))) {
+      throw new DomainError('NOT_FOUND', `plan '${planPath}' not found`);
+    }
+    const raw = await fs.readFile(this.absPath(planPath), 'utf-8');
+    const parsed = matter(raw);
+    const frontmatter = (parsed.data ?? {}) as PlanFrontmatter;
+    if (frontmatter.type !== 'plan') {
+      throw new DomainError(
+        'PLAN_INVALID_FRONTMATTER',
+        `file '${planPath}' is not a plan (frontmatter.type=${JSON.stringify(frontmatter.type)})`,
+      );
+    }
+    return { raw, parsed, frontmatter };
   }
 
   async getByThread(threadId: string, opts?: { range?: ArtifactRange }): Promise<Plan | null> {
@@ -495,7 +531,7 @@ export class PlanService {
         };
       }
 
-      const current = await this.getByPath(existingPath);
+      const current = await this.readForWrite(existingPath);
       /**
        * 0.2.15 — the guard, enforced HERE rather than in each channel's schema.
        *
@@ -624,7 +660,7 @@ export class PlanService {
    */
   async updateContent(opts: PlanUpdateContentOpts): Promise<{ newHash: string }> {
     return this.withLock(opts.path, async () => {
-      const current = await this.getByPath(opts.path);
+      const current = await this.readForWrite(opts.path);
       if (typeof opts.expectedHash === 'string' && opts.expectedHash !== current.hash) {
         throw new ConflictError('PLAN_CONFLICT', 'plan changed since last read', current.hash, current.content);
       }
@@ -687,7 +723,7 @@ export class PlanService {
    */
   async updateFrontmatter(opts: PlanUpdateFrontmatterOpts): Promise<Plan> {
     return this.withLock(opts.path, async () => {
-      const current = await this.getByPath(opts.path);
+      const current = await this.readForWrite(opts.path);
       const next: PlanFrontmatter = { ...current.frontmatter };
       if (opts.patch.title !== undefined && opts.patch.title !== current.frontmatter.title) {
         next.title = opts.patch.title;

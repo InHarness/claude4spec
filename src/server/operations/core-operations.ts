@@ -668,7 +668,11 @@ export function registerCoreOperations(): void {
       'AMBIGUOUS_ANCHOR',
       'FIND_NOT_FOUND',
       'MATCH_COUNT_MISMATCH',
-      'IMMUTABLE_FIELD',
+      // The create branch attaches the new plan to the calling thread, and a
+      // thread that does not exist is this operation's own NOT_FOUND. Not
+      // IMMUTABLE_FIELD: that one is thrown by the editor's save route
+      // (`updateContent`), which is a different operation.
+      'NOT_FOUND',
     ],
     sideEffects: ['file', 'db', 'ui-notify'],
     /**

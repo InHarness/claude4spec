@@ -289,6 +289,51 @@ describe('PlanService.update — a section batch against a duplicated anchor', (
   });
 });
 
+describe('PlanService.update — a plan larger than the read budget', () => {
+  let h: Harness;
+
+  beforeEach(async () => {
+    h = await setup();
+  });
+
+  afterEach(async () => {
+    await teardown(h);
+  });
+
+  /**
+   * 0.2.43 — the write path reads the WHOLE plan, never the budgeted read.
+   *
+   * `getByPath` caps its answer at the response budget while still hashing the
+   * whole file, so an edit composed against that answer would pass the
+   * `expectedHash` guard and then write the truncation back. Differential edits
+   * make partial writes routine, so a long plan must survive a one-line change.
+   */
+  it('keeps everything past the response budget when a textEdits call rewrites one line', async () => {
+    seedThread(h.db, 'thread-big');
+
+    const filler = Array.from({ length: 3000 }, (_, i) => `line ${i} of ordinary plan prose`).join('\n');
+    const body = `## Head\n\nneedle here\n\n${filler}\n\n## Tail\n\nthe very last words\n`;
+    expect(body.length).toBeGreaterThan(60_000);
+
+    await h.service.update({ threadId: 'thread-big', title: 'Big plan', content: body, changedBy: 'user' });
+
+    await h.service.update({
+      threadId: 'thread-big',
+      expectedHash: await currentHash(h, 'thread-big'),
+      textEdits: [{ find: 'needle here', replaceWith: 'NEEDLE FOUND' }],
+      changedBy: 'agent',
+    });
+
+    // Raw bytes, not `soleStoredBody` — that helper reads through `getByPath`,
+    // whose answer is budgeted and would hide the very truncation under test.
+    const files = await h.plansPages.listMarkdownFiles();
+    const saved = await readPlanFile(h, files[0]!);
+    expect(saved).toContain('NEEDLE FOUND');
+    expect(saved).toContain('the very last words');
+    expect(saved).toContain('line 2999 of ordinary plan prose');
+  });
+});
+
 describe('PlanService.getByAnchor', () => {
   let h: Harness;
 

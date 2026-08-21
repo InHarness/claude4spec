@@ -294,24 +294,26 @@ export function applyPlanBatch(body: string, edits: readonly PlanSectionEdit[]):
   }
 
   /**
-   * An `edit` that NESTS with another entry — either direction — is refused, and
-   * only `edit` is: the bottom-up walk already makes `replace`-inside-`replace`
-   * well defined, because a whole-section action states its result outright and
-   * the outer one simply wins.
+   * An `edit` that NESTS with ANY other entry — either direction, whatever that
+   * entry's action — is refused, and only `edit` is: the bottom-up walk already
+   * makes `replace`-inside-`replace` well defined, because a whole-section
+   * action states its result outright and the outer one simply wins.
    *
    * A substitution states a CHANGE instead, and both directions break it. With
    * the `edit` inside, an outer entry overwrites the same lines and the caller
    * has no answer to "did my substitution survive?". With the `edit` outside,
    * the inner entry splices first, so the `find` would be matched against text
    * this same batch just wrote. Either way the order of the batch would start to
-   * matter, which is exactly what the engine promises it never does.
+   * matter, which is exactly what the engine promises it never does. That holds
+   * for an inner `append`/`insert_after`/`edit` just as it does for a `replace`:
+   * they splice first too, so an outer substitution would count and rewrite text
+   * this same batch produced and the caller never read.
    */
   for (const edit of edits) {
     if (edit.action !== 'edit') continue;
     const mine = rangeByAnchor.get(edit.anchor)!;
     const clash = edits.find((other) => {
       if (other.anchor === edit.anchor) return false;
-      if (other.action !== 'replace' && other.action !== 'delete') return false;
       const theirs = rangeByAnchor.get(other.anchor);
       if (!theirs) return false;
       const insideThem = theirs.lineStart < mine.lineStart && theirs.lineEnd >= mine.lineEnd;
@@ -323,7 +325,8 @@ export function applyPlanBatch(body: string, edits: readonly PlanSectionEdit[]):
       const relation = theirs.lineStart < mine.lineStart ? 'lies inside' : 'encloses';
       throw new DomainError(
         'INVALID_ARGUMENT',
-        `edit on '${edit.anchor}' ${relation} the section '${clash.anchor}' that another entry in this batch ${clash.action}s`,
+        `edit on '${edit.anchor}' ${relation} the section '${clash.anchor}', which another entry in this batch ` +
+          `also writes (action '${clash.action}')`,
         "split them into separate calls, or fold the substitution into the outer entry's content",
       );
     }
