@@ -1,0 +1,125 @@
+/*
+ * Syntax colours for the code-snippet surfaces, mapped onto the paper/terra
+ * palette — never onto highlight.js's own themes and never onto literals.
+ *
+ * TWO REASONS THIS FILE EXISTS RATHER THAN AN IMPORTED HLJS THEME:
+ *
+ * 1. The design-system entity `c4s-paper-terra` is the source of truth for both
+ *    variants (light = base values, dark = `modes[].dark`), and the host exposes
+ *    it as `--c-*` custom properties that flip with the effective theme. A
+ *    vendored hljs theme hard-codes hex and would be right in exactly one mode.
+ * 2. The host already imports `highlight.js/styles/atom-one-dark.css` GLOBALLY
+ *    for the chat renderer. Its `.hljs-*` rules would otherwise reach this card
+ *    and paint it in a palette that has nothing to do with the page. Every rule
+ *    here is scoped under `.c4s-code-snippet` so it wins on specificity without
+ *    disturbing the chat.
+ *
+ * The mapping is by ROLE, not by prettiness: accent for keywords (the strongest
+ * colour the palette has), green for strings, blue for identifiers and types,
+ * purple for numbers and constants, muted for comments. It reads as one system
+ * with the rest of the app because it is made of the same five accents.
+ */
+
+.c4s-code-snippet {
+  background: var(--c-card);
+  color: var(--c-ink);
+}
+
+/*
+ * Editor typography must not reach inside a code block — the same invariant that
+ * protects the labels inside a rendered diagram's SVG. `.prose-spec` sets serif
+ * families, line-height and colour on descendants; a code block that inherits
+ * them stops being a code block.
+ */
+.prose-spec .c4s-code-snippet,
+.prose-spec .c4s-code-snippet code,
+.prose-spec .c4s-code-snippet pre {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--c-ink);
+  letter-spacing: normal;
+}
+
+.prose-spec .c4s-code-snippet pre,
+.prose-spec .c4s-code-snippet code {
+  background: transparent;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.c4s-code-snippet .hljs-comment,
+.c4s-code-snippet .hljs-quote {
+  color: var(--c-subtle);
+  font-style: italic;
+}
+
+.c4s-code-snippet .hljs-keyword,
+.c4s-code-snippet .hljs-selector-tag,
+.c4s-code-snippet .hljs-literal,
+.c4s-code-snippet .hljs-doctag,
+.c4s-code-snippet .hljs-name {
+  color: var(--c-accent-ink);
+  font-weight: 600;
+}
+
+.c4s-code-snippet .hljs-string,
+.c4s-code-snippet .hljs-regexp,
+.c4s-code-snippet .hljs-addition,
+.c4s-code-snippet .hljs-meta-string {
+  color: var(--c-green);
+}
+
+.c4s-code-snippet .hljs-title,
+.c4s-code-snippet .hljs-title.function_,
+.c4s-code-snippet .hljs-title.class_,
+.c4s-code-snippet .hljs-type,
+.c4s-code-snippet .hljs-built_in,
+.c4s-code-snippet .hljs-class .hljs-title {
+  color: var(--c-blue);
+}
+
+.c4s-code-snippet .hljs-number,
+.c4s-code-snippet .hljs-symbol,
+.c4s-code-snippet .hljs-bullet,
+.c4s-code-snippet .hljs-variable,
+.c4s-code-snippet .hljs-template-variable {
+  color: var(--c-purple);
+}
+
+.c4s-code-snippet .hljs-attr,
+.c4s-code-snippet .hljs-attribute,
+.c4s-code-snippet .hljs-property,
+.c4s-code-snippet .hljs-selector-attr,
+.c4s-code-snippet .hljs-selector-class,
+.c4s-code-snippet .hljs-selector-id {
+  color: var(--c-accent);
+}
+
+.c4s-code-snippet .hljs-meta,
+.c4s-code-snippet .hljs-params {
+  color: var(--c-muted);
+}
+
+.c4s-code-snippet .hljs-deletion {
+  color: var(--c-red);
+}
+
+.c4s-code-snippet .hljs-emphasis {
+  font-style: italic;
+}
+
+.c4s-code-snippet .hljs-strong {
+  font-weight: 700;
+}
+
+/* The line-number gutter. Not selectable — copying must yield code, not code
+ * with a column of integers welded to the front of every line. */
+.c4s-code-snippet-gutter {
+  user-select: none;
+  -webkit-user-select: none;
+  color: var(--c-subtle);
+  text-align: right;
+  border-right: 1px solid var(--c-hair);
+}

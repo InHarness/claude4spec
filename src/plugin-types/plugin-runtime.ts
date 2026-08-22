@@ -72,6 +72,7 @@ export type {
   EnumNode,
   FieldFlags,
   FieldNode,
+  FieldNormalization,
   IntegrityConstraint,
   ObjectNode,
   RecordNode,

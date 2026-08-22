@@ -818,3 +818,61 @@ describe('value constraints', () => {
     expect(check(data)).toThrow(/must be a positive integer/);
   });
 });
+
+describe('normalize — the one COERCING declaration', () => {
+  const withLang = (normalize: unknown, extra: Record<string, unknown> = {}) =>
+    ({
+      schema: {
+        name: { type: 'string', required: true },
+        language: { type: 'string', maxLength: 30, ...extra, normalize },
+      },
+    }) as unknown as DataDeclaration;
+
+  it('accepts a well-formed declaration', () => {
+    expect(check(withLang({ case: 'lower', aliases: { ts: 'typescript' } }))).not.toThrow();
+  });
+
+  it('accepts case-folding alone, with no alias table', () => {
+    expect(check(withLang({ case: 'lower' }))).not.toThrow();
+  });
+
+  it('rejects normalize on a non-string leaf', () => {
+    const data = {
+      schema: {
+        name: { type: 'string', required: true },
+        count: { type: 'number', normalize: { case: 'lower' } },
+      },
+    } as unknown as DataDeclaration;
+    expect(check(data)).toThrow(/STRING constraint/);
+  });
+
+  it('rejects an empty declaration — it canonicalizes nothing', () => {
+    expect(check(withLang({}))).toThrow(/canonicalizes nothing/);
+  });
+
+  it('rejects an alias key that is not already folded — the lookup would never reach it', () => {
+    expect(check(withLang({ case: 'lower', aliases: { TS: 'typescript' } }))).toThrow(
+      /unreachable/,
+    );
+  });
+
+  it('rejects a key that is also a target — normalization would not be idempotent', () => {
+    expect(
+      check(withLang({ case: 'lower', aliases: { ts: 'typescript', typescript: 'ts' } })),
+    ).toThrow(/not be idempotent/);
+  });
+
+  it('rejects an alias target longer than the field’s own maxLength', () => {
+    // The gate with teeth: zod runs in the router BEFORE normalization, so this
+    // value would otherwise reach the row having been screened by nothing.
+    expect(check(withLang({ case: 'lower', aliases: { x: 'y'.repeat(31) } }))).toThrow(
+      /longer than its own maxLength/,
+    );
+  });
+
+  it('rejects an alias target failing the field’s own named validator', () => {
+    expect(
+      check(withLang({ case: 'lower', aliases: { tbl: 'not a sql identifier' } }, { kind: 'sql-identifier' })),
+    ).toThrow(/fails its own/);
+  });
+});
