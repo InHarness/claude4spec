@@ -270,6 +270,34 @@ describe.skipIf(!BASE)('code-snippet — card, chip, overlay and broken state', 
     await expect.poll(() => overlayView.getAttribute('data-state')).not.toBe('collapsed');
     expect(await overlayView.innerText()).toContain('const line40 = 40;');
 
+    /*
+     * The gutter and the code must share a baseline grid.
+     *
+     * They are SIBLING <pre> columns, so nothing structurally keeps line 40's
+     * number beside line 40's text — only identical metrics do. The host imports
+     * `highlight.js/styles/atom-one-dark.css` globally for the chat renderer, and
+     * its base `.hljs` rule carries a font-size; when that leaked in, the two
+     * columns drifted a little per line and were visibly out of step by the
+     * bottom of a long snippet. A short fixture would not have caught it, which
+     * is why this measures the LAST line rather than the first.
+     */
+    const metrics = await overlayView.evaluate((el) => {
+      const gutter = el.querySelector('.c4s-code-snippet-gutter') as HTMLElement;
+      const code = el.querySelector('code') as HTMLElement;
+      const cs = (n: HTMLElement) => getComputedStyle(n);
+      return {
+        gutterLh: cs(gutter).lineHeight,
+        codeLh: cs(code).lineHeight,
+        gutterFs: cs(gutter).fontSize,
+        codeFs: cs(code).fontSize,
+        drift: Math.abs(gutter.getBoundingClientRect().height - code.getBoundingClientRect().height),
+      };
+    });
+    expect(metrics.gutterLh).toBe(metrics.codeLh);
+    expect(metrics.gutterFs).toBe(metrics.codeFs);
+    // Same line count at the same metrics — the columns must end together.
+    expect(metrics.drift).toBeLessThan(4);
+
     await page.keyboard.press('Escape');
     await expect.poll(() => page.locator('[data-testid="code-snippet-fullscreen"]').count()).toBe(0);
     expect(page.url()).toBe(before);
