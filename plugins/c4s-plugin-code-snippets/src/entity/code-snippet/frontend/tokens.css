@@ -78,12 +78,27 @@
   letter-spacing: normal;
 }
 
+/*
+ * Inside the editor, `.prose-spec pre` (0,1,1) out-specifies the gutter's own
+ * class (0,1,0) and would impose the editor's block padding on both columns. So
+ * the padding is restated HERE, at (0,2,1), rather than zeroed: zeroing it welds
+ * the line number to the code ("1export const …") in the card, while the
+ * fullscreen overlay — which never inherits `.prose-spec` — stays correct, and a
+ * discrepancy between the two surfaces is the hardest kind to notice.
+ */
 .prose-spec .c4s-code-snippet pre,
 .prose-spec .c4s-code-snippet code {
   background: transparent;
   margin: 0;
-  padding: 0;
   border: 0;
+}
+
+.prose-spec .c4s-code-snippet .c4s-code-snippet-gutter {
+  padding: 12px 10px;
+}
+
+.prose-spec .c4s-code-snippet .c4s-code-snippet-code {
+  padding: 12px 12px 12px 12px;
 }
 
 .c4s-code-snippet .hljs-comment,
