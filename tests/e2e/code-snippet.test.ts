@@ -212,6 +212,15 @@ describe.skipIf(!BASE)('code-snippet — card, chip, overlay and broken state', 
     ).toBeGreaterThan(0);
 
     /*
+     * The gutter must be held OFF the code. Inside the editor, `.prose-spec pre`
+     * competes for this padding, and losing that race renders "1export const …"
+     * with the number welded to the line — correct in the fullscreen overlay,
+     * which never inherits `.prose-spec`, and wrong in the card, which does.
+     */
+    const gap = await gutter.evaluate((el) => parseFloat(getComputedStyle(el).paddingRight));
+    expect(gap).toBeGreaterThan(4);
+
+    /*
      * The palette comes from `--c-*` tokens, never literals — so it must CHANGE
      * when the effective theme does. Asserting a specific hex would pin the
      * design system; asserting that light and dark differ pins the wiring, which
@@ -283,14 +292,17 @@ describe.skipIf(!BASE)('code-snippet — card, chip, overlay and broken state', 
      */
     const metrics = await overlayView.evaluate((el) => {
       const gutter = el.querySelector('.c4s-code-snippet-gutter') as HTMLElement;
-      const code = el.querySelector('code') as HTMLElement;
+      // The two <pre> COLUMNS, like for like: `<code>` carries no padding of its
+      // own, so measuring it against the padded gutter reports the padding as
+      // drift and the assertion never means anything.
+      const codePre = el.querySelectorAll('pre')[1] as HTMLElement;
       const cs = (n: HTMLElement) => getComputedStyle(n);
       return {
         gutterLh: cs(gutter).lineHeight,
-        codeLh: cs(code).lineHeight,
+        codeLh: cs(codePre).lineHeight,
         gutterFs: cs(gutter).fontSize,
-        codeFs: cs(code).fontSize,
-        drift: Math.abs(gutter.getBoundingClientRect().height - code.getBoundingClientRect().height),
+        codeFs: cs(codePre).fontSize,
+        drift: Math.abs(gutter.getBoundingClientRect().height - codePre.getBoundingClientRect().height),
       };
     });
     expect(metrics.gutterLh).toBe(metrics.codeLh);

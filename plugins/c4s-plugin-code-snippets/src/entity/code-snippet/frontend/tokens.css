@@ -159,4 +159,13 @@
   color: var(--c-subtle);
   text-align: right;
   border-right: 1px solid var(--c-hair);
+  /* Stated here rather than left to a utility class: the editor's `.prose-spec`
+     rules also target `pre`, and the gutter touching the code is the visible
+     result of losing that race. */
+  padding-right: 10px;
+  padding-left: 10px;
+}
+
+.c4s-code-snippet-code {
+  padding-left: 12px;
 }

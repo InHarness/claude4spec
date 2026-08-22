@@ -117,12 +117,12 @@ export function CodeSnippetView({
               block, or a copy yields line numbers interleaved with code. */}
           <pre
             aria-hidden="true"
-            className="c4s-code-snippet-gutter shrink-0 px-2 py-3 text-[12.5px] leading-[1.6]"
+            className="c4s-code-snippet-gutter shrink-0 py-3 text-[12.5px] leading-[1.6]"
             style={{ fontFamily: 'var(--font-mono, ui-monospace, Menlo, monospace)' }}
           >
             {visible.map((_, i) => `${i + 1}`).join('\n')}
           </pre>
-          <pre className="min-w-0 flex-1 overflow-x-auto px-3 py-3 text-[12.5px] leading-[1.6]">
+          <pre className="c4s-code-snippet-code min-w-0 flex-1 overflow-x-auto py-3 text-[12.5px] leading-[1.6]">
             <code
               className="hljs"
               style={{ background: 'transparent' }}

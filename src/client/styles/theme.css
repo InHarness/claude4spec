@@ -323,12 +323,22 @@ body {
   background: transparent;
   border: 0;
   border-radius: 0;
-  padding: 0;
   margin: 0;
   color: inherit;
-  font-size: inherit;
   overflow-x: visible;
 }
+
+/*
+ * PADDING IS NOT NEUTRALISED HERE, and that omission is deliberate. The block
+ * sets its own horizontal padding to hold the line-number gutter off the code;
+ * zeroing it made the two columns touch ("1export const …") in the card while
+ * the fullscreen overlay — which never inherits `.prose-spec` — looked correct.
+ * Neutralise only what the editor's typography imposes, never what the component
+ * asked for.
+ *
+ * `font-size` is likewise left to the component: it states one value for the
+ * gutter and the code together, which is what keeps their baselines in step.
+ */
 
 /* chat composer (L8 `chat-input` context) — tiptap skinned to match the old textarea */
 .chat-input-pm {
