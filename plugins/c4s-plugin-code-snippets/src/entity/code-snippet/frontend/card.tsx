@@ -71,6 +71,38 @@ export function CodeSnippetCard({ slug, entity, caption, onOpen }: EntityCardPro
 
   const heading = record?.filename?.trim() || record?.title || slug;
 
+  /*
+   * The reference resolved to nothing — deleted, or never created. Shown as a
+   * BROKEN BLOCK rather than as an empty code frame: an empty frame is
+   * indistinguishable from a snippet whose content happens to be blank, which
+   * is exactly the confusion a reader cannot get out of on their own.
+   *
+   * `injected === null` rather than `record === null`: the host tells us the
+   * slug is unresolvable, and that answer is authoritative immediately, whereas
+   * `record` is also null during the first fetch. Keying on `record` would flash
+   * this block on every cold render of a perfectly good snippet.
+   */
+  if (injected === null) {
+    return (
+      <figure
+        className="my-2 overflow-hidden rounded-md"
+        data-testid="code-snippet-card"
+        data-broken-ref={slug}
+        data-slug={slug}
+        style={{ background: 'var(--c-red-soft)', border: '1px dashed var(--c-red)' }}
+      >
+        <div className="px-2.5 py-2 font-mono text-[11.5px]" style={{ color: 'var(--c-red)' }}>
+          {`broken code-snippet: ${slug}`}
+        </div>
+        {caption ? (
+          <figcaption className="px-2.5 py-1.5 text-[11.5px]" style={{ color: 'var(--c-muted)' }}>
+            {caption}
+          </figcaption>
+        ) : null}
+      </figure>
+    );
+  }
+
   return (
     <figure
       className="my-2 overflow-hidden rounded-md"

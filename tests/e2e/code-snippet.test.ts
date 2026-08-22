@@ -132,8 +132,31 @@ describe.skipIf(!BASE)('code-snippet — card, chip, overlay and broken state', 
     page.on('response', (res) => {
       if (res.status() >= 400 && ours(res.url())) failedResponses.push(`${res.status()} ${res.url()}`);
     });
-    await page.goto(`${BASE}/p/${project.id}/pages/${PAGE_PATH}`, { waitUntil: 'networkidle' });
-    await page.waitForTimeout(2500);
+    /*
+     * LAND ELSEWHERE FIRST, THEN NAVIGATE IN-APP — and this is a workaround for
+     * a HOST bug, not a quirk of this type.
+     *
+     * `main.tsx` fires `bootFrontendPlugins()` without awaiting it before
+     * `render()`. The router gates plugin ROUTES on `frontendPluginsBooted`
+     * (`PendingOrNotFound` re-invalidates when boot settles), but nothing gates
+     * the page editor's node views: a `<single_element type="<plugin type>"/>`
+     * that renders before boot settles calls `getEntityDef()` against an empty
+     * registry, draws the "unknown type" broken chip, and NEVER re-renders when
+     * the plugin lands.
+     *
+     * It is not specific to `code-snippet`. Verified on `main`, where this type
+     * does not exist at all: a page carrying
+     * `<single_element type="spreadsheet" .../>` renders the same broken chip on
+     * a cold load. Every envelope-contributed type is affected.
+     *
+     * So: one cold load on a page with no embeds, wait for boot, then a
+     * client-side navigation to the fixture page — which is also the path a real
+     * reader takes through the app. Filed as a patch against the spec.
+     */
+    await page.goto(`${BASE}/p/${project.id}/pages/index.md`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(6000);
+    await page.getByText(PAGE_PATH, { exact: true }).first().click();
+    await page.waitForTimeout(4000);
   });
 
   afterAll(async () => {
@@ -152,9 +175,12 @@ describe.skipIf(!BASE)('code-snippet — card, chip, overlay and broken state', 
     // language badge shows the NORMALIZED value — `TS` went in, `typescript` out.
     const card = page.locator(`[data-testid="code-snippet-card"][data-slug="${SLUG}"]`).first();
     expect(await card.innerText()).toContain('src/manifest.ts');
-    expect(await card.locator('[data-testid="code-snippet-language-badge"]').innerText()).toBe(
-      'typescript',
-    );
+    // Case-insensitively: the badge is UPPERCASED by CSS (`text-transform`),
+    // while the stored value is lower case. Asserting the rendered casing would
+    // pin a style choice; asserting the letters pins the normalization.
+    expect(
+      (await card.locator('[data-testid="code-snippet-language-badge"]').innerText()).toLowerCase(),
+    ).toBe('typescript');
 
     // The type registers no tag of its own, so nothing leaks as literal text.
     const body = await page.locator('body').innerText();
@@ -256,7 +282,10 @@ describe.skipIf(!BASE)('code-snippet — card, chip, overlay and broken state', 
     // and the intact embeds beside it are unaffected
     expect(await page.locator(`[data-slug="${SLUG}"]`).count()).toBeGreaterThan(0);
 
-    // The broken reference is visible AS broken, naming the slug it wanted.
+    // Both broken references are visible AS broken and name the slug they
+    // wanted — "broken" without the name gives a reader nothing to fix.
+    expect(await page.locator(`[data-broken-ref="${DOOMED_SLUG}"]`).count()).toBeGreaterThan(0);
+    expect(await page.locator(`[data-broken-ref="${MISSING_SLUG}"]`).count()).toBeGreaterThan(0);
     expect(body).toContain(MISSING_SLUG);
     expect(body).toContain(DOOMED_SLUG);
     // No unhandled failure reached the console (the entity 404s are excluded by
@@ -269,13 +298,15 @@ describe.skipIf(!BASE)('code-snippet — card, chip, overlay and broken state', 
     expect(await page.locator('[data-testid="code-snippet-fullscreen"]').count()).toBe(0);
 
     /*
-     * The host cannot build an open handler for a slug that resolves to nothing,
-     * so the chip receives no `onOpen` and the click is inert. Clicking whatever
-     * carries the missing slug — the broken chip is rendered by the host's own
-     * broken path, not by this plugin, so its markup is not ours to assume.
+     * Target the chip by its own marker, never by text. `getByText` also matches
+     * every ANCESTOR containing the string, so `.first()` can resolve to a
+     * wrapper whose centre lies over a perfectly good card — force-clicking that
+     * opened the overlay and made this assertion fail for a reason that had
+     * nothing to do with broken chips.
      */
-    const broken = page.getByText(MISSING_SLUG, { exact: false }).first();
-    if (await broken.count()) await broken.click({ force: true }).catch(() => {});
+    const broken = page.locator(`[data-testid="code-snippet-chip"][data-broken-ref="${MISSING_SLUG}"]`);
+    expect(await broken.count()).toBeGreaterThan(0);
+    await broken.first().click({ force: true }).catch(() => {});
     await page.waitForTimeout(500);
 
     expect(await page.locator('[data-testid="code-snippet-fullscreen"]').count()).toBe(0);

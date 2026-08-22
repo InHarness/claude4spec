@@ -27,6 +27,38 @@ export function CodeSnippetChip({ slug, entity, onOpen }: EntityChipProps<unknow
   const label = record?.title ?? slug;
   const interactive = typeof onOpen === 'function';
 
+  /*
+   * `entity === null` means the host resolved the reference to nothing: the slug
+   * names a snippet that was deleted or never existed. The TYPE is still known
+   * (otherwise this component would not be mounted at all — the host would draw
+   * its own unknown-type chip), so the broken state belongs here.
+   *
+   * It names the slug it wanted, because "broken" without the name gives a
+   * reader nothing to fix. It is also inert by construction: the host cannot
+   * build an open handler for an unresolvable slug, so `onOpen` is `undefined`
+   * and a click does nothing — that is the required behaviour, not a special
+   * case coded here.
+   */
+  if (record === null) {
+    return (
+      <span
+        data-testid="code-snippet-chip"
+        data-broken-ref={slug}
+        data-slug={slug}
+        title="This code snippet no longer exists."
+        className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 align-baseline font-mono text-[11.5px]"
+        style={{
+          background: 'var(--c-red-soft)',
+          border: '1px dashed var(--c-red)',
+          color: 'var(--c-red)',
+        }}
+      >
+        <Code2 size={11} />
+        {`broken code-snippet: ${slug}`}
+      </span>
+    );
+  }
+
   return (
     <span
       role={interactive ? 'button' : undefined}
