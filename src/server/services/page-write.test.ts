@@ -516,6 +516,43 @@ describe('update_sections over a real section index', () => {
     expect((await pages.read('doc.md')).body).toContain('ALPHA BODY');
   });
 
+  it('conflicts between DISJOINT anchors of one page — there is no fast path', async () => {
+    /**
+     * 0.2.46. A page's sections are a third kind of collection: the keys
+     * (`anchor`) are immutable, the coordinates are derived, and — unlike a
+     * keyed collection — writes to disjoint keys do NOT proceed in parallel.
+     * They cannot: `update_sections` is a read-modify-write of the WHOLE page
+     * with the same primitive as `update_page`, and `expectedHash` is per file.
+     *
+     * So this is not a limitation to optimize away later. Anyone tempted to add
+     * a "disjoint keys, so write straight through" path has to delete this test
+     * first, which is the point of writing it down.
+     */
+    await index('doc.md', page);
+    const shared = await hashOfPage();
+
+    // Both callers read the page at the same moment and address DIFFERENT
+    // sections. The first write invalidates the hash for the second.
+    const first = await updateSections(
+      deps(),
+      { expectedHash: shared, edits: [{ anchor: anchorOf('Alpha'), action: 'replace', content: 'ALPHA REWRITTEN' }] },
+      'agent',
+    );
+    expect(first).toBeTruthy();
+
+    const err = await updateSections(
+      deps(),
+      { expectedHash: shared, edits: [{ anchor: anchorOf('Beta'), action: 'replace', content: 'BETA REWRITTEN' }] },
+      'agent',
+    ).catch((e) => e);
+
+    expect(err.code).toBe('PAGE_CONFLICT');
+    // The loser changed nothing — its edit is not partially applied.
+    const body = (await pages.read('doc.md')).body;
+    expect(body).toContain('ALPHA REWRITTEN');
+    expect(body).not.toContain('BETA REWRITTEN');
+  });
+
   it('edits the right section when the INDEX is behind the file', async () => {
     /**
      * The corruption case, and the reason the range is recomputed from the bytes

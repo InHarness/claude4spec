@@ -532,6 +532,13 @@ export interface SectionIndexEntry {
   headingLevel: number;
   headingText: string;
   contentHash: string;
+  /**
+   * 0.2.46 — a PREFIX of `section_index.body`, capped at
+   * `SECTION_CONTENT_SNIPPET_CHARS`. Never the full section content: the index
+   * materializes the body, but no generic operation emits it. Reach for a read
+   * of a single section when the whole thing is wanted.
+   */
+  contentSnippet: string;
   lineStart: number;
   lineEnd: number;
   paragraphCount: number;

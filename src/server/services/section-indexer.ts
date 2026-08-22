@@ -406,12 +406,27 @@ export class SectionIndexerService implements WatchSubscriber {
     const blocked = await this.anchorsOwnedElsewhere(rootId, relPath, sections);
 
     const tx = this.db.transaction(() => {
+      /**
+       * 0.2.46 — the upsert also writes `section_index.body`: the section AS
+       * AUTHORED, i.e. `s.content`, the RAW slice between the boundaries with the
+       * heading line and the anchor comment already excluded by `buildSections`.
+       *
+       * Deliberately NOT `normalizeContent(s.content)` — normalization is the
+       * hash's input and nothing but the hash consumes it. Writing it here would
+       * store a lossy rendering under a name that promises the original.
+       *
+       * Materialization, not emission: no generic operation hands this column
+       * out. `list_sections` stays a skeleton; `GET /api/sections` emits only a
+       * prefix of it as `contentSnippet`. A column with no write-side would be a
+       * bug rather than an intermediate state, so it is bound on BOTH the insert
+       * and the conflict path.
+       */
       const upsertStmt = this.db.prepare(
         `INSERT INTO section_index
             (rootId, anchor, page_path, heading_path, heading_slug, heading_level,
-             heading_text, content_hash, line_start, line_end, paragraph_count,
+             heading_text, content_hash, body, line_start, line_end, paragraph_count,
              created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
           ON CONFLICT(anchor) DO UPDATE SET
             rootId = excluded.rootId,
             page_path = excluded.page_path,
@@ -420,6 +435,7 @@ export class SectionIndexerService implements WatchSubscriber {
             heading_level = excluded.heading_level,
             heading_text = excluded.heading_text,
             content_hash = excluded.content_hash,
+            body = excluded.body,
             line_start = excluded.line_start,
             line_end = excluded.line_end,
             paragraph_count = excluded.paragraph_count,
@@ -436,6 +452,7 @@ export class SectionIndexerService implements WatchSubscriber {
           s.heading.level,
           s.heading.text,
           s.contentHash,
+          s.content,
           s.lineStart,
           s.lineEnd,
           s.paragraphCount

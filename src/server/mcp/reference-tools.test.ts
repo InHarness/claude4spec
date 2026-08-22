@@ -220,13 +220,20 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
       return { isError: res.isError === true, body: JSON.parse(text) as Record<string, any> };
     }
 
-    /** Index one section the way the indexer does — over the page body, 1-based. */
+    /**
+     * Index one section the way the indexer does — over the page body, 1-based.
+     *
+     * `body` is left empty on purpose: these cases are about the COORDINATES
+     * reaching the tools, and `get_sections` slices its content out of the file
+     * regardless of what the column holds. Passing real text here would suggest
+     * the tool reads it, which is exactly the question 0.2.46 leaves open.
+     */
     function indexSection(anchor: string, page: string, heading: string, start: number, end: number): void {
       db.prepare(
         `INSERT INTO section_index
            (rootId, anchor, page_path, heading_path, heading_slug, heading_level, heading_text,
-            content_hash, line_start, line_end, paragraph_count)
-         VALUES ('pages', ?, ?, ?, ?, 1, ?, 'hash', ?, ?, 1)`,
+            content_hash, body, line_start, line_end, paragraph_count)
+         VALUES ('pages', ?, ?, ?, ?, 1, ?, 'hash', '', ?, ?, 1)`,
       ).run(anchor, page, heading, heading.toLowerCase(), heading, start, end);
     }
 
@@ -253,6 +260,33 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
       expect(body.items[0]).toMatchObject({ rootId: 'pages', anchor: 'aaaaaa11', heading: 'Alpha' });
       expect(body.items[0].size).toBeGreaterThan(0);
       expect(body).toMatchObject({ total: 1, hasMore: false });
+    });
+
+    it('list_sections stays a skeleton — materializing content did not widen it', async () => {
+      // 0.2.46 regression. `section_index` now stores each section's body, and
+      // the listing reads that table with `SELECT *`. What keeps the column out
+      // of the answer is the explicit projection in `toRawSection`, so this
+      // checks KEYS: a value check would pass just as happily against a row
+      // that carried an empty `body` through.
+      await pagesService.write('page.md', { body: '# Alpha\n\nbody line\nanother line\n' });
+      db.prepare(
+        `INSERT INTO section_index
+           (rootId, anchor, page_path, heading_path, heading_slug, heading_level, heading_text,
+            content_hash, body, line_start, line_end, paragraph_count)
+         VALUES ('pages', 'aaaaaa11', 'page.md', 'Alpha', 'alpha', 1, 'Alpha', 'hash',
+                 'BODY THAT MUST NOT BE LISTED', 1, 4, 1)`,
+      ).run();
+      const client = await connectClient(deps());
+
+      const { isError, body } = await call(client, 'list_sections', { by: 'page', rootId: 'pages', path: 'page.md' });
+
+      expect(isError).toBe(false);
+      expect(Object.keys(body.items[0])).toEqual(
+        expect.not.arrayContaining(['body', 'content', 'contentSnippet', 'content_snippet']),
+      );
+      expect(JSON.stringify(body)).not.toContain('BODY THAT MUST NOT BE LISTED');
+      // Still a measurement: the size is there, the content it measures is not.
+      expect(body.items[0].size).toBeGreaterThan(0);
     });
 
     it('list_sections by page without a path refuses instead of answering "no sections"', async () => {

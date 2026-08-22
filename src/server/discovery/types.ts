@@ -269,6 +269,18 @@ export interface GetPageInput {
 }
 
 /**
+ * 0.2.46 — the L9 record shape for `page`, the second `host foundational type`
+ * after `section`. Foundational is the one L9 role whose module does NOT call
+ * `registerEntityModule`: the page has no logical schema, so it has no reserved
+ * `title` and no `select` (a projection picks from schema fields, and there are
+ * none). Its identity key is the pair `(rootId, path)` — the same `path` can
+ * exist under several roots, unlike a section's globally unique `anchor`.
+ *
+ * `content` is the page AS AUTHORED: frontmatter stays in the text and XML tags
+ * stay UNEXPANDED, because a tag is an edge and expanding it would erase it.
+ * The record deliberately carries no `hasMore`/`total` and no section listing —
+ * sections have their own semantics and their own discovery operations.
+ *
  * `truncated` + `truncationHint` are the ONLY cut signal. There is deliberately
  * no line counter beside them: the budget that does the cutting is measured in
  * CHARACTERS, so a line total is denominated in a unit unrelated to the reason

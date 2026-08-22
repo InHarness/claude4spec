@@ -4,6 +4,16 @@ import { parseXmlTagsExcludingCode, serializeXmlTag } from '../../shared/xml-tag
 import type { PagesService } from './pages.js';
 import type { SelfWriteMarker } from '../fs/sources.js';
 
+/**
+ * 0.2.46 — how much of `section_index.body` a generic listing may emit.
+ *
+ * `GET /api/sections` returns `contentSnippet`, a prefix of the materialized
+ * column cut to this fixed width. It is a preview, never the content: the
+ * emission discipline did not loosen when the index started storing bodies.
+ * Matches the width the page-search snippet has always used (see PagesService).
+ */
+export const SECTION_CONTENT_SNIPPET_CHARS = 160;
+
 interface SectionRow {
   id: number;
   anchor: string;
@@ -14,6 +24,7 @@ interface SectionRow {
   heading_level: number;
   heading_text: string;
   content_hash: string;
+  body: string;
   line_start: number;
   line_end: number;
   paragraph_count: number;
@@ -161,6 +172,9 @@ export class SectionsService {
       headingLevel: row.heading_level,
       headingText: row.heading_text,
       contentHash: row.content_hash,
+      // A prefix, never `row.body` itself — this projection is what every
+      // generic read of the index goes through.
+      contentSnippet: row.body.slice(0, SECTION_CONTENT_SNIPPET_CHARS),
       lineStart: row.line_start,
       lineEnd: row.line_end,
       paragraphCount: row.paragraph_count,
