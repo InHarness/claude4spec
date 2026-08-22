@@ -41,8 +41,14 @@ const SECTION_COLUMNS = `id, anchor, rootId, page_path, heading_path, heading_sl
        heading_text, content_hash, substr(body, 1, ${SECTION_BODY_READ_CHARS}) AS body_head,
        line_start, line_end, paragraph_count, created_at, updated_at`;
 
-/** An anchor comment is machinery — it is in the body, but it is not content. */
-const ANCHOR_COMMENT_RE = /^[ \t]*<!--\s*anchor:\s*[A-Za-z0-9_-]+\s*-->[ \t]*$/gm;
+/**
+ * An anchor comment is machinery — it is in the body, but it is not content.
+ *
+ * The trailing newline goes with it. Dropping only the text would leave the
+ * blank line behind, so a preview of a parent section would read
+ * `…below it.\n\n\n## Alpha` — the anchor's ghost, still spending width.
+ */
+const ANCHOR_COMMENT_RE = /^[ \t]*<!--\s*anchor:\s*[A-Za-z0-9_-]+\s*-->[ \t]*\r?\n?/gm;
 
 /**
  * The preview itself: strip the anchor comments, then trim, then cut.

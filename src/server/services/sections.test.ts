@@ -96,6 +96,9 @@ describe('SectionsService — what a generic read of the index emits', () => {
     // index machinery and does not.
     expect(entry!.contentSnippet).toContain('## Alpha');
     expect(entry!.contentSnippet).not.toMatch(/<!--\s*anchor:/);
+    // The anchor's line goes with its text — no blank line left standing in
+    // its place, which would spend the width on the comment's ghost.
+    expect(entry!.contentSnippet).toContain('TOP BODY.\n\n## Alpha');
   });
 
   /**
