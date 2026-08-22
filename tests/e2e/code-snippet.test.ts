@@ -315,6 +315,43 @@ describe.skipIf(!BASE)('code-snippet — card, chip, overlay and broken state', 
     expect(page.url()).toBe(before);
   });
 
+  it('keeps the read-only overlay read-only, whatever gesture lands on it', async () => {
+    /*
+     * The overlay is documented read-only, and the card's `<figure>` carries the
+     * two gestures that open the EDIT form (alt-click and double-click). While
+     * the overlay was rendered in place, `position: fixed` did not make it any
+     * less a DOM child: double-clicking to select a word in the code — the most
+     * ordinary thing a reader does on a fullscreen snippet — bubbled out and
+     * opened the edit popover underneath. It is portalled to `document.body`
+     * now, which is what actually severs the path.
+     *
+     * Reachable wherever the host passes no `onOpen`, which the release-diff card
+     * and the chat tool renderer both do.
+     */
+    await page.locator(`[data-slug="${SLUG}"] button[aria-label="Open fullscreen"]`).first().click();
+    const overlay = page.locator('[data-testid="code-snippet-fullscreen"]');
+    await expect.poll(() => overlay.count()).toBeGreaterThan(0);
+
+    // Not a descendant of the card that opened it — the structural fact the
+    // behaviour rests on, asserted directly so a revert cannot pass quietly.
+    expect(
+      await page.locator(`[data-slug="${SLUG}"] [data-testid="code-snippet-fullscreen"]`).count(),
+    ).toBe(0);
+
+    const code = overlay.locator('[data-testid="code-snippet-view"] pre').nth(1);
+    await code.dblclick();
+    await page.waitForTimeout(400);
+    await code.click({ modifiers: ['Alt'] });
+    await page.waitForTimeout(400);
+
+    // No editor opened, and the overlay is still standing.
+    expect(await page.getByText('Edit code snippet', { exact: true }).count()).toBe(0);
+    expect(await overlay.count()).toBeGreaterThan(0);
+
+    await page.keyboard.press('Escape');
+    await expect.poll(() => overlay.count()).toBe(0);
+  });
+
   it('[ac:ac-usuniecie-snippetu-daje-broken-card-i] shows a broken card and chip for a deleted snippet, leaving the page readable', async () => {
     const body = await page.locator('body').innerText();
     // The document still renders — a broken reference is a state, not a crash.
