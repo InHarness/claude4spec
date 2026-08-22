@@ -1,6 +1,6 @@
 {
   "name": "@inharness-ai/claude4spec",
-  "version": "0.2.43",
+  "version": "0.2.45",
   "description": "Plan the whole system before your agent writes a line of code. Local-first planning layer with structured entities and typed relations.",
   "license": "MIT",
   "author": "Mike Tomala <mike@inharness.ai>",
@@ -69,15 +69,15 @@
     "test:ac-coverage": "node scripts/ac-coverage.mjs",
     "deps:link": "node scripts/deps-link.mjs",
     "deps:unlink": "node scripts/deps-unlink.mjs",
-    "build:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts run build && npm --prefix plugins/c4s-plugin-spreadsheets run build && npm --prefix plugins/c4s-plugin-database-tables run build && npm --prefix plugins/c4s-plugin-frontend-mockups run build && npm --prefix plugins/c4s-plugin-mcp-tools run build",
-    "dev:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts run dev & npm --prefix plugins/c4s-plugin-spreadsheets run dev & npm --prefix plugins/c4s-plugin-database-tables run dev & npm --prefix plugins/c4s-plugin-frontend-mockups run dev & npm --prefix plugins/c4s-plugin-mcp-tools run dev",
+    "build:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts run build && npm --prefix plugins/c4s-plugin-spreadsheets run build && npm --prefix plugins/c4s-plugin-database-tables run build && npm --prefix plugins/c4s-plugin-frontend-mockups run build && npm --prefix plugins/c4s-plugin-mcp-tools run build && npm --prefix plugins/c4s-plugin-code-snippets run build",
+    "dev:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts run dev & npm --prefix plugins/c4s-plugin-spreadsheets run dev & npm --prefix plugins/c4s-plugin-database-tables run dev & npm --prefix plugins/c4s-plugin-frontend-mockups run dev & npm --prefix plugins/c4s-plugin-mcp-tools run dev & npm --prefix plugins/c4s-plugin-code-snippets run dev",
     "prebuild": "npm run build:envelopes",
     "predev": "npm run build:envelopes",
     "predev:default": "npm run build:envelopes",
     "pretest": "npm run build:envelopes",
     "pretest:watch": "npm run build:envelopes",
-    "test:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts test && npm --prefix plugins/c4s-plugin-spreadsheets test && npm --prefix plugins/c4s-plugin-database-tables test && npm --prefix plugins/c4s-plugin-frontend-mockups test && npm --prefix plugins/c4s-plugin-mcp-tools test",
-    "typecheck:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts run typecheck && npm --prefix plugins/c4s-plugin-spreadsheets run typecheck && npm --prefix plugins/c4s-plugin-database-tables run typecheck && npm --prefix plugins/c4s-plugin-frontend-mockups run typecheck && npm --prefix plugins/c4s-plugin-mcp-tools run typecheck"
+    "test:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts test && npm --prefix plugins/c4s-plugin-spreadsheets test && npm --prefix plugins/c4s-plugin-database-tables test && npm --prefix plugins/c4s-plugin-frontend-mockups test && npm --prefix plugins/c4s-plugin-mcp-tools test && npm --prefix plugins/c4s-plugin-code-snippets test",
+    "typecheck:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts run typecheck && npm --prefix plugins/c4s-plugin-spreadsheets run typecheck && npm --prefix plugins/c4s-plugin-database-tables run typecheck && npm --prefix plugins/c4s-plugin-frontend-mockups run typecheck && npm --prefix plugins/c4s-plugin-mcp-tools run typecheck && npm --prefix plugins/c4s-plugin-code-snippets run typecheck"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.210",

@@ -1,0 +1,186 @@
+/*
+ * Syntax colours for the code-snippet surfaces, mapped onto the paper/terra
+ * palette — never onto highlight.js's own themes and never onto literals.
+ *
+ * TWO REASONS THIS FILE EXISTS RATHER THAN AN IMPORTED HLJS THEME:
+ *
+ * 1. The design-system entity `c4s-paper-terra` is the source of truth for both
+ *    variants (light = base values, dark = `modes[].dark`), and the host exposes
+ *    it as `--c-*` custom properties that flip with the effective theme. A
+ *    vendored hljs theme hard-codes hex and would be right in exactly one mode.
+ * 2. The host already imports `highlight.js/styles/atom-one-dark.css` GLOBALLY
+ *    for the chat renderer. Its `.hljs-*` rules would otherwise reach this card
+ *    and paint it in a palette that has nothing to do with the page. Every rule
+ *    here is scoped under `.c4s-code-snippet` so it wins on specificity without
+ *    disturbing the chat.
+ *
+ * The mapping is by ROLE, not by prettiness: accent for keywords (the strongest
+ * colour the palette has), green for strings, blue for identifiers and types,
+ * purple for numbers and constants, muted for comments. It reads as one system
+ * with the rest of the app because it is made of the same five accents.
+ */
+
+.c4s-code-snippet {
+  background: var(--c-card);
+  color: var(--c-ink);
+}
+
+/*
+ * Neutralise the GLOBAL highlight.js theme.
+ *
+ * The host imports `highlight.js/styles/atom-one-dark.css` at app scope for the
+ * chat renderer, and its base `.hljs` rule carries a background, a padding and
+ * its OWN font-size. The token colours below already out-specify that theme's
+ * `.hljs-*` rules, so the palette looked right — but the base rule still applied,
+ * and its font-size is what pushed the code column out of step with the
+ * line-number gutter beside it. The drift accumulated down the block, so a short
+ * snippet looked fine and a forty-line one was visibly wrong.
+ *
+ * The `.prose-spec` guard in the host's `theme.css` fixed this for the CARD,
+ * which lives inside the editor's prose container. It could not fix the
+ * FULLSCREEN overlay, which is mounted at the document root and inherits none of
+ * it — hence this rule, which holds on every surface this type renders.
+ *
+ * Both columns must state the same metrics rather than inherit them: `font: inherit`
+ * alone still leaves the gutter and the code resolving against different parents.
+ */
+.c4s-code-snippet pre,
+.c4s-code-snippet code,
+.c4s-code-snippet .hljs {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  margin: 0;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12.5px;
+  line-height: 1.6;
+  tab-size: 2;
+}
+
+.c4s-code-snippet .hljs {
+  padding: 0;
+  color: inherit;
+}
+
+/*
+ * Editor typography must not reach inside a code block — the same invariant that
+ * protects the labels inside a rendered diagram's SVG. `.prose-spec` sets serif
+ * families, line-height and colour on descendants; a code block that inherits
+ * them stops being a code block.
+ */
+.prose-spec .c4s-code-snippet,
+.prose-spec .c4s-code-snippet code,
+.prose-spec .c4s-code-snippet pre {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--c-ink);
+  letter-spacing: normal;
+}
+
+/*
+ * Inside the editor, `.prose-spec pre` (0,1,1) out-specifies the gutter's own
+ * class (0,1,0) and would impose the editor's block padding on both columns. So
+ * the padding is restated HERE, at (0,2,1), rather than zeroed: zeroing it welds
+ * the line number to the code ("1export const …") in the card, while the
+ * fullscreen overlay — which never inherits `.prose-spec` — stays correct, and a
+ * discrepancy between the two surfaces is the hardest kind to notice.
+ */
+.prose-spec .c4s-code-snippet pre,
+.prose-spec .c4s-code-snippet code {
+  background: transparent;
+  margin: 0;
+  border: 0;
+}
+
+.prose-spec .c4s-code-snippet .c4s-code-snippet-gutter {
+  padding: 12px 10px;
+}
+
+.prose-spec .c4s-code-snippet .c4s-code-snippet-code {
+  padding: 12px 12px 12px 12px;
+}
+
+.c4s-code-snippet .hljs-comment,
+.c4s-code-snippet .hljs-quote {
+  color: var(--c-subtle);
+  font-style: italic;
+}
+
+.c4s-code-snippet .hljs-keyword,
+.c4s-code-snippet .hljs-selector-tag,
+.c4s-code-snippet .hljs-literal,
+.c4s-code-snippet .hljs-doctag,
+.c4s-code-snippet .hljs-name {
+  color: var(--c-accent-ink);
+  font-weight: 600;
+}
+
+.c4s-code-snippet .hljs-string,
+.c4s-code-snippet .hljs-regexp,
+.c4s-code-snippet .hljs-addition,
+.c4s-code-snippet .hljs-meta-string {
+  color: var(--c-green);
+}
+
+.c4s-code-snippet .hljs-title,
+.c4s-code-snippet .hljs-title.function_,
+.c4s-code-snippet .hljs-title.class_,
+.c4s-code-snippet .hljs-type,
+.c4s-code-snippet .hljs-built_in,
+.c4s-code-snippet .hljs-class .hljs-title {
+  color: var(--c-blue);
+}
+
+.c4s-code-snippet .hljs-number,
+.c4s-code-snippet .hljs-symbol,
+.c4s-code-snippet .hljs-bullet,
+.c4s-code-snippet .hljs-variable,
+.c4s-code-snippet .hljs-template-variable {
+  color: var(--c-purple);
+}
+
+.c4s-code-snippet .hljs-attr,
+.c4s-code-snippet .hljs-attribute,
+.c4s-code-snippet .hljs-property,
+.c4s-code-snippet .hljs-selector-attr,
+.c4s-code-snippet .hljs-selector-class,
+.c4s-code-snippet .hljs-selector-id {
+  color: var(--c-accent);
+}
+
+.c4s-code-snippet .hljs-meta,
+.c4s-code-snippet .hljs-params {
+  color: var(--c-muted);
+}
+
+.c4s-code-snippet .hljs-deletion {
+  color: var(--c-red);
+}
+
+.c4s-code-snippet .hljs-emphasis {
+  font-style: italic;
+}
+
+.c4s-code-snippet .hljs-strong {
+  font-weight: 700;
+}
+
+/* The line-number gutter. Not selectable — copying must yield code, not code
+ * with a column of integers welded to the front of every line. */
+.c4s-code-snippet-gutter {
+  user-select: none;
+  -webkit-user-select: none;
+  color: var(--c-subtle);
+  text-align: right;
+  border-right: 1px solid var(--c-hair);
+  /* Stated here rather than left to a utility class: the editor's `.prose-spec`
+     rules also target `pre`, and the gutter touching the code is the visible
+     result of losing that race. */
+  padding-right: 10px;
+  padding-left: 10px;
+}
+
+.c4s-code-snippet-code {
+  padding-left: 12px;
+}

@@ -32,6 +32,7 @@ import {
   evaluateComputedDefault,
   evaluateSlugPattern,
 } from '../../../shared/plugin-host/slug-pattern.js';
+import { normalizePayload } from '../../../shared/plugin-host/data-schema.js';
 import type { ChangedBy } from '../../../shared/entities.js';
 import type { RawEntity, RawEntityReader, RawEntityType } from '../../discovery/raw-entity-reader.js';
 import type { EntityStore } from '../../services/entity-store.js';
@@ -135,6 +136,29 @@ function applyComputedDefaults(
   return out;
 }
 
+/**
+ * Canonicalize every field whose leaf declares `normalize`.
+ *
+ * RUNS BEFORE `applyComputedDefaults`, and the order is deliberate for the same
+ * class of reason the block above gives: a `computedDefault` that reads a
+ * normalized field must see the canonical value, not the spelling the caller
+ * happened to type. No type does that today, so the order costs nothing to hold
+ * and would be expensive to discover was wrong later.
+ *
+ * ABSENT IS NOT EMPTY, and both must still land on the field's default. An
+ * absent key is skipped here and filled from the DDL default by
+ * `upsertProjectionRow`; a present `''` is folded and aliased here. Two paths,
+ * one result.
+ */
+function applyNormalizations(
+  module: BackendModule,
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const schema = module.data?.schema;
+  if (!schema) return payload;
+  return normalizePayload(schema, payload);
+}
+
 function requireModule(deps: GenericCrudDeps, type: string): BackendModule {
   const module = deps.host.getEntity(type);
   if (!module) throw new DomainError('VALIDATION', `unknown entity type '${type}'`);
@@ -196,7 +220,10 @@ export function genericCreate(
   const module = requireModule(deps, type);
   // Derived fields first — see `applyComputedDefaults`: the slug pattern reads
   // `title`, and `title` may be one of them.
-  const supplied = applyComputedDefaults(module, { ...((input ?? {}) as Record<string, unknown>) });
+  const supplied = applyComputedDefaults(
+    module,
+    applyNormalizations(module, { ...((input ?? {}) as Record<string, unknown>) }),
+  );
   const tags = Array.isArray(supplied.tags) ? (supplied.tags as string[]) : [];
 
   /**
@@ -288,7 +315,15 @@ export function genericUpdate(
   if (!current) throw new DomainError('NOT_FOUND', `${type} '${slug}' not found`);
 
   const patch = (input ?? {}) as Record<string, unknown>;
-  const merged = mergeUpdate(deps, module, current, patch);
+  /**
+   * Normalize the MERGE, not the patch.
+   *
+   * The stored half is already canonical, so folding the merged payload is a
+   * no-op on the fields the caller did not mention — which makes a PATCH that
+   * carries `language` and one that does not behave identically, and keeps the
+   * whole step idempotent.
+   */
+  const merged = applyNormalizations(module, mergeUpdate(deps, module, current, patch));
   const requested = typeof patch.newSlug === 'string' ? patch.newSlug.trim() : '';
   const target = requested && requested !== slug ? requested : slug;
 

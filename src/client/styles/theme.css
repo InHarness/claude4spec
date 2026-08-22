@@ -307,6 +307,39 @@ body {
   margin: 0;
 }
 
+/* Invariant: app typography does NOT style the inside of a code-snippet block.
+   The SAME rule the diagram guard above states, for the same reason. A snippet
+   card is a Tiptap node view living inside `.prose-spec`, so `.prose-spec pre`
+   (0,1,1) and `.prose-spec code` would otherwise repaint the block's background,
+   put a border and 10px of padding around the highlighted body, and override the
+   syntax colours with `--c-accent-ink`. The block's own appearance belongs to
+   the plugin's token stylesheet; these reset only what leaks in.
+
+   Kept HERE rather than in the plugin's CSS because the rules being neutralised
+   are the host's — a plugin cannot be expected to know which of the editor's
+   typography selectors reach into its surfaces. */
+.prose-spec .c4s-code-snippet pre,
+.prose-spec .c4s-code-snippet code {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  margin: 0;
+  color: inherit;
+  overflow-x: visible;
+}
+
+/*
+ * PADDING IS NOT NEUTRALISED HERE, and that omission is deliberate. The block
+ * sets its own horizontal padding to hold the line-number gutter off the code;
+ * zeroing it made the two columns touch ("1export const …") in the card while
+ * the fullscreen overlay — which never inherits `.prose-spec` — looked correct.
+ * Neutralise only what the editor's typography imposes, never what the component
+ * asked for.
+ *
+ * `font-size` is likewise left to the component: it states one value for the
+ * gutter and the code together, which is what keeps their baselines in step.
+ */
+
 /* chat composer (L8 `chat-input` context) — tiptap skinned to match the old textarea */
 .chat-input-pm {
   font-size: 13px;

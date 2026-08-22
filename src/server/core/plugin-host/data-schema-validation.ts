@@ -60,7 +60,11 @@ import {
 } from '../../../shared/plugin-host/slug-pattern.js';
 import { PluginManifestError } from './manifest-adapter.js';
 import { SQL_RESERVED_WORDS } from '../../../shared/plugin-host/sql-reserved-words.js';
-import { VALIDATOR_KINDS, isValidatorKind } from '../../../shared/plugin-host/named-validators.js';
+import {
+  VALIDATOR_KINDS,
+  checkValidator,
+  isValidatorKind,
+} from '../../../shared/plugin-host/named-validators.js';
 
 /**
  * snake_case only — stricter than the bare-identifier rule in
@@ -738,6 +742,104 @@ function checkValueConstraints(type: string, schema: DataDeclaration['schema']):
     }
     if ((node as { maxLength?: number }).maxLength !== undefined) {
       fail(type, `field "${path}" declares maxLength on a ${node.type} leaf — it is a STRING constraint`);
+    }
+  });
+  checkNormalizations(type, schema);
+}
+
+/**
+ * The ways a `normalize` declaration can be wrong, all caught at registration
+ * rather than at some later write.
+ *
+ * The last gate is the one with teeth. Zod validation runs in the generated
+ * router and in the MCP tool BEFORE `generic-crud` normalizes, so a normalization
+ * whose OUTPUT violates the field's own `maxLength` or `kind` would slip past the
+ * input schema entirely and reach the row unscreened. Checking the alias targets
+ * statically lets the write path assume they are already legal.
+ */
+function checkNormalizations(type: string, schema: DataDeclaration['schema']): void {
+  walkSchema(schema, (path, node) => {
+    const rule = (node as { normalize?: { case?: 'lower'; aliases?: Record<string, string> } })
+      .normalize;
+    if (rule === undefined) return;
+    // `normalizePayload` walks the payload's TOP-LEVEL keys only, so a nested
+    // declaration would register cleanly and then canonicalize nothing. Refusing
+    // it is the same call the sibling gates make: a constraint its author
+    // believes is enforced, silently doing nothing, is worse than a boot failure.
+    if (path.includes('.') || path.includes('[')) {
+      fail(
+        type,
+        `field "${path}" declares normalize below the top level — normalization applies to ` +
+          `top-level scalar leaves only, so this declaration would never fire`,
+      );
+      return;
+    }
+    if (node.type !== 'string') {
+      fail(type, `field "${path}" declares normalize on a ${node.type} leaf — it is a STRING constraint`);
+      return;
+    }
+    // Plugins are plain JS at load time, so `case` is not narrowed by the type.
+    if (rule.case !== undefined && rule.case !== 'lower') {
+      fail(
+        type,
+        `field "${path}" declares \`case: '${String(rule.case)}'\` — the only supported folding ` +
+          `is 'lower'`,
+      );
+      return;
+    }
+    // `aliases: {}` satisfies `!== undefined` while being a no-op, so count the
+    // keys rather than testing for the property.
+    if (rule.case === undefined && Object.keys(rule.aliases ?? {}).length === 0) {
+      fail(type, `field "${path}" declares an empty \`normalize\` — it canonicalizes nothing`);
+      return;
+    }
+    const aliases = rule.aliases ?? {};
+    const targets = new Set(Object.values(aliases));
+    for (const [key, target] of Object.entries(aliases)) {
+      // An unfolded key is UNREACHABLE: the lookup happens after folding, so
+      // `TS: 'typescript'` would look like it worked and never fire.
+      if (rule.case === 'lower' && key !== key.toLowerCase()) {
+        fail(
+          type,
+          `field "${path}" declares the alias key "${key}", which is not lower case while ` +
+            `\`case: 'lower'\` is set — the lookup happens AFTER folding, so this key is unreachable`,
+        );
+      }
+      if (targets.has(key)) {
+        fail(
+          type,
+          `field "${path}" declares "${key}" as both an alias key and an alias target — ` +
+            `normalization would not be idempotent`,
+        );
+      }
+      if (node.maxLength !== undefined && target.length > node.maxLength) {
+        fail(
+          type,
+          `field "${path}" normalizes "${key}" to "${target}", which is longer than its own ` +
+            `maxLength ${node.maxLength} — the input schema runs BEFORE normalization, so this ` +
+            `value would reach the row unscreened`,
+        );
+      }
+      // Idempotence needs the TARGET canonical too, not just the key reachable.
+      // `{ ts: 'TypeScript' }` passes every other gate, yet `ts` stores
+      // `TypeScript` while re-sending `TypeScript` stores `typescript` — two
+      // writes of one logical value landing as two different rows, and the
+      // update path assumes the stored half is already canonical.
+      if (rule.case === 'lower' && target !== target.toLowerCase()) {
+        fail(
+          type,
+          `field "${path}" normalizes "${key}" to "${target}", which is not itself lower case ` +
+            `while \`case: 'lower'\` is set — normalizing the stored value again would change ` +
+            `it, so normalization would not be idempotent`,
+        );
+      }
+      if (node.kind !== undefined && checkValidator(node.kind, target) !== null) {
+        fail(
+          type,
+          `field "${path}" normalizes "${key}" to "${target}", which fails its own ` +
+            `\`kind: '${node.kind}'\` — the input schema runs BEFORE normalization`,
+        );
+      }
     }
   });
 }

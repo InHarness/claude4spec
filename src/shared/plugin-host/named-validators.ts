@@ -23,8 +23,8 @@
 
 import { SQL_RESERVED_WORDS } from './sql-reserved-words.js';
 
-/** The name a declaration may put in `kind`. Closed — one entry today. */
-export type ValidatorKind = 'sql-identifier';
+/** The name a declaration may put in `kind`. Closed — two entries today. */
+export type ValidatorKind = 'sql-identifier' | 'non-empty';
 
 /** Why a value was refused. The two arms carry DIFFERENT messages on purpose. */
 export type ValidatorFailure = 'shape' | 'reserved';
@@ -63,6 +63,30 @@ const VALIDATORS: Readonly<Record<ValidatorKind, NamedValidator>> = {
        */
       if (SQL_RESERVED_WORDS.has(value.toLowerCase())) return 'reserved';
       return null;
+    },
+  },
+  /**
+   * Present AND not blank.
+   *
+   * `required` is not this rule and cannot be made into it: it refuses `null`
+   * and a missing key, so `''` satisfies it — the column is NOT NULL and an
+   * empty string is a value. For most fields that is right (an empty `notes` is
+   * a cleared note). For a field whose whole content IS the entity — a code
+   * snippet's `code` — an empty value is not a legal state, and storing one
+   * produces a record that renders as an empty box and diffs against nothing.
+   *
+   * Whitespace counts as blank: a field holding one newline is empty in every
+   * sense the author cares about, and treating it as content would make the rule
+   * trivially evadable by pressing return.
+   *
+   * A separate validator rather than widening `required`, because widening it
+   * would change what every existing type's required strings accept — silently,
+   * and in a direction no existing declaration asked for.
+   */
+  'non-empty': {
+    describe: 'at least one non-whitespace character',
+    check(value) {
+      return value.trim() === '' ? 'shape' : null;
     },
   },
 };

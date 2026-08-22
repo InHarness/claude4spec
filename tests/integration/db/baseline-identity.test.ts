@@ -193,7 +193,13 @@ const PROJECTED_TABLES = new Set([
  * able to see a table appearing that nobody meant to add. Their presence is
  * asserted separately below, so excluding them cannot hide them going missing.
  */
-const NEW_SINCE_LEGACY = new Set(['spreadsheet', 'spreadsheet_cells', 'mcp_tool']);
+const NEW_SINCE_LEGACY = new Set([
+  'spreadsheet',
+  'spreadsheet_cells',
+  'mcp_tool',
+  // 0.2.45 — `code-snippet`, contributed by `c4s-plugin-code-snippets`.
+  'code_snippet',
+]);
 
 const withoutNewTables = (schema: Record<string, TableShape>): Record<string, TableShape> =>
   Object.fromEntries(Object.entries(schema).filter(([table]) => !NEW_SINCE_LEGACY.has(table)));

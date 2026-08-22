@@ -236,6 +236,108 @@ export interface ScalarNode extends FieldFlags {
    * never actually screened.
    */
   kind?: ValidatorKind;
+  /**
+   * STRING ONLY — CANONICALIZE the value on write instead of refusing it.
+   *
+   * This is the one declaration on a scalar leaf that COERCES. `maxLength` and
+   * `kind` are the opposite axis: they screen a value and refuse it loudly, with
+   * no silent rewriting. `normalize` exists for the case where several spellings
+   * genuinely mean one thing — `TypeScript`, `ts` and `typescript` are one
+   * language, not three — and where refusing the variant spellings would be
+   * hostile rather than protective.
+   *
+   * ORDER IS FIXED AND PART OF THE CONTRACT: case-fold first (`case: 'lower'`),
+   * then look the FOLDED value up in `aliases`. A miss stores the folded value
+   * unchanged. It NEVER refuses — a value outside the table is a legal value the
+   * host simply has no synonym for.
+   *
+   * Applied by the generic write path (`generic-crud`), so it covers both
+   * external doors — the generated REST router and the generic MCP
+   * `create_entities` / `update_entities` — without the type needing a `backend`
+   * slot to reach them. It is deliberately NOT applied on the restore/reindex
+   * path: values on disk were normalized when they were written, so replay is
+   * already canonical, and normalizing there would break the `file → index →
+   * file` convergence this schema's header rests on (a hand-edited file saying
+   * `ts` would index as `typescript` while the file still said `ts`).
+   *
+   * NOT part of `data.integrity` and never reaching DDL — exactly like
+   * `maxLength` and `kind`, and for the same reason: it is a domain truth about
+   * the value, not a shape the table enforces. No `CHECK`, no column, no change
+   * to the DDL default.
+   *
+   * Published by `describe_*` under `constraints`, because an agent that writes
+   * `ts` and reads back `typescript` otherwise has nothing explaining why.
+   *
+   * Rejected on a non-string leaf; see `data-schema-validation` for the rest of
+   * the registration-time gates (an empty declaration, an alias key that is not
+   * already folded, and an alias TARGET that would violate the field's own
+   * `maxLength` or `kind` — that last one matters because zod runs in the router
+   * BEFORE normalization, so a normalized value would otherwise slip past the
+   * input schema entirely).
+   */
+  normalize?: FieldNormalization;
+}
+
+/**
+ * How a scalar string leaf is canonicalized on write. See `ScalarNode.normalize`
+ * for the ordering contract and for why this is the only coercing declaration.
+ *
+ * Both halves are optional individually but the object must declare at least one
+ * of them — an empty `normalize` declares nothing and is refused at registration.
+ */
+export interface FieldNormalization {
+  /** Fold the value to lower case before the alias lookup. */
+  case?: 'lower';
+  /**
+   * Synonym table, consulted AFTER folding. Keys must already be folded when
+   * `case: 'lower'` is set, and no target may itself be a key — together those
+   * two rules make normalization idempotent by construction.
+   */
+  aliases?: Readonly<Record<string, string>>;
+}
+
+/**
+ * Apply a leaf's `normalize` declaration to one value.
+ *
+ * Total and idempotent: a non-string (or a leaf declaring no `normalize`) comes
+ * back untouched, and a value that is already canonical maps to itself.
+ */
+export function normalizeFieldValue(node: FieldNode, value: unknown): unknown {
+  if (node.type !== 'string') return value;
+  const rule = (node as ScalarNode).normalize;
+  if (!rule) return value;
+  if (typeof value !== 'string') return value;
+  const folded = rule.case === 'lower' ? value.toLowerCase() : value;
+  // OWN keys only. A plain object literal inherits from `Object.prototype`, so a
+  // bare `aliases[folded]` resolves `constructor`, `__proto__`, `toString` and
+  // the rest — and case-folding puts every capitalisation of them in reach. The
+  // result is then a value no author declared, arriving AFTER the input schema
+  // has run: `language: 'Constructor'` stored 35 characters into a field
+  // declaring `maxLength: 30`. The registration gates screen the DECLARED
+  // targets; this is what keeps the lookup to them.
+  const aliases = rule.aliases;
+  if (aliases === undefined || !Object.prototype.hasOwnProperty.call(aliases, folded)) return folded;
+  return aliases[folded];
+}
+
+/**
+ * Apply every `normalize` declaration in a schema to a payload's TOP-LEVEL
+ * scalar leaves, returning a new object. Keys absent from the payload stay
+ * absent — an absent field is filled by the DDL default, not by this.
+ */
+export function normalizePayload(
+  schema: Readonly<Record<string, FieldNode>>,
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  let out: Record<string, unknown> | null = null;
+  for (const [name, node] of Object.entries(schema)) {
+    if (!(name in payload)) continue;
+    const next = normalizeFieldValue(node, payload[name]);
+    if (next === payload[name]) continue;
+    out ??= { ...payload };
+    out[name] = next;
+  }
+  return out ?? payload;
 }
 
 /** A leaf constrained to a closed set of strings. Projects to `TEXT`, validated on write. */
@@ -591,7 +693,13 @@ export function selectableFieldsOf(schema: Readonly<Record<string, FieldNode>>):
 export type FieldConstraint =
   | { field: string; type: 'enum'; values: readonly string[] }
   | { field: string; type: 'maxLength'; maxLength: number }
-  | { field: string; type: 'kind'; kind: ValidatorKind; describe: string };
+  | { field: string; type: 'kind'; kind: ValidatorKind; describe: string }
+  | {
+      field: string;
+      type: 'normalize';
+      case?: 'lower';
+      aliases?: Readonly<Record<string, string>>;
+    };
 
 /**
  * Every value constraint the schema declares, flattened for `describe_*`.
@@ -611,6 +719,17 @@ export function constraintsOf(schema: Readonly<Record<string, FieldNode>>): Fiel
     // of `sql-identifier` still learns the rule before a write teaches it.
     if (node.type === 'string' && node.kind !== undefined) {
       out.push({ field, type: 'kind', kind: node.kind, describe: describeValidator(node.kind) });
+    }
+    // The one COERCING constraint, and the one most worth publishing: without
+    // it an agent writes `ts`, reads back `typescript`, and has nothing telling
+    // it that was the rule rather than a bug.
+    if (node.type === 'string' && node.normalize !== undefined) {
+      out.push({
+        field,
+        type: 'normalize',
+        ...(node.normalize.case ? { case: node.normalize.case } : {}),
+        ...(node.normalize.aliases ? { aliases: node.normalize.aliases } : {}),
+      });
     }
   }
   return out;
