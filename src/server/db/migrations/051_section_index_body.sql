@@ -8,7 +8,7 @@
 --
 -- Materialization, NOT emission. No generic operation hands this column out:
 -- `list_sections` stays a skeleton and `GET /api/sections` emits only a
--- truncated `contentSnippet` (a prefix of this column). A read of one section
+-- truncated `contentSnippet` (a bounded preview of this column). A read of one section
 -- is where full content comes from.
 --
 -- Why a full rebuild rather than `ALTER TABLE ... ADD COLUMN`: the column is
@@ -35,6 +35,16 @@
 -- an acceptable resting state. The boot-time `SectionIndexerService.indexAll()`
 -- reindexes every page in every section-indexed root and refills the column with
 -- real content on the first start after this migration.
+--
+-- That boot pass is the ONLY repair path, and it is fire-and-forget (see
+-- project-context.ts: `indexAll().catch(console.error)`). If it fails or the
+-- process dies mid-run, the affected rows keep body = '' and a listing reports
+-- an empty `contentSnippet` for them with no error anywhere — a restart repairs
+-- it, nothing else does. Rows belonging to a root that has since lost
+-- `sectionIndexed` are never revisited at all: `indexAll` walks the configured
+-- roots, while the read side deliberately keeps listing those anchors. Neither
+-- case loses data — `content_hash` and the coordinates are untouched, and a read
+-- of a single section still slices the file.
 --
 -- No index changes: `idx_si_hash` and `idx_si_root_page` are recreated exactly
 -- as they were, and anchor uniqueness stays the inline global UNIQUE (see 044 --

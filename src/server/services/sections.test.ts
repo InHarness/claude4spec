@@ -75,6 +75,44 @@ describe('SectionsService — what a generic read of the index emits', () => {
     expect(byAnchor['bbbb2222']).toBe('');
   });
 
+  /**
+   * The shape the indexer actually stores, which the synthetic bodies above do
+   * not have: a body opens with the blank line after its heading, and a parent
+   * section runs through its children — anchor comments and all. A verbatim
+   * prefix of the column would spend its first thirty characters on markup.
+   */
+  it('opens the preview on content, not on the machinery around it', async () => {
+    insert(
+      'aaaa1111',
+      'notes.md',
+      'Top',
+      ['', 'TOP BODY.', '', '<!-- anchor: bbbb2222 -->', '## Alpha', '', 'ALPHA BODY.', ''].join('\n'),
+    );
+
+    const [entry] = sections.list();
+
+    expect(entry!.contentSnippet.startsWith('TOP BODY.')).toBe(true);
+    // The nested heading is content and stays; the anchor comment above it is
+    // index machinery and does not.
+    expect(entry!.contentSnippet).toContain('## Alpha');
+    expect(entry!.contentSnippet).not.toMatch(/<!--\s*anchor:/);
+  });
+
+  /**
+   * The preview is cut in SQL, not in JS — an H1 section's body is the whole
+   * page, so a listing that read the column in full would read the corpus once
+   * per heading level. This is the case that fails if that window is removed:
+   * the content past it must be unreachable through this service.
+   */
+  it('never reads more of the column than the preview can need', async () => {
+    insert('aaaa1111', 'notes.md', 'Top', `${'z'.repeat(SECTION_CONTENT_SNIPPET_CHARS * 8)}TAIL MARKER`);
+
+    const [entry] = sections.list();
+
+    expect(entry!.contentSnippet).toHaveLength(SECTION_CONTENT_SNIPPET_CHARS);
+    expect(entry!.contentSnippet).not.toContain('TAIL MARKER');
+  });
+
   it('filters by page without touching what it emits', async () => {
     insert('aaaa1111', 'notes.md', 'Alpha', 'from notes');
     insert('bbbb2222', 'other.md', 'Beta', 'from other');

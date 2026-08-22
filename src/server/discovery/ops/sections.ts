@@ -133,9 +133,20 @@ async function measure(pages: PageSource, sections: readonly RawSection[]): Prom
   return sizes;
 }
 
+/**
+ * 0.2.46 — every column a `RawSection` is built from, and not one more.
+ *
+ * Was `SELECT *`, which was harmless until the index started materializing
+ * `body`: a section's body runs to the next heading of its own level, so an H1
+ * row carries a whole page. `toRawSection` never reads it — `get_sections`
+ * slices the file — so a star here would load the corpus to throw it away.
+ */
+export const RAW_SECTION_COLUMNS =
+  'rootId, anchor, page_path, heading_path, heading_slug, heading_text, heading_level, content_hash, line_start, line_end';
+
 export function selectSections(db: Database, where: string, params: unknown[]): RawSection[] {
   const rows = db
-    .prepare(`SELECT * FROM section_index ${where} ORDER BY page_path, line_start`)
+    .prepare(`SELECT ${RAW_SECTION_COLUMNS} FROM section_index ${where} ORDER BY page_path, line_start`)
     .all(...(params as never[])) as Array<Record<string, unknown>>;
   return rows.map(toRawSection);
 }
