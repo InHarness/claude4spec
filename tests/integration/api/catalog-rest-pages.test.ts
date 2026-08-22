@@ -7,7 +7,9 @@ import request from 'supertest';
 import { crossRootPagesRouter, pagesRouter, type PageRootRuntime } from '../../../src/server/routes/pages.js';
 import { sectionsRouter } from '../../../src/server/routes/sections.js';
 import type { DiscoveryCore } from '../../../src/server/discovery/types.js';
-import type { SectionsService } from '../../../src/server/services/sections.js';
+import type Database from 'better-sqlite3';
+import { SECTION_CONTENT_SNIPPET_CHARS, SectionsService } from '../../../src/server/services/sections.js';
+import { createTestDb } from '../../helpers/test-db.js';
 import { PagesService } from '../../../src/server/services/pages.js';
 
 /**
@@ -168,6 +170,74 @@ describe('GET /api/pages/:rootId/list — the flat list_pages', () => {
     const res = await request(appWithPages(core)).get('/api/pages/nope/list').expect(404);
     expect(res.body.error.code).toBe('ROOT_NOT_FOUND');
     expect(calls).toHaveLength(0);
+  });
+});
+
+/**
+ * 0.2.46 — the plain index listing, against a REAL `SectionsService`.
+ *
+ * The rest of this file drives a recording core and a fake service, because
+ * what it checks is the mapping a thin handler can get wrong. Here the thing
+ * under test IS the emitted row, so the fake would be testing itself: the
+ * service is wired to a real database instead.
+ */
+describe('GET /api/sections — the index listing', () => {
+  function appWithRealSections(): { app: express.Express; db: Database.Database } {
+    const db = createTestDb();
+    const app = express();
+    app.use('/api/sections', sectionsRouter(new SectionsService(db), recordingCore().core));
+    return { app, db };
+  }
+
+  function insert(db: Database.Database, anchor: string, page: string, heading: string, body: string): void {
+    db.prepare(
+      `INSERT INTO section_index
+         (rootId, anchor, page_path, heading_path, heading_slug, heading_level, heading_text,
+          content_hash, body, line_start, line_end, paragraph_count)
+       VALUES ('pages', ?, ?, ?, ?, 2, ?, 'hash', ?, 1, 5, 1)`,
+    ).run(anchor, page, heading, heading.toLowerCase(), heading, body);
+  }
+
+  it('emits a bounded snippet and never the materialized column', async () => {
+    const { app, db } = appWithRealSections();
+    try {
+      insert(db, 'aaaa1111', 'notes.md', 'Alpha', 'A'.repeat(SECTION_CONTENT_SNIPPET_CHARS * 3));
+
+      const res = await request(app).get('/api/sections').expect(200);
+
+      const [entry] = res.body.sections;
+      expect(entry.contentSnippet).toHaveLength(SECTION_CONTENT_SNIPPET_CHARS);
+      expect(Object.keys(entry)).not.toContain('body');
+      // The coordinates and header metadata are untouched by the addition.
+      expect(entry).toMatchObject({
+        anchor: 'aaaa1111',
+        pagePath: 'notes.md',
+        headingText: 'Alpha',
+        headingLevel: 2,
+        contentHash: 'hash',
+        lineStart: 1,
+        lineEnd: 5,
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('keeps `pagePath` an optional filter', async () => {
+    const { app, db } = appWithRealSections();
+    try {
+      insert(db, 'aaaa1111', 'notes.md', 'Alpha', 'from notes');
+      insert(db, 'bbbb2222', 'other.md', 'Beta', 'from other');
+
+      const all = await request(app).get('/api/sections').expect(200);
+      expect(all.body.sections).toHaveLength(2);
+
+      const scoped = await request(app).get('/api/sections?pagePath=notes.md').expect(200);
+      expect(scoped.body.sections.map((s: { anchor: string }) => s.anchor)).toEqual(['aaaa1111']);
+      expect(scoped.body.sections[0].contentSnippet).toBe('from notes');
+    } finally {
+      db.close();
+    }
   });
 });
 

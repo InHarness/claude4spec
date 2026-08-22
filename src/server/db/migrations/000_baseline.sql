@@ -227,6 +227,9 @@ CREATE TABLE section_index (
   heading_level INTEGER NOT NULL,
   heading_text TEXT NOT NULL,
   content_hash TEXT NOT NULL,
+  -- 0.2.46 (051): the section AS AUTHORED -- no heading line, no anchor line, no
+  -- normalization. Materialization, not emission: no generic operation hands it out.
+  body TEXT NOT NULL,
   line_start INTEGER NOT NULL,
   line_end INTEGER NOT NULL,
   paragraph_count INTEGER NOT NULL DEFAULT 0,

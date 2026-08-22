@@ -1,7 +1,18 @@
 /**
- * FileSerializer — M02 stays out of L9 plugin host (M17 decyzja 1).
- * Lives outside `EntitySerializer` registry; provides parallel
- * snapshot/restore/diff for markdown files (pages, briefs, patches).
+ * FileSerializer — the AUTHORED versioning mechanism for markdown files (pages,
+ * briefs, patches): `version` / `snapshot` / `restore` / `diff`, hand-written
+ * rather than generated from a logical schema, because a file has none. M02 does
+ * not register the page through `registerEntityModule` (M17 decyzja 1) — files
+ * on disk run a track parallel to entities in SQLite, so this serializer sits
+ * outside the `EntitySerializer` registry.
+ *
+ * 0.2.46 — that is NOT the same as "the page is outside L9", a claim this file
+ * used to make and which is hereby withdrawn as misleading. L9 is a registry of
+ * RECORD SHAPES emitted to external consumers, not a registry of entity types:
+ * it declares the page in the `host foundational type` role (the second one,
+ * alongside `section`), with identity key `(rootId, path)` and the record shape
+ * `GetPageResult`. This class is M17's versioning machinery, not an L9
+ * generation — the two interfaces neither collide nor replace each other.
  *
  * Snapshot shape — `FileSnapshotData` per `db-m17-snapshots.md` (`dbm17shp01`).
  * Diff variant C (M17 decyzja 10): section-level operations + mandatory
