@@ -308,8 +308,16 @@ export function normalizeFieldValue(node: FieldNode, value: unknown): unknown {
   if (!rule) return value;
   if (typeof value !== 'string') return value;
   const folded = rule.case === 'lower' ? value.toLowerCase() : value;
-  const aliased = rule.aliases?.[folded];
-  return aliased === undefined ? folded : aliased;
+  // OWN keys only. A plain object literal inherits from `Object.prototype`, so a
+  // bare `aliases[folded]` resolves `constructor`, `__proto__`, `toString` and
+  // the rest — and case-folding puts every capitalisation of them in reach. The
+  // result is then a value no author declared, arriving AFTER the input schema
+  // has run: `language: 'Constructor'` stored 35 characters into a field
+  // declaring `maxLength: 30`. The registration gates screen the DECLARED
+  // targets; this is what keeps the lookup to them.
+  const aliases = rule.aliases;
+  if (aliases === undefined || !Object.prototype.hasOwnProperty.call(aliases, folded)) return folded;
+  return aliases[folded];
 }
 
 /**

@@ -46,6 +46,31 @@ describe('normalizeFieldValue', () => {
   });
 });
 
+describe('normalizeFieldValue — the alias table is not a prototype chain', () => {
+  /*
+   * A plain object literal inherits from `Object.prototype`, so an unguarded
+   * `aliases[folded]` answers for keys nobody declared — and case-folding brings
+   * every capitalisation of them into reach. The stored value then bypassed both
+   * the input schema (which runs BEFORE normalization) and the registration
+   * gates (which only ever saw the declared targets): `Constructor` landed 35
+   * characters in a field declaring `maxLength: 30`.
+   */
+  it.each(['constructor', 'Constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf'])(
+    'stores the folded input for the inherited key %s, not the inherited value',
+    (key) => {
+      expect(normalizeFieldValue(language, key)).toBe(key.toLowerCase());
+    },
+  );
+
+  it('is unaffected by a table built with a null prototype', () => {
+    const aliases = Object.create(null) as Record<string, string>;
+    aliases.ts = 'typescript';
+    const node: FieldNode = { type: 'string', normalize: { case: 'lower', aliases } };
+    expect(normalizeFieldValue(node, 'TS')).toBe('typescript');
+    expect(normalizeFieldValue(node, 'constructor')).toBe('constructor');
+  });
+});
+
 describe('normalizePayload', () => {
   const schema = { title: { type: 'string' } as FieldNode, language };
 

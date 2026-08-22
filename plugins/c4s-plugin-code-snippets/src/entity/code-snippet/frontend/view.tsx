@@ -53,7 +53,15 @@ export function CodeSnippetView({
   const lines = React.useMemo(() => code.split('\n'), [code]);
   const collapsible = !alwaysExpanded && lines.length > COLLAPSE_LINES;
   const showAll = alwaysExpanded || expanded || !collapsible;
-  const visible = showAll ? lines : lines.slice(0, COLLAPSE_LINES);
+  // Memoized for its IDENTITY, not for the slice. `lines.slice(...)` is a fresh
+  // array every render, and it is the highlight memo's dependency — so while a
+  // snippet was collapsed the memo never hit and `highlightToHtml` re-parsed on
+  // every unrelated state change (`copied` ticking back, the popover's live
+  // preview typing).
+  const visible = React.useMemo(
+    () => (showAll ? lines : lines.slice(0, COLLAPSE_LINES)),
+    [showAll, lines],
+  );
   const hidden = lines.length - visible.length;
 
   const html = React.useMemo(

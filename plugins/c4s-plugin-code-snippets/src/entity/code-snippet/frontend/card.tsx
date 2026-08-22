@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { Check, Copy, Maximize2 } from 'lucide-react';
 import type { EntityCardProps } from '@c4s/plugin-runtime';
 import { DEFAULT_LANGUAGE } from '../../../identity.js';
@@ -30,7 +31,12 @@ export function CodeSnippetCard({ slug, entity, caption, onOpen }: EntityCardPro
     let live = true;
     void fetchCodeSnippet(slug).then((next) => {
       if (!live) return;
-      setRecord(next);
+      // A failed read must not CLOBBER a record we already hold. The host injects
+      // a snapshot for entities that no longer exist in the database — a release
+      // diff's deleted side is rendered from the PREVIOUS release's snapshot — so
+      // the fetch 404s there by design. Overwriting with `null` turned that panel
+      // into an empty code frame.
+      if (next !== null) setRecord(next);
       setLoading(false);
     });
     return () => {
@@ -39,8 +45,14 @@ export function CodeSnippetCard({ slug, entity, caption, onOpen }: EntityCardPro
   }, [slug]);
 
   React.useEffect(() => {
+    // Only when the host injected nothing. An injected entity is already the
+    // answer, and re-reading it is at best redundant and at worst wrong: a
+    // snapshot of something deleted has no row left to fetch.
+    if (injected) return;
     setLoading(true);
     return reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `injected` is a
+    // render-identity object; the slug is what decides whether to fetch.
   }, [reload]);
 
   // An external edit of the entity file lands here: watcher → reindex → WS.
@@ -172,14 +184,23 @@ export function CodeSnippetCard({ slug, entity, caption, onOpen }: EntityCardPro
         </figcaption>
       ) : null}
 
-      {overlay ? (
-        <CodeSnippetFullscreen
-          slug={slug}
-          entity={record}
-          {...(caption ? { caption } : {})}
-          onClose={() => setOverlay(false)}
-        />
-      ) : null}
+      {/*
+        Portalled to `document.body`, NOT rendered in place. The `<figure>` owns
+        the alt-click and double-click edit gestures, and a `position: fixed`
+        child is still a DOM child: double-clicking to select a word in the
+        read-only overlay bubbled back out and opened the edit form underneath it.
+      */}
+      {overlay
+        ? createPortal(
+            <CodeSnippetFullscreen
+              slug={slug}
+              entity={record}
+              {...(caption ? { caption } : {})}
+              onClose={() => setOverlay(false)}
+            />,
+            document.body,
+          )
+        : null}
     </figure>
   );
 }
