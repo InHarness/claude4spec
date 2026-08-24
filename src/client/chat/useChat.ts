@@ -13,6 +13,21 @@ import type {
 import { thinkingToConfig, type ChatModel, type ChatThinking } from '../state/chat.js';
 import { toast } from '../ui/events.js';
 
+/**
+ * claude4spec's own annotation on a replayed `user_input_request`, added by the
+ * server when the question is no longer answerable — answered, cancelled, or
+ * its in-memory `pendingInputs` entry gone with a restart. It never rides a LIVE
+ * event: a live one is by definition still answerable.
+ *
+ * Kept as a separate type rather than widening the union member, because the
+ * library's own `WireEvent` already carries a `user_input_request` variant and a
+ * second one would only make every field access ambiguous.
+ */
+type ResolvedUserInputAnnotation = {
+  resolved?: boolean;
+  response?: UserInputResponse | null;
+};
+
 type WireEventExtended =
   | WireEvent
   | { type: 'user_input_request'; request: UserInputRequest }
@@ -147,6 +162,14 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
   const isStreamingRef = useRef(false);
   /** C21: makes each synthetic warning block's toolUseId unique within a session. */
   const warningSeqRef = useRef(0);
+  /**
+   * Request ids whose read-only history card has already been synthesized from a
+   * resolved replay event. A joiner can replay the same turn more than once
+   * (thread switch A→B→A), and the reducer would otherwise stack a duplicate
+   * card each time. Cleared wherever `pendingUserInputs` is, since both describe
+   * the same turn.
+   */
+  const synthesizedUserInputsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     isStreamingRef.current = state.isStreaming;
   }, [state.isStreaming]);
@@ -251,6 +274,50 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
         return;
       }
       if (ext.type === 'user_input_request') {
+        /**
+         * A RESOLVED request is history, not a prompt. It reaches us only from
+         * the replay buffer of a turn that is still running (F5, or a thread
+         * switch away and back) — the question was already answered, so putting
+         * it back in `pendingUserInputs` would hide the composer behind a card
+         * whose submit answers `404 no pending input for that requestId`.
+         *
+         * It cannot simply be dropped either: a mid-turn joiner restores
+         * persisted history only up to BEFORE the last user message, so the
+         * `user_input_request` / `user_input_response` rows of the running turn
+         * never arrive — this event is the only trace of the question the
+         * current transcript will get. So synthesize the same pair of blocks
+         * `rowsToChatMessages` builds from those rows, exactly the way the
+         * `warning` branch below synthesizes its carrier `tool_use`.
+         *
+         * The `uir-` prefix is not cosmetic. The adapter uses
+         * `requestId === ctx.toolUseID`, so an unprefixed id would collide with
+         * the REAL `AskUserQuestion` tool_use/tool_result pair already in the
+         * stream, and <BlockRenderer />'s first-match pairing would cross the
+         * two.
+         */
+        const annotation = ext as ResolvedUserInputAnnotation;
+        if (annotation.resolved) {
+          const { requestId } = ext.request;
+          if (synthesizedUserInputsRef.current.has(requestId)) return;
+          synthesizedUserInputsRef.current.add(requestId);
+          setPendingUserInputs((prev) => prev.filter((r) => r.requestId !== requestId));
+          handleWireEvent({
+            type: 'tool_use',
+            toolUseId: `uir-${requestId}`,
+            toolName: USER_INPUT_TOOL_NAME,
+            input: ext.request,
+            isSubagent: false,
+          });
+          if (annotation.response) {
+            handleWireEvent({
+              type: 'tool_result',
+              toolUseId: `uir-${requestId}`,
+              summary: JSON.stringify(annotation.response),
+              isSubagent: false,
+            });
+          }
+          return;
+        }
         setPendingUserInputs((prev) =>
           prev.some((r) => r.requestId === ext.request.requestId) ? prev : [...prev, ext.request],
         );
@@ -409,6 +476,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     setIsResuming(false);
     handleWireEvent({ type: 'error', error: 'Request aborted', code: 'ABORTED' });
     setPendingUserInputs([]);
+    synthesizedUserInputsRef.current = new Set();
   }, [abortStream, handleWireEvent]);
 
   // M05: enqueue a message typed during a live turn. Returns true on success so
@@ -485,6 +553,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     setIsResuming(false);
     clear();
     setPendingUserInputs([]);
+    synthesizedUserInputsRef.current = new Set();
     setCurrentTodoItems(null);
     setUserPlanModes([]);
     setUserAnnotations([]);
@@ -610,6 +679,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
 
   useEffect(() => {
     setPendingUserInputs([]);
+    synthesizedUserInputsRef.current = new Set();
   }, [threadId]);
 
   return {

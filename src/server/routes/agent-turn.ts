@@ -161,14 +161,71 @@ export interface ActiveAdapter {
 // `POST /threads/:id/ask` dostaja te same instancje przez wspolne agentDeps:
 // drugi POST/ask na ten sam watek dostaje 409, a GET /chat/stream/:threadId
 // dolacza do zywego streamu niezaleznie od tego, ktory endpoint go uruchomil.
+/**
+ * Annotate an ALREADY-BUFFERED `user_input_request` as resolved.
+ *
+ * The adapter hands one `AskUserQuestion` to the server over two parallel
+ * channels: the `onUserInput(...)` handler (whose promise the answer resolves)
+ * and a plain `user_input_request` stream event. The second one goes through
+ * `emit`, and `user_input_request` is in `REPLAY_EVENT_TYPES` — so it sits in
+ * `replay.events` for the rest of the turn. Nothing used to take it back out
+ * once answered, and a mid-turn F5 (or a thread switch away and back) replayed
+ * it verbatim: the interactive card came BACK, covered the composer, and its
+ * submit answered `404 no pending input for that requestId`, because the
+ * `pendingInputs` entry behind it was long gone.
+ *
+ * The entry is annotated rather than DELETED, and that distinction is
+ * load-bearing. A mid-turn joiner restores persisted history only up to BEFORE
+ * the last user message, so the `user_input_request` / `user_input_response`
+ * rows of the running turn are sliced off — the current turn's transcript is
+ * rebuilt from this buffer and nothing else. Dropping the event would take the
+ * read-only history card down with the interactive one; annotating it lets the
+ * client render `<PersistedUserInputCard />` instead.
+ *
+ * `response: null` means resolved-but-unanswerable (cancelled, aborted, or a
+ * `pendingInputs` entry that no longer exists) — the card shows its `pending`
+ * badge and stays read-only.
+ *
+ * Scans every active adapter rather than taking a threadId: input request ids
+ * are `nanoid(12)`, and the one caller that knows the id best (`POST
+ * /api/chat/user-input`) gets `threadId` only as an OPTIONAL body field.
+ */
+export function markUserInputResolvedInReplay(
+  activeAdapters: Map<string, ActiveAdapter>,
+  inputRequestId: string,
+  response: UserInputResponse | null,
+): void {
+  for (const active of activeAdapters.values()) {
+    const events = active.replay.events;
+    for (let i = 0; i < events.length; i++) {
+      const current = events[i];
+      if (!current || current.type !== 'user_input_request') continue;
+      const request = (current as { request?: { requestId?: string } }).request;
+      if (request?.requestId !== inputRequestId) continue;
+      // A COPY, not a mutation: the very same object was already handed to
+      // `input.onEvent` and the emitter. Those consumers serialized it long ago,
+      // but mutating shared state that other code holds a reference to is how
+      // the next reader of this buffer gets surprised.
+      events[i] = { ...current, resolved: true, response };
+    }
+  }
+}
+
 export function cancelPendingForRequest(
   pendingInputs: Map<string, PendingInput>,
   requestId: string,
+  /**
+   * Optional so the pure-`pendingInputs` callers keep working, but every caller
+   * that HAS the adapter map should pass it: a cancelled request must not
+   * survive in the replay buffer any more than an answered one does.
+   */
+  activeAdapters?: Map<string, ActiveAdapter>,
 ): void {
   for (const [inputId, pending] of pendingInputs) {
     if (pending.requestIdsForRequest === requestId) {
       pending.reject(new Error('stream aborted'));
       pendingInputs.delete(inputId);
+      if (activeAdapters) markUserInputResolvedInReplay(activeAdapters, inputId, null);
     }
   }
 }
@@ -1377,8 +1434,11 @@ export async function runAgentTurn(
       console.error('[chat] finalizeStreamingRows failed', finalizeErr);
     }
     emitter.emit('event', { type: 'done' });
+    // Sweep BEFORE the entry is dropped — `cancelPendingForRequest` reaches the
+    // replay buffer through `activeAdapters`, so the other order would leave
+    // every still-unanswered request of this turn un-annotated.
+    cancelPendingForRequest(deps.pendingInputs, requestId, deps.activeAdapters);
     deps.activeAdapters.delete(thread.id);
-    cancelPendingForRequest(deps.pendingInputs, requestId);
     deps.onTurnFinished?.();
   }
 
