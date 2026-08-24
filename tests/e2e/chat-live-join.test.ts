@@ -98,7 +98,7 @@ describe.skipIf(!BASE)('chat turn-resume contract', () => {
     expect(await res.text()).not.toContain('event: done');
   });
 
-  it('opens a thread with no running turn as plain history, with a clean console', async () => {
+  it('restores the chat overlay on a thread with no running turn as plain history, with a clean console', async () => {
     const created = await fetch(`${api}/threads`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -106,7 +106,7 @@ describe.skipIf(!BASE)('chat turn-resume contract', () => {
     });
     const { data: thread } = (await created.json()) as { data: { id: string } };
 
-    const page: Page = await browser.newPage();
+    const page: Page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     const consoleErrors: string[] = [];
     const badResponses: string[] = [];
     page.on('console', (msg) => {
@@ -116,20 +116,43 @@ describe.skipIf(!BASE)('chat turn-resume contract', () => {
       if (res.status() >= 400) badResponses.push(`${res.status()} ${res.url()}`);
     });
 
-    await page.goto(`${BASE}/projects/${project.id}/chat/${thread.id}`, {
-      waitUntil: 'networkidle',
-    });
-    // Reload once: this is the path that used to guess liveness from message
-    // status and could park the view on a resume that never resolves.
+    const home = `${BASE}/p/${project.id}/`;
+    await page.goto(home, { waitUntil: 'networkidle' });
+    // The chat is an OVERLAY, not a route: which thread is open lives in a
+    // persisted zustand store (`c4s:m05:chat-store::<projectId>`). Seeding it and
+    // reloading is literally the F5 path — the one that used to guess liveness
+    // from message status and could park on a resume that never resolved.
+    await page.evaluate(
+      ([projectId, threadId]) => {
+        localStorage.setItem(
+          `c4s:m05:chat-store::${projectId}`,
+          JSON.stringify({
+            state: {
+              chatOpen: true,
+              chatWidth: 560,
+              chatThreadId: threadId,
+              model: 'opus-5',
+              thinking: 'medium',
+            },
+            version: 3,
+          }),
+        );
+      },
+      [project.id, thread.id],
+    );
     await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForTimeout(1500);
 
     const shot = `${process.env.TMPDIR ?? '/tmp'}/c4s-e2e-chat-live-join.png`;
-    await page.screenshot({ path: shot, fullPage: true });
+    await page.screenshot({ path: shot });
 
     expect(consoleErrors, `console errors: ${consoleErrors.join(' | ')}`).toEqual([]);
     expect(badResponses, `failed requests: ${badResponses.join(' | ')}`).toEqual([]);
-    // A white SPA shell also returns 200 — assert something rendered.
-    expect(await page.locator('body').innerText()).not.toBe('');
+    // Assert the overlay actually MOUNTED, not just that the page returned 200 —
+    // a wrong URL renders the welcome shell, which is also a clean 200.
+    const bodyText = await page.locator('body').innerText();
+    expect(bodyText, `screenshot: ${shot}`).toContain('render probe');
+    expect(await page.locator('[contenteditable="true"], textarea').count()).toBeGreaterThan(0);
 
     await page.close();
   }, 60_000);
