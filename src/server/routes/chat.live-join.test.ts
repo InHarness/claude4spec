@@ -158,7 +158,7 @@ describe('GET /api/chat/stream/:threadId — live-join replay', () => {
 
     const snapshot = frames.filter((f) => f.event === 'queue_updated');
     expect(snapshot).toHaveLength(1);
-    expect(snapshot[0].data).toMatchObject({ queued });
+    expect(snapshot[0]!.data).toMatchObject({ queued });
   });
 
   it('[ac:ac-replay-po-merged-dispatch-obejmuje-ty] a joiner after a merged dispatch sees only the current iteration', async () => {

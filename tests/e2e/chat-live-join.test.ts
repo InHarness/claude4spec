@@ -112,8 +112,13 @@ describe.skipIf(!BASE)('chat turn-resume contract', () => {
     page.on('console', (msg) => {
       if (msg.type() === 'error') consoleErrors.push(msg.text());
     });
+    // Scoped to the endpoints this test is a contract over. A blanket ">= 400
+    // anywhere" would make an unrelated tolerated 404 (a plugin manifest probe,
+    // a favicon) fail the resume case with a misleading message.
     page.on('response', (res) => {
-      if (res.status() >= 400) badResponses.push(`${res.status()} ${res.url()}`);
+      if (res.status() >= 400 && /\/(threads|chat)(\/|\?|$)/.test(res.url())) {
+        badResponses.push(`${res.status()} ${res.url()}`);
+      }
     });
 
     const home = `${BASE}/p/${project.id}/`;
