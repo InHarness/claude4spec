@@ -106,11 +106,29 @@ function isUnresolved(v: unknown): boolean {
  * One token → zero or more declaration lines.
  *
  * A COMPOSITE token (`typography` / `shadow`, whose resolved value is an
- * object) is flattened one custom property per field — `--<token>-<field>` —
- * rather than joined into a single shorthand. A shorthand would have to know
- * each type's field ORDER and its separators, which is exactly the kind of
- * per-type knowledge this generator has none of; per-field also lets a mockup
- * use `var(--heading-1-font-size)` on its own.
+ * object) is flattened one custom property per field rather than joined into a
+ * single shorthand. A shorthand would have to know each type's field ORDER and
+ * its separators, which is exactly the kind of per-type knowledge this
+ * generator has none of; per-field also lets a mockup use one field on its own.
+ *
+ * The flattened name is `--<token>-<fieldKey>`, the field key VERBATIM —
+ * camelCase preserved, never kebab-cased. A `typography` token `heading-1` with
+ * a field `fontSize` emits `--heading-1-fontSize: 36px;` and is consumed as
+ * `var(--heading-1-fontSize)`. If this comment and the code below ever disagree,
+ * THE CODE IS RIGHT and the comment is the defect: a `var()` naming a property
+ * that was never emitted fails silently, so a wrong rule here produces no error,
+ * just quietly wrong styling.
+ *
+ * Two rules drop output in silence — nothing warns, nothing throws, the
+ * declaration simply is not there:
+ *
+ * - `SAFE_NAME` (`/^[A-Za-z0-9_-]+$/`) is tested at three points: the token
+ *   name (here), the composite field key (here), and the mode name (in
+ *   `generateStylesheet`). The granularity is the trap — a rejected field key
+ *   drops THAT FIELD ALONE while its siblings emit normally, so a partially
+ *   emitted composite is an expected outcome, not a bug.
+ * - A value whose parens do not balance is dropped whole (see
+ *   `parensBalanced` for why parens in particular).
  *
  * `unresolved` becomes a COMMENT, never an empty value: an empty custom
  * property is a legal declaration that reads as a deliberate zeroing, so the
