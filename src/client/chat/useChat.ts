@@ -163,11 +163,11 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
   /** C21: makes each synthetic warning block's toolUseId unique within a session. */
   const warningSeqRef = useRef(0);
   /**
-   * Request ids whose read-only history card has already been synthesized from a
-   * resolved replay event. A joiner can replay the same turn more than once
-   * (thread switch A→B→A), and the reducer would otherwise stack a duplicate
-   * card each time. Cleared wherever `pendingUserInputs` is, since both describe
-   * the same turn.
+   * Request ids whose read-only history card is already on screen — either
+   * synthesized from a resolved replay event, or restored from persisted rows
+   * that the joiner's history slice happened to keep (see the thread-load effect).
+   * Either way the replay branch must not build a second card for them. Cleared
+   * wherever `pendingUserInputs` is, since both describe the same turn.
    */
   const synthesizedUserInputsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
@@ -643,6 +643,25 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
           }
           const slicedRows = lastUserIdx >= 0 ? rows.slice(0, lastUserIdx) : rows;
           const slicedMessages = rowsToChatMessages(slicedRows, subagentTasks);
+          /**
+           * The slice does not always cut ABOVE the running turn's questions.
+           * A message pushed into a live session persists a `user` row mid-turn
+           * (`agent-turn.ts`, the `user_message` case) WITHOUT re-seeding the
+           * replay buffer — unlike the merged-queue dispatch, which resets it.
+           * So when the agent asked a question, the user answered it and then
+           * queued a message, the cut lands at the PUSHED row and the answered
+           * question's rows are restored as history — while the replay buffer
+           * still carries the same question, annotated.
+           *
+           * Claiming those request ids here means the replay branch in `onEvent`
+           * leaves them to the restored history rather than synthesizing a second
+           * identical card beside it.
+           */
+          for (const row of slicedRows) {
+            if (row.role === 'user_input_request' && row.toolId) {
+              synthesizedUserInputsRef.current.add(row.toolId);
+            }
+          }
           restoreMessages(slicedMessages, thread.lastSessionId ?? undefined, 'claude-code', model, queuedMessages);
           setIsResuming(true);
           // Fire-and-forget: fetch+restore konczy sie szybko (zwalnia loadingThreadRef),
