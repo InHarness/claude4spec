@@ -116,6 +116,19 @@ export type TokenType =
 /** Token types whose `value` is a composite object (each field literal or `{alias}`). */
 export const COMPOSITE_TOKEN_TYPES = ['typography', 'shadow'] as const;
 
+/**
+ * The character class a name must fall in to survive into the generated
+ * stylesheet, where it becomes part of a CSS custom property name.
+ *
+ * It lives HERE rather than beside the generator because two layers have to
+ * agree on it and they cannot import each other: the backend sheet generator
+ * ENFORCES it (silently, dropping what fails), and the browser-side linter
+ * WARNS about it before the author ever gets that far. Two copies of the same
+ * regex would drift, and the drift would show up as a token that lints clean
+ * and then vanishes from the sheet.
+ */
+export const SAFE_CSS_NAME = /^[A-Za-z0-9_-]+$/;
+
 /** Literal/alias string, or a composite object (typography/shadow). */
 export type TokenValue = string | Record<string, string>;
 

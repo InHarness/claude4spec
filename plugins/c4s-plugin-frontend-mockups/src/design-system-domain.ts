@@ -6,6 +6,7 @@
 
 import {
   COMPOSITE_TOKEN_TYPES,
+  SAFE_CSS_NAME,
   UNRESOLVED_TOKEN,
   type DesignMode,
   type DesignSystem,
@@ -211,7 +212,17 @@ export function lintTokens(groups: TokenGroup[], modes: DesignMode[]): string[] 
           warnings.push(`note: semantic token '${t.name}' uses a literal value instead of an alias`);
         }
       } else if (t.value && typeof t.value === 'object') {
-        for (const fv of Object.values(t.value)) {
+        for (const [fk, fv] of Object.entries(t.value)) {
+          // The field key becomes part of a custom property name verbatim
+          // (`--<token>-<fieldKey>`), so the sheet generator's name filter
+          // applies to it too — and a key it rejects drops THAT FIELD ALONE,
+          // silently. This warning is the only thing that surfaces it.
+          if (!SAFE_CSS_NAME.test(fk)) {
+            warnings.push(
+              `Token '${t.name}': field key '${fk}' is outside [A-Za-z0-9_-] and will be dropped ` +
+                `from the stylesheet without a trace (its sibling fields still emit)`
+            );
+          }
           if (typeof fv === 'string') {
             const target = aliasTarget(fv);
             if (target) aliasRefs.push(target);

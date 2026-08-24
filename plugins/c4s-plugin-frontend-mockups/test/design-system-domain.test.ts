@@ -159,6 +159,54 @@ describe('lintTokens()', () => {
     expect(w.some((m) => m.includes("'bad-str'") && m.includes('composite object value'))).toBe(true);
   });
 
+  /**
+   * The one lint rule that exists purely to make a SILENT failure audible. The
+   * sheet generator drops a field key outside `[A-Za-z0-9_-]` without a word,
+   * so without this warning the author sees a saved token and a missing
+   * declaration and nothing connecting the two.
+   */
+  it('warns on a composite field key the stylesheet will silently drop', () => {
+    const w = lintTokens(
+      [
+        primitives([
+          {
+            name: 'heading-1',
+            type: 'typography',
+            value: { fontSize: '32px', 'letter spacing': '-0.02em' },
+          },
+        ]),
+      ],
+      []
+    );
+    expect(
+      w.some((m) => m.includes("'heading-1'") && m.includes("'letter spacing'") && m.includes('dropped'))
+    ).toBe(true);
+    // The legal sibling is not implicated — the drop is per field.
+    expect(w.some((m) => m.includes('fontSize'))).toBe(false);
+  });
+
+  /** camelCase passes the filter unchanged; the canonical keys must not warn. */
+  it('leaves the canonical camelCase field keys alone', () => {
+    const w = lintTokens(
+      [
+        primitives([
+          {
+            name: 'heading-1',
+            type: 'typography',
+            value: { fontFamily: 'Inter', fontSize: '32px', lineHeight: '1.2', letterSpacing: '0' },
+          },
+          {
+            name: 'shadow-card',
+            type: 'shadow',
+            value: { offsetX: '0', offsetY: '2px', blur: '8px', spread: '0', color: '#0003' },
+          },
+        ]),
+      ],
+      []
+    );
+    expect(w).toEqual([]);
+  });
+
   it('never throws and returns [] for a clean design system', () => {
     let w: string[] = [];
     expect(() => {

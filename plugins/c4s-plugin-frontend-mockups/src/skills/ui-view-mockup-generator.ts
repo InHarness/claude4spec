@@ -51,8 +51,10 @@ everything below is a generic host entity tool.
 
 2. **The design system**, when the view names one.
    \`get_entities({ type: 'design-system', slugs: ['<designSystemSlug>'] })\`
-   This is where the custom property names and the list of \`modes\` come from. Read
-   them; never invent them.
+   The record carries token **names**, **types**, the \`value\` shape of each composite
+   token and the list of \`modes\`. It does **not** carry custom property names — those
+   exist only in the sheet the route generates. So you **derive** them, by the rule in
+   step 2; never invent them, and never go looking for them in the record.
 
 3. **The existing mockup**, only when you intend to revise rather than replace it.
    \`get_field_content({ type: 'ui-view', slug: '<slug>', field: 'mockupHtml' })\`
@@ -78,8 +80,29 @@ stylesheet of the design system's custom properties, then pastes your fragment i
 \`<body>\` verbatim. A full document nested inside one is invalid markup.
 
 **Every visual value through a CSS custom property.** \`var(--color-action-primary)\`,
-\`var(--space-4)\` — never a literal hex, never a literal px. The tokens come from step
-1.2; use the names you read there.
+\`var(--space-4)\` — never a literal hex, never a literal px.
+
+**DERIVE the property name from the token; do not look it up.** The design system record
+read in step 1.2 gives you token names and, for a composite token, the keys of its
+\`value\` object. The sheet's names follow from those by one rule, with no prefixing and
+no rewriting of any kind:
+
+- a **scalar** token \`space-4\` → \`var(--space-4)\`;
+- a **composite** token (\`typography\`, \`shadow\`) is flattened **one property per
+  field**, \`--<token>-<fieldKey>\`, the field key **verbatim** — camelCase and all.
+
+So a \`typography\` token \`heading-1\` is consumed field by field:
+
+\`\`\`css
+font-size: var(--heading-1-fontSize);
+line-height: var(--heading-1-lineHeight);
+\`\`\`
+
+Never \`var(--heading-1)\` and never \`var(--heading-1-font-size)\`. The generator has no
+per-type knowledge, so it composes **no** shorthand: there is no single
+\`var(--shadow-card)\` to reach for — you assemble it yourself from the fields. A
+\`var()\` naming a property that was never emitted fails in silence, which is why the
+rule is worth getting exactly right rather than approximately.
 
 *A view with no \`designSystemSlug\` gets a fragment with no token references at all.*
 Plain, unstyled, semantic markup beats guessing the names of a design system that does
@@ -97,7 +120,14 @@ write it as one selector in the fragment rather than as a second fragment:
 \`\`\`html
 <div class="card">…</div>
 <style>
-  .card { background: var(--color-surface); box-shadow: var(--shadow-raised); }
+  .card {
+    background: var(--color-surface);
+    /* \`shadow-raised\` is a composite token: composed per field, because the sheet
+       holds no single collective property for it. */
+    box-shadow: var(--shadow-raised-offsetX) var(--shadow-raised-offsetY)
+                var(--shadow-raised-blur) var(--shadow-raised-spread)
+                var(--shadow-raised-color);
+  }
   [data-preview-mode="dark"] .card { box-shadow: none; }
 </style>
 \`\`\`

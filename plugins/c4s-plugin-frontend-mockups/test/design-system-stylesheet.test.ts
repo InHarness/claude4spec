@@ -144,6 +144,32 @@ describe('composite tokens', () => {
     expect(css).toContain('--heading-fontWeight: 700;');
   });
 
+  /**
+   * The field key reaches the sheet VERBATIM. Kebab-casing it would be the
+   * obvious CSS-idiomatic thing to do and is exactly what the contract forbids:
+   * the name is derived by consumers from the token record, so a rewrite here
+   * would make every derived `var()` miss.
+   */
+  it('carries the field key over verbatim and composes no shorthand', () => {
+    const css = generateStylesheet({ 'heading-1': { fontSize: '32px', lineHeight: '1.2' } });
+    expect(css).toContain('--heading-1-fontSize: 32px;');
+    expect(css).not.toContain('--heading-1-font-size');
+    expect(css).not.toMatch(/--heading-1:/);
+  });
+
+  /**
+   * The granularity that separates this from a bad token NAME: there, the whole
+   * token goes; here, only the field does.
+   */
+  it('drops a field whose key fails the name filter, keeping its siblings', () => {
+    const css = generateStylesheet({
+      'shadow-card': { offsetX: '0px', 'blur.radius': '8px', color: '#0003' },
+    });
+    expect(css).not.toContain('blur.radius');
+    expect(css).toContain('--shadow-card-offsetX: 0px;');
+    expect(css).toContain('--shadow-card-color: #0003;');
+  });
+
   /** A shadow whose colour failed still has a usable blur. */
   it('comments out only the field that is unresolved', () => {
     const css = generateStylesheet({ shadow: { blur: '8px', color: UNRESOLVED_TOKEN } });

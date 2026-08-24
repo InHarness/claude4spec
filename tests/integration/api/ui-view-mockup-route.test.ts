@@ -176,6 +176,96 @@ describe('ui-view mockup document', () => {
   });
 
   /**
+   * The token name → custom property name mapping, end to end through the route.
+   *
+   * It is asserted HERE and not only on the generator because the name is a
+   * PUBLIC contract: a mockup derives `var(--heading-1-fontSize)` from the token
+   * record alone, never by reading the sheet back. A `var()` naming a property
+   * that was never emitted fails silently — no error, just wrong styling — so
+   * the mapping needs a test that fails loudly instead.
+   */
+  describe('token name → custom property name', () => {
+    async function seedNamingDs(tokens: unknown[]) {
+      const res = await request(t.app)
+        .post('/api/design-systems')
+        .send({
+          title: 'Naming',
+          groups: [{ name: 'Naming', tier: 'primitive', tokens }],
+          modes: [],
+        });
+      expect(res.status).toBe(201);
+      return res.body.data.slug as string;
+    }
+
+    async function sheetFor(tokens: unknown[]) {
+      const ds = await seedNamingDs(tokens);
+      const slug = await seedView({ designSystemSlug: ds });
+      return (await request(t.app).get(`/api/ui-views/${slug}/mockup`)).text;
+    }
+
+    it('[ac:ac-token-typography-o-nazwie-heading-1-d] flattens a composite per field, key verbatim, and leaves a scalar name alone', async () => {
+      const text = await sheetFor([
+        { name: 'space-4', type: 'dimension', value: '16px' },
+        {
+          name: 'heading-1',
+          type: 'typography',
+          value: {
+            fontFamily: 'Inter, sans-serif',
+            fontSize: '32px',
+            fontWeight: '700',
+            lineHeight: '1.2',
+            letterSpacing: '-0.02em',
+          },
+        },
+      ]);
+
+      // One property per FIELD, the key carried over character for character.
+      expect(text).toContain('--heading-1-fontSize: 32px;');
+      expect(text).toContain('--heading-1-lineHeight: 1.2;');
+
+      // Not kebab-cased on the way in — this is the form a mockup would guess
+      // if it assumed CSS convention rather than reading the contract.
+      expect(text).not.toContain('--heading-1-font-size');
+      expect(text).not.toContain('--heading-1-line-height');
+
+      // And no collective declaration: the generator knows no type's field
+      // ORDER or separators, so it composes no shorthand for the author.
+      expect(text).not.toMatch(/--heading-1:/);
+
+      // The scalar half of the same rule: verbatim, unprefixed.
+      expect(text).toContain('--space-4: 16px;');
+    });
+
+    it('[ac:ac-klucz-pola-tokenu-composite-ze-znakie] drops only the offending field of a composite, never the whole token', async () => {
+      const text = await sheetFor([
+        {
+          name: 'shadow-card',
+          type: 'shadow',
+          value: {
+            offsetX: '0px',
+            offsetY: '2px',
+            'blur.radius': '8px',
+            'spread size': '0px',
+            color: 'rgba(0,0,0,0.2)',
+          },
+        },
+      ]);
+
+      // The two unusable keys leave nothing behind — not a declaration, not a
+      // comment. Silent, by design.
+      expect(text).not.toContain('blur.radius');
+      expect(text).not.toContain('spread size');
+
+      // ...while their siblings emit exactly as if nothing had happened. This
+      // per-FIELD granularity is what separates this case from a bad token
+      // NAME, which takes the whole token with it.
+      expect(text).toContain('--shadow-card-offsetX: 0px;');
+      expect(text).toContain('--shadow-card-offsetY: 2px;');
+      expect(text).toContain('--shadow-card-color: rgba(0,0,0,0.2);');
+    });
+  });
+
+  /**
    * The route is a DIFFERENT resource with a different subject; it must not
    * become a second door onto the field's raw value.
    */
