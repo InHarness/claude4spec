@@ -124,7 +124,18 @@ const THREAD_META_COLUMNS = `t.id, t.title, t.last_session_id,
         (t.initial_system_prompt IS NOT NULL) AS has_system_prompt`;
 
 export class ChatService {
-  constructor(private db: Database.Database) {}
+  /**
+   * @param isThreadLive predykat „ta tura wciaz zyje" — w produkcji
+   *   `(id) => activeAdapters.has(id)` z `ProjectContext`. Service nie ma (i nie powinien
+   *   miec) dostepu do rejestru adapterow, wiec dostaje go wstrzyknietego; `hydrateThread()`
+   *   wypelnia nim `ChatThread.isLive`, przez co pole trafia zarowno do `GET /api/threads/:id`,
+   *   jak i do listy `GET /api/threads` (`ChatThreadMeta extends ChatThread`).
+   *   Domyslne `false` jest tez poprawna odpowiedzia po restarcie procesu.
+   */
+  constructor(
+    private db: Database.Database,
+    private isThreadLive: (threadId: string) => boolean = () => false,
+  ) {}
 
   createThread(
     title: string | null = null,
@@ -835,6 +846,8 @@ export class ChatService {
       id: row.id,
       title: row.title,
       lastSessionId: row.last_session_id,
+      // Nie-persystowane: liczone per-request z rejestru aktywnych adapterow.
+      isLive: this.isThreadLive(row.id),
       initialArchitectureConfig: parseInitialArchitectureConfig(row.initial_architecture_config_json),
       currentTodoItems: parseTodoItems(row.current_todo_items),
       planMode: row.plan_mode === 1,

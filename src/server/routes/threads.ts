@@ -67,16 +67,16 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
       const offset = req.query.offset ? Math.max(0, Number(req.query.offset)) : undefined;
       const result = chat.getThread(req.params.id, limit, offset);
       if (!result) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'thread not found' } });
-      // `isLive`: czy tura serwerowa wciąż trwa — klient decyduje, czy wznawiać przez
-      // `joinStream` (zamiast zgadywać po `status` wierszy, który dla czystej tury
-      // tekstowej nie istnieje aż do flush na granicy).
+      // `isLive` (czy tura serwerowa wciąż trwa — klient decyduje, czy wznawiać przez
+      // `joinStream`, zamiast zgadywać po `status` wierszy, który dla czystej tury
+      // tekstowej nie istnieje aż do flush na granicy) przyjeżdża już w `result.thread`:
+      // liczy je `hydrateThread()`, więc to samo pole widzi też lista `GET /api/threads`.
       res.json({
         data: {
           ...result.thread,
           messages: result.messages,
           subagentTasks: result.subagentTasks,
           backgroundTasks: result.backgroundTasks,
-          isLive: activeAdapters.has(req.params.id),
           // M05: pending queue (position ASC) — restores chips after F5/restart.
           queuedMessages: chat.listQueued(req.params.id),
         },
