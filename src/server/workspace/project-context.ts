@@ -572,7 +572,9 @@ async function buildInner(
   // client per project context; base URL from config.remoteApiUrl (or the prod constant).
   const remoteHttpClient = new RemoteHttpClient(remoteApiUrl);
   const remoteAuthService = new RemoteAuthService(db.handle, remoteHttpClient);
-  const chatService = new ChatService(db.handle);
+  // `activeAdapters` (wyzej w tym pliku) jest jedynym zrodlem prawdy dla trzech rzeczy:
+  // istnienia bufora replay, kodu odpowiedzi live-join (200 vs 404) i pola `isLive` na DTO.
+  const chatService = new ChatService(db.handle, (threadId) => activeAdapters.has(threadId));
   // M05 0.1.62: user's own ANTHROPIC API key (single-row, encrypted at-rest).
   const agentCredentialService = new AgentCredentialService(db.handle);
   // Orphan cleanup: rowsy chat_message.status='streaming' pozostale po crashu poprzedniego

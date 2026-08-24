@@ -585,6 +585,18 @@ export interface ChatThread {
   id: string;
   title: string | null;
   lastSessionId: string | null;
+  /**
+   * M05 0.2.47: czy watek ma ZYWA TURE w chwili odczytu — doslownie
+   * `activeAdapters.has(threadId)` po stronie serwera. Bez kolumny w bazie: liczone
+   * per-request w `hydrateThread()`, wiec po restarcie serwera jest `false` dla kazdego
+   * watku (spojnie z `finalizeAllStreamingRows()` na starcie i z `404` z live-join).
+   *
+   * To JEDYNY trigger auto-resume: klient na `true` tnie RESTORE nad biezaca tura i otwiera
+   * live-join, na `false` renderuje pelna historie. Swiadomie strukturalne, a NIE wyliczane
+   * z `messages[].status` — tura czysto tekstowa nie ma wiersza `status='streaming'` az do
+   * granicy flusha, wiec stara heurystyka po cichu gubila cala te klase tur.
+   */
+  isLive: boolean;
   /** M05 0.1.61: turn-1 architecture snapshot (model + reasoning config). null until the
    *  thread has a session; controls hydrate from this when session-locked.
    *  0.2.8 (C15): plus the turn-1 FS path scope, also resume-immutable. Optional — threads

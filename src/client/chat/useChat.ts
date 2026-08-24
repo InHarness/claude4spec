@@ -590,7 +590,6 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
             messages: ChatMessageRow[];
             subagentTasks: ChatSubagentTask[];
             backgroundTasks?: ChatBackgroundTask[];
-            isLive?: boolean;
             queuedMessages?: QueuedMessage[];
           };
         };

@@ -475,7 +475,10 @@ export function chatRouter(deps: AgentTurnDeps): Router {
 
     // Handler jest w pelni synchroniczny (brak await), wiec snapshot bufora + attach
     // listenera sa atomowe wzgledem petli runu — zaden event nie zginie ani sie nie zdubluje.
-    send('connected', { requestId: active.requestId, threadId, live: true });
+    // Ksztalt identyczny jak `connected` z POST /api/chat — `{ requestId, threadId }`.
+    // Pole `live` bylo reliktem sprzed przejscia na 404: zawsze `true`, wiec nie nioslo
+    // zadnej informacji, a jedynym sygnalem "brak tury" jest teraz kod 404 powyzej.
+    send('connected', { requestId: active.requestId, threadId });
     send('turn_start', active.replay.turnStart);
     for (const ev of active.replay.events.slice()) {
       send((ev as { type: string }).type, toReplayWireEvent(ev));
