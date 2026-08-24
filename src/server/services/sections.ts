@@ -4,6 +4,64 @@ import { parseXmlTagsExcludingCode, serializeXmlTag } from '../../shared/xml-tag
 import type { PagesService } from './pages.js';
 import type { SelfWriteMarker } from '../fs/sources.js';
 
+/**
+ * 0.2.46 — how much of `section_index.body` a generic listing may emit.
+ *
+ * `GET /api/sections` returns `contentSnippet`, a preview of the materialized
+ * column cut to this fixed width. It is a preview, never the content: the
+ * emission discipline did not loosen when the index started storing bodies.
+ * Matches the width the page-search snippet has always used (see PagesService).
+ */
+export const SECTION_CONTENT_SNIPPET_CHARS = 160;
+
+/**
+ * How much of the column a generic read pulls out of SQLite to build that preview.
+ *
+ * Not the same number as the width above, and not decoration. A section's body
+ * runs to the next heading of ITS OWN LEVEL OR SHALLOWER, so an H1 section's
+ * body is the whole page — reading `body` in full to hand back 160 characters
+ * would read the corpus once per heading level on every listing. So the cut
+ * happens in SQL and the widening covers what `sectionSnippet` then strips:
+ * the blank line after the heading, and the `<!-- anchor: … -->` lines above
+ * every nested heading in the window (~28 characters each).
+ *
+ * The degradation is bounded and deliberate: a section whose first 640
+ * characters are almost entirely machinery — a dozen-plus consecutive empty
+ * subsections — yields a preview shorter than the width above. A preview is
+ * allowed to be cheap; a caller who needs the content asks `get_sections`.
+ */
+const SECTION_BODY_READ_CHARS = SECTION_CONTENT_SNIPPET_CHARS * 4;
+
+/**
+ * The columns a generic read selects. `body` is deliberately not among them —
+ * it enters only as the `substr` above, under the alias `body_head`, so that no
+ * later `SELECT *` can quietly put the whole column back on the read path.
+ */
+const SECTION_COLUMNS = `id, anchor, rootId, page_path, heading_path, heading_slug, heading_level,
+       heading_text, content_hash, substr(body, 1, ${SECTION_BODY_READ_CHARS}) AS body_head,
+       line_start, line_end, paragraph_count, created_at, updated_at`;
+
+/**
+ * An anchor comment is machinery — it is in the body, but it is not content.
+ *
+ * The trailing newline goes with it. Dropping only the text would leave the
+ * blank line behind, so a preview of a parent section would read
+ * `…below it.\n\n\n## Alpha` — the anchor's ghost, still spending width.
+ */
+const ANCHOR_COMMENT_RE = /^[ \t]*<!--\s*anchor:\s*[A-Za-z0-9_-]+\s*-->[ \t]*\r?\n?/gm;
+
+/**
+ * The preview itself: strip the anchor comments, then trim, then cut.
+ *
+ * Trimming is not cosmetic. Every body starts with the blank line that follows
+ * its heading, and a parent section's body continues into its children — so a
+ * raw prefix of the column would open with a newline and a nested anchor
+ * comment, spending most of the width on markup before the first word.
+ */
+export function sectionSnippet(body: string): string {
+  return body.replace(ANCHOR_COMMENT_RE, '').trim().slice(0, SECTION_CONTENT_SNIPPET_CHARS);
+}
+
 interface SectionRow {
   id: number;
   anchor: string;
@@ -14,6 +72,8 @@ interface SectionRow {
   heading_level: number;
   heading_text: string;
   content_hash: string;
+  /** The `substr` window of `body`, never the column — see SECTION_BODY_READ_CHARS. */
+  body_head: string;
   line_start: number;
   line_end: number;
   paragraph_count: number;
@@ -53,7 +113,7 @@ export class SectionsService {
 
   getByAnchor(anchor: string): SectionIndexEntry | null {
     const row = this.db
-      .prepare('SELECT * FROM section_index WHERE anchor = ?')
+      .prepare(`SELECT ${SECTION_COLUMNS} FROM section_index WHERE anchor = ?`)
       .get(anchor) as SectionRow | undefined;
     return row ? this.hydrate(row) : null;
   }
@@ -67,7 +127,7 @@ export class SectionsService {
 
   listByPage(pagePath: string): SectionIndexEntry[] {
     const rows = this.db
-      .prepare('SELECT * FROM section_index WHERE page_path = ? ORDER BY line_start')
+      .prepare(`SELECT ${SECTION_COLUMNS} FROM section_index WHERE page_path = ? ORDER BY line_start`)
       .all(pagePath) as SectionRow[];
     return rows.map((r) => this.hydrate(r));
   }
@@ -87,7 +147,9 @@ export class SectionsService {
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
     const limit = Math.min(Math.max(query.limit ?? 500, 1), 2000);
     const rows = this.db
-      .prepare(`SELECT * FROM section_index ${whereSql} ORDER BY page_path, line_start LIMIT ?`)
+      .prepare(
+        `SELECT ${SECTION_COLUMNS} FROM section_index ${whereSql} ORDER BY page_path, line_start LIMIT ?`,
+      )
       .all(...params, limit) as SectionRow[];
     return rows.map((r) => this.hydrate(r));
   }
@@ -161,6 +223,9 @@ export class SectionsService {
       headingLevel: row.heading_level,
       headingText: row.heading_text,
       contentHash: row.content_hash,
+      // A bounded preview, never the column itself — this projection is what
+      // every generic read of the index goes through.
+      contentSnippet: sectionSnippet(row.body_head),
       lineStart: row.line_start,
       lineEnd: row.line_end,
       paragraphCount: row.paragraph_count,

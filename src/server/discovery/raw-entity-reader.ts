@@ -4,6 +4,7 @@ import { compositionOf } from '../../shared/plugin-host/composition.js';
 import { columnOf, isEmbedded, type FieldNode } from '../../shared/plugin-host/data-schema.js';
 import { countProjectionCollection, readProjectionCollection } from '../db/projection-read.js';
 import { toIsoMs, type SystemStamp } from '../serialization/system-fields.js';
+import { RAW_SECTION_COLUMNS } from './ops/sections.js';
 
 /**
  * An entity type id, kebab-case. 0.2.11: a plain `string`, not a union.
@@ -306,7 +307,9 @@ export class RawEntityReader {
 
   getSection(anchor: string): RawSection | null {
     const row = this.db
-      .prepare('SELECT * FROM section_index WHERE anchor = ?')
+      // Explicit columns: `hydrateSection` builds a RawSection and never reads
+      // `body`, which since 0.2.46 can hold a whole page's worth of text.
+      .prepare(`SELECT ${RAW_SECTION_COLUMNS} FROM section_index WHERE anchor = ?`)
       .get(anchor) as Record<string, unknown> | undefined;
     if (!row) return null;
     return this.hydrateSection(row);

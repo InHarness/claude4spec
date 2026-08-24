@@ -532,6 +532,18 @@ export interface SectionIndexEntry {
   headingLevel: number;
   headingText: string;
   contentHash: string;
+  /**
+   * 0.2.46 — a PREVIEW of `section_index.body`, capped at
+   * `SECTION_CONTENT_SNIPPET_CHARS`. Never the full section content: the index
+   * materializes the body, but no generic operation emits it. Reach for a read
+   * of a single section when the whole thing is wanted.
+   *
+   * Not a verbatim prefix of the column: the anchor comments that sit above
+   * nested headings are stripped and the surrounding whitespace trimmed first,
+   * so the preview opens on the section's first words rather than on the blank
+   * line that always follows a heading. See `sectionSnippet`.
+   */
+  contentSnippet: string;
   lineStart: number;
   lineEnd: number;
   paragraphCount: number;

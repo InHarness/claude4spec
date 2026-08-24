@@ -154,12 +154,19 @@ describe('discovery core', () => {
     start: number;
     end: number;
     level?: number;
+    /**
+     * 0.2.46 — `section_index.body`, the section as authored. Defaults to `''`
+     * because the cases below that call `indexSection` directly are about
+     * COORDINATES, and the reader under test still slices bodies out of the
+     * file. `indexPageLikeTheIndexer` fills it for real.
+     */
+    body?: string;
   }): void {
     db.prepare(
       `INSERT INTO section_index
          (rootId, anchor, page_path, heading_path, heading_slug, heading_level, heading_text,
-          content_hash, line_start, line_end, paragraph_count)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'hash', ?, ?, 1)`,
+          content_hash, body, line_start, line_end, paragraph_count)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'hash', ?, ?, ?, 1)`,
     ).run(
       row.rootId,
       row.anchor,
@@ -168,6 +175,7 @@ describe('discovery core', () => {
       row.heading.toLowerCase(),
       row.level ?? 2,
       row.heading,
+      row.body ?? '',
       row.start,
       row.end,
     );
@@ -217,6 +225,11 @@ describe('discovery core', () => {
         start: h.line + 1,
         end,
         level: h.level,
+        // As authored, with neither the heading line nor the anchor comment.
+        // The real indexer drops the heading with a `.slice(1)` and never sees
+        // its own anchor (it sits ABOVE the heading there); this fixture puts
+        // the comment BELOW, so it has to skip one more line.
+        body: lines.slice(h.line + (h.anchorLine === undefined ? 1 : 2), end).join('\n'),
       });
     }
   }
@@ -1886,8 +1899,8 @@ describe('applyPagesOverride, through the core that consumes it', () => {
     db.prepare(
       `INSERT INTO section_index
          (rootId, anchor, page_path, heading_path, heading_slug, heading_level, heading_text,
-          content_hash, line_start, line_end, paragraph_count)
-       VALUES ('pages', 'aaaa1111', 'notes.md', 'Notes', 'notes', 1, 'Notes', 'h', 1, 9, 1)`,
+          content_hash, body, line_start, line_end, paragraph_count)
+       VALUES ('pages', 'aaaa1111', 'notes.md', 'Notes', 'notes', 1, 'Notes', 'h', '', 1, 9, 1)`,
     ).run();
 
     // The configured root DOES get the anchor — the control that gives the

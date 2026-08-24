@@ -66,6 +66,12 @@ describe('discovery core over the real section indexer', () => {
 
   beforeEach(async () => {
     indexer = undefined;
+    // Reset with the indexer it belongs to. Left standing, the subscriber from
+    // the first test keeps serving every later one, holding that indexer's
+    // pending-injection map — so minted anchors stop reaching disk after test
+    // one, and any case that re-reads a page it just indexed sees a file with
+    // no anchor comments and mints fresh ones on the next pass.
+    injection = undefined;
     cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-section-index-test-'));
     db = createTestDb();
     pages = new PagesService(cwd, 'pages', 'pages');
@@ -86,7 +92,7 @@ describe('discovery core over the real section indexer', () => {
     await fs.rm(cwd, { recursive: true, force: true });
   });
 
-  let injection: WatchSubscriber;
+  let injection: WatchSubscriber | undefined;
 
   async function index(relPath: string, content: string): Promise<void> {
     await pages.write(relPath, { body: content });
@@ -332,6 +338,92 @@ describe('discovery core over the real section indexer', () => {
       expect(anchors.map((a) => a.anchor)).not.toContain('dupdupdu');
       // And the held section is still addressable — nothing overwrote it.
       expect(sectionItem(await core.getSections({ anchors: ['dupdupdu'] })).heading_text).toBe('Held');
+    });
+  });
+  /**
+   * 0.2.46 — `section_index.body`, the write side of the materialized column.
+   *
+   * These read the COLUMN directly rather than going through `get_sections`,
+   * and that is deliberate: where the read path takes its content from is an
+   * open question in the specification, so a test that asserted the column by
+   * way of `get_sections` would silently pin an answer to it. What is settled is
+   * that the indexer must fill the column on every upsert — a column with no
+   * write side is a bug, not an intermediate state.
+   */
+  describe('the indexer materializes section content', () => {
+    function bodyOf(heading: string): string {
+      const row = db.prepare('SELECT body FROM section_index WHERE heading_text = ?').get(heading) as
+        | { body: string }
+        | undefined;
+      if (!row) throw new Error(`no indexed section titled ${heading}`);
+      return row.body;
+    }
+
+    it('stores the section as authored — no heading line, no anchor line', async () => {
+      await index(
+        'authored.md',
+        ['# Top', '', '## Alpha', '', 'ALPHA BODY LINE', '', '## Beta', '', 'BETA BODY LINE', ''].join('\n'),
+      );
+
+      const alpha = bodyOf('Alpha');
+      expect(alpha).toContain('ALPHA BODY LINE');
+      // Its own heading, and the anchor comment the indexer minted above it.
+      expect(alpha).not.toContain('## Alpha');
+      expect(alpha).not.toMatch(/<!--\s*anchor:/);
+      // The next section's heading and anchor line belong to the next section.
+      expect(alpha).not.toContain('BETA BODY LINE');
+      expect(alpha).not.toContain('## Beta');
+    });
+
+    it('stores the RAW text, not the normalized hash input', async () => {
+      // `normalizeContent` strips XML tags with their contents, bold/emphasis
+      // markers and backticks, then lowercases and collapses whitespace. Every
+      // one of those survives here, which is what makes this the content rather
+      // than a second rendering of the hash.
+      await index(
+        'raw.md',
+        [
+          '# Top',
+          '',
+          '## Raw',
+          '',
+          'Some **bold** and `code` and an [anchor](./x.md) link.',
+          '',
+          '<inline_mention type="dto" slug="thing"/>',
+          '',
+        ].join('\n'),
+      );
+
+      const body = bodyOf('Raw');
+      expect(body).toContain('**bold**');
+      expect(body).toContain('`code`');
+      expect(body).toContain('[anchor](./x.md)');
+      expect(body).toContain('<inline_mention type="dto" slug="thing"/>');
+    });
+
+    it('keeps a heading with an empty body as a real row — the collection is not sparse', async () => {
+      await index('sparse.md', ['# Top', '', '## Empty', '', '## After', '', 'after body', ''].join('\n'));
+
+      const row = db.prepare('SELECT anchor, body FROM section_index WHERE heading_text = ?').get('Empty') as
+        | { anchor: string; body: string }
+        | undefined;
+      expect(row).toBeDefined();
+      expect(row!.anchor).toMatch(/^[a-z0-9]{6,12}$/);
+      expect(row!.body.trim()).toBe('');
+    });
+
+    it('refreshes the column on re-index — the conflict path writes it too', async () => {
+      await index('edited.md', ['# Top', '', '## Edited', '', 'FIRST CONTENT', ''].join('\n'));
+      const anchor = anchorOf('Edited');
+      expect(bodyOf('Edited')).toContain('FIRST CONTENT');
+
+      // Re-index the SAME anchor: the upsert takes ON CONFLICT, not INSERT.
+      const raw = await pages.read('edited.md');
+      await index('edited.md', raw.body.replace('FIRST CONTENT', 'SECOND CONTENT'));
+
+      expect(anchorOf('Edited')).toBe(anchor);
+      expect(bodyOf('Edited')).toContain('SECOND CONTENT');
+      expect(bodyOf('Edited')).not.toContain('FIRST CONTENT');
     });
   });
 });
