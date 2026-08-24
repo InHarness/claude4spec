@@ -17,6 +17,7 @@ import { DomainError } from '../services/tags.js';
 import { QUEUE_LIMIT } from '../services/chat.js';
 import {
   cancelPendingForRequest,
+  markUserInputResolvedInReplay,
   runAgentTurn,
   ALLOWED_MODELS,
   type Model,
@@ -40,6 +41,29 @@ export function chatRouter(deps: AgentTurnDeps): Router {
     return clearedTexts;
   };
 
+  /**
+   * Last gate before a buffered event goes out to a joining client.
+   *
+   * A `user_input_request` is answerable only while its `pendingInputs` entry
+   * lives, and that map is in-memory: after a server restart, an abort, or a
+   * rejected promise, NOTHING behind the question is still listening. Replaying
+   * such an event unannotated hands the client an interactive card that hides
+   * the composer and answers `404` on submit.
+   *
+   * `markUserInputResolvedInReplay` annotates the buffer at each resolution
+   * site; this check is the backstop that does not depend on every one of those
+   * sites having remembered to. Live-and-still-answerable requests pass through
+   * untouched — a joiner SHOULD be able to answer those.
+   */
+  const toReplayWireEvent = (ev: unknown): unknown => {
+    const event = ev as { type: string; request?: { requestId?: string }; resolved?: boolean };
+    if (event.type !== 'user_input_request') return ev;
+    const inputRequestId = event.request?.requestId;
+    if (inputRequestId && pendingInputs.has(inputRequestId)) return ev;
+    if (event.resolved) return ev;
+    return { ...(ev as object), resolved: true, response: null };
+  };
+
   // 0.1.69 Transagents: a CONSCIOUS abort cascades to children. After aborting a
   // target thread, abort every active turn whose `parentThreadId` is that thread
   // (a banka cannot outlive a deliberate Stop of its parent). The child raises
@@ -49,7 +73,7 @@ export function chatRouter(deps: AgentTurnDeps): Router {
   const cascadeAbortChildren = (abortedThreadId: string): void => {
     for (const [tid, entry] of activeAdapters.entries()) {
       if (entry.parentThreadId === abortedThreadId) {
-        cancelPendingForRequest(pendingInputs, entry.requestId);
+        cancelPendingForRequest(pendingInputs, entry.requestId, activeAdapters);
         entry.adapter.abort();
         // Children can themselves have children — cascade transitively.
         cascadeAbortChildren(tid);
@@ -285,7 +309,7 @@ export function chatRouter(deps: AgentTurnDeps): Router {
       }
     }
     if (!found || !foundThreadId) return res.json({ data: { aborted: false }, clearedTexts: [] });
-    cancelPendingForRequest(pendingInputs, requestId);
+    cancelPendingForRequest(pendingInputs, requestId, activeAdapters);
     found.adapter.abort();
     cascadeAbortChildren(foundThreadId);
     res.json({ data: { aborted: true }, clearedTexts: clearThreadQueue(found, foundThreadId) });
@@ -336,7 +360,7 @@ export function chatRouter(deps: AgentTurnDeps): Router {
        */
       const active = activeAdapters.get(threadId);
       if (active) {
-        cancelPendingForRequest(pendingInputs, active.requestId);
+        cancelPendingForRequest(pendingInputs, active.requestId, activeAdapters);
         active.adapter.abort();
         cascadeAbortChildren(threadId);
         return res.json({ data: { aborted: true }, clearedTexts: clearThreadQueue(active, threadId) });
@@ -454,7 +478,7 @@ export function chatRouter(deps: AgentTurnDeps): Router {
     send('connected', { requestId: active.requestId, threadId, live: true });
     send('turn_start', active.replay.turnStart);
     for (const ev of active.replay.events.slice()) {
-      send((ev as { type: string }).type, ev);
+      send((ev as { type: string }).type, toReplayWireEvent(ev));
     }
     // M05: hydrate the joiner's queue chips with the current snapshot.
     send('queue_updated', { type: 'queue_updated', queued: deps.chatService.listQueued(threadId) });
@@ -513,6 +537,10 @@ export function chatRouter(deps: AgentTurnDeps): Router {
       }
     }
     pending.resolve(response);
+    // The turn's replay buffer still holds this question as if it were unanswered.
+    // Annotate it now, or the next joiner (an F5, a thread switch back) gets the
+    // interactive card again — over the composer, and dead on submit.
+    markUserInputResolvedInReplay(activeAdapters, inputRequestId, response);
     res.json({ data: { ok: true } });
   });
 
