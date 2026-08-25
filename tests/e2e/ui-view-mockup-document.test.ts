@@ -55,7 +55,17 @@ describe.skipIf(!BASE)('ui-view mockup document', () => {
 
   const MOCKUP =
     '<main data-smoke="mockup"><h1 style="color: var(--brand)">Smoke Heading</h1>' +
-    '<div data-preview-mode="dark"><p data-in-dark>dark subtree</p></div></main>';
+    '<div data-preview-mode="dark"><p data-in-dark>dark subtree</p></div>' +
+    // The 0.2.49 pattern: the alternative state lives in the DOM BESIDE the
+    // default content and is switched by an ancestor selector — no script.
+    '<p data-smoke-empty>Nothing here yet</p></main>' +
+    '<style>[data-smoke-empty]{display:none}' +
+    '[data-preview-state="empty"] [data-smoke-empty]{display:block}' +
+    '[data-preview-state="empty"] h1{display:none}</style>';
+
+  const STATES = [
+    { name: 'empty', label: 'Empty', description: 'Nothing matched the filter.' },
+  ];
 
   const json = (body: unknown) => ({
     method: 'POST',
@@ -108,7 +118,7 @@ describe.skipIf(!BASE)('ui-view mockup document', () => {
     await fetch(`${api}/ui-views/${slug}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mockupHtml: MOCKUP, designSystemSlug: 'smoke-ds' }),
+      body: JSON.stringify({ mockupHtml: MOCKUP, designSystemSlug: 'smoke-ds', states: STATES }),
     });
   });
 
@@ -281,6 +291,129 @@ describe.skipIf(!BASE)('ui-view mockup document', () => {
         page.frameLocator('iframe[title*="Mockup preview"]').locator('[data-mockup-placeholder]').count(),
       )
       .toBe(1);
+    await page.close();
+  });
+  /**
+   * The state axis, end to end and WITHOUT SCRIPT.
+   *
+   * This is the claim 0.2.49 actually makes: a variant is a query param and a
+   * CSS selector. A `curl` can see the attribute in the bytes; only a browser
+   * can see that the cascade acted on it.
+   */
+  it('switches the rendered state from the query param alone, through the cascade', async () => {
+    const page = await browser.newPage();
+    const { consoleErrors, badResponses } = watch(page);
+
+    // Default: the heading shows, the empty block does not.
+    await page.goto(`${api}/ui-views/${slug}/mockup`, { waitUntil: 'networkidle' });
+    expect(await page.locator('html').getAttribute('data-preview-state')).toBeNull();
+    await expect.poll(() => page.locator('h1').isVisible()).toBe(true);
+    await expect.poll(() => page.locator('[data-smoke-empty]').isVisible()).toBe(false);
+
+    // ?state=empty: exactly the other way round, and no script ran to do it.
+    const res = await page.goto(`${api}/ui-views/${slug}/mockup?state=empty`, {
+      waitUntil: 'networkidle',
+    });
+    expect(res?.status()).toBe(200);
+    expect(await page.locator('html').getAttribute('data-preview-state')).toBe('empty');
+    await expect.poll(() => page.locator('[data-smoke-empty]').isVisible()).toBe(true);
+    await expect.poll(() => page.locator('h1').isVisible()).toBe(false);
+
+    expect(consoleErrors).toEqual([]);
+    expect(badResponses).toEqual([]);
+    await page.close();
+  });
+
+  it('applies both axes at once, and drops a value outside the whitelist', async () => {
+    const page = await browser.newPage();
+    const { consoleErrors, badResponses } = watch(page);
+
+    await page.goto(`${api}/ui-views/${slug}/mockup?state=empty&mode=dark`, {
+      waitUntil: 'networkidle',
+    });
+    const root = page.locator('html');
+    expect(await root.getAttribute('data-preview-state')).toBe('empty');
+    expect(await root.getAttribute('data-preview-mode')).toBe('dark');
+
+    // A hostile value is treated as NO parameter: no attribute, still 200.
+    const res = await page.goto(
+      `${api}/ui-views/${slug}/mockup?state=${encodeURIComponent('"><script>alert(1)</script>')}`,
+      { waitUntil: 'networkidle' },
+    );
+    expect(res?.status()).toBe(200);
+    expect(await page.locator('html').getAttribute('data-preview-state')).toBeNull();
+
+    expect(consoleErrors).toEqual([]);
+    expect(badResponses).toEqual([]);
+    await page.close();
+  });
+
+  /**
+   * The variant box — native host UI, OUTSIDE the frame.
+   *
+   * The choice has to land in the route's search params rather than in
+   * component state: that is what makes it survive a refresh and be sendable as
+   * a link, which is the whole product claim.
+   */
+  it('drives the frame from the variant box, and keeps the choice in the URL', async () => {
+    const page = await browser.newPage();
+    const { consoleErrors, badResponses } = watch(page);
+    await page.goto(`${BASE}/p/${project.id}/ui-views/${slug}/preview`, {
+      waitUntil: 'networkidle',
+    });
+
+    // Both axes are present, each with its synthetic default first.
+    for (const label of ['Default', 'Empty', 'Base', 'dark']) {
+      await expect.poll(() => page.getByRole('tab', { name: label, exact: true }).count()).toBe(1);
+    }
+
+    await page.getByRole('tab', { name: 'Empty', exact: true }).click();
+    await expect.poll(() => new URL(page.url()).searchParams.get('state')).toBe('empty');
+    await expect
+      .poll(() => page.frameLocator('iframe[title*="Mockup preview"]').locator('[data-smoke-empty]').isVisible())
+      .toBe(true);
+
+    await page.getByRole('tab', { name: 'dark', exact: true }).click();
+    await expect.poll(() => new URL(page.url()).searchParams.get('mode')).toBe('dark');
+
+    // Survives a reload — the proof that this is a search param and not state.
+    await page.reload({ waitUntil: 'networkidle' });
+    await expect
+      .poll(() => page.getByRole('tab', { name: 'Empty', exact: true }).getAttribute('aria-selected'))
+      .toBe('true');
+    await expect
+      .poll(() => page.getByRole('tab', { name: 'dark', exact: true }).getAttribute('aria-selected'))
+      .toBe('true');
+
+    // "Open" carries the SAME url the frame is showing — both variants included.
+    const href = await page.getByRole('link', { name: /open/i }).getAttribute('href');
+    expect(href).toContain('state=empty');
+    expect(href).toContain('mode=dark');
+
+    expect(consoleErrors).toEqual([]);
+    expect(badResponses).toEqual([]);
+    await page.close();
+  });
+
+  /**
+   * The negative half of "an axis with nothing to show does not render at all".
+   * A view with no states and no design system must look exactly as it did
+   * before the box existed — no empty chrome, no disabled control.
+   */
+  it('renders no variant box for a view with neither states nor a design system', async () => {
+    const bare = await ensure('ui-views', { title: 'Bare Smoke View' }, 'bare-smoke-view');
+    const page = await browser.newPage();
+    const { consoleErrors, badResponses } = watch(page);
+    await page.goto(`${BASE}/p/${project.id}/ui-views/${bare}/preview`, {
+      waitUntil: 'networkidle',
+    });
+
+    await expect.poll(() => page.locator('iframe[title*="Mockup preview"]').count()).toBe(1);
+    // Only the three view segments — no State axis, no Mode axis.
+    await expect.poll(() => page.getByRole('tab').count()).toBe(3);
+
+    expect(consoleErrors).toEqual([]);
+    expect(badResponses).toEqual([]);
     await page.close();
   });
 });

@@ -45,9 +45,13 @@ everything below is a generic host entity tool.
 
 1. **The view.**
    \`get_entities({ type: 'ui-view', slugs: ['<slug>'] })\`
-   The record carries \`title\`, \`url\`, \`params[]\` and \`designSystemSlug\`. It does
-   **not** carry \`mockupHtml\`: the field is content-bearing, so no read emits it. You
+   The record carries \`title\`, \`url\`, \`params[]\`, \`states[]\` and \`designSystemSlug\`. It
+   does **not** carry \`mockupHtml\`: the field is content-bearing, so no read emits it. You
    get \`hasMockupHtml\` and \`mockupHtmlBytes\` instead — a descriptor, not a value.
+
+   \`states[]\` is the view's **domain declaration of its alternative screen states**, not a
+   wish list addressed to you, and it carries **no entry for the default state**. Treat it
+   the way you treat \`url\` and \`params[]\`: a fact about the screen you are drawing.
 
 2. **The design system**, when the view names one.
    \`get_entities({ type: 'design-system', slugs: ['<designSystemSlug>'] })\`
@@ -132,18 +136,47 @@ write it as one selector in the fragment rather than as a second fragment:
 </style>
 \`\`\`
 
-**No state harness.** The document's \`<script>\` slot stays empty. A mockup is one
-static screen: loading, empty and error states have no home in \`ui-view\` today. Draw
-the state the view is chiefly about and leave the rest — do not simulate them with
-script, and do not stack them as hidden siblings.
+**States through an attribute selector, never through script.** The variant selector is
+\`[data-preview-state="<name>"]\`, which the mockup route sets on \`<html>\` from the
+\`?state=\` query param — there is no \`<script>\` slot any more, and no harness is coming.
+ONE fragment covers every state the view declares in \`states[]\`. Blocks for alternative
+states live **in the DOM beside the default content** and are switched off by an ancestor
+selector; that is the sanctioned pattern here, not the hidden-sibling smell it resembles:
+
+\`\`\`html
+<main class="results">…</main>
+<p class="empty">No results match this filter.</p>
+<style>
+  .empty { display: none; }
+  [data-preview-state="empty"] .results { display: none; }
+  [data-preview-state="empty"] .empty  { display: block; }
+</style>
+\`\`\`
+
+**The default state must render a complete screen.** The fragment with no
+\`data-preview-*\` attribute in play is a whole, sensible view on its own. Alternative
+states are an OVERRIDE of it — never a precondition for it rendering correctly.
+
+**Mode is one click away, so every mode has to work.** The reviewer picks the mode in the
+preview's variant box now; the author no longer hard-codes it in a wrapper. Your fragment
+has to look right in **every** mode the design system declares, not just in the one you
+had in mind.
 
 ## 3. Save
 
 \`\`\`
-update_entities({ type: 'ui-view', updates: [{ slug: '<slug>', data: { mockupHtml: '<fragment>' } }] })
+update_entities({ type: 'ui-view', updates: [{ slug: '<slug>', data: {
+  states: [{ name: 'empty', label: 'Empty', description: 'No results after filtering.' }],
+  mockupHtml: '<fragment>',
+} }] })
 \`\`\`
 
-A partial update of \`mockupHtml\` alone. The field goes **inside \`data\`** — a key
+**\`states[]\` and \`mockupHtml\` go in ONE call.** Splitting them across two would leave the
+entity inconsistent in between — a mockup illustrating a state the view does not declare,
+or a declared state nothing illustrates. Send \`states\` only when you are changing it;
+omitting it leaves it alone, and \`[]\` is a value (no states declared), not a clear.
+
+A partial update. The fields go **inside \`data\`** — a key
 placed beside \`slug\` is not an update, it is dropped. Omitting the field means "no
 change"; \`data: { mockupHtml: null }\` clears the mockup — the field is clearable, and
 that is how you remove one.

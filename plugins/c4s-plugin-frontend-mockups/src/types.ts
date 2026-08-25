@@ -42,6 +42,21 @@ export interface UiViewParam {
   description?: string;
 }
 
+/**
+ * One ALTERNATIVE screen state of a view — `empty`, `loading`, `error`.
+ *
+ * The default state is NOT one of these: the collection enumerates only what
+ * deviates from the mockup rendered with no `data-preview-*` attribute at all.
+ *
+ * `name` is expected to match `[a-z0-9-]+` because it travels as `?state=` and
+ * lands in an HTML attribute. That expectation is linted, not enforced here.
+ */
+export interface UiViewState {
+  name: string;
+  label?: string;
+  description?: string;
+}
+
 export interface UiView {
   slug: string;
   /** 0.2.22 — the reserved label, formerly `name`. `params[].name` is a parameter name and stays. */
@@ -49,6 +64,8 @@ export interface UiView {
   url: string | null;
   description: string | null;
   params: UiViewParam[];
+  /** 0.2.49: declared alternative screen states. The DEFAULT state is not an entry; `[]` is typical. */
+  states: UiViewState[];
   /** v0.1.59: structural (non-tag) relation to a design-system. NULL = none. Slug, no FK. */
   designSystemSlug: string | null;
   tags: string[];
@@ -61,6 +78,8 @@ export interface UiViewCreateInput {
   url?: string | null;
   description?: string;
   params?: UiViewParam[];
+  /** 0.2.49: value collection, default empty. Not clearable — `null` is not one of its values. */
+  states?: UiViewState[];
   /** v0.1.59: slug of the referenced design-system (no FK). undefined/null = none. */
   designSystemSlug?: string | null;
   slug?: string;
@@ -72,6 +91,12 @@ export interface UiViewUpdateInput {
   url?: string | null;
   description?: string | null;
   params?: UiViewParam[];
+  /**
+   * 0.2.49: replaced WHOLE, like `params[]`. Omitted = unchanged; `[]` is a
+   * value, not a clear — the field carries no `clearable` flag, so `null` is
+   * not legal for it the way it is for `designSystemSlug` and `mockupHtml`.
+   */
+  states?: UiViewState[];
   /** v0.1.59: undefined = unchanged; null = clear; string = set (dangling allowed). */
   designSystemSlug?: string | null;
   tags?: string[];

@@ -119,16 +119,44 @@ describe('the body states the three output rules', () => {
     expect(body).toContain('[data-preview-mode="dark"] .card { box-shadow: none; }');
   });
 
-  it('leaves the script slot empty — no state harness', () => {
-    expect(body).toMatch(/No state harness/i);
-    expect(body).toMatch(/`<script>` slot stays empty/);
+  it('teaches states as an attribute selector, and never as a script harness', () => {
+    // 0.2.49 replaced the "No state harness" rule. The slot it referred to is
+    // gone from the document, so a skill still promising one would send the
+    // agent looking for a place to put JavaScript that no longer exists.
+    expect(body).not.toMatch(/No state harness/i);
+    expect(body).not.toMatch(/`<script>` slot stays empty/);
+    expect(body).toContain('[data-preview-state="<name>"]');
+    expect(body).toMatch(/never through script/i);
+    // Alternative states as SIBLINGS switched off by an ancestor selector — the
+    // pattern the document's own composition makes possible, stated as
+    // sanctioned so an agent does not read it as the smell it resembles.
+    expect(body).toContain('[data-preview-state="empty"] .results { display: none; }');
+  });
+
+  it('requires the default state to render a complete screen on its own', () => {
+    expect(body).toMatch(/default state must render a complete screen/i);
+    expect(body).toMatch(/never a precondition/i);
+  });
+
+  it('requires the fragment to work in EVERY mode, because the reviewer picks it', () => {
+    // The mode axis moved from the author's wrapper to the preview's variant
+    // box, so "looks right in the mode I hard-coded" stopped being enough.
+    expect(body).toMatch(/every\*\* mode/i);
+    expect(body).toMatch(/reviewer picks the mode/i);
   });
 });
 
 describe('the body states the write contract', () => {
-  it('writes through update_entities as a partial update of mockupHtml alone', () => {
+  it('writes through update_entities as a partial update', () => {
     expect(body).toContain('update_entities');
-    expect(body).toMatch(/partial update of `mockupHtml` alone/i);
+    expect(body).toMatch(/A partial update\./);
+  });
+
+  it('saves states[] and mockupHtml in ONE call', () => {
+    // Two calls would leave the entity inconsistent in between: a mockup
+    // illustrating a state the view does not declare, or the reverse.
+    expect(body).toMatch(/go in ONE call/);
+    expect(body).toMatch(/leave the\s+entity inconsistent/i);
   });
 
   it('wraps the field in `data`, the shape the tool schema actually requires', () => {
@@ -136,9 +164,8 @@ describe('the body states the write contract', () => {
     // strips anything else, so a field placed beside `slug` is not a partial
     // update — it is a no-op the agent cannot see. Every example must carry the
     // wrapper, and the prose must say why.
-    expect(body).toContain(
-      "update_entities({ type: 'ui-view', updates: [{ slug: '<slug>', data: { mockupHtml: '<fragment>' } }] })",
-    );
+    expect(body).toContain("update_entities({ type: 'ui-view', updates: [{ slug: '<slug>', data: {");
+    expect(body).toContain("mockupHtml: '<fragment>',");
     expect(body).toContain('data: { mockupHtml: null }');
     expect(body).toMatch(/\*\*inside `data`\*\*/);
     // No example may show the flat shape.

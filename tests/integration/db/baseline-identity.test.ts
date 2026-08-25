@@ -217,7 +217,12 @@ const withoutNewTables = (schema: Record<string, TableShape>): Record<string, Ta
  * of READS, not out of the projection.
  */
 const NEW_COLUMNS_SINCE_LEGACY: Record<string, Array<Record<string, unknown>>> = {
-  ui_view: [{ name: 'mockup_html', type: 'TEXT', notnull: 0, dflt_value: null, pk: 0 }],
+  ui_view: [
+    { name: 'mockup_html', type: 'TEXT', notnull: 0, dflt_value: null, pk: 0 },
+    // 0.2.49 — the view's declared alternative screen states. An embedded value
+    // collection, so NOT NULL with an empty-array default, exactly like `params`.
+    { name: 'states', type: 'TEXT', notnull: 1, dflt_value: "'[]'", pk: 0 },
+  ],
 };
 
 /**

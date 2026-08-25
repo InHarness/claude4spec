@@ -5,7 +5,8 @@ export const uiViewSystemPrompt: SystemPromptContribution = {
   // M13: CRUD moved to the generic entity-tools server (composed by the host);
   // ui-view has no custom (non-CRUD) tools, so mcpToolsLine is omitted.
   narrativeBlock:
-    'UI views (screen-level) — title, url, params (path/query/hash). A view may carry an HTML ' +
-    'mockup in `mockupHtml` — a content-bearing field: reads never emit it, fetch it with ' +
-    'get_field_content. Plus tags.',
+    'UI views (screen-level) — title, url, params (path/query/hash) and states (declared ' +
+    'alternative screen states such as empty/loading/error; the default state is not an entry). ' +
+    'A view may carry an HTML mockup in `mockupHtml` — a content-bearing field: reads never ' +
+    'emit it, fetch it with get_field_content. Plus tags.',
 };

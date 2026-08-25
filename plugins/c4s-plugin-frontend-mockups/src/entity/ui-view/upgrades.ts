@@ -40,4 +40,29 @@ export function uiViewPayloadV2ToV3(payload: SnapshotData): SnapshotData {
   return p;
 }
 
-export const uiViewPayloadUpgrades = [uiViewPayloadV1ToV2, uiViewPayloadV2ToV3];
+/**
+ * `ui-view` payload v3 → v4: the view gains `states[]`, explicitly empty.
+ *
+ * An EMPTY ARRAY, not `null` and not an omitted key. `states[]` is a value
+ * collection with no `clearable` flag, so `null` is not one of its legal values
+ * anywhere in the contract — the empty array IS the value that says "this view
+ * declares no alternative states", which is the ordinary case rather than the
+ * exceptional one. Writing the key makes "not migrated yet" and "no states"
+ * distinguishable, the same reason v2→v3 writes `mockupHtml: null` rather than
+ * leaving the key off.
+ *
+ * Idempotent, and never overwrites: a payload that already carries states keeps
+ * them.
+ */
+export function uiViewPayloadV3ToV4(payload: SnapshotData): SnapshotData {
+  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) return payload;
+  const p = { ...(payload as Record<string, unknown>) };
+  if (!Array.isArray(p.states)) p.states = [];
+  return p;
+}
+
+export const uiViewPayloadUpgrades = [
+  uiViewPayloadV1ToV2,
+  uiViewPayloadV2ToV3,
+  uiViewPayloadV3ToV4,
+];

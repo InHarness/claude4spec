@@ -19,6 +19,12 @@
  * The document is a DIFFERENT resource with a different subject — a composition
  * of two entities — and it takes nothing away from that exclusivity.
  *
+ * TWO OPTIONAL QUERY PARAMS since 0.2.49 — `?state=` and `?mode=` — each an
+ * axis of the preview variant, each landing as a `data-preview-*` attribute on
+ * `<html>`. They are ORTHOGONAL and independently optional, and neither can
+ * make the route answer anything but `200`: an unrecognised character drops the
+ * param, an unrecognised NAME emits the attribute with a warning comment.
+ *
  * A type deactivated in `config.entities` needs no check here: `mountBackend`
  * only walks ACTIVE types, so this router never mounts and the request 404s by
  * absence — exactly like every other path of the type.
@@ -66,8 +72,63 @@ import { renderMockupDocument } from './document.js';
  * `/api/*` still REACH the server — an opaque origin blocks reading the
  * response, not sending the request. No cookies are used anywhere, so there is
  * no session to steal, but a blind write is not closed by this header.
+ *
+ * 0.2.49 adds a SECOND INPUT CHANNEL to the threat model: the query params, and
+ * they are the only input whose value ends up inside an attribute we write
+ * ourselves. `mockupHtml` is pasted as element content and isolated by the
+ * header above; `?state=` / `?mode=` are not content, so they get their own
+ * whitelist — `SAFE_VARIANT` below.
  */
 const SANDBOX_CSP = 'sandbox allow-scripts allow-forms allow-modals';
+
+/**
+ * The whitelist for BOTH variant query params — a SECURITY boundary, not format
+ * validation.
+ *
+ * Query params are the route's second input channel and the ONLY one whose
+ * value lands inside an HTML attribute. The `sandbox` header isolates the
+ * document's origin; it does not sanitise what we ourselves write into it. So
+ * the value is checked against a closed character class before it goes
+ * anywhere near the composer — the same class the design system's stylesheet
+ * generator applies to a mode name (`SAFE_CSS_NAME`), because these are the two
+ * halves of one selector.
+ *
+ * The length cap is part of the boundary rather than a nicety: a megabyte of
+ * legal characters is still a megabyte pasted into every response.
+ *
+ * A value outside the class is treated as NO PARAMETER AT ALL — no attribute,
+ * no warning, still `200`. Never a `400`: the resource is a document, and this
+ * route has never answered an input problem with an error status.
+ */
+const SAFE_VARIANT = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** The query param as a usable variant name, or `null` for "not asked for". */
+function variantParam(raw: unknown): string | null {
+  // Express hands back an array when the param repeats (`?state=a&state=b`) and
+  // an object for `?state[x]=y`. Neither is a variant name.
+  if (typeof raw !== 'string') return null;
+  return SAFE_VARIANT.test(raw) ? raw : null;
+}
+
+/** Defensive parse of the embedded `states` JSON column — a document, never a 500. */
+function parseStateNames(raw: unknown): string[] {
+  let value = raw;
+  if (typeof value === 'string') {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) =>
+      item && typeof item === 'object' && typeof (item as { name?: unknown }).name === 'string'
+        ? (item as { name: string }).name
+        : null,
+    )
+    .filter((name): name is string => name !== null);
+}
 
 /**
  * `config.language` holds a DISPLAY NAME (`'Polski'`), not a BCP-47 tag, and
@@ -130,8 +191,14 @@ export function uiViewMockupRouter(ctx: MockupMountContext): Router {
       const mockupHtml = typeof data.mockup_html === 'string' ? data.mockup_html : null;
       const title = typeof data.title === 'string' ? data.title : view.slug;
 
+      // The two variant axes. Whitelisted HERE, before either value can reach
+      // the composer — see `SAFE_VARIANT`.
+      const state = variantParam(req.query.state);
+      const mode = variantParam(req.query.mode);
+
       let stylesheet = '';
       let missingDesignSystemSlug: string | null = null;
+      let modeNames: string[] = [];
 
       // In-process, through the host — never an internal HTTP call and never a
       // direct import of the service class. Both types ship in one envelope,
@@ -164,9 +231,9 @@ export function uiViewMockupRouter(ctx: MockupMountContext): Router {
           // `onMissing: 'warn'` — a dangling ref degrades, it does not fail.
           missingDesignSystemSlug = dsSlug;
         } else {
-          stylesheet = service
-            ? service.stylesheetFor(parseGroups(ds.groups), parseModes(ds.modes))
-            : '';
+          const modes = parseModes(ds.modes);
+          modeNames = modes.map((m) => m.name);
+          stylesheet = service ? service.stylesheetFor(parseGroups(ds.groups), modes) : '';
         }
       }
 
@@ -189,8 +256,27 @@ export function uiViewMockupRouter(ctx: MockupMountContext): Router {
       // Raw document bytes — NOT a `{ data }` envelope. A resource consumed as
       // a document or as an iframe `src` carries its own Content-Type, because
       // wrapping it in JSON would make it unrenderable.
+      // Character-safe but undeclared: the attribute still goes out, verbatim,
+      // and so does a comment saying nothing styles it. A view with no design
+      // system has no mode vocabulary at all, so every `?mode=` there is
+      // unknown by definition — `modeNames` is empty and the check needs no
+      // special case for it.
+      const declaredStates = parseStateNames(data.states);
+      const unknownState = state && !declaredStates.includes(state) ? state : null;
+      const unknownMode = mode && !modeNames.includes(mode) ? mode : null;
+
       res.send(
-        renderMockupDocument({ title, mockupHtml, stylesheet, lang: projectLang(ctx.cwd), missingDesignSystemSlug }),
+        renderMockupDocument({
+          title,
+          mockupHtml,
+          stylesheet,
+          lang: projectLang(ctx.cwd),
+          missingDesignSystemSlug,
+          state,
+          mode,
+          unknownState,
+          unknownMode,
+        }),
       );
     } catch (err) {
       next(err);

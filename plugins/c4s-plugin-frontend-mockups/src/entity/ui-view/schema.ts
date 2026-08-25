@@ -108,6 +108,60 @@ export const uiViewData: DataDeclaration = {
         'HTML mockup of the screen. Content-bearing: reads never emit it — fetch it with ' +
         'get_field_content. Null = no mockup; null in an update clears it, omitting it changes nothing.',
     },
+    /**
+     * The view's ALTERNATIVE SCREEN STATES — `empty`, `loading`, `error` — as
+     * domain data rather than as a comment inside the mockup.
+     *
+     * 0.2.49 reverses the earlier framing that deferred states to a future
+     * `ui-component` entity. They are a field of the VIEW: the mockup document
+     * turns `?state=<name>` into `data-preview-state="<name>"` on `<html>`, so a
+     * variant costs one query param and no JavaScript at all. The `<script>`
+     * slot that was reserved for a "preview-state harness" is gone with it.
+     *
+     * The DEFAULT STATE IS NOT AN ENTRY. This collection enumerates only the
+     * deviations from what the mockup renders with no attribute set, which is
+     * why `states: []` is both legal and typical.
+     *
+     * `identity: ['name']` and NO `rekeyOn`: unlike `params[]`, whose identity is
+     * the `('name','in')` pair and whose `rekeyOn` turns a path→query move into
+     * one `item_rekeyed`, a state's identity is one field. There is no second
+     * axis to move along, so a one-level match is the whole story and
+     * `item_rekeyed` never appears.
+     *
+     * The `[a-z0-9-]+` pattern on `name` is advice the client-side linter gives,
+     * not a constraint enforced here — the SECURITY boundary is at the mockup
+     * route, which whitelists the value before it reaches an HTML attribute. A
+     * name outside the class is storable; it is simply unaddressable.
+     *
+     * Divergence between what this declares and what the mockup actually
+     * illustrates is legal and unvalidated — exactly like the existing
+     * `url`/`params[]` divergence from the mockup.
+     *
+     * LAST, like `mockupHtml` before it: field order is column order and the
+     * baseline gate compares `PRAGMA table_info` positionally.
+     */
+    states: {
+      type: 'collection',
+      collection: { kind: 'value', identity: ['name'] },
+      item: {
+        type: 'object',
+        fields: {
+          name: {
+            type: 'string',
+            required: true,
+            description:
+              'State identifier, pattern [a-z0-9-]+ — it becomes ?state= and the ' +
+              'data-preview-state attribute. The default state is NOT listed here.',
+          },
+          label: { type: 'string', description: 'Label shown in the preview variant box' },
+          description: {
+            type: 'string',
+            description:
+              'What the state MEANS in the domain — specification content, not a hint for the mockup generator.',
+          },
+        },
+      },
+    },
   },
 };
 

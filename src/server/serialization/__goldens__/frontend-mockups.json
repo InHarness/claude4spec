@@ -168,13 +168,14 @@
     "groups": [],
     "modes": []
   },
-  "ui-view.payloadVersion": 3,
+  "ui-view.payloadVersion": 4,
   "ui-view/confirm-dialog/snapshot": {
     "description": null,
     "designSystemSlug": null,
     "mockupHtml": null,
     "params": [],
     "slug": "confirm-dialog",
+    "states": [],
     "tags": [],
     "title": "ConfirmDialog",
     "url": null
@@ -189,7 +190,8 @@
     "params": [],
     "designSystemSlug": null,
     "hasMockupHtml": false,
-    "mockupHtmlBytes": 0
+    "mockupHtmlBytes": 0,
+    "states": []
   },
   "ui-view/orphan-view/snapshot": {
     "description": null,
@@ -197,6 +199,7 @@
     "mockupHtml": null,
     "params": [],
     "slug": "orphan-view",
+    "states": [],
     "tags": [],
     "title": "OrphanView",
     "url": "/orphan"
@@ -211,7 +214,8 @@
     "params": [],
     "designSystemSlug": "never-existed",
     "hasMockupHtml": false,
-    "mockupHtmlBytes": 0
+    "mockupHtmlBytes": 0,
+    "states": []
   },
   "ui-view/user-profile/snapshot": {
     "description": "Ekran profilu — zakładki",
@@ -239,6 +243,7 @@
       }
     ],
     "slug": "user-profile",
+    "states": [],
     "tags": [],
     "title": "UserProfile",
     "url": "/users/:id"
@@ -273,6 +278,7 @@
     ],
     "designSystemSlug": "brand-2026",
     "hasMockupHtml": false,
-    "mockupHtmlBytes": 0
+    "mockupHtmlBytes": 0,
+    "states": []
   }
 }
