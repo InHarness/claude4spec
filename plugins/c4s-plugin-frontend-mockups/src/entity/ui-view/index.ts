@@ -38,8 +38,8 @@ export const uiViewEntity: EntityContribution = {
   data: uiViewData,
   slugPattern: uiViewSlugPattern,
   // 1 — initial; 2 — `name` gives way to the reserved `title`; 3 — `mockupHtml`
-  // arrives as a content-bearing field.
-  payloadVersion: 3,
+  // arrives as a content-bearing field; 4 — `states[]` arrives, empty.
+  payloadVersion: 4,
   label: UI_VIEW_LABEL,
   labelPlural: UI_VIEW_LABEL_PLURAL,
   displayOrder: UI_VIEW_DISPLAY_ORDER,

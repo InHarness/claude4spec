@@ -33,6 +33,11 @@ import { designSystemData } from '../src/entity/design-system/schema.js';
  * `ui_view.mockup_html` (0.2.27) is one of those: `contentBearing` excludes a
  * field from READS, not from the projection, so the column exists exactly as the
  * diagram's `source` does. Nullable, because a mockup is optional and clearable.
+ *
+ * `ui_view.states` (0.2.49) is the next, and it is appended AFTER `mockup_html`
+ * for the same positional reason `design_system_slug` is where it is. NOT NULL
+ * with a `'[]'` default, like `params` — an embedded value collection is never
+ * absent, it is empty.
  */
 const RETIRED_DDL: Record<string, string> = {
   'ui-view': `
@@ -45,7 +50,8 @@ const RETIRED_DDL: Record<string, string> = {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       design_system_slug TEXT,
-      mockup_html TEXT
+      mockup_html TEXT,
+      states TEXT NOT NULL DEFAULT '[]'
     );
   `,
   'design-system': `

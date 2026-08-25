@@ -17,7 +17,7 @@ const doc = (over: Partial<Parameters<typeof renderMockupDocument>[0]> = {}) =>
   });
 
 describe('element order is the contract', () => {
-  it('runs doctype → head(meta, title, style) → body → script slot', () => {
+  it('runs doctype → head(meta, title, style) → body — three points, not four', () => {
     const d = doc();
     const at = (s: string) => d.indexOf(s);
     expect(at('<!doctype html>')).toBe(0);
@@ -26,13 +26,79 @@ describe('element order is the contract', () => {
     // The sheet is LAST in the head, so it cannot be separated from the body.
     expect(at('<style>')).toBeGreaterThan(at('<title>'));
     expect(at('<body>')).toBeGreaterThan(at('</head>'));
-    expect(at('preview harness slot')).toBeGreaterThan(at('<main>'));
-    expect(at('preview harness slot')).toBeLessThan(at('</body>'));
+    expect(at('<main>')).toBeGreaterThan(at('<body>'));
+    expect(at('<main>')).toBeLessThan(at('</body>'));
+  });
+
+  it('reserves NOTHING after the fragment — the harness slot is gone', () => {
+    // 0.2.49 retired the fourth point of the contract. Switching a preview
+    // variant is a query param and a CSS selector, so the document needs no
+    // script of its own; a slot still standing would promise one that will
+    // never arrive.
+    const d = doc();
+    expect(d).not.toContain('preview harness slot');
+    expect(d).not.toContain('<script>');
+    expect(d).toContain('<main><h1>Profile</h1></main>\n</body>');
   });
 
   it('carries the view title and the project lang', () => {
     expect(doc({ lang: 'pl' })).toContain('<html lang="pl">');
     expect(doc()).toContain('<title>User Profile</title>');
+  });
+});
+
+describe('the variant axes', () => {
+  /**
+   * ON `<html>`, never on `<body>` and never on a wrapper. A mode redefines
+   * custom properties, and the override has to sit above everything the author
+   * wrote — including anything at the very top of the fragment.
+   */
+  it('puts both attributes on the root element', () => {
+    const d = doc({ state: 'empty', mode: 'dark' });
+    expect(d).toContain('<html lang="en" data-preview-state="empty" data-preview-mode="dark">');
+    expect(d).not.toContain('<body data-preview');
+  });
+
+  it('treats the two axes as independent', () => {
+    expect(doc({ state: 'empty' })).toContain('<html lang="en" data-preview-state="empty">');
+    expect(doc({ mode: 'dark' })).toContain('<html lang="en" data-preview-mode="dark">');
+  });
+
+  it('emits NO attribute for an axis at its default — absence is the signal', () => {
+    // There is no sentinel value for "default variant". An empty attribute
+    // would match `[data-preview-state]` and become a variant of its own.
+    const d = doc();
+    expect(d).toContain('<html lang="en">');
+    expect(d).not.toContain('data-preview-state');
+    expect(d).not.toContain('data-preview-mode');
+  });
+
+  it('escapes a variant value for the attribute context', () => {
+    // Belt and braces: the route whitelists the value long before it gets
+    // here, but this layer writes the attribute and so owns its escaping.
+    expect(doc({ state: 'a"onload="x' })).not.toContain('"onload="x');
+  });
+
+  it('warns when a variant is well-formed but undeclared, and still emits it', () => {
+    // A document with an attribute nothing styles is pixel-for-pixel identical
+    // to one with no attribute, so the comment is the only signal that would
+    // tell a typo apart from a mockup that simply does not draw the state.
+    const d = doc({ state: 'noSuch', unknownState: 'noSuch', mode: 'neon', unknownMode: 'neon' });
+    expect(d).toContain('data-preview-state="noSuch"');
+    expect(d).toContain('data-preview-mode="neon"');
+    expect(d).toMatch(/<!--[^>]*state 'noSuch' is not declared/);
+    expect(d).toMatch(/<!--[^>]*mode 'neon' is not a mode/);
+  });
+
+  it('says nothing when both variants are declared', () => {
+    const d = doc({ state: 'empty', mode: 'dark' });
+    expect(d).not.toContain('is not declared');
+    expect(d).not.toContain('is not a mode');
+  });
+
+  it('will not let an unknown variant break out of its warning comment', () => {
+    const d = doc({ state: 'x', unknownState: '--><script>alert(1)</script>' });
+    expect(d).not.toContain('--><script>');
   });
 });
 

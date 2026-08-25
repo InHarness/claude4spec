@@ -12,7 +12,7 @@
 
 ARG NODE_VERSION=22
 ARG DEPS_MODE=registry
-ARG AGENT_ADAPTERS_VERSION=^0.8.5
+ARG AGENT_ADAPTERS_VERSION=^0.9.1
 ARG AGENT_CHAT_VERSION=^0.3.1
 
 FROM node:${NODE_VERSION}-bookworm-slim AS base
@@ -31,9 +31,16 @@ COPY package.json ./
 # (installing it as a dangling symlink) even after package.json is rewritten
 # to a registry semver range, unless the lockfile is dropped first so npm
 # resolves the whole tree fresh from the (rewritten) package.json.
+# Matched on the DEPENDENCY KEY, not on the `file:` value it used to hold.
+# The committed form is a registry range (see deps-local below for why), so a
+# `s#file:../agent-adapters#…#` rewrite silently matches nothing and the
+# AGENT_ADAPTERS_VERSION build-arg — the whole point of this stage, and what
+# env-runner's `registry` mode passes to pin a library version — is ignored in
+# favour of whatever range happens to be committed. Keying on the name covers
+# both forms.
 RUN sed -i \
-    -e "s#file:../agent-adapters#${AGENT_ADAPTERS_VERSION}#" \
-    -e "s#file:../agent-chat#${AGENT_CHAT_VERSION}#" \
+    -e "s#\"@inharness-ai/agent-adapters\": \"[^\"]*\"#\"@inharness-ai/agent-adapters\": \"${AGENT_ADAPTERS_VERSION}\"#" \
+    -e "s#\"@inharness-ai/agent-chat\": \"[^\"]*\"#\"@inharness-ai/agent-chat\": \"${AGENT_CHAT_VERSION}\"#" \
     package.json \
     && npm install
 
@@ -41,8 +48,29 @@ RUN sed -i \
 FROM base AS deps-local
 COPY --from=agent-adapters . /agent-adapters
 COPY --from=agent-chat . /agent-chat
-COPY package.json package-lock.json ./
-RUN npm ci
+COPY package.json ./
+# The MIRROR of the rewrite in deps-registry, and for the same reason: the two
+# stages disagree with the committed package.json, in opposite directions.
+#
+# A `file:../agent-adapters` dependency is a DEVELOPMENT state, not a committed
+# one — the release commits rewrite it back to a registry range before publish
+# (a published package cannot depend on a path), so what lands on `main` is
+# always the semver. deps-local therefore cannot take package.json at its word:
+# a plain `npm ci` here resolves the registry tarball and the two source trees
+# copied above are installed nowhere, silently. That is not a mode that fails
+# loudly — it is a mode that builds an image against the published library
+# while claiming to test the local one, which is how DEPS_MODE=local came to
+# look broken: an app commit needing an unpublished export failed to compile in
+# `local` mode, the one mode that was supposed to supply it.
+#
+# The lockfile is dropped rather than passed, exactly as deps-registry drops it:
+# it pins whichever of the two forms was current when it was written, and npm
+# keeps honoring that entry over a rewritten package.json.
+RUN sed -i \
+    -e "s#\"@inharness-ai/agent-adapters\": \"[^\"]*\"#\"@inharness-ai/agent-adapters\": \"file:/agent-adapters\"#" \
+    -e "s#\"@inharness-ai/agent-chat\": \"[^\"]*\"#\"@inharness-ai/agent-chat\": \"file:/agent-chat\"#" \
+    package.json \
+    && npm install
 
 FROM deps-${DEPS_MODE} AS deps
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { uiViewEntity } from '../src/entity/ui-view/index.js';
 import { uiViewSerialization, type UiViewSnapshot } from '../src/entity/ui-view/serializer.js';
-import { uiViewPayloadV2ToV3 } from '../src/entity/ui-view/upgrades.js';
+import { uiViewPayloadV2ToV3, uiViewPayloadV3ToV4 } from '../src/entity/ui-view/upgrades.js';
 import { uiViewData } from '../src/entity/ui-view/schema.js';
 import { snapshotFromSchema } from '../../../src/server/serialization/schema-snapshot.js';
 import { canonicalize } from '../../../src/server/serialization/snapshot.js';
@@ -151,6 +151,7 @@ describe('ui-view params — the two-pass match', () => {
     url: null,
     description: null,
     params,
+    states: [],
     designSystemSlug: null,
     mockupHtml: null,
     tags: [],
@@ -225,5 +226,86 @@ describe('ui-view mockupHtml — the payload upgrade', () => {
 
   it('declares one step per version transition', () => {
     expect(uiViewSerialization.payloadUpgrades).toHaveLength(uiViewEntity.payloadVersion! - 1);
+  });
+});
+
+describe('ui-view states — the one-level match', () => {
+  const schema = uiViewEntity.data!.schema;
+  const withStates = (states: unknown[]) => ({
+    slug: 'v',
+    title: 'V',
+    url: null,
+    description: null,
+    params: [],
+    states,
+    designSystemSlug: null,
+    mockupHtml: null,
+    tags: [],
+  });
+
+  it('round-trips through the snapshot', () => {
+    const states = [{ name: 'empty', label: 'Empty', description: 'Nothing matched.' }];
+    const snap = snapshot(rawEntity({ slug: 'v', title: 'V', states }));
+    expect(snap.states).toEqual(states);
+    expect(canonicalize(snap)).toEqual(canonicalize(canonicalize(snap)));
+  });
+
+  it('is an empty array, never null, when the view declares no states', () => {
+    // `states[]` carries no `clearable` flag, so `null` is not one of its
+    // values anywhere — the empty array IS "declares nothing".
+    expect(snapshot(rawEntity({ slug: 'v', title: 'V' })).states).toEqual([]);
+  });
+
+  it('matches items by name — an added state is one op', () => {
+    const a = withStates([{ name: 'empty' }]);
+    const b = withStates([{ name: 'empty' }, { name: 'loading' }]);
+    expect(diffFromSchema(schema, a, b)).toEqual([
+      { op: 'item_added', path: 'states', identity: { name: 'loading' }, item: { name: 'loading' } },
+    ]);
+  });
+
+  it('reports an edited label as a modification of the same item', () => {
+    const a = withStates([{ name: 'empty', label: 'Empty' }]);
+    const b = withStates([{ name: 'empty', label: 'Pusty' }]);
+    const ops = diffFromSchema(schema, a, b).map((c) => c.op);
+    expect(ops).toEqual(['item_modified']);
+  });
+
+  it('says nothing about a pure reorder — the match is by identity, not by index', () => {
+    const a = withStates([{ name: 'empty' }, { name: 'loading' }]);
+    const b = withStates([{ name: 'loading' }, { name: 'empty' }]);
+    expect(diffFromSchema(schema, a, b)).toEqual([]);
+  });
+
+  it('never emits item_rekeyed — the identity is one field, with nowhere to move', () => {
+    // The whole difference from `params[]`, whose ('name','in') identity plus
+    // `rekeyOn: ['name']` exists so a path → query move reads as one op. A state
+    // has no second axis, so a renamed state is a removal and an addition.
+    const a = withStates([{ name: 'empty', label: 'Empty' }]);
+    const b = withStates([{ name: 'pusty', label: 'Empty' }]);
+    const ops = diffFromSchema(schema, a, b).map((c) => c.op).sort();
+    expect(ops).toEqual(['item_added', 'item_removed']);
+  });
+
+  it('is IN search scope — a state name and its meaning are ordinary spec text', () => {
+    const paths = hostDefaultFields(uiViewEntity as never).map((f) => f.path);
+    expect(paths).toContain('states[].name');
+    expect(paths).toContain('states[].label');
+    expect(paths).toContain('states[].description');
+  });
+});
+
+describe('ui-view states — the payload upgrade', () => {
+  it('writes an empty array rather than leaving the key off', () => {
+    expect(uiViewPayloadV3ToV4({ slug: 'v', title: 'V' } as never)).toEqual({
+      slug: 'v',
+      title: 'V',
+      states: [],
+    });
+  });
+
+  it('never overwrites states that are already there', () => {
+    const states = [{ name: 'empty' }];
+    expect(uiViewPayloadV3ToV4({ slug: 'v', states } as never)).toMatchObject({ states });
   });
 });

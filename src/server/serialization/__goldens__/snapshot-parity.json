@@ -166,7 +166,7 @@
     "title": "POST /api/ping"
   },
   "endpoint/post-api-ping/_stamped": true,
-  "ui-view.payloadVersion": 3,
+  "ui-view.payloadVersion": 4,
   "ui-view/users": {
     "description": null,
     "designSystemSlug": null,
@@ -178,6 +178,7 @@
       }
     ],
     "slug": "users",
+    "states": [],
     "tags": [],
     "title": "Users",
     "url": "/users/:id"

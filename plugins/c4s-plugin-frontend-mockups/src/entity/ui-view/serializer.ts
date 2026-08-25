@@ -1,6 +1,6 @@
 import type { RawEntity } from '../../host-kit/host-types.js';
 import type { SerializationContribution } from '@c4s/plugin-runtime';
-import type { UiViewParam } from '../../types.js';
+import type { UiViewParam, UiViewState } from '../../types.js';
 import { uiViewPayloadUpgrades } from './upgrades.js';
 
 // ─── M17 Snapshot shape (entities/ui-view.md `uvsn0sho`) ────────────────────
@@ -11,6 +11,13 @@ export interface UiViewSnapshot {
   url: string | null;
   description: string | null;
   params: UiViewParam[];
+  /**
+   * 0.2.49 — the view's alternative screen states, the entity's SECOND value
+   * collection. Carried in full: `snapshot → restore → snapshot` has to be
+   * lossless, and restore replaces the collection whole exactly as it does
+   * `params[]`.
+   */
+  states: UiViewState[];
   /** v0.1.59 (serializer 1.1.0, additive): referenced design-system slug, or null. */
   designSystemSlug: string | null;
   /**

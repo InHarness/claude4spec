@@ -28,7 +28,7 @@ import { Pane, RouteBody } from '../../../frontend-kit/route-shell.js';
 import { useUiView } from './hooks.js';
 import { UiViewsList } from './list-page.js';
 import { UiViewDetail } from './detail-panel.js';
-import { UiViewOpenExternal, UiViewPreview } from './preview-page.js';
+import { UiViewOpenExternal, UiViewPreview, type PreviewVariant } from './preview-page.js';
 import { EntityVersionHistoryView } from '@c4s/plugin-runtime/ui';
 import type { EntityView } from '../../../frontend-kit/EntityViewSwitcher.js';
 
@@ -36,6 +36,16 @@ import type { EntityView } from '../../../frontend-kit/EntityViewSwitcher.js';
 const UI_VIEW_VIEWS: readonly EntityView[] = ['details', 'preview', 'history'];
 
 type ListSearch = { q?: string; tag?: string };
+
+/**
+ * The preview VARIANT lives in the URL, not in a component.
+ *
+ * Same rule the list page's `q`/`tag` follow, and for the same two reasons: the
+ * choice has to survive a refresh, and it has to be sendable as a link. Both
+ * are optional and both are plain strings — the document validates them, so the
+ * route does not have to.
+ */
+type PreviewSearch = { state?: string; mode?: string };
 
 function UiViewsIndexRoute() {
   const search = useSearch({ strict: false }) as ListSearch;
@@ -98,7 +108,23 @@ function UiViewDetailRoute() {
  */
 function UiViewPreviewRoute() {
   const { slug } = useParams({ strict: false }) as { slug: string };
+  const search = useSearch({ strict: false }) as PreviewSearch;
+  const navigate = useNavigate() as Navigate;
   const { data: uiView } = useUiView(slug);
+
+  const variant: PreviewVariant = { state: search.state, mode: search.mode };
+
+  // Written back to the URL rather than to state. `undefined` removes the
+  // param, which is what "default variant" means everywhere else in this
+  // feature — the document has no sentinel for it.
+  const setVariant = (next: PreviewVariant) =>
+    navigate({
+      to: `${UI_VIEW_PATH_PREFIX}/$slug/preview`,
+      params: { slug },
+      search: (prev: PreviewSearch) => ({ ...prev, state: next.state, mode: next.mode }),
+      replace: true,
+    });
+
   return (
     <Pane>
       <EntityBreadcrumbBar
@@ -108,10 +134,11 @@ function UiViewPreviewRoute() {
         view="preview"
         views={UI_VIEW_VIEWS}
         // Only this view. The action opens the document the frame below shows,
-        // so it has no meaning on the detail form or the history timeline.
-        actions={<UiViewOpenExternal slug={slug} />}
+        // so it has no meaning on the detail form or the history timeline — and
+        // it carries the variant, so it opens what is on screen.
+        actions={<UiViewOpenExternal slug={slug} variant={variant} />}
       />
-      <UiViewPreview slug={slug} />
+      <UiViewPreview slug={slug} variant={variant} onVariantChange={setVariant} />
     </Pane>
   );
 }

@@ -287,4 +287,132 @@ describe('ui-view mockup document', () => {
       expect(res.body.content).toBe(MOCKUP);
     });
   });
+
+  /**
+   * The two variant axes, end to end — 0.2.49.
+   *
+   * The route took NO query parameters until this release, and the property
+   * every case here shares is that it still cannot be made to answer anything
+   * but `200`. A parameter is either honoured, dropped as if it were never
+   * sent, or honoured-with-a-warning; there is no fourth outcome and no `400`.
+   */
+  describe('variant query params', () => {
+    async function seedVariantDs() {
+      const res = await request(t.app)
+        .post('/api/design-systems')
+        .send({
+          title: 'Variant',
+          groups: [
+            {
+              name: 'Brand',
+              tier: 'primitive',
+              tokens: [{ name: 'blue-500', type: 'color', value: '#2563eb' }],
+            },
+          ],
+          modes: [{ name: 'dark', overrides: [{ token: 'blue-500', value: '#1e3a8a' }] }],
+        });
+      expect(res.status).toBe(201);
+      return res.body.data.slug as string;
+    }
+
+    /** A view with one declared state, attached to a design system with one mode. */
+    async function seedVariantView() {
+      const ds = await seedVariantDs();
+      const slug = await seedView({
+        designSystemSlug: ds,
+        states: [{ name: 'empty', label: 'Empty', description: 'Nothing matched the filter.' }],
+      });
+      await withMockup(slug, MOCKUP);
+      return slug;
+    }
+
+    it('carries states[] through create and back out in the read record', async () => {
+      // Unlike `mockupHtml`, `states[]` is ordinary read-surface data: it has no
+      // `contentBearing` flag, so it travels inline in the record.
+      const slug = await seedVariantView();
+      const res = await request(t.app).get(`/api/ui-views/${slug}`);
+      expect(res.body.data.states).toEqual([
+        { name: 'empty', label: 'Empty', description: 'Nothing matched the filter.' },
+      ]);
+    });
+
+    it('accepts states[] and mockupHtml in ONE patch', async () => {
+      // The atomicity the generator skill promises: split across two calls the
+      // entity is momentarily inconsistent — a mockup illustrating a state the
+      // view does not declare, or the reverse.
+      const slug = await seedView();
+      const res = await request(t.app)
+        .patch(`/api/ui-views/${slug}`)
+        .send({ states: [{ name: 'loading' }], mockupHtml: MOCKUP });
+      expect(res.status).toBe(200);
+      expect(res.body.data.states).toEqual([{ name: 'loading' }]);
+      expect(res.body.data.hasMockupHtml).toBe(true);
+    });
+
+    it('rejects null for states[] — an empty array is its empty, not null', async () => {
+      // No `clearable` flag, so the generated update shape has no null arm.
+      const slug = await seedView();
+      const res = await request(t.app).patch(`/api/ui-views/${slug}`).send({ states: null });
+      expect(res.status).toBe(400);
+    });
+
+    it('sets both attributes on <html> for declared variants', async () => {
+      const slug = await seedVariantView();
+      const res = await request(t.app).get(`/api/ui-views/${slug}/mockup?state=empty&mode=dark`);
+      expect(res.status).toBe(200);
+      expect(res.text).toContain('data-preview-state="empty"');
+      expect(res.text).toContain('data-preview-mode="dark"');
+      // The generator was NOT touched: the mode block was already in the sheet
+      // and element-agnostic, so the route only activates what is there.
+      expect(res.text).toContain('[data-preview-mode="dark"]');
+      expect(res.text).not.toContain('is not declared');
+    });
+
+    it('never puts the attributes on <body>', async () => {
+      // A mode override redefines custom properties, and it has to cascade over
+      // everything the author wrote — the root element is the only ancestor
+      // guaranteed to be above all of it.
+      const slug = await seedVariantView();
+      const res = await request(t.app).get(`/api/ui-views/${slug}/mockup?mode=dark`);
+      expect(res.text).toContain('<body>');
+      expect(res.text).not.toContain('<body data-preview');
+    });
+
+    it('drops a value outside the whitelist and still answers 200', async () => {
+      const slug = await seedVariantView();
+      const res = await request(t.app).get(
+        `/api/ui-views/${slug}/mockup?state=${encodeURIComponent('"><script>')}`,
+      );
+      expect(res.status).toBe(200);
+      expect(res.text).not.toContain('data-preview-state');
+      expect(res.text).not.toContain('<script>');
+    });
+
+    it('emits an undeclared but well-formed variant verbatim, with a warning', async () => {
+      const slug = await seedVariantView();
+      const res = await request(t.app).get(`/api/ui-views/${slug}/mockup?state=loading&mode=neon`);
+      expect(res.status).toBe(200);
+      expect(res.text).toContain('data-preview-state="loading"');
+      expect(res.text).toContain('data-preview-mode="neon"');
+      expect(res.text).toMatch(/<!--[^>]*state 'loading' is not declared/);
+      expect(res.text).toMatch(/<!--[^>]*mode 'neon' is not a mode/);
+    });
+
+    it('leaves the headers exactly as they were', async () => {
+      const slug = await seedVariantView();
+      const res = await request(t.app).get(`/api/ui-views/${slug}/mockup?state=empty&mode=dark`);
+      expect(res.headers['content-type']).toContain('text/html; charset=utf-8');
+      expect(res.headers['x-content-type-options']).toBe('nosniff');
+      expect(res.headers['content-security-policy']).toBe(
+        'sandbox allow-scripts allow-forms allow-modals',
+      );
+      expect(res.headers['cache-control']).toBe('no-store');
+    });
+
+    it('reserves no script slot any more', async () => {
+      const slug = await seedVariantView();
+      const res = await request(t.app).get(`/api/ui-views/${slug}/mockup`);
+      expect(res.text).not.toContain('preview harness slot');
+    });
+  });
 });

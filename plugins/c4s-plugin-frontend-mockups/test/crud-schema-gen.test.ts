@@ -164,7 +164,19 @@ function nullableKeys(shape: ZodRawShape): string[] {
   return out.sort();
 }
 
-const CASES = [
+interface Case {
+  type: string;
+  data: typeof uiViewData;
+  create: ZodRawShape;
+  update: ZodRawShape;
+  createAdds: string[];
+  updateAdds: string[];
+  updateNullAdds: string[];
+  /** Enumerated nested-required additions, for a field the frozen shape has no counterpart for. */
+  createNestedAdds?: Record<string, string[]>;
+}
+
+const CASES: Case[] = [
   {
     type: 'ui-view',
     data: uiViewData,
@@ -173,13 +185,20 @@ const CASES = [
     // 0.2.27 — the mockup. Written through the ORDINARY write path: the
     // `contentBearing` flag governs reads, so the field is an unremarkable
     // optional string in both input shapes.
-    createAdds: ['mockupHtml'],
+    // 0.2.49 — `states[]`, the type's SECOND value collection. Optional in
+    // create (a value collection defaults to empty) and not `clearable`, so it
+    // adds nothing to `updateNullAdds`: `[]` is its empty, `null` is not one of
+    // its values.
+    createAdds: ['mockupHtml', 'states'],
     // Every type takes `tags` on update. Two of the six hand-written shapes
     // omitted it for no stated reason — nothing about ui-view makes its tags
     // less editable than ac's.
-    updateAdds: ['tags', 'mockupHtml'],
+    updateAdds: ['tags', 'mockupHtml', 'states'],
     // `clearable`, so `null` clears it — the arm the retired shape had no field for.
     updateNullAdds: ['mockupHtml'],
+    // The first ADDED field with a shape of its own. `mockupHtml` is a scalar,
+    // so until now every addition was invisible to the nested comparison.
+    createNestedAdds: { '.states[]': ['name'] },
   },
   {
     type: 'design-system',
@@ -193,7 +212,7 @@ const CASES = [
 ];
 
 describe('item 27 — generated CRUD schemas vs the hand-written ones they replace', () => {
-  describe.each(CASES)('$type', ({ data, create, update, createAdds, updateAdds, updateNullAdds }) => {
+  describe.each(CASES)('$type', ({ data, create, update, createAdds, updateAdds, updateNullAdds, createNestedAdds }) => {
     it('create: same fields, plus only the enumerated additions', () => {
       expect(keys(buildCreateShape(data))).toEqual([...keys(create), ...createAdds].sort());
     });
@@ -210,7 +229,10 @@ describe('item 27 — generated CRUD schemas vs the hand-written ones they repla
       // Not a stronger restatement of the case above — a different one. The
       // `design-system` token `value` regression lived three levels down, where
       // a top-level comparison cannot see it.
-      expect(requiredTree(buildCreateShape(data))).toEqual(requiredTree(create));
+      expect(requiredTree(buildCreateShape(data))).toEqual({
+        ...requiredTree(create),
+        ...(createNestedAdds ?? {}),
+      });
     });
 
     it('update: nothing is mandatory — omitted means unchanged', () => {
