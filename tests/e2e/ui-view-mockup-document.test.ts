@@ -396,6 +396,48 @@ describe.skipIf(!BASE)('ui-view mockup document', () => {
   });
 
   /**
+   * A duplicate state name collapses to ONE segment.
+   *
+   * Nothing stops a duplicate from being written: `identity: ['name']` governs
+   * how the delta matches items, not what the store accepts, so two states
+   * called `empty` round-trip through create and read intact. Rendering both
+   * gives two segments carrying the same `?state=`, one of which is dead — a
+   * control where two identical-looking buttons behave differently is worse
+   * than one that shows the state once. Only a browser can see this, because
+   * the API happily returns three entries.
+   */
+  it('collapses a duplicate state name to a single segment', async () => {
+    const dupe = await ensure(
+      'ui-views',
+      {
+        title: 'Dupe Smoke View',
+        mockupHtml: MOCKUP,
+        states: [{ name: 'empty', label: 'Empty' }, { name: 'empty', label: 'Empty again' }],
+      },
+      'dupe-smoke-view',
+    );
+    const page = await browser.newPage();
+    const { consoleErrors, badResponses } = watch(page);
+    await page.goto(`${BASE}/p/${project.id}/ui-views/${dupe}/preview`, {
+      waitUntil: 'networkidle',
+    });
+
+    // The record really does carry both — this is a rendering rule, not a
+    // write-time constraint sneaking in through the back door.
+    const record = await (await fetch(`${api}/ui-views/${dupe}`)).json();
+    expect(record.data.states).toHaveLength(2);
+
+    await expect.poll(() => page.getByRole('tab', { name: 'Empty', exact: true }).count()).toBe(1);
+    await expect
+      .poll(() => page.getByRole('tab', { name: 'Empty again', exact: true }).count())
+      .toBe(0);
+
+    expect(consoleErrors).toEqual([]);
+    expect(badResponses).toEqual([]);
+    await page.close();
+  });
+
+  /**
    * The negative half of "an axis with nothing to show does not render at all".
    * A view with no states and no design system must look exactly as it did
    * before the box existed — no empty chrome, no disabled control.
