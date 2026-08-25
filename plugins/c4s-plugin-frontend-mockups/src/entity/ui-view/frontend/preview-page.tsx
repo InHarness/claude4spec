@@ -100,7 +100,16 @@ function VariantAxis({
   value: string | undefined;
   onChange(next: string | undefined): void;
 }) {
-  const all = [{ id: defaultId, label: defaultLabel }, ...options];
+  // DEDUPED BY ID, because `states[]` is a value collection with no uniqueness
+  // constraint anywhere: `identity: ['name']` governs how the delta MATCHES
+  // items, not what the store accepts, so two states named `empty` round-trip
+  // fine. Rendering both gives two segments with the same React key and the
+  // same `?state=`, i.e. a control where one of two identical-looking buttons
+  // silently does nothing. The first entry wins — the same one the mockup's
+  // selector would resolve to.
+  const all = [{ id: defaultId, label: defaultLabel }, ...options].filter(
+    (o, i, xs) => xs.findIndex((x) => x.id === o.id) === i,
+  );
   const active = value ?? defaultId;
   const pick = (id: string) => onChange(id === defaultId ? undefined : id);
 
@@ -213,17 +222,24 @@ export function UiViewPreview({
         <UiViewVariantBox slug={slug} variant={variant} onChange={onVariantChange} />
       )}
       <iframe
-        // A REMOUNT KEY, not decoration. `mockupHtml` is agent-written and not
-        // editable anywhere in the UI, so it changes under a mounted frame.
-        // React keeps the same element while `src` is unchanged and the browser
-        // then makes no request at all — which is why the route's
-        // `Cache-Control: no-store` cannot help. Keying on `updatedAt` forces a
-        // fresh element, and with it a fresh GET.
-        key={`${slug}:${view?.updatedAt ?? ''}`}
+        // A REMOUNT KEY, not decoration, and it carries the VARIANT for a
+        // second reason on top of the first.
+        //
+        // `mockupHtml` is agent-written and not editable anywhere in the UI, so
+        // it changes under a mounted frame. React keeps the same element while
+        // `src` is unchanged and the browser then makes no request at all —
+        // which is why the route's `Cache-Control: no-store` cannot help.
+        // `updatedAt` forces a fresh element, and with it a fresh GET.
+        //
+        // The variant is in the key because a `src` change on a MOUNTED iframe
+        // is a navigation, and an iframe navigation pushes onto the joint
+        // session history. The route picks variants with `replace: true`
+        // precisely so that flipping through them does not fill up Back; a
+        // live-navigating frame would put every one of those entries back,
+        // under an address bar that never moved. Remounting instead makes each
+        // switch a new element loading its initial `src`, which is not history.
+        key={`${slug}:${view?.updatedAt ?? ''}:${variant.state ?? ''}:${variant.mode ?? ''}`}
         title={`Mockup preview: ${slug}`}
-        // A changed variant changes `src`, so the frame reloads on its own —
-        // the remount key is still needed for the case it was written for, an
-        // agent rewriting `mockupHtml` under a frame whose `src` is unchanged.
         src={mockupUrl(slug, variant)}
         sandbox="allow-scripts allow-forms allow-modals"
         className="flex-1 w-full border-0 bg-white"

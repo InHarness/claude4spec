@@ -34,12 +34,29 @@ describe('ui-view states — the linter', () => {
     expect(warnings[0]).toContain('empty');
   });
 
-  it('warns that a name outside [a-z0-9-]+ cannot be addressed at all', () => {
-    for (const name of ['Empty', 'no_underscores', 'has space', 'ma-ę']) {
+  /**
+   * The convention and the route's whitelist are DIFFERENT lines, and a name can
+   * fall between them: `Empty` breaks `[a-z0-9-]+` while the route accepts it
+   * verbatim, so that state addresses and renders exactly as asked. Telling its
+   * author the state is unreachable would send them after a problem they do not
+   * have — the warning has to name the failure it actually is.
+   */
+  it('warns about a convention-only break WITHOUT claiming the state is unreachable', () => {
+    for (const name of ['Empty', 'no_underscores', 'MiXeD-42']) {
       const warnings = computeStateWarnings([{ name }]);
       expect(warnings).toHaveLength(1);
       expect(warnings[0]).toMatch(/\[a-z0-9-\]\+/);
-      expect(warnings[0]).toMatch(/cannot be\s+addressed/i);
+      expect(warnings[0]).toMatch(/still addresses/i);
+      expect(warnings[0]).not.toMatch(/drops it/i);
+    }
+  });
+
+  it('warns that a name the ROUTE also rejects is dropped, and says so', () => {
+    for (const name of ['has space', 'ma-ę', 'a'.repeat(65)]) {
+      const warnings = computeStateWarnings([{ name }]);
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toMatch(/\[a-z0-9-\]\+/);
+      expect(warnings[0]).toMatch(/drops it/i);
     }
   });
 

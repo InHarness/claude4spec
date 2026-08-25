@@ -89,12 +89,19 @@ const SANDBOX_CSP = 'sandbox allow-scripts allow-forms allow-modals';
  * value lands inside an HTML attribute. The `sandbox` header isolates the
  * document's origin; it does not sanitise what we ourselves write into it. So
  * the value is checked against a closed character class before it goes
- * anywhere near the composer — the same class the design system's stylesheet
- * generator applies to a mode name (`SAFE_CSS_NAME`), because these are the two
- * halves of one selector.
+ * anywhere near the composer — the same CHARACTER class the design system's
+ * stylesheet generator applies to a mode name (`SAFE_CSS_NAME`), because these
+ * are the two halves of one selector.
  *
  * The length cap is part of the boundary rather than a nicety: a megabyte of
- * legal characters is still a megabyte pasted into every response.
+ * legal characters is still a megabyte pasted into every response. It is also
+ * the one place the two classes DIVERGE — `SAFE_CSS_NAME` has no cap and
+ * `modes[].name` has no `maxLength`, so a mode name over 64 characters gets its
+ * `[data-preview-mode="…"]` block emitted into the sheet and gets listed in the
+ * preview's variant box, while `?mode=` for it is dropped here. Selecting that
+ * mode is a no-op. The bound is kept anyway: a name that long is pathological,
+ * and an unbounded value on a public query param is not something to trade for
+ * it.
  *
  * A value outside the class is treated as NO PARAMETER AT ALL — no attribute,
  * no warning, still `200`. Never a `400`: the resource is a document, and this

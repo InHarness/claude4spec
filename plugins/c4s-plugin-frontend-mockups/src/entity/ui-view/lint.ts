@@ -81,8 +81,21 @@ export function computeWarnings(
  * shape a state name is authored in. A name outside it is storable and the
  * route would even echo it — but the document's own whitelist is what a person
  * hits first, and telling them at authoring time beats a silent no-op later.
+ *
+ * It carries the route's LENGTH CAP even so. Without it the convention would be
+ * satisfied by a name the route then drops — 65 lowercase letters — which is
+ * the one shape that would slip past every rule below while still being
+ * unreachable, the exact failure this function exists to catch.
  */
-const ADDRESSABLE_STATE_NAME = /^[a-z0-9-]+$/;
+const ADDRESSABLE_STATE_NAME = /^[a-z0-9-]{1,64}$/;
+
+/**
+ * The mockup route's own `SAFE_VARIANT`, restated here rather than imported:
+ * `routes.ts` is the backend half of the envelope and pulling it in would drag
+ * express into a module the client bundles. Kept in sync by the pair of tests
+ * that assert the two classes disagree exactly where this file says they do.
+ */
+const ROUTE_ACCEPTS = /^[A-Za-z0-9_-]{1,64}$/;
 
 /**
  * The `states[]` rules — the same presentation-time, never-blocking advice the
@@ -102,10 +115,21 @@ export function computeStateWarnings(states: UiViewState[]): string[] {
       continue;
     }
     if (!ADDRESSABLE_STATE_NAME.test(name)) {
+      // TWO different failures, and saying the wrong one sends the author after
+      // the wrong thing. `Empty_State` breaks only the authoring convention —
+      // the route's class is wider, so it addresses and renders exactly as
+      // asked. `Empty state` breaks the route's class too, and there the state
+      // really is unreachable. The old single message claimed the second for
+      // both, contradicting this file's own comment above.
       warnings.push(
-        `states[${i}] '${name}': name does not match [a-z0-9-]+ — this state cannot be ` +
-          `addressed in the mockup URL (?state= drops a value outside the whitelist, ` +
-          `which the document then treats as no parameter at all)`,
+        ROUTE_ACCEPTS.test(name)
+          ? `states[${i}] '${name}': name does not match [a-z0-9-]+ — it still addresses ` +
+              `(?state= accepts it), but the mockup selects it with ` +
+              `[data-preview-state="${name}"], which is exact; the convention is what keeps ` +
+              `the two halves from drifting apart on case or separator`
+          : `states[${i}] '${name}': name does not match [a-z0-9-]+ and falls outside the ` +
+              `mockup route's whitelist as well — ?state= drops it, and the document then ` +
+              `renders as if no state had been asked for at all`,
       );
     }
   }
