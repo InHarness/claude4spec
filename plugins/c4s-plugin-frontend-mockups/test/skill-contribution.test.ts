@@ -32,7 +32,7 @@ describe('the envelope contributes the mockup-generator skill', () => {
 
   it('carries a description — the only thing the model reads before opening it', () => {
     // A contextual plugin skill is never forced: it rides `inlineSkills` and the
-    // model opens it itself via `Skill(<slug>)`. An empty or generic description
+    // model opens it itself via `load_skill_file(<slug>)`. An empty or generic description
     // makes it unreachable in practice while everything still "registers".
     expect(uiViewMockupGeneratorSkill.description.length).toBeGreaterThan(40);
     expect(uiViewMockupGeneratorSkill.description).toMatch(/mockup/i);
@@ -240,6 +240,10 @@ describe('the skill ships as a package, not as one body', () => {
       expect(body).toContain(path);
     }
     expect(body).toMatch(/before drawing a NEW mockup/i);
+    // `load_skill_file` is the ONLY channel: the prompt forbids the native
+    // `Skill()` tool by name and a skill package is not on disk to `Read`.
+    expect(body).toContain("load_skill_file('ui-view-mockup-generator', '<file>')");
+    expect(body).not.toMatch(/\bSkill\(/);
     expect(body).toMatch(/before drawing \*\*and\*\* again before saving/i);
   });
 
@@ -282,7 +286,26 @@ describe('research.md carries the three questions and the variable type roster',
     // calls re-deriving what it was handed on turn one — and would still miss
     // the types whose narrative says what they are for.
     expect(research).toContain('<entities>');
-    expect(research).toMatch(/describe_entity_type[\s\S]{0,200}Never wholesale/i);
+    expect(research).toMatch(/describe_entity_type[\s\S]{0,400}Never\s*\n?\s*wholesale/i);
+  });
+
+  it('does not sell the <entities> block as the complete roster', () => {
+    // `buildEntityRows` SKIPS any module with an empty `roleNoun` (the legacy
+    // ui-view opt-out), so a type can be active and absent from the block. A
+    // skill calling the block the roster AND saying it needs no discovery would
+    // leave the agent no way to notice the type it never considered.
+    expect(research).toMatch(/one row per entity type that declares\s*\n?\s*a role noun/i);
+    expect(research).toMatch(/may opt out[\s\S]{0,160}authoritative list of what is active/i);
+  });
+
+  it('points default filters at list_entities, which is where they are actually named', () => {
+    // `describe_entity_type` returns createSchema/updateSchema/constraints/
+    // contentFields/selectableFields/searchableFields and NOTHING about a type's
+    // `defaultPredicate` — that lives in the type's systemPrompt and surfaces in
+    // `list_entities`' own description. Sending the agent to the wrong tool costs
+    // a call and still leaves it listing only active rows without knowing why.
+    expect(research).toMatch(/DEFAULT filter[\s\S]{0,120}`list_entities`/);
+    expect(research).not.toMatch(/describe_entity_type[^)]{0,80}default filters/i);
   });
 
   it('states which two types are guaranteed, and treats every other name as an example', () => {
@@ -305,7 +328,15 @@ describe('research.md carries the three questions and the variable type roster',
     // `spec-explore` cannot read this file, so handing it the JUDGEMENT would
     // hand it to something that never saw the rules. Locating is all it does.
     expect(research).toMatch(/that is your call, not a rule/i);
-    expect(research).toMatch(/mandatory is going through the\s*\n?\s*three questions/i);
+    expect(research).toMatch(/mandatory is going through the\s+three\s+questions/i);
+  });
+
+  it('keeps get_field_content out of what may be delegated', () => {
+    // `spec-explore`'s allow-list carries get_entities/list_entities/
+    // search_entities/describe_entity_type and no get_field_content, so a
+    // delegated LOOK sweep returns sibling slugs and no mockups at all. The
+    // skill has to say so, or the parent waits for content that cannot arrive.
+    expect(research).toMatch(/toolset does NOT carry\s*\n?\s*`get_field_content`/);
   });
 });
 

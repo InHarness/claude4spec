@@ -16,11 +16,14 @@ what a screen of this kind usually carries.
 
 ## Which types can even contribute?
 
-Read the \`<entities>\` block in your system prompt. It carries one row per entity type this project
-actually has, with the narrative of what each is for. That IS the roster; it needs no discovery.
-Pick the types whose records carry field shapes, columns, signatures or criteria, and reach for
-\`describe_entity_type\` only on those, and only for what the narrative did not say
-(\`searchableFields\`, default filters, \`contentFields\`). Never wholesale.
+Read the \`<entities>\` block in your system prompt. It carries one row per entity type that declares
+a role noun, with the narrative of what each is for — in practice the roster, and it needs no
+discovery. A type may opt out of that block, so if something you expect is missing, \`describe_entity_type\`
+with no \`type\` is the authoritative list of what is active. Pick the types whose records carry field
+shapes, columns, signatures or criteria, and reach for \`describe_entity_type\` only on those, and only
+for what the narrative did not say (\`searchableFields\`, \`contentFields\`, \`selectableFields\`). Never
+wholesale — and note that a DEFAULT filter, when a type declares one, is named by \`list_entities\`
+itself rather than by \`describe_entity_type\`.
 
 Exactly two types are guaranteed: \`ui-view\` and \`design-system\` — they arrive and leave with this
 skill. Everything else is conditional. One project keeps its contracts in \`endpoint\` + \`dto\`,
@@ -63,8 +66,10 @@ the pages citing the view — it takes no tags, and entities by tag are \`list_e
 \`resolve_identity\` when you do not yet know which type a name lives in.
 
 Sweeping many pages or many types is worth handing to the \`spec-explore\` subagent, one per
-question, in parallel — but that is your call, not a rule. What is mandatory is going through the
-three questions; whose hands do the reading is not.
+question, in parallel — but that is your call, not a rule. Its toolset does NOT carry
+\`get_field_content\`, so a sibling's \`mockupHtml\` is yours to read whatever you delegate; a LOCATE
+task comes back with slugs, and you fetch the content. What is mandatory is going through the three
+questions; whose hands do the reading is not.
 `;
 
 /**
@@ -116,7 +121,7 @@ so you REPORT it in your answer. Neither one gets patched over quietly in the fr
  * `attachInternalSkills` table — that makes `resolveForContext` pick it up, in
  * every one of the four context types. It rides `inlineSkills` only; a
  * `<project_skill/>` block belongs to the writing-style slot and this is not
- * one. The model opens it itself, off `description`, via `Skill(<slug>)`.
+ * one. The model opens it itself, off `description`, via `load_skill_file(<slug>)`.
  *
  * Which is why `description` is load-bearing and not decoration: it is the ONLY
  * thing the model sees before deciding to open the body.
@@ -136,7 +141,10 @@ so you REPORT it in your answer. Neither one gets patched over quietly in the fr
  * output. `research.md` and `principles.md` are the layer before it: what belongs
  * on the screen, and how the agent knows. They are sub-files because their cost is
  * only worth paying before a NEW mockup, and because `files` gives the model the
- * byte cost up front (`skill-tools.ts` returns the manifest when the skill opens).
+ * byte cost up front: `load_skill_file(<slug>)` returns the manifest alongside the
+ * body, and `load_skill_file(<slug>, <path>)` fetches one sub-file. That tool is the
+ * ONLY channel — the prompt forbids the native `Skill()` tool and skill packages are
+ * not on disk to `Read`.
  *
  * And the split has a HARD constraint that must survive later tidying: THE RULES
  * BIND THE PARENT; THE SUBAGENT ONLY LOCATES. `spec-explore` carries `Read`/`Grep`/
@@ -196,7 +204,8 @@ everything below is a generic host entity tool.
    finds the spec pages that cite the view itself. \`find_references\` takes no tags and
    requires the \`target\` discriminator; calling it without one is an error.
 
-   **This package carries two more files, and you open them yourself.**
+   **This package carries two more files, and you open them yourself** —
+   \`load_skill_file('ui-view-mockup-generator', '<file>')\`, the only channel there is.
    \`research.md\` turns those channels into answers: three questions (what feeds this
    screen, how it must look and what it must be consistent with, what happens on it),
    which entity types can contribute at all in THIS project, and when a sweep is worth
