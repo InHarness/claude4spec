@@ -81,6 +81,33 @@ describe('the body states the three output rules', () => {
     expect(body).toMatch(/no `designSystemSlug`[\s\S]{0,160}no token references at all/i);
   });
 
+  /**
+   * The naming contract, pinned against the generator it describes. The skill's
+   * whole job here is to let the agent DERIVE a property name from the entity
+   * record — the record carries no property names — and a derived `var()` that
+   * misses fails silently, so a wrong rule in the prose produces no error
+   * anywhere, just quietly unstyled markup.
+   */
+  it('tells the agent to derive property names rather than read them off the record', () => {
+    expect(body).toMatch(/DERIVE the property name from the token/i);
+    // The record's actual payload, so the agent stops looking for names in it.
+    expect(body).toMatch(/does \*\*not\*\* carry custom property names/i);
+    expect(body).toContain('--<token>-<fieldKey>');
+    expect(body).toMatch(/verbatim/i);
+  });
+
+  it('consumes a composite token per field, never by a collective name', () => {
+    expect(body).toContain('var(--heading-1-fontSize)');
+    expect(body).toContain('var(--heading-1-lineHeight)');
+    // Both wrong forms are named as wrong — the collective and the kebab-cased.
+    expect(body).toMatch(/Never `var\(--heading-1\)` and never `var\(--heading-1-font-size\)`/);
+    // ...and the worked example practises it rather than only preaching it: a
+    // `shadow` token is composite, so `var(--shadow-raised)` would be the very
+    // form the rule above forbids.
+    expect(body).toContain('var(--shadow-raised-offsetX)');
+    expect(body).not.toContain('var(--shadow-raised)');
+  });
+
   it('describes modes as token redefinition, which is what the stylesheet actually emits', () => {
     // `stylesheet.ts` emits `[data-preview-mode="<name>"] { --token: … }` — modes
     // rebind custom properties. A skill that taught author-level descendant rules

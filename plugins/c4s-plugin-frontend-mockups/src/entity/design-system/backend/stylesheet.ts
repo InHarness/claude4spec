@@ -13,7 +13,7 @@
  * sheet it lands in, which is a correctness property, not a security boundary.
  */
 
-import { UNRESOLVED_TOKEN, type ResolvedTokenValue } from '../../../types.js';
+import { SAFE_CSS_NAME, UNRESOLVED_TOKEN, type ResolvedTokenValue } from '../../../types.js';
 
 /**
  * One resolved mode: its name and the tokens `resolve(groups, modes, name)`
@@ -34,8 +34,12 @@ export interface ResolvedMode {
  * name alike. A name outside it is skipped in silence — never an exception:
  * one unusable token must not cost the author the whole sheet, and the document
  * that embeds it still has to render.
+ *
+ * Shared with the linter through `types.ts` rather than declared here: the
+ * linter's warning and this filter have to describe the same set, or an author
+ * gets a clean lint and a missing declaration.
  */
-const SAFE_NAME = /^[A-Za-z0-9_-]+$/;
+const SAFE_NAME = SAFE_CSS_NAME;
 
 /**
  * The first of the sheet's three layers. Deliberately tiny and opinion-free:
