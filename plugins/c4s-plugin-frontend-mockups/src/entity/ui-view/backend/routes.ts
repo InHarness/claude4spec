@@ -253,9 +253,6 @@ export function uiViewMockupRouter(ctx: MockupMountContext): Router {
       // without a hard refresh.
       res.setHeader('Cache-Control', 'no-store');
 
-      // Raw document bytes — NOT a `{ data }` envelope. A resource consumed as
-      // a document or as an iframe `src` carries its own Content-Type, because
-      // wrapping it in JSON would make it unrenderable.
       // Character-safe but undeclared: the attribute still goes out, verbatim,
       // and so does a comment saying nothing styles it. A view with no design
       // system has no mode vocabulary at all, so every `?mode=` there is
@@ -265,6 +262,9 @@ export function uiViewMockupRouter(ctx: MockupMountContext): Router {
       const unknownState = state && !declaredStates.includes(state) ? state : null;
       const unknownMode = mode && !modeNames.includes(mode) ? mode : null;
 
+      // Raw document bytes — NOT a `{ data }` envelope. A resource consumed as
+      // a document or as an iframe `src` carries its own Content-Type, because
+      // wrapping it in JSON would make it unrenderable.
       res.send(
         renderMockupDocument({
           title,
