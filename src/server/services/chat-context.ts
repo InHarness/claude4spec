@@ -8,8 +8,8 @@ import type { PatchDetail } from './patch.js';
 import path from 'node:path';
 import type { Root } from '../../shared/types.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
-import type { SubagentDefinition } from '@inharness-ai/agent-adapters';
-import { CLAUDE_CODE_READONLY_BUILTINS, CLAUDE_CODE_MUTATING_BUILTINS } from '@inharness-ai/agent-adapters/claude-code';
+import { PLAN_MODE_DENY_GROUPS, type SubagentDefinition } from '@inharness-ai/agent-adapters';
+import { buildClaudeCodeToolPolicy, claudeCodeKnownBuiltins } from '@inharness-ai/agent-adapters/claude-code';
 import { PROFILES, mcpServerSetForProfile, type McpServerSet } from '../operations/profiles.js';
 import { INTERACTION_RULES } from './interaction-rules.js';
 
@@ -478,22 +478,34 @@ You also have read-only release-tools (get_release, get_release_diff, list_relea
 You do NOT have filesystem access (no Read/Write/Edit/Glob/Grep/Bash). Brief content flows through get_brief / update_brief only.
 </brief_tools_usage>`;
 
-// Interpolated from agent-adapters' real CLAUDE_CODE_READONLY_BUILTINS /
-// CLAUDE_CODE_MUTATING_BUILTINS — these ARE the exact values the adapter
-// assigns to options.tools/disallowedTools when planMode is true, so this is
-// a 1:1 mirror of actual gating, not a hand-maintained paraphrase that can
-// drift (see 0-1-125-to-next follow-up).
+/**
+ * The plan-mode tool policy, taken straight from agent-adapters (0.9.6, M18
+ * deny-groups). `planMode: true` IS `PLAN_MODE_DENY_GROUPS`, and
+ * `buildClaudeCodeToolPolicy` is the same function the adapter calls to turn
+ * those groups into `options.tools` / `options.disallowedTools` — so the lists
+ * interpolated below are a 1:1 mirror of actual gating, not a hand-maintained
+ * paraphrase that can drift (see 0-1-125-to-next follow-up).
+ *
+ * The groups are non-empty, so the policy is never `undefined`; the guard exists
+ * so a future contract change fails loudly instead of rendering an empty list
+ * into the prompt.
+ */
+const PLAN_MODE_TOOL_POLICY = buildClaudeCodeToolPolicy(PLAN_MODE_DENY_GROUPS);
+if (!PLAN_MODE_TOOL_POLICY) {
+  throw new Error('plan-mode tool policy is empty — the agent-adapters gating contract changed');
+}
+
 const PLAN_MODE = `<claude4spec_plan_mode>
 Plan Mode is ACTIVE. Investigate and propose — do not modify.
 
 The plan you draft must conform to the project skill referenced in <project_skill/>. Before drafting or updating the plan, ensure load_skill_file(slug) has been called this turn — its conventions (module/layer structure, naming, file layout, quality rules) constrain every line of the plan. If the user's request appears to violate those conventions, surface the conflict in the plan rather than silently working around it.
 
 Forbidden (mutating):
-  - Built-in: ${CLAUDE_CODE_MUTATING_BUILTINS.join(', ')}
+  - Built-in: ${PLAN_MODE_TOOL_POLICY.deny.join(', ')}
   - MCP: any create_*, update_*, delete_*, link_*, unlink_*, tag_entity, untag_entity
 
 Allowed (read-only):
-  - Built-in: ${CLAUDE_CODE_READONLY_BUILTINS.join(', ')}
+  - Built-in: ${PLAN_MODE_TOOL_POLICY.allow.join(', ')}
   - MCP: list_*, get_*, find_*, check_consistency
 
 plan-tools (get_plan, update_plan, list_plan_versions, get_plan_version) are EXEMPT — use update_plan to persist the plan rather than writing it as prose in your reply.
@@ -511,12 +523,12 @@ function buildEntityToolsLine(): string {
   return `  <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities, search_entities, describe_entity_type</mcp>`;
 }
 
-// Deduped union of agent-adapters' real read-only + mutating builtin arrays —
-// a sourced, generated list rather than a hand-maintained one (see
-// 0-1-125-to-next follow-up). Not necessarily exhaustive for the unrestricted
-// non-plan-mode catalog (agent-adapters doesn't export a "full SDK catalog"
-// constant), but every name in it is real and confirmed.
-const CLAUDE_CODE_ALL_BUILTINS = Array.from(new Set([...CLAUDE_CODE_READONLY_BUILTINS, ...CLAUDE_CODE_MUTATING_BUILTINS]));
+// Every built-in agent-adapters knows about — a sourced, generated list rather
+// than a hand-maintained one (see 0-1-125-to-next follow-up). 0.9.6 exports the
+// full catalog directly, so this no longer has to be reconstructed as a union of
+// the two plan-mode halves (which omitted BashOutput / KillShell / MultiEdit /
+// NotebookRead).
+const CLAUDE_CODE_ALL_BUILTINS = claudeCodeKnownBuiltins();
 
 function buildTooling(pluginHost: ProjectPluginHost, planToolsAvailable: boolean, c4sToolsAvailable: boolean): string {
   const lines: string[] = [
