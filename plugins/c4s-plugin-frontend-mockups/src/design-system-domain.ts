@@ -183,6 +183,15 @@ export function lintTokens(groups: TokenGroup[], modes: DesignMode[]): string[] 
     for (const t of g.tokens ?? []) {
       if (!t || typeof t.name !== 'string' || !t.name) continue;
       if (seenNames.has(t.name)) warnings.push(`Duplicate token name '${t.name}'`);
+      // A token NAME outside the class costs MORE than a field key does — the
+      // whole token goes, so every `var(--<name>)` in every mockup that used it
+      // falls back at once. Silently, like the field-key case.
+      if (!SAFE_CSS_NAME.test(t.name)) {
+        warnings.push(
+          `Token '${t.name}': the name is outside [A-Za-z0-9_-], so the whole token will be ` +
+            `dropped from the stylesheet without a trace`
+        );
+      }
       seenNames.add(t.name);
       base.set(t.name, t);
     }
@@ -240,6 +249,14 @@ export function lintTokens(groups: TokenGroup[], modes: DesignMode[]): string[] 
   warnings.push(...detectCycles(base));
 
   for (const m of modes ?? []) {
+    // The mode name becomes the `[data-preview-mode="…"]` selector, so it faces
+    // the same filter — and a rejected one takes the mode's ENTIRE block with it.
+    if (typeof m?.name === 'string' && m.name && !SAFE_CSS_NAME.test(m.name)) {
+      warnings.push(
+        `Mode '${m.name}': the name is outside [A-Za-z0-9_-], so the whole mode block will be ` +
+          `dropped from the stylesheet without a trace`
+      );
+    }
     for (const ov of m.overrides ?? []) {
       if (!base.has(ov.token)) {
         warnings.push(`Mode '${m.name}': override targets non-existent token '${ov.token}'`);

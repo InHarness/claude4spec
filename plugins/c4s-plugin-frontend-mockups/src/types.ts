@@ -126,6 +126,12 @@ export const COMPOSITE_TOKEN_TYPES = ['typography', 'shadow'] as const;
  * WARNS about it before the author ever gets that far. Two copies of the same
  * regex would drift, and the drift would show up as a token that lints clean
  * and then vanishes from the sheet.
+ *
+ * Both layers apply it at the SAME three points — token name, composite field
+ * key, mode name — and the granularity differs per point: a rejected field key
+ * costs one declaration, a rejected token name costs the whole token, a
+ * rejected mode name costs the whole mode block. `lintTokens` warns about all
+ * three because the two expensive ones are the ones worth catching first.
  */
 export const SAFE_CSS_NAME = /^[A-Za-z0-9_-]+$/;
 

@@ -185,6 +185,29 @@ describe('lintTokens()', () => {
     expect(w.some((m) => m.includes('fontSize'))).toBe(false);
   });
 
+  /**
+   * All THREE application points of the filter warn, not just the field key.
+   * The two here are the more expensive failures — a rejected token name drops
+   * the whole token, a rejected mode name drops its whole block — so a linter
+   * that covered only the cheapest of the three would leave the worst silent.
+   */
+  it('warns on a token name the stylesheet will drop whole', () => {
+    const w = lintTokens([primitives([{ name: 'color/primary', type: 'color', value: '#2563eb' }])], []);
+    expect(
+      w.some((m) => m.includes("'color/primary'") && m.includes('whole token') && m.includes('dropped'))
+    ).toBe(true);
+  });
+
+  it('warns on a mode name whose entire block the stylesheet will drop', () => {
+    const w = lintTokens(
+      [primitives([{ name: 'brand', type: 'color', value: '#2563eb' }])],
+      [{ name: 'high contrast', overrides: [{ token: 'brand', value: '#000' }] }]
+    );
+    expect(
+      w.some((m) => m.includes("'high contrast'") && m.includes('whole mode block'))
+    ).toBe(true);
+  });
+
   /** camelCase passes the filter unchanged; the canonical keys must not warn. */
   it('leaves the canonical camelCase field keys alone', () => {
     const w = lintTokens(
