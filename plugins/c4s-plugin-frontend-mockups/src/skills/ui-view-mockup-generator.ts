@@ -1,6 +1,118 @@
 import type { PluginSkillContribution } from '@c4s/plugin-runtime';
 
 /**
+ * `research.md` — the "what belongs on the screen" layer, kept OUT of the body.
+ *
+ * It is a sub-file rather than a fifth section because it is only needed before
+ * drawing a NEW mockup; a one-element revision of an existing one pays nothing
+ * for it. `Skill(<slug>)` hands the model the `files` manifest with the byte and
+ * line cost, so the decision to fetch is an informed one.
+ */
+const RESEARCH_MD = `# What belongs on the screen
+
+A mockup is not a drawing exercise: it FOLLOWS from the specification. Before you write a single
+element of the fragment, answer three questions — and answer each from a NAMED SOURCE, never from
+what a screen of this kind usually carries.
+
+## Which types can even contribute?
+
+Read the \`<entities>\` block in your system prompt. It carries one row per entity type that declares
+a role noun, with the narrative of what each is for — in practice the roster, and it needs no
+discovery. A type may opt out of that block, so if something you expect is missing, \`describe_entity_type\`
+with no \`type\` is the authoritative list of what is active. Pick the types whose records carry field
+shapes, columns, signatures or criteria, and reach for \`describe_entity_type\` only on those, and only
+for what the narrative did not say (\`searchableFields\`, \`contentFields\`, \`selectableFields\`). Never
+wholesale — and note that a DEFAULT filter, when a type declares one, is named by \`list_entities\`
+itself rather than by \`describe_entity_type\`.
+
+Exactly two types are guaranteed: \`ui-view\` and \`design-system\` — they arrive and leave with this
+skill. Everything else is conditional. One project keeps its contracts in \`endpoint\` + \`dto\`,
+another in a single \`api\` type of its own, another in no type at all with all the knowledge in
+prose. Names like \`endpoint\`, \`dto\`, \`database-table\` or \`ac\` are examples of a typical layout in
+what follows — never types you may assume are there.
+
+## DATA — what feeds this screen?
+
+Every visible field needs a named source. Find the entities that share the view's tags with
+\`list_entities({ type: '<type>', tags: [...], tagFilter: 'or' })\`, one call per type you chose
+above; find them by name with \`search_entities\`, which takes ONE type per call. Read \`params[]\` for
+the split that shapes the whole screen: what is known up front, and what the screen has to fetch.
+A field you cannot trace to a record or a sentence does not get invented — it gets left out.
+
+## LOOK — how should it look, and what must it be consistent with?
+
+The design system from step 1.2 is only half of it; the other half is the SIBLINGS. Ask
+\`list_entities({ type: 'ui-view', filters: { designSystemSlug: '<slug>' } })\` for the views sharing
+this design system, and for the closest of them read
+\`get_field_content({ type: 'ui-view', slug: '<sibling>', field: 'mockupHtml' })\`. Inherit their
+shell, their navigation and their terminology instead of inventing a second vocabulary for the same
+product. The user journey is not an entity anywhere — neighbouring views are its only record.
+The presentation paradigm and the requirements on copy live in prose: read them, never assume, and
+in particular never assume mobile.
+
+## BEHAVIOUR — what happens on it?
+
+\`states[]\` with the \`description\` of each entry — the schema is explicit that this is
+"specification content, not a hint for the mockup generator", so it is evidence, not a brief
+addressed to you. Then \`ui-view.description\`, then the prose. If the project has a type binding
+criteria to entities, that bond is ENTITY DATA rather than a document edge, so \`find_references\`
+will not return it; the route there is \`search_entities\` by the view's slug.
+
+## Channels that hold whatever the type roster looks like
+
+\`search_pages\` with \`mode: 'map'\` to find the prose, then collect the \`anchor\`s and spend ONE
+\`get_sections\` on all of them. \`find_references({ target: 'entity', type: 'ui-view', slug })\` for
+the pages citing the view — it takes no tags, and entities by tag are \`list_entities\`'s job.
+\`resolve_identity\` when you do not yet know which type a name lives in.
+
+Sweeping many pages or many types is worth handing to the \`spec-explore\` subagent, one per
+question, in parallel — but that is your call, not a rule. Its toolset does NOT carry
+\`get_field_content\`, so a sibling's \`mockupHtml\` is yours to read whatever you delegate; a LOCATE
+task comes back with slugs, and you fetch the content. What is mandatory is going through the three
+questions; whose hands do the reading is not.
+`;
+
+/**
+ * `principles.md` — the four rules, kept out of the body for the same reason,
+ * but on a different schedule: they are read before drawing AND before saving.
+ */
+const PRINCIPLES_MD = `# Binding rules
+
+Four rules, binding for every mockup this skill produces — and binding on YOU. A subagent you
+delegate to cannot read this file: it has no access to this package. It may locate things for you;
+it never decides what goes on the screen.
+
+1. **Invent values, never features.** A concrete value for a field the specification HAS — a name,
+   an amount, a date — yes, and you should: a screen of empty labels is not a mockup. A field,
+   column, widget, badge, metric, filter or concept the specification does NOT have — no, however
+   natural it looks on a screen of this kind. An element with no named source does not reach the
+   screen. WHEN IN DOUBT, OMIT.
+
+2. **Production fidelity.** The screen must look like a shipped product rather than a sketch of
+   one: no lorem, no placeholders, no "sample" or "demo" captions, no annotations addressed to a
+   developer. Realistic means CONCRETE, not embellished — and the fidelity is owed to the product
+   AS THE SPECIFICATION DEFINES IT, never to the genre of application it happens to resemble.
+
+3. **Sample data is coherent.** One set of invented records serves the whole fragment: a counter
+   agrees with the number of rows beneath it, the same record is named identically in every state,
+   an \`empty\` state matches the filter the default state is showing, and the naming agrees with the
+   sibling mockups you read. Incoherent data reads as a bug in the product, not as a rough edge in
+   the mockup.
+
+4. **States are opt-in and spec-driven.** \`states[]\` is the view's declaration, not a wish list you
+   may extend — do not add a loading view merely because the screen fetches something. If you have
+   a PROPOSAL (one more state, a missing column, better copy), ASK THE USER AND STOP UNTIL THEY
+   ANSWER; it enters neither the fragment nor \`states[]\` before it is confirmed. The channel is
+   open in every context: \`AskUserQuestion\` is an ungated built-in, so plan mode in \`ask\` does not
+   take it away.
+
+**A proposal and a discrepancy leave by different doors.** A PROPOSAL is yours — something you
+would add — so it goes to the user as a question and waits. A DISCREPANCY is the specification's —
+a contradiction between two entities, a reference pointing at nothing, a state no field can carry —
+so you REPORT it in your answer. Neither one gets patched over quietly in the fragment.
+`;
+
+/**
  * `ui-view-mockup-generator` — the envelope's contribution to `contributes.skills[]`.
  *
  * The FIRST thing this file is evidence of: an envelope contributes more than
@@ -9,7 +121,7 @@ import type { PluginSkillContribution } from '@c4s/plugin-runtime';
  * `attachInternalSkills` table — that makes `resolveForContext` pick it up, in
  * every one of the four context types. It rides `inlineSkills` only; a
  * `<project_skill/>` block belongs to the writing-style slot and this is not
- * one. The model opens it itself, off `description`, via `Skill(<slug>)`.
+ * one. The model opens it itself, off `description`, via `load_skill_file(<slug>)`.
  *
  * Which is why `description` is load-bearing and not decoration: it is the ONLY
  * thing the model sees before deciding to open the body.
@@ -24,13 +136,31 @@ import type { PluginSkillContribution } from '@c4s/plugin-runtime';
  * the point — a skill teaching how to author a `ui-view` mockup has no subject
  * once `ui-view` is gone. It carries NO activation gate of its own; `config.entities`
  * gates the types, not this.
+ *
+ * WHY IT IS A PACKAGE AND NOT ONE BODY. The body is mechanics — the shape of the
+ * output. `research.md` and `principles.md` are the layer before it: what belongs
+ * on the screen, and how the agent knows. They are sub-files because their cost is
+ * only worth paying before a NEW mockup, and because `files` gives the model the
+ * byte cost up front: `load_skill_file(<slug>)` returns the manifest alongside the
+ * body, and `load_skill_file(<slug>, <path>)` fetches one sub-file. That tool is the
+ * ONLY channel — the prompt forbids the native `Skill()` tool and skill packages are
+ * not on disk to `Read`.
+ *
+ * And the split has a HARD constraint that must survive later tidying: THE RULES
+ * BIND THE PARENT; THE SUBAGENT ONLY LOCATES. `spec-explore` carries `Read`/`Grep`/
+ * `Glob` plus read-only MCP and NO skill tools, and these files live in the registry
+ * rather than on disk — so a subagent cannot be handed them, and delegating the
+ * JUDGEMENT of what belongs on the screen would delegate it to something that never
+ * read the rules. This is the same stance as the host's own `<delegation_policy/>`.
+ * Folding the sub-files back into the body would not fix it; it would only make the
+ * always-on context pay for a layer most turns do not need.
  */
 export const uiViewMockupGeneratorSkill: PluginSkillContribution = {
   slug: 'ui-view-mockup-generator',
   title: 'UI View Mockup Generator',
   description:
-    'Generate or update the HTML mockup of a `ui-view` entity from its design system tokens. Use when asked to draft, refresh or clear a screen mockup for a view.',
-  version: 1,
+    'Author the HTML mockup of a `ui-view` entity: research what belongs on the screen from the specification, then emit a fragment built from its design system tokens. Use when asked to draft, refresh or clear a screen mockup for a view.',
+  version: 2,
   language: 'en',
   scope: 'contextual',
   content: `# UI View Mockup Generator
@@ -68,11 +198,24 @@ everything below is a generic host entity tool.
 
 4. **Domain context**, so the mockup shows the right fields rather than a generic
    screen. Two different tools, and they answer two different questions:
-   \`list_entities({ type: 'endpoint', tags: [...], tagFilter: 'or' })\` — repeated per
-   type you care about (\`endpoint\`, \`dto\`, \`ac\`) — finds the entities that share
-   the view's tags. \`find_references({ target: 'entity', type: 'ui-view', slug })\`
+   \`list_entities({ type: '<type>', tags: [...], tagFilter: 'or' })\` — repeated per
+   type that can contribute — finds the entities that share the view's tags.
+   \`find_references({ target: 'entity', type: 'ui-view', slug })\`
    finds the spec pages that cite the view itself. \`find_references\` takes no tags and
    requires the \`target\` discriminator; calling it without one is an error.
+
+   **This package carries two more files, and you open them yourself** —
+   \`load_skill_file('ui-view-mockup-generator', '<file>')\`, the only channel there is.
+   \`research.md\` turns those channels into answers: three questions (what feeds this
+   screen, how it must look and what it must be consistent with, what happens on it),
+   which entity types can contribute at all in THIS project, and when a sweep is worth
+   delegating. Read it before drawing a NEW mockup; a small revision of an existing one
+   can skip it. \`principles.md\` carries four binding rules about what may reach the
+   screen — read it before drawing **and** again before saving.
+
+   **The rule that holds even if you open neither: invent VALUES, never FEATURES.** A
+   concrete value for a field the specification has, yes; a field, widget, badge or metric
+   it does not have, no. An element with no named source does not go on the screen.
 
 ## 2. Write a \`<body>\` fragment — not a document
 
@@ -164,6 +307,10 @@ had in mind.
 
 ## 3. Save
 
+Three things to confirm before you send anything. Every entry in \`states[]\` produces a
+difference you can actually SEE in the fragment. Every mode the design system declares
+still renders. Nothing on the screen lacks a named source in the specification.
+
 \`\`\`
 update_entities({ type: 'ui-view', updates: [{ slug: '<slug>', data: {
   states: [{ name: 'empty', label: 'Empty', description: 'No results after filtering.' }],
@@ -196,5 +343,15 @@ an error to work around:
 In either case: **describe** the mockup you would write — its structure, the tokens it
 would consume, the modes it would carry — and stop. Do not attempt the write, and do
 not hunt for another channel to smuggle it through; there is not one.
+
+They differ in one further way, and it decides how much you can say. A \`brief\` thread
+gets the \`diff-explore\` subagent, which sees NEITHER the entity graph NOR the pages at
+HEAD — the research in \`research.md\` cannot be carried out there at all, and your
+description rests on the brief's own content. In \`ask\` it is the reverse: \`spec-explore\`
+is present, the research proceeds exactly as described, and only the write is closed.
 `,
+  files: {
+    'research.md': RESEARCH_MD,
+    'principles.md': PRINCIPLES_MD,
+  },
 };

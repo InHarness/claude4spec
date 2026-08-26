@@ -32,7 +32,7 @@ describe('the envelope contributes the mockup-generator skill', () => {
 
   it('carries a description — the only thing the model reads before opening it', () => {
     // A contextual plugin skill is never forced: it rides `inlineSkills` and the
-    // model opens it itself via `Skill(<slug>)`. An empty or generic description
+    // model opens it itself via `load_skill_file(<slug>)`. An empty or generic description
     // makes it unreachable in practice while everything still "registers".
     expect(uiViewMockupGeneratorSkill.description.length).toBeGreaterThan(40);
     expect(uiViewMockupGeneratorSkill.description).toMatch(/mockup/i);
@@ -192,10 +192,199 @@ describe('the body handles the contexts that cannot write', () => {
 });
 
 describe('the skill practises what it prescribes', () => {
-  it('shows no hardcoded hex or px in any example it gives', () => {
+  // Every part of the PACKAGE, not just the body: a sub-file is served to the
+  // same agent by the same tool, so a literal in `principles.md` teaches the
+  // forbidden thing exactly as effectively as one in an example in `content`.
+  const wholePackage = Object.entries({
+    'SKILL.md': body,
+    ...(uiViewMockupGeneratorSkill.files ?? {}),
+  });
+
+  it('shows no hardcoded hex or px in any example it gives, in any file of the package', () => {
     // The examples are the part an agent is most likely to copy verbatim, so a
     // literal here would teach exactly the thing the rule above forbids.
-    expect(body).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
-    expect(body).not.toMatch(/\b\d+px\b/);
+    for (const [path, text] of wholePackage) {
+      expect(text, `${path} carries a hex literal`).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+      expect(text, `${path} carries a px literal`).not.toMatch(/\b\d+px\b/);
+    }
+  });
+
+  it('never shows the collective form of a composite token, nor a flat update shape', () => {
+    // Both are forms the body forbids in prose; a sub-file quietly demonstrating
+    // one would be the only example an agent actually copies.
+    for (const [path, text] of wholePackage) {
+      expect(text, path).not.toContain('var(--shadow-raised)');
+      expect(text, path).not.toMatch(/\{ slug: '<slug>', mockupHtml:/);
+    }
+  });
+});
+
+describe('the skill ships as a package, not as one body', () => {
+  const files = uiViewMockupGeneratorSkill.files ?? {};
+
+  it('carries exactly the two sub-files, each non-empty', () => {
+    // `files` is what `load_skill_file(slug)` advertises as a manifest and what
+    // `load_skill_file(slug, file)` serves. A typo'd key registers silently: the
+    // manifest lists a path the body never names, and the body names one that
+    // 404s — neither is a type error, and neither shows up in `content`.
+    expect(Object.keys(files).sort()).toEqual(['principles.md', 'research.md']);
+    for (const [path, text] of Object.entries(files)) {
+      expect(text.trim().length, `${path} is empty`).toBeGreaterThan(0);
+    }
+  });
+
+  it('routes to both sub-files from the body, by the exact keys `files` registers', () => {
+    // The model reaches a sub-file by asking for it BY PATH. A router naming
+    // `research` or `RESEARCH.md` sends it at a key the registry does not hold.
+    for (const path of Object.keys(files)) {
+      expect(body).toContain(path);
+    }
+    expect(body).toMatch(/before drawing a NEW mockup/i);
+    // `load_skill_file` is the ONLY channel: the prompt forbids the native
+    // `Skill()` tool by name and a skill package is not on disk to `Read`.
+    expect(body).toContain("load_skill_file('ui-view-mockup-generator', '<file>')");
+    expect(body).not.toMatch(/\bSkill\(/);
+    expect(body).toMatch(/before drawing \*\*and\*\* again before saving/i);
+  });
+
+  it('keeps a one-line version of the binding rule in the body, for the turn that opens neither', () => {
+    // Sub-files are opt-in: nothing forces the model to fetch them. A router
+    // that were a bare pointer would leave a skipped fetch with NO rule at all
+    // about what may reach the screen — the exact gap this change closes.
+    expect(body).toMatch(/invent VALUES, never FEATURES/i);
+    expect(body).toMatch(/no named source does not go on the screen/i);
+  });
+});
+
+describe('the body still pins the discovery contract the router replaced', () => {
+  // Step 1.4 became a router, but the two-tools distinction is a fact about the
+  // tools, not about the old step, and it stayed WRONG for a whole release once
+  // already (`find_references` called by tags). Moving it into `research.md`
+  // would drop it out of every turn that does not fetch the sub-file.
+  it('keeps the list_entities-by-tag / find_references-by-target split in the always-on body', () => {
+    expect(body).toMatch(/list_entities\(\{[^)]*tags:/);
+    expect(body).toContain("find_references({ target: 'entity', type: 'ui-view', slug })");
+    expect(body).toMatch(/takes no tags and\s*\n?\s*requires the `target` discriminator/);
+  });
+
+  it('names no entity type as guaranteed beyond the two the envelope ships', () => {
+    // The skill rides an envelope into ANY project: `endpoint`/`dto`/`ac` exist
+    // in some and in none in others. The old step 1.4 named them as the types to
+    // query, which reads as an instruction to call `list_entities` on a type
+    // this project never registered.
+    expect(body).not.toMatch(/\(`endpoint`, `dto`, `ac`\)/);
+    expect(body).toContain("list_entities({ type: '<type>', tags: [...], tagFilter: 'or' })");
+  });
+});
+
+describe('research.md carries the three questions and the variable type roster', () => {
+  const research = uiViewMockupGeneratorSkill.files?.['research.md'] ?? '';
+
+  it('sends the agent to the <entities> prompt block rather than to discovery', () => {
+    // `chat-context.ts` already puts one row per active type in the system
+    // prompt. A skill that told the agent to DISCOVER the roster would spend
+    // calls re-deriving what it was handed on turn one — and would still miss
+    // the types whose narrative says what they are for.
+    expect(research).toContain('<entities>');
+    expect(research).toMatch(/describe_entity_type[\s\S]{0,400}Never\s*\n?\s*wholesale/i);
+  });
+
+  it('does not sell the <entities> block as the complete roster', () => {
+    // `buildEntityRows` SKIPS any module with an empty `roleNoun` (the legacy
+    // ui-view opt-out), so a type can be active and absent from the block. A
+    // skill calling the block the roster AND saying it needs no discovery would
+    // leave the agent no way to notice the type it never considered.
+    expect(research).toMatch(/one row per entity type that declares\s*\n?\s*a role noun/i);
+    expect(research).toMatch(/may opt out[\s\S]{0,160}authoritative list of what is active/i);
+  });
+
+  it('points default filters at list_entities, which is where they are actually named', () => {
+    // `describe_entity_type` returns createSchema/updateSchema/constraints/
+    // contentFields/selectableFields/searchableFields and NOTHING about a type's
+    // `defaultPredicate` — that lives in the type's systemPrompt and surfaces in
+    // `list_entities`' own description. Sending the agent to the wrong tool costs
+    // a call and still leaves it listing only active rows without knowing why.
+    expect(research).toMatch(/DEFAULT filter[\s\S]{0,120}`list_entities`/);
+    expect(research).not.toMatch(/describe_entity_type[^)]{0,80}default filters/i);
+  });
+
+  it('states which two types are guaranteed, and treats every other name as an example', () => {
+    expect(research).toMatch(/Exactly two types are guaranteed[\s\S]{0,120}`design-system`/);
+    expect(research).toMatch(/never types you may assume are there/i);
+  });
+
+  it('asks all three questions and names a channel for each', () => {
+    expect(research).toMatch(/## DATA/);
+    expect(research).toMatch(/## LOOK/);
+    expect(research).toMatch(/## BEHAVIOUR/);
+    // Siblings are the only record of the user journey — there is no entity for it.
+    expect(research).toContain("list_entities({ type: 'ui-view', filters: { designSystemSlug: '<slug>' } })");
+    expect(research).toMatch(/neighbouring views are its only record/i);
+    // A criteria-to-entity bond is entity DATA, so the document-edge tool misses it.
+    expect(research).toMatch(/find_references\`?\s*\n?\s*will not return it/i);
+  });
+
+  it('keeps delegation soft, and the three questions mandatory', () => {
+    // `spec-explore` cannot read this file, so handing it the JUDGEMENT would
+    // hand it to something that never saw the rules. Locating is all it does.
+    expect(research).toMatch(/that is your call, not a rule/i);
+    expect(research).toMatch(/mandatory is going through the\s+three\s+questions/i);
+  });
+
+  it('keeps get_field_content out of what may be delegated', () => {
+    // `spec-explore`'s allow-list carries get_entities/list_entities/
+    // search_entities/describe_entity_type and no get_field_content, so a
+    // delegated LOOK sweep returns sibling slugs and no mockups at all. The
+    // skill has to say so, or the parent waits for content that cannot arrive.
+    expect(research).toMatch(/toolset does NOT carry\s*\n?\s*`get_field_content`/);
+  });
+});
+
+describe('principles.md carries the four binding rules', () => {
+  const principles = uiViewMockupGeneratorSkill.files?.['principles.md'] ?? '';
+
+  it('binds the parent explicitly, because the subagent cannot read it', () => {
+    // The whole reason the rules live in the parent's hands: `spec-explore` has
+    // Read/Grep/Glob + read-only MCP and NO skill tools, and this file is in the
+    // registry, not on disk. Delegating "decide what belongs" is unimplementable.
+    expect(principles).toMatch(/cannot read this file/i);
+    expect(principles).toMatch(/it never decides what goes on the screen/i);
+  });
+
+  it('states all four rules, values-not-features first', () => {
+    expect(principles).toMatch(/Invent values, never features/i);
+    expect(principles).toMatch(/WHEN IN DOUBT, OMIT/);
+    expect(principles).toMatch(/Production fidelity/i);
+    expect(principles).toMatch(/concrete, not embellished/i);
+    expect(principles).toMatch(/Sample data is coherent/i);
+    expect(principles).toMatch(/States are opt-in and spec-driven/i);
+  });
+
+  it('separates a proposal (ask and wait) from a discrepancy (report)', () => {
+    // Both are "something is off", and collapsing them makes the agent either
+    // block on a spec bug it should just report, or silently patch a gap the
+    // spec-author needs to see.
+    expect(principles).toMatch(/ASK THE USER AND STOP UNTIL THEY\s*\n?\s*ANSWER/);
+    expect(principles).toMatch(/REPORT it in your answer/);
+    expect(principles).toMatch(/AskUserQuestion` is an ungated built-in/);
+  });
+});
+
+describe('the body carries what belongs to saving, not to research', () => {
+  it('checks the three things before update_entities', () => {
+    // Post-hoc: the fragment is written by now, so this is a review pass, not a
+    // research one — which is why it stays in the body rather than in a sub-file.
+    expect(body).toMatch(/difference you can actually SEE in the fragment/);
+    expect(body).toMatch(/Every mode the design system declares\s*\n?\s*still renders/);
+    expect(body).toMatch(/Nothing on the screen lacks a named source/);
+  });
+
+  it('says a brief thread cannot do the research at all, and why', () => {
+    // `brief` gets `diff-explore`, which has release-tools and no entity graph:
+    // an agent told to "describe the mockup" there would otherwise go hunting
+    // for entities that its toolset cannot reach.
+    expect(body).toMatch(/`diff-explore` subagent, which sees NEITHER the entity graph NOR/);
+    expect(body).toMatch(/`research.md` cannot be carried out there/);
+    expect(body).toMatch(/In `ask` it is the reverse/);
   });
 });
