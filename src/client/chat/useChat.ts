@@ -40,6 +40,7 @@ type WireEventExtended =
   // workflow). agent-adapters 0.9.1 emits these instead of mislabelling the work
   // as `subagent_*`. agent-chat's reducer doesn't know them (unknown → identity),
   // so this panel is driven entirely from onEvent + custom state, transagent-style.
+  | { type: 'connected'; requestId: string; threadId?: string; replayTruncated?: true }
   | { type: 'background_task_started'; taskId: string; taskType: string; description: string }
   | {
       type: 'background_task_progress';
@@ -215,6 +216,20 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
   const onEvent = useCallback(
     (event: WireEvent) => {
       const ext = event as WireEventExtended;
+      /**
+       * 0.2.50 — the joined turn's replay buffer blew its 4MB budget and
+       * degradation was not enough, so what follows is an INCOMPLETE picture of
+       * the turn so far.
+       *
+       * Read off the raw wire event because the library's `onConnected` callback
+       * is typed `(requestId, threadId)` and drops everything else. Told once,
+       * as a toast, rather than rendered inline: the gap is in the transcript we
+       * are about to draw, so there is no single place in it to point at — and
+       * the full content does come back from `chat_message` once the turn ends.
+       */
+      if (ext.type === 'connected' && (ext as { replayTruncated?: boolean }).replayTruncated) {
+        toast.warning('Replay incomplete — full content will load once the turn finishes.');
+      }
       if (ext.type === 'transagent_started') {
         const { toolUseId, childThreadId, contextType } = ext;
         setTransagents((prev) =>
