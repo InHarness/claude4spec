@@ -79,7 +79,7 @@ describe.skipIf(!BASE)('generic entity embed — a hidden type renders and opens
     await fetch(`${BASE}/api/projects/${project.id}/acs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ slug: AC_SLUG, text: AC_TEXT }),
+      body: JSON.stringify({ slug: AC_SLUG, title: AC_TEXT }),
     });
 
     // Both generic forms on one page: the block card and the inline chip. The

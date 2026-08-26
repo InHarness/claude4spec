@@ -69,7 +69,7 @@ describe.skipIf(!BASE)('0.2.22 — title on screen, select on the wire', () => {
     });
 
     for (const [key, path, payload] of [
-      ['ac', '/acs', { text: `The title reaches the screen ${stamp}` }],
+      ['ac', '/acs', { title: `The title reaches the screen ${stamp}` }],
       ['dto', '/dtos', { title: `TitleDto${stamp}`, fields: [{ name: 'id', type: 'string', required: true }] }],
       ['ui-view', '/ui-views', { title: `Title View ${stamp}` }],
       ['diagram', '/diagrams', { title: `Title Diagram ${stamp}`, source: DIAGRAM_SOURCE }],
