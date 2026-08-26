@@ -65,9 +65,19 @@ export function checkResumeConfigLock(input: ResumeLockInput): ResumeConfigLockE
    * turn-1 snapshot recorded instead: the flag is fixed for a thread's lifetime,
    * plan mode stays a per-turn switch.
    *
-   * A snapshot written before this field existed has no value for it; nothing is
-   * locked in that case, which is the same "absent ⇒ not comparable" rule the
+   * A snapshot written before this field existed has no value for it, and
+   * nothing is locked in that case — the same "absent ⇒ not comparable" rule the
    * library applies to every other constraint.
+   *
+   * That rule is NOT free here, and the cost is worth naming because it looks
+   * like an oversight: absence is arguably a known value (every pre-0.2.53
+   * thread ran WITH the built-ins), so treating it as `false` would be defensible
+   * and would 409 exactly the threads this release changes under. It is rejected
+   * on the trade-off, not on the logic — reading absence as `false` makes EVERY
+   * conversation that predates the upgrade unresumable in one step, whereas the
+   * shrink it avoids is fail-closed (tools vanish, none appear) and is announced
+   * to the model on every resumed turn by `<agent_filesystem_access>`. A
+   * capability the model is told it lost beats a fleet-wide 409.
    */
   const snapshotFlag = snapshot.disableDirectFilesystemAccess;
   const currentFlag = readConfig(input.cwd).agent.disableDirectFilesystemAccess;

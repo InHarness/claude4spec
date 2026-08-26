@@ -154,6 +154,21 @@ describe('GET/PATCH /config — agent.pathScopeStrength (0.1.103)', () => {
     expect(res.body.error.code).toBe('VALIDATION');
   });
 
+  /**
+   * 0.2.53 — `strength` must not fall through to 'hard' on an empty report set.
+   * `[].every(...)` is `true` and `[].some(...)` is `false`, so the reducer's
+   * natural shape claims the strongest possible gate for a project with NO gate.
+   */
+  it("reports toolGating strength 'none' when the flag is off and nothing is gated", async () => {
+    await request(app())
+      .patch('/config')
+      .send({ agent: { disableDirectFilesystemAccess: false } });
+    const res = await request(app()).get('/config');
+    expect(res.status).toBe(200);
+    expect(res.body.agent.toolGating.strength).toBe('none');
+    expect(res.body.agent.toolGating.escapeSurfaces).toEqual([]);
+  });
+
   it('preserves disableDirectFilesystemAccess across the onboarding-shaped agent PATCH', async () => {
     await request(app())
       .patch('/config')
@@ -522,3 +537,4 @@ describe('PATCH /config — D4 write-target overlap (0.2.9)', () => {
     expect(res.body.error.message).toMatch(/overlaps write-target/);
   });
 });
+

@@ -106,11 +106,17 @@ function configResponse(c: NormalizedConfig, cwd: string, skillRegistry: SkillRe
     : [];
   const agentToolGating = {
     enforceable: gatingReports.every((r) => r.enforceable),
-    strength: (gatingReports.some((r) => !r.enforceable || r.strength === 'none')
+    // No reports means the flag is OFF and nothing is gated at all — which is
+    // `none`, not the `hard` the `every`/`some` chain would otherwise fall
+    // through to on an empty array. A consumer reading `strength` must never see
+    // a hardness claim for a project with no gating.
+    strength: (gatingReports.length === 0
       ? 'none'
-      : gatingReports.some((r) => r.strength === 'soft')
-        ? 'soft'
-        : 'hard') as ToolGatingStrength,
+      : gatingReports.some((r) => !r.enforceable || r.strength === 'none')
+        ? 'none'
+        : gatingReports.some((r) => r.strength === 'soft')
+          ? 'soft'
+          : 'hard') as ToolGatingStrength,
     escapeSurfaces: [...new Set(gatingReports.flatMap((r) => r.escapeSurfaces))],
   };
 

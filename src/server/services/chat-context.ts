@@ -828,7 +828,7 @@ const specExplorePrompt = (builtinsEnabled: boolean): string => `You are a read-
 
 Your job: explore on the parent's behalf and report CONCISE findings — file paths, section anchors, and entity slugs — never the full bulk you read. You exist to keep the parent's context small.
 
-Tools: read-only spec operations on \`reference-tools\` — \`list_pages\` (which pages exist), \`search_pages\` (phrase or regex over the prose; modes are a cost ladder count -> map -> hits, and the DEFAULT is \`map\` — identity rows with no prose, so pass \`mode: \"hits\"\` explicitly when you need the text. A hit is a SECTION carrying \`matchCount\`; feed its \`anchor\` to \`get_sections\`. Narrow the scan with \`pathInclude\`/\`pathExclude\` before it opens files, or \`anchors\` to name sections outright), \`list_sections\` + \`get_sections\` (the body of EVERY anchor you need, in one call), \`get_page\` (a page as authored) — plus the read-only entity graph (get_*/list_*, find_references, check_consistency).\${builtinsEnabled ? ' Read/Grep/Glob are also available for the rest of the repository.' : ' There are no built-in file tools here — every intent they would serve is covered above: list_pages for Glob, search_pages for Grep, get_page / get_sections for Read.'}
+Tools: read-only spec operations on \`reference-tools\` — \`list_pages\` (which pages exist), \`search_pages\` (phrase or regex over the prose; modes are a cost ladder count -> map -> hits, and the DEFAULT is \`map\` — identity rows with no prose, so pass \`mode: \"hits\"\` explicitly when you need the text. A hit is a SECTION carrying \`matchCount\`; feed its \`anchor\` to \`get_sections\`. Narrow the scan with \`pathInclude\`/\`pathExclude\` before it opens files, or \`anchors\` to name sections outright), \`list_sections\` + \`get_sections\` (the body of EVERY anchor you need, in one call), \`get_page\` (a page as authored) — plus the read-only entity graph (get_*/list_*, find_references, check_consistency).${builtinsEnabled ? ' Read/Grep/Glob are also available for the rest of the repository.' : ' There are no built-in file tools here — every intent they would serve is covered above: list_pages for Glob, search_pages for Grep, get_page / get_sections for Read.'}
 
 Truncation protocol for \`get_sections\` (you are the one who calls it in bulk, so you are the one who hits the budget):
 - An item that came back with \`truncated: true\` carries \`edges\` — the outgoing references of the WHOLE section, including the part you did not receive: \`sectionRefs\` (anchors), \`entityEmbeds\` (type + slug), \`pageLinks\` (rootId + path).
@@ -841,7 +841,7 @@ Hard rules:
 - NEVER mutate anything (no create/update/delete; you have no such tools).
 - Report pointers (paths / anchors / slugs), not dumps. The parent decides; you locate.`;
 
-const DIFF_EXPLORE_PROMPT = `You are a read-only explorer of ONE SLICE of a HISTORICAL release diff, working for a parent that is authoring a release brief.
+const diffExplorePrompt = (builtinsEnabled: boolean): string => `You are a read-only explorer of ONE SLICE of a HISTORICAL release diff, working for a parent that is authoring a release brief.
 
 The parent hands you a slice — a \`from\`/\`to\` pair, an optional \`roots\` page-root scope, plus \`entityTypes\` and/or a \`limit\`/\`offset\` window. Your job: call \`release_diff\` for exactly that slice, absorb its heavy \`before\`/\`after\`/\`content\`, and return a CONCISE DISTILLATE: the concrete facts the parent must inline (each changed entity/section by name, its key signatures / field shapes / SQL / view URLs / file paths, and a one-line framing of the change — including deletions). The bulk stays with you; only the distillate goes back, keeping the parent's context small.
 
@@ -851,7 +851,7 @@ How to read your slice — three levels, in order:
 
 - \`roots\` scope: if the parent gave you \`roots\`, pass it through verbatim on EVERY \`release_diff\` call — it narrows the PAGES dimension to the brief's scope. Dropping it silently widens the diff to all releasable roots and leaks out-of-scope pages into the brief.
 
-Tools: \`release-tools\` MCP (\`release_diff\`; \`release_show\` / \`release_list\` available but rarely needed). Nothing else — no filesystem, and that is now structural rather than a promise: without \`Read\` you cannot reach \`pages/*.md\` at all, so the guarantee that you see ONLY the historical diff is enforced by your toolset instead of by this paragraph.
+Tools: \`release-tools\` MCP (\`release_diff\`; \`release_show\` / \`release_list\` available but rarely needed).${builtinsEnabled ? ' `Read` is also available, and is the LAST RESORT for a slice that will not fit any window: ask the parent for an on-disk dump and read that file. It is not a licence to read `pages/*.md` — see the hard rules.' : ' Nothing else — no filesystem, and that is structural rather than a promise: without `Read` you cannot reach `pages/*.md` at all, so the guarantee that you see ONLY the historical diff is enforced by your toolset instead of by this paragraph. It also means the on-disk-dump escape hatch is gone: `summaryOnly: true` is your floor.'}
 
 Hard rules:
 - Read ONLY \`release_diff\` output / release artifacts. NEVER read \`pages/*.md\` (current spec state) and NEVER touch the entity graph (get_*/find_references) — those return HEAD and would break the brief's historical self-containment.
@@ -917,12 +917,12 @@ function buildSpecExploreSubagent(pluginHost: ProjectPluginHost, builtinsEnabled
 
 /** `diff-explore`: read-only exploration of a historical `release_diff`. Deliberately WITHOUT the
  *  entity graph (it returns HEAD) — only release-scoped `release-tools` + Read for the on-disk dump. */
-function buildDiffExploreSubagent(): SubagentDefinition {
+function buildDiffExploreSubagent(builtinsEnabled: boolean): SubagentDefinition {
   return {
     name: 'diff-explore',
     description:
       'Read-only explorer of ONE SLICE of a historical release diff for a brief. Spawn it in parallel (one per disjoint slice) and hand it a `from`/`to` + optional `roots` scope + `entityTypes` and/or `limit`/`offset` window; it calls heavy `release_diff` for that slice, absorbs the bulk, and returns a concise distillate (facts to inline) — keeping the whole diff out of your own context. When the brief is root-scoped, pass the same `roots` to every diff-explore slice so the pages filter is not lost on fan-out.',
-    prompt: DIFF_EXPLORE_PROMPT,
+    prompt: diffExplorePrompt(builtinsEnabled),
     tools: [
       'Read',
       'Grep',
@@ -945,9 +945,28 @@ export function subagentsFor(
   pluginHost: ProjectPluginHost,
   builtinsEnabled = false,
 ): SubagentDefinition[] {
+  /**
+   * 0.2.53 — no subagent AT ALL while the built-ins are denied, and the reason is
+   * the library, not this posture.
+   *
+   * The claude-code adapter runs every `SubagentDefinition` through
+   * `subagentToolPolicy`, which intersects `agent.tools` with
+   * `buildClaudeCodeToolPolicy(...).allow` — a list of BUILT-IN names only. No
+   * `mcp__*` name is ever in it, so with `file-read`/`file-write`/`shell` denied
+   * both explorers come out with `tools: []`, and in the SDK an empty array is
+   * "no tools", not "inherit". A spawned explorer would then have no way to
+   * reach the spec and would answer from nothing.
+   *
+   * Injecting nothing is strictly better than injecting that: the PARENT keeps
+   * every core operation (top-level MCP servers are untouched by the deny), so
+   * the only thing lost is the context economy of delegating. This is the same
+   * defect the release's AC #8 depends on; when the library passes `mcp__*`
+   * through, delete this branch and the explorers come back on their own.
+   */
+  if (!builtinsEnabled) return [];
   const { subagent } = CONTEXT_TYPE_REGISTRY[contextType];
   return subagent === 'diff-explore'
-    ? [buildDiffExploreSubagent()]
+    ? [buildDiffExploreSubagent(builtinsEnabled)]
     : [buildSpecExploreSubagent(pluginHost, builtinsEnabled)];
 }
 
@@ -1262,7 +1281,8 @@ function buildAgentFilesystemAccess(access: { enabled: boolean }): string {
       `  - a brief with source: analysis — reading somebody else's repository needs the file built-ins;`,
       `  - the c4s CLI — it is a shell program; only its \`ask\` survives, and only where this turn mounted the server that exposes it — check <tooling>;`,
       `  - scaffolding a new writing style — it writes a skill package under .claude/skills/, which no C4S operation owns.`,
-      `The user can turn all four back on by unchecking "Block direct file access" in Settings → Agent. Say that plainly; do not try to work around it.`,
+      `The user can turn all four back on by unchecking \"Block direct file access\" in Settings → Agent. Say that plainly; do not try to work around it.`,
+      `One more consequence, and it is about you rather than the user: the read-only explorer subagents (spec-explore, diff-explore) are NOT mounted in this posture — the runtime cannot hand an MCP tool to a subagent while the built-ins are denied, so a spawned one would have no tools at all. Explore the spec yourself with the core read operations, and budget your context accordingly; there is nobody to delegate the bulk to.`,
       `</agent_filesystem_access>`,
     ].join('\n');
   }

@@ -87,6 +87,7 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
     const chatService = new ChatService(db);
 
     const briefService = new BriefService({
+      cwd,
       briefsPages,
       briefsWatcher,
       briefsSerializer,
