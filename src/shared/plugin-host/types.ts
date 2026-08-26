@@ -141,6 +141,17 @@ export interface SystemPromptContribution {
    * live on the generic `entity-tools` server (composed by the host, not
    * per-type); a type contributes no line here unless it also registers a
    * custom `${type}-tools` server for non-CRUD tools.
+   *
+   * 0.2.50 — this slot NO LONGER feeds the prompt's `<tooling>` block. That
+   * block is now derived from the servers actually mounted for the turn (their
+   * `McpServerFactory.tools`, after the context profile's gate), so a
+   * hand-written line here can no longer make the prompt advertise a tool that
+   * is absent, or stay silent about one that is present. The field remains
+   * because the rest of the host reads it as a DECLARATION of the type's custom
+   * operations — `serialization-engine`, `composition-validation`,
+   * `data-schema-validation` (as an "is this operation known" check), the
+   * discovery meta surface, and the `spec-explore` subagent's tool allow-list.
+   * Keep it accurate; it is a manifest fact, no longer prompt copy.
    */
   mcpToolsLine?: string;
 
@@ -151,6 +162,24 @@ export interface SystemPromptContribution {
    * migrations, internal validation mechanics).
    */
   narrativeBlock?: string;
+
+  /**
+   * 0.2.50 — full XML blocks this type contributes to the prompt's writing-
+   * conventions layer, emitted in `listEntities()` order and ONLY while the type
+   * is active.
+   *
+   * `narrativeBlock` answers "what is this entity" in two or three sentences,
+   * inside the shared `<entities>` block. This slot is for the other thing a
+   * type sometimes owns: a whole convention the agent must follow when writing
+   * about it — the referencing grammar of `diagram`, say — which used to be
+   * hardcoded in the core prompt builder and emitted even when the type was not
+   * mounted. A block belongs to the type that owns the convention, and travels
+   * with it.
+   *
+   * `name` is the XML tag name (used for ordering assertions and diagnostics);
+   * `body` is the complete block including its opening and closing tags.
+   */
+  promptBlocks?: readonly { name: string; body: string }[];
 }
 
 /**

@@ -165,7 +165,7 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
       '`changeSummary` is ONE per call, however many edits the call carries — and so is the `file_version` entry.',
       'Returns { path, version, hash, results } — the hash arms your next call. Each `results` row is { anchor, action, affectedAnchors, droppedAnchors, replacements? }, in the order you GAVE the edits, not the order they were applied; `replacements` appears only where a literal match ran. Whole-plan variants answer with one row whose `anchor` and `action` are null. The plan content does not come back; you already have it.',
       'IDEMPOTENCE: `content` and a batch `replace` repeat harmlessly (same text, new version number). `delete` repeated answers SECTION_NOT_FOUND, `edit`/`textEdits` answer FIND_NOT_FOUND, and `append`/`insert_after` duplicate their content.',
-      'Available in plan_mode=true (preferred) and plan_mode=false.',
+      'WHEN TO CALL IT. In plan_mode=true: always — persist the plan here rather than writing it out as prose in your reply, which is the one place it cannot be reviewed, versioned or applied from. Outside plan_mode: when the user explicitly asks for a deployment plan or an architectural proposal. An ordinary answer is not a plan.',
       'This tool cannot change `applied` — use `mark_plan_applied`.',
     ].join('\n'),
     {

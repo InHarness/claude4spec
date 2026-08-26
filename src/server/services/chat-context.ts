@@ -11,6 +11,17 @@ import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import { PLAN_MODE_DENY_GROUPS, type SubagentDefinition } from '@inharness-ai/agent-adapters';
 import { buildClaudeCodeToolPolicy, claudeCodeKnownBuiltins } from '@inharness-ai/agent-adapters/claude-code';
 import { PROFILES, mcpServerSetForProfile, type McpServerSet } from '../operations/profiles.js';
+import { CATALOG } from '../operations/catalog.js';
+import { registerCoreOperations } from '../operations/core-operations.js';
+
+/**
+ * Seed the process-wide catalog, for the same reason `profile-gate` does it at
+ * its own module init: on an unseeded catalog this module's answers are WRONG
+ * rather than absent. `<claude4spec_plan_mode>` classifies each mounted tool by
+ * its `opClass`, and with no rows to read every tool looks alike. Idempotent, so
+ * importing it from both places is safe.
+ */
+registerCoreOperations();
 import { INTERACTION_RULES } from './interaction-rules.js';
 
 /* ─────────────────────────── M05 m05ctxreg: context-type registry ───────────────────────────
@@ -118,16 +129,53 @@ export const CONTEXT_TYPE_REGISTRY: Record<ChatContextType, ContextTypeEntry> = 
 };
 
 /**
- * 0.1.58: a workspace peer the agent may consult via `c4s-tools.ask`. `path` is
- * the peer's `cwd` from the workspace registry — passed 1:1 as the `project`
- * param to `ask`. `name`/`description` are read from the peer's `config.json`
- * (source of truth, no denormalization); both are optional so a peer with an
- * unreadable config still renders as `<peer path="…"/>`.
+ * 0.1.58: a workspace peer the agent may consult via `c4s-tools.ask`.
+ *
+ * 0.2.50 — THREE fields, two of which are names, and the difference between them
+ * is the whole reason this comment is long.
+ *
+ * `name` is what the peer calls itself in its own `config.json`: "C4S - App
+ * Spec". It is a label for a human and is NOT an address — `ask({ project })`
+ * resolves a non-path value through `findProjectByName`, which compares against
+ * the WORKSPACE REGISTRY's name, and the two are routinely different strings.
+ * `registryName` is that registry name (`app-spec`), and it is the one the agent
+ * must pass.
+ *
+ * This was found by running the call, not by reading the code: the obvious
+ * simplification of this block — "drop the path, the name is an address" —
+ * type-checks, reads correctly, and answers PROJECT_SLUG_NOT_FOUND.
+ *
+ * `path` is the peer's `cwd` and remains the resolver's first attempt, which is
+ * why it survives as the fallback address when a peer's config is unreadable.
  */
 export interface PeerProject {
+  /** Display name from the peer's own `config.json`. A label, never an address. */
   name?: string;
+  /** `ProjectRecord.name` from the workspace registry — the address `ask({ project })` resolves. */
+  registryName?: string;
   path: string;
   description?: string;
+}
+
+/**
+ * 0.2.50: one mounted MCP server as the prompt sees it — the name it is mounted
+ * under, and the tools it declares, AFTER the context profile's gate.
+ *
+ * `tools` is optional for the same reason `McpServerFactory.tools` is: a server
+ * built against the pre-0.2.13 contract declares nothing, and the honest
+ * rendering of that is the server's bare name rather than a guess.
+ */
+export interface McpInventoryEntry {
+  name: string;
+  tools?: readonly string[];
+  /**
+   * Whether this server came from a PLUGIN rather than the host. The prompt does
+   * not render it; `planModeMutatingTools` classifies with it, because a catalog
+   * row is a statement about the surface it was declared on and `CATALOG` is
+   * keyed by bare tool name. See `toolAdmittedByProfile`, which draws the same
+   * distinction for the same reason.
+   */
+  plugin?: boolean;
 }
 
 export interface SystemPromptInput {
@@ -138,10 +186,6 @@ export interface SystemPromptInput {
   /** 0.1.96 multiroot: every configured page root (replaces the single `pagesDir`).
    *  Drives the `<project roots="…">` attr and the `<agent_path_scope>` allow-list. */
   roots: Root[];
-  /** 0.1.96: brief store dir — rendered as `briefs=<dir>` in the `<project roots>` attr. */
-  briefsDir: string;
-  /** 0.1.96: patch store dir — rendered as `patches=<dir>` in the `<project roots>` attr. */
-  patchesDir: string;
   currentPagePath: string | null;
   /** 0.1.96: which root the current page belongs to — the `root="…"` attr on `<current_page>`. */
   currentPageRootId?: string;
@@ -154,13 +198,25 @@ export interface SystemPromptInput {
   annotations?: Annotation[];
   planMode?: boolean;
   currentPlan?: Plan | null;
-  planToolsAvailable?: boolean;
-  /** M24 c4s-tools: cross-cutting MCP for synchronous cross-spec consultation.
-   *  Mounted for chat+patch threads; brief threads have a narrow toolset and
-   *  do not see this server. */
-  c4sToolsAvailable?: boolean;
+  /**
+   * 0.2.50: the MCP servers actually mounted for this turn, post-gate — the sole
+   * source of the `<tooling>` block, and the replacement for the
+   * `planToolsAvailable` / `c4sToolsAvailable` flag pair.
+   *
+   * Those flags existed so the prompt could be kept in step with the mount by
+   * hand. They kept two of the servers in step and left the rest to a list of
+   * literals that nothing checked, which is how `page-tools` came to be missing
+   * from a prompt that instructs the agent to call `update_sections`. There is
+   * no longer a second list to keep in step with: this one is derived from the
+   * mount itself, and whether a block like `<workspace_projects>` renders is a
+   * question about what is in here, not about a flag beside it.
+   *
+   * Absent (the hand-rolled test rigs) means "no MCP servers", and the block
+   * renders with its built-ins alone rather than crashing.
+   */
+  mcpInventory?: readonly McpInventoryEntry[];
   /** 0.1.58: workspace peers (current project excluded) for the
-   *  `<workspace_projects>` discovery block. Gated on `c4sToolsAvailable`. */
+   *  `<workspace_projects>` discovery block. Gated on `c4s-tools` being mounted. */
   workspaceProjects?: PeerProject[];
   /** 0.1.58: workspace name — the `workspace="…"` attr on `<workspace_projects>`. */
   workspaceName?: string;
@@ -175,7 +231,7 @@ export interface SystemPromptInput {
    * the plugin fan-out — rides `availableSkills` alone, and the model opens it via
    * `load_skill_file(<slug>)` if the description warrants it.
    */
-  writingStyleSkill?: { slug: string; title: string } | null;
+  writingStyleSkill?: { slug: string; title: string; description?: string } | null;
   /**
    * 0.2.36: the skill LISTING — `{ slug, description }` per attached skill, from
    * `SkillResolver.resolveForContext`. Rendered as `<available_skills>`, which is
@@ -243,17 +299,27 @@ function selfClose(name: string, attrsStr: string): string {
 
 /**
  * 0.1.96 multiroot: serialize the `roots="…"` attr on `<project>`. Format is a
- * `;`-separated list of `id=dir` pairs: the built-in `pages` root first, then the
- * two fixed write-target dirs (`briefs`/`patches` — NOT roots, but shown for the
- * agent's spatial map), then every user root in `roots[]` order. Example:
- * `pages=pages;briefs=.claude4spec/briefs;patches=.claude4spec/patches;adr=docs/adr`.
+ * `;`-separated list of `id=dir` pairs: the built-in `pages` root first, then
+ * every user root in `roots[]` order. Example: `pages=pages;adr=docs/adr`.
+ *
+ * The `id=dir` shape is the point of the attribute and the reason it survives
+ * unabbreviated: this is the ONLY place in the prompt that binds a root
+ * IDENTIFIER — the token every page tool takes as `rootId` — to a directory.
+ * `<agent_path_scope>` names the same directories and no identifiers, which
+ * makes it useless for constructing a call.
+ *
+ * 0.2.50 — `briefs=` and `patches=` are gone. They were listed "for the agent's
+ * spatial map" while being neither roots nor reachable: `rootId: "briefs"`
+ * answers ROOT_NOT_FOUND ("active roots: […]"), and `<agent_path_scope>` names
+ * both directories as ALWAYS DISALLOWED. An attribute called `roots` carrying
+ * two entries that are not roots, cannot be passed anywhere, and are forbidden
+ * to touch is worse than an attribute that omits them: it invites exactly one
+ * kind of call, and that call fails.
  */
-function buildRootsAttr(roots: Root[], briefsDir: string, patchesDir: string): string {
+function buildRootsAttr(roots: Root[]): string {
   const parts: string[] = [];
   const pagesRoot = roots.find((r) => r.id === 'pages');
   if (pagesRoot) parts.push(`pages=${pagesRoot.dir}`);
-  parts.push(`briefs=${briefsDir}`);
-  parts.push(`patches=${patchesDir}`);
   for (const r of roots) {
     if (r.id === 'pages') continue;
     parts.push(`${r.id}=${r.dir}`);
@@ -285,182 +351,229 @@ function buildEntityEmbedTypeUnion(pluginHost: ProjectPluginHost): string {
   return types.length > 0 ? types.join('|') : 'entity';
 }
 
-function buildIdentity(pluginHost: ProjectPluginHost, projectName: string): string {
-  const entityRows = buildEntityRows(pluginHost);
-  const embedTypeUnion = buildEntityEmbedTypeUnion(pluginHost);
+/* ─────────────────────────── LAYER A — the frame ───────────────────────────
+ *
+ * 0.2.50 — `<claude4spec_identity>` used to be a single 15 KB template literal
+ * holding thirteen sub-blocks: the identity paragraph, the entity catalogue, the
+ * embed grammar, the linking discipline, discovery, the change protocol, the
+ * delegation heuristic, tags, TODOs, diagram referencing, anchors, and handling
+ * instructions for two blocks that appeared seven hundred lines further down.
+ * The order recorded when each was written, and nothing else.
+ *
+ * They are separate builders now, assigned to layers (see `MAIN_PROMPT_BLOCKS`
+ * at the bottom of this file), so that a block sits next to what it talks about
+ * and the order is a value you can read rather than a history you have to
+ * reconstruct. `identity` keeps the four sentences that are actually identity.
+ */
+function buildIdentity(projectName: string): string {
   return `<claude4spec_identity>
-You are a specification writing assistant for project "${projectName}". The user is editing a specification that consists of markdown pages and structured entities. You operate via built-in file tools and MCP servers exposed in \`<tooling/>\`.
+You are a specification writing assistant for project "${projectName}". The user is editing a specification that consists of markdown pages and structured entities. The pages are markdown on disk; the entities are structured records reached only through MCP tools. What you can call is listed in the tooling block below, and what each tool does is in the tool's own description.
+</claude4spec_identity>`;
+}
 
-<entities>
-${entityRows}
-</entities>
+/* ─────────────────────────── LAYER B — this project ─────────────────────── */
 
-<entity_embeds>
-Pages can embed live entity views as self-closing XML tags. The Tiptap editor renders each tag as a rich UI widget that fetches fresh data from the spec — the embed stays in sync as the entity changes; you do not duplicate field/column lists into prose.
+function buildEntitiesBlock(pluginHost: ProjectPluginHost): string {
+  return `<entities>\n${buildEntityRows(pluginHost)}\n</entities>`;
+}
 
-Pick the tag that matches the rendering you need:
+/* ─────────────────────────── LAYER D — writing conventions ───────────────── */
+
+/**
+ * The embed grammar, and — since 0.2.50 — the linking discipline that used to
+ * stand beside it as `<entity_linking_rule severity="mandatory">`.
+ *
+ * The two were one rule written twice. The five-way decision tree ("pick the
+ * smallest tag that fits") appeared in full in both blocks, and a third time in
+ * `interaction-rules.ts`. What the linking rule added beyond the duplication was
+ * a "pre-edit self-check": sweep every draft with two regexes, verify each hit
+ * with a separate tool call, and — for a hit you decide to leave alone — "state
+ * the exemption to yourself". For a paragraph naming five HTTP paths that is
+ * five MCP round-trips before one write, using two tools that do not exist
+ * (`get_endpoint`, `get_dto`), plus an instruction with no observable form.
+ *
+ * The rule's own justification does survive, and is kept: prose-named entities
+ * really are invisible to `find_references`. But it is stated as what it is.
+ * `severity="mandatory"` claimed an enforcement that has no enforcer — none of
+ * `check_consistency`'s fourteen rules reads prose, so nothing anywhere reports
+ * a violation. A rule nobody can check is advice, and calling it mandatory only
+ * teaches the agent that severities are decoration.
+ */
+function buildEntityEmbeds(pluginHost: ProjectPluginHost): string {
+  const embedTypeUnion = buildEntityEmbedTypeUnion(pluginHost);
+  return `<entity_embeds severity="recommended">
+Pages can embed live entity views as self-closing XML tags. The Tiptap editor renders each tag as a rich UI widget that fetches fresh data from the spec — the embed stays in sync as the entity changes, so you never duplicate field or column lists into prose.
+
+When an entity that exists in the spec is named in prose, link it with a tag instead of typing the bare name. This is not a formatting preference: \`find_references\` reads tags, so a prose-named entity has no incoming references and goes stale silently as slugs and paths change. Nothing reports this — no consistency rule reads prose — which is exactly why it has to be a habit rather than something you expect to be told about.
+
+Pick the smallest tag that fits:
 
   <inline_mention type="${embedTypeUnion}" slug="..."/>
-    Inline chip inside a sentence (small pill with type icon + name). Use when referring to an entity in flowing prose. Also valid inside DTO/endpoint descriptions.
+    Inline chip inside a sentence. Use when naming an entity in flowing prose. Valid inside entity descriptions too, and it renders in your chat replies as well as in pages.
 
-  <single_element type="..." slug="..."/>
-    Block card with the entity's full detail view (fields/columns, validation, relations). Use when this page documents that specific entity.
+  <single_element type="..." slug="..." caption="..."/>
+    Block card with the entity's full detail view. Use when this page documents that specific entity. The optional \`caption\` is per-reference prose and works for EVERY entity type, so the same entity can be framed differently in two places.
 
   <element_list type="..." slugs="a,b,c"/>
     Static block list of hand-picked entities, fixed order. Use when the reader should see exactly these N items.
 
   <tagged_list type="..." tags="x,y" filter="and|or"/>
-    Dynamic block list filtered by tag — auto-updates as entities are tagged/untagged. Use to surface e.g. "all DTOs tagged auth" without maintaining the list manually.
+    Dynamic block list filtered by tag — auto-updates as entities are tagged and untagged. Use to surface e.g. "all DTOs tagged auth" without maintaining the list by hand.
 
   <tagged_list_mixed tags="x" filter="and|or"/>
-    Like tagged_list, but spans all entity types (endpoints + DTOs + tables) sharing the tag(s). Use to show a cross-cutting feature slice.
+    Like tagged_list, but spans every ACTIVE entity type sharing the tag(s). Use to show a cross-cutting feature slice.
 
-Slugs are kebab-case. Prefer MCP tools (create_*, link_*, tag_entity) over hand-editing inline JSON in markdown.
-</entity_embeds>
+Bare prose is right in three cases: the name itself is the SUBJECT of the sentence (naming conventions, escape syntax, the tag grammar); the thing named is not a registered entity (a plugin is disabled, or the value is illustrative); or it sits in a code fence showing literal source or SQL, where mid-fence embeds would be noise.
 
-<entity_linking_rule severity="mandatory">
-When an entity that exists in the spec is named in prose, you MUST link it via an XML tag — never type the bare name. The link is the connective tissue M19 reads; prose-named entities are invisible to \`find_references\` / \`check_consistency\` and rot silently as slugs / paths change.
-
-Banned in prose for entities that exist in the spec:
-  - Endpoint paths: \`\`\`GET /api/...\`\`\`, \`\`\`POST /api/...\`\`\`, etc. (any verb + path that resolves to an active endpoint slug).
-  - DTO class names: \`\`\`XyzRequest\`\`\`, \`\`\`XyzResponse\`\`\`, \`\`\`XyzDto\`\`\` (anything matching a DTO slug).
-  - Database table names referenced as live entities (e.g. \`\`\`chat_thread\`\`\` when discussing M05 storage — link the entity, not the identifier).
-  - AC slugs and any other active entity type registered with the plugin host.
-
-Decision tree (pick the smallest tag that fits):
-  1. Naming the entity inside a sentence → \`<inline_mention type slug/>\`.
-  2. The current page documents this entity → \`<single_element type slug/>\`.
-  3. Hand-picked fixed-order list of N entities → \`<element_list type slugs="a,b,c"/>\`.
-  4. "All entities of one type tagged X" (auto-updating) → \`<tagged_list type tags="x"/>\`.
-  5. Cross-type slice tagged X → \`<tagged_list_mixed tags="x"/>\`.
-
-Exceptions (bare prose IS allowed):
-  - The path / class name itself is the SUBJECT of the sentence — discussing naming conventions, escape syntax, regex examples, the XML tag grammar.
-  - Documenting a NON-active entity (slug not registered, plugin disabled, or value is purely illustrative — e.g. example HTTP paths inside an L4 conventions section).
-  - Code fences showing literal source/SQL fragments where mid-fence XML embeds would be visual noise.
-
-Pre-edit self-check (run BEFORE every \`Edit\` / \`Write\` on \`pages/\` or \`entities/\` content):
-  1. Sweep your draft with regex \`(GET|POST|PATCH|PUT|DELETE)\\s+/\\S+\` and \`\\b[A-Z][a-zA-Z]+(Request|Response|Dto)\\b\`.
-  2. For each hit: verify via \`get_endpoint\` / \`get_dto\` / \`list_*\`. If the slug resolves → rewrite as the appropriate XML tag. If not → leave as prose AND state the exemption to yourself ("not a registered entity — bare prose intentional").
-  3. Same sweep applies to your replies in chat — \`<inline_mention/>\` and \`<section_ref/>\` both render in react-markdown, so chip out the entity refs there too.
-
-Severity is mandatory because the cost of compliance is low (one tag), the cost of drift is high (M19 blindness compounding across hundreds of pages).
-</entity_linking_rule>
-
-<entity_discovery severity="recommended">
-Before answering a question, sketching a plan, or orienting yourself in a new area that touches a specific entity or tag, query the graph instead of reasoning from memory. The graph is the source of truth for "who uses X"; the model's pattern-matching is not. This is the general discipline; the stricter mutation variant is in \`<entity_change_protocol/>\`.
-
-Four use-cases that should trigger discovery:
-  1. **Question answering** — user asks "what uses X?" / "where does tag Y appear?" / "which AC verify auth endpoints?". Query graph first, then prose.
-  2. **Planning** — before proposing a change in a plan (especially edits to M19 / core entities), enumerate current consumers. Plans drafted without discovery are blind to impact.
-  3. **Orientation** — entering a new module / new tag for the first time: enumerate the entities in scope, which pages consume them, which dynamic lists surface them.
-  4. **Mutation impact** — handled by the stricter \`<entity_change_protocol/>\` below; mandatory pre-mutation rather than recommended.
-
-Four channels to use (cover all four when the question demands completeness; pick the relevant subset for narrower questions; a sweep spanning MORE THAN ONE channel can be delegated to the \`spec-explore\` subagent as a single task — see \`<delegation_policy/>\`):
-  1. \`find_references({ target: "entity", type, slug })\` — direct XML refs (inline_mention / single_element / element_list, plus AC.verifies via consistency rule 9, plus structured endpoint↔dto links). \`target\` is REQUIRED and there is no positional form; the other variants are \`{ target: "section", anchor }\` (who cites this section) and \`{ target: "page", rootId, path }\` (who links this page).
-  2. **Dynamic tag refs** — \`tagged_list\` / \`tagged_list_mixed\` consumers, joined via entity tags. Add \`includeTagMatches: true\` to the channel-1 call to fold them in (rows carry \`via: string[]\`); otherwise search pages for \`tags="[^"]*{tag}[^"]*"\` per tag attached to the entity.
-  3. **Structured links** — \`get_endpoint(slug).dtos\` / \`get_dto(slug).endpoints\` / \`check_consistency\` rule 9 for \`ac.verifies\`.
-  4. **Prose-drift sweep** — grep pages for the entity's HTTP path / DTO class name / table identifier to catch authors who skipped \`<entity_linking_rule/>\`.
-
-Ground your answer / plan section / orientation summary on the returned set, not on what you remember. If you skipped discovery — say so explicitly ("not querying graph — answering from thread context"). Silent skipping looks identical to forgetting.
-
-Traps (each has cost a real answer here):
-  - **Reflex, not deliberation.** \`find_references({ target: "entity", … })\` is the first move for any (type, slug) topic; fallback channels are for when it doesn't apply.
-  - **Verbalize non-entity fallbacks.** Target isn't a registered type (MCP tool name, domain term, file path) → say so explicitly, or it looks like rule-skipping.
-  - **Verify the slug before calling.** Kebab vs snake vs PascalCase is a frequent trap (\`chat_thread\` table → slug \`chat-thread\`). \`list_*\`/\`get_*\` first, or a false \`[]\` reads as "unused".
-  - **\`[]\` ≠ no consumers.** Direct refs empty just means channel 1 is empty — finish channels 2–4 before concluding "unused". (\`includeTagMatches: true\` collapses 1+2 into one call.)
-</entity_discovery>
-
-<entity_change_protocol severity="mandatory">
-Before any \`update_*\` / \`delete_*\` / slug rename / re-tag on an active entity, run the four-channel discovery from \`<entity_discovery/>\` AND present the impact list to the user BEFORE mutating. Strict-mode inherits the channel mechanics from the general discipline — the difference is obligatoriness and the user-facing report.
-
-Protocol:
-  1. Resolve the target slug — \`list_*\` / \`get_*\` first; never call \`find_references({ target: "entity", type, slug })\` on an unverified slug (see trap 3 in \`<entity_discovery/>\`).
-  2. Union the four channels into one set: direct refs + dynamic tag consumers + structured links + prose drift.
-  3. Present an impact report to the user: which pages link this entity, which dynamic lists surface it, which other entities link to it structurally, where the prose mentions it. List counts AND specific anchors / file paths.
-  4. For renames — propose propagation (M19 sync sweep) as part of the report. For deletes — show what will break (broken refs, AC.verifies pointing into the void). For re-tag — show which \`tagged_list\` / \`tagged_list_mixed\` consumers gain or lose this entity.
-  5. Only mutate after the user has the report. "Just renaming a slug" is exactly the case where silent mutation breaks the most pages.
-
-Stop-rule: do NOT mutate blind. The graph is the only source of truth about impact; your memory is not. Skipping the report for a "simple" change is the failure mode this rule exists to prevent.
-</entity_change_protocol>
-
-<delegation_policy severity="recommended">
-Advertises the built-in \`spec-explore\` subagent: a read-only explorer of the current spec (pages + entity graph + sections) that returns concise pointers (paths/anchors/slugs) and isolates bulk reading in its own context.
-Heuristic (soft): a sweep spanning more than one discovery channel (see \`<entity_discovery/>\`), orienting yourself in a new module/tag, or a prose-drift grep across many pages → delegate to spec-explore. A single targeted lookup (one get_*/find_references call) → do it yourself.
-Rule: "the parent synthesizes, the subagent locates" — a spec-explore subagent's findings are first-class evidence for \`<entity_discovery/>\` and \`<entity_change_protocol/>\`.
-</delegation_policy>
-
-<tags>
-Tags are cross-cutting buckets — not entities. A tag is a slug (kebab-case) + color, defined once globally and attached to any number of entities of any type. No FK, no owned data — purely a labeling layer that bundles entities into shared "feature slices" (e.g. "auth", "billing-v2") spanning endpoints + DTOs + tables.
-
-Workflow:
-  1. \`create_tag(slug, color)\` — define once globally.
-  2. \`tag_entity(type, slug, tagSlug)\` — attach per-entity, any active type.
-  3. Consume on a page via \`<tagged_list type="endpoint" tags="auth"/>\` (single-type) or \`<tagged_list_mixed tags="auth"/>\` (mixed) — embed auto-updates as entities are tagged/untagged.
-
-Use tags for **dynamic, cross-cutting groupings** (feature slices). Use FK columns / DTO field references for **structural relationships** between specific entities.
-</tags>
-
-<todo_markers>
-  <todo comment="..."/>
-Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, Grep pages/ for \`<todo comment=\`.
-</todo_markers>
-
-<diagram_references>
-  <single_element type="diagram" slug="..." caption="..."/>
-  <inline_mention type="diagram" slug="..."/>
-A \`diagram\` is embedded with the GENERIC reference tags, like every other entity type — there is no \`<diagram/>\` tag (removed in 0.2.15). The Mermaid DSL \`source\` is the entity's truth (stored in \`.claude4spec/entities/diagram/<slug>.json\`), NOT inline in the page. The page tag carries \`type\`, \`slug\` (which diagram) and an optional \`caption\` — caption is per-reference prose, so the same diagram can show different captions in different places. Tiptap fetches the source by slug and renders it live, with a fallback \`<pre>\` on parse error. Create and edit diagrams through the generic \`entity-tools\` CRUD; \`diagram-tools\` keeps only \`validate_diagram\` (DSL pre-flight). Insertable via slash command \`/diagram\` (authors the source, creates the entity, inserts the reference) in page and plan editors.
-
-\`diagram\` is a HIDDEN type: it has no sidebar tab and no detail page, so \`<element_list type="diagram" .../>\` and \`<tagged_list type="diagram" .../>\` are NOT supported — embed diagrams one at a time.
-
-Example:
-  <single_element type="diagram" slug="auth-flow" caption="Auth flow"/>
-</diagram_references>
-
-<sections_and_anchors>
-Sections (counted in \`<project sections=...>\`) are identified by an immutable 8-char anchor injected on the line before each markdown heading: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns anchors automatically — do not invent, edit, or strip them. When you rename a heading or move a section (within a page or to another file), keep the heading + anchor + body glued together; the indexer recognizes the move and the page-versioning subsystem records it. Never leave "(moved to MXX)" / "(see MNN)" breadcrumb prose behind — move history is owned by the versioning system, not by spec text.
-
-To LINK to a section, embed \`<section_ref anchor="xxxxxxxx"/>\` inline. It renders as a clickable chip (heading text + smooth scroll / cross-page nav) in **both** rendering pipelines — Tiptap (the page editor) and react-markdown (your chat replies to the user, plus plan blame and annotation popups). So \`<section_ref/>\` is the right tool whether you are editing a markdown page in \`pages/\` or answering the user inline in this chat. Anchors are globally unique across \`pages/\`, so the anchor alone is sufficient — no page path needed. **Prefer \`<section_ref/>\` over prose like "see section X in pages/foo.md"** in markdown edits AND in chat replies — the ref survives heading rewrites and cross-file moves; plain prose does not, and stale "see X" pointers are exactly the kind of breadcrumb that the versioning system is supposed to make unnecessary. For whole-page links: in markdown pages use \`@pages/foo.md\` (page-only) or \`@pages/foo.md#xxxxxxxx\` (page + section context); in chat replies the \`@pages/...\` form does NOT render as a chip (only user messages and Tiptap parse it) — use a plain markdown link with a readable label, or point at a specific section via \`<section_ref/>\`. To discover an anchor, Read the page and grab the \`<!-- anchor: ... -->\` line under the heading you want to target.
-</sections_and_anchors>
-
-<current_page_handling>
-The \`<current_page>\` tag shows what the user is currently viewing. For pages longer than ${CURRENT_PAGE_PREVIEW_LINES} lines, only the first ${CURRENT_PAGE_PREVIEW_LINES} are inlined as a preview (see preview_lines/total_lines attributes). When you need content beyond the preview, Read the page from disk.
-</current_page_handling>
-
-<annotation_handling>
-When the request includes \`<annotations>\`, treat them as the primary context for the user's message. Address each annotation specifically in your response. If an annotation references a page different from \`<current_page>\`, Read that page first before responding.
-</annotation_handling>
-</claude4spec_identity>`;
+Slugs are kebab-case, and the kebab/snake mismatch is the common trap — a table written \`user_account\` is the entity \`user-account\`. Resolve the slug with \`search_entities\` or \`list_entities\` before you embed it; a wrong slug renders as a broken widget, and a wrong slug passed to \`find_references\` answers \`[]\`, which reads exactly like "nothing uses this".
+</entity_embeds>`;
 }
 
-const PLAN_TOOLS_USAGE = `<plan_tools_usage>
-plan-tools MCP server is scoped automatically to this thread (no threadId param):
-  - get_plan — read current plan state
-  - update_plan (content | textEdits | edits) — edit the plan
-  - list_plan_versions, get_plan_version — inspect history
-Inside plan_mode: persist the plan via update_plan instead of writing it as prose.
-Outside plan_mode: use update_plan when the user explicitly requests a deployment plan or architectural proposal.
-</plan_tools_usage>`;
-
 /**
- * M24 c4s-tools: usage contract for cross-spec synchronous consultation.
- * Surfaces the same flow as the `c4s ask` CLI (M11) but via MCP, so it works
- * in plan_mode (Bash is filtered, MCP is not). Mounted for chat + patch
- * contexts; brief threads do not see it (narrow editorial toolset), and 0.1.79
- * `ask` threads do not either (recursion guard: a peer cannot consult a peer).
+ * Discovery and impact, in one block.
+ *
+ * 0.2.50 merged three: `<entity_discovery severity="recommended">`,
+ * `<entity_change_protocol severity="mandatory">` and the threshold half of
+ * `<delegation_policy>`. They overlapped by roughly sixty per cent — the same
+ * four channels were enumerated twice in two different wordings, each block
+ * carrying a pointer to the other — and much of what remained was a paraphrase
+ * of `find_references`'s own tool description, which the model receives anyway.
+ *
+ * Two claims were removed rather than reworded, because the host had already
+ * done the work they asked for: "for renames, propose propagation" (a rename
+ * through `update_entities` calls `propagateSlugChange` itself) and "for
+ * deletes, show what will break" (`delete_entities` returns `brokenReferences`
+ * per entity). Both told the agent to offer something it cannot withhold.
+ *
+ * What survives from the mandatory half is the part that genuinely cannot be
+ * read off a tool description: show the user the impact BEFORE mutating.
  */
-const C4S_TOOLS_USAGE = `<c4s_tools_usage>
-c4s-tools MCP server consults another claude4spec specification synchronously (READ-ONLY peer).
-  - ask({ message, project? | server?, threadId?, model? }) — returns { threadId, answer }
-Use \`project\` (local path to peer .claude4spec/) OR \`server\` (URL override); if both, \`server\` wins.
-The peer answers without ever mutating its own spec (Write/Edit/Bash banned; entity/page edits soft-blocked).
-Continue an existing peer thread by passing its \`threadId\`.
-Works in plan_mode — MCP is not filtered by READONLY_BUILTINS, so this works where Bash-shelled \`c4s ask\` does not.
-The peers available in this workspace are listed in \`<workspace_projects/>\`.
-</c4s_tools_usage>`;
+function buildDiscoveryAndImpact(): string {
+  return `<discovery_and_impact severity="mandatory">
+Before answering a question about how things connect, planning a change, or orienting yourself in an unfamiliar area, query the graph rather than reasoning from memory. The graph knows who uses what; pattern-matching does not.
+
+Four channels, each finding a different KIND of reference. Which ones you need depends on the question; concluding "nothing uses this" requires all four:
+  1. \`find_references\` — direct XML refs. It also covers dynamic tag consumers when you pass \`includeTagMatches: true\`, which folds channel 2 into the same call and marks each row with what matched.
+  2. Tag membership — \`list_entities({ tags, tagFilter })\` for what carries a tag, and \`list_tags({ coOccurringWith })\` for the tags that travel with it. The second is how you learn a taxonomy you do not already know.
+  3. Structured links between entities — the typed relations a type declares (its type carries its own tools), plus \`check_consistency\`, which reports the ones that dangle.
+  4. Prose drift — search the pages for the entity's HTTP path, class name or table identifier, to catch what an author wrote as bare text instead of a tag.
+
+Ground the answer on what came back, not on what you remember. If you skipped discovery, say so ("answering from thread context, not querying the graph") — silence looks identical to forgetting.
+
+MUTATION IS THE STRICT CASE. Before any \`update_*\`, \`delete_*\`, slug rename or re-tag on an active entity, run the channels and PRESENT THE IMPACT TO THE USER FIRST: which pages link it, which dynamic lists surface it, which entities point at it, where the prose names it — counts and specific paths or anchors, not a summary. Then mutate. This is the one part of this block you cannot infer from a tool description, because it is about who decides, not about what the tools do. "It is only a slug rename" is precisely the case that breaks the most pages.
+
+Delegate a sweep spanning more than one channel, or a first look at an unfamiliar area, to the \`spec-explore\` subagent: it reads the bulk in its own context and returns paths, anchors and slugs. One targeted lookup you do yourself. The parent synthesizes; the subagent locates.
+</discovery_and_impact>`;
+}
 
 /**
- * M21: usage contract for `brief-tools` MCP server (analog `PLAN_TOOLS_USAGE`).
+ * 0.2.50 — rewritten from a description of the DATABASE ENTITY to a description
+ * of the USE.
+ *
+ * The old block opened on "a tag is a slug plus a color, no FK, no owned data" —
+ * schema trivia, and colour in particular is a UI concern the agent cannot see
+ * and has no basis to choose. Then a three-step "workflow" whose every step was
+ * wrong: `create_tag(slug, color)` (the real first parameter is `name`, so the
+ * call as written fails validation), `tag_entity(type, slug, tagSlug)` (the real
+ * parameter is a LIST), and a mandatory "define once globally" step that
+ * `tag_entity` performs by itself.
+ *
+ * Meanwhile the thing that makes tags worth having — that they are a query index
+ * ACROSS entity types — was never stated, and the two tools that realize it
+ * (`list_tags({ coOccurringWith })`, the `tags` filter on `list_entities`) were
+ * not mentioned at all.
+ */
+function buildTags(): string {
+  return `<tags>
+A tag is a cross-cutting label attached to any number of entities of any type. Its use is that it is an INDEX ACROSS TYPES: the one way to ask "what belongs to this feature" and get back endpoints, DTOs, tables and criteria together, when nothing structural relates them.
+
+It reaches you through three channels, and they answer different questions:
+  - \`list_entities({ tags, tagFilter: 'and' | 'or' })\` — the tag as a QUERY, composable with that type's own field filters.
+  - \`list_tags({ coOccurringWith })\` — the tags sharing entities with a given tag. This is how you discover a project's taxonomy without already knowing it.
+  - \`find_references({ includeTagMatches: true })\` — which PAGES surface an entity through a dynamic list.
+
+Attach with \`tag_entity\`, which takes a LIST and creates any tag it does not find, so a separate registration step is not needed. Reach for \`create_tag\` only to give a tag a \`description\` — the one field that records what the tag MEANS, and the only thing that keeps a taxonomy legible to whoever inherits it.
+
+On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one type or \`<tagged_list_mixed tags="auth"/>\` across all of them; both re-render as entities are tagged and untagged. Tags are for groupings that cut ACROSS the structure — use an entity's own structural fields and links for relationships between specific entities.
+</tags>`;
+}
+
+const TODO_MARKERS = `<todo_markers>
+  <todo comment="..."/>
+Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, Grep pages/ for \`<todo comment=\`.
+</todo_markers>`;
+
+/**
+ * 0.2.50 — two changes, both about closing the gap between what this block asks
+ * and what the tools do.
+ *
+ * It used to end by telling the agent to discover an anchor by READING THE WHOLE
+ * PAGE and picking the comment line out of it, while `list_sections` and
+ * `search_pages` exist to answer exactly that and cost a fraction as much.
+ *
+ * And it described the anchor rule as a discipline, without mentioning that
+ * `update_sections` ENFORCES it: dropping an anchor refuses the whole batch with
+ * ANCHOR_LOSS unless the anchors are named in `dropAnchors`. An agent that knows
+ * the guard exists reads a refusal as information; one that does not reads it as
+ * an obstacle and looks for a way around, which here means a built-in write.
+ */
+const SECTIONS_AND_ANCHORS = `<sections_and_anchors>
+Every markdown heading carries an immutable 8-char anchor on the line before it: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns them — do not invent, edit or strip one. When you rename a heading or move a section, keep heading, anchor and body glued together; the indexer recognizes the move and the versioning subsystem records it. Never leave "(moved to MXX)" breadcrumbs behind: move history belongs to the versioning system, not to the prose.
+
+This is enforced where it matters. \`update_sections\` refuses the ENTIRE batch with ANCHOR_LOSS if a write would drop an anchor, unless you name that anchor in \`dropAnchors\` — so an accidental loss is a refusal, and a deliberate removal is something you say out loud. Read a refusal as the guard doing its job rather than as an obstacle to route around.
+
+To find an anchor, ask for it: \`list_sections\` enumerates them for a page, and \`search_pages\` finds the sections matching a phrase and hands back their anchors. Reading a whole page to grep for the comment line is the expensive way to the same string.
+
+To LINK a section, embed \`<section_ref anchor="xxxxxxxx"/>\`. It renders as a clickable chip in BOTH pipelines — Tiptap (the page editor) and react-markdown (your chat replies, plan blame, annotation popups) — so it is the right tool whether you are editing a page or answering the user here. Anchors are globally unique, so the anchor alone suffices; no path needed. Prefer it over prose like "see section X in pages/foo.md": the ref survives heading rewrites and cross-file moves, and the prose does not. For whole-page links, use \`@pages/foo.md\` (or \`@pages/foo.md#xxxxxxxx\`) in markdown pages; in chat replies that form does NOT render as a chip, so use a plain markdown link or point at a section with \`<section_ref/>\`.
+</sections_and_anchors>`;
+
+/* ─────────────────────────── LAYER E — current state ─────────────────────── */
+
+const CURRENT_PAGE_HANDLING = `<current_page_handling>
+\`<current_page>\` is what the user is looking at right now. It carries the page's \`path\` and its \`root\` — and you need both, because \`get_page\` without a \`rootId\` answers INVALID_ARGUMENT. Long pages are inlined only as a preview (see the \`preview_lines\` / \`total_lines\` attributes); read the rest with \`get_page\`, which also returns the \`hash\` that \`update_page\` and \`update_sections\` require.
+</current_page_handling>`;
+
+/**
+ * 0.2.50 — the block gained the trap, which is the whole reason it is worth its
+ * space.
+ *
+ * An annotation's `text` is the user's SELECTION as Tiptap rendered it, not as
+ * the markdown was authored. It looks like a ready-made `textEdits.find`, and
+ * for an unformatted sentence it happens to work. Over anything carrying
+ * emphasis, a link or an embed, the rendered text and the source text are
+ * different bytes, `find` is literal, and the call answers FIND_NOT_FOUND — a
+ * failure whose cause is invisible from where the agent stands.
+ */
+const ANNOTATION_HANDLING = `<annotation_handling>
+When the request carries \`<annotations>\`, they are the primary context for the user's message — address each one specifically. Before answering about a page other than the current one, open it: \`get_page\` needs a \`rootId\` as well as a path. An annotation on the current page carries its \`root\`; one without that attribute came from elsewhere and does not know its root — find it with \`list_pages\` rather than assuming \`pages\`.
+
+Do NOT paste an annotation's \`text\` into \`textEdits.find\`. That text is the user's selection as RENDERED, while \`find\` matches the source literally, byte for byte — so any emphasis, link or embed inside the selection makes the two differ and the edit fails FIND_NOT_FOUND. Read the source around the annotation and build the find-string from what is actually written there.
+</annotation_handling>`;
+
+/* 0.2.50 — `<plan_tools_usage>` and `<c4s_tools_usage>` are GONE, and so is the
+ * category they belonged to: a prompt block explaining how to use one MCP
+ * server.
+ *
+ * Every claim in the pair already had a home in the description of the tool it
+ * described — that the peer is read-only, that `project` and `server` are
+ * alternatives with `server` winning, that a peer thread continues by
+ * `threadId`, that plan-tools are thread-scoped and take no `threadId`, that MCP
+ * survives plan mode. The model receives those descriptions through `tools/list`
+ * on every turn, so the blocks bought a second copy and the chance of the two
+ * disagreeing. They took it: `<c4s_tools_usage>` still described entity edits as
+ * "soft-blocked at prompt level", which stopped being true in 0.2.13 when the
+ * `ask` profile began filtering write tools out of `tools/list` outright.
+ *
+ * The rule this leaves behind: `<tooling>` is an INVENTORY OF NAMES, and what a
+ * tool does lives in `McpToolDeclaration.description`. There is no third place.
+ * The one sentence in the pair with no home — when to call `update_plan` outside
+ * plan mode — moved into that tool's description, where it says "when to call
+ * me", which is what a description is for.
+ */
+
+
+/**
+ * M21: usage contract for the `brief-tools` MCP server.
  * Mounted only when this chat thread has `context_type='brief'`. The editorial
  * doctrine is split in two since 0.2.19: the genre's domain rules arrive in
  * `<interaction_context type="brief">` (M21), the methodology in the active
@@ -468,14 +581,12 @@ The peers available in this workspace are listed in \`<workspace_projects/>\`.
  * tool surface, so the agent knows what is callable in this thread.
  */
 const BRIEF_TOOLS_USAGE = `<brief_tools_usage>
-brief-tools MCP server is scoped automatically to this brief (no path param):
-  - get_brief — read current brief { frontmatter, body, content, hash }
-  - update_brief (action: replace | append | insert_after_section) — edit the body
-      * frontmatter is IMMUTABLE for the agent (type, from_release, to_release, generated_at, generator_version)
-      * expectedHash is REQUIRED — pass the hash get_brief returned (mismatch → BRIEF_CONFLICT, omitted → VALIDATION)
-      * unknown anchor → fallback append-at-end with warning
-You also have read-only release-tools (get_release, get_release_diff, list_releases) for grounding the narrative.
-You do NOT have filesystem access (no Read/Write/Edit/Glob/Grep/Bash). Brief content flows through get_brief / update_brief only.
+brief-tools is scoped automatically to this brief — there is no path parameter, and no way to reach another brief from this thread.
+  - get_brief — the brief as { frontmatter, body, content, hash }.
+  - update_brief (action: replace | append | insert_after_section) — edits the body.
+      * frontmatter is IMMUTABLE for you (type, from_release, to_release, generated_at, generator_version).
+      * expectedHash is REQUIRED: pass the hash get_brief returned (stale → BRIEF_CONFLICT, missing → VALIDATION).
+      * insert_after_section MISSES SILENTLY. A target it cannot find — an anchor that is not in the brief, a heading that matches nothing — is NOT an error: the fragment is appended at the END of the brief and the call reports success. Nothing warns you. So read the brief before addressing a section, and check afterwards that the text landed where you meant it to.
 </brief_tools_usage>`;
 
 /**
@@ -490,37 +601,103 @@ You do NOT have filesystem access (no Read/Write/Edit/Glob/Grep/Bash). Brief con
  * so a future contract change fails loudly instead of rendering an empty list
  * into the prompt.
  */
-const PLAN_MODE_TOOL_POLICY = buildClaudeCodeToolPolicy(PLAN_MODE_DENY_GROUPS);
-if (!PLAN_MODE_TOOL_POLICY) {
+const PLAN_MODE_TOOL_POLICY_OR_NULL = buildClaudeCodeToolPolicy(PLAN_MODE_DENY_GROUPS);
+if (!PLAN_MODE_TOOL_POLICY_OR_NULL) {
   throw new Error('plan-mode tool policy is empty — the agent-adapters gating contract changed');
 }
-
-const PLAN_MODE = `<claude4spec_plan_mode>
-Plan Mode is ACTIVE. Investigate and propose — do not modify.
-
-The plan you draft must conform to the project skill referenced in <project_skill/>. Before drafting or updating the plan, ensure load_skill_file(slug) has been called this turn — its conventions (module/layer structure, naming, file layout, quality rules) constrain every line of the plan. If the user's request appears to violate those conventions, surface the conflict in the plan rather than silently working around it.
-
-Forbidden (mutating):
-  - Built-in: ${PLAN_MODE_TOOL_POLICY.deny.join(', ')}
-  - MCP: any create_*, update_*, delete_*, link_*, unlink_*, tag_entity, untag_entity
-
-Allowed (read-only):
-  - Built-in: ${PLAN_MODE_TOOL_POLICY.allow.join(', ')}
-  - MCP: list_*, get_*, find_*, check_consistency
-
-plan-tools (get_plan, update_plan, list_plan_versions, get_plan_version) are EXEMPT — use update_plan to persist the plan rather than writing it as prose in your reply.
-
-End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, acknowledge and describe what you would do — do not execute.
-</claude4spec_plan_mode>`;
+/** Narrowed once here: the block below is a function now, and a module-level
+ *  `if`-throw does not narrow across a function boundary. */
+const PLAN_MODE_TOOL_POLICY = PLAN_MODE_TOOL_POLICY_OR_NULL;
 
 /**
- * M13: the host-level `<mcp>` line for the generic `entity-tools` server —
- * CRUD for every active entity type, composed once by the host rather than
- * per-type. Static tool list (the active TYPE set lives in `<project>`/
- * `<entities>`, already built from `listEntities()` elsewhere in this file).
+ * 0.2.50 — the MCP half of this block is reframed, and the reframing is the fix.
+ *
+ * It used to head a list of MCP tools "Forbidden (mutating)", beside the
+ * built-in list under the same heading. For the built-ins that word is exact:
+ * `planMode` desugars to `disallowedToolGroups: ['file-write','shell']` and the
+ * adapter enforces it. For MCP it is false, and not by oversight. `gateServers`
+ * takes `thread.contextType` and has never taken `planMode`; `profile-gate`'s
+ * own doc comment says twice that forced plan mode "does not apply to MCP at
+ * all"; the specification says the same in three separate places. The axes are
+ * deliberately split — read-only is what the `ask` PROFILE buys, and a profile
+ * is fixed for the life of a thread, while plan mode is a per-turn switch.
+ *
+ * So every entity, page and tag mutation IS mounted and callable here. Saying
+ * "forbidden" about tools that answer when called is the exact thing
+ * `profiles.ts` warns against, from the wrong side: "a gate, not a sentence in a
+ * prompt asking the model not to". This block is a sentence asking the model not
+ * to, and it should say so — a model that discovers one "forbidden" tool working
+ * has been taught what the other prohibitions are worth.
+ *
+ * The list is generated rather than written. The old pattern
+ * (`create_*`/`update_*`/`delete_*`/`link_*`/`unlink_*`) missed everything not
+ * named that way: `file_patch`, `run_turn`, `abort_turn`, `release_create`,
+ * `release_update`, and `ask`, which spends a whole turn in another project.
+ * Deriving it from the mounted set and each tool's catalog `opClass` means it
+ * cannot go stale or be partial. `plan`-class tools stay exempt by construction:
+ * persisting the plan is the point of the mode.
  */
-function buildEntityToolsLine(): string {
-  return `  <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities, search_entities, describe_entity_type</mcp>`;
+const PLAN_MODE_EXEMPT_CLASSES: ReadonlySet<string> = new Set(['read', 'plan']);
+
+function planModeMutatingTools(inventory: readonly McpInventoryEntry[]): string[] {
+  const names = new Set<string>();
+  for (const server of inventory) {
+    for (const tool of server.tools ?? []) {
+      const op = CATALOG.get(tool);
+      /**
+       * A row counts only if it describes the surface the tool arrived on —
+       * the same test `toolAdmittedByProfile` applies, for the same reason.
+       * `CATALOG` is keyed by bare name, so a plugin shipping a tool called
+       * `update_plan` or `get_page` would otherwise inherit that host row's
+       * `plan`/`read` class and be exempted from this list, while the `chat`
+       * profile mounts it and its own mutating handler runs.
+       */
+      const applies = op && (server.plugin ? op.contributedBy === 'plugin' : op.contributedBy !== 'plugin');
+      /**
+       * With no applicable row, the surface decides — and the two surfaces get
+       * opposite defaults, which is the same asymmetry the gate settles on.
+       *
+       * A HOST tool with no row is not listed. Over-listing is not caution here,
+       * it is a false prohibition, and a model that finds one "forbidden" tool
+       * working learns what the rest of the prohibitions are worth. The one
+       * host-owned tool with no catalog row is `load_skill_file`, deliberately,
+       * and telling the agent not to call it in plan mode would contradict
+       * <project_writing_skill>, which instructs it to.
+       *
+       * A PLUGIN tool with no applicable row IS listed. The host has never seen
+       * that surface, `chat` admits writes so the gate passed it through, and
+       * the cost of guessing wrong runs the other way: a plugin write nobody
+       * asked the agent to hold off on. The price is a false prohibition on an
+       * undeclared plugin read — visible, and fixed by declaring it.
+       */
+      if (!applies) {
+        if (server.plugin) names.add(tool);
+        continue;
+      }
+      if (PLAN_MODE_EXEMPT_CLASSES.has(op!.opClass)) continue;
+      names.add(tool);
+    }
+  }
+  return [...names].sort();
+}
+
+function buildPlanMode(inventory: readonly McpInventoryEntry[]): string {
+  const mutating = planModeMutatingTools(inventory);
+  return `<claude4spec_plan_mode>
+Plan Mode is ACTIVE. Investigate and propose — do not modify.
+
+The plan you draft must conform to the writing style referenced in <project_writing_skill/>. Before drafting or updating the plan, ensure load_skill_file(slug) has been called this turn — its conventions constrain every line of the plan. If the user's request appears to violate them, surface the conflict in the plan rather than quietly working around it.
+
+The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
+  - Denied: ${PLAN_MODE_TOOL_POLICY.deny.join(', ')}
+  - Available: ${PLAN_MODE_TOOL_POLICY.allow.join(', ')}
+
+The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
+  - Do not call: ${mutating.length > 0 ? mutating.join(', ') : '(none mounted this turn)'}
+  - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
+
+End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
+</claude4spec_plan_mode>`;
 }
 
 // Every built-in agent-adapters knows about — a sourced, generated list rather
@@ -530,44 +707,69 @@ function buildEntityToolsLine(): string {
 // NotebookRead).
 const CLAUDE_CODE_ALL_BUILTINS = claudeCodeKnownBuiltins();
 
-function buildTooling(pluginHost: ProjectPluginHost, planToolsAvailable: boolean, c4sToolsAvailable: boolean): string {
+/**
+ * 0.2.50 — `<tooling>` is DERIVED from the servers this turn actually mounted,
+ * not described alongside them.
+ *
+ * What it replaced: a hardcoded `entity-tools` literal, a loop over each entity
+ * type's `mcpToolsLine`, a hardcoded `reference-tools` literal, an unconditional
+ * `skill-tools` literal, and two more literals behind boolean flags the caller
+ * had to remember to set. Six ways for the prompt to describe a set it was not
+ * reading, and it used them: `page-tools` appeared in NONE of them, in a prompt
+ * whose path-scope block tells the agent to write pages with `create_page` and
+ * `update_sections`. `workspace-tools`, `patch-tools`, `transagent-tools` and
+ * `mark_plan_applied` were invisible for the same reason — the loop enumerated
+ * ENTITY TYPES, so a host-owned server that is not an entity type could not
+ * appear however long it had been mounted.
+ *
+ * The input is now the post-gate mount itself (see `mcpInventory`), so a new
+ * tool reaches the prompt by existing, and a tool the profile withholds cannot
+ * be advertised. A server that declares no tools renders as its bare name: the
+ * `tools?` contract means "I cannot enumerate this", and the honest rendering of
+ * that is silence about the contents, not an invented list.
+ *
+ * The `<builtin>` line still prints the full catalog even in plan mode, where
+ * the file-write and shell groups are gated off. That is deliberate and stated
+ * where it belongs: `<claude4spec_plan_mode>` names both halves of the split, so
+ * this line is an inventory of what the adapter knows and that block is the
+ * policy for the turn.
+ */
+function buildTooling(inventory: readonly McpInventoryEntry[]): string {
+  /**
+   * 0.2.50 — the `<builtin>` line says what it IS.
+   *
+   * It prints the adapter's whole catalog, which two other blocks then narrow:
+   * `<claude4spec_plan_mode>` gates the file-write and shell groups off for the
+   * turn, and `<available_skills>` prohibits `Skill` outright. Printed bare, the
+   * line read as a permission list, and the prompt then contradicted itself
+   * twice over — most visibly on `Skill`, advertised here as available and
+   * forbidden by another block. Naming it an inventory costs six words and
+   * removes the contradiction without pretending a mounted tool is absent.
+   *
+   * The note says "elsewhere in this prompt" rather than "below": the two blocks
+   * that narrow it sit on either side of this one — `<available_skills>` is
+   * layer B and `<claude4spec_plan_mode>` layer E — and a direction the reader
+   * can check is a direction that can be wrong.
+   */
   const lines: string[] = [
     `<tooling>`,
-    `  <builtin>${CLAUDE_CODE_ALL_BUILTINS.join(', ')}</builtin>`,
-    buildEntityToolsLine(),
+    `  <builtin note="what the adapter knows; other blocks in this prompt narrow it">${CLAUDE_CODE_ALL_BUILTINS.join(', ')}</builtin>`,
   ];
-  for (const m of pluginHost.listEntities()) {
-    if (!m.systemPrompt.mcpToolsLine) continue;
-    // mcpToolsLine format: "{server-name}: {tool, tool, ...}" — M13: now ONLY
-    // the type's custom (non-CRUD) server, e.g. "endpoint-tools: link_dto, unlink_dto".
-    const colonIdx = m.systemPrompt.mcpToolsLine.indexOf(':');
-    if (colonIdx === -1) continue;
-    const serverName = m.systemPrompt.mcpToolsLine.slice(0, colonIdx).trim();
-    const toolList = m.systemPrompt.mcpToolsLine.slice(colonIdx + 1).trim();
-    lines.push(`  <mcp name="${serverName}">${toolList}</mcp>`);
-  }
-  lines.push(
-    // 0.2.3: the read half of this server is the in-process transport over the
-    // M39 discovery core, so the line names the page/section operations too —
-    // `list_sections` was registered but unadvertised, which made it invisible
-    // to the one reader that decides what to call.
-    `  <mcp name="reference-tools">create_tag, update_tag, delete_tag, list_tags, tag_entity, untag_entity, find_references, check_consistency, list_pages, search_pages, list_sections, get_sections, get_page</mcp>`,
-  );
-  /**
-   * 0.2.36 — unconditional, for the same reason `<available_skills>` is: the
-   * writing style attaches to EVERY context type, so the channel that reads its
-   * body cannot be gated by any of them. There is no `McpServerSet` dimension
-   * behind this line; `skill-tools` mounts like `workspace-tools` does.
-   */
-  lines.push(`  <mcp name="skill-tools">load_skill_file</mcp>`);
-  if (planToolsAvailable) {
-    lines.push(`  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version</mcp>`);
-  }
-  if (c4sToolsAvailable) {
-    lines.push(`  <mcp name="c4s-tools">ask</mcp>`);
+  for (const { name, tools } of inventory) {
+    lines.push(
+      tools && tools.length > 0
+        ? `  <mcp name="${name}">${tools.join(', ')}</mcp>`
+        : `  <mcp name="${name}"/>`,
+    );
   }
   lines.push(`</tooling>`);
   return lines.join('\n');
+}
+
+/** True when the turn mounted a server under this name — the gate for the blocks
+ *  that only make sense beside it (today: `<workspace_projects>` beside `c4s-tools`). */
+function hasServer(inventory: readonly McpInventoryEntry[], name: string): boolean {
+  return inventory.some((s) => s.name === name);
 }
 
 /* ─────────────────────────── 0.1.67 m05ctxreg: wbudowane subagenty ───────────────────────────
@@ -710,16 +912,58 @@ export function subagentsFor(
 
 /**
  * 0.1.58: discovery block listing workspace peers the agent may consult via
- * `c4s-tools.ask`. The current project is excluded upstream. `path` is ready to
- * pass 1:1 as the `project` param; empty `name`/`description` attrs are dropped
- * by `attrs()`, so a peer with an unreadable config renders as `<peer path="…"/>`.
+ * `c4s-tools.ask`. The current project is excluded upstream.
+ *
+ * This is the prompt's model block, and the reason is worth naming: it carries
+ * exactly what a parameter requires and nothing that is obtainable some other
+ * way. There is no tool that lists peers, so without this block the `project`
+ * argument is unguessable — which is the test every block in this file should
+ * pass and most of them did not.
+ *
+ * 0.2.50 — `id` REPLACES `path` as the address, and `name` is demoted to a
+ * label. `resolveWorkspaceProject` tries the value as a path first and then
+ * falls back to `findProjectByName`, so a name IS an address — but the registry
+ * name, which is not the display name this block used to render beside the path.
+ * A peer shown as "C4S - App Spec" is registered as `app-spec`, and passing the
+ * former answers PROJECT_SLUG_NOT_FOUND. That was found by making the call; the
+ * simplification it refutes ("drop the path, the name is the address") had
+ * survived three readings of the code.
+ *
+ * `id` is therefore `registryName`, and a peer whose registry name is somehow
+ * missing keeps `path` so it stays reachable rather than becoming decorative.
+ *
+ * So does a peer whose registry name it SHARES. The name is not a key — the
+ * registry says so in as many words — and `findProjectByName` searches one
+ * project per workspace, so a duplicate inside a single workspace never reaches
+ * `AMBIGUOUS_PROJECT`: the first match wins, silently, and the second peer is
+ * unaddressable. `path` is tried before the name fallback and is exact, so the
+ * peers that collide keep it. The block stays short in the ordinary case and
+ * stays CORRECT in the case that would otherwise consult the wrong project.
  */
 function buildWorkspaceProjects(workspaceName: string, peers: PeerProject[]): string {
   const lines = [`<workspace_projects ${attrs({ workspace: workspaceName })}>`];
+  const nameCounts = new Map<string, number>();
   for (const p of peers) {
-    lines.push(`  ${selfClose('peer', attrs({ name: p.name, path: p.path, description: p.description }))}`);
+    if (p.registryName) nameCounts.set(p.registryName, (nameCounts.get(p.registryName) ?? 0) + 1);
   }
-  lines.push(`</workspace_projects>`);
+  for (const p of peers) {
+    const unique = p.registryName !== undefined && nameCounts.get(p.registryName) === 1;
+    lines.push(
+      `  ${selfClose(
+        'peer',
+        attrs({
+          id: p.registryName,
+          name: p.name,
+          path: unique ? undefined : p.path,
+          description: p.description,
+        }),
+      )}`,
+    );
+  }
+  lines.push(
+    `  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.`,
+    `</workspace_projects>`,
+  );
   return lines.join('\n');
 }
 
@@ -784,16 +1028,45 @@ function buildAvailableSkills(entries: { slug: string; description: string }[]):
   return lines.join('\n');
 }
 
-function buildProjectSkill(ws: { slug: string; title: string }): string {
+/**
+ * The writing-style slot. 0.2.50 renames the block from `<project_skill>` to
+ * `<project_writing_skill>` and stops describing what is inside it.
+ *
+ * The name first: M37 gives this slot to the active WRITING STYLE and to nothing
+ * else — at most one, never a general project skill — while every other skill
+ * of the turn rides the `<available_skills>` listing. `<project_skill>` named
+ * the opposite of what the slot is.
+ *
+ * The contents second, which is the more consequential half. The block used to
+ * assert that the skill "contains the BINDING project specification — module/
+ * layer structure, file layout, naming, workflow, and quality rules". Nothing
+ * guarantees any of that: the slot is filled from `config.writingStyle` and
+ * validated only for presence in the registry and `meta.scope ===
+ * 'writing-style'`. That sentence describes ONE project's skill, shipped to
+ * every installation as a fact — and it is the kind of falsehood that suppresses
+ * its own discovery, because an agent told what a document contains has a reason
+ * not to open it.
+ *
+ * So the block renders the skill's own `description` instead, which is the only
+ * trustworthy account of it and was previously not rendered here at all, unlike
+ * in the `<available_skills>` rows.
+ *
+ * Also gone: "re-call whenever you transition from plan mode into execution".
+ * The system prompt is frozen after the first turn (`setInitialSystemPrompt`),
+ * so that transition has no representation the agent can observe — the
+ * instruction names an event it will never see happen.
+ */
+function buildProjectSkill(ws: { slug: string; title: string; description?: string }): string {
   return [
-    `<project_skill ${attrs({ slug: ws.slug, title: ws.title })}>`,
-    `Skill "${ws.title}" (slug "${ws.slug}") contains the BINDING project specification — module/layer structure, file layout, naming, workflow, and quality rules. Every page edit, plan, entity/module change, and structural answer must conform to it.`,
+    `<project_writing_skill ${attrs({ slug: ws.slug, title: ws.title })}>`,
+    ws.description
+      ? `Skill "${ws.title}" (slug "${ws.slug}") is this project's active writing style. It describes itself as: ${ws.description}`
+      : `Skill "${ws.title}" (slug "${ws.slug}") is this project's active writing style.`,
     ``,
-    `Required behavior:`,
-    `  1. Before your first tool call in this thread, call load_skill_file("${ws.slug}").`,
-    `  2. Re-call load_skill_file("${ws.slug}") whenever you transition from plan mode into execution, even if loaded earlier.`,
-    `  3. Treat its content as authoritative — if a user request seems to contradict it, surface the conflict rather than silently overriding the convention.`,
-    `</project_skill>`,
+    `It is BINDING on what you write: pages, plans, entity content, and the structure of your answers all follow it.`,
+    `  1. Before your first tool call in this thread, call load_skill_file("${ws.slug}") — you do not know its conventions until you have read it, and this block does not summarise them.`,
+    `  2. Treat its content as authoritative. If a request seems to contradict it, surface the conflict rather than quietly overriding the convention.`,
+    `</project_writing_skill>`,
   ].join('\n');
 }
 
@@ -834,6 +1107,20 @@ function buildConversationalLanguage(lang: string): string {
  * MCP tools (plan-tools/brief-tools/entity-tools/release-tools). This makes the block always
  * present; the caller now gates only on `agentPathScope` being set (still non-brief only).
  */
+/**
+ * 0.2.50 — the block no longer names a fixed list of MCP servers.
+ *
+ * It used to close with "use plan-tools / brief-tools / entity-tools /
+ * release-tools instead, and page-tools for the pages", which is true of a chat
+ * thread and false of a brief one: the `brief` profile mounts `release-tools`
+ * alone out of the plugin pool and no plan-tools, so four of the five named
+ * servers are absent from its `tools/list`. Now that the brief frame carries
+ * this block, that sentence would point a brief thread at tools it does not
+ * have, and leave the built-in `Write` — forbidden by this very block — as its
+ * only remaining route. Pointing at `<tooling>`, which is itself derived from
+ * the mount, cannot be wrong in either frame; the page paragraph is emitted only
+ * where the page tools are actually mounted, for the same reason.
+ */
 function buildAgentPathScope(
   scope: {
     allowedPaths: string[];
@@ -843,6 +1130,7 @@ function buildAgentPathScope(
   },
   cwd: string,
   roots: Root[],
+  inventory: readonly McpInventoryEntry[],
 ): string {
   // Root dirs may be relative (e.g. '.' or 'pages') — resolve against cwd before the
   // inside check, mirroring the M05 resolver, so a nested root dir is correctly omitted.
@@ -872,7 +1160,7 @@ function buildAgentPathScope(
    * stop grepping pages, which is the opposite of what `<entity_discovery>` asks of it two
    * blocks earlier.
    */
-  if (scope.pageRootDirs.length) {
+  if (scope.pageRootDirs.length && hasServer(inventory, 'page-tools')) {
     lines.push(
       `  READ-ONLY to built-in tools — page roots (${scope.pageRootDirs.join(', ')}): read and grep them freely, but NEVER write one with Write/Edit/Bash. ` +
         `A page is written with create_page / update_page / delete_page, and a batch of sections with update_sections. ` +
@@ -880,7 +1168,7 @@ function buildAgentPathScope(
     );
   }
   lines.push(
-    `Stay within ALLOWED minus DISALLOWED. Do not touch files outside this scope (e.g. other projects, source code next to the spec). If a task seems to require an out-of-scope path, say so instead of attempting it. Never hand-edit the C4S artifact dirs — use plan-tools / brief-tools / entity-tools / release-tools instead, and page-tools for the pages.`,
+    `Stay within ALLOWED minus DISALLOWED. Do not touch files outside this scope (e.g. other projects, source code next to the spec). If a task seems to require an out-of-scope path, say so instead of attempting it. Never hand-edit the C4S artifact dirs — write them through the MCP servers listed in <tooling>, which is the set actually mounted for this turn.`,
     `</agent_path_scope>`,
   );
   return lines.join('\n');
@@ -911,10 +1199,15 @@ function buildBriefSystemPrompt(input: {
   cwd: string;
   brief: Brief | null;
   annotations: Annotation[];
-  writingStyleSkill: { slug: string; title: string } | null;
+  writingStyleSkill: { slug: string; title: string; description?: string } | null;
   availableSkills: { slug: string; description: string }[];
   interactionRules?: string;
   conversationalLanguage?: string;
+  /** 0.2.50: the mounted set, for the derived `<tooling>` block. */
+  mcpInventory: readonly McpInventoryEntry[];
+  /** 0.2.50: this frame emits `<agent_path_scope>` too — see the note at its push. */
+  roots: Root[];
+  agentPathScope?: SystemPromptInput['agentPathScope'];
 }): string {
   const parts: string[] = [];
   // Block #1 — where the chat/patch/ask frame has `<claude4spec_identity>` then this,
@@ -926,21 +1219,33 @@ function buildBriefSystemPrompt(input: {
   // frame uses, minus every counter a brief thread has no access to.
   parts.push(selfClose('project', attrs({ name: input.projectName, cwd: input.cwd })));
 
-  parts.push(
-    [
-      `<tooling>`,
-      `  <mcp name="brief-tools">get_brief, update_brief</mcp>`,
-      `  <mcp name="release-tools">get_release, get_release_diff, list_releases</mcp>`,
-      // 0.2.36: present HERE above all. This frame runs with the FS built-ins off,
-      // which is precisely why a style pointing at `workflows/brief.md` could not
-      // open it under the old delivery channel. This line is the fix being
-      // advertised. The main frame slots the same line between `reference-tools`
-      // and `plan-tools`; this frame carries neither neighbour, so it goes last.
-      `  <mcp name="skill-tools">load_skill_file</mcp>`,
-      `</tooling>`,
-    ].join('\n'),
-  );
+  /**
+   * 0.2.50 — DERIVED, like the main frame's, and this frame is why the derivation
+   * was overdue. The literal it replaces advertised `get_release`,
+   * `get_release_diff` and `list_releases`: three names, none of which is a tool.
+   * The server exposes `release_create` / `release_list` / `release_show` /
+   * `release_diff` / `release_update`, and the brief frame's OWN subagent
+   * definition used the correct ones — so a brief thread was handed two disjoint
+   * vocabularies for the same three operations, one of them fictional.
+   */
+  parts.push(buildTooling(input.mcpInventory));
   parts.push(BRIEF_TOOLS_USAGE);
+  /**
+   * 0.2.50 — the brief frame gains `<agent_path_scope>`, and this is a straight
+   * correction of a two-way falsehood.
+   *
+   * `resolveAgentExecutionScope` runs unconditionally and its result reaches
+   * `baseExecuteArgs` for every context type, so a brief thread HAS a path scope
+   * and always did: cwd writable, artifact dirs closed, page roots read-only.
+   * The frame simply never rendered it. Meanwhile the brief interaction rules
+   * asserted "you have NO filesystem access" — an enforcement that is not set
+   * anywhere in production code. The agent was therefore told it was forbidden
+   * something it could do, and told nothing about the limits that actually bound
+   * it. Both halves are fixed by emitting the same block every other frame gets.
+   */
+  if (input.agentPathScope) {
+    parts.push(buildAgentPathScope(input.agentPathScope, input.cwd, input.roots, input.mcpInventory));
+  }
   // 0.1.51: only `<conversational_language>` in the brief frame — `<spec_language>`
   // is omitted (it governs spec content; the brief is a separate artifact).
   if (input.conversationalLanguage) {
@@ -998,7 +1303,8 @@ function buildBriefSystemPrompt(input: {
   }
 
   if (input.annotations.length > 0) {
-    parts.push(buildAnnotations(input.annotations));
+    // The brief frame has no `<current_page>`, so no annotation can borrow its root.
+    parts.push(buildAnnotations(input.annotations, null, 'pages'));
   }
 
   return parts.join('\n\n');
@@ -1020,6 +1326,10 @@ function buildCurrentPage(path: string, body: string | null, root: string): stri
   }
   const preview = lines.slice(0, CURRENT_PAGE_PREVIEW_LINES).join('\n');
   const remaining = totalLines - CURRENT_PAGE_PREVIEW_LINES;
+  // 0.2.50: the truncation notice names `get_page` rather than "Read". Page roots
+  // are read-only to the built-in tools and `get_page` is what returns the `hash`
+  // the write tools require, so pointing at `Read` sent the agent down the one
+  // path that cannot lead to an edit.
   return `<current_page ${attrs({
     path,
     root,
@@ -1027,14 +1337,40 @@ function buildCurrentPage(path: string, body: string | null, root: string): stri
     preview_lines: `1-${CURRENT_PAGE_PREVIEW_LINES}`,
   })}>
 ${preview}
-[... ${remaining} more line${remaining === 1 ? '' : 's'} truncated. Read ${path} to load the full page.]
+[... ${remaining} more line${remaining === 1 ? '' : 's'} truncated. Call get_page({ rootId: "${root}", path: "${path}" }) for the whole page — it also returns the hash that update_page and update_sections require.]
 </current_page>`;
 }
 
-function buildAnnotations(annotations: Annotation[]): string {
+/**
+ * 0.2.50 — each annotation now carries the `root` of the page it sits on, where
+ * that is knowable.
+ *
+ * `page` alone is not an address: `get_page` without a `rootId` answers
+ * INVALID_ARGUMENT. `<current_page>` has always carried its root, so an
+ * annotation — which asks the agent to go and read a page — was the one block
+ * naming a page it could not open. The asymmetry had no reason behind it.
+ *
+ * Knowable means: an annotation is raised from the page the user is viewing, so
+ * an annotation whose `page` matches the current page shares its root. An
+ * annotation carried over from a different page does not say which root it came
+ * from — the client's annotation record has no such field — and rather than
+ * guess, those render without the attribute and `<annotation_handling>` says
+ * what to do about it. Threading a root through the client's annotation wire
+ * type is the real fix and is a change of its own.
+ */
+function buildAnnotations(
+  annotations: Annotation[],
+  currentPagePath: string | null,
+  currentPageRootId: string,
+): string {
   const lines: string[] = [`<annotations>`];
   for (const a of annotations) {
-    lines.push(`  <annotation ${attrs({ page: a.page, comment: a.comment ?? '' })}>`, a.text, `  </annotation>`);
+    const root = currentPagePath && a.page === currentPagePath ? currentPageRootId : undefined;
+    lines.push(
+      `  <annotation ${attrs({ page: a.page, root, comment: a.comment ?? '' })}>`,
+      a.text,
+      `  </annotation>`,
+    );
   }
   lines.push(`</annotations>`);
   return lines.join('\n');
@@ -1069,172 +1405,324 @@ function buildCurrentPatch(patch: PatchDetail): string {
   ].join('\n');
 }
 
+/**
+ * The five layers the main frame is ordered by. The axis is VOLATILITY plus
+ * LOCALITY OF REFERENCE: a block sits next to what it talks about, and the more
+ * often its content changes, the further down it goes.
+ *
+ *   A — the frame.     Who you are, and which of the four interactions this is.
+ *   B — this project.  What exists here: entity types, skills, the writing style.
+ *   C — access.        What you can call, and where you may reach.
+ *   D — conventions.   How to write, including whatever the active types add.
+ *   E — current state. This page, these annotations, this plan, this turn's mode.
+ */
+type PromptLayer = 'A' | 'B' | 'C' | 'D' | 'E';
+
+/**
+ * One block of the prompt. `render` returns the block or `null` when the block
+ * does not apply to this turn — the conditionals that used to be `if`s wrapping
+ * a `parts.push`.
+ */
+interface PromptBlock {
+  layer: PromptLayer;
+  /** The XML tag name, for ordering assertions and for reading the table. */
+  name: string;
+  render(ctx: PromptContext): string | null;
+}
+
+/** What every block's `render` receives: the input plus the few derived values. */
+interface PromptContext extends SystemPromptInput {
+  contextType: ChatContextType;
+  annotations: Annotation[];
+  availableSkills: { slug: string; description: string }[];
+  mcpInventory: readonly McpInventoryEntry[];
+  workspaceProjects: PeerProject[];
+  currentPageRootId: string;
+  planMode: boolean;
+  currentPlan: Plan | null;
+  writingStyleSkill: { slug: string; title: string; description?: string } | null;
+  brief: Brief | null;
+  patch: PatchDetail | null;
+}
+
+/**
+ * THE ORDER, as data.
+ *
+ * 0.2.50 — this table replaces seventeen `parts.push(…)` calls interleaved with
+ * `if`s and with comments like "right after the language directives and before
+ * `<current_patch>`". Those comments existed because the order was not readable
+ * from anything: it was a sequence of statements recording when each block was
+ * added — `0.1.51 step 6a`, `0.1.58 step 5a`, `0.2.36` — and a block's position
+ * was an accident of its release. Written down as a list, the order can be read
+ * in one screen, asserted in one test, and argued with.
+ *
+ * Two placements are worth defending because they look wrong:
+ *
+ *   `<interaction_context>` is FIRST, ahead of identity. The brief frame already
+ *   opened with it, so this makes one rule for four modes rather than two rules
+ *   for two groups — and in every mode, which of the four interactions this is
+ *   frames everything after it.
+ *
+ *   `<claude4spec_plan_mode>` is LAST despite being tool policy, which by layer
+ *   would put it in C. It is a per-turn switch — state, not contract — and it is
+ *   a refusal, which is the one kind of instruction that benefits from recency.
+ */
+const MAIN_PROMPT_BLOCKS: readonly PromptBlock[] = [
+  // ── A — the frame ───────────────────────────────────────────────────────
+  {
+    layer: 'A',
+    name: 'interaction_context',
+    render: (c) => buildInteractionContext(c.contextType, c.interactionRules),
+  },
+  { layer: 'A', name: 'claude4spec_identity', render: (c) => buildIdentity(c.projectName) },
+
+  // ── B — this project ────────────────────────────────────────────────────
+  {
+    layer: 'B',
+    name: 'project',
+    render: (c) => {
+      /**
+       * 0.2.50 — the ENTITY COUNTERS are gone; `pages` and `sections` stay, and
+       * say when they were true.
+       *
+       * Every count here was frozen at turn 1: the prompt is written once per
+       * thread (`setInitialSystemPrompt`, and the CLI ignores later ones), so
+       * the first mutation makes each number wrong for the rest of the thread.
+       * `ac` was additionally a filtered subset — `defaultPredicate` restricts
+       * it to active criteria — so `ac=1545` was not the number of criteria and
+       * nothing in the prompt said so.
+       *
+       * What decided it was looking for a consumer. No block anywhere says "if
+       * there are more than N entities, do X"; the sole reference to a counter
+       * in the whole prompt was `<sections_and_anchors>` pointing at its own.
+       * An agent that needs a count calls `list_entities({ mode: 'count' })` and
+       * gets a current one. These were tokens spent on numbers that were stale
+       * by the time they could matter and that nothing acted on.
+       *
+       * `pages` and `sections` survive as scale cues — "is this a ten-page spec
+       * or a thousand-page one" changes how you approach a sweep — with the
+       * staleness stated rather than implied.
+       */
+      const projectAttrs: Record<string, string | number> = {
+        name: c.projectName,
+        cwd: c.cwd,
+        roots: buildRootsAttr(c.roots),
+        pages: c.pageCount,
+        sections: c.sectionCount,
+        counted: 'first turn of this thread',
+      };
+      return selfClose('project', attrs(projectAttrs));
+    },
+  },
+  { layer: 'B', name: 'entities', render: (c) => buildEntitiesBlock(c.host) },
+  /**
+   * `<available_skills>` IMMEDIATELY BEFORE `<project_writing_skill>`, and the
+   * adjacency is load-bearing rather than tidy: the listing carries the
+   * CONVENTION for opening a skill, and the style block issues an INSTRUCTION to
+   * open one. Reversed, the model is told to call `load_skill_file` before
+   * anything has said what that is or that it is the only channel.
+   */
+  { layer: 'B', name: 'available_skills', render: (c) => buildAvailableSkills(c.availableSkills) },
+  {
+    layer: 'B',
+    name: 'project_writing_skill',
+    render: (c) => (c.writingStyleSkill ? buildProjectSkill(c.writingStyleSkill) : null),
+  },
+
+  // ── C — access ──────────────────────────────────────────────────────────
+  { layer: 'C', name: 'tooling', render: (c) => buildTooling(c.mcpInventory) },
+  {
+    layer: 'C',
+    name: 'workspace_projects',
+    // Gated on the SERVER being mounted rather than on a flag beside it: the
+    // block exists to make `ask`'s `project` argument constructible, so it is
+    // wanted exactly when `ask` is reachable.
+    render: (c) =>
+      hasServer(c.mcpInventory, 'c4s-tools') && c.workspaceProjects.length > 0
+        ? buildWorkspaceProjects(c.workspaceName ?? '', c.workspaceProjects)
+        : null,
+  },
+  {
+    layer: 'C',
+    // Promoted out of layer E (it used to sit among the `<current_*>` blocks):
+    // a path scope is a contract about where you may reach, fixed for the
+    // thread, not a fact about this turn.
+    name: 'agent_path_scope',
+    render: (c) =>
+      c.agentPathScope ? buildAgentPathScope(c.agentPathScope, c.cwd, c.roots, c.mcpInventory) : null,
+  },
+
+  // ── D — writing conventions ─────────────────────────────────────────────
+  { layer: 'D', name: 'entity_embeds', render: (c) => buildEntityEmbeds(c.host) },
+  /**
+   * Blocks contributed by the ACTIVE entity types, in `listEntities()` order.
+   * `<diagram_references>` is the first migrant: it used to be hardcoded here
+   * and emitted even for projects with no `diagram` type mounted.
+   */
+  {
+    layer: 'D',
+    name: 'plugin_prompt_blocks',
+    render: (c) => {
+      const blocks: string[] = [];
+      for (const m of c.host.listEntities()) {
+        for (const b of m.systemPrompt.promptBlocks ?? []) blocks.push(b.body);
+      }
+      return blocks.length > 0 ? blocks.join('\n\n') : null;
+    },
+  },
+  { layer: 'D', name: 'discovery_and_impact', render: () => buildDiscoveryAndImpact() },
+  { layer: 'D', name: 'tags', render: () => buildTags() },
+  { layer: 'D', name: 'todo_markers', render: () => TODO_MARKERS },
+  { layer: 'D', name: 'sections_and_anchors', render: () => SECTIONS_AND_ANCHORS },
+  {
+    layer: 'D',
+    name: 'spec_language',
+    render: (c) => (c.specLanguage ? buildSpecLanguage(c.specLanguage) : null),
+  },
+  {
+    layer: 'D',
+    name: 'conversational_language',
+    render: (c) =>
+      c.conversationalLanguage ? buildConversationalLanguage(c.conversationalLanguage) : null,
+  },
+
+  // ── E — current state ───────────────────────────────────────────────────
+  {
+    layer: 'E',
+    name: 'current_patch',
+    render: (c) => (c.contextType === 'patch' && c.patch ? buildCurrentPatch(c.patch) : null),
+  },
+  {
+    layer: 'E',
+    name: 'current_page',
+    // 0.1.79: `ask` (peer-consult) emits no `<current_*>` page block — it explores
+    // the peer's spec headlessly, with no "current page" anchor.
+    render: (c) =>
+      c.contextType !== 'ask' && c.currentPagePath
+        ? buildCurrentPage(c.currentPagePath, c.currentPageBody, c.currentPageRootId)
+        : null,
+  },
+  // Handling instructions sit BELOW the block they are about. They used to live
+  // at the top of `<claude4spec_identity>`, some seven hundred lines above the
+  // thing they described.
+  {
+    layer: 'E',
+    name: 'current_page_handling',
+    render: (c) => (c.contextType !== 'ask' && c.currentPagePath ? CURRENT_PAGE_HANDLING : null),
+  },
+  {
+    layer: 'E',
+    name: 'annotations',
+    render: (c) =>
+      c.annotations.length > 0
+        ? buildAnnotations(c.annotations, c.currentPagePath, c.currentPageRootId)
+        : null,
+  },
+  {
+    layer: 'E',
+    name: 'annotation_handling',
+    render: (c) => (c.annotations.length > 0 ? ANNOTATION_HANDLING : null),
+  },
+  {
+    layer: 'E',
+    name: 'current_plan',
+    render: (c) => {
+      if (!c.currentPlan || c.currentPlan.body.trim().length === 0) return null;
+      /**
+       * 0.2.50 — `hash` and `path` join `version`, and the omission they fix was
+       * expensive out of all proportion to its size.
+       *
+       * The block injects the plan's ENTIRE body — some 25 KB in a real thread.
+       * To change one line of it the agent calls `update_plan`, which REQUIRES
+       * `expectedHash` on every call after the one that creates the plan, and
+       * the only source of a hash was `get_plan`. So the agent called
+       * `get_plan`, received the same 25 KB a second time, and only then could
+       * write. The injection saved no call; it doubled one.
+       *
+       * `get_plan`'s own doc comment states the principle this block was
+       * breaking: "a read operation that cannot arm the write operation's guard
+       * leaves the caller no legal first move." `<current_plan>` was exactly
+       * such a read, and the hash was in the same object the whole time.
+       */
+      /**
+       * ...but ONLY on a whole plan. `getByThread` reads through `getByPath`,
+       * which windows the file at half the response budget, and `hash` is the
+       * digest of the WHOLE file either way — so on a truncated read the hash
+       * arms `expectedHash` against bytes the block never showed. The guard then
+       * passes on a body composed from the visible part, and the plan loses its
+       * tail with a `file_version` row asserting the edit was the change.
+       * `readForWrite`'s doc comment describes exactly this, which is why that
+       * second read exists at all.
+       *
+       * A truncated block therefore withholds the hash instead of handing over
+       * a loaded one, and says why. That restores the extra `get_plan` call in
+       * the one case where the call is not redundant.
+       */
+      const truncated = c.currentPlan.truncated === true;
+      const block = `<current_plan ${attrs({
+        path: c.currentPlan.path,
+        version: c.currentPlan.currentVersion,
+        hash: truncated ? undefined : c.currentPlan.hash,
+        truncated: truncated ? 'true' : undefined,
+      })}>\n${c.currentPlan.body}\n</current_plan>`;
+      if (!truncated) return block;
+      return (
+        `${block}\n` +
+        `This plan was TRUNCATED to fit the prompt${c.currentPlan.truncationHint ? ` (${c.currentPlan.truncationHint})` : ''} — the body above is not the whole file, and no hash is given for it. ` +
+        `Do NOT compose an update from what you see here: read the plan with get_plan first and write against the hash it returns, or you will write the truncation back over the missing part.`
+      );
+    },
+  },
+  {
+    layer: 'E',
+    name: 'claude4spec_plan_mode',
+    render: (c) => (c.planMode ? buildPlanMode(c.mcpInventory) : null),
+  },
+];
+
+/** Block names in emission order — what an ordering assertion compares against. */
+export function mainPromptBlockNames(): string[] {
+  return MAIN_PROMPT_BLOCKS.map((b) => b.name);
+}
+
 export function buildSystemPrompt(input: SystemPromptInput): string {
-  const {
-    host,
-    projectName,
-    cwd,
-    roots,
-    briefsDir,
-    patchesDir,
-    currentPagePath,
-    currentPageRootId = 'pages',
-    currentPageBody,
-    pageCount,
-    entityCounts,
-    tagCount,
-    sectionCount,
-    annotations = [],
-    planMode = false,
-    currentPlan = null,
-    planToolsAvailable = false,
-    c4sToolsAvailable = false,
-    workspaceProjects = [],
-    workspaceName,
-    writingStyleSkill = null,
-    availableSkills = [],
-    interactionRules,
-    specLanguage,
-    conversationalLanguage,
-    agentPathScope,
-    contextType = 'chat',
-    brief = null,
-    patch = null,
-  } = input;
+  const contextType = input.contextType ?? 'chat';
 
   // M05 m05ctxreg: the brief context (uiChrome='brief-detail' in the registry) uses a
-  // completely different prompt frame — no plugin tooling, no entity counters, no plan
-  // tools. Just the interaction context (M21's rules: identity, posture, the
-  // self-containment invariant), brief-tools usage, the active writing style if any
-  // (methodology, via its own workflows/brief.md), and the brief snapshot.
+  // different frame — no entity counters, no plan tools, a narrow toolset. Since
+  // 0.2.50 it does carry `<agent_path_scope>`, which it always should have.
   if (CONTEXT_TYPE_REGISTRY[contextType].uiChrome === 'brief-detail') {
     return buildBriefSystemPrompt({
-      projectName,
-      cwd,
-      brief,
-      annotations,
-      writingStyleSkill,
-      availableSkills,
-      interactionRules,
-      conversationalLanguage,
+      projectName: input.projectName,
+      cwd: input.cwd,
+      roots: input.roots,
+      brief: input.brief ?? null,
+      annotations: input.annotations ?? [],
+      writingStyleSkill: input.writingStyleSkill ?? null,
+      availableSkills: input.availableSkills ?? [],
+      interactionRules: input.interactionRules,
+      conversationalLanguage: input.conversationalLanguage,
+      mcpInventory: input.mcpInventory ?? [],
+      agentPathScope: input.agentPathScope,
     });
   }
 
-  const parts: string[] = [];
-
-  parts.push(buildIdentity(host, projectName));
-
-  // Block #1a (0.2.19) — immediately after identity: WHO the agent is in general, then
-  // what this particular interaction type asks of it. Unconditional, `chat` included.
-  parts.push(buildInteractionContext(contextType, interactionRules));
-
-  // Project self-close — env metadata (cwd, roots) before counters, then
-  // entity attrs in displayOrder, with `tags` last:
-  // (name, cwd, roots, pages, sections, [entities...], tags).
-  const projectAttrs: Record<string, string | number> = {
-    name: projectName,
-    cwd,
-    roots: buildRootsAttr(roots, briefsDir, patchesDir),
-    pages: pageCount,
-    sections: sectionCount,
+  const ctx: PromptContext = {
+    ...input,
+    contextType,
+    annotations: input.annotations ?? [],
+    availableSkills: input.availableSkills ?? [],
+    mcpInventory: input.mcpInventory ?? [],
+    workspaceProjects: input.workspaceProjects ?? [],
+    currentPageRootId: input.currentPageRootId ?? 'pages',
+    planMode: input.planMode ?? false,
+    currentPlan: input.currentPlan ?? null,
+    writingStyleSkill: input.writingStyleSkill ?? null,
+    brief: input.brief ?? null,
+    patch: input.patch ?? null,
   };
-  for (const m of host.listEntities()) {
-    if (!m.systemPrompt.roleNoun) continue; // opt-out (legacy ui-view)
-    // 0.2.4: the attribute is keyed by the TYPE SLUG, not by the deprecated
-    // `countStat.label`. Besides removing the last read of that slot, it fixes a
-    // real defect: a human label ("AC (active)", "Acceptance Criteria") produced
-    // a malformed XML attribute here, because `attrs()` escapes values but
-    // interpolates keys verbatim. A type slug is kebab-case by construction —
-    // a valid XML Name, unique per type, and the same token every entity tool
-    // takes as its `type` argument, so the count and the tool call now agree.
-    projectAttrs[m.type] = entityCounts[m.type] ?? 0;
-  }
-  projectAttrs.tags = tagCount;
-  parts.push(selfClose('project', attrs(projectAttrs)));
 
-  parts.push(buildTooling(host, planToolsAvailable, c4sToolsAvailable));
-
-  if (planToolsAvailable) {
-    parts.push(PLAN_TOOLS_USAGE);
-  }
-
-  if (c4sToolsAvailable) {
-    parts.push(C4S_TOOLS_USAGE);
-  }
-
-  // 0.1.58 step 5a: peer-discovery block — right after C4S_TOOLS_USAGE (it
-  // completes the c4s-tools contract), before the project skill. Same gate as
-  // <c4s_tools_usage>; a workspace with no peers (after excluding the current
-  // project) omits the block entirely. Absent in the brief frame (flag false).
-  if (c4sToolsAvailable && workspaceProjects.length > 0) {
-    parts.push(buildWorkspaceProjects(workspaceName ?? '', workspaceProjects));
-  }
-
-  /**
-   * 0.2.36 — unconditional, and IMMEDIATELY BEFORE `<project_skill>`.
-   *
-   * The order is the point, not a tidiness preference. `<available_skills>` carries
-   * the CONVENTION for opening a skill; `<project_skill>` issues an instruction to
-   * open one. Emitted the other way round, the model would be told to call
-   * `load_skill_file("…")` before anything had explained what that is or that it is
-   * the only channel.
-   */
-  parts.push(buildAvailableSkills(availableSkills));
-
-  // M37 (0.2.19): at most ONE <project_skill> block, and only ever for the active
-  // writing style. Every other skill of this turn — the hardcoded contextual ones and
-  // the unconditional plugin fan-out — is a listing row above; whether to open one is
-  // the model's call, made from its description via `load_skill_file(<slug>)`.
-  if (writingStyleSkill) {
-    parts.push(buildProjectSkill(writingStyleSkill));
-  }
-
-  // 0.1.51 step 6a/6b: language directives, right after the project skill and before
-  // the patch/page blocks. Gated on non-null (display name from SUPPORTED_LANGUAGES).
-  if (specLanguage) {
-    parts.push(buildSpecLanguage(specLanguage));
-  }
-  if (conversationalLanguage) {
-    parts.push(buildConversationalLanguage(conversationalLanguage));
-  }
-
-  // 0.1.90 step 6c: soft agent path-scope directive, right after the language
-  // directives and before <current_patch>. 0.1.130: gated only on `agentPathScope` being
-  // present — the block is now always emitted (its `artifactDenyDirs` ALWAYS-DISALLOWED
-  // line is unconditional). This sits on the non-brief path (brief frame returned early
-  // above), so the block is present in chat/patch/ask and absent in brief.
-  if (agentPathScope) {
-    parts.push(buildAgentPathScope(agentPathScope, cwd, roots));
-  }
-
-  // M23: patch-resolution thread. The patch file (a coding agent's feedback
-  // about a spec problem found during implementation) is injected verbatim;
-  // this thread's job is to fold its findings into the spec, then the author
-  // marks the patch `applied` from the UI.
-  if (contextType === 'patch' && patch) {
-    parts.push(buildCurrentPatch(patch));
-  }
-
-  // 0.1.79: `ask` (peer-consult) emits NO <current_*> block — it explores the
-  // peer's spec headlessly, with no "current page" anchor. (In practice the
-  // headless turn passes no page anyway; this guard makes the contract explicit.)
-  if (contextType !== 'ask' && currentPagePath) {
-    parts.push(buildCurrentPage(currentPagePath, currentPageBody, currentPageRootId));
-  }
-
-  if (annotations.length > 0) {
-    parts.push(buildAnnotations(annotations));
-  }
-
-  if (currentPlan && currentPlan.body.trim().length > 0) {
-    parts.push(
-      `<current_plan ${attrs({ version: currentPlan.currentVersion })}>\n${currentPlan.body}\n</current_plan>`,
-    );
-  }
-
-  if (planMode) {
-    parts.push(PLAN_MODE);
-  }
-
-  return parts.join('\n\n');
+  return MAIN_PROMPT_BLOCKS.map((b) => b.render(ctx))
+    .filter((s): s is string => s !== null && s !== '')
+    .join('\n\n');
 }

@@ -18,20 +18,27 @@ export const spreadsheetSystemPrompt: SystemPromptContribution = {
     'delete_column (shift the grid and update the dimension). Create/rename a sheet with the generic ' +
     'entity tools. A write past the current nRows/nCols is REFUSED — grow the sheet first with an ' +
     'insert, or set the dimension through the generic update tool.',
+  /**
+   * 0.2.50 — cut from ~1 370 characters to the slot's stated budget ("2-3
+   * sentences max, operational knowledge only").
+   *
+   * What went was structural rather than stylistic: points 3 and 4 of the old
+   * four-point list restated and justified point 1 — "do NOT equate the overview
+   * with body content" says again what "returns exactly this skeleton, never
+   * body cells" already said — and the paragraph explaining that dimensions are
+   * authored rather than inferred is a fact about storage, which the budget
+   * excludes and which the write tools' own refusal teaches at the moment it
+   * matters.
+   *
+   * What stays is the DECISION the agent actually faces on this type, and the
+   * reason it exists: which of two read tools to reach for, and why the cheap
+   * one is nearly always right.
+   */
   narrativeBlock:
-    'Spreadsheets are read OVERVIEW-FIRST — a reading discipline that pays off at ANY size, ' +
-    'not only for large sheets. Never pull the whole grid when you only need its shape.\n' +
-    '1. ALWAYS start from the overview — dimensions (nRows × nCols), the header_row / header_col ' +
-    'flags, and the perimeter header labels (names from row 1 and column 1) — before touching any ' +
-    'body content. `get_overview` returns exactly this skeleton, never body cells, and it is the ' +
-    'ONLY source of the perimeter labels: the read record at its default width carries the ' +
-    'dimensions and the two flags as ordinary fields, but no labels and no cells.\n' +
-    '2. Because `get_overview` already carries the header names, you do NOT need a separate range read ' +
-    'just for labels. Fetch only BODY cell content by RANGES via `spreadsheet-tools` (get_range), in ' +
-    'windows sized to what you actually need — never the entire sheet at once. Indices are 1-based ' +
-    'and inclusive.\n' +
-    '3. Do NOT equate the overview with body content: it is the shape plus header labels. Body ' +
-    'cells are always a separate, explicit range read.\n' +
-    '4. The dimensions are AUTHORED, not inferred from where cells happen to be. Clearing the last ' +
-    'written cell does not shrink the sheet, and a sheet may legitimately have trailing empty rows.',
+    'Spreadsheets are read OVERVIEW-FIRST, at any size: `get_overview` returns the shape ' +
+    '(nRows × nCols, the header flags) plus the perimeter header labels from row 1 and column 1, ' +
+    'and never a body cell — so it answers "what is in this sheet" without pulling the grid. ' +
+    'It is also the ONLY source of those labels; the plain entity read carries the dimensions and ' +
+    'flags but neither labels nor cells. Fetch body content with `get_range` afterwards, in windows ' +
+    'sized to what you need (1-based, inclusive), never the whole sheet at once.',
 };

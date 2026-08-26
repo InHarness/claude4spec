@@ -19,15 +19,22 @@ export const acSystemPrompt: SystemPromptContribution = {
   // this line now covers ONLY ac's custom semantic-audit tool.
   mcpToolsLine: 'ac-tools: analyze_ac_against_entities',
   /**
-   * The tagging convention rides HERE rather than in the specification, because
-   * an agent that has to read a page to learn how to tag will tag inconsistently
-   * on the turn it creates the criterion. `tags` is the classification axis for
-   * consistency rules 10 and 11, so a wrong tag is not cosmetic — it decides
-   * whether a module counts as covered.
+   * 0.2.50 — the tagging convention (`mNN` / `mNN-edge` / `entity-{type}` / `lN`)
+   * used to ride here, on the argument that an agent which has to read a page to
+   * learn how to tag will tag inconsistently on the turn it creates the
+   * criterion. The argument is sound and the address was wrong: those tokens
+   * describe ONE project's module numbering ("Layered Vertical Slices"), not a
+   * property of the `ac` type, and every other installation was being handed
+   * them as a fact about the product. A convention that varies per project
+   * belongs to the project's active writing style, which the agent loads with
+   * `load_skill_file` in every context type — early enough to tag correctly on
+   * the same turn.
+   *
+   * What stays is what does not vary: the shape of the entity. `tags` remains
+   * the classification axis for consistency rules 10 and 11, so the field is
+   * named here even though its vocabulary is not.
    */
   narrativeBlock:
     'Acceptance criteria — one observable statement; kind (requirement/edge-case), status (active/deprecated), verifies[] refs to entities, tags. ' +
-    'Tagging convention: a host module is `mNN` (m16, m05); its edge cases take the sibling tag `mNN-edge`; ' +
-    'an entity type contributed by a plugin is `entity-{type}` (entity-dto, entity-diagram); ' +
-    'a layer criterion is `lN` (l9) and is embedded on the page of the module that implements the layer, not on the layer page.',
+    'The tag vocabulary is a project convention, not a property of the type: follow the active writing style, and reuse the tags already on neighbouring criteria rather than inventing a scheme.',
 };

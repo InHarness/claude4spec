@@ -35,11 +35,29 @@ describe('INTERACTION_RULES', () => {
     expect(rules).toContain('Describe the SYSTEM, not the spec edits');
   });
 
-  it('brief: states the read-only posture and the single allowed plugin MCP', () => {
+  it('brief: states the narrow toolset and the single allowed plugin MCP', () => {
     const rules = INTERACTION_RULES.brief;
-    expect(rules).toContain('NO filesystem access');
     expect(rules).toContain('release-tools');
     expect(rules).toContain('diff-explore');
+  });
+
+  /**
+   * 0.2.50 — the brief rules no longer claim there is no filesystem access, and
+   * the claim's removal is a correction rather than a relaxation.
+   *
+   * `disallowedTools` is set NOWHERE in production code, and the `brief` profile
+   * has `builtinPosture: 'follow-thread'` — so the built-in file tools were
+   * available all along. Worse, the claim ran in the opposite direction too:
+   * `resolveAgentExecutionScope` reaches `baseExecuteArgs` for every context
+   * type, so a brief thread DID have a path scope and was told nothing about it.
+   * The agent was forbidden what it could do and unaware of what bound it. The
+   * frame now emits `<agent_path_scope>` and the rules point at it.
+   */
+  it('brief: claims no filesystem ban that nothing enforces', () => {
+    const rules = INTERACTION_RULES.brief;
+    expect(rules).not.toContain('NO filesystem access');
+    expect(rules).not.toContain('no Read/Write/Edit/Glob/Grep/Bash');
+    expect(rules).toContain('<agent_path_scope/>');
   });
 
   it('patch: says explicitly that it is NOT read-only, unlike brief', () => {

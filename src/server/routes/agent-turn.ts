@@ -332,9 +332,11 @@ export async function runAgentTurn(
   // M05 m05ctxreg: the context-type registry is the single source of truth for this
   // thread's five dispatch dimensions (skill / MCP set / chrome / subagent / posture).
   const ctx = CONTEXT_TYPE_REGISTRY[thread.contextType];
-  // Builtin posture (dim 5): `force-plan` pins read-only plan-mode EVERY turn regardless
-  // of the thread's stored plan_mode flag (→ READONLY_BUILTINS + disallowedTools =
-  // MUTATING_BUILTINS). One site, so it covers both POST /api/threads/:id/ask and
+  // Builtin posture (dim 5): `force-plan` pins plan-mode EVERY turn regardless of the
+  // thread's stored plan_mode flag. "Read-only" is the wrong word for what that buys:
+  // plan mode desugars to `disallowedToolGroups: ['file-write','shell']`, which touches
+  // BUILT-INS ONLY — the MCP surface is narrowed by the context profile instead (see
+  // `gateServers` below). One site, so it covers both POST /api/threads/:id/ask and
   // POST /api/chat. (Today only `ask` forces; the rest follow the thread flag.)
   const planMode = ctx.builtinPosture === 'force-plan' ? true : thread.planMode;
 
@@ -633,15 +635,71 @@ export async function runAgentTurn(
     // identical deny-set from the identical code (it re-reads config itself — the extra
     // disk read is the price of a single source of truth).
     const resolvedPathScope = resolveAgentExecutionScope({ cwd: deps.cwd, roots: deps.roots });
+
+    // 0.1.69 Transagents: the dispatcher is turn-scoped, NOT execute-scoped. It is
+    // itself stateless (two injected fields), but the correlation state it reaches —
+    // `takeTransagentToolUse` above — belongs to the turn, and capturing
+    // `input.model`/`input.architectureConfig` once keeps the child-turn posture
+    // identical across every execute of this turn.
+    // 0.2.50: hoisted above the system prompt, because `buildMcpEntries` reads it and
+    // the prompt's `<tooling>` block is now derived from what that returns.
+    const isChildBanka = thread.parentThreadId != null;
+    const transagentDispatcher = ctx.mcp.transagentTools && !isChildBanka
+      ? new TransagentDispatcher(deps, {
+          model: input.model,
+          architectureConfig: input.architectureConfig,
+          takeToolUseId: takeTransagentToolUse,
+          runTurn: (childInput) => runAgentTurn(deps, childInput),
+        })
+      : null;
+    /**
+     * Which of the mounted servers are a PLUGIN's own surface. Turn-scoped: plugin
+     * activation cannot change mid-turn (a config change builds a whole new
+     * `ProjectPluginHost`), so this is computed once and handed to every execute.
+     */
+    const pluginServerNames = pluginServerNamesFor(deps.pluginHost.listEntities().map((m) => m.type));
+
+    /**
+     * 0.2.50 — the `<tooling>` block's contents, DERIVED rather than described.
+     *
+     * The prompt used to carry a hand-written inventory: one line per entity type
+     * from its `mcpToolsLine`, plus three hardcoded literals. It drifted, in both
+     * directions at once. `page-tools` appeared nowhere in it while a neighbouring
+     * block instructed the agent to call `create_page` / `update_sections`; the
+     * brief frame advertised `get_release` / `get_release_diff` / `list_releases`,
+     * none of which are the names of the five tools that server actually exposes.
+     * Neither could be caught by a test, because there was nothing to compare the
+     * list against.
+     *
+     * Now there is. The same `buildMcpEntries()` that mounts the servers for the
+     * turn is run through the same `gateServers()` with the same profile, and the
+     * surviving handles are read for their DECLARED tool names. A server the
+     * profile empties out is dropped by the gate and never named; a server built
+     * against the pre-0.2.13 contract, which declares no `tools`, renders as its
+     * bare name — "I cannot enumerate this", which is a true statement, rather
+     * than an invented list, which is not.
+     */
+    const mcpInventory = gateServers(thread.contextType, buildMcpEntries(), pluginServerNames).map(
+      ({ name, server }) => ({
+        name,
+        tools: server.tools?.map((t) => t.name),
+        // Carried for classification, not for rendering: `<tooling>` draws no
+        // line between host and plugin servers, but the plan-mode list must,
+        // since a catalog row only speaks for the surface it was declared on.
+        plugin: pluginServerNames.has(name),
+      }),
+    );
+
     const systemPrompt = buildSystemPrompt({
       host: deps.pluginHost,
       projectName: cfg.name,
       cwd: deps.cwd,
       roots: deps.roots,
-      // briefs/patches are NOT roots but are shown in the `<project roots>` attr so the
-      // agent has a full spatial map; dirs read per-turn from config (hot-reload).
-      briefsDir: cfg.briefsDir,
-      patchesDir: cfg.patchesDir,
+      // 0.2.50: `briefsDir`/`patchesDir` no longer travel here. They were rendered into
+      // the `<project roots>` attr as `briefs=…;patches=…` for a "full spatial map",
+      // which made that attribute self-contradicting: neither is a root, passing either
+      // id to page-tools answers ROOT_NOT_FOUND, and `<agent_path_scope>` names the same
+      // two dirs as ALWAYS DISALLOWED. They keep the one home where they mean something.
       currentPagePath: currentPage,
       // rootId of the service the page was actually read from (viewed root, or the
       // 'pages' fallback) — rendered into the `<current_page root="…">` context.
@@ -654,13 +712,11 @@ export async function runAgentTurn(
       annotations,
       planMode,
       currentPlan,
-      // M05 m05ctxreg dim 2: prompt-side tooling flags mirror the registry's MCP set
-      // (the <tooling>/usage blocks must match what is actually mounted below).
-      planToolsAvailable: ctx.mcp.planTools,
-      // c4s-tools excluded for brief (narrow toolset) and `ask` (recursion guard) — the
-      // registry encodes this; dropping it also drops the <c4s_tools_usage> +
-      // peer-discovery prompt blocks.
-      c4sToolsAvailable: ctx.mcp.c4sTools,
+      // 0.2.50: replaces the `planToolsAvailable` / `c4sToolsAvailable` flag pair. Those
+      // mirrored the registry's MCP set by hand so the prompt could "match what is
+      // actually mounted"; this IS what is actually mounted, so there is nothing left to
+      // mirror. `<workspace_projects>` gates itself on `c4s-tools` appearing here.
+      mcpInventory,
       // 0.1.58: peer-discovery block. Gated on the same c4s-tools dimension; skip the
       // disk reads when c4s-tools is absent (the block would be gated out anyway).
       workspaceProjects: ctx.mcp.c4sTools ? (deps.listWorkspacePeers?.() ?? []) : [],
@@ -676,8 +732,15 @@ export async function runAgentTurn(
       conversationalLanguage: cfg.agent?.conversationalLanguage ?? undefined,
       // 0.1.90 soft layer: config-level lists drive the <agent_path_scope> block's
       // ALLOWED/DISALLOWED lines (rendered from the raw config lists). 0.1.130: the block
-      // is now always emitted (non-brief) because `artifactDenyDirs` is always non-empty —
-      // it carries the absolute artifact deny-set for the unconditional ALWAYS-DISALLOWED line.
+      // is always emitted because `artifactDenyDirs` is always non-empty — it carries the
+      // absolute artifact deny-set for the unconditional ALWAYS-DISALLOWED line.
+      //
+      // 0.2.50: and now in the BRIEF frame too, which is where this field was always
+      // going anyway. `resolvedPathScope` is computed unconditionally above and reaches
+      // `baseExecuteArgs` for every context type, so a brief thread has been running
+      // under this scope all along — it was only the prompt that omitted the block,
+      // while the brief's own interaction rules claimed no filesystem access at all.
+      // The agent was told the opposite of its situation in both directions at once.
       agentPathScope: {
         allowedPaths: resolvedPathScope.userAllowedPaths,
         disallowedPaths: resolvedPathScope.userDisallowedPaths,
@@ -724,27 +787,6 @@ export async function runAgentTurn(
         disallowedPaths: normalizeResumePathScope(resolvedPathScope.disallowedPaths),
       });
     };
-
-    // 0.1.69 Transagents: the dispatcher is turn-scoped, NOT execute-scoped. It is
-    // itself stateless (two injected fields), but the correlation state it reaches —
-    // `takeTransagentToolUse` above — belongs to the turn, and capturing
-    // `input.model`/`input.architectureConfig` once keeps the child-turn posture
-    // identical across every execute of this turn.
-    const isChildBanka = thread.parentThreadId != null;
-    const transagentDispatcher = ctx.mcp.transagentTools && !isChildBanka
-      ? new TransagentDispatcher(deps, {
-          model: input.model,
-          architectureConfig: input.architectureConfig,
-          takeToolUseId: takeTransagentToolUse,
-          runTurn: (childInput) => runAgentTurn(deps, childInput),
-        })
-      : null;
-    /**
-     * Which of the mounted servers are a PLUGIN's own surface. Turn-scoped: plugin
-     * activation cannot change mid-turn (a config change builds a whole new
-     * `ProjectPluginHost`), so this is computed once and handed to every execute.
-     */
-    const pluginServerNames = pluginServerNamesFor(deps.pluginHost.listEntities().map((m) => m.type));
 
     /**
      * MOUNTING IS LOUD — the two guards that make a failed mount fatal.
@@ -903,6 +945,43 @@ export async function runAgentTurn(
      * this very bug from the other side.
      */
     const buildMcpServersForExecute = (): Record<string, McpServerConfig> => {
+      /**
+       * ONE gate call, producing the final map. There is deliberately no second
+       * place where a server can enter it: `buildMcpEntries` is the only
+       * producer, and it is shared with the prompt's `<tooling>` inventory
+       * (built ~250 lines above, before the system prompt) so the set the model
+       * is TOLD about and the set it is GIVEN cannot describe different things.
+       */
+      const gated = gateServers(thread.contextType, buildMcpEntries(), pluginServerNames);
+
+      const mcpServers: Record<string, McpServerConfig> = Object.fromEntries(
+        // 0.2.2: `McpServerFactory.config` is deliberately `unknown` — the host
+        // only forwards it. THIS is the adapter boundary where it is re-widened to
+        // the vendor's config type, and the only place in the host that needs to.
+        gated.map(({ name, server }) => [name, server.config as McpServerConfig] as const),
+      );
+      assertFreshMount(mcpServers);
+      return mcpServers;
+    };
+
+    /**
+     * 0.2.50 — the SERVER-BUILDING half of the old `buildMcpServersForExecute`,
+     * split out so it has two callers instead of one.
+     *
+     * A `function` declaration rather than a `const` arrow, deliberately: it is
+     * hoisted, so the `<tooling>` inventory can call it up where the system
+     * prompt is assembled without moving a hundred and fifty lines of server
+     * construction up there with it.
+     *
+     * Calling it twice per turn is safe and is the point. Each call builds FRESH
+     * handles — `ProjectPluginHost.buildMcpServers` keeps its `seenHandles` /
+     * `seenInstances` dedup sets local to one invocation, so a second call is
+     * not a repeat instance — and an `McpServer` that is never mounted holds no
+     * OS resource and is simply collected. Only the per-query call's map reaches
+     * `assertFreshMount`; the inventory call's handles are read for their
+     * declared `tools` and discarded.
+     */
+    function buildMcpEntries(): Array<{ name: string; server: McpServerFactory }> {
       // M05 m05ctxreg dim 2: per-thread MCP servers are dispatched from the registry's
       // `mcp` descriptor — each server mounts iff its registry flag is set.
       const planTools = ctx.mcp.planTools
@@ -1030,29 +1109,8 @@ export async function runAgentTurn(
       if (workspaceTools) inlineEntries.push({ name: 'workspace-tools', server: workspaceTools });
       inlineEntries.push({ name: 'skill-tools', server: skillTools });
 
-      /**
-       * ONE gate call, producing the final map. There is deliberately no second
-       * place in this function where a server can enter it.
-       */
-      const gated = gateServers(
-        thread.contextType,
-        [...pluginEntries, ...inlineEntries],
-        // Which of the survivors are a PLUGIN's own surface. For a profile that
-        // admits no writes, an undeclared tool on one of those is denied rather
-        // than waved through — the host cannot vouch for what it never wrote.
-        // Inline servers are host-owned and are not in this set.
-        pluginServerNames,
-      );
-
-      const mcpServers: Record<string, McpServerConfig> = Object.fromEntries(
-        // 0.2.2: `McpServerFactory.config` is deliberately `unknown` — the host
-        // only forwards it. THIS is the adapter boundary where it is re-widened to
-        // the vendor's config type, and the only place in the host that needs to.
-        gated.map(({ name, server }) => [name, server.config as McpServerConfig] as const),
-      );
-      assertFreshMount(mcpServers);
-      return mcpServers;
-    };
+      return [...pluginEntries, ...inlineEntries];
+    }
 
     // M05 queue: streaming-input keeps the SDK input channel open across turns so
     // queued messages can be pushed into the LIVE turn (`adapter.pushMessage`).

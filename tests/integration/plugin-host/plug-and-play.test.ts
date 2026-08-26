@@ -183,8 +183,6 @@ describe('item 63 — a type that declares only its data is a first-class type',
         projectName: 'My Spec',
         cwd: t.cwd,
         roots: [] as Root[],
-        briefsDir: '.claude4spec/briefs',
-        patchesDir: '.claude4spec/patches',
         currentPagePath: null,
         currentPageBody: null,
         pageCount: 0,
@@ -193,10 +191,11 @@ describe('item 63 — a type that declares only its data is a first-class type',
         sectionCount: 0,
       });
 
-      // The narrative row, the count attribute, and the embed type union — three
-      // separate places in `prompts.md`'s shape, none of which was edited.
+      // The narrative row and the embed type union — two separate places in
+      // `prompts.md`'s shape, neither of which was edited. 0.2.50 removed the
+      // third, the per-type count attribute: frozen at turn 1, read by no block.
       expect(prompt).toContain('<entity type="sprocket">A sprocket is a toothed wheel. It fits DTOs.</entity>');
-      expect(prompt).toContain('sprocket="3"');
+      expect(prompt).not.toContain('sprocket="3"');
       // The embed type union — position depends on `displayOrder`, so match the
       // token inside the pipe-separated list rather than at a fixed offset.
       expect(prompt).toMatch(/(^|\|)sprocket(\||[^-\w])/);
