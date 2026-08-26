@@ -341,9 +341,17 @@ export function buildClonePatch(
   // presence decides — not its truthiness.
   if (bundleConfig.writingStyle !== undefined) patch.writingStyle = bundleConfig.writingStyle;
   if (bundleConfig.entities !== undefined) patch.entities = bundleConfig.entities;
+  // Key-presence, per field — the two are independent, and a bundle predating
+  // 0.2.53 carries only the first. An absent flag leaves the clone on the local
+  // default (`true`), which is the same answer a fresh project gets.
+  const agentPatch: { claudeUsePreset?: boolean; disableDirectFilesystemAccess?: boolean } = {};
   if (bundleConfig.agent?.claudeUsePreset !== undefined) {
-    patch.agent = { claudeUsePreset: bundleConfig.agent.claudeUsePreset };
+    agentPatch.claudeUsePreset = bundleConfig.agent.claudeUsePreset;
   }
+  if (bundleConfig.agent?.disableDirectFilesystemAccess !== undefined) {
+    agentPatch.disableDirectFilesystemAccess = bundleConfig.agent.disableDirectFilesystemAccess;
+  }
+  if (Object.keys(agentPatch).length > 0) patch.agent = agentPatch;
   // 0.1.96: migrate the bundle's releasable roots into the new cwd. A v1
   // bundle carries `pagesDir` (no `roots[]`) → map it to the built-in 'pages'
   // root via the v3→v4 path so the cloned project is v4-shaped.

@@ -3,6 +3,7 @@ import {
   normalizeResumePathScope,
   resolveAgentExecutionScope,
 } from '../services/agent-execution-scope.js';
+import { readConfig } from '../config.js';
 import type { Root } from '../../shared/types.js';
 
 /** The 409 body shape both turn-starting routes return. `violations` is the UI contract. */
@@ -44,12 +45,50 @@ export interface ResumeLockInput {
 export function checkResumeConfigLock(input: ResumeLockInput): ResumeConfigLockError | null {
   if (input.lastSessionId == null || !input.snapshotJson) return null;
   const scope = resolveAgentExecutionScope({ cwd: input.cwd, roots: input.roots });
-  const violations = findResumeViolations('claude-code', JSON.parse(input.snapshotJson), {
+  const snapshot = JSON.parse(input.snapshotJson) as Record<string, unknown>;
+  const violations = findResumeViolations('claude-code', snapshot, {
     model: input.model,
     architectureConfig: input.architectureConfig,
     allowedPaths: normalizeResumePathScope(scope.allowedPaths),
     disallowedPaths: normalizeResumePathScope(scope.disallowedPaths),
   });
+
+  /**
+   * 0.2.53 — the tool-gating axis, compared HERE and not by the library, and the
+   * difference is the entire point.
+   *
+   * `findResumeViolations` does know `disallowedToolGroups`, and locks it — but
+   * it locks the RESOLVED UNION, into which `planMode` desugars. Handing it our
+   * groups would therefore turn every mid-thread Plan Mode flip into a 409,
+   * because plan mode produces the same `file-write` + `shell` pair the project
+   * constant does. So we never pass them, and compare the CONFIG FIELD the
+   * turn-1 snapshot recorded instead: the flag is fixed for a thread's lifetime,
+   * plan mode stays a per-turn switch.
+   *
+   * A snapshot written before this field existed has no value for it, and
+   * nothing is locked in that case — the same "absent ⇒ not comparable" rule the
+   * library applies to every other constraint.
+   *
+   * That rule is NOT free here, and the cost is worth naming because it looks
+   * like an oversight: absence is arguably a known value (every pre-0.2.53
+   * thread ran WITH the built-ins), so treating it as `false` would be defensible
+   * and would 409 exactly the threads this release changes under. It is rejected
+   * on the trade-off, not on the logic — reading absence as `false` makes EVERY
+   * conversation that predates the upgrade unresumable in one step, whereas the
+   * shrink it avoids is fail-closed (tools vanish, none appear) and is announced
+   * to the model on every resumed turn by `<agent_filesystem_access>`. A
+   * capability the model is told it lost beats a fleet-wide 409.
+   */
+  const snapshotFlag = snapshot.disableDirectFilesystemAccess;
+  const currentFlag = readConfig(input.cwd).agent.disableDirectFilesystemAccess;
+  if (typeof snapshotFlag === 'boolean' && snapshotFlag !== currentFlag) {
+    violations.push({
+      path: 'agent.disableDirectFilesystemAccess',
+      reason:
+        'Direct filesystem access is fixed for the lifetime of a session; a capability gate must not shrink or grow mid-session. Start a new conversation to use the new setting.',
+    });
+  }
+
   if (violations.length === 0) return null;
   return {
     error: {

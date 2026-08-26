@@ -209,6 +209,21 @@ export interface AgentConfig {
    */
   allowedPaths?: string[];
   disallowedPaths?: string[];
+  /**
+   * 0.2.53: odbiera agentowi wbudowanemu grupy narzedzi `file-read` /
+   * `file-write` / `shell`, wiec `Read`, `Grep`, `Glob`, `Edit`, `Write`,
+   * `Bash`, `NotebookEdit` i `Skill` ZNIKAJA z katalogu modelu (a nie odmawiaja
+   * dopiero przy uzyciu). Specyfikacja jest odtad czytana i zapisywana wylacznie
+   * operacjami rdzenia — MCP jest poza gatingiem bez wyjatkow.
+   *
+   * BRAK POLA = `true`. Domyslka obejmuje rowniez istniejace projekty — swiadoma
+   * regresja wsteczna, ta sama klasa decyzji co `git.enabled`. Powod: zapis
+   * strony built-inem `Write` omijal `expectedHash`, capture wersji i
+   * wstrzykiwanie anchorow, czyli caly kontrakt spojnosci C4S.
+   *
+   * Additive — no `$schemaVersion` bump.
+   */
+  disableDirectFilesystemAccess?: boolean;
 }
 
 export interface NormalizedGitCommitTargetConfig {
@@ -236,6 +251,7 @@ export interface NormalizedAgentConfig {
   conversationalLanguage: string | null;
   allowedPaths: string[];
   disallowedPaths: string[];
+  disableDirectFilesystemAccess: boolean;
 }
 
 /**
@@ -327,6 +343,10 @@ export function defaults(cwd: string): NormalizedConfig {
       conversationalLanguage: null,
       allowedPaths: [],
       disallowedPaths: [],
+      // 0.2.53: brak pola = `true`. Ten default jest JEDYNYM miejscem, w ktorym
+      // ta domyslka zyje — konsumenci czytaja `config.agent.disableDirectFilesystemAccess`
+      // wprost, bez `?? true` rozsianego po call-siteach.
+      disableDirectFilesystemAccess: true,
     },
     // M28/0.1.118/0.1.125: git layer off unless opted in; commits land on HEAD.
     git: {
@@ -854,6 +874,12 @@ function validate(raw: unknown): Partial<Config> {
         throw typeError('agent.claudeUsePreset', 'boolean', ar.claudeUsePreset);
       }
       agent.claudeUsePreset = ar.claudeUsePreset;
+    }
+    if ('disableDirectFilesystemAccess' in ar) {
+      if (typeof ar.disableDirectFilesystemAccess !== 'boolean') {
+        throw typeError('agent.disableDirectFilesystemAccess', 'boolean', ar.disableDirectFilesystemAccess);
+      }
+      agent.disableDirectFilesystemAccess = ar.disableDirectFilesystemAccess;
     }
     if ('conversationalLanguage' in ar) {
       // Type-only here; membership enforced at PATCH /api/config route.

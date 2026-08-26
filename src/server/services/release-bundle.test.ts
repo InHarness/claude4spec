@@ -44,7 +44,7 @@ const CONFIG = {
   writingStyle: null,
   onboardingCompleted: true,
   entities: ['endpoint', 'design-system', 'diagram'],
-  agent: { claudeUsePreset: false },
+  agent: { claudeUsePreset: false, disableDirectFilesystemAccess: true },
 } as unknown as NormalizedConfig;
 
 const VERSIONS: Record<string, string> = {
@@ -409,6 +409,15 @@ describe('buildBundleArchive — sanitized config', () => {
       for (const excluded of ['pagesDir', 'mode', 'briefsDir', 'patchesDir', 'plansDir', 'entitiesDir', 'releasesDir', 'remoteApiUrl']) {
         expect(config).not.toHaveProperty(excluded);
       }
+      /**
+       * 0.2.53: the working convention travels (verdict KEEP) so a clone
+       * reproduces a project whose agent works through core operations. The
+       * path scope does NOT — absolute paths from another machine mean nothing
+       * here, and that asymmetry is the point of the allow-list.
+       */
+      expect(config.agent).toEqual({ claudeUsePreset: false, disableDirectFilesystemAccess: true });
+      expect(config.agent).not.toHaveProperty('allowedPaths');
+      expect(config.agent).not.toHaveProperty('disallowedPaths');
     } finally {
       cleanup();
     }

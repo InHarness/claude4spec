@@ -34,7 +34,7 @@ describe('spreadsheet system prompt (0.2.50)', () => {
   });
 
   it('declares its tools as `server: tool, tool`, so the allow-list parse yields real names', () => {
-    const tools = subagentsFor('chat', hostWithSpreadsheet)[0].tools ?? [];
+    const tools = subagentsFor('chat', hostWithSpreadsheet, true)[0].tools ?? [];
     const fromThisType = tools.filter((t) => t.includes('spreadsheet'));
     expect(fromThisType).toEqual([
       'mcp__spreadsheet-tools__get_overview',

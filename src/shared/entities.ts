@@ -571,7 +571,11 @@ export type ChatRole =
   | 'warning';
 
 /**
- * M21 generic context discriminator. 'chat' = default (full toolset, overlay UI).
+ * M21 generic context discriminator. 'chat' = default (overlay UI, the full MCP
+ * surface). 0.2.53: "full toolset" is no longer the right word for its BUILT-IN
+ * half — with `agent.disableDirectFilesystemAccess` on (the default) a chat
+ * thread runs with no file or shell built-ins at all, and work outside the
+ * specification requires unchecking that flag first.
  * 'brief' = brief editorial thread (whitelisted tools, brief-detail chrome,
  * brief_path points to FS file under briefsDir).
  * M23 'patch' = patch resolution thread — applies a patch's findings to the

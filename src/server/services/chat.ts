@@ -641,6 +641,11 @@ export class ChatService {
    * resume-immutable po stronie biblioteki). Oba pola sa OPCJONALNE — watki sprzed 0.2.8
    * maja snapshot bez nich, a `findResumeViolations` traktuje pole nieobecne po ktorejs
    * stronie jako "niezmienione", wiec stare watki nie zaczynaja nagle dostawac 409.
+   *
+   * 0.2.53: dochodzi `disableDirectFilesystemAccess` — POLE CONFIGU, nie policzona
+   * unia grup. Unia desugaruje sie z `planMode`, wiec porownywanie jej zamienialoby
+   * kazdy flip Plan Mode w srodku watku na 409. Tak samo opcjonalne i z tego samego
+   * powodu co para sciezek wyzej.
    */
   setInitialArchitectureConfig(
     threadId: string,
@@ -649,6 +654,7 @@ export class ChatService {
       architectureConfig: Record<string, unknown>;
       allowedPaths?: string[];
       disallowedPaths?: string[];
+      disableDirectFilesystemAccess?: boolean;
     },
   ): void {
     this.db

@@ -229,6 +229,8 @@ describe('config — agent path scope (0.1.90)', () => {
       // carry their defaults; the file itself keeps only the two written keys.
       conversationalLanguage: null,
       disallowedPaths: [],
+      // 0.2.53: absent from the file, so the normalizer supplies the default.
+      disableDirectFilesystemAccess: true,
     });
   });
 });
@@ -545,6 +547,7 @@ describe('config — central default normalizer (C23, 0.2.8)', () => {
       conversationalLanguage: null,
       allowedPaths: [],
       disallowedPaths: [],
+      disableDirectFilesystemAccess: true,
     });
     expect(cfg.git).toEqual({
       enabled: false,

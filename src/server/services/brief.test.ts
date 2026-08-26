@@ -33,6 +33,7 @@ describe('BriefService.updateContent — the suppress token and a failed write',
       unsuppress: (relPath) => calls.push({ op: 'unsuppress', relPath }),
     };
     return new BriefService({
+      cwd,
       briefsPages,
       briefsWatcher: writer,
       briefsSerializer: {} as BriefServiceDeps['briefsSerializer'],
@@ -104,5 +105,72 @@ describe('BriefService.updateContent — the suppress token and a failed write',
     // Releasing here would resurrect exactly the event the token exists to eat.
     expect(calls).toEqual([{ op: 'suppress', relPath: 'b.md' }]);
     expect(await fs.readFile(path.join(cwd, 'briefs', 'b.md'), 'utf-8')).toContain('edited');
+  });
+});
+
+/**
+ * 0.2.53 — an analysis brief is written by reading SOMEBODY ELSE'S repository
+ * with the built-in file tools, and no core operation replaces them. So the
+ * default posture refuses it at CREATION rather than opening a thread whose
+ * agent has nothing to work with.
+ *
+ * Enforced in the service, not the route, so the in-process caller
+ * (`TransagentDispatcher`) cannot bypass it — the same reason the neighbouring
+ * `roots` guard lives here.
+ */
+describe('BriefService.create — source: analysis vs the built-in tool posture', () => {
+  let cwd: string;
+
+  const writeConfig = async (agent: Record<string, unknown>) => {
+    await fs.mkdir(path.join(cwd, '.claude4spec'), { recursive: true });
+    await fs.writeFile(
+      path.join(cwd, '.claude4spec', 'config.json'),
+      JSON.stringify({ $schemaVersion: 4, name: 'test', agent }),
+    );
+  };
+
+  function makeService(): BriefService {
+    return new BriefService({
+      cwd,
+      briefsPages: new PagesService(cwd, 'briefs', 'briefs'),
+      briefsWatcher: {
+        markOrigin: () => {},
+        flush: async () => {},
+        suppress: () => {},
+        unsuppress: () => {},
+      } as SelfWriteMarker,
+      briefsSerializer: {} as BriefServiceDeps['briefsSerializer'],
+      pageVersions: { recordVersion: async () => {} } as unknown as BriefServiceDeps['pageVersions'],
+      chatService: {} as BriefServiceDeps['chatService'],
+      releaseService: {
+        getLatestReleaseName: () => 'r1',
+        getRelease: () => ({ name: 'r1' }),
+      } as unknown as BriefServiceDeps['releaseService'],
+      frontmatterIndexer: { indexPage: async () => {} } as unknown as BriefServiceDeps['frontmatterIndexer'],
+      ws: { broadcast: () => {} } as unknown as BriefServiceDeps['ws'],
+    });
+  }
+
+  beforeEach(async () => {
+    cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-brief-analysis-'));
+  });
+  afterEach(async () => {
+    await fs.rm(cwd, { recursive: true, force: true });
+  });
+
+  it('refuses an analysis brief under the default posture, naming the setting', async () => {
+    await writeConfig({});
+
+    await expect(
+      makeService().createBrief({ source: 'analysis', fromReleaseName: 'r1', toReleaseName: null }),
+    ).rejects.toThrow(/Block direct file access/);
+  });
+
+  it('allows an analysis brief once direct FS access is enabled', async () => {
+    await writeConfig({ disableDirectFilesystemAccess: false });
+
+    await expect(
+      makeService().createBrief({ source: 'analysis', fromReleaseName: 'r1', toReleaseName: null }),
+    ).resolves.toMatchObject({ toReleaseName: null });
   });
 });

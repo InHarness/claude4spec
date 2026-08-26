@@ -124,6 +124,73 @@ describe('GET/PATCH /config — agent.pathScopeStrength (0.1.103)', () => {
     expect(res.body.agent.allowedPaths).toEqual(['/allowed/dir']);
     expect(res.body.agent.pathScopeStrength).toBe('hard');
   });
+
+  /**
+   * 0.2.53 — the field, and the deep-merge that has to keep carrying it.
+   *
+   * The onboarding submit sends `agent: { conversationalLanguage }` and nothing
+   * else; if that wiped the branch, every freshly-onboarded project would lose
+   * the posture it was created with. This is the regression that guards it.
+   */
+  it('defaults disableDirectFilesystemAccess to true when the file omits it', async () => {
+    const res = await request(app()).get('/config');
+    expect(res.status).toBe(200);
+    expect(res.body.agent.disableDirectFilesystemAccess).toBe(true);
+  });
+
+  it('round-trips disableDirectFilesystemAccess through PATCH', async () => {
+    const res = await request(app())
+      .patch('/config')
+      .send({ agent: { disableDirectFilesystemAccess: false } });
+    expect(res.status).toBe(200);
+    expect(res.body.agent.disableDirectFilesystemAccess).toBe(false);
+  });
+
+  it('rejects a non-boolean disableDirectFilesystemAccess', async () => {
+    const res = await request(app())
+      .patch('/config')
+      .send({ agent: { disableDirectFilesystemAccess: 'yes' } });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+  });
+
+  /**
+   * 0.2.53 — `strength` must not fall through to 'hard' on an empty report set.
+   * `[].every(...)` is `true` and `[].some(...)` is `false`, so the reducer's
+   * natural shape claims the strongest possible gate for a project with NO gate.
+   */
+  it("reports toolGating strength 'none' when the flag is off and nothing is gated", async () => {
+    await request(app())
+      .patch('/config')
+      .send({ agent: { disableDirectFilesystemAccess: false } });
+    const res = await request(app()).get('/config');
+    expect(res.status).toBe(200);
+    expect(res.body.agent.toolGating.strength).toBe('none');
+    expect(res.body.agent.toolGating.escapeSurfaces).toEqual([]);
+  });
+
+  it('preserves disableDirectFilesystemAccess across the onboarding-shaped agent PATCH', async () => {
+    await request(app())
+      .patch('/config')
+      .send({ agent: { disableDirectFilesystemAccess: false } });
+
+    const res = await request(app())
+      .patch('/config')
+      .send({ agent: { conversationalLanguage: null } });
+    expect(res.status).toBe(200);
+    expect(res.body.agent.disableDirectFilesystemAccess).toBe(false);
+  });
+
+  /**
+   * The badge's data source. It must never claim `hard`: the tools are removed
+   * from the model's catalog, which is a model-behaviour gate, not a sandbox.
+   */
+  it('reports soft tool-gating strength with a named escape surface', async () => {
+    const res = await request(app()).get('/config');
+    expect(res.body.agent.toolGating.enforceable).toBe(true);
+    expect(res.body.agent.toolGating.strength).not.toBe('hard');
+    expect(res.body.agent.toolGating.escapeSurfaces.length).toBeGreaterThan(0);
+  });
 });
 
 // 0.1.125 — commit-target validation. `commitTarget`/`switchAfterRelease`
@@ -470,3 +537,4 @@ describe('PATCH /config — D4 write-target overlap (0.2.9)', () => {
     expect(res.body.error.message).toMatch(/overlaps write-target/);
   });
 });
+

@@ -613,7 +613,7 @@ const entityHost = {
 
 describe('subagentsFor (0.1.67)', () => {
   it('brief → diff-explore: release-tools, no entity graph', () => {
-    const subs = subagentsFor('brief', entityHost);
+    const subs = subagentsFor('brief', entityHost, true);
     expect(subs.map((s) => s.name)).toEqual(['diff-explore']);
     const tools = subs[0].tools ?? [];
     expect(tools).toEqual([
@@ -630,7 +630,7 @@ describe('subagentsFor (0.1.67)', () => {
 
   it('chat/patch → spec-explore: read-only entity graph + reference reads', () => {
     for (const ct of ['chat', 'patch'] as const) {
-      const subs = subagentsFor(ct, entityHost);
+      const subs = subagentsFor(ct, entityHost, true);
       expect(subs.map((s) => s.name)).toEqual(['spec-explore']);
       const tools = subs[0].tools ?? [];
       // M13: CRUD (incl. reads) lives on the generic entity-tools server —
@@ -649,7 +649,7 @@ describe('subagentsFor (0.1.67)', () => {
 
   it('no subagent can nest (no Agent/Task in tools)', () => {
     for (const ct of ['chat', 'brief', 'patch'] as const) {
-      const tools = subagentsFor(ct, entityHost)[0].tools ?? [];
+      const tools = subagentsFor(ct, entityHost, true)[0].tools ?? [];
       expect(tools).not.toContain('Agent');
       expect(tools).not.toContain('Task');
     }
@@ -663,17 +663,60 @@ describe('subagentsFor (0.1.67)', () => {
     // that needs a skill's content gets `mcp__skill-tools__load_skill_file`, the
     // same channel as its parent.
     for (const ct of ['chat', 'brief', 'patch', 'ask'] as const) {
-      const tools = subagentsFor(ct, entityHost)[0].tools ?? [];
+      const tools = subagentsFor(ct, entityHost, true)[0].tools ?? [];
       expect(tools).not.toContain('Skill');
     }
   });
 
   it('ask → spec-explore (reuses the read-only current-spec explorer)', () => {
-    const subs = subagentsFor('ask', entityHost);
+    const subs = subagentsFor('ask', entityHost, true);
     expect(subs.map((s) => s.name)).toEqual(['spec-explore']);
   });
-});
 
+  /**
+   * 0.2.53 — the default posture mounts NO explorer, and this is the test that
+   * keeps that honest.
+   *
+   * It is not a preference: the adapter intersects every subagent's `tools` with
+   * a BUILT-IN-only allow-list, so with the file/shell groups denied both
+   * explorers come out with `tools: []` — and an empty array is "no tools" in the
+   * SDK, not "inherit". An explorer that can call nothing is worse than none, so
+   * the parent keeps the work. Delete this expectation the day the library lets
+   * `mcp__*` through, and the cases above start covering both postures.
+   */
+  /**
+   * A `\\${` in a template literal is an ESCAPE, not an interpolation — the
+   * expression then ships to the model as source text. It happened here once, in
+   * the very branch that tells `spec-explore` whether it still has `Read`, and
+   * nothing else caught it: the prompt is a string, so both postures "pass" while
+   * neither is rendered.
+   */
+  it('renders every subagent prompt — no unexpanded template expression survives', () => {
+    for (const ct of ['chat', 'brief', 'patch', 'ask'] as const) {
+      for (const sub of subagentsFor(ct, entityHost, true)) {
+        expect(sub.prompt).not.toMatch(/\$\{/);
+      }
+    }
+  });
+
+  it('tells each explorer the truth about its built-ins, in both postures', () => {
+    const specOn = subagentsFor('chat', entityHost, true)[0].prompt;
+    expect(specOn).toContain('Read/Grep/Glob are also available');
+    const diffOn = subagentsFor('brief', entityHost, true)[0].prompt;
+    // With the built-ins on, `diff-explore` really does keep `Read` — so it must
+    // not claim its isolation from `pages/*.md` is structural, and the on-disk
+    // dump stays a documented last resort.
+    expect(diffOn).toContain('LAST RESORT');
+    expect(diffOn).not.toContain('that is structural rather than a promise');
+  });
+
+  it('mounts no subagent at all while the built-ins are denied (the default posture)', () => {
+    for (const ct of ['chat', 'brief', 'patch', 'ask'] as const) {
+      expect(subagentsFor(ct, entityHost)).toEqual([]);
+      expect(subagentsFor(ct, entityHost, false)).toEqual([]);
+    }
+  });
+});
 // 0.1.79: ask peer-consult prompt frame.
 describe('buildSystemPrompt — ask context (0.1.79)', () => {
   it('emits the chat-frame with <spec_language> + PLAN MODE and NO <current_*> block', () => {
@@ -693,6 +736,84 @@ describe('buildSystemPrompt — ask context (0.1.79)', () => {
     expect(out).not.toContain('<current_page path=');
     // Standard chat-frame identity (not the brief frame).
     expect(out).not.toContain('<claude4spec_brief_identity>');
+  });
+});
+
+/**
+ * 0.2.53 — `<agent_filesystem_access>`. The property under test is that there is
+ * NO omitted case: the block is emitted in both states of the flag, for every
+ * frame that uses the main block table. A block that appeared only when
+ * something was switched off would teach the model to read its absence as
+ * permission.
+ */
+describe('buildSystemPrompt — <agent_filesystem_access> (0.2.53)', () => {
+  for (const contextType of ['chat', 'patch', 'ask'] as const) {
+    it(`[ac:ac-blok-agent-filesystem-access-jest-emi] emits the disabled block in the ${contextType} frame`, () => {
+      const out = build({ contextType, agentFilesystemAccess: { enabled: false } });
+      expect(out).toContain('<agent_filesystem_access enabled="false">');
+    });
+
+    it(`emits the enabled block in the ${contextType} frame`, () => {
+      const out = build({ contextType, agentFilesystemAccess: { enabled: true } });
+      expect(out).toContain('<agent_filesystem_access enabled="true">');
+    });
+  }
+
+  /** Absent input describes the DEFAULT posture, not the permissive one. */
+  it('defaults to enabled="false" when the caller omits the field', () => {
+    expect(build({ contextType: 'chat' })).toContain('<agent_filesystem_access enabled="false">');
+  });
+
+  /** The brief frame states its posture in its own interaction-rules body. */
+  it('is absent from the brief frame in both states', () => {
+    for (const enabled of [true, false]) {
+      const out = build({ contextType: 'brief', agentFilesystemAccess: { enabled } });
+      expect(out).not.toContain('<agent_filesystem_access');
+    }
+  });
+
+  /** It sits directly after the path scope: where you may reach, then whether there is anything to reach with. */
+  it('follows <agent_path_scope> in emission order', () => {
+    const names = mainPromptBlockNames();
+    expect(names.indexOf('agent_filesystem_access')).toBe(names.indexOf('agent_path_scope') + 1);
+  });
+
+  /** The disabled body must name what stops working — that is the whole regression notice. */
+  it('names the capabilities the posture costs', () => {
+    const out = build({ contextType: 'chat', agentFilesystemAccess: { enabled: false } });
+    expect(out).toContain('source: analysis');
+    expect(out).toContain('Fix it with Agent');
+  });
+});
+
+/**
+ * 0.2.53 — the `<builtin>` inventory has two states, and only the project
+ * constant moves it (plan mode's split is stated by its own block instead).
+ */
+describe('buildSystemPrompt — <builtin> reflects the posture (0.2.53)', () => {
+  /**
+   * Compare TOOL NAMES, not substrings: `Write` is a substring of `TodoWrite`,
+   * which survives the deny, so a `toContain` check here reports the opposite of
+   * the truth.
+   */
+  const builtinTools = (out: string): string[] => {
+    const line = out.split('\n').find((l) => l.includes('<builtin')) ?? '';
+    const body = line.slice(line.indexOf('>') + 1, line.lastIndexOf('</builtin>'));
+    return body.split(',').map((t) => t.trim()).filter(Boolean);
+  };
+  const GATED = ['Read', 'Grep', 'Glob', 'Edit', 'Write', 'NotebookEdit', 'Bash', 'Skill'];
+
+  it('drops the file and shell built-ins when access is blocked', () => {
+    const tools = builtinTools(build({ contextType: 'chat', agentFilesystemAccess: { enabled: false } }));
+    for (const tool of GATED) expect(tools).not.toContain(tool);
+    // Ungated built-ins survive — the deny is by group, not a blanket silence.
+    expect(tools).toContain('TodoWrite');
+    expect(tools).toContain('WebFetch');
+  });
+
+  it('lists the full catalog when access is allowed', () => {
+    const tools = builtinTools(build({ contextType: 'chat', agentFilesystemAccess: { enabled: true } }));
+    for (const tool of GATED) expect(tools).toContain(tool);
   });
 });
 

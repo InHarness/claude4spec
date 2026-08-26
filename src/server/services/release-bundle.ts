@@ -97,7 +97,7 @@ export interface BundleConfig {
   writingStyle: string | null;
   onboardingCompleted: boolean;
   entities?: string[];
-  agent?: { claudeUsePreset?: boolean };
+  agent?: { claudeUsePreset?: boolean; disableDirectFilesystemAccess?: boolean };
 }
 
 export interface BundleManifest {
@@ -233,7 +233,20 @@ export function sanitizeConfigForBundle(config: NormalizedConfig): BundleConfig 
     writingStyle: config.writingStyle,
     onboardingCompleted: config.onboardingCompleted,
     entities: config.entities,
-    agent: { claudeUsePreset: config.agent.claudeUsePreset },
+    /**
+     * 0.2.53 adds `disableDirectFilesystemAccess` beside `claudeUsePreset`, with
+     * the verdict KEEP: it is a convention for working on the specification, not
+     * a secret and not a local correlation. A clone must reproduce a project in
+     * which the agent works through core operations — silently handing the file
+     * built-ins back would be the wrong default to inherit.
+     *
+     * `allowedPaths` / `disallowedPaths` stay off the list: those ARE local, and
+     * absolute paths from someone else's machine mean nothing here.
+     */
+    agent: {
+      claudeUsePreset: config.agent.claudeUsePreset,
+      disableDirectFilesystemAccess: config.agent.disableDirectFilesystemAccess,
+    },
   };
 }
 

@@ -14,7 +14,11 @@ import path from 'node:path';
  * deny-set must come from the same builder, not from a second implementation that can drift.
  */
 const executeMock = vi.hoisted(() => vi.fn(() => (async function* () {})()));
-vi.mock('@inharness-ai/agent-adapters', () => ({
+vi.mock('@inharness-ai/agent-adapters', async (importOriginal) => ({
+  // 0.2.53: partial mock. `resolveAgentToolGroups` (reached through the service)
+  // reads the real `PLAN_MODE_DENY_GROUPS`, and a hand-written stub of a
+  // library constant is exactly the drift this suite exists to catch.
+  ...(await importOriginal<typeof import('@inharness-ai/agent-adapters')>()),
   createAdapter: () => ({ execute: executeMock }),
   extractText: async () => '{"issues":[]}',
 }));
