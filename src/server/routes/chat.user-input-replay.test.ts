@@ -59,6 +59,10 @@ function makeActive(events: Array<Record<string, unknown>>): ActiveAdapter {
     replay: {
       turnStart: { type: 'turn_start', prompt: 'hi' },
       events: events as unknown as ActiveAdapter['replay']['events'],
+      // 0.2.50 replay byte budget. Test files are excluded from tsc
+      // (tsconfig.server.json), so a missing required field here is invisible
+      // until something reads it — keep the fixture honest by hand.
+      bytes: 0,
     },
     emit: () => {},
   };
