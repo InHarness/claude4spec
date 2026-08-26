@@ -637,6 +637,30 @@ export interface ChatThreadMeta extends ChatThread {
   messageCount: number;
 }
 
+/**
+ * 0.2.52: the shape `GET /api/threads/:id` actually returns — a thread plus the
+ * four DETAIL-ONLY collections.
+ *
+ * None of the four passes through `hydrateThread()`; every one is attached in
+ * the detail handler. The rule binds both ways. A list consumer must not reach
+ * for them: `GET /api/threads` does not ship them and never queries their
+ * tables. And none of them may be moved INTO `hydrateThread()`, because that
+ * would subject them to the list projection's performance contract — one extra
+ * query per listed row, for no reader.
+ *
+ * That is also why they live here rather than as required fields on
+ * {@link ChatThread}: `ChatThreadMeta extends ChatThread`, so a required field
+ * on the base would be a type-level claim the list projection cannot honour.
+ * Declaring the detail shape separately states the same contract structurally.
+ */
+export interface ChatThreadDetail extends ChatThread {
+  messages: ChatMessage[];
+  subagentTasks: ChatSubagentTask[];
+  /** Empty array when the thread never backgrounded a task. Sorted `created_at ASC`. */
+  backgroundTasks: ChatBackgroundTask[];
+  queuedMessages: QueuedMessage[];
+}
+
 export type ChatMessageStatus = 'streaming' | 'complete';
 
 export interface ChatMessage {

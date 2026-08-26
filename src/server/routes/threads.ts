@@ -14,6 +14,7 @@ import {
 import { checkResumeConfigLock } from './resume-lock.js';
 import { ASK_TURN_TIMEOUT_MS } from '../../shared/agent-turn.js';
 import { DEFAULT_MODEL } from '../../core/agent/run-agent.js';
+import type { ChatThreadDetail } from '../../shared/entities.js';
 
 export function threadsRouter(deps: AgentTurnDeps): Router {
   const router = Router();
@@ -71,16 +72,18 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
       // `joinStream`, zamiast zgadywać po `status` wierszy, który dla czystej tury
       // tekstowej nie istnieje aż do flush na granicy) przyjeżdża już w `result.thread`:
       // liczy je `hydrateThread()`, więc to samo pole widzi też lista `GET /api/threads`.
-      res.json({
-        data: {
-          ...result.thread,
-          messages: result.messages,
-          subagentTasks: result.subagentTasks,
-          backgroundTasks: result.backgroundTasks,
-          // M05: pending queue (position ASC) — restores chips after F5/restart.
-          queuedMessages: chat.listQueued(req.params.id),
-        },
-      });
+      // 0.2.52: the four DETAIL-ONLY collections are attached HERE, never in
+      // `hydrateThread()` — `GET /api/threads` must not carry them and must not
+      // touch their tables. See {@link ChatThreadDetail}.
+      const data: ChatThreadDetail = {
+        ...result.thread,
+        messages: result.messages,
+        subagentTasks: result.subagentTasks,
+        backgroundTasks: result.backgroundTasks,
+        // M05: pending queue (position ASC) — restores chips after F5/restart.
+        queuedMessages: chat.listQueued(req.params.id),
+      };
+      res.json({ data });
     } catch (err) {
       next(err);
     }
