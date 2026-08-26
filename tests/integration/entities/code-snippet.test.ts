@@ -297,10 +297,8 @@ describe('code-snippet — envelope and system prompt', () => {
         roots: [] as Root[],
         currentPagePath: null,
         currentPageBody: null,
-        pageCount: 0,
         entityCounts: { 'code-snippet': 2 },
         tagCount: 0,
-        sectionCount: 0,
       });
 
       // The narrative row carries the threshold — the one rule no validator can

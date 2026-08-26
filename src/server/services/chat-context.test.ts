@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { buildSystemPrompt, mainPromptBlockNames, subagentsFor, type SystemPromptInput, type PeerProject } from './chat-context.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
+import { acSystemPrompt } from '../entities/ac/system-prompt.js';
+import { diagramSystemPrompt } from '../entities/diagram/system-prompt.js';
 import { DEFAULT_PAGES_ROOT_PROPS, type Root } from '../../shared/types.js';
 
 /** Minimal Root at `dir` for prompt tests. */
@@ -20,10 +22,8 @@ function build(overrides: Partial<SystemPromptInput>): string {
     roots: [rootAt('pages')],
     currentPagePath: null,
     currentPageBody: null,
-    pageCount: 0,
     entityCounts: {},
     tagCount: 0,
-    sectionCount: 0,
     ...overrides,
   });
 }
@@ -82,12 +82,21 @@ describe('buildSystemPrompt — <project> carries no per-type counters (0.2.50)'
     expect(out).not.toContain('Acceptance Criteria=');
   });
 
-  it('keeps pages/sections and says when they were counted', () => {
-    const out = build({ pageCount: 41, sectionCount: 260 });
-    expect(out).toContain('pages="41"');
-    expect(out).toContain('sections="260"');
-    // The staleness is stated, not implied — the prompt is frozen after turn 1.
-    expect(out).toContain('counted="first turn of this thread"');
+  /**
+   * `pages`/`sections` fell to the same test that took the per-type counters:
+   * nothing in the prompt branches on them, and after #171 rewrote
+   * `<sections_and_anchors>` no block cites one at all. `counted=` went with
+   * them — it was honest about two attributes and misleading about the prompt
+   * around them.
+   */
+  it('carries identity only — name, cwd, roots, and no scale counters', () => {
+    const out = build({});
+    const projectTag = /<project\s([^>]*)\/>/.exec(out)?.[1] ?? '';
+    const keys = [...projectTag.matchAll(/([^\s=]+)="/g)].map(([, k]) => k);
+    expect(keys).toEqual(['name', 'cwd', 'roots']);
+    expect(projectTag).toContain('name="My Spec"');
+    expect(projectTag).toContain('cwd="/tmp/my-spec"');
+    expect(projectTag).toContain('roots="pages=pages"');
   });
 
   /**
@@ -122,6 +131,46 @@ describe('buildSystemPrompt — <project> carries no per-type counters (0.2.50)'
     expect(out).toContain('roots="pages=pages;adr=docs/adr"');
     expect(out).not.toContain('briefs=');
     expect(out).not.toContain('patches=');
+  });
+});
+
+/**
+ * 0.2.50 — `<entities>` rows carry RULES; shapes come from the tool.
+ *
+ * The rows are the real plugin contributions here, not fixtures, because the
+ * thing under test is a discipline about their CONTENT: a row must not preview
+ * what `describe_entity_type` returns derived from the schema. A fixture would
+ * only prove the assertion runs.
+ */
+describe('buildSystemPrompt — <entities> states rules, not shapes (0.2.50)', () => {
+  const realHost = {
+    listEntities: () => [
+      { type: 'ac', systemPrompt: acSystemPrompt },
+      { type: 'diagram', systemPrompt: diagramSystemPrompt },
+    ],
+  } as unknown as ProjectPluginHost;
+
+  const entitiesBlock = (out: string) => /<entities>[\s\S]*?<\/entities>/.exec(out)?.[0] ?? '';
+
+  it('names describe_entity_type as the address for fields and enums', () => {
+    const block = entitiesBlock(build({ host: realHost, mcpInventory: CHAT_INVENTORY }));
+    expect(block).toContain('describe_entity_type(type)');
+    expect(block).toMatch(/RULES, not shapes/);
+  });
+
+  it('previews no field name or enum value that describe_entity_type returns', () => {
+    const block = entitiesBlock(build({ host: realHost, mcpInventory: CHAT_INVENTORY }));
+    for (const shape of ['verifies[]', 'requirement/edge-case', 'active/deprecated']) {
+      expect({ shape, present: block.includes(shape) }).toEqual({ shape, present: false });
+    }
+  });
+
+  it('does not restate a convention block emitted beside it', () => {
+    // diagram's own <diagram_references> carries the reference grammar; the row
+    // must point at it rather than spell the two tags out a second time.
+    const out = build({ host: realHost, mcpInventory: CHAT_INVENTORY });
+    expect(out).toContain('<diagram_references>');
+    expect(entitiesBlock(out)).not.toContain('<single_element type="diagram"');
   });
 });
 
@@ -206,6 +255,33 @@ describe('buildSystemPrompt — M37 <project_writing_skill> is the writing-style
     });
     expect(out.match(/<project_writing_skill /g)?.length).toBe(1);
     expect(out).toContain('<project_writing_skill slug="house-style" title="House Style">');
+  });
+
+  /**
+   * 0.2.50 — the block says a style EXISTS and orders it read; it does not
+   * characterise it. It briefly rendered the style's own `description`, which
+   * is a blurb written to help a model decide whether to open a skill — a
+   * decision this block has already made for it.
+   */
+  it('renders no description of the style, only its address and the order to read it', () => {
+    const out = build({
+      mcpInventory: CHAT_INVENTORY,
+      // The extra `description` is a probe: the type no longer carries one, so
+      // this also fails at compile time if the field comes back — but the cast
+      // keeps the runtime guarantee that nothing renders it.
+      writingStyleSkill: { slug: 'house-style', title: 'House Style', description: 'PROBE_DESCRIPTION_TEXT' } as unknown as {
+        slug: string;
+        title: string;
+      },
+    });
+    const block = /<project_writing_skill [\s\S]*?<\/project_writing_skill>/.exec(out)?.[0] ?? '';
+    expect(block).not.toBe('');
+    expect(block).toContain('slug="house-style"');
+    expect(block).toContain('title="House Style"');
+    expect(block).toContain('call load_skill_file("house-style")');
+    expect(block).toContain('BINDING');
+    expect(block).not.toContain('PROBE_DESCRIPTION_TEXT');
+    expect(block).not.toContain('describes itself as');
   });
 
   it('brief frame: emits no block at all when no writing style is active', () => {

@@ -190,11 +190,9 @@ export interface SystemPromptInput {
   /** 0.1.96: which root the current page belongs to — the `root="…"` attr on `<current_page>`. */
   currentPageRootId?: string;
   currentPageBody: string | null;
-  pageCount: number;
   /** Counts indexed by entity-plugin type. Example: `{ endpoint: 12, dto: 5 }`. */
   entityCounts: Record<string, number>;
   tagCount: number;
-  sectionCount: number;
   annotations?: Annotation[];
   planMode?: boolean;
   currentPlan?: Plan | null;
@@ -231,7 +229,7 @@ export interface SystemPromptInput {
    * the plugin fan-out — rides `availableSkills` alone, and the model opens it via
    * `load_skill_file(<slug>)` if the description warrants it.
    */
-  writingStyleSkill?: { slug: string; title: string; description?: string } | null;
+  writingStyleSkill?: { slug: string; title: string } | null;
   /**
    * 0.2.36: the skill LISTING — `{ slug, description }` per attached skill, from
    * `SkillResolver.resolveForContext`. Rendered as `<available_skills>`, which is
@@ -373,8 +371,22 @@ You are a specification writing assistant for project "${projectName}". The user
 
 /* ─────────────────────────── LAYER B — this project ─────────────────────── */
 
+/**
+ * 0.2.50 — the rows state RULES; the closing line says where the SHAPES are.
+ *
+ * Every row used to open by enumerating the type's fields, its enums and which
+ * read carries its content. All of that is what `describe_entity_type` returns,
+ * and it returns it DERIVED from the declared data schema — so the tool's answer
+ * cannot drift from what the host enforces, while a hand-written preview of it
+ * can and did. Naming the tool once costs a line and is always current; the
+ * rows keep only what the tool does not answer: when to reach for the type, and
+ * the conventions no validator enforces.
+ */
 function buildEntitiesBlock(pluginHost: ProjectPluginHost): string {
-  return `<entities>\n${buildEntityRows(pluginHost)}\n</entities>`;
+  const schemaPointer =
+    '  Call describe_entity_type(type) for a type\'s fields, enums, required-ness and which reads ' +
+    'carry which — before your first write of a type. The rows above state RULES, not shapes.';
+  return `<entities>\n${buildEntityRows(pluginHost)}\n${schemaPointer}\n</entities>`;
 }
 
 /* ─────────────────────────── LAYER D — writing conventions ───────────────── */
@@ -1047,24 +1059,28 @@ function buildAvailableSkills(entries: { slug: string; description: string }[]):
  * its own discovery, because an agent told what a document contains has a reason
  * not to open it.
  *
- * So the block renders the skill's own `description` instead, which is the only
- * trustworthy account of it and was previously not rendered here at all, unlike
- * in the `<available_skills>` rows.
+ * 0.2.50 finishes the thought. The block briefly rendered the skill's own
+ * `description` instead — truer than the invented sentence, but the same shape
+ * of mistake: a `description` is a blurb written to help a model DECIDE whether
+ * to open a skill, and here there is no decision left, since the style is
+ * already selected and the block orders it read regardless. It is `summarise
+ * what the document contains` by another route, and buys nothing for the tokens.
+ *
+ * What the block says now is generic and true of every writing style: one
+ * exists, it binds everything you produce, and you have not read it yet.
  *
  * Also gone: "re-call whenever you transition from plan mode into execution".
  * The system prompt is frozen after the first turn (`setInitialSystemPrompt`),
  * so that transition has no representation the agent can observe — the
  * instruction names an event it will never see happen.
  */
-function buildProjectSkill(ws: { slug: string; title: string; description?: string }): string {
+function buildProjectSkill(ws: { slug: string; title: string }): string {
   return [
     `<project_writing_skill ${attrs({ slug: ws.slug, title: ws.title })}>`,
-    ws.description
-      ? `Skill "${ws.title}" (slug "${ws.slug}") is this project's active writing style. It describes itself as: ${ws.description}`
-      : `Skill "${ws.title}" (slug "${ws.slug}") is this project's active writing style.`,
+    `This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.`,
     ``,
-    `It is BINDING on what you write: pages, plans, entity content, and the structure of your answers all follow it.`,
-    `  1. Before your first tool call in this thread, call load_skill_file("${ws.slug}") — you do not know its conventions until you have read it, and this block does not summarise them.`,
+    `You do not know its conventions yet, and this block does not summarise them.`,
+    `  1. Before your first tool call in this thread, call load_skill_file("${ws.slug}") and read it.`,
     `  2. Treat its content as authoritative. If a request seems to contradict it, surface the conflict rather than quietly overriding the convention.`,
     `</project_writing_skill>`,
   ].join('\n');
@@ -1199,7 +1215,7 @@ function buildBriefSystemPrompt(input: {
   cwd: string;
   brief: Brief | null;
   annotations: Annotation[];
-  writingStyleSkill: { slug: string; title: string; description?: string } | null;
+  writingStyleSkill: { slug: string; title: string } | null;
   availableSkills: { slug: string; description: string }[];
   interactionRules?: string;
   conversationalLanguage?: string;
@@ -1440,7 +1456,7 @@ interface PromptContext extends SystemPromptInput {
   currentPageRootId: string;
   planMode: boolean;
   currentPlan: Plan | null;
-  writingStyleSkill: { slug: string; title: string; description?: string } | null;
+  writingStyleSkill: { slug: string; title: string } | null;
   brief: Brief | null;
   patch: PatchDetail | null;
 }
@@ -1482,34 +1498,31 @@ const MAIN_PROMPT_BLOCKS: readonly PromptBlock[] = [
     name: 'project',
     render: (c) => {
       /**
-       * 0.2.50 — the ENTITY COUNTERS are gone; `pages` and `sections` stay, and
-       * say when they were true.
+       * 0.2.50 — `<project>` carries IDENTITY, not statistics: every counter is
+       * gone, `pages` and `sections` included.
        *
-       * Every count here was frozen at turn 1: the prompt is written once per
-       * thread (`setInitialSystemPrompt`, and the CLI ignores later ones), so
-       * the first mutation makes each number wrong for the rest of the thread.
-       * `ac` was additionally a filtered subset — `defaultPredicate` restricts
-       * it to active criteria — so `ac=1545` was not the number of criteria and
+       * Each was frozen at turn 1: the prompt is written once per thread
+       * (`setInitialSystemPrompt`, and the CLI ignores later ones), so the first
+       * mutation makes the number wrong for the rest of the thread. `ac` was
+       * additionally a filtered subset — `defaultPredicate` restricts it to
+       * active criteria — so `ac=1545` was not the number of criteria and
        * nothing in the prompt said so.
        *
-       * What decided it was looking for a consumer. No block anywhere says "if
-       * there are more than N entities, do X"; the sole reference to a counter
-       * in the whole prompt was `<sections_and_anchors>` pointing at its own.
-       * An agent that needs a count calls `list_entities({ mode: 'count' })` and
-       * gets a current one. These were tokens spent on numbers that were stale
-       * by the time they could matter and that nothing acted on.
+       * What decided it was looking for a consumer, and the same look condemns
+       * `pages`/`sections`. No block anywhere says "if there are more than N
+       * pages, do X"; the one block that ever cited a counter,
+       * `<sections_and_anchors>`, stopped doing so in #171. An agent that needs
+       * a count calls `list_entities({ mode: 'count' })` and gets a current one.
        *
-       * `pages` and `sections` survive as scale cues — "is this a ten-page spec
-       * or a thousand-page one" changes how you approach a sweep — with the
-       * staleness stated rather than implied.
+       * The `counted=` stamp went with them. It was honest about these two
+       * attributes and misleading about the rest of the prompt, which it
+       * implied was fresh — and it cost a `listTree()` walk plus a
+       * `sections.count()` on the way to every turn's prompt.
        */
       const projectAttrs: Record<string, string | number> = {
         name: c.projectName,
         cwd: c.cwd,
         roots: buildRootsAttr(c.roots),
-        pages: c.pageCount,
-        sections: c.sectionCount,
-        counted: 'first turn of this thread',
       };
       return selfClose('project', attrs(projectAttrs));
     },

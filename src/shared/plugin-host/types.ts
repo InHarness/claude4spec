@@ -156,10 +156,27 @@ export interface SystemPromptContribution {
   mcpToolsLine?: string;
 
   /**
-   * Optional domain-specific paragraph injected after the core narrative.
-   * Budget: 2-3 sentences max, operational knowledge only (what the entity IS,
-   * how it's referenced/embedded) — no implementation details (storage layout,
-   * migrations, internal validation mechanics).
+   * Optional domain-specific paragraph injected after the core narrative — one
+   * `<entity type="…">` row in the prompt's `<entities>` block.
+   *
+   * 0.2.50 — the budget is stated by SUBJECT rather than by length, because the
+   * old wording ("what the entity IS") invited exactly what had to be cut. What
+   * belongs here is a RULE FOR USING THE TYPE THAT `describe_entity_type` DOES
+   * NOT RETURN. That tool answers every question about shape — field names,
+   * types, enums, required-ness, `constraints` (including named validators with
+   * their own prose), `contentFields`, `selectableFields`, `searchableFields` —
+   * and answers it DERIVED from the declared data schema, so it cannot drift
+   * from what the host enforces, while a paragraph here can and did.
+   *
+   * So: no field lists, no enum values, no "read X with tool Y" (that is
+   * `contentFields`), no embed grammar (that is `<entity_embeds>`), and no
+   * implementation detail (storage layout, migrations, validation mechanics).
+   * What is left is worth the tokens: when to reach for the type, the
+   * conventions no validator enforces, and the refusals an agent would
+   * otherwise read as a bug. 2-3 sentences.
+   *
+   * Note this text is ALSO the type's `description` in `c4s catalog` output
+   * (`serialization-engine`), so it is read outside the prompt too.
    */
   narrativeBlock?: string;
 
