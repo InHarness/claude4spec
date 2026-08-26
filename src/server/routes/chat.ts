@@ -478,7 +478,13 @@ export function chatRouter(deps: AgentTurnDeps): Router {
     // Ksztalt identyczny jak `connected` z POST /api/chat — `{ requestId, threadId }`.
     // Pole `live` bylo reliktem sprzed przejscia na 404: zawsze `true`, wiec nie nioslo
     // zadnej informacji, a jedynym sygnalem "brak tury" jest teraz kod 404 powyzej.
-    send('connected', { requestId: active.requestId, threadId });
+    send('connected', {
+      requestId: active.requestId,
+      threadId,
+      // Present ONLY when true, so its presence is always information. The
+      // client shows "replay incomplete; full content once the turn ends".
+      ...(active.replay.truncated ? { replayTruncated: true as const } : {}),
+    });
     send('turn_start', active.replay.turnStart);
     for (const ev of active.replay.events.slice()) {
       send((ev as { type: string }).type, toReplayWireEvent(ev));
@@ -558,7 +564,19 @@ function setupSse(res: Response): void {
   res.flushHeaders();
 }
 
-const SSE_HEARTBEAT_MS = 15_000;
+/**
+ * SSE keepalive interval (0.2.50: 15s → 20s).
+ *
+ * Written as a bare SSE COMMENT (`:` + blank line), deliberately not an event:
+ * a comment never reaches the client's event mapper or the library reducer, so
+ * it cannot be mistaken for turn activity. It guarantees exactly one thing —
+ * "this server process is alive" — and specifically NOT "work is progressing".
+ * Long silences are normal now that a turn can hold for background work.
+ *
+ * A future `hold_heartbeat` event (carrying `heldForMs`, `backgroundTasks[]`)
+ * replaces this and joins `SIDE_BAND_EVENT_TYPES`.
+ */
+const SSE_HEARTBEAT_MS = 20_000;
 
 /** Periodyczny komentarz SSE (`:\n\n`) — utrzymuje połączenie podczas długiego
  *  „thinking" bez zdarzeń, żeby proxy/load-balancer nie ubiło bezczynnego socketu.

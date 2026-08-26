@@ -711,6 +711,43 @@ export class ChatService {
       .run();
   }
 
+  /**
+   * Close out background tasks left `running` when a turn ended (0.2.50).
+   *
+   * A background task killed by hold-cap expiry, by an abort, or by a server
+   * restart never receives `background_task_completed` — the contract has no
+   * failed/aborted variant. Without this sweep its row keeps `status='running'`
+   * forever, so after F5 the panel does not merely lose information, it states
+   * something FALSE: a task that died minutes ago still rendering as in-flight.
+   *
+   * `'abandoned'` is our value, not the engine's: the contract hands over an
+   * opaque status string and never emits a terminal one for this case. The UI
+   * renders it as a plain label like any other status.
+   *
+   * Runs from the same `finally` as `finalizeStreamingRows`, i.e. only once the
+   * generator is exhausted — never on a held `result`, which is mid-turn.
+   */
+  finalizeRunningBackgroundTasks(threadId: string): void {
+    this.db
+      .prepare(
+        `UPDATE chat_background_task
+            SET status = 'abandoned', updated_at = datetime('now')
+          WHERE thread_id = ? AND status = 'running'`
+      )
+      .run(threadId);
+  }
+
+  /** Boot sweep — a restart leaves orphans behind in every thread at once. */
+  finalizeAllRunningBackgroundTasks(): void {
+    this.db
+      .prepare(
+        `UPDATE chat_background_task
+            SET status = 'abandoned', updated_at = datetime('now')
+          WHERE status = 'running'`
+      )
+      .run();
+  }
+
   updateCurrentTodoItems(threadId: string, items: TodoItem[] | null): void {
     const payload = items && items.length > 0 ? JSON.stringify(items) : null;
     this.db

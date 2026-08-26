@@ -7,6 +7,10 @@ import {
   AdapterAbortError,
   AdapterInitError,
   AdapterTimeoutError,
+  AdapterBackgroundHoldExpiredError,
+  AdapterToolPolicyError,
+  probeToolGating,
+  PLAN_MODE_DENY_GROUPS,
   type RuntimeAdapter,
   type StreamObserver,
   type UsageStats,
@@ -14,6 +18,7 @@ import {
   type UserInputResponse,
   type McpServerConfig,
 } from '@inharness-ai/agent-adapters';
+import { redactSecrets } from '../services/redact-secrets.js';
 import type { ChatService } from '../services/chat.js';
 import type { AgentCredentialService } from '../services/agent-credential.js';
 import type { PagesService } from '../services/pages.js';
@@ -134,6 +139,15 @@ export interface PendingInput {
 export interface TurnReplay {
   turnStart: TurnEvent;
   events: TurnEvent[];
+  /**
+   * Set once this iteration's buffer blew the byte budget and degradation was
+   * not enough to bring it back under (see `bufferForReplay`). Surfaced to a
+   * joining client as `connected.replayTruncated`, and ONLY when true — the
+   * field is absent otherwise, so its presence always means something.
+   */
+  truncated?: boolean;
+  /** Running byte estimate of `events`, maintained incrementally. */
+  bytes: number;
 }
 
 export interface ActiveAdapter {
@@ -235,7 +249,11 @@ export function cancelPendingForRequest(
  * `runTransagent` had to narrow on it too — re-exported here so the many
  * existing `from './agent-turn.js'` importers keep working.
  */
-import { AgentTurnError } from '../../shared/agent-turn.js';
+import {
+  AgentTurnError,
+  BACKGROUND_HOLD_CAP_MS,
+  TURN_TIMEOUT_MS,
+} from '../../shared/agent-turn.js';
 export { AgentTurnError, type AgentTurnErrorCode } from '../../shared/agent-turn.js';
 
 /** Every MCP tool the model sees is namespaced `mcp__<server>__<tool>`. */
@@ -352,7 +370,7 @@ export async function runAgentTurn(
     prompt,
     timestamp: new Date().toISOString(),
   };
-  const replay: TurnReplay = { turnStart, events: [] };
+  const replay: TurnReplay = { turnStart, events: [], bytes: 0 };
 
   // Zdarzenia istotne dla reducera (replay buduje stan bieżącej tury u joinera).
   const REPLAY_EVENT_TYPES = new Set([
@@ -383,6 +401,68 @@ export async function runAgentTurn(
     // dropped a SECURITY notice. A warning nobody sees is no warning.
     'warning',
   ]);
+  /**
+   * Byte budget for ONE iteration's replay buffer (0.2.50).
+   *
+   * The buffer is unbounded RAM held for the whole turn, and a turn that reads
+   * a lot of large files can push tens of MB of `tool_result` summaries through
+   * it. The cap is per iteration, not per turn, because merged dispatch resets
+   * the buffer on each new `turn_start`.
+   */
+  const REPLAY_BUDGET_BYTES = 4 * 1024 * 1024;
+
+  const sizeOf = (event: TurnEvent): number => {
+    try {
+      return JSON.stringify(event).length;
+    } catch {
+      // A non-serializable event cannot be replayed anyway; charge it nothing
+      // rather than letting the estimator throw inside the hot path.
+      return 0;
+    }
+  };
+
+  /**
+   * Bring the buffer back under budget by DEGRADING the oldest `tool_result`
+   * entries to a header — `{ toolUseId, toolName, truncated: true }` — instead
+   * of dropping them.
+   *
+   * Degrade rather than delete, because a deleted `tool_result` leaves the
+   * paired `tool_use` card spinning forever in the joiner's reducer: the card
+   * closes on the RESULT, so an absent one is not "less detail", it is a stuck
+   * UI. A degraded entry still closes the card, just without the body — and the
+   * full text is recoverable from `chat_message` once the turn ends.
+   *
+   * Oldest-first, because the newest results are the ones a joining client is
+   * most likely to still care about.
+   */
+  const degradeOldestToolResults = () => {
+    for (const entry of replay.events) {
+      if (replay.bytes <= REPLAY_BUDGET_BYTES) return;
+      const ev = entry as { type: string; truncated?: boolean; summary?: unknown };
+      if (ev.type !== 'tool_result' || ev.truncated) continue;
+      const before = sizeOf(entry);
+      const degraded = entry as unknown as Record<string, unknown>;
+      // Keep the identity fields the reducer pairs on; drop the payload.
+      for (const key of Object.keys(degraded)) {
+        if (key === 'type' || key === 'toolUseId' || key === 'toolName') continue;
+        delete degraded[key];
+      }
+      degraded.truncated = true;
+      replay.bytes -= before - sizeOf(entry);
+    }
+  };
+
+  const pushToReplay = (event: TurnEvent) => {
+    replay.events.push(event);
+    replay.bytes += sizeOf(event);
+    if (replay.bytes <= REPLAY_BUDGET_BYTES) return;
+    degradeOldestToolResults();
+    // Still over after degrading everything degradable — the overflow is text,
+    // not tool output. Nothing more to give back, so tell the joiner its replay
+    // is incomplete rather than pretending it is whole.
+    if (replay.bytes > REPLAY_BUDGET_BYTES) replay.truncated = true;
+  };
+
   const bufferForReplay = (event: TurnEvent) => {
     if (!REPLAY_EVENT_TYPES.has(event.type)) return;
     // Koalescuj kolejne `text_delta` z tej samej ramki (main vs subagent) — replay
@@ -395,14 +475,20 @@ export async function runAgentTurn(
         Boolean(last.isSubagent) === Boolean(event.isSubagent) &&
         last.subagentTaskId === event.subagentTaskId
       ) {
+        const before = sizeOf(last);
         last.text = String(last.text ?? '') + String(event.text ?? '');
+        replay.bytes += sizeOf(last) - before;
+        if (replay.bytes > REPLAY_BUDGET_BYTES) {
+          degradeOldestToolResults();
+          if (replay.bytes > REPLAY_BUDGET_BYTES) replay.truncated = true;
+        }
         return;
       }
       // Kopia — kolejne koalescje mutują bufor, nie obiekt już wysłany na żywo.
-      replay.events.push({ ...event });
+      pushToReplay({ ...event });
       return;
     }
-    replay.events.push(event);
+    pushToReplay(event);
   };
 
   // `onEvent` to transport callera; `emitter` zasila GET /api/chat/stream/:threadId.
@@ -440,6 +526,31 @@ export async function runAgentTurn(
   let lastMainAssistantRowId: number | null = null;
   let lastToolResultRowId: number | null = null;
   let lastTurnUsage: UsageStats | null = null;
+
+  /**
+   * Background tasks STARTED minus COMPLETED, for this turn (0.2.50).
+   *
+   * The application has to keep this itself, because the contract gives no way
+   * to recover it: `AdapterBackgroundHoldExpiredError` carries only `capMs` and
+   * no task list, and a task killed by cap expiry or abort never receives a
+   * `background_task_completed` at all. Whatever is still in this set when the
+   * generator ends is exactly the work that was abandoned.
+   *
+   * Turn-scoped and in memory only — the DB rows are finalized separately by
+   * `finalizeRunningBackgroundTasks`.
+   */
+  const hold = new Set<string>();
+
+  /**
+   * Terminal error EVENTS captured inside the loop (0.2.50).
+   *
+   * The adapter delivers these two through the stream rather than throwing, so
+   * they cannot be caught. They are recorded here and re-raised as an
+   * `AgentTurnError` once the generator is exhausted, which keeps every turn
+   * failure — thrown or delivered — funnelling through one exit path.
+   */
+  let policyRefusal: AdapterToolPolicyError | null = null;
+  let backgroundHoldExpired: AdapterBackgroundHoldExpiredError | null = null;
 
   const getSubBuf = (taskId: string) => {
     let buf = subagentBuffers.get(taskId);
@@ -1126,10 +1237,59 @@ export async function runAgentTurn(
     // resolvedPathScope.disallowedPaths, so the sandbox is built every turn. `allowWrite`
     // may be empty (no user allow-list, roots inside cwd); the library keeps `cwd`
     // writable as its base, so empty allowWrite means "cwd writable, artifact dirs denied".
+    /**
+     * 0.2.50 — background tasks are switched OFF where there is nowhere to show
+     * a hold.
+     *
+     * `ask` is headless: `POST /api/threads/:id/ask` blocks the HTTP request
+     * until the turn ends and has no UI in which to render a spinner. A child
+     * thread is switched off because `runTransagent` must stay blocking and
+     * terminal — detach mode is deliberately absent in v1, and without this
+     * flag a bubble's `result` could carry `backgroundTasks` and break that
+     * decision as a side effect of a library upgrade.
+     *
+     * This is the third guard keyed on `parentThreadId`, alongside the
+     * `transagent-tools` recursion strip and the bubble's exclusion from lists.
+     */
+    const backgroundTasksDisallowed =
+      thread.contextType === 'ask' || thread.parentThreadId != null;
+
     const architectureConfigForExecute = {
       ...input.architectureConfig,
       claude_sandbox: resolvedPathScope.claudeSandbox,
+      /**
+       * Cap the hold at 5 min rather than the library's 90 s: silence during a
+       * hold is normal, because `background_task_progress` is not guaranteed.
+       * Must never be null/Infinity — the library reads either as "disarm".
+       */
+      claude_backgroundHoldCapMs: BACKGROUND_HOLD_CAP_MS,
+      ...(backgroundTasksDisallowed ? { claude_disallowBackgroundBash: true } : {}),
     };
+
+    /**
+     * SYNCHRONOUS pre-dispatch probe (0.2.50).
+     *
+     * Asked BEFORE `adapter.execute` so an unenforceable posture is a refusal to
+     * start rather than a degradation discovered after the fact. On
+     * `claude-code` all four groups are enforceable (at `soft` strength — a
+     * model-behaviour gate, not a sandbox), so this path is defensive here; it
+     * is what makes the refusal contract real on any other architecture.
+     */
+    if (planMode) {
+      const unenforceable = probeToolGating('claude-code', PLAN_MODE_DENY_GROUPS)
+        .filter((report) => !report.enforceable)
+        .map((report) => report.group);
+      if (unenforceable.length > 0) {
+        const refusal = new AgentTurnError(
+          'TOOL_POLICY_REFUSED',
+          `plan mode requires deny-groups that this architecture cannot enforce: ${unenforceable.join(', ')}`,
+        );
+        // Refusal to START: exactly one `error`, then `done`. No `adapter_ready`,
+        // no `result`, and nothing persisted as an assistant message.
+        emit({ type: 'error', code: refusal.code, error: refusal.message });
+        throw refusal;
+      }
+    }
     const baseExecuteArgs = {
       systemPrompt,
       model: input.model,
@@ -1153,7 +1313,14 @@ export async function runAgentTurn(
       architectureConfig: architectureConfigForExecute,
       planMode,
       onUserInput: input.onUserInput,
-      ...(input.timeoutMs ? { timeoutMs: input.timeoutMs } : {}),
+      /**
+       * Always bounded now. `ask` passes its own tighter 15 min; an interactive
+       * chat turn falls back to `TURN_TIMEOUT_MS` (60 min), which must stay
+       * well ABOVE `BACKGROUND_HOLD_CAP_MS` so a hold that outlives its cap
+       * surfaces as the typed `AdapterBackgroundHoldExpiredError` rather than a
+       * bare timeout.
+       */
+      timeoutMs: input.timeoutMs ?? TURN_TIMEOUT_MS,
       ...(streamingInput ? { streamingInput: true } : {}),
       // 0.1.90 hard layer: resolved, absolute scope handed to the native sandbox
       // every turn (hot-reload). 0.1.130: always present — disallowedPaths always carries
@@ -1204,15 +1371,39 @@ export async function runAgentTurn(
           // further `result` (empty `backgroundTasks`) before the generator is
           // `done`. Do NOT emit or buffer this result: agent-chat's reducer sets
           // `isStreaming: false` and SUMS usage on every `result`, so a held one
-          // would stop the turn UI early and double-count usage. Track sessionId
-          // only, skip the switch's usage finalization, and let the `for-await`
-          // continue to the genuine final result.
+          // would stop the turn UI early and double-count usage.
+          //
+          // 0.2.50: the brief's wire example DOES show this result on the
+          // stream. We deliberately keep swallowing it, and filed a
+          // `clarification` patch saying so — forwarding it is blocked on
+          // agent-chat's reducer learning that a `result` can be non-terminal.
+          // The client does not need it: the hold spinner counts
+          // `background_task_started` minus `_completed`, which it already sees.
+          //
+          // Persistence-wise this is a PARTIAL flush: close the text buffers so
+          // the rows land in stream order, remember the session, and record the
+          // hold — but do NOT call `attachTurnUsage`, because the turn's usage
+          // snapshot is not final until the continuation turn's `result`.
+          flushMainBuf();
+          for (const tid of Array.from(subagentBuffers.keys())) flushSubBuf(tid);
           if (event.sessionId) {
             currentSessionId = event.sessionId;
             recordSession(event.sessionId);
           }
+          if (event.usage) {
+            // `setLastUsage` is a "latest wins" SCRATCH write on the thread, not
+            // the closing snapshot — safe to repeat on every held result.
+            //
+            // Deliberately does NOT touch `lastTurnUsage`: that variable is what
+            // the terminal `result` stamps onto the turn's anchor row via
+            // `attachTurnUsage`, and it is owned by `assistant_message`.
+            // Overwriting it here would freeze the turn's final usage at the
+            // partial figure the hold happened to be holding.
+            deps.chatService.setLastUsage(thread.id, event.usage);
+          }
+          for (const task of event.backgroundTasks ?? []) hold.add(task.taskId);
           continue;
-        } else {
+        } else if (event.type !== 'adapter_ready') {
           emit(event as unknown as TurnEvent);
         }
 
@@ -1363,6 +1554,7 @@ export async function runAgentTurn(
           // stored by name so a future SDK kind is observable, not dropped.
           case 'background_task_started':
             flushMainBuf();
+            hold.add(event.taskId);
             deps.chatService.startBackgroundTask(
               thread.id,
               event.taskId,
@@ -1381,6 +1573,10 @@ export async function runAgentTurn(
             );
             break;
           case 'background_task_completed':
+            // Settles ONE task; it never ends the turn. The run stays open until
+            // the generator is exhausted, and a continuation turn usually
+            // follows this event.
+            hold.delete(event.taskId);
             deps.chatService.completeBackgroundTask(
               thread.id,
               event.taskId,
@@ -1417,7 +1613,80 @@ export async function runAgentTurn(
               deps.chatService.updateCurrentTodoItems(thread.id, event.items);
             }
             break;
+          /**
+           * Internal delimiter meaning "every start-up warning has now been
+           * emitted". Consumed here and nowhere else: not forwarded (filtered
+           * out above), not persisted, not replayed — it renders nothing, and
+           * the client's marker for "an iteration began" is `turn_start`.
+           *
+           * Logged because it is the only record of what the turn actually ran
+           * with. `sdkConfig` is library-shaped and carries `custom_env` with a
+           * decrypted API key, so it goes through `redactSecrets` first.
+           */
+          case 'adapter_ready':
+            console.info(
+              '[agent] adapter ready',
+              JSON.stringify({
+                adapter: event.adapter,
+                sdkConfig: redactSecrets(event.sdkConfig),
+              }),
+            );
+            break;
+          /**
+           * Context-compaction boundary, empty payload. Side-band: forwarded so
+           * the client can draw a separator, but it must never take part in
+           * end-of-turn detection — hence its membership in
+           * `SIDE_BAND_EVENT_TYPES`. Nothing to persist.
+           */
+          case 'flush':
+            break;
+          /**
+           * Terminal error events. These are DELIVERED, not thrown: the
+           * iterator yields them and then ends, so the `catch` below never sees
+           * them. It handles only `AdapterAbortError` / `AdapterTimeoutError`,
+           * which genuinely throw.
+           *
+           * Recognized by class, not by a code — `.name` survives serialization
+           * where a code would have to be invented.
+           */
+          case 'error': {
+            const err = event.error;
+            if (err instanceof AdapterToolPolicyError) {
+              // Refusal to START, not a turn that failed. No assistant message
+              // is persisted; the stream is exactly this error plus `done`.
+              policyRefusal = err;
+            } else if (err instanceof AdapterBackgroundHoldExpiredError) {
+              backgroundHoldExpired = err;
+            }
+            break;
+          }
+          /**
+           * REQUIRED, and not a matter of style: `UnifiedEvent` gains members
+           * between library releases, and an unhandled new type must be a
+           * silent no-op rather than a crash inside the turn loop.
+           */
+          default:
+            break;
         }
+      }
+      /**
+       * The generator is exhausted — THE only unconditional end of an
+       * iteration. Any terminal error the stream delivered rather than threw is
+       * re-raised now, so it reaches the same `catch` as a thrown one.
+       */
+      if (policyRefusal) {
+        throw new AgentTurnError(
+          'TOOL_POLICY_REFUSED',
+          `tool policy not enforceable on this architecture: ${policyRefusal.unenforceable.join(', ') || 'unknown group'}`,
+        );
+      }
+      if (backgroundHoldExpired) {
+        // The abandoned count comes from OUR registry — the library's error
+        // carries `capMs` and nothing else.
+        throw new AgentTurnError(
+          'BACKGROUND_HOLD_EXPIRED',
+          `background hold expired after ${backgroundHoldExpired.capMs}ms with ${hold.size} task(s) still running`,
+        );
       }
     };
 
@@ -1451,6 +1720,10 @@ export async function runAgentTurn(
       };
       replay.turnStart = mergedTurnStart;
       replay.events = [];
+      // The byte budget is PER ITERATION, so the counter and the truncation
+      // flag reset with the events they describe.
+      replay.bytes = 0;
+      delete replay.truncated;
       emit(mergedTurnStart);
       await consume(merged);
       batch = deps.chatService.popAllQueued(thread.id);
@@ -1463,7 +1736,13 @@ export async function runAgentTurn(
     // Mapuj na typed blad — `onEvent` dostaje `event: error` (parytet z SSE),
     // a caller (headless `ask`) lapie `AgentTurnError` i mapuje na status HTTP.
     let turnErr: AgentTurnError;
-    if (err instanceof AdapterAbortError) {
+    if (err instanceof AgentTurnError) {
+      // Already typed — a terminal error the STREAM delivered (tool-policy
+      // refusal, hold-cap expiry), re-raised after the generator ended. Passing
+      // it through keeps its specific code instead of flattening it to
+      // AGENT_ERROR.
+      turnErr = err;
+    } else if (err instanceof AdapterAbortError) {
       turnErr = new AgentTurnError('ABORTED', 'Aborted by user');
     } else if (err instanceof AdapterTimeoutError) {
       turnErr = new AgentTurnError('TIMEOUT', 'Agent took too long to respond');
@@ -1485,6 +1764,18 @@ export async function runAgentTurn(
       for (const tid of Array.from(subagentBuffers.keys())) flushSubBuf(tid);
     } catch (flushErr) {
       console.error('[chat] final flush failed', flushErr);
+    }
+    try {
+      // Whatever is STILL in `hold` here was abandoned: the generator is
+      // exhausted, so no further `background_task_completed` can arrive.
+      if (hold.size > 0) {
+        console.warn(
+          `[chat] turn ended with ${hold.size} background task(s) still running: ${Array.from(hold).join(', ')}`,
+        );
+      }
+      deps.chatService.finalizeRunningBackgroundTasks(thread.id);
+    } catch (bgErr) {
+      console.error('[chat] finalizeRunningBackgroundTasks failed', bgErr);
     }
     try {
       deps.chatService.finalizeStreamingRows(thread.id);

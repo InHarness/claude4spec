@@ -76,6 +76,7 @@ vi.mock('../config.js', async (importOriginal) => {
 });
 
 import { runAgentTurn, type AgentTurnDeps, type AgentTurnInput } from './agent-turn.js';
+import { BACKGROUND_HOLD_CAP_MS, TURN_TIMEOUT_MS } from '../../shared/agent-turn.js';
 
 afterEach(() => {
   hoisted.agent = undefined;
@@ -136,6 +137,7 @@ function makeDeps() {
     startBackgroundTask: () => {},
     updateBackgroundTaskProgress: () => {},
     completeBackgroundTask: () => {},
+    finalizeRunningBackgroundTasks: () => {},
     updateCurrentTodoItems: () => {},
     finalizeStreamingRows: () => {},
     // M05 queue: the after-turn merged-dispatch loop drains the queue; an empty
@@ -687,13 +689,50 @@ describe('runAgentTurn — server-side turn timeout (0-1-110-to-next)', () => {
     expect(hoisted.lastExecute?.timeoutMs).toBe(15 * 60_000);
   });
 
-  it('leaves timeoutMs unset when the caller omits it (interactive chat must stay unbounded)', async () => {
+  /**
+   * 0.2.50 REVERSES the previous assertion here.
+   *
+   * Interactive chat used to pass no timeout at all, on purpose. The background
+   * hold cap makes that untenable: with no turn timeout above it, a hold that
+   * outlives its cap and a turn that simply hung are indistinguishable. The
+   * turn is now always bounded, just very loosely.
+   */
+  it('falls back to TURN_TIMEOUT_MS when the caller omits it (interactive chat)', async () => {
     hoisted.events = [{ type: 'result', sessionId: 's1' }];
     const { deps } = makeDeps();
 
     await runAgentTurn(deps, makeInput());
 
-    expect('timeoutMs' in (hoisted.lastExecute ?? {})).toBe(false);
+    expect(hoisted.lastExecute?.timeoutMs).toBe(TURN_TIMEOUT_MS);
+  });
+
+  /**
+   * The invariant that gives `AdapterBackgroundHoldExpiredError` its meaning.
+   * If the cap ever reached or passed the turn timeout, a hold expiry would
+   * surface as a bare `AdapterTimeoutError` and we would lose the distinction
+   * between "the hold expired" and "the turn hung" — different bugs, different
+   * fixes.
+   */
+  it('keeps the turn timeout strictly above the background hold cap', () => {
+    expect(TURN_TIMEOUT_MS).toBeGreaterThan(BACKGROUND_HOLD_CAP_MS);
+  });
+
+  /**
+   * The library treats `null`/`Infinity` as a sentinel meaning "disarm the
+   * cap", which would let a wedged background task hold a session open with no
+   * bound at all.
+   */
+  it('arms the hold cap with a finite positive number, never a disarm sentinel', async () => {
+    hoisted.events = [{ type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+
+    await runAgentTurn(deps, makeInput());
+
+    const cap = (hoisted.lastExecute?.architectureConfig as Record<string, unknown>)
+      ?.claude_backgroundHoldCapMs;
+    expect(typeof cap).toBe('number');
+    expect(Number.isFinite(cap as number)).toBe(true);
+    expect(cap).toBe(BACKGROUND_HOLD_CAP_MS);
   });
 });
 
@@ -757,6 +796,284 @@ describe('runAgentTurn — M17 background tasks (0-1-141-to-next-2)', () => {
     // Held result still advances the session anchor; final result advances it again.
     expect(setSession).toHaveBeenCalledWith('t1', 's-held');
     expect(setSession).toHaveBeenCalledWith('t1', 's-final');
+  });
+
+  /**
+   * 0.2.50 — a held `result` must NOT close the turn's usage snapshot.
+   *
+   * `attachTurnUsage` is the closing write: it stamps usage onto the turn's
+   * anchor row. Calling it on a held result would publish a partial figure as
+   * final, and the continuation turn's own `result` would then either
+   * double-count or be ignored. `setLastUsage` is a separate "latest wins"
+   * scratch write and is allowed to run on every result.
+   */
+  it('defers attachTurnUsage until the terminal result, not the held one', async () => {
+    hoisted.events = [
+      { type: 'text_delta', text: 'working ' },
+      // Usage reaches the turn through `assistant_message`, which is what
+      // `attachTurnUsage` ultimately stamps.
+      { type: 'assistant_message', message: { usage: { inputTokens: 10, outputTokens: 5 } } },
+      { type: 'background_task_started', taskId: 'bg1', taskType: 'shell', description: 'build' },
+      {
+        type: 'result',
+        sessionId: 's-held',
+        usage: { inputTokens: 10, outputTokens: 5 },
+        contextSize: 15,
+        backgroundTasks: [{ taskId: 'bg1', taskType: 'shell' }],
+      },
+      { type: 'background_task_completed', taskId: 'bg1', taskType: 'shell', status: 'exited 0' },
+      { type: 'text_delta', text: 'done' },
+      { type: 'assistant_message', message: { usage: { inputTokens: 20, outputTokens: 8 } } },
+      {
+        type: 'result',
+        sessionId: 's-final',
+        usage: { inputTokens: 20, outputTokens: 8 },
+        contextSize: 28,
+      },
+    ];
+    const { deps } = makeDeps();
+    const cs = deps.chatService as unknown as {
+      attachTurnUsage: (...a: unknown[]) => void;
+    };
+    const attach = vi.spyOn(cs, 'attachTurnUsage');
+
+    await runAgentTurn(deps, makeInput());
+
+    // Exactly once — for the terminal result, never for the held one.
+    expect(attach).toHaveBeenCalledTimes(1);
+    const [, , usage] = attach.mock.calls[0] as [string, number, { outputTokens: number }];
+    expect(usage.outputTokens).toBe(8);
+  });
+
+  /**
+   * A task abandoned by cap expiry or abort NEVER receives
+   * `background_task_completed` — the contract has no failed/aborted variant. Its
+   * row would otherwise read `running` forever, so after a reload the panel would
+   * assert something false rather than merely lose detail.
+   */
+  it('finalizes still-running background tasks once the generator is exhausted', async () => {
+    hoisted.events = [
+      { type: 'background_task_started', taskId: 'bg1', taskType: 'shell', description: 'sleep 900' },
+      // Generator ends with bg1 still in flight — no completion event ever comes.
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps } = makeDeps();
+    const cs = deps.chatService as unknown as {
+      finalizeRunningBackgroundTasks: (...a: unknown[]) => void;
+    };
+    const finalize = vi.spyOn(cs, 'finalizeRunningBackgroundTasks');
+
+    await runAgentTurn(deps, makeInput());
+
+    expect(finalize).toHaveBeenCalledWith('t1');
+  });
+});
+
+describe('runAgentTurn — 0.2.50 turn-lifecycle contract', () => {
+  /**
+   * `adapter_ready` is an INTERNAL delimiter. Forwarding it would put an event
+   * on the wire that renders nothing and that the client's mapper has no branch
+   * for; the client's real "an iteration began" marker is `turn_start`.
+   */
+  it('consumes adapter_ready internally instead of forwarding it', async () => {
+    hoisted.events = [
+      { type: 'adapter_ready', adapter: 'claude-code', sdkConfig: { model: 'opus' } },
+      { type: 'text_delta', text: 'hi' },
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps } = makeDeps();
+    const emitted: Array<Record<string, unknown>> = [];
+    const input = makeInput();
+    input.onEvent = (e) => emitted.push(e as Record<string, unknown>);
+
+    await runAgentTurn(deps, input);
+
+    expect(emitted.filter((e) => e.type === 'adapter_ready')).toHaveLength(0);
+  });
+
+  /**
+   * `sdkConfig` is library-shaped and carries `custom_env`, which holds a
+   * DECRYPTED api key whenever the project uses a stored credential. Logging it
+   * verbatim would write a live credential to disk in plaintext.
+   */
+  it('never logs a raw secret from adapter_ready sdkConfig', async () => {
+    hoisted.events = [
+      {
+        type: 'adapter_ready',
+        adapter: 'claude-code',
+        sdkConfig: { custom_env: { ANTHROPIC_API_KEY: 'sk-ant-super-secret' } },
+      },
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps } = makeDeps();
+    const logged: string[] = [];
+    const spy = vi.spyOn(console, 'info').mockImplementation((...args: unknown[]) => {
+      logged.push(args.map(String).join(' '));
+    });
+
+    await runAgentTurn(deps, makeInput());
+    spy.mockRestore();
+
+    const all = logged.join('\n');
+    expect(all).not.toContain('sk-ant-super-secret');
+    // The key NAME still shows — which env vars were set is useful and is not
+    // itself the secret.
+    expect(all).toContain('ANTHROPIC_API_KEY');
+  });
+
+  /**
+   * A `warning` arriving AFTER the final `result` is legal: its position on the
+   * stream carries no meaning. It must be accepted normally rather than treated
+   * as a protocol error or as a second end-of-turn.
+   */
+  it('accepts a side-band warning that arrives after the terminal result', async () => {
+    hoisted.events = [
+      { type: 'text_delta', text: 'answer' },
+      { type: 'result', sessionId: 's1' },
+      { type: 'warning', message: 'scope degraded to soft enforcement' },
+    ];
+    const { deps } = makeDeps();
+    const emitted: Array<Record<string, unknown>> = [];
+    const input = makeInput();
+    input.onEvent = (e) => emitted.push(e as Record<string, unknown>);
+
+    const result = await runAgentTurn(deps, input);
+
+    expect(result.answer).toBe('answer');
+    expect(emitted.filter((e) => e.type === 'warning')).toHaveLength(1);
+  });
+
+  /**
+   * `flush` is side-band too: an empty-payload context-compaction boundary. It
+   * must not crash the loop and must not end the turn.
+   */
+  it('tolerates a flush event mid-turn without ending the turn', async () => {
+    hoisted.events = [
+      { type: 'text_delta', text: 'before ' },
+      { type: 'flush' },
+      { type: 'text_delta', text: 'after' },
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps } = makeDeps();
+
+    const result = await runAgentTurn(deps, makeInput());
+
+    expect(result.answer).toBe('before after');
+  });
+
+  /**
+   * `UnifiedEvent` grows between library releases. An unknown member must be an
+   * inert no-op, not an exception thrown from inside the turn loop.
+   */
+  it('ignores an unknown future event type instead of throwing', async () => {
+    hoisted.events = [
+      { type: 'text_delta', text: 'ok' },
+      { type: 'hold_heartbeat', heldForMs: 1000 },
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps } = makeDeps();
+
+    await expect(runAgentTurn(deps, makeInput())).resolves.toMatchObject({ answer: 'ok' });
+  });
+
+  /**
+   * `ask` is headless and blocks its HTTP request until the turn ends — there is
+   * no UI in which a hold could be shown, so background work is switched off.
+   */
+  it('disallows background bash for an ask-context turn', async () => {
+    hoisted.events = [{ type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    const input = makeInput();
+    (input.thread as { contextType: string }).contextType = 'ask';
+
+    await runAgentTurn(deps, input);
+
+    const cfg = hoisted.lastExecute?.architectureConfig as Record<string, unknown>;
+    expect(cfg.claude_disallowBackgroundBash).toBe(true);
+  });
+
+  /**
+   * A transagent bubble must stay blocking and terminal — detach mode is
+   * deliberately absent in v1. Without this flag a child's `result` could carry
+   * `backgroundTasks` and break that decision as a side effect of the upgrade.
+   */
+  it('disallows background bash for a child thread regardless of context type', async () => {
+    hoisted.events = [{ type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    const input = makeInput();
+    (input.thread as { parentThreadId: string | null }).parentThreadId = 'parent-1';
+
+    await runAgentTurn(deps, input);
+
+    const cfg = hoisted.lastExecute?.architectureConfig as Record<string, unknown>;
+    expect(cfg.claude_disallowBackgroundBash).toBe(true);
+  });
+
+  /** A normal top-level chat turn keeps background work available. */
+  it('leaves background bash enabled for a top-level chat turn', async () => {
+    hoisted.events = [{ type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+
+    await runAgentTurn(deps, makeInput());
+
+    const cfg = hoisted.lastExecute?.architectureConfig as Record<string, unknown>;
+    expect(cfg.claude_disallowBackgroundBash).toBeUndefined();
+  });
+});
+
+/**
+ * 0.2.50 — the replay buffer is unbounded RAM held for the whole turn, and a
+ * turn that reads many large files can push tens of MB of `tool_result`
+ * summaries through it.
+ */
+describe('runAgentTurn — replay buffer byte budget', () => {
+  /** One 1 MB tool_result payload; five of them clear the 4 MB budget. */
+  const bigResult = (id: string) => ({
+    type: 'tool_result',
+    toolUseId: id,
+    toolName: 'Read',
+    summary: 'x'.repeat(1024 * 1024),
+    isSubagent: false,
+  });
+
+  it('degrades the oldest tool_result entries to a header instead of dropping them', async () => {
+    hoisted.events = [
+      bigResult('tu-1'),
+      bigResult('tu-2'),
+      bigResult('tu-3'),
+      bigResult('tu-4'),
+      bigResult('tu-5'),
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps } = makeDeps();
+    const activeAdapters = new Map();
+    (deps as unknown as { activeAdapters: Map<string, unknown> }).activeAdapters = activeAdapters;
+
+    let replaySnapshot: Array<Record<string, unknown>> = [];
+    hoisted.beforeEvent = () => {
+      const active = activeAdapters.get('t1') as { replay: { events: unknown[] } } | undefined;
+      if (active) replaySnapshot = active.replay.events as Array<Record<string, unknown>>;
+    };
+
+    await runAgentTurn(deps, makeInput());
+    hoisted.beforeEvent = null;
+
+    const toolResults = replaySnapshot.filter((e) => e.type === 'tool_result');
+    // NOTHING is removed — a dropped `tool_result` would leave the paired
+    // `tool_use` card spinning forever in a joiner's reducer, because the card
+    // closes on the RESULT. Degraded still closes it, just without a body.
+    expect(toolResults).toHaveLength(5);
+
+    const degraded = toolResults.filter((e) => e.truncated === true);
+    expect(degraded.length).toBeGreaterThan(0);
+    // A degraded entry keeps exactly the identity fields the reducer pairs on.
+    for (const entry of degraded) {
+      expect(entry.toolUseId).toBeTruthy();
+      expect(entry).not.toHaveProperty('summary');
+    }
+    // Oldest-first: the newest result is the one a joiner most likely still wants.
+    expect(toolResults[0].truncated).toBe(true);
+    expect(toolResults[toolResults.length - 1].truncated).toBeUndefined();
   });
 });
 

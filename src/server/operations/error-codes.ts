@@ -137,6 +137,23 @@ export const STATUS_FOR_CODE: Record<string, number> = {
    * absent from the single table that is supposed to define it.
    */
   STREAM_IN_PROGRESS: 409,
+  /**
+   * 0.2.50 (M05) — the turn REFUSED TO START because a deny-group the posture
+   * asks for is not enforceable on this architecture.
+   *
+   * 422, not 500: the request was well-formed and the server is healthy, but
+   * the posture it asks for cannot be honoured here. `probeToolGating` answers
+   * this synchronously BEFORE `adapter.execute`, so a refusal costs no tokens
+   * and persists no assistant message.
+   */
+  TOOL_POLICY_REFUSED: 422,
+  /**
+   * 0.2.50 (M05) — `claude_backgroundHoldCapMs` elapsed with background work
+   * still in flight. 504: the turn started fine and died waiting, which is a
+   * timeout family, and the client must tell it apart from a user abort and
+   * from a whole-turn timeout.
+   */
+  BACKGROUND_HOLD_EXPIRED: 504,
   // M24 Remote Account
   NO_ACTIVE_FLOW: 400,
   REMOTE_UNAUTHORIZED: 401,

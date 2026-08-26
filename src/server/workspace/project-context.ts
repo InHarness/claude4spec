@@ -580,6 +580,10 @@ async function buildInner(
   // Orphan cleanup: rowsy chat_message.status='streaming' pozostale po crashu poprzedniego
   // procesu (SIGKILL/OOM) — brak aktywnego adaptera po starcie, flipujemy wszystkie na 'complete'.
   chatService.finalizeAllStreamingRows();
+  // 0.2.50: same reasoning one table over. A background task whose process died
+  // with the previous server will never send `background_task_completed`, so
+  // without this sweep its row would render as still-running forever.
+  chatService.finalizeAllRunningBackgroundTasks();
 
   // M33 phase 3: the project-local plugin overlay (axis B — pool composition).
   // The trust gate blocks the MOUNT, not just the subscription: without consent
