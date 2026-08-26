@@ -168,6 +168,14 @@ export interface PeerProject {
 export interface McpInventoryEntry {
   name: string;
   tools?: readonly string[];
+  /**
+   * Whether this server came from a PLUGIN rather than the host. The prompt does
+   * not render it; `planModeMutatingTools` classifies with it, because a catalog
+   * row is a statement about the surface it was declared on and `CATALOG` is
+   * keyed by bare tool name. See `toolAdmittedByProfile`, which draws the same
+   * distinction for the same reason.
+   */
+  plugin?: boolean;
 }
 
 export interface SystemPromptInput {
@@ -637,20 +645,36 @@ function planModeMutatingTools(inventory: readonly McpInventoryEntry[]): string[
     for (const tool of server.tools ?? []) {
       const op = CATALOG.get(tool);
       /**
-       * An UNDECLARED tool is not listed, which is the opposite of what the
-       * profile gate does with one — and the asymmetry is deliberate, because
-       * the two are answering different questions with opposite costs.
+       * A row counts only if it describes the surface the tool arrived on —
+       * the same test `toolAdmittedByProfile` applies, for the same reason.
+       * `CATALOG` is keyed by bare name, so a plugin shipping a tool called
+       * `update_plan` or `get_page` would otherwise inherit that host row's
+       * `plan`/`read` class and be exempted from this list, while the `chat`
+       * profile mounts it and its own mutating handler runs.
+       */
+      const applies = op && (server.plugin ? op.contributedBy === 'plugin' : op.contributedBy !== 'plugin');
+      /**
+       * With no applicable row, the surface decides — and the two surfaces get
+       * opposite defaults, which is the same asymmetry the gate settles on.
        *
-       * The gate decides whether a tool REACHES the model, so an unknown tool on
-       * an unvouched-for surface fails closed. This list decides what the model
-       * is ASKED not to call while a mutating tool sits mounted in front of it.
-       * Over-listing there is not caution, it is a false prohibition: the one
+       * A HOST tool with no row is not listed. Over-listing is not caution here,
+       * it is a false prohibition, and a model that finds one "forbidden" tool
+       * working learns what the rest of the prohibitions are worth. The one
        * host-owned tool with no catalog row is `load_skill_file`, deliberately,
        * and telling the agent not to call it in plan mode would contradict
        * <project_writing_skill>, which instructs it to.
+       *
+       * A PLUGIN tool with no applicable row IS listed. The host has never seen
+       * that surface, `chat` admits writes so the gate passed it through, and
+       * the cost of guessing wrong runs the other way: a plugin write nobody
+       * asked the agent to hold off on. The price is a false prohibition on an
+       * undeclared plugin read — visible, and fixed by declaring it.
        */
-      if (!op) continue;
-      if (PLAN_MODE_EXEMPT_CLASSES.has(op.opClass)) continue;
+      if (!applies) {
+        if (server.plugin) names.add(tool);
+        continue;
+      }
+      if (PLAN_MODE_EXEMPT_CLASSES.has(op!.opClass)) continue;
       names.add(tool);
     }
   }
@@ -719,12 +743,17 @@ function buildTooling(inventory: readonly McpInventoryEntry[]): string {
    * turn, and `<available_skills>` prohibits `Skill` outright. Printed bare, the
    * line read as a permission list, and the prompt then contradicted itself
    * twice over — most visibly on `Skill`, advertised here as available and
-   * forbidden three blocks later. Naming it an inventory costs six words and
+   * forbidden by another block. Naming it an inventory costs six words and
    * removes the contradiction without pretending a mounted tool is absent.
+   *
+   * The note says "elsewhere in this prompt" rather than "below": the two blocks
+   * that narrow it sit on either side of this one — `<available_skills>` is
+   * layer B and `<claude4spec_plan_mode>` layer E — and a direction the reader
+   * can check is a direction that can be wrong.
    */
   const lines: string[] = [
     `<tooling>`,
-    `  <builtin note="what the adapter knows; the blocks below narrow it">${CLAUDE_CODE_ALL_BUILTINS.join(', ')}</builtin>`,
+    `  <builtin note="what the adapter knows; other blocks in this prompt narrow it">${CLAUDE_CODE_ALL_BUILTINS.join(', ')}</builtin>`,
   ];
   for (const { name, tools } of inventory) {
     lines.push(
@@ -902,24 +931,37 @@ export function subagentsFor(
  *
  * `id` is therefore `registryName`, and a peer whose registry name is somehow
  * missing keeps `path` so it stays reachable rather than becoming decorative.
+ *
+ * So does a peer whose registry name it SHARES. The name is not a key — the
+ * registry says so in as many words — and `findProjectByName` searches one
+ * project per workspace, so a duplicate inside a single workspace never reaches
+ * `AMBIGUOUS_PROJECT`: the first match wins, silently, and the second peer is
+ * unaddressable. `path` is tried before the name fallback and is exact, so the
+ * peers that collide keep it. The block stays short in the ordinary case and
+ * stays CORRECT in the case that would otherwise consult the wrong project.
  */
 function buildWorkspaceProjects(workspaceName: string, peers: PeerProject[]): string {
   const lines = [`<workspace_projects ${attrs({ workspace: workspaceName })}>`];
+  const nameCounts = new Map<string, number>();
   for (const p of peers) {
+    if (p.registryName) nameCounts.set(p.registryName, (nameCounts.get(p.registryName) ?? 0) + 1);
+  }
+  for (const p of peers) {
+    const unique = p.registryName !== undefined && nameCounts.get(p.registryName) === 1;
     lines.push(
       `  ${selfClose(
         'peer',
         attrs({
           id: p.registryName,
           name: p.name,
-          path: p.registryName ? undefined : p.path,
+          path: unique ? undefined : p.path,
           description: p.description,
         }),
       )}`,
     );
   }
   lines.push(
-    `  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address.`,
+    `  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.`,
     `</workspace_projects>`,
   );
   return lines.join('\n');
@@ -1065,6 +1107,20 @@ function buildConversationalLanguage(lang: string): string {
  * MCP tools (plan-tools/brief-tools/entity-tools/release-tools). This makes the block always
  * present; the caller now gates only on `agentPathScope` being set (still non-brief only).
  */
+/**
+ * 0.2.50 — the block no longer names a fixed list of MCP servers.
+ *
+ * It used to close with "use plan-tools / brief-tools / entity-tools /
+ * release-tools instead, and page-tools for the pages", which is true of a chat
+ * thread and false of a brief one: the `brief` profile mounts `release-tools`
+ * alone out of the plugin pool and no plan-tools, so four of the five named
+ * servers are absent from its `tools/list`. Now that the brief frame carries
+ * this block, that sentence would point a brief thread at tools it does not
+ * have, and leave the built-in `Write` — forbidden by this very block — as its
+ * only remaining route. Pointing at `<tooling>`, which is itself derived from
+ * the mount, cannot be wrong in either frame; the page paragraph is emitted only
+ * where the page tools are actually mounted, for the same reason.
+ */
 function buildAgentPathScope(
   scope: {
     allowedPaths: string[];
@@ -1074,6 +1130,7 @@ function buildAgentPathScope(
   },
   cwd: string,
   roots: Root[],
+  inventory: readonly McpInventoryEntry[],
 ): string {
   // Root dirs may be relative (e.g. '.' or 'pages') — resolve against cwd before the
   // inside check, mirroring the M05 resolver, so a nested root dir is correctly omitted.
@@ -1103,7 +1160,7 @@ function buildAgentPathScope(
    * stop grepping pages, which is the opposite of what `<entity_discovery>` asks of it two
    * blocks earlier.
    */
-  if (scope.pageRootDirs.length) {
+  if (scope.pageRootDirs.length && hasServer(inventory, 'page-tools')) {
     lines.push(
       `  READ-ONLY to built-in tools — page roots (${scope.pageRootDirs.join(', ')}): read and grep them freely, but NEVER write one with Write/Edit/Bash. ` +
         `A page is written with create_page / update_page / delete_page, and a batch of sections with update_sections. ` +
@@ -1111,7 +1168,7 @@ function buildAgentPathScope(
     );
   }
   lines.push(
-    `Stay within ALLOWED minus DISALLOWED. Do not touch files outside this scope (e.g. other projects, source code next to the spec). If a task seems to require an out-of-scope path, say so instead of attempting it. Never hand-edit the C4S artifact dirs — use plan-tools / brief-tools / entity-tools / release-tools instead, and page-tools for the pages.`,
+    `Stay within ALLOWED minus DISALLOWED. Do not touch files outside this scope (e.g. other projects, source code next to the spec). If a task seems to require an out-of-scope path, say so instead of attempting it. Never hand-edit the C4S artifact dirs — write them through the MCP servers listed in <tooling>, which is the set actually mounted for this turn.`,
     `</agent_path_scope>`,
   );
   return lines.join('\n');
@@ -1187,7 +1244,7 @@ function buildBriefSystemPrompt(input: {
    * it. Both halves are fixed by emitting the same block every other frame gets.
    */
   if (input.agentPathScope) {
-    parts.push(buildAgentPathScope(input.agentPathScope, input.cwd, input.roots));
+    parts.push(buildAgentPathScope(input.agentPathScope, input.cwd, input.roots, input.mcpInventory));
   }
   // 0.1.51: only `<conversational_language>` in the brief frame — `<spec_language>`
   // is omitted (it governs spec content; the brief is a separate artifact).
@@ -1491,7 +1548,8 @@ const MAIN_PROMPT_BLOCKS: readonly PromptBlock[] = [
     // a path scope is a contract about where you may reach, fixed for the
     // thread, not a fact about this turn.
     name: 'agent_path_scope',
-    render: (c) => (c.agentPathScope ? buildAgentPathScope(c.agentPathScope, c.cwd, c.roots) : null),
+    render: (c) =>
+      c.agentPathScope ? buildAgentPathScope(c.agentPathScope, c.cwd, c.roots, c.mcpInventory) : null,
   },
 
   // ── D — writing conventions ─────────────────────────────────────────────
@@ -1586,11 +1644,33 @@ const MAIN_PROMPT_BLOCKS: readonly PromptBlock[] = [
        * leaves the caller no legal first move." `<current_plan>` was exactly
        * such a read, and the hash was in the same object the whole time.
        */
-      return `<current_plan ${attrs({
+      /**
+       * ...but ONLY on a whole plan. `getByThread` reads through `getByPath`,
+       * which windows the file at half the response budget, and `hash` is the
+       * digest of the WHOLE file either way — so on a truncated read the hash
+       * arms `expectedHash` against bytes the block never showed. The guard then
+       * passes on a body composed from the visible part, and the plan loses its
+       * tail with a `file_version` row asserting the edit was the change.
+       * `readForWrite`'s doc comment describes exactly this, which is why that
+       * second read exists at all.
+       *
+       * A truncated block therefore withholds the hash instead of handing over
+       * a loaded one, and says why. That restores the extra `get_plan` call in
+       * the one case where the call is not redundant.
+       */
+      const truncated = c.currentPlan.truncated === true;
+      const block = `<current_plan ${attrs({
         path: c.currentPlan.path,
         version: c.currentPlan.currentVersion,
-        hash: c.currentPlan.hash,
+        hash: truncated ? undefined : c.currentPlan.hash,
+        truncated: truncated ? 'true' : undefined,
       })}>\n${c.currentPlan.body}\n</current_plan>`;
+      if (!truncated) return block;
+      return (
+        `${block}\n` +
+        `This plan was TRUNCATED to fit the prompt${c.currentPlan.truncationHint ? ` (${c.currentPlan.truncationHint})` : ''} — the body above is not the whole file, and no hash is given for it. ` +
+        `Do NOT compose an update from what you see here: read the plan with get_plan first and write against the hash it returns, or you will write the truncation back over the missing part.`
+      );
     },
   },
   {

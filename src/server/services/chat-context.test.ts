@@ -663,7 +663,15 @@ describe('buildSystemPrompt — <agent_path_scope> (0.1.90 / 0.1.130)', () => {
     expect(out).toContain('DISALLOWED (never read/write here, takes precedence): /tmp/my-spec/src');
     // 0.1.130: unconditional artifact deny line + MCP-only guidance.
     expect(out).toContain(`ALWAYS DISALLOWED — C4S artifact dirs (edit ONLY via MCP tools, never with built-in Read/Write/Edit/Bash): ${ARTIFACT.join(', ')}`);
-    expect(out).toContain('use plan-tools / brief-tools / entity-tools / release-tools instead');
+    /**
+     * 0.2.50 — the closing sentence points at `<tooling>` instead of naming a
+     * fixed roster of servers. The roster was true of a chat thread and false of
+     * a brief one, which mounts `release-tools` alone out of the plugin pool and
+     * no plan-tools; now that the brief frame carries this block, naming them
+     * would send it to four servers it does not have.
+     */
+    expect(out).toContain('write them through the MCP servers listed in <tooling>');
+    expect(out).not.toContain('use plan-tools / brief-tools / entity-tools / release-tools');
   });
 
   it('[ac:ac-crud-stron-dziala-przez-ui-i-wbudowane-n] tells the agent the page roots are READ-only, on a line of their own', () => {
@@ -678,7 +686,11 @@ describe('buildSystemPrompt — <agent_path_scope> (0.1.90 / 0.1.130)', () => {
      * sandbox the hard half of the block is dropped by the adapter, and this
      * sentence is the entire remaining gate.
      */
-    const out = build({ contextType: 'chat', agentPathScope: scope });
+    const out = build({
+      contextType: 'chat',
+      agentPathScope: scope,
+      mcpInventory: inv(['page-tools', ['create_page', 'update_page', 'delete_page', 'update_sections']]),
+    });
     expect(out).toContain('READ-ONLY to built-in tools — page roots (/tmp/my-spec/pages)');
     for (const op of ['create_page', 'update_page', 'delete_page', 'update_sections']) {
       expect(out, op).toContain(op);
@@ -1140,5 +1152,148 @@ describe('buildSystemPrompt — plugin promptBlocks (0.2.50)', () => {
   it('emits nothing when no active type contributes one', () => {
     const out = build({ contextType: 'chat' });
     expect(out).not.toContain('<diagram_references>');
+  });
+});
+
+/**
+ * The four corrections that came out of the review of this change. Each one is a
+ * case where a block was RIGHT for the frame it was written in and wrong for one
+ * of the others — which is what a shared block table makes possible, and what it
+ * therefore has to be tested against.
+ */
+describe('buildSystemPrompt — the block table under frames it was not written in (0.2.50)', () => {
+  const ARTIFACT = ['/tmp/my-spec/.claude4spec/plans'];
+
+  /**
+   * `getByThread` reads through `getByPath`, which windows the file at half the
+   * response budget — and `hash` is the digest of the WHOLE file either way. Hand
+   * the agent both and the `expectedHash` guard passes on a body composed from
+   * the visible part, so the plan loses its tail with a `file_version` row
+   * asserting the edit was the change. `readForWrite` exists for exactly this.
+   */
+  it('withholds the hash from a TRUNCATED plan rather than arming a write with it', () => {
+    const plan = {
+      path: 'p.md',
+      currentVersion: 6,
+      hash: 'abc123',
+      body: 'head of the plan',
+      truncated: true as const,
+      truncationHint: 'pass range to read further',
+    } as unknown as SystemPromptInput['currentPlan'];
+    const out = build({ currentPlan: plan });
+    expect(out).toContain('truncated="true"');
+    expect(out).not.toContain('hash="abc123"');
+    expect(out).toContain('read the plan with get_plan first');
+  });
+
+  it('hands over the hash when the plan came through whole', () => {
+    const plan = {
+      path: 'p.md',
+      currentVersion: 6,
+      hash: 'abc123',
+      body: 'the whole plan',
+    } as unknown as SystemPromptInput['currentPlan'];
+    const out = build({ currentPlan: plan });
+    expect(out).toContain('hash="abc123"');
+    expect(out).not.toContain('truncated=');
+  });
+
+  /**
+   * A registry name is NOT a key — `findProjectByName` searches one project per
+   * workspace, so two peers sharing a name inside one workspace never reach
+   * `AMBIGUOUS_PROJECT`: the first wins silently and the second is unaddressable.
+   * `path` is tried before the name fallback and is exact, so the colliding
+   * peers keep it while everyone else stays short.
+   */
+  it('keeps `path` on peers whose registry name is shared, and only on those', () => {
+    const out = build({
+      mcpInventory: inv(['c4s-tools', ['ask']]),
+      workspaceName: 'default',
+      workspaceProjects: [
+        { name: 'Work spec', registryName: 'spec', path: '/work/foo/spec' },
+        { name: 'Other spec', registryName: 'spec', path: '/work/bar/spec' },
+        { name: 'Billing API', registryName: 'billing', path: '/ws/billing' },
+      ],
+    } as Partial<SystemPromptInput>);
+    expect(out).toContain('<peer id="spec" name="Work spec" path="/work/foo/spec"/>');
+    expect(out).toContain('<peer id="spec" name="Other spec" path="/work/bar/spec"/>');
+    expect(out).toContain('<peer id="billing" name="Billing API"/>');
+    expect(out).toContain('only the path addresses it unambiguously');
+  });
+
+  /**
+   * `<agent_path_scope>` reaches the brief frame since 0.2.50, and a brief thread
+   * mounts neither page-tools nor plan-tools. A block that names them anyway
+   * points the agent at tools it does not have — leaving the built-in `Write`,
+   * which this very block forbids, as its only remaining route.
+   */
+  it('says nothing about writing pages when page-tools is not mounted', () => {
+    const out = build({
+      contextType: 'chat',
+      agentPathScope: {
+        allowedPaths: [],
+        disallowedPaths: [],
+        artifactDenyDirs: ARTIFACT,
+        pageRootDirs: ['/tmp/my-spec/pages'],
+      },
+      mcpInventory: inv(['release-tools', ['release_show']]),
+    });
+    const block = out.slice(out.indexOf('<agent_path_scope>'), out.indexOf('</agent_path_scope>'));
+    expect(block).not.toBe('');
+    expect(block).not.toContain('READ-ONLY to built-in tools');
+    expect(block).not.toContain('update_sections');
+  });
+
+  /**
+   * `CATALOG` is keyed by bare tool name, so a row only speaks for the surface it
+   * was declared on. A plugin shipping `update_plan` would otherwise inherit the
+   * host row's `plan` class and be exempted from the list — while the `chat`
+   * profile mounts it and its own mutating handler runs. Same test
+   * `toolAdmittedByProfile` applies, for the same reason.
+   */
+  it('does not let a plugin tool inherit a host catalog row to escape the list', () => {
+    const out = build({
+      contextType: 'chat',
+      planMode: true,
+      mcpInventory: [
+        { name: 'plan-tools', tools: ['update_plan'] },
+        { name: 'sheet-tools', tools: ['update_plan', 'set_cell'], plugin: true },
+      ],
+    });
+    const listLine = out.split('\n').find((l) => l.startsWith('  - Do not call:')) ?? '';
+    expect(listLine).toContain('update_plan');
+    expect(listLine).toContain('set_cell');
+  });
+
+  /**
+   * The two surfaces get opposite defaults when no row applies, which is the
+   * asymmetry the profile gate settles on too. A host tool with no row is not
+   * listed — `load_skill_file` is the one, deliberately, and prohibiting it would
+   * contradict `<project_writing_skill>`. An undeclared PLUGIN tool is listed:
+   * the host has never seen that surface and the cost runs the other way.
+   */
+  it('lists an undeclared plugin tool and still exempts host `load_skill_file`', () => {
+    const out = build({
+      contextType: 'chat',
+      planMode: true,
+      mcpInventory: [
+        { name: 'skill-tools', tools: ['load_skill_file'] },
+        { name: 'sheet-tools', tools: ['frobnicate_grid'], plugin: true },
+      ],
+    });
+    const listLine = out.split('\n').find((l) => l.startsWith('  - Do not call:')) ?? '';
+    expect(listLine).toContain('frobnicate_grid');
+    expect(listLine).not.toContain('load_skill_file');
+  });
+
+  /**
+   * The `<builtin>` note used to say the blocks "below" narrow it. Only
+   * `<claude4spec_plan_mode>` is below; `<available_skills>`, which carries the
+   * `Skill` prohibition the note exists to reconcile, is layer B and sits above.
+   */
+  it('claims no direction for the blocks that narrow the builtin inventory', () => {
+    const out = build({ mcpInventory: CHAT_INVENTORY });
+    expect(out).toContain('other blocks in this prompt narrow it');
+    expect(out).not.toContain('the blocks below narrow it');
   });
 });

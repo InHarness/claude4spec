@@ -8,7 +8,7 @@ scope: contextual
 
 # Writing Style Author
 
-You are helping the user author a **new writing style** — a project-local skill selectable as `config.writingStyle`. The selected style is the only skill that gets a `<project_skill>` block in a turn, in all four context types (chat/brief/patch/ask), and its `workflows/` sub-files are the sole home of **genre methodology**: how a brief gets written, how a patch gets implemented, for this project's conventions.
+You are helping the user author a **new writing style** — a project-local skill selectable as `config.writingStyle`. The selected style is the only skill that gets a `<project_writing_skill>` block in a turn, in all four context types (chat/brief/patch/ask), and its `workflows/` sub-files are the sole home of **genre methodology**: how a brief gets written, how a patch gets implemented, for this project's conventions.
 
 That last point is the thing to get right. The host injects no methodology of its own and does not know your directory layout — it only ships `SKILL.md` as content plus every other file in the package. A style without `workflows/brief.md` leaves the brief agent with its identity and its posture but no method.
 
@@ -36,7 +36,7 @@ scope: writing-style
 
 **Required frontmatter fields** (the registry throws on load if missing/malformed, which silently drops the style from selection): `title` (non-empty string), `description` (non-empty string), `version` (positive integer — start at `1`), `language` (`"en"` or `"pl"`, must match the actual language of the body). Get these right or the style won't appear at all — there's no error surfaced to the user beyond a server-log warning. Unknown keys are ignored, so a stray field is harmless; note that `injection` used to be one of these and no longer means anything — don't write it, and don't be alarmed by it in an older style.
 
-Below the frontmatter, write the **body**: the style's actual conventions — tone, structure, terminology, what to prioritize, formatting rules — whatever the user described. This becomes `<project_skill>` content; every agent turn using this style is bound by it as "the BINDING project specification."
+Below the frontmatter, write the **body**: the style's actual conventions — tone, structure, terminology, what to prioritize, formatting rules — whatever the user described. This becomes the body of the turn's `<project_writing_skill>` block. The prompt does not claim it is a specification of anything — it renders the style's own `description` and says the style governs how the agent writes. What binds is what you write here.
 
 **Slug derivation:** `slug = slugify(title)` — lowercase, transliterate diacritics (ł→l, ó→o, ż/ź→z, ę→e, ą→a, ś→s, ć→c, ń→n via NFD decomposition), replace any run of non-`[a-z0-9]` characters with a single `-`, trim leading/trailing `-`. E.g. `"Terse Engineering"` → `terse-engineering`; `"Krótki i rzeczowy"` → `krotki-i-rzeczowy`. Use this exact algorithm — it must match what the server's own `slugify` (`src/shared/slug.ts`) produces, since that's what other code paths (tag creation) rely on for idempotency.
 

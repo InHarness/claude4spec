@@ -431,7 +431,12 @@ export function registerCoreOperations(): void {
    * description are optional, and a tag is not identified by a colour.
    */
   tagWrite('create_tag', 'Create a tag in the registry. The slug is derived from `name` and returned.', { name: z.string(), color: z.string().optional(), description: z.string().optional() }, false);
-  tagWrite('update_tag', 'Rename or restyle a tag; a slug change propagates through references.', { slug: z.string(), name: z.string().optional(), color: z.string().optional(), description: z.string().optional() }, true);
+  // `update_tag` nests its mutable fields under `data` because `reference-tools`
+  // does, and for the same reason the four rows around it were corrected: the row
+  // is a DECLARATION of the operation that runs, not a second design of it. Left
+  // flat, this was the one tag row still carrying the divergence the comment
+  // above claims to have closed.
+  tagWrite('update_tag', 'Rename or restyle a tag; a slug change propagates through references.', { slug: z.string(), data: z.object({ name: z.string().optional(), color: z.string().nullable().optional(), description: z.string().nullable().optional() }) }, true);
   tagWrite('delete_tag', 'Remove a tag from the registry and every entity carrying it.', { slug: z.string() }, true);
   tagWrite('tag_entity', 'Attach tags to an entity. Idempotent — the entity ends up with the UNION of its existing tags and these. Tags that do not exist yet are created.', { type: z.string(), slug: z.string(), tags: z.array(z.string()) }, true);
   tagWrite('untag_entity', 'Detach tags from an entity. Idempotent.', { type: z.string(), slug: z.string(), tags: z.array(z.string()) }, true);

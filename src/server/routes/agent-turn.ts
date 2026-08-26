@@ -680,7 +680,14 @@ export async function runAgentTurn(
      * than an invented list, which is not.
      */
     const mcpInventory = gateServers(thread.contextType, buildMcpEntries(), pluginServerNames).map(
-      ({ name, server }) => ({ name, tools: server.tools?.map((t) => t.name) }),
+      ({ name, server }) => ({
+        name,
+        tools: server.tools?.map((t) => t.name),
+        // Carried for classification, not for rendering: `<tooling>` draws no
+        // line between host and plugin servers, but the plan-mode list must,
+        // since a catalog row only speaks for the surface it was declared on.
+        plugin: pluginServerNames.has(name),
+      }),
     );
 
     const systemPrompt = buildSystemPrompt({
