@@ -158,7 +158,7 @@ describe('BriefService.create — source: analysis vs the built-in tool posture'
     await fs.rm(cwd, { recursive: true, force: true });
   });
 
-  it('[ac:ac-istniejacy-projekt-bez-pola-dostaje] refuses an analysis brief under the default posture, naming the setting', async () => {
+  it('refuses an analysis brief under the default posture, naming the setting', async () => {
     await writeConfig({});
 
     await expect(

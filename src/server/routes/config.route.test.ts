@@ -132,7 +132,7 @@ describe('GET/PATCH /config — agent.pathScopeStrength (0.1.103)', () => {
    * else; if that wiped the branch, every freshly-onboarded project would lose
    * the posture it was created with. This is the regression that guards it.
    */
-  it('[ac:ac-checkbox-w-sekcji-agent-jest-domysl] defaults disableDirectFilesystemAccess to true when the file omits it', async () => {
+  it('defaults disableDirectFilesystemAccess to true when the file omits it', async () => {
     const res = await request(app()).get('/config');
     expect(res.status).toBe(200);
     expect(res.body.agent.disableDirectFilesystemAccess).toBe(true);
@@ -170,7 +170,7 @@ describe('GET/PATCH /config — agent.pathScopeStrength (0.1.103)', () => {
    * The badge's data source. It must never claim `hard`: the tools are removed
    * from the model's catalog, which is a model-behaviour gate, not a sandbox.
    */
-  it('[ac:ac-badge-sily-nigdy-nie-mowi-twardy-i] reports soft tool-gating strength with a named escape surface', async () => {
+  it('reports soft tool-gating strength with a named escape surface', async () => {
     const res = await request(app()).get('/config');
     expect(res.body.agent.toolGating.enforceable).toBe(true);
     expect(res.body.agent.toolGating.strength).not.toBe('hard');

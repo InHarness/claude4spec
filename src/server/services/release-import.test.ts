@@ -53,7 +53,7 @@ describe('buildClonePatch — the clone is faithful to its bundle (C6/C7, 0.2.8)
    * this release carries only the first, and its clone falls back to the local
    * default (`true`), which is what a fresh project gets too.
    */
-  it('[ac:ac-pole-przechodzi-przez-sanitizeconfi] applies agent.disableDirectFilesystemAccess from the bundle', () => {
+  it('applies agent.disableDirectFilesystemAccess from the bundle', () => {
     const patch = buildClonePatch(
       bundle({ agent: { claudeUsePreset: false, disableDirectFilesystemAccess: false } }),
       opts,

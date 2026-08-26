@@ -152,7 +152,7 @@ describe('POST /api/chat — RESUME_CONFIG_LOCKED wiring (M05 item 33)', () => {
    * the CONFIG FIELD from the turn-1 snapshot instead, and these two tests pin
    * both halves of that — the flag locks, the toggle does not.
    */
-  it('[ac:ac-wznowienie-watku-zalozonego-przy-inn] 409s when disableDirectFilesystemAccess changed since turn 1', async () => {
+  it('[ac:ac-wznowienie-watku-zalozonego-przy-inne] 409s when disableDirectFilesystemAccess changed since turn 1', async () => {
     writeConfig({ agent: { disableDirectFilesystemAccess: false } });
     snapshot = JSON.stringify({
       model: 'opus-5',
@@ -170,7 +170,7 @@ describe('POST /api/chat — RESUME_CONFIG_LOCKED wiring (M05 item 33)', () => {
     expect(runAgentTurnMock).not.toHaveBeenCalled();
   });
 
-  it('[ac:ac-flip-plan-mode-w-srodku-watku-nie-po] does NOT 409 on a plan-mode flip while the flag is unchanged', async () => {
+  it('[ac:ac-flip-plan-mode-w-srodku-watku-nie-pow] does NOT 409 on a plan-mode flip while the flag is unchanged', async () => {
     writeConfig({ agent: { disableDirectFilesystemAccess: true } });
     snapshot = JSON.stringify({
       model: 'opus-5',

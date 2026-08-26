@@ -705,7 +705,7 @@ describe('buildSystemPrompt — ask context (0.1.79)', () => {
  */
 describe('buildSystemPrompt — <agent_filesystem_access> (0.2.53)', () => {
   for (const contextType of ['chat', 'patch', 'ask'] as const) {
-    it(`[ac:ac-blok-agent-filesystem-access-jest-e] emits the disabled block in the ${contextType} frame`, () => {
+    it(`[ac:ac-blok-agent-filesystem-access-jest-emi] emits the disabled block in the ${contextType} frame`, () => {
       const out = build({ contextType, agentFilesystemAccess: { enabled: false } });
       expect(out).toContain('<agent_filesystem_access enabled="false">');
     });
@@ -760,7 +760,7 @@ describe('buildSystemPrompt — <builtin> reflects the posture (0.2.53)', () => 
   };
   const GATED = ['Read', 'Grep', 'Glob', 'Edit', 'Write', 'NotebookEdit', 'Bash', 'Skill'];
 
-  it('[ac:ac-przy-agent-disabledirectfilesystema] drops the file and shell built-ins when access is blocked', () => {
+  it('drops the file and shell built-ins when access is blocked', () => {
     const tools = builtinTools(build({ contextType: 'chat', agentFilesystemAccess: { enabled: false } }));
     for (const tool of GATED) expect(tools).not.toContain(tool);
     // Ungated built-ins survive — the deny is by group, not a blanket silence.

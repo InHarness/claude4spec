@@ -330,7 +330,7 @@ describe('runAgentTurn — disallowedToolGroups posture', () => {
     hoisted.events = [{ type: 'result', sessionId: 's1' }];
   };
 
-  it('[ac:ac-przy-agent-disabledirectfilesystema] denies file-read, file-write and shell by default', async () => {
+  it('[ac:ac-przy-agent-disabledirectfilesystemacc] denies file-read, file-write and shell by default', async () => {
     settle();
     const { deps } = makeDeps();
 
@@ -358,7 +358,7 @@ describe('runAgentTurn — disallowedToolGroups posture', () => {
    * plan mode must still contribute its own groups. A builder that returned the
    * project constant and stopped would silently un-gate plan mode.
    */
-  it('[ac:ac-efektywne-disallowedtoolgroups-tury] unions the plan-mode preset in when the flag is off', async () => {
+  it('[ac:ac-efektywne-disallowedtoolgroups-tury-t] unions the plan-mode preset in when the flag is off', async () => {
     settle();
     hoisted.agent = { disableDirectFilesystemAccess: false };
     const { deps } = makeDeps();
@@ -1159,7 +1159,7 @@ describe('runAgentTurn — 0.2.50 turn-lifecycle contract', () => {
     expect(cfg.claude_disallowBackgroundBash).toBeUndefined();
   });
 
-  it('[ac:ac-grupa-shell-suppressuje-rowniez-narz] disallows background bash for a top-level chat turn under the default posture', async () => {
+  it('disallows background bash for a top-level chat turn under the default posture', async () => {
     hoisted.events = [{ type: 'result', sessionId: 's1' }];
     const { deps } = makeDeps();
 
