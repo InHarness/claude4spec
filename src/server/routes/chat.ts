@@ -7,6 +7,8 @@ import {
   createConsoleObserver,
   getModelContextWindow,
   getSessionResumeConstraints,
+  probeToolGating,
+  PLAN_MODE_DENY_GROUPS,
   type StreamObserver,
   type UserInputRequest,
   type UserInputResponse,
@@ -130,6 +132,24 @@ export function chatRouter(deps: AgentTurnDeps): Router {
       // propagate automatically. Server-side because the package's main entry pulls the agent
       // runtime (not browser-safe), so the client reads the declared list from here.
       sessionResumeConstraints: getSessionResumeConstraints('claude-code'),
+      /**
+       * 0.2.50 — can plan mode actually be ENFORCED here?
+       *
+       * `planMode` desugars to `disallowedToolGroups: ['file-write','shell']`,
+       * and a group that the architecture cannot enforce makes the turn refuse
+       * to start (`TOOL_POLICY_REFUSED`). Offering the toggle in that case would
+       * hand the user a switch whose only effect is to break their next turn, so
+       * the client renders it unavailable instead.
+       *
+       * Server-side for the same reason as `sessionResumeConstraints` above: the
+       * package's main entry pulls the agent runtime and is not browser-safe.
+       *
+       * On `claude-code` this is always true — all four groups are enforceable,
+       * though only at `soft` strength (a model-behaviour gate, not a sandbox).
+       */
+      planModeEnforceable: probeToolGating('claude-code', PLAN_MODE_DENY_GROUPS).every(
+        (report) => report.enforceable,
+      ),
     });
   });
 

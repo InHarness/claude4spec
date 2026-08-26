@@ -163,6 +163,12 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
   /** C21: makes each synthetic warning block's toolUseId unique within a session. */
   const warningSeqRef = useRef(0);
   /**
+   * Background tasks that already have a carrier block in the transcript. The
+   * event family is upsert-shaped (any variant can arrive first), so placement
+   * has to be idempotent on its own rather than trusting `_started` to be unique.
+   */
+  const seenBackgroundTaskIdsRef = useRef<Set<string>>(new Set());
+  /**
    * Request ids whose read-only history card is already on screen — either
    * synthesized from a resolved replay event, or restored from persisted rows
    * that the joiner's history slice happened to keep (see the thread-load effect).
@@ -243,6 +249,25 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
             summary: e?.summary ?? null,
           })),
         );
+        // Place the block IN THE TURN, at the point the task actually started —
+        // same synthetic-carrier trick as WARNING_TOOL_NAME, for the same reason:
+        // `UIContentBlock` is the library's and a new variant is not ours to add,
+        // but a tool call is a block the reducer already orders for us.
+        //
+        // Guarded on first sight: `_progress`/`_completed` can legitimately
+        // arrive before `_started` (replay ordering), and the upsert above
+        // tolerates that — but a second carrier for the same task would render
+        // the panel twice.
+        if (!seenBackgroundTaskIdsRef.current.has(taskId)) {
+          seenBackgroundTaskIdsRef.current.add(taskId);
+          handleWireEvent({
+            type: 'tool_use',
+            toolUseId: `bgtask-${taskId}`,
+            toolName: BACKGROUND_TASK_TOOL_NAME,
+            input: { taskId },
+            isSubagent: false,
+          });
+        }
         return;
       }
       if (ext.type === 'background_task_progress') {
@@ -323,6 +348,21 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
         );
         return;
       }
+      /**
+       * `items` is ALWAYS a complete snapshot — do not add a client-side merge.
+       *
+       * The per-item vs whole-replacement distinction is real, but it is the
+       * ADAPTER's job and it already does it: `TodoWrite` rebuilds the list from
+       * its input, while the `TaskCreate`/`TaskGet`/`TaskUpdate`/`TaskList`
+       * family goes through `mergeTaskToolInputIntoSnapshot` against the
+       * adapter's own `lastTodoSnapshot`. By the time the event reaches us both
+       * paths have collapsed into one full list, so merging again here would
+       * apply the same update twice.
+       *
+       * The `Task*` tool calls themselves never arrive as `tool_use`: the
+       * adapter rewrites that content block into a `todoList` block, which is
+       * also why no `tool_result` echo needs suppressing on this side.
+       */
       if (ext.type === 'todo_list_updated' && !ext.isSubagent) {
         setCurrentTodoItems(ext.items.length > 0 ? ext.items : null);
       }
@@ -561,6 +601,10 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     setLiveContextSize(null);
     setTransagents([]);
     setBackgroundTasks([]);
+    // Carrier blocks live in the transcript we are about to replace, so the
+    // "already placed" memory has to go with it — otherwise re-entering a thread
+    // would suppress every block it placed the first time.
+    seenBackgroundTaskIdsRef.current = new Set();
     setActiveThreadMeta(null);
 
     currentThreadIdRef.current = threadId;
@@ -723,6 +767,16 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     transagents,
     // M17: engine-backgrounded tasks
     backgroundTasks,
+    /**
+     * How many background tasks the turn is currently waiting on — the "hold".
+     *
+     * Derived from OUR OWN registry (started minus completed), never from
+     * adapter data: the held `result` that opens a hold is not forwarded, and
+     * `AdapterBackgroundHoldExpiredError` carries no task list. Drives the
+     * "waiting for N background tasks" spinner between a hold and the
+     * continuation turn.
+     */
+    heldBackgroundTaskCount: backgroundTasks.filter((t) => t.status === 'running').length,
     // P2: active thread metadata (from GET /api/threads/:id), list-independent.
     activeThreadMeta,
   };
@@ -837,6 +891,22 @@ interface PersistedContent {
 export const USER_INPUT_TOOL_NAME = '__user_input__';
 /** C21: not a real tool — the carrier for an adapter warning inside the transcript. */
 export const WARNING_TOOL_NAME = '__warning__';
+/**
+ * 0.2.50: not a real tool either — the carrier that puts the "Background tasks"
+ * block AT TURN LEVEL, in stream order, instead of in a flat list appended after
+ * the whole conversation.
+ *
+ * It is a block of the turn rather than a child of the `tool_use` card that
+ * spawned the task, because the contract gives no `toolUseId` on the
+ * `background_task_*` family — there is nothing to nest it under. Correlating
+ * heuristically (by taskType, by ordering, by parsing the Bash command) was
+ * considered and rejected.
+ *
+ * The block carries only the `taskId`; the mutable state (status, outputFile,
+ * summary) is looked up live from the hook's registry at render time, since
+ * `_progress` and `_completed` keep arriving after the block is placed.
+ */
+export const BACKGROUND_TASK_TOOL_NAME = '__background_task__';
 
 function parseContent(raw: string): PersistedContent {
   try {

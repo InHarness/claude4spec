@@ -294,8 +294,10 @@ describe('runAgentTurn — patch thread posture (0.2.30)', () => {
 
     await runAgentTurn(deps, input);
 
-    // planMode=false ⇒ the adapter is handed no READONLY_BUILTINS allow-list and
-    // no MUTATING_BUILTINS ban, i.e. the full built-in toolset.
+    // planMode=false ⇒ no deny-groups are declared, so the adapter keeps the
+    // full built-in toolset. (0.9.6 replaced the old name lists with semantic
+    // groups; `planMode: true` desugars to disallowedToolGroups
+    // ['file-write','shell'].)
     expect(hoisted.lastExecute?.planMode).toBe(false);
   });
 });

@@ -6,6 +6,17 @@ interface Props {
   items: TodoItem[] | null;
 }
 
+/**
+ * `TodoItem.status` is an OPEN union: four named values plus `(string & {})`.
+ * Every lookup below is therefore written `STATUS_GLYPH[...] ?? '·'` — the `??`
+ * IS the required default branch, not defensive noise. A status this map has
+ * never heard of renders with the neutral glyph instead of an empty cell.
+ *
+ * One documented library quirk this must not build on: `TaskUpdate` with status
+ * `deleted` does NOT remove the item from the snapshot, it leaves it carrying
+ * that status. It falls through to the default glyph, which is the right
+ * outcome — but do not encode an assumption that it keeps behaving that way.
+ */
 const STATUS_GLYPH: Record<string, string> = {
   pending: '○',
   in_progress: '▶',
