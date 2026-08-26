@@ -397,8 +397,17 @@ describe('runAgentTurn — one MCP server set per adapter.execute (0-2-23-to-nex
     await runAgentTurn(deps, makeInput());
 
     expect(hoisted.executes).toHaveLength(2);
-    // The host's factories are re-invoked, not memoized for the turn.
-    expect(built).toBe(2);
+    /**
+     * Two executes plus ONE more: 0.2.50 calls `buildMcpEntries()` a third time,
+     * up where the system prompt is assembled, to derive `<tooling>` from the
+     * set the turn will actually mount rather than from a hand-written list
+     * beside it. That call's handles are read for their declared tool names and
+     * dropped — they are never mounted, so they never reach `assertFreshMount`,
+     * and building them is safe precisely because of what this test asserts:
+     * every call to the host yields brand-new instances.
+     */
+    expect(built).toBe(3);
+    // The invariant itself, unchanged: no instance is shared between executes.
     expect(instanceOf(hoisted.executes[1], 'entity-tools')).not.toBe(
       instanceOf(hoisted.executes[0], 'entity-tools'),
     );
@@ -498,13 +507,13 @@ describe('runAgentTurn — M37 per-context skill injection', () => {
 
     const prompt = String(hoisted.lastExecute?.systemPrompt);
     expect(prompt).toContain('<skill slug="writing-style-author" description="authors styles"/>');
-    expect(prompt).not.toContain('<project_skill slug="writing-style-author"');
+    expect(prompt).not.toContain('<project_writing_skill slug="writing-style-author"');
     // The listing carries the description and NOTHING of the body: that is the
     // release's budget claim, and the only assertion that can falsify it.
     expect(prompt).not.toContain('writing-style-author body');
   });
 
-  it('the active writing style is the one skill that gets the <project_skill> block', async () => {
+  it('the active writing style is the one skill that gets the <project_writing_skill> block', async () => {
     hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
     const { deps } = makeDeps();
     Object.assign(deps, fakeSkillDeps({
@@ -517,8 +526,8 @@ describe('runAgentTurn — M37 per-context skill injection', () => {
     await runAgentTurn(deps, input);
 
     const prompt = String(hoisted.lastExecute?.systemPrompt);
-    expect(prompt).toContain('<project_skill slug="house-style"');
-    expect(prompt.match(/<project_skill /g)?.length).toBe(1);
+    expect(prompt).toContain('<project_writing_skill slug="house-style"');
+    expect(prompt.match(/<project_writing_skill /g)?.length).toBe(1);
   });
 
   it('a missing bundled attach-list skill degrades gracefully (no crash, no <project_skill> block for it) instead of failing every turn', async () => {

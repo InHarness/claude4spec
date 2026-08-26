@@ -121,6 +121,20 @@ import type { EntityModuleManifest, SystemPromptContribution } from './types.js'
  * Once a first third-party plugin is published, all of this goes back under the
  * major rule — that is the condition the stabilisation window depends on, not a
  * property of the changes.
+ *
+ * 0.2.50 — `SystemPromptContribution.promptBlocks` joins the slot, and the
+ * baseline stays at `2.0.0`. This is the plain additive case the rule was
+ * written for: a new OPTIONAL field on an existing contribution, read only when
+ * present, with every existing manifest continuing to load and render exactly as
+ * before. No shape a plugin already depended on changes.
+ *
+ * Note what did NOT happen in the same round, because it is the more instructive
+ * half: `mcpToolsLine` was a candidate for REMOVAL (the prompt's `<tooling>`
+ * block stopped reading it, which was its original purpose). It stays, because
+ * "the prompt no longer reads it" turned out not to mean "nothing reads it" —
+ * five other subsystems consume it as a declaration of the type's custom
+ * operations. A slot is retired when its last consumer goes, not when its first
+ * one does; the doc comment on the field now says which consumers remain.
  */
 export const HOST_API_VERSION = '2.0.0';
 

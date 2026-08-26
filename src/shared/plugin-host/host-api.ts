@@ -474,6 +474,26 @@ export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] =
       'new VALUE SHAPE for an existing flag, not a new entry in the closed flag ' +
       'dictionary.',
   },
+  {
+    release: '0.2.50',
+    slot: 'SystemPromptContribution.promptBlocks',
+    kind: 'slot-added',
+    summary:
+      'Full XML blocks a type contributes to the prompt\'s writing-conventions ' +
+      'layer, emitted in `listEntities()` order and only while the type is ' +
+      'active. `narrativeBlock` says what an entity IS in two or three sentences ' +
+      'inside the shared `<entities>` block; this slot is for the other thing a ' +
+      'type sometimes owns — a whole convention governing how the agent writes ' +
+      'ABOUT it. The first migrant is `<diagram_references>`, which the core ' +
+      'prompt builder emitted unconditionally, including for projects where the ' +
+      '`diagram` type is not mounted, while the diagram\'s own `narrativeBlock` ' +
+      'carried a pointer to it: one convention in two files, neither of which ' +
+      'owned it. Purely additive — a manifest without the slot renders exactly ' +
+      'as before. Note what was NOT removed in the same round: `mcpToolsLine` ' +
+      'stopped feeding `<tooling>` (now derived from the servers actually ' +
+      'mounted, post-gate) but stays on the surface, because five other ' +
+      'subsystems read it as a declaration of the type\'s custom operations.',
+  },
 ];
 
 /** First numeric component of a semver RANGE (e.g. "^1.4.0" → 1, ">=2.5.0" → 2). */

@@ -417,11 +417,24 @@ export function registerCoreOperations(): void {
       channels: fullParity(),
     });
 
-  tagWrite('create_tag', 'Create a tag in the registry.', { slug: z.string(), name: z.string().optional() }, false);
-  tagWrite('update_tag', 'Rename or restyle a tag; a slug change propagates through references.', { slug: z.string(), name: z.string().optional() }, true);
+  /**
+   * 0.2.50 — these five rows are RE-DECLARED to match `reference-tools`, which
+   * is what actually runs. They had drifted in a way the catalog's own opening
+   * claim ("ONE declaration per operation, RENDERED into four channels") rules
+   * out: `create_tag` required `slug` here and `name` there — DISJOINT required
+   * fields, so a caller obeying this row failed validation at the MCP boundary
+   * and vice versa — and `tag_entity` named its list `tagSlugs` here and `tags`
+   * there. Since `inputSchema` is what the REST and CLI channels validate
+   * against, the divergence meant one operation with two contracts depending on
+   * which door you came through. The MCP shape wins because it is the one in
+   * use: a tag is created by NAME (the slug is derived and returned), colour and
+   * description are optional, and a tag is not identified by a colour.
+   */
+  tagWrite('create_tag', 'Create a tag in the registry. The slug is derived from `name` and returned.', { name: z.string(), color: z.string().optional(), description: z.string().optional() }, false);
+  tagWrite('update_tag', 'Rename or restyle a tag; a slug change propagates through references.', { slug: z.string(), name: z.string().optional(), color: z.string().optional(), description: z.string().optional() }, true);
   tagWrite('delete_tag', 'Remove a tag from the registry and every entity carrying it.', { slug: z.string() }, true);
-  tagWrite('tag_entity', 'Attach tags to an entity. Idempotent — re-attaching is a no-op.', { type: z.string(), slug: z.string(), tagSlugs: z.array(z.string()) }, true);
-  tagWrite('untag_entity', 'Detach tags from an entity. Idempotent.', { type: z.string(), slug: z.string(), tagSlugs: z.array(z.string()) }, true);
+  tagWrite('tag_entity', 'Attach tags to an entity. Idempotent — the entity ends up with the UNION of its existing tags and these. Tags that do not exist yet are created.', { type: z.string(), slug: z.string(), tags: z.array(z.string()) }, true);
+  tagWrite('untag_entity', 'Detach tags from an entity. Idempotent.', { type: z.string(), slug: z.string(), tags: z.array(z.string()) }, true);
 
   // ── M02 Pages / M06 Sections — the page WRITE path (item 28) ──────────────
   //

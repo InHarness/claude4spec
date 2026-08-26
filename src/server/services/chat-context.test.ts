@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildSystemPrompt, subagentsFor, type SystemPromptInput, type PeerProject } from './chat-context.js';
+import { buildSystemPrompt, mainPromptBlockNames, subagentsFor, type SystemPromptInput, type PeerProject } from './chat-context.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import { DEFAULT_PAGES_ROOT_PROPS, type Root } from '../../shared/types.js';
 
@@ -18,8 +18,6 @@ function build(overrides: Partial<SystemPromptInput>): string {
     projectName: 'My Spec',
     cwd: '/tmp/my-spec',
     roots: [rootAt('pages')],
-    briefsDir: '.claude4spec/briefs',
-    patchesDir: '.claude4spec/patches',
     currentPagePath: null,
     currentPageBody: null,
     pageCount: 0,
@@ -31,41 +29,71 @@ function build(overrides: Partial<SystemPromptInput>): string {
 }
 
 const PEERS: PeerProject[] = [
-  { name: 'Billing API', path: '/ws/billing', description: 'Money in, money out.' },
-  { name: 'Auth', path: '/ws/auth' },
+  { name: 'Billing API', registryName: 'billing', path: '/ws/billing', description: 'Money in, money out.' },
+  { name: 'Auth', registryName: 'auth', path: '/ws/auth' },
 ];
 
+/** The mounted-server inventory the turn hands the prompt. `<tooling>` is derived
+ *  from this alone since 0.2.50, so a test that wants a server named must say so. */
+function inv(...servers: Array<[string, string[]?]>) {
+  return servers.map(([name, tools]) => ({ name, tools }));
+}
+
+/** The inventory a plain chat turn mounts, trimmed to what these tests assert on. */
+const CHAT_INVENTORY = inv(
+  ['entity-tools', ['create_entities', 'get_entities', 'update_entities', 'delete_entities', 'list_entities', 'search_entities', 'describe_entity_type']],
+  ['reference-tools', ['create_tag', 'tag_entity', 'find_references', 'check_consistency', 'list_pages', 'get_page']],
+  ['page-tools', ['create_page', 'update_page', 'delete_page', 'update_sections']],
+  ['skill-tools', ['load_skill_file']],
+  ['plan-tools', ['get_plan', 'update_plan', 'list_plan_versions', 'get_plan_version']],
+  ['c4s-tools', ['ask']],
+);
+
 /**
- * 0.2.4 — the `<project>` element carries one count attribute per entity type,
- * and `attrs()` escapes VALUES but interpolates KEYS verbatim. So whatever the
- * key is drawn from is, in effect, unescaped XML: a human label ("AC (active)",
- * "Acceptance Criteria") produced a malformed attribute, and this is the assertion
- * that catches the next attempt to key it by one.
+ * 0.2.50 — the per-type COUNT attributes are gone, so the well-formedness rule
+ * they needed is gone with them; what replaces it is the assertion that they do
+ * not come back.
+ *
+ * They were frozen at turn 1 (the system prompt is written once per thread), and
+ * `ac` was silently a filtered subset on top of that. No block in the prompt
+ * ever branched on one, and an agent that needs a count has
+ * `list_entities({ mode: 'count' })`, which is current. What remains on
+ * `<project>` is scale — pages and sections — stamped with when it was true.
  */
-describe('buildSystemPrompt — <project> count attributes are well-formed', () => {
+describe('buildSystemPrompt — <project> carries no per-type counters (0.2.50)', () => {
   const typed = (types: Array<{ type: string; labelPlural: string }>) =>
     ({
       listEntities: () =>
         types.map((t) => ({ ...t, label: t.labelPlural, systemPrompt: { roleNoun: t.type } })),
     }) as unknown as ProjectPluginHost;
 
-  it('keys each count by the type slug, never by a human label', () => {
+  it('emits no count attribute for any entity type', () => {
     const out = build({
       host: typed([
         { type: 'ac', labelPlural: 'Acceptance Criteria' },
         { type: 'ui-view', labelPlural: 'UI Views' },
       ]),
       entityCounts: { ac: 12, 'ui-view': 3 },
+      tagCount: 7,
     });
-    expect(out).toContain('ac="12"');
-    expect(out).toContain('ui-view="3"');
+    expect(out).not.toContain('ac="12"');
+    expect(out).not.toContain('ui-view="3"');
+    expect(out).not.toContain('tags="7"');
     expect(out).not.toContain('Acceptance Criteria=');
-    expect(out).not.toContain('UI Views=');
+  });
+
+  it('keeps pages/sections and says when they were counted', () => {
+    const out = build({ pageCount: 41, sectionCount: 260 });
+    expect(out).toContain('pages="41"');
+    expect(out).toContain('sections="260"');
+    // The staleness is stated, not implied — the prompt is frozen after turn 1.
+    expect(out).toContain('counted="first turn of this thread"');
   });
 
   /**
-   * The general form of the rule, so a future key source is held to it too: an
-   * XML Name may not contain a space, a quote or a parenthesis.
+   * The general form of the rule, kept so a future attribute source is held to
+   * it: an XML Name may not contain a space, a quote or a parenthesis, and
+   * `attrs()` escapes VALUES while interpolating KEYS verbatim.
    */
   it('emits only valid XML Names as attribute keys', () => {
     const out = build({
@@ -81,66 +109,103 @@ describe('buildSystemPrompt — <project> count attributes are well-formed', () 
       expect({ key, valid: /^[A-Za-z_][A-Za-z0-9_.-]*$/.test(key!) }).toEqual({ key, valid: true });
     }
   });
+
+  /**
+   * 0.2.50 — `roots=` lists ROOTS. It used to prepend `briefs=` and `patches=`,
+   * which are not roots: passing either as a `rootId` answers ROOT_NOT_FOUND,
+   * and `<agent_path_scope>` names both directories as ALWAYS DISALLOWED. The
+   * `id=dir` shape stays, because it is the only place in the prompt binding a
+   * root identifier to a directory.
+   */
+  it('roots= lists only real roots, as id=dir', () => {
+    const out = build({ roots: [rootAt('pages'), rootAt('docs/adr', 'adr')] });
+    expect(out).toContain('roots="pages=pages;adr=docs/adr"');
+    expect(out).not.toContain('briefs=');
+    expect(out).not.toContain('patches=');
+  });
 });
 
 describe('buildSystemPrompt — <workspace_projects> (0.1.58)', () => {
-  it('omits the block when c4sToolsAvailable is false, regardless of peers', () => {
-    const out = build({ c4sToolsAvailable: false, workspaceProjects: PEERS, workspaceName: 'acme' });
+  const withC4s = (o: Record<string, unknown>) =>
+    build({ mcpInventory: CHAT_INVENTORY, workspaceName: 'acme', ...o });
+
+  it('omits the block when c4s-tools is not mounted, regardless of peers', () => {
+    // 0.2.50: the gate is the SERVER's presence, not a flag beside it. The block
+    // exists to make `ask`'s `project` argument constructible, so it is wanted
+    // exactly when `ask` is reachable.
+    const out = build({
+      mcpInventory: inv(['entity-tools', ['get_entities']]),
+      workspaceProjects: PEERS,
+      workspaceName: 'acme',
+    });
     expect(out).not.toContain('<workspace_projects workspace=');
   });
 
   it('omits the block when the peer list is empty', () => {
-    const out = build({ c4sToolsAvailable: true, workspaceProjects: [], workspaceName: 'acme' });
-    expect(out).not.toContain('<workspace_projects workspace=');
+    expect(withC4s({ workspaceProjects: [] })).not.toContain('<workspace_projects workspace=');
   });
 
-  it('renders the block right after <c4s_tools_usage> and before <project_skill>', () => {
-    const out = build({
-      c4sToolsAvailable: true,
+  it('renders in layer C, after <tooling> and before the writing conventions', () => {
+    const out = withC4s({
       workspaceProjects: PEERS,
-      workspaceName: 'acme',
       writingStyleSkill: { slug: 'house-style', title: 'House Style' },
     });
-    const c4sIdx = out.indexOf('<c4s_tools_usage>');
+    const toolingIdx = out.indexOf('<tooling>');
     const wsIdx = out.indexOf('<workspace_projects');
-    const skillIdx = out.indexOf('<project_skill');
-    expect(c4sIdx).toBeGreaterThanOrEqual(0);
-    expect(wsIdx).toBeGreaterThan(c4sIdx);
-    expect(skillIdx).toBeGreaterThan(wsIdx);
+    const conventionsIdx = out.indexOf('<entity_embeds');
+    expect(toolingIdx).toBeGreaterThanOrEqual(0);
+    expect(wsIdx).toBeGreaterThan(toolingIdx);
+    expect(conventionsIdx).toBeGreaterThan(wsIdx);
     expect(out).toContain('<workspace_projects workspace="acme">');
   });
 
-  it('renders one <peer> per project with the workspace cwd as path', () => {
-    const out = build({ c4sToolsAvailable: true, workspaceProjects: PEERS, workspaceName: 'acme' });
-    expect(out).toContain('<peer name="Billing API" path="/ws/billing" description="Money in, money out."/>');
+  /**
+   * 0.2.50 — the peer's ADDRESS is `id`, the registry name, and this is the
+   * assertion that keeps it from being "simplified" back to the display name.
+   *
+   * `ask({ project })` resolves a non-path value through `findProjectByName`,
+   * which compares against `ProjectRecord.name` from the workspace registry —
+   * not the `name` the peer gives itself in its own config.json. A peer that
+   * shows as "Billing API" is registered as `billing`, and passing the former
+   * answers PROJECT_SLUG_NOT_FOUND. This was found by making the call; the
+   * change it refutes had survived three readings of the code.
+   */
+  it('renders the REGISTRY name as `id` — the address — with `name` as a label only', () => {
+    const out = withC4s({ workspaceProjects: PEERS });
+    expect(out).toContain(
+      '<peer id="billing" name="Billing API" description="Money in, money out."/>',
+    );
+    // The display name must never be the only identifier offered.
+    expect(out).not.toContain('<peer name="Billing API" path=');
+    expect(out).toContain('Pass a peer\'s `id` as the `project` argument');
   });
 
-  it('drops empty name/description attributes (unreadable peer config → path only)', () => {
-    const out = build({ c4sToolsAvailable: true, workspaceProjects: PEERS, workspaceName: 'acme' });
-    expect(out).toContain('<peer name="Auth" path="/ws/auth"/>');
+  it('drops an empty description, keeping the addressable id', () => {
+    expect(withC4s({ workspaceProjects: PEERS })).toContain('<peer id="auth" name="Auth"/>');
+  });
+
+  /** A peer with no registry name keeps `path`, which the resolver tries first —
+   *  better a longer address than a decorative one. */
+  it('falls back to path when a peer has no registry name', () => {
+    const out = withC4s({ workspaceProjects: [{ name: 'Legacy', path: '/ws/legacy' }] });
+    expect(out).toContain('<peer name="Legacy" path="/ws/legacy"/>');
   });
 
   it('never renders the block in a brief frame', () => {
-    const out = build({
-      contextType: 'brief',
-      c4sToolsAvailable: true,
-      workspaceProjects: PEERS,
-      workspaceName: 'acme',
-      brief: null,
-    });
+    const out = withC4s({ contextType: 'brief', workspaceProjects: PEERS, brief: null });
     expect(out).not.toContain('<workspace_projects workspace=');
   });
 });
 
-describe('buildSystemPrompt — M37 <project_skill> is the writing-style slot (0.2.19)', () => {
+describe('buildSystemPrompt — M37 <project_writing_skill> is the writing-style slot (0.2.19)', () => {
   it('brief frame: emits exactly one block, for the active writing style', () => {
     const out = build({
       contextType: 'brief',
       brief: null,
       writingStyleSkill: { slug: 'house-style', title: 'House Style' },
     });
-    expect(out.match(/<project_skill /g)?.length).toBe(1);
-    expect(out).toContain('<project_skill slug="house-style" title="House Style">');
+    expect(out.match(/<project_writing_skill /g)?.length).toBe(1);
+    expect(out).toContain('<project_writing_skill slug="house-style" title="House Style">');
   });
 
   it('brief frame: emits no block at all when no writing style is active', () => {
@@ -148,7 +213,7 @@ describe('buildSystemPrompt — M37 <project_skill> is the writing-style slot (0
     // never reached zero here. The genre rules that skill used to carry now
     // arrive in <interaction_context>, which is what makes an empty slot safe.
     const out = build({ contextType: 'brief', brief: null, writingStyleSkill: null });
-    expect(out).not.toContain('<project_skill');
+    expect(out).not.toContain('<project_writing_skill');
   });
 
   it('brief frame: no longer points at the style\'s internal file layout', () => {
@@ -168,14 +233,14 @@ describe('buildSystemPrompt — M37 <project_skill> is the writing-style slot (0
         contextType,
         writingStyleSkill: { slug: 'house-style', title: 'House Style' },
       });
-      expect(out.match(/<project_skill /g)?.length).toBe(1);
-      expect(out).toContain('<project_skill slug="house-style" title="House Style">');
+      expect(out.match(/<project_writing_skill /g)?.length).toBe(1);
+      expect(out).toContain('<project_writing_skill slug="house-style" title="House Style">');
     }
   });
 
   it('non-brief frame: renders nothing when no writing style is active', () => {
     const out = build({ contextType: 'ask' });
-    expect(out).not.toContain('<project_skill');
+    expect(out).not.toContain('<project_writing_skill');
   });
 });
 
@@ -216,10 +281,10 @@ describe('buildSystemPrompt — <available_skills> (0.2.36)', () => {
   );
 
   it.each(['chat', 'patch', 'ask', 'brief'] as const)(
-    'lands immediately BEFORE <project_skill> in the %s context',
+    'lands immediately BEFORE <project_writing_skill> in the %s context',
     (contextType) => {
       // The order is load-bearing: <available_skills> carries the convention for
-      // opening a skill, <project_skill> issues an instruction to open one. Reversed,
+      // opening a skill, <project_writing_skill> issues an instruction to open one. Reversed,
       // the model is told to make a call before anything says what that call is.
       const out = build({
         contextType,
@@ -229,7 +294,7 @@ describe('buildSystemPrompt — <available_skills> (0.2.36)', () => {
       });
       const listingIdx = out.indexOf('<available_skills>');
       const closeIdx = out.indexOf('</available_skills>');
-      const skillIdx = out.indexOf('<project_skill');
+      const skillIdx = out.indexOf('<project_writing_skill');
       expect(listingIdx).toBeGreaterThanOrEqual(0);
       expect(skillIdx).toBeGreaterThan(listingIdx);
       // IMMEDIATELY before: the two blocks are adjacent parts, nothing in between.
@@ -240,7 +305,15 @@ describe('buildSystemPrompt — <available_skills> (0.2.36)', () => {
   it.each(['chat', 'patch', 'ask', 'brief'] as const)(
     'advertises the skill-tools mount in the %s context\'s <tooling>',
     (contextType) => {
-      const out = build({ contextType, brief: null });
+      // 0.2.50: `<tooling>` is derived from the mounted set, so the fixture has
+      // to say the server is mounted — which is the point. The line can no
+      // longer appear for a server that is not there, nor go missing for one
+      // that is.
+      const out = build({
+        contextType,
+        brief: null,
+        mcpInventory: inv(['skill-tools', ['load_skill_file']]),
+      });
       expect(out).toContain('<mcp name="skill-tools">load_skill_file</mcp>');
     },
   );
@@ -261,7 +334,7 @@ describe('buildSystemPrompt — <available_skills> (0.2.36)', () => {
   });
 });
 
-describe('buildSystemPrompt — <project_skill> points at load_skill_file (0.2.36)', () => {
+describe('buildSystemPrompt — <project_writing_skill> points at load_skill_file (0.2.36)', () => {
   it('never instructs the model to call the native Skill() tool', () => {
     for (const contextType of ['chat', 'patch', 'ask', 'brief'] as const) {
       const out = build({
@@ -314,14 +387,19 @@ describe('buildSystemPrompt — <interaction_context> (0.2.19)', () => {
     expect(out).toContain('<interaction_context type="patch"/>');
   });
 
-  it('sits immediately after <claude4spec_identity> in the chat frame', () => {
+  /**
+   * 0.2.50 — it OPENS every frame, identity included, where it used to come
+   * second in the chat frame and first in the brief frame. One rule for four
+   * modes rather than two rules for two groups: in all of them, which of the
+   * four interactions this is frames everything after it.
+   */
+  it('opens the chat frame, ahead of <claude4spec_identity>', () => {
     const out = build({ contextType: 'chat', interactionRules: 'rules' });
-    const identityEnd = out.indexOf('</claude4spec_identity>');
-    const ctxIdx = out.indexOf('<interaction_context');
+    expect(out.indexOf('<interaction_context')).toBe(0);
+    const identityIdx = out.indexOf('<claude4spec_identity>');
     const projectIdx = out.indexOf('<project name="My Spec"');
-    expect(identityEnd).toBeGreaterThanOrEqual(0);
-    expect(ctxIdx).toBeGreaterThan(identityEnd);
-    expect(projectIdx).toBeGreaterThan(ctxIdx);
+    expect(identityIdx).toBeGreaterThan(0);
+    expect(projectIdx).toBeGreaterThan(identityIdx);
   });
 
   it('opens the brief frame, replacing the two blocks it absorbed', () => {
@@ -337,70 +415,109 @@ describe('buildSystemPrompt — <interaction_context> (0.2.19)', () => {
   });
 });
 
-// M13 (0.1.113): CRUD lives on the generic entity-tools server, composed by
-// the host — per-type mcpToolsLine now covers ONLY a custom server, and is
-// absent entirely for a type with no non-CRUD tools (e.g. dto).
-describe('buildSystemPrompt — <tooling> entity-tools (M13)', () => {
-  it('always includes the host-level entity-tools line', () => {
-    const out = build({});
-    expect(out).toContain(
-      '<mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities, search_entities, describe_entity_type</mcp>',
-    );
+/**
+ * 0.2.50 — `<tooling>` is DERIVED from the servers the turn actually mounted,
+ * post-gate, instead of being described alongside them.
+ *
+ * The suite it replaces asserted the shape of a hand-written list: an
+ * `entity-tools` literal, a loop over each type's `mcpToolsLine`, and two more
+ * literals. It passed throughout the period in which the block omitted
+ * `page-tools` from a prompt that instructs the agent to call `update_sections`,
+ * and in which the brief frame advertised three release tools that do not exist
+ * — because there was nothing to compare the list against. Now there is.
+ */
+describe('buildSystemPrompt — <tooling> is derived from the mount (0.2.50)', () => {
+  const mcpLines = (out: string) => out.match(/<mcp name="[^"]+"(?:>|\/>)/g) ?? [];
+
+  it('names every mounted server and nothing else', () => {
+    const out = build({
+      mcpInventory: inv(
+        ['entity-tools', ['get_entities', 'update_entities']],
+        ['page-tools', ['create_page', 'update_sections']],
+      ),
+    });
+    expect(out).toContain('<mcp name="entity-tools">get_entities, update_entities</mcp>');
+    expect(out).toContain('<mcp name="page-tools">create_page, update_sections</mcp>');
+    expect(mcpLines(out)).toHaveLength(2);
   });
 
-  it('plug-and-play: config.entities = ["endpoint"] → entity-tools line + endpoint-tools custom line, no dto line', () => {
-    const singleEntityHost = {
+  /**
+   * The regression this whole change exists for. `page-tools` is not an entity
+   * type, so the old per-type loop could not reach it however long it had been
+   * mounted — while `<agent_path_scope>` told the agent to write pages with
+   * exactly its tools.
+   */
+  it('advertises a host-owned server that is not an entity type', () => {
+    const out = build({ mcpInventory: inv(['page-tools', ['create_page']]) });
+    expect(out).toContain('<mcp name="page-tools">create_page</mcp>');
+  });
+
+  /** A server the profile emptied out never reaches the inventory, so it cannot
+   *  be advertised — the gate and the prompt cannot disagree. */
+  it('names no server the gate dropped', () => {
+    const out = build({ mcpInventory: inv(['entity-tools', ['get_entities']]) });
+    expect(out).not.toContain('page-tools');
+    expect(out).not.toContain('c4s-tools');
+  });
+
+  /**
+   * `McpServerFactory.tools` is optional: a server built against the pre-0.2.13
+   * contract declares nothing. The honest rendering of "I cannot enumerate this"
+   * is the bare name — not an invented list, and not an omission that would
+   * make a mounted server unreachable.
+   */
+  it('renders a server that declares no tools as its bare name', () => {
+    const out = build({ mcpInventory: inv(['legacy-tools']) });
+    expect(out).toContain('<mcp name="legacy-tools"/>');
+  });
+
+  it('an empty mount leaves the builtins alone in the block', () => {
+    const out = build({ mcpInventory: [] });
+    expect(out).toContain('<tooling>');
+    expect(mcpLines(out)).toHaveLength(0);
+  });
+
+  /**
+   * 0.2.50 — the block no longer reads `mcpToolsLine`. The slot stays on the
+   * Host API (five other subsystems consume it as a declaration of the type's
+   * custom operations) but it is no longer prompt copy, so a stale line there
+   * can no longer make the prompt advertise a tool that is not mounted.
+   */
+  it('ignores a type\'s mcpToolsLine entirely', () => {
+    const hostWithLine = {
       listEntities: () => [
-        { systemPrompt: { mcpToolsLine: 'endpoint-tools: link_dto, unlink_dto' } },
+        { systemPrompt: { roleNoun: 'Endpoints', mcpToolsLine: 'endpoint-tools: link_dto, unlink_dto' } },
       ],
     } as unknown as ProjectPluginHost;
-    const out = buildSystemPrompt({
-      host: singleEntityHost,
-      projectName: 'My Spec',
-      cwd: '/tmp/my-spec',
-      roots: [rootAt('pages')],
-      briefsDir: '.claude4spec/briefs',
-      patchesDir: '.claude4spec/patches',
-      currentPagePath: null,
-      currentPageBody: null,
-      pageCount: 0,
-      entityCounts: {},
-      tagCount: 0,
-      sectionCount: 0,
-    });
-    expect(out).toContain('<mcp name="entity-tools">');
-    expect(out).toContain('<mcp name="endpoint-tools">link_dto, unlink_dto</mcp>');
-    expect(out).not.toContain('dto-tools');
+    const out = build({ host: hostWithLine, mcpInventory: inv(['entity-tools', ['get_entities']]) });
+    expect(out).not.toContain('<mcp name="endpoint-tools">');
+    expect(out).not.toContain('link_dto');
   });
+});
 
-  it('a type with no mcpToolsLine (e.g. dto — no custom tools) contributes no per-type <mcp> line', () => {
-    const dtoOnlyHost = {
-      listEntities: () => [{ systemPrompt: {} }],
-    } as unknown as ProjectPluginHost;
-    const out = buildSystemPrompt({
-      host: dtoOnlyHost,
-      projectName: 'My Spec',
-      cwd: '/tmp/my-spec',
-      roots: [rootAt('pages')],
-      briefsDir: '.claude4spec/briefs',
-      patchesDir: '.claude4spec/patches',
-      currentPagePath: null,
-      currentPageBody: null,
-      pageCount: 0,
-      entityCounts: {},
-      tagCount: 0,
-      sectionCount: 0,
+/**
+ * 0.2.50 — the brief frame's `<tooling>` came from an inline literal naming
+ * `get_release`, `get_release_diff` and `list_releases`. None of the three is a
+ * tool: the server exposes `release_create` / `release_list` / `release_show` /
+ * `release_diff` / `release_update`, and the frame's OWN `diff-explore` subagent
+ * used the correct names — so a brief thread held two disjoint vocabularies for
+ * the same three operations, one of them fictional.
+ */
+describe('buildSystemPrompt — brief frame <tooling> (0.2.50)', () => {
+  it('derives from the mount, and names no invented release tool', () => {
+    const out = build({
+      contextType: 'brief',
+      brief: null,
+      mcpInventory: inv(
+        ['brief-tools', ['get_brief', 'update_brief']],
+        ['release-tools', ['release_list', 'release_show', 'release_diff']],
+        ['skill-tools', ['load_skill_file']],
+      ),
     });
-    // Only the always-present entity-tools + reference-tools + skill-tools lines —
-    // no extra <mcp> from the dto type. `skill-tools` (0.2.36) is unconditional for
-    // the same reason `<available_skills>` is: the writing style attaches to every
-    // context type, so its read channel cannot be gated by any of them.
-    const mcpLines = (out.match(/<mcp name="[^"]+">/g) ?? []).map((m) => m);
-    expect(mcpLines).toEqual([
-      '<mcp name="entity-tools">',
-      '<mcp name="reference-tools">',
-      '<mcp name="skill-tools">',
-    ]);
+    expect(out).toContain('<mcp name="release-tools">release_list, release_show, release_diff</mcp>');
+    for (const phantom of ['get_release', 'get_release_diff', 'list_releases']) {
+      expect(out).not.toContain(phantom);
+    }
   });
 });
 
@@ -584,10 +701,22 @@ describe('buildSystemPrompt — <agent_path_scope> (0.1.90 / 0.1.130)', () => {
     expect(build({ contextType: 'ask', agentPathScope: scope })).toContain('<agent_path_scope>');
   });
 
-  it('NEVER emits the block in the brief frame, even with a configured scope', () => {
-    const out = build({ contextType: 'brief', agentPathScope: scope });
-    expect(out).not.toContain('<agent_path_scope>');
-    expect(out).not.toContain('ALWAYS DISALLOWED — C4S artifact dirs');
+  /**
+   * 0.2.50 — INVERTED. The brief frame now emits the block, and the assertion
+   * that it must not was encoding a two-way falsehood.
+   *
+   * `resolveAgentExecutionScope` runs unconditionally and its result reaches
+   * `baseExecuteArgs` for every context type, so a brief thread has always had a
+   * path scope: cwd writable, artifact dirs closed, page roots read-only. The
+   * frame simply never rendered it — while the brief interaction rules asserted
+   * "you have NO filesystem access", an enforcement set nowhere in production
+   * code. The agent was told it was forbidden something it could do, and told
+   * nothing of the limits that actually bound it.
+   */
+  it('emits the block in the brief frame too — the scope applies there', () => {
+    const out = build({ contextType: 'brief', brief: null, agentPathScope: scope });
+    expect(out).toContain('<agent_path_scope>');
+    expect(out).toContain('ALWAYS DISALLOWED — C4S artifact dirs');
   });
 
   it('drops the DISALLOWED line when only allowedPaths is set (artifact line still present)', () => {
@@ -614,32 +743,56 @@ describe('buildSystemPrompt — <agent_path_scope> (0.1.90 / 0.1.130)', () => {
   });
 });
 
-// 0.1.110: <delegation_policy> advertises the spec-explore subagent inside <claude4spec_identity>.
-describe('buildSystemPrompt — <delegation_policy> (0.1.110)', () => {
-  it('renders between </entity_change_protocol> and <tags> in the chat frame, mentioning spec-explore', () => {
+/**
+ * 0.2.50 — `<entity_discovery>`, `<entity_change_protocol>` and the threshold
+ * half of `<delegation_policy>` are ONE block, `<discovery_and_impact>`.
+ *
+ * They overlapped by roughly sixty per cent: the same four channels enumerated
+ * twice in two wordings, each block carrying a meta-pointer to the other, and
+ * much of the remainder a paraphrase of `find_references`'s own tool
+ * description, which the model receives anyway.
+ */
+describe('buildSystemPrompt — <discovery_and_impact> (0.2.50)', () => {
+  it('replaces the three blocks it merged, keeping the delegation heuristic', () => {
     const out = build({ contextType: 'chat' });
-    const protocolEndIdx = out.indexOf('</entity_change_protocol>');
-    // Match the block's opening tag, not the `<delegation_policy/>` self-reference inside
-    // <entity_discovery>'s channels intro (which appears earlier in the identity block).
-    const delegationIdx = out.indexOf('<delegation_policy severity=');
-    const tagsIdx = out.indexOf('<tags>');
-    expect(protocolEndIdx).toBeGreaterThanOrEqual(0);
-    expect(delegationIdx).toBeGreaterThan(protocolEndIdx);
-    expect(tagsIdx).toBeGreaterThan(delegationIdx);
+    expect(out).toContain('<discovery_and_impact severity="mandatory">');
     expect(out).toContain('spec-explore');
+    for (const retired of ['<entity_discovery', '<entity_change_protocol', '<delegation_policy']) {
+      expect(out).not.toContain(retired);
+    }
+  });
+
+  /**
+   * The one part of the merged block that cannot be read off a tool description:
+   * it is about who decides, not about what the tools do.
+   */
+  it('keeps the show-the-impact-before-mutating rule', () => {
+    expect(build({ contextType: 'chat' })).toContain('PRESENT THE IMPACT TO THE USER FIRST');
+  });
+
+  /**
+   * Two claims were REMOVED rather than reworded, because the host already does
+   * the work they asked the agent to offer: a rename through `update_entities`
+   * calls `propagateSlugChange` itself, and `delete_entities` returns
+   * `brokenReferences` per entity. Both told the agent to propose something it
+   * cannot withhold.
+   */
+  it('no longer asks the agent to propose work the host performs itself', () => {
+    const out = build({ contextType: 'chat' });
+    expect(out).not.toContain('propose propagation');
+    expect(out).not.toContain('sync sweep');
   });
 
   it('never renders in the brief frame', () => {
     const out = build({ contextType: 'brief', brief: null });
-    expect(out).not.toContain('<delegation_policy');
+    expect(out).not.toContain('<discovery_and_impact');
   });
 });
 
-// 0.1.110: each of the 5 entity-embed forms is fully described exactly once, inside <entity_embeds>.
 describe('buildSystemPrompt — <entity_embeds> single-source regression (0.1.110)', () => {
   it('describes each embed form exactly once', () => {
     const out = build({ contextType: 'chat' });
-    const start = out.indexOf('<entity_embeds>');
+    const start = out.indexOf('<entity_embeds');
     const end = out.indexOf('</entity_embeds>');
     expect(start).toBeGreaterThanOrEqual(0);
     const embedsBlock = out.slice(start, end);
@@ -650,35 +803,141 @@ describe('buildSystemPrompt — <entity_embeds> single-source regression (0.1.11
       'Block card with the entity',
       'Static block list of hand-picked',
       'Dynamic block list filtered by tag',
-      'spans all entity types',
+      'spans every ACTIVE entity type',
     ];
     for (const signature of formSignatures) {
       expect(embedsBlock.split(signature).length - 1).toBe(1);
-      // The full description must not be duplicated elsewhere (e.g. <entity_linking_rule>, <tags>).
+      // The full description must not be duplicated elsewhere.
       expect(restOfPrompt).not.toContain(signature);
     }
   });
-});
 
-// 0.1.110: the plan-tools read-only exemption sentence has exactly one source (<claude4spec_plan_mode>).
-describe('buildSystemPrompt — plan-tools exemption single-source regression (0.1.110)', () => {
-  it('appears exactly once when both plan_tools_usage and plan_mode are mounted', () => {
-    const out = build({ contextType: 'chat', planToolsAvailable: true, planMode: true });
-    expect(out.split('EXEMPT').length - 1).toBe(1);
+  /**
+   * 0.2.50 — `<entity_linking_rule>` is ABSORBED here, and this asserts the
+   * duplication it was is gone.
+   *
+   * The five-way "pick the smallest tag" decision tree stood in full in both
+   * blocks, and a third time in `interaction-rules.ts`. What the linking rule
+   * added beyond the copy was a pre-edit ritual: sweep every draft with two
+   * regexes, verify each hit with a separate call to `get_endpoint` /
+   * `get_dto` — which do not exist — and, for a hit you leave alone, "state the
+   * exemption to yourself", an instruction with no observable form.
+   */
+  it('absorbs <entity_linking_rule>, keeping its reason and dropping its ritual', () => {
+    const out = build({ contextType: 'chat' });
+    expect(out).not.toContain('<entity_linking_rule');
+    // The reason the rule existed survives.
+    expect(out).toContain('find_references');
+    // The ritual does not.
+    expect(out).not.toContain('Pre-edit self-check');
+    expect(out).not.toContain('state the exemption to yourself');
   });
 
-  it('is absent from <plan_tools_usage> on its own (plan_mode not active)', () => {
-    const out = build({ contextType: 'chat', planToolsAvailable: true, planMode: false });
-    expect(out).toContain('<plan_tools_usage>');
-    expect(out).not.toContain('EXEMPT');
-    expect(out).not.toContain('NOT subject to plan_mode');
+  /**
+   * The block used to claim `severity="mandatory"` on a rule with no enforcer:
+   * none of `check_consistency`'s fourteen rules reads prose, so nothing
+   * anywhere reports a violation. Calling that mandatory teaches the agent what
+   * the other severities are worth.
+   */
+  it('claims only the severity it can back', () => {
+    expect(build({ contextType: 'chat' })).toContain('<entity_embeds severity="recommended">');
+  });
+
+  /**
+   * 0.2.50 — the embed union is computed from the ACTIVE types, and the prose
+   * around it no longer enumerates a guess. "endpoints + DTOs + tables" named
+   * three plugins as though they were the product, two lines from a helper that
+   * knew the real set.
+   */
+  it('names no hardcoded plugin roster', () => {
+    const out = build({ contextType: 'chat' });
+    expect(out).not.toContain('endpoints + DTOs + tables');
   });
 });
 
 /**
- * 0.2.14 — `<current_patch>` carries `applied="true|false"`, not the retired
- * `status="awaiting|completed"` enum.
+ * 0.2.50 — `<plan_tools_usage>` and `<c4s_tools_usage>` are gone, and with them
+ * the category: a prompt block explaining how to use one MCP server.
+ *
+ * Every claim in the pair already lived in the description of the tool it
+ * described, which the model receives through `tools/list` on every turn. The
+ * blocks bought a second copy and the chance of the two disagreeing — and they
+ * took it: `<c4s_tools_usage>` still called entity edits "soft-blocked at prompt
+ * level" a full release after the `ask` profile began filtering write tools out
+ * of `tools/list` outright.
  */
+describe('buildSystemPrompt — no per-server usage blocks (0.2.50)', () => {
+  it('emits neither retired block, however the servers are mounted', () => {
+    const out = build({ contextType: 'chat', mcpInventory: CHAT_INVENTORY, planMode: true });
+    expect(out).not.toContain('<plan_tools_usage');
+    expect(out).not.toContain('<c4s_tools_usage');
+  });
+
+  it('carries no stale account of the ask profile', () => {
+    const out = build({ contextType: 'chat', mcpInventory: CHAT_INVENTORY });
+    expect(out).not.toContain('soft-blocked');
+  });
+});
+
+/**
+ * 0.2.50 — the MCP half of `<claude4spec_plan_mode>` is reframed and generated.
+ *
+ * It used to head a list of MCP tools "Forbidden (mutating)", beside the
+ * built-in list under the same heading. For built-ins the word is exact — plan
+ * mode desugars to `disallowedToolGroups: ['file-write','shell']` and the
+ * adapter enforces it. For MCP it is false, and deliberately so: `gateServers`
+ * takes `thread.contextType` and has never taken `planMode`, read-only is what
+ * the `ask` PROFILE buys, and the specification says so in three places. Every
+ * entity mutation is mounted and callable in a plan-mode chat turn.
+ */
+describe('buildSystemPrompt — <claude4spec_plan_mode> states intent, not a gate (0.2.50)', () => {
+  const planned = () => build({ contextType: 'chat', planMode: true, mcpInventory: CHAT_INVENTORY });
+
+  it('does not call the mounted MCP tools forbidden', () => {
+    expect(planned()).not.toContain('Forbidden (mutating)');
+  });
+
+  it('says plainly that the MCP tools will execute if called', () => {
+    const out = planned();
+    expect(out).toContain('Plan mode does not gate them at all');
+    expect(out).toContain('WILL execute if you call them');
+  });
+
+  /**
+   * The list is generated from the mount and each tool's catalog `opClass`, so
+   * it cannot be partial. The old hand-written pattern
+   * (`create_*`/`update_*`/`delete_*`/`link_*`/`unlink_*`) missed everything not
+   * named that way — including `ask`, which spends a whole turn in another
+   * project.
+   */
+  it('names the mutating tools it actually mounted, `ask` included', () => {
+    const out = planned();
+    expect(out).toContain('create_entities');
+    expect(out).toContain('update_entities');
+    expect(out).toContain('create_page');
+    expect(out).toContain('tag_entity');
+    expect(out).toContain('ask');
+  });
+
+  it('exempts the read and plan classes, which is the point of the mode', () => {
+    const out = planned();
+    const listLine = out.split('\n').find((l) => l.startsWith('  - Do not call:')) ?? '';
+    expect(listLine).not.toContain('get_entities');
+    expect(listLine).not.toContain('list_entities');
+    expect(listLine).not.toContain('update_plan');
+    expect(out).toContain('persist the plan with update_plan');
+  });
+
+  it('says so rather than rendering an empty list when nothing mutating is mounted', () => {
+    const out = build({
+      contextType: 'chat',
+      planMode: true,
+      mcpInventory: inv(['entity-tools', ['get_entities', 'list_entities']]),
+    });
+    expect(out).toContain('  - Do not call: (none mounted this turn)');
+  });
+});
+
 describe('buildSystemPrompt — <current_patch applied=…>', () => {
   const patchWith = (frontmatter: Record<string, unknown>) =>
     build({
@@ -703,5 +962,183 @@ describe('buildSystemPrompt — <current_patch applied=…>', () => {
   // A pre-0.2.14 patch is not silently promoted: `status` is an unknown field.
   it('reads a legacy `status: completed` as applied="false"', () => {
     expect(patchWith({ status: 'completed' })).toContain('applied="false"');
+  });
+});
+
+/**
+ * 0.2.50 — THE ORDER, asserted as a whole rather than pairwise.
+ *
+ * Before this release the order was a sequence of seventeen `parts.push` calls
+ * interleaved with `if`s, and what held it in place were comments naming
+ * neighbours ("right after the language directives and before `<current_patch>`")
+ * plus a handful of pairwise tests. That could keep two blocks adjacent; it
+ * could not say what the order WAS, so nothing noticed that it recorded the
+ * release each block was written in and nothing else.
+ */
+describe('buildSystemPrompt — layer order (0.2.50)', () => {
+  /** Every block a full turn can emit, with the fixture needed to make it appear. */
+  const FULL_TURN: Partial<SystemPromptInput> = {
+    contextType: 'chat',
+    interactionRules: 'rules',
+    mcpInventory: CHAT_INVENTORY,
+    workspaceProjects: PEERS,
+    workspaceName: 'acme',
+    availableSkills: [{ slug: 'house-rules', description: 'always on' }],
+    writingStyleSkill: { slug: 'house-style', title: 'House Style' },
+    specLanguage: 'Polish',
+    conversationalLanguage: 'Polish',
+    agentPathScope: {
+      allowedPaths: [],
+      disallowedPaths: [],
+      artifactDenyDirs: ['/tmp/my-spec/.claude4spec/briefs'],
+      pageRootDirs: ['/tmp/my-spec/pages'],
+    },
+    currentPagePath: 'guide.md',
+    currentPageBody: '# Guide\n\nbody',
+    annotations: [{ id: 'a1', text: 'sel', comment: 'why?', page: 'guide.md' }],
+    planMode: true,
+  };
+
+  it('emits the blocks in the declared order, for a turn that emits them all', () => {
+    const out = build(FULL_TURN);
+    const emitted = mainPromptBlockNames().filter((name) => {
+      // `plugin_prompt_blocks` is not a tag; the test host contributes none.
+      if (name === 'plugin_prompt_blocks') return false;
+      return out.includes(`<${name}`);
+    });
+    const positions = emitted.map((name) => out.indexOf(`<${name}`));
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+    // Guard against the filter silently matching nothing.
+    expect(emitted.length).toBeGreaterThan(12);
+  });
+
+  it.each(['chat', 'patch', 'ask'] as const)(
+    'holds the layer boundaries in the %s frame',
+    (contextType) => {
+      const out = build({ ...FULL_TURN, contextType, patch: null });
+      const at = (tag: string) => out.indexOf(tag);
+      // A before B before C before D before E.
+      expect(at('<interaction_context')).toBe(0);
+      expect(at('<claude4spec_identity>')).toBeLessThan(at('<project name='));
+      expect(at('<project name=')).toBeLessThan(at('<tooling>'));
+      expect(at('<tooling>')).toBeLessThan(at('<entity_embeds'));
+      // 0.1.79: `ask` explores a peer's spec headlessly and emits no <current_*>
+      // page block, so there is no layer-E anchor to compare against there.
+      if (contextType !== 'ask') {
+        expect(at('<entity_embeds')).toBeLessThan(at('<current_page '));
+      }
+    },
+  );
+
+  /**
+   * The handling instructions used to sit at the TOP of `<claude4spec_identity>`,
+   * some seven hundred lines above the blocks they describe. A block belongs next
+   * to what it talks about.
+   */
+  it('puts each handling block below the block it explains', () => {
+    const out = build(FULL_TURN);
+    expect(out.indexOf('<current_page ')).toBeLessThan(out.indexOf('<current_page_handling>'));
+    expect(out.indexOf('<annotations>')).toBeLessThan(out.indexOf('<annotation_handling>'));
+  });
+
+  /**
+   * `<claude4spec_plan_mode>` is last despite being tool policy, which by layer
+   * would put it in C: it is a per-turn switch rather than a thread-long
+   * contract, and it is a refusal, which is the one kind of instruction that
+   * benefits from recency.
+   */
+  it('ends on the plan-mode block when plan mode is active', () => {
+    const out = build(FULL_TURN);
+    expect(out.trimEnd().endsWith('</claude4spec_plan_mode>')).toBe(true);
+  });
+
+  it('emits no handling block for a state block that is absent', () => {
+    const out = build({ contextType: 'chat', mcpInventory: CHAT_INVENTORY });
+    expect(out).not.toContain('<current_page_handling>');
+    expect(out).not.toContain('<annotation_handling>');
+  });
+});
+
+/**
+ * 0.2.50 — the prompt describes the PRODUCT, not the project that happens to be
+ * dogfooding it.
+ *
+ * Module numbers (`M19`, `M05`), a specific table name, and the `mNN` / `lN` AC
+ * tagging convention were shipped to every installation as facts. So were four
+ * tool names that do not exist. A negative test is the only kind that catches
+ * either class, because both read perfectly well in place.
+ */
+describe('buildSystemPrompt — no project or phantom-tool leaks (0.2.50)', () => {
+  const LEAKS = [
+    // One project's module numbering, not a property of the product.
+    'M19',
+    'M05',
+    'chat_thread',
+    // Tools that do not exist. `get_endpoint`/`get_dto` were replaced by generic
+    // CRUD; the release trio never had those names at all.
+    'get_endpoint',
+    'get_dto',
+    'get_release_diff',
+    'list_releases',
+    // Retired blocks.
+    '<plan_tools_usage',
+    '<c4s_tools_usage',
+    '<entity_linking_rule',
+    '<entity_change_protocol',
+    // Prompt archaeology: the block should describe the present.
+    'removed in 0.2.15',
+  ];
+
+  it.each(['chat', 'patch', 'ask', 'brief'] as const)('leaks nothing in the %s frame', (contextType) => {
+    const out = build({
+      contextType,
+      brief: null,
+      planMode: true,
+      mcpInventory: CHAT_INVENTORY,
+      writingStyleSkill: { slug: 'house-style', title: 'House Style' },
+      agentPathScope: {
+        allowedPaths: [],
+        disallowedPaths: [],
+        artifactDenyDirs: ['/tmp/my-spec/.claude4spec/briefs'],
+        pageRootDirs: ['/tmp/my-spec/pages'],
+      },
+    });
+    for (const leak of LEAKS) expect({ leak, found: out.includes(leak) }).toEqual({ leak, found: false });
+  });
+});
+
+/**
+ * 0.2.50 — a type's `promptBlocks` reach the writing-conventions layer, and only
+ * while the type is active.
+ *
+ * `<diagram_references>` is the first migrant. It was hardcoded in the core
+ * builder and emitted unconditionally — so a project with no `diagram` type got
+ * a screenful of instructions for embedding diagrams it cannot create — while
+ * the diagram's own `narrativeBlock` ended by pointing at it. One convention,
+ * two files, neither owning it.
+ */
+describe('buildSystemPrompt — plugin promptBlocks (0.2.50)', () => {
+  const hostWith = (blocks: Array<{ name: string; body: string }>) =>
+    ({
+      listEntities: () => [
+        { type: 'diagram', systemPrompt: { roleNoun: 'Diagrams', promptBlocks: blocks } },
+      ],
+    }) as unknown as ProjectPluginHost;
+
+  it('emits an active type\'s block, in the conventions layer', () => {
+    const out = build({
+      contextType: 'chat',
+      host: hostWith([{ name: 'diagram_references', body: '<diagram_references>D</diagram_references>' }]),
+      currentPagePath: 'guide.md',
+      currentPageBody: 'body',
+    });
+    expect(out).toContain('<diagram_references>D</diagram_references>');
+    expect(out.indexOf('<diagram_references>')).toBeGreaterThan(out.indexOf('<entity_embeds'));
+    expect(out.indexOf('<diagram_references>')).toBeLessThan(out.indexOf('<current_page '));
+  });
+
+  it('emits nothing when no active type contributes one', () => {
+    const out = build({ contextType: 'chat' });
+    expect(out).not.toContain('<diagram_references>');
   });
 });

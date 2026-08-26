@@ -295,8 +295,6 @@ describe('code-snippet — envelope and system prompt', () => {
         projectName: 'My Spec',
         cwd: t.cwd,
         roots: [] as Root[],
-        briefsDir: '.claude4spec/briefs',
-        patchesDir: '.claude4spec/patches',
         currentPagePath: null,
         currentPageBody: null,
         pageCount: 0,
@@ -309,7 +307,10 @@ describe('code-snippet — envelope and system prompt', () => {
       // enforce, so it reaches the agent here or it reaches it nowhere.
       expect(prompt).toContain('<entity type="code-snippet">');
       expect(prompt).toMatch(/20 lines/);
-      expect(prompt).toContain('code-snippet="2"');
+      // 0.2.50: no per-type count attribute. It was frozen at turn 1 and nothing
+      // in the prompt branched on it; `list_entities({ mode: 'count' })` answers
+      // the question with a current number.
+      expect(prompt).not.toContain('code-snippet="2"');
       // The type is embeddable, so it belongs to the embed type union.
       expect(prompt).toMatch(/(^|\|)code-snippet(\||[^-\w])/);
       // No custom MCP server line: the package contributes no server of its own.

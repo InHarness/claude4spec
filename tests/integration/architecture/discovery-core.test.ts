@@ -317,15 +317,30 @@ describe('M39 — Discovery Core', () => {
     });
 
     it('the chat agent is TOLD about every read tool it is given', () => {
-      // `list_sections` shipped registered but unadvertised for a release: the
-      // only reader that decides what to call never saw it. An unlisted tool is
-      // an unused tool, so the advertisement is part of the surface.
-      const advertised = fs.readFileSync(path.join(SRC, 'server/services/chat-context.ts'), 'utf-8');
-      const line = /<mcp name="reference-tools">([^<]*)</.exec(advertised)?.[1] ?? '';
-      const registered = toolNames(path.join(SRC, 'server/mcp/reference-tools.ts'));
-      for (const name of registered) {
-        expect(line, `reference-tools registers '${name}' but does not advertise it`).toContain(name);
-      }
+      /**
+       * `list_sections` shipped registered but unadvertised for a release: the
+       * only reader that decides what to call never saw it. An unlisted tool is
+       * an unused tool, so the advertisement is part of the surface.
+       *
+       * 0.2.50 makes that structural instead of checked. `<tooling>` is built
+       * from `McpServerFactory.tools` of the servers the turn actually mounted,
+       * so a registered tool is advertised BY CONSTRUCTION and the two lists can
+       * no longer diverge — there is only one list. (The rendering itself is
+       * asserted in `chat-context.test.ts`.)
+       *
+       * What is left to guard is the regression that would undo it: someone
+       * writing a server's tool list back into the prompt as a literal, where it
+       * would go stale exactly as the old `reference-tools` line did — and as
+       * the brief frame's `get_release` / `get_release_diff` / `list_releases`
+       * did, three names that were never tools at all.
+       */
+      const promptSrc = fs.readFileSync(path.join(SRC, 'server/services/chat-context.ts'), 'utf-8');
+      const hardcoded = Array.from(promptSrc.matchAll(/<mcp name="[^"$]+">[^<$]+</g)).map((m) => m[0]);
+      expect(hardcoded, 'a server tool list is hardcoded in the prompt again — derive it from the mount').toEqual([]);
+
+      // And the registered set is still reachable, so the derivation has something
+      // to read: reference-tools declares every tool this suite knows about.
+      expect(toolNames(path.join(SRC, 'server/mcp/reference-tools.ts'))).toContain('list_sections');
     });
   });
 

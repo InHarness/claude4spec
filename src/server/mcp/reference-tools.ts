@@ -84,7 +84,10 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): CapturedMc
 
   const createTag = mcpTool(
     'create_tag',
-    'Create a new tag for classifying entities.',
+    [
+      'Create a new tag for classifying entities. Returns { slug, name } — the slug is DERIVED from `name`, not supplied.',
+      'You rarely need this: `tag_entity` creates any tag it does not find, so call this one only to register a tag up front, or to give it a `description` — the one field carrying what the tag MEANS, and the only thing that keeps a taxonomy legible to the next author.',
+    ].join('\n'),
     {
       name: z.string().describe('Display name'),
       color: z.string().optional().describe('Hex color (e.g. #4A90D9)'),

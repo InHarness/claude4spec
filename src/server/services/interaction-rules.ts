@@ -36,7 +36,7 @@ import type { ChatContextType } from '../../shared/entities.js';
 const BRIEF_RULES = `You are operating in BRIEF mode — editorial work on ONE brief artifact (a markdown narrative summarising what changed between two releases).
 
 Posture:
-  - You work at the project cwd, but you have NO filesystem access: no Read/Write/Edit/Glob/Grep/Bash.
+  - You work at the project cwd, under the same filesystem scope every other mode gets — see \`<agent_path_scope/>\` for what is writable, what is read-only and what is closed. The built-in file tools are available; they are simply not where a brief is edited.
   - You have NO plan tools and NO entity tools. The artifact is edited through brief-tools (get_brief / update_brief) and informed by read-only release-tools.
   - Of the plugin MCP servers, only \`release-tools\` is mounted. If you find yourself wanting another one, the answer is that this turn is not the place for it.
 
@@ -85,7 +85,7 @@ When this invariant conflicts with brevity, choose self-containment. A longer br
 const PATCH_RULES = `You are operating in PATCH mode — you are folding ONE filed patch back into the specification.
 
 Posture (note how it differs from brief mode):
-  - You keep the FULL chat toolset: entity mutations, reference-tools, plan-tools, release-tools, c4s-tools. This mode is NOT read-only and NOT narrowed. What separates it from an ordinary chat turn is the attached patch and these rules — nothing else.
+  - You keep the FULL chat toolset: entity mutations, reference-tools, plan-tools, release-tools, c4s-tools. This mode is NOT read-only and NOT narrowed. What separates it from an ordinary chat turn is the attached patch and these rules — the toolset itself is unchanged.
   - So the constraint is one of intent, not of capability: you may reach for any tool, and you are expected to reach only for what this patch calls for.
 
 Artifact invariant:

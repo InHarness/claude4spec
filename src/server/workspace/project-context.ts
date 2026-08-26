@@ -1129,24 +1129,32 @@ async function buildInner(
   }
   router.use('/external-skills', externalSkillsRouter({ registry, workspace, projectId }));
   // 0.1.58: peer-discovery for the `<workspace_projects>` prompt block. For each
-  // workspace project except this one, build a PeerProject whose `path` is the
-  // registry `cwd` (passed 1:1 as the `project` param to `c4s-tools.ask`); name/
-  // description are lazily read from the peer's config.json (source of truth,
-  // no denormalization). Unreadable config → entry with `path` only. Re-read per
-  // turn so peer-config edits surface on the next thread's first turn.
+  // workspace project except this one, build a PeerProject. Re-read per turn so
+  // peer-config edits surface on the next thread's first turn.
+  //
+  // 0.2.50 — TWO names, and the distinction is load-bearing rather than
+  // cosmetic. `displayName`/`description` come from the peer's own config.json
+  // (source of truth, no denormalization) and are what a human calls the
+  // project: "C4S - App Spec". `registryName` is `ProjectRecord.name` from
+  // `~/.claude4spec/workspaces.json`, and it is the only one of the two that
+  // `ask({ project })` can resolve — `resolveWorkspaceProject` falls back to
+  // `findProjectByName`, which compares against the REGISTRY name exactly. The
+  // prompt used to render the display name beside the path; drop the path and
+  // keep the display name alone, and peer consultation breaks with
+  // PROJECT_SLUG_NOT_FOUND. Unreadable config → registry name and path only.
   const listWorkspacePeers = (): PeerProject[] => {
     const ws = registry.getWorkspace(workspace.name);
     if (!ws) return [];
     return ws.projects
       .filter((p) => p.cwd !== cwd)
       .map((p) => {
-        const peer: PeerProject = { path: p.cwd };
+        const peer: PeerProject = { path: p.cwd, registryName: p.name };
         try {
           const peerCfg = readConfig(p.cwd);
           if (peerCfg.name) peer.name = peerCfg.name;
           if (peerCfg.description) peer.description = peerCfg.description;
         } catch {
-          /* unreadable/missing config → path-only entry, not an error */
+          /* unreadable/missing config → no display name, not an error */
         }
         return peer;
       });

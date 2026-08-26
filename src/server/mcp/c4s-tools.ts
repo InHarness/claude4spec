@@ -7,10 +7,12 @@ import { runAgent, AgentError } from '../../core/agent/run-agent.js';
  * `c4s-tools` — cross-cutting in-process MCP server expozujacy peer-consult
  * jako narzedzie MCP. Jeden tool `ask`, mountowany per request (jak `plan-tools`).
  *
- * Motywacja: w `plan_mode=true` agent ma `disallowedTools = MUTATING_BUILTINS`
- * (Bash zakazany), wiec nie moglby zawolac binarki `c4s ask`. MCP nie podlega
- * temu filtrowi, wiec `mcp__c4s-tools__ask` dziala w plan_mode i poza nim,
- * bez zdejmowania bana na Bash.
+ * Motywacja: `plan_mode=true` desugaruje sie do `disallowedToolGroups:
+ * ['file-write','shell']`, czyli Bash jest zdjety i agent nie moglby zawolac
+ * binarki `c4s ask`. Grupy dotycza WYLACZNIE built-inow — MCP nie podlega temu
+ * filtrowi w ogole — wiec `mcp__c4s-tools__ask` dziala w plan_mode i poza nim,
+ * bez zdejmowania bana na Bash. (Jedyna twarda bramka na powierzchni MCP to
+ * profil `context_type`; patrz `operations/profile-gate.ts`.)
  *
  * Prawie stateless — wzorem `plan-tools` (gdzie `threadId` jest ambient z
  * closure) fabryka domyka jedynie `callerWorkspace`: domyslny workspace, w
@@ -35,16 +37,22 @@ export function buildC4sToolsServer(callerWorkspace?: string): CapturedMcpServer
     'ask',
     [
       'Consult another claude4spec specification synchronously. Returns { threadId, answer }.',
-      'The peer is READ-ONLY: it does not mutate its spec (Write/Edit/Bash banned; entity/page edits soft-blocked at prompt level).',
-      'Use `project` (local path to peer .claude4spec/) OR `server` (URL override); if both, `server` wins.',
+      'The peer is READ-ONLY, and by a gate rather than by persuasion: it runs under the `ask` context profile, which admits only read/plan operations, so the write tools of every mounted MCP server are filtered out of its `tools/list` and its file-write and shell built-ins are off.',
+      'Use `project` OR `server` (URL override); if both, `server` wins.',
+      '`project` accepts EITHER a local path to the peer project directory OR the project name as registered in the workspace (`~/.claude4spec/workspaces.json`) — the path is tried first, then the registry name. The registry name is NOT necessarily the display name in the peer\'s config.json: a peer shown as "C4S - App Spec" may be registered as `app-spec`, and only the latter resolves.',
       'Continue an existing peer thread by passing its `threadId`.',
-      'Works in plan_mode — MCP is not filtered by READONLY_BUILTINS, so this works where Bash-shelled `c4s ask` does not.',
+      'Works in plan_mode — that flag gates built-ins only and does not apply to MCP at all, so this works where Bash-shelled `c4s ask` does not.',
       'Same contract as the `c4s ask` CLI shorthand: same discovery, same errors.',
       '`model` and `effort` are resume-immutable: continuing a peer thread (via `threadId`) with values different from its first turn → RESUME_CONFIG_LOCKED.',
     ].join('\n'),
     {
       message: z.string().describe('Question/prompt for the peer spec.'),
-      project: z.string().optional().describe('Local path to the peer .claude4spec/ directory.'),
+      project: z
+        .string()
+        .optional()
+        .describe(
+          'The peer project: a local path to its directory, or its name as registered in the workspace. Resolved as a path first, then by registry name.',
+        ),
       workspace: z
         .string()
         .optional()

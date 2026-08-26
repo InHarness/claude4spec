@@ -399,7 +399,12 @@ export class SkillRegistry {
  */
 export interface ContextSkills {
   listing: SkillListingEntry[];
-  writingStyle: { slug: string; title: string } | null;
+  /**
+   * 0.2.50 — carries `description` too. `<project_writing_skill>` used to assert
+   * what the style contained; it now renders the style's own self-description,
+   * which is the only account of it that cannot be wrong.
+   */
+  writingStyle: { slug: string; title: string; description?: string } | null;
 }
 
 export class SkillResolver {
@@ -514,7 +519,9 @@ export class SkillResolver {
 
     return {
       listing: dedupeBySlug(listing),
-      writingStyle: style ? { slug: style.slug, title: style.title } : null,
+      writingStyle: style
+        ? { slug: style.slug, title: style.title, description: style.description }
+        : null,
     };
   }
 }

@@ -16,14 +16,23 @@ import type { SystemPromptContribution } from '@c4s/plugin-runtime';
  */
 export const mcpToolSystemPrompt: SystemPromptContribution = {
   roleNoun: 'MCP tools',
+  /**
+   * 0.2.50 — the reference to "the `## Operacje (L3)` row of the owning module"
+   * is gone. `L3` is a heading in ONE project's page layout ("Layered Vertical
+   * Slices"), and every other installation was being sent to a section that does
+   * not exist there. The BOUNDARY it was drawing is real and stays; where the
+   * other side of the boundary lives is a project convention, and belongs to the
+   * active writing style.
+   *
+   * Also trimmed: the `logic`-is-never-sent-to-a-model line, which is a fact
+   * about the host rather than a decision for the author.
+   */
   narrativeBlock:
     'An `mcp-tool` record is the WIRE CONTRACT of one tool and nothing else: `description`, ' +
-    '`params[]`, `returns`/`sampleReturn` and the four annotation hints transfer verbatim into ' +
-    'a tool definition in code. Everything about the OPERATION — canonical name, scope, mediation ' +
-    'class, channels, error codes, idempotence — belongs to the `## Operacje (L3)` row of the ' +
-    'owning module, never here; the protocol has no error-code dictionary, so a refusal condition ' +
-    'is one sentence in `logic`, never a table. `logic` describes the inside of the tool and is ' +
-    'never sent to a model. `returns` describes the PAYLOAD, never the `content[]`/`isError` ' +
-    'envelope, and `sampleReturn` is filled ONLY when the return is nested or carries an array of ' +
-    'objects. An empty annotation hint means the server declares nothing — it is not `false`.',
+    '`params[]`, `returns`/`sampleReturn` and the annotation hints transfer verbatim into a tool ' +
+    'definition in code. Everything about the OPERATION — canonical name, scope, mediation class, ' +
+    'channels, error codes, idempotence — belongs with the owning module, never here. `returns` ' +
+    'describes the PAYLOAD, never the `content[]`/`isError` envelope; a refusal condition is one ' +
+    'sentence in `logic`, never a table; and an empty annotation hint means the server declares ' +
+    'nothing, which is not the same as `false`.',
 };
