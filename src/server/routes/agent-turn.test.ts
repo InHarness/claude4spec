@@ -715,7 +715,7 @@ describe('runAgentTurn — server-side turn timeout (0-1-110-to-next)', () => {
    * between "the hold expired" and "the turn hung" — different bugs, different
    * fixes.
    */
-  it('keeps the turn timeout strictly above the background hold cap', () => {
+  it('[ac:ac-wartosc-timeoutms-przekazywana-do-ada] keeps the turn timeout strictly above the background hold cap', () => {
     expect(TURN_TIMEOUT_MS).toBeGreaterThan(BACKGROUND_HOLD_CAP_MS);
   });
 
@@ -724,7 +724,7 @@ describe('runAgentTurn — server-side turn timeout (0-1-110-to-next)', () => {
    * cap", which would let a wedged background task hold a session open with no
    * bound at all.
    */
-  it('arms the hold cap with a finite positive number, never a disarm sentinel', async () => {
+  it('[ac:ac-wartosc-timeoutms-przekazywana-do-ada] arms the hold cap with a finite positive number, never a disarm sentinel', async () => {
     hoisted.events = [{ type: 'result', sessionId: 's1' }];
     const { deps } = makeDeps();
 
@@ -979,10 +979,38 @@ describe('runAgentTurn — 0.2.50 turn-lifecycle contract', () => {
   });
 
   /**
+   * A mid-turn push is persisted where the ADAPTER emitted `user_message`, not
+   * where `pushMessage()` was called. The two differ: the SDK accepts the push
+   * immediately but only surfaces the message once it actually reaches the
+   * model. Ordering by the call site would leave the thread's row order
+   * disagreeing with the order the model saw them in.
+   */
+  it('[ac:ac-wiadomosc-dostarczona-mid-turn-jest-p] persists a mid-turn user_message in STREAM order, not push order', async () => {
+    hoisted.events = [
+      { type: 'text_delta', text: 'first half ' },
+      // The push happened earlier; the adapter surfaces it HERE.
+      { type: 'user_message', text: 'pushed mid-turn', timestamp: Date.now() },
+      { type: 'text_delta', text: 'second half' },
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps, messages } = makeDeps();
+
+    await runAgentTurn(deps, makeInput());
+
+    const roles = messages.map((m) => m.role);
+    const userIdx = roles.lastIndexOf('user');
+    const assistantIdxs = roles.flatMap((r, i) => (r === 'assistant' ? [i] : []));
+    // The pushed user row sits BETWEEN the two assistant blocks — i.e. exactly
+    // where the adapter emitted it, not before the turn's first text.
+    expect(assistantIdxs.some((i) => i < userIdx)).toBe(true);
+    expect(assistantIdxs.some((i) => i > userIdx)).toBe(true);
+  });
+
+  /**
    * `ask` is headless and blocks its HTTP request until the turn ends — there is
    * no UI in which a hold could be shown, so background work is switched off.
    */
-  it('disallows background bash for an ask-context turn', async () => {
+  it('[ac:ac-w-watku-o-context-type-ask-oraz-w-kaz] disallows background bash for an ask-context turn', async () => {
     hoisted.events = [{ type: 'result', sessionId: 's1' }];
     const { deps } = makeDeps();
     const input = makeInput();
@@ -999,7 +1027,7 @@ describe('runAgentTurn — 0.2.50 turn-lifecycle contract', () => {
    * deliberately absent in v1. Without this flag a child's `result` could carry
    * `backgroundTasks` and break that decision as a side effect of the upgrade.
    */
-  it('disallows background bash for a child thread regardless of context type', async () => {
+  it('[ac:ac-w-watku-o-context-type-ask-oraz-w-kaz] disallows background bash for a child thread regardless of context type', async () => {
     hoisted.events = [{ type: 'result', sessionId: 's1' }];
     const { deps } = makeDeps();
     const input = makeInput();
@@ -1038,7 +1066,7 @@ describe('runAgentTurn — replay buffer byte budget', () => {
     isSubagent: false,
   });
 
-  it('degrades the oldest tool_result entries to a header instead of dropping them', async () => {
+  it('[ac:ac-bufor-replay-przekraczajacy-budzet-ba] degrades the oldest tool_result entries to a header instead of dropping them', async () => {
     hoisted.events = [
       bigResult('tu-1'),
       bigResult('tu-2'),

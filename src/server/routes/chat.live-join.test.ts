@@ -150,7 +150,7 @@ describe('GET /api/chat/stream/:threadId — live-join replay', () => {
    * joiner is TOLD its replay is incomplete rather than silently handed a
    * partial transcript that looks whole.
    */
-  it('surfaces replayTruncated on connected when the buffer blew its budget', async () => {
+  it('[ac:ac-bufor-replay-przekraczajacy-budzet-ba] surfaces replayTruncated on connected when the buffer blew its budget', async () => {
     activeAdapters.set(
       THREAD_ID,
       makeActive([{ type: 'text_delta', text: 'partial' }], undefined, { truncated: true }),
