@@ -696,6 +696,84 @@ describe('buildSystemPrompt — ask context (0.1.79)', () => {
   });
 });
 
+/**
+ * 0.2.53 — `<agent_filesystem_access>`. The property under test is that there is
+ * NO omitted case: the block is emitted in both states of the flag, for every
+ * frame that uses the main block table. A block that appeared only when
+ * something was switched off would teach the model to read its absence as
+ * permission.
+ */
+describe('buildSystemPrompt — <agent_filesystem_access> (0.2.53)', () => {
+  for (const contextType of ['chat', 'patch', 'ask'] as const) {
+    it(`[ac:ac-blok-agent-filesystem-access-jest-e] emits the disabled block in the ${contextType} frame`, () => {
+      const out = build({ contextType, agentFilesystemAccess: { enabled: false } });
+      expect(out).toContain('<agent_filesystem_access enabled="false">');
+    });
+
+    it(`emits the enabled block in the ${contextType} frame`, () => {
+      const out = build({ contextType, agentFilesystemAccess: { enabled: true } });
+      expect(out).toContain('<agent_filesystem_access enabled="true">');
+    });
+  }
+
+  /** Absent input describes the DEFAULT posture, not the permissive one. */
+  it('defaults to enabled="false" when the caller omits the field', () => {
+    expect(build({ contextType: 'chat' })).toContain('<agent_filesystem_access enabled="false">');
+  });
+
+  /** The brief frame states its posture in its own interaction-rules body. */
+  it('is absent from the brief frame in both states', () => {
+    for (const enabled of [true, false]) {
+      const out = build({ contextType: 'brief', agentFilesystemAccess: { enabled } });
+      expect(out).not.toContain('<agent_filesystem_access');
+    }
+  });
+
+  /** It sits directly after the path scope: where you may reach, then whether there is anything to reach with. */
+  it('follows <agent_path_scope> in emission order', () => {
+    const names = mainPromptBlockNames();
+    expect(names.indexOf('agent_filesystem_access')).toBe(names.indexOf('agent_path_scope') + 1);
+  });
+
+  /** The disabled body must name what stops working — that is the whole regression notice. */
+  it('names the capabilities the posture costs', () => {
+    const out = build({ contextType: 'chat', agentFilesystemAccess: { enabled: false } });
+    expect(out).toContain('source: analysis');
+    expect(out).toContain('Fix it with Agent');
+  });
+});
+
+/**
+ * 0.2.53 — the `<builtin>` inventory has two states, and only the project
+ * constant moves it (plan mode's split is stated by its own block instead).
+ */
+describe('buildSystemPrompt — <builtin> reflects the posture (0.2.53)', () => {
+  /**
+   * Compare TOOL NAMES, not substrings: `Write` is a substring of `TodoWrite`,
+   * which survives the deny, so a `toContain` check here reports the opposite of
+   * the truth.
+   */
+  const builtinTools = (out: string): string[] => {
+    const line = out.split('\n').find((l) => l.includes('<builtin')) ?? '';
+    const body = line.slice(line.indexOf('>') + 1, line.lastIndexOf('</builtin>'));
+    return body.split(',').map((t) => t.trim()).filter(Boolean);
+  };
+  const GATED = ['Read', 'Grep', 'Glob', 'Edit', 'Write', 'NotebookEdit', 'Bash', 'Skill'];
+
+  it('[ac:ac-przy-agent-disabledirectfilesystema] drops the file and shell built-ins when access is blocked', () => {
+    const tools = builtinTools(build({ contextType: 'chat', agentFilesystemAccess: { enabled: false } }));
+    for (const tool of GATED) expect(tools).not.toContain(tool);
+    // Ungated built-ins survive — the deny is by group, not a blanket silence.
+    expect(tools).toContain('TodoWrite');
+    expect(tools).toContain('WebFetch');
+  });
+
+  it('lists the full catalog when access is allowed', () => {
+    const tools = builtinTools(build({ contextType: 'chat', agentFilesystemAccess: { enabled: true } }));
+    for (const tool of GATED) expect(tools).toContain(tool);
+  });
+});
+
 describe('buildSystemPrompt — <agent_path_scope> (0.1.90 / 0.1.130)', () => {
   // 0.1.130: artifactDenyDirs is always present (the implicit deny-set) → block always emitted.
   const ARTIFACT = [

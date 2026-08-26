@@ -166,6 +166,25 @@ export interface ConfigResponse {
      * or 'none' (no scope configured). Server-computed; not client-settable.
      */
     pathScopeStrength: 'hard' | 'soft' | 'none';
+    /**
+     * 0.2.53: `true` (the default, including for projects whose config.json
+     * predates the field) means the agent runs with NO built-in filesystem or
+     * shell tools — the spec is reached only through core operations.
+     */
+    disableDirectFilesystemAccess: boolean;
+    /**
+     * 0.2.53: what the deny-groups actually buy on this host, probed
+     * server-side. `strength` is never 'hard' on claude-code — the tools are
+     * removed from the model's catalog, which is a model-behaviour gate, not a
+     * sandbox — and `escapeSurfaces` names the documented bypasses (the native
+     * Agent/Task subagent does not inherit the deny-groups). Empty when the flag
+     * is off, since nothing is being gated.
+     */
+    toolGating: {
+      enforceable: boolean;
+      strength: 'hard' | 'soft' | 'none';
+      escapeSurfaces: string[];
+    };
   };
   /**
    * M28: hot-reload git-sync toggles (always resolved; all default false).
@@ -215,6 +234,7 @@ export interface ConfigPatch {
     conversationalLanguage?: string | null;
     allowedPaths?: string[];
     disallowedPaths?: string[];
+    disableDirectFilesystemAccess?: boolean;
   };
   /**
    * M28: hot-reload — deep-merged server-side, so one toggle can be sent

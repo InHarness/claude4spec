@@ -1002,6 +1002,7 @@ async function buildInner(
   // M21: BriefService — top-level (nie plugin), wzorzec analogiczny do
   // PlanService. Mountowany router /briefs poniżej.
   const briefService = new BriefService({
+    cwd,
     briefsPages: briefsMount.pages,
     briefsWatcher: briefsMount.writer,
     briefsSerializer: briefsMount.serializer,

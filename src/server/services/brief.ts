@@ -27,6 +27,7 @@ import { BRIEF_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
 import { BRIEF_ROOT_MARKER } from '../../shared/types.js';
 import type { PagesService } from './pages.js';
 import { hashContent } from './artifact-content.js';
+import { readConfig } from '../config.js';
 import type { SelfWriteMarker } from '../fs/sources.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import type { FileVersionService } from './file-version.js';
@@ -41,6 +42,8 @@ import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 const GENERATOR_VERSION = 'brief-author@0.1';
 
 export interface BriefServiceDeps {
+  /** 0.2.53: project root — read to answer "does the agent still have file tools?". */
+  cwd: string;
   briefsPages: PagesService;
   briefsWatcher: SelfWriteMarker;
   briefsSerializer: FileSerializer;
@@ -340,6 +343,24 @@ export class BriefService {
     // `TransagentDispatcher` can't bypass it.
     if (source === 'analysis' && opts.roots && opts.roots.length > 0) {
       throw new DomainError('VALIDATION', "roots is not allowed when source = 'analysis'");
+    }
+    /**
+     * 0.2.53: an analysis brief is written by reading SOMEBODY ELSE'S repository,
+     * which is exactly what the built-in file tools do and what no core
+     * operation replaces. With `agent.disableDirectFilesystemAccess` on, the
+     * thread this creates would open with no way to read the thing it exists to
+     * analyse — so refuse at creation and name the setting, rather than hand the
+     * user a thread that can only apologise.
+     *
+     * Enforced HERE, next to the `roots` guard above and for the same reason:
+     * both the HTTP route and in-process callers (`TransagentDispatcher`) go
+     * through this method, so neither can bypass it.
+     */
+    if (source === 'analysis' && readConfig(this.deps.cwd).agent.disableDirectFilesystemAccess) {
+      throw new DomainError(
+        'VALIDATION',
+        "source = 'analysis' reads a repository with the built-in file tools, which this project disables. Uncheck 'Block direct file access' in Settings → Agent to use it.",
+      );
     }
     // 0.1.69: analysis briefs (to=null) compare against HEAD — skip same-release
     // guard and the target-release existence check.

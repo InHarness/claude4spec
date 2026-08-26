@@ -143,6 +143,64 @@ describe('POST /api/chat — RESUME_CONFIG_LOCKED wiring (M05 item 33)', () => {
     expect(runAgentTurnMock).toHaveBeenCalled();
   });
 
+  /**
+   * 0.2.53 — the pair that makes the guard's design decision observable.
+   *
+   * `agent.disableDirectFilesystemAccess` and `planMode` desugar into
+   * OVERLAPPING deny-groups, so a guard that compared the resolved union could
+   * not tell them apart: it would 409 on a plan-mode toggle. The guard compares
+   * the CONFIG FIELD from the turn-1 snapshot instead, and these two tests pin
+   * both halves of that — the flag locks, the toggle does not.
+   */
+  it('[ac:ac-wznowienie-watku-zalozonego-przy-inn] 409s when disableDirectFilesystemAccess changed since turn 1', async () => {
+    writeConfig({ agent: { disableDirectFilesystemAccess: false } });
+    snapshot = JSON.stringify({
+      model: 'opus-5',
+      architectureConfig: {},
+      disableDirectFilesystemAccess: true,
+    });
+
+    const res = await post({ model: 'opus-5' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('RESUME_CONFIG_LOCKED');
+    expect(res.body.error.violations.map((v: { path: string }) => v.path)).toContain(
+      'agent.disableDirectFilesystemAccess',
+    );
+    expect(runAgentTurnMock).not.toHaveBeenCalled();
+  });
+
+  it('[ac:ac-flip-plan-mode-w-srodku-watku-nie-po] does NOT 409 on a plan-mode flip while the flag is unchanged', async () => {
+    writeConfig({ agent: { disableDirectFilesystemAccess: true } });
+    snapshot = JSON.stringify({
+      model: 'opus-5',
+      architectureConfig: {},
+      disableDirectFilesystemAccess: true,
+    });
+    thread = makeThread({ lastSessionId: 'sess-1', planMode: false });
+
+    const res = await post({ model: 'opus-5', planMode: true });
+
+    expect(res.status).not.toBe(409);
+    expect(runAgentTurnMock).toHaveBeenCalled();
+  });
+
+  /**
+   * A thread started before the field existed has no value to compare against,
+   * so nothing is locked — the same "absent ⇒ not comparable" rule the library
+   * applies to every other constraint. Without this, shipping 0.2.53 would make
+   * every pre-existing conversation unresumable in one step.
+   */
+  it('does not lock a pre-0.2.53 snapshot that has no flag recorded', async () => {
+    writeConfig({ agent: { disableDirectFilesystemAccess: false } });
+    snapshot = JSON.stringify({ model: 'opus-5', architectureConfig: {} });
+
+    const res = await post({ model: 'opus-5' });
+
+    expect(res.status).not.toBe(409);
+    expect(runAgentTurnMock).toHaveBeenCalled();
+  });
+
   /** The snapshot must not carry the field in the first place. */
   it('keeps planMode and disallowedToolGroups out of the turn-1 config snapshot', async () => {
     thread = makeThread({ lastSessionId: 'sess-1' });

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Dialog } from '../host-ui-kit/overlay/Dialog.js';
 import { startSeededThread } from '../chat/startSeededThread.js';
 import { UI_EVENTS, type GitErrorModalRequest } from './events.js';
+import { useConfig } from '../hooks/useConfig.js';
 
 const OPERATION_LABEL: Record<GitErrorModalRequest['recovery']['operation'], string> = {
   'commit-on-release': 'Committing the release',
@@ -31,6 +32,9 @@ const KIND_HINT: Record<NonNullable<GitErrorModalRequest['recovery']['kind']>, s
  * `confirmDestructive` — mounted once in `App.tsx`.
  */
 export function GitErrorRecoveryModal() {
+  const { data: config } = useConfig();
+  // Absent field = the flag is on, matching the server default.
+  const blockedByPosture = config?.agent?.disableDirectFilesystemAccess ?? true;
   const [request, setRequest] = useState<GitErrorModalRequest | null>(null);
   const [expanded, setExpanded] = useState(false);
 
@@ -61,22 +65,35 @@ export function GitErrorRecoveryModal() {
           >
             Dismiss
           </button>
-          <button
-            onClick={() => {
-              startSeededThread(recovery.intentPrompt, { autoSubmit: true });
-              setRequest(null);
-            }}
-            style={{
-              fontSize: 12,
-              padding: '6px 14px',
-              borderRadius: 4,
-              fontWeight: 500,
-              background: 'var(--c-accent)',
-              color: '#fff',
-            }}
-          >
-            Fix it with Agent
-          </button>
+          {/*
+            * 0.2.53: git recovery drives git through the built-in `Bash`, and no
+            * core operation replaces it — this is the most painful of the four
+            * capabilities the default posture costs. So say what is in the way
+            * instead of opening a thread whose agent has nothing to work with:
+            * the turn would start, fail to find a shell, and improvise.
+            */}
+          {blockedByPosture ? (
+            <span style={{ fontSize: 11.5, color: 'var(--c-subtle)', maxWidth: 320, textAlign: 'right' }}>
+              Fixing this with the agent needs a shell. Uncheck “Block direct file access” in Settings → Agent first.
+            </span>
+          ) : (
+            <button
+              onClick={() => {
+                startSeededThread(recovery.intentPrompt, { autoSubmit: true });
+                setRequest(null);
+              }}
+              style={{
+                fontSize: 12,
+                padding: '6px 14px',
+                borderRadius: 4,
+                fontWeight: 500,
+                background: 'var(--c-accent)',
+                color: '#fff',
+              }}
+            >
+              Fix it with Agent
+            </button>
+          )}
         </>
       }
     >

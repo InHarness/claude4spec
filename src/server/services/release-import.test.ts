@@ -47,6 +47,25 @@ describe('buildClonePatch — the clone is faithful to its bundle (C6/C7, 0.2.8)
     expect(patch.agent).toBeUndefined();
   });
 
+  /**
+   * 0.2.53: the clone must not silently recover the file built-ins. The two
+   * agent fields are applied INDEPENDENTLY by key presence — a bundle predating
+   * this release carries only the first, and its clone falls back to the local
+   * default (`true`), which is what a fresh project gets too.
+   */
+  it('[ac:ac-pole-przechodzi-przez-sanitizeconfi] applies agent.disableDirectFilesystemAccess from the bundle', () => {
+    const patch = buildClonePatch(
+      bundle({ agent: { claudeUsePreset: false, disableDirectFilesystemAccess: false } }),
+      opts,
+    );
+    expect(patch.agent).toEqual({ claudeUsePreset: false, disableDirectFilesystemAccess: false });
+  });
+
+  it('applies the new flag alone when the bundle carries only that one', () => {
+    const patch = buildClonePatch(bundle({ agent: { disableDirectFilesystemAccess: true } }), opts);
+    expect(patch.agent).toEqual({ disableDirectFilesystemAccess: true });
+  });
+
   // C7: the pre-0.2.8 hardcoded `true` made "clone a project that has not been
   // onboarded" unreachable — the wizard never ran in the clone.
   it('carries onboardingCompleted: false through, so the clone starts the wizard', () => {

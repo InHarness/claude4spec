@@ -36,7 +36,9 @@ const hoisted = vi.hoisted(() => ({
   executes: [] as Array<Record<string, unknown>>,
   // 0.1.103: lets tests control cfg.agent.{allowedPaths,disallowedPaths} without
   // a real config.json on disk — undefined mirrors "nothing configured".
-  agent: undefined as { allowedPaths?: string[]; disallowedPaths?: string[] } | undefined,
+  agent: undefined as
+    | { allowedPaths?: string[]; disallowedPaths?: string[]; disableDirectFilesystemAccess?: boolean }
+    | undefined,
   /**
    * Stands in for what the SDK does to an sdk-type server: bind it to a
    * transport. Runs inside `execute`, before any event is yielded, so a test can
@@ -71,7 +73,17 @@ vi.mock('../config.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../config.js')>();
   return {
     ...actual,
-    readConfig: (cwd: string) => ({ ...actual.readConfig(cwd), agent: hoisted.agent }),
+    /**
+     * 0.2.53: MERGE the override into the normalized branch instead of replacing
+     * it. `readConfig` guarantees every field of `agent` (that is what
+     * `NormalizedAgentConfig` is for), and consumers read them without `??`; a
+     * mock that swapped the whole branch for a two-field literal was handing the
+     * turn a shape the real reader can never produce.
+     */
+    readConfig: (cwd: string) => {
+      const cfg = actual.readConfig(cwd);
+      return { ...cfg, agent: { ...cfg.agent, ...hoisted.agent } };
+    },
   };
 });
 
@@ -299,11 +311,96 @@ describe('runAgentTurn — patch thread posture (0.2.30)', () => {
 
     await runAgentTurn(deps, input);
 
-    // planMode=false ⇒ no deny-groups are declared, so the adapter keeps the
-    // full built-in toolset. (0.9.6 replaced the old name lists with semantic
-    // groups; `planMode: true` desugars to disallowedToolGroups
-    // ['file-write','shell'].)
+    // planMode=false ⇒ the preset contributes no deny-groups. Since 0.2.53 the
+    // PROJECT CONSTANT still does, so the turn is not unrestricted — see the
+    // posture suite below for what it carries.
     expect(hoisted.lastExecute?.planMode).toBe(false);
+  });
+});
+
+/**
+ * 0.2.53 (M18 II) — the built-in tool posture handed to `adapter.execute`.
+ *
+ * Two axes with different lifetimes composed into ONE union, and the property
+ * that matters is that composition is a SUM: whichever axis is active, nothing
+ * the other one denied comes back.
+ */
+describe('runAgentTurn — disallowedToolGroups posture', () => {
+  const settle = () => {
+    hoisted.events = [{ type: 'result', sessionId: 's1' }];
+  };
+
+  it('[ac:ac-przy-agent-disabledirectfilesystema] denies file-read, file-write and shell by default', async () => {
+    settle();
+    const { deps } = makeDeps();
+
+    await runAgentTurn(deps, makeInput());
+
+    expect([...(hoisted.lastExecute?.disallowedToolGroups as string[])].sort()).toEqual([
+      'file-read',
+      'file-write',
+      'shell',
+    ]);
+  });
+
+  it('declares no groups of its own when the project allows direct FS access', async () => {
+    settle();
+    hoisted.agent = { disableDirectFilesystemAccess: false };
+    const { deps } = makeDeps();
+
+    await runAgentTurn(deps, makeInput());
+
+    expect(hoisted.lastExecute?.disallowedToolGroups).toEqual([]);
+  });
+
+  /**
+   * The union, from the side that could actually go wrong: with the flag OFF,
+   * plan mode must still contribute its own groups. A builder that returned the
+   * project constant and stopped would silently un-gate plan mode.
+   */
+  it('[ac:ac-efektywne-disallowedtoolgroups-tury] unions the plan-mode preset in when the flag is off', async () => {
+    settle();
+    hoisted.agent = { disableDirectFilesystemAccess: false };
+    const { deps } = makeDeps();
+    const input = makeInput();
+    (input.thread as { planMode: boolean }).planMode = true;
+
+    await runAgentTurn(deps, input);
+
+    expect([...(hoisted.lastExecute?.disallowedToolGroups as string[])].sort()).toEqual([
+      'file-write',
+      'shell',
+    ]);
+  });
+
+  /** Overlapping groups collapse — the union is a set, not a concatenation. */
+  it('does not duplicate a group both axes deny', async () => {
+    settle();
+    const { deps } = makeDeps();
+    const input = makeInput();
+    (input.thread as { planMode: boolean }).planMode = true;
+
+    await runAgentTurn(deps, input);
+
+    const groups = hoisted.lastExecute?.disallowedToolGroups as string[];
+    expect([...groups].sort()).toEqual(['file-read', 'file-write', 'shell']);
+    expect(new Set(groups).size).toBe(groups.length);
+  });
+
+  /**
+   * The snapshot records the FIELD, never the computed union — the resume guard
+   * depends on being able to tell the two axes apart.
+   */
+  it('snapshots the config field rather than the resolved groups', async () => {
+    settle();
+    const { deps, snapshots } = makeDeps();
+
+    await runAgentTurn(deps, makeInput());
+
+    const snapshot = snapshots.at(-1) as Record<string, unknown>;
+    expect(snapshot.disableDirectFilesystemAccess).toBe(true);
+    expect(snapshot).not.toHaveProperty('disallowedToolGroups');
+    expect(snapshot).not.toHaveProperty('planMode');
   });
 });
 
@@ -1044,15 +1141,32 @@ describe('runAgentTurn — 0.2.50 turn-lifecycle contract', () => {
     expect(cfg.claude_disallowBackgroundBash).toBe(true);
   });
 
-  /** A normal top-level chat turn keeps background work available. */
-  it('leaves background bash enabled for a top-level chat turn', async () => {
+  /**
+   * 0.2.53: a top-level chat turn keeps background work available only where the
+   * project left `agent.disableDirectFilesystemAccess` off. With the flag on —
+   * the DEFAULT — the `shell` group is denied, so a background shell is not a
+   * capability this turn has, and starting one is blocked at the source rather
+   * than failing later.
+   */
+  it('leaves background bash enabled for a top-level chat turn when direct FS access is allowed', async () => {
     hoisted.events = [{ type: 'result', sessionId: 's1' }];
+    hoisted.agent = { disableDirectFilesystemAccess: false };
     const { deps } = makeDeps();
 
     await runAgentTurn(deps, makeInput());
 
     const cfg = hoisted.lastExecute?.architectureConfig as Record<string, unknown>;
     expect(cfg.claude_disallowBackgroundBash).toBeUndefined();
+  });
+
+  it('[ac:ac-grupa-shell-suppressuje-rowniez-narz] disallows background bash for a top-level chat turn under the default posture', async () => {
+    hoisted.events = [{ type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+
+    await runAgentTurn(deps, makeInput());
+
+    const cfg = hoisted.lastExecute?.architectureConfig as Record<string, unknown>;
+    expect(cfg.claude_disallowBackgroundBash).toBe(true);
   });
 });
 

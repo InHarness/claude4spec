@@ -3,6 +3,7 @@ import type { PluginHost } from '../../core/plugin-host/types.js';
 import type { DiscoveryCore } from '../../discovery/types.js';
 import type { Root } from '../../../shared/types.js';
 import { resolveAgentExecutionScope } from '../../services/agent-execution-scope.js';
+import { resolveAgentToolGroups } from '../../services/agent-tool-posture.js';
 import { readActiveAcs } from './read-acs.js';
 import { type RawEntityReader, type RawEntityType } from '../../discovery/raw-entity-reader.js';
 import { DEFAULT_CONTENT_OPERATION } from '../../../shared/plugin-host/data-schema.js';
@@ -201,6 +202,14 @@ export class AcAnalysisService {
       // The audit reads ACs and entities through the host and returns a JSON verdict — it
       // never needs to write, so it also runs plan-mode (read-only built-in toolset).
       planMode: true,
+      /**
+       * 0.2.53: the same shared builder as the chat turn, for the same reason as
+       * the path scope above — this audit is reachable as an MCP tool from ANY
+       * thread, so it must not be the one call-site that quietly runs with a
+       * wider built-in toolset than the project asked for. `planMode: true`
+       * stays: the library unions the preset with these groups.
+       */
+      disallowedToolGroups: resolveAgentToolGroups({ cwd: this.deps.cwd, planMode: true }),
       allowedPaths: scope.allowedPaths,
       disallowedPaths: scope.disallowedPaths,
       architectureConfig: { claude_sandbox: scope.claudeSandbox },

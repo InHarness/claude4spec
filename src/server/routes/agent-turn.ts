@@ -9,8 +9,6 @@ import {
   AdapterTimeoutError,
   AdapterBackgroundHoldExpiredError,
   AdapterToolPolicyError,
-  probeToolGating,
-  PLAN_MODE_DENY_GROUPS,
   type RuntimeAdapter,
   type StreamObserver,
   type UsageStats,
@@ -46,6 +44,10 @@ import {
   normalizeResumePathScope,
   resolveAgentExecutionScope,
 } from '../services/agent-execution-scope.js';
+import {
+  resolveAgentToolGroups,
+  unenforceableToolGroups,
+} from '../services/agent-tool-posture.js';
 import type { PlanService } from '../services/plan.js';
 import type { BriefService } from '../services/brief.js';
 import type { PatchService, PatchDetail } from '../services/patch.js';
@@ -769,6 +771,27 @@ export async function runAgentTurn(
     // identical deny-set from the identical code (it re-reads config itself — the extra
     // disk read is the price of a single source of truth).
     const resolvedPathScope = resolveAgentExecutionScope({ cwd: deps.cwd, roots: deps.roots });
+    /**
+     * 0.2.53: the OTHER axis of the turn's posture, from the same kind of shared
+     * builder and for the same reason — the AC-analysis turn composes it with the
+     * identical code, and no call-site gets a local branch that could weaken it.
+     *
+     * The union is deny-only, so `planMode` stays on the execute params below as
+     * well: the library unions the preset with what we pass, and passing both is
+     * how plan mode keeps working on a project that left the flag off.
+     */
+    const disallowedToolGroups = resolveAgentToolGroups({ cwd: deps.cwd, planMode });
+    const shellDenied = disallowedToolGroups.includes('shell');
+    /**
+     * The PROJECT-CONSTANT half, isolated: `file-read` is the one group only
+     * `agent.disableDirectFilesystemAccess` contributes. Plan mode denies
+     * `file-write` + `shell` but deliberately keeps reads, so keying the prompt
+     * and the subagents on `shell` would tell a plan-mode turn that Read/Grep/Glob
+     * are gone when they are not. Derived from the applied groups rather than
+     * re-read from config, so the prompt cannot describe a posture the turn does
+     * not actually run with.
+     */
+    const directFilesystemDenied = disallowedToolGroups.includes('file-read');
 
     // 0.1.69 Transagents: the dispatcher is turn-scoped, NOT execute-scoped. It is
     // itself stateless (two injected fields), but the correlation state it reaches —
@@ -881,6 +904,13 @@ export async function runAgentTurn(
         // `claude_sandbox.filesystem.denyWrite`, further down in the same scope object.
         pageRootDirs: resolvedPathScope.pageRootDirs,
       },
+      /**
+       * 0.2.53: the NEGATION of the config flag — the field names what is taken
+       * away, the prompt names what the model has. Keyed on the `shell` group
+       * rather than re-reading config, so the prompt can never describe a posture
+       * different from the one `disallowedToolGroups` above actually applies.
+       */
+      agentFilesystemAccess: { enabled: !directFilesystemDenied },
       contextType: thread.contextType,
       brief: briefSnapshot,
       patch: patchSnapshot,
@@ -917,6 +947,16 @@ export async function runAgentTurn(
         architectureConfig: snapshotArchitectureConfig,
         allowedPaths: normalizeResumePathScope(resolvedPathScope.allowedPaths),
         disallowedPaths: normalizeResumePathScope(resolvedPathScope.disallowedPaths),
+        /**
+         * 0.2.53: the CONFIG FIELD, deliberately — not the computed
+         * `disallowedToolGroups` union above.
+         *
+         * Snapshotting the union would make every mid-thread Plan Mode flip a
+         * `409 RESUME_CONFIG_LOCKED`, because `planMode` desugars into the very
+         * same groups. The flag is the thing that is locked for a thread's
+         * lifetime; plan mode is a per-turn switch and must stay one.
+         */
+        disableDirectFilesystemAccess: readConfig(deps.cwd).agent.disableDirectFilesystemAccess,
       });
     };
 
@@ -1272,8 +1312,15 @@ export async function runAgentTurn(
      * This is the third guard keyed on `parentThreadId`, alongside the
      * `transagent-tools` recursion strip and the bubble's exclusion from lists.
      */
+    /**
+     * 0.2.53 adds a third reason, on a different axis from the two above: the
+     * `shell` group is denied, so a background shell is not a capability this
+     * turn has. Only STARTS are blocked — a task already in flight from an
+     * earlier turn runs to completion, because a capability gate applies to what
+     * the model may reach for, not to work already handed to the OS.
+     */
     const backgroundTasksDisallowed =
-      thread.contextType === 'ask' || thread.parentThreadId != null;
+      thread.contextType === 'ask' || thread.parentThreadId != null || shellDenied;
 
     const architectureConfigForExecute = {
       ...input.architectureConfig,
@@ -1296,14 +1343,12 @@ export async function runAgentTurn(
      * model-behaviour gate, not a sandbox), so this path is defensive here; it
      * is what makes the refusal contract real on any other architecture.
      */
-    if (planMode) {
-      const unenforceable = probeToolGating('claude-code', PLAN_MODE_DENY_GROUPS)
-        .filter((report) => !report.enforceable)
-        .map((report) => report.group);
+    {
+      const unenforceable = unenforceableToolGroups('claude-code', disallowedToolGroups);
       if (unenforceable.length > 0) {
         const refusal = new AgentTurnError(
           'TOOL_POLICY_REFUSED',
-          `plan mode requires deny-groups that this architecture cannot enforce: ${unenforceable.join(', ')}`,
+          `this turn requires deny-groups that this architecture cannot enforce: ${unenforceable.join(', ')}`,
         );
         // Refusal to START: exactly one `error`, then `done`. No `adapter_ready`,
         // no `result`, and nothing persisted as an assistant message.
@@ -1334,9 +1379,26 @@ export async function runAgentTurn(
        */
       // 0.1.67 m05ctxreg: inject the per-context read-only explorer subagent. Mapped onto the
       // SDK's `options.agents`; does NOT narrow the parent's toolset (no allowedTools).
-      subagents: subagentsFor(thread.contextType, deps.pluginHost),
+      /**
+       * 0.2.53: the run's deny-groups apply to each subagent by INTERSECTION —
+       * the library does it (`subagentToolPolicy`), silently, and a `tools` entry
+       * naming a denied built-in is not an error, it just falls out. So the
+       * definitions keep naming Read/Grep/Glob and simply lose them here; only
+       * the prompt has to stop PROMISING them, which is what the flag below does.
+       */
+      subagents: subagentsFor(thread.contextType, deps.pluginHost, !directFilesystemDenied),
       architectureConfig: architectureConfigForExecute,
       planMode,
+      /**
+       * 0.2.53: the project-constant half of the posture. UNIONED by the library
+       * with whatever `planMode` desugars to, so the two lines above and below
+       * are not in competition — a deny is never re-widened.
+       *
+       * MCP is deliberately NOT filtered anywhere near here: the library gates
+       * built-ins only, and the whole default posture depends on the core
+       * operations surviving it.
+       */
+      disallowedToolGroups,
       onUserInput: input.onUserInput,
       /**
        * Always bounded now. `ask` passes its own tighter 15 min; an interactive

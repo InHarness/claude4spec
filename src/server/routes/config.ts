@@ -7,7 +7,14 @@ import { C4S_VERSION } from '../services/release-bundle.js';
 import type { SkillRegistry } from '../services/skill-registry.js';
 import type { PluginSettingsSection } from '../../shared/plugin-host/manifest.js';
 import { resolveAgentPathScope } from '../services/agent-path-scope.js';
-import { probePathScope, type PathScopeStrength } from '@inharness-ai/agent-adapters';
+import {
+  probePathScope,
+  probeToolGating,
+  type PathScopeStrength,
+  type ToolGatingStrength,
+  type ToolGroup,
+} from '@inharness-ai/agent-adapters';
+import { DIRECT_FILESYSTEM_DENY_GROUPS } from '../services/agent-tool-posture.js';
 import { ensureGitignore } from '../../bin/gitignore.js';
 import { isValidGitRefName } from '../services/git.js';
 import { renderCommitTargetTemplate, localDateYYYYMMDD } from '../../shared/git.js';
@@ -88,6 +95,25 @@ function configResponse(c: NormalizedConfig, cwd: string, skillRegistry: SkillRe
       }).strength
     : 'none';
 
+  /**
+   * 0.2.53: one report for the whole project-constant posture. The groups are
+   * probed together and reduced to the WEAKEST outcome across them, because the
+   * badge makes a single claim about a single checkbox — a posture is only as
+   * enforceable as its weakest group.
+   */
+  const gatingReports = c.agent.disableDirectFilesystemAccess
+    ? probeToolGating('claude-code', DIRECT_FILESYSTEM_DENY_GROUPS as ToolGroup[])
+    : [];
+  const agentToolGating = {
+    enforceable: gatingReports.every((r) => r.enforceable),
+    strength: (gatingReports.some((r) => !r.enforceable || r.strength === 'none')
+      ? 'none'
+      : gatingReports.some((r) => r.strength === 'soft')
+        ? 'soft'
+        : 'hard') as ToolGatingStrength,
+    escapeSurfaces: [...new Set(gatingReports.flatMap((r) => r.escapeSurfaces))],
+  };
+
   return {
     name: c.name,
     roots: c.roots,
@@ -115,6 +141,20 @@ function configResponse(c: NormalizedConfig, cwd: string, skillRegistry: SkillRe
       // 0.1.103: real probed runtime enforcement strength for the current
       // config + host. 'none' when no scope is configured.
       pathScopeStrength,
+      disableDirectFilesystemAccess: c.agent.disableDirectFilesystemAccess,
+      /**
+       * 0.2.53: what the deny-groups will ACTUALLY buy on this host, probed here
+       * for the same reason `pathScopeStrength` is — the package's main entry
+       * pulls the agent runtime and is not browser-safe, so the client cannot ask
+       * for itself.
+       *
+       * The badge this feeds must never say "hard": on `claude-code` the strength
+       * is `soft` (the tools are removed from the model's catalog — a
+       * model-behaviour gate, not a sandbox) and `escapeSurfaces` names the
+       * documented bypass, the native Agent/Task subagent, which does not inherit
+       * the deny-groups.
+       */
+      toolGating: agentToolGating,
     },
     git: {
       enabled: c.git.enabled,
@@ -174,7 +214,15 @@ export function configRouter(deps: ConfigRouterDeps): Router {
         description: string | null;
         onboardingCompleted: boolean;
         entities: string[];
-        agent: { claudeUsePreset?: boolean; conversationalLanguage?: string | null };
+        agent: {
+          claudeUsePreset?: boolean;
+          conversationalLanguage?: string | null;
+          // Declared here since 0.2.53 — the handler has assigned them since 0.1.90,
+          // through a separately typed `next` object, so TS never flagged the gap.
+          allowedPaths?: string[];
+          disallowedPaths?: string[];
+          disableDirectFilesystemAccess?: boolean;
+        };
         git: {
           enabled?: boolean;
           syncPushOnPush?: boolean;
@@ -383,12 +431,19 @@ export function configRouter(deps: ConfigRouterDeps): Router {
           conversationalLanguage?: string | null;
           allowedPaths?: string[];
           disallowedPaths?: string[];
+          disableDirectFilesystemAccess?: boolean;
         } = {};
         if ('claudeUsePreset' in ar) {
           if (typeof ar.claudeUsePreset !== 'boolean') {
             return res.status(400).json({ error: { code: 'VALIDATION', message: 'agent.claudeUsePreset must be boolean' } });
           }
           next.claudeUsePreset = ar.claudeUsePreset;
+        }
+        if ('disableDirectFilesystemAccess' in ar) {
+          if (typeof ar.disableDirectFilesystemAccess !== 'boolean') {
+            return res.status(400).json({ error: { code: 'VALIDATION', message: 'agent.disableDirectFilesystemAccess must be boolean' } });
+          }
+          next.disableDirectFilesystemAccess = ar.disableDirectFilesystemAccess;
         }
         if ('conversationalLanguage' in ar) {
           if (ar.conversationalLanguage !== null && !isSupportedLanguage(ar.conversationalLanguage)) {

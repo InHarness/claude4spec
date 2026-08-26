@@ -82,11 +82,27 @@ export function AgentSection() {
   const { data: config } = useConfig();
   const patch = usePatchConfig();
   const usePreset = config?.agent?.claudeUsePreset ?? true;
+  /**
+   * 0.2.53: absent field means ON. The `?? true` mirrors the server default
+   * exactly, so a project whose config.json predates the field renders the
+   * checkbox ticked rather than flashing the permissive state before the first
+   * response lands.
+   */
+  const blockDirectFs = config?.agent?.disableDirectFilesystemAccess ?? true;
   const [languageError, setLanguageError] = useState<string | null>(null);
 
   async function handleToggle(next: boolean) {
     try {
       await patch.mutateAsync({ agent: { claudeUsePreset: next } });
+      toast.success('Agent settings updated');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Update failed');
+    }
+  }
+
+  async function handleToggleDirectFs(next: boolean) {
+    try {
+      await patch.mutateAsync({ agent: { disableDirectFilesystemAccess: next } });
       toast.success('Agent settings updated');
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Update failed');
@@ -163,11 +179,121 @@ export function AgentSection() {
           )}
         </label>
 
-        <PathScopeFields />
+        <DirectFilesystemAccessField
+          checked={blockDirectFs}
+          gating={config?.agent?.toolGating}
+          disabled={patch.isPending}
+          onChange={handleToggleDirectFs}
+        />
+
+        {/*
+          * 0.2.53: HIDDEN, not cleared. The values stay in config.json and keep
+          * feeding the hard OS sandbox — which is the only confinement that also
+          * covers the native subagent. What goes away is the ability to edit
+          * something that no longer has an effect on the built-in channel.
+          */}
+        {!blockDirectFs && <PathScopeFields />}
 
         <ApiKeyField />
       </div>
     </SettingsCard>
+  );
+}
+
+/**
+ * 0.2.53 — "Block direct file access". The one control for
+ * `agent.disableDirectFilesystemAccess`, and deliberately the ONLY one: unlike
+ * Plan Mode there is no composer toggle and no entry in the model-settings
+ * popover, because a policy fixed for a whole thread has no business sitting
+ * next to a message box that starts a turn.
+ *
+ * Three things this has to say, none of them optional:
+ *
+ *  1. the strength badge NEVER says "hard" — the tools are removed from the
+ *     model's catalog, which is a model-behaviour gate, not a sandbox — and in
+ *     both of its states it names the way out (the native Agent/Task subagent
+ *     does not inherit the deny-groups);
+ *  2. the timing: this breaks resumption of every existing conversation;
+ *  3. what actually stops working, by name, so the regression is discovered here
+ *     and not by a user wondering why "Fix it with Agent" went quiet.
+ */
+function DirectFilesystemAccessField({
+  checked,
+  gating,
+  disabled,
+  onChange,
+}: {
+  checked: boolean;
+  gating: ConfigResponse['agent']['toolGating'] | undefined;
+  disabled: boolean;
+  onChange: (next: boolean) => void | Promise<void>;
+}) {
+  // Degradation is worth naming even though `claude-code` never degrades: the
+  // probe is what makes the claim true on any other architecture.
+  const degraded = gating !== undefined && !gating.enforceable;
+  const badgeLabel = degraded
+    ? 'Enforced softly — a model hint only'
+    : 'Tools removed from the catalog (strength: soft)';
+  const escapes = gating?.escapeSurfaces ?? [];
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="flex items-start gap-3">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => void onChange(e.target.checked)}
+          disabled={disabled}
+          className="mt-0.5 h-4 w-4"
+        />
+        <span className="flex-1">
+          <span className="block text-[13px] font-medium" style={{ color: 'var(--c-ink)' }}>
+            Block direct file access
+          </span>
+          <span className="block text-[11.5px] mt-0.5" style={{ color: 'var(--c-subtle)' }}>
+            Checked (default): the agent reads and changes the specification through core operations only — it has no
+            file or shell tools. Uncheck only if the agent should work on files outside the specification (code,
+            implementation artifacts).
+          </span>
+        </span>
+      </label>
+
+      {checked && (
+        <div className="flex flex-col gap-2 pl-7">
+          <span
+            className="self-start rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide"
+            style={{
+              background: 'var(--c-panel)',
+              color: degraded ? '#c99467' : 'var(--c-accent)',
+              border: `1px solid ${degraded ? '#c99467' : 'var(--c-accent)'}`,
+            }}
+          >
+            {badgeLabel}
+          </span>
+          <span className="text-[11px]" style={{ color: 'var(--c-subtle)' }}>
+            One way around it stays open either way: a native subagent (Agent / Task) does not inherit these
+            restrictions
+            {escapes.length > 0 ? ` — the runtime also reports: ${escapes.join(', ')}` : ''}.
+          </span>
+          <span className="text-[11px]" style={{ color: 'var(--c-subtle)' }}>
+            This setting applies to the whole project and ends the ability to resume existing conversations — they will
+            need to be started anew.
+          </span>
+          <span className="text-[11px]" style={{ color: 'var(--c-subtle)' }}>
+            File scope still exists — the hard system sandbox remains the only restriction that also covers a native
+            subagent. It stops being editable; it does not stop applying.
+          </span>
+          <div className="text-[11px]" style={{ color: 'var(--c-subtle)' }}>
+            Unavailable while this is on:
+            <ul className="mt-1 list-disc pl-4">
+              <li>git recovery — “Fix it with Agent” in the git error dialog</li>
+              <li>briefs with source: analysis (reading another repository)</li>
+              <li>the c4s CLI, which the agent runs from a shell</li>
+              <li>scaffolding a new writing style into .claude/skills/</li>
+            </ul>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

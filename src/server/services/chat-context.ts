@@ -8,7 +8,8 @@ import type { PatchDetail } from './patch.js';
 import path from 'node:path';
 import type { Root } from '../../shared/types.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
-import { PLAN_MODE_DENY_GROUPS, type SubagentDefinition } from '@inharness-ai/agent-adapters';
+import { PLAN_MODE_DENY_GROUPS, type SubagentDefinition, type ToolGroup } from '@inharness-ai/agent-adapters';
+import { DIRECT_FILESYSTEM_DENY_GROUPS } from './agent-tool-posture.js';
 import { buildClaudeCodeToolPolicy, claudeCodeKnownBuiltins } from '@inharness-ai/agent-adapters/claude-code';
 import { PROFILES, mcpServerSetForProfile, type McpServerSet } from '../operations/profiles.js';
 import { CATALOG } from '../operations/catalog.js';
@@ -271,6 +272,14 @@ export interface SystemPromptInput {
     /** 0.2.13 item 28 — read-allowed, write-denied. See `agent-path-scope.ts`. */
     pageRootDirs: string[];
   };
+  /**
+   * 0.2.53: whether this turn HAS the built-in filesystem/shell tools — the
+   * negation of `agent.disableDirectFilesystemAccess`. Absent defaults to
+   * `{ enabled: false }`, which matches the config default (absent field = the
+   * flag is on = the built-ins are gone), so a caller that forgets it describes
+   * the default posture rather than the permissive one.
+   */
+  agentFilesystemAccess?: { enabled: boolean };
   /** M21 m05ctxreg: one of the four interaction types — `chat` (default), `brief`, `patch`,
    *  `ask`. Drives the frame, and is echoed verbatim as `<interaction_context type="…">`. */
   contextType?: ChatContextType;
@@ -746,7 +755,7 @@ const CLAUDE_CODE_ALL_BUILTINS = claudeCodeKnownBuiltins();
  * this line is an inventory of what the adapter knows and that block is the
  * policy for the turn.
  */
-function buildTooling(inventory: readonly McpInventoryEntry[]): string {
+function buildTooling(inventory: readonly McpInventoryEntry[], builtinsEnabled: boolean): string {
   /**
    * 0.2.50 — the `<builtin>` line says what it IS.
    *
@@ -763,9 +772,29 @@ function buildTooling(inventory: readonly McpInventoryEntry[]): string {
    * layer B and `<claude4spec_plan_mode>` layer E — and a direction the reader
    * can check is a direction that can be wrong.
    */
+  /**
+   * 0.2.53 — the line now has two states, and only ONE flag moves it.
+   *
+   * With `agent.disableDirectFilesystemAccess` on, the file and shell built-ins
+   * are gone from the model's catalog for the whole thread, so printing them as
+   * "what the adapter knows" would be inventorying tools that do not exist here.
+   * The gated list is DERIVED from the same `buildClaudeCodeToolPolicy` the
+   * adapter itself calls, so it is a 1:1 mirror of the actual gating rather than
+   * a hand-maintained paraphrase that can drift — the same trick as
+   * `PLAN_MODE_TOOL_POLICY` above.
+   *
+   * Plan mode deliberately does NOT move this line, though it denies groups too:
+   * it is a per-turn switch whose split `<claude4spec_plan_mode>` states in full,
+   * and that division of labour (inventory here, policy there) is what the 0.2.50
+   * note above bought. The flag is a different kind of fact — the tools are
+   * absent for the thread's whole life — so it belongs in the inventory.
+   */
+  const builtins = builtinsEnabled
+    ? CLAUDE_CODE_ALL_BUILTINS
+    : (buildClaudeCodeToolPolicy(DIRECT_FILESYSTEM_DENY_GROUPS as ToolGroup[])?.allow ?? []);
   const lines: string[] = [
     `<tooling>`,
-    `  <builtin note="what the adapter knows; other blocks in this prompt narrow it">${CLAUDE_CODE_ALL_BUILTINS.join(', ')}</builtin>`,
+    `  <builtin note="what the adapter knows; other blocks in this prompt narrow it">${builtins.join(', ')}</builtin>`,
   ];
   for (const { name, tools } of inventory) {
     lines.push(
@@ -795,11 +824,11 @@ function hasServer(inventory: readonly McpInventoryEntry[], name: string): boole
  * (Agent/Task) są wymuszone konstrukcją `tools` — zero narzędzi mutujących. */
 
 /** English per "English UI/API messages": agent-facing instruction, same register as system prompt. */
-const SPEC_EXPLORE_PROMPT = `You are a read-only explorer of the CURRENT specification (pages + entities + sections).
+const specExplorePrompt = (builtinsEnabled: boolean): string => `You are a read-only explorer of the CURRENT specification (pages + entities + sections).
 
 Your job: explore on the parent's behalf and report CONCISE findings — file paths, section anchors, and entity slugs — never the full bulk you read. You exist to keep the parent's context small.
 
-Tools: read-only spec operations on \`reference-tools\` — \`list_pages\` (which pages exist), \`search_pages\` (phrase or regex over the prose; modes are a cost ladder count -> map -> hits, and the DEFAULT is \`map\` — identity rows with no prose, so pass \`mode: \"hits\"\` explicitly when you need the text. A hit is a SECTION carrying \`matchCount\`; feed its \`anchor\` to \`get_sections\`. Narrow the scan with \`pathInclude\`/\`pathExclude\` before it opens files, or \`anchors\` to name sections outright), \`list_sections\` + \`get_sections\` (the body of EVERY anchor you need, in one call), \`get_page\` (a page as authored) — plus the read-only entity graph (get_*/list_*, find_references, check_consistency). Read/Grep/Glob are also available for the rest of the repository.
+Tools: read-only spec operations on \`reference-tools\` — \`list_pages\` (which pages exist), \`search_pages\` (phrase or regex over the prose; modes are a cost ladder count -> map -> hits, and the DEFAULT is \`map\` — identity rows with no prose, so pass \`mode: \"hits\"\` explicitly when you need the text. A hit is a SECTION carrying \`matchCount\`; feed its \`anchor\` to \`get_sections\`. Narrow the scan with \`pathInclude\`/\`pathExclude\` before it opens files, or \`anchors\` to name sections outright), \`list_sections\` + \`get_sections\` (the body of EVERY anchor you need, in one call), \`get_page\` (a page as authored) — plus the read-only entity graph (get_*/list_*, find_references, check_consistency).\${builtinsEnabled ? ' Read/Grep/Glob are also available for the rest of the repository.' : ' There are no built-in file tools here — every intent they would serve is covered above: list_pages for Glob, search_pages for Grep, get_page / get_sections for Read.'}
 
 Truncation protocol for \`get_sections\` (you are the one who calls it in bulk, so you are the one who hits the budget):
 - An item that came back with \`truncated: true\` carries \`edges\` — the outgoing references of the WHOLE section, including the part you did not receive: \`sectionRefs\` (anchors), \`entityEmbeds\` (type + slug), \`pageLinks\` (rootId + path).
@@ -819,11 +848,10 @@ The parent hands you a slice — a \`from\`/\`to\` pair, an optional \`roots\` p
 How to read your slice — three levels, in order:
 1. WINDOWING (primary): call \`release_diff({ fromIdOrName, toIdOrName, roots, ...slice })\` and read the returned \`MCPReleaseDiff\` directly — the parent already windowed the slice to fit. The size of the window is the caller's choice: \`entityTypes\` / \`limit\` / \`offset\`.
 2. EXPLICIT DEGRADATION: the operation TELLS you when it could not fit. An item past the budget comes back with its identity and \`truncated: true\` — an entity having lost \`before\`/\`after\` entirely, a section with \`content\` cut as text — and the envelope carries \`truncationHint\` naming the retry. When you see that marker, the slice you are holding is INCOMPLETE: follow the hint down (narrow \`entityTypes\`, lower \`limit\`, advance \`offset\`) and, if nothing else fits, \`summaryOnly: true\`, which is the guaranteed floor. Never report a truncated slice as if it were whole — absence of an item means "unchanged", and only the marker distinguishes that from "it did not fit".
-3. LAST RESORT: if a slice is still too large and the SDK dumps the tool result to disk, \`Read\` that dump file. This is now a convenience, not the recovery path — level 2 is. Do not otherwise touch the filesystem.
 
 - \`roots\` scope: if the parent gave you \`roots\`, pass it through verbatim on EVERY \`release_diff\` call — it narrows the PAGES dimension to the brief's scope. Dropping it silently widens the diff to all releasable roots and leaks out-of-scope pages into the brief.
 
-Tools: \`release-tools\` MCP (\`release_diff\`; \`release_show\` / \`release_list\` available but rarely needed) and Read/Grep/Glob — the latter ONLY for a release-diff dump file the SDK wrote to disk.
+Tools: \`release-tools\` MCP (\`release_diff\`; \`release_show\` / \`release_list\` available but rarely needed). Nothing else — no filesystem, and that is now structural rather than a promise: without \`Read\` you cannot reach \`pages/*.md\` at all, so the guarantee that you see ONLY the historical diff is enforced by your toolset instead of by this paragraph.
 
 Hard rules:
 - Read ONLY \`release_diff\` output / release artifacts. NEVER read \`pages/*.md\` (current spec state) and NEVER touch the entity graph (get_*/find_references) — those return HEAD and would break the brief's historical self-containment.
@@ -851,12 +879,12 @@ function entityReadMcpTools(pluginHost: ProjectPluginHost): string[] {
 
 /** `spec-explore`: read-only exploration of the current spec (entity graph). Built per-turn
  *  because the entity-graph toolset depends on which entity plugins are mounted. */
-function buildSpecExploreSubagent(pluginHost: ProjectPluginHost): SubagentDefinition {
+function buildSpecExploreSubagent(pluginHost: ProjectPluginHost, builtinsEnabled: boolean): SubagentDefinition {
   return {
     name: 'spec-explore',
     description:
       'Read-only explorer of the CURRENT spec (pages, entities, sections). Delegate to it to LOCATE things — paths, section anchors, entity slugs — without pulling bulk into your own context. Returns concise pointers, not full dumps. Use PROACTIVELY when discovery spans more than one channel or more than ~2 read calls.',
-    prompt: SPEC_EXPLORE_PROMPT,
+    prompt: specExplorePrompt(builtinsEnabled),
     tools: [
       'Read',
       'Grep',
@@ -915,11 +943,12 @@ function buildDiffExploreSubagent(): SubagentDefinition {
 export function subagentsFor(
   contextType: ChatContextType,
   pluginHost: ProjectPluginHost,
+  builtinsEnabled = false,
 ): SubagentDefinition[] {
   const { subagent } = CONTEXT_TYPE_REGISTRY[contextType];
   return subagent === 'diff-explore'
     ? [buildDiffExploreSubagent()]
-    : [buildSpecExploreSubagent(pluginHost)];
+    : [buildSpecExploreSubagent(pluginHost, builtinsEnabled)];
 }
 
 /**
@@ -1206,6 +1235,45 @@ function buildAgentPathScope(
   return lines.join('\n');
 }
 
+/**
+ * 0.2.53 — the built-in filesystem/shell posture, stated to the model in BOTH
+ * states, for `chat` / `patch` / `ask`. There is no omitted case: a block that
+ * appears only when something is switched off teaches the model to read its
+ * absence as permission, and the `enabled="true"` body has its own thing to say.
+ *
+ * The `brief` frame does not carry it — that frame states its posture inside its
+ * own `<interaction_context type="brief">` block instead.
+ *
+ * `enabled` is the NEGATION of `agent.disableDirectFilesystemAccess`: the config
+ * field names what is taken away, the prompt names what the model has.
+ *
+ * The disabled body names the four capabilities that genuinely stop working, so
+ * a model asked for one of them says which setting is in the way instead of
+ * reaching for a tool that is not in its catalog and improvising after it fails.
+ */
+function buildAgentFilesystemAccess(access: { enabled: boolean }): string {
+  if (!access.enabled) {
+    return [
+      `<agent_filesystem_access enabled="false">`,
+      `This project runs you WITHOUT built-in filesystem or shell tools. Read, Grep, Glob, Edit, Write, NotebookEdit, Bash and Skill are not in your catalog — they are absent, not merely discouraged, so there is nothing to fall back to and no point proposing one.`,
+      `The specification is fully reachable anyway, through the MCP servers listed in <tooling>: read with get_page / get_sections / list_pages / search_pages, write with update_sections / update_page. That is the point of the posture, not a workaround for it — a core write carries expectedHash, captures a version and injects anchors, and a built-in write skipped all three.`,
+      `Four things genuinely do not work while this is on. If you are asked for one, say which setting is in the way rather than attempting it:`,
+      `  - git recovery ("Fix it with Agent") — it drives git through Bash, and no MCP operation replaces it;`,
+      `  - a brief with source: analysis — reading somebody else's repository needs the file built-ins;`,
+      `  - the c4s CLI — it is a shell program; only its \`ask\` survives, and only where this turn mounted the server that exposes it — check <tooling>;`,
+      `  - scaffolding a new writing style — it writes a skill package under .claude/skills/, which no C4S operation owns.`,
+      `The user can turn all four back on by unchecking "Block direct file access" in Settings → Agent. Say that plainly; do not try to work around it.`,
+      `</agent_filesystem_access>`,
+    ].join('\n');
+  }
+  return [
+    `<agent_filesystem_access enabled="true">`,
+    `This project leaves the built-in filesystem and shell tools available to you, so work outside the specification (implementation code, git, the c4s CLI, scaffolding a writing style) is possible here.`,
+    `That does NOT make them an alternative route into the specification. Pages, entities, plans and briefs are still read and written ONLY through the MCP servers in <tooling>: a built-in write bypasses expectedHash, version capture and anchor injection, so it corrupts the consistency contract while reporting success. Reach for Read/Edit/Write only for files that are not C4S artifacts.`,
+    `</agent_filesystem_access>`,
+  ].join('\n');
+}
+
 /** True when `child` is the same as or nested under `parent`. */
 function isInside(parent: string, child: string): boolean {
   const rel = path.relative(parent, child);
@@ -1229,6 +1297,13 @@ function isInside(parent: string, child: string): boolean {
 function buildBriefSystemPrompt(input: {
   projectName: string;
   cwd: string;
+  /**
+   * 0.2.53: the brief frame does NOT carry `<agent_filesystem_access>` — it
+   * states its posture in its own `<interaction_context type="brief">` body —
+   * but its `<builtin>` inventory must still be truthful about what this thread
+   * actually has, so the flag is threaded in for that one line.
+   */
+  builtinsEnabled: boolean;
   brief: Brief | null;
   annotations: Annotation[];
   writingStyleSkill: { slug: string; title: string } | null;
@@ -1260,7 +1335,7 @@ function buildBriefSystemPrompt(input: {
    * definition used the correct ones — so a brief thread was handed two disjoint
    * vocabularies for the same three operations, one of them fictional.
    */
-  parts.push(buildTooling(input.mcpInventory));
+  parts.push(buildTooling(input.mcpInventory, input.builtinsEnabled));
   parts.push(BRIEF_TOOLS_USAGE);
   /**
    * 0.2.50 — the brief frame gains `<agent_path_scope>`, and this is a straight
@@ -1559,7 +1634,7 @@ const MAIN_PROMPT_BLOCKS: readonly PromptBlock[] = [
   },
 
   // ── C — access ──────────────────────────────────────────────────────────
-  { layer: 'C', name: 'tooling', render: (c) => buildTooling(c.mcpInventory) },
+  { layer: 'C', name: 'tooling', render: (c) => buildTooling(c.mcpInventory, c.agentFilesystemAccess?.enabled ?? false) },
   {
     layer: 'C',
     name: 'workspace_projects',
@@ -1579,6 +1654,15 @@ const MAIN_PROMPT_BLOCKS: readonly PromptBlock[] = [
     name: 'agent_path_scope',
     render: (c) =>
       c.agentPathScope ? buildAgentPathScope(c.agentPathScope, c.cwd, c.roots, c.mcpInventory) : null,
+  },
+  {
+    layer: 'C',
+    // Directly after the path scope, and in the same layer, because it answers
+    // the question that block raises: the path scope says WHERE the built-in
+    // tools may reach, this one says WHETHER there are any. Unconditional —
+    // `render` never returns null, in either state of the flag.
+    name: 'agent_filesystem_access',
+    render: (c) => buildAgentFilesystemAccess(c.agentFilesystemAccess ?? { enabled: false }),
   },
 
   // ── D — writing conventions ─────────────────────────────────────────────
@@ -1733,6 +1817,7 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
       conversationalLanguage: input.conversationalLanguage,
       mcpInventory: input.mcpInventory ?? [],
       agentPathScope: input.agentPathScope,
+      builtinsEnabled: input.agentFilesystemAccess?.enabled ?? false,
     });
   }
 
