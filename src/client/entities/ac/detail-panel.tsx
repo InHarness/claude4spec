@@ -4,7 +4,6 @@ import { Trash, CheckSquare } from 'lucide-react';
 import { Badge } from '../../host-ui-kit/actions/Badge.js';
 import { EnumBadgePicker } from '../../host-ui-kit/pickers/EnumBadgePicker.js';
 import { GroupedRelationPicker } from '../../host-ui-kit/pickers/GroupedRelationPicker.js';
-import { DocEditor } from '../../host-ui-kit/detail/DocEditor.js';
 import { TagPicker } from '../../host-ui-kit/detail/TagPicker.js';
 import { FieldGrid } from '../../host-ui-kit/core/FieldGrid.js';
 import { FieldRow } from '../../host-ui-kit/core/FieldRow.js';
@@ -30,6 +29,9 @@ const AC_KIND_OPTIONS = [
   { value: 'edge-case', label: 'edge-case', color: 'var(--c-yellow-ink)' },
 ];
 
+/** `title`'s bound in `acData`, enforced in the browser too so the 501st character never gets typed. */
+const AC_TITLE_MAX_LENGTH = 500;
+
 const AC_STATUS_OPTIONS = [
   { value: 'active', label: 'active', color: 'var(--c-accent)' },
   { value: 'deprecated', label: 'deprecated', color: 'var(--c-red, #c45a3b)' },
@@ -43,22 +45,29 @@ interface Props {
   onOpenPage?: (rootId: string, path: string) => void;
 }
 
+/**
+ * 0.2.51 — one prose field, and it is the reserved one.
+ *
+ * The draft used to carry `text` (the criterion) and `description` (optional
+ * prose beside it) while `title` — the field the chip, the row, the card, the
+ * slug and every identity lookup actually read — was absent, auto-derived, and
+ * unreachable from this page. Editing the H1 therefore changed a field nothing
+ * displayed. Now the H1 edits `title` itself, and there is nothing else to edit.
+ */
 interface Draft {
-  text: string;
+  title: string;
   kind: AcKind;
   status: AcStatus;
   verifies: AcVerifyRef[];
-  description: string;
   tags: string[];
 }
 
 function toDraft(ac: Ac): Draft {
   return {
-    text: ac.text,
+    title: ac.title,
     kind: ac.kind,
     status: ac.status,
     verifies: ac.verifies,
-    description: ac.description ?? '',
     tags: ac.tags,
   };
 }
@@ -85,11 +94,10 @@ export function AcDetail({
       const updated = await update.mutateAsync({
         slug: a.slug,
         input: {
-          text: current.text,
+          title: current.title,
           kind: current.kind,
           status: current.status,
           verifies: current.verifies,
-          description: current.description || null,
           tags: current.tags,
         },
       });
@@ -103,7 +111,7 @@ export function AcDetail({
     if (!el) return;
     el.style.height = 'auto';
     el.style.height = `${el.scrollHeight}px`;
-  }, [draft?.text]);
+  }, [draft?.title]);
 
   async function handleDelete() {
     if (!ac) return;
@@ -201,9 +209,10 @@ export function AcDetail({
           <CheckSquare size={22} style={{ color: 'var(--c-accent)', marginTop: 6 }} />
           <textarea
             ref={textareaRef}
-            value={draft.text}
-            onChange={(e) => patch({ text: e.target.value })}
+            value={draft.title}
+            onChange={(e) => patch({ title: e.target.value })}
             rows={1}
+            maxLength={AC_TITLE_MAX_LENGTH}
             className="flex-1 bg-transparent outline-none resize-none overflow-hidden"
             style={{
               fontSize: 22,
@@ -215,6 +224,9 @@ export function AcDetail({
             spellCheck={false}
           />
         </div>
+        {/* The detail page is where the criterion is NOT abbreviated — the chip
+            and the row cut to 40 characters, this shows all 500 and grows to
+            fit them. */}
 
         <FieldRow label="Kind">
           <EnumBadgePicker
@@ -249,16 +261,6 @@ export function AcDetail({
               onAdd={addVerify}
               onRemove={removeVerify}
               onOpenEntity={onOpenEntity}
-            />
-          </FieldRow>
-        </div>
-
-        <div className="mt-6">
-          <FieldRow label="Description" align="start">
-            <DocEditor
-              value={draft.description}
-              onChange={(md) => patch({ description: md })}
-              placeholder="Optional context: why this AC matters, how it's tested, related modules…"
             />
           </FieldRow>
         </div>

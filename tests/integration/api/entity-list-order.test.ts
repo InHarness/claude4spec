@@ -46,8 +46,8 @@ describe('entity list order is unified', () => {
    */
   async function seedAcs(): Promise<string[]> {
     const slugs: string[] = [];
-    for (const text of ['zebra criterion', 'middle criterion', 'alpha criterion']) {
-      const res = await request(t.app).post('/api/acs').send({ text });
+    for (const title of ['zebra criterion', 'middle criterion', 'alpha criterion']) {
+      const res = await request(t.app).post('/api/acs').send({ title });
       expect(res.status).toBe(201);
       slugs.push(res.body.data.slug);
       // Distinct millisecond, so the assertion tests `created_at` rather than

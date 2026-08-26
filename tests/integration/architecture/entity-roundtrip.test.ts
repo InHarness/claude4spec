@@ -54,7 +54,7 @@ async function seed(t: TestApp): Promise<void> {
     .post('/api/endpoints')
     .send({ method: 'GET', path: '/api/users', summary: 'list users', tags: ['alpha'] });
   expect(endpoint.status).toBe(201);
-  const ac = await request(t.app).post('/api/acs').send({ text: 'the list is ordered' });
+  const ac = await request(t.app).post('/api/acs').send({ title: 'the list is ordered' });
   expect(ac.status).toBe(201);
   const uiView = await request(t.app).post('/api/ui-views').send({ title: 'Users' });
   expect(uiView.status, JSON.stringify(uiView.body)).toBe(201);
@@ -220,7 +220,7 @@ describe('release restore projects the stamp even when the diff is a noop', () =
   }
 
   it('[ac:ac-round-trip-release-u-zachowuje-pola-syst] a stamp-only restore is reported noop, yet the file becomes identical', async () => {
-    const created = await request(t.app).post('/api/acs').send({ text: 'the rule holds' });
+    const created = await request(t.app).post('/api/acs').send({ title: 'the rule holds' });
     expect(created.status).toBe(201);
     const slug = created.body.data.slug as string;
 
@@ -266,13 +266,13 @@ describe('release restore projects the stamp even when the diff is a noop', () =
    * to say so. `createdAt` is still immutable.
    */
   it('a version restore mints a new updatedAt rather than replaying the old one', async () => {
-    const created = await request(t.app).post('/api/acs').send({ text: 'first text' });
+    const created = await request(t.app).post('/api/acs').send({ title: 'first text' });
     expect(created.status).toBe(201);
     const slug = created.body.data.slug as string;
     const originalStamp = t.rawReader.getEntity('ac', slug)!.system!;
 
     await new Promise((r) => setTimeout(r, 5));
-    const patched = await request(t.app).patch(`/api/acs/${slug}`).send({ text: 'second text' });
+    const patched = await request(t.app).patch(`/api/acs/${slug}`).send({ title: 'second text' });
     expect(patched.status).toBe(200);
 
     t.versionService.configureRestore(t.entityStore, t.tagsService);
@@ -280,7 +280,7 @@ describe('release restore projects the stamp even when the diff is a noop', () =
     t.versionService.restore('ac', slug, 1, 'user');
 
     const after = t.rawReader.getEntity('ac', slug)!;
-    expect((after.data as { text: string }).text).toBe('first text'); // content really rewound
+    expect((after.data as { title: string }).title).toBe('first text'); // content really rewound
     expect(after.system!.createdAt).toBe(originalStamp.createdAt); // never moves
     expect(after.system!.updatedAt > originalStamp.updatedAt).toBe(true); // the restore IS a change
   });

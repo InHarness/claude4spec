@@ -35,17 +35,20 @@ import type { SlugPattern } from '../../../shared/plugin-host/slug-pattern.js';
 // ─── FROZEN: the retired hand-written shapes, verbatim ──────────────────────
 
 const acCreateSchema: ZodRawShape = {
-  // Optional on create despite being required on the entity: `computedDefault`
-  // derives it from `text`, which is the whole point of asking the author once.
-  title: z.string().optional().describe('Label. Defaults to the first 200 characters of `text`.'),
-  text: z.string().describe('Observable behavior the AC asserts. One sentence is best.'),
+  // 0.2.51 — REQUIRED on create, where it used to be optional. It was optional
+  // because `computedDefault` derived it from `text`; `text` is gone, the
+  // criterion lives here, and there is nothing left to derive from.
+  title: z
+    .string()
+    .max(500)
+    .regex(/\S/, 'must not be blank')
+    .describe('Observable behavior the AC asserts. One sentence is best.'),
   kind: z.enum(['requirement', 'edge-case']).optional().describe('requirement (default) | edge-case'),
   status: z.enum(['active', 'deprecated']).optional(),
   verifies: z
     .array(z.object({ type: z.string(), slug: z.string() }))
     .optional()
     .describe('Entities this AC verifies. Reported broken if entity does not exist; not blocking.'),
-  description: z.string().optional(),
   slug: z.string().optional().describe('Optional explicit slug; otherwise auto-generated.'),
   tags: z
     .array(z.string())
@@ -54,12 +57,10 @@ const acCreateSchema: ZodRawShape = {
 };
 
 const acUpdateSchema: ZodRawShape = {
-  title: z.string().optional(),
-  text: z.string().optional(),
+  title: z.string().max(500).regex(/\S/, 'must not be blank').optional(),
   kind: z.enum(['requirement', 'edge-case']).optional(),
   status: z.enum(['active', 'deprecated']).optional(),
   verifies: z.array(z.object({ type: z.string(), slug: z.string() })).optional(),
-  description: z.string().nullable().optional(),
   tags: z.array(z.string()).optional(),
 };
 
@@ -231,7 +232,7 @@ describe('item 27 — generated CRUD schemas vs the hand-written ones they repla
     const json = z.toJSONSchema(z.object(buildCreateShape(acData)), { io: 'input' }) as {
       properties: Record<string, { description?: string }>;
     };
-    expect(json.properties.text?.description).toBe(
+    expect(json.properties.title?.description).toBe(
       'Observable behavior the AC asserts. One sentence is best.',
     );
   });

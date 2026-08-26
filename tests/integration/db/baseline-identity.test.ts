@@ -238,6 +238,25 @@ const TITLE_COLUMN = { name: 'title', type: 'TEXT', notnull: 1, dflt_value: null
  */
 const RENAMED_TO_TITLE = new Set(['dto', 'design_system', 'ui_view']);
 
+/**
+ * Columns the legacy chain created that their type no longer declares at all.
+ *
+ * A different delta from `RENAMED_TO_TITLE`, and worth keeping separate: there
+ * the legacy `name` was REPLACED, one column for one column, so the count and
+ * the shape stayed put. Here the type simply has fewer fields than it used to,
+ * and the fresh projection never emits them.
+ *
+ * 0.2.51 collapses `ac`'s three text fields into one: `text` (the criterion) and
+ * `description` (optional prose beside it) both retire into the reserved
+ * `title`, which is what makes `ac` the first entry. A legacy database keeps
+ * these columns until `dropRemovedColumns` takes them at boot — that half is
+ * covered by `upgrade-adoption.test.ts`; what this file compares is the shape a
+ * FRESH install lands on, where they were never created.
+ */
+const RETIRED_COLUMNS: Record<string, ReadonlySet<string>> = {
+  ac: new Set(['text', 'description']),
+};
+
 /** Apply the known deltas to the LEGACY snapshot so the rest compares strictly. */
 function applyExpectedDeltas(schema: Record<string, TableShape>): Record<string, TableShape> {
   const out: Record<string, TableShape> = {};
@@ -246,9 +265,13 @@ function applyExpectedDeltas(schema: Record<string, TableShape>): Record<string,
       out[table] = shape;
       continue;
     }
-    const withoutRenamed = RENAMED_TO_TITLE.has(table)
-      ? shape.columns.filter((c) => (c as { name: string }).name !== 'name')
+    const retired = RETIRED_COLUMNS[table];
+    const withoutRetired = retired
+      ? shape.columns.filter((c) => !retired.has((c as { name: string }).name))
       : shape.columns;
+    const withoutRenamed = RENAMED_TO_TITLE.has(table)
+      ? withoutRetired.filter((c) => (c as { name: string }).name !== 'name')
+      : withoutRetired;
     // `endpoint_dto` is a junction, not an entity: it has no title.
     const withTitle =
       table === 'endpoint_dto'

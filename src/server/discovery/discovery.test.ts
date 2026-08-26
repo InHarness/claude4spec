@@ -1490,7 +1490,7 @@ describe('discovery core', () => {
     it('exempts the AC tags whose consumer is a rule rather than an embed', async () => {
       applyProjection(db, [widgetModule(), acBackendModule]);
       db.prepare(
-        `INSERT INTO ac (slug, title, text, status) VALUES ('ac-x', 'X', 'X happens', 'active')`,
+        `INSERT INTO ac (slug, title, status) VALUES ('ac-x', 'X happens', 'active')`,
       ).run();
       // `topic` rides along as the control: it proves the AC's tags reach the
       // rule at all, so the two exemptions below are an exemption rather than a

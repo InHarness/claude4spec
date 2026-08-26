@@ -55,13 +55,14 @@ describe('entity_version.serializer_version — written by a per-type service (0
   afterEach(() => t.cleanup());
 
   it('records the type\'s integer payloadVersion, not a serializer semver', async () => {
-    const created = await request(t.app).post('/api/acs').send({ text: 'version capture' });
+    const created = await request(t.app).post('/api/acs').send({ title: 'version capture' });
     expect(created.status).toBe(201);
 
     const row = t.db
       .prepare(`SELECT serializer_version FROM entity_version WHERE entity_type = 'ac' AND entity_slug = ?`)
       .get(created.body.data.slug) as { serializer_version: string };
-    // `ac` moved to payload 2 in 0.2.22, when it gained the reserved `title`.
-    expect(row.serializer_version).toBe('2');
+    // `ac` moved to payload 2 in 0.2.22, when it gained the reserved `title`,
+    // and to 3 in 0.2.51, when `text` and `description` collapsed back into it.
+    expect(row.serializer_version).toBe('3');
   });
 });

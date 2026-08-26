@@ -69,7 +69,7 @@ describe.skipIf(!BASE)('0.2.22 — title on screen, select on the wire', () => {
     });
 
     for (const [key, path, payload] of [
-      ['ac', '/acs', { text: `The title reaches the screen ${stamp}` }],
+      ['ac', '/acs', { title: `The title reaches the screen ${stamp}` }],
       ['dto', '/dtos', { title: `TitleDto${stamp}`, fields: [{ name: 'id', type: 'string', required: true }] }],
       ['ui-view', '/ui-views', { title: `Title View ${stamp}` }],
       ['diagram', '/diagrams', { title: `Title Diagram ${stamp}`, source: DIAGRAM_SOURCE }],
@@ -95,10 +95,16 @@ describe.skipIf(!BASE)('0.2.22 — title on screen, select on the wire', () => {
   });
 
   /**
-   * The derivation, end to end: `ac` is created with `text` alone and the host
-   * fills `title` from it before the slug is computed. That ordering is the most
-   * breakable line in the release — reversed, every create of every type lands
-   * on an empty slug.
+   * Title to slug, end to end.
+   *
+   * This case used to exercise a DERIVATION: `ac` was created with `text` alone
+   * and the host filled `title` from it before computing the slug, and that
+   * ordering was the release's most breakable line — reversed, every create
+   * landed on an empty slug. 0.2.51 removes the derivation by removing the field
+   * it derived from, so what is left to pin is the second half, which is the
+   * half that still has a way to go wrong: the slug is built from `title`, at
+   * create, and matches the criterion it was made from. Types that still derive
+   * their title (`endpoint`, below) keep the ordering half.
    */
   it('[ac:ac-wartosc-title-pochodzi-z-jawnego-wejs] a derived title fills in and seeds the slug', async () => {
     const res = await api(`/api/projects/${projectId}/acs/${made.ac}`);
@@ -110,7 +116,10 @@ describe.skipIf(!BASE)('0.2.22 — title on screen, select on the wire', () => {
   it('[ac:ac-select-jest-legalne-i-znaczy-sam-szki] select narrows a record, and the envelope says what it gave', async () => {
     const wide = await api(`/api/projects/${projectId}/entities/ac/get?slugs=${made.ac}`);
     expect(wide.status).toBe(200);
-    expect(wide.body.results[0].entity.text).toBeDefined();
+    // A declared, non-identity field — `text` played this part until 0.2.51
+    // collapsed it into `title`, and `title` cannot: it is identity, so it
+    // survives the skeleton and proves nothing about width.
+    expect(wide.body.results[0].entity.kind).toBeDefined();
 
     const skeleton = await api(`/api/projects/${projectId}/entities/ac/get?slugs=${made.ac}&select=`);
     expect(skeleton.status).toBe(200);
@@ -118,7 +127,7 @@ describe.skipIf(!BASE)('0.2.22 — title on screen, select on the wire', () => {
     expect(skeleton.body.results[0].entity.slug).toBe(made.ac);
     expect(skeleton.body.results[0].entity.title).toBeDefined();
     // ...and the fields nobody asked for are gone.
-    expect(skeleton.body.results[0].entity.text).toBeUndefined();
+    expect(skeleton.body.results[0].entity.kind).toBeUndefined();
     expect(skeleton.body.selectedFields).toEqual(['slug', 'title', 'tags', 'href']);
     /**
      * `href` is in the SKELETON, which is the width where a chip is rendered.

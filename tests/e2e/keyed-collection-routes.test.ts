@@ -64,7 +64,7 @@ describe.skipIf(!BASE)('keyed-collection read routes — end to end', () => {
     const created = await api(`/api/projects/${projectId}/acs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: `Keyed route smoke ${Date.now()}`, kind: 'requirement', status: 'active' }),
+      body: JSON.stringify({ title: `Keyed route smoke ${Date.now()}`, kind: 'requirement', status: 'active' }),
     });
     expect([200, 201]).toContain(created.status);
     acSlug = created.body.data.slug;
@@ -73,7 +73,7 @@ describe.skipIf(!BASE)('keyed-collection read routes — end to end', () => {
   it('refuses a field that is not a keyed collection with 400, not 500', () => {
     // The whole point: before the error handler learned the discovery
     // catalogue, this was a 500 with the hint discarded.
-    return api(`${collections('ac', acSlug, 'text')}/overview`).then((res) => {
+    return api(`${collections('ac', acSlug, 'title')}/overview`).then((res) => {
       expect(res.status).toBe(400);
       expect(res.body.error.code).toBe('INVALID_ARGUMENT');
       expect(res.body.error.message).toMatch(/not a keyed collection/);

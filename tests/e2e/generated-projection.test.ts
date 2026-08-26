@@ -80,7 +80,7 @@ function payloads(stamp: number) {
     dto: ['/dtos', { title: `SmokeDto${stamp}`, fields: [{ name: 'id', type: 'string', required: true }] }],
     endpoint: ['/endpoints', { method: 'GET', path: `/smoke/${stamp}`, summary: 'projection smoke' }],
     'ui-view': ['/ui-views', { title: `Smoke View ${stamp}`, url: '/smoke/:id', params: [{ name: 'id', in: 'path' }] }],
-    ac: ['/acs', { text: `Projection smoke ${stamp}`, kind: 'requirement', status: 'active' }],
+    ac: ['/acs', { title: `Projection smoke ${stamp}`, kind: 'requirement', status: 'active' }],
     'design-system': [
       '/design-systems',
       {

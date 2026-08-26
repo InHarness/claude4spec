@@ -95,7 +95,7 @@ async function seed(t: TestApp): Promise<void> {
   // No links at all — `linkedDtos: []` must not collapse to undefined.
   await post('/api/endpoints', { method: 'POST', path: '/api/ping', summary: '' });
 
-  const ac = await post('/api/acs', { text: 'the list is ordered', description: 'sorted by name' });
+  const ac = await post('/api/acs', { title: 'the list is ordered' });
   // `verifies` is a value collection of polymorphic refs, and the one array the
   // brief names as needing a stable sort. Written out of order on purpose.
   const verified = await request(t.app)

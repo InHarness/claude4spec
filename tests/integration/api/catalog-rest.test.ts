@@ -104,8 +104,8 @@ describe('GET /api/entities/:type/list and /:type/get', () => {
   let beta: string;
   beforeEach(async () => {
     t = await createTestApp();
-    alpha = (await request(t.app).post('/api/acs').send({ text: 'alpha' }).expect(201)).body.data.slug;
-    beta = (await request(t.app).post('/api/acs').send({ text: 'beta' }).expect(201)).body.data.slug;
+    alpha = (await request(t.app).post('/api/acs').send({ title: 'alpha' }).expect(201)).body.data.slug;
+    beta = (await request(t.app).post('/api/acs').send({ title: 'beta' }).expect(201)).body.data.slug;
   });
   afterEach(() => t.cleanup());
 
@@ -248,7 +248,7 @@ describe('GET /api/tags/list', () => {
   it('still indexes an entity whose file already carries a `list` tag', async () => {
     const created = await request(t.app)
       .post('/api/acs')
-      .send({ text: 'tagged with a reserved slug', tags: ['List'] })
+      .send({ title: 'tagged with a reserved slug', tags: ['List'] })
       .expect(201);
     expect(created.body.data.tags).toContain('list');
   });
@@ -259,7 +259,7 @@ describe('POST /api/_meta/resolve-page', () => {
   let alphaSlug: string;
   beforeEach(async () => {
     t = await createTestApp();
-    alphaSlug = (await request(t.app).post('/api/acs').send({ text: 'alpha' }).expect(201)).body.data.slug;
+    alphaSlug = (await request(t.app).post('/api/acs').send({ title: 'alpha' }).expect(201)).body.data.slug;
   });
   afterEach(() => t.cleanup());
 

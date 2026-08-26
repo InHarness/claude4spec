@@ -135,7 +135,7 @@ describe.skipIf(!BASE)('rename propagation — end to end', () => {
       summary: 'verify smoke',
     });
     const ac = await post(p('/acs'), {
-      text: `Rename verify smoke ${stamp}`,
+      title: `Rename verify smoke ${stamp}`,
       verifies: [{ type: 'endpoint', slug: endpoint.body.data.slug }],
     });
     expect(ac.status).toBeLessThan(400);

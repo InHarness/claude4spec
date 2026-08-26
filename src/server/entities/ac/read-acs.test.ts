@@ -38,13 +38,13 @@ function readerOver(db: ReturnType<typeof createTestDb>): RawEntityReader {
 const insert = (
   db: ReturnType<typeof createTestDb>,
   slug: string,
-  text: string,
+  title: string,
   status: string,
   verifies: unknown,
 ) =>
   db
-    .prepare('INSERT INTO ac (slug, title, text, kind, status, verifies) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(slug, text, text, 'requirement', status, JSON.stringify(verifies));
+    .prepare('INSERT INTO ac (slug, title, kind, status, verifies) VALUES (?, ?, ?, ?, ?)')
+    .run(slug, title, 'requirement', status, JSON.stringify(verifies));
 
 describe('readActiveAcs', () => {
   it('reads the embedded verifies collection off the row', () => {
@@ -61,7 +61,7 @@ describe('readActiveAcs', () => {
         { type: 'endpoint', slug: 'get-users' },
         { type: 'dto', slug: 'user-dto' },
       ]);
-      expect(ac?.text).toBe('the endpoint answers');
+      expect(ac?.title).toBe('the endpoint answers');
       expect(ac?.kind).toBe('requirement');
     } finally {
       db.close();

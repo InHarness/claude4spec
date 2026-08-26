@@ -8,7 +8,7 @@ export const acBackendModule: BackendModule = {
   type: 'ac',
   data: acData,
   slugPattern: acSlugPattern,
-  payloadVersion: 2,
+  payloadVersion: 3,
   // Slug is slugified prose, so two entities that start alike are two entities —
   // suffix rather than refuse. See `slugConflict` on the manifest. `diagram`
   // left this group in 0.2.22: a repeated diagram TITLE is now a hard conflict,

@@ -63,7 +63,7 @@ describe.skipIf(!BASE)('hoisted entity routes — list and detail pages still re
       body: JSON.stringify({ onboardingCompleted: true }),
     });
 
-    await post('acs', { slug: AC_SLUG, text: AC_TEXT });
+    await post('acs', { slug: AC_SLUG, title: AC_TEXT });
     await post('ui-views', { slug: UI_VIEW_SLUG, title: UI_VIEW_NAME });
     await post('design-systems', { slug: DS_SLUG, title: DS_NAME });
 

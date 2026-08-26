@@ -28,6 +28,7 @@ import type { McpServerFactory } from '../../../shared/plugin-host/mcp.js';
 import type { BackendModule, MountContext, PluginMountFn, ProjectPluginHost } from './types.js';
 import type { EntityStore } from '../../services/entity-store.js';
 import { declaresRefs, rewriteRefsForRename } from '../../db/ref-rewrite.js';
+import { RESERVED_TITLE_FIELD, TITLE_MAX_LENGTH } from '../../../shared/plugin-host/data-schema.js';
 
 
 /** Thrown when a contribution is structurally invalid. Caught per-package by the loader. */
@@ -366,6 +367,37 @@ export function lowerEntityContribution(c: EntityContribution): BackendModule {
       : {}),
     systemPrompt: c.systemPrompt,
     backend: backendSlot,
+  };
+}
+
+/**
+ * Fill the host's DEFAULT bound on the reserved `title` where a type declared none.
+ *
+ * 0.2.51 turned `maxLength: 200` from a constant every type had to spell back
+ * into a default a type may narrow or widen. "May" implies "need not", and a
+ * type that says nothing has to end up with a number anyway: the zod shapes in
+ * `crud-schema-gen`, the `constraints` list `describe_entity_type` publishes and
+ * the read-budget gate in `data-schema-validation` all read `maxLength` off the
+ * node, and three consumers each defaulting on their own is three places for the
+ * default to drift.
+ *
+ * So it is resolved ONCE, here, at the registration choke point both origins
+ * share, and everything downstream sees a concrete number whose provenance no
+ * longer matters. Non-destructive: the declaration is copied rather than
+ * mutated, because `data` is a module-level constant a type may also import into
+ * its client bundle, and key order is preserved because it is the generated
+ * table's column order.
+ */
+export function applyReservedTitleDefault(module: BackendModule): BackendModule {
+  const schema = module.data?.schema;
+  const node = schema?.[RESERVED_TITLE_FIELD];
+  if (!schema || !node || node.type !== 'string' || node.maxLength !== undefined) return module;
+  return {
+    ...module,
+    data: {
+      ...module.data,
+      schema: { ...schema, [RESERVED_TITLE_FIELD]: { ...node, maxLength: TITLE_MAX_LENGTH } },
+    },
   };
 }
 

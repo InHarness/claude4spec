@@ -15,6 +15,28 @@ import { AcDetail } from './detail-panel.js';
 import { acRoutes } from './routes.js';
 import { acData, acSlugPattern } from '../../../shared/entities/ac/schema.js';
 
+/**
+ * The ONLY truncation `ac` performs, and it happens here rather than anywhere
+ * near the data.
+ *
+ * Two different shortenings used to be confused with each other. TRANSPORT never
+ * shortens a title: `maxLength: 500` sits far below the read budget, the host
+ * refuses any type that would change that, and no read marks a title truncated.
+ * DISPLAY is a different question with a different answer — a chip sitting
+ * inline in a paragraph, or a row in a sidebar list, has room for a few words,
+ * and since 0.2.51 an AC's title is the whole criterion rather than a label for
+ * it, so "render it as stored" would put a 500-character sentence inside a pill.
+ *
+ * 40 characters is the width at which a criterion is still recognisable and a
+ * chip still reads as a chip. The full text is one hover away, and one click
+ * away on the detail page, where nothing is cut at all.
+ */
+const CHIP_LABEL_CHARS = 40;
+
+function shortLabel(title: string): string {
+  return title.length > CHIP_LABEL_CHARS ? `${title.slice(0, CHIP_LABEL_CHARS).trimEnd()}…` : title;
+}
+
 function AcRow({ entity, active, onOpen }: EntityRowProps<Ac>) {
   const deprecated = entity.status === 'deprecated';
   return (
@@ -34,8 +56,14 @@ function AcRow({ entity, active, onOpen }: EntityRowProps<Ac>) {
     >
       <CheckSquare size={14} style={{ color: 'var(--c-accent)' }} />
       <span className="flex-1 min-w-0">
-        <span className="block text-[13px]" style={{ color: 'var(--c-ink)', fontWeight: 500 }}>
-          {entity.title}
+        {/* Same rule as the chip, deliberately — a row and a chip are the two
+            places a criterion appears as a reference to itself. */}
+        <span
+          className="block text-[13px]"
+          style={{ color: 'var(--c-ink)', fontWeight: 500 }}
+          title={entity.title}
+        >
+          {shortLabel(entity.title)}
         </span>
         <span className="block text-[10.5px] font-mono uppercase tracking-wider" style={{ color: 'var(--c-subtle)' }}>
           {entity.kind}
@@ -86,16 +114,17 @@ function AcChip({ slug, entity, onOpen }: EntityChipProps<Ac>) {
       }}
       onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--c-hair-strong)')}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--c-hair)')}
-      title={entity.text}
+      title={entity.title}
     >
       <CheckSquare size={11} style={{ color: 'var(--c-accent)' }} />
       {/*
-        0.2.22 — no second truncation here. `title` is bounded at 200 characters
-        by the host, so the chip renders it as stored; shortening it again was a
-        per-type guess at a limit the declaration now states once. The full
-        criterion is still one hover away in the `title` attribute.
+        0.2.51 — truncation comes BACK here, for the opposite reason it left.
+        It left in 0.2.22 because `title` was a 200-character label the host
+        bounded, so shortening it again was a per-type guess. It returns because
+        `title` is no longer a label: it is the criterion, up to 500 characters,
+        and a chip is not where a paragraph goes. See `shortLabel`.
       */}
-      <span style={{ color: 'var(--c-ink)' }}>{entity.title}</span>
+      <span style={{ color: 'var(--c-ink)' }}>{shortLabel(entity.title)}</span>
     </button>
   );
 }
@@ -149,6 +178,21 @@ function AcCard({ slug, entity, onOpen }: EntityCardProps<Ac>) {
           <span title="verifies count">· verifies {entity.verifies.length}</span>
         )}
       </div>
+      {/* The card is the one reference-shaped view with room for the whole
+          criterion, so it neither truncates the title nor hides the tags. */}
+      {entity.tags.length > 0 && (
+        <div className="mt-1 flex flex-wrap gap-1">
+          {entity.tags.map((tag) => (
+            <span
+              key={tag}
+              className="font-mono text-[10.5px] px-1.5 py-0.5 rounded"
+              style={{ background: 'var(--c-panel)', color: 'var(--c-muted)' }}
+            >
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
     </button>
   );
 }
@@ -157,10 +201,11 @@ const acFrontendModule: FrontendModule = {
   type: 'ac',
   data: acData,
   slugPattern: acSlugPattern,
-  // Tracks the backend module (src/server/entities/ac/plugin.ts), which went to 2
-  // when `title` was lifted out of `text`. Left at 1 here, the two halves of the
-  // same type disagreed about their own payload age.
-  payloadVersion: 2,
+  // Tracks the backend module (src/server/entities/ac/plugin.ts): 2 when `title`
+  // was lifted out of `text`, 3 when `text` and `description` were collapsed
+  // back INTO it. Left behind here, the two halves of the same type would
+  // disagree about their own payload age.
+  payloadVersion: 3,
   label: 'Acceptance Criterion',
   labelPlural: 'Acceptance Criteria',
   displayOrder: 50,
