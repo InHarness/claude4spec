@@ -1105,6 +1105,46 @@ describe('runAgentTurn — replay buffer byte budget', () => {
     expect(toolResults[0].truncated).toBe(true);
     expect(toolResults[toolResults.length - 1].truncated).toBeUndefined();
   });
+
+  /**
+   * Degrading the replay buffer must never reach into what gets PERSISTED.
+   *
+   * The whole design rests on "the full content stays recoverable from
+   * `chat_message` after the turn". `emit` runs before the persistence switch
+   * and degradation mutates in place, so buffering the live object would let a
+   * budget overflow blank the very row that makes the degradation safe — the
+   * cap would quietly destroy the copy it promises to fall back on.
+   */
+  it('never lets replay degradation blank the persisted tool_result row', async () => {
+    // A SINGLE result larger than the whole budget is the case that bites:
+    // degrading every older entry still leaves the buffer over, so the sweep
+    // reaches the newest entry — the one the persistence switch has not read
+    // yet. Five 1MB results do NOT reproduce it: degrading the first is enough
+    // to get back under, so the newest is never touched.
+    const payload = 'y'.repeat(5 * 1024 * 1024);
+    hoisted.events = [
+      { type: 'tool_result', toolUseId: 'tu-1', toolName: 'Read', summary: payload, isSubagent: false },
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps } = makeDeps();
+
+    await runAgentTurn(deps, makeInput());
+
+    // `messages` drops `content`; the row store keeps it, and content is the
+    // whole point here.
+    const stored = (
+      deps.chatService as unknown as { getMessages: () => Array<{ role: string; content: string }> }
+    ).getMessages();
+    const rows = stored.filter((m) => m.role === 'tool_result');
+    expect(rows).toHaveLength(1);
+    // Every persisted row still carries its full body, however hard the replay
+    // buffer had to degrade to stay under budget.
+    for (const row of rows) {
+      const parsed = JSON.parse(row.content) as { summary?: string };
+      expect(parsed.summary).toBeTruthy();
+      expect(parsed.summary).toHaveLength(payload.length);
+    }
+  });
 });
 
 /**

@@ -453,8 +453,20 @@ export async function runAgentTurn(
   };
 
   const pushToReplay = (event: TurnEvent) => {
-    replay.events.push(event);
-    replay.bytes += sizeOf(event);
+    /**
+     * `tool_result` is buffered as a COPY, and that is load-bearing.
+     *
+     * `emit` runs BEFORE the persistence switch, so the object handed here is
+     * the same one `case 'tool_result'` is about to read `summary` off in order
+     * to write the `chat_message` row. Degradation mutates in place, and when a
+     * single result is itself bigger than the whole budget the sweep runs out of
+     * older entries and degrades the newest — this very event. Buffering the
+     * original would then let the replay cap silently empty the DB row,
+     * destroying exactly the full copy that makes degradation safe to do at all.
+     */
+    const buffered = event.type === 'tool_result' ? ({ ...event } as TurnEvent) : event;
+    replay.events.push(buffered);
+    replay.bytes += sizeOf(buffered);
     if (replay.bytes <= REPLAY_BUDGET_BYTES) return;
     degradeOldestToolResults();
     // Still over after degrading everything degradable — the overflow is text,
