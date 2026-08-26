@@ -133,7 +133,14 @@ describe.skipIf(!BASE)('background-task detail projection', () => {
       [project.id, threadId],
     );
     await page.reload({ waitUntil: 'networkidle' });
-    await page.waitForTimeout(1500);
+    // Wait for the overlay to actually hydrate rather than sleeping a fixed
+    // 1.5s — on a slow container the sleep expires before the mount and the
+    // assertions below fail for a reason that has nothing to do with them.
+    await page.waitForFunction(
+      (title) => document.body.innerText.includes(title),
+      'background-render probe',
+      { timeout: 20_000 },
+    );
 
     const shot = `${process.env.TMPDIR ?? '/tmp'}/c4s-e2e-background-task-projection.png`;
     await page.screenshot({ path: shot });
@@ -146,8 +153,10 @@ describe.skipIf(!BASE)('background-task detail projection', () => {
     expect(bodyText, `screenshot: ${shot}`).toContain('background-render probe');
     // No task was backgrounded, so the panel must not appear at all. This is the
     // assertion that would catch a reconstruction that renders a stray block for
-    // an empty collection.
-    expect(bodyText).not.toContain('background ·');
+    // an empty collection. Case-INSENSITIVE deliberately: the panel header sits
+    // under Tailwind's `uppercase`, and `innerText` applies text-transform, so it
+    // reaches us as `BACKGROUND · SHELL` — a literal match here never fails.
+    expect(bodyText.toLowerCase()).not.toContain('background \u00b7');
 
     await page.close();
   }, 60_000);

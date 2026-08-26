@@ -389,8 +389,11 @@ describe('GET /threads — detail-only projection of task collections (0.2.52)',
     const t = chat.createThread('t');
     chat.startBackgroundTask(t.id, 'bg1', 'shell', 'npm run build');
     chat.startBackgroundTask(t.id, 'bg2', 'monitor', 'watch');
+    // Backdate the SECOND-inserted row: created_at order must differ from
+    // insertion order, or an unsorted projection passes this case unchanged
+    // (SQLite hands back rowid order when no ORDER BY applies).
     db.prepare(
-      `UPDATE chat_background_task SET created_at = datetime('now', '+1 hour')
+      `UPDATE chat_background_task SET created_at = datetime('now', '-1 hour')
         WHERE thread_id = ? AND task_id = 'bg2'`,
     ).run(t.id);
     chat.completeBackgroundTask(t.id, 'bg1', 'shell', 'exited 0', '/tmp/bg1.log', 'built');
@@ -399,6 +402,7 @@ describe('GET /threads — detail-only projection of task collections (0.2.52)',
 
     expect(res.status).toBe(200);
     expect(res.body.data.backgroundTasks).toEqual([
+      expect.objectContaining({ taskId: 'bg2', taskType: 'monitor', status: 'running' }),
       expect.objectContaining({
         taskId: 'bg1',
         taskType: 'shell',
@@ -407,7 +411,6 @@ describe('GET /threads — detail-only projection of task collections (0.2.52)',
         outputFile: '/tmp/bg1.log',
         summary: 'built',
       }),
-      expect.objectContaining({ taskId: 'bg2', taskType: 'monitor', status: 'running' }),
     ]);
     expect(res.body.data.subagentTasks).toEqual([]);
   });

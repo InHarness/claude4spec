@@ -57,6 +57,26 @@ describe('ChatService — chat_background_task persistence', () => {
     });
   });
 
+  it('re-arms a reused taskId that a previous turn left settled', () => {
+    const t = chat.createThread('t');
+    chat.startBackgroundTask(t.id, 'bash_1', 'shell', 'old build');
+    chat.updateBackgroundTaskProgress(t.id, 'bash_1', 'shell', null, null, '/tmp/old.log');
+    chat.finalizeRunningBackgroundTasks(t.id);
+    expect(row(t.id, 'bash_1')).toMatchObject({ status: 'abandoned' });
+
+    // Engine task ids are session-scoped and restart, so the same id comes back
+    // for a genuinely new task. The row must read as live again, carrying none
+    // of the previous task's outcome.
+    chat.startBackgroundTask(t.id, 'bash_1', 'shell', 'new build');
+
+    expect(row(t.id, 'bash_1')).toMatchObject({
+      description: 'new build',
+      status: 'running',
+      output_file: null,
+      summary: null,
+    });
+  });
+
   it('keeps prior values for the fields a progress event omits (COALESCE)', () => {
     const t = chat.createThread('t');
     chat.startBackgroundTask(t.id, 'bg1', 'shell', 'npm run build');
@@ -97,13 +117,16 @@ describe('ChatService — chat_background_task persistence', () => {
     chat.startBackgroundTask(a.id, 'bg2', 'monitor', 'second');
     chat.startBackgroundTask(b.id, 'other', 'workflow', 'elsewhere');
     // Same-second inserts: force a distinct ordering key rather than relying on
-    // `datetime('now')`, whose resolution is one second.
+    // `datetime('now')`, whose resolution is one second. Backdated, not
+    // post-dated, so created_at order is the REVERSE of insertion order — with a
+    // `+1 hour` bump the two coincide and dropping the ORDER BY entirely would
+    // still pass, since SQLite hands back rowid order.
     db.prepare(
-      `UPDATE chat_background_task SET created_at = datetime('now', '+1 hour')
+      `UPDATE chat_background_task SET created_at = datetime('now', '-1 hour')
         WHERE thread_id = ? AND task_id = 'bg2'`,
     ).run(a.id);
 
-    expect(chat.listBackgroundTasks(a.id).map((t) => t.taskId)).toEqual(['bg1', 'bg2']);
+    expect(chat.listBackgroundTasks(a.id).map((t) => t.taskId)).toEqual(['bg2', 'bg1']);
     expect(chat.listBackgroundTasks(b.id).map((t) => t.taskId)).toEqual(['other']);
   });
 
@@ -163,6 +186,10 @@ describe('ChatService — chat_background_task persistence', () => {
       const msg = chat.addMessage(t.id, 'assistant', JSON.stringify({ text: 'hi' }));
       db.prepare(`UPDATE chat_message SET status = 'streaming' WHERE id = ?`).run(msg.id);
       chat.startBackgroundTask(t.id, 'bg1', 'shell', 'x');
+      // Both rows exist BEFORE either sweep runs. Creating bg2 afterwards would
+      // make the assertion below tautological — a fresh row is 'running' whatever
+      // the message finalizer did.
+      chat.startBackgroundTask(t.id, 'bg2', 'shell', 'y');
 
       chat.finalizeRunningBackgroundTasks(t.id);
       const after = db.prepare(`SELECT status FROM chat_message WHERE id = ?`).get(msg.id) as {
@@ -170,9 +197,12 @@ describe('ChatService — chat_background_task persistence', () => {
       };
       expect(after.status).toBe('streaming');
 
+      // bg2 was abandoned by the per-thread sweep above, so it cannot serve as
+      // the witness here; re-open it and let the message finalizer run past it.
+      chat.startBackgroundTask(t.id, 'bg2', 'shell', 'y');
+      expect(row(t.id, 'bg2')).toMatchObject({ status: 'running' });
       chat.finalizeAllStreamingRows();
       // ...and the message finalizer likewise does not reach into this table.
-      chat.startBackgroundTask(t.id, 'bg2', 'shell', 'y');
       expect(row(t.id, 'bg2')).toMatchObject({ status: 'running' });
     });
   });
