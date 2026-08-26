@@ -381,7 +381,7 @@ export async function runAgentTurn(
     'subagent_started',
     'subagent_progress',
     'subagent_completed',
-    // M17: engine-backgrounded tasks (shell/monitor/workflow) — a reload or
+    // M05: engine-backgrounded tasks (shell/monitor/workflow) — a reload or
     // late-joining client rebuilds the background-task panel from history.
     'background_task_started',
     'background_task_progress',
@@ -1072,7 +1072,7 @@ export async function runAgentTurn(
      *
      * Nothing is disposed on the way out. The SDK closes the transports it opened,
      * an `McpServer` holds no OS resource, and closing a set ourselves would abort
-     * handlers of a query that may still be live (the M17 held-result path, a
+     * handlers of a query that may still be live (the M05 held-result path, a
      * transagent child running inside a blocked parent handler) — i.e. reproduce
      * this very bug from the other side.
      */
@@ -1390,7 +1390,7 @@ export async function runAgentTurn(
             timestamp: new Date(event.timestamp).toISOString(),
           });
         } else if (event.type === 'result' && (event.backgroundTasks?.length ?? 0) > 0) {
-          // M17 HELD RESULT — NOT end-of-run. The engine holds the session open
+          // M05 HELD RESULT — NOT end-of-run. The engine holds the session open
           // while background work (a `run_in_background` shell, a Monitor, a
           // workflow) is in flight, wakes the model when it settles, and emits a
           // further `result` (empty `backgroundTasks`) before the generator is
@@ -1578,7 +1578,7 @@ export async function runAgentTurn(
               event.summary ?? null,
             );
             break;
-          // M17: engine-backgrounded tasks. Persist (emission is automatic via the
+          // M05: engine-backgrounded tasks. Persist (emission is automatic via the
           // `emit` above); the client renders them in a distinct panel — a
           // backgrounded shell/monitor/workflow is NOT a subagent. `taskType` is
           // stored by name so a future SDK kind is observable, not dropped.

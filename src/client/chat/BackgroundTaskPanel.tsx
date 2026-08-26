@@ -2,7 +2,7 @@ import { Terminal, Activity, Workflow, Cog, FileText } from 'lucide-react';
 import type { BackgroundTaskEntry } from './useChat.js';
 
 /**
- * M17: an engine-backgrounded task (a `run_in_background` shell, a Monitor loop,
+ * M05: an engine-backgrounded task (a `run_in_background` shell, a Monitor loop,
  * a workflow run) surfaced as a compact status row. Deliberately NOT the
  * subagent panel (blue, expandable agent transcript) nor the transagent panel
  * (accent-bordered nested child) — a backgrounded process is neither a spawned

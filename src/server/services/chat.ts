@@ -486,7 +486,7 @@ export class ChatService {
     return rows.map((r) => this.hydrateSubagentTask(r));
   }
 
-  // --- M17: engine-backgrounded tasks (background_task_* family). Sibling to the
+  // --- M05: engine-backgrounded tasks (background_task_* family). Sibling to the
   // subagent methods above; a backgrounded shell/monitor/workflow is NOT a subagent.
 
   startBackgroundTask(

@@ -690,7 +690,7 @@ export interface ChatSubagentTask {
 }
 
 /**
- * M17: an engine-backgrounded task (a `Bash run_in_background`, a `Monitor`
+ * M05: an engine-backgrounded task (a `Bash run_in_background`, a `Monitor`
  * loop, a `workflow`) surfaced by agent-adapters 0.9.1's `background_task_*`
  * event family. **Never a subagent** — real spawned helper agents keep the
  * `subagent_*` family / {@link ChatSubagentTask}. `taskType` is passed through

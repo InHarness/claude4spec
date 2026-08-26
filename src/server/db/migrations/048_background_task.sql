@@ -1,4 +1,4 @@
--- M17: engine-backgrounded task persistence (reconstruction po reload).
+-- M05: engine-backgrounded task persistence (reconstruction po reload).
 -- Sibling table to chat_subagent_task — a backgrounded shell/monitor/workflow
 -- is NOT a subagent (agent-adapters 0.9.1 background_task_* event family).
 
