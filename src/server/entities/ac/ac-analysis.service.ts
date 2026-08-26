@@ -70,7 +70,7 @@ export interface AcAnalysisDeps {
 /**
  * L2 service for the LLM-based AC semantic audit (brief 0.1.45 §1). Owns the
  * logic that used to live inline in the `ac-tools` MCP server: for each active
- * AC it loads `text` + `verifies[]` + the linked entity snapshots, builds a
+ * AC it loads `title` + `verifies[]` + the linked entity snapshots, builds a
  * single prompt, and calls the `claude-code` adapter. Read-only, on-demand,
  * non-deterministic.
  *
@@ -115,7 +115,7 @@ export class AcAnalysisService {
     const skipped_reasons: AcSkippedEntry[] = [];
     const dossier: Array<{
       slug: string;
-      text: string;
+      title: string;
       kind: string;
       linked: Array<Record<string, unknown>>;
     }> = [];
@@ -157,7 +157,7 @@ export class AcAnalysisService {
         skipped_reasons.push({ ac_slug: ac.slug, reason: 'all_verifies_broken' });
         continue;
       }
-      dossier.push({ slug: ac.slug, text: ac.text, kind: ac.kind, linked });
+      dossier.push({ slug: ac.slug, title: ac.title, kind: ac.kind, linked });
     }
 
     if (dossier.length === 0) {
@@ -262,7 +262,7 @@ function buildPrompt(dossier: unknown): string {
   return [
     'You are a specification consistency auditor.',
     '',
-    'For each Acceptance Criterion (AC) below, decide whether its `text` is semantically consistent with the linked entities (their fields, params, shape).',
+    'For each Acceptance Criterion (AC) below, decide whether its `title` — which carries the criterion itself, not a label for it — is semantically consistent with the linked entities (their fields, params, shape).',
     '',
     'Return ONLY a JSON object on a single line, no prose, matching:',
     '{"issues":[{"ac_slug":string,"issue_type":string,"details":string,"affected_entity"?:{"type":string,"slug":string},"confidence":number,"suggested_correction"?:string}]}',

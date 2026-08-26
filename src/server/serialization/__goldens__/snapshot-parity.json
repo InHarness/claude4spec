@@ -1,12 +1,10 @@
 {
-  "ac.payloadVersion": 2,
+  "ac.payloadVersion": 3,
   "ac/ac-the-list-is-ordered": {
-    "description": "sorted by name",
     "kind": "requirement",
     "slug": "ac-the-list-is-ordered",
     "status": "active",
     "tags": [],
-    "text": "the list is ordered",
     "title": "the list is ordered",
     "verifies": [
       {

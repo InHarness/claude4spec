@@ -108,6 +108,12 @@ describe('upgrading a pre-0.2.2 database', () => {
        * shape by an ADD COLUMN at boot rather than by a rebuild that would
        * discard the rows this test just checked are intact.
        *
+       * 0.2.51 — `ac.text` and `ac.description` join `dto.name` on the dropped
+       * side. They are the columns the criterion USED to live in before it moved
+       * into `title`, and this is the one place the drop is visible as an
+       * upgrade rather than as a fresh install's shape: a legacy database that
+       * still holds them reaches the new shape here.
+       *
        * 0.2.27 — and they LOSE the columns their type no longer declares. This
        * reverses the earlier rule that a removed field is "resolved by the
        * rebuild, never by dropping a column underneath a running install",
@@ -118,7 +124,14 @@ describe('upgrading a pre-0.2.2 database', () => {
        * history rather than of the schema.
        */
       expect(result.alteredColumns).toEqual(
-        expect.arrayContaining(['endpoint.title', 'dto.title', 'ac.title', 'dto.name']),
+        expect.arrayContaining([
+          'endpoint.title',
+          'dto.title',
+          'ac.title',
+          'dto.name',
+          'ac.text',
+          'ac.description',
+        ]),
       );
 
       // 3. The retired ledger is gone, dropped by the host chain rather than
@@ -142,8 +155,12 @@ describe('upgrading a pre-0.2.2 database', () => {
       expect(
         db.prepare('SELECT status_code FROM endpoint_dto WHERE endpoint_slug = ?').get('get-users'),
       ).toEqual({ status_code: 200 });
-      expect(db.prepare('SELECT text FROM ac WHERE slug = ?').get('ac-one')).toEqual({
-        text: 'something holds',
+      // `ac.text` is one of the columns this upgrade DROPS, so the surviving
+      // fact is the row's identity, not its old prose: `title` is added empty
+      // here and refilled from the entity file by the `indexAll()` that follows
+      // a real boot.
+      expect(db.prepare('SELECT slug FROM ac WHERE slug = ?').get('ac-one')).toEqual({
+        slug: 'ac-one',
       });
     } finally {
       db.close();

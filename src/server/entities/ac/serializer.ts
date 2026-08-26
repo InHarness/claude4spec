@@ -7,12 +7,11 @@ import type { AcKind, AcStatus, AcVerifyRef } from '../../../shared/entities.js'
 
 export interface AcSnapshot {
   slug: string;
+  /** The criterion. 0.2.51 collapsed `text` and `description` into this one field. */
   title: string;
-  text: string;
   kind: AcKind;
   status: AcStatus;
   verifies: AcVerifyRef[];
-  description: string | null;
   tags: string[];
 }
 

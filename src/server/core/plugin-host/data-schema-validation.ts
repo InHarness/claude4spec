@@ -60,6 +60,7 @@ import {
 } from '../../../shared/plugin-host/slug-pattern.js';
 import { PluginManifestError } from './manifest-adapter.js';
 import { SQL_RESERVED_WORDS } from '../../../shared/plugin-host/sql-reserved-words.js';
+import { DEFAULT_BUDGET_CHARS } from '../../discovery/budget.js';
 import {
   VALIDATOR_KINDS,
   checkValidator,
@@ -696,31 +697,91 @@ function checkReservedTitle(type: string, schema: DataDeclaration['schema']): vo
     );
   }
   /**
-   * The host sets the FLOOR for `title`, not the ceiling.
+   * The host sets the DEFAULT for `title`'s length, not a constant.
    *
-   * `type: 'string'`, `required: true` and `maxLength: 200` are the host's and
-   * nobody may drop or widen them — that is what makes "a title never needs
-   * shortening at read time" a fact rather than a hope. What a type MAY do is
-   * narrow further from the value-constraint dictionary: `database-table` binds
+   * `type: 'string'` and `required: true` are the host's and nobody may drop
+   * them — every renderer, every slug pattern and every identity lookup reads
+   * this field, so a type that made it optional would make them all conditional.
+   *
+   * `maxLength` is different, and 0.2.51 inverts its axis. It used to be a host
+   * CONSTANT: a type had to spell `200` back verbatim, and narrowing was only
+   * expressible through the value-constraint dictionary — `database-table` binds
    * its title to `kind: 'sql-identifier'` because for that type the instance's
-   * name and its technical identifier are one thing. Narrowing only; a type
-   * cannot relax what the host fixed.
+   * name and its technical identifier are one thing. Now the number itself is a
+   * DEFAULT a type may move in EITHER direction: a type that declares nothing
+   * gets `TITLE_MAX_LENGTH`, a type that declares its own bound gets that one,
+   * narrower or wider. `ac` is the case that forced it — after `text` and
+   * `description` were collapsed into `title`, the criterion's own words ARE the
+   * instance's name, and 200 characters is not a label bound there but a content
+   * bound, so it declares 500.
+   *
+   * THE TWO DIRECTIONS DO NOT COST THE SAME, and that asymmetry is the type's
+   * problem rather than this gate's. Widening is additive — no value already on
+   * disk stops being legal, so nothing is required of the type. NARROWING
+   * invalidates data already written and must be carried by a `payloadUpgrades`
+   * step, which is where the type decides between truncating and refusing.
+   *
+   * What this gate keeps is STATIC DECIDABILITY: the bound is a number in the
+   * manifest, so `checkTitleFitsReadBudget` below can settle "a title never
+   * needs shortening at read time" from the declaration alone, without a value
+   * in hand. That guarantee is now CONDITIONAL on the number, not on its
+   * provenance.
    *
    * `computedDefault` is likewise optional rather than expected. A type with
-   * nothing to derive a title FROM declares none, and a write without a title
-   * then fails input validation — which is the honest outcome, not a gap.
+   * nothing to derive a title FROM declares none — `ac` no longer has a second
+   * field to derive from, and `database-table` never did — and a write without a
+   * title then fails input validation, which is the honest outcome, not a gap.
    */
-  if (node.type !== 'string' || node.required !== true || node.maxLength !== TITLE_MAX_LENGTH) {
+  if (node.type !== 'string' || node.required !== true) {
     fail(
       type,
       `the reserved \`${RESERVED_TITLE_FIELD}\` field must declare at least ` +
-        `\`{ type: 'string', required: true, maxLength: ${TITLE_MAX_LENGTH} }\` — the bound is the ` +
-        `HOST's, which is what makes "a title never needs shortening at read time" a fact. A type ` +
-        `may add NARROWING constraints beside it, but may not drop or widen these`,
+        `\`{ type: 'string', required: true }\` — a type may not drop or relax either. ` +
+        `\`maxLength\` is the HOST's DEFAULT (${TITLE_MAX_LENGTH}) rather than its constant since ` +
+        `0.2.51: declare your own to narrow OR widen it, and remember that narrowing invalidates ` +
+        `values already on disk and needs a \`payloadUpgrades\` step`,
     );
   }
   if (node.contentBearing) {
     fail(type, `the reserved \`${RESERVED_TITLE_FIELD}\` field may not be contentBearing — it is the label`);
+  }
+}
+
+/**
+ * The condition under which "a title never needs shortening at read time" holds.
+ *
+ * It used to be unconditional, and it was unconditional for a reason nobody had
+ * to state: the bound was the host's own `200`, and 200 characters fit inside
+ * any response this server will ever assemble. 0.2.51 lets a type move that
+ * number, so the guarantee stops being free and becomes a THEOREM WITH A
+ * HYPOTHESIS — one this gate discharges once, at registration.
+ *
+ * The hypothesis: the declared bound sits below the read budget
+ * (`DEFAULT_BUDGET_CHARS`, today 120_000 characters of serialized JSON). While
+ * it holds, `renderInlineMention` can take `title` as the chip's label verbatim
+ * and no reader has to mark it `truncated`; the only thing standing between a
+ * caller and an arbitrarily wide response is the budget's own paging, which is
+ * where that protection belonged all along.
+ *
+ * Checked STATICALLY, from the manifest, with no value in hand — which is the
+ * whole point of insisting the bound be a number rather than a policy. Today's
+ * widest declaration is `ac` at 500, so the margin is three orders of magnitude;
+ * the gate exists for the declaration that would erase it, not for that one.
+ */
+function checkTitleFitsReadBudget(type: string, schema: DataDeclaration['schema']): void {
+  const node = schema[RESERVED_TITLE_FIELD];
+  // `checkReservedTitle` has already refused anything but a string here; this
+  // reads the bound off whatever survived that, defaulting where none is set.
+  const declared = (node as { maxLength?: number } | undefined)?.maxLength ?? TITLE_MAX_LENGTH;
+  if (declared >= DEFAULT_BUDGET_CHARS) {
+    fail(
+      type,
+      `the reserved \`${RESERVED_TITLE_FIELD}\` field declares maxLength ${declared}, which is not ` +
+        `below the read budget (${DEFAULT_BUDGET_CHARS} characters). A title that cannot be promised ` +
+        `to survive a read intact is not a label: every chip and every identity row would have to ` +
+        `carry a \`truncated\` flag. Narrow the bound, or make the wide value a contentBearing ` +
+        `field of its own`,
+    );
   }
 }
 
@@ -929,6 +990,7 @@ export function validateDataDeclaration(
   }
   if (!Object.keys(data.schema).length) fail(type, 'the schema declares no fields');
   checkReservedTitle(type, data.schema);
+  checkTitleFitsReadBudget(type, data.schema);
   if (!slugPattern || !Array.isArray(slugPattern) || !slugPattern.length) {
     fail(type, 'the `slugPattern` slot is required in Host API 2.0.0');
   }

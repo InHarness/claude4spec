@@ -5,6 +5,16 @@ export function renderInlineMention(data: unknown): string {
    * 0.2.22 — `title` is the label, on every type, with no per-type view left to
    * supply one. `label` stays ahead of `slug` in the chain for the SECTION chip,
    * which is not an entity and carries its own.
+   *
+   * TAKEN VERBATIM, never shortened, and 0.2.51 makes that conditional rather
+   * than automatic. It used to follow from the host fixing `maxLength: 200` on
+   * every title; now a type may widen that bound — `ac` declares 500 — so the
+   * thing the chip relies on is not the number but the gate:
+   * `checkTitleFitsReadBudget` refuses at registration any type whose declared
+   * bound reaches `DEFAULT_BUDGET_CHARS`. While no such type can register, a
+   * label always fits the response it rides in and no chip has to carry a
+   * `truncated` flag. Shortening for DISPLAY (the ~40 characters `ac`'s chip and
+   * row show) is a renderer's decision and belongs in the client, not here.
    */
   const label =
     pickString(obj, 'title') ?? pickString(obj, 'label') ?? pickString(obj, 'slug') ?? 'unknown';

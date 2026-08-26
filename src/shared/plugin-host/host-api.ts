@@ -494,6 +494,37 @@ export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] =
       'mounted, post-gate) but stays on the surface, because five other ' +
       'subsystems read it as a declaration of the type\'s custom operations.',
   },
+  {
+    release: '0.2.51',
+    slot: 'reserved `title` — `maxLength` is a default, not a constant',
+    kind: 'behaviour-changed',
+    summary:
+      'The host\'s `maxLength: 200` on the reserved title stops being a number ' +
+      'every type had to spell back verbatim and becomes the value a type gets ' +
+      'when it declares none. A type that declares its own bound now gets it in ' +
+      'EITHER direction — narrower or wider — where 0.2.27 admitted narrowing ' +
+      'only, and only through the value-constraint dictionary rather than the ' +
+      'number itself. `ac` is what forced it: with `text` and `description` ' +
+      'collapsed into `title`, the criterion\'s own words ARE the instance\'s ' +
+      'name, and 200 characters is a label bound applied to content. It declares ' +
+      '500. ADDITIVE, INSIDE THE BASELINE, NO BUMP: every `data.schema` written ' +
+      'before this release stays legal and means exactly what it meant, because ' +
+      'they all declare 200 explicitly and 200 is still what 200 means. The new ' +
+      'freedom is optional. Two things the inversion does NOT relax: `type: ' +
+      '"string"` and `required: true` are still the host\'s and still ' +
+      'unmovable, and the bound must stay below the read budget ' +
+      '(`DEFAULT_BUDGET_CHARS`) — which is what turns "a title never needs ' +
+      'shortening at read time" from a free consequence of 200 into a gate ' +
+      'checked once at registration, statically, from the manifest. The two ' +
+      'directions also do not cost the same: widening is additive and needs ' +
+      'nothing, while narrowing invalidates values already on disk and must be ' +
+      'carried by a `payloadUpgrades` step, which is where the type chooses ' +
+      'between truncating and refusing. NOT A HOST API CHANGE, and worth saying ' +
+      'because both numbers live in the same manifest: RETIRING A FIELD from a ' +
+      'type is versioned by that type\'s `payloadVersion`, never by the surface ' +
+      'version — `ac` dropping `text` and `description` in this same release ' +
+      'moves its payload 2 → 3 and leaves `hostApiVersion` untouched.',
+  },
 ];
 
 /** First numeric component of a semver RANGE (e.g. "^1.4.0" → 1, ">=2.5.0" → 2). */

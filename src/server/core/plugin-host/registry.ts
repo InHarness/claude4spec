@@ -33,6 +33,7 @@ import {
   validateSkillContribution,
   validateWritingStyle,
   assertSerializationContribution,
+  applyReservedTitleDefault,
 } from './manifest-adapter.js';
 import { attachComposition } from './composition-validation.js';
 
@@ -80,7 +81,11 @@ export class PluginRegistryImpl implements PluginRegistry {
       module as unknown as Record<string, unknown>,
       module.payloadVersion,
     );
-    this.modules.set(module.type, attachComposition(synthesizeMount(module), this.modules.values()));
+    // 0.2.51 — resolve the host's default `title` bound before anything reads
+    // the declaration, so a type that widened it, a type that narrowed it and a
+    // type that said nothing are all one shape from here on.
+    const resolved = applyReservedTitleDefault(module);
+    this.modules.set(resolved.type, attachComposition(synthesizeMount(resolved), this.modules.values()));
     // 0.2.15 — nothing is forwarded to the M19 reference registry from here any
     // more. An entity module no longer owns an XML tag; it is embedded through
     // the generic tags, dispatched on `type=`.
@@ -121,6 +126,7 @@ export class PluginRegistryImpl implements PluginRegistry {
     const batch: BackendModule[] = [];
     const entityModules = (manifest.contributes.entities ?? [])
       .map(lowerEntityContribution)
+      .map(applyReservedTitleDefault)
       .map(synthesizeMount)
       .map((m) => {
         const validated = attachComposition(m, [...this.modules.values(), ...batch]);

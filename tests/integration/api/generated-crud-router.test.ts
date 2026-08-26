@@ -370,9 +370,9 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
    * "everything" over HTTP and "nothing" over MCP.
    */
   it('applies ac\'s declared default, and lets ?status=all lift it', async () => {
-    const active = await request(t.app).post('/api/acs').send({ text: 'still true' });
+    const active = await request(t.app).post('/api/acs').send({ title: 'still true' });
     expect(active.status).toBe(201);
-    const gone = await request(t.app).post('/api/acs').send({ text: 'no longer true' });
+    const gone = await request(t.app).post('/api/acs').send({ title: 'no longer true' });
     await request(t.app).patch(`/api/acs/${gone.body.data.slug}`).send({ status: 'deprecated' });
 
     const def = await request(t.app).get('/api/acs');
@@ -383,6 +383,60 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
 
     const deprecated = await request(t.app).get('/api/acs?status=deprecated');
     expect(deprecated.body.data.map((a: { slug: string }) => a.slug)).toEqual([gone.body.data.slug]);
+  });
+
+  /**
+   * 0.2.51 — `ac.title` has no `computedDefault` any more, so there is no
+   * fallback left when the author supplies none.
+   *
+   * It USED to be derivable: `title` was `truncate(text, 200)`, so a create
+   * carrying only `text` produced a labelled AC. `text` is gone and the
+   * criterion lives in `title`, which means a body without it is not an
+   * under-specified create the host can complete — it is an AC with no content.
+   */
+  it('refuses a create with no title, where the derivation used to cover for it', async () => {
+    const res = await request(t.app).post('/api/acs').send({ kind: 'edge-case' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+  });
+
+  it('refuses a blank title too — it is the slug source, and `ac-` is not a slug', async () => {
+    const res = await request(t.app).post('/api/acs').send({ title: '   ' });
+    expect(res.status).toBe(400);
+  });
+
+  it('refuses a title past the type\'s own 500, rather than storing a cut criterion', async () => {
+    const res = await request(t.app).post('/api/acs').send({ title: 'x'.repeat(501) });
+    expect(res.status).toBe(400);
+    // 500 exactly is fine: the bound the type declares, not one below it.
+    const ok = await request(t.app).post('/api/acs').send({ title: 'y'.repeat(500) });
+    expect(ok.status).toBe(201);
+  });
+
+  /**
+   * The rule that makes a 500-character title survivable: editing it is not a
+   * rename.
+   *
+   * A slug is derived once, at create, and never recomputed — so a criterion can
+   * be reworded, tightened or corrected without every markdown reference to it
+   * going stale. Renaming stays explicit, through `newSlug`, which is also the
+   * only thing that triggers reference propagation.
+   */
+  it('editing an ac title does NOT re-derive the slug', async () => {
+    const created = await request(t.app).post('/api/acs').send({ title: 'the list is ordered' });
+    const slug = created.body.data.slug as string;
+    expect(slug).toBe('ac-the-list-is-ordered');
+
+    const patched = await request(t.app)
+      .patch(`/api/acs/${slug}`)
+      .send({ title: 'the list is ordered by creation time, oldest first' });
+    expect(patched.status).toBe(200);
+    expect(patched.body.data.slug).toBe(slug);
+    expect(patched.body.data.title).toBe('the list is ordered by creation time, oldest first');
+
+    // And the old slug is still the one that answers.
+    const read = await request(t.app).get(`/api/acs/${slug}`);
+    expect(read.status).toBe(200);
   });
 
   /**

@@ -73,7 +73,7 @@ export function AcsList({ search, tagFilter, onSearchChange, onTagToggle, onSele
         count={acs.length}
         search={search}
         onSearchChange={onSearchChange}
-        searchPlaceholder="Search text, slug, description…"
+        searchPlaceholder="Search title, slug…"
         createLabel="New AC"
         onCreate={handleCreate}
       />
@@ -152,15 +152,27 @@ export function AcsList({ search, tagFilter, onSearchChange, onTagToggle, onSele
               align="start"
               style={{ opacity: deprecated ? 0.65 : 1 }}
             >
+              {/*
+                `title`, which since 0.2.51 is the criterion itself — this row
+                showed `text` before, and the two are now one field.
+
+                NOT the 40-character rule the chip and the sidebar row apply.
+                Those two are references to a criterion appearing somewhere else;
+                this page IS the criteria, and cutting each to a few words would
+                leave nothing to browse. It keeps the one-line clamp it always
+                had, so the column stays scannable without deciding for the
+                reader where the sentence stops being interesting.
+              */}
               <div
-                className="text-[13.5px]"
+                className="text-[13.5px] line-clamp-1"
                 style={{
                   color: 'var(--c-ink)',
                   fontWeight: 500,
                   textDecoration: deprecated ? 'line-through' : undefined,
                 }}
+                title={a.title}
               >
-                {a.text}
+                {a.title}
               </div>
               <div
                 className="mt-1 flex items-center gap-2 text-[10.5px] font-mono uppercase tracking-wider"

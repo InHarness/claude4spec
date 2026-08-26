@@ -19,12 +19,18 @@ import type { AcVerifyRef } from '../../../shared/entities.js';
 
 /**
  * What the two non-CRUD readers need off an AC. Deliberately narrower than the
- * old `Ac` domain type: neither caller reads `description` or the audit stamps,
- * and asking for less is what lets this be a plain reader query.
+ * old `Ac` domain type: neither caller reads the audit stamps, and asking for
+ * less is what lets this be a plain reader query.
+ *
+ * 0.2.51 — `text` became `title`. Not a rename at this layer so much as a
+ * collapse one layer down: the type has a single authored prose field now, and
+ * it is the reserved one, so the criterion arrives under the name every generic
+ * reader already uses for an entity's name.
  */
 export interface ActiveAc {
   slug: string;
-  text: string;
+  /** The criterion, whole. */
+  title: string;
   kind: string;
   tags: string[];
   verifies: AcVerifyRef[];
@@ -77,7 +83,7 @@ export function readActiveAcs(reader: RawEntityReader): ActiveAc[] {
     if (!entity) continue;
     acs.push({
       slug,
-      text: typeof entity.data.text === 'string' ? entity.data.text : '',
+      title: typeof entity.data.title === 'string' ? entity.data.title : '',
       kind: typeof entity.data.kind === 'string' ? entity.data.kind : 'requirement',
       tags: entity.tags,
       verifies: verifiesOf(entity),

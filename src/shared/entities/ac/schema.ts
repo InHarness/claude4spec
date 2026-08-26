@@ -12,26 +12,32 @@ import type { SlugPattern } from '../../plugin-host/slug-pattern.js';
 export const acData: DataDeclaration = {
   schema: {
     /**
-     * Derived from `text`, because an AC's name IS its text — asking an author
-     * for both would be asking the same question twice.
+     * The criterion itself. The type's ONE authored text field, and the reserved
+     * `title` slot both at once.
      *
-     * `text` STAYS beside it rather than being replaced: the full criterion is
-     * the thing being asserted and may run well past 200 characters, while a
-     * title is a label. Collapsing them would truncate the criterion itself.
+     * Until 0.2.51 this was a LABEL derived from a separate `text`, on the
+     * argument that the full criterion may run past a title's length and that
+     * collapsing them would truncate the assertion. The argument held; the
+     * conclusion was backwards. What it produced was a type with two authored
+     * prose fields (three, counting `description`) where the second was a
+     * lossy copy of the first — the editor showed a title nobody could edit,
+     * the chip showed 200 characters of a sentence that continued elsewhere,
+     * and search had to be told about all three names.
+     *
+     * So the bound moves instead of the content. `maxLength: 500` is WIDER than
+     * the host's default of 200, which the host now permits, and 500 is not an
+     * estimate of how long criteria get: it is a forcing function. A criterion
+     * that will not fit in 500 characters is, almost always, several criteria
+     * spliced together — and the honest answer to one is to split it, which is
+     * why the migration into this field REFUSES rather than truncates.
+     *
+     * No `computedDefault`: there is nothing left to derive from, so a write
+     * without a title fails input validation outright.
      */
     title: {
       type: 'string',
       required: true,
-      maxLength: 200,
-      computedDefault: [
-        { op: 'raw', field: 'text' },
-        { op: 'truncate', n: 200 },
-      ],
-      description: 'Label. Defaults to the first 200 characters of `text`.',
-    },
-    text: {
-      type: 'string',
-      required: true,
+      maxLength: 500,
       description: 'Observable behavior the AC asserts. One sentence is best.',
     },
     kind: {
@@ -66,7 +72,6 @@ export const acData: DataDeclaration = {
         },
       },
     },
-    description: { type: 'string', clearable: true },
     createdAt: { type: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
     updatedAt: { type: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
   },
@@ -78,10 +83,11 @@ export const acData: DataDeclaration = {
 /**
  * `ac-` + slugify(title) + truncate(40).
  *
- * 0.2.22 moves the source from `text` to `title`. In practice the slug does not
- * change: `title` defaults to the first 200 characters of `text`, and 40
- * characters of slug never reach past that — so an AC created before and after
- * this release from the same text gets the same slug.
+ * 0.2.22 moved the source from `text` to `title`, and 0.2.51 retired `text`
+ * altogether — so the pattern reads the field that now IS the criterion. Neither
+ * step changes a slug: `title` used to be the first 200 characters of `text` and
+ * is now the whole of it, and 40 characters of slug never reached past 200 in
+ * either case.
  *
  * Two older behaviour notes still hold, both affecting only entities created
  * from here on (a slug is computed once, at create, and never recomputed):

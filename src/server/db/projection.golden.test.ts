@@ -32,23 +32,31 @@ import { acData } from '../../shared/entities/ac/schema.js';
 import { diagramData } from '../../shared/entities/diagram/schema.js';
 
 /**
- * The DDL as the deleted `migrations.ts` files wrote it — plus the one column
- * 0.2.22 adds to every table, spelled out rather than silently regenerated.
+ * The DDL as the deleted `migrations.ts` files wrote it, carried forward through
+ * every DECLARED change since — spelled out here rather than silently
+ * regenerated, which is the whole value of the golden.
  *
- * `title` is reserved on every type, so it is a column on every projection. The
- * rest of each table still has to match what the hand-written migration wrote:
- * order, nullability, defaults, indexes.
+ * 0.2.22 added `title`, reserved on every type and therefore a column on every
+ * projection. 0.2.51 removes `ac.text` and `ac.description`, the two fields that
+ * release collapses into `title`. Each such edit has to be made BY HAND, and
+ * that is the point: an unexplained diff here is a schema change nobody
+ * declared, and the only thing standing between it and a silent
+ * `CREATE TABLE IF NOT EXISTS` no-op on an upgraded database is a reviewer
+ * reading this file. Everything not named in a release note still has to match
+ * what the hand-written migration wrote: order, nullability, defaults, indexes.
+ *
+ * A removal here also carries a runtime half the addition did not: existing
+ * databases keep the retired column until `dropRemovedColumns` takes it, which
+ * is exercised further down.
  */
 const RETIRED_DDL: Record<string, string> = {
   ac: `
     CREATE TABLE IF NOT EXISTS ac (
       slug TEXT PRIMARY KEY,
       title TEXT NOT NULL,
-      text TEXT NOT NULL,
       kind TEXT NOT NULL DEFAULT 'requirement',
       status TEXT NOT NULL DEFAULT 'active',
       verifies TEXT NOT NULL DEFAULT '[]',
-      description TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -168,7 +176,7 @@ describe('projection generator — reconciling an existing database', () => {
   it('adds a computedDefault column to a POPULATED table without a non-constant default', () => {
     const db = new Database(':memory:');
     applyProjection(db, MODULES);
-    db.prepare(`INSERT INTO ac (slug, title, text) VALUES ('a', 'something holds', 'something holds')`).run();
+    db.prepare(`INSERT INTO ac (slug, title) VALUES ('a', 'something holds')`).run();
 
     const widened = {
       type: 'ac',
@@ -241,7 +249,7 @@ describe('projection generator — reconciling an existing database', () => {
     db.exec(`UPDATE ac SET gone = 'x'`);
     applyProjection(db, MODULES);
     expect(() =>
-      db.prepare(`INSERT INTO ac (slug, title, text) VALUES ('b', 't', 't')`).run(),
+      db.prepare(`INSERT INTO ac (slug, title) VALUES ('b', 't')`).run(),
     ).not.toThrow();
     db.close();
   });

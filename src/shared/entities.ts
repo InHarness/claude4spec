@@ -460,13 +460,17 @@ export interface AcBrokenVerify extends AcVerifyRef {
 
 export interface Ac {
   slug: string;
-  /** 0.2.22 — the reserved label. Defaults to the first 200 characters of `text`. */
+  /**
+   * 0.2.51 — the criterion itself, not a label for it.
+   *
+   * `text` (the criterion) and `description` (optional prose beside it) were
+   * collapsed into this one field, bounded at 500 characters. Nothing else on
+   * the type carries prose any more.
+   */
   title: string;
-  text: string;
   kind: AcKind;
   status: AcStatus;
   verifies: AcVerifyRef[];
-  description: string | null;
   tags: string[];
   createdAt: string;
   updatedAt: string;
@@ -482,25 +486,23 @@ export interface Ac {
 }
 
 export interface AcCreateInput {
-  text: string;
-  /** Omit to derive it from `text`. */
-  title?: string;
+  /** The criterion. Required — the type derives no default for it. */
+  title: string;
   kind?: AcKind;
   status?: AcStatus;
   verifies?: AcVerifyRef[];
-  description?: string | null;
   tags?: string[];
   /** Optional explicit slug — used by M17 restore to preserve identity. */
   slug?: string;
 }
 
 export interface AcUpdateInput {
-  text?: string;
+  title?: string;
   kind?: AcKind;
   status?: AcStatus;
   verifies?: AcVerifyRef[];
-  description?: string | null;
   tags?: string[];
+  /** A rename. Editing `title` does NOT re-derive the slug. */
   newSlug?: string;
 }
 

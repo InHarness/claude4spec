@@ -11,6 +11,7 @@
 import { describe, expect, it } from 'vitest';
 import { validateDataDeclaration } from './data-schema-validation.js';
 import type { DataDeclaration } from '../../../shared/plugin-host/data-schema.js';
+import { DEFAULT_BUDGET_CHARS } from '../../discovery/budget.js';
 import type { SlugPattern } from '../../../shared/plugin-host/slug-pattern.js';
 
 const NAME_PATTERN: SlugPattern = [{ op: 'slugify', field: 'name' }];
@@ -678,15 +679,11 @@ describe('Host API 2.0.0 — the reserved title', () => {
     );
   });
 
-  it('rejects a `title` that drops or widens what the host fixed', () => {
+  it('rejects a `title` that drops what the host fixed', () => {
     for (const title of [
       { type: 'string' } as const,
-      { type: 'string', required: true } as const,
-      // Widening the host's bound is the case the message exists for: a longer
-      // title would need shortening at read time, which the contract promises
-      // never happens.
-      { type: 'string', required: true, maxLength: 80 } as const,
-      { type: 'string', required: true, maxLength: 500 } as const,
+      { type: 'string', required: false, maxLength: 200 } as const,
+      { type: 'number', required: true } as const,
     ]) {
       const data = { schema: { title, name: { type: 'string' } } } as unknown as DataDeclaration;
       expect(() => validateDataDeclaration('widget', data, NAME_PATTERN, 1)).toThrow(
@@ -696,24 +693,45 @@ describe('Host API 2.0.0 — the reserved title', () => {
   });
 
   /**
-   * 0.2.27 — the host sets the FLOOR, not the ceiling.
+   * 0.2.51 — `maxLength` is the host's DEFAULT, and the axis runs both ways.
    *
-   * A type may NARROW the reserved title from the value-constraint dictionary.
-   * `database-table` binds its title to `kind: 'sql-identifier'` because for that
-   * type the instance's name and its technical identifier are one thing. Without
-   * this the rule would have had to go on every other type's title, or nowhere.
+   * 0.2.27 made the host declaration a floor a type could only add to; the
+   * length itself stayed a constant every type had to spell back. `ac` broke
+   * that: with `text` and `description` collapsed into `title`, the criterion's
+   * own words are the instance's name, and 200 characters is a label bound
+   * applied to content. So the number moves too — in either direction.
    */
-  it('accepts a `title` that NARROWS with a value constraint, and one with no computedDefault', () => {
+  it('accepts a `title` that widens OR narrows the host default', () => {
+    const titlePattern = [{ op: 'slugify', field: 'title' }] as unknown as typeof NAME_PATTERN;
+    for (const maxLength of [500, 80, undefined]) {
+      const data = {
+        schema: {
+          title: { type: 'string', required: true, ...(maxLength === undefined ? {} : { maxLength }) },
+          name: { type: 'string' },
+        },
+      } as unknown as DataDeclaration;
+      expect(() => validateDataDeclaration('widget', data, titlePattern, 1)).not.toThrow();
+    }
+  });
+
+  /**
+   * The condition the widening freedom is bought with.
+   *
+   * "A title never needs shortening at read time" used to follow for free from
+   * the host's 200. Now it is a theorem with a hypothesis, discharged once at
+   * registration: the declared bound must sit below the read budget.
+   */
+  it('rejects a `title` bound that reaches the read budget', () => {
+    const titlePattern = [{ op: 'slugify', field: 'title' }] as unknown as typeof NAME_PATTERN;
     const data = {
       schema: {
-        title: { type: 'string', required: true, maxLength: 200, kind: 'sql-identifier' },
+        title: { type: 'string', required: true, maxLength: DEFAULT_BUDGET_CHARS },
         name: { type: 'string' },
       },
     } as unknown as DataDeclaration;
-    // Slugged from `title`, as a type binding its title to an identifier would:
-    // `name` here is optional and cannot seed a slug on its own.
-    const titlePattern = [{ op: 'slugify', field: 'title' }] as unknown as typeof NAME_PATTERN;
-    expect(() => validateDataDeclaration('widget', data, titlePattern, 1)).not.toThrow();
+    expect(() => validateDataDeclaration('widget', data, titlePattern, 1)).toThrow(
+      /not below the read budget/,
+    );
   });
 
   it('refuses to let the label itself be content-bearing', () => {
