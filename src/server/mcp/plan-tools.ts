@@ -340,8 +340,8 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
    * so `applied` is deliberately absent from `update_plan`'s shape and editing
    * a plan can never flip the flag as a side effect.
    *
-   * Not gated by posture. `plan-tools` is outside the READONLY_BUILTINS /
-   * MUTATING_BUILTINS filter and the plan has no `contextType` of its own, so
+   * Not gated by posture. `plan-tools` is an MCP server, and MCP sits entirely
+   * outside the built-in deny-group gating, so the plan has no `contextType` of its own and
    * this is reachable regardless of `chat_thread.plan_mode` — a recorded
    * decision, not an oversight. The contrast is `mark-brief-implemented`, which
    * declares a fact about CODE that a C4S thread cannot see; a plan declares a

@@ -40,6 +40,7 @@ type WireEventExtended =
   // workflow). agent-adapters 0.9.1 emits these instead of mislabelling the work
   // as `subagent_*`. agent-chat's reducer doesn't know them (unknown → identity),
   // so this panel is driven entirely from onEvent + custom state, transagent-style.
+  | { type: 'connected'; requestId: string; threadId?: string; replayTruncated?: true }
   | { type: 'background_task_started'; taskId: string; taskType: string; description: string }
   | {
       type: 'background_task_progress';
@@ -163,6 +164,12 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
   /** C21: makes each synthetic warning block's toolUseId unique within a session. */
   const warningSeqRef = useRef(0);
   /**
+   * Background tasks that already have a carrier block in the transcript. The
+   * event family is upsert-shaped (any variant can arrive first), so placement
+   * has to be idempotent on its own rather than trusting `_started` to be unique.
+   */
+  const seenBackgroundTaskIdsRef = useRef<Set<string>>(new Set());
+  /**
    * Request ids whose read-only history card is already on screen — either
    * synthesized from a resolved replay event, or restored from persisted rows
    * that the joiner's history slice happened to keep (see the thread-load effect).
@@ -209,6 +216,20 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
   const onEvent = useCallback(
     (event: WireEvent) => {
       const ext = event as WireEventExtended;
+      /**
+       * 0.2.50 — the joined turn's replay buffer blew its 4MB budget and
+       * degradation was not enough, so what follows is an INCOMPLETE picture of
+       * the turn so far.
+       *
+       * Read off the raw wire event because the library's `onConnected` callback
+       * is typed `(requestId, threadId)` and drops everything else. Told once,
+       * as a toast, rather than rendered inline: the gap is in the transcript we
+       * are about to draw, so there is no single place in it to point at — and
+       * the full content does come back from `chat_message` once the turn ends.
+       */
+      if (ext.type === 'connected' && (ext as { replayTruncated?: boolean }).replayTruncated) {
+        toast.warning('Replay incomplete — full content will load once the turn finishes.');
+      }
       if (ext.type === 'transagent_started') {
         const { toolUseId, childThreadId, contextType } = ext;
         setTransagents((prev) =>
@@ -231,6 +252,34 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
       // ordering, or a completed-only fast task), so a plain map that dropped the
       // update on a missing entry would lose the task. Kept out of the lib reducer
       // (early return) — it has no background-task block; this panel is custom.
+      /**
+       * Place the block IN THE TURN — same synthetic-carrier trick as
+       * WARNING_TOOL_NAME, for the same reason: `UIContentBlock` is the
+       * library's and a new variant is not ours to add, but a tool call is a
+       * block the reducer already orders for us.
+       *
+       * Called from ALL THREE lifecycle variants, not just `_started`, because
+       * `_started` is not guaranteed to be seen: the replay buffer is reset at
+       * every merged-dispatch `turn_start`, so a client joining during a
+       * continuation turn replays the `_completed` of a task that started in the
+       * previous iteration and never its `_started`. Placing only there left
+       * such a task in the registry — counted by the hold spinner — with no
+       * panel ever rendered for it.
+       *
+       * Idempotent on taskId: a second carrier would render the panel twice.
+       */
+      const placeBackgroundTaskCarrier = (taskId: string) => {
+        if (seenBackgroundTaskIdsRef.current.has(taskId)) return;
+        seenBackgroundTaskIdsRef.current.add(taskId);
+        handleWireEvent({
+          type: 'tool_use',
+          toolUseId: `bgtask-${taskId}`,
+          toolName: BACKGROUND_TASK_TOOL_NAME,
+          input: { taskId },
+          isSubagent: false,
+        });
+      };
+
       if (ext.type === 'background_task_started') {
         const { taskId, taskType, description } = ext;
         setBackgroundTasks((prev) =>
@@ -243,6 +292,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
             summary: e?.summary ?? null,
           })),
         );
+        placeBackgroundTaskCarrier(taskId);
         return;
       }
       if (ext.type === 'background_task_progress') {
@@ -257,6 +307,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
             summary: e?.summary ?? null,
           })),
         );
+        placeBackgroundTaskCarrier(taskId);
         return;
       }
       if (ext.type === 'background_task_completed') {
@@ -271,6 +322,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
             summary: summary ?? e?.summary ?? null,
           })),
         );
+        placeBackgroundTaskCarrier(taskId);
         return;
       }
       if (ext.type === 'user_input_request') {
@@ -323,6 +375,21 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
         );
         return;
       }
+      /**
+       * `items` is ALWAYS a complete snapshot — do not add a client-side merge.
+       *
+       * The per-item vs whole-replacement distinction is real, but it is the
+       * ADAPTER's job and it already does it: `TodoWrite` rebuilds the list from
+       * its input, while the `TaskCreate`/`TaskGet`/`TaskUpdate`/`TaskList`
+       * family goes through `mergeTaskToolInputIntoSnapshot` against the
+       * adapter's own `lastTodoSnapshot`. By the time the event reaches us both
+       * paths have collapsed into one full list, so merging again here would
+       * apply the same update twice.
+       *
+       * The `Task*` tool calls themselves never arrive as `tool_use`: the
+       * adapter rewrites that content block into a `todoList` block, which is
+       * also why no `tool_result` echo needs suppressing on this side.
+       */
       if (ext.type === 'todo_list_updated' && !ext.isSubagent) {
         setCurrentTodoItems(ext.items.length > 0 ? ext.items : null);
       }
@@ -561,6 +628,10 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     setLiveContextSize(null);
     setTransagents([]);
     setBackgroundTasks([]);
+    // Carrier blocks live in the transcript we are about to replace, so the
+    // "already placed" memory has to go with it — otherwise re-entering a thread
+    // would suppress every block it placed the first time.
+    seenBackgroundTaskIdsRef.current = new Set();
     setActiveThreadMeta(null);
 
     currentThreadIdRef.current = threadId;
@@ -596,8 +667,9 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
         const thread = payload.data;
         setActiveThreadMeta(thread);
         const subagentTasks = thread.subagentTasks ?? [];
+        const bgTasks = thread.backgroundTasks ?? [];
         const queuedMessages = thread.queuedMessages ?? [];
-        const fullMessages = rowsToChatMessages(thread.messages, subagentTasks);
+        const fullMessages = rowsToChatMessages(thread.messages, subagentTasks, bgTasks);
         // Per-user metadata z PELNEJ historii — kolejnosc renderowanych user-messages
         // (sliced + dolozona przez turn_start) odpowiada pelnej liscie.
         setCurrentTodoItems(thread.currentTodoItems ?? null);
@@ -617,6 +689,11 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
         // M17 (F5 / cold reload): rebuild the background-task panel from persisted
         // rows. In-flight ('running') entries dedup against the live replay's
         // `background_task_started` (onEvent upserts by taskId).
+        // Seed the carrier-dedup set from the rows `rowsToChatMessages` just
+        // placed carriers for. Without this, a live `background_task_progress`
+        // for a task still running across the reload would place a SECOND
+        // carrier and render its panel twice.
+        seenBackgroundTaskIdsRef.current = new Set(bgTasks.map((t) => t.taskId));
         setBackgroundTasks(
           (thread.backgroundTasks ?? []).map((t) => ({
             taskId: t.taskId,
@@ -641,7 +718,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
             }
           }
           const slicedRows = lastUserIdx >= 0 ? rows.slice(0, lastUserIdx) : rows;
-          const slicedMessages = rowsToChatMessages(slicedRows, subagentTasks);
+          const slicedMessages = rowsToChatMessages(slicedRows, subagentTasks, bgTasks);
           /**
            * The slice does not always cut ABOVE the running turn's questions.
            * A message pushed into a live session persists a `user` row mid-turn
@@ -723,6 +800,16 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     transagents,
     // M17: engine-backgrounded tasks
     backgroundTasks,
+    /**
+     * How many background tasks the turn is currently waiting on — the "hold".
+     *
+     * Derived from OUR OWN registry (started minus completed), never from
+     * adapter data: the held `result` that opens a hold is not forwarded, and
+     * `AdapterBackgroundHoldExpiredError` carries no task list. Drives the
+     * "waiting for N background tasks" spinner between a hold and the
+     * continuation turn.
+     */
+    heldBackgroundTaskCount: backgroundTasks.filter((t) => t.status === 'running').length,
     // P2: active thread metadata (from GET /api/threads/:id), list-independent.
     activeThreadMeta,
   };
@@ -837,6 +924,22 @@ interface PersistedContent {
 export const USER_INPUT_TOOL_NAME = '__user_input__';
 /** C21: not a real tool — the carrier for an adapter warning inside the transcript. */
 export const WARNING_TOOL_NAME = '__warning__';
+/**
+ * 0.2.50: not a real tool either — the carrier that puts the "Background tasks"
+ * block AT TURN LEVEL, in stream order, instead of in a flat list appended after
+ * the whole conversation.
+ *
+ * It is a block of the turn rather than a child of the `tool_use` card that
+ * spawned the task, because the contract gives no `toolUseId` on the
+ * `background_task_*` family — there is nothing to nest it under. Correlating
+ * heuristically (by taskType, by ordering, by parsing the Bash command) was
+ * considered and rejected.
+ *
+ * The block carries only the `taskId`; the mutable state (status, outputFile,
+ * summary) is looked up live from the hook's registry at render time, since
+ * `_progress` and `_completed` keep arriving after the block is placed.
+ */
+export const BACKGROUND_TASK_TOOL_NAME = '__background_task__';
 
 function parseContent(raw: string): PersistedContent {
   try {
@@ -857,6 +960,7 @@ function parseRaw(raw: string): unknown {
 export function rowsToChatMessages(
   rows: ChatMessageRow[],
   subagentTasks: ChatSubagentTask[],
+  backgroundTasks: ChatBackgroundTask[] = [],
 ): import('@inharness-ai/agent-chat').ChatMessageType[] {
   type UIBlock = import('@inharness-ai/agent-chat').UIContentBlock;
   type UIMsg = import('@inharness-ai/agent-chat').ChatMessageType;
@@ -916,8 +1020,45 @@ export function rowsToChatMessages(
     }
   };
 
+  /**
+   * Background tasks live in `chat_background_task`, NOT in `chat_message`, so
+   * unlike every other block on this list they have no row to be reached from.
+   * Without an explicit pass they simply never render after a reload: the live
+   * `onEvent` branch places their carrier, a cold load has no events, and the
+   * hydrated `backgroundTasks` state would sit there referenced by nothing.
+   *
+   * Anchored by `createdAt` against the row stream, which is the closest thing
+   * to the position the carrier had when it was placed live.
+   */
+  const pendingBgTasks = [...backgroundTasks].sort((a, b) =>
+    a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0,
+  );
+  let nextBgTask = 0;
+
+  const flushBackgroundTasksBefore = (timestamp: string) => {
+    while (nextBgTask < pendingBgTasks.length && pendingBgTasks[nextBgTask]!.createdAt <= timestamp) {
+      const task = pendingBgTasks[nextBgTask++]!;
+      if (!currentAssistant) startAssistant(task.createdAt);
+      // The same synthetic carrier the live branch in `onEvent` produces, down
+      // to the `bgtask-` id prefix, so a reload renders the panel identically.
+      currentAssistant!.blocks.push({
+        type: 'toolUse',
+        toolUseId: `bgtask-${task.taskId}`,
+        toolName: BACKGROUND_TASK_TOOL_NAME,
+        input: { taskId: task.taskId },
+        collapsed: true,
+      });
+    }
+  };
+
   for (const row of rows) {
     const parsed = parseContent(row.content);
+    // Before the row, so a task that started between two rows lands between
+    // them rather than after everything.
+    if (row.role !== 'user') flushBackgroundTasksBefore(row.createdAt);
+    // Before the row, so a task that started between two rows lands between
+    // them rather than after everything.
+
 
     if (row.role === 'user') {
       currentAssistant = null;
@@ -1004,6 +1145,9 @@ export function rowsToChatMessages(
       }
     }
   }
+
+  // Anything left started after the last persisted row.
+  flushBackgroundTasksBefore('\uffff');
 
   return msgs;
 }

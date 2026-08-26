@@ -75,7 +75,13 @@ vi.mock('../config.js', async (importOriginal) => {
   };
 });
 
+import {
+  AdapterAbortError,
+  AdapterBackgroundHoldExpiredError,
+  AdapterTimeoutError,
+} from '@inharness-ai/agent-adapters';
 import { runAgentTurn, type AgentTurnDeps, type AgentTurnInput } from './agent-turn.js';
+import { BACKGROUND_HOLD_CAP_MS, TURN_TIMEOUT_MS } from '../../shared/agent-turn.js';
 
 afterEach(() => {
   hoisted.agent = undefined;
@@ -136,6 +142,7 @@ function makeDeps() {
     startBackgroundTask: () => {},
     updateBackgroundTaskProgress: () => {},
     completeBackgroundTask: () => {},
+    finalizeRunningBackgroundTasks: () => {},
     updateCurrentTodoItems: () => {},
     finalizeStreamingRows: () => {},
     // M05 queue: the after-turn merged-dispatch loop drains the queue; an empty
@@ -292,8 +299,10 @@ describe('runAgentTurn — patch thread posture (0.2.30)', () => {
 
     await runAgentTurn(deps, input);
 
-    // planMode=false ⇒ the adapter is handed no READONLY_BUILTINS allow-list and
-    // no MUTATING_BUILTINS ban, i.e. the full built-in toolset.
+    // planMode=false ⇒ no deny-groups are declared, so the adapter keeps the
+    // full built-in toolset. (0.9.6 replaced the old name lists with semantic
+    // groups; `planMode: true` desugars to disallowedToolGroups
+    // ['file-write','shell'].)
     expect(hoisted.lastExecute?.planMode).toBe(false);
   });
 });
@@ -687,13 +696,50 @@ describe('runAgentTurn — server-side turn timeout (0-1-110-to-next)', () => {
     expect(hoisted.lastExecute?.timeoutMs).toBe(15 * 60_000);
   });
 
-  it('leaves timeoutMs unset when the caller omits it (interactive chat must stay unbounded)', async () => {
+  /**
+   * 0.2.50 REVERSES the previous assertion here.
+   *
+   * Interactive chat used to pass no timeout at all, on purpose. The background
+   * hold cap makes that untenable: with no turn timeout above it, a hold that
+   * outlives its cap and a turn that simply hung are indistinguishable. The
+   * turn is now always bounded, just very loosely.
+   */
+  it('falls back to TURN_TIMEOUT_MS when the caller omits it (interactive chat)', async () => {
     hoisted.events = [{ type: 'result', sessionId: 's1' }];
     const { deps } = makeDeps();
 
     await runAgentTurn(deps, makeInput());
 
-    expect('timeoutMs' in (hoisted.lastExecute ?? {})).toBe(false);
+    expect(hoisted.lastExecute?.timeoutMs).toBe(TURN_TIMEOUT_MS);
+  });
+
+  /**
+   * The invariant that gives `AdapterBackgroundHoldExpiredError` its meaning.
+   * If the cap ever reached or passed the turn timeout, a hold expiry would
+   * surface as a bare `AdapterTimeoutError` and we would lose the distinction
+   * between "the hold expired" and "the turn hung" — different bugs, different
+   * fixes.
+   */
+  it('[ac:ac-wartosc-timeoutms-przekazywana-do-ada] keeps the turn timeout strictly above the background hold cap', () => {
+    expect(TURN_TIMEOUT_MS).toBeGreaterThan(BACKGROUND_HOLD_CAP_MS);
+  });
+
+  /**
+   * The library treats `null`/`Infinity` as a sentinel meaning "disarm the
+   * cap", which would let a wedged background task hold a session open with no
+   * bound at all.
+   */
+  it('[ac:ac-wartosc-timeoutms-przekazywana-do-ada] arms the hold cap with a finite positive number, never a disarm sentinel', async () => {
+    hoisted.events = [{ type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+
+    await runAgentTurn(deps, makeInput());
+
+    const cap = (hoisted.lastExecute?.architectureConfig as Record<string, unknown>)
+      ?.claude_backgroundHoldCapMs;
+    expect(typeof cap).toBe('number');
+    expect(Number.isFinite(cap as number)).toBe(true);
+    expect(cap).toBe(BACKGROUND_HOLD_CAP_MS);
   });
 });
 
@@ -757,6 +803,357 @@ describe('runAgentTurn — M17 background tasks (0-1-141-to-next-2)', () => {
     // Held result still advances the session anchor; final result advances it again.
     expect(setSession).toHaveBeenCalledWith('t1', 's-held');
     expect(setSession).toHaveBeenCalledWith('t1', 's-final');
+  });
+
+  /**
+   * 0.2.50 — a held `result` must NOT close the turn's usage snapshot.
+   *
+   * `attachTurnUsage` is the closing write: it stamps usage onto the turn's
+   * anchor row. Calling it on a held result would publish a partial figure as
+   * final, and the continuation turn's own `result` would then either
+   * double-count or be ignored. `setLastUsage` is a separate "latest wins"
+   * scratch write and is allowed to run on every result.
+   */
+  it('defers attachTurnUsage until the terminal result, not the held one', async () => {
+    hoisted.events = [
+      { type: 'text_delta', text: 'working ' },
+      // Usage reaches the turn through `assistant_message`, which is what
+      // `attachTurnUsage` ultimately stamps.
+      { type: 'assistant_message', message: { usage: { inputTokens: 10, outputTokens: 5 } } },
+      { type: 'background_task_started', taskId: 'bg1', taskType: 'shell', description: 'build' },
+      {
+        type: 'result',
+        sessionId: 's-held',
+        usage: { inputTokens: 10, outputTokens: 5 },
+        contextSize: 15,
+        backgroundTasks: [{ taskId: 'bg1', taskType: 'shell' }],
+      },
+      { type: 'background_task_completed', taskId: 'bg1', taskType: 'shell', status: 'exited 0' },
+      { type: 'text_delta', text: 'done' },
+      { type: 'assistant_message', message: { usage: { inputTokens: 20, outputTokens: 8 } } },
+      {
+        type: 'result',
+        sessionId: 's-final',
+        usage: { inputTokens: 20, outputTokens: 8 },
+        contextSize: 28,
+      },
+    ];
+    const { deps } = makeDeps();
+    const cs = deps.chatService as unknown as {
+      attachTurnUsage: (...a: unknown[]) => void;
+    };
+    const attach = vi.spyOn(cs, 'attachTurnUsage');
+
+    await runAgentTurn(deps, makeInput());
+
+    // Exactly once — for the terminal result, never for the held one.
+    expect(attach).toHaveBeenCalledTimes(1);
+    const [, , usage] = attach.mock.calls[0] as [string, number, { outputTokens: number }];
+    expect(usage.outputTokens).toBe(8);
+  });
+
+  /**
+   * A task abandoned by cap expiry or abort NEVER receives
+   * `background_task_completed` — the contract has no failed/aborted variant. Its
+   * row would otherwise read `running` forever, so after a reload the panel would
+   * assert something false rather than merely lose detail.
+   */
+  it('finalizes still-running background tasks once the generator is exhausted', async () => {
+    hoisted.events = [
+      { type: 'background_task_started', taskId: 'bg1', taskType: 'shell', description: 'sleep 900' },
+      // Generator ends with bg1 still in flight — no completion event ever comes.
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps } = makeDeps();
+    const cs = deps.chatService as unknown as {
+      finalizeRunningBackgroundTasks: (...a: unknown[]) => void;
+    };
+    const finalize = vi.spyOn(cs, 'finalizeRunningBackgroundTasks');
+
+    await runAgentTurn(deps, makeInput());
+
+    expect(finalize).toHaveBeenCalledWith('t1');
+  });
+});
+
+describe('runAgentTurn — 0.2.50 turn-lifecycle contract', () => {
+  /**
+   * `adapter_ready` is an INTERNAL delimiter. Forwarding it would put an event
+   * on the wire that renders nothing and that the client's mapper has no branch
+   * for; the client's real "an iteration began" marker is `turn_start`.
+   */
+  it('consumes adapter_ready internally instead of forwarding it', async () => {
+    hoisted.events = [
+      { type: 'adapter_ready', adapter: 'claude-code', sdkConfig: { model: 'opus' } },
+      { type: 'text_delta', text: 'hi' },
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps } = makeDeps();
+    const emitted: Array<Record<string, unknown>> = [];
+    const input = makeInput();
+    input.onEvent = (e) => emitted.push(e as Record<string, unknown>);
+
+    await runAgentTurn(deps, input);
+
+    expect(emitted.filter((e) => e.type === 'adapter_ready')).toHaveLength(0);
+  });
+
+  /**
+   * `sdkConfig` is library-shaped and carries `custom_env`, which holds a
+   * DECRYPTED api key whenever the project uses a stored credential. Logging it
+   * verbatim would write a live credential to disk in plaintext.
+   */
+  it('never logs a raw secret from adapter_ready sdkConfig', async () => {
+    hoisted.events = [
+      {
+        type: 'adapter_ready',
+        adapter: 'claude-code',
+        sdkConfig: { custom_env: { ANTHROPIC_API_KEY: 'sk-ant-super-secret' } },
+      },
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps } = makeDeps();
+    const logged: string[] = [];
+    const spy = vi.spyOn(console, 'info').mockImplementation((...args: unknown[]) => {
+      logged.push(args.map(String).join(' '));
+    });
+
+    await runAgentTurn(deps, makeInput());
+    spy.mockRestore();
+
+    const all = logged.join('\n');
+    expect(all).not.toContain('sk-ant-super-secret');
+    // The key NAME still shows — which env vars were set is useful and is not
+    // itself the secret.
+    expect(all).toContain('ANTHROPIC_API_KEY');
+  });
+
+  /**
+   * A `warning` arriving AFTER the final `result` is legal: its position on the
+   * stream carries no meaning. It must be accepted normally rather than treated
+   * as a protocol error or as a second end-of-turn.
+   */
+  it('accepts a side-band warning that arrives after the terminal result', async () => {
+    hoisted.events = [
+      { type: 'text_delta', text: 'answer' },
+      { type: 'result', sessionId: 's1' },
+      { type: 'warning', message: 'scope degraded to soft enforcement' },
+    ];
+    const { deps } = makeDeps();
+    const emitted: Array<Record<string, unknown>> = [];
+    const input = makeInput();
+    input.onEvent = (e) => emitted.push(e as Record<string, unknown>);
+
+    const result = await runAgentTurn(deps, input);
+
+    expect(result.answer).toBe('answer');
+    expect(emitted.filter((e) => e.type === 'warning')).toHaveLength(1);
+  });
+
+  /**
+   * `flush` is side-band too: an empty-payload context-compaction boundary. It
+   * must not crash the loop and must not end the turn.
+   */
+  it('tolerates a flush event mid-turn without ending the turn', async () => {
+    hoisted.events = [
+      { type: 'text_delta', text: 'before ' },
+      { type: 'flush' },
+      { type: 'text_delta', text: 'after' },
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps } = makeDeps();
+
+    const result = await runAgentTurn(deps, makeInput());
+
+    expect(result.answer).toBe('before after');
+  });
+
+  /**
+   * `UnifiedEvent` grows between library releases. An unknown member must be an
+   * inert no-op, not an exception thrown from inside the turn loop.
+   */
+  it('ignores an unknown future event type instead of throwing', async () => {
+    hoisted.events = [
+      { type: 'text_delta', text: 'ok' },
+      { type: 'hold_heartbeat', heldForMs: 1000 },
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps } = makeDeps();
+
+    await expect(runAgentTurn(deps, makeInput())).resolves.toMatchObject({ answer: 'ok' });
+  });
+
+  /**
+   * A mid-turn push is persisted where the ADAPTER emitted `user_message`, not
+   * where `pushMessage()` was called. The two differ: the SDK accepts the push
+   * immediately but only surfaces the message once it actually reaches the
+   * model. Ordering by the call site would leave the thread's row order
+   * disagreeing with the order the model saw them in.
+   */
+  it('[ac:ac-wiadomosc-dostarczona-mid-turn-jest-p] persists a mid-turn user_message in STREAM order, not push order', async () => {
+    hoisted.events = [
+      { type: 'text_delta', text: 'first half ' },
+      // The push happened earlier; the adapter surfaces it HERE.
+      { type: 'user_message', text: 'pushed mid-turn', timestamp: Date.now() },
+      { type: 'text_delta', text: 'second half' },
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps, messages } = makeDeps();
+
+    await runAgentTurn(deps, makeInput());
+
+    const roles = messages.map((m) => m.role);
+    const userIdx = roles.lastIndexOf('user');
+    const assistantIdxs = roles.flatMap((r, i) => (r === 'assistant' ? [i] : []));
+    // The pushed user row sits BETWEEN the two assistant blocks — i.e. exactly
+    // where the adapter emitted it, not before the turn's first text.
+    expect(assistantIdxs.some((i) => i < userIdx)).toBe(true);
+    expect(assistantIdxs.some((i) => i > userIdx)).toBe(true);
+  });
+
+  /**
+   * `ask` is headless and blocks its HTTP request until the turn ends — there is
+   * no UI in which a hold could be shown, so background work is switched off.
+   */
+  it('[ac:ac-w-watku-o-context-type-ask-oraz-w-kaz] disallows background bash for an ask-context turn', async () => {
+    hoisted.events = [{ type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    const input = makeInput();
+    (input.thread as { contextType: string }).contextType = 'ask';
+
+    await runAgentTurn(deps, input);
+
+    const cfg = hoisted.lastExecute?.architectureConfig as Record<string, unknown>;
+    expect(cfg.claude_disallowBackgroundBash).toBe(true);
+  });
+
+  /**
+   * A transagent bubble must stay blocking and terminal — detach mode is
+   * deliberately absent in v1. Without this flag a child's `result` could carry
+   * `backgroundTasks` and break that decision as a side effect of the upgrade.
+   */
+  it('[ac:ac-w-watku-o-context-type-ask-oraz-w-kaz] disallows background bash for a child thread regardless of context type', async () => {
+    hoisted.events = [{ type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    const input = makeInput();
+    (input.thread as { parentThreadId: string | null }).parentThreadId = 'parent-1';
+
+    await runAgentTurn(deps, input);
+
+    const cfg = hoisted.lastExecute?.architectureConfig as Record<string, unknown>;
+    expect(cfg.claude_disallowBackgroundBash).toBe(true);
+  });
+
+  /** A normal top-level chat turn keeps background work available. */
+  it('leaves background bash enabled for a top-level chat turn', async () => {
+    hoisted.events = [{ type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+
+    await runAgentTurn(deps, makeInput());
+
+    const cfg = hoisted.lastExecute?.architectureConfig as Record<string, unknown>;
+    expect(cfg.claude_disallowBackgroundBash).toBeUndefined();
+  });
+});
+
+/**
+ * 0.2.50 — the replay buffer is unbounded RAM held for the whole turn, and a
+ * turn that reads many large files can push tens of MB of `tool_result`
+ * summaries through it.
+ */
+describe('runAgentTurn — replay buffer byte budget', () => {
+  /** One 1 MB tool_result payload; five of them clear the 4 MB budget. */
+  const bigResult = (id: string) => ({
+    type: 'tool_result',
+    toolUseId: id,
+    toolName: 'Read',
+    summary: 'x'.repeat(1024 * 1024),
+    isSubagent: false,
+  });
+
+  it('[ac:ac-bufor-replay-przekraczajacy-budzet-ba] degrades the oldest tool_result entries to a header instead of dropping them', async () => {
+    hoisted.events = [
+      bigResult('tu-1'),
+      bigResult('tu-2'),
+      bigResult('tu-3'),
+      bigResult('tu-4'),
+      bigResult('tu-5'),
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps } = makeDeps();
+    const activeAdapters = new Map();
+    (deps as unknown as { activeAdapters: Map<string, unknown> }).activeAdapters = activeAdapters;
+
+    let replaySnapshot: Array<Record<string, unknown>> = [];
+    hoisted.beforeEvent = () => {
+      const active = activeAdapters.get('t1') as { replay: { events: unknown[] } } | undefined;
+      if (active) replaySnapshot = active.replay.events as Array<Record<string, unknown>>;
+    };
+
+    await runAgentTurn(deps, makeInput());
+    hoisted.beforeEvent = null;
+
+    const toolResults = replaySnapshot.filter((e) => e.type === 'tool_result');
+    // NOTHING is removed — a dropped `tool_result` would leave the paired
+    // `tool_use` card spinning forever in a joiner's reducer, because the card
+    // closes on the RESULT. Degraded still closes it, just without a body.
+    expect(toolResults).toHaveLength(5);
+
+    const degraded = toolResults.filter((e) => e.truncated === true);
+    expect(degraded.length).toBeGreaterThan(0);
+    // A degraded entry loses its PAYLOAD and keeps every routing field. Dropping
+    // `isSubagent`/`subagentTaskId` would make a joiner append a subagent's
+    // result to the main transcript and leave the subagent card spinning — the
+    // very failure degradation exists to prevent — and dropping `isError` would
+    // replay a failed tool as a successful one.
+    for (const entry of degraded) {
+      expect(entry.toolUseId).toBeTruthy();
+      expect(entry.summary).toBe('');
+      expect(entry).toHaveProperty('isSubagent');
+    }
+    // Oldest-first: the newest result is the one a joiner most likely still wants.
+    expect(toolResults[0].truncated).toBe(true);
+    expect(toolResults[toolResults.length - 1].truncated).toBeUndefined();
+  });
+
+  /**
+   * Degrading the replay buffer must never reach into what gets PERSISTED.
+   *
+   * The whole design rests on "the full content stays recoverable from
+   * `chat_message` after the turn". `emit` runs before the persistence switch
+   * and degradation mutates in place, so buffering the live object would let a
+   * budget overflow blank the very row that makes the degradation safe — the
+   * cap would quietly destroy the copy it promises to fall back on.
+   */
+  it('never lets replay degradation blank the persisted tool_result row', async () => {
+    // A SINGLE result larger than the whole budget is the case that bites:
+    // degrading every older entry still leaves the buffer over, so the sweep
+    // reaches the newest entry — the one the persistence switch has not read
+    // yet. Five 1MB results do NOT reproduce it: degrading the first is enough
+    // to get back under, so the newest is never touched.
+    const payload = 'y'.repeat(5 * 1024 * 1024);
+    hoisted.events = [
+      { type: 'tool_result', toolUseId: 'tu-1', toolName: 'Read', summary: payload, isSubagent: false },
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps } = makeDeps();
+
+    await runAgentTurn(deps, makeInput());
+
+    // `messages` drops `content`; the row store keeps it, and content is the
+    // whole point here.
+    const stored = (
+      deps.chatService as unknown as { getMessages: () => Array<{ role: string; content: string }> }
+    ).getMessages();
+    const rows = stored.filter((m) => m.role === 'tool_result');
+    expect(rows).toHaveLength(1);
+    // Every persisted row still carries its full body, however hard the replay
+    // buffer had to degrade to stay under budget.
+    for (const row of rows) {
+      const parsed = JSON.parse(row.content) as { summary?: string };
+      expect(parsed.summary).toBeTruthy();
+      expect(parsed.summary).toHaveLength(payload.length);
+    }
   });
 });
 
@@ -1051,5 +1448,88 @@ describe('runAgentTurn — the profile gate covers the inline servers too', () =
     const mounted = await mountedFor('ask');
     expect(mounted).not.toContain('c4s-tools');
     expect(mounted).not.toContain('transagent-tools');
+  });
+});
+
+/**
+ * TERMINAL ERROR DELIVERY (0.2.50).
+ *
+ * The contract is explicit that "the iterator never throws (M01/M13)" — every
+ * adapter error, `AdapterTimeoutError` and `AdapterAbortError` included, arrives
+ * as `{ type: 'error' }` and the generator then ends normally. An earlier draft
+ * of the turn loop captured only the tool-policy and hold-cap classes and
+ * assumed the other two were thrown, so a timed-out turn RESOLVED AS SUCCESS
+ * with an empty answer while the client got an unshaped error frame with no
+ * `code` on it. These cases pin every class to a code.
+ */
+describe('runAgentTurn — delivered terminal errors', () => {
+  const cases: Array<{ name: string; error: Error; code: string }> = [
+    {
+      name: 'AdapterTimeoutError',
+      error: new AdapterTimeoutError('claude-code', 1000),
+      code: 'TIMEOUT',
+    },
+    { name: 'AdapterAbortError', error: new AdapterAbortError('claude-code'), code: 'ABORTED' },
+    {
+      name: 'AdapterBackgroundHoldExpiredError',
+      error: new AdapterBackgroundHoldExpiredError('claude-code', 1000),
+      code: 'BACKGROUND_HOLD_EXPIRED',
+    },
+  ];
+
+  for (const { name, error, code } of cases) {
+    it(`fails the turn with ${code} when the stream delivers ${name}`, async () => {
+      hoisted.events = [
+        { type: 'text_delta', text: 'partial' },
+        { type: 'error', error, phase: 'runtime' },
+      ];
+      const { deps } = makeDeps();
+      const seen: Array<Record<string, unknown>> = [];
+
+      // MUST reject. Resolving here is the actual bug this pins: the generator
+      // ends normally after delivering the error, so nothing else stops the turn.
+      await expect(
+        runAgentTurn(deps, { ...makeInput(), onEvent: (e) => seen.push(e as never) }),
+      ).rejects.toMatchObject({ name: 'AgentTurnError', code });
+
+      // Exactly ONE error frame, and it is the typed one — the raw adapter event
+      // (a live `Error` under `error`, no `code`) must never reach the wire.
+      const errors = seen.filter((e) => e.type === 'error');
+      expect(errors).toHaveLength(1);
+      expect(errors[0]!.code).toBe(code);
+      expect(typeof errors[0]!.error).toBe('string');
+    });
+  }
+
+  /**
+   * The refusal path used to `emit` and then `throw`, and the catch emitted the
+   * same frame again — two identical errors on the wire and two in the replay
+   * buffer, since `error` is a replayed type.
+   */
+  it('emits exactly one error frame when plan mode is refused pre-dispatch', async () => {
+    const probe = await import('@inharness-ai/agent-adapters');
+    const spy = vi
+      .spyOn(probe, 'probeToolGating')
+      .mockReturnValue([
+        { group: 'shell', enforceable: false } as never,
+        { group: 'file-write', enforceable: true, strength: 'soft' } as never,
+      ]);
+    try {
+      hoisted.events = [{ type: 'result', sessionId: 's1' }];
+      const { deps } = makeDeps();
+      const seen: Array<Record<string, unknown>> = [];
+      const input = { ...makeInput(), onEvent: (e: unknown) => seen.push(e as never) };
+      (input.thread as { planMode: boolean }).planMode = true;
+
+      await expect(runAgentTurn(deps, input)).rejects.toMatchObject({
+        code: 'TOOL_POLICY_REFUSED',
+      });
+
+      expect(seen.filter((e) => e.type === 'error')).toHaveLength(1);
+      // Refused BEFORE dispatch: the adapter was never asked to run.
+      expect(hoisted.executes).toHaveLength(0);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

@@ -119,6 +119,45 @@ describe('POST /api/chat — RESUME_CONFIG_LOCKED wiring (M05 item 33)', () => {
     expect(runAgentTurnMock).not.toHaveBeenCalled();
   });
 
+  /**
+   * 0.2.50 item 11 — a DELIBERATE omission, guarded here because it looks like a
+   * bug to anyone tidying the snapshot.
+   *
+   * The library declares `disallowedToolGroups` (and therefore `planMode`) as
+   * resume-immutable. claude4spec deliberately excludes it from the turn-1
+   * config snapshot so the Plan Mode toggle keeps working on a resumed thread,
+   * in BOTH directions. Adding the field "for consistency" would silently turn
+   * every plan-mode toggle on an existing conversation into a 409.
+   *
+   * The accepted risk is named rather than hidden: turning plan mode OFF
+   * mid-thread hands the model shell access after it has already read the
+   * transcript.
+   */
+  it('does NOT lock plan mode on a resumed thread — the toggle stays live', async () => {
+    thread = makeThread({ lastSessionId: 'sess-1', planMode: false });
+    snapshot = JSON.stringify({ model: 'opus-5', architectureConfig: {} });
+
+    const res = await post({ model: 'opus-5', planMode: true });
+
+    expect(res.status).not.toBe(409);
+    expect(runAgentTurnMock).toHaveBeenCalled();
+  });
+
+  /** The snapshot must not carry the field in the first place. */
+  it('keeps planMode and disallowedToolGroups out of the turn-1 config snapshot', async () => {
+    thread = makeThread({ lastSessionId: 'sess-1' });
+    snapshot = JSON.stringify({ model: 'opus-5', architectureConfig: {} });
+
+    await post({ model: 'opus-5', planMode: true });
+
+    const [, input] = runAgentTurnMock.mock.calls.at(-1) as [
+      unknown,
+      { architectureConfig?: Record<string, unknown> },
+    ];
+    expect(input.architectureConfig ?? {}).not.toHaveProperty('planMode');
+    expect(input.architectureConfig ?? {}).not.toHaveProperty('disallowedToolGroups');
+  });
+
   it('409s on a model change', async () => {
     snapshot = JSON.stringify({ model: 'haiku-4.5', architectureConfig: {} });
 

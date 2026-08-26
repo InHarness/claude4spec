@@ -1,3 +1,4 @@
+import type { AgentTurnErrorCode } from '../../shared/agent-turn.js';
 /**
  * L3 — the shared error taxonomy of the operation catalog.
  *
@@ -180,3 +181,39 @@ export function httpStatusForCode(code: string): number {
   if (known !== undefined) return known;
   return SERVER_FAULT_CODES.has(code) ? 500 : 400;
 }
+
+/**
+ * HTTP status per `AgentTurnErrorCode` (0.2.50).
+ *
+ * Deliberately its OWN table rather than entries in `STATUS_FOR_CODE`: that one
+ * serves `DomainError` and falls back to 400 for anything it does not list, and
+ * none of the turn codes were ever in it. Adding only the two new ones there
+ * would have left `TIMEOUT`/`ABORTED`/`AGENT_ERROR` mapping elsewhere and made
+ * the table lie about being the source of truth for turn failures.
+ *
+ * Covers the union exhaustively — `Record<AgentTurnErrorCode, number>` makes a
+ * new code a compile error here rather than a silent 500.
+ */
+export const STATUS_FOR_TURN_ERROR: Record<AgentTurnErrorCode, number> = {
+  // The `claude` CLI is missing or not logged in — the server cannot serve the
+  // turn at all.
+  AGENT_UNAVAILABLE: 503,
+  // The turn ran and failed.
+  AGENT_ERROR: 500,
+  TIMEOUT: 504,
+  ABORTED: 499,
+  /**
+   * REFUSED TO START because a deny-group the posture asks for is not
+   * enforceable on this architecture. 422, not 500: the request was well-formed
+   * and the server is healthy, but the posture it asks for cannot be honoured
+   * here. `probeToolGating` answers this synchronously BEFORE `adapter.execute`,
+   * so a refusal costs no tokens and persists no assistant message.
+   */
+  TOOL_POLICY_REFUSED: 422,
+  /**
+   * `claude_backgroundHoldCapMs` elapsed with background work still in flight.
+   * 504: the turn started fine and died waiting, which is the timeout family —
+   * distinguished from a whole-turn `TIMEOUT` by the code, not the status.
+   */
+  BACKGROUND_HOLD_EXPIRED: 504,
+};

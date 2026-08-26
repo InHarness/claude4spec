@@ -7,6 +7,8 @@ import {
   createConsoleObserver,
   getModelContextWindow,
   getSessionResumeConstraints,
+  probeToolGating,
+  PLAN_MODE_DENY_GROUPS,
   type StreamObserver,
   type UserInputRequest,
   type UserInputResponse,
@@ -130,6 +132,24 @@ export function chatRouter(deps: AgentTurnDeps): Router {
       // propagate automatically. Server-side because the package's main entry pulls the agent
       // runtime (not browser-safe), so the client reads the declared list from here.
       sessionResumeConstraints: getSessionResumeConstraints('claude-code'),
+      /**
+       * 0.2.50 — can plan mode actually be ENFORCED here?
+       *
+       * `planMode` desugars to `disallowedToolGroups: ['file-write','shell']`,
+       * and a group that the architecture cannot enforce makes the turn refuse
+       * to start (`TOOL_POLICY_REFUSED`). Offering the toggle in that case would
+       * hand the user a switch whose only effect is to break their next turn, so
+       * the client renders it unavailable instead.
+       *
+       * Server-side for the same reason as `sessionResumeConstraints` above: the
+       * package's main entry pulls the agent runtime and is not browser-safe.
+       *
+       * On `claude-code` this is always true — all four groups are enforceable,
+       * though only at `soft` strength (a model-behaviour gate, not a sandbox).
+       */
+      planModeEnforceable: probeToolGating('claude-code', PLAN_MODE_DENY_GROUPS).every(
+        (report) => report.enforceable,
+      ),
     });
   });
 
@@ -478,7 +498,13 @@ export function chatRouter(deps: AgentTurnDeps): Router {
     // Ksztalt identyczny jak `connected` z POST /api/chat — `{ requestId, threadId }`.
     // Pole `live` bylo reliktem sprzed przejscia na 404: zawsze `true`, wiec nie nioslo
     // zadnej informacji, a jedynym sygnalem "brak tury" jest teraz kod 404 powyzej.
-    send('connected', { requestId: active.requestId, threadId });
+    send('connected', {
+      requestId: active.requestId,
+      threadId,
+      // Present ONLY when true, so its presence is always information. The
+      // client shows "replay incomplete; full content once the turn ends".
+      ...(active.replay.truncated ? { replayTruncated: true as const } : {}),
+    });
     send('turn_start', active.replay.turnStart);
     for (const ev of active.replay.events.slice()) {
       send((ev as { type: string }).type, toReplayWireEvent(ev));
@@ -558,7 +584,19 @@ function setupSse(res: Response): void {
   res.flushHeaders();
 }
 
-const SSE_HEARTBEAT_MS = 15_000;
+/**
+ * SSE keepalive interval (0.2.50: 15s → 20s).
+ *
+ * Written as a bare SSE COMMENT (`:` + blank line), deliberately not an event:
+ * a comment never reaches the client's event mapper or the library reducer, so
+ * it cannot be mistaken for turn activity. It guarantees exactly one thing —
+ * "this server process is alive" — and specifically NOT "work is progressing".
+ * Long silences are normal now that a turn can hold for background work.
+ *
+ * A future `hold_heartbeat` event (carrying `heldForMs`, `backgroundTasks[]`)
+ * replaces this, it will be side-band too — see `shared/agent-turn.ts`.
+ */
+const SSE_HEARTBEAT_MS = 20_000;
 
 /** Periodyczny komentarz SSE (`:\n\n`) — utrzymuje połączenie podczas długiego
  *  „thinking" bez zdarzeń, żeby proxy/load-balancer nie ubiło bezczynnego socketu.

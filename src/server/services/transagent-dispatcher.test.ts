@@ -10,8 +10,8 @@ import type { AgentTurnDeps, AgentTurnInput } from '../routes/agent-turn.js';
  *
  * Everything here reads the `chat_thread` row the dispatcher created, on a real
  * migrated schema: `plan_mode` is what the turn later reads (agent-turn resolves
- * `thread.planMode` → `tools = READONLY_BUILTINS` + `disallowedTools =
- * MUTATING_BUILTINS` + the PLAN MODE ACTIVE prompt section), so the column IS
+ * `thread.planMode` → `disallowedToolGroups: ['file-write','shell']` + the
+ * PLAN MODE ACTIVE prompt section), so the column IS
  * the posture. The child turn itself is a stub — it records the thread it was
  * handed so the same assertion can be made on what the turn would receive.
  */
@@ -93,7 +93,7 @@ describe('TransagentDispatcher — planMode (0.2.30)', () => {
     const { threadId } = await run({ parentThreadId, planMode: true });
 
     // The column IS the posture: agent-turn reads `thread.planMode` and hands
-    // the adapter READONLY_BUILTINS + disallowedTools = MUTATING_BUILTINS, and
+    // the adapter the 'file-write' + 'shell' deny-groups, and
     // chat-context appends the PLAN MODE ACTIVE section off the same flag.
     expect(planModeOf(threadId)).toBe(1);
     expect(turnThreads[0]?.planMode).toBe(true);
@@ -170,7 +170,7 @@ describe('TransagentDispatcher — planMode (0.2.30)', () => {
 
   it("[ac:ac-banka-context-type-patch-spawnowana-z] keeps a patch banka spawned from a plan-mode parent unrestricted, so it can still edit the spec", async () => {
     // Inheritance here would be a concrete regression: the patch thread would
-    // get READONLY_BUILTINS and lose Write/Edit/Bash — the only thing it exists
+    // get the plan-mode deny-groups and lose Write/Edit/Bash — the only thing it exists
     // to do. (That a plan_mode=0 thread runs with the full builtin set is
     // covered at the turn level in agent-turn.test.ts.)
     const parentThreadId = seedParent(true);

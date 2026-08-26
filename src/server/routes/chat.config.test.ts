@@ -56,6 +56,22 @@ describe('GET /api/chat/config — the claude-code catalog', () => {
     };
   };
 
+  /**
+   * 0.2.50 — the Plan Mode toggle is only offered when the deny-groups it
+   * desugars to can actually be enforced. Probed server-side because the
+   * package's main entry pulls the agent runtime and is not browser-safe.
+   */
+  it('reports whether plan mode is enforceable on this architecture', async () => {
+    const res = await request(app()).get('/chat/config');
+
+    expect(res.status).toBe(200);
+    // claude-code enforces all four groups (at `soft` strength), so the toggle
+    // is always offered here. The field must be a real boolean, not undefined —
+    // the client defaults it to `true` when absent, which would silently mask a
+    // route that stopped reporting it.
+    expect(res.body.planModeEnforceable).toBe(true);
+  });
+
   it('offers exactly the 0.2.17 aliases, with opus-5 as the default', async () => {
     const cc = await config();
     expect(cc.models).toEqual(['fable-5', 'sonnet-5', 'opus-5', 'haiku-4.5']);

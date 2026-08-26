@@ -11,7 +11,6 @@ import { useChat } from './useChat.js';
 import { useThreadListContext } from './ThreadListContext.js';
 import { BlockRenderer, QueuedMessageBubble } from './BlockRenderer.js';
 import { TransagentPanel } from './TransagentPanel.js';
-import { BackgroundTaskPanel } from './BackgroundTaskPanel.js';
 import { AnnotationPanel } from './AnnotationPanel.js';
 import { CurrentTodoList } from './CurrentTodoList.js';
 import { UsageBadge } from './UsageBadge.js';
@@ -132,6 +131,7 @@ export function ChatOverlay() {
     clearQueue,
     transagents,
     backgroundTasks,
+    heldBackgroundTaskCount,
     activeThreadMeta,
   } = useChat({
     threadId: chatThreadId,
@@ -158,6 +158,13 @@ export function ChatOverlay() {
   // adapter package, served via GET /api/chat/config (not hardcoded in the UI).
   const { data: chatConfig } = useQuery({ queryKey: ['chat-config'], queryFn: () => chatConfigApi.get() });
   const resumeConstraints = chatConfig?.sessionResumeConstraints ?? [];
+  /**
+   * Default TRUE while the config is still loading: the toggle's normal state is
+   * available, and `claude-code` (the only architecture this app runs) always
+   * reports both groups enforceable. Defaulting to false would flicker the
+   * control into a disabled state on every mount.
+   */
+  const planModeEnforceable = chatConfig?.planModeEnforceable ?? true;
   // M21: dla brief context naglowek pokazuje "Brief: <filename>" zamiast title.
   // Pozwala na szybka identyfikacje ze rozmowa ma whitelisted toolset (brief-tools).
   const activeTitle = activeThread?.contextType === 'brief' && activeThread.briefPath
@@ -546,6 +553,7 @@ export function ChatOverlay() {
                           side={msg.role}
                           annotations={msgAnnotations}
                           planMode={msgPlanMode}
+                          backgroundTasks={backgroundTasks}
                         />
                       ))}
                     </div>
@@ -556,11 +564,29 @@ export function ChatOverlay() {
               {transagents.map((t) => (
                 <TransagentPanel key={t.toolUseId} entry={t} model={model} />
               ))}
-              {/* M17: engine-backgrounded tasks (shell/monitor/workflow) — a distinct
-                  panel; a backgrounded process is not a subagent. */}
-              {backgroundTasks.map((t) => (
-                <BackgroundTaskPanel key={t.taskId} entry={t} />
-              ))}
+              {/* 0.2.50: background-task panels moved INTO the turn (a carrier
+                  block placed by useChat, rendered by <BlockRenderer />), so they
+                  sit where the task actually started instead of in a flat list
+                  after the whole conversation. What remains here is the HOLD
+                  indicator: the window between a held `result` and the
+                  continuation turn, during which nothing else is streaming. */}
+              {heldBackgroundTaskCount > 0 && (
+                <div className="msg-enter mb-3 flex">
+                  <div
+                    className="inline-flex items-center gap-1.5 py-1 text-[10.5px] font-mono"
+                    style={{ color: 'var(--c-muted)' }}
+                    aria-live="polite"
+                  >
+                    <span className="dot-pulse">
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </span>
+                    waiting for {heldBackgroundTaskCount} background task
+                    {heldBackgroundTaskCount === 1 ? '' : 's'}
+                  </div>
+                </div>
+              )}
               {showStreamingBubble && (
                 <div className="msg-enter mb-3 flex">
                   <div
@@ -808,6 +834,7 @@ export function ChatOverlay() {
               currentPage={currentPage}
               sessionLocked={activeThread?.lastSessionId != null}
               resumeConstraints={resumeConstraints}
+              planModeEnforceable={planModeEnforceable}
               onClose={() => setSettingsOpen(false)}
             />
           )}
@@ -974,10 +1001,12 @@ interface ModelSettingsPopoverProps {
   sessionLocked: boolean;
   /** Locked fields declared by the adapter package (served via GET /api/chat/config). */
   resumeConstraints: SessionResumeConstraint[];
+  /** Whether `probeToolGating` confirmed both plan-mode deny-groups are enforceable. */
+  planModeEnforceable: boolean;
   onClose(): void;
 }
 
-function ModelSettingsPopover({ model, setModel, thinking, setThinking, planMode, setPlanMode, currentPage, sessionLocked, resumeConstraints, onClose }: ModelSettingsPopoverProps) {
+function ModelSettingsPopover({ model, setModel, thinking, setThinking, planMode, setPlanMode, currentPage, sessionLocked, resumeConstraints, planModeEnforceable, onClose }: ModelSettingsPopoverProps) {
   const models: Array<{ id: ChatModel; label: string; sub: string }> = [
     { id: 'opus-5', label: 'Opus 5', sub: 'Deep reasoning · default · 1M ctx' },
     { id: 'fable-5', label: 'Fable 5', sub: 'Next-gen · deep reasoning · 1M ctx' },
@@ -1131,12 +1160,24 @@ function ModelSettingsPopover({ model, setModel, thinking, setThinking, planMode
         >
           Plan mode
         </div>
+        {/* 0.2.50: the toggle is only offered once the pre-dispatch probe has
+            confirmed BOTH preset deny-groups are enforceable here. Where they are
+            not, `planMode: true` would make the next turn refuse to start
+            (TOOL_POLICY_REFUSED), so a switch that only breaks the turn is worse
+            than no switch. */}
         <button
-          onClick={() => setPlanMode(!planMode)}
-          className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-md"
+          onClick={() => { if (planModeEnforceable) setPlanMode(!planMode); }}
+          disabled={!planModeEnforceable}
+          title={
+            planModeEnforceable
+              ? undefined
+              : 'This agent architecture cannot enforce the file-write and shell restrictions plan mode requires'
+          }
+          className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-md disabled:cursor-not-allowed"
           style={{
             background: planMode ? 'var(--c-accent-soft)' : 'var(--c-panel)',
             border: `1px solid ${planMode ? 'var(--c-accent)' : 'var(--c-hair)'}`,
+            opacity: planModeEnforceable ? 1 : 0.5,
           }}
         >
           <span
@@ -1155,7 +1196,9 @@ function ModelSettingsPopover({ model, setModel, thinking, setThinking, planMode
               {planMode ? 'Plan mode ON' : 'Plan mode OFF'}
             </div>
             <div className="text-[10.5px]" style={{ color: 'var(--c-subtle)' }}>
-              Agent proposes, doesn't modify
+              {planModeEnforceable
+                ? "Agent proposes, doesn't modify"
+                : 'Unavailable — not enforceable on this architecture'}
             </div>
           </span>
         </button>

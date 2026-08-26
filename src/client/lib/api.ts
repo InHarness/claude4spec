@@ -503,6 +503,13 @@ export interface ChatConfigResponse {
   >;
   defaultArchitecture: string;
   sessionResumeConstraints: SessionResumeConstraint[];
+  /**
+   * 0.2.50 — whether both plan-mode deny-groups (`file-write`, `shell`) are
+   * enforceable on the server's architecture, per a synchronous
+   * `probeToolGating` call. False ⇒ the Plan Mode toggle renders unavailable,
+   * because turning it on would only make the next turn refuse to start.
+   */
+  planModeEnforceable: boolean;
 }
 
 export const chatConfigApi = {

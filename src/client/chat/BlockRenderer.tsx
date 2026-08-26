@@ -5,7 +5,13 @@ import type { UserInputRequest, UserInputResponse } from '@inharness-ai/agent-ad
 import { SubagentPanel } from './SubagentPanel.js';
 import { ToolCard, type ToolItem } from './ToolCard.js';
 import { UserTextMarkdown } from './UserTextMarkdown.js';
-import { USER_INPUT_TOOL_NAME, WARNING_TOOL_NAME } from './useChat.js';
+import {
+  BACKGROUND_TASK_TOOL_NAME,
+  USER_INPUT_TOOL_NAME,
+  WARNING_TOOL_NAME,
+  type BackgroundTaskEntry,
+} from './useChat.js';
+import { BackgroundTaskPanel } from './BackgroundTaskPanel.js';
 import { ChatMarkdown } from './ChatMarkdown.js';
 
 export type BlockSide = 'user' | 'assistant';
@@ -16,9 +22,23 @@ interface Props {
   side: BlockSide;
   annotations?: import('../../shared/entities.js').Annotation[];
   planMode?: boolean;
+  /**
+   * Live background-task registry, for the turn-level "Background tasks" block.
+   * The carrier block stores only a `taskId`, because `_progress`/`_completed`
+   * keep mutating the entry long after the block is placed — so the row is
+   * looked up at render time rather than frozen into the block.
+   */
+  backgroundTasks?: BackgroundTaskEntry[];
 }
 
-export function BlockRenderer({ block, siblings, side, annotations, planMode }: Props) {
+export function BlockRenderer({
+  block,
+  siblings,
+  side,
+  annotations,
+  planMode,
+  backgroundTasks,
+}: Props) {
   switch (block.type) {
     case 'text':
       return side === 'user' ? (
@@ -38,6 +58,13 @@ export function BlockRenderer({ block, siblings, side, annotations, planMode }: 
       const result = paired && paired.type === 'toolResult' ? paired : null;
       if (block.toolName === WARNING_TOOL_NAME) {
         return <WarningBlock message={warningMessage(block.input)} />;
+      }
+      if (block.toolName === BACKGROUND_TASK_TOOL_NAME) {
+        const taskId = backgroundTaskId(block.input);
+        const entry = backgroundTasks?.find((t) => t.taskId === taskId);
+        // No entry yet means the carrier outran its own state update; render
+        // nothing this pass rather than an empty shell.
+        return entry ? <BackgroundTaskPanel entry={entry} /> : null;
       }
       if (block.toolName === USER_INPUT_TOOL_NAME) {
         return (
@@ -103,6 +130,34 @@ export function BlockRenderer({ block, siblings, side, annotations, planMode }: 
                 side={side}
                 annotations={annotations}
                 planMode={planMode}
+                backgroundTasks={backgroundTasks}
+              />
+            )}
+          </>
+        );
+      }
+      // Same reasoning one carrier over: a background task is not a tool call,
+      // so it must not be folded into a tool card when the batcher happens to
+      // place it beside one. The remainder goes BACK through this switch so the
+      // special cases below it survive.
+      if (block.items.some((i) => i.toolName === BACKGROUND_TASK_TOOL_NAME)) {
+        const tasks = block.items.filter((i) => i.toolName === BACKGROUND_TASK_TOOL_NAME);
+        const rest = block.items.filter((i) => i.toolName !== BACKGROUND_TASK_TOOL_NAME);
+        return (
+          <>
+            {tasks.map((item) => {
+              const taskId = backgroundTaskId(item.input);
+              const entry = backgroundTasks?.find((t) => t.taskId === taskId);
+              return entry ? <BackgroundTaskPanel key={item.toolUseId} entry={entry} /> : null;
+            })}
+            {rest.length > 0 && (
+              <BlockRenderer
+                block={{ ...block, items: rest }}
+                siblings={siblings}
+                side={side}
+                annotations={annotations}
+                planMode={planMode}
+                backgroundTasks={backgroundTasks}
               />
             )}
           </>
@@ -415,3 +470,11 @@ function PersistedUserInputCard({
   );
 }
 
+
+/** The carrier block's payload is `{ taskId }` — read defensively; it round-trips through JSON. */
+function backgroundTaskId(input: unknown): string | null {
+  if (input && typeof input === 'object' && typeof (input as { taskId?: unknown }).taskId === 'string') {
+    return (input as { taskId: string }).taskId;
+  }
+  return null;
+}

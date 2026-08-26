@@ -8,17 +8,27 @@ import type { BackgroundTaskEntry } from './useChat.js';
  * (accent-bordered nested child) — a backgrounded process is neither a spawned
  * helper agent nor a child banka, and must not read as one. Uses the paper/terra
  * accent in a flat single-row form so the form factor alone sets it apart.
+ *
+ * ## `status` is an OPAQUE LABEL (0.2.50)
+ *
+ * It used to be normalized onto running/failed/done and coloured accordingly.
+ * That is now forbidden, and the reason is that the mapping was a guess: the
+ * contract types `background_task_completed.status` as a bare, undocumented
+ * string with no enumerated values, so any success/failure classification is
+ * invented rather than read. A wrong green on a failed build is worse than no
+ * colour at all.
+ *
+ * The literal consequence, which is intended and not an oversight: **a failed
+ * background task looks exactly like a successful one.** The only distinction
+ * the UI draws is running vs. settled, which IS knowable — a task is running
+ * until its `_completed` event arrives.
  */
 export function BackgroundTaskPanel({ entry }: { entry: BackgroundTaskEntry }) {
-  const status = normalizeStatus(entry.status);
-  const running = status === 'running';
+  // 'running' is OUR sentinel, written when `_started` is seen and replaced by
+  // whatever string the engine sends on `_completed`. `'abandoned'` is ours too
+  // (the server's orphan finalizer). Everything else is the engine's, verbatim.
+  const running = entry.status === 'running';
   const Icon = iconFor(entry.taskType);
-
-  const dotColor = running
-    ? 'var(--c-accent)'
-    : status === 'failed'
-      ? 'var(--c-red, #c45a3b)'
-      : 'var(--c-green, #4a9860)';
 
   return (
     <div
@@ -47,20 +57,22 @@ export function BackgroundTaskPanel({ entry }: { entry: BackgroundTaskEntry }) {
             running
           </span>
         ) : (
+          // Neutral chrome, always. No branch on the value — see the note above.
           <span
             className="font-mono uppercase tracking-wider text-[10.5px] px-1.5 py-0.5 rounded"
-            style={
-              status === 'failed'
-                ? { background: 'var(--c-red-soft)', color: 'var(--c-red)' }
-                : { background: 'var(--c-green-soft)', color: 'var(--c-green)' }
-            }
+            style={{ background: 'var(--c-hair)', color: 'var(--c-muted)' }}
+            title="Status reported by the engine, shown verbatim"
           >
             {entry.status}
           </span>
         )}
         <span
           className="inline-block rounded-full"
-          style={{ width: 7, height: 7, background: dotColor }}
+          style={{
+            width: 7,
+            height: 7,
+            background: running ? 'var(--c-accent)' : 'var(--c-muted)',
+          }}
           aria-hidden
         />
       </div>
@@ -89,6 +101,15 @@ export function BackgroundTaskPanel({ entry }: { entry: BackgroundTaskEntry }) {
   );
 }
 
+/**
+ * `BackgroundTaskType` is an OPEN union (`'shell' | 'monitor' | 'workflow' |
+ * (string & {})`), so the `default` branch is required, not defensive padding: a
+ * task kind added by a future SDK must render under its own name rather than
+ * take the block down.
+ *
+ * Wire-level SDK values (e.g. `local_bash`) must never arrive here — the adapter
+ * strips that prefix. Seeing one means the normalization path is broken.
+ */
 function iconFor(taskType: string) {
   switch (taskType) {
     case 'shell':
@@ -102,17 +123,3 @@ function iconFor(taskType: string) {
   }
 }
 
-/**
- * Map the engine's status string onto the three visual states. Only KNOWN
- * terminal statuses read as done/failed; anything unrecognized falls back to
- * 'running' so an in-flight task whose status string we don't know (e.g.
- * 'active', 'starting', 'queued') never renders as finished.
- */
-function normalizeStatus(status: string): 'running' | 'failed' | 'done' {
-  const s = status.toLowerCase();
-  if (s === 'error' || s === 'failed' || s === 'failure' || s === 'cancelled' || s === 'canceled')
-    return 'failed';
-  if (s === 'success' || s === 'succeeded' || s === 'completed' || s === 'complete' || s === 'done' || s === 'ok')
-    return 'done';
-  return 'running';
-}
