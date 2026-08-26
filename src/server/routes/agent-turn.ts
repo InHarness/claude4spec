@@ -681,7 +681,7 @@ export async function runAgentTurn(
     const isBriefFrame = ctx.uiChrome === 'brief-detail';
 
     // M21: dla brief context czytamy aktualny snapshot brief'u (frontmatter+body+hash)
-    // i wkladamy do system promptu. Skip kosztownych obliczen pageCount/entityCounts.
+    // i wkladamy do system promptu. Skip kosztownych obliczen entityCounts.
     // Gated on the registry's brief-tools dimension (brief is the only briefTools row).
     let briefSnapshot: Brief | null = null;
     if (ctx.mcp.briefTools && thread.briefPath) {
@@ -752,7 +752,6 @@ export async function runAgentTurn(
     const { listing: availableSkills, writingStyle: writingStyleSkill } =
       deps.skillResolver.resolveForContext(thread.contextType);
 
-    const pageCount = isBriefFrame ? 0 : countPages(await deps.pagesService.listTree());
     // 0.1.51: language directives travel the same path as writingStyle — read from
     // config per-turn here, NOT via architectureConfig. Effective only from the first
     // turn of a new thread (the prompt is persisted once by setInitialSystemPrompt).
@@ -840,10 +839,8 @@ export async function runAgentTurn(
       // 'pages' fallback) — rendered into the `<current_page root="…">` context.
       currentPageRootId: currentPageService.rootId,
       currentPageBody,
-      pageCount,
       entityCounts: isBriefFrame ? {} : deps.pluginHost.computeEntityCounts(deps.db.handle),
       tagCount: isBriefFrame ? 0 : deps.tagsService.list().length,
-      sectionCount: isBriefFrame ? 0 : deps.sectionsService.count(),
       annotations,
       planMode,
       currentPlan,
@@ -1841,12 +1838,3 @@ export async function runAgentTurn(
   return { threadId: thread.id, answer: lastAssistantText.trim(), messages };
 }
 
-export function countPages(tree: Array<{ type: string; children?: unknown[] }>): number {
-  let n = 0;
-  for (const node of tree) {
-    if (node.type === 'file') n++;
-    else if (Array.isArray(node.children))
-      n += countPages(node.children as Array<{ type: string; children?: unknown[] }>);
-  }
-  return n;
-}

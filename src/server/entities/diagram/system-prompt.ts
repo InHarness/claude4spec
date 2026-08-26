@@ -26,9 +26,14 @@ export const diagramSystemPrompt: SystemPromptContribution = {
   // M13: CRUD moved to the generic entity-tools server (composed by the host);
   // this line now covers ONLY diagram's custom pre-flight validation tool.
   mcpToolsLine: 'diagram-tools: validate_diagram',
+  /**
+   * 0.2.50 — the second sentence went. It spelled out the two reference tags,
+   * which is a strict subset of `<diagram_references>` above — emitted into the
+   * same prompt, whenever this type is active. The row now states the rule that
+   * makes the convention matter and points at the block that carries it.
+   */
   narrativeBlock:
-    'Diagrams are hoisted out to entities — the DSL body (Mermaid) lives in the entity file, not the page. ' +
-    'Embed only via the generic reference `<single_element type="diagram" slug="…" caption="…"/>` (block) or ' +
-    '`<inline_mention type="diagram" slug="…"/>` (chip) — do NOT paste the DSL into the page.',
+    'Diagrams are hoisted out to entities — the Mermaid DSL lives in the entity, NEVER pasted into the page. ' +
+    'Embed one with the generic reference tags; the grammar is in `<diagram_references>`.',
   promptBlocks: [{ name: 'diagram_references', body: DIAGRAM_REFERENCES }],
 };

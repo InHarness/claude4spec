@@ -400,11 +400,13 @@ export class SkillRegistry {
 export interface ContextSkills {
   listing: SkillListingEntry[];
   /**
-   * 0.2.50 — carries `description` too. `<project_writing_skill>` used to assert
-   * what the style contained; it now renders the style's own self-description,
-   * which is the only account of it that cannot be wrong.
+   * 0.2.50 — slug and title only. `<project_writing_skill>` briefly rendered the
+   * style's own `description`, and no longer does: a description is a blurb that
+   * helps a model DECIDE whether to open a skill, and in that block the decision
+   * is already made. `<available_skills>` keeps its descriptions, because that
+   * is the one place the blurb does its job.
    */
-  writingStyle: { slug: string; title: string; description?: string } | null;
+  writingStyle: { slug: string; title: string } | null;
 }
 
 export class SkillResolver {
@@ -519,9 +521,7 @@ export class SkillResolver {
 
     return {
       listing: dedupeBySlug(listing),
-      writingStyle: style
-        ? { slug: style.slug, title: style.title, description: style.description }
-        : null,
+      writingStyle: style ? { slug: style.slug, title: style.title } : null,
     };
   }
 }
