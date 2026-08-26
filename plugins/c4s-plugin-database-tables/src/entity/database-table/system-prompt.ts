@@ -21,12 +21,21 @@ import type { SystemPromptContribution } from '@c4s/plugin-runtime';
  */
 export const databaseTableSystemPrompt: SystemPromptContribution = {
   roleNoun: 'database tables',
+  /**
+   * 0.2.50 — the sentence defending `title` as an SQL identifier went.
+   * `constraints` publishes `kind: 'sql-identifier'` for that field WITH its own
+   * prose, and `describe_entity_type` returns it, so the prompt was paraphrasing
+   * a rule the host states better and enforces itself.
+   *
+   * What stays is what the schema cannot say: that this type is a SHAPE and
+   * nothing runs DDL, that a soft `fk` is PERMISSION to reference forward, and
+   * that renaming goes through `newSlug` rather than `title`.
+   */
   narrativeBlock:
     'A database table is a SHAPE — ordered columns and indexes — not a live schema; nothing here ' +
     'runs DDL. A column\'s `fk` is a SOFT foreign key: it may point at a table that does not exist ' +
     'yet, which returns a warning rather than an error, and deleting a table never cascades to the ' +
-    'columns referencing it. `title` is this type\'s ONLY name field and IS the SQL identifier — it ' +
-    'must stay one, so it takes no free text; the slug is derived from it once, so editing `title` ' +
-    'alone does NOT rename the entity — pass `newSlug` to do that, which also repoints every `fk` ' +
-    'pointing here.',
+    'columns referencing it — so you may reference a table you have not written. The slug is derived ' +
+    'from `title` once, so editing `title` alone does NOT rename the entity: pass `newSlug` to do ' +
+    'that, which also repoints every `fk` pointing here.',
 };

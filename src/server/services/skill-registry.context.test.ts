@@ -62,7 +62,7 @@ describe('SkillRegistry — legacy `injection` frontmatter (0.2.19: retired)', (
     const registry = SkillRegistry.load([root]);
     writeConfig(tmp, 'house-style');
     const { writingStyle } = new SkillResolver(registry, tmp).resolveForContext('chat');
-    expect(writingStyle).toEqual({ slug: 'house-style', title: 'house-style', description: 'from bundled' });
+    expect(writingStyle).toEqual({ slug: 'house-style', title: 'house-style' });
   });
 });
 
@@ -157,7 +157,7 @@ describe('SkillResolver.resolveForContext', () => {
 
     expect(spy).not.toHaveBeenCalled();
     expect(listing).toEqual([{ slug: 'writing-style-author', description: 'from bundled' }]);
-    expect(writingStyle).toEqual({ slug: 'house-style', title: 'house-style', description: 'from bundled' });
+    expect(writingStyle).toEqual({ slug: 'house-style', title: 'house-style' });
   });
 
   it('gives a brief thread nothing but the active writing style — the mode skills are gone', () => {
@@ -172,7 +172,7 @@ describe('SkillResolver.resolveForContext', () => {
       // a listing row would.
       expect(resolver.resolveForContext(ct)).toEqual({
         listing: [],
-        writingStyle: { slug: 'house-style', title: 'house-style', description: 'from bundled' },
+        writingStyle: { slug: 'house-style', title: 'house-style' },
       });
     }
   });
@@ -186,7 +186,7 @@ describe('SkillResolver.resolveForContext', () => {
 
     const { listing, writingStyle } = resolver.resolveForContext('chat');
     expect(listing.map((s) => s.slug)).toEqual(['writing-style-author']);
-    expect(writingStyle).toEqual({ slug: 'house-style', title: 'house-style', description: 'from bundled' });
+    expect(writingStyle).toEqual({ slug: 'house-style', title: 'house-style' });
   });
 
   it('warns and skips an attach-list slug missing from the registry, without throwing (bundled roots only rescan at boot — a newly bundled skill not yet picked up by a running process must degrade gracefully, not fail every turn)', () => {
@@ -203,7 +203,7 @@ describe('SkillResolver.resolveForContext', () => {
     const resolver = new SkillResolver(registry, tmp);
 
     const { listing, writingStyle } = resolver.resolveForContext('brief');
-    expect(writingStyle).toEqual({ slug: 'house-style', title: 'house-style', description: 'from bundled' });
+    expect(writingStyle).toEqual({ slug: 'house-style', title: 'house-style' });
     expect(listing).toEqual([]);
   });
 
@@ -301,7 +301,7 @@ describe('SkillResolver.resolveForContext', () => {
 
       const { listing, writingStyle } = new SkillResolver(registry, tmp).resolveForContext('chat');
       // Title from the WINNING entry: the bundled file outranks the plugin push.
-      expect(writingStyle).toEqual({ slug: 'house-style', title: 'house-style', description: 'from bundled' });
+      expect(writingStyle).toEqual({ slug: 'house-style', title: 'house-style' });
       expect(listing).toEqual([]);
     });
 

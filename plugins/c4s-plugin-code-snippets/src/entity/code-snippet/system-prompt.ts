@@ -32,13 +32,17 @@ export const codeSnippetSystemPrompt: SystemPromptContribution = {
    * judgement — and the agent is the only thing in the system positioned to make
    * the second half.
    */
+  /**
+   * 0.2.50 — the closing sentence about reference tags went: `<entity_embeds>`
+   * states the embed grammar for every type, in the same prompt. What stays is
+   * the promotion threshold, which is the one rule here no validator enforces
+   * and no schema can express — a two-part test the agent has to apply itself.
+   */
   narrativeBlock:
     `Lift a code block out of a fence into a \`code-snippet\` entity ONLY when BOTH hold: it is ` +
     `at least ${PROMOTION_MIN_LINES} lines long, AND it is an EXAMPLE OF A FORM — the canonical ` +
     `shape of something named elsewhere (a manifest, a contract, a schema, a convention). The ` +
     `deciding test for the second half is "would this block make sense on a page other than the ` +
     `one I am writing it on?" If not, it stays an ordinary fence. A one-off quotation of an ` +
-    `implementation belonging to a single section is NOT a snippet, however long it is. ` +
-    `Embed one with the generic reference tags and never paste the same code beside a reference ` +
-    `to it — the reference is the point.`,
+    `implementation belonging to a single section is NOT a snippet, however long it is.`,
 };

@@ -30,11 +30,16 @@ export const acSystemPrompt: SystemPromptContribution = {
    * `load_skill_file` in every context type — early enough to tag correctly on
    * the same turn.
    *
-   * What stays is what does not vary: the shape of the entity. `tags` remains
-   * the classification axis for consistency rules 10 and 11, so the field is
-   * named here even though its vocabulary is not.
+   * 0.2.50 — the field list went with it, for the same reason one step further
+   * out: `kind`, `status` and `verifies[]` are named in `createSchema` and
+   * their enums appear twice more in `constraints`, all of it returned by
+   * `describe_entity_type` and derived from the schema the host enforces.
+   *
+   * What stays is the granulation rule — one observable statement, which is a
+   * decision about how many criteria to write, not a field — and the tag
+   * convention, which no schema can carry because it varies per project.
    */
   narrativeBlock:
-    'Acceptance criteria — one observable statement; kind (requirement/edge-case), status (active/deprecated), verifies[] refs to entities, tags. ' +
+    'Acceptance criteria state ONE observable thing each: if a criterion needs an "and" to be true, it is two criteria. ' +
     'The tag vocabulary is a project convention, not a property of the type: follow the active writing style, and reuse the tags already on neighbouring criteria rather than inventing a scheme.',
 };

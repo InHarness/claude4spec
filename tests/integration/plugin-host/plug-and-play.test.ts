@@ -185,10 +185,8 @@ describe('item 63 — a type that declares only its data is a first-class type',
         roots: [] as Root[],
         currentPagePath: null,
         currentPageBody: null,
-        pageCount: 0,
         entityCounts: { sprocket: 3 },
         tagCount: 0,
-        sectionCount: 0,
       });
 
       // The narrative row and the embed type union — two separate places in

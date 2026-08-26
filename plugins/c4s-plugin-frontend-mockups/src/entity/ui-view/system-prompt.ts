@@ -11,9 +11,16 @@ export const uiViewSystemPrompt: SystemPromptContribution = {
    * content-bearing, which is the only reason a read of a ui-view can come back
    * looking empty.
    */
+  /**
+   * 0.2.50 — the `mockupHtml` sentence went: it restated `contentFields`, which
+   * `describe_entity_type` returns as `{ field, operation }` pairs, naming the
+   * very tool that issues the content.
+   *
+   * The `states` semantics stay. The schema says `states` is a list; it cannot
+   * say that the DEFAULT screen is not one of its entries, so an empty list
+   * means one state rather than zero — a reading no field description supplies.
+   */
   narrativeBlock:
-    'UI views are screen-level: a url with its params, plus `states` for the ALTERNATIVE screens ' +
-    '(empty, loading, error) — the default state is not an entry, so an empty list means one ' +
-    'state rather than none. `mockupHtml` is content-bearing: an ordinary read never emits it, ' +
-    'and `get_field_content` is the only way to see it.',
+    'UI views are screen-level. `states` lists the ALTERNATIVE screens (empty, loading, error): the ' +
+    'default state is not an entry, so an empty list means ONE state rather than none.',
 };
