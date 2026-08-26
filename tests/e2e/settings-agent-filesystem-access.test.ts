@@ -111,8 +111,15 @@ describe.skipIf(!BASE)('settings — Agent: block direct file access (0.2.53)', 
    * documented way around it unmentioned.
    */
   it('[ac:ac-badge-sily-przy-checkboxie-agent-disa] shows a soft-strength badge naming the native subagent as the escape', async () => {
-    await expect.poll(() => section().getByText(/strength: soft|Enforced softly/i).count()).toBeGreaterThan(0);
-    await expect.poll(() => section().getByText(/\bhard\b/i).count()).toBe(0);
+    const badge = section().getByText(/strength: soft|Enforced softly/i).first();
+    await expect.poll(() => badge.count()).toBeGreaterThan(0);
+    /**
+     * Scoped to the BADGE, not the section. The section legitimately uses the
+     * word elsewhere — the note about the hard OS sandbox that still covers the
+     * native subagent — and that sentence is the opposite of the thing this
+     * criterion forbids: it is there precisely because this gate is not hard.
+     */
+    await expect.poll(async () => /\bhard\b/i.test((await badge.innerText()) ?? '')).toBe(false);
     await expect.poll(() => section().getByText(/Agent \/ Task/i).count()).toBeGreaterThan(0);
   });
 
