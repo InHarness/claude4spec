@@ -64,7 +64,11 @@ export function redactSecrets(value: unknown, seen: WeakSet<object> = new WeakSe
   if (seen.has(value as object)) return '[circular]';
   seen.add(value as object);
 
-  if (Array.isArray(value)) return value.map((entry) => redactSecrets(entry, seen));
+  if (Array.isArray(value)) {
+    const arr = value.map((entry) => redactSecrets(entry, seen));
+    seen.delete(value as object);
+    return arr;
+  }
 
   const out: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
@@ -83,5 +87,10 @@ export function redactSecrets(value: unknown, seen: WeakSet<object> = new WeakSe
     }
     out[key] = redactSecrets(entry, seen);
   }
+  // Leave the set holding only the ANCESTOR path, not every node already
+  // visited. A config where two keys point at the same options object is a DAG,
+  // not a cycle, and a plain visited-set would render the second occurrence as
+  // `'[circular]'` — hiding a whole subtree behind a claim that isn't true.
+  seen.delete(value as object);
   return out;
 }

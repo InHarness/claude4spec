@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { restError } from '../operations/envelope.js';
-import { httpStatusForCode } from '../operations/error-codes.js';
+import { httpStatusForCode, STATUS_FOR_TURN_ERROR } from '../operations/error-codes.js';
 import { nanoid } from 'nanoid';
 import { resolveModel, ADAPTIVE_THINKING_ONLY } from '@inharness-ai/agent-adapters';
 import { readConfig } from '../config.js';
@@ -232,9 +232,12 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
       res.json(result);
     } catch (err) {
       if (err instanceof AgentTurnError) {
-        // 503 AGENT_UNAVAILABLE — `claude` CLI niedostepne/niezalogowane.
-        // 500 — tura zakonczona eventem `error`; `code ∈ AGENT_ERROR|TIMEOUT|ABORTED`.
-        const status = err.code === 'AGENT_UNAVAILABLE' ? 503 : 500;
+        // Per-code status (0.2.50). This used to be a single
+        // `AGENT_UNAVAILABLE ? 503 : 500` ternary, which collapsed every other
+        // turn failure into 500 — so a hold-cap expiry was indistinguishable
+        // from an internal error by status, which is exactly what the two new
+        // codes exist to prevent.
+        const status = STATUS_FOR_TURN_ERROR[err.code] ?? 500;
         return res.status(status).json({ error: { code: err.code, message: err.message } });
       }
       next(err);

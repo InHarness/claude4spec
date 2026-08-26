@@ -75,6 +75,11 @@ vi.mock('../config.js', async (importOriginal) => {
   };
 });
 
+import {
+  AdapterAbortError,
+  AdapterBackgroundHoldExpiredError,
+  AdapterTimeoutError,
+} from '@inharness-ai/agent-adapters';
 import { runAgentTurn, type AgentTurnDeps, type AgentTurnInput } from './agent-turn.js';
 import { BACKGROUND_HOLD_CAP_MS, TURN_TIMEOUT_MS } from '../../shared/agent-turn.js';
 
@@ -1096,10 +1101,15 @@ describe('runAgentTurn — replay buffer byte budget', () => {
 
     const degraded = toolResults.filter((e) => e.truncated === true);
     expect(degraded.length).toBeGreaterThan(0);
-    // A degraded entry keeps exactly the identity fields the reducer pairs on.
+    // A degraded entry loses its PAYLOAD and keeps every routing field. Dropping
+    // `isSubagent`/`subagentTaskId` would make a joiner append a subagent's
+    // result to the main transcript and leave the subagent card spinning — the
+    // very failure degradation exists to prevent — and dropping `isError` would
+    // replay a failed tool as a successful one.
     for (const entry of degraded) {
       expect(entry.toolUseId).toBeTruthy();
-      expect(entry).not.toHaveProperty('summary');
+      expect(entry.summary).toBe('');
+      expect(entry).toHaveProperty('isSubagent');
     }
     // Oldest-first: the newest result is the one a joiner most likely still wants.
     expect(toolResults[0].truncated).toBe(true);
@@ -1438,5 +1448,88 @@ describe('runAgentTurn — the profile gate covers the inline servers too', () =
     const mounted = await mountedFor('ask');
     expect(mounted).not.toContain('c4s-tools');
     expect(mounted).not.toContain('transagent-tools');
+  });
+});
+
+/**
+ * TERMINAL ERROR DELIVERY (0.2.50).
+ *
+ * The contract is explicit that "the iterator never throws (M01/M13)" — every
+ * adapter error, `AdapterTimeoutError` and `AdapterAbortError` included, arrives
+ * as `{ type: 'error' }` and the generator then ends normally. An earlier draft
+ * of the turn loop captured only the tool-policy and hold-cap classes and
+ * assumed the other two were thrown, so a timed-out turn RESOLVED AS SUCCESS
+ * with an empty answer while the client got an unshaped error frame with no
+ * `code` on it. These cases pin every class to a code.
+ */
+describe('runAgentTurn — delivered terminal errors', () => {
+  const cases: Array<{ name: string; error: Error; code: string }> = [
+    {
+      name: 'AdapterTimeoutError',
+      error: new AdapterTimeoutError('claude-code', 1000),
+      code: 'TIMEOUT',
+    },
+    { name: 'AdapterAbortError', error: new AdapterAbortError('claude-code'), code: 'ABORTED' },
+    {
+      name: 'AdapterBackgroundHoldExpiredError',
+      error: new AdapterBackgroundHoldExpiredError('claude-code', 1000),
+      code: 'BACKGROUND_HOLD_EXPIRED',
+    },
+  ];
+
+  for (const { name, error, code } of cases) {
+    it(`fails the turn with ${code} when the stream delivers ${name}`, async () => {
+      hoisted.events = [
+        { type: 'text_delta', text: 'partial' },
+        { type: 'error', error, phase: 'runtime' },
+      ];
+      const { deps } = makeDeps();
+      const seen: Array<Record<string, unknown>> = [];
+
+      // MUST reject. Resolving here is the actual bug this pins: the generator
+      // ends normally after delivering the error, so nothing else stops the turn.
+      await expect(
+        runAgentTurn(deps, { ...makeInput(), onEvent: (e) => seen.push(e as never) }),
+      ).rejects.toMatchObject({ name: 'AgentTurnError', code });
+
+      // Exactly ONE error frame, and it is the typed one — the raw adapter event
+      // (a live `Error` under `error`, no `code`) must never reach the wire.
+      const errors = seen.filter((e) => e.type === 'error');
+      expect(errors).toHaveLength(1);
+      expect(errors[0]!.code).toBe(code);
+      expect(typeof errors[0]!.error).toBe('string');
+    });
+  }
+
+  /**
+   * The refusal path used to `emit` and then `throw`, and the catch emitted the
+   * same frame again — two identical errors on the wire and two in the replay
+   * buffer, since `error` is a replayed type.
+   */
+  it('emits exactly one error frame when plan mode is refused pre-dispatch', async () => {
+    const probe = await import('@inharness-ai/agent-adapters');
+    const spy = vi
+      .spyOn(probe, 'probeToolGating')
+      .mockReturnValue([
+        { group: 'shell', enforceable: false } as never,
+        { group: 'file-write', enforceable: true, strength: 'soft' } as never,
+      ]);
+    try {
+      hoisted.events = [{ type: 'result', sessionId: 's1' }];
+      const { deps } = makeDeps();
+      const seen: Array<Record<string, unknown>> = [];
+      const input = { ...makeInput(), onEvent: (e: unknown) => seen.push(e as never) };
+      (input.thread as { planMode: boolean }).planMode = true;
+
+      await expect(runAgentTurn(deps, input)).rejects.toMatchObject({
+        code: 'TOOL_POLICY_REFUSED',
+      });
+
+      expect(seen.filter((e) => e.type === 'error')).toHaveLength(1);
+      // Refused BEFORE dispatch: the adapter was never asked to run.
+      expect(hoisted.executes).toHaveLength(0);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

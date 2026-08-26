@@ -442,11 +442,17 @@ export async function runAgentTurn(
       if (ev.type !== 'tool_result' || ev.truncated) continue;
       const before = sizeOf(entry);
       const degraded = entry as unknown as Record<string, unknown>;
-      // Keep the identity fields the reducer pairs on; drop the payload.
-      for (const key of Object.keys(degraded)) {
-        if (key === 'type' || key === 'toolUseId' || key === 'toolName') continue;
-        delete degraded[key];
-      }
+      /**
+       * Empty the PAYLOAD (`summary`), and only the payload.
+       *
+       * Everything else on a `tool_result` is routing, not detail, and dropping
+       * any of it turns a degraded entry into a wrong one: without `isSubagent`
+       * / `subagentTaskId` a joiner appends a subagent's result to the main
+       * transcript and leaves the subagent's own card spinning — the exact
+       * failure degradation exists to prevent — and without `isError` a failed
+       * tool replays as a successful one.
+       */
+      degraded.summary = '';
       degraded.truncated = true;
       replay.bytes -= before - sizeOf(entry);
     }
@@ -554,15 +560,21 @@ export async function runAgentTurn(
   const hold = new Set<string>();
 
   /**
-   * Terminal error EVENTS captured inside the loop (0.2.50).
+   * The terminal error EVENT captured inside the loop (0.2.50).
    *
-   * The adapter delivers these two through the stream rather than throwing, so
-   * they cannot be caught. They are recorded here and re-raised as an
-   * `AgentTurnError` once the generator is exhausted, which keeps every turn
-   * failure — thrown or delivered — funnelling through one exit path.
+   * EVERY adapter error arrives this way. The contract is explicit that "the
+   * iterator never throws (M01/M13)" — including the abort and timeout cases
+   * that an earlier draft of this file assumed were thrown, and that the
+   * `catch` below still handles defensively in case a future release changes
+   * its mind. `terminalRuntimeError()` in the claude-code adapter yields
+   * `AdapterTimeoutError`, `AdapterBackgroundHoldExpiredError` and
+   * `AdapterAbortError` alike as `{ type: 'error', phase: 'runtime' }`.
+   *
+   * Recording rather than throwing on the spot keeps the generator draining to
+   * exhaustion (so late `background_task_completed` events still land) and
+   * funnels every turn failure — delivered or thrown — through one exit path.
    */
-  let policyRefusal: AdapterToolPolicyError | null = null;
-  let backgroundHoldExpired: AdapterBackgroundHoldExpiredError | null = null;
+  let deliveredError: AgentTurnError | null = null;
 
   const getSubBuf = (taskId: string) => {
     let buf = subagentBuffers.get(taskId);
@@ -1298,7 +1310,11 @@ export async function runAgentTurn(
         );
         // Refusal to START: exactly one `error`, then `done`. No `adapter_ready`,
         // no `result`, and nothing persisted as an assistant message.
-        emit({ type: 'error', code: refusal.code, error: refusal.message });
+        //
+        // Thrown WITHOUT emitting here — the `catch` emits the one `error`
+        // frame for every failure path. Emitting first as well is how this
+        // refusal used to put two identical errors on the wire (and two into
+        // the replay buffer, since `error` is a replayed type).
         throw refusal;
       }
     }
@@ -1415,9 +1431,14 @@ export async function runAgentTurn(
           }
           for (const task of event.backgroundTasks ?? []) hold.add(task.taskId);
           continue;
-        } else if (event.type !== 'adapter_ready') {
+        } else if (event.type !== 'adapter_ready' && event.type !== 'error') {
           emit(event as unknown as TurnEvent);
         }
+        // `error` is withheld here on purpose. The adapter's event carries a
+        // live `Error` instance under `error` and no `code`; forwarding it
+        // raw would put an unshaped, mostly-empty object on the wire AND then
+        // duplicate it, because the `catch` below emits the typed
+        // `{ code, error: message }` frame that the client actually reads.
 
         switch (event.type) {
           case 'text_delta':
@@ -1646,17 +1667,18 @@ export async function runAgentTurn(
             break;
           /**
            * Context-compaction boundary, empty payload. Side-band: forwarded so
-           * the client can draw a separator, but it must never take part in
-           * end-of-turn detection — hence its membership in
-           * `SIDE_BAND_EVENT_TYPES`. Nothing to persist.
+           * the client can draw a separator, but it takes no part in
+           * end-of-turn detection — nothing here does, since an iteration ends
+           * on generator exhaustion alone. Nothing to persist.
            */
           case 'flush':
             break;
           /**
-           * Terminal error events. These are DELIVERED, not thrown: the
-           * iterator yields them and then ends, so the `catch` below never sees
-           * them. It handles only `AdapterAbortError` / `AdapterTimeoutError`,
-           * which genuinely throw.
+           * Terminal error events. ALL of them are DELIVERED, not thrown — the
+           * iterator yields and then ends, so the `catch` below never sees
+           * them. Every class therefore has to be mapped HERE; anything left to
+           * fall through would end the loop normally and make a failed turn
+           * resolve as a success with an empty answer.
            *
            * Recognized by class, not by a code — `.name` survives serialization
            * where a code would have to be invented.
@@ -1666,9 +1688,31 @@ export async function runAgentTurn(
             if (err instanceof AdapterToolPolicyError) {
               // Refusal to START, not a turn that failed. No assistant message
               // is persisted; the stream is exactly this error plus `done`.
-              policyRefusal = err;
+              deliveredError = new AgentTurnError(
+                'TOOL_POLICY_REFUSED',
+                `tool policy not enforceable on this architecture: ${err.unenforceable.join(', ') || 'unknown group'}`,
+              );
             } else if (err instanceof AdapterBackgroundHoldExpiredError) {
-              backgroundHoldExpired = err;
+              // The abandoned count comes from OUR registry — the library's
+              // error carries `capMs` and nothing else.
+              deliveredError = new AgentTurnError(
+                'BACKGROUND_HOLD_EXPIRED',
+                `background hold expired after ${err.capMs}ms with ${hold.size} task(s) still running`,
+              );
+            } else if (err instanceof AdapterTimeoutError) {
+              deliveredError = new AgentTurnError('TIMEOUT', 'Agent took too long to respond');
+            } else if (err instanceof AdapterAbortError) {
+              deliveredError = new AgentTurnError('ABORTED', 'Aborted by user');
+            } else if (err instanceof AdapterInitError) {
+              deliveredError = new AgentTurnError(
+                'AGENT_UNAVAILABLE',
+                'Claude CLI not found or not logged in. Run `claude login` first.',
+              );
+            } else {
+              deliveredError = new AgentTurnError(
+                'AGENT_ERROR',
+                err instanceof Error ? err.message : String(err),
+              );
             }
             break;
           }
@@ -1686,20 +1730,7 @@ export async function runAgentTurn(
        * iteration. Any terminal error the stream delivered rather than threw is
        * re-raised now, so it reaches the same `catch` as a thrown one.
        */
-      if (policyRefusal) {
-        throw new AgentTurnError(
-          'TOOL_POLICY_REFUSED',
-          `tool policy not enforceable on this architecture: ${policyRefusal.unenforceable.join(', ') || 'unknown group'}`,
-        );
-      }
-      if (backgroundHoldExpired) {
-        // The abandoned count comes from OUR registry — the library's error
-        // carries `capMs` and nothing else.
-        throw new AgentTurnError(
-          'BACKGROUND_HOLD_EXPIRED',
-          `background hold expired after ${backgroundHoldExpired.capMs}ms with ${hold.size} task(s) still running`,
-        );
-      }
+      if (deliveredError) throw deliveredError;
     };
 
     await consume(prompt);

@@ -45,20 +45,17 @@ export const TURN_TIMEOUT_MS = 60 * 60_000;
 export const BACKGROUND_HOLD_CAP_MS = 5 * 60_000;
 
 /**
- * Event types excluded from end-of-turn detection.
+ * SIDE-BAND EVENTS — `warning` and `flush` — carry no position on the stream:
+ * a `warning` can legitimately arrive after the final `result`, and a `flush`
+ * marks a context-compaction boundary with an empty payload.
  *
- * Terminality reads "the last `result` that is NOT side-band (or a terminal
- * `error`)" — never "the last event that isn't `warning` and isn't `flush`".
- * The difference matters when the set grows: adding a type here must be the
- * ONLY edit required, so no site is allowed to spell these names by hand.
- *
- * `warning` qualifies because its position on the stream carries no meaning —
- * it can legitimately arrive after the final `result`. `flush` qualifies
- * because it marks a context-compaction boundary and has an empty payload.
- *
- * Next expected member: `hold_heartbeat`, when the dependency reaches 0.10.0.
+ * There is deliberately no constant for the set, because nothing in this
+ * codebase decides terminality by inspecting event types. An iteration ends
+ * when the ASYNC GENERATOR IS EXHAUSTED and at no other moment — see the loop
+ * in `runAgentTurn`. A named set here would read as the single source of truth
+ * for a decision that is not made anywhere, so a future `hold_heartbeat` would
+ * be added to it and change nothing.
  */
-export const SIDE_BAND_EVENT_TYPES: ReadonlySet<string> = new Set(['warning', 'flush']);
 
 /**
  * The codes a turn can fail with, shared by every consumer that has to tell

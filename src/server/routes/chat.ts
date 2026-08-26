@@ -594,7 +594,7 @@ function setupSse(res: Response): void {
  * Long silences are normal now that a turn can hold for background work.
  *
  * A future `hold_heartbeat` event (carrying `heldForMs`, `backgroundTasks[]`)
- * replaces this and joins `SIDE_BAND_EVENT_TYPES`.
+ * replaces this, it will be side-band too — see `shared/agent-turn.ts`.
  */
 const SSE_HEARTBEAT_MS = 20_000;
 
