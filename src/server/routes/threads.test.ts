@@ -8,6 +8,9 @@ import { threadsRouter } from './threads.js';
 import type { AgentTurnDeps } from './agent-turn.js';
 import type { ChatThreadMeta } from '../../shared/entities.js';
 import { ASK_TURN_TIMEOUT_MS } from '../../shared/agent-turn.js';
+import Database from 'better-sqlite3';
+import { runMigrations } from '../db/migrate.js';
+import { ChatService } from '../services/chat.js';
 
 // 0.1.107: threads.ts's `POST /:id/ask` now branches on model adaptivity (mirrors
 // the client's `thinkingToConfig`) instead of only setting `claude_effort`.
@@ -338,5 +341,101 @@ describe('POST /:id/ask — headless-only turn timeout (0-1-110-to-next)', () =>
 
     expect(res.status).toBe(200);
     expect(runAgentTurnMock.mock.calls.at(-1)?.[1].timeoutMs).toBe(ASK_TURN_TIMEOUT_MS);
+  });
+});
+
+/**
+ * 0.2.52: DETAIL-ONLY projection. `subagentTasks` / `backgroundTasks` ride the
+ * detail handler, exactly like `queuedMessages` — deliberately NOT
+ * `hydrateThread()`. The rule binds both ways, so both directions are pinned
+ * here: the detail response carries them, and the list response neither carries
+ * them nor reads their table.
+ *
+ * Moving either into `hydrateThread()` would subject it to the list's
+ * performance contract — one extra query per listed row, for no reader at all.
+ *
+ * Unlike the mocked fixtures above, these run against a real ChatService over a
+ * real in-memory DB: the point is what the projection ACTUALLY queries.
+ */
+describe('GET /threads — detail-only projection of task collections (0.2.52)', () => {
+  let db: Database.Database;
+  let chat: ChatService;
+  let dir: string;
+
+  const app = () => {
+    const deps = {
+      chatService: chat,
+      agentCredentialService: { getDecrypted: () => null },
+      activeAdapters: new Map(),
+      cwd: dir,
+      roots: [],
+    } as unknown as AgentTurnDeps;
+    return express().use(express.json()).use('/threads', threadsRouter(deps));
+  };
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-threads-detail-'));
+    db = new Database(':memory:');
+    db.pragma('foreign_keys = ON');
+    runMigrations(db);
+    chat = new ChatService(db);
+  });
+  afterEach(() => {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('returns backgroundTasks on the detail route, oldest first', async () => {
+    const t = chat.createThread('t');
+    chat.startBackgroundTask(t.id, 'bg1', 'shell', 'npm run build');
+    chat.startBackgroundTask(t.id, 'bg2', 'monitor', 'watch');
+    // Backdate the SECOND-inserted row: created_at order must differ from
+    // insertion order, or an unsorted projection passes this case unchanged
+    // (SQLite hands back rowid order when no ORDER BY applies).
+    db.prepare(
+      `UPDATE chat_background_task SET created_at = datetime('now', '-1 hour')
+        WHERE thread_id = ? AND task_id = 'bg2'`,
+    ).run(t.id);
+    chat.completeBackgroundTask(t.id, 'bg1', 'shell', 'exited 0', '/tmp/bg1.log', 'built');
+
+    const res = await request(app()).get(`/threads/${t.id}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.backgroundTasks).toEqual([
+      expect.objectContaining({ taskId: 'bg2', taskType: 'monitor', status: 'running' }),
+      expect.objectContaining({
+        taskId: 'bg1',
+        taskType: 'shell',
+        // Verbatim, not classified — the wire type is a bare undocumented string.
+        status: 'exited 0',
+        outputFile: '/tmp/bg1.log',
+        summary: 'built',
+      }),
+    ]);
+    expect(res.body.data.subagentTasks).toEqual([]);
+  });
+
+  it('returns an empty array for a thread that never backgrounded anything', async () => {
+    const t = chat.createThread('t');
+    const res = await request(app()).get(`/threads/${t.id}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.backgroundTasks).toEqual([]);
+  });
+
+  it('omits both collections from the list, and never reads the table for it', async () => {
+    const t = chat.createThread('t');
+    chat.startBackgroundTask(t.id, 'bg1', 'shell', 'npm run build');
+    const listBackgroundTasks = vi.spyOn(chat, 'listBackgroundTasks');
+    const listSubagentTasks = vi.spyOn(chat, 'listSubagentTasks');
+
+    const res = await request(app()).get('/threads');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(1);
+    // Absent, not empty: a list consumer must not be able to reach for them.
+    expect(res.body.data[0]).not.toHaveProperty('backgroundTasks');
+    expect(res.body.data[0]).not.toHaveProperty('subagentTasks');
+    expect(listBackgroundTasks).not.toHaveBeenCalled();
+    expect(listSubagentTasks).not.toHaveBeenCalled();
   });
 });

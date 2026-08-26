@@ -495,6 +495,11 @@ export class ChatService {
     taskType: string,
     description: string
   ): void {
+    // A start event re-declares the row from scratch, so on conflict the outcome
+    // of whatever held this id before goes with it. Engine task ids are
+    // session-scoped and restart (`bash_1`), so a row swept to 'abandoned' at the
+    // previous turn's end is genuinely reachable here — without the reset a live
+    // task renders as abandoned until some later event happens to carry a status.
     this.db
       .prepare(
         `INSERT INTO chat_background_task (thread_id, task_id, task_type, description, status)
@@ -502,6 +507,9 @@ export class ChatService {
          ON CONFLICT(thread_id, task_id) DO UPDATE SET
            task_type   = excluded.task_type,
            description = excluded.description,
+           status      = 'running',
+           output_file = NULL,
+           summary     = NULL,
            updated_at  = datetime('now')`
       )
       .run(threadId, taskId, taskType, description);

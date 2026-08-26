@@ -9,6 +9,7 @@ import type {
   ChatMessage as ChatMessageRow,
   ChatSubagentTask,
   ChatThread,
+  ChatThreadDetail,
 } from '../../shared/entities.js';
 import { thinkingToConfig, type ChatModel, type ChatThinking } from '../state/chat.js';
 import { toast } from '../ui/events.js';
@@ -656,19 +657,16 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
           return;
         }
         if (staleResponse) return;
-        const payload = (await res.json()) as {
-          data: ChatThread & {
-            messages: ChatMessageRow[];
-            subagentTasks: ChatSubagentTask[];
-            backgroundTasks?: ChatBackgroundTask[];
-            queuedMessages?: QueuedMessage[];
-          };
-        };
+        // 0.2.52: `ChatThreadDetail` — the detail projection's own shape. The four
+        // collections are REQUIRED here (the handler always attaches them, empty
+        // array included) and absent from `GET /api/threads`, which is why they
+        // are not fields on `ChatThread` itself.
+        const payload = (await res.json()) as { data: ChatThreadDetail };
         const thread = payload.data;
         setActiveThreadMeta(thread);
-        const subagentTasks = thread.subagentTasks ?? [];
-        const bgTasks = thread.backgroundTasks ?? [];
-        const queuedMessages = thread.queuedMessages ?? [];
+        const subagentTasks = thread.subagentTasks;
+        const bgTasks = thread.backgroundTasks;
+        const queuedMessages = thread.queuedMessages;
         const fullMessages = rowsToChatMessages(thread.messages, subagentTasks, bgTasks);
         // Per-user metadata z PELNEJ historii — kolejnosc renderowanych user-messages
         // (sliced + dolozona przez turn_start) odpowiada pelnej liscie.
@@ -695,7 +693,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
         // carrier and render its panel twice.
         seenBackgroundTaskIdsRef.current = new Set(bgTasks.map((t) => t.taskId));
         setBackgroundTasks(
-          (thread.backgroundTasks ?? []).map((t) => ({
+          bgTasks.map((t) => ({
             taskId: t.taskId,
             taskType: t.taskType,
             description: t.description,
