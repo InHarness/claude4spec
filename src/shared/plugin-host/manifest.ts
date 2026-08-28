@@ -362,6 +362,71 @@ export interface PluginCommandContribution {
 }
 
 /**
+ * M33/M05 — one programmatic subagent a plugin contributes to a turn.
+ *
+ * Deliberately NARROWER FIELD-BY-FIELD than the library's `SubagentDefinition`:
+ * every field here is either the plugin's own prose or a SELECTION over a set
+ * the host enumerates — never a raw permission literal. The host validates each
+ * entry at fan-out, dedupes by `name`, sanitizes `tools`, and prepends its own
+ * prompt frame before anything reaches `adapter.execute({ subagents })`.
+ *
+ * NOT sugar over `skills`: a different registry, a different consumer, and a
+ * different moment of resolution. A contextual skill costs a line of listing in
+ * every prompt; a subagent costs a WHOLE TURN with its own model whenever
+ * auto-delegation by `description` lands on it — and that routing cannot be
+ * switched off.
+ */
+export interface PluginSubagentContribution {
+  /**
+   * Agent type the model invokes. No prefix is enforced — namespacing belongs
+   * to distribution, not to the envelope. The host dedupes deterministically
+   * (first by discovery order wins) and reserves its own built-in names.
+   */
+  name: string;
+  /**
+   * STEERS AUTO-DELEGATION — the host does not rewrite it. This prose is the
+   * whole routing surface, so it should say when to delegate, not what the
+   * subagent is.
+   */
+  description: string;
+  /**
+   * BODY of the prompt. The host prepends its own frame (spec language, the
+   * no-mutation rule, the findings-reporting contract, the ban on reaching for
+   * another context's entry primitives); a plugin cannot skip or rewrite it.
+   */
+  promptBody: string;
+  /**
+   * Which turns this subagent is offered in. OMISSION MEANS `['chat']`, not
+   * "everywhere" — a plugin that meant to reach `brief` adds one field and
+   * learns so from the docs, whereas one that reached it by oversight would
+   * pollute brief composition with no opt-out available to the user.
+   *
+   * Mirrors `ChatContextType`, spelled out rather than imported: this module is
+   * the plugin-author-facing contract and must not drag in the host's deps.
+   */
+  contextTypes?: ('chat' | 'brief' | 'patch' | 'ask')[];
+  /**
+   * SELECTION over the host's delegable tool set — never a grant. Passes
+   * through the host's sanitizer, which subtracts the non-delegable primitives
+   * (`Agent`/`Task`, `Skill`, `runTransagent`) and every mutating MCP tool. An
+   * unknown or subtracted entry is dropped with a warning; the turn still
+   * starts.
+   */
+  tools: string[];
+  /** Slugs from the internal skill registry; the host verifies each exists. */
+  attachInternalSkills?: string[];
+  /**
+   * CLOSED enum. `model` goes to the SDK verbatim, bypassing the model
+   * catalogue, so an arbitrary literal is a turn-failure vector rather than
+   * merely a cost one. Omitted = inherit the parent's model.
+   */
+  model?: 'sonnet' | 'haiku';
+  effort?: 'low' | 'medium' | 'high';
+  /** A PROPOSAL: the host clamps it to a ceiling of 20 rather than throwing. */
+  maxTurns?: number;
+}
+
+/**
  * The default export of a plugin package. `contributes` is the capability
  * bundle: `contributes.entities`, `contributes.skills` and its sugar
  * `contributes.writingStyles` (both pushed into the SkillRegistry as
@@ -411,6 +476,14 @@ export interface PluginManifest {
     settings?: PluginSettingsModule;
     /** M33 — declarative editor slash-commands (entity-less plugins). */
     commands?: PluginCommandContribution[];
+    /**
+     * M33/M05 — programmatic subagents contributed to a turn. Read by PULL at
+     * turn-build time via `subagentsFor(contextType)`, after validation and
+     * sanitizing; there is no push and therefore no teardown step — dropping
+     * the source is enough, and the contribution is gone from the NEXT turn
+     * without a session restart.
+     */
+    subagents?: PluginSubagentContribution[];
     /**
      * 0.2.15 — `referenceTypes` is GONE. A plugin envelope no longer contributes
      * XML reference tags at all; the enumeration of envelope capabilities is

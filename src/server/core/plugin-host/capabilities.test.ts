@@ -169,6 +169,7 @@ describe('M33 — host.listSettings / listCommands ignore config.entities', () =
         { name: '@c4s/overlay-bar', version: '2.0.0', fields: [{ key: 'x', label: 'X', control: 'toggle', kind: 'hot-reload', default: false }] },
       ],
       listCommands: () => [{ name: 'bar-cmd', trigger: 'bar', label: 'Bar', popoverKind: 'bar' }],
+    listSubagents: () => [],
     };
     const host = registry.consolidate({ entities: [] }, overlay);
     expect(host.listSettings().map((s) => s.name).sort()).toEqual(['@c4s/overlay-bar', '@c4s/plugin-foo']);

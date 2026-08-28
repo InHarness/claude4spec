@@ -39,6 +39,7 @@ import { installPluginRuntimeResolver } from './plugin-runtime-resolver.js';
 import type { BackendModule, ProjectPluginOverlay } from './types.js';
 import type {
   PluginCommandContribution,
+  PluginSubagentContribution,
   PluginSettingsSection,
   PluginSkillContribution,
 } from '../../../shared/plugin-host/manifest.js';
@@ -153,6 +154,7 @@ export async function loadProjectOverlay(
   // entity-less plugin (commands/settings only) still produces these.
   const settingsSections: PluginSettingsSection[] = [];
   const commands: PluginCommandContribution[] = [];
+  const subagents: PluginSubagentContribution[] = [];
   const teardowns: Array<() => void> = [];
 
   // Bind the bare `@c4s/plugin-runtime` alias before the first overlay import. This
@@ -273,6 +275,7 @@ export async function loadProjectOverlay(
       });
     }
     commands.push(...(manifest.contributes?.commands ?? []));
+    subagents.push(...(manifest.contributes?.subagents ?? []));
     // 0.2.29 — the slot is OPTIONAL and its absence is the normal case, so no
     // warning: a declarative overlay package holds no resource of its own. When
     // it IS declared it goes into `teardowns`, which is the legitimate
@@ -308,9 +311,17 @@ export async function loadProjectOverlay(
 
   // No capabilities at all ⇒ no overlay host layer, but a plugin may still have
   // contributed writing styles — return those so the caller can push them.
-  // M33: an entity-less plugin with only settings/commands DOES produce
-  // an overlay so the host surfaces those capabilities (axis B).
-  if (modules.size === 0 && settingsSections.length === 0 && commands.length === 0) {
+  // M33: an entity-less plugin with only settings/commands/subagents DOES
+  // produce an overlay so the host surfaces those capabilities (axis B).
+  // `subagents` belongs in this test for the same reason `commands` does: a
+  // project-local package whose ONLY contribution is a subagent would otherwise
+  // yield no overlay and be dropped in silence.
+  if (
+    modules.size === 0 &&
+    settingsSections.length === 0 &&
+    commands.length === 0 &&
+    subagents.length === 0
+  ) {
     return { overlay: undefined, records, skills, dispose };
   }
 
@@ -319,6 +330,7 @@ export async function loadProjectOverlay(
     origin: (type) => originByType.get(type) ?? '',
     listSettings: () => settingsSections,
     listCommands: () => commands,
+    listSubagents: () => subagents,
   };
 
   return { overlay, records, skills, dispose };

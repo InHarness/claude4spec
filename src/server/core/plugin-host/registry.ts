@@ -21,6 +21,7 @@ import type {
 } from './types.js';
 import type {
   PluginCommandContribution,
+  PluginSubagentContribution,
   PluginManifest,
   PluginSettingsModule,
   PluginSkillContribution,
@@ -154,6 +155,11 @@ export class PluginRegistryImpl implements PluginRegistry {
 
     const settings: PluginSettingsModule = manifest.contributes.settings ?? [];
     const commands: PluginCommandContribution[] = manifest.contributes.commands ?? [];
+    // Carried RAW. Validation, dedupe and sanitizing belong to the per-turn
+    // resolver (services/plugin-subagents.ts) rather than here, because the
+    // reserved-name and first-wins rules span BOTH layers (base pool + overlay)
+    // and this class only ever sees the base one.
+    const subagents: PluginSubagentContribution[] = manifest.contributes.subagents ?? [];
     return {
       record: {
         name: manifest.name,
@@ -161,6 +167,7 @@ export class PluginRegistryImpl implements PluginRegistry {
         contributedTypes: entityModules.map((m) => m.type),
         settings,
         commands,
+        subagents,
         skills,
         entityModules,
         onUnregister,
@@ -178,8 +185,9 @@ export class PluginRegistryImpl implements PluginRegistry {
     // none of them reaches the M19 reference registry: entities →
     // registerEntityModule (here), skills → SkillRegistry (M37), writingStyles →
     // the same SkillRegistry via the sugar lowering above, settings → the
-    // settings registry, and commands → registerEditorExtension (the last four
-    // read off the record by their own consumers).
+    // settings registry, commands → registerEditorExtension, and subagents →
+    // subagentsFor() at turn build (the last five read off the record by their
+    // own consumers).
     for (const module of record.entityModules) {
       this.registerEntityModule(module);
     }
@@ -196,8 +204,13 @@ export class PluginRegistryImpl implements PluginRegistry {
    *
    * The fan-out backwards over `contributedTypes[]` is the two statements below:
    * the entity modules are deleted by type, and deleting the record takes the
-   * skills, the settings descriptor and the commands with it (every one of those
-   * is pull-read off the record, never pushed anywhere). Config VALUES under
+   * skills, the settings descriptor, the commands and the subagent
+   * contributions with it (every one of those is pull-read off the record,
+   * never pushed anywhere). That is why the subagent capability needs no
+   * teardown step of its own: `subagentsFor()` reads the registry by pull when
+   * a turn is built and keeps no copy, and `subagents` is a per-turn mutable
+   * field — so dropping the source is enough and the contribution is gone from
+   * the NEXT turn, with no session restart and no ProjectContext invalidation. Config VALUES under
    * `config.plugins[<name>]` live in the config file and are not touched here.
    *
    * Mounted things — Express routes, MCP factories, DI services — are NOT
@@ -225,6 +238,7 @@ export class PluginRegistryImpl implements PluginRegistry {
       contributedTypes: [...r.contributedTypes],
       settings: r.settings,
       commands: r.commands,
+      subagents: r.subagents,
       onUnregister: r.onUnregister,
     }));
   }

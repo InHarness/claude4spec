@@ -404,6 +404,53 @@ describe('runAgentTurn — disallowedToolGroups posture', () => {
   });
 });
 
+/**
+ * 0.2.54 — `subagentsFor`'s fourth argument. `hasSkillSlug` is INJECTED here rather than
+ * imported by the resolver, because `skill-registry.ts` imports `CONTEXT_TYPE_REGISTRY`
+ * from `chat-context.ts` and the reverse import would close a cycle. If this wiring is
+ * dropped the resolver silently falls back to accept-all and unknown slugs reach the SDK.
+ */
+describe('runAgentTurn — plugin subagent contributions reach adapter.execute (0.2.54)', () => {
+  const settle = () => {
+    hoisted.events = [{ type: 'result', sessionId: 's1' }];
+  };
+
+  const contribution = {
+    name: 'domain-explore',
+    description: 'Explores the domain.',
+    promptBody: 'Body.',
+    tools: ['mcp__reference-tools__get_page'],
+    attachInternalSkills: ['real', 'ghost'],
+  };
+
+  it('passes the contribution through, and the skill registry decides which slugs survive', async () => {
+    settle();
+    hoisted.agent = { disableDirectFilesystemAccess: false };
+    const { deps } = makeDeps();
+    (deps.pluginHost as unknown as { listSubagents: () => unknown[] }).listSubagents = () => [
+      contribution,
+    ];
+    (deps.skillRegistry as unknown as { has: (s: string) => boolean }).has = (slug) =>
+      slug === 'real';
+
+    await runAgentTurn(deps, makeInput());
+
+    const subs = hoisted.lastExecute?.subagents as { name: string; skills?: string[] }[];
+    expect(subs.map((s) => s.name)).toEqual(['spec-explore', 'domain-explore']);
+    // The unknown slug is dropped; the entry itself survives.
+    expect(subs[1]!.skills).toEqual(['real']);
+  });
+
+  it('mounts only the built-in when the pool contributes nothing', async () => {
+    settle();
+    const { deps } = makeDeps();
+    await runAgentTurn(deps, makeInput());
+    expect((hoisted.lastExecute?.subagents as { name: string }[]).map((s) => s.name)).toEqual([
+      'spec-explore',
+    ]);
+  });
+});
+
 describe('runAgentTurn — entity-tools mcpServers wiring (M13, 0-1-112-to-0-1-113)', () => {
   it('chat thread: entity-tools (from pluginHost.buildMcpServers) reaches adapter.execute mcpServers', async () => {
     hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];

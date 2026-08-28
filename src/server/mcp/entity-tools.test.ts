@@ -78,6 +78,7 @@ function fakeDeps(extraActive: BackendModule[] = []): {
     listEntities: () => Array.from(modules.values()).filter((m) => activeTypes.has(m.type)),
     listSettings: () => [],
     listCommands: () => [],
+    listSubagents: () => [],
     getEntity: (type) => (activeTypes.has(type) ? (modules.get(type) ?? null) : null),
     getAvailable: (type) => modules.get(type) ?? null,
     isActive: (type) => activeTypes.has(type),
