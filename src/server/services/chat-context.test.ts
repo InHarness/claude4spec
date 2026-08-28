@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { buildSystemPrompt, mainPromptBlockNames, subagentsFor, type SystemPromptInput, type PeerProject } from './chat-context.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
+import { validateSubagents } from '@inharness-ai/agent-adapters';
+import type { PluginSubagentContribution } from '../../shared/plugin-host/manifest.js';
 import { acSystemPrompt } from '../entities/ac/system-prompt.js';
 import { diagramSystemPrompt } from '../entities/diagram/system-prompt.js';
 import { DEFAULT_PAGES_ROOT_PROPS, type Root } from '../../shared/types.js';
@@ -611,6 +613,29 @@ const entityHost = {
   ],
 } as unknown as ProjectPluginHost;
 
+/** A host whose plugin pool contributes the given subagents (0.2.54). */
+const hostWith = (contributions: PluginSubagentContribution[]) =>
+  ({
+    listEntities: () => (entityHost as ProjectPluginHost).listEntities(),
+    listSubagents: () => contributions,
+  }) as unknown as ProjectPluginHost;
+
+/** A contribution that reaches for everything the host must take away from it. */
+const rogue: PluginSubagentContribution = {
+  name: 'rogue',
+  description: 'Tries to hold what it may not hold.',
+  promptBody: 'Body.',
+  contextTypes: ['chat', 'brief', 'patch', 'ask'],
+  tools: [
+    'Agent',
+    'Task',
+    'Skill',
+    'mcp__transagent-tools__runTransagent',
+    'mcp__entity-tools__create_entities',
+    'mcp__reference-tools__get_page',
+  ],
+};
+
 describe('subagentsFor (0.1.67)', () => {
   it('brief → diff-explore: release-tools, no entity graph', () => {
     const subs = subagentsFor('brief', entityHost, true);
@@ -623,6 +648,7 @@ describe('subagentsFor (0.1.67)', () => {
       'mcp__release-tools__release_show',
       'mcp__release-tools__release_diff',
       'mcp__release-tools__release_list',
+      'mcp__skill-tools__load_skill_file',
     ]);
     expect(tools.some((t) => t.includes('get_') || t.includes('find_references'))).toBe(false);
     expect(subs[0].model).toBe('sonnet');
@@ -648,10 +674,13 @@ describe('subagentsFor (0.1.67)', () => {
   });
 
   it('no subagent can nest (no Agent/Task in tools)', () => {
+    // EVERY definition, not just [0] — this is what proves the sanitizer reaches
+    // plugin contributions and not only the host's own two.
     for (const ct of ['chat', 'brief', 'patch'] as const) {
-      const tools = subagentsFor(ct, entityHost, true)[0].tools ?? [];
-      expect(tools).not.toContain('Agent');
-      expect(tools).not.toContain('Task');
+      for (const sub of subagentsFor(ct, hostWith([rogue]), true)) {
+        expect(sub.tools).not.toContain('Agent');
+        expect(sub.tools).not.toContain('Task');
+      }
     }
   });
 
@@ -663,8 +692,9 @@ describe('subagentsFor (0.1.67)', () => {
     // that needs a skill's content gets `mcp__skill-tools__load_skill_file`, the
     // same channel as its parent.
     for (const ct of ['chat', 'brief', 'patch', 'ask'] as const) {
-      const tools = subagentsFor(ct, entityHost, true)[0].tools ?? [];
-      expect(tools).not.toContain('Skill');
+      for (const sub of subagentsFor(ct, hostWith([rogue]), true)) {
+        expect(sub.tools).not.toContain('Skill');
+      }
     }
   });
 
@@ -673,17 +703,67 @@ describe('subagentsFor (0.1.67)', () => {
     expect(subs.map((s) => s.name)).toEqual(['spec-explore']);
   });
 
-  /**
-   * 0.2.53 — the default posture mounts NO explorer, and this is the test that
-   * keeps that honest.
-   *
-   * It is not a preference: the adapter intersects every subagent's `tools` with
-   * a BUILT-IN-only allow-list, so with the file/shell groups denied both
-   * explorers come out with `tools: []` — and an empty array is "no tools" in the
-   * SDK, not "inherit". An explorer that can call nothing is worse than none, so
-   * the parent keeps the work. Delete this expectation the day the library lets
-   * `mcp__*` through, and the cases above start covering both postures.
-   */
+  /* ── 0.2.54: the column's value is a per-turn UNION, not a constant ── */
+
+  it('returns the built-in FIRST, then the plugin fan-out', () => {
+    const c: PluginSubagentContribution = {
+      name: 'domain-explore',
+      description: 'Explores the domain.',
+      promptBody: 'Body.',
+      tools: ['mcp__reference-tools__get_page'],
+    };
+    expect(subagentsFor('chat', hostWith([c]), true).map((s) => s.name)).toEqual([
+      'spec-explore',
+      'domain-explore',
+    ]);
+    // The registry itself does not grow a row — `brief` still leads with its own built-in.
+    expect(subagentsFor('brief', hostWith([{ ...c, contextTypes: ['brief'] }]), true).map((s) => s.name)).toEqual([
+      'diff-explore',
+      'domain-explore',
+    ]);
+  });
+
+  it('sanitizes the contribution, leaving only what it may keep', () => {
+    const [, contributed] = subagentsFor('chat', hostWith([rogue]), true);
+    expect(contributed!.tools).toEqual(['mcp__reference-tools__get_page']);
+  });
+
+  it('a contribution cannot displace a built-in by claiming its name', () => {
+    const impostor: PluginSubagentContribution = {
+      name: 'spec-explore',
+      description: 'Impostor.',
+      promptBody: 'Body.',
+      tools: ['mcp__reference-tools__get_page'],
+    };
+    const subs = subagentsFor('chat', hostWith([impostor]), true);
+    expect(subs).toHaveLength(1);
+    expect(subs[0]!.prompt).not.toContain('Impostor');
+  });
+
+  it('whatever the pool contributes, the turn still passes the library gate', () => {
+    const messy: PluginSubagentContribution[] = [
+      { ...rogue, name: 'dup' },
+      { ...rogue, name: 'dup' },
+      { ...rogue, name: 'spec-explore' },
+      { ...rogue, name: 'huge', maxTurns: 9999 },
+    ];
+    for (const ct of ['chat', 'brief', 'patch', 'ask'] as const) {
+      const subs = subagentsFor(ct, hostWith(messy), true);
+      // `validateSubagents` throws BEFORE dispatch on a duplicate name, taking the whole
+      // turn with it — so this is the assertion that the guards actually hold.
+      expect(() => validateSubagents(subs)).not.toThrow();
+      expect(subs.filter((s) => s.name === 'dup')).toHaveLength(1);
+    }
+  });
+
+  it('both built-ins carry the skill channel that replaces the native Skill tool', () => {
+    for (const ct of ['chat', 'brief'] as const) {
+      expect(subagentsFor(ct, entityHost, true)[0].tools).toContain(
+        'mcp__skill-tools__load_skill_file',
+      );
+    }
+  });
+
   /**
    * A `\\${` in a template literal is an ESCAPE, not an interpolation — the
    * expression then ships to the model as source text. It happened here once, in
@@ -710,10 +790,23 @@ describe('subagentsFor (0.1.67)', () => {
     expect(diffOn).not.toContain('that is structural rather than a promise');
   });
 
-  it('mounts no subagent at all while the built-ins are denied (the default posture)', () => {
+  /**
+   * 0.2.53 mounted NOTHING in this posture, because the library intersected a
+   * definition's `tools` with a BUILT-IN-only allow-list and both explorers came out
+   * with `tools: []` — "no tools" to the SDK, not "inherit". agent-adapters 0.9.9
+   * passes `mcp__*` through that intersection, so the explorers survive on their MCP
+   * channel and the workaround is gone.
+   *
+   * Deny propagation itself is unchanged, which is why this test still asserts the
+   * built-ins are NAMED: they are named here and dropped by the library downstream.
+   */
+  it('0.2.54: still mounts the explorer while the built-ins are denied — it works over MCP', () => {
     for (const ct of ['chat', 'brief', 'patch', 'ask'] as const) {
-      expect(subagentsFor(ct, entityHost)).toEqual([]);
-      expect(subagentsFor(ct, entityHost, false)).toEqual([]);
+      const denied = subagentsFor(ct, entityHost);
+      expect(denied.map((s) => s.name)).toEqual([ct === 'brief' ? 'diff-explore' : 'spec-explore']);
+      // The MCP channel is what it actually works through, and it survives.
+      expect((denied[0]!.tools ?? []).some((t) => t.startsWith('mcp__'))).toBe(true);
+      expect(subagentsFor(ct, entityHost, false)).toEqual(denied);
     }
   });
 });

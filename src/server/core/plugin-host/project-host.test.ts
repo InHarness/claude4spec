@@ -35,6 +35,7 @@ function overlayOf(modules: BackendModule[]): ProjectPluginOverlay {
     origin: (type) => `.claude4spec/plugins/${type}-pkg`,
     listSettings: () => [],
     listCommands: () => [],
+    listSubagents: () => [],
   };
 }
 

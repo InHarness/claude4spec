@@ -1386,7 +1386,12 @@ export async function runAgentTurn(
        * definitions keep naming Read/Grep/Glob and simply lose them here; only
        * the prompt has to stop PROMISING them, which is what the flag below does.
        */
-      subagents: subagentsFor(thread.contextType, deps.pluginHost, !directFilesystemDenied),
+      subagents: subagentsFor(
+        thread.contextType,
+        deps.pluginHost,
+        !directFilesystemDenied,
+        (slug) => deps.skillRegistry.has(slug),
+      ),
       architectureConfig: architectureConfigForExecute,
       planMode,
       /**

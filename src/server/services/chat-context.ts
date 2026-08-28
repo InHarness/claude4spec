@@ -24,6 +24,7 @@ import { registerCoreOperations } from '../operations/core-operations.js';
  */
 registerCoreOperations();
 import { INTERACTION_RULES } from './interaction-rules.js';
+import { resolvePluginSubagents, sanitizeSubagentDefinition } from './plugin-subagents.js';
 
 /* ─────────────────────────── M05 m05ctxreg: context-type registry ───────────────────────────
  * Single code-level constant map (spec `m05ctxreg`), keyed by `context_type`, deciding the five
@@ -910,6 +911,10 @@ function buildSpecExploreSubagent(pluginHost: ProjectPluginHost, builtinsEnabled
       'mcp__reference-tools__search_pages',
       'mcp__reference-tools__get_page',
       'mcp__reference-tools__get_sections',
+      // 0.2.54: the skill channel. Granted so the ban on the native `Skill` tool in every
+      // subagent toolset describes the state of things rather than an intention — the job
+      // `Skill` would do is done by this MCP tool.
+      'mcp__skill-tools__load_skill_file',
     ],
     model: 'sonnet',
   };
@@ -930,44 +935,74 @@ function buildDiffExploreSubagent(builtinsEnabled: boolean): SubagentDefinition 
       'mcp__release-tools__release_show',
       'mcp__release-tools__release_diff',
       'mcp__release-tools__release_list',
+      // 0.2.54: see the note on spec-explore's copy of this line.
+      'mcp__skill-tools__load_skill_file',
     ],
     model: 'sonnet',
   };
 }
 
 /**
- * 0.1.67: fourth dimension of the `context_type` registry — which built-in read-only subagent is
- * injected into `adapter.execute({ subagents })`. `chat`/`patch` get `spec-explore` (current
- * entity graph); `brief` gets `diff-explore` (release-scoped, no entity graph).
+ * Dimension four of the `context_type` registry, as of 0.2.54 no longer a constant: the
+ * `SubagentDefinition`s injected into `adapter.execute({ subagents })`.
+ *
+ * The return value is a UNION resolved per turn — the built-in of this context type's row,
+ * plus the `contributes.subagents` fan-out of the effective plugin pool filtered by each
+ * contribution's `contextTypes[]`. What changed is the TYPE OF THE COLUMN'S VALUE, not the
+ * number of rows: the registry stays a code constant of four rows and a plugin adds none.
+ *
+ * Read by PULL, and that is what makes the capability teardown-free: this function consults
+ * the plugin host when a turn is built and keeps no copy, and `subagents` is a per-turn
+ * mutable field of the execute params. Enabling, disabling or reloading a plugin therefore
+ * takes effect FROM THE NEXT TURN — no session restart, no `ProjectContext` invalidation,
+ * and nothing for `unregisterPlugin` to unwire beyond dropping its record.
+ *
+ * `chat`/`patch`/`ask` get `spec-explore` (current entity graph); `brief` gets
+ * `diff-explore` (release-scoped, no entity graph, because the graph returns HEAD).
+ *
+ * `hasSkillSlug` is injected rather than imported: `skill-registry.ts` imports
+ * `CONTEXT_TYPE_REGISTRY` from this module, so reaching back for the registry would close a
+ * cycle. It defaults to accept-all so the two-argument call sites and test fixtures that
+ * predate this parameter keep compiling.
  */
 export function subagentsFor(
   contextType: ChatContextType,
   pluginHost: ProjectPluginHost,
   builtinsEnabled = false,
+  hasSkillSlug: (slug: string) => boolean = () => true,
 ): SubagentDefinition[] {
   /**
-   * 0.2.53 — no subagent AT ALL while the built-ins are denied, and the reason is
-   * the library, not this posture.
+   * 0.2.53 mounted NO subagent at all while the built-ins were denied, and the reason was
+   * the library rather than this posture: `subagentToolPolicy` intersected a definition's
+   * whole `tools` list with an allow-list of BUILT-IN names, so every `mcp__*` entry fell
+   * out and both explorers came back with `tools: []` — which the SDK reads as "no tools",
+   * not "inherit". That branch carried its own deletion trigger: "when the library passes
+   * `mcp__*` through, delete this branch and the explorers come back on their own."
    *
-   * The claude-code adapter runs every `SubagentDefinition` through
-   * `subagentToolPolicy`, which intersects `agent.tools` with
-   * `buildClaudeCodeToolPolicy(...).allow` — a list of BUILT-IN names only. No
-   * `mcp__*` name is ever in it, so with `file-read`/`file-write`/`shell` denied
-   * both explorers come out with `tools: []`, and in the SDK an empty array is
-   * "no tools", not "inherit". A spawned explorer would then have no way to
-   * reach the spec and would answer from nothing.
+   * agent-adapters 0.9.9 does exactly that (the predicate is now
+   * `t.startsWith('mcp__') || allowed.has(t)`), so the branch is gone. Deny-group
+   * propagation is unchanged — a denied BUILT-IN still drops from every definition — which
+   * is why the two explorers keep naming Read/Grep/Glob and simply lose them in a gated
+   * posture, while their MCP channel, the one they actually work through, survives whole.
    *
-   * Injecting nothing is strictly better than injecting that: the PARENT keeps
-   * every core operation (top-level MCP servers are untouched by the deny), so
-   * the only thing lost is the context economy of delegating. This is the same
-   * defect the release's AC #8 depends on; when the library passes `mcp__*`
-   * through, delete this branch and the explorers come back on their own.
+   * `builtinsEnabled` therefore no longer gates the LIST; it still shapes the two built-in
+   * PROMPTS, which must stop promising file tools they will not have.
    */
-  if (!builtinsEnabled) return [];
   const { subagent } = CONTEXT_TYPE_REGISTRY[contextType];
-  return subagent === 'diff-explore'
-    ? [buildDiffExploreSubagent(builtinsEnabled)]
-    : [buildSpecExploreSubagent(pluginHost, builtinsEnabled)];
+  const builtin = sanitizeSubagentDefinition(
+    subagent === 'diff-explore'
+      ? buildDiffExploreSubagent(builtinsEnabled)
+      : buildSpecExploreSubagent(pluginHost, builtinsEnabled),
+  );
+  // Optional call: several fixtures reach this function through an
+  // `as unknown as ProjectPluginHost` cast that predates the method.
+  const contributed = resolvePluginSubagents({
+    contextType,
+    contributions: pluginHost.listSubagents?.() ?? [],
+    hasSkillSlug,
+    taken: new Set([builtin.name]),
+  });
+  return [builtin, ...contributed];
 }
 
 /**

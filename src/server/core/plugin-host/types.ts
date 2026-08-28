@@ -23,6 +23,7 @@ import type { UpsertResult } from '../../serialization/writer.js';
 import type { SystemStamp } from '../../serialization/system-fields.js';
 import type {
   PluginCommandContribution,
+  PluginSubagentContribution,
   PluginManifest,
   PluginSettingsSection,
   PluginSkillContribution,
@@ -380,6 +381,8 @@ export interface ProjectPluginOverlay {
   listSettings(): PluginSettingsSection[];
   /** M33 — declarative editor commands from trusted project-local plugins. */
   listCommands(): PluginCommandContribution[];
+  /** M33/M05 — subagent contributions from trusted project-local plugins. */
+  listSubagents(): PluginSubagentContribution[];
 }
 
 /**
@@ -396,6 +399,8 @@ export interface RegisteredPluginRecord {
   contributedTypes: string[];
   settings: PluginSettingsSection['fields'];
   commands: PluginCommandContribution[];
+  /** M33/M05 — raw subagent contributions; policy is applied at turn build. */
+  subagents: PluginSubagentContribution[];
   /**
    * 0.2.29 — OPTIONAL teardown hook for the plugin's OWN resources (see
    * `PluginManifest.onUnregister`). `undefined` when the manifest declares none,
@@ -514,6 +519,19 @@ export interface ProjectPluginHost {
    * `listSettings()`). Routed into the editor via `registerEditorExtension`.
    */
   listCommands(): PluginCommandContribution[];
+
+  /**
+   * M33/M05 — raw subagent contributions of ALL loaded + trusted plugins, base
+   * pool then project-local overlay, in discovery order. Same two-axis
+   * rationale as `listSettings()`: pool + trust, NOT `config.entities` — an
+   * entity-less plugin may contribute nothing but a subagent.
+   *
+   * Deliberately UNVALIDATED and unsanitized: policy (reserved names, dedupe,
+   * model/maxTurns/skill-slug checks, the prompt frame, the tool sanitizer)
+   * belongs to `services/plugin-subagents.ts`, applied per turn by
+   * `subagentsFor()`. Order is the dedupe key — first by discovery wins.
+   */
+  listSubagents(): PluginSubagentContribution[];
 
   /** Lookup by type — returns null for inactive or unknown. */
   getEntity(type: string): BackendModule | null;

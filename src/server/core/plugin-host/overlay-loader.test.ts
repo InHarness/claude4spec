@@ -75,6 +75,41 @@ describe('overlay-loader', () => {
     expect(res.records).toEqual([]);
   });
 
+  /**
+   * A subagent-only package has no entities, no settings and no commands, so it would fall
+   * through the "no capabilities at all" early return and be dropped in silence — the same
+   * trap `commands` had to be added to that test for.
+   */
+  it('a subagent-only project-local package still produces an overlay', async () => {
+    const url = makePkg('subagent-pkg');
+    const res = await loadProjectOverlay(
+      cwd,
+      fakeImporter({
+        [url]: {
+          manifest: {
+            name: '@local/subagent-only',
+            version: '1.0.0',
+            hostApiVersion: '^2.0.0',
+            contributes: {
+              subagents: [
+                {
+                  name: 'domain-explore',
+                  description: 'Explores the domain.',
+                  promptBody: 'Body.',
+                  tools: ['mcp__reference-tools__get_page'],
+                },
+              ],
+            },
+          },
+        },
+      }),
+    );
+    expect(res.records[0]).toMatchObject({ package: 'subagent-pkg', status: 'loaded' });
+    expect(res.overlay).toBeDefined();
+    expect(res.overlay?.listSubagents().map((c) => c.name)).toEqual(['domain-explore']);
+    expect(res.overlay?.listLocal()).toEqual([]);
+  });
+
   it('resolves an entry from conditional exports (no top-level main/module)', async () => {
     const dir = path.join(cwd, '.claude4spec', 'plugins', 'exports-pkg');
     fs.mkdirSync(dir, { recursive: true });

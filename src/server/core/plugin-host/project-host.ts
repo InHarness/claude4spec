@@ -19,6 +19,7 @@ import type {
 import type { PluginActivationState } from '../../../shared/plugin-host/types.js';
 import type {
   PluginCommandContribution,
+  PluginSubagentContribution,
   PluginSettingsSection,
 } from '../../../shared/plugin-host/manifest.js';
 import type {
@@ -128,6 +129,17 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
     // Same two-axis rationale as listSettings(): pool + trust, not entities.
     const base = this.registry.listPluginRecords().flatMap((r) => r.commands);
     return [...base, ...(this.overlay?.listCommands() ?? [])];
+  }
+
+  listSubagents(): PluginSubagentContribution[] {
+    // CONCATENATION, not shadowing (contrast listSettings): the dedupe key is
+    // the subagent `name`, and it is resolved downstream with first-by-discovery
+    // wins — so base must come first and the overlay must not overwrite it by
+    // plugin name. Project-local contributes on equal footing with an
+    // npm-installed package; the only asymmetry left is that the host's own
+    // built-in names are reserved against both.
+    const base = this.registry.listPluginRecords().flatMap((r) => r.subagents);
+    return [...base, ...(this.overlay?.listSubagents() ?? [])];
   }
 
   getEntity(type: string): BackendModule | null {

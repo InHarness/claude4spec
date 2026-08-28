@@ -55,6 +55,7 @@ function fakeHost(): ProjectPluginHost {
     listEntities: () => Array.from(modules.values()),
     listSettings: () => [],
     listCommands: () => [],
+    listSubagents: () => [],
     getEntity: (type) => modules.get(type) ?? null,
     getAvailable: (type) => modules.get(type) ?? null,
     isActive: (type) => modules.has(type),
