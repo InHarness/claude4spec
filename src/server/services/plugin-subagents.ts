@@ -38,6 +38,12 @@ export const MAX_SUBAGENT_TURNS = 20;
  *  out-of-enum value rejects the entry at fan-out instead of being coerced. */
 export const ALLOWED_SUBAGENT_MODELS: ReadonlySet<string> = new Set(['sonnet', 'haiku']);
 
+/** Closed enum, for the same reason as `model` above and enforced the same way: `effort` is
+ *  forwarded to the SDK verbatim by the adapter (`...a.effort ? { effort: a.effort } : {}`),
+ *  the manifest is plain JSON so the TypeScript union buys nothing at the plugin boundary,
+ *  and an out-of-enum literal fails the turn from the inside. */
+export const ALLOWED_SUBAGENT_EFFORTS: ReadonlySet<string> = new Set(['low', 'medium', 'high']);
+
 /**
  * Primitives no subagent may hold — host-built or contributed. A closed list, NOT a
  * read/write taxonomy.
@@ -78,7 +84,7 @@ export function __resetSubagentWarnings(): void {
 }
 
 /**
- * Is this a MUTATING MCP tool, by the prefix of its TOOL segment?
+ * Is this a MUTATING MCP tool, by the VERBS appearing anywhere in its TOOL segment?
  *
  * A BLACKLIST on mutating prefixes — deliberately not a `get_`/`list_` whitelist, and the
  * distinction is not cosmetic. This sanitizer runs over EVERY definition including the two
@@ -91,13 +97,29 @@ export function __resetSubagentWarnings(): void {
  * The split takes `slice(2).join('__')` so a tool whose own name contains `__` survives,
  * and it tests the tool segment rather than the whole string so a SERVER called
  * `link-tools` does not make its read tools look mutating.
+ *
+ * The verb may sit in ANY `_`-separated position, not just the first. A prefix-only test
+ * reads well and catches almost nothing this repo actually ships: `release_create`,
+ * `release_update`, `tag_entity`, `untag_entity`, `mark_plan_applied`, `file_patch` and
+ * `update_brief` all name the noun first or the verb second, and every one of them writes.
+ * A subagent granted one of those would be told by `hostFrame()` that it cannot mutate
+ * while holding a tool that does — the frame lying to the model being strictly worse than
+ * no frame. Matching per segment keeps the read surface intact: no segment of
+ * `check_consistency`, `describe_entity_type`, `find_references`, `resolve_identity`,
+ * `search_pages`, `release_diff`, `release_show`, `overview` or `load_skill_file` is a verb
+ * on this list.
  */
+const MUTATING_VERBS = new Set([
+  'create', 'update', 'delete', 'link', 'unlink', 'remove', 'add', 'set', 'write',
+  'apply', 'applied', 'mark', 'tag', 'untag', 'patch', 'move', 'rename', 'archive',
+]);
+
 export function isMutatingMcpTool(tool: string): boolean {
   if (!tool.startsWith('mcp__')) return false;
   const parts = tool.split('__');
   if (parts.length < 3) return false;
   const toolSegment = parts.slice(2).join('__');
-  return /^(create|update|delete|link)_/.test(toolSegment);
+  return toolSegment.split('_').some((segment) => MUTATING_VERBS.has(segment));
 }
 
 /**
@@ -116,6 +138,13 @@ export function sanitizeSubagentDefinition(
   if (!def.tools) return def;
   const kept: string[] = [];
   for (const tool of def.tools) {
+    // The manifest is plain JSON, so `tools: [null]` type-checks nowhere and arrives here
+    // intact. `isMutatingMcpTool(null)` would throw out of `subagentsFor()` and take the
+    // whole turn with it — the one outcome this module promises never to cause.
+    if (typeof tool !== 'string' || tool.trim() === '') {
+      warn(`[subagents] "${def.name}": dropping a non-string entry from its toolset`);
+      continue;
+    }
     if (NON_DELEGABLE_TOOLS.includes(tool)) {
       warn(`[subagents] "${def.name}": dropping non-delegable tool "${tool}" from its toolset`);
       continue;
@@ -193,7 +222,13 @@ export function resolvePluginSubagents(opts: ResolveSubagentsOptions): SubagentD
       continue;
     }
 
-    // The SELECTOR, not an error: omission means ['chat'], never "everywhere".
+    // The SELECTOR, not an error: omission means ['chat'], never "everywhere". A malformed
+    // value is neither — `.includes` on a non-array throws, so it is rejected loudly rather
+    // than silently widened to every context.
+    if (c.contextTypes !== undefined && !Array.isArray(c.contextTypes)) {
+      warn(`[subagents] subagent "${name}" declares a non-array contextTypes; skipping this contribution`);
+      continue;
+    }
     const contextTypes = c.contextTypes ?? ['chat'];
     if (!contextTypes.includes(contextType)) continue;
 
@@ -212,11 +247,16 @@ export function resolvePluginSubagents(opts: ResolveSubagentsOptions): SubagentD
       warn(`[subagents] subagent "${name}" declares model "${c.model}", which is outside the allowed set (${[...ALLOWED_SUBAGENT_MODELS].join(', ')}); skipping this contribution`);
       continue;
     }
+    if (c.effort !== undefined && !ALLOWED_SUBAGENT_EFFORTS.has(c.effort)) {
+      warn(`[subagents] subagent "${name}" declares effort "${c.effort}", which is outside the allowed set (${[...ALLOWED_SUBAGENT_EFFORTS].join(', ')}); skipping this contribution`);
+      continue;
+    }
 
     // An unknown slug costs the slug, not the entry.
     let skills: string[] | undefined;
-    if (c.attachInternalSkills?.length) {
+    if (Array.isArray(c.attachInternalSkills) && c.attachInternalSkills.length > 0) {
       skills = c.attachInternalSkills.filter((slug) => {
+        if (typeof slug !== 'string' || slug.trim() === '') return false;
         if (hasSkillSlug(slug)) return true;
         warn(`[subagents] subagent "${name}" attaches unknown internal skill "${slug}"; dropping the slug and registering the rest`);
         return false;

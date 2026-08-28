@@ -73,8 +73,33 @@ describe('isMutatingMcpTool — blacklist on the TOOL segment', () => {
       'mcp__entity-tools__describe_entity_type',
       'mcp__skill-tools__load_skill_file',
       'mcp__reference-tools__get_page',
+      'mcp__release-tools__release_show',
+      'mcp__release-tools__release_list',
+      'mcp__entity-tools__resolve_identity',
+      'mcp__entity-tools__describe_types',
+      'mcp__c4s-tools__overview',
     ]) {
       expect(isMutatingMcpTool(t)).toBe(false);
+    }
+  });
+
+  /**
+   * The finding that made the verb test per-segment rather than prefix-only: every one of
+   * these is a real, mounted, WRITING tool in this repo, and a prefix test matches none of
+   * them. `release_update` in particular lands in `brief`, right next to `diff-explore`.
+   */
+  it('catches a mutating verb that is not the first segment', () => {
+    for (const t of [
+      'mcp__release-tools__release_create',
+      'mcp__release-tools__release_update',
+      'mcp__reference-tools__tag_entity',
+      'mcp__reference-tools__untag_entity',
+      'mcp__plan-tools__mark_plan_applied',
+      'mcp__patch-tools__file_patch',
+      'mcp__brief-tools__update_brief',
+      'mcp__plugin-srv__set_cell',
+    ]) {
+      expect(isMutatingMcpTool(t)).toBe(true);
     }
   });
 
@@ -257,6 +282,29 @@ describe('resolvePluginSubagents — fan-out validation', () => {
     const { out } = resolve([contrib({ model: 'haiku', effort: 'low' })]);
     expect(out[0]!.model).toBe('haiku');
     expect(out[0]!.effort).toBe('low');
+  });
+
+  it('rejects the whole entry when effort is outside the closed enum', () => {
+    const { out, messages } = resolve([
+      contrib({ name: 'bad', effort: 'ultra' as unknown as 'low' }),
+      contrib({ name: 'sibling' }),
+    ]);
+    expect(out.map((s) => s.name)).toEqual(['sibling']);
+    expect(messages.some((m) => /effort "ultra"/.test(m))).toBe(true);
+  });
+
+  /* The manifest is plain JSON: none of these shapes is stopped by a type at the plugin
+   * boundary, and each of them used to throw out of the resolver and take the turn down. */
+  it('never throws on malformed field shapes, and keeps the siblings', () => {
+    const { out } = resolve([
+      contrib({ name: 'bad-tools', tools: [null, 123, 'mcp__reference-tools__get_page'] as unknown as string[] }),
+      contrib({ name: 'bad-ctx', contextTypes: 'chat' as unknown as ('chat')[] }),
+      contrib({ name: 'bad-skills', attachInternalSkills: 'x' as unknown as string[] }),
+      contrib({ name: 'sibling' }),
+    ]);
+    expect(out.map((s) => s.name)).toEqual(['bad-tools', 'bad-skills', 'sibling']);
+    expect(out[0]!.tools).toEqual(['mcp__reference-tools__get_page']);
+    expect(out[1]!.skills).toBeUndefined();
   });
 
   it('drops an unknown skill slug but KEEPS the entry', () => {

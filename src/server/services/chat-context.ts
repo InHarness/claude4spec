@@ -1317,7 +1317,7 @@ function buildAgentFilesystemAccess(access: { enabled: boolean }): string {
       `  - the c4s CLI — it is a shell program; only its \`ask\` survives, and only where this turn mounted the server that exposes it — check <tooling>;`,
       `  - scaffolding a new writing style — it writes a skill package under .claude/skills/, which no C4S operation owns.`,
       `The user can turn all four back on by unchecking \"Block direct file access\" in Settings → Agent. Say that plainly; do not try to work around it.`,
-      `One more consequence, and it is about you rather than the user: the read-only explorer subagents (spec-explore, diff-explore) are NOT mounted in this posture — the runtime cannot hand an MCP tool to a subagent while the built-ins are denied, so a spawned one would have no tools at all. Explore the spec yourself with the core read operations, and budget your context accordingly; there is nobody to delegate the bulk to.`,
+      `One thing that DOES still work, and it is about you rather than the user: the read-only explorer subagents are mounted here as usual. They never held the file built-ins to begin with — they read the specification through the same MCP operations you do — so this posture takes nothing away from them, and delegating a wide sweep is still the way to keep the bulk of what you read out of your own context.`,
       `</agent_filesystem_access>`,
     ].join('\n');
   }
