@@ -1354,6 +1354,59 @@ describe('buildSystemPrompt — layer order (0.2.50)', () => {
     expect(out.trimEnd().endsWith('</claude4spec_plan_mode>')).toBe(true);
   });
 
+  /**
+   * The one rule this block and the marker both answer to: they may name CORE
+   * OPERATIONS and nothing else. `agent.disableDirectFilesystemAccess` defaults to
+   * true, which strips `Read` from the catalogue outright — a prompt that sends the
+   * agent to the disk is sending it to a tool that is not there.
+   */
+  it('never sends a truncated page to the filesystem, in the block or in the marker', () => {
+    const long = Array.from({ length: 120 }, (_, i) => `line ${i}`).join('\n');
+    const out = build({ ...FULL_TURN, currentPagePath: 'guide.md', currentPageBody: long });
+
+    const marker = out.slice(out.indexOf('<current_page '), out.indexOf('</current_page>'));
+    expect(marker).toContain('preview_lines="1-40"');
+    expect(marker).toContain('list_sections');
+    expect(marker).toContain('get_sections');
+    expect(marker).not.toMatch(/\bRead\b/);
+    // Scoped to the block itself: `<claude4spec_plan_mode>` names `Read` further
+    // down, and naming it as DENIED is the opposite of pointing the agent at it.
+    expect(out.slice(out.indexOf('<current_page_handling>'), out.indexOf('</current_page_handling>'))).not.toMatch(
+      /\bRead\b/,
+    );
+  });
+
+  /**
+   * Both routes must leave the caller holding the write guard, or the preview is a
+   * dead end: the page you were shown only part of is the page you cannot arm an
+   * edit against.
+   */
+  it('points a long page at the sectional route and names the hash the write needs', () => {
+    const long = Array.from({ length: 120 }, (_, i) => `line ${i}`).join('\n');
+    const out = build({ ...FULL_TURN, currentPagePath: 'guide.md', currentPageBody: long });
+
+    const block = out.slice(out.indexOf('<current_page_handling>'), out.indexOf('</current_page_handling>'));
+    expect(block).toContain('list_sections');
+    expect(block).toContain('get_sections');
+    expect(block).toContain('expectedHash');
+    // `get_page` stays on offer for the case that genuinely wants the whole page.
+    expect(block).toContain('get_page');
+  });
+
+  /** A short page is inlined whole — no marker, no preview attribute, nothing to route. */
+  it('leaves a page inside the preview budget unmarked', () => {
+    const out = build({ ...FULL_TURN, currentPagePath: 'guide.md', currentPageBody: '# Guide\n\nbody' });
+    expect(out).not.toContain('preview_lines=');
+    expect(out).not.toContain('truncated.');
+  });
+
+  it('self-closes an unavailable and an empty current page, unchanged by the marker rewrite', () => {
+    expect(build({ ...FULL_TURN, currentPagePath: 'guide.md', currentPageBody: null })).toContain(
+      'unavailable="true"',
+    );
+    expect(build({ ...FULL_TURN, currentPagePath: 'guide.md', currentPageBody: '   ' })).toContain('empty="true"');
+  });
+
   it('emits no handling block for a state block that is absent', () => {
     const out = build({ contextType: 'chat', mcpInventory: CHAT_INVENTORY });
     expect(out).not.toContain('<current_page_handling>');

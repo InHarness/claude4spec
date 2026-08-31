@@ -551,8 +551,22 @@ To LINK a section, embed \`<section_ref anchor="xxxxxxxx"/>\`. It renders as a c
 
 /* ─────────────────────────── LAYER E — current state ─────────────────────── */
 
+/**
+ * 0.2.56 — the block stops sending a long page down the whole-page path.
+ *
+ * It used to answer "the rest is missing" with `get_page`, which reads the entire
+ * file to hand back a preview's worth of what was wanted — and on a page over the
+ * response budget comes back truncated anyway. `list_sections` answers the same
+ * question for a fraction of it, hands back the anchors to fetch, and carries the
+ * page `hash` on its envelope, so the sectional route now closes on a write rather
+ * than stopping one call short of one.
+ *
+ * What it must never name is a filesystem read. `agent.disableDirectFilesystemAccess`
+ * defaults to TRUE, which removes `Read` from the catalogue outright — a prompt
+ * pointing there is pointing at a tool the agent does not have.
+ */
 const CURRENT_PAGE_HANDLING = `<current_page_handling>
-\`<current_page>\` is what the user is looking at right now. It carries the page's \`path\` and its \`root\` — and you need both, because \`get_page\` without a \`rootId\` answers INVALID_ARGUMENT. Long pages are inlined only as a preview (see the \`preview_lines\` / \`total_lines\` attributes); read the rest with \`get_page\`, which also returns the \`hash\` that \`update_page\` and \`update_sections\` require.
+\`<current_page>\` is what the user is looking at right now. It carries the page's \`path\` and its \`root\` — and you need both, because \`get_page\` without a \`rootId\` answers INVALID_ARGUMENT. Long pages are inlined only as a preview (see the \`preview_lines\` / \`total_lines\` attributes). To see the rest, prefer the sectional route: \`list_sections({ by: "page", rootId, path })\` lists every section with its size and its anchor, and its envelope carries the page's \`hash\`; then \`get_sections({ anchors })\` reads only the ones you actually need. Use \`get_page\` when you genuinely need the whole page. Either way you end up holding the \`hash\` that \`update_page\` and \`update_sections\` require as \`expectedHash\`, so editing a page never depends on reading all of it.
 </current_page_handling>`;
 
 /**
@@ -1488,10 +1502,20 @@ function buildCurrentPage(path: string, body: string | null, root: string): stri
   }
   const preview = lines.slice(0, CURRENT_PAGE_PREVIEW_LINES).join('\n');
   const remaining = totalLines - CURRENT_PAGE_PREVIEW_LINES;
-  // 0.2.50: the truncation notice names `get_page` rather than "Read". Page roots
-  // are read-only to the built-in tools and `get_page` is what returns the `hash`
-  // the write tools require, so pointing at `Read` sent the agent down the one
-  // path that cannot lead to an edit.
+  /**
+   * The marker names CORE OPERATIONS, and never a filesystem read.
+   *
+   * 0.2.50 removed the "Read {path}" it used to carry: with
+   * `agent.disableDirectFilesystemAccess` — default TRUE — `Read` is not in the
+   * agent's catalogue at all, so the notice was pointing at a tool that does not
+   * exist. That constraint is standing, not a one-off fix: whatever this line says
+   * next, it may not send the agent to the disk.
+   *
+   * 0.2.56 leads with the sectional route instead of `get_page`. Reading a whole page
+   * to reach part of it is the expensive answer, it truncates again past the response
+   * budget, and `list_sections` supplies both halves of what comes next — the anchors
+   * to fetch, and the page `hash` that arms the write.
+   */
   return `<current_page ${attrs({
     path,
     root,
@@ -1499,7 +1523,7 @@ function buildCurrentPage(path: string, body: string | null, root: string): stri
     preview_lines: `1-${CURRENT_PAGE_PREVIEW_LINES}`,
   })}>
 ${preview}
-[... ${remaining} more line${remaining === 1 ? '' : 's'} truncated. Call get_page({ rootId: "${root}", path: "${path}" }) for the whole page — it also returns the hash that update_page and update_sections require.]
+[... ${remaining} more line${remaining === 1 ? '' : 's'} truncated. To read on, call list_sections({ by: "page", rootId: "${root}", path: "${path}" }) and then get_sections({ anchors }) for the sections you need — that list_sections envelope also carries the page hash that update_page and update_sections take as expectedHash. Call get_page({ rootId: "${root}", path: "${path}" }) only when you need the whole page.]
 </current_page>`;
 }
 

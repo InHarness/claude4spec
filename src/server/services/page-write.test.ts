@@ -1138,6 +1138,50 @@ describe('update_sections — the anchor-loss guard', () => {
       ),
     );
 
+  /**
+   * 0.2.56, the headline of the release: an over-budget page is EDITABLE without
+   * ever being fetched whole.
+   *
+   * The chain is `list_sections` -> `get_sections` -> `update_sections`, and the
+   * link that used to be missing is the guard's value: `expectedHash` was only
+   * obtainable from `get_page`, so the one page too big to return in full was also
+   * the one page you had to return in full before you could touch it. The envelope's
+   * `hash` closes it — this test arms the write from the LISTING and nothing else.
+   *
+   * `get_page` is stubbed to throw rather than merely left uncalled: an assertion
+   * that a call did not happen passes just as well when the code path quietly
+   * changed underneath it.
+   */
+  it('edits a page armed only by the list_sections hash — no get_page anywhere in the chain', async () => {
+    await index('doc.md', nested);
+    const noWholePageReads = {
+      ...core,
+      getPage: () => {
+        throw new Error('get_page must not be needed to edit a page');
+      },
+    } as unknown as DiscoveryCore;
+
+    const listed = await noWholePageReads.listSections({ by: 'page', rootId: 'pages', path: 'doc.md' });
+    const parent = listed.items.find((i) => i.heading === 'Parent')!;
+    const read = await noWholePageReads.getSections({ anchors: [parent.anchor] });
+    expect(read.results[0]).toMatchObject({ anchor: parent.anchor });
+
+    const res = await updateSections(
+      deps(),
+      {
+        expectedHash: listed.hash!,
+        edits: [{ anchor: parent.anchor, action: 'replace', content: 'REWRITTEN PREAMBLE\n' }],
+        dropAnchors: [anchorOf('Child one'), anchorOf('Child two')],
+      },
+      'agent',
+    );
+
+    expect((await pages.read('doc.md')).body).toContain('REWRITTEN PREAMBLE');
+    // And the write hands the NEXT hash straight back, so a second edit needs no
+    // read between them either — the third channel of the same value.
+    expect(res.hash).toBe(await hashOfPage('doc.md'));
+  });
+
   it('refuses the batch with ANCHOR_LOSS when a replace drops a CITED subsection anchor', async () => {
     await index('doc.md', nested);
     const childOne = anchorOf('Child one');

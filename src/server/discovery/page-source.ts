@@ -100,7 +100,27 @@ export class PageSource {
     return await this.guard(rootId, relPath, async () => (await this.service(rootId).read(relPath)).body);
   }
 
-  private async guard(rootId: string, relPath: string, read: () => Promise<string>): Promise<string> {
+  /**
+   * The body AND the hash of the raw file, from a single read.
+   *
+   * `list_sections` needs both: the body to measure each section before anything is
+   * fetched, and the file's digest for the envelope's `hash` — the value a caller
+   * copies straight into `expectedHash`. Two calls would read the same file twice
+   * for a listing that exists precisely to be cheap.
+   *
+   * The digest is `PagesService.read`'s own, taken over the RAW bytes rather than
+   * over the `body` returned beside it: `expectedHash` is compared against the
+   * file, so hashing the frontmatter-stripped half would arm a guard that never
+   * passes on any page that has frontmatter.
+   */
+  async readWithHash(rootId: string, relPath: string): Promise<{ body: string; hash: string }> {
+    return await this.guard(rootId, relPath, async () => {
+      const page = await this.service(rootId).read(relPath);
+      return { body: page.body, hash: page.hash };
+    });
+  }
+
+  private async guard<T>(rootId: string, relPath: string, read: () => Promise<T>): Promise<T> {
     try {
       return await read();
     } catch (err) {

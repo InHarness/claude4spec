@@ -125,10 +125,23 @@ export async function getPage(
     content = content.split('\n').slice(start - 1, end).join('\n');
   }
 
+  /**
+   * 0.2.56 — the hint names the WRITE it leads to, not just the pair of reads.
+   *
+   * The rule it already obeyed was feasibility: never propose a call this same
+   * operation would refuse (which is why `range` goes unmentioned on an indexed
+   * root — see `lineWindowsRefused` above). This adds the second half of the same
+   * principle: never propose a path with no exit onto the operation the caller came
+   * for. A caller truncated here is usually on their way to an edit, and a hint that
+   * stopped at `get_sections` left them holding sections and no `expectedHash` — so
+   * the only visible way on was to fetch the whole page they had just been told was
+   * too big. Naming `hash` here is what closes the loop: `list_sections` hands it
+   * over on the envelope, and it is the guard's value.
+   */
   const budgeted = truncateText(
     content,
     lineWindowsRefused
-      ? `page truncated by response budget — list this page's sections with list_sections({ by: "page", rootId: "${root.id}", path: "${input.path}" }), then read them with get_sections({ anchors })`
+      ? `page truncated by response budget — list this page's sections with list_sections({ by: "page", rootId: "${root.id}", path: "${input.path}" }), then read the ones you need with get_sections({ anchors }). To edit them, call update_sections with the \`hash\` from that list_sections envelope as \`expectedHash\` — the whole page is never needed`
       : `page truncated by response budget — re-read a window with get_page({ rootId: "${root.id}", path: "${input.path}", range: { start, end } })`,
   );
 

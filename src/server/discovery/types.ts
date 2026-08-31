@@ -147,7 +147,25 @@ export interface SectionListItem {
  * `total: 0` alone. It lives here rather than in each transport because a
  * transport that had to derive it would be defining behaviour.
  */
-export type ListSectionsResult = Page<SectionListItem> & { is_known?: boolean };
+/**
+ * 0.2.56 — `hash` rides the ENVELOPE, and it is the same value `get_page` returns:
+ * sha256 of the whole file, ready to be copied straight into `expectedHash`.
+ *
+ * On the envelope rather than on the items because it is a fact about the PAGE,
+ * and every row of one listing shares it; on the items it would be the same string
+ * repeated N times, and it would read as a per-section version — which is what
+ * `section_index.content_hash` is, a normalized digest that must never be handed
+ * out as a write guard.
+ *
+ * The name matches `get_page`'s deliberately. Two names for one value would be a
+ * tax on carrying it between calls, and carrying it between calls is the entire
+ * point: with it, `list_sections` -> `get_sections` -> `update_sections` closes
+ * without ever fetching the page whole.
+ *
+ * Present for `by: "page"`, and for `by: "anchor"` when the anchor is known. ABSENT
+ * (not null) when `is_known: false` — there is no page for it to be about.
+ */
+export type ListSectionsResult = Page<SectionListItem> & { is_known?: boolean; hash?: string };
 
 /**
  * 0.2.5 — `get_sections` takes a LIST. One anchor is a list of one.
