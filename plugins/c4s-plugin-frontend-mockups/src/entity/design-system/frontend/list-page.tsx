@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Palette } from 'lucide-react';
 import { useDesignSystems } from './hooks.js';
+import { countsOf } from './api.js';
 import { DesignSystemCreateDialog } from './create-dialog.js';
 import { ListPageLayout } from '../../../frontend-kit/ListPageLayout.js';
 import { ListPageHeader } from '../../../frontend-kit/ListPageHeader.js';
@@ -60,6 +61,7 @@ export function DesignSystemsList({
         onCreate={handleCreate}
       >
         {sorted.map((ds) => {
+          const counts = countsOf(ds);
           return (
             <EntityListRow
               key={ds.slug}
@@ -69,7 +71,7 @@ export function DesignSystemsList({
               tagLookup={tagLookup}
               trailing={
                 <CountBadge>
-                  {ds.groupCount} groups / {ds.tokenCount} tokens
+                  {counts.groups} groups / {counts.tokens} tokens
                 </CountBadge>
               }
             >

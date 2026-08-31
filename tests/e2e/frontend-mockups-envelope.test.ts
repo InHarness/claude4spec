@@ -249,15 +249,19 @@ describe.skipIf(!BASE)('c4s-plugin-frontend-mockups envelope', () => {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     const { consoleErrors, badResponses } = watch(page);
 
-    // Every per-row read the page could possibly make, recorded. The content
-    // route is the one the chip must never reach for; `?view=detail` is the
-    // other way a list could quietly go wide.
+    // Every per-row read the page could possibly make, recorded.
+    //
+    // Two shapes, because there are two ways to go wide: the supervised content
+    // route, which is the one the chip must never reach for, and a per-slug
+    // detail GET. The latter is matched structurally — `/api/ui-views/<slug>`
+    // with a path segment after the collection — rather than by `?view=detail`,
+    // which was retired in 0.2.22 and would make this half of the assertion
+    // vacuous: an N+1 built out of plain detail reads would sail through.
     const perRowReads: string[] = [];
     page.on('request', (r) => {
       const u = new URL(r.url());
-      if (/\/content\//.test(u.pathname) || u.searchParams.get('view') === 'detail') {
-        perRowReads.push(`${u.pathname}${u.search}`);
-      }
+      const detail = /\/api\/(?:projects\/[^/]+\/)?ui-views\/[^/]+$/.test(u.pathname);
+      if (/\/content\//.test(u.pathname) || detail) perRowReads.push(`${u.pathname}${u.search}`);
     });
 
     const stamp = Date.now();
@@ -295,8 +299,11 @@ describe.skipIf(!BASE)('c4s-plugin-frontend-mockups envelope', () => {
     await expect.poll(() => search.count()).toBe(1);
     await search.fill(`E2E Chip`);
 
-    const rowWith = page.locator('button', { hasText: `E2E Chip Present ${stamp}` }).last();
-    const rowWithout = page.locator('button', { hasText: `E2E Chip Absent ${stamp}` }).last();
+    // NOT `.last()`: collapsing to one element would make the count assertion
+    // below unfalsifiable, and its whole job is to prove the search actually
+    // narrowed to this run's pair so the row lookups mean what they say.
+    const rowWith = page.locator('button', { hasText: `E2E Chip Present ${stamp}` });
+    const rowWithout = page.locator('button', { hasText: `E2E Chip Absent ${stamp}` });
     await expect.poll(() => rowWith.count()).toBe(1);
     await expect.poll(() => rowWithout.count()).toBe(1);
 

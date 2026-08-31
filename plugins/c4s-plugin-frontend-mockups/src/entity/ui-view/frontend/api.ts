@@ -25,11 +25,21 @@ import { handle, apiFetch, unwrap, unwrapList } from '../../../frontend-kit/api-
  *
  * `hasMockupHtml` is NOT a field of the entity: `mockupHtml` is `contentBearing`,
  * and the host swaps the value for a `has<Field>`/`<field>Bytes` descriptor pair
- * derived from the field name. `project()` emits that pair regardless of
- * `select`, so it rides on every projection width — including this one, at no
- * extra read. `mockupHtmlBytes` is deliberately NOT declared: the list must not
- * present the size (that belongs to the `Details` descriptor), and leaving it
- * off the type is the cheapest way to make a future misuse a compile error.
+ * derived from the field name. It arrives here at no extra read — but for a
+ * narrower reason than "descriptors always ride along". `project()` tests
+ * `wanted` BEFORE it reaches the `contentBearing` branch, so a `select` that does
+ * not name `mockupHtml` drops `hasMockupHtml` entirely; what makes it present is
+ * that `hydrateRows` sends no `select` at all.
+ *
+ * Which is the trap worth naming: narrowing this read with a `select` — the
+ * obvious optimisation, since `params[]` is the expensive thing on the row —
+ * would silently delete the mockup chip from every row, with no type error and
+ * no failing unit test. `select` it explicitly if that day comes; the e2e case
+ * in `frontend-mockups-envelope.test.ts` is what would catch it.
+ *
+ * `mockupHtmlBytes` is deliberately NOT declared: the list must not present the
+ * size (that belongs to the `Details` descriptor), and leaving it off the type is
+ * the cheapest way to make a future misuse a compile error.
  */
 export type UiViewListItem = Pick<
   UiView,
