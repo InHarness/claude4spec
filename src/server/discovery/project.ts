@@ -245,7 +245,19 @@ export function selectedFieldsOf(select: readonly string[] | undefined, schema: 
   return [
     ...new Set([
       ...identity,
-      ...selectableFieldsOf(schema).filter((name) => !schema[name]?.contentBearing),
+      ...selectableFieldsOf(schema).filter(
+        (name) =>
+          /**
+           * `name in schema` drops the DERIVED names — `<field>Count` — which
+           * are selectable but are not fields. With no `select` the record
+           * carries the collection itself, so echoing its count key would
+           * advertise a key the record does not have, and this echo exists
+           * precisely so a consumer can tell a narrow record from an entity
+           * holding little data. A caller that DID ask for one gets it back
+           * through the `select` branch above, where it is genuinely present.
+           */
+          name in schema && !schema[name]?.contentBearing,
+      ),
     ]),
   ];
 }
