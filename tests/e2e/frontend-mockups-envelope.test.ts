@@ -221,4 +221,112 @@ describe.skipIf(!BASE)('c4s-plugin-frontend-mockups envelope', () => {
     expect(badResponses, 'responses >= 400').toEqual([]);
     await page.close();
   });
+
+  /**
+   * 0.2.55 — the mockup presence chip on the `ui-view` LIST row.
+   *
+   * Before this, the only place a mockup's existence was visible was a single
+   * view's `Details` tab, so answering "which of these has a mockup?" meant
+   * opening every record in turn.
+   *
+   * Three properties, and each is invisible to the server — the list request is
+   * byte-for-byte identical whether the chip renders or not, so no integration
+   * test can reach any of them:
+   *
+   *  1. PRESENCE-ONLY. A view WITH a mockup gets a chip; a view WITHOUT one gets
+   *     nothing at all in that slot — not a dimmed icon, not a placeholder
+   *     holding width. That is the same convention the URL badge beside it
+   *     already follows, and a two-state variant would have put an element into
+   *     every row of the list.
+   *  2. POSITION — after the URL badge, before the truncated description.
+   *  3. NO EXTRA READ. The chip reads `hasMockupHtml` off the record the list
+   *     already fetched. It must not touch the supervised content route, which
+   *     stays reserved for pulling the mockup itself on demand. This is a
+   *     performance CONTRACT, not a preference: a per-row fetch would turn one
+   *     request into one-per-view.
+   */
+  it('the list row chips a mockup only where there is one, without a second read', async () => {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    const { consoleErrors, badResponses } = watch(page);
+
+    // Every per-row read the page could possibly make, recorded.
+    //
+    // Two shapes, because there are two ways to go wide: the supervised content
+    // route, which is the one the chip must never reach for, and a per-slug
+    // detail GET. The latter is matched structurally — `/api/ui-views/<slug>`
+    // with a path segment after the collection — rather than by `?view=detail`,
+    // which was retired in 0.2.22 and would make this half of the assertion
+    // vacuous: an N+1 built out of plain detail reads would sail through.
+    const perRowReads: string[] = [];
+    page.on('request', (r) => {
+      const u = new URL(r.url());
+      const detail = /\/api\/(?:projects\/[^/]+\/)?ui-views\/[^/]+$/.test(u.pathname);
+      if (/\/content\//.test(u.pathname) || detail) perRowReads.push(`${u.pathname}${u.search}`);
+    });
+
+    const stamp = Date.now();
+    const api = `${BASE}/api/projects/${project.id}`;
+    // Neither title contains the chip's own label, or asserting on the row's
+    // text would pass on the title alone.
+    const withSlug = `e2e-chip-present-${stamp}`;
+    const withoutSlug = `e2e-chip-absent-${stamp}`;
+
+    for (const [slug, title] of [
+      [withSlug, `E2E Chip Present ${stamp}`],
+      [withoutSlug, `E2E Chip Absent ${stamp}`],
+    ]) {
+      const res = await fetch(`${api}/ui-views`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug, title, url: '/e2e-chip', params: [] }),
+      });
+      expect(res.status, `POST /ui-views ${slug}`).toBe(201);
+    }
+
+    // Only ONE of them gets a mockup — the pair is the whole point, since a
+    // chip that rendered unconditionally would satisfy a one-view test.
+    const patch = await fetch(`${api}/ui-views/${withSlug}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mockupHtml: '<!doctype html><title>chip</title><h1>Chip</h1>' }),
+    });
+    expect(patch.status, `PATCH /ui-views/${withSlug}`).toBe(200);
+
+    await page.goto(`${BASE}/p/${project.id}/ui-views`, { waitUntil: 'networkidle' });
+    // Narrowed to this run's two views, so a seeded corpus of any size cannot
+    // make the row lookups ambiguous.
+    const search = page.locator('input[placeholder*="Search"]').first();
+    await expect.poll(() => search.count()).toBe(1);
+    await search.fill(`E2E Chip`);
+
+    // NOT `.last()`: collapsing to one element would make the count assertion
+    // below unfalsifiable, and its whole job is to prove the search actually
+    // narrowed to this run's pair so the row lookups mean what they say.
+    const rowWith = page.locator('button', { hasText: `E2E Chip Present ${stamp}` });
+    const rowWithout = page.locator('button', { hasText: `E2E Chip Absent ${stamp}` });
+    await expect.poll(() => rowWith.count()).toBe(1);
+    await expect.poll(() => rowWithout.count()).toBe(1);
+
+    // (1) presence-only, read off the rows' own text.
+    await expect.poll(() => rowWith.innerText()).toContain('Mockup');
+    expect(await rowWithout.innerText(), 'a view with no mockup chips nothing').not.toContain(
+      'Mockup',
+    );
+
+    // (2) position — between the URL badge and the description. Compared as
+    // text offsets rather than by DOM shape, which is what the reader of the row
+    // actually perceives and what the spec states.
+    const withText = await rowWith.innerText();
+    expect(withText.indexOf('/e2e-chip'), 'URL badge present').toBeGreaterThanOrEqual(0);
+    expect(withText.indexOf('Mockup'), 'chip follows the URL badge').toBeGreaterThan(
+      withText.indexOf('/e2e-chip'),
+    );
+
+    // (3) the performance contract.
+    expect(perRowReads, 'per-row content/detail reads while listing').toEqual([]);
+
+    expect(consoleErrors, 'console errors').toEqual([]);
+    expect(badResponses, 'responses >= 400').toEqual([]);
+    await page.close();
+  });
 });

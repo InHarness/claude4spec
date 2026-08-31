@@ -23,9 +23,11 @@
 import {
   IDENTITY_FIELDS,
   RESERVED_TITLE_FIELD,
+  collectionCountKey,
   contentBearingKeys,
   contentBytes,
   contentOperationOf,
+  isKeyed,
   selectableFieldsOf,
   type FieldNode,
 } from '../../shared/plugin-host/data-schema.js';
@@ -141,8 +143,32 @@ export function project(
 
   for (const [name, node] of Object.entries(schema)) {
     if (node.transientInput || node.localSurrogate) continue;
-    if (wanted && !wanted.has(name)) continue;
     if (IDENTITY_FIELDS.includes(name as (typeof IDENTITY_FIELDS)[number])) continue;
+
+    /**
+     * `<field>Count` is a name of its own, so a caller naming it gets it —
+     * independently of whether it also named the collection.
+     *
+     * The number is produced upstream by `genericEntity`, which counts rather
+     * than reads; here it only has to survive the cut. `0` when the record came
+     * from a path that carries no collection reader, matching the emitted-keys
+     * rule the content-bearing branch below already follows.
+     */
+    if (node.type === 'collection' && !isKeyed(node)) {
+      const key = collectionCountKey(name);
+      if (wanted?.has(key)) {
+        /**
+         * Two sources, one answer. A collection in its own table was counted
+         * upstream by `genericEntity` and arrives as `row[key]`; an EMBEDDED one
+         * never goes near a query — it rides on the entity's row, so the array
+         * is right here and `length` is the whole story.
+         */
+        const value = row[key] ?? (Array.isArray(row[name]) ? (row[name] as unknown[]).length : 0);
+        out[key] = Number(value);
+      }
+    }
+
+    if (wanted && !wanted.has(name)) continue;
 
     if (node.contentBearing) {
       /**
@@ -219,7 +245,19 @@ export function selectedFieldsOf(select: readonly string[] | undefined, schema: 
   return [
     ...new Set([
       ...identity,
-      ...selectableFieldsOf(schema).filter((name) => !schema[name]?.contentBearing),
+      ...selectableFieldsOf(schema).filter(
+        (name) =>
+          /**
+           * `name in schema` drops the DERIVED names — `<field>Count` — which
+           * are selectable but are not fields. With no `select` the record
+           * carries the collection itself, so echoing its count key would
+           * advertise a key the record does not have, and this echo exists
+           * precisely so a consumer can tell a narrow record from an entity
+           * holding little data. A caller that DID ask for one gets it back
+           * through the `select` branch above, where it is genuinely present.
+           */
+          name in schema && !schema[name]?.contentBearing,
+      ),
     ]),
   ];
 }

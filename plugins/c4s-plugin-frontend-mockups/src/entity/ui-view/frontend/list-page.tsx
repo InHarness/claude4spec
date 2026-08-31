@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Monitor } from 'lucide-react';
+import { Badge } from '@c4s/plugin-runtime/ui';
 import { useUiViews } from './hooks.js';
 import { UiViewCreateDialog } from './create-dialog.js';
 import { ListPageLayout } from '../../../frontend-kit/ListPageLayout.js';
@@ -63,7 +64,7 @@ export function UiViewsList({
             onClick={() => onSelect(v.slug)}
             tags={v.tags}
             tagLookup={tagLookup}
-            trailing={<CountBadge>{v.paramCount}p</CountBadge>}
+            trailing={<CountBadge>{v.paramsCount ?? 0}p</CountBadge>}
           >
             <div className="flex items-center gap-2">
               <span className="text-[13.5px]" style={{ color: 'var(--c-ink)', fontWeight: 500 }}>
@@ -77,6 +78,24 @@ export function UiViewsList({
                   {v.url}
                 </span>
               )}
+              {/*
+                The mockup chip — PRESENCE-ONLY, by the same convention the URL
+                badge above already follows: no mockup renders NOTHING here, not
+                a dimmed icon and not an empty container holding width. A
+                two-state variant would put an element in every single row.
+
+                `hasMockupHtml` comes off the record the list already fetched
+                (the host derives it from the `contentBearing` `mockupHtml`
+                field), so the chip costs no request. It must never reach for the
+                mockup itself, nor for `mockupHtmlBytes` — the size answers "what
+                does fetching this cost", and the list is not where that is
+                decided; the `Details` descriptor is.
+
+                Text label only, no emoji and no icon of its own, and no new
+                token or class: the existing kit `Badge` in the same `small`
+                shape the row's tag chips use.
+              */}
+              {v.hasMockupHtml === true && <Badge label="Mockup" small dot={false} />}
             </div>
             {v.description && (
               <div className="text-[12.5px] truncate mt-0.5" style={{ color: 'var(--c-muted)' }}>

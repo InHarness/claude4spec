@@ -41,7 +41,12 @@ import { getEntitiesAll } from '../../discovery/index.js';
 import { errorHandler } from '../../routes/errors.js';
 import { buildCreateShape, buildUpdateShape } from './crud-schema-gen.js';
 import { genericCreate, genericDelete, genericUpdate, propagateRename, type GenericCrudDeps } from './generic-crud.js';
-import { isEmbedded, type FieldNode } from '../../../shared/plugin-host/data-schema.js';
+import {
+  collectionCountKey,
+  isEmbedded,
+  selectableFieldsOf,
+  type FieldNode,
+} from '../../../shared/plugin-host/data-schema.js';
 import type { DiscoveryCore } from '../../discovery/types.js';
 import type { WsEmitter } from '../../ws/project-emitter.js';
 import type { BackendModule } from './types.js';
@@ -169,18 +174,52 @@ function readOne(deps: GeneratedCrudDeps, type: string, slug: string): unknown {
  * decides WHICH entities and in what order, and one batched `get_entities` says
  * what they contain. One extra call per page, not per row.
  *
- * No `select`: the default projection is already "everything but the
- * content-bearing fields", which is exactly what a list wants — and it is the
- * same rule the agent-facing channel gets, so the UI has no privileged width.
+ * The `select` is everything the type declares EXCEPT its `listOverview`
+ * collections, which come back as `<field>Count` instead — see `listSelect`.
+ * Until 0.2.55 there was no `select` at all, on the reasoning that the default
+ * projection is "everything but the content-bearing fields" and that is what a
+ * list wants. It was not: a list row renders a parameter count and was handed
+ * every parameter to get it.
+ *
+ * Note the `select` names content-bearing fields explicitly. It has to —
+ * `project()` tests `wanted` BEFORE its `contentBearing` branch, so a `select`
+ * that omitted them would drop `hasMockupHtml` and take the ui-view list's
+ * mockup chip with it. Naming them costs nothing (a named content-bearing field
+ * answers with its descriptor, never its value) and is the difference between
+ * narrowing the payload and silently narrowing the FEATURES.
  *
  * `getEntitiesAll`, NOT `getEntities`: this route's default page is 200 while
  * the core operation refuses more than 50 slugs in one call. That cap is the
  * agent's contract and is right for it; a page the server itself just decided
  * the size of is not overreaching, so it batches instead of being refused.
  */
-function hydrateRows(deps: GeneratedCrudDeps, type: string, rows: Array<{ slug: string }>): unknown[] {
+function listSelect(module: BackendModule): string[] {
+  const schema = module.data?.schema ?? {};
+  // Derived from the schema, never matched by spelling: a field legitimately
+  // named `retryCount` must not be mistaken for a collection's count key.
+  const derivedCounts = new Set(
+    selectableFieldsOf(schema).filter((n) => !(n in schema)),
+  );
+  const wanted: string[] = [];
+  for (const name of selectableFieldsOf(schema)) {
+    const node = schema[name];
+    if (node?.type === 'collection' && node.listOverview) {
+      wanted.push(collectionCountKey(name));
+      continue;
+    }
+    if (!derivedCounts.has(name)) wanted.push(name);
+  }
+  return wanted;
+}
+
+function hydrateRows(
+  deps: GeneratedCrudDeps,
+  type: string,
+  rows: Array<{ slug: string }>,
+  select: string[],
+): unknown[] {
   if (!rows.length) return [];
-  const { results } = getEntitiesAll(deps.discovery, { type, slugs: rows.map((r) => r.slug) });
+  const { results } = getEntitiesAll(deps.discovery, { type, slugs: rows.map((r) => r.slug), select });
   return withSystemAll(
     deps,
     type,
@@ -192,6 +231,7 @@ export function generatedCrudRouter(deps: GeneratedCrudDeps, module: BackendModu
   const router = Router();
   const type = module.type;
   const createSchema = z.object(buildCreateShape(module.data!, module.slugPattern));
+  const rowSelect = listSelect(module);
   const updateSchema = z.object(buildUpdateShape(module.data!, module.slugPattern));
 
   const broadcast = (slug: string): void => {
@@ -261,7 +301,7 @@ export function generatedCrudRouter(deps: GeneratedCrudDeps, module: BackendModu
           ...(offset !== undefined ? { offset } : {}),
         });
         if (hits.mode !== 'hits') throw new DomainError('INTERNAL', 'search returned a count');
-        res.json({ data: hydrateRows(deps, type, hits.items), total: hits.total });
+        res.json({ data: hydrateRows(deps, type, hits.items, rowSelect), total: hits.total });
         return;
       }
 
@@ -272,7 +312,7 @@ export function generatedCrudRouter(deps: GeneratedCrudDeps, module: BackendModu
         ...(offset !== undefined ? { offset } : {}),
       });
       if (page.mode !== 'items') throw new DomainError('INTERNAL', 'list returned a count');
-      res.json({ data: hydrateRows(deps, type, page.items), total: page.total });
+      res.json({ data: hydrateRows(deps, type, page.items, rowSelect), total: page.total });
     } catch (err) {
       next(err);
     }

@@ -34,6 +34,15 @@ export const uiViewData: DataDeclaration = {
        * unrelated-looking addition.
        */
       collection: { kind: 'value', identity: ['name', 'in'], rekeyOn: ['name'] },
+      /**
+       * 0.2.55 — the LIST takes `paramsCount`, not the parameters.
+       *
+       * The list row has only ever rendered the number. Shipping every
+       * parameter to print it made the row's cost grow with a view's
+       * complexity, for nothing a reader of the list can see. The detail read is
+       * untouched and still carries the array.
+       */
+      listOverview: true,
       item: {
         type: 'object',
         fields: {

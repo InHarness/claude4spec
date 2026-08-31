@@ -43,6 +43,17 @@ export const designSystemData: DataDeclaration = {
     groups: {
       type: 'collection',
       collection: { kind: 'value', identity: ['name'] },
+      /**
+       * 0.2.55 — the LIST takes `groupsCount`, not the groups.
+       *
+       * This is the entity's expensive half: every token, with its resolved
+       * value per mode. The list row rendered two integers off it. It now
+       * renders the group count the host counts without reading, and the token
+       * total — which is nested inside the groups and so cannot be counted
+       * without pulling exactly what we are refusing to pull — moves to the
+       * detail page, where the groups are loaded anyway.
+       */
+      listOverview: true,
       description: 'Token groups (default []).',
       // A group's identity is its name, so reordering groups is a noop — but an
       // unsorted snapshot would still churn the file. `tokens` below is
@@ -91,6 +102,9 @@ export const designSystemData: DataDeclaration = {
       collection: { kind: 'value', identity: ['name'] },
       // Same rule as `groups`; `overrides` stays authored.
       unordered: true,
+      // And the same list rule: a mode carries an override set, and no list row
+      // has ever rendered one.
+      listOverview: true,
       description: 'Theme modes — token override sets (default []).',
       item: {
         type: 'object',

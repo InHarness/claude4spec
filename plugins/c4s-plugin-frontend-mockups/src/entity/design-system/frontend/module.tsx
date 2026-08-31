@@ -3,7 +3,7 @@ import { ChevronRight, Palette } from 'lucide-react';
 import type { DesignSystem, ResolvedTokenValue } from '../../../types.js';
 import { resolve } from '../../../design-system-domain.js';
 import { useDesignSystem } from './hooks.js';
-import { designSystemsApi } from './api.js';
+import { designSystemsApi, countsOf } from './api.js';
 import type {
   EntityCardProps,
   EntityChipProps,
@@ -26,20 +26,17 @@ import type { DesignSystemListItem } from './api.js';
  * how much of a design system they carry.
  *
  * `ElementListView`, `TaggedListView`/`TaggedListMixedView` and `listByTags` all
- * hand it an `element_list_item`/`tagged_list_item` row, which is `trimItem` —
- * `groupCount` and `tokenCount`, no `groups[]`. The agent tool renderer can hand
- * it a wider payload. Reading `groups.length` unconditionally is what made a page
- * containing `<tagged_list type="design-system"/>` throw on render once the
- * retired router stopped returning whole rows.
+ * hand it a row, and the agent tool renderer can hand it a wider payload — hence
+ * the union, and hence `countsOf` rather than a bare `groups.length`, which is
+ * what made a page containing `<tagged_list type="design-system"/>` throw on
+ * render once the retired router stopped returning whole rows.
+ *
+ * What those rows are NOT is a `groupCount`/`tokenCount` pair. `countsOf` used
+ * to branch on one, citing a `trimItem` projection that no longer exists —
+ * nothing in the corpus emits either field, so the branch was dead and the
+ * fallback was doing all the work. The counts are derived from `groups[]`,
+ * which is what every one of these paths actually carries.
  */
-function countsOf(entity: DesignSystem | DesignSystemListItem): { groups: number; tokens: number } {
-  if ('groupCount' in entity && typeof entity.groupCount === 'number') {
-    return { groups: entity.groupCount, tokens: entity.tokenCount ?? 0 };
-  }
-  const groups = (entity as DesignSystem).groups ?? [];
-  return { groups: groups.length, tokens: groups.reduce((acc, g) => acc + g.tokens.length, 0) };
-}
-
 function DesignSystemRow({ entity, active, onOpen }: EntityRowProps<DesignSystem | DesignSystemListItem>) {
   const counts = countsOf(entity);
   return (
@@ -69,7 +66,7 @@ function DesignSystemRow({ entity, active, onOpen }: EntityRowProps<DesignSystem
         className="font-mono text-[10.5px] px-1.5 py-0.5 rounded"
         style={{ background: 'var(--c-panel)', color: 'var(--c-muted)' }}
       >
-        {counts.groups} groups / {counts.tokens} tokens
+        {counts.groups} groups{counts.tokens !== null && ` / ${counts.tokens} tokens`}
       </span>
     </button>
   );
@@ -151,7 +148,7 @@ function DesignSystemCard({ slug, entity, onOpen }: EntityCardProps<DesignSystem
           className="font-mono text-[11px] px-1.5 py-0.5 rounded"
           style={{ background: 'var(--c-panel)', color: 'var(--c-muted)' }}
         >
-          {counts.groups} groups / {counts.tokens} tokens
+          {counts.groups} groups{counts.tokens !== null && ` / ${counts.tokens} tokens`}
         </span>
         <span className="flex-1" />
         <ChevronRight size={14} style={{ color: 'var(--c-subtle)' }} />
