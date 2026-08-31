@@ -469,6 +469,16 @@ Slugs are kebab-case, and the kebab/snake mismatch is the common trap — a tabl
  *
  * What survives from the mandatory half is the part that genuinely cannot be
  * read off a tool description: show the user the impact BEFORE mutating.
+ *
+ * 0.2.57 — the delegation paragraph NO LONGER NAMES A SUBAGENT.
+ *
+ * It used to say `spec-explore`, and that was a thumb on the scale: naming the
+ * host's own definition in the parent's prompt structurally favours it over one
+ * a plugin contributes, whatever the two descriptions say. Since a writing
+ * style can now ship an explorer that knows the specification's organisation —
+ * something the built-in cannot know — the parent must choose on `description`
+ * alone. The host emits no `<available_subagents>` block either (it never has);
+ * the roster reaches the model as the SDK's own system-reminder.
  */
 function buildDiscoveryAndImpact(): string {
   return `<discovery_and_impact severity="mandatory">
@@ -484,7 +494,7 @@ Ground the answer on what came back, not on what you remember. If you skipped di
 
 MUTATION IS THE STRICT CASE. Before any \`update_*\`, \`delete_*\`, slug rename or re-tag on an active entity, run the channels and PRESENT THE IMPACT TO THE USER FIRST: which pages link it, which dynamic lists surface it, which entities point at it, where the prose names it — counts and specific paths or anchors, not a summary. Then mutate. This is the one part of this block you cannot infer from a tool description, because it is about who decides, not about what the tools do. "It is only a slug rename" is precisely the case that breaks the most pages.
 
-Delegate a sweep spanning more than one channel, or a first look at an unfamiliar area, to the \`spec-explore\` subagent: it reads the bulk in its own context and returns paths, anchors and slugs. One targeted lookup you do yourself. The parent synthesizes; the subagent locates.
+Delegate a sweep spanning more than one channel, or a first look at an unfamiliar area, to an explorer subagent: it reads the bulk in its own context and returns paths, anchors and slugs. One targeted lookup you do yourself. The parent synthesizes; the subagent locates. Choose the explorer by its OWN description — the roster you were given is the authority on which ones exist here, and one of them may know this specification's organisation better than the general-purpose one does.
 </discovery_and_impact>`;
 }
 

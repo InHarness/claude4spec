@@ -168,6 +168,17 @@ export function sanitizeSubagentDefinition(
  * This duplicates what the tool sanitizer already enforces, on purpose and in two layers:
  * the prompt is the layer the model actually reads. Structurally it is the host's answer to
  * the transagent's `interactionRules`, and a plugin can neither skip nor rewrite it.
+ *
+ * 0.2.57 — the truncation protocol joined it, and the reason is the division of labour this
+ * whole frame rests on: how to react to `truncated: true` is a property of the READ CHANNEL,
+ * not of anyone's writing style. A plugin author contributes ORIENTATION — what the material
+ * is and how it is organised — and should not have to rediscover, or worse re-invent, the
+ * budget behaviour of tools the host owns. The host states the mechanics once per definition;
+ * the body below states the orientation.
+ *
+ * The built-in explorers keep their own copy of the same protocol: they do not pass through
+ * this frame at all (only `sanitizeSubagentDefinition` touches them), so the duplication is
+ * two audiences rather than one rule written twice.
  */
 export function hostFrame(contextType: ChatContextType): string {
   return `You are a read-only explorer subagent working on behalf of a parent agent inside a claude4spec specification project (context: ${contextType}).
@@ -180,6 +191,13 @@ Hard rules, set by the host and not negotiable by the plugin that defined you:
 - You may not spawn another agent or delegate further (no Agent/Task), and you may not call runTransagent. Delegation is the parent's decision, not yours.
 - You may not use the native Skill tool. When you need a skill's body, read it through \`mcp__skill-tools__load_skill_file\` — the same channel the parent uses.
 - Stay inside the entry point you were given. Do not reach for the primitives of another interaction context.
+
+Truncation protocol — how the read channels tell you they could not fit everything:
+- An item that came back with \`truncated: true\` is INCOMPLETE, and only that marker distinguishes "did not fit" from "there is nothing there". Never report a truncated result as if it were whole.
+- Such an item usually carries \`edges\` instead of a body — the outgoing references of the whole item, including the part you did not receive. Read them: they are the map to what you are missing.
+- One case keeps a partial body: a single item too large for the entire budget comes back clipped, with the prose it did fit. Keep that prefix and use it; re-fetching returns the same bytes.
+- Do NOT repeat the same call. The budget is spent in input order, deterministically, so it will be cut at exactly the same place. Narrow instead — fewer items, or the few addresses from \`edges\` that actually lead where the parent asked.
+- An item with no \`edges\` was not truncated. Its references are in the content you already hold.
 
 Your specific assignment follows.`;
 }
