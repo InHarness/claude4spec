@@ -18,7 +18,9 @@ export const LIST_SECTIONS_RETURN =
   'The envelope carries `hash`: the sha256 of the WHOLE page file, the same value `get_page` returns and exactly ' +
   'what `update_page` / `update_sections` want as `expectedHash` — so a sectional edit closes with list_sections ' +
   '-> get_sections -> update_sections and never needs to fetch the page whole. It is present for { by: "page" } ' +
-  'and for a KNOWN anchor; with `is_known: false` the field is absent, because no page is named. Rows carry no ' +
+  'and for a KNOWN anchor, whenever that page can be read. It is ABSENT when no page is named (`is_known: false`) ' +
+  'and when the named page does not exist or cannot be read — an empty listing may therefore carry no hash, so ' +
+  'check the field before passing it as `expectedHash`. Rows carry no ' +
   'per-section hash: `content_hash` is normalized and would read as something you could write with, which it is not.';
 
 /** `get_page` — the full response shape, and WHEN the hash is taken. */

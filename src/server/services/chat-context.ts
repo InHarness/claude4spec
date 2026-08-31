@@ -566,7 +566,7 @@ To LINK a section, embed \`<section_ref anchor="xxxxxxxx"/>\`. It renders as a c
  * pointing there is pointing at a tool the agent does not have.
  */
 const CURRENT_PAGE_HANDLING = `<current_page_handling>
-\`<current_page>\` is what the user is looking at right now. It carries the page's \`path\` and its \`root\` — and you need both, because \`get_page\` without a \`rootId\` answers INVALID_ARGUMENT. Long pages are inlined only as a preview (see the \`preview_lines\` / \`total_lines\` attributes). To see the rest, prefer the sectional route: \`list_sections({ by: "page", rootId, path })\` lists every section with its size and its anchor, and its envelope carries the page's \`hash\`; then \`get_sections({ anchors })\` reads only the ones you actually need. Use \`get_page\` when you genuinely need the whole page. Either way you end up holding the \`hash\` that \`update_page\` and \`update_sections\` require as \`expectedHash\`, so editing a page never depends on reading all of it.
+\`<current_page>\` is what the user is looking at right now. It carries the page's \`path\` and its \`root\` — and you need both, because \`get_page\` without a \`rootId\` answers INVALID_ARGUMENT. Long pages are inlined only as a preview (see the \`preview_lines\` / \`total_lines\` attributes). To see the rest, prefer the sectional route where it is open to you: \`list_sections({ by: "page", rootId, path })\` lists every section with its size and its anchor, and its envelope carries the page's \`hash\`; then \`get_sections({ anchors })\` reads only the ones you actually need. That route needs a SECTION-INDEXED root — on any other root \`list_sections\` answers INVALID_ARGUMENT and \`get_page\` is the only way through. The truncation notice inside \`<current_page>\` already names whichever route applies to the page you are looking at; follow it rather than guessing. Use \`get_page\` when you genuinely need the whole page. Either way you end up holding the \`hash\` that \`update_page\` and \`update_sections\` require as \`expectedHash\`, so editing a page never depends on reading all of it.
 </current_page_handling>`;
 
 /**
@@ -1488,7 +1488,12 @@ function buildBriefSystemPrompt(input: {
 
 const CURRENT_PAGE_PREVIEW_LINES = 40;
 
-function buildCurrentPage(path: string, body: string | null, root: string): string {
+function buildCurrentPage(
+  path: string,
+  body: string | null,
+  root: string,
+  sectionIndexed: boolean,
+): string {
   if (body === null) {
     return selfClose('current_page', attrs({ path, root, unavailable: 'true' }));
   }
@@ -1515,6 +1520,13 @@ function buildCurrentPage(path: string, body: string | null, root: string): stri
    * to reach part of it is the expensive answer, it truncates again past the response
    * budget, and `list_sections` supplies both halves of what comes next — the anchors
    * to fetch, and the page `hash` that arms the write.
+   *
+   * That route is offered only when the page's root is SECTION-INDEXED. `list_sections`
+   * goes through `RootSet.requireSectionIndexed`, which answers INVALID_ARGUMENT on a
+   * root without an index — so on such a root the sectional lead would be an instruction
+   * that cannot succeed, and the notice names `get_page` instead. This is the same rule
+   * `get_page`'s own `truncationHint` follows (`ops/pages.ts`, `lineWindowsRefused`): a
+   * hint never proposes a call the operation it points at refuses.
    */
   return `<current_page ${attrs({
     path,
@@ -1523,7 +1535,11 @@ function buildCurrentPage(path: string, body: string | null, root: string): stri
     preview_lines: `1-${CURRENT_PAGE_PREVIEW_LINES}`,
   })}>
 ${preview}
-[... ${remaining} more line${remaining === 1 ? '' : 's'} truncated. To read on, call list_sections({ by: "page", rootId: "${root}", path: "${path}" }) and then get_sections({ anchors }) for the sections you need — that list_sections envelope also carries the page hash that update_page and update_sections take as expectedHash. Call get_page({ rootId: "${root}", path: "${path}" }) only when you need the whole page.]
+[... ${remaining} more line${remaining === 1 ? '' : 's'} truncated. ${
+    sectionIndexed
+      ? `To read on, call list_sections({ by: "page", rootId: "${root}", path: "${path}" }) and then get_sections({ anchors }) for the sections you need — that list_sections envelope also carries the page hash that update_page and update_sections take as expectedHash. Call get_page({ rootId: "${root}", path: "${path}" }) only when you need the whole page.`
+      : `To read on, call get_page({ rootId: "${root}", path: "${path}" }) — this root is not section-indexed, so list_sections and get_sections do not apply to it. The response carries the page hash that update_page takes as expectedHash.`
+  }]
 </current_page>`;
 }
 
@@ -1791,7 +1807,17 @@ const MAIN_PROMPT_BLOCKS: readonly PromptBlock[] = [
     // the peer's spec headlessly, with no "current page" anchor.
     render: (c) =>
       c.contextType !== 'ask' && c.currentPagePath
-        ? buildCurrentPage(c.currentPagePath, c.currentPageBody, c.currentPageRootId)
+        ? buildCurrentPage(
+            c.currentPagePath,
+            c.currentPageBody,
+            c.currentPageRootId,
+            /**
+             * An unknown root defaults to section-indexed: `pages`, the builtin every
+             * project has, is indexed, and the notice for a root this context cannot
+             * see should read like the normal case rather than like the exception.
+             */
+            c.roots.find((r) => r.id === c.currentPageRootId)?.sectionIndexed ?? true,
+          )
         : null,
   },
   // Handling instructions sit BELOW the block they are about. They used to live

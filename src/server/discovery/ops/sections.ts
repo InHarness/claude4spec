@@ -82,7 +82,7 @@ export async function listSections(
   // Measurement before fetching is a contract, not a nicety: three of five
   // failures in the motivating session were pulling something unbounded. Each
   // page is read ONCE for the whole group, not once per section.
-  const { sizes, hashes } = await measure(pages, visible);
+  const { sizes, hashes, measured } = await measure(pages, visible);
 
   const items: SectionListItem[] = visible.map((section) => ({
     rootId: section.rootId,
@@ -130,9 +130,18 @@ export async function listSections(
       : rows[0]
         ? { rootId: rows[0].rootId, path: rows[0].pagePath }
         : undefined;
-  const hash = hashPage
-    ? (hashes.get(pageKey(hashPage.rootId, hashPage.path)) ?? (await pageHashFor(pages, hashPage.rootId, hashPage.path)))
-    : undefined;
+  /**
+   * `measured` is consulted before the fallback so a page this listing ALREADY
+   * opened is never opened twice: a page whose read failed is in `measured` with
+   * no entry in `hashes`, and retrying it would repeat the same failure — one
+   * wasted read per stale index row, on the path taken when the index is stale.
+   */
+  const hashKey = hashPage ? pageKey(hashPage.rootId, hashPage.path) : undefined;
+  const hash =
+    hashPage && hashKey
+      ? (hashes.get(hashKey) ??
+        (measured.has(hashKey) ? undefined : await pageHashFor(pages, hashPage.rootId, hashPage.path)))
+      : undefined;
   const envelope = { ...page, ...(hash === undefined ? {} : { hash }) };
 
   return input.by === 'anchor' ? { ...envelope, is_known: rows.length > 0 } : envelope;
@@ -144,12 +153,16 @@ export async function listSections(
  * The hash rides back from here rather than being fetched separately because this
  * loop already opens every page the listing touches: `readWithHash` hands over the
  * body it was going to read anyway plus the digest `PagesService` computed on the
- * way past, so the envelope's `hash` costs no I/O at all.
+ * way past, so for a page that HAS sections the envelope's `hash` costs no extra I/O.
+ *
+ * `measured` reports which pages this loop attempted, successfully or not, so the
+ * caller can tell "no hash because nothing here reads that page" from "no hash
+ * because reading it failed" and skip a retry it already knows the answer to.
  */
 async function measure(
   pages: PageSource,
   sections: readonly RawSection[],
-): Promise<{ sizes: Map<string, number>; hashes: Map<string, string> }> {
+): Promise<{ sizes: Map<string, number>; hashes: Map<string, string>; measured: Set<string> }> {
   const byPage = new Map<string, RawSection[]>();
   for (const s of sections) {
     const key = pageKey(s.rootId, s.pagePath);
@@ -172,7 +185,7 @@ async function measure(
     hashes.set(key, read.hash);
     for (const s of group) sizes.set(s.anchor, bodySize(read.body, s));
   }
-  return { sizes, hashes };
+  return { sizes, hashes, measured: new Set(byPage.keys()) };
 }
 
 /** One page's identity as a map key. `rootId` is part of it: the same relPath lives in several roots. */
@@ -182,7 +195,13 @@ function pageKey(rootId: string, pagePath: string): string {
 
 /**
  * The page hash for the envelope when the listing produced no section to measure —
- * `by: "page"` on a page that genuinely has no headings.
+ * `by: "page"` on a page that genuinely has no headings, or an anchor whose root has
+ * since lost its section index.
+ *
+ * This is the ONE path on which the envelope's hash costs a read of its own. It is
+ * the price of the field existing at all in those cases: there is no section to
+ * measure, so nothing else opens the file. `measured` keeps it from repeating a read
+ * the measuring loop already tried.
  *
  * A missing page yields `undefined` rather than an error: `list_sections({ by:
  * "page" })` answers an empty list for a path that does not exist, and turning a

@@ -670,7 +670,7 @@ async function assertUnchanged(
     throw new DomainError(
       'INVALID_ARGUMENT',
       'expectedHash is required',
-      `read the page first (get_page) and pass back its \`hash\`; for a page that does not exist yet, create it with create_page({ rootId: "${target.pages.rootId}", path: "${relPath}" })`,
+      `pass back the \`hash\` of the file as you last read it — get_page returns it, and so does the \`list_sections({ by: "page", rootId: "${target.pages.rootId}", path: "${relPath}" })\` envelope, which is the cheaper source on a large page; for a page that does not exist yet, create it with create_page({ rootId: "${target.pages.rootId}", path: "${relPath}" })`,
     );
   }
   const currentHash = await hashOf(target.pages, relPath);

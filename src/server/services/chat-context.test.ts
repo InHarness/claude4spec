@@ -1393,6 +1393,35 @@ describe('buildSystemPrompt — layer order (0.2.50)', () => {
     expect(block).toContain('get_page');
   });
 
+  /**
+   * The sectional route is not universal, and a notice that proposes it on a root
+   * without a section index proposes an INVALID_ARGUMENT: `list_sections` goes
+   * through `RootSet.requireSectionIndexed`. The marker follows the same rule
+   * `get_page`'s own `truncationHint` follows — never name a call the operation it
+   * points at refuses.
+   */
+  it('routes a long page on a non-section-indexed root to get_page instead', () => {
+    const long = Array.from({ length: 120 }, (_, i) => `line ${i}`).join('\n');
+    const flat: Root = { ...rootAt('notes', 'notes'), sectionIndexed: false };
+    const out = build({
+      ...FULL_TURN,
+      roots: [flat],
+      currentPagePath: 'guide.md',
+      currentPageRootId: 'notes',
+      currentPageBody: long,
+    });
+
+    const marker = out.slice(out.indexOf('<current_page '), out.indexOf('</current_page>'));
+    expect(marker).toContain('preview_lines="1-40"');
+    expect(marker).toContain('get_page');
+    expect(marker).toContain('not section-indexed');
+    // The two calls that would answer INVALID_ARGUMENT on this root.
+    expect(marker).not.toMatch(/list_sections\(/);
+    expect(marker).not.toMatch(/get_sections\(/);
+    // Still no filesystem read — the standing rule holds on both branches.
+    expect(marker).not.toMatch(/\bRead\b/);
+  });
+
   /** A short page is inlined whole — no marker, no preview attribute, nothing to route. */
   it('leaves a page inside the preview budget unmarked', () => {
     const out = build({ ...FULL_TURN, currentPagePath: 'guide.md', currentPageBody: '# Guide\n\nbody' });
