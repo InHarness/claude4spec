@@ -12,15 +12,29 @@ import { handle, apiFetch, unwrap, unwrapList } from '../../../frontend-kit/api-
  *
  * The retired `uiViewsRouter` selected whole rows, so the list and the detail
  * happened to be the same shape and the client typed both as `UiView`. The
- * generated router serves the declared list view instead, and that view carries
- * `paramCount` rather than the `params[]` array — cheaper for a list, and the
- * list page only ever rendered the count. Typing it honestly is what makes the
- * difference a compile error instead of an `undefined.length` at runtime.
+ * generated router serves the declared list view instead. Typing it honestly is
+ * what makes a difference a compile error instead of an `undefined.length` at
+ * runtime.
+ *
+ * `paramCount` used to sit here and was FICTION: nothing on the server produces
+ * it. `projectedCollections` emits a `{ count }` shape only for `keyed`
+ * collections, and `params` is a `value` collection, so the row carries the
+ * `params[]` array itself — which is why the list's trailing badge rendered
+ * `undefinedp` on every row. The array is what the wire sends, so the array is
+ * what this declares.
+ *
+ * `hasMockupHtml` is NOT a field of the entity: `mockupHtml` is `contentBearing`,
+ * and the host swaps the value for a `has<Field>`/`<field>Bytes` descriptor pair
+ * derived from the field name. `project()` emits that pair regardless of
+ * `select`, so it rides on every projection width — including this one, at no
+ * extra read. `mockupHtmlBytes` is deliberately NOT declared: the list must not
+ * present the size (that belongs to the `Details` descriptor), and leaving it
+ * off the type is the cheapest way to make a future misuse a compile error.
  */
 export type UiViewListItem = Pick<
   UiView,
-  'slug' | 'title' | 'url' | 'description' | 'tags' | 'createdAt' | 'updatedAt'
-> & { type: 'ui-view'; paramCount: number };
+  'slug' | 'title' | 'url' | 'description' | 'params' | 'tags' | 'createdAt' | 'updatedAt'
+> & { type: 'ui-view'; hasMockupHtml: boolean };
 
 export const uiViewsApi = {
   async list(query: UiViewListQuery = {}): Promise<UiViewListItem[]> {
