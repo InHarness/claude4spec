@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { buildSystemPrompt, mainPromptBlockNames, subagentsFor, type SystemPromptInput, type PeerProject } from './chat-context.js';
+import {
+  buildSystemPrompt,
+  mainPromptBlockNames,
+  subagentsFor,
+  CONTEXT_TYPE_REGISTRY,
+  type SystemPromptInput,
+  type PeerProject,
+} from './chat-context.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import { validateSubagents } from '@inharness-ai/agent-adapters';
 import type { PluginSubagentContribution } from '../../shared/plugin-host/manifest.js';
@@ -1110,14 +1117,42 @@ describe('buildSystemPrompt — <discovery_and_impact> (0.2.50)', () => {
    * `description` alone — and the roster reaches the model as the SDK's own
    * system-reminder, never as a block of ours.
    *
-   * Asserted across every frame, because the interaction rules named it too and
-   * those render into all four.
+   * The interaction rules named it too, and they render into every frame — so the
+   * loop feeds each frame its OWN rules from the registry. Without that argument
+   * `buildInteractionContext` emits a self-closed block and the assertion inspects
+   * no rules text at all, which would leave a re-introduced name undetected.
+   *
+   * `brief` is exempt from the name ban and asserted separately below: nothing
+   * competes with `diff-explore` there (a plugin explorer declares its own
+   * `contextTypes`, and this release's contributes chat/patch/ask), and the brief
+   * rules do not merely mention it — they bind the turn to consuming exactly the
+   * map plus what those subagents return.
    */
-  it('names no subagent and emits no <available_subagents> roster, in any frame', () => {
-    for (const contextType of ['chat', 'patch', 'ask', 'brief'] as const) {
-      const out = build({ contextType });
+  it('names no explorer subagent in the chat, patch and ask frames', () => {
+    for (const contextType of ['chat', 'patch', 'ask'] as const) {
+      const out = build({
+        contextType,
+        interactionRules: CONTEXT_TYPE_REGISTRY[contextType].interactionRules,
+      });
       expect(out, contextType).not.toContain('spec-explore');
       expect(out, contextType).not.toContain('diff-explore');
+    }
+
+    // The rules text is genuinely in there — `chat`'s entry is deliberately empty,
+    // so without this the two frames that DO carry rules could be passing vacuously.
+    const patch = build({ contextType: 'patch', interactionRules: CONTEXT_TYPE_REGISTRY.patch.interactionRules });
+    expect(patch).toContain('You are operating in PATCH mode');
+    expect(patch).toContain('delegate to an explorer subagent');
+    const ask = build({ contextType: 'ask', interactionRules: CONTEXT_TYPE_REGISTRY.ask.interactionRules });
+    expect(ask).toContain('You are being CONSULTED');
+  });
+
+  it('emits no <available_subagents> roster, in any frame — the SDK owns the roster', () => {
+    for (const contextType of ['chat', 'patch', 'ask', 'brief'] as const) {
+      const out = build({
+        contextType,
+        interactionRules: CONTEXT_TYPE_REGISTRY[contextType].interactionRules,
+      });
       expect(out, contextType).not.toContain('<available_subagents');
     }
   });

@@ -16,6 +16,13 @@ import type { PluginSubagentContribution } from '@c4s/plugin-runtime';
  * one wins in a project organised the way it describes, because it can say so
  * more sharply.
  *
+ * Nothing binds it to the style being ACTIVE, and nothing should: a contribution
+ * is filtered on `contextTypes` and name, never on `config.writingStyle`, so this
+ * envelope being built-in means every project sees it in the roster — including a
+ * flat one. The guard is therefore in the `description` itself, which says both
+ * when to pick it and when not to. Routing runs on descriptions; a description
+ * that only advertises is half-written.
+ *
  * `promptBody` carries ORIENTATION only. Everything mechanical — the read-only
  * posture, the ban on delegating further, the findings format, the truncation
  * protocol — is the host frame's, prepended to this body and not rewritable
@@ -24,7 +31,7 @@ import type { PluginSubagentContribution } from '@c4s/plugin-runtime';
 export const layeredSpecExplore: PluginSubagentContribution = {
   name: 'layered-spec-explore',
   description:
-    'Read-only explorer of a specification organised as LAYERED VERTICAL SLICES — modules `MXX-slug`, layers `LY-slug` inside them, and addresses written `MXX-slug/LY-slug`. Delegate to it to locate a module, a layer, the slice that owns a behaviour, or the page and anchor behind an address, without pulling the bulk into your own context. Prefer it over a generic explorer whenever the question is about WHERE something lives in this structure.',
+    'Read-only explorer of a specification organised as LAYERED VERTICAL SLICES — modules `MXX-slug`, layers `LY-slug` inside them, and addresses written `MXX-slug/LY-slug`. Delegate to it to locate a module, a layer, the slice that owns a behaviour, or the page and anchor behind an address, without pulling the bulk into your own context. Prefer it over a generic explorer whenever the question is about WHERE something lives in this structure. Do NOT use it if this specification is not organised that way — if its pages carry no `MXX-slug` modules, a generic explorer is the right one and this one would be looking for a structure that is not there.',
   promptBody: `You are exploring a specification written in the LAYERED VERTICAL SLICES style. What follows is how that specification is organised — the mechanics of exploring it are above and are not yours to restate.
 
 ## The organisation

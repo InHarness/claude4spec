@@ -22,6 +22,9 @@ describe('c4s-plugin-layered-vertical-slices — the subagent it contributes', (
     // that can win this explorer a turn over the generic one.
     expect(sub.description).toContain('MXX-slug/LY-slug');
     expect(sub.description.toLowerCase()).toContain('read-only');
+    // Nothing gates the contribution on the style being active, so a flat-spec
+    // project sees it too — the description has to rule itself out there.
+    expect(sub.description).toContain('Do NOT use it if this specification is not organised that way');
   });
 
   it('carries ORIENTATION in its body and leaves the mechanics to the host frame', () => {

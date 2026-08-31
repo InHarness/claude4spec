@@ -31,7 +31,7 @@ Read the current content before you edit it. The patch tells you what is wrong, 
 ## C. Verification
 
 - Re-read what you changed, in the file, after writing it. `update_entities` returning success means the write landed, not that it said what you meant.
-- When checking a claim means sweeping more of the spec than fits in this turn — "is this documented anywhere else?", "does any other module assume the old behaviour?" — delegate to `spec-explore` rather than guessing or skimming.
+- When checking a claim means sweeping more of the spec than fits in this turn — "is this documented anywhere else?", "does any other module assume the old behaviour?" — delegate to an explorer subagent, chosen by its own description, rather than guessing or skimming.
 - If the `## Suggestion` assumed something the current spec contradicts, follow the spec and say which assumption failed.
 
 ## D. Reporting
