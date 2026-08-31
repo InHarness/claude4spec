@@ -92,7 +92,7 @@ Artifact invariant:
   - The patch is an implementer's report of where the specification and reality diverged. The turn's outcome is a SPEC that no longer diverges — pages and entities actually edited, not a reply describing what should be edited.
   - Implement what the patch establishes; do not silently widen it into an unrelated cleanup you noticed on the way.
   - Where you deliberately do NOT implement something the patch asks for, say so and say why. A patch half-applied in silence is worse than one openly declined: the next reader has no way to tell which half.
-  - Verify before you claim. Re-read what you changed; delegate to \`spec-explore\` when checking a claim means sweeping more of the spec than one turn can hold.
+  - Verify before you claim. Re-read what you changed; delegate to an explorer subagent — picked by its own description — when checking a claim means sweeping more of the spec than one turn can hold.
   - How the implementation sequence is structured for this specification is methodology, and lives in \`workflows/patch.md\` of the active writing style.`;
 
 /**

@@ -137,7 +137,11 @@ describe('axis B — activation is per project, per type', () => {
 describe('axis A, continued — the envelope contributes a SKILL, not only types', () => {
   const SKILL = 'ui-view-mockup-generator';
   const CONTEXTS = ['chat', 'brief', 'patch', 'ask'] as const;
-  /** A real bundled writing style, so the `<project_skill/>` slot is genuinely occupied. */
+  /**
+   * A real selectable writing style, so the `<project_skill/>` slot is genuinely
+   * occupied. Since 0.2.57 it comes from an envelope rather than the bundled root —
+   * which changes nothing here and is asserted in its own suite below.
+   */
   const STYLE = 'layered-vertical-slices';
 
   /** A registry with the envelope's skills folded in the way `createProjectContext` folds them. */
@@ -220,5 +224,109 @@ describe('axis A, continued — the envelope contributes a SKILL, not only types
     for (const contextType of CONTEXTS) {
       expect(resolver.resolveForContext(contextType).listing.map((s) => s.slug)).not.toContain(SKILL);
     }
+  });
+});
+
+/**
+ * 0.2.57 — the CAPABILITY-class envelope, and the first plugin in this repo that
+ * carries no entity type.
+ *
+ * Every envelope above travels as one package because its contributions are
+ * COUPLED: `ui-view` declares a fixed ref at `design-system`, so splitting the
+ * pair would cut the declaration. `c4s-plugin-layered-vertical-slices` travels
+ * as one package for a different reason — its two contributions are one
+ * authorial capability, writable and distributable by someone outside this repo.
+ * The test is "could a stranger want to write this and give it to others?"; a
+ * writing style passes it, an `endpoint`/`dto` pair does not.
+ *
+ * Driven through the real loader against the real `plugins/` tree for the same
+ * reason as everything above it: a fixture would prove the machinery, and the
+ * wiring is what changed.
+ */
+describe('the capability-class envelope — a plugin with no entity type', () => {
+  const PKG = 'c4s-plugin-layered-vertical-slices';
+  const STYLE = 'layered-vertical-slices';
+  const SUBAGENT = 'layered-spec-explore';
+
+  function skillRegistryWith(registry: PluginRegistryImpl, cwd: string): SkillRegistry {
+    const skills = SkillRegistry.load(findSkillsRoots(cwd));
+    for (const skill of registry.listSkills()) skills.addPluginSkill(skill);
+    return skills;
+  }
+
+  let registry: PluginRegistryImpl;
+  let tmp: string;
+
+  beforeAll(async () => {
+    registry = await loadedRegistry();
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-capability-envelope-'));
+    fs.mkdirSync(path.join(tmp, '.claude4spec'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.claude4spec', 'config.json'), JSON.stringify({ writingStyle: STYLE }));
+  });
+  afterAll(() => {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('[ac:ac-manifest-koperty-c4s-plugin-layered-v] loads with an empty contributes.entities[] and registers no type', () => {
+    const record = registry.listPluginRecords().find((r) => r.name === PKG);
+    expect(record, `${PKG} did not load`).toBeDefined();
+    expect(record!.contributedTypes).toEqual([]);
+  });
+
+  /**
+   * The FLOOR invariant. A built-in envelope ships inside the host package, so it
+   * loads with no `trustProjectPlugins` gate and its `hostApiVersion` agrees by
+   * construction — which is what guarantees at least one style resolves in every
+   * installation. `tmp` is a bare cwd with no `.claude/skills` of its own, so the
+   * only thing that can put a style on this list is the envelope.
+   */
+  it('[ac:ac-koperta-wbudowana-rozwiazuje-sie-w-ka] resolves in a bare project, with no trust gate in the way', () => {
+    const skills = skillRegistryWith(registry, tmp);
+    expect(skills.isSelectable(STYLE)).toBe(true);
+    expect(new SkillResolver(skills, tmp).resolveForContext('chat').writingStyle?.slug).toBe(STYLE);
+  });
+
+  /**
+   * The bundled root did not merely stop being the style's home — it holds no
+   * style at all now. The class stays legal and the root stays in the precedence
+   * chain; nothing lives there.
+   */
+  it('is served as source "plugin", and no style is bundled any more', () => {
+    const selectable = skillRegistryWith(registry, tmp).listSelectable();
+    expect(selectable.find((s) => s.slug === STYLE)?.source).toBe('plugin');
+    expect(selectable.filter((s) => s.source === 'bundled')).toEqual([]);
+  });
+
+  /**
+   * Contributed as literals compiled into the envelope's module — the one real
+   * cost difference against the disk roots, and the reason the sub-files come
+   * back without a `path` to read them from.
+   */
+  it('carries its whole package in memory, addressed (slug, file)', () => {
+    const resolved = skillRegistryWith(registry, tmp).resolve(STYLE);
+    expect(resolved.metadata.source).toBe('plugin');
+    expect(resolved.metadata.path).toBe('');
+    expect(resolved.content.length).toBeGreaterThan(0);
+    for (const file of ['workflows/brief.md', 'templates/module.md']) {
+      expect(resolved.files[file]?.isText, file).toBe(true);
+      expect(resolved.files[file]!.content.length, file).toBeGreaterThan(0);
+    }
+  });
+
+  /**
+   * The two slots are one capability, so they come down together. Separately they
+   * lose their meaning: the subagent's `promptBody` REPLACES the parent's prompt,
+   * so without the style it does not know what it is moving through — and the
+   * style without it leaves the parent grepping.
+   */
+  it('[ac:ac-jedno-registry-unregisterplugin-c4s-p] one unregister takes the style AND the subagent', () => {
+    expect(registry.listSkills().map((s) => s.slug)).toContain(STYLE);
+    expect(registry.listPluginRecords().flatMap((r) => r.subagents).map((s) => s.name)).toContain(SUBAGENT);
+
+    registry.unregisterPlugin(PKG);
+
+    expect(registry.listSkills().map((s) => s.slug)).not.toContain(STYLE);
+    expect(registry.listPluginRecords().flatMap((r) => r.subagents).map((s) => s.name)).not.toContain(SUBAGENT);
+    expect(registry.listPluginRecords().map((r) => r.name)).not.toContain(PKG);
   });
 });

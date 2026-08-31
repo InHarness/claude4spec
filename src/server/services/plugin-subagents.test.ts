@@ -218,6 +218,21 @@ describe('resolvePluginSubagents — host prompt frame', () => {
     expect(prompt).toMatch(/may not spawn another agent/);
   });
 
+  /**
+   * 0.2.57 — reacting to `truncated: true` is a property of the READ CHANNEL, not of
+   * anyone's writing style, so the host states it once per definition instead of leaving
+   * every plugin author to rediscover it. A contributed explorer holding `get_sections`
+   * used to get no budget guidance at all.
+   */
+  it('carries the truncation protocol, so a plugin need not reimplement it', () => {
+    const prompt = resolve([contrib({ promptBody: 'BODY-MARKER' })]).out[0]!.prompt;
+    expect(prompt).toContain('truncated: true');
+    expect(prompt).toContain('edges');
+    expect(prompt).toMatch(/Do NOT repeat the same call/);
+    // The body still comes last: the frame grew, it did not swallow the assignment.
+    expect(prompt.indexOf('truncated: true')).toBeLessThan(prompt.indexOf('BODY-MARKER'));
+  });
+
   it('renders every context type with no unexpanded template expression', () => {
     for (const ct of ['chat', 'brief', 'patch', 'ask'] as const) {
       expect(hostFrame(ct)).not.toMatch(/\$\{/);

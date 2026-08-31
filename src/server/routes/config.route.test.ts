@@ -538,3 +538,61 @@ describe('PATCH /config — D4 write-target overlap (0.2.9)', () => {
   });
 });
 
+
+/**
+ * 0.2.57 — `GET /writing-styles`, which had no test at all until the style it
+ * serves moved out of the host.
+ *
+ * The whole point of the route here is the `source` field: it is the only place
+ * a user can see WHERE a style comes from, and after this release the reference
+ * style comes from an envelope rather than from the bundled root. Driven through
+ * the real loader against the real `plugins/` tree — a stubbed registry would
+ * assert that the route copies a field, which was never in doubt.
+ */
+describe('GET /writing-styles — where a style comes from (0.2.57)', () => {
+  const STYLE = 'layered-vertical-slices';
+  let dir: string;
+  let skillRegistry: SkillRegistry;
+
+  beforeEach(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-writing-styles-'));
+    const file = configPath(dir);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ $schemaVersion: 3, writingStyle: STYLE }));
+
+    const { PluginRegistryImpl } = await import('../core/plugin-host/registry.js');
+    const { loadBuiltinEnvelopes } = await import('../core/plugin-host/loader.js');
+    const { SkillRegistry, findSkillsRoots } = await import('../services/skill-registry.js');
+    const plugins = new PluginRegistryImpl();
+    await loadBuiltinEnvelopes(plugins);
+    skillRegistry = SkillRegistry.load(findSkillsRoots(dir));
+    for (const skill of plugins.listSkills()) skillRegistry.addPluginSkill(skill);
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const app = () => express().use(express.json()).use(configRouter({ cwd: dir, skillRegistry }));
+
+  it('[ac:ac-styl-layered-vertical-slices-wraca-z] reports the reference style as source "plugin", not "bundled"', async () => {
+    const res = await request(app()).get('/writing-styles');
+    expect(res.status).toBe(200);
+    const entry = (res.body.available as Array<{ slug: string; source: string }>).find(
+      (s) => s.slug === STYLE,
+    );
+    expect(entry, `${STYLE} is not selectable at all`).toBeDefined();
+    expect(entry!.source).toBe('plugin');
+  });
+
+  /**
+   * The bundled root stays in the precedence chain and the class stays legal for
+   * styles — it is simply empty of them now. Asserting "no bundled style" rather
+   * than "the root is gone" is the difference between the two.
+   */
+  it('offers no bundled style any more, the root having been emptied of them', async () => {
+    const res = await request(app()).get('/writing-styles');
+    const sources = (res.body.available as Array<{ source: string }>).map((s) => s.source);
+    expect(sources).not.toContain('bundled');
+    expect(res.body.active).toBe(STYLE);
+  });
+});

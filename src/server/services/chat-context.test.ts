@@ -673,6 +673,38 @@ describe('subagentsFor (0.1.67)', () => {
     }
   });
 
+  /**
+   * 0.2.57 — a contributed explorer stands BESIDE the built-in, never instead of it.
+   *
+   * This is the shape the capability-class envelope depends on. The built-in is the
+   * FLOOR — a project with no writing style still gets an explorer — and a style's
+   * own explorer is the sharper option where one exists, because it knows the
+   * specification's organisation. There is no `replaces?` field and none is coming:
+   * a contribution that could delete the floor would make "no explorer at all" a
+   * reachable state through a manifest typo.
+   *
+   * Routing between the two is `description`'s job alone, which is why the parent's
+   * prompt names neither (asserted in the `<discovery_and_impact>` suite).
+   */
+  it('[ac:ac-subagent-wniesiony-przez-koperte-stoi] a contributed explorer joins the built-in rather than replacing it', () => {
+    const contributed: PluginSubagentContribution = {
+      name: 'layered-spec-explore',
+      description: 'Read-only explorer of a specification organised as layered vertical slices.',
+      promptBody: 'Orientation only; the host frame supplies the mechanics.',
+      contextTypes: ['chat', 'patch', 'ask'],
+      tools: ['mcp__reference-tools__get_sections', 'mcp__skill-tools__load_skill_file'],
+      model: 'sonnet',
+    };
+    for (const ct of ['chat', 'patch', 'ask'] as const) {
+      const subs = subagentsFor(ct, hostWith([contributed]), true);
+      // Built-in FIRST, and both present — the order is the host's, not the pool's.
+      expect(subs.map((s) => s.name), ct).toEqual(['spec-explore', 'layered-spec-explore']);
+      // Each keeps its own routing surface; the host rewrites neither.
+      expect(subs[1]!.description).toBe(contributed.description);
+      expect(subs[0]!.description).not.toBe(subs[1]!.description);
+    }
+  });
+
   it('no subagent can nest (no Agent/Task in tools)', () => {
     // EVERY definition, not just [0] — this is what proves the sanitizer reaches
     // plugin contributions and not only the host's own two.
@@ -1058,9 +1090,35 @@ describe('buildSystemPrompt — <discovery_and_impact> (0.2.50)', () => {
   it('replaces the three blocks it merged, keeping the delegation heuristic', () => {
     const out = build({ contextType: 'chat' });
     expect(out).toContain('<discovery_and_impact severity="mandatory">');
-    expect(out).toContain('spec-explore');
+    // Exactly one, and at top level — a sibling of <claude4spec_identity>, not nested in it.
+    expect(out.split('<discovery_and_impact severity="mandatory">')).toHaveLength(2);
+    expect(out).toMatch(/^<discovery_and_impact severity="mandatory">$/m);
+    // The delegation heuristic survives; only the NAME went (see below).
+    expect(out).toContain('Delegate a sweep spanning more than one channel');
     for (const retired of ['<entity_discovery', '<entity_change_protocol', '<delegation_policy']) {
       expect(out).not.toContain(retired);
+    }
+  });
+
+  /**
+   * 0.2.57 — the prompt names NO subagent, and emits no roster block.
+   *
+   * Naming `spec-explore` in the parent's prompt put a thumb on the scale: it
+   * favoured the host's own definition over one a plugin contributes, whatever
+   * the two descriptions said. Since a writing style can now ship an explorer
+   * that knows the specification's organisation, routing has to run on
+   * `description` alone — and the roster reaches the model as the SDK's own
+   * system-reminder, never as a block of ours.
+   *
+   * Asserted across every frame, because the interaction rules named it too and
+   * those render into all four.
+   */
+  it('names no subagent and emits no <available_subagents> roster, in any frame', () => {
+    for (const contextType of ['chat', 'patch', 'ask', 'brief'] as const) {
+      const out = build({ contextType });
+      expect(out, contextType).not.toContain('spec-explore');
+      expect(out, contextType).not.toContain('diff-explore');
+      expect(out, contextType).not.toContain('<available_subagents');
     }
   });
 

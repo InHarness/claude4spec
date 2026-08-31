@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { buildSkillToolsServer } from './skill-tools.js';
@@ -245,5 +245,60 @@ describe('skill-tools — load_skill_file', () => {
       `---\ntitle: house-style\ndescription: about house-style\nversion: 1\nlanguage: en\nscope: writing-style\n---\n# house-style\nrewritten\n`,
     );
     expect((await call({ slug: 'house-style' })).body.content).toContain('rewritten');
+  });
+
+  /**
+   * 0.2.57 — a plugin-contributed package is served from the registry's MEMORY.
+   *
+   * That is the one real cost difference against the `bundled` and `user` roots,
+   * which resolve a package off the disk on every read: a contribution has no
+   * `path` to read from, because its files are literals compiled into the
+   * plugin's module. The `fs` spy is the assertion — a passing content check
+   * alone would look identical if the tool had quietly found the files on disk.
+   */
+  it('[ac:ac-podpliki-pakietu-stylu-workflows-brie] serves a plugin package\'s subfiles (slug, file) without touching the disk', async () => {
+    // A real disk root beside it, holding a DIFFERENT skill: the claim under test
+    // is about the plugin branch of `resolve()`, not about a registry that happens
+    // to have nowhere to look.
+    const registry = SkillRegistry.load([writeSkill('house-style')], { rescanTtlMs: 0 });
+    registry.addPluginStyle({
+      slug: 'layered-vertical-slices',
+      title: 'Layered Vertical Slices',
+      description: 'contributed by an envelope, not found on disk',
+      version: 1,
+      language: 'en',
+      content: '# Layered Specification Meta-Prompt\nthe conventions',
+      files: {
+        'workflows/brief.md': '# brief workflow\nhow a brief gets written here',
+        'templates/module.md': '# module template\nthe shape of a module page',
+      },
+    });
+    await mount(registry);
+
+    const readFileSync = vi.spyOn(fs, 'readFileSync');
+    const readdirSync = vi.spyOn(fs, 'readdirSync');
+    try {
+      const manifest = await call({ slug: 'layered-vertical-slices' });
+      expect(manifest.body.files.map((f: { path: string }) => f.path)).toEqual([
+        'templates/module.md',
+        'workflows/brief.md',
+      ]);
+
+      for (const [file, marker] of [
+        ['workflows/brief.md', 'how a brief gets written here'],
+        ['templates/module.md', 'the shape of a module page'],
+      ] as const) {
+        const { isError, body } = await call({ slug: 'layered-vertical-slices', file });
+        expect(isError, file).toBe(false);
+        expect(body.path).toBe(file);
+        expect(body.content).toContain(marker);
+      }
+
+      expect(readFileSync).not.toHaveBeenCalled();
+      expect(readdirSync).not.toHaveBeenCalled();
+    } finally {
+      readFileSync.mockRestore();
+      readdirSync.mockRestore();
+    }
   });
 });

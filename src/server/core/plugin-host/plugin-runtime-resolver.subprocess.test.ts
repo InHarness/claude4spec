@@ -235,7 +235,21 @@ describe('builtin envelope — real load path', () => {
     // Every envelope in `plugins/`, and every one of them `loaded` — a `skipped`
     // here would be the version gate, which is how `spreadsheet` was absent for
     // the whole of 2.0.0 while its plugin still declared `^1.0.0`.
-    expect(parsed.statuses).toEqual(['loaded', 'loaded', 'loaded', 'loaded', 'loaded', 'loaded']);
+    //
+    // SEVEN since 0.2.57, and the type list below is still EIGHT: the seventh is
+    // `c4s-plugin-layered-vertical-slices`, which contributes a writing style and
+    // a subagent and no entity type at all. That gap between the two assertions
+    // is the capability-class envelope — a package that loads like any other and
+    // registers nothing in the type pool.
+    expect(parsed.statuses).toEqual([
+      'loaded',
+      'loaded',
+      'loaded',
+      'loaded',
+      'loaded',
+      'loaded',
+      'loaded',
+    ]);
     expect(parsed.types).toEqual([
       'code-snippet',
       'database-table',
