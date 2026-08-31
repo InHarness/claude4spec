@@ -8,6 +8,7 @@
  */
 
 import os from 'node:os';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
@@ -292,6 +293,36 @@ describe('discovery core', () => {
       expect(page.truncated).toBe(true);
       expect(page.truncationHint).toMatch(/list_sections.*get_sections/);
       expect(page.truncationHint).not.toMatch(/range/);
+    });
+
+    /**
+     * The same rule, second half: a hint may not propose a path with no exit onto
+     * the operation the caller came for. Stopping at `get_sections` left a caller
+     * who wanted to EDIT holding sections and no `expectedHash`, whose only visible
+     * source was the whole-page read they had just been told was too big.
+     */
+    it('the truncation hint on an indexed root closes on the write, not on a pair of reads', async () => {
+      await writePage('pages', 'big.md', `# H\n\n${'x'.repeat(DEFAULT_BUDGET_CHARS + 1000)}\n`);
+      const c = core([pagesRoot()]);
+      const page = await c.getPage({ rootId: 'pages', path: 'big.md' });
+      expect(page.truncationHint).toMatch(/update_sections/);
+      expect(page.truncationHint).toMatch(/expectedHash/);
+      expect(page.truncationHint).toMatch(/hash/);
+    });
+
+    /**
+     * The hash is of the FILE, not of the payload that fit. A hash of the returned
+     * prefix would look identical and arm a guard that can never pass, and the
+     * caller cannot tell the two values apart by looking at them.
+     */
+    it('a truncated page still carries the hash of the whole file', async () => {
+      const body = `# H\n\n${'x'.repeat(DEFAULT_BUDGET_CHARS + 1000)}\n`;
+      await writePage('pages', 'big.md', body);
+      const c = core([pagesRoot()]);
+      const page = await c.getPage({ rootId: 'pages', path: 'big.md' });
+      expect(page.truncated).toBe(true);
+      expect(page.content.length).toBeLessThan(body.length);
+      expect(page.hash).toBe(createHash('sha256').update(body, 'utf-8').digest('hex'));
     });
 
     it('the truncation hint on a root without a section index still proposes range', async () => {
@@ -1031,6 +1062,83 @@ describe('discovery core', () => {
     expect(listed.items).toHaveLength(1);
     expect(listed.items[0]!.size).toBeGreaterThan(0);
     expect(listed.items[0]!.anchor).toBe('abcdef12');
+  });
+
+  /**
+   * The envelope's `hash` is the page's FILE hash — byte for byte what `get_page`
+   * returns and what `update_page` / `update_sections` compare `expectedHash`
+   * against. Frontmatter included: hashing the gray-matter body instead would arm a
+   * guard that fails on every page that has any.
+   */
+  it('list_sections by page carries the page file hash on the envelope', async () => {
+    const body = ['---', 'title: M', '---', '# Top', '', '## S', '<!-- anchor: abcdef12 -->', '', 'body', ''].join('\n');
+    await writePage('pages', 'm.md', body);
+    indexSection({ rootId: 'pages', anchor: 'abcdef12', page: 'm.md', heading: 'S', start: 3, end: 7 });
+    const c = core([pagesRoot()]);
+
+    const listed = await c.listSections({ by: 'page', rootId: 'pages', path: 'm.md' });
+
+    expect(listed.hash).toBe(createHash('sha256').update(body, 'utf-8').digest('hex'));
+    // One value, one name, across both channels — so it can be copied between them.
+    expect(listed.hash).toBe((await c.getPage({ rootId: 'pages', path: 'm.md' })).hash);
+  });
+
+  it('list_sections by page carries the hash even for a page with no sections at all', async () => {
+    const body = '# Top\n\nprose with no headings under it\n';
+    await writePage('pages', 'bare.md', body);
+    const c = core([pagesRoot()]);
+
+    const listed = await c.listSections({ by: 'page', rootId: 'pages', path: 'bare.md' });
+
+    expect(listed.items).toEqual([]);
+    expect(listed.hash).toBe(createHash('sha256').update(body, 'utf-8').digest('hex'));
+  });
+
+  /**
+   * By anchor the page is learned from the row the anchor resolved to — and an
+   * anchor that resolves to nothing names no page, so the field is ABSENT rather
+   * than null. A null would travel one call further and land as `expectedHash:
+   * null`, which the write refuses as a missing guard.
+   */
+  it('list_sections by anchor carries the hash when known and omits it when not', async () => {
+    const body = ['# Top', '<!-- anchor: abcdef12 -->', '', 'body', ''].join('\n');
+    await writePage('pages', 'm.md', body);
+    indexSection({ rootId: 'pages', anchor: 'abcdef12', page: 'm.md', heading: 'Top', start: 1, end: 5 });
+    const c = core([pagesRoot()]);
+
+    const known = await c.listSections({ by: 'anchor', anchor: 'abcdef12' });
+    expect(known.is_known).toBe(true);
+    expect(known.hash).toBe(createHash('sha256').update(body, 'utf-8').digest('hex'));
+
+    const unknown = await c.listSections({ by: 'anchor', anchor: 'zzzzzz99' });
+    expect(unknown.is_known).toBe(false);
+    expect(unknown).not.toHaveProperty('hash');
+  });
+
+  /** No page, no hash. A listing that answers empty must not start answering 404 to deliver a field. */
+  it('list_sections by page omits the hash for a path that does not exist', async () => {
+    const c = core([pagesRoot()]);
+
+    const listed = await c.listSections({ by: 'page', rootId: 'pages', path: 'nope.md' });
+
+    expect(listed.items).toEqual([]);
+    expect(listed).not.toHaveProperty('hash');
+  });
+
+  /**
+   * The row is the page's shape, not a version of it. `section_index.content_hash`
+   * is NORMALIZED, so beside a file hash it would read as something you could write
+   * with — which it is not. It stays in the table, for M06's REST surface.
+   */
+  it('a list_sections row carries no section hash of any spelling', async () => {
+    await writePage('pages', 'm.md', ['# Top', '', '## S', '<!-- anchor: abcdef12 -->', '', 'body', ''].join('\n'));
+    indexSection({ rootId: 'pages', anchor: 'abcdef12', page: 'm.md', heading: 'S', start: 3, end: 7 });
+    const c = core([pagesRoot()]);
+
+    const row = (await c.listSections({ by: 'page', rootId: 'pages', path: 'm.md' })).items[0]!;
+
+    expect(row).not.toHaveProperty('content_hash');
+    expect(row).not.toHaveProperty('contentHash');
   });
 
   it('list_sections rejects a non-anchor where an anchor is required', async () => {

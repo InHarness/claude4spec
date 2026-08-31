@@ -10,6 +10,7 @@ import type { EntityType } from '../../shared/entities.js';
 import type { EntityStore } from '../services/entity-store.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import { isDiscoveryError, MAX_ANCHORS_PER_CALL, type DiscoveryCore } from '../discovery/index.js';
+import { GET_PAGE_RETURN, LIST_SECTIONS_RETURN } from './tool-contract-text.js';
 
 /**
  * `reference-tools` — tag CRUD, and the in-process transport over the M39
@@ -299,7 +300,7 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): CapturedMc
 
   const listSections = mcpTool(
     'list_sections',
-    'List sections, either of one page — { by: "page", rootId, path } — or the single section an anchor names — { by: "anchor", anchor }, which also reports `is_known` for an anchor that does not exist. Every row carries its `size`, so the volume of a section is knowable BEFORE fetching them with get_sections. There is no fuzzy heading search: a heading substring is not an identity, so to find a section by text call search_pages and then list_sections({ by: "anchor" }) on the hit. Calling without `by` returns INVALID_ARGUMENT listing both variants.',
+    'List sections, either of one page — { by: "page", rootId, path } — or the single section an anchor names — { by: "anchor", anchor }, which also reports `is_known` for an anchor that does not exist. Every row carries its `size`, so the volume of a section is knowable BEFORE fetching them with get_sections. There is no fuzzy heading search: a heading substring is not an identity, so to find a section by text call search_pages and then list_sections({ by: "anchor" }) on the hit. Calling without `by` returns INVALID_ARGUMENT listing both variants. ' + LIST_SECTIONS_RETURN,
     {
       by: z.enum(['page', 'anchor']).optional().describe('Identity regime; required'),
       rootId: z.string().optional().describe('With by:"page" — which page root'),
@@ -434,7 +435,7 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): CapturedMc
 
   const getPage = mcpTool(
     'get_page',
-    'Read one page as authored — XML tags untouched — addressed by the FULL key (rootId, path). A bare path is ambiguous across roots, so a call without `rootId` returns INVALID_ARGUMENT with the root list rather than guessing the built-in one. `range` is a line window and is allowed only on roots WITHOUT a section index; on an indexed root it is refused with a pointer to list_sections + get_sections, which is semantic, measurable up front and carries its own edges. Embeds are never expanded — fetch the entity by slug instead.',
+    'Read one page as authored — XML tags untouched — addressed by the FULL key (rootId, path). A bare path is ambiguous across roots, so a call without `rootId` returns INVALID_ARGUMENT with the root list rather than guessing the built-in one. `range` is a line window and is allowed only on roots WITHOUT a section index; on an indexed root it is refused with a pointer to list_sections + get_sections, which is semantic, measurable up front and carries its own edges. Embeds are never expanded — fetch the entity by slug instead. ' + GET_PAGE_RETURN,
     {
       rootId: z.string().optional().describe('Which page root — required'),
       path: z.string().optional().describe('Page path relative to the root'),

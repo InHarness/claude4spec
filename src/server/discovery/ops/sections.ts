@@ -82,7 +82,7 @@ export async function listSections(
   // Measurement before fetching is a contract, not a nicety: three of five
   // failures in the motivating session were pulling something unbounded. Each
   // page is read ONCE for the whole group, not once per section.
-  const sizes = await measure(pages, visible);
+  const { sizes, hashes, measured } = await measure(pages, visible);
 
   const items: SectionListItem[] = visible.map((section) => ({
     rootId: section.rootId,
@@ -106,31 +106,114 @@ export async function listSections(
    * one `get_sections` resolves, and the two answers would contradict each other
    * about the same string.
    */
-  return input.by === 'anchor' ? { ...page, is_known: rows.length > 0 } : page;
+  /**
+   * 0.2.56 — the page's file hash, on the envelope.
+   *
+   * This is the channel that lets a section edit close without `get_page`:
+   * `list_sections` is the first call of every sectional edit anyway, so the value
+   * the write's `expectedHash` needs arrives with the anchors instead of costing a
+   * second, whole-page read the caller only wanted the digest from.
+   *
+   * WHICH page it is about differs by variant, and that is the whole reason the
+   * field is conditional: `by: "page"` names one up front, `by: "anchor"` learns it
+   * from the row the anchor resolved to, and an anchor that resolves to nothing
+   * names no page at all — so the field is OMITTED there rather than sent as null.
+   * A null would invite `expectedHash: null`, which the write refuses as a missing
+   * guard, one indirection later than here.
+   *
+   * `rows`, not `visible`: an anchor on a root that has since lost its section index
+   * is still an anchor on a real page, and `is_known` already says so.
+   */
+  const hashPage =
+    input.by === 'page'
+      ? { rootId: input.rootId, path: input.path }
+      : rows[0]
+        ? { rootId: rows[0].rootId, path: rows[0].pagePath }
+        : undefined;
+  /**
+   * `measured` is consulted before the fallback so a page this listing ALREADY
+   * opened is never opened twice: a page whose read failed is in `measured` with
+   * no entry in `hashes`, and retrying it would repeat the same failure — one
+   * wasted read per stale index row, on the path taken when the index is stale.
+   */
+  const hashKey = hashPage ? pageKey(hashPage.rootId, hashPage.path) : undefined;
+  const hash =
+    hashPage && hashKey
+      ? (hashes.get(hashKey) ??
+        (measured.has(hashKey) ? undefined : await pageHashFor(pages, hashPage.rootId, hashPage.path)))
+      : undefined;
+  const envelope = { ...page, ...(hash === undefined ? {} : { hash }) };
+
+  return input.by === 'anchor' ? { ...envelope, is_known: rows.length > 0 } : envelope;
 }
 
-async function measure(pages: PageSource, sections: readonly RawSection[]): Promise<Map<string, number>> {
+/**
+ * Sizes per anchor AND the file hash per page, from ONE read of each page.
+ *
+ * The hash rides back from here rather than being fetched separately because this
+ * loop already opens every page the listing touches: `readWithHash` hands over the
+ * body it was going to read anyway plus the digest `PagesService` computed on the
+ * way past, so for a page that HAS sections the envelope's `hash` costs no extra I/O.
+ *
+ * `measured` reports which pages this loop attempted, successfully or not, so the
+ * caller can tell "no hash because nothing here reads that page" from "no hash
+ * because reading it failed" and skip a retry it already knows the answer to.
+ */
+async function measure(
+  pages: PageSource,
+  sections: readonly RawSection[],
+): Promise<{ sizes: Map<string, number>; hashes: Map<string, string>; measured: Set<string> }> {
   const byPage = new Map<string, RawSection[]>();
   for (const s of sections) {
-    const key = `${s.rootId}:${s.pagePath}`;
+    const key = pageKey(s.rootId, s.pagePath);
     const group = byPage.get(key);
     if (group) group.push(s);
     else byPage.set(key, [s]);
   }
   const sizes = new Map<string, number>();
-  for (const group of byPage.values()) {
+  const hashes = new Map<string, string>();
+  for (const [key, group] of byPage) {
     const first = group[0]!;
-    let content: string;
+    let read: { body: string; hash: string };
     try {
-      content = await pages.readBody(first.rootId, first.pagePath);
+      read = await pages.readWithHash(first.rootId, first.pagePath);
     } catch {
-      // An index row whose page is gone still lists — with size 0 rather than
-      // taking the whole listing down over one stale row.
+      // An index row whose page is gone still lists — with size 0 and no hash,
+      // rather than taking the whole listing down over one stale row.
       continue;
     }
-    for (const s of group) sizes.set(s.anchor, bodySize(content, s));
+    hashes.set(key, read.hash);
+    for (const s of group) sizes.set(s.anchor, bodySize(read.body, s));
   }
-  return sizes;
+  return { sizes, hashes, measured: new Set(byPage.keys()) };
+}
+
+/** One page's identity as a map key. `rootId` is part of it: the same relPath lives in several roots. */
+function pageKey(rootId: string, pagePath: string): string {
+  return `${rootId}:${pagePath}`;
+}
+
+/**
+ * The page hash for the envelope when the listing produced no section to measure —
+ * `by: "page"` on a page that genuinely has no headings, or an anchor whose root has
+ * since lost its section index.
+ *
+ * This is the ONE path on which the envelope's hash costs a read of its own. It is
+ * the price of the field existing at all in those cases: there is no section to
+ * measure, so nothing else opens the file. `measured` keeps it from repeating a read
+ * the measuring loop already tried.
+ *
+ * A missing page yields `undefined` rather than an error: `list_sections({ by:
+ * "page" })` answers an empty list for a path that does not exist, and turning a
+ * listing into a 404 to deliver a field would change the operation's failure
+ * contract to add one.
+ */
+async function pageHashFor(pages: PageSource, rootId: string, path: string): Promise<string | undefined> {
+  try {
+    return (await pages.readWithHash(rootId, path)).hash;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
