@@ -1,5 +1,6 @@
 import type { RawEntity, RawSection } from '../discovery/raw-entity-reader.js';
 import {
+  collectionCountKey,
   columnOf,
   contentBearingKeys,
   contentBytes,
@@ -75,6 +76,15 @@ export interface CollectionReader {
  *     `count` is all of it: a 200x40 spreadsheet must not put 8 000 cells into
  *     a record nobody asked to be that wide. It must not READ 8 000 cells to say
  *     so either, hence `countCollection` rather than `readCollection().length`.
+ *
+ * A value collection the caller did NOT select is the third case, and it answers
+ * like the second: `<field>Count`, counted rather than read. Before 0.2.55 it
+ * answered with silence, and the cost of that silence was a list page that had to
+ * choose between pulling every item to show a number and not showing the number —
+ * `ui-view` rows shipped every `params[]` entry to render `3p`, and
+ * `design-system` rows shipped every token with its resolved value per mode to
+ * render `4 groups`. `select` is how a caller says it wants the shape without the
+ * contents; the count is what makes that a usable answer rather than a lossy one.
  */
 function projectedCollections(
   entity: RawEntity,
@@ -86,10 +96,19 @@ function projectedCollections(
   const out: Record<string, unknown> = {};
   for (const [name, node] of Object.entries(schema)) {
     if (node.type !== 'collection' || isEmbedded(node)) continue;
+    if (isKeyed(node)) {
+      if (select && !select.includes(name)) continue;
+      out[name] = { count: collections.countCollection(entity.type, entity.slug, name) };
+      continue;
+    }
+    // The size, asked for by its own name — a COUNT(*) instead of the whole
+    // collection. Checked first: a caller naming both gets both, and a caller
+    // naming neither pays for neither.
+    if (select?.includes(collectionCountKey(name))) {
+      out[collectionCountKey(name)] = collections.countCollection(entity.type, entity.slug, name);
+    }
     if (select && !select.includes(name)) continue;
-    out[name] = isKeyed(node)
-      ? { count: collections.countCollection(entity.type, entity.slug, name) }
-      : collections.readCollection(entity.type, entity.slug, name);
+    out[name] = collections.readCollection(entity.type, entity.slug, name);
   }
   return out;
 }

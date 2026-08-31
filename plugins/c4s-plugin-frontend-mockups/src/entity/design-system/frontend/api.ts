@@ -9,37 +9,43 @@ import { handle, apiFetch, unwrap, unwrapList } from '../../../frontend-kit/api-
 /**
  * What `GET /api/design-systems` actually answers with.
  *
- * `groupCount`/`tokenCount` used to sit here and were FICTION, the same fiction
- * `UiViewListItem` carried as `paramCount`: nothing on the server produces
- * either. `projectedCollections` emits a `{ count }` shape only for `keyed`
- * collections, and `groups`/`modes` are both `value` collections, so the row
- * carries the arrays themselves — which is why every row of the list rendered
- * `undefined groups / undefined tokens`.
+ * `groupCount`/`tokenCount` used to sit here and were FICTION — nothing produced
+ * either, so every row rendered `undefined groups / undefined tokens`. 0.2.55
+ * made the first of them real rather than deleting it: `groups` and `modes` are
+ * declared `listOverview`, so a LIST read answers with `groupsCount`, counted
+ * without reading, while a single-entity GET still carries the arrays.
  *
- * `groups[]` (every token, with its resolved value per mode) really is the
- * expensive half of this entity and a list that only renders two numbers has no
- * use for it, so narrowing the read would be worth doing. But that is a change
- * to the wire, and until it happens the honest type is the one that says what
- * arrives. See `countsOf` below for the derivation the rows use.
+ * `tokenCount` does NOT come back, and cannot. A token total is nested inside
+ * the groups, so the only way to know it is to read every group with every
+ * token and its resolved value per mode — which is precisely the payload this
+ * narrowing exists to stop shipping. It lives on the detail page, where the
+ * groups are loaded anyway.
  */
 export type DesignSystemListItem = Pick<
   DesignSystem,
-  'slug' | 'title' | 'description' | 'groups' | 'tags' | 'createdAt' | 'updatedAt'
-> & { type: 'design-system' };
+  'slug' | 'title' | 'description' | 'tags' | 'createdAt' | 'updatedAt'
+> & { type: 'design-system'; groupsCount: number };
 
 /**
- * Group and token counts, derived rather than read.
+ * Group and token counts for a row, from whichever shape the row arrived in.
  *
- * Lives here, beside the type that explains why the counts are not on the wire,
- * so the list page and the sidebar row cannot drift apart on the answer — and
- * so neither is tempted to read a `groupCount` field again.
+ * Two shapes reach the rows and they answer differently, which is the whole
+ * reason this is a function: a LIST item carries `groupsCount` and no groups, a
+ * full `DesignSystem` (the agent tool renderer hands one over) carries the
+ * groups. Tokens are knowable only from the second — `null` says "not knowable
+ * here", which a caller must render as absence rather than as zero.
  */
 export function countsOf(entity: DesignSystem | DesignSystemListItem): {
   groups: number;
-  tokens: number;
+  tokens: number | null;
 } {
-  const groups = entity.groups ?? [];
-  return { groups: groups.length, tokens: groups.reduce((acc, g) => acc + g.tokens.length, 0) };
+  if ('groups' in entity && Array.isArray(entity.groups)) {
+    return {
+      groups: entity.groups.length,
+      tokens: entity.groups.reduce((acc, g) => acc + g.tokens.length, 0),
+    };
+  }
+  return { groups: (entity as DesignSystemListItem).groupsCount ?? 0, tokens: null };
 }
 
 export const designSystemsApi = {

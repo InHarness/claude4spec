@@ -16,12 +16,12 @@ import { handle, apiFetch, unwrap, unwrapList } from '../../../frontend-kit/api-
  * what makes a difference a compile error instead of an `undefined.length` at
  * runtime.
  *
- * `paramCount` used to sit here and was FICTION: nothing on the server produces
- * it. `projectedCollections` emits a `{ count }` shape only for `keyed`
- * collections, and `params` is a `value` collection, so the row carries the
- * `params[]` array itself — which is why the list's trailing badge rendered
- * `undefinedp` on every row. The array is what the wire sends, so the array is
- * what this declares.
+ * `paramCount` used to sit here and was FICTION: nothing produced it, so the
+ * list's trailing badge rendered `undefinedp` on every row. 0.2.55 made the idea
+ * behind it real rather than deleting it — `params` is declared `listOverview`,
+ * so a LIST read answers with `paramsCount`, counted rather than read, while a
+ * single-entity GET still carries the array. The name is `paramsCount` (from the
+ * FIELD, `params`) and not the `paramCount` that never worked.
  *
  * `hasMockupHtml` is NOT a field of the entity: `mockupHtml` is `contentBearing`,
  * and the host swaps the value for a `has<Field>`/`<field>Bytes` descriptor pair
@@ -43,8 +43,8 @@ import { handle, apiFetch, unwrap, unwrapList } from '../../../frontend-kit/api-
  */
 export type UiViewListItem = Pick<
   UiView,
-  'slug' | 'title' | 'url' | 'description' | 'params' | 'tags' | 'createdAt' | 'updatedAt'
-> & { type: 'ui-view'; hasMockupHtml: boolean };
+  'slug' | 'title' | 'url' | 'description' | 'tags' | 'createdAt' | 'updatedAt'
+> & { type: 'ui-view'; hasMockupHtml: boolean; paramsCount: number };
 
 export const uiViewsApi = {
   async list(query: UiViewListQuery = {}): Promise<UiViewListItem[]> {

@@ -427,6 +427,24 @@ export interface CollectionNode extends FieldFlags {
   collection: CollectionFlag;
   item: FieldNode;
   /**
+   * A LIST read takes this collection's size instead of its contents.
+   *
+   * Only meaningful on a `'value'` collection — a `'keyed'` one already projects
+   * as `{ count }` on every read, because it is never materialised at all.
+   *
+   * The flag says something about the collection, not about any one page: that
+   * its contents are worth more than a list row can justify carrying. `ui-view`
+   * rows rendered a parameter COUNT while receiving every `params[]` entry, and
+   * `design-system` rows rendered a group count while receiving every token with
+   * its resolved value per mode. Both paid the entity's expensive half to print
+   * one integer, on every row, forever.
+   *
+   * What arrives in its place is `<field>Count` (see `collectionCountKey`),
+   * counted rather than read. A single-entity GET is untouched and still carries
+   * the array — narrowing is what a LIST asked for, not a new shape for the type.
+   */
+  listOverview?: boolean;
+  /**
    * The tuple addressing one item within its parent.
    *
    * Mandatory for `'keyed'` — the key IS the address there. On a `'value'`
@@ -613,6 +631,23 @@ export function contentBearingKeys(name: string): { has: string; bytes: string }
 }
 
 /**
+ * The key a VALUE collection is replaced by when the caller's `select` leaves it
+ * out: `params` → `paramsCount`.
+ *
+ * Same bargain as `contentBearingKeys`, one axis over. A content-bearing field is
+ * withheld because it is always too big to inline; a value collection is withheld
+ * because THIS caller said so — but in both cases the record can still answer the
+ * one question that survives not carrying the thing, and answer it without
+ * reading it (`countCollection` is a `COUNT(*)`, not a `readCollection().length`).
+ *
+ * A KEYED collection has no use for this: it already projects as `{ count }`
+ * whether or not it was selected, because it is never materialised at all.
+ */
+export function collectionCountKey(name: string): string {
+  return `${name}Count`;
+}
+
+/**
  * The reserved field EVERY registered type must declare, spelled once.
  *
  * 0.2.22 — one source for the label, the slug and the identity end of the search
@@ -680,13 +715,31 @@ export function contentOperationOf(node: FieldNode): string {
  * with the field's descriptor and the operation that issues it, which is a more
  * useful reply than a refusal.
  *
+ * A value collection in its OWN table publishes a second name, `<field>Count`,
+ * alongside the field itself: the size instead of the contents, counted rather
+ * than read. Two names for one field, because there are genuinely two questions
+ * and the expensive one is not always the one being asked — a list row printing
+ * `3p` wants the number, and until 0.2.55 the only way to get it was to receive
+ * every parameter. It is a SEPARATE name rather than a mode of the first so that
+ * `select: []` keeps costing nothing: a caller gets a count only by asking.
+ *
+ * Embedded collections get the count name too, and it is answered differently:
+ * they ride on the entity's own row, so the array is already in hand and the
+ * count is `length` rather than a query. There is no read to save there — what
+ * the caller saves is the BYTES, which for `design-system.groups` is every token
+ * with its resolved value per mode, on every row of the list.
+ *
  * Transient inputs are excluded: they never reach a stored entity, so there is
  * nothing to project.
  */
 export function selectableFieldsOf(schema: Readonly<Record<string, FieldNode>>): string[] {
-  return Object.entries(schema)
-    .filter(([, node]) => !node.transientInput && !node.localSurrogate)
-    .map(([name]) => name);
+  const out: string[] = [];
+  for (const [name, node] of Object.entries(schema)) {
+    if (node.transientInput || node.localSurrogate) continue;
+    out.push(name);
+    if (node.type === 'collection' && !isKeyed(node)) out.push(collectionCountKey(name));
+  }
+  return out;
 }
 
 /** A value constraint as `describe_*` publishes it. */

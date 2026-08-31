@@ -71,7 +71,8 @@ export function DesignSystemsList({
               tagLookup={tagLookup}
               trailing={
                 <CountBadge>
-                  {counts.groups} groups / {counts.tokens} tokens
+                  {counts.groups} groups
+                  {counts.tokens !== null && ` / ${counts.tokens} tokens`}
                 </CountBadge>
               }
             >

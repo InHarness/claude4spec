@@ -66,7 +66,7 @@ function DesignSystemRow({ entity, active, onOpen }: EntityRowProps<DesignSystem
         className="font-mono text-[10.5px] px-1.5 py-0.5 rounded"
         style={{ background: 'var(--c-panel)', color: 'var(--c-muted)' }}
       >
-        {counts.groups} groups / {counts.tokens} tokens
+        {counts.groups} groups{counts.tokens !== null && ` / ${counts.tokens} tokens`}
       </span>
     </button>
   );
@@ -148,7 +148,7 @@ function DesignSystemCard({ slug, entity, onOpen }: EntityCardProps<DesignSystem
           className="font-mono text-[11px] px-1.5 py-0.5 rounded"
           style={{ background: 'var(--c-panel)', color: 'var(--c-muted)' }}
         >
-          {counts.groups} groups / {counts.tokens} tokens
+          {counts.groups} groups{counts.tokens !== null && ` / ${counts.tokens} tokens`}
         </span>
         <span className="flex-1" />
         <ChevronRight size={14} style={{ color: 'var(--c-subtle)' }} />
