@@ -529,7 +529,6 @@ export interface SectionIndexEntry {
   /** 0.1.96: which root the section's page lives in. */
   rootId: string;
   pagePath: string;
-  headingPath: string;
   headingSlug: string;
   headingLevel: number;
   headingText: string;

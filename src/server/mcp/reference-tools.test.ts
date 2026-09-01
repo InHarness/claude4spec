@@ -232,78 +232,80 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
     function indexSection(anchor: string, page: string, heading: string, start: number, end: number): void {
       db.prepare(
         `INSERT INTO section_index
-           (rootId, anchor, page_path, heading_path, heading_slug, heading_level, heading_text,
+           (rootId, anchor, page_path, parent_anchor, heading_slug, heading_level, heading_text,
             content_hash, body, line_start, line_end, paragraph_count)
-         VALUES ('pages', ?, ?, ?, ?, 1, ?, 'hash', '', ?, ?, 1)`,
-      ).run(anchor, page, heading, heading.toLowerCase(), heading, start, end);
+         VALUES ('pages', ?, ?, NULL, ?, 1, ?, 'hash', '', ?, ?, 1)`,
+      ).run(anchor, page, heading.toLowerCase(), heading, start, end);
     }
 
-    it('list_sections without `by` refuses AND names both variants', async () => {
-      const client = await connectClient(deps());
-      const { isError, body } = await call(client, 'list_sections', {});
-      expect(isError).toBe(true);
-      expect(body.code).toBe('INVALID_ARGUMENT');
-      // A refusal that does not say what WOULD work sends the agent back to
-      // guessing — which is what the fuzzy `query` mode used to absorb.
-      expect(body.hint).toContain('by: "page"');
-      expect(body.hint).toContain('by: "anchor"');
-    });
-
-    it('list_sections by page measures each section before it is fetched', async () => {
+    it('get_page_outline returns a tree and measures each section before it is fetched', async () => {
       await pagesService.write('page.md', { body: '# Alpha\n\nbody line\nanother line\n' });
       indexSection('aaaaaa11', 'page.md', 'Alpha', 1, 4);
       const client = await connectClient(deps());
 
-      const { isError, body } = await call(client, 'list_sections', { by: 'page', rootId: 'pages', path: 'page.md' });
+      const { isError, body } = await call(client, 'get_page_outline', { rootId: 'pages', path: 'page.md' });
 
       expect(isError).toBe(false);
-      expect(body.items).toHaveLength(1);
-      expect(body.items[0]).toMatchObject({ rootId: 'pages', anchor: 'aaaaaa11', heading: 'Alpha' });
-      expect(body.items[0].size).toBeGreaterThan(0);
-      expect(body).toMatchObject({ total: 1, hasMore: false });
+      expect(body).toMatchObject({ rootId: 'pages', path: 'page.md' });
+      expect(body.hash).toEqual(expect.any(String));
+      expect(body.sections).toHaveLength(1);
+      expect(body.sections[0]).toMatchObject({ anchor: 'aaaaaa11', heading: 'Alpha', level: 1 });
+      expect(body.sections[0].size).toBeGreaterThan(0);
+      // A leaf omits `children`, and the envelope carries no paging shape at all.
+      expect(body.sections[0]).not.toHaveProperty('children');
+      for (const key of ['total', 'hasMore', 'limit', 'offset', 'is_known']) {
+        expect(body).not.toHaveProperty(key);
+      }
     });
 
-    it('list_sections stays a skeleton — materializing content did not widen it', async () => {
-      // 0.2.46 regression. `section_index` now stores each section's body, and
-      // the listing reads that table with `SELECT *`. What keeps the column out
-      // of the answer is the explicit projection in `toRawSection`, so this
-      // checks KEYS: a value check would pass just as happily against a row
-      // that carried an empty `body` through.
+    it('get_page_outline stays a skeleton — materializing content did not widen it', async () => {
+      // 0.2.46 regression, carried forward. `section_index` stores each section's
+      // body; what keeps the column out of the answer is the explicit projection in
+      // `toRawSection`, so this checks KEYS — a value check would pass just as
+      // happily against a row that carried an empty `body` through.
       await pagesService.write('page.md', { body: '# Alpha\n\nbody line\nanother line\n' });
       db.prepare(
         `INSERT INTO section_index
-           (rootId, anchor, page_path, heading_path, heading_slug, heading_level, heading_text,
+           (rootId, anchor, page_path, parent_anchor, heading_slug, heading_level, heading_text,
             content_hash, body, line_start, line_end, paragraph_count)
-         VALUES ('pages', 'aaaaaa11', 'page.md', 'Alpha', 'alpha', 1, 'Alpha', 'hash',
+         VALUES ('pages', 'aaaaaa11', 'page.md', NULL, 'alpha', 1, 'Alpha', 'hash',
                  'BODY THAT MUST NOT BE LISTED', 1, 4, 1)`,
       ).run();
       const client = await connectClient(deps());
 
-      const { isError, body } = await call(client, 'list_sections', { by: 'page', rootId: 'pages', path: 'page.md' });
+      const { isError, body } = await call(client, 'get_page_outline', { rootId: 'pages', path: 'page.md' });
 
       expect(isError).toBe(false);
-      expect(Object.keys(body.items[0])).toEqual(
+      expect(Object.keys(body.sections[0])).toEqual(
         expect.not.arrayContaining(['body', 'content', 'contentSnippet', 'content_snippet']),
       );
       expect(JSON.stringify(body)).not.toContain('BODY THAT MUST NOT BE LISTED');
       // Still a measurement: the size is there, the content it measures is not.
-      expect(body.items[0].size).toBeGreaterThan(0);
+      expect(body.sections[0].size).toBeGreaterThan(0);
     });
 
-    it('list_sections by page without a path refuses instead of answering "no sections"', async () => {
+    it('get_page_outline without a path refuses instead of answering "no sections"', async () => {
       const client = await connectClient(deps());
-      const { isError, body } = await call(client, 'list_sections', { by: 'page', rootId: 'pages' });
+      const { isError, body } = await call(client, 'get_page_outline', { rootId: 'pages', path: '' });
       expect(isError).toBe(true);
       expect(body.code).toBe('INVALID_ARGUMENT');
       expect(body.hint).toContain('path');
     });
 
-    it('list_sections by an unknown anchor reports is_known: false, not just an empty list', async () => {
+    /**
+     * 0.2.59 — the refusal is the WHOLE envelope, not an item.
+     *
+     * Its ancestor answered `is_known: false` for an anchor it did not know, and that
+     * was the documented way to validate an anchor before citing it. This operation
+     * is single-target, so it has no per-item slot to put a failure in and refuses
+     * outright. Anchor validation moved to `check_consistency` (in bulk) and to
+     * `get_sections` (per item).
+     */
+    it('get_page_outline refuses an unknown page rather than answering an empty tree', async () => {
       const client = await connectClient(deps());
-      const { isError, body } = await call(client, 'list_sections', { by: 'anchor', anchor: 'zzzzzz99' });
-      expect(isError).toBe(false);
-      expect(body.items).toEqual([]);
-      expect(body.is_known).toBe(false);
+      const { isError, body } = await call(client, 'get_page_outline', { rootId: 'pages', path: 'nope.md' });
+      expect(isError).toBe(true);
+      expect(body.code).toBe('PAGE_NOT_FOUND');
     });
 
     it('find_references without `target` refuses AND names the variants', async () => {
@@ -403,7 +405,7 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
 
       expect(isError).toBe(true);
       expect(body.code).toBe('INVALID_ARGUMENT');
-      expect(body.hint).toContain('list_sections');
+      expect(body.hint).toContain('get_page_outline');
       expect(body.hint).toContain('get_sections');
     });
 

@@ -125,12 +125,11 @@ describe('the seeded catalog', () => {
     }
   });
 
-  it('declares every M39 read operation with full four-channel parity and zero n/a', () => {
+  it('declares every M39 read operation with full four-channel parity, bar the one with a recorded reason', () => {
     const M39 = [
       'overview',
       'describe_types',
       'list_pages',
-      'list_sections',
       'get_sections',
       'get_page',
       'search_pages',
@@ -142,7 +141,7 @@ describe('the seeded catalog', () => {
       'check_consistency',
       'resolve_identity',
     ];
-    expect(M39).toHaveLength(14);
+    expect(M39).toHaveLength(13);
     for (const name of M39) {
       const op = CATALOG.get(name);
       expect(op, name).toBeDefined();
@@ -154,6 +153,27 @@ describe('the seeded catalog', () => {
         expect(op!.channels[channel].kind, `${name}.${channel}`).toBe('direct');
       }
     }
+  });
+
+  /**
+   * 0.2.59 — `get_page_outline` is the one M39 read that does NOT claim parity, and
+   * the gap is a decision rather than a backlog item.
+   *
+   * Asserted as its own case rather than dropped from the list above, because
+   * "absent from a roster" and "declared n/a with a reason" are different states and
+   * only the second is a contract. The reason has to be there too: an empty `n/a` is
+   * exactly the unexplained gap the four-channel rule exists to prevent.
+   */
+  it('`get_page_outline` declares its REST gap rather than claiming parity', () => {
+    const op = CATALOG.require('get_page_outline');
+    expect(op.channels.internal.kind).toBe('direct');
+    expect(op.channels.cli.kind).toBe('direct');
+    expect(op.channels.mcp.kind).toBe('direct');
+    expect(op.channels.rest.kind).toBe('na');
+    expect(op.channels.rest).toHaveProperty('reason');
+    // `GET /api/sections` is the route the reason is ABOUT — it stays M06's own
+    // semantics, and the cell says so rather than pointing at a route to build.
+    expect((op.channels.rest as { reason: string }).reason).toContain('/api/sections');
   });
 
   /**

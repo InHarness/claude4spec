@@ -124,54 +124,79 @@ export interface PageListItem {
 
 export type ListPagesResult = Page<PageListItem>;
 
-export type ListSectionsInput = ({ by: 'page'; rootId: string; path: string } | { by: 'anchor'; anchor: string }) & {
-  limit?: number;
-  offset?: number;
-};
-
-export interface SectionListItem {
+/**
+ * 0.2.59 — the whole input: ONE page key, both halves required.
+ *
+ * `rootId` is not optional and has no fallback onto the built-in `pages` root: the
+ * same relative path can exist in several roots, so a path alone never identifies a
+ * page. This is a SINGLE-REGIME operation, which the design rules call a degenerate
+ * case of the discriminated-union rule rather than an exception to it — where
+ * `find_references`, `resolve_identity` and `search_pages` carry more than one
+ * identity regime and name the variant explicitly, this one carries exactly one and
+ * so needs no discriminator.
+ */
+export interface GetPageOutlineInput {
   rootId: string;
-  anchor: string;
-  heading: string;
-  level: number;
-  headingPath: string[];
-  /** Bytes of body — measurement before fetching, part of the contract. */
-  size: number;
+  path: string;
 }
 
 /**
- * `is_known` is present only for the `by: "anchor"` variant, and it is part of
- * the contract rather than a convenience: an empty list from an anchor lookup
- * means "this well-formed anchor is not in the index", which is a different fact
- * from "this page has no sections", and a caller cannot tell them apart from
- * `total: 0` alone. It lives here rather than in each transport because a
- * transport that had to derive it would be defining behaviour.
+ * One heading in the outline.
+ *
+ * `size` is the section's body measured in bytes — the same granularity
+ * `get_sections` yields without `includeSubtree`, which is what makes it a usable
+ * price tag: what you measure here is what you pay for there. (`includeSubtree` is
+ * an option for reading CONTENT; it is not a cheap subtree listing.)
+ *
+ * `children` is present ONLY when the node has any. A leaf omits the key rather than
+ * carrying `[]` — an empty array on every leaf of a large page is pure envelope
+ * weight spent saying "nothing here", and the budget it spends is the budget this
+ * operation exists to conserve.
+ *
+ * There is no `content_hash` and no `heading_path`. No agent-facing operation emits a
+ * section hash: `content_hash` is normalized, so handing it out would read as a value
+ * you could write with, which it is not — it stays a `section_index` column and a
+ * field of M06's REST surface. The hierarchy `heading_path` used to encode is the
+ * node's POSITION in this tree.
  */
+export interface OutlineNode {
+  anchor: string;
+  heading: string;
+  level: number;
+  size: number;
+  children?: OutlineNode[];
+}
+
 /**
- * 0.2.56 — `hash` rides the ENVELOPE, and it is the same value `get_page` returns:
- * sha256 of the whole file, ready to be copied straight into `expectedHash`.
+ * The envelope: the page key it answered for, the file hash, and the tree.
  *
- * On the envelope rather than on the items because it is a fact about the PAGE,
- * and every row of one listing shares it; on the items it would be the same string
- * repeated N times, and it would read as a per-section version — which is what
- * `section_index.content_hash` is, a normalized digest that must never be handed
- * out as a write guard.
+ * `hash` is on the ENVELOPE and is the sha256 of the WHOLE file — the same value
+ * `get_page` returns and exactly what `update_page` / `update_sections` take as
+ * `expectedHash`. That is what lets an edit of an over-budget page close without a
+ * single `get_page`: the outline hands over the hash and the sizes, `get_sections`
+ * hands over the bodies that were worth fetching, and `update_sections` accepts the
+ * hash and passes.
  *
- * The name matches `get_page`'s deliberately. Two names for one value would be a
- * tax on carrying it between calls, and carrying it between calls is the entire
- * point: with it, `list_sections` -> `get_sections` -> `update_sections` closes
- * without ever fetching the page whole.
+ * It is unconditional, unlike its `list_sections` ancestor. The conditionality went
+ * with the anchor variant: this operation either resolves a page — and then there IS
+ * a hash — or it refuses. There is no shape in between.
  *
- * Present for `by: "page"`, and for `by: "anchor"` when the anchor is known. ABSENT
- * (not null) when `is_known: false` — there is no page for it to be about.
+ * No `total`, no `hasMore`, no `limit`, no `offset`: this is not a paginated listing.
  */
-export type ListSectionsResult = Page<SectionListItem> & { is_known?: boolean; hash?: string };
+export interface GetPageOutlineResult {
+  rootId: string;
+  path: string;
+  hash: string;
+  sections: OutlineNode[];
+  truncated?: true;
+  message?: string;
+}
 
 /**
  * 0.2.5 — `get_sections` takes a LIST. One anchor is a list of one.
  *
  * Every path that produces an anchor produces several: `search_pages` hits,
- * `find_references` referents, a pick out of `list_sections`. Fetching them one
+ * `find_references` referents, a pick out of `get_page_outline`. Fetching them one
  * at a time is the N+1 the minimal `list_entities` view already removed once —
  * except over stdio the cost is model turns, not I/O. `includeSubtree` was never
  * the answer to it: a subtree covers ADJACENT sections, and search hits are
@@ -304,7 +329,7 @@ export interface GetPageInput {
  * CHARACTERS, so a line total is denominated in a unit unrelated to the reason
  * the content ended — worse than absent, because it invites arithmetic that
  * cannot work. Resumption goes through the document's structure
- * (`list_sections` + `get_sections`) or through an explicit line window
+ * (`get_page_outline` + `get_sections`) or through an explicit line window
  * (`range`, on roots without a section index), never through a counter.
  */
 export interface GetPageResult {
@@ -379,7 +404,7 @@ export interface SearchPageHit {
    */
   anchor?: string;
   heading?: string;
-  /** The ancestor chain including this heading, as `list_sections` reports it. */
+  /** The ancestor chain including this heading, derived from `parent_anchor`. */
   headingPath?: string[];
   matchCount: number;
   /** `hits` mode only: the matching lines with `context` around them, merged. */
@@ -712,7 +737,7 @@ export interface DiscoveryCore {
   overview(): Promise<OverviewResult>;
   describeTypes(input?: DescribeTypesInput): DescribeTypesResult;
   listPages(input: ListPagesInput): Promise<ListPagesResult>;
-  listSections(input: ListSectionsInput): Promise<ListSectionsResult>;
+  getPageOutline(input: GetPageOutlineInput): Promise<GetPageOutlineResult>;
   getSections(input: GetSectionsInput): Promise<GetSectionsResult>;
   getPage(input: GetPageInput): Promise<GetPageResult>;
   searchPages(input: SearchPagesInput): Promise<SearchPagesResult>;

@@ -125,7 +125,7 @@ export async function searchPages(
             path: rel,
             anchor: section?.anchor,
             heading: section?.headingText,
-            headingPath: section?.headingPath ? section.headingPath.split('/') : undefined,
+            headingPath: section?.headingPath,
             // The SORT key: a section sorts by where the section starts, a page
             // by its first match. Both are stable across calls, which is what
             // `offset` stands on.
@@ -422,23 +422,70 @@ interface AnchorRow {
   start: number;
   end: number;
   headingText: string;
-  headingPath: string;
+  parentAnchor: string | null;
+  /** Derived from `parentAnchor`, not stored — see `withHeadingPaths`. */
+  headingPath: string[];
 }
 
 /**
- * The heading columns come along for the ride: `heading_text` and `heading_path`
- * are already stored on every row (the indexer maintains the breadcrumb as it
- * walks), so a map row can carry them without a second query and without
- * re-parsing any markdown.
+ * The heading columns come along for the ride: `heading_text` and `parent_anchor`
+ * are already stored on every row, so a map row can carry the breadcrumb without a
+ * second query and without re-parsing any markdown.
+ *
+ * 0.2.59 — the breadcrumb is DERIVED here rather than read from a column.
+ * `section_index.heading_path` is gone: it slash-joined the ancestor chain into one
+ * TEXT field, where the separator was also a legal content character, so any heading
+ * containing a `/` split into two elements on the way out. `get_page_outline`
+ * replaced it with position in a tree — but a search hit is not a tree. Hits are a
+ * flat list scattered across many pages, so there is no position for the field to
+ * become, and it stays. It is a known debt carried deliberately, not a design win:
+ * the array is now built from the one carrier of the parent relation instead of from
+ * a lossy encoding of it.
+ *
+ * The walk is free of extra I/O: this function already loads EVERY section row of the
+ * root, so the ancestor of any row is a map lookup away.
  */
 function anchorIndex(db: Database, rootId: string): AnchorRow[] {
-  return db
+  const rows = db
     .prepare(
       `SELECT page_path AS path, anchor, line_start AS start, line_end AS end,
-              heading_text AS headingText, heading_path AS headingPath
+              heading_text AS headingText, parent_anchor AS parentAnchor
          FROM section_index WHERE rootId = ? ORDER BY page_path, line_start`,
     )
-    .all(rootId) as AnchorRow[];
+    .all(rootId) as Array<Omit<AnchorRow, 'headingPath'>>;
+  return withHeadingPaths(rows);
+}
+
+/**
+ * The ancestor chain of every row, innermost LAST, the section's own heading included
+ * — the order the slash-joined column used to serialize in.
+ *
+ * Cycles cannot occur (a parent is always an earlier row on the same page), but the
+ * walk is bounded by the row count anyway: this reads whatever the index holds, and a
+ * read path is not the place to trust an invariant it does not itself enforce.
+ *
+ * The climb stops at the page boundary, the same rule `buildOutline` applies to the
+ * tree. `parent_anchor` can point off-page: an anchor is unique across the whole
+ * root, so a heading whose anchor was already claimed by another page gets no row of
+ * its own while its children still name it. Following that edge would splice a
+ * foreign page's headings into the breadcrumb in place of the real ones.
+ */
+function withHeadingPaths(rows: readonly Omit<AnchorRow, 'headingPath'>[]): AnchorRow[] {
+  const byAnchor = new Map(rows.map((r) => [r.anchor, r] as const));
+  return rows.map((row) => {
+    const path: string[] = [];
+    let cursor: Omit<AnchorRow, 'headingPath'> | undefined = row;
+    const seen = new Set<string>();
+    while (cursor && !seen.has(cursor.anchor)) {
+      seen.add(cursor.anchor);
+      path.unshift(cursor.headingText);
+      const parent: Omit<AnchorRow, 'headingPath'> | undefined = cursor.parentAnchor
+        ? byAnchor.get(cursor.parentAnchor)
+        : undefined;
+      cursor = parent && parent.path === row.path ? parent : undefined;
+    }
+    return { ...row, headingPath: path };
+  });
 }
 
 /** The innermost section containing `line` — the deepest range wins, so a match

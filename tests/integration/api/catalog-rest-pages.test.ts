@@ -45,7 +45,7 @@ function recordingCore(): { core: DiscoveryCore; calls: Call[] } {
   const core = {
     listPages: record('listPages', Promise.resolve({ items: [], total: 0, hasMore: false })),
     searchPages: record('searchPages', Promise.resolve({ items: [], total: 0, hasMore: false })),
-    listSections: record('listSections', Promise.resolve({ items: [], total: 0, hasMore: false })),
+    getPageOutline: record('getPageOutline', Promise.resolve({ rootId: 'mainspec', path: 'a.md', hash: 'h', sections: [] })),
     getSections: record('getSections', Promise.resolve({ sections: [] })),
   } as unknown as DiscoveryCore;
   return { core, calls };
@@ -192,10 +192,10 @@ describe('GET /api/sections — the index listing', () => {
   function insert(db: Database.Database, anchor: string, page: string, heading: string, body: string): void {
     db.prepare(
       `INSERT INTO section_index
-         (rootId, anchor, page_path, heading_path, heading_slug, heading_level, heading_text,
+         (rootId, anchor, page_path, parent_anchor, heading_slug, heading_level, heading_text,
           content_hash, body, line_start, line_end, paragraph_count)
-       VALUES ('pages', ?, ?, ?, ?, 2, ?, 'hash', ?, 1, 5, 1)`,
-    ).run(anchor, page, heading, heading.toLowerCase(), heading, body);
+       VALUES ('pages', ?, ?, NULL, ?, 2, ?, 'hash', ?, 1, 5, 1)`,
+    ).run(anchor, page, heading.toLowerCase(), heading, body);
   }
 
   it('emits a bounded snippet and never the materialized column', async () => {
@@ -241,39 +241,35 @@ describe('GET /api/sections — the index listing', () => {
   });
 });
 
-describe('GET /api/sections/list and /api/sections/get', () => {
-  it('both are matched before `/:anchor`', async () => {
+describe("GET /api/sections/get, and the /list route 0.2.59 removed", () => {
+  it('`get` is matched before `/:anchor`', async () => {
     const { core, calls } = recordingCore();
     const app = appWithSections(core);
-    await request(app).get('/api/sections/list?by=anchor&anchor=a1').expect(200);
     await request(app).get('/api/sections/get?anchors=a1').expect(200);
-    // The `/:anchor` handler answers from the SERVICE, so if either had been
+    // The `/:anchor` handler answers from the SERVICE, so if this had been
     // captured the recording core would show nothing.
-    expect(calls.map((c) => c.op)).toEqual(['listSections', 'getSections']);
+    expect(calls.map((c) => c.op)).toEqual(['getSections']);
     // …and the service route still works, for an anchor that is not a keyword.
     const one = await request(app).get('/api/sections/a1').expect(200);
     expect(one.body.from).toBe('service');
   });
 
-  it('list demands the discriminant, and the field the chosen arm needs', async () => {
-    const { core } = recordingCore();
-    const app = appWithSections(core);
-    expect((await request(app).get('/api/sections/list').expect(400)).body.error.code).toBe('VALIDATION');
-    expect((await request(app).get('/api/sections/list?by=anchor').expect(400)).body.error.code).toBe(
-      'VALIDATION',
-    );
-    // `by=page` is keyed by (rootId, path) — a path alone is ambiguous across roots.
-    expect(
-      (await request(app).get('/api/sections/list?by=page&path=a.md').expect(400)).body.error.code,
-    ).toBe('VALIDATION');
-  });
-
-  it('list by page carries both halves of the key', async () => {
+  /**
+   * 0.2.59 — `/api/sections/list` went with the operation it rendered.
+   *
+   * It is NOT renamed to an outline route: this router is keyed by anchors and by
+   * nothing, while an outline is keyed by ONE page, so its transport belongs in the
+   * page family (`GET /api/pages/:rootId/outline`). Asserted as a 404 rather than
+   * simply deleted, because the path is now free for `/:anchor` to swallow — an
+   * old caller must get a miss, not a lookup for a section named "list".
+   */
+  it('`/list` is gone, and falls through to the anchor route rather than lingering', async () => {
     const { core, calls } = recordingCore();
-    await request(appWithSections(core))
-      .get('/api/sections/list?by=page&rootId=mainspec&path=guides/a.md&offset=2')
-      .expect(200);
-    expect(calls[0].input).toEqual({ by: 'page', rootId: 'mainspec', path: 'guides/a.md', offset: 2 });
+    const app = appWithSections(core);
+    // The stub service answers every anchor, so this proves only that no dedicated
+    // handler intercepted it — the core was never called.
+    await request(app).get('/api/sections/list?by=page&rootId=mainspec&path=a.md').expect(200);
+    expect(calls).toEqual([]);
   });
 
   it('get takes a comma list and the subtree flag, and no window', async () => {
@@ -353,11 +349,10 @@ describe('PUT /api/sections — the rest rendering of update_sections', () => {
 
   it('does not shadow the static GET routes declared above it', async () => {
     // `PUT /` is method-scoped so it cannot, but the ordering claim is worth an
-    // assertion rather than an argument — `/list` and `/get` are the two
-    // segments a route declared before them would swallow.
+    // assertion rather than an argument. Since 0.2.59 `/get` is the only static
+    // segment left here — `/list` went with `list_sections`.
     const { app, dir } = appWithWrites();
     try {
-      await request(app).get('/api/sections/list?by=page&rootId=mainspec&path=a.md').expect(200);
       await request(app).get('/api/sections/get?anchors=x').expect(200);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -372,7 +367,7 @@ describe('PUT /api/sections — the rest rendering of update_sections', () => {
         .send({ expectedHash: 'a'.repeat(64), edits: [{ anchor: 'nope', action: 'replace', content: 'x' }] })
         .expect(400);
       expect(res.body.error.code).toBe('SECTION_NOT_FOUND');
-      expect(res.body.error.hint).toContain('list_sections');
+      expect(res.body.error.hint).toContain('get_page_outline');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

@@ -1,7 +1,7 @@
 /**
  * M39 — `list_pages` and `get_page`.
  *
- * Together with `list_sections` + `get_sections` these are the full replacement
+ * Together with `get_page_outline` + `get_sections` these are the full replacement
  * for reading the specification with `Glob` and `Read`. The difference that
  * matters is not the name: a glob has no pagination, no measurement and no
  * notion of a root, so it can address a brief, a patch or the entity catalogue.
@@ -101,7 +101,7 @@ export async function getPage(
   if (input.range && lineWindowsRefused) {
     throw invalidArgument(
       `root '${root.id}' is section-indexed, so a line range is the wrong window onto it`,
-      `use list_sections({ by: "page", rootId: "${root.id}", path: "${input.path}" }) then get_sections({ anchors })`,
+      `use get_page_outline({ rootId: "${root.id}", path: "${input.path}" }) then get_sections({ anchors })`,
     );
   }
 
@@ -135,13 +135,13 @@ export async function getPage(
    * for. A caller truncated here is usually on their way to an edit, and a hint that
    * stopped at `get_sections` left them holding sections and no `expectedHash` — so
    * the only visible way on was to fetch the whole page they had just been told was
-   * too big. Naming `hash` here is what closes the loop: `list_sections` hands it
+   * too big. Naming `hash` here is what closes the loop: `get_page_outline` hands it
    * over on the envelope, and it is the guard's value.
    */
   const budgeted = truncateText(
     content,
     lineWindowsRefused
-      ? `page truncated by response budget — list this page's sections with list_sections({ by: "page", rootId: "${root.id}", path: "${input.path}" }), then read the ones you need with get_sections({ anchors }). To edit them, call update_sections with the \`hash\` from that list_sections envelope as \`expectedHash\` — the whole page is never needed`
+      ? `page truncated by response budget — outline this page with get_page_outline({ rootId: "${root.id}", path: "${input.path}" }), then read the ones you need with get_sections({ anchors }). To edit them, call update_sections with the \`hash\` from that get_page_outline envelope as \`expectedHash\` — the whole page is never needed`
       : `page truncated by response budget — re-read a window with get_page({ rootId: "${root.id}", path: "${input.path}", range: { start, end } })`,
   );
 

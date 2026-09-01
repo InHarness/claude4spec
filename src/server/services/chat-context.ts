@@ -540,7 +540,7 @@ Lightweight inline TODO marker. Lives only in markdown — never persisted as an
  * and what the tools do.
  *
  * It used to end by telling the agent to discover an anchor by READING THE WHOLE
- * PAGE and picking the comment line out of it, while `list_sections` and
+ * PAGE and picking the comment line out of it, while `get_page_outline` and
  * `search_pages` exist to answer exactly that and cost a fraction as much.
  *
  * And it described the anchor rule as a discipline, without mentioning that
@@ -554,7 +554,7 @@ Every markdown heading carries an immutable 8-char anchor on the line before it:
 
 This is enforced where it matters. \`update_sections\` refuses the ENTIRE batch with ANCHOR_LOSS if a write would drop an anchor, unless you name that anchor in \`dropAnchors\` — so an accidental loss is a refusal, and a deliberate removal is something you say out loud. Read a refusal as the guard doing its job rather than as an obstacle to route around.
 
-To find an anchor, ask for it: \`list_sections\` enumerates them for a page, and \`search_pages\` finds the sections matching a phrase and hands back their anchors. Reading a whole page to grep for the comment line is the expensive way to the same string.
+To find an anchor, ask for it: \`get_page_outline\` enumerates them for a page as a tree, and \`search_pages\` finds the sections matching a phrase and hands back their anchors. Reading a whole page to grep for the comment line is the expensive way to the same string.
 
 To LINK a section, embed \`<section_ref anchor="xxxxxxxx"/>\`. It renders as a clickable chip in BOTH pipelines — Tiptap (the page editor) and react-markdown (your chat replies, plan blame, annotation popups) — so it is the right tool whether you are editing a page or answering the user here. Anchors are globally unique, so the anchor alone suffices; no path needed. Prefer it over prose like "see section X in pages/foo.md": the ref survives heading rewrites and cross-file moves, and the prose does not. For whole-page links, use \`@pages/foo.md\` (or \`@pages/foo.md#xxxxxxxx\`) in markdown pages; in chat replies that form does NOT render as a chip, so use a plain markdown link or point at a section with \`<section_ref/>\`.
 </sections_and_anchors>`;
@@ -566,7 +566,7 @@ To LINK a section, embed \`<section_ref anchor="xxxxxxxx"/>\`. It renders as a c
  *
  * It used to answer "the rest is missing" with `get_page`, which reads the entire
  * file to hand back a preview's worth of what was wanted — and on a page over the
- * response budget comes back truncated anyway. `list_sections` answers the same
+ * response budget comes back truncated anyway. `get_page_outline` answers the same
  * question for a fraction of it, hands back the anchors to fetch, and carries the
  * page `hash` on its envelope, so the sectional route now closes on a write rather
  * than stopping one call short of one.
@@ -576,7 +576,7 @@ To LINK a section, embed \`<section_ref anchor="xxxxxxxx"/>\`. It renders as a c
  * pointing there is pointing at a tool the agent does not have.
  */
 const CURRENT_PAGE_HANDLING = `<current_page_handling>
-\`<current_page>\` is what the user is looking at right now. It carries the page's \`path\` and its \`root\` — and you need both, because \`get_page\` without a \`rootId\` answers INVALID_ARGUMENT. Long pages are inlined only as a preview (see the \`preview_lines\` / \`total_lines\` attributes). To see the rest, prefer the sectional route where it is open to you: \`list_sections({ by: "page", rootId, path })\` lists every section with its size and its anchor, and its envelope carries the page's \`hash\`; then \`get_sections({ anchors })\` reads only the ones you actually need. That route needs a SECTION-INDEXED root — on any other root \`list_sections\` answers INVALID_ARGUMENT and \`get_page\` is the only way through. The truncation notice inside \`<current_page>\` already names whichever route applies to the page you are looking at; follow it rather than guessing. Use \`get_page\` when you genuinely need the whole page. Either way you end up holding the \`hash\` that \`update_page\` and \`update_sections\` require as \`expectedHash\`, so editing a page never depends on reading all of it.
+\`<current_page>\` is what the user is looking at right now. It carries the page's \`path\` and its \`root\` — and you need both, because \`get_page\` without a \`rootId\` answers INVALID_ARGUMENT. Long pages are inlined only as a preview (see the \`preview_lines\` / \`total_lines\` attributes). To see the rest, prefer the sectional route where it is open to you: \`get_page_outline({ rootId, path })\` returns every section as a tree with its size and its anchor, and its envelope carries the page's \`hash\`; then \`get_sections({ anchors })\` reads only the ones you actually need. That route needs a SECTION-INDEXED root — on any other root \`get_page_outline\` answers INVALID_ARGUMENT and \`get_page\` is the only way through. The truncation notice inside \`<current_page>\` already names whichever route applies to the page you are looking at; follow it rather than guessing. Use \`get_page\` when you genuinely need the whole page. Either way you end up holding the \`hash\` that \`update_page\` and \`update_sections\` require as \`expectedHash\`, so editing a page never depends on reading all of it.
 </current_page_handling>`;
 
 /**
@@ -853,7 +853,7 @@ const specExplorePrompt = (builtinsEnabled: boolean): string => `You are a read-
 
 Your job: explore on the parent's behalf and report CONCISE findings — file paths, section anchors, and entity slugs — never the full bulk you read. You exist to keep the parent's context small.
 
-Tools: read-only spec operations on \`reference-tools\` — \`list_pages\` (which pages exist), \`search_pages\` (phrase or regex over the prose; modes are a cost ladder count -> map -> hits, and the DEFAULT is \`map\` — identity rows with no prose, so pass \`mode: \"hits\"\` explicitly when you need the text. A hit is a SECTION carrying \`matchCount\`; feed its \`anchor\` to \`get_sections\`. Narrow the scan with \`pathInclude\`/\`pathExclude\` before it opens files, or \`anchors\` to name sections outright), \`list_sections\` + \`get_sections\` (the body of EVERY anchor you need, in one call), \`get_page\` (a page as authored) — plus the read-only entity graph (get_*/list_*, find_references, check_consistency).${builtinsEnabled ? ' Read/Grep/Glob are also available for the rest of the repository.' : ' There are no built-in file tools here — every intent they would serve is covered above: list_pages for Glob, search_pages for Grep, get_page / get_sections for Read.'}
+Tools: read-only spec operations on \`reference-tools\` — \`list_pages\` (which pages exist), \`search_pages\` (phrase or regex over the prose; modes are a cost ladder count -> map -> hits, and the DEFAULT is \`map\` — identity rows with no prose, so pass \`mode: \"hits\"\` explicitly when you need the text. A hit is a SECTION carrying \`matchCount\`; feed its \`anchor\` to \`get_sections\`. Narrow the scan with \`pathInclude\`/\`pathExclude\` before it opens files, or \`anchors\` to name sections outright), \`get_page_outline\` + \`get_sections\` (a page's headings as a tree, then the body of EVERY anchor you need in one call), \`get_page\` (a page as authored) — plus the read-only entity graph (get_*/list_*, find_references, check_consistency).${builtinsEnabled ? ' Read/Grep/Glob are also available for the rest of the repository.' : ' There are no built-in file tools here — every intent they would serve is covered above: list_pages for Glob, search_pages for Grep, get_page / get_sections for Read.'}
 
 Truncation protocol for \`get_sections\` (you are the one who calls it in bulk, so you are the one who hits the budget):
 - An item that came back with \`truncated: true\` carries \`edges\` — the outgoing references of the WHOLE section, including the part you did not receive: \`sectionRefs\` (anchors), \`entityEmbeds\` (type + slug), \`pageLinks\` (rootId + path).
@@ -927,7 +927,7 @@ function buildSpecExploreSubagent(pluginHost: ProjectPluginHost, builtinsEnabled
       // — mirrors the hardcode in buildTooling().
       'mcp__reference-tools__find_references',
       'mcp__reference-tools__check_consistency',
-      'mcp__reference-tools__list_sections',
+      'mcp__reference-tools__get_page_outline',
       // 0.2.3 item 14 stage 1: the domain replacements for Glob / Grep / Read
       // over the specification. Granted alongside the built-ins, not instead of
       // them — narrowing the toolset is a later stage, gated on telemetry.
@@ -1528,10 +1528,10 @@ function buildCurrentPage(
    *
    * 0.2.56 leads with the sectional route instead of `get_page`. Reading a whole page
    * to reach part of it is the expensive answer, it truncates again past the response
-   * budget, and `list_sections` supplies both halves of what comes next — the anchors
+   * budget, and `get_page_outline` supplies both halves of what comes next — the anchors
    * to fetch, and the page `hash` that arms the write.
    *
-   * That route is offered only when the page's root is SECTION-INDEXED. `list_sections`
+   * That route is offered only when the page's root is SECTION-INDEXED. `get_page_outline`
    * goes through `RootSet.requireSectionIndexed`, which answers INVALID_ARGUMENT on a
    * root without an index — so on such a root the sectional lead would be an instruction
    * that cannot succeed, and the notice names `get_page` instead. This is the same rule
@@ -1547,8 +1547,8 @@ function buildCurrentPage(
 ${preview}
 [... ${remaining} more line${remaining === 1 ? '' : 's'} truncated. ${
     sectionIndexed
-      ? `To read on, call list_sections({ by: "page", rootId: "${root}", path: "${path}" }) and then get_sections({ anchors }) for the sections you need — that list_sections envelope also carries the page hash that update_page and update_sections take as expectedHash. Call get_page({ rootId: "${root}", path: "${path}" }) only when you need the whole page.`
-      : `To read on, call get_page({ rootId: "${root}", path: "${path}" }) — this root is not section-indexed, so list_sections and get_sections do not apply to it. The response carries the page hash that update_page takes as expectedHash.`
+      ? `To read on, call get_page_outline({ rootId: "${root}", path: "${path}" }) and then get_sections({ anchors }) for the sections you need — that get_page_outline envelope also carries the page hash that update_page and update_sections take as expectedHash. Call get_page({ rootId: "${root}", path: "${path}" }) only when you need the whole page.`
+      : `To read on, call get_page({ rootId: "${root}", path: "${path}" }) — this root is not section-indexed, so get_page_outline and get_sections do not apply to it. The response carries the page hash that update_page takes as expectedHash.`
   }]
 </current_page>`;
 }

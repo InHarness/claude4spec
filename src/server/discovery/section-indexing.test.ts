@@ -159,8 +159,9 @@ describe('discovery core over the real section indexer', () => {
   it('reports a section size that matches the body it will return', async () => {
     await index('fm2.md', ['---', 'title: X', '---', '', '# Top', '', '## Only', '', 'measured content', ''].join('\n'));
 
-    const listed = await core.listSections({ by: 'page', rootId: 'pages', path: 'fm2.md' });
-    const row = listed.items.find((s) => s.heading === 'Only');
+    const outline = await core.getPageOutline({ rootId: 'pages', path: 'fm2.md' });
+    // 'Only' nests under 'Top', so it is a CHILD in the tree, not a top-level row.
+    const row = outline.sections.flatMap((n) => [n, ...(n.children ?? [])]).find((s) => s.heading === 'Only');
     const fetched = sectionItem(await core.getSections({ anchors: [row!.anchor] }));
 
     // `size` exists so a caller can decide whether to fetch. A size that
@@ -178,6 +179,20 @@ describe('discovery core over the real section indexer', () => {
     if (result.mode !== 'hits') throw new Error('expected hit mode');
 
     expect(result.items[0]).toMatchObject({ kind: 'section', anchor: anchorOf('Hay') });
+  });
+
+  /**
+   * 0.2.59 — `headingPath` survives the loss of its column, rebuilt by climbing
+   * `parent_anchor`. Three levels with a level JUMP over `###`, because depth is
+   * not level: the chain has three elements, not four.
+   */
+  it('derives a multi-level headingPath, innermost last', async () => {
+    await index('deep.md', ['# Top', '', '## Middle', '', '#### Leaf', '', 'a needle here', ''].join('\n'));
+
+    const result = await core.searchPages({ query: 'needle', mode: 'map' });
+    if (result.mode !== 'map') throw new Error('expected map mode');
+
+    expect(result.items[0]?.headingPath).toEqual(['Top', 'Middle', 'Leaf']);
   });
 
   /**
@@ -338,6 +353,68 @@ describe('discovery core over the real section indexer', () => {
       expect(anchors.map((a) => a.anchor)).not.toContain('dupdupdu');
       // And the held section is still addressable — nothing overwrote it.
       expect(sectionItem(await core.getSections({ anchors: ['dupdupdu'] })).heading_text).toBe('Held');
+    });
+
+    /**
+     * 0.2.59 — where `parent_anchor` points when the nearest ancestor LOST.
+     *
+     * A collision loser keeps shaping the nesting below it but owns no row, so a
+     * child cannot name it. The child re-parents onto the nearest ancestor that
+     * does own one — here `Root`. What it must never do is name the anchor string
+     * anyway: that string resolves to the WINNER, a heading elsewhere in the page,
+     * and the outline then nests the child under its own uncle.
+     */
+    it('a child of a collision loser re-parents onto the nearest ancestor that owns a row', async () => {
+      await index(
+        'losers.md',
+        ['# Root', '', dup, '## B', '', 'B BODY', '', dup, '## D', '', 'D BODY', '', '### E', '', 'E BODY', ''].join(
+          '\n',
+        ),
+      );
+
+      const parentOf = (heading: string) =>
+        (
+          db.prepare('SELECT parent_anchor AS p FROM section_index WHERE heading_text = ?').get(heading) as
+            | { p: string | null }
+            | undefined
+        )?.p;
+
+      // `D` lost the collision to `B`, so `dupdupdu` is B's row.
+      expect(sectionItem(await core.getSections({ anchors: ['dupdupdu'] })).heading_text).toBe('B');
+      expect(parentOf('E')).toBe(anchorOf('Root'));
+      expect(parentOf('E')).not.toBe('dupdupdu');
+
+      // And the tree agrees: E is a child of Root, not of B.
+      const outline = await core.getPageOutline({ rootId: 'pages', path: 'losers.md' });
+      const root = outline.sections[0]!;
+      expect(root.heading).toBe('Root');
+      expect(root.children?.map((c) => c.heading)).toContain('E');
+      expect(root.children?.find((c) => c.heading === 'B')?.children).toBeUndefined();
+    });
+
+    /**
+     * The same edge on the SEARCH side, where the breadcrumb is derived by
+     * climbing `parent_anchor`. A cross-page loser's children name an anchor
+     * belonging to another page entirely.
+     */
+    it('a derived headingPath stops at the page boundary', async () => {
+      await index('aaa.md', ['# ARoot', '', dup, '## SharedA', '', 'a body', ''].join('\n'));
+      await index(
+        'zzz.md',
+        ['# ZRoot', '', dup, '## SharedZ', '', 'z body', '', '### Child', '', 'CHILD NEEDLE', ''].join('\n'),
+      );
+
+      const hits = await core.searchPages({ query: 'CHILD NEEDLE', rootId: 'pages', mode: 'map' });
+      if (hits.mode !== 'map') throw new Error('expected a map response');
+      const hit = hits.items.find((r) => r.path === 'zzz.md');
+
+      // `SharedZ` lost `dupdupdu` to `aaa.md`, so `Child`'s parent has no row and
+      // the chain ends there. Short is the honest answer; what it must never do is
+      // follow the anchor off-page and report `aaa.md`'s headings as ancestors of a
+      // section on `zzz.md`.
+      expect(hit?.headingPath).toEqual(['Child']);
+      expect(hit?.headingPath).not.toContain('SharedA');
+      expect(hit?.headingPath).not.toContain('ARoot');
     });
   });
   /**

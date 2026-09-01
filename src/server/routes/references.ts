@@ -170,7 +170,7 @@ export function referencesRouter(
        * `{ rootId, pagePath, tagType, line, raw }` (`services/references.ts`),
        * dropping the `anchor` the core attaches to every hit falling inside an
        * indexed section. That anchor is the entire link from a reference to
-       * `get-sections` / `list-sections --by anchor` — the path the CLI help
+       * `get-sections` / `get-page-outline` — the path the CLI help
        * advertises — and `c4s find-references … | jq '.references[].anchor'`
        * answered `null` for every hit while the operation reached over MCP
        * answered correctly. One operation, two answers, which is the drift this

@@ -14,7 +14,7 @@ import type { CliCommandContribution } from '../registry.js';
  *                    [--anchors <a1,a2>] [--context <n>] [--limit <n>] [--offset <n>]
  *
  * A hit on a section-indexed root carries an `anchor`, which is what makes
- * `list-sections --by anchor` and `get-sections` reachable from a phrase. On a
+ * `get-sections` reachable from a phrase — a hit carries the anchor outright. On a
  * root without a section index it collapses per PAGE and carries no anchor.
  *
  * 0.2.40 — `--mode pages` is GONE and the default is `map`, not `hits`. A

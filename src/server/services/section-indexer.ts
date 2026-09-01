@@ -31,7 +31,16 @@ export interface ParsedHeading {
 interface SectionInfo {
   anchor: string;
   heading: ParsedHeading;
-  headingPath: string;
+  /**
+   * 0.2.59 — the anchor of the enclosing section, or `null` for a page's first one.
+   *
+   * Replaces `headingPath`, the slash-joined ancestor chain. That string had the
+   * separator as a content character (a heading with a `/` split into two), and it
+   * encoded an array in a TEXT column so every reader paid to parse it. The tree
+   * `get_page_outline` returns carries the hierarchy now, and this is what it is
+   * built from.
+   */
+  parentAnchor: string | null;
   headingSlug: string;
   lineStart: number;
   lineEnd: number;
@@ -423,14 +432,14 @@ export class SectionIndexerService implements WatchSubscriber {
        */
       const upsertStmt = this.db.prepare(
         `INSERT INTO section_index
-            (rootId, anchor, page_path, heading_path, heading_slug, heading_level,
+            (rootId, anchor, page_path, parent_anchor, heading_slug, heading_level,
              heading_text, content_hash, body, line_start, line_end, paragraph_count,
              created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
           ON CONFLICT(anchor) DO UPDATE SET
             rootId = excluded.rootId,
             page_path = excluded.page_path,
-            heading_path = excluded.heading_path,
+            parent_anchor = excluded.parent_anchor,
             heading_slug = excluded.heading_slug,
             heading_level = excluded.heading_level,
             heading_text = excluded.heading_text,
@@ -447,7 +456,7 @@ export class SectionIndexerService implements WatchSubscriber {
           rootId,
           s.anchor,
           relPath,
-          s.headingPath,
+          s.parentAnchor,
           s.headingSlug,
           s.heading.level,
           s.heading.text,
@@ -630,17 +639,45 @@ function buildSections(lines: string[], headings: ParsedHeading[]): SectionInfo[
   // (lowest line) owns the anchor and the rest are not indexed. Never "whichever
   // the upsert wrote last".
   const claimed = new Set<string>();
+  // The headings that actually GOT a row, by identity. `claimed` answers "is this
+  // anchor string spoken for", which is a different question: a collision loser
+  // shares its anchor string with the winner, so asking `claimed` about the loser
+  // says yes and re-parents its children onto the winner — a heading elsewhere in
+  // the page. Identity is the only thing that tells the two frames apart.
+  const owners = new Set<ParsedHeading>();
   for (let idx = 0; idx < headings.length; idx++) {
     const h = headings[idx]!;
     if (!h.anchor) continue;
+    /**
+     * Pops MANY frames at once, and that is load-bearing: Markdown allows level
+     * jumps (`##` -> `####` -> `##`), so closing one frame per heading would leave
+     * a `####` sitting under a sibling it does not belong to. Depth is not level.
+     */
     while (stack.length && stack[stack.length - 1]!.level >= h.level) stack.pop();
-    const headingPath = [...stack.map((x) => x.text), h.text].join('/');
+    /**
+     * The nearest ancestor THAT OWNS A ROW, not simply the nearest ancestor.
+     *
+     * A heading that lost a within-page anchor collision stays on the stack — it
+     * still shapes what nests under it — but it is never written, so pointing at it
+     * would leave `parent_anchor` referencing a row that does not exist. Walking
+     * past it re-parents the child onto the nearest real ancestor: a shallower tree,
+     * which is a truthful one, rather than a dangling edge.
+     */
+    let parentAnchor: string | null = null;
+    for (let s = stack.length - 1; s >= 0; s--) {
+      const candidate = stack[s]!;
+      if (owners.has(candidate)) {
+        parentAnchor = candidate.anchor;
+        break;
+      }
+    }
     const headingSlug = slugifyHeading(h.text);
     stack.push(h);
     // Skipped AFTER the stack is maintained: the losing heading still shapes the
-    // heading path of everything nested under it, it just does not get a row.
+    // nesting of everything below it, it just does not get a row.
     if (claimed.has(h.anchor)) continue;
     claimed.add(h.anchor);
+    owners.add(h);
 
     let endLine = lines.length;
     for (let j = idx + 1; j < headings.length; j++) {
@@ -658,7 +695,7 @@ function buildSections(lines: string[], headings: ParsedHeading[]): SectionInfo[
     sections.push({
       anchor: h.anchor,
       heading: h,
-      headingPath,
+      parentAnchor,
       headingSlug,
       lineStart: startLine + 1,
       lineEnd: endLine,

@@ -73,7 +73,7 @@ const EXPLICIT_BRIEF_ARG = {
  * The read window, shared shape with `get_page.range` — 1-based, inclusive.
  *
  * Unconditionally allowed, with no `sectionIndexed` gate: a brief never enters
- * `section_index`, so `list_sections` + `get_sections` is not a second way to
+ * `section_index`, so `get_page_outline` + `get_sections` is not a second way to
  * resume a large read the way it is for a page. `range` is the only one, which
  * is exactly why it had to exist — before it, a brief past the response budget
  * simply could not be read through.

@@ -1,220 +1,182 @@
 /**
- * M39 — `list_sections` and `get_sections`.
+ * M39 — `get_page_outline` and `get_sections`.
  *
- * `list_sections` takes a DISCRIMINATED UNION, `{ by: "page" }` or
- * `{ by: "anchor" }`, replacing three optional flags that were silently ANDed
- * and quietly ignored each other. The fuzzy `query` mode is gone on purpose: it
- * mixed identity regimes — a heading substring is not an identity — and leaked
- * search into what is a traversal. The replacement path is explicit:
- * `search_pages` to find a hit, then `list_sections({ by: "anchor" })`.
+ * 0.2.59 — `list_sections` is gone and `get_page_outline` stands in its place. It
+ * looks like a rename and is not: the discriminated union, the pagination, the
+ * `is_known` probe and the flat row shape all went with the name.
  *
- * Sections exist only on roots with `sectionIndexed`, so both operations
- * iterate that subset. There is no `rootId === 'pages'` branch anywhere here.
+ * What is left is a FETCH BY ONE PAGE KEY that answers with a TREE of headings in
+ * document order — a table of contents. No `by`, no anchor variant, no fuzzy
+ * `query`, no `limit`/`offset`, no depth cap. The valve is the response budget
+ * alone, which is a third category of pagination exemption beside "bounded by
+ * construction" (`overview`, `describe_types`) and "fetch by key"
+ * (`get_entities`, `get_sections`): a response keyed by ONE resource has no
+ * narrowing parameter to offer, because a window into a tree is not a tree.
+ *
+ * The anchor variant left without a replacement, deliberately: a `search_pages`
+ * hit already carries an anchor, so there was nothing left to look up in between.
+ * That shortens the read path from three calls to two and makes this operation an
+ * optional table of contents rather than a mandatory hop — "the cheap step between
+ * locating a page and paying for any of its text".
+ *
+ * Anchor validation lost its probe with `is_known`. It is now `check_consistency`
+ * in bulk, or a per-item `SECTION_NOT_FOUND` from `get_sections` as an existence
+ * test — which narrows `SECTION_NOT_FOUND` to a single emitter.
+ *
+ * Sections exist only on roots with `sectionIndexed`, so both operations iterate
+ * that subset. There is no `rootId === 'pages'` branch anywhere here.
  */
 
 import type { Database } from 'better-sqlite3';
 import type { DiscoveryError, DiscoveryErrorCode } from '../errors.js';
 import { invalidArgument, sectionNotFound } from '../errors.js';
 import type { PageSource } from '../page-source.js';
-import { DEFAULT_LIMITS, paginate } from '../pagination.js';
 import type { RawEntityReader, RawSection } from '../raw-entity-reader.js';
 import type { RootSet } from '../roots.js';
 import { serializeSection } from '../../serialization/serializers/section.js';
 import { bodySize, hydrateSection } from '../section-hydrator.js';
-import { applyItemBudget, MAX_ANCHORS_PER_CALL, truncateText } from '../budget.js';
+import { applyItemBudget, DEFAULT_BUDGET_CHARS, MAX_ANCHORS_PER_CALL, truncateText } from '../budget.js';
 import type {
   GetSectionsInput,
   GetSectionsItem,
+  GetPageOutlineInput,
+  GetPageOutlineResult,
   GetSectionsResult,
-  ListSectionsInput,
-  ListSectionsResult,
+  OutlineNode,
   SectionEdges,
-  SectionListItem,
   SectionResultItem,
 } from '../types.js';
 
-/** The indexer's own anchor alphabet — an anchor is `[a-z0-9]{6,12}`, nothing else. */
-const ANCHOR_RE = /^[a-z0-9]{6,12}$/;
-
-export async function listSections(
+export async function getPageOutline(
   db: Database,
   pages: PageSource,
   roots: RootSet,
-  input: ListSectionsInput,
-): Promise<ListSectionsResult> {
-  if (input.by !== 'page' && input.by !== 'anchor') {
+  input: GetPageOutlineInput,
+): Promise<GetPageOutlineResult> {
+  const root = roots.requireSectionIndexed(input.rootId, 'get_page_outline');
+  /**
+   * A missing `path` is refused rather than answered. `page_path = NULL` matches no
+   * row, so without this the call would come back "that page has no sections" for a
+   * call that never named a page — and every sibling operation (`get_page`,
+   * `search_pages`, `find_references({ target: "page" })`) refuses the same shape.
+   */
+  if (!input.path) {
     throw invalidArgument(
-      'list_sections requires a `by` discriminator',
-      'list_sections({ by: "page", rootId, path }) or list_sections({ by: "anchor", anchor })',
+      'get_page_outline requires path',
+      `get_page_outline({ rootId: "${root.id}", path: "<relative path>" }) — use list_pages({ rootId: "${root.id}" }) to see them`,
     );
   }
 
-  let rows: RawSection[];
-  if (input.by === 'anchor') {
-    if (!ANCHOR_RE.test(input.anchor ?? '')) {
-      throw invalidArgument(
-        `'${input.anchor ?? ''}' is not an anchor`,
-        'an anchor is 6-12 lowercase alphanumerics; use search_pages to find one by text',
-      );
-    }
-    rows = selectSections(db, 'WHERE anchor = ?', [input.anchor]);
-  } else {
-    const root = roots.requireSectionIndexed(input.rootId, 'list_sections');
+  /**
+   * The page is read FIRST, and a failure to read it is the operation's refusal.
+   *
+   * This is where the contract diverges from `list_sections({ by: "page" })`, which
+   * answered an empty list for a path that did not exist. `get_page_outline` is
+   * single-target — one page key, no union and no batch — so it refuses by ENVELOPE,
+   * the way `get_page` does, rather than per-item the way `get_sections` does. And it
+   * cannot do otherwise and still keep its promise: the envelope's `hash` is the
+   * value a sectional edit closes on, so an operation that "succeeded" with no page
+   * behind it would hand back an envelope with nothing to write against.
+   *
+   * The refusal is `PageSource`'s, not a `catch` here: it already turns ENOENT into
+   * `PAGE_NOT_FOUND` and a path escaping the root into its own code. Wrapping it
+   * would flatten everything else — a permission error, a directory where a file is
+   * expected — into "no such page", sending the caller to `list_pages` to look for
+   * something `list_pages` will happily show them.
+   */
+  const read = await pages.readWithHash(root.id, input.path);
+
+  const rows = selectSections(db, 'WHERE rootId = ? AND page_path = ?', [root.id, input.path]);
+
+  return {
+    rootId: root.id,
+    path: input.path,
+    hash: read.hash,
+    ...buildOutline(rows, read.body),
+  };
+}
+
+/**
+ * The tree, and the budget that may cut it short.
+ *
+ * `rows` arrive in document order (`selectSections` orders by `line_start`), which
+ * is the order the tree is emitted in and the order the budget consumes them in.
+ * Nothing re-sorts: the tree "goes the way the page is written" is the contract.
+ */
+function buildOutline(
+  rows: readonly RawSection[],
+  pageBody: string,
+): { sections: OutlineNode[]; truncated?: true; message?: string } {
+  const nodes = new Map<string, OutlineNode>();
+  for (const row of rows) {
+    nodes.set(row.anchor, {
+      anchor: row.anchor,
+      heading: row.headingText,
+      level: row.headingLevel,
+      // The page is read ONCE for the whole outline, not once per section:
+      // measurement before fetching is the point of the operation, and paying a
+      // read per heading to deliver it would defeat it.
+      size: bodySize(pageBody, row),
+    });
+  }
+
+  /**
+   * Emission is a PRE-ORDER walk, and the budget stops it at the first node that
+   * would not fit. That is what makes truncation a PREFIX rather than a sample: a
+   * prefix of a pre-order sequence is closed under parents by construction, so no
+   * returned node can name a parent the envelope does not contain. It is also why
+   * there is no `offset` — a window into a tree returns nodes whose parents are
+   * missing, which is not a tree.
+   */
+  const roots: OutlineNode[] = [];
+  let spent = 0;
+  let truncated = false;
+  for (const row of rows) {
+    const node = nodes.get(row.anchor)!;
     /**
-     * A missing `path` is refused rather than answered. `page_path = NULL`
-     * matches no row, so without this the call comes back "that page has no
-     * sections" for a call that never named a page — the caller cannot tell an
-     * unsectioned page from its own omission, and every sibling operation
-     * (`get_page`, `search_pages`, `find_references({ target: "page" })`)
-     * refuses the same shape.
+     * A parent that is not on THIS page is no parent here. It happens: an anchor
+     * blocked by a collision with another page keeps its row over there, so a child
+     * on this page can point off-page. Such a node is emitted as a root of this
+     * page's tree rather than dropped — a shallower tree is truthful, a missing
+     * section is not.
      */
-    if (!input.path) {
-      throw invalidArgument(
-        'list_sections({ by: "page" }) requires path',
-        `list_sections({ by: "page", rootId: "${root.id}", path: "<relative path>" }) — use list_pages({ rootId: "${root.id}" }) to see them`,
-      );
+    const parent = row.parentAnchor ? nodes.get(row.parentAnchor) : undefined;
+    // Priced as it ships. `children` is not counted here because the child pays for
+    // itself when its own turn comes.
+    const cost = JSON.stringify(node).length;
+    if (spent + cost > DEFAULT_BUDGET_CHARS && (roots.length > 0 || parent)) {
+      truncated = true;
+      break;
     }
-    rows = selectSections(db, 'WHERE rootId = ? AND page_path = ?', [root.id, input.path]);
+    spent += cost;
+    if (parent) (parent.children ??= []).push(node);
+    else roots.push(node);
   }
 
-  const indexed = new Set(roots.sectionIndexed().map((r) => r.id));
-  const visible = rows.filter((r) => indexed.has(r.rootId));
-  // Measurement before fetching is a contract, not a nicety: three of five
-  // failures in the motivating session were pulling something unbounded. Each
-  // page is read ONCE for the whole group, not once per section.
-  const { sizes, hashes, measured } = await measure(pages, visible);
-
-  const items: SectionListItem[] = visible.map((section) => ({
-    rootId: section.rootId,
-    anchor: section.anchor,
-    heading: section.headingText,
-    level: section.headingLevel,
-    headingPath: section.headingPath ? section.headingPath.split('/') : [],
-    size: sizes.get(section.anchor) ?? 0,
-  }));
-
-  items.sort((a, b) => a.rootId.localeCompare(b.rootId) || a.anchor.localeCompare(b.anchor));
-  const page = paginate(items, input, DEFAULT_LIMITS.listSections);
-  /**
-   * An anchor lookup answers whether the anchor EXISTS, not only what it points
-   * at: an empty list would otherwise be indistinguishable from a page with no
-   * sections, and an agent that cannot tell those apart retries the wrong fix.
-   *
-   * Existence is asked of `rows`, NOT of the root-filtered `visible`. An anchor
-   * indexed on a root that has since lost `sectionIndexed` is still a real
-   * anchor — reporting `is_known: false` there would say "no such anchor" about
-   * one `get_sections` resolves, and the two answers would contradict each other
-   * about the same string.
-   */
-  /**
-   * 0.2.56 — the page's file hash, on the envelope.
-   *
-   * This is the channel that lets a section edit close without `get_page`:
-   * `list_sections` is the first call of every sectional edit anyway, so the value
-   * the write's `expectedHash` needs arrives with the anchors instead of costing a
-   * second, whole-page read the caller only wanted the digest from.
-   *
-   * WHICH page it is about differs by variant, and that is the whole reason the
-   * field is conditional: `by: "page"` names one up front, `by: "anchor"` learns it
-   * from the row the anchor resolved to, and an anchor that resolves to nothing
-   * names no page at all — so the field is OMITTED there rather than sent as null.
-   * A null would invite `expectedHash: null`, which the write refuses as a missing
-   * guard, one indirection later than here.
-   *
-   * `rows`, not `visible`: an anchor on a root that has since lost its section index
-   * is still an anchor on a real page, and `is_known` already says so.
-   */
-  const hashPage =
-    input.by === 'page'
-      ? { rootId: input.rootId, path: input.path }
-      : rows[0]
-        ? { rootId: rows[0].rootId, path: rows[0].pagePath }
-        : undefined;
-  /**
-   * `measured` is consulted before the fallback so a page this listing ALREADY
-   * opened is never opened twice: a page whose read failed is in `measured` with
-   * no entry in `hashes`, and retrying it would repeat the same failure — one
-   * wasted read per stale index row, on the path taken when the index is stale.
-   */
-  const hashKey = hashPage ? pageKey(hashPage.rootId, hashPage.path) : undefined;
-  const hash =
-    hashPage && hashKey
-      ? (hashes.get(hashKey) ??
-        (measured.has(hashKey) ? undefined : await pageHashFor(pages, hashPage.rootId, hashPage.path)))
-      : undefined;
-  const envelope = { ...page, ...(hash === undefined ? {} : { hash }) };
-
-  return input.by === 'anchor' ? { ...envelope, is_known: rows.length > 0 } : envelope;
+  return {
+    sections: roots,
+    ...(truncated ? { truncated: true as const, message: OUTLINE_TRUNCATION_MESSAGE } : {}),
+  };
 }
 
 /**
- * Sizes per anchor AND the file hash per page, from ONE read of each page.
+ * What a caller does with a cut outline — and what they must NOT be told to do.
  *
- * The hash rides back from here rather than being fetched separately because this
- * loop already opens every page the listing touches: `readWithHash` hands over the
- * body it was going to read anyway plus the digest `PagesService` computed on the
- * way past, so for a page that HAS sections the envelope's `hash` costs no extra I/O.
+ * The prefix that came back is complete in itself: every node in it has its parent
+ * in it, so it can be read and acted on exactly as an untruncated outline can. The
+ * way on is `get_sections` over the anchors already in hand.
  *
- * `measured` reports which pages this loop attempted, successfully or not, so the
- * caller can tell "no hash because nothing here reads that page" from "no hash
- * because reading it failed" and skip a retry it already knows the answer to.
+ * There is deliberately NO "retry smaller" here, unlike `get_sections`, whose hint
+ * ends in exactly that. The rule that governs both is the same — a hint never
+ * proposes a call this operation would refuse — and this operation has no narrowing
+ * parameter at all: no `limit`, no `offset`, no depth cap. Offering a smaller retry
+ * would name a call that cannot be written.
  */
-async function measure(
-  pages: PageSource,
-  sections: readonly RawSection[],
-): Promise<{ sizes: Map<string, number>; hashes: Map<string, string>; measured: Set<string> }> {
-  const byPage = new Map<string, RawSection[]>();
-  for (const s of sections) {
-    const key = pageKey(s.rootId, s.pagePath);
-    const group = byPage.get(key);
-    if (group) group.push(s);
-    else byPage.set(key, [s]);
-  }
-  const sizes = new Map<string, number>();
-  const hashes = new Map<string, string>();
-  for (const [key, group] of byPage) {
-    const first = group[0]!;
-    let read: { body: string; hash: string };
-    try {
-      read = await pages.readWithHash(first.rootId, first.pagePath);
-    } catch {
-      // An index row whose page is gone still lists — with size 0 and no hash,
-      // rather than taking the whole listing down over one stale row.
-      continue;
-    }
-    hashes.set(key, read.hash);
-    for (const s of group) sizes.set(s.anchor, bodySize(read.body, s));
-  }
-  return { sizes, hashes, measured: new Set(byPage.keys()) };
-}
-
-/** One page's identity as a map key. `rootId` is part of it: the same relPath lives in several roots. */
-function pageKey(rootId: string, pagePath: string): string {
-  return `${rootId}:${pagePath}`;
-}
-
-/**
- * The page hash for the envelope when the listing produced no section to measure —
- * `by: "page"` on a page that genuinely has no headings, or an anchor whose root has
- * since lost its section index.
- *
- * This is the ONE path on which the envelope's hash costs a read of its own. It is
- * the price of the field existing at all in those cases: there is no section to
- * measure, so nothing else opens the file. `measured` keeps it from repeating a read
- * the measuring loop already tried.
- *
- * A missing page yields `undefined` rather than an error: `list_sections({ by:
- * "page" })` answers an empty list for a path that does not exist, and turning a
- * listing into a 404 to deliver a field would change the operation's failure
- * contract to add one.
- */
-async function pageHashFor(pages: PageSource, rootId: string, path: string): Promise<string | undefined> {
-  try {
-    return (await pages.readWithHash(rootId, path)).hash;
-  } catch {
-    return undefined;
-  }
-}
+const OUTLINE_TRUNCATION_MESSAGE =
+  'outline truncated by response budget — what came back is a PREFIX of the tree and is complete in itself: ' +
+  'every node present has its parent present. There is no smaller retry to make (this operation takes no ' +
+  'limit, offset or depth), so go on from here: read the sections you need with get_sections({ anchors }) ' +
+  'using the anchors already returned.';
 
 /**
  * 0.2.46 — every column a `RawSection` is built from, and not one more.
@@ -225,7 +187,7 @@ async function pageHashFor(pages: PageSource, rootId: string, path: string): Pro
  * slices the file — so a star here would load the corpus to throw it away.
  */
 export const RAW_SECTION_COLUMNS =
-  'rootId, anchor, page_path, heading_path, heading_slug, heading_text, heading_level, content_hash, line_start, line_end';
+  'rootId, anchor, page_path, parent_anchor, heading_slug, heading_text, heading_level, content_hash, line_start, line_end';
 
 export function selectSections(db: Database, where: string, params: unknown[]): RawSection[] {
   const rows = db
@@ -239,7 +201,7 @@ export function toRawSection(row: Record<string, unknown>): RawSection {
     rootId: row.rootId as string,
     anchor: row.anchor as string,
     pagePath: row.page_path as string,
-    headingPath: row.heading_path as string,
+    parentAnchor: (row.parent_anchor as string | null) ?? null,
     headingSlug: row.heading_slug as string,
     headingText: row.heading_text as string,
     headingLevel: row.heading_level as number,
@@ -415,7 +377,7 @@ async function fetchOne(
    */
   const budgeted = truncateText(
     String(detail.body ?? hydrated.body),
-    `section body truncated by response budget — narrow to a child section via list_sections({ by: "page", rootId: "${section.rootId}", path: "${section.pagePath}" }), then get_sections({ anchors })`,
+    `section body truncated by response budget — narrow to a child section via get_page_outline({ rootId: "${section.rootId}", path: "${section.pagePath}" }), then get_sections({ anchors })`,
   );
 
   /**

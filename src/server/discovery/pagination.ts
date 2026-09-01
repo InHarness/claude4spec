@@ -17,7 +17,6 @@ import { invalidArgument } from './errors.js';
 /** Applied when a caller passes no `limit`. Per-operation, never global-∞. */
 export const DEFAULT_LIMITS = {
   listPages: 100,
-  listSections: 100,
   listEntities: 50,
   listTags: 200,
   /**

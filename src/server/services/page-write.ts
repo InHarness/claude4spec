@@ -670,7 +670,7 @@ async function assertUnchanged(
     throw new DomainError(
       'INVALID_ARGUMENT',
       'expectedHash is required',
-      `pass back the \`hash\` of the file as you last read it — get_page returns it, and so does the \`list_sections({ by: "page", rootId: "${target.pages.rootId}", path: "${relPath}" })\` envelope, which is the cheaper source on a large page; for a page that does not exist yet, create it with create_page({ rootId: "${target.pages.rootId}", path: "${relPath}" })`,
+      `pass back the \`hash\` of the file as you last read it — get_page returns it, and so does the \`get_page_outline({ rootId: "${target.pages.rootId}", path: "${relPath}" })\` envelope, which is the cheaper source on a large page; for a page that does not exist yet, create it with create_page({ rootId: "${target.pages.rootId}", path: "${relPath}" })`,
     );
   }
   const currentHash = await hashOf(target.pages, relPath);
@@ -943,9 +943,9 @@ function pagePositionResolver(fullText: string): PositionResolver {
  *    sectionLines.slice(1)`), so read → edit → write only round-trips if this
  *    writes back the same shape. Taking the heading here would make an agent
  *    that echoed what it read delete the heading.
- *  - the heading text is the section's IDENTITY — `headingSlug`, `headingPath`,
- *    and (through a rename) anchor propagation across every root all hang off
- *    it. A "punctual section edit" quietly restructuring the page is not a
+ *  - the heading text is the section's IDENTITY — `headingSlug`, its place in the
+ *    outline tree, and (through a rename) anchor propagation across every root all
+ *    hang off it. A "punctual section edit" quietly restructuring the page is not a
  *    convenience. Rewriting a heading is an `update_page` call, where it is
  *    visible.
  *
@@ -1041,7 +1041,7 @@ export async function updateSections(
       throw new DomainError(
         'SECTION_NOT_FOUND',
         `section '${edit.anchor}' not found`,
-        'list the anchors of a page with list_sections({ by: "page", rootId, path })',
+        'list the anchors of a page with get_page_outline({ rootId, path })',
       );
     }
     return { edit, section };
@@ -1090,7 +1090,7 @@ export async function updateSections(
     throw new DomainError(
       'SECTION_NOT_FOUND',
       `section '${first.anchor}' is indexed on '${first.pagePath}', which no longer exists`,
-      'the section index is behind the filesystem — re-list the page with list_sections({ by: "page", rootId, path })',
+      'the section index is behind the filesystem — re-read the page with get_page_outline({ rootId, path })',
     );
   }
 

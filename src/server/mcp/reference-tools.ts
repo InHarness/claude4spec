@@ -10,7 +10,7 @@ import type { EntityType } from '../../shared/entities.js';
 import type { EntityStore } from '../services/entity-store.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import { isDiscoveryError, MAX_ANCHORS_PER_CALL, type DiscoveryCore } from '../discovery/index.js';
-import { GET_PAGE_RETURN, LIST_SECTIONS_RETURN } from './tool-contract-text.js';
+import { GET_PAGE_OUTLINE_RETURN, GET_PAGE_RETURN } from './tool-contract-text.js';
 
 /**
  * `reference-tools` — tag CRUD, and the in-process transport over the M39
@@ -23,11 +23,16 @@ import { GET_PAGE_RETURN, LIST_SECTIONS_RETURN } from './tool-contract-text.js';
  * The asymmetry where the built-in agent reached for the filesystem while an
  * external one got operations is gone at the level of the contract.
  *
- * 0.2.3 moved the last read tools across: `list_sections` takes the core's
+ * 0.2.3 moved the last read tools across: the section listing took the core's
  * discriminated union, `find_references` its target union and full sweep,
  * `list_tags` its opt-in counts — and `list_pages` / `search_pages` /
  * `get_page` / `get_sections` arrived, which is what makes `Glob` / `Grep` /
  * `Read` replaceable at all.
+ *
+ * 0.2.59 retired that section listing: `get_page_outline` takes one page key and no
+ * union at all, and the path from a phrase to a body is two calls rather than three
+ * — a `search_pages` hit already carries an anchor, so nothing needs looking up in
+ * between.
  */
 export interface ReferenceToolsDeps {
   /** M31: per-project host (was the process singleton). */
@@ -298,28 +303,18 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): CapturedMc
     },
   );
 
-  const listSections = mcpTool(
-    'list_sections',
-    'List sections, either of one page — { by: "page", rootId, path } — or the single section an anchor names — { by: "anchor", anchor }, which also reports `is_known` for an anchor that does not exist. Every row carries its `size`, so the volume of a section is knowable BEFORE fetching them with get_sections. There is no fuzzy heading search: a heading substring is not an identity, so to find a section by text call search_pages and then list_sections({ by: "anchor" }) on the hit. Calling without `by` returns INVALID_ARGUMENT listing both variants. ' + LIST_SECTIONS_RETURN,
+  const getPageOutline = mcpTool(
+    'get_page_outline',
+    "One page's headings as a TREE in document order — the cheap step between locating a page and paying for any of its text. Takes the page key and NOTHING else: no `by` discriminator, no anchor variant, no fuzzy heading search (a heading substring is not an identity), no limit/offset, no depth cap. Read it as a table of contents: every node carries the section's anchor, so you can pick exactly the anchors worth fetching with get_sections and skip the rest. It emits no content — bodies come from get_sections. It refuses as a WHOLE (it is keyed by one page, unlike the batched get_sections, which errors per item): an unknown path on a known root is PAGE_NOT_FOUND, and a root with no section index is refused with a pointer at get_page. " +
+      GET_PAGE_OUTLINE_RETURN,
     {
-      by: z.enum(['page', 'anchor']).optional().describe('Identity regime; required'),
-      rootId: z.string().optional().describe('With by:"page" — which page root'),
-      path: z.string().optional().describe('With by:"page" — page path relative to the root'),
-      anchor: z.string().optional().describe('With by:"anchor" — 6-12 lowercase alphanumerics'),
-      limit: z.number().int().positive().optional(),
-      offset: z.number().int().nonnegative().optional(),
+      rootId: z.string().describe('Which page root. Required — the same relative path can exist in several roots.'),
+      path: z.string().describe('Page path relative to the root.'),
     },
     async (args) => {
       try {
         return ok(
-          await deps.discovery.listSections({
-            by: args.by,
-            rootId: args.rootId === undefined ? undefined : String(args.rootId),
-            path: args.path === undefined ? undefined : String(args.path),
-            anchor: args.anchor === undefined ? undefined : String(args.anchor),
-            limit: args.limit as number | undefined,
-            offset: args.offset as number | undefined,
-          } as Parameters<DiscoveryCore['listSections']>[0]),
+          await deps.discovery.getPageOutline({ rootId: String(args.rootId), path: String(args.path) }),
         );
       } catch (err) {
         return fail(err);
@@ -412,7 +407,7 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): CapturedMc
 
   const getSections = mcpTool(
     'get_sections',
-    `Read sections BY ANCHOR — pass every anchor you need in ONE call; one anchor is simply a list of one. Search hits, a reference sweep and a section listing all hand you a LIST of anchors, and fetching them one per call is the cost this tool exists to remove. Each comes back as its own item in \`results\`, in the order asked for (duplicates silently collapsed), carrying the heading, the coordinates and the body as authored — XML tags left untouched, because a tag is an edge and expanding it would paste the payload in and destroy the edge. The item is \`{ anchor, rootId, page_path, heading_text, heading_level, line_start, line_end, body, truncated?, edges? }\`. \`edges\` accompanies an item IF AND ONLY IF it carries \`truncated: true\`: a full body already contains its own edges as authored tags and links, so parsing them out a second time would spend the budget on a copy. When they are there, they are the parsed outgoing edges of the WHOLE section — \`edges.sectionRefs: [{ anchor }]\`, \`edges.entityEmbeds: [{ tagType, type, slug?, slugs?, tags?, filter? }]\`, \`edges.pageLinks: [{ rootId, path, anchor? }]\` — identifiers only, in order of occurrence, so a truncated item still tells you everything its section points at; to follow an embed, call get_entities with the slug it carries. There is no \`content_hash\`: the response carries the content itself, so there is nothing left for a version of it to settle. An anchor that is not addressable comes back as \`{ anchor, error, code: "SECTION_NOT_FOUND" }\` in its own slot rather than failing the batch, and that happens two ways with two different remedies: the anchor is unknown (the message points at search_pages / list_sections), or it resolves onto a root that carries no section index (the message points at get_page). \`anchors\` has a hard length limit of ${MAX_ANCHORS_PER_CALL} (exceeding it, or passing none, is INVALID_ARGUMENT stating the limit) and the response has a size budget: past it, items keep their coordinates, GAIN \`edges\` and lose \`body\`, and are marked \`truncated: true\` — never dropped in silence, and the envelope's \`message\` says how to retry. Do not repeat the same batch: pick the anchors you need out of the \`edges\` you were handed and call again, narrower. The FIRST item never degrades that way: if its body alone exceeds the budget it comes back shortened as text with \`truncated: true\` AND with \`edges\` (its tail is invisible, so the edges are the only view of it), because a one-anchor call is already the smallest retry and "ask for fewer" would otherwise be unfollowable. \`includeSubtree\` adds the lower headings beneath each anchor; an anchor already covered by another one's subtree comes back as \`{ anchor, coveredBy }\` instead of repeating the body. An anchor names exactly ONE section. If a duplicate anchor slips into the pages anyway, the read is still deterministic rather than a coin flip on directory order: the occurrence with the lowest (rootId, page_path) owns the anchor, and within one page the first (lowest line) occurrence wins. \`check_consistency\` rule 13 reports the collision with every location so it gets fixed.`,
+    `Read sections BY ANCHOR — pass every anchor you need in ONE call; one anchor is simply a list of one. Search hits, a reference sweep and a page outline all hand you a LIST of anchors, and fetching them one per call is the cost this tool exists to remove. Each comes back as its own item in \`results\`, in the order asked for (duplicates silently collapsed), carrying the heading, the coordinates and the body as authored — XML tags left untouched, because a tag is an edge and expanding it would paste the payload in and destroy the edge. The item is \`{ anchor, rootId, page_path, heading_text, heading_level, line_start, line_end, body, truncated?, edges? }\`. \`edges\` accompanies an item IF AND ONLY IF it carries \`truncated: true\`: a full body already contains its own edges as authored tags and links, so parsing them out a second time would spend the budget on a copy. When they are there, they are the parsed outgoing edges of the WHOLE section — \`edges.sectionRefs: [{ anchor }]\`, \`edges.entityEmbeds: [{ tagType, type, slug?, slugs?, tags?, filter? }]\`, \`edges.pageLinks: [{ rootId, path, anchor? }]\` — identifiers only, in order of occurrence, so a truncated item still tells you everything its section points at; to follow an embed, call get_entities with the slug it carries. There is no \`content_hash\`: the response carries the content itself, so there is nothing left for a version of it to settle. An anchor that is not addressable comes back as \`{ anchor, error, code: "SECTION_NOT_FOUND" }\` in its own slot rather than failing the batch, and that happens two ways with two different remedies: the anchor is unknown (the message points at search_pages / get_page_outline), or it resolves onto a root that carries no section index (the message points at get_page). \`anchors\` has a hard length limit of ${MAX_ANCHORS_PER_CALL} (exceeding it, or passing none, is INVALID_ARGUMENT stating the limit) and the response has a size budget: past it, items keep their coordinates, GAIN \`edges\` and lose \`body\`, and are marked \`truncated: true\` — never dropped in silence, and the envelope's \`message\` says how to retry. Do not repeat the same batch: pick the anchors you need out of the \`edges\` you were handed and call again, narrower. The FIRST item never degrades that way: if its body alone exceeds the budget it comes back shortened as text with \`truncated: true\` AND with \`edges\` (its tail is invisible, so the edges are the only view of it), because a one-anchor call is already the smallest retry and "ask for fewer" would otherwise be unfollowable. \`includeSubtree\` adds the lower headings beneath each anchor — it is an option for reading CONTENT, NOT a cheap listing of a subtree; for that, get_page_outline is the call, and the \`size\` it reports per node is exactly the granularity this tool yields WITHOUT \`includeSubtree\`. An anchor already covered by another one's subtree comes back as \`{ anchor, coveredBy }\` instead of repeating the body. An anchor names exactly ONE section. If a duplicate anchor slips into the pages anyway, the read is still deterministic rather than a coin flip on directory order: the occurrence with the lowest (rootId, page_path) owns the anchor, and within one page the first (lowest line) occurrence wins. \`check_consistency\` rule 13 reports the collision with every location so it gets fixed.`,
     {
       anchors: z
         .array(z.string())
@@ -435,7 +430,7 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): CapturedMc
 
   const getPage = mcpTool(
     'get_page',
-    'Read one page as authored — XML tags untouched — addressed by the FULL key (rootId, path). A bare path is ambiguous across roots, so a call without `rootId` returns INVALID_ARGUMENT with the root list rather than guessing the built-in one. `range` is a line window and is allowed only on roots WITHOUT a section index; on an indexed root it is refused with a pointer to list_sections + get_sections, which is semantic, measurable up front and carries its own edges. Embeds are never expanded — fetch the entity by slug instead. ' + GET_PAGE_RETURN,
+    'Read one page as authored — XML tags untouched — addressed by the FULL key (rootId, path). A bare path is ambiguous across roots, so a call without `rootId` returns INVALID_ARGUMENT with the root list rather than guessing the built-in one. `range` is a line window and is allowed only on roots WITHOUT a section index; on an indexed root it is refused with a pointer to get_page_outline + get_sections, which is semantic, measurable up front and carries its own edges. Embeds are never expanded — fetch the entity by slug instead. ' + GET_PAGE_RETURN,
     {
       rootId: z.string().optional().describe('Which page root — required'),
       path: z.string().optional().describe('Page path relative to the root'),
@@ -470,7 +465,7 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): CapturedMc
       untagEntity,
       findReferences,
       checkConsistency,
-      listSections,
+      getPageOutline,
       listPages,
       searchPages,
       getSections,

@@ -156,7 +156,7 @@ export class BriefService {
    *
    * There is NO `sectionIndexed` gate, unlike `get_page`: a brief never enters
    * `section_index`, so the second way of resuming a large read
-   * (`list_sections` + `get_sections`) does not exist for it and `range` is the
+   * (`get_page_outline` + `get_sections`) does not exist for it and `range` is the
    * only one. That is also why the hint is unconditional — there is no other
    * call it could propose.
    *

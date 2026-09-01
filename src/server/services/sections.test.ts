@@ -20,10 +20,10 @@ describe('SectionsService — what a generic read of the index emits', () => {
   function insert(anchor: string, pagePath: string, heading: string, body: string, lineStart = 1): void {
     db.prepare(
       `INSERT INTO section_index
-         (rootId, anchor, page_path, heading_path, heading_slug, heading_level, heading_text,
+         (rootId, anchor, page_path, parent_anchor, heading_slug, heading_level, heading_text,
           content_hash, body, line_start, line_end, paragraph_count)
-       VALUES ('pages', ?, ?, ?, ?, 2, ?, 'hash', ?, ?, ?, 1)`,
-    ).run(anchor, pagePath, heading, heading.toLowerCase(), heading, body, lineStart, lineStart + 4);
+       VALUES ('pages', ?, ?, NULL, ?, 2, ?, 'hash', ?, ?, ?, 1)`,
+    ).run(anchor, pagePath, heading.toLowerCase(), heading, body, lineStart, lineStart + 4);
   }
 
   beforeEach(() => {

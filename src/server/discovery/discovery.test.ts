@@ -163,17 +163,24 @@ describe('discovery core', () => {
      * file. `indexPageLikeTheIndexer` fills it for real.
      */
     body?: string;
+    /**
+     * 0.2.59 — the enclosing section's anchor, the column `get_page_outline`
+     * builds its tree from. Defaults to NULL: most cases below are about
+     * COORDINATES on one flat page, and a helper that guessed a parent from
+     * `level` would be inventing a hierarchy the case never stated.
+     */
+    parent?: string | null;
   }): void {
     db.prepare(
       `INSERT INTO section_index
-         (rootId, anchor, page_path, heading_path, heading_slug, heading_level, heading_text,
+         (rootId, anchor, page_path, parent_anchor, heading_slug, heading_level, heading_text,
           content_hash, body, line_start, line_end, paragraph_count)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'hash', ?, ?, ?, 1)`,
     ).run(
       row.rootId,
       row.anchor,
       row.page,
-      row.heading,
+      row.parent ?? null,
       row.heading.toLowerCase(),
       row.level ?? 2,
       row.heading,
@@ -257,14 +264,14 @@ describe('discovery core', () => {
       });
     });
 
-    it('with a range on a section-indexed root, points at list_sections + get_sections', async () => {
+    it('with a range on a section-indexed root, points at get_page_outline + get_sections', async () => {
       await writePage('pages', 'a.md', '# A\n\nbody\n');
       const c = core([pagesRoot()]);
       await expect(
         c.getPage({ rootId: 'pages', path: 'a.md', range: { start: 1, end: 2 } }),
       ).rejects.toMatchObject({
         code: 'INVALID_ARGUMENT',
-        hint: expect.stringMatching(/list_sections.*get_sections/),
+        hint: expect.stringMatching(/get_page_outline.*get_sections/),
       });
     });
 
@@ -291,7 +298,15 @@ describe('discovery core', () => {
       const c = core([pagesRoot()]);
       const page = await c.getPage({ rootId: 'pages', path: 'big.md' });
       expect(page.truncated).toBe(true);
-      expect(page.truncationHint).toMatch(/list_sections.*get_sections/);
+      expect(page.truncationHint).toMatch(/get_page_outline.*get_sections/);
+      /**
+       * 0.2.56 — and the hint reaches the WRITE, not just the pair of reads. A
+       * caller truncated here is usually on the way to an edit; a hint that stopped
+       * at `get_sections` left them holding sections and no `expectedHash`, whose
+       * only visible remedy was fetching the whole page they were just told is too
+       * big. `get_page_outline` hands the hash over, so the path has an exit.
+       */
+      expect(page.truncationHint).toMatch(/update_sections/);
       expect(page.truncationHint).not.toMatch(/range/);
     });
 
@@ -498,7 +513,7 @@ describe('discovery core', () => {
         rootId: 'pages',
         anchor: 'abcdef12',
         pagePath: 'h.md',
-        headingPath: 'S',
+        parentAnchor: null,
         headingSlug: 's',
         headingText: 'S',
         headingLevel: 2,
@@ -1046,22 +1061,87 @@ describe('discovery core', () => {
       // a section-indexed root, and that is exactly where get_page refuses a
       // `range`, so the page-window half was dead on every input that can reach
       // this line. Narrowing to a child section is what remains true.
-      expect(result.message).toContain('list_sections');
+      expect(result.message).toContain('get_page_outline');
       expect(result.message).toContain('get_sections');
-      expect(result.message).not.toContain('get_page');
+      // Still no `get_page`: matched as a CALL, since `get_page_outline` shares the
+      // prefix and a bare substring check would now pass for the wrong reason.
+      expect(result.message).not.toMatch(/get_page\(/);
     });
   });
 
-  it('list_sections measures each section before anything is fetched', async () => {
+  it('get_page_outline measures each section before anything is fetched', async () => {
     await writePage('pages', 'm.md', ['# Top', '', '## S', '<!-- anchor: abcdef12 -->', '', 'exactly this', ''].join('\n'));
     indexSection({ rootId: 'pages', anchor: 'abcdef12', page: 'm.md', heading: 'S', start: 3, end: 7 });
     const c = core([pagesRoot()]);
 
-    const listed = await c.listSections({ by: 'page', rootId: 'pages', path: 'm.md' });
+    const outline = await c.getPageOutline({ rootId: 'pages', path: 'm.md' });
 
-    expect(listed.items).toHaveLength(1);
-    expect(listed.items[0]!.size).toBeGreaterThan(0);
-    expect(listed.items[0]!.anchor).toBe('abcdef12');
+    expect(outline.sections).toHaveLength(1);
+    expect(outline.sections[0]!.size).toBeGreaterThan(0);
+    expect(outline.sections[0]!.anchor).toBe('abcdef12');
+  });
+
+  /**
+   * The tree is the operation. `parent_anchor` is the only carrier of the relation,
+   * and DOCUMENT ORDER is the contract — not the anchor sort the flat listing used,
+   * which shuffled a page into alphabetical nonsense.
+   */
+  it('nests by parent_anchor and emits in document order', async () => {
+    await writePage(
+      'pages',
+      'tree.md',
+      ['# Top', '', '## Alpha', '', 'a', '', '### Deep', '', 'd', '', '## Beta', '', 'b', ''].join('\n'),
+    );
+    indexSection({ rootId: 'pages', anchor: 'toptop01', page: 'tree.md', heading: 'Top', level: 1, start: 1, end: 14 });
+    indexSection({ rootId: 'pages', anchor: 'zalpha01', page: 'tree.md', heading: 'Alpha', level: 2, start: 3, end: 10, parent: 'toptop01' });
+    indexSection({ rootId: 'pages', anchor: 'adeep001', page: 'tree.md', heading: 'Deep', level: 3, start: 7, end: 10, parent: 'zalpha01' });
+    indexSection({ rootId: 'pages', anchor: 'mbeta001', page: 'tree.md', heading: 'Beta', level: 2, start: 11, end: 14, parent: 'toptop01' });
+    const c = core([pagesRoot()]);
+
+    const outline = await c.getPageOutline({ rootId: 'pages', path: 'tree.md' });
+
+    expect(outline.sections).toHaveLength(1);
+    const top = outline.sections[0]!;
+    expect(top.anchor).toBe('toptop01');
+    // Alpha before Beta because the PAGE says so — `zalpha01` sorts after
+    // `mbeta001`, so an anchor sort would have inverted them.
+    expect(top.children!.map((n) => n.heading)).toEqual(['Alpha', 'Beta']);
+    expect(top.children![0]!.children!.map((n) => n.heading)).toEqual(['Deep']);
+  });
+
+  /**
+   * A leaf OMITS `children` rather than carrying `[]`. On a page of any size the
+   * empty arrays are pure envelope weight spent saying "nothing here" — and the
+   * envelope budget is the only valve this operation has.
+   */
+  it('a leaf omits `children` entirely — never an empty array', async () => {
+    await writePage('pages', 'm.md', ['# Top', '', 'body', ''].join('\n'));
+    indexSection({ rootId: 'pages', anchor: 'abcdef12', page: 'm.md', heading: 'Top', level: 1, start: 1, end: 4 });
+    const c = core([pagesRoot()]);
+
+    const node = (await c.getPageOutline({ rootId: 'pages', path: 'm.md' })).sections[0]!;
+
+    expect(node).not.toHaveProperty('children');
+    expect(node.children).toBeUndefined();
+  });
+
+  /**
+   * Markdown allows level JUMPS (`##` -> `####`), so tree depth is not heading
+   * level. Both facts are needed and both are reported: the nesting comes from
+   * `parent_anchor`, the number comes from `heading_level`. (This is also why the
+   * schema grew no `depth` column — a third carrier of the same information.)
+   */
+  it('a level jump nests one deep while `level` keeps the real number', async () => {
+    await writePage('pages', 'jump.md', ['## Two', '', 't', '', '#### Four', '', 'f', ''].join('\n'));
+    indexSection({ rootId: 'pages', anchor: 'twotwo01', page: 'jump.md', heading: 'Two', level: 2, start: 1, end: 8 });
+    indexSection({ rootId: 'pages', anchor: 'fourfo01', page: 'jump.md', heading: 'Four', level: 4, start: 5, end: 8, parent: 'twotwo01' });
+    const c = core([pagesRoot()]);
+
+    const two = (await c.getPageOutline({ rootId: 'pages', path: 'jump.md' })).sections[0]!;
+
+    expect(two.level).toBe(2);
+    expect(two.children).toHaveLength(1);
+    expect(two.children![0]!.level).toBe(4); // depth 1, level 4 — not the same number
   });
 
   /**
@@ -1070,132 +1150,117 @@ describe('discovery core', () => {
    * against. Frontmatter included: hashing the gray-matter body instead would arm a
    * guard that fails on every page that has any.
    */
-  it('list_sections by page carries the page file hash on the envelope', async () => {
+  it('carries the page file hash on the envelope', async () => {
     const body = ['---', 'title: M', '---', '# Top', '', '## S', '<!-- anchor: abcdef12 -->', '', 'body', ''].join('\n');
     await writePage('pages', 'm.md', body);
     indexSection({ rootId: 'pages', anchor: 'abcdef12', page: 'm.md', heading: 'S', start: 3, end: 7 });
     const c = core([pagesRoot()]);
 
-    const listed = await c.listSections({ by: 'page', rootId: 'pages', path: 'm.md' });
+    const outline = await c.getPageOutline({ rootId: 'pages', path: 'm.md' });
 
-    expect(listed.hash).toBe(createHash('sha256').update(body, 'utf-8').digest('hex'));
+    expect(outline.hash).toBe(createHash('sha256').update(body, 'utf-8').digest('hex'));
     // One value, one name, across both channels — so it can be copied between them.
-    expect(listed.hash).toBe((await c.getPage({ rootId: 'pages', path: 'm.md' })).hash);
+    expect(outline.hash).toBe((await c.getPage({ rootId: 'pages', path: 'm.md' })).hash);
   });
 
-  it('list_sections by page carries the hash even for a page with no sections at all', async () => {
-    const body = '# Top\n\nprose with no headings under it\n';
+  /**
+   * 0.2.59 — the hash is UNCONDITIONAL, and this is the case that proves it is not
+   * merely usually present. Its `list_sections` ancestor omitted it whenever no page
+   * was named; this operation always names one, so either there is a hash or there
+   * is a refusal. A page with no headings at all is still a page.
+   */
+  it('carries the hash even for a page with no sections at all', async () => {
+    const body = 'prose with no headings at all\n';
     await writePage('pages', 'bare.md', body);
     const c = core([pagesRoot()]);
 
-    const listed = await c.listSections({ by: 'page', rootId: 'pages', path: 'bare.md' });
+    const outline = await c.getPageOutline({ rootId: 'pages', path: 'bare.md' });
 
-    expect(listed.items).toEqual([]);
-    expect(listed.hash).toBe(createHash('sha256').update(body, 'utf-8').digest('hex'));
+    expect(outline.sections).toEqual([]);
+    expect(outline.hash).toBe(createHash('sha256').update(body, 'utf-8').digest('hex'));
   });
 
   /**
-   * By anchor the page is learned from the row the anchor resolved to — and an
-   * anchor that resolves to nothing names no page, so the field is ABSENT rather
-   * than null. A null would travel one call further and land as `expectedHash:
-   * null`, which the write refuses as a missing guard.
-   */
-  it('list_sections by anchor carries the hash when known and omits it when not', async () => {
-    const body = ['# Top', '<!-- anchor: abcdef12 -->', '', 'body', ''].join('\n');
-    await writePage('pages', 'm.md', body);
-    indexSection({ rootId: 'pages', anchor: 'abcdef12', page: 'm.md', heading: 'Top', start: 1, end: 5 });
-    const c = core([pagesRoot()]);
-
-    const known = await c.listSections({ by: 'anchor', anchor: 'abcdef12' });
-    expect(known.is_known).toBe(true);
-    expect(known.hash).toBe(createHash('sha256').update(body, 'utf-8').digest('hex'));
-
-    const unknown = await c.listSections({ by: 'anchor', anchor: 'zzzzzz99' });
-    expect(unknown.is_known).toBe(false);
-    expect(unknown).not.toHaveProperty('hash');
-  });
-
-  /** No page, no hash. A listing that answers empty must not start answering 404 to deliver a field. */
-  it('list_sections by page omits the hash for a path that does not exist', async () => {
-    const c = core([pagesRoot()]);
-
-    const listed = await c.listSections({ by: 'page', rootId: 'pages', path: 'nope.md' });
-
-    expect(listed.items).toEqual([]);
-    expect(listed).not.toHaveProperty('hash');
-  });
-
-  /**
-   * The row is the page's shape, not a version of it. `section_index.content_hash`
+   * The node is the page's shape, not a version of it. `section_index.content_hash`
    * is NORMALIZED, so beside a file hash it would read as something you could write
-   * with — which it is not. It stays in the table, for M06's REST surface.
+   * with — which it is not. It stays in the table, for M06's REST surface. Same for
+   * `heading_path`: the hierarchy is the node's POSITION now.
    */
-  it('a list_sections row carries no section hash of any spelling', async () => {
+  it('a node carries no section hash of any spelling, and no headingPath', async () => {
     await writePage('pages', 'm.md', ['# Top', '', '## S', '<!-- anchor: abcdef12 -->', '', 'body', ''].join('\n'));
     indexSection({ rootId: 'pages', anchor: 'abcdef12', page: 'm.md', heading: 'S', start: 3, end: 7 });
     const c = core([pagesRoot()]);
 
-    const row = (await c.listSections({ by: 'page', rootId: 'pages', path: 'm.md' })).items[0]!;
+    const node = (await c.getPageOutline({ rootId: 'pages', path: 'm.md' })).sections[0]!;
 
-    expect(row).not.toHaveProperty('content_hash');
-    expect(row).not.toHaveProperty('contentHash');
-  });
-
-  it('list_sections rejects a non-anchor where an anchor is required', async () => {
-    const c = core([pagesRoot()]);
-    await expect(c.listSections({ by: 'anchor', anchor: 'NOT AN ANCHOR' })).rejects.toMatchObject({
-      code: 'INVALID_ARGUMENT',
-    });
+    expect(node).not.toHaveProperty('content_hash');
+    expect(node).not.toHaveProperty('contentHash');
+    expect(node).not.toHaveProperty('headingPath');
+    expect(node).not.toHaveProperty('heading_path');
   });
 
   /**
-   * A well-formed anchor that is not in the index is a DIFFERENT fact from a
-   * page with no sections, and both come back as an empty list. An agent that
-   * cannot tell them apart re-indexes when it should have searched for the
-   * anchor, or vice versa.
+   * 0.2.59 — this operation REFUSES BY ENVELOPE, and that is a deliberate break
+   * with its ancestor, which answered an empty list for a path that did not exist.
+   *
+   * It is single-target — one page key, no union and no batch — so there is no
+   * per-item slot for an error to live in, unlike `get_sections`, which reports
+   * `SECTION_NOT_FOUND` inside the item and keeps the rest of the batch. And an
+   * envelope that "succeeded" with no page behind it could carry no `hash`, which
+   * is the value the whole sectional-edit path closes on.
    */
-  it('list_sections says whether an anchor is known, not just what it points at', async () => {
-    await writePage('pages', 'm.md', ['# Top', '<!-- anchor: abcdef12 -->', '', 'body', ''].join('\n'));
-    indexSection({ rootId: 'pages', anchor: 'abcdef12', page: 'm.md', heading: 'Top', start: 1, end: 5 });
+  it('refuses a path that does not exist rather than answering an empty tree', async () => {
     const c = core([pagesRoot()]);
 
-    await expect(c.listSections({ by: 'anchor', anchor: 'abcdef12' })).resolves.toMatchObject({ is_known: true });
-    await expect(c.listSections({ by: 'anchor', anchor: 'zzzzzz99' })).resolves.toMatchObject({
-      is_known: false,
-      total: 0,
+    await expect(c.getPageOutline({ rootId: 'pages', path: 'nope.md' })).rejects.toMatchObject({
+      code: 'PAGE_NOT_FOUND',
     });
-    // Absent for the page variant: there is no anchor whose existence to report.
-    expect(await c.listSections({ by: 'page', rootId: 'pages', path: 'm.md' })).not.toHaveProperty('is_known');
   });
 
-  /**
-   * `is_known` answers about the ANCHOR, not about which roots are currently
-   * listable. An anchor indexed on a root that has since lost `sectionIndexed`
-   * is still a real anchor — saying "no such anchor" about one `get_section`
-   * resolves gives the caller two contradictory facts about the same string,
-   * and the plausible next move is to delete or re-author a live section.
-   */
-  it('an anchor on a de-indexed root is still known, even though it does not list', async () => {
-    await writePage('notes', 'n.md', ['# Note', '', 'body', ''].join('\n'));
-    indexSection({ rootId: 'notes', anchor: 'abcdef12', page: 'n.md', heading: 'Note', start: 1, end: 4 });
+  /** No section index, no anchors — refused as a whole, with `get_page` named as the way through. */
+  it('refuses a root that carries no section index, pointing at get_page', async () => {
+    await writePage('notes', 'n.md', '# Note\n\nbody\n');
     const c = core([pagesRoot(), flatRoot()]); // `notes` has sectionIndexed: false
 
-    const listed = await c.listSections({ by: 'anchor', anchor: 'abcdef12' });
-
-    expect(listed.items).toEqual([]); // not listable — the root has no section index
-    expect(listed.is_known).toBe(true); // but the anchor exists
+    await expect(c.getPageOutline({ rootId: 'notes', path: 'n.md' })).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+      hint: expect.stringContaining('get_page'),
+    });
   });
 
   /**
-   * Every sibling operation refuses a half-named page; this one used to answer.
-   * `page_path = NULL` matches no row, so the caller got "that page has no
-   * sections" for a call that never named a page.
+   * Every sibling operation refuses a half-named page; the ancestor of this one
+   * used to answer. `page_path = NULL` matches no row, so the caller got "that page
+   * has no sections" for a call that never named a page.
    */
-  it('list_sections by page refuses a missing path instead of answering empty', async () => {
+  it('refuses a missing path instead of answering empty', async () => {
     const c = core([pagesRoot()]);
     await expect(
-      c.listSections({ by: 'page', rootId: 'pages' } as Parameters<typeof c.listSections>[0]),
+      c.getPageOutline({ rootId: 'pages' } as Parameters<typeof c.getPageOutline>[0]),
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT', hint: expect.stringContaining('list_pages') });
+  });
+
+  /**
+   * 0.2.59 — the anchor variant is gone, and with it `is_known`.
+   *
+   * Asserted as an ABSENCE because the probe was a documented way to validate an
+   * anchor before citing it in a `<section_ref/>`, and a caller still reaching for
+   * it must fail loudly rather than get a plausible-looking outline back. The
+   * replacement is `check_consistency` in bulk, or a per-item `SECTION_NOT_FOUND`
+   * from `get_sections` as an existence test.
+   */
+  it('has no anchor variant and no is_known anywhere on the core', async () => {
+    const c = core([pagesRoot()]);
+    expect(c).not.toHaveProperty('listSections');
+
+    await writePage('pages', 'm.md', ['# Top', '', 'body', ''].join('\n'));
+    indexSection({ rootId: 'pages', anchor: 'abcdef12', page: 'm.md', heading: 'Top', level: 1, start: 1, end: 4 });
+    const outline = await c.getPageOutline({ rootId: 'pages', path: 'm.md' });
+    expect(outline).not.toHaveProperty('is_known');
+    // And no pagination envelope either — the budget is the only valve.
+    for (const key of ['total', 'hasMore', 'limit', 'offset']) {
+      expect(outline).not.toHaveProperty(key);
+    }
   });
 
   /**
@@ -2007,9 +2072,9 @@ describe('applyPagesOverride, through the core that consumes it', () => {
     await write('drafts', 'notes.md', CITES);
     db.prepare(
       `INSERT INTO section_index
-         (rootId, anchor, page_path, heading_path, heading_slug, heading_level, heading_text,
+         (rootId, anchor, page_path, parent_anchor, heading_slug, heading_level, heading_text,
           content_hash, body, line_start, line_end, paragraph_count)
-       VALUES ('pages', 'aaaa1111', 'notes.md', 'Notes', 'notes', 1, 'Notes', 'h', '', 1, 9, 1)`,
+       VALUES ('pages', 'aaaa1111', 'notes.md', NULL, 'notes', 1, 'Notes', 'h', '', 1, 9, 1)`,
     ).run();
 
     // The configured root DOES get the anchor — the control that gives the

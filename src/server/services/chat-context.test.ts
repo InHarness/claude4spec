@@ -674,7 +674,7 @@ describe('subagentsFor (0.1.67)', () => {
       expect(tools).toContain('mcp__entity-tools__describe_entity_type');
       expect(tools).toContain('mcp__reference-tools__find_references');
       expect(tools).toContain('mcp__reference-tools__check_consistency');
-      expect(tools).toContain('mcp__reference-tools__list_sections');
+      expect(tools).toContain('mcp__reference-tools__get_page_outline');
       expect(tools.some((t) => /create_|update_|delete_|link_/.test(t))).toBe(false);
       expect(subs[0].model).toBe('sonnet');
     }
@@ -1459,7 +1459,7 @@ describe('buildSystemPrompt — layer order (0.2.50)', () => {
 
     const marker = out.slice(out.indexOf('<current_page '), out.indexOf('</current_page>'));
     expect(marker).toContain('preview_lines="1-40"');
-    expect(marker).toContain('list_sections');
+    expect(marker).toContain('get_page_outline');
     expect(marker).toContain('get_sections');
     expect(marker).not.toMatch(/\bRead\b/);
     // Scoped to the block itself: `<claude4spec_plan_mode>` names `Read` further
@@ -1479,7 +1479,7 @@ describe('buildSystemPrompt — layer order (0.2.50)', () => {
     const out = build({ ...FULL_TURN, currentPagePath: 'guide.md', currentPageBody: long });
 
     const block = out.slice(out.indexOf('<current_page_handling>'), out.indexOf('</current_page_handling>'));
-    expect(block).toContain('list_sections');
+    expect(block).toContain('get_page_outline');
     expect(block).toContain('get_sections');
     expect(block).toContain('expectedHash');
     // `get_page` stays on offer for the case that genuinely wants the whole page.
@@ -1488,7 +1488,7 @@ describe('buildSystemPrompt — layer order (0.2.50)', () => {
 
   /**
    * The sectional route is not universal, and a notice that proposes it on a root
-   * without a section index proposes an INVALID_ARGUMENT: `list_sections` goes
+   * without a section index proposes an INVALID_ARGUMENT: `get_page_outline` goes
    * through `RootSet.requireSectionIndexed`. The marker follows the same rule
    * `get_page`'s own `truncationHint` follows — never name a call the operation it
    * points at refuses.
@@ -1509,7 +1509,7 @@ describe('buildSystemPrompt — layer order (0.2.50)', () => {
     expect(marker).toContain('get_page');
     expect(marker).toContain('not section-indexed');
     // The two calls that would answer INVALID_ARGUMENT on this root.
-    expect(marker).not.toMatch(/list_sections\(/);
+    expect(marker).not.toMatch(/get_page_outline\(/);
     expect(marker).not.toMatch(/get_sections\(/);
     // Still no filesystem read — the standing rule holds on both branches.
     expect(marker).not.toMatch(/\bRead\b/);

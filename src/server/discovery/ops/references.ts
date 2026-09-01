@@ -160,7 +160,7 @@ async function sectionReferences(
   if (!anchor) {
     throw invalidArgument(
       'find_references({ target: "section" }) requires an anchor',
-      'find_references({ target: "section", anchor: "<anchor>" }); list_sections reports the anchors of a page',
+      'find_references({ target: "section", anchor: "<anchor>" }); get_page_outline reports the anchors of a page',
     );
   }
   const out: ReferenceHit[] = [];

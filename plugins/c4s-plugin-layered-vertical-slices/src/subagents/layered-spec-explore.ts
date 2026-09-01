@@ -44,7 +44,7 @@ The full address of a slice is therefore \`MXX-slug/LY-slug\` — read it as "th
 
 ## Turning an address into something you can read
 
-Module pages live under the specification's module root; the page for \`MXX-slug\` is that address as a file name. Layers are SECTIONS of their module's page, not files of their own — so \`MXX-slug/LY-slug\` resolves to a page plus an anchor, and \`list_sections\` on the module page is the cheapest way to see which layers it actually carries. Do not assume a module has every layer; a slice carries the layers its capability needs and no more.
+Module pages live under the specification's module root; the page for \`MXX-slug\` is that address as a file name. Layers are SECTIONS of their module's page, not files of their own — so \`MXX-slug/LY-slug\` resolves to a page plus an anchor, and \`get_page_outline\` on the module page is the cheapest way to see which layers it actually carries. Do not assume a module has every layer; a slice carries the layers its capability needs and no more.
 
 When an address in your assignment does not resolve, say so with the address you were given rather than substituting the nearest match — a wrong module is worse than a missing one, because the parent cannot tell it apart from a right one.
 
@@ -70,7 +70,7 @@ Addresses first — \`MXX-slug/LY-slug\`, page paths, section anchors, entity sl
   tools: [
     'mcp__reference-tools__list_pages',
     'mcp__reference-tools__search_pages',
-    'mcp__reference-tools__list_sections',
+    'mcp__reference-tools__get_page_outline',
     'mcp__reference-tools__get_sections',
     'mcp__reference-tools__get_page',
     'mcp__reference-tools__find_references',
