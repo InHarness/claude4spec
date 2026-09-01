@@ -111,8 +111,13 @@ function buildBriefAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
       const b = await briefs.updateFrontmatter({ path, patch: { implemented }, changedBy: 'user' });
       return { path: b.path, frontmatter: b.frontmatter, body: b.body, content: b.content, hash: b.hash };
     },
-    createThread(path, name) {
-      return Promise.resolve(briefs.createThreadForBrief({ path, name: name ?? null }));
+    async createThread(path, name) {
+      // Watek bez pliku briefu to sierota: `createThreadForBrief` wstawia wiersz
+      // z samej sciezki, a `agent-turn` polyka pozniejszy NOT_FOUND w warn — wiec
+      // literowka w `--brief` konczyla sie zielona, platna tura bez snapshotu.
+      // `getBrief` przywraca 404 zanim cokolwiek powstanie.
+      await briefs.getBrief(path);
+      return briefs.createThreadForBrief({ path, name: name ?? null });
     },
   };
 }

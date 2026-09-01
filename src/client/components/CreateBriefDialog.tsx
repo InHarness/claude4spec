@@ -113,9 +113,13 @@ export function CreateBriefDialog({ toReleaseName, onClose }: Props) {
         params: { path: encodeBriefPath(result.path) },
       });
       // Watek zalozony razem z plikiem jest top-level, wiec stoi w threads[0].
-      const initialThreadId = result.threads[0]?.id;
-      if (initialThreadId) setChatThreadId(initialThreadId);
-      setChatOpen(true);
+      // Bez niego czat nie ma sie do czego podpiac — otwarcie overlaya trafiloby
+      // w poprzednio wybrany watek (innego briefu) z gotowym promptem do wyslania.
+      const initialThreadId = result.threads?.[0]?.id;
+      if (initialThreadId) {
+        setChatThreadId(initialThreadId);
+        setChatOpen(true);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }

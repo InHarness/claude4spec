@@ -278,6 +278,27 @@ describe('runAgent — brief attach XOR create mutex', () => {
     expect(create).toBeDefined();
     expect((create?.body as { suffix?: string }).suffix).toBe('scoped');
   });
+
+  /**
+   * Walidacja argumentow biegnie PRZED `resolveServer`/`healthCheck`. Inaczej
+   * `--ct brief --source initial` bez `--to` konczy sie przy zgaszonym serwerze
+   * jako `SERVER_NOT_RUNNING` — diagnoza zupelnie innego problemu. Dowod: ani
+   * jeden fetch nie wychodzi.
+   */
+  it.each([
+    ['neither argument', {}],
+    ['both arguments', { briefPath: 'a.md', source: 'analysis' as const }],
+    ['a create-payload missing its required field', { source: 'initial' as const }],
+  ])('rejects %s before any request reaches the server', async (_label, extra) => {
+    const { calls } = stubBriefFlow();
+    const err = await runAgent({ ...BASE, message: 'hi', contextType: 'brief', ...extra }).catch(
+      (e) => e,
+    );
+
+    expect(err).toBeInstanceOf(AgentError);
+    expect((err as AgentError).code).toBe('INVALID_ARGS');
+    expect(calls).toEqual([]);
+  });
 });
 
 describe('runAgent — brief create-mode source mapping', () => {

@@ -150,21 +150,16 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
   const effort = params.effort ?? DEFAULT_EFFORT;
   const output: 'final' | 'full' = params.output ?? 'final';
 
-  // --- discovery + health-check tozsamosci --------------------------------
-  const { baseUrl, apiBase } = await resolveServer({
-    project: params.project,
-    workspace: params.workspace,
-    server: params.server,
-  });
-  await healthCheck(baseUrl, apiBase);
-
-  // --- create-thread (context-specific) — pomijany dla threadId ----------
-  let threadId: string;
-  let mintedBriefPath: string | undefined;
-  if (params.threadId) {
-    threadId = params.threadId;
-  } else {
-    const ct: AgentContextType = params.contextType ?? 'chat';
+  // --- walidacja argumentow — PRZED discovery -----------------------------
+  // Blad argumentow musi wrocic jako blad argumentow. Gdy ta walidacja stala za
+  // `resolveServer`, `--ct brief --source initial` bez `--to` konczyl sie
+  // `SERVER_NOT_RUNNING` przy zgaszonym serwerze — diagnoza nie tego problemu.
+  // Cala ta czesc jest offline, wiec idzie przed odkryciem serwera.
+  const ct: AgentContextType = params.contextType ?? 'chat';
+  /** Cialo `POST /api/briefs` policzone z gory — tu zyje walidacja per-source. */
+  let briefCreateBody: Record<string, unknown> | undefined;
+  let briefAttach = false;
+  if (!params.threadId) {
     if (ct !== 'chat' && ct !== 'brief' && ct !== 'patch' && ct !== 'ask') {
       throw new AgentError(
         'INVALID_ARGS',
@@ -191,17 +186,9 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
         );
       }
       if (hasCreatePayload) {
-        // Create-mode: mint a new brief (file + initial thread) in one call.
-        const created = await postJson(`${apiBase}/briefs`, buildBriefCreateBody(params));
-        threadId = pickCreatedBriefThreadId(created);
-        mintedBriefPath = typeof created.path === 'string' ? created.path : undefined;
+        briefCreateBody = buildBriefCreateBody(params);
       } else if (params.briefPath) {
-        // M36: watki briefu zyja w generycznej rodzinie artefaktow. `encodeArtifactPath`
-        // zamiast recznego split/encode — samo `encodeURIComponent` przepuszcza `..`,
-        // ktore URL resolution sklada zanim request opusci proces (patrz http.ts).
-        const encoded = encodeArtifactPath(params.briefPath);
-        const created = await postJson(`${apiBase}/artifacts/brief/${encoded}/threads`, {});
-        threadId = pickThreadId(created);
+        briefAttach = true;
       } else {
         throw new AgentError(
           'INVALID_ARGS',
@@ -209,12 +196,39 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
             '(source/fromReleaseName/toReleaseName/roots/suffix)',
         );
       }
-    } else {
-      // 'chat' + 'ask' share the generic create-thread route; the server
-      // validates `context_type` (only 'chat'/'ask' accepted on this path).
-      const created = await postJson(`${apiBase}/threads`, { context_type: ct });
-      threadId = pickThreadId(created);
     }
+  }
+
+  // --- discovery + health-check tozsamosci --------------------------------
+  const { baseUrl, apiBase } = await resolveServer({
+    project: params.project,
+    workspace: params.workspace,
+    server: params.server,
+  });
+  await healthCheck(baseUrl, apiBase);
+
+  // --- create-thread (context-specific) — pomijany dla threadId ----------
+  let threadId: string;
+  let mintedBriefPath: string | undefined;
+  if (params.threadId) {
+    threadId = params.threadId;
+  } else if (briefCreateBody) {
+    // Create-mode: mint a new brief (file + initial thread) in one call.
+    const created = await postJson(`${apiBase}/briefs`, briefCreateBody);
+    threadId = pickCreatedBriefThreadId(created);
+    mintedBriefPath = typeof created.path === 'string' ? created.path : undefined;
+  } else if (briefAttach) {
+    // M36: watki briefu zyja w generycznej rodzinie artefaktow. `encodeArtifactPath`
+    // zamiast recznego split/encode — samo `encodeURIComponent` przepuszcza `..`,
+    // ktore URL resolution sklada zanim request opusci proces (patrz http.ts).
+    const encoded = encodeArtifactPath(params.briefPath as string);
+    const created = await postJson(`${apiBase}/artifacts/brief/${encoded}/threads`, {});
+    threadId = pickThreadId(created);
+  } else {
+    // 'chat' + 'ask' share the generic create-thread route; the server
+    // validates `context_type` (only 'chat'/'ask' accepted on this path).
+    const created = await postJson(`${apiBase}/threads`, { context_type: ct });
+    threadId = pickThreadId(created);
   }
 
   // --- run-turn (generyczny po context_type) ------------------------------

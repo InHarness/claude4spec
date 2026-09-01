@@ -81,18 +81,30 @@ export function briefsRouter(briefs: BriefService, chat: ChatService): Router {
           : fromName === null
             ? `Initial brief: ${toName}`
             : `Brief: ${fromName} → ${toName}`;
-      briefs.createThreadForBrief({ path: briefPath, name: threadTitle });
+      const { threadId: initialThreadId } = briefs.createThreadForBrief({
+        path: briefPath,
+        name: threadTitle,
+      });
       // Odpowiedz to pelny `BriefResponse` — ten sam ksztalt co detal briefu,
       // plus `threads`. Watek zalozony wyzej jest top-level, wiec konsument
       // (m.in. `runAgent` create-mode) bierze go jako `threads[0].id`; osobne
       // pole na id watku nie istnieje.
       const brief = await briefs.getBrief(briefPath);
-      const threads = chat.listThreadsByArtifact({
+      const listed = chat.listThreadsByArtifact({
         threadColumn: artifactRegistry.brief.binding.threadColumn as ArtifactThreadColumn,
         path: briefPath,
         limit: 20,
         offset: 0,
       });
+      // Kolejnosc listy to `updated_at DESC, id DESC`, a `updated_at` ma
+      // rozdzielczosc sekundy — brief odtworzony pod ta sama sciezka (wiersze
+      // chat_thread przezywaja skasowany plik) moglby wystawic na threads[0]
+      // stary watek. Id z `createThreadForBrief` jest jednoznaczne, wiec ten
+      // watek wychodzi na czolo listy.
+      const threads = [
+        ...listed.filter((t) => t.id === initialThreadId),
+        ...listed.filter((t) => t.id !== initialThreadId),
+      ];
       res.json({ data: { ...brief, threads } });
     } catch (err) {
       next(err);
