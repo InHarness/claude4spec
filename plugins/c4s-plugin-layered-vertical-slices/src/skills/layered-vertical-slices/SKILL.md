@@ -98,7 +98,7 @@ There are four workflows. **Pick the right one before doing anything else** — 
 - **`type="brief"`** → follow `workflows/brief.md`. You are not editing the spec; you are composing a self-contained release brief. The workflow defines the two operating branches, how to partition a heavy release diff across subagents, what counts as feature substance vs. spec-format convention in this style's `RawDelta`, plus inlining patterns and the "For implementers" structure. It takes precedence over the two below — do not also run daily / bootstrap.
 - **`type="patch"`** → follow `workflows/patch.md`. One filed deviation, folded back into the live spec: where a fix lands in this layered layout, how to verify it, and how to report what you did not implement.
 - **No `<index>` file in CWD?** → follow `workflows/bootstrap.md`. The spec does not yet exist; you'll discover the project, propose layers and modules, then generate skeleton and content over six phases.
-- **`<index>` file already in CWD?** → follow `workflows/daily.md`. The spec exists; you are extending or editing it. Hear the user's intent first, classify the request (explicit edit / idea / inconsistency), translate, edit, drift-check, stop.
+- **`<index>` file already in CWD?** → follow `workflows/daily.md`. The spec exists; you are extending or editing it. Hear the user's intent first, classify the request (explicit edit / idea / inconsistency), translate, edit, drift-check, hand the saved change to `spec-review`, stop.
 
 Never run bootstrap on top of an existing spec. If the user wants a clean restart, ask them to move the existing spec aside first. Read the relevant workflow file before starting; do not improvise the phases or steps from memory.
 

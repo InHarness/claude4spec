@@ -524,3 +524,42 @@ describe('release budget — explicit degradation (0.2.40)', () => {
     }
   });
 });
+
+describe('projectReleaseDiff — the unreleased `to` (0.2.62)', () => {
+  /**
+   * L2 stamps `{ id: 0, name: 'current' }` because `computeDelta` wants a row
+   * shape; 0 is a release id, and a consumer must not have to know that this
+   * particular one is a placeholder. The translation happens here so BOTH
+   * unreleased paths — SQL and git-anchored — come through it.
+   */
+  it('reports the live side as `id: null`, never as release 0', () => {
+    const { raw, from, to } = diffFixture();
+    const out = projectReleaseDiff(
+      { ...raw, to: { id: 0, name: 'current' } },
+      from,
+      to,
+      DIFF_INCLUDE,
+      { summaryOnly: true },
+    );
+    expect(out.to).toEqual({ id: null, name: 'current' });
+  });
+
+  it('leaves a frozen `to` exactly as L2 gave it', () => {
+    const { raw, from, to } = diffFixture();
+    const out = projectReleaseDiff(raw, from, to, DIFF_INCLUDE, { summaryOnly: true });
+    expect(out.to).toEqual({ id: 2, name: 'v2' });
+  });
+
+  /** A real release id that happens to be named `current` is still a release. */
+  it('does not null out a non-zero id just because the name matches', () => {
+    const { raw, from, to } = diffFixture();
+    const out = projectReleaseDiff(
+      { ...raw, to: { id: 9, name: 'current' } },
+      from,
+      to,
+      DIFF_INCLUDE,
+      { summaryOnly: true },
+    );
+    expect(out.to).toEqual({ id: 9, name: 'current' });
+  });
+});

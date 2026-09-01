@@ -72,6 +72,22 @@ After non-trivial edits, scan `<index>` against files-on-disk:
 
 If you find drift, surface it as a short punch list and ask the user before fixing — drift can be intentional (work-in-progress).
 
-## Step 6 — Stop
+## Step 6 — Style review (always, before you report)
 
-State what changed, point to the file(s), and stop. Do not auto-loop into "what else can we improve?" — wait for the user. The user drives the next round.
+Delegate the saved change to the **`spec-review`** subagent and wait for its answer. This step is not conditional and not the user's to ask for: the point of it is that you are not the only reader of what you just wrote, and a reviewer you call only when you doubt yourself reviews nothing that needed reviewing.
+
+Hand it the scope — the files and addresses you touched in Step 4. It reads the rules from `SKILL.md` itself, so do not restate them in the delegation; it fetches the change through `release_diff` against the current state, so do not paste the diff either.
+
+Its answer comes back in one of four shapes, and they are not interchangeable:
+- **deviations** — carry each one into Step 7 with its address, verbatim enough that the user can see what the rule required;
+- **no deviations** — say so, once;
+- **no input / empty delta** — the reviewer had nothing to work from (no release to compare against, or nothing changed). Report it as that, never as a clean review;
+- **partial review** — the delta did not fit and it judged a subset. Say which part went unreviewed. Do not re-run it hoping for a fuller pass; narrow the scope or leave the gap stated.
+
+One turn does not reach this step: a read-only one, which saved nothing. `spec-review` reviews a change, so with no edit behind you there is nothing to hand it — and it is not mounted in that turn anyway. Answer the question and stop; do not report a missing subagent as a failure.
+
+Do not fix what it reports on your own initiative. A deviation is a finding for Step 7; whether to act on it is the user's call, exactly as with the drift punch list in Step 5.
+
+## Step 7 — Stop
+
+State what changed, point to the file(s), relay the reviewer's verdict from Step 6, and stop. Do not auto-loop into "what else can we improve?" — wait for the user. The user drives the next round.

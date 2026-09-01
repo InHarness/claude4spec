@@ -4,6 +4,7 @@ import { HOST_API_VERSION } from '../../../src/shared/plugin-host/manifest.js';
 import { manifest } from '../src/manifest.js';
 import { layeredVerticalSlicesStyle } from '../src/skills/layered-vertical-slices.js';
 import { layeredSpecExplore } from '../src/subagents/layered-spec-explore.js';
+import { layeredSpecReview } from '../src/subagents/layered-spec-review.js';
 
 /**
  * The envelope's own shape, asserted against the REAL host registry rather than a
@@ -24,14 +25,17 @@ describe('c4s-plugin-layered-vertical-slices — manifest', () => {
     expect(registry.listAvailable()).toEqual([]);
   });
 
-  it('carries both contributions and nothing else', () => {
+  it('carries all three contributions and nothing else', () => {
     expect(Object.keys(manifest.contributes).sort()).toEqual([
       'entities',
       'subagents',
       'writingStyles',
     ]);
     expect(manifest.contributes.writingStyles).toEqual([layeredVerticalSlicesStyle]);
-    expect(manifest.contributes.subagents).toEqual([layeredSpecExplore]);
+    // TWO subagents, not one: the style ships an explorer AND a reviewer, and the
+    // pair is the capability — a style whose saved changes nobody re-reads is a
+    // style only at the moment of writing.
+    expect(manifest.contributes.subagents).toEqual([layeredSpecExplore, layeredSpecReview]);
   });
 
   /**

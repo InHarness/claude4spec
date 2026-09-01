@@ -25,6 +25,7 @@ import type {
   SpecSnapshotPageRow,
   UpdateReleaseResponse,
 } from '../../shared/entities.js';
+import { CURRENT_RELEASE_NAME } from '../../shared/entities.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
 import { topoSortModules } from '../core/plugin-host/entity-order.js';
 import type { RawEntityReader, RawEntityType } from '../discovery/raw-entity-reader.js';
@@ -100,8 +101,14 @@ const STATUS_TO_ENTITY_OP: Record<'A' | 'M' | 'D' | 'R', 'created' | 'updated' |
  * by `createRelease`/`updateRelease` AND by `ReleaseIndexerService` (which
  * upserts `spec_release` rows straight from on-disk release-identity files,
  * a write path the two API-layer methods never see).
+ *
+ * 0.2.62: the reservation now covers TWO surfaces at once — the same literal is
+ * also `release_diff`'s `toIdOrName`, a parameter typed `string | number`. It is
+ * the reservation that makes the literal safe there, not the other way round:
+ * without it `toIdOrName: "current"` would have two readings and the choice
+ * between them would fall out of the database's contents at call time.
  */
-const RESERVED_RELEASE_NAMES = new Set(['current']);
+const RESERVED_RELEASE_NAMES = new Set<string>([CURRENT_RELEASE_NAME]);
 
 export function isReservedReleaseName(name: string): boolean {
   return RESERVED_RELEASE_NAMES.has(name);
@@ -856,7 +863,7 @@ export class ReleaseService {
 
     return {
       from: { id: fromRow.id, name: fromRow.name },
-      to: { id: 0, name: 'current' },
+      to: { id: 0, name: CURRENT_RELEASE_NAME },
       entities: await this.dropStampOnlyEntityChanges(
         entities,
         entityPaths,
@@ -1213,7 +1220,7 @@ export class ReleaseService {
 
     const toSnap = this.getCurrentSnapshot();
     const toPageRows = this.latestPageRowsAtOrBefore(null, opts?.roots);
-    const toMeta = { id: 0, name: 'current' };
+    const toMeta = { id: 0, name: CURRENT_RELEASE_NAME };
     const { fromSnap, fromMeta, fromPageRows } = this.resolveFromSide(fromIdOrName, toSnap, opts);
 
     return this.computeDelta(fromSnap, fromPageRows, toSnap, toPageRows, fromMeta, toMeta);

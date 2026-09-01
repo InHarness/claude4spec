@@ -13,7 +13,15 @@ export type EntitySnapshot = Record<string, unknown>;
 
 export interface MCPReleaseDiff {
   from: { id: number; name: string } | null;
-  to: { id: number; name: string };
+  /**
+   * The `after` side. `id: null` — reachable only through `toIdOrName:
+   * "current"` — is the ONLY signal that this side is the live, not-yet-released
+   * state rather than a frozen release, and therefore that the diff is a
+   * function of the working tree and does not reproduce. A consumer that keys
+   * off `name === 'current'` instead is reading a string a real release can
+   * never carry (the name is reserved), but `id` is the field that means it.
+   */
+  to: { id: number | null; name: string };
   /**
    * Totals AFTER include/entityTypes filters, BEFORE limit/offset. Keys stay in
    * lock-step with `include` (mirrors `MCPSpecSnapshot.total`). Always present so

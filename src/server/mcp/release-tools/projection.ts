@@ -14,6 +14,7 @@ import type {
   SpecSnapshotEntityRow,
   SpecSnapshotPageRow,
 } from '../../../shared/entities.js';
+import { CURRENT_RELEASE_NAME } from '../../../shared/entities.js';
 import { parseSections } from '../../services/file-serializer.js';
 import {
   applyItemBudget,
@@ -98,6 +99,18 @@ const HEAVY_RETRY_HINT =
  * share keeps each dimension's cursor independently followable, and the hint
  * says to page one dimension at a time.
  */
+/**
+ * The `to` side of the envelope. L2 stamps the unreleased branch's "to" as
+ * `{ id: 0, name: 'current' }` — a synthetic row id it needs internally to reuse
+ * `computeDelta` — but 0 is a release id shape, and the MCP consumer must be able
+ * to tell "not frozen" from "release #0" without knowing that. `null` is that
+ * signal, and this is the one place the translation happens: both the SQL and the
+ * git-anchored unreleased paths come through here, so neither can forget it.
+ */
+function projectTo(to: RawDelta['to']): MCPReleaseDiff['to'] {
+  return to.name === CURRENT_RELEASE_NAME && to.id === 0 ? { id: null, name: to.name } : to;
+}
+
 export function projectReleaseDiff(
   raw: RawDelta,
   fromSnap: SpecSnapshot | null,
@@ -108,7 +121,7 @@ export function projectReleaseDiff(
   const summaryOnly = options?.summaryOnly ?? false;
   const limit = options?.limit ?? DEFAULT_PAGE_LIMIT;
   const offset = options?.offset ?? 0;
-  const out: MCPReleaseDiff = { from: raw.from, to: raw.to, total: {} };
+  const out: MCPReleaseDiff = { from: raw.from, to: projectTo(raw.to), total: {} };
   const hints: string[] = [];
   let spent = 0;
   const remaining = (): number => Math.max(DEFAULT_BUDGET_CHARS - spent, 0);

@@ -10,6 +10,15 @@
  * threads; the projection is what makes briefs interpretable after HEAD
  * advances beyond the release pair. REST (`/api/releases/...`) and UI keep
  * consuming the raw L2 shape for render-time `line_diff`.
+ *
+ * 0.2.62: `release_diff` grew a second engine — `toIdOrName: "current"` diffs a
+ * release against the live, unreleased state. It costs this server the property
+ * that made its toolset safe to hand a subagent without thinking: "release-tools
+ * are historical by definition" is no longer true of the WHOLE server, one branch
+ * of one tool answers with the present. Nothing here changes to compensate; what
+ * changes is that `diff-explore`'s "historical diff only" guarantee now rests on
+ * its PROMPT, exactly as its `Read` guarantee always did, rather than on the
+ * shape of the tools it holds.
  */
 
 import { createMcpServer, mcpTool, type CapturedMcpServer } from '../../plugin-runtime/index.js';
@@ -18,6 +27,7 @@ import type { ReleaseService } from '../../services/release.js';
 import type { GitService } from '../../services/git.js';
 import type { WsEmitter } from '../../ws/project-emitter.js';
 import { DomainError } from '../../services/tags.js';
+import { CURRENT_RELEASE_NAME } from '../../../shared/entities.js';
 import { DEFAULT_PAGE_LIMIT, projectReleaseDiff, projectSpecSnapshot } from './projection.js';
 import type {
   EntityTypeFilter,
@@ -152,14 +162,18 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
 
   const releaseDiff = mcpTool(
     'release_diff',
-    "Compute a SELF-CONTAINED structured diff between two releases. Heavy mode (default): each entity carries full `before`/`after` snapshots (per plugin's serializer); each modified section carries full `before`/`after` raw markdown. `entities[]`/`pages[]` are paginated independently by `limit`/`offset` (default 5), and `total: { entities?, pages? }` reports the full count after `include`/`entityTypes` filters, before the window. Light mode (`summaryOnly: true`): returns a delta MAP — `total` + identifiers `{ type, slug, name, op }` per entity and `{ path, op }` per page (incl. `op:'delete'`), WITHOUT `before`/`after`/`content`; the map is FULL and ignores `limit`. It is the guaranteed floor of degradation: for a map too large to fit in one response it PAGES from `offset` (never dropping a row) and says so via `truncationHint`. RESPONSE BUDGET: an item that does not fit is NEVER silently omitted — it comes back with its identity and `truncated: true`, an entity losing `before`/`after` WHOLE and a section keeping `content` cut as TEXT, while the envelope's `truncationHint` says how to retry. Absence from `entities[]`/`pages[]` therefore means one thing only: that thing did not change. Do NOT assume `op:'update'` implies `before`/`after` — check `truncated` first. Intended use: probe with `summaryOnly: true` to learn what changed, then fan out the heavy slices (`entityTypes` and/or `limit`/`offset`) to subagents. Pass `from: null` for the initial brief (synthetic empty `from`; all entries become `op:'create'` with `before` omitted). `from === to` returns an empty diff. There is NO `line_diff`.",
+    "Compute a SELF-CONTAINED structured diff between two releases. Heavy mode (default): each entity carries full `before`/`after` snapshots (per plugin's serializer); each modified section carries full `before`/`after` raw markdown. `entities[]`/`pages[]` are paginated independently by `limit`/`offset` (default 5), and `total: { entities?, pages? }` reports the full count after `include`/`entityTypes` filters, before the window. Light mode (`summaryOnly: true`): returns a delta MAP — `total` + identifiers `{ type, slug, name, op }` per entity and `{ path, op }` per page (incl. `op:'delete'`), WITHOUT `before`/`after`/`content`; the map is FULL and ignores `limit`. It is the guaranteed floor of degradation: for a map too large to fit in one response it PAGES from `offset` (never dropping a row) and says so via `truncationHint`. RESPONSE BUDGET: an item that does not fit is NEVER silently omitted — it comes back with its identity and `truncated: true`, an entity losing `before`/`after` WHOLE and a section keeping `content` cut as TEXT, while the envelope's `truncationHint` says how to retry. Absence from `entities[]`/`pages[]` therefore means one thing only: that thing did not change. Do NOT assume `op:'update'` implies `before`/`after` — check `truncated` first. Intended use: probe with `summaryOnly: true` to learn what changed, then fan out the heavy slices (`entityTypes` and/or `limit`/`offset`) to subagents. Pass `from: null` for the initial brief (synthetic empty `from`; all entries become `op:'create'` with `before` omitted). `from === to` returns an empty diff. There is NO `line_diff`. Pass `toIdOrName: \"current\"` to diff a release against the live, not-yet-released state (HEAD): that `after` side is not frozen, so such a diff does not reproduce later. `current` is a reserved release name and never collides with a real one.",
     {
       fromIdOrName: z
         .union([z.string(), z.number(), z.null()])
         .describe(
           'Earlier release id or name. `null` = initial brief (compare to empty state — all entries become op:create).',
         ),
-      toIdOrName: z.union([z.string(), z.number()]).describe('Later release id or name'),
+      toIdOrName: z
+        .union([z.string(), z.number()])
+        .describe(
+          'Later release id or name. The literal `"current"` compares against the live, not-yet-released state (HEAD) instead of a release; it is resolved before the name lookup and is a reserved release name, so it can never be shadowed by a real one. `fromIdOrName: null` together with `"current"` → 400 INVALID_DIFF_RANGE.',
+        ),
       include: z
         .array(z.enum(INCLUDE_VALUES))
         .optional()
@@ -211,8 +225,31 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
         const toIdOrName = args.toIdOrName as number | string;
         const roots = args.roots as string[] | undefined;
 
-        const raw = await deps.releaseService.getReleaseDiff(fromIdOrName, toIdOrName, { roots });
-        const toSnap = deps.releaseService.getReleaseSnapshot(toIdOrName);
+        // The reserved literal is settled BEFORE anything resolves a name or an
+        // id. The order is the whole guarantee: resolve first and a real release
+        // named `current` — which `createRelease` refuses, but an older database
+        // or a hand-written row could still hold — would shadow the literal and
+        // silently answer a historical diff to a caller asking about HEAD.
+        const isCurrent = toIdOrName === CURRENT_RELEASE_NAME;
+        if (isCurrent && fromIdOrName === null) {
+          // "From nothing to the working tree" has no useful reading: the initial
+          // brief is a claim about a FROZEN pair, and this pairing would answer it
+          // with a snapshot of whatever is on disk right now.
+          throw new DomainError(
+            'INVALID_DIFF_RANGE',
+            'fromIdOrName: null cannot be combined with toIdOrName: "current"',
+          );
+        }
+
+        // Two engines, ONE projection. `getUnreleasedDiff` returns the same
+        // `RawDelta` as `getReleaseDiff`, so the envelope the caller reads does
+        // not fork — only `to.id` (null) says which branch produced it.
+        const raw = isCurrent
+          ? await deps.releaseService.getUnreleasedDiff(fromIdOrName, { roots })
+          : await deps.releaseService.getReleaseDiff(fromIdOrName, toIdOrName, { roots });
+        const toSnap = isCurrent
+          ? deps.releaseService.getCurrentSnapshot()
+          : deps.releaseService.getReleaseSnapshot(toIdOrName);
         const fromSnap =
           fromIdOrName === null ? null : deps.releaseService.getReleaseSnapshot(fromIdOrName);
 

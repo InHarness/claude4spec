@@ -1,6 +1,7 @@
 import type { PluginManifest } from '@c4s/plugin-runtime';
 import { layeredVerticalSlicesStyle } from './skills/layered-vertical-slices.js';
 import { layeredSpecExplore } from './subagents/layered-spec-explore.js';
+import { layeredSpecReview } from './subagents/layered-spec-review.js';
 
 /**
  * The first CAPABILITY-class envelope: a plugin that contributes no entity type
@@ -9,10 +10,18 @@ import { layeredSpecExplore } from './subagents/layered-spec-explore.js';
  * Every other envelope in this repo travels together because its contributions
  * are COUPLED — `ui-view` declares a fixed ref at `design-system`, so splitting
  * the pair would cut the declaration. This one travels together for a different
- * reason: its two contributions are one authorial capability, writable and
+ * reason: its contributions are one authorial capability, writable and
  * distributable by someone outside the host repo. The test is "could a stranger
  * want to write this and give it to others?" — a writing style passes it; an
  * `endpoint`/`dto` pair does not.
+ *
+ * 0.2.62: what it carries is writing conventions plus TWO subagents that know
+ * them — an explorer of the specification and a reviewer of the saved change.
+ * Separately each contribution loses its point: the style without the explorer
+ * makes the parent search a specification whose organisation nobody told it
+ * about, the style without the reviewer leaves the author the only judge of
+ * their own work, and neither subagent without the style knows what a module is
+ * or what a layer is.
  *
  * `contributes.entities: []` is written out rather than omitted. Every slot is
  * optional and the empty array and the omission are the same thing to the host,
@@ -34,17 +43,18 @@ import { layeredSpecExplore } from './subagents/layered-spec-explore.js';
  * stops being free the day this package moves to its own npm repo.
  *
  * No `onUnregister`: the package is purely declarative and holds no resource of
- * its own. One `registry.unregisterPlugin(name)` takes BOTH contributions off —
- * the style and the subagent — because both are pull-read off the record.
+ * its own. One `registry.unregisterPlugin(name)` takes EVERY contribution off —
+ * the style and both subagents — because all of them are pull-read off the
+ * record.
  */
 export const manifest: PluginManifest = {
   name: 'c4s-plugin-layered-vertical-slices',
-  version: '0.2.57',
+  version: '0.2.62',
   hostApiVersion: '^2.0.0',
   engines: { node: '>=20' },
   contributes: {
     entities: [],
     writingStyles: [layeredVerticalSlicesStyle],
-    subagents: [layeredSpecExplore],
+    subagents: [layeredSpecExplore, layeredSpecReview],
   },
 };
