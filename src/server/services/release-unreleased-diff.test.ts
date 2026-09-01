@@ -2,6 +2,9 @@ import Database from 'better-sqlite3';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { runMigrations } from '../db/migrate.js';
 import { ReleaseService } from './release.js';
+import { createReleaseToolsServer } from '../mcp/release-tools/index.js';
+import type { GitService } from './git.js';
+import type { WsEmitter } from '../ws/project-emitter.js';
 import { diffEntity } from '../serialization/snapshot.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
 import type { FileSerializer } from './file-serializer.js';
@@ -201,6 +204,76 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
       await expect(releases.getUnreleasedDiff('does-not-exist')).rejects.toMatchObject({
         code: 'NOT_FOUND',
       });
+    });
+  });
+
+  /**
+   * 0.2.62 — the same engine, reached the way an AGENT reaches it. The tool's own
+   * unit tests stub the service to witness which engine ran; this one runs the
+   * REAL one end to end, because the claim that both branches share one
+   * projection is only worth something if a real `RawDelta` survives it.
+   */
+  describe('release_diff over MCP, against the live state', () => {
+    function releaseDiffTool() {
+      const server = createReleaseToolsServer({
+        releaseService: releases,
+        gitService: {} as GitService,
+        ws: { broadcast: () => {} } as unknown as WsEmitter,
+      });
+      const tool = server.tools.find((t) => t.name === 'release_diff')!;
+      return async (args: Record<string, unknown>) => {
+        const res = (await tool.handler(args, {} as never)) as {
+          isError?: boolean;
+          content: Array<{ text: string }>;
+        };
+        return { isError: res.isError === true, body: JSON.parse(res.content[0]!.text) as any };
+      };
+    }
+
+    it('projects the unreleased delta into the same envelope, with to.id null', async () => {
+      const relId = insertRelease('v1');
+      insertEntityVersion({ slug: 'kept', version: 1, data: { title: 'released' }, releaseId: relId });
+      insertEntityVersion({ slug: 'gone', version: 1, data: { title: 'doomed' }, releaseId: relId });
+      insertEntityVersion({ slug: 'kept', version: 2, data: { title: 'edited' }, releaseId: null, op: 'update' });
+      // Deleted AFTER the release: present in snapshot(from), absent from current.
+      insertEntityVersion({ slug: 'gone', version: 2, data: null, releaseId: null, op: 'delete' });
+      insertPageVersion({ path: 'b.md', version: 1, data: { content: 'new' }, releaseId: null });
+
+      const call = releaseDiffTool();
+      const res = await call({ fromIdOrName: 'v1', toIdOrName: 'current', summaryOnly: true });
+
+      expect(res.isError).toBe(false);
+      expect(res.body.from).toEqual({ id: relId, name: 'v1' });
+      // The single signal that this after side is not frozen.
+      expect(res.body.to).toEqual({ id: null, name: 'current' });
+
+      const entities = res.body.entities as Array<Record<string, unknown>>;
+      expect(entities).toContainEqual(expect.objectContaining({ slug: 'kept', op: 'update' }));
+      // The deletion the current branch must not lose.
+      expect(entities).toContainEqual(expect.objectContaining({ slug: 'gone', op: 'delete' }));
+      expect(res.body.pages).toContainEqual({ path: 'b.md', op: 'create' });
+    });
+
+    it('a real release NAMED current does not shadow the literal', async () => {
+      // `createRelease` refuses this name; a row can still arrive by other paths
+      // (the indexer, a hand-written file), and the resolution order is what makes
+      // that harmless.
+      const relId = insertRelease('v1');
+      insertRelease('current');
+      insertEntityVersion({ slug: 'e1', version: 1, data: { title: 'released' }, releaseId: relId });
+      insertEntityVersion({ slug: 'e1', version: 2, data: { title: 'live' }, releaseId: null, op: 'update' });
+
+      const res = await releaseDiffTool()({ fromIdOrName: 'v1', toIdOrName: 'current', summaryOnly: true });
+
+      expect(res.body.to).toEqual({ id: null, name: 'current' });
+      expect(res.body.entities).toContainEqual(expect.objectContaining({ slug: 'e1', op: 'update' }));
+    });
+
+    it('refuses from:null with to:"current" as INVALID_DIFF_RANGE', async () => {
+      insertEntityVersion({ slug: 'e1', version: 1, data: { title: 'live only' }, releaseId: null });
+      const res = await releaseDiffTool()({ fromIdOrName: null, toIdOrName: 'current' });
+      expect(res.isError).toBe(true);
+      expect(res.body.code).toBe('INVALID_DIFF_RANGE');
     });
   });
 
