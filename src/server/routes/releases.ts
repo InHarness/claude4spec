@@ -2,6 +2,7 @@ import { Router } from 'express';
 import type { ReleaseService } from '../services/release.js';
 import type { GitService } from '../services/git.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
+import { CURRENT_RELEASE_NAME } from '../../shared/entities.js';
 
 export function releasesRouter(
   releases: ReleaseService,
@@ -107,7 +108,7 @@ export function releasesRouter(
         .filter((r): r is string => typeof r === 'string');
       // 0.1.122: reserved literal `:to === 'current'` resolved BEFORE the
       // nameOrId lookup — diff `:from` against the live/unreleased spec state.
-      if (req.params.to === 'current') {
+      if (req.params.to === CURRENT_RELEASE_NAME) {
         const delta = await releases.getUnreleasedDiff(fromParam, {
           roots: roots.length > 0 ? roots : undefined,
         });

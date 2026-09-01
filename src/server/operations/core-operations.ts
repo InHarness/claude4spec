@@ -1129,7 +1129,7 @@ export function registerCoreOperations(): void {
 
   releaseOp('release_list', 'Releases newest-first, paginated. Answers `{ releases, total }` where `total` precedes limit/offset.', 'read', { ...paging }, ['none']);
   releaseOp('release_show', 'One release by numeric id or name, with its snapshot counts.', 'read', { idOrName: z.union([z.string(), z.number()]) }, ['none']);
-  releaseOp('release_diff', 'What changed between two releases, per entity type and page root.', 'read', { from: z.union([z.string(), z.number()]), to: z.union([z.string(), z.number()]) }, ['none']);
+  releaseOp('release_diff', 'What changed between two releases — or, with `to: "current"`, between a release and the live not-yet-released state — per entity type and page root.', 'read', { from: z.union([z.string(), z.number()]), to: z.union([z.string(), z.number()]) }, ['none']);
   releaseOp(
     'release_create',
     'Create a named release: assigns every unreleased entity_version and file_version row to it in one transaction, then commits to git when git sync is on. Always manual.',

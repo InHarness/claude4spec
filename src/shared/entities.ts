@@ -436,6 +436,19 @@ export interface RawDeltaPageChange {
   xml_refs_diff: XmlRefsDiffLite | null;
 }
 
+/**
+ * The reserved release name standing for the live, not-yet-released state.
+ *
+ * It is a literal on THREE surfaces that must agree — the `:to` segment of `GET
+ * /api/releases/:from/diff/:to`, the `toIdOrName` argument of the MCP tool
+ * `release_diff`, and the `RawDelta.to.name` both unreleased engine paths stamp
+ * — which is why it lives here rather than in any one of them, and why
+ * `createRelease` refuses it: without the reservation the argument would carry
+ * two possible readings, settled at runtime by whatever happens to be in the
+ * database.
+ */
+export const CURRENT_RELEASE_NAME = 'current';
+
 export interface RawDelta {
   /** `null` = synthetic empty state (initial brief, comparing against "nothing"). */
   from: { id: number; name: string } | null;

@@ -1,6 +1,6 @@
 {
   "name": "@inharness-ai/c4s-plugin-layered-vertical-slices",
-  "version": "0.2.57",
+  "version": "0.2.62",
   "description": "claude4spec builtin envelope contributing the `layered-vertical-slices` writing style and a spec explorer that knows the MXX-slug/LY-slug organisation. Contributes NO entity type — a capability-class envelope (host API 2.0.0).",
   "private": true,
   "type": "module",
