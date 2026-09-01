@@ -111,7 +111,7 @@ Utility:
 
 Agent:
   agent "<msg>" --ct <chat|brief|patch|ask>   generic turn; verbose (all messages + reasoning)
-  agent "<msg>" --ct brief --brief <path>      attach a turn to an existing brief
+  agent "<msg>" --ct brief --brief <path>     attach a turn to an existing brief
   agent "<msg>" --ct brief --source <release-diff|initial|analysis> [--from <r>] [--to <r>]
                                               create the brief first, then turn on it
                                               (mutually exclusive with --brief)
