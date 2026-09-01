@@ -1,6 +1,13 @@
 import { Agent } from 'undici';
 import { ASK_TURN_TIMEOUT_MS } from '../../shared/agent-turn.js';
-import { AgentError, healthCheck, patchJson, postJson, resolveServer } from './http.js';
+import {
+  AgentError,
+  encodeArtifactPath,
+  healthCheck,
+  patchJson,
+  postJson,
+  resolveServer,
+} from './http.js';
 
 /**
  * 0.2.13 — address resolution, the health-check and the JSON verbs moved to
@@ -9,7 +16,14 @@ import { AgentError, healthCheck, patchJson, postJson, resolveServer } from './h
  * from this module (`src/bin/c4s/commands/agent.ts`, `src/server/mcp/c4s-tools.ts`)
  * keep working, and so `AgentError` stays one class rather than two.
  */
-export { AgentError, healthCheck, patchJson, postJson, resolveServer } from './http.js';
+export {
+  AgentError,
+  encodeArtifactPath,
+  healthCheck,
+  patchJson,
+  postJson,
+  resolveServer,
+} from './http.js';
 export type { AgentErrorCode } from './http.js';
 
 /**
@@ -23,8 +37,12 @@ export type { AgentErrorCode } from './http.js';
  *   await runAgent({ message: '...', contextType: 'chat' })
  *   await runAgent({ message: '...', contextType: 'ask' })          // read-only peer consult
  *   await runAgent({ message: '...', server: 'http://other:4501', threadId: '...' })
- *   await runAgent({ message: '...', contextType: 'brief', briefPath: '...' })       // attach-mode
- *   await runAgent({ message: '...', contextType: 'brief', briefCreate: {...} })    // create-mode (0.1.104)
+ *   await runAgent({ message: '...', contextType: 'brief', briefPath: '...' })   // attach-mode
+ *   await runAgent({ message: '...', contextType: 'brief', source: 'analysis' }) // create-mode
+ *
+ * Dla `contextType='brief'` attach i create wykluczaja sie wzajemnie — plik
+ * briefu powstaje w kroku 3, PRZED tura: `runAgent` nie startuje tury na
+ * nieistniejacym artefakcie i zaden tool wewnatrz tury go nie zaklada.
  */
 
 export type AgentContextType = 'chat' | 'brief' | 'patch' | 'ask';
@@ -56,23 +74,37 @@ export interface AgentParams {
   contextType?: AgentContextType;
   /** Kontynuacja istniejacego watku u peera; pomija create-thread. */
   threadId?: string;
-  /** Attach-mode dla `contextType='brief'` — otwiera watek na istniejacym briefie. Mutex z `briefCreate`. */
-  briefPath?: string;
   /**
-   * 0.1.104 create-mode dla `contextType='brief'` — mintuje nowy brief przez
-   * `POST /api/briefs` (plik + initial thread), potem run-turn jak zwykle.
-   * Mutex z `briefPath`. Dokladnie jedno z (`briefPath`, `briefCreate`) wymagane
-   * gdy `contextType='brief'` i brak `threadId`.
+   * Attach-mode dla `contextType='brief'` — otwiera watek na istniejacym
+   * briefie. Mutex z create-payloadem ponizej (attach XOR create).
    */
-  briefCreate?: {
-    source: 'release-diff' | 'analysis';
-    /** `null` = initial brief (no previous release). */
-    fromReleaseName: string | null;
-    /** `null` = analysis brief (state relative to HEAD); required unless `source='analysis'`. */
-    toReleaseName: string | null;
-    roots?: string[];
-    suffix?: string;
-  };
+  briefPath?: string;
+
+  /**
+   * Create-payload — wylacznie dla `contextType='brief'`, mutex z `briefPath`.
+   *
+   * Piec plaskich pol opcjonalnych, symetrycznie do juz istniejacego `effort`:
+   * zaden nowy wzorzec w sygnaturze. Tryb create wyzwala obecnosc
+   * KTOREJKOLWIEK z nich; `source` domyslne na `'release-diff'` dziala dopiero
+   * WEWNATRZ trybu create i samo trybu nie wlacza.
+   *
+   * Dokladnie jedno z (`briefPath`, create-payload) jest wymagane gdy
+   * `contextType='brief'` i brak `threadId` — inaczej `INVALID_ARGS`.
+   */
+
+  /**
+   * Trzy wartosci po tej stronie; DTO `brief-create-request` zna tylko dwie.
+   * Mapowanie 3→2 (`initial` → `release-diff` + `fromReleaseName: null`) robi
+   * ta warstwa, w {@link buildBriefCreateBody} — patrz tabela tamze.
+   */
+  source?: 'release-diff' | 'initial' | 'analysis';
+  /** Wymagane dla `source='release-diff'`; zabronione dla `'initial'`; opcjonalne dla `'analysis'`. */
+  fromReleaseName?: string;
+  /** Wymagane dla `source='release-diff'` i `'initial'`; zabronione dla `'analysis'`. */
+  toReleaseName?: string;
+  /** Zakres briefu (releasable root ids). Zabronione dla `source='analysis'`. */
+  roots?: string[];
+  suffix?: string;
   /**
    * Model tury; claude-code: `fable-5` / `sonnet-5` / `opus-5` / `haiku-4.5`.
    * Domyslnie `'opus-5'` (rozwiazywany tutaj).
@@ -118,21 +150,16 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
   const effort = params.effort ?? DEFAULT_EFFORT;
   const output: 'final' | 'full' = params.output ?? 'final';
 
-  // --- discovery + health-check tozsamosci --------------------------------
-  const { baseUrl, apiBase } = await resolveServer({
-    project: params.project,
-    workspace: params.workspace,
-    server: params.server,
-  });
-  await healthCheck(baseUrl, apiBase);
-
-  // --- create-thread (context-specific) — pomijany dla threadId ----------
-  let threadId: string;
-  let mintedBriefPath: string | undefined;
-  if (params.threadId) {
-    threadId = params.threadId;
-  } else {
-    const ct: AgentContextType = params.contextType ?? 'chat';
+  // --- walidacja argumentow — PRZED discovery -----------------------------
+  // Blad argumentow musi wrocic jako blad argumentow. Gdy ta walidacja stala za
+  // `resolveServer`, `--ct brief --source initial` bez `--to` konczyl sie
+  // `SERVER_NOT_RUNNING` przy zgaszonym serwerze — diagnoza nie tego problemu.
+  // Cala ta czesc jest offline, wiec idzie przed odkryciem serwera.
+  const ct: AgentContextType = params.contextType ?? 'chat';
+  /** Cialo `POST /api/briefs` policzone z gory — tu zyje walidacja per-source. */
+  let briefCreateBody: Record<string, unknown> | undefined;
+  let briefAttach = false;
+  if (!params.threadId) {
     if (ct !== 'chat' && ct !== 'brief' && ct !== 'patch' && ct !== 'ask') {
       throw new AgentError(
         'INVALID_ARGS',
@@ -147,39 +174,61 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
       );
     }
     if (ct === 'brief') {
-      if (params.briefPath && params.briefCreate) {
+      // attach XOR create — dokladnie jedno z dwojga. Walidacja mutexu mieszka
+      // TUTAJ, nie w CLI: `runAgent` jest wspolna biblioteka obu transportow,
+      // wiec duplikat po stronie flag dawalby dwie odpowiedzi na jedno pytanie.
+      const hasCreatePayload = hasBriefCreatePayload(params);
+      if (params.briefPath && hasCreatePayload) {
         throw new AgentError(
           'INVALID_ARGS',
-          "contextType='brief' accepts briefPath (attach) or briefCreate (create), not both",
+          "contextType='brief' accepts briefPath (attach) or the create-payload " +
+            '(source/fromReleaseName/toReleaseName/roots/suffix), not both',
         );
       }
-      if (params.briefCreate) {
-        // 0.1.104 create-mode: mint a new brief (file + initial thread) in one call.
-        const created = await postJson(`${apiBase}/briefs`, {
-          source: params.briefCreate.source,
-          fromReleaseName: params.briefCreate.fromReleaseName,
-          toReleaseName: params.briefCreate.toReleaseName,
-          roots: params.briefCreate.roots,
-          suffix: params.briefCreate.suffix,
-        });
-        threadId = pickThreadId(created);
-        mintedBriefPath = typeof created.briefPath === 'string' ? created.briefPath : undefined;
+      if (hasCreatePayload) {
+        briefCreateBody = buildBriefCreateBody(params);
       } else if (params.briefPath) {
-        const encoded = params.briefPath.split('/').map(encodeURIComponent).join('/');
-        const created = await postJson(`${apiBase}/briefs/${encoded}/threads`, {});
-        threadId = pickThreadId(created);
+        briefAttach = true;
       } else {
         throw new AgentError(
           'INVALID_ARGS',
-          "contextType='brief' requires briefPath (attach) or briefCreate (create)",
+          "contextType='brief' requires briefPath (attach) or the create-payload " +
+            '(source/fromReleaseName/toReleaseName/roots/suffix)',
         );
       }
-    } else {
-      // 'chat' + 'ask' share the generic create-thread route; the server
-      // validates `context_type` (only 'chat'/'ask' accepted on this path).
-      const created = await postJson(`${apiBase}/threads`, { context_type: ct });
-      threadId = pickThreadId(created);
     }
+  }
+
+  // --- discovery + health-check tozsamosci --------------------------------
+  const { baseUrl, apiBase } = await resolveServer({
+    project: params.project,
+    workspace: params.workspace,
+    server: params.server,
+  });
+  await healthCheck(baseUrl, apiBase);
+
+  // --- create-thread (context-specific) — pomijany dla threadId ----------
+  let threadId: string;
+  let mintedBriefPath: string | undefined;
+  if (params.threadId) {
+    threadId = params.threadId;
+  } else if (briefCreateBody) {
+    // Create-mode: mint a new brief (file + initial thread) in one call.
+    const created = await postJson(`${apiBase}/briefs`, briefCreateBody);
+    threadId = pickCreatedBriefThreadId(created);
+    mintedBriefPath = typeof created.path === 'string' ? created.path : undefined;
+  } else if (briefAttach) {
+    // M36: watki briefu zyja w generycznej rodzinie artefaktow. `encodeArtifactPath`
+    // zamiast recznego split/encode — samo `encodeURIComponent` przepuszcza `..`,
+    // ktore URL resolution sklada zanim request opusci proces (patrz http.ts).
+    const encoded = encodeArtifactPath(params.briefPath as string);
+    const created = await postJson(`${apiBase}/artifacts/brief/${encoded}/threads`, {});
+    threadId = pickThreadId(created);
+  } else {
+    // 'chat' + 'ask' share the generic create-thread route; the server
+    // validates `context_type` (only 'chat'/'ask' accepted on this path).
+    const created = await postJson(`${apiBase}/threads`, { context_type: ct });
+    threadId = pickThreadId(created);
   }
 
   // --- run-turn (generyczny po context_type) ------------------------------
@@ -215,11 +264,100 @@ const runTurnDispatcher = new Agent({
 });
 
 function pickThreadId(created: Record<string, unknown>): string {
-  // `POST /api/threads` → `{ id }`; `POST /api/briefs/.../threads` → `{ threadId }`;
-  // `POST /api/briefs` (create-mode) → `{ briefPath, initialThreadId }`.
-  const id = created.threadId ?? created.id ?? created.initialThreadId;
+  // `POST /api/threads` → `{ id }`; `POST /api/artifacts/brief/.../threads` → `{ threadId }`.
+  const id = created.threadId ?? created.id;
   if (typeof id !== 'string' || !id) {
     throw new AgentError('AGENT_ERROR', 'create-thread response had no thread id');
   }
   return id;
+}
+
+/**
+ * `POST /api/briefs` odpowiada pelnym `BriefResponse`; watek zalozony razem z
+ * plikiem jest top-level (`parent_thread_id IS NULL`), wiec siedzi w `threads[0]`.
+ * Banki transagenta maja rodzica i do `threads[]` nie wchodza — dlatego akurat
+ * ta droga `threads[0].id` jest kontraktem, a `run_transagent` nie.
+ */
+function pickCreatedBriefThreadId(created: Record<string, unknown>): string {
+  const threads = created.threads;
+  const first = Array.isArray(threads) ? (threads[0] as { id?: unknown } | undefined) : undefined;
+  const id = first?.id;
+  if (typeof id !== 'string' || !id) {
+    throw new AgentError(
+      'AGENT_ERROR',
+      'POST /api/briefs response carried no initial thread (threads[0].id)',
+    );
+  }
+  return id;
+}
+
+/** Czy wolajacy podal KTORAKOLWIEK czesc create-payloadu. */
+function hasBriefCreatePayload(params: AgentParams): boolean {
+  return (
+    params.source !== undefined ||
+    params.fromReleaseName !== undefined ||
+    params.toReleaseName !== undefined ||
+    params.roots !== undefined ||
+    params.suffix !== undefined
+  );
+}
+
+/**
+ * Create-payload → cialo `POST /api/briefs`, razem z mapowaniem 3-wartosciowego
+ * `source` na 2-wartosciowe pole DTO. Tabela:
+ *
+ * | `source`       | body                                                                  |
+ * |----------------|-----------------------------------------------------------------------|
+ * | `release-diff` | `release-diff`, `from=<fromReleaseName>`, `to=<toReleaseName>` (oba wymagane) |
+ * | `initial`      | `release-diff`, `from=null`, `to=<toReleaseName>` (`from` zabroniony)  |
+ * | `analysis`     | `analysis`, `from=<fromReleaseName ?? latest>`, `to=null` (`roots` zabroniony) |
+ *
+ * `initial` NIE jest wartoscia pola `source` w DTO — to `release-diff`
+ * z `fromReleaseName: null`.
+ */
+function buildBriefCreateBody(params: AgentParams): Record<string, unknown> {
+  const source = params.source ?? 'release-diff';
+  const { fromReleaseName, toReleaseName, roots, suffix } = params;
+
+  if (source === 'release-diff') {
+    if (!fromReleaseName || !toReleaseName) {
+      throw new AgentError(
+        'INVALID_ARGS',
+        "source 'release-diff' requires both fromReleaseName and toReleaseName",
+      );
+    }
+    return { source, fromReleaseName, toReleaseName, roots, suffix };
+  }
+
+  if (source === 'initial') {
+    if (!toReleaseName) {
+      throw new AgentError('INVALID_ARGS', "source 'initial' requires toReleaseName");
+    }
+    if (fromReleaseName !== undefined) {
+      throw new AgentError(
+        'INVALID_ARGS',
+        "source 'initial' does not accept fromReleaseName (it is always null)",
+      );
+    }
+    return { source: 'release-diff', fromReleaseName: null, toReleaseName, roots, suffix };
+  }
+
+  if (source === 'analysis') {
+    if (toReleaseName !== undefined) {
+      throw new AgentError(
+        'INVALID_ARGS',
+        "source 'analysis' does not accept toReleaseName (it is always null)",
+      );
+    }
+    if (roots !== undefined) {
+      throw new AgentError('INVALID_ARGS', "source 'analysis' does not accept roots");
+    }
+    // `fromReleaseName` opcjonalny — serwer domysla latest release w `createBrief`.
+    return { source, fromReleaseName: fromReleaseName ?? null, toReleaseName: null, suffix };
+  }
+
+  throw new AgentError(
+    'INVALID_ARGS',
+    `source must be release-diff|initial|analysis (got '${String(source)}')`,
+  );
 }

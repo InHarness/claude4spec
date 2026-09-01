@@ -17,7 +17,7 @@ import type {
   ArtifactResponse,
   ArtifactThreadCreateRequest,
   BriefCreateRequest,
-  BriefCreateResult,
+  BriefResponse,
 } from '../../shared/entities.js';
 import { handle, apiFetch } from './api-core.js';
 import { encodeArtifactPath } from './artifact-path.js';
@@ -92,8 +92,8 @@ export const briefsApi = {
     return env.data.map(toBriefListItemView);
   },
 
-  async create(input: BriefCreateRequest): Promise<BriefCreateResult> {
-    const env = await handle<Envelope<BriefCreateResult>>(
+  async create(input: BriefCreateRequest): Promise<BriefResponse> {
+    const env = await handle<Envelope<BriefResponse>>(
       await apiFetch('/api/briefs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

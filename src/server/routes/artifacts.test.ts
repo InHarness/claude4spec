@@ -398,6 +398,20 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
       expect(listed.body.data[0].title).toBe('my thread');
     });
 
+    /**
+     * Wiersz `chat_thread` powstaje z samej sciezki, wiec bez tego sprawdzenia
+     * literowka w `c4s agent --ct brief --brief <path>` mintowala sierotę i
+     * odpalala pelna, platna ture bez snapshotu briefu (`agent-turn` polyka
+     * pozniejszy NOT_FOUND w `console.warn`).
+     */
+    it('POST .../threads 404s for a brief path that does not exist', async () => {
+      const res = await request(app).post('/api/artifacts/brief/no-such-brief.md/threads').send({});
+      expect(res.status).toBe(404);
+
+      const listed = await request(app).get('/api/artifacts/brief/no-such-brief.md/threads');
+      expect(listed.body.data).toHaveLength(0);
+    });
+
     it('GET .../threads lists them as ArtifactThreadListItem rows', async () => {
       await request(app).post('/api/artifacts/brief/v1-to-v2.md/threads').send({ name: 'first' });
 

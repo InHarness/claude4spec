@@ -193,62 +193,233 @@ describe('runAgent — ask context + output axis', () => {
   });
 });
 
-describe('runAgent — brief create-mode', () => {
+/**
+ * Stub dla obu drog create-thread na briefie. `POST /api/briefs` odpowiada
+ * pelnym `BriefResponse` (m.in. `threads[]`), a nie osobnym polem na id watku.
+ */
+function stubBriefFlow(opts: { threads?: Array<{ id: string }>; briefPath?: string } = {}) {
+  const calls: Array<{ url: string; body: unknown }> = [];
+  const threads = opts.threads ?? [{ id: 'T1' }];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string, init?: { body?: string }) => {
+      const body = init?.body ? JSON.parse(init.body) : undefined;
+      calls.push({ url, body });
+      if (url.endsWith('/config')) {
+        return { status: 200, ok: true, json: async () => VALID_CONFIG };
+      }
+      if (url.endsWith('/briefs')) {
+        return {
+          status: 201,
+          ok: true,
+          json: async () => ({
+            data: {
+              path: opts.briefPath ?? 'analysis-brief.md',
+              frontmatter: {},
+              body: '',
+              content: '',
+              hash: 'h1',
+              threads,
+            },
+          }),
+        };
+      }
+      if (url.endsWith('/threads')) {
+        return { status: 201, ok: true, json: async () => ({ data: { threadId: 'T1' } }) };
+      }
+      return { status: 200, ok: true, json: async () => ({ threadId: 'T1', answer: 'done' }) };
+    }),
+  );
+  return { calls };
+}
+
+describe('runAgent — brief attach XOR create mutex', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it('surfaces the minted brief path on AgentResult.briefPath', async () => {
-    const calls: Array<{ url: string; body: unknown }> = [];
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string, init?: { body?: string }) => {
-        const body = init?.body ? JSON.parse(init.body) : undefined;
-        calls.push({ url, body });
-        if (url.endsWith('/config')) {
-          return { status: 200, ok: true, json: async () => VALID_CONFIG };
-        }
-        if (url.endsWith('/briefs')) {
-          return {
-            status: 201,
-            ok: true,
-            json: async () => ({ data: { briefPath: 'analysis-brief.md', initialThreadId: 'T1' } }),
-          };
-        }
-        // POST /threads/T1/ask
-        return { status: 200, ok: true, json: async () => ({ threadId: 'T1', answer: 'done' }) };
-      }),
-    );
-
-    const result = await runAgent({
+  it('rejects briefPath together with a create-payload field', async () => {
+    stubBriefFlow();
+    const err = await runAgent({
       ...BASE,
-      message: 'Code drift on X',
+      message: 'hi',
       contextType: 'brief',
-      briefCreate: { source: 'analysis', fromReleaseName: null, toReleaseName: null },
+      briefPath: 'existing.md',
+      source: 'analysis',
+    }).catch((e) => e);
+
+    expect(err).toBeInstanceOf(AgentError);
+    expect((err as AgentError).code).toBe('INVALID_ARGS');
+  });
+
+  it('rejects neither briefPath nor a create-payload', async () => {
+    stubBriefFlow();
+    const err = await runAgent({ ...BASE, message: 'hi', contextType: 'brief' }).catch((e) => e);
+
+    expect(err).toBeInstanceOf(AgentError);
+    expect((err as AgentError).code).toBe('INVALID_ARGS');
+  });
+
+  /**
+   * Tryb create wyzwala KTORAKOLWIEK z pieciu flag — nie samo `source`. Bez
+   * tego `--suffix` w pojedynke wpadalby w galaz "brak obu" i konczyl sie
+   * mylacym bledem zamiast walidacja pol create-payloadu.
+   */
+  it('enters create-mode on a lone create-payload field other than source', async () => {
+    const { calls } = stubBriefFlow();
+    await runAgent({
+      ...BASE,
+      message: 'hi',
+      contextType: 'brief',
+      fromReleaseName: '0.1.0',
+      toReleaseName: '0.2.0',
+      suffix: 'scoped',
     });
 
-    expect(result.briefPath).toBe('analysis-brief.md');
     const create = calls.find((c) => c.url.endsWith('/briefs'));
-    expect(create?.body).toEqual({
-      source: 'analysis',
+    expect(create).toBeDefined();
+    expect((create?.body as { suffix?: string }).suffix).toBe('scoped');
+  });
+
+  /**
+   * Walidacja argumentow biegnie PRZED `resolveServer`/`healthCheck`. Inaczej
+   * `--ct brief --source initial` bez `--to` konczy sie przy zgaszonym serwerze
+   * jako `SERVER_NOT_RUNNING` — diagnoza zupelnie innego problemu. Dowod: ani
+   * jeden fetch nie wychodzi.
+   */
+  it.each([
+    ['neither argument', {}],
+    ['both arguments', { briefPath: 'a.md', source: 'analysis' as const }],
+    ['a create-payload missing its required field', { source: 'initial' as const }],
+  ])('rejects %s before any request reaches the server', async (_label, extra) => {
+    const { calls } = stubBriefFlow();
+    const err = await runAgent({ ...BASE, message: 'hi', contextType: 'brief', ...extra }).catch(
+      (e) => e,
+    );
+
+    expect(err).toBeInstanceOf(AgentError);
+    expect((err as AgentError).code).toBe('INVALID_ARGS');
+    expect(calls).toEqual([]);
+  });
+});
+
+describe('runAgent — brief create-mode source mapping', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("maps source 'release-diff' straight through", async () => {
+    const { calls } = stubBriefFlow();
+    await runAgent({
+      ...BASE,
+      message: 'go',
+      contextType: 'brief',
+      source: 'release-diff',
+      fromReleaseName: '0.1.0',
+      toReleaseName: '0.2.0',
+      roots: ['app'],
+    });
+
+    expect(calls.find((c) => c.url.endsWith('/briefs'))?.body).toEqual({
+      source: 'release-diff',
+      fromReleaseName: '0.1.0',
+      toReleaseName: '0.2.0',
+      roots: ['app'],
+      suffix: undefined,
+    });
+  });
+
+  /** `initial` nie jest wartoscia DTO — to `release-diff` z `fromReleaseName: null`. */
+  it("maps source 'initial' onto release-diff with a null fromReleaseName", async () => {
+    const { calls } = stubBriefFlow();
+    await runAgent({
+      ...BASE,
+      message: 'go',
+      contextType: 'brief',
+      source: 'initial',
+      toReleaseName: '0.1.0',
+    });
+
+    expect(calls.find((c) => c.url.endsWith('/briefs'))?.body).toEqual({
+      source: 'release-diff',
       fromReleaseName: null,
-      toReleaseName: null,
+      toReleaseName: '0.1.0',
       roots: undefined,
       suffix: undefined,
     });
   });
 
+  it("maps source 'analysis' onto a null toReleaseName", async () => {
+    const { calls } = stubBriefFlow();
+    await runAgent({
+      ...BASE,
+      message: 'go',
+      contextType: 'brief',
+      source: 'analysis',
+      fromReleaseName: '0.2.0',
+    });
+
+    expect(calls.find((c) => c.url.endsWith('/briefs'))?.body).toEqual({
+      source: 'analysis',
+      fromReleaseName: '0.2.0',
+      toReleaseName: null,
+      suffix: undefined,
+    });
+  });
+
+  it.each([
+    ['release-diff without toReleaseName', { source: 'release-diff', fromReleaseName: '0.1.0' }],
+    ['release-diff without fromReleaseName', { source: 'release-diff', toReleaseName: '0.2.0' }],
+    ['initial without toReleaseName', { source: 'initial', suffix: 's' }],
+    ['initial with fromReleaseName', { source: 'initial', fromReleaseName: '0.1.0', toReleaseName: '0.2.0' }],
+    ['analysis with toReleaseName', { source: 'analysis', toReleaseName: '0.2.0' }],
+    ['analysis with roots', { source: 'analysis', roots: ['app'] }],
+    ['an unknown source', { source: 'nonsense' }],
+  ])('rejects %s with INVALID_ARGS', async (_label, payload) => {
+    stubBriefFlow();
+    const err = await runAgent({
+      ...BASE,
+      message: 'go',
+      contextType: 'brief',
+      ...(payload as Record<string, unknown>),
+    } as Parameters<typeof runAgent>[0]).catch((e) => e);
+
+    expect(err).toBeInstanceOf(AgentError);
+    expect((err as AgentError).code).toBe('INVALID_ARGS');
+  });
+});
+
+describe('runAgent — brief create-mode', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('takes threadId from BriefResponse.threads[0].id and surfaces the minted path', async () => {
+    const { calls } = stubBriefFlow({ threads: [{ id: 'T-initial' }], briefPath: 'analysis-brief.md' });
+
+    const result = await runAgent({
+      ...BASE,
+      message: 'Code drift on X',
+      contextType: 'brief',
+      source: 'analysis',
+    });
+
+    expect(result.briefPath).toBe('analysis-brief.md');
+    // Tura leci na watku z threads[0], nie na czymkolwiek innym z odpowiedzi.
+    expect(calls.some((c) => c.url.endsWith('/threads/T-initial/ask'))).toBe(true);
+  });
+
+  /** Pusta `threads[]` znaczy, ze plik powstal bez watku — tury nie ma na czym postawic. */
+  it('fails with AGENT_ERROR when the response carries no initial thread', async () => {
+    stubBriefFlow({ threads: [] });
+
+    const err = await runAgent({
+      ...BASE,
+      message: 'go',
+      contextType: 'brief',
+      source: 'analysis',
+    }).catch((e) => e);
+
+    expect(err).toBeInstanceOf(AgentError);
+    expect((err as AgentError).code).toBe('AGENT_ERROR');
+  });
+
   it('omits briefPath for attach-mode (existing brief, no mint)', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => {
-        if (url.endsWith('/config')) {
-          return { status: 200, ok: true, json: async () => VALID_CONFIG };
-        }
-        if (url.endsWith('/threads')) {
-          return { status: 201, ok: true, json: async () => ({ data: { threadId: 'T1' } }) };
-        }
-        return { status: 200, ok: true, json: async () => ({ threadId: 'T1', answer: 'done' }) };
-      }),
-    );
+    const { calls } = stubBriefFlow();
 
     const result = await runAgent({
       ...BASE,
@@ -258,6 +429,26 @@ describe('runAgent — brief create-mode', () => {
     });
 
     expect(result.briefPath).toBeUndefined();
+    /**
+     * Pelny URL, nie `endsWith('/threads')`: watki briefu przeniosly sie do
+     * generycznej rodziny M36, a `runAgent` przez dwa wydania walil w martwe
+     * `/briefs/<path>/threads` — luzny matcher tego nie zlapal.
+     */
+    const create = calls.find((c) => c.url.endsWith('/threads'));
+    expect(create?.url).toMatch(/\/artifacts\/brief\/existing-brief\.md\/threads$/);
+  });
+
+  it('refuses a traversing briefPath before any thread call', async () => {
+    stubBriefFlow();
+    const err = await runAgent({
+      ...BASE,
+      message: 'hi',
+      contextType: 'brief',
+      briefPath: '../outside.md',
+    }).catch((e) => e);
+
+    expect(err).toBeInstanceOf(AgentError);
+    expect((err as AgentError).code).toBe('INVALID_ARGS');
   });
 });
 
