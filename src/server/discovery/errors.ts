@@ -70,8 +70,8 @@ export function sectionNotFound(anchor: string, alternatives: readonly string[])
     'SECTION_NOT_FOUND',
     `no section with anchor '${anchor}'`,
     alternatives.length
-      ? `nearby anchors: ${sample(alternatives)}. Use search_pages to find a section by text, then list_sections({ by: "anchor" }).`
-      : 'Use search_pages to find a section by text, then list_sections({ by: "anchor" }).',
+      ? `nearby anchors: ${sample(alternatives)}. Use search_pages to find a section by text — a hit carries the anchor.`
+      : 'Use search_pages to find a section by text — a hit carries the anchor.',
   );
 }
 

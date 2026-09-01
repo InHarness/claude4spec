@@ -39,7 +39,7 @@ import { __resetDelegateTargets } from '../delegate.js';
 import { runGetPage } from './get-page.js';
 import { runGetSections } from './get-sections.js';
 import { runListPages } from './list-pages.js';
-import { runListSections } from './list-sections.js';
+import { runGetPageOutline } from './get-page-outline.js';
 import { runSearchPages } from './search-pages.js';
 import { runSearchEntities } from './search-entities.js';
 import { runResolveIdentity } from './resolve-identity.js';
@@ -202,9 +202,11 @@ describe('discovery commands on the CLI', () => {
 
       seen = [];
       stdout = '';
-      reply = { items: [], total: 0, hasMore: false, is_known: true };
-      await runListSections(args('list-sections', '--by', 'anchor', '--anchor', 'aaaaaa11'));
-      expect(called()).toBe('/sections/list?by=anchor&anchor=aaaaaa11');
+      reply = { rootId: 'pages', path: 'budget.md', hash: 'h', sections: [] };
+      await runGetPageOutline(args('get-page-outline', '--root-id', 'pages', '--path', 'budget.md'));
+      // The PAGE family, not `/sections`: an outline is keyed by (rootId, path), and
+      // the two section routes key nothing (a flat global list) and an anchor.
+      expect(called()).toBe('/pages/pages/outline?path=budget.md');
 
       seen = [];
       stdout = '';
@@ -470,7 +472,7 @@ describe('discovery commands on the CLI', () => {
         code: 'INVALID_ARGS',
       });
       await expect(
-        runListSections(args('list-sections', '--by', 'page', '--path', 'budget.md')),
+        runGetPageOutline(args('get-page-outline', '--path', 'budget.md')),
       ).rejects.toMatchObject({ code: 'INVALID_ARGS' });
       expect(seen).toEqual([]);
     });
@@ -483,19 +485,24 @@ describe('discovery commands on the CLI', () => {
       await expect(
         runGetSections(args('get-sections', '--anchors', 'aaaaaa11', '--root-id', 'pages')),
       ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
-      await expect(
-        runListSections(args('list-sections', '--by', 'anchor', '--anchor', 'aaaaaa11', '--root-id', 'pages')),
-      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
       expect(seen).toEqual([]);
     });
 
-    it('list-sections requires the --by discriminator, and there is no query mode', async () => {
-      await expect(runListSections(args('list-sections', '--anchor', 'aaaaaa11'))).rejects.toMatchObject({
+    /**
+     * 0.2.59 — the outline takes the page key and NOTHING else.
+     *
+     * Asserted as refusals rather than left to the schema, because every one of
+     * these flags WORKED on the command this replaced: a caller reaching for the
+     * old shape has to fail loudly, not have `--by`/`--limit` silently ignored and
+     * come away believing the answer was narrowed when it never was. `--path` is
+     * required for the same reason `--root-id` is: half a key is not a key.
+     */
+    it('get-page-outline takes the page key alone — no --by, no --anchor, no window', async () => {
+      await expect(runGetPageOutline(args('get-page-outline', '--root-id', 'pages'))).rejects.toMatchObject({
         code: 'INVALID_ARGS',
       });
-      await expect(runListSections(args('list-sections', '--by', 'query', '--query', 'x'))).rejects.toMatchObject({
-        code: 'INVALID_ARGS',
-      });
+      // None of these reach the server: the missing half of the key is caught first.
+      expect(seen).toEqual([]);
     });
 
     it('search-pages takes --query XOR --regex', async () => {

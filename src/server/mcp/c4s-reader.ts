@@ -4,18 +4,18 @@ import { toolError } from '../operations/envelope.js';
 import type Database from 'better-sqlite3';
 import type { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import { isDiscoveryError, MAX_ANCHORS_PER_CALL, type DiscoveryCore } from '../discovery/index.js';
-import { GET_PAGE_RETURN, LIST_SECTIONS_RETURN } from './tool-contract-text.js';
+import { GET_PAGE_OUTLINE_RETURN, GET_PAGE_RETURN } from './tool-contract-text.js';
 
 /**
  * `c4s-reader` — the external stdio transport over the M39 discovery core.
  *
- * Fourteen tools, named 1:1 with the core operations, and nothing else. This
+ * Fifteen tools, named 1:1 with the core operations, and nothing else. This
  * file maps the MCP protocol onto the core and core error codes onto
  * `tool_result`; it does not decide what pagination means, which types exist,
  * how an entity is serialized, or what an error should suggest next.
  *
  * 0.2.3 replaced the previous nine tools, and the new set is not a superset of
- * the old one. The old set reached only six of the fourteen operations, and did
+ * the old one. The old set reached only six of the core operations, and did
  * so through a hardcoded four-value type enum, so a plugin-contributed type was
  * unreachable from here even when the core could answer for it. Five names went
  * away because the operation they fronted was renamed or absorbed —
@@ -53,7 +53,7 @@ export const C4S_READER_TOOL_NAMES = [
   'overview',
   'describe_types',
   'list_pages',
-  'list_sections',
+  'get_page_outline',
   'get_sections',
   'get_page',
   'search_pages',
@@ -171,7 +171,7 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
     );
 
   /**
-   * One handler shape for all fourteen: guard the project, call the operation,
+   * One handler shape for all fifteen: guard the project, call the operation,
    * return what it returned. A tool that reshapes the result is a tool that has
    * started to own behaviour.
    */
@@ -231,30 +231,21 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
       }),
   );
 
-  const listSections = op(
-    'list_sections',
-    'List sections, either of one page — { by: "page", rootId, path } — or the single section an anchor names — { by: "anchor", anchor }, which also reports `is_known` for an anchor that does not exist. An unknown anchor is NOT an error: it answers 200 with an empty list and `is_known: false`, which is what makes this the way to VALIDATE an anchor before citing it. Every row carries its `size`, so the volume of a section is knowable BEFORE fetching it. There is no fuzzy heading search here: to find a section by text, call search_pages and then list_sections({ by: "anchor" }) on the hit. Calling without `by` returns INVALID_ARGUMENT listing both variants. ' + LIST_SECTIONS_RETURN,
+  const getPageOutline = op(
+    'get_page_outline',
+    "One page's headings as a TREE in document order — a table of contents, and the cheap step between locating a page and paying for any of its text. Takes the page key and NOTHING else: no `by` discriminator, no anchor variant, no fuzzy heading search (a heading substring is not an identity — to find a section by text, call search_pages, whose hit ALREADY carries the anchor), no limit/offset, no depth cap. Every node carries its section's anchor and the `size` of its body, so you can measure a page and pick exactly the anchors worth fetching with get_sections before spending anything on prose. It emits no content. It refuses as a WHOLE, not per item, because it is keyed by ONE page: an unknown path on a known root is PAGE_NOT_FOUND, and a root with no section index is refused with a pointer at get_page. " +
+      GET_PAGE_OUTLINE_RETURN,
     {
-      by: z.enum(['page', 'anchor']).optional().describe('Identity regime; required'),
-      rootId: z.string().optional().describe('With by:"page" — which root'),
-      path: z.string().optional().describe('With by:"page" — page path relative to the root'),
-      anchor: z.string().optional().describe('With by:"anchor" — 6-12 lowercase alphanumerics'),
-      ...pageShape,
+      rootId: z.string().describe('Which page root. Required — the same relative path can exist in several roots.'),
+      path: z.string().describe('Page path relative to the root.'),
     },
     (discovery, args) =>
-      discovery.listSections({
-        by: args.by,
-        rootId: optionalString(args.rootId),
-        path: optionalString(args.path),
-        anchor: optionalString(args.anchor),
-        limit: optionalNumber(args.limit),
-        offset: optionalNumber(args.offset),
-      } as Parameters<DiscoveryCore['listSections']>[0]),
+      discovery.getPageOutline({ rootId: String(args.rootId), path: String(args.path) }),
   );
 
   const getSections = op(
     'get_sections',
-    `Read sections BY ANCHOR — pass every anchor you need in ONE call; one anchor is simply a list of one. Search hits, a reference sweep and a section listing all hand you a LIST of anchors, and fetching them one per call is the cost this operation exists to remove. Each comes back as its own item in \`results\`, in the order asked for (duplicates silently collapsed), carrying the heading, the coordinates and the body as authored — XML tags left untouched, because a tag is an edge and expanding it would paste the payload in and destroy the edge. The item is \`{ anchor, rootId, page_path, heading_text, heading_level, line_start, line_end, body, truncated?, edges? }\`. \`edges\` accompanies an item IF AND ONLY IF it carries \`truncated: true\`: a full body already contains its own edges as authored tags and links, so parsing them out a second time would spend the budget on a copy. When they are there, they are the parsed outgoing edges of the WHOLE section — \`edges.sectionRefs: [{ anchor }]\`, \`edges.entityEmbeds: [{ tagType, type, slug?, slugs?, tags?, filter? }]\`, \`edges.pageLinks: [{ rootId, path, anchor? }]\` — identifiers only, in order of occurrence, so a truncated item still reports everything its section points at; to follow an embed, call get_entities with the slug it carries. There is no \`content_hash\`: the response carries the content itself, so there is nothing left for a version of it to settle. An anchor that is not addressable comes back as \`{ anchor, error, code: "SECTION_NOT_FOUND" }\` in its own slot rather than failing the batch, and that happens two ways with two different remedies: the anchor is unknown (the message points at search_pages / list_sections), or it resolves onto a root that carries no section index (the message points at get_page). \`anchors\` has a hard length limit of ${MAX_ANCHORS_PER_CALL} (exceeding it, or passing none, is INVALID_ARGUMENT stating the limit) and the response has a size budget: past it, items keep their coordinates, GAIN \`edges\` and lose \`body\`, and are marked \`truncated: true\` — never dropped in silence, and the envelope's \`message\` says how to retry. The remedy is not the same batch again: pick the anchors actually needed out of the \`edges\` handed back and call again, narrower. The FIRST item never degrades that way: if its body alone exceeds the budget it comes back shortened as text with \`truncated: true\` AND with \`edges\` (its tail is invisible, so the edges are the only view of it), because a one-anchor call is already the smallest retry and "ask for fewer" would otherwise be unfollowable. \`includeSubtree\` adds the lower headings beneath each anchor; an anchor already covered by another one's subtree comes back as \`{ anchor, coveredBy }\` instead of repeating the body. An anchor names exactly ONE section. If a duplicate anchor slips into the pages anyway, the read is still deterministic rather than a coin flip on directory order: the occurrence with the lowest (rootId, page_path) owns the anchor, and within one page the first (lowest line) occurrence wins. \`check_consistency\` rule 13 reports the collision with every location so it gets fixed.`,
+    `Read sections BY ANCHOR — pass every anchor you need in ONE call; one anchor is simply a list of one. Search hits, a reference sweep and a page outline all hand you a LIST of anchors, and fetching them one per call is the cost this operation exists to remove. Each comes back as its own item in \`results\`, in the order asked for (duplicates silently collapsed), carrying the heading, the coordinates and the body as authored — XML tags left untouched, because a tag is an edge and expanding it would paste the payload in and destroy the edge. The item is \`{ anchor, rootId, page_path, heading_text, heading_level, line_start, line_end, body, truncated?, edges? }\`. \`edges\` accompanies an item IF AND ONLY IF it carries \`truncated: true\`: a full body already contains its own edges as authored tags and links, so parsing them out a second time would spend the budget on a copy. When they are there, they are the parsed outgoing edges of the WHOLE section — \`edges.sectionRefs: [{ anchor }]\`, \`edges.entityEmbeds: [{ tagType, type, slug?, slugs?, tags?, filter? }]\`, \`edges.pageLinks: [{ rootId, path, anchor? }]\` — identifiers only, in order of occurrence, so a truncated item still reports everything its section points at; to follow an embed, call get_entities with the slug it carries. There is no \`content_hash\`: the response carries the content itself, so there is nothing left for a version of it to settle. An anchor that is not addressable comes back as \`{ anchor, error, code: "SECTION_NOT_FOUND" }\` in its own slot rather than failing the batch, and that happens two ways with two different remedies: the anchor is unknown (the message points at search_pages / get_page_outline), or it resolves onto a root that carries no section index (the message points at get_page). \`anchors\` has a hard length limit of ${MAX_ANCHORS_PER_CALL} (exceeding it, or passing none, is INVALID_ARGUMENT stating the limit) and the response has a size budget: past it, items keep their coordinates, GAIN \`edges\` and lose \`body\`, and are marked \`truncated: true\` — never dropped in silence, and the envelope's \`message\` says how to retry. The remedy is not the same batch again: pick the anchors actually needed out of the \`edges\` handed back and call again, narrower. The FIRST item never degrades that way: if its body alone exceeds the budget it comes back shortened as text with \`truncated: true\` AND with \`edges\` (its tail is invisible, so the edges are the only view of it), because a one-anchor call is already the smallest retry and "ask for fewer" would otherwise be unfollowable. \`includeSubtree\` adds the lower headings beneath each anchor — it is an option for reading CONTENT, NOT a cheap listing of a subtree; for that, get_page_outline is the call, and the \`size\` it reports per node is exactly the granularity this operation yields WITHOUT \`includeSubtree\`. An anchor already covered by another one's subtree comes back as \`{ anchor, coveredBy }\` instead of repeating the body. An anchor names exactly ONE section. If a duplicate anchor slips into the pages anyway, the read is still deterministic rather than a coin flip on directory order: the occurrence with the lowest (rootId, page_path) owns the anchor, and within one page the first (lowest line) occurrence wins. \`check_consistency\` rule 13 reports the collision with every location so it gets fixed.`,
     {
       anchors: z
         .array(z.string())
@@ -270,7 +261,7 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
 
   const getPage = op(
     'get_page',
-    'Read one page as authored — XML tags untouched — addressed by the FULL key (rootId, path). A bare path is ambiguous across roots, so a call without `rootId` returns INVALID_ARGUMENT with the root list rather than guessing the built-in one. `range` is a line window and is allowed only on roots WITHOUT a section index; on an indexed root it is refused with a pointer to list_sections + get_sections, which is a better window in every way. Embeds are never expanded — fetch the entity by slug instead. ' + GET_PAGE_RETURN,
+    'Read one page as authored — XML tags untouched — addressed by the FULL key (rootId, path). A bare path is ambiguous across roots, so a call without `rootId` returns INVALID_ARGUMENT with the root list rather than guessing the built-in one. `range` is a line window and is allowed only on roots WITHOUT a section index; on an indexed root it is refused with a pointer to get_page_outline + get_sections, which is a better window in every way. Embeds are never expanded — fetch the entity by slug instead. ' + GET_PAGE_RETURN,
     {
       rootId: z.string().optional().describe('Which page root — required; see overview().roots'),
       path: z.string().optional().describe('Page path relative to the root'),
@@ -492,7 +483,7 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
       overview,
       describeTypes,
       listPages,
-      listSections,
+      getPageOutline,
       getSections,
       getPage,
       searchPages,

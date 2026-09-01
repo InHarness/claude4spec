@@ -57,12 +57,13 @@ A whole page is often more than you need. Pages are addressed by the full key
 `--root-id` is required and there is no silent fallback. Sections are addressed
 by `anchor` alone (globally unique), so section commands take no root.
 
-The normal path from "I have a phrase" to "I have the text":
+The normal path from "I have a phrase" to "I have the text" is TWO commands,
+not three — a search hit already carries the anchor, so there is nothing to look
+up in between:
 
 ```sh
-c4s search-pages --query "<phrase>" --project 'app-spec' --workspace 'default'          # hits carry an anchor (indexed root)
-c4s list-sections --by anchor --anchor <a> --project 'app-spec' --workspace 'default'   # subtree below that section, with per-section size
-c4s get-sections --anchors a,b,c --project 'app-spec' --workspace 'default'             # bodies of several sections in ONE call
+c4s search-pages --query "<phrase>" --project 'app-spec' --workspace 'default'   # hits carry an anchor (indexed root)
+c4s get-sections --anchors a,b,c --project 'app-spec' --workspace 'default'      # bodies of several sections in ONE call
 ```
 
 Fetch sections in **batches** — `get-sections` takes a comma-separated list and
@@ -70,10 +71,13 @@ returns `{ results: [...] }` in input order. An unknown anchor comes back as an
 error **inside its own item**, so one bad anchor does not lose the other
 sections. Asking anchor-by-anchor costs one command per section for no benefit.
 
-To list what a page contains before pulling it, use `--by page`:
+To see what a page contains before pulling any of it, ask for its outline. It
+comes back as a tree in document order — a table of contents — and every node
+carries the section's anchor, its heading, its level and the size of its own
+body, so you can pick exactly the anchors worth fetching:
 
 ```sh
-c4s list-sections --by page --root-id pages --path some/page.md --project 'app-spec' --workspace 'default'
+c4s get-page-outline --root-id pages --path some/page.md --project 'app-spec' --workspace 'default'
 c4s list-pages --root-id pages [--prefix modules/] --project 'app-spec' --workspace 'default'
 ```
 
@@ -87,7 +91,7 @@ The page comes back **as authored**, with XML tags left untouched — the tag is
 the edge to another entity, so expanding it would replace a link with a payload.
 Resolve the tags you care about with the commands above. `--range <from:to>` is
 only accepted on a non-section-indexed root; on an indexed one the command
-refuses and tells you to use `list-sections` + `get-sections` instead.
+refuses and tells you to use `get-page-outline` + `get-sections` instead.
 
 ## Discovery
 
@@ -119,7 +123,7 @@ transport over it. The mapping, when you need to read the operation's contract:
 | `c4s tagged_list` / `tagged_list_mixed` | `list_entities` (tag-filtered) |
 | `c4s get-entities` / `c4s list-entities` | `get_entities` / `list_entities` (the canonical surface the aliases above sit on) |
 | `c4s list-pages` / `c4s get-page` | `list_pages` / `get_page` |
-| `c4s list-sections` / `c4s get-sections` | `list_sections` / `get_sections` |
+| `c4s get-page-outline` / `c4s get-sections` | `get_page_outline` / `get_sections` |
 | `c4s search-pages` / `c4s search-entities` | `search_pages` / `search_entities` |
 | `c4s check-consistency` / `c4s resolve-identity` | `check_consistency` / `resolve_identity` |
 | `c4s find-references` | `find_references` |

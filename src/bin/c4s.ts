@@ -21,7 +21,7 @@ import { getEntitiesCommand } from './c4s/commands/get-entities.js';
 import { getFieldContentCommand } from './c4s/commands/get-field-content.js';
 import { listEntitiesCommand } from './c4s/commands/list-entities.js';
 import { listPagesCommand } from './c4s/commands/list-pages.js';
-import { listSectionsCommand } from './c4s/commands/list-sections.js';
+import { getPageOutlineCommand } from './c4s/commands/get-page-outline.js';
 import { getSectionsCommand } from './c4s/commands/get-sections.js';
 import { getPageCommand } from './c4s/commands/get-page.js';
 import { searchPagesCommand } from './c4s/commands/search-pages.js';
@@ -65,7 +65,7 @@ const COMMANDS: CliCommandContribution[] = [
   getFieldContentCommand,
   listEntitiesCommand,
   listPagesCommand,
-  listSectionsCommand,
+  getPageOutlineCommand,
   getSectionsCommand,
   getPageCommand,
   searchPagesCommand,
@@ -156,8 +156,9 @@ Discovery (through the server's operations — see "Server required" below):
 
 Pages and sections (a page is (rootId, path); an anchor is globally unique):
   list-pages --root-id <id> [--prefix <p>] [--sort path|modified]
-  list-sections --by page --root-id <id> --path <p>
-  list-sections --by anchor --anchor <a>       subtree below that section, with per-section size
+  get-page-outline --root-id <id> --path <p>
+                                    the page's headings as a TREE in document order — a table of
+                                    contents; each node carries its anchor, level and body size
   get-sections --anchors <a,b,c> [--include-subtree]
                                     bodies of several sections in ONE call; an unknown anchor
                                     errors inside its own item and the exit code stays 0
@@ -274,10 +275,14 @@ function codeToExit(code: string): number {
       return 2;
     case 'ENTITY_NOT_FOUND':
     // 0.2.6 — an anchor that names nothing is the same outcome for a script as a
-    // slug that names nothing. NOTE this is the CALL-level refusal only
-    // (`list-sections --by anchor`); in `get-sections` the same code arrives
-    // inside one item of a batch and the exit code stays 0, because the other
-    // sections in that call are real answers.
+    // slug that names nothing.
+    //
+    // 0.2.59 — and this row is now UNREACHABLE for sections. `SECTION_NOT_FOUND`
+    // had two emitters; the call-level one went with `list-sections --by anchor`,
+    // and the survivor is per-item inside a `get-sections` batch, where the exit
+    // code stays 0 because the other sections in that call are real answers. The
+    // case is kept because the code still exists in the catalog, not because a
+    // section command can still reach it.
     case 'SECTION_NOT_FOUND':
       return 3;
     case 'INVALID_TYPE':

@@ -200,7 +200,7 @@ describe('page-tools', () => {
     });
     expect(res.isError).toBe(true);
     expect(res.body.code).toBe('SECTION_NOT_FOUND');
-    expect(res.body.hint).toContain('list_sections');
+    expect(res.body.hint).toContain('get_page_outline');
   });
 
   it('update_page without expectedHash is INVALID_ARGUMENT — the guard is not optional', async () => {

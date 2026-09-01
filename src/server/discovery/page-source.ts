@@ -103,7 +103,7 @@ export class PageSource {
   /**
    * The body AND the hash of the raw file, from a single read.
    *
-   * `list_sections` needs both: the body to measure each section before anything is
+   * `get_page_outline` needs both: the body to measure each section before anything is
    * fetched, and the file's digest for the envelope's `hash` — the value a caller
    * copies straight into `expectedHash`. Two calls would read the same file twice
    * for a listing that exists precisely to be cheap.

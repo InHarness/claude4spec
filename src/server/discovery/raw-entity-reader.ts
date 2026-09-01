@@ -46,7 +46,8 @@ export interface RawSection {
   rootId: string;
   anchor: string;
   pagePath: string;
-  headingPath: string;
+  /** 0.2.59 — the enclosing section's anchor, or `null` at a page's root. Replaced `headingPath`. */
+  parentAnchor: string | null;
   headingSlug: string;
   headingText: string;
   headingLevel: number;
@@ -748,7 +749,7 @@ export class RawEntityReader {
       contentHash: row.content_hash as string,
       anchor: row.anchor as string,
       pagePath: row.page_path as string,
-      headingPath: row.heading_path as string,
+      parentAnchor: (row.parent_anchor as string | null) ?? null,
       headingSlug: row.heading_slug as string,
       headingText: row.heading_text as string,
       headingLevel: row.heading_level as number,

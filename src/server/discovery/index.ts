@@ -11,7 +11,7 @@
  * looking for a write tool finds none, by construction rather than by policy.
  *
  * Operations are grouped by subject rather than one file per operation —
- * `list_sections` and `get_sections` share the same row shape and the same root
+ * `get_page_outline` and `get_sections` share the same row shape and the same root
  * gate, and splitting them would mean exporting that shared machinery just to
  * re-import it next door.
  */
@@ -23,7 +23,7 @@ import { getFieldContent } from './ops/content.js';
 import { describeTypes, overview } from './ops/meta.js';
 import { getPage, listPages } from './ops/pages.js';
 import { findReferences } from './ops/references.js';
-import { getSections, listSections } from './ops/sections.js';
+import { getPageOutline, getSections } from './ops/sections.js';
 import { listTags } from './ops/tags.js';
 import { PageSource } from './page-source.js';
 import { RootSet } from './roots.js';
@@ -51,7 +51,7 @@ export function createDiscoveryCore(deps: DiscoveryDeps): DiscoveryCore {
     overview: () => overview(deps, pages, roots),
     describeTypes: (input) => describeTypes(deps, input),
     listPages: (input) => listPages(deps.db, pages, roots, input),
-    listSections: (input) => listSections(deps.db, pages, roots, input),
+    getPageOutline: (input) => getPageOutline(deps.db, pages, roots, input),
     getSections: (input) => getSections(deps.db, pages, roots, deps.reader, input),
     getPage: (input) => getPage(pages, roots, input),
     searchPages: (input) => searchPages(deps.db, pages, roots, input),

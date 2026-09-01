@@ -159,8 +159,9 @@ describe('discovery core over the real section indexer', () => {
   it('reports a section size that matches the body it will return', async () => {
     await index('fm2.md', ['---', 'title: X', '---', '', '# Top', '', '## Only', '', 'measured content', ''].join('\n'));
 
-    const listed = await core.listSections({ by: 'page', rootId: 'pages', path: 'fm2.md' });
-    const row = listed.items.find((s) => s.heading === 'Only');
+    const outline = await core.getPageOutline({ rootId: 'pages', path: 'fm2.md' });
+    // 'Only' nests under 'Top', so it is a CHILD in the tree, not a top-level row.
+    const row = outline.sections.flatMap((n) => [n, ...(n.children ?? [])]).find((s) => s.heading === 'Only');
     const fetched = sectionItem(await core.getSections({ anchors: [row!.anchor] }));
 
     // `size` exists so a caller can decide whether to fetch. A size that

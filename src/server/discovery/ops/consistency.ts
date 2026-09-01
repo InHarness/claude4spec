@@ -520,7 +520,7 @@ interface AnchorOccurrence {
  * Rule 13 — one anchor, two headings.
  *
  * An anchor is an identity: `get_sections({ anchors })`,
- * `list_sections({ by: "anchor" })` and `<section_ref anchor="…"/>` all assume it
+ * `get_page_outline` and `<section_ref anchor="…"/>` all assume it
  * names exactly one section. A duplicate makes every reference to it ambiguous.
  *
  * The evidence comes from the PAGE TEXT, not from `section_index`. It cannot come

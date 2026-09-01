@@ -13,15 +13,22 @@
  * framing. Only the CONTRACT is shared.
  */
 
-/** `list_sections` — the envelope's `hash`, and the absence of any per-section one. */
-export const LIST_SECTIONS_RETURN =
-  'The envelope carries `hash`: the sha256 of the WHOLE page file, the same value `get_page` returns and exactly ' +
-  'what `update_page` / `update_sections` want as `expectedHash` — so a sectional edit closes with list_sections ' +
-  '-> get_sections -> update_sections and never needs to fetch the page whole. It is present for { by: "page" } ' +
-  'and for a KNOWN anchor, whenever that page can be read. It is ABSENT when no page is named (`is_known: false`) ' +
-  'and when the named page does not exist or cannot be read — an empty listing may therefore carry no hash, so ' +
-  'check the field before passing it as `expectedHash`. Rows carry no ' +
-  'per-section hash: `content_hash` is normalized and would read as something you could write with, which it is not.';
+/** `get_page_outline` — the tree, the envelope's `hash`, and what a node does NOT carry. */
+export const GET_PAGE_OUTLINE_RETURN =
+  'The response is `{ rootId, path, hash, sections[], truncated?, message? }`. `sections` is a TREE in ' +
+  'DOCUMENT ORDER — the page as it is written — and a node is `{ anchor, heading, level, size }` plus ' +
+  '`children` ONLY when it has any: a leaf OMITS the key rather than sending `[]`. `size` is the byte ' +
+  "length of that section's body, the same granularity get_sections yields without `includeSubtree`, so it " +
+  'is the price tag for fetching it. `hash` is on the ENVELOPE, never on a node: it is the sha256 of the ' +
+  'WHOLE page file, the same value get_page returns and exactly what update_page / update_sections want as ' +
+  '`expectedHash` — so a sectional edit closes with get_page_outline -> get_sections -> update_sections and ' +
+  'never fetches the page whole. It is UNCONDITIONAL: this operation either resolves the page (and then the ' +
+  'hash is there) or it refuses. A node carries NO `content_hash` (that digest is normalized and would read ' +
+  'as something you could write with, which it is not) and NO `heading_path` (the hierarchy IS the position ' +
+  'in the tree). The envelope carries no `total`, `hasMore`, `limit` or `offset` — this is not a paginated ' +
+  'listing. Over budget, `truncated: true` and the tree comes back as a PREFIX that is complete in itself: ' +
+  'every node present has its parent present. There is no smaller retry and `message` does not offer one — ' +
+  'go on from the anchors you already have.';
 
 /** `get_page` — the full response shape, and WHEN the hash is taken. */
 export const GET_PAGE_RETURN =

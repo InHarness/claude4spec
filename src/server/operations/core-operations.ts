@@ -10,12 +10,16 @@
  * `DiscoveryCore` method, and none of them re-derives its behaviour. Where that
  * is checkable it is checked — see `catalog.test.ts`.
  *
- * ## M39 read core — 15 operations, full four-channel parity
+ * ## M39 read core — 15 operations, four-channel parity for fourteen
  *
- * All 15 are `project` scope, `direct` mediation, `direct` in all four channels,
- * ZERO `n/a` cells. Three of them (`check_consistency`, `search_entities`,
- * `resolve_identity`) had no `rest` rendering before 0.2.13; this release adds
- * it, which is what makes the parity claim true rather than aspirational.
+ * All 15 are `project` scope, `direct` mediation and `direct` internally. Three of
+ * them (`check_consistency`, `search_entities`, `resolve_identity`) had no `rest`
+ * rendering before 0.2.13; adding it is what made the parity claim true rather than
+ * aspirational.
+ *
+ * 0.2.59 leaves exactly ONE `n/a` cell in the set: `get_page_outline` has no `rest`
+ * rendering, and that is a decision with a recorded reason (see its declaration),
+ * not a gap awaiting a route.
  *
  * The `cli` cells say `direct` because M11 renders the whole catalog as CLI
  * commands. Parity there is OPERATIONAL, not nominal: five XML-tag reader
@@ -146,12 +150,54 @@ export function registerCoreOperations(): void {
     }, ['ROOT_NOT_FOUND']),
   );
 
-  CATALOG.register(
-    coreRead('list_sections', 'Section index over page content, optionally narrowed to one page.', {
-      pagePath: z.string().optional(),
-      ...paging,
-    }),
-  );
+  /**
+   * 0.2.59 — `get_page_outline` replaces `list_sections`, and it is the one M39 read
+   * that does NOT declare four-channel parity.
+   *
+   * Declared through the object literal rather than `coreRead`, because `coreRead`
+   * hard-codes `fullParity()` and this operation's `rest` cell is `n/a` with a
+   * recorded reason. The reason is semantic, not a backlog item: `GET /api/sections`
+   * is NOT a rendering of this operation — without `pagePath` it answers a flat
+   * global list across every page, feeding the editor's fuzzy autocomplete, and the
+   * outline has no such mode and will not get one, being keyed by ONE page. That
+   * route stays M06's own semantics rather than becoming a transport over the core.
+   */
+  CATALOG.register({
+    name: 'get_page_outline',
+    summary:
+      "One page's headings as a TREE in document order — a table of contents. Keyed by (rootId, path) alone: no `by` discriminator, no anchor variant, no fuzzy `query`, no limit/offset, no depth cap. Each node carries `anchor`, `heading`, `level` and the `size` of its body, with `children` present only when it has any; the envelope carries the file `hash` that `update_sections` takes as `expectedHash`. It emits no content — bodies come from `get_sections`.",
+    scope: 'project',
+    mediation: 'direct',
+    opClass: 'read',
+    inputSchema: {
+      rootId: z.string(),
+      path: z.string(),
+    },
+    /**
+     * No `...paging`, and that absence is the declaration.
+     *
+     * This is the THIRD category of exemption from the rule that every operation
+     * returning a list paginates, beside "bounded by construction" (`overview`,
+     * `describe_types`, whose valve is a projection) and "fetch by key"
+     * (`get_entities`, `get_sections`, whose valve is an input-length cap plus the
+     * budget). A response keyed by ONE resource has the budget and nothing else:
+     * there is no narrowing parameter to offer, because a window into a tree yields
+     * nodes whose parents are absent. Which category an operation falls into has to
+     * be decidable from its declaration alone, without reading the implementation —
+     * so it is decidable from right here.
+     */
+    errorCodes: [...READ_CODES, 'PAGE_NOT_FOUND', 'ROOT_NOT_FOUND'],
+    sideEffects: ['none'],
+    idempotent: true,
+    channels: {
+      internal: direct(),
+      cli: direct(),
+      mcp: direct(),
+      rest: na(
+        '`GET /api/sections` is NOT a rendering of this operation: without `pagePath` it returns a flat global list across every page, feeding the editor fuzzy-autocomplete (`/section`, `<SectionRefChip />`) — a mode the outline does not have and will not get, being keyed by ONE page. The route stays M06 semantics, not a transport over the core.',
+      ),
+    },
+  });
 
   CATALOG.register(
     coreRead('get_sections', 'Content of several sections addressed by anchor, in ONE call. The singular `get_section` was removed without a transition period: N sections cost N model turns, which was not acceptable.', {

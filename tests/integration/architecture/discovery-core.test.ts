@@ -155,7 +155,7 @@ describe('M39 — Discovery Core', () => {
     const toolNames = (file: string): string[] =>
       Array.from(fs.readFileSync(file, 'utf-8').matchAll(/\b(?:mcpTool|op)\(\s*\n?\s*'([a-z_]+)'/g)).map((m) => m[1]!);
 
-    it('c4s-reader exposes exactly the fourteen core operations, by their own names', () => {
+    it('c4s-reader exposes exactly the fifteen core operations, by their own names', () => {
       // Read from the handler declarations, not from the exported name list —
       // otherwise the test would only prove the list agrees with itself.
       const declared = Array.from(readerSource().matchAll(/\bop\(\s*\n?\s*'([a-z_]+)'/g)).map((m) => m[1]!);
@@ -163,7 +163,7 @@ describe('M39 — Discovery Core', () => {
         'overview',
         'describe_types',
         'list_pages',
-        'list_sections',
+        'get_page_outline',
         'get_sections',
         'get_page',
         'search_pages',
@@ -240,11 +240,33 @@ describe('M39 — Discovery Core', () => {
         expect(decl, `'${byKey}' is fetch-by-key and must not paginate`).not.toMatch(/pageShape|\blimit:|\boffset:/);
       }
 
+      /**
+       * 0.2.59 — the THIRD exemption category: a response keyed by ONE resource.
+       *
+       * It is not "bounded by construction" (`overview`, `describe_types`, whose
+       * valve is a projection) and it is not "fetch by key" (above, whose valve is
+       * an input-length cap plus the budget). `get_page_outline` names one page and
+       * gets back its whole tree, and its valve is the BUDGET ALONE — there is no
+       * narrowing parameter at all, because a window into a tree returns nodes whose
+       * parents are missing, which is not a tree.
+       *
+       * Asserted here rather than left as prose because the whole point of the
+       * taxonomy is that an operation's category is decidable from its DECLARATION,
+       * without reading the implementation. Adding `limit`/`offset` back would give
+       * this tool two disagreeing valves and go unnoticed.
+       */
+      for (const byResource of ['get_page_outline']) {
+        const decl = declaration(byResource);
+        expect(
+          decl,
+          `'${byResource}' is keyed by one resource — the budget is its only valve, so it takes no window`,
+        ).not.toMatch(/pageShape|\blimit:|\boffset:/);
+      }
+
       // The counterpart: a tool that returns a COLLECTION the caller did not
       // enumerate has to be bounded, or one call can return the whole project.
       for (const listing of [
         'list_pages',
-        'list_sections',
         'search_pages',
         'search_entities',
         'list_entities',
@@ -273,7 +295,7 @@ describe('M39 — Discovery Core', () => {
         path.join(SRC, 'server/mcp/reference-tools.ts'),
         path.join(SRC, 'server/mcp/entity-tools.ts'),
       ].flatMap(toolNames);
-      for (const parity of ['list_pages', 'search_pages', 'get_page', 'get_sections', 'list_sections']) {
+      for (const parity of ['list_pages', 'search_pages', 'get_page', 'get_sections', 'get_page_outline']) {
         expect(inProcess, `no in-process tool named '${parity}'`).toContain(parity);
       }
     });
@@ -318,7 +340,7 @@ describe('M39 — Discovery Core', () => {
 
     it('the chat agent is TOLD about every read tool it is given', () => {
       /**
-       * `list_sections` shipped registered but unadvertised for a release: the
+       * The section listing shipped registered but unadvertised for a release: the
        * only reader that decides what to call never saw it. An unlisted tool is
        * an unused tool, so the advertisement is part of the surface.
        *
@@ -340,7 +362,7 @@ describe('M39 — Discovery Core', () => {
 
       // And the registered set is still reachable, so the derivation has something
       // to read: reference-tools declares every tool this suite knows about.
-      expect(toolNames(path.join(SRC, 'server/mcp/reference-tools.ts'))).toContain('list_sections');
+      expect(toolNames(path.join(SRC, 'server/mcp/reference-tools.ts'))).toContain('get_page_outline');
     });
   });
 
@@ -438,7 +460,7 @@ describe('M39 — Discovery Core', () => {
       ['overview', 'catalog'],
       ['describe_types', 'describe'],
       ['list_pages', 'list-pages'],
-      ['list_sections', 'list-sections'],
+      ['get_page_outline', 'get-page-outline'],
       ['get_sections', 'get-sections'],
       ['get_page', 'get-page'],
       ['search_pages', 'search-pages'],
@@ -496,7 +518,7 @@ describe('M39 — Discovery Core', () => {
       'overview',
       'describeTypes',
       'listPages',
-      'listSections',
+      'getPageOutline',
       'getSections',
       'getPage',
       'searchPages',

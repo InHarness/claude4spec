@@ -112,7 +112,7 @@ export function createPageToolsServer(deps: PageToolsDeps): CapturedMcpServer {
     .string()
     .describe(
       'REQUIRED. sha256 of the full file as you last read it. THREE calls hand it to you: `get_page`, the ' +
-        '`list_sections` envelope, and a previous write — so on a large page take it from list_sections and skip ' +
+        '`get_page_outline` envelope, and a previous write — so on a large page take it from get_page_outline and skip ' +
         'the whole-page read entirely. Missing → INVALID_ARGUMENT; mismatch → PAGE_CONFLICT carrying the current hash.',
     );
 
@@ -278,7 +278,7 @@ export function createPageToolsServer(deps: PageToolsDeps): CapturedMcpServer {
       edits: z
         .array(
           z.object({
-            anchor: z.string().describe('The section anchor, from get_sections / list_sections.'),
+            anchor: z.string().describe('The section anchor, from get_sections / get_page_outline.'),
             action: z.enum(['replace', 'append', 'insert_after', 'delete', 'edit']),
             content: z
               .string()

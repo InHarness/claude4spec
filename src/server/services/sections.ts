@@ -37,7 +37,7 @@ const SECTION_BODY_READ_CHARS = SECTION_CONTENT_SNIPPET_CHARS * 4;
  * it enters only as the `substr` above, under the alias `body_head`, so that no
  * later `SELECT *` can quietly put the whole column back on the read path.
  */
-const SECTION_COLUMNS = `id, anchor, rootId, page_path, heading_path, heading_slug, heading_level,
+const SECTION_COLUMNS = `id, anchor, rootId, page_path, heading_slug, heading_level,
        heading_text, content_hash, substr(body, 1, ${SECTION_BODY_READ_CHARS}) AS body_head,
        line_start, line_end, paragraph_count, created_at, updated_at`;
 
@@ -67,7 +67,6 @@ interface SectionRow {
   anchor: string;
   rootId: string;
   page_path: string;
-  heading_path: string;
   heading_slug: string;
   heading_level: number;
   heading_text: string;
@@ -140,9 +139,16 @@ export class SectionsService {
       params.push(query.pagePath);
     }
     if (query.search) {
-      where.push('(heading_text LIKE ? OR heading_path LIKE ?)');
-      const like = `%${query.search}%`;
-      params.push(like, like);
+      /**
+       * 0.2.59 — `heading_text` alone. The second half of this filter was
+       * `heading_path LIKE ?`, and that column is gone: it encoded the ancestor
+       * chain slash-joined into one TEXT field, which `get_page_outline`'s tree
+       * replaced. Nothing regressed for the editor either way — the `/section`
+       * autocomplete loads this listing whole and fuzzy-matches CLIENT-side over
+       * the heading and the page path, so this parameter has no caller today.
+       */
+      where.push('heading_text LIKE ?');
+      params.push(`%${query.search}%`);
     }
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
     const limit = Math.min(Math.max(query.limit ?? 500, 1), 2000);
@@ -218,7 +224,6 @@ export class SectionsService {
       anchor: row.anchor,
       rootId: row.rootId,
       pagePath: row.page_path,
-      headingPath: row.heading_path,
       headingSlug: row.heading_slug,
       headingLevel: row.heading_level,
       headingText: row.heading_text,

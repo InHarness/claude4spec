@@ -502,7 +502,7 @@ describe('update_sections over a real section index', () => {
     await index('doc.md', page);
     const err = await replaceOne('deadbeef', 'x').catch((e) => e);
     expect(err.code).toBe('SECTION_NOT_FOUND');
-    expect(err.hint).toContain('list_sections');
+    expect(err.hint).toContain('get_page_outline');
   });
 
   it('honours expectedHash against the PAGE, because a section has no version of its own', async () => {
@@ -642,7 +642,7 @@ describe('update_sections over a real section index', () => {
         'agent',
       ).catch((e) => e);
       expect(err.code).toBe('SECTION_NOT_FOUND');
-      expect(err.hint).toContain('list_sections');
+      expect(err.hint).toContain('get_page_outline');
     }
   });
 });
@@ -1142,17 +1142,17 @@ describe('update_sections — the anchor-loss guard', () => {
    * 0.2.56, the headline of the release: an over-budget page is EDITABLE without
    * ever being fetched whole.
    *
-   * The chain is `list_sections` -> `get_sections` -> `update_sections`, and the
+   * The chain is `get_page_outline` -> `get_sections` -> `update_sections`, and the
    * link that used to be missing is the guard's value: `expectedHash` was only
    * obtainable from `get_page`, so the one page too big to return in full was also
    * the one page you had to return in full before you could touch it. The envelope's
-   * `hash` closes it — this test arms the write from the LISTING and nothing else.
+   * `hash` closes it — this test arms the write from the OUTLINE and nothing else.
    *
    * `get_page` is stubbed to throw rather than merely left uncalled: an assertion
    * that a call did not happen passes just as well when the code path quietly
    * changed underneath it.
    */
-  it('edits a page armed only by the list_sections hash — no get_page anywhere in the chain', async () => {
+  it('edits a page armed only by the get_page_outline hash — no get_page anywhere in the chain', async () => {
     await index('doc.md', nested);
     const noWholePageReads = {
       ...core,
@@ -1161,15 +1161,17 @@ describe('update_sections — the anchor-loss guard', () => {
       },
     } as unknown as DiscoveryCore;
 
-    const listed = await noWholePageReads.listSections({ by: 'page', rootId: 'pages', path: 'doc.md' });
-    const parent = listed.items.find((i) => i.heading === 'Parent')!;
+    const outline = await noWholePageReads.getPageOutline({ rootId: 'pages', path: 'doc.md' });
+    const flat = (nodes: typeof outline.sections): typeof outline.sections =>
+      nodes.flatMap((n) => [n, ...flat(n.children ?? [])]);
+    const parent = flat(outline.sections).find((i) => i.heading === 'Parent')!;
     const read = await noWholePageReads.getSections({ anchors: [parent.anchor] });
     expect(read.results[0]).toMatchObject({ anchor: parent.anchor });
 
     const res = await updateSections(
       deps(),
       {
-        expectedHash: listed.hash!,
+        expectedHash: outline.hash,
         edits: [{ anchor: parent.anchor, action: 'replace', content: 'REWRITTEN PREAMBLE\n' }],
         dropAnchors: [anchorOf('Child one'), anchorOf('Child two')],
       },

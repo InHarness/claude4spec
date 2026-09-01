@@ -72,7 +72,7 @@ export async function hydrateSection(
   return { ...section, body, edges: parseEdges(db, section, body) };
 }
 
-/** Byte size of a section's body — what `list_sections` reports so a caller can measure before fetching. */
+/** Byte size of a section's body — what `get_page_outline` reports so a caller can measure before fetching. */
 export function bodySize(pageContent: string, section: RawSection): number {
   return Buffer.byteLength(sliceBody(pageContent, section), 'utf8');
 }

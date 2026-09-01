@@ -13,7 +13,7 @@
  * The one substantive difference from `get_page`'s window: there is NO
  * `sectionIndexed` gate here, and there cannot be one. On pages the core has two
  * ways to resume a read, chosen by the root: an indexed root resumes through
- * `list_sections` + `get_sections`, a non-indexed one through `range`. Artifacts
+ * `get_page_outline` + `get_sections`, a non-indexed one through `range`. Artifacts
  * NEVER enter `section_index` (every `artifactRegistry` entry is
  * `sectionIndexed: false`), so only `range` exists — which makes `range`
  * unconditionally allowed and `truncationHint` unconditionally point at it,

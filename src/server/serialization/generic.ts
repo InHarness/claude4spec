@@ -184,7 +184,6 @@ export function genericSection(section: RawSection): Record<string, unknown> {
     type: 'section',
     anchor: section.anchor,
     pagePath: section.pagePath,
-    headingPath: section.headingPath,
     headingText: section.headingText,
     headingLevel: section.headingLevel,
     lineStart: section.lineStart,

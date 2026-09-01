@@ -18,7 +18,7 @@ import { z } from 'zod';
  *
  * These use a stub plugin host rather than the full harness: the claims under
  * test are about which SERVERS a profile contributes and how their tools merge,
- * and a real host would drown that in the fourteen reads.
+ * and a real host would drown that in the fifteen reads.
  */
 function stubDeps(overrides: Partial<ExternalSurfaceDeps> = {}): ExternalSurfaceDeps {
   const servers: Array<{ name: string; server: McpServerFactory }> = [];
@@ -30,7 +30,7 @@ function stubDeps(overrides: Partial<ExternalSurfaceDeps> = {}): ExternalSurface
     profile: 'chat',
     // `createC4sReaderServer` tolerates a null project — every tool then answers
     // PROJECT_NOT_FOUND — which is exactly the degenerate case wanted here: the
-    // fourteen names are declared, no db is touched.
+    // fifteen names are declared, no db is touched.
     reader: { reader: null, discovery: null, db: null, projectDir: null, packageVersion: '0.0.0' },
     pluginHost: host,
     planService: {} as ExternalSurfaceDeps['planService'],
@@ -64,19 +64,20 @@ describe('composeExternalSurface', () => {
     expect(EXTERNAL_MCP_SERVER_NAME).toBe('c4s-reader');
   });
 
-  it('renders the fourteen M39 reads as the backbone', () => {
+  it('renders the fifteen M39 reads as the backbone', () => {
     const names = composeExternalSurface(stubDeps()).toolNames;
     for (const op of [
       'overview',
       'describe_types',
       'list_pages',
-      'list_sections',
+      'get_page_outline',
       'get_sections',
       'get_page',
       'search_pages',
       'search_entities',
       'list_entities',
       'get_entities',
+      'get_field_content',
       'list_tags',
       'find_references',
       'check_consistency',

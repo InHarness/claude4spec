@@ -222,8 +222,18 @@ CREATE TABLE section_index (
   rootId TEXT NOT NULL DEFAULT 'pages',
   anchor TEXT UNIQUE NOT NULL,
   page_path TEXT NOT NULL,
-  heading_path TEXT NOT NULL,
+  -- 0.2.59 (052): the enclosing section's anchor, NULL at a page's root. The ONLY
+  -- carrier of the parent-child relation in this flat table, and what
+  -- `get_page_outline` builds its tree from. It replaced `heading_path`, which
+  -- slash-joined the ancestor chain into one TEXT field -- a separator that was
+  -- also a legal content character, so a heading containing `/` split in two.
+  -- ON DELETE SET NULL: losing a parent promotes a section to a page-level root,
+  -- which is both truthful and what the next reindex writes anyway.
+  parent_anchor TEXT NULL REFERENCES section_index(anchor) ON DELETE SET NULL,
   heading_slug TEXT NOT NULL,
+  -- 0.2.59: 1-6, and NOT derivable from depth in the outline tree -- Markdown
+  -- allows level jumps (## -> ####), so depth != level and both are needed. That
+  -- is also why there is no `depth` column: it falls out of `parent_anchor`.
   heading_level INTEGER NOT NULL,
   heading_text TEXT NOT NULL,
   content_hash TEXT NOT NULL,

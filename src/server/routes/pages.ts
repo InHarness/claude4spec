@@ -232,6 +232,38 @@ export function pagesRouter(
   });
 
   /**
+   * 0.2.59 — the transport `c4s get-page-outline` delegates to.
+   *
+   * It lives in the PAGE family, not under `/sections`, and that is the operation's
+   * identity showing through: an outline is keyed by one page — `(rootId, path)` —
+   * so it belongs beside `/get` and `/list`, which key the same way. `/api/sections`
+   * keys nothing (it is a flat global listing feeding the editor's autocomplete) and
+   * `/api/sections/:anchor` keys an anchor; neither is the address of a page.
+   *
+   * The catalog declares this operation `rest: n/a`, and the two statements are in
+   * tension. The recorded reason for the cell is about `GET /api/sections` NOT being
+   * a rendering of the outline — which is true, and says nothing about whether some
+   * other route may be. Meanwhile L3 makes the CLI a REST client and M11 makes every
+   * catalog command server-delegating, so the command cannot reach the core without a
+   * route. The specification carries no sentence reconciling those, so the gap is
+   * filed as a patch; this route is the reading that leaves the CLI working.
+   *
+   * `path` is a QUERY parameter for the same reason `/get`'s is: a page path contains
+   * slashes and would otherwise be shadowed by, or shadow, a static segment.
+   */
+  router.get('/outline', async (req, res, next) => {
+    try {
+      const rt = resolve(req, res);
+      if (!rt) return;
+      const pagePath = typeof req.query.path === 'string' ? req.query.path : '';
+      if (!pagePath) throw new DomainError('VALIDATION', 'path query param required');
+      res.json(await discovery.getPageOutline({ rootId: rt.root.id, path: pagePath }));
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
    * Text search over page content (query param `q`) — a FILE SCAN, not an index.
    *
    * There is no full-text index of page content anywhere in this system: no FTS

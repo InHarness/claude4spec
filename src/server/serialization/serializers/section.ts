@@ -31,7 +31,6 @@ const coordinates = (section: RawSection) => ({
   anchor: section.anchor,
   rootId: section.rootId,
   pagePath: section.pagePath,
-  headingPath: section.headingPath,
   headingText: section.headingText,
   headingLevel: section.headingLevel,
   href: `/${section.pagePath}#${section.anchor}`,
