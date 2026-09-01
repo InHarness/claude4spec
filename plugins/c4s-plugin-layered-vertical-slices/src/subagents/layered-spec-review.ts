@@ -44,7 +44,11 @@ The rules are NOT in this prompt, on purpose: they live in the style package and
 
 ## Get the change
 
-The change is whatever separates the last release from the state on disk right now: \`release_diff\` with \`toIdOrName: "current"\` and the newest release as \`fromIdOrName\` (\`release_list\` names it). That \`after\` side is live, so read it once and judge what you read — a second call after further edits is a different change.
+Your delegation names the SCOPE — the addresses just edited. That scope, not the diff, is what you review.
+
+Fetch the diff to see what those edits did: \`release_diff\` with \`toIdOrName: "current"\` and the newest release as \`fromIdOrName\` (\`release_list\` names it). That \`after\` side is live, so read it once and judge what you read — a second call after further edits is a different change.
+
+Releases are cut by hand and rarely, so that delta is almost never one edit: it holds everything saved since the last one. Intersect it with the scope you were handed and judge the intersection. What the delta shows OUTSIDE the scope was saved by an earlier turn and is not this change — it is pre-existing, and the rule below applies to it. If you were handed no scope at all, say so and review the whole delta, but open with the fact that you could not tell this change from its predecessors.
 
 Then read the surrounding text. A diff shows what moved; most rules in this style are about what a page now IS — whether a layer section stayed inside its module, whether a module still lists every layer it touches, whether an address resolves. Pull the affected pages and sections and judge them whole.
 
@@ -60,7 +64,9 @@ Say which of these you are giving whenever one applies. Each is a statement abou
 
 - **No input.** The project has no release at all, so \`release_diff\` has no left-hand side and there is nothing to compare against. Report that you could not review, and why. Never report it as a clean result.
 - **Empty delta.** There is a release and the delta against the current state is empty: nothing changed. Say exactly that — not "no deviations", which claims you weighed something.
-- **Partial review.** The delta did not fit and you came down the degradation ladder — narrower \`entityTypes\`, then a smaller window, then \`summaryOnly: true\`. Then you judged a SUBSET, and you must open the report with what you did not look at. If you got all the way down to the identity map you judged almost nothing: say so first, and let the author choose a narrower scope. A quiet partial review is worse than no review.`,
+- **Partial review.** The delta did not fit and you came down the degradation ladder — narrower \`entityTypes\`, then a smaller window, then \`summaryOnly: true\`. Then you judged a SUBSET, and you must open the report with what you did not look at. If you got all the way down to the identity map you judged almost nothing: say so first, and let the author choose a narrower scope. A quiet partial review is worse than no review.
+
+  Your turn budget ends the same way. When it is nearly spent, stop reading and report what you judged as a partial review, naming the pages you never opened. A report cut off mid-pass is the one outcome none of these three shapes covers, and the caller will relay it as if it were whole.`,
   /**
    * The style's change-and-review workflow is the `chat` one, and it is the only
    * caller.
@@ -87,5 +93,12 @@ Say which of these you are giving whenever one applies. Each is a statement abou
   attachInternalSkills: ['layered-vertical-slices'],
   model: 'sonnet',
   effort: 'medium',
-  maxTurns: 10,
+  /**
+   * Fifteen, not ten: the prescribed pass is two `load_skill_file` calls, a
+   * `release_list`, a `release_diff`, and then one read per affected page —
+   * a change over three pages exhausted ten before it had judged anything, and
+   * a turn cut short by the cap returns a verdict none of the three reports
+   * above covers. Still under the host's `MAX_SUBAGENT_TURNS`.
+   */
+  maxTurns: 15,
 };

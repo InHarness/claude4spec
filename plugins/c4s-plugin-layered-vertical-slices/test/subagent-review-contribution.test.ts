@@ -71,7 +71,7 @@ describe('c4s-plugin-layered-vertical-slices — the reviewer it contributes', (
   it('declares the model, effort and turn budget of a bounded review', () => {
     expect(sub.model).toBe('sonnet');
     expect(sub.effort).toBe('medium');
-    expect(sub.maxTurns).toBe(10);
+    expect(sub.maxTurns).toBe(15);
   });
 
   /**

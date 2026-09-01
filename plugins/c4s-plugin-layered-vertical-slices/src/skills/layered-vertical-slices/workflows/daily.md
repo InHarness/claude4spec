@@ -84,6 +84,8 @@ Its answer comes back in one of four shapes, and they are not interchangeable:
 - **no input / empty delta** — the reviewer had nothing to work from (no release to compare against, or nothing changed). Report it as that, never as a clean review;
 - **partial review** — the delta did not fit and it judged a subset. Say which part went unreviewed. Do not re-run it hoping for a fuller pass; narrow the scope or leave the gap stated.
 
+One turn does not reach this step: a read-only one, which saved nothing. `spec-review` reviews a change, so with no edit behind you there is nothing to hand it — and it is not mounted in that turn anyway. Answer the question and stop; do not report a missing subagent as a failure.
+
 Do not fix what it reports on your own initiative. A deviation is a finding for Step 7; whether to act on it is the user's call, exactly as with the drift punch list in Step 5.
 
 ## Step 7 — Stop
