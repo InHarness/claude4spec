@@ -639,6 +639,12 @@ function buildSections(lines: string[], headings: ParsedHeading[]): SectionInfo[
   // (lowest line) owns the anchor and the rest are not indexed. Never "whichever
   // the upsert wrote last".
   const claimed = new Set<string>();
+  // The headings that actually GOT a row, by identity. `claimed` answers "is this
+  // anchor string spoken for", which is a different question: a collision loser
+  // shares its anchor string with the winner, so asking `claimed` about the loser
+  // says yes and re-parents its children onto the winner — a heading elsewhere in
+  // the page. Identity is the only thing that tells the two frames apart.
+  const owners = new Set<ParsedHeading>();
   for (let idx = 0; idx < headings.length; idx++) {
     const h = headings[idx]!;
     if (!h.anchor) continue;
@@ -659,9 +665,9 @@ function buildSections(lines: string[], headings: ParsedHeading[]): SectionInfo[
      */
     let parentAnchor: string | null = null;
     for (let s = stack.length - 1; s >= 0; s--) {
-      const candidate = stack[s]!.anchor;
-      if (candidate && claimed.has(candidate)) {
-        parentAnchor = candidate;
+      const candidate = stack[s]!;
+      if (owners.has(candidate)) {
+        parentAnchor = candidate.anchor;
         break;
       }
     }
@@ -671,6 +677,7 @@ function buildSections(lines: string[], headings: ParsedHeading[]): SectionInfo[
     // nesting of everything below it, it just does not get a row.
     if (claimed.has(h.anchor)) continue;
     claimed.add(h.anchor);
+    owners.add(h);
 
     let endLine = lines.length;
     for (let j = idx + 1; j < headings.length; j++) {

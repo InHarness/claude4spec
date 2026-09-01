@@ -29,7 +29,7 @@
 
 import type { Database } from 'better-sqlite3';
 import type { DiscoveryError, DiscoveryErrorCode } from '../errors.js';
-import { invalidArgument, pageNotFound, sectionNotFound } from '../errors.js';
+import { invalidArgument, sectionNotFound } from '../errors.js';
 import type { PageSource } from '../page-source.js';
 import type { RawEntityReader, RawSection } from '../raw-entity-reader.js';
 import type { RootSet } from '../roots.js';
@@ -77,13 +77,14 @@ export async function getPageOutline(
    * cannot do otherwise and still keep its promise: the envelope's `hash` is the
    * value a sectional edit closes on, so an operation that "succeeded" with no page
    * behind it would hand back an envelope with nothing to write against.
+   *
+   * The refusal is `PageSource`'s, not a `catch` here: it already turns ENOENT into
+   * `PAGE_NOT_FOUND` and a path escaping the root into its own code. Wrapping it
+   * would flatten everything else — a permission error, a directory where a file is
+   * expected — into "no such page", sending the caller to `list_pages` to look for
+   * something `list_pages` will happily show them.
    */
-  let read: { body: string; hash: string };
-  try {
-    read = await pages.readWithHash(root.id, input.path);
-  } catch {
-    throw pageNotFound(root.id, input.path, roots.ids());
-  }
+  const read = await pages.readWithHash(root.id, input.path);
 
   const rows = selectSections(db, 'WHERE rootId = ? AND page_path = ?', [root.id, input.path]);
 

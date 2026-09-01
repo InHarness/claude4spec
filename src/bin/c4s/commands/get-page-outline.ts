@@ -40,6 +40,6 @@ export const getPageOutlineCommand: CliCommandContribution = {
   name: 'get-page-outline',
   operation: 'get_page_outline',
   executionMode: 'server-delegating',
-  errorCodes: ['INVALID_ARGS', 'INVALID_ARGUMENT', 'PAGE_NOT_FOUND'],
+  errorCodes: ['INVALID_ARGS', 'INVALID_ARGUMENT', 'ROOT_NOT_FOUND', 'PAGE_NOT_FOUND'],
   handler: runGetPageOutline,
 };

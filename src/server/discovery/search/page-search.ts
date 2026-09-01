@@ -463,6 +463,12 @@ function anchorIndex(db: Database, rootId: string): AnchorRow[] {
  * Cycles cannot occur (a parent is always an earlier row on the same page), but the
  * walk is bounded by the row count anyway: this reads whatever the index holds, and a
  * read path is not the place to trust an invariant it does not itself enforce.
+ *
+ * The climb stops at the page boundary, the same rule `buildOutline` applies to the
+ * tree. `parent_anchor` can point off-page: an anchor is unique across the whole
+ * root, so a heading whose anchor was already claimed by another page gets no row of
+ * its own while its children still name it. Following that edge would splice a
+ * foreign page's headings into the breadcrumb in place of the real ones.
  */
 function withHeadingPaths(rows: readonly Omit<AnchorRow, 'headingPath'>[]): AnchorRow[] {
   const byAnchor = new Map(rows.map((r) => [r.anchor, r] as const));
@@ -473,7 +479,10 @@ function withHeadingPaths(rows: readonly Omit<AnchorRow, 'headingPath'>[]): Anch
     while (cursor && !seen.has(cursor.anchor)) {
       seen.add(cursor.anchor);
       path.unshift(cursor.headingText);
-      cursor = cursor.parentAnchor ? byAnchor.get(cursor.parentAnchor) : undefined;
+      const parent: Omit<AnchorRow, 'headingPath'> | undefined = cursor.parentAnchor
+        ? byAnchor.get(cursor.parentAnchor)
+        : undefined;
+      cursor = parent && parent.path === row.path ? parent : undefined;
     }
     return { ...row, headingPath: path };
   });
