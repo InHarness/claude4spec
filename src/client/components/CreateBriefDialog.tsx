@@ -110,9 +110,11 @@ export function CreateBriefDialog({ toReleaseName, onClose }: Props) {
       setSeedPrompt(prompt);
       navigate({
         to: '/briefs/$path',
-        params: { path: encodeBriefPath(result.briefPath) },
+        params: { path: encodeBriefPath(result.path) },
       });
-      setChatThreadId(result.initialThreadId);
+      // Watek zalozony razem z plikiem jest top-level, wiec stoi w threads[0].
+      const initialThreadId = result.threads[0]?.id;
+      if (initialThreadId) setChatThreadId(initialThreadId);
       setChatOpen(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

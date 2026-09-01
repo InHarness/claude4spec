@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import type { BriefService } from '../services/brief.js';
+import type { ChatService, ArtifactThreadColumn } from '../services/chat.js';
+import { artifactRegistry } from '../services/artifact-registry.js';
 import { DomainError } from '../services/tags.js';
 
 /**
@@ -10,7 +12,7 @@ import { DomainError } from '../services/tags.js';
  * threads) moved to `GET/PUT/PATCH/POST /api/artifacts/brief/*` — see
  * `routes/artifacts.ts`.
  */
-export function briefsRouter(briefs: BriefService): Router {
+export function briefsRouter(briefs: BriefService, chat: ChatService): Router {
   const router = Router();
 
   // POST /api/briefs — create
@@ -79,8 +81,19 @@ export function briefsRouter(briefs: BriefService): Router {
           : fromName === null
             ? `Initial brief: ${toName}`
             : `Brief: ${fromName} → ${toName}`;
-      const { threadId } = briefs.createThreadForBrief({ path: briefPath, name: threadTitle });
-      res.json({ data: { briefPath, initialThreadId: threadId } });
+      briefs.createThreadForBrief({ path: briefPath, name: threadTitle });
+      // Odpowiedz to pelny `BriefResponse` — ten sam ksztalt co detal briefu,
+      // plus `threads`. Watek zalozony wyzej jest top-level, wiec konsument
+      // (m.in. `runAgent` create-mode) bierze go jako `threads[0].id`; osobne
+      // pole na id watku nie istnieje.
+      const brief = await briefs.getBrief(briefPath);
+      const threads = chat.listThreadsByArtifact({
+        threadColumn: artifactRegistry.brief.binding.threadColumn as ArtifactThreadColumn,
+        path: briefPath,
+        limit: 20,
+        offset: 0,
+      });
+      res.json({ data: { ...brief, threads } });
     } catch (err) {
       next(err);
     }

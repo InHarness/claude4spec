@@ -111,7 +111,14 @@ Utility:
 
 Agent:
   agent "<msg>" --ct <chat|brief|patch|ask>   generic turn; verbose (all messages + reasoning)
-  agent "<msg>" --ct brief --brief <path>
+  agent "<msg>" --ct brief --brief <path>      attach a turn to an existing brief
+  agent "<msg>" --ct brief --source <release-diff|initial|analysis> [--from <r>] [--to <r>]
+                                              create the brief first, then turn on it
+                                              (mutually exclusive with --brief)
+                                                release-diff: --from and --to both required
+                                                initial:      --to only (from is always null)
+                                                analysis:     optional --from, no --to/--roots
+                                              [--roots <a,b>] [--suffix <s>]
   agent "<msg>" --thread <id>                 continue any thread (--ct not needed)
   ask "<msg>"                                 read-only peer-consult shorthand (--ct=ask, terse)
   ask "<msg>" --thread <id>                   continue an existing ask thread

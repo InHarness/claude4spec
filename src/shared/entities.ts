@@ -958,9 +958,13 @@ export interface BriefCreateRequest {
   roots?: string[];
 }
 
-export interface BriefCreateResult {
-  briefPath: string;
-  initialThreadId: string;
+/**
+ * Odpowiedz `POST /api/briefs` — pelny detal briefu plus jego watki. Nie ma
+ * osobnego pola na id watku zalozonego razem z plikiem: ten watek jest
+ * top-level, wiec konsument bierze `threads[0].id`.
+ */
+export interface BriefResponse extends Brief {
+  threads: ArtifactThreadListItem[];
 }
 
 // --- M23: Patches ---

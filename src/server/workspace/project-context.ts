@@ -1246,7 +1246,7 @@ async function buildInner(
   // 0.1.123: on a successful checkout, reuse the same invalidate path as a
   // context-defining config change — no new M31 reload machinery needed.
   router.use('/git', gitRouter(gitService, { onSwitched: onContextConfigChanged }));
-  router.use('/briefs', briefsRouter(briefService));
+  router.use('/briefs', briefsRouter(briefService, chatService));
   router.use(
     '/artifacts',
     artifactsRouter({
