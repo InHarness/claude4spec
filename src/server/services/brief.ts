@@ -11,23 +11,17 @@
  *   - **Zero new tables**. Listing comes from PagesFrontmatterIndexer.
  *   - **Optimistic concurrency** by sha256 hash of full content (frontmatter+body).
  *   - **Immutable frontmatter** keys protected: type/from_release/to_release/
- *     generated_at/generator_version. Mutation attempt → DomainError.
+ *     roots/generated_at. Mutation attempt → DomainError.
  */
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import matter from 'gray-matter';
-import type {
-  Brief,
-  BriefChangedBy,
-  BriefFrontmatter,
-  BriefSource,
-} from '../../shared/entities.js';
+import type { Brief, BriefChangedBy, BriefFrontmatter } from '../../shared/entities.js';
 import { BRIEF_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
 import { BRIEF_ROOT_MARKER } from '../../shared/types.js';
 import type { PagesService } from './pages.js';
 import { hashContent } from './artifact-content.js';
-import { readConfig } from '../config.js';
 import type { SelfWriteMarker } from '../fs/sources.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import type { FileVersionService } from './file-version.js';
@@ -39,11 +33,7 @@ import { DomainError } from './tags.js';
 import { readArtifactWindow, windowBody, type ArtifactRange } from './artifact-read.js';
 import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 
-const GENERATOR_VERSION = 'brief-author@0.1';
-
 export interface BriefServiceDeps {
-  /** 0.2.53: project root — read to answer "does the agent still have file tools?". */
-  cwd: string;
   briefsPages: PagesService;
   briefsWatcher: SelfWriteMarker;
   briefsSerializer: FileSerializer;
@@ -55,15 +45,17 @@ export interface BriefServiceDeps {
 }
 
 export interface BriefCreateOpts {
-  /** 0.1.69: brief provenance. Defaults to 'release-diff' when absent. */
-  source?: BriefSource;
-  /** `null` = initial brief — pomijamy walidacje `fromRelease` i frontmatter trzyma `from_release: null`. */
-  fromReleaseName: string | null;
-  /** `null` = analysis brief (state relative to HEAD; no target release). */
-  toReleaseName: string | null;
   /**
-   * 0.1.69: pre-synthesized brief body (analysis briefs synthesize it from the
-   * parent thread's `message`). Absent ⇒ the generated stub body is used.
+   * Start of the window. `null` = window open at the start (frontmatter keeps
+   * `from_release: null`, no `fromRelease` validation). Omitted = latest release.
+   */
+  fromReleaseName?: string | null;
+  /** End of the window. `null` / omitted = window open to the current state. */
+  toReleaseName?: string | null;
+  /**
+   * 0.1.69: pre-synthesized brief body (a brief against the current state
+   * synthesizes it from the parent thread's `message`). Absent ⇒ the generated
+   * stub body is used.
    */
   content?: string;
   suffix?: string;
@@ -117,7 +109,7 @@ export interface BriefListOpts {
 /**
  * Internal list-item shape for `BriefService.listBriefs()`. Was previously the
  * shared `BriefListItem` DTO; M36 replaced the wire-level list shape with the
- * generic `ArtifactListItem` (no top-level title/source/threadCount — those
+ * generic `ArtifactListItem` (no top-level title/threadCount — those
  * live in `frontmatter` or are dropped), so this stays a service-internal type
  * that `routes/artifacts.ts`'s brief adapter maps to `ArtifactListItem` at the
  * REST boundary.
@@ -125,11 +117,9 @@ export interface BriefListOpts {
 export interface BriefListItem {
   path: string;
   title: string | null;
-  /** 0.1.69: brief provenance ('release-diff' | 'analysis'). */
-  source: string;
-  /** `null` = initial brief. */
+  /** `null` = window open at the start. */
   fromRelease: string | null;
-  /** `null` = analysis brief (no target release; state relative to HEAD). */
+  /** `null` = window open to the current state (no target release). */
   toRelease: string | null;
   implemented: boolean;
   generatedAt: string;
@@ -199,10 +189,6 @@ export class BriefService {
         `file '${path}' is not a brief (frontmatter.type=${JSON.stringify(frontmatter.type)})`,
       );
     }
-    // 0.1.69: legacy briefs predate `source` — default to 'release-diff' at parse
-    // time so the field is always present downstream (DTO, immutability diffing).
-    if (frontmatter.source !== 'analysis') frontmatter.source = 'release-diff';
-
     const hash = hashContent(content);
     const windowed = readArtifactWindow(
       content,
@@ -242,7 +228,8 @@ export class BriefService {
   }
 
   /**
-   * `to_release` DESCENDING, analysis briefs first, path as the tiebreak.
+   * `to_release` DESCENDING, briefs open to the current state first, path as
+   * the tiebreak.
    *
    * The order is part of the operation, not a presentation choice, which is why
    * it lives here rather than in a caller. The indexer answers in
@@ -259,8 +246,9 @@ export class BriefService {
   private static compareBriefs(a: BriefListItem, b: BriefListItem): number {
     const at = a.toRelease;
     const bt = b.toRelease;
-    // An analysis brief has no target release; it describes the state as of HEAD,
-    // so it sorts ahead of every named release rather than below all of them.
+    // A brief whose window is open at the `to` end has no target release; it
+    // describes the state as of HEAD, so it sorts ahead of every named release
+    // rather than below all of them.
     if (at === null && bt === null) return a.path.localeCompare(b.path);
     if (at === null) return -1;
     if (bt === null) return 1;
@@ -279,10 +267,8 @@ export class BriefService {
       out.push({
         path: rec.path,
         title: typeof fm.title === 'string' ? (fm.title as string) : null,
-        // 0.1.69: legacy briefs predate `source` — default to 'release-diff'.
-        source: fm.source === 'analysis' ? 'analysis' : 'release-diff',
         fromRelease: typeof fm.from_release === 'string' ? fm.from_release : null,
-        // 0.1.69: analysis briefs carry `to_release: null` → toRelease stays null.
+        // A window open to the current state carries `to_release: null` → toRelease stays null.
         toRelease: typeof fm.to_release === 'string' ? fm.to_release : null,
         implemented,
         generatedAt: String(fm.generated_at ?? ''),
@@ -300,78 +286,85 @@ export class BriefService {
   /**
    * 0.1.69: file-only brief creation (writes file + file_version + index, NO
    * thread). Callers pair this with {@link createThreadForBrief}. `content`
-   * carries a pre-synthesized body for analysis briefs; else a generated stub.
+   * carries a pre-synthesized body for a brief written against the current
+   * state; else a generated stub.
    *
-   * Validation matrix (source, from, to):
-   *   - (release-diff, null, set) → initial brief
-   *   - (release-diff, set,  set) → release-diff brief
-   *   - (analysis,     set,  null) → analysis brief (state relative to HEAD)
-   *   - (*, null, null) → 400 VALIDATION
-   *   - (release-diff, *, null) → 400 VALIDATION (only analysis may omit `to`)
-   *   - (analysis, *, set) → 400 VALIDATION (analysis always has `to_release = null`)
-   * `analysis` briefs missing `fromReleaseName` default to the latest release
-   * (mirrors `TransagentDispatcher.createChild`'s own resolution).
-   * When `to=null` (analysis) the BRIEF_SAME_RELEASE guard and the
-   * `getRelease(toName)` existence check are skipped.
+   * 0.2.64 — provenance is the SHAPE OF THE WINDOW, so this method takes no
+   * provenance selector and the matrix has one axis fewer. Exactly three
+   * windows exist, and the nullability of the two ends is what names them:
+   *   - (null, set) → open at the start (the project's first brief)
+   *   - (set,  set) → closed window (a release diff)
+   *   - (set,  null) → open to the current state
+   *   - (null, null) → 400 VALIDATION — a window with neither end is nothing.
+   * An omitted `fromReleaseName` resolves to the latest release; an omitted
+   * `toReleaseName` stays `null`, so `createBrief({})` is the common case: a
+   * brief against the current state. With `to === null` the BRIEF_SAME_RELEASE
+   * guard and the `getRelease(toName)` existence check have nothing to check
+   * and are skipped.
    */
   async createBrief(
     opts: BriefCreateOpts,
   ): Promise<{ briefPath: string; fromReleaseName: string | null; toReleaseName: string | null }> {
-    const source: BriefSource = opts.source ?? 'release-diff';
-    let fromName = opts.fromReleaseName === null ? null : opts.fromReleaseName.trim();
-    const toName = opts.toReleaseName === null ? null : opts.toReleaseName.trim();
-    if (source === 'analysis' && fromName === null) {
-      fromName = this.deps.releaseService.getLatestReleaseName();
-    }
+    // An OMITTED `from` means "the latest release"; an explicit `null` means
+    // "open at the start". The two are different windows, so `undefined` and
+    // `null` must stay distinguishable all the way from the wire to here.
+    const fromName =
+      opts.fromReleaseName === undefined
+        ? this.deps.releaseService.getLatestReleaseName()
+        : opts.fromReleaseName === null
+          ? null
+          : opts.fromReleaseName.trim();
+    // An omitted `to` is the same as an explicit `null`: open to the current state.
+    const toName =
+      opts.toReleaseName === undefined || opts.toReleaseName === null ? null : opts.toReleaseName.trim();
     if (fromName === null && toName === null) {
-      throw new DomainError('VALIDATION', 'at least one of fromReleaseName / toReleaseName is required');
-    }
-    if (fromName !== null && fromName.length === 0) {
-      throw new DomainError('VALIDATION', 'fromReleaseName must be non-empty (or null for initial brief)');
-    }
-    if (toName !== null && toName.length === 0) {
-      throw new DomainError('VALIDATION', 'toReleaseName must be non-empty (or null for analysis brief)');
-    }
-    if (source === 'analysis' && toName !== null) {
-      throw new DomainError('VALIDATION', "toReleaseName must be null when source = 'analysis'");
-    }
-    if (source === 'release-diff' && toName === null) {
-      throw new DomainError('VALIDATION', "toReleaseName is required when source = 'release-diff'");
-    }
-    // 0.1.104 D4: roots is a dead field once `toReleaseName = null` (analysis).
-    // Enforced here (not just the HTTP route) so in-process callers like
-    // `TransagentDispatcher` can't bypass it.
-    if (source === 'analysis' && opts.roots && opts.roots.length > 0) {
-      throw new DomainError('VALIDATION', "roots is not allowed when source = 'analysis'");
-    }
-    /**
-     * 0.2.53: an analysis brief is written by reading SOMEBODY ELSE'S repository,
-     * which is exactly what the built-in file tools do and what no core
-     * operation replaces. With `agent.disableDirectFilesystemAccess` on, the
-     * thread this creates would open with no way to read the thing it exists to
-     * analyse — so refuse at creation and name the setting, rather than hand the
-     * user a thread that can only apologise.
-     *
-     * Enforced HERE, next to the `roots` guard above and for the same reason:
-     * both the HTTP route and in-process callers (`TransagentDispatcher`) go
-     * through this method, so neither can bypass it.
-     */
-    if (source === 'analysis' && readConfig(this.deps.cwd).agent.disableDirectFilesystemAccess) {
+      // Both ends open is not a window at all. Reached either by asking for it
+      // explicitly, or by omitting both in a project that has no releases yet —
+      // hence the second half of the message.
       throw new DomainError(
         'VALIDATION',
-        "source = 'analysis' reads a repository with the built-in file tools, which this project disables. Uncheck 'Block direct file access' in Settings → Agent to use it.",
+        'at least one of fromReleaseName / toReleaseName is required (a window needs an end; a project with no releases has to name toReleaseName)',
       );
     }
-    // 0.1.69: analysis briefs (to=null) compare against HEAD — skip same-release
-    // guard and the target-release existence check.
+    if (fromName !== null && fromName.length === 0) {
+      throw new DomainError(
+        'VALIDATION',
+        'fromReleaseName must be non-empty (or null for a window open at the start)',
+      );
+    }
+    if (toName !== null && toName.length === 0) {
+      throw new DomainError(
+        'VALIDATION',
+        'toReleaseName must be non-empty (or null for a window open to the current state)',
+      );
+    }
+    // 0.1.104 D4, generalised in 0.2.64: `roots` is a dead field whenever the
+    // window's `to` end is open — narrowing the page space makes no sense with
+    // no second release to diff against. Enforced here (not just the HTTP
+    // route) so in-process callers like `TransagentDispatcher` can't bypass it.
+    if (toName === null && opts.roots && opts.roots.length > 0) {
+      throw new DomainError(
+        'VALIDATION',
+        'roots is not allowed when the window is open to the current state (toReleaseName = null)',
+      );
+    }
+    /**
+     * 0.2.64: no posture guard here. A brief with an open `to` does NOT read
+     * anybody's repository — the analysis reaches it through the parent's
+     * `message`, so `agent.disableDirectFilesystemAccess` is not a condition of
+     * its existence. (0.2.53 refused this window while that flag was on; the
+     * refusal was aimed at a reader that never existed.)
+     */
+    // An open `to` compares against the current state — there is no target
+    // release to check for existence, and no same-release collision to guard.
     if (toName !== null) {
       if (fromName !== null && fromName === toName) {
         throw new DomainError('BRIEF_SAME_RELEASE', 'from_release must differ from to_release');
       }
       this.deps.releaseService.getRelease(toName);
     }
-    // Validate the source release exists (throws NOT_FOUND if missing). `fromName
-    // === null` ⇒ initial brief, no fromRelease to validate.
+    // Validate the start release exists (throws NOT_FOUND if missing). `fromName
+    // === null` ⇒ window open at the start, nothing to validate.
     if (fromName !== null) this.deps.releaseService.getRelease(fromName);
 
     // 0.1.96: normalize scope — empty array is whole-release (no `roots` key/segment).
@@ -379,11 +372,9 @@ export class BriefService {
     const briefPath = await this.allocatePath(fromName, toName, opts.suffix, scopeRoots);
     const frontmatter: BriefFrontmatter = {
       type: 'brief',
-      source,
       from_release: fromName,
       to_release: toName,
       generated_at: new Date().toISOString(),
-      generator_version: GENERATOR_VERSION,
       implemented: false,
       // 0.1.96: written verbatim; omitted entirely for whole-release scope.
       ...(scopeRoots ? { roots: scopeRoots } : {}),
@@ -391,7 +382,7 @@ export class BriefService {
     const body =
       opts.content ??
       (toName === null
-        ? `# Analysis brief: ${fromName} → (next)\n`
+        ? `# Brief: ${fromName} → (unreleased)\n`
         : fromName === null
           ? `# Initial brief: ${toName}\n`
           : `# Brief: ${fromName} → ${toName}\n`);
@@ -536,9 +527,11 @@ export class BriefService {
     // 0.1.96: scoped brief gains a roots segment (`-{root-slug}[-{root-slug}]`);
     // omitted for whole-release scope (roots undefined/empty).
     const rootsSeg = roots && roots.length > 0 ? `-${roots.map(slugify).join('-')}` : '';
-    // 0.1.69: analysis brief (to=null) — `{from-slug}-to-next[-{roots}][-{suffix}].md`.
+    // 0.1.69: window open to the current state (to=null) —
+    // `{from-slug}-to-next[-{roots}][-{suffix}].md`. `fromName` cannot be null
+    // here; a window with neither end is rejected in `createBrief`.
     const base = toName === null
-      ? `${slugify(fromName ?? 'head')}-to-next${rootsSeg}${suf}`
+      ? `${slugify(fromName as string)}-to-next${rootsSeg}${suf}`
       : fromName === null
         ? `initial-${slugify(toName)}${rootsSeg}${suf}`
         : `${slugify(fromName)}-to-${slugify(toName)}${rootsSeg}${suf}`;

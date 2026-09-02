@@ -177,8 +177,10 @@ export class TransagentDispatcher {
 
   /**
    * Context-type registry: how to materialize a child thread per `contextType`.
-   *   - brief → create an analysis brief file (source:'analysis', to_release:null,
-   *     from=payload.fromReleaseName ?? latest) then a child brief thread.
+   *   - brief → create a brief file against the current state (an OPEN `to` end:
+   *     to_release:null, from=payload.fromReleaseName ?? latest) then a child
+   *     brief thread. The channel is reserved for that window shape, which is
+   *     described by the window itself — there is no provenance label to set.
    *   - patch → child patch thread (requires payload.patchPath).
    *   - chat  → plain child chat thread.
    *
@@ -193,14 +195,15 @@ export class TransagentDispatcher {
     generic: GenericThreadColumns,
   ): Promise<ChatThread> {
     if (contextType === 'brief') {
-      // `createBrief` itself defaults a null `fromReleaseName` to the latest
-      // release for `source: 'analysis'` — no need to resolve it here too.
+      // `createBrief` expands an OMITTED `fromReleaseName` to the latest release
+      // — no need to resolve it here too. It must stay `undefined` and not
+      // `null`: `null` is a different window (open at the start), and with
+      // `to: null` it would be no window at all → VALIDATION.
       const fromReleaseName =
-        typeof payload.fromReleaseName === 'string' ? payload.fromReleaseName : null;
+        typeof payload.fromReleaseName === 'string' ? payload.fromReleaseName : undefined;
       const suffix = typeof payload.suffix === 'string' ? payload.suffix : undefined;
       const content = typeof payload.content === 'string' ? payload.content : undefined;
       const { briefPath } = await this.deps.briefService.createBrief({
-        source: 'analysis',
         fromReleaseName,
         toReleaseName: null,
         content,

@@ -132,7 +132,7 @@ There are two operating branches, and `get_brief` tells you which one you are in
 - **Branch A — initial generation.** The body contains only the H1 heading, or is otherwise empty.
 - **Branch B — editorial.** The body already has non-trivial content and the user is asking for a change to it.
 
-A second axis crosses that one: a brief whose frontmatter says `source: release-diff` is grounded in a release window and is authored from `release_diff`; a brief whose `source` is `analysis` has no window and is authored from what the thread gives you. Everything below assumes the `release-diff` case.
+A second axis crosses that one, and it is read off the **shape of the window**, not off any provenance field: a brief with both ends set (`from_release` and `to_release` non-null) is grounded in a release window and is authored from `release_diff`; a brief with `to_release: null` has no second release to diff against — do **not** call `release_diff` at all, author it from what the thread gives you; a brief with `from_release: null` covers everything from the beginning. Everything below assumes the closed-window case.
 
 ### Orchestration — map, then fan out, then compose
 

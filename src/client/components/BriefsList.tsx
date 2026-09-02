@@ -52,8 +52,9 @@ export function BriefsList() {
   }, [releases]);
 
   const sortedBriefs = useMemo(() => {
-    // 0.1.69: analysis briefs carry `toRelease === null` (no target release) —
-    // they sort to the top (rank -1), ahead of any released target.
+    // 0.1.69: a window open to the current state carries `toRelease === null`
+    // (no target release) — those sort to the top (rank -1), ahead of any
+    // released target.
     const rankOf = (name: string | null) =>
       name === null
         ? -1
@@ -253,14 +254,14 @@ function BriefRow({
           >
             {brief.path}
           </Link>
-          <SourceBadge source={brief.source} />
+          <WindowBadge fromRelease={brief.fromRelease} toRelease={brief.toRelease} />
           {brief.fromRelease === null ? (
             <InitialBadge />
           ) : (
             <ReleaseBadge label={brief.fromRelease} />
           )}
           <span style={{ color: 'var(--c-subtle)', fontSize: 11 }}>→</span>
-          {/* 0.1.69: analysis briefs have no target release — state is relative to HEAD. */}
+          {/* An open `to` end has no target release — the state is the current one. */}
           {brief.toRelease === null ? (
             <UnreleasedBadge />
           ) : (
@@ -411,29 +412,43 @@ export function ImplementedBadge({ implemented }: { implemented: boolean }) {
   );
 }
 
-/** 0.1.69: brief provenance badge — release-diff (self-contained) vs analysis. */
-function SourceBadge({ source }: { source: string }) {
-  const isAnalysis = source === 'analysis';
+/**
+ * 0.2.64: provenance badge COMPUTED from the window, not read off a field. The
+ * nullability of the two ends is the whole vocabulary: `to` open = a brief
+ * against the current state, `from` open = a brief from the beginning, both
+ * ends set = a release diff.
+ */
+function WindowBadge({
+  fromRelease,
+  toRelease,
+}: {
+  fromRelease: string | null;
+  toRelease: string | null;
+}) {
+  const open = toRelease === null ? 'to' : fromRelease === null ? 'from' : null;
+  const label = open === 'to' ? 'current state' : open === 'from' ? 'from the start' : 'release diff';
+  const title =
+    open === 'to'
+      ? 'Window open to the current state — no target release'
+      : open === 'from'
+        ? 'Window open at the start — the first brief of the project'
+        : 'Closed window — self-contained, grounded in a release diff';
   return (
     <span
       className="font-mono text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded"
       style={
-        isAnalysis
+        open !== null
           ? { background: 'var(--c-accent-soft)', color: 'var(--c-accent)' }
           : { background: 'var(--c-hair)', color: 'var(--c-muted)' }
       }
-      title={
-        isAnalysis
-          ? 'Analysis brief — grounded in a parent thread analysis (state relative to HEAD)'
-          : 'Release-diff brief — self-contained, grounded in a release diff'
-      }
+      title={title}
     >
-      {isAnalysis ? 'analysis' : 'release-diff'}
+      {label}
     </span>
   );
 }
 
-/** 0.1.69: target for an analysis brief — no release, state relative to HEAD. */
+/** The `to` end of the window is open — no release, state is the current one. */
 function UnreleasedBadge() {
   return (
     <span
@@ -443,7 +458,7 @@ function UnreleasedBadge() {
         color: 'var(--c-muted)',
         border: '1px dashed var(--c-hair-strong)',
       }}
-      title="Analysis brief — no target release (state relative to current HEAD)"
+      title="Window open to the current state — no target release"
     >
       (unreleased)
     </span>

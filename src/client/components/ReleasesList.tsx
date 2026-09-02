@@ -9,7 +9,8 @@ import { UnreleasedBanner } from './release/UnreleasedBanner.js';
 import { ImplementedBadge } from './BriefsList.js';
 
 /** Briefs attached to a single release card — belonging (`toRelease === name`)
- * vs outgoing (an unreleased analysis brief authored FROM this release). */
+ * vs outgoing (a brief authored FROM this release whose window is still open at
+ * the `to` end). */
 interface ReleaseBriefs {
   belonging: BriefListItemView[];
   outgoing: BriefListItemView[];
@@ -40,8 +41,8 @@ export function ReleasesList({ onCreateClick }: Props) {
   // brief frontmatter's from/toRelease are version strings, not release ids —
   // no slug on the release DTO to join on, and none needed). "Belonging" =
   // toRelease === this release's name (badge shows implemented/pending).
-  // "Outgoing" = an unreleased analysis brief (toRelease === null) authored
-  // FROM this release. Briefs with both null (degenerate) are dropped
+  // "Outgoing" = a brief whose window is still open at the `to` end
+  // (toRelease === null), authored FROM this release. Briefs with both null (degenerate) are dropped
   // entirely — they never render on any card, only on /briefs.
   const briefsByRelease = useMemo(() => {
     const m = new Map<string, ReleaseBriefs>();
@@ -56,7 +57,7 @@ export function ReleasesList({ onCreateClick }: Props) {
     for (const b of briefs) {
       if (b.toRelease !== null) {
         bucket(b.toRelease).belonging.push(b);
-      } else if (b.source === 'analysis' && b.fromRelease !== null) {
+      } else if (b.fromRelease !== null) {
         bucket(b.fromRelease).outgoing.push(b);
       }
     }
@@ -164,7 +165,11 @@ function BriefPill({ brief, outgoing }: { brief: BriefListItemView; outgoing?: b
     <span
       className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 min-w-0"
       style={{ background: 'var(--c-bg)', border: '1px solid var(--c-hair)' }}
-      title={outgoing ? `Outgoing analysis brief from this release: ${brief.path}` : brief.path}
+      title={
+        outgoing
+          ? `Outgoing brief from this release, against the current state: ${brief.path}`
+          : brief.path
+      }
     >
       <FileText size={11} style={{ color: 'var(--c-accent)', flexShrink: 0 }} />
       <span

@@ -51,7 +51,6 @@ describe('briefsRouter — POST /api/briefs', () => {
     );
     const chatService = new ChatService(db);
     const briefService = new BriefService({
-      cwd,
       briefsPages,
       briefsWatcher: boundWriter(scoped, artifactSource('brief')),
       briefsSerializer,
@@ -79,7 +78,7 @@ describe('briefsRouter — POST /api/briefs', () => {
   it('answers with a full BriefResponse whose threads[0] is the initial thread', async () => {
     const res = await request(app)
       .post('/api/briefs')
-      .send({ source: 'release-diff', fromReleaseName: 'r1', toReleaseName: 'r2' });
+      .send({ fromReleaseName: 'r1', toReleaseName: 'r2' });
 
     expect(res.status).toBe(200);
     const brief = res.body.data;
@@ -98,8 +97,24 @@ describe('briefsRouter — POST /api/briefs', () => {
     expect(brief).not.toHaveProperty('briefPath');
   });
 
-  it('rejects an unknown source with VALIDATION', async () => {
-    const res = await request(app).post('/api/briefs').send({ source: 'nonsense' });
+  /**
+   * The most common call after 0.2.64: no window at all. The server fills in
+   * `from` from the latest release and leaves `to` open — a brief against the
+   * current state, with nothing on the wire naming that provenance.
+   */
+  it('[ac:ac-post-api-briefs-przyjmuje-opcjonalne-po] accepts an empty body — window open to the current state, `from` resolved to latest', async () => {
+    const res = await request(app).post('/api/briefs').send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.frontmatter).toMatchObject({ from_release: 'r1', to_release: null });
+    expect(res.body.data.frontmatter).not.toHaveProperty('source');
+    expect(res.body.data.threads[0].title).toBe('Brief: r1 → (unreleased)');
+  });
+
+  it('rejects a window with neither end with VALIDATION', async () => {
+    const res = await request(app)
+      .post('/api/briefs')
+      .send({ fromReleaseName: null, toReleaseName: null });
 
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION');
@@ -108,7 +123,7 @@ describe('briefsRouter — POST /api/briefs', () => {
   it('rejects from === to with BRIEF_SAME_RELEASE', async () => {
     const res = await request(app)
       .post('/api/briefs')
-      .send({ source: 'release-diff', fromReleaseName: 'r1', toReleaseName: 'r1' });
+      .send({ fromReleaseName: 'r1', toReleaseName: 'r1' });
 
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('BRIEF_SAME_RELEASE');

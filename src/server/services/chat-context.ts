@@ -630,7 +630,7 @@ const BRIEF_TOOLS_USAGE = `<brief_tools_usage>
 brief-tools is scoped automatically to this brief — there is no path parameter, and no way to reach another brief from this thread.
   - get_brief — the brief as { frontmatter, body, content, hash }.
   - update_brief (action: replace | append | insert_after_section) — edits the body.
-      * frontmatter is IMMUTABLE for you (type, from_release, to_release, generated_at, generator_version).
+      * frontmatter is IMMUTABLE for you (type, from_release, to_release, roots, generated_at).
       * expectedHash is REQUIRED: pass the hash get_brief returned (stale → BRIEF_CONFLICT, missing → VALIDATION).
       * insert_after_section MISSES SILENTLY. A target it cannot find — an anchor that is not in the brief, a heading that matches nothing — is NOT an error: the fragment is appended at the END of the brief and the call reports success. Nothing warns you. So read the brief before addressing a section, and check afterwards that the text landed where you meant it to.
 </brief_tools_usage>`;
@@ -1326,7 +1326,7 @@ function buildAgentPathScope(
  * `enabled` is the NEGATION of `agent.disableDirectFilesystemAccess`: the config
  * field names what is taken away, the prompt names what the model has.
  *
- * The disabled body names the four capabilities that genuinely stop working, so
+ * The disabled body names the three capabilities that genuinely stop working, so
  * a model asked for one of them says which setting is in the way instead of
  * reaching for a tool that is not in its catalog and improvising after it fails.
  */
@@ -1336,12 +1336,11 @@ function buildAgentFilesystemAccess(access: { enabled: boolean }): string {
       `<agent_filesystem_access enabled="false">`,
       `This project runs you WITHOUT built-in filesystem or shell tools. Read, Grep, Glob, Edit, Write, NotebookEdit, Bash and Skill are not in your catalog — they are absent, not merely discouraged, so there is nothing to fall back to and no point proposing one.`,
       `The specification is fully reachable anyway, through the MCP servers listed in <tooling>: read with get_page / get_sections / list_pages / search_pages, write with update_sections / update_page. That is the point of the posture, not a workaround for it — a core write carries expectedHash, captures a version and injects anchors, and a built-in write skipped all three.`,
-      `Four things genuinely do not work while this is on. If you are asked for one, say which setting is in the way rather than attempting it:`,
+      `Three things genuinely do not work while this is on. If you are asked for one, say which setting is in the way rather than attempting it:`,
       `  - git recovery ("Fix it with Agent") — it drives git through Bash, and no MCP operation replaces it;`,
-      `  - a brief with source: analysis — reading somebody else's repository needs the file built-ins;`,
       `  - the c4s CLI — it is a shell program; only its \`ask\` survives, and only where this turn mounted the server that exposes it — check <tooling>;`,
       `  - scaffolding a new writing style — it writes a skill package under .claude/skills/, which no C4S operation owns.`,
-      `The user can turn all four back on by unchecking \"Block direct file access\" in Settings → Agent. Say that plainly; do not try to work around it.`,
+      `The user can turn all three back on by unchecking \"Block direct file access\" in Settings → Agent. Say that plainly; do not try to work around it.`,
       `One thing that DOES still work, and it is about you rather than the user: the read-only explorer subagents are mounted here as usual. They never held the file built-ins to begin with — they read the specification through the same MCP operations you do — so this posture takes nothing away from them, and delegating a wide sweep is still the way to keep the bulk of what you read out of your own context.`,
       `</agent_filesystem_access>`,
     ].join('\n');
@@ -1478,7 +1477,10 @@ function buildBriefSystemPrompt(input: {
         `<current_brief ${attrs({
           path: input.brief.path,
           from_release: fm.from_release ?? '(initial)',
-          to_release: fm.to_release,
+          // `attrs()` drops nulls, and an open `to` is now the DEFAULT window —
+          // the agent must be able to read that branch off the attribute rather
+          // than off its absence. Mirrors `from_release`'s `(initial)`.
+          to_release: fm.to_release ?? '(unreleased)',
           implemented: fm.implemented ? 'true' : 'false',
           hash: input.brief.hash,
           ...(scopeRoots.length > 0 ? { roots: scopeRoots.join(', ') } : {}),

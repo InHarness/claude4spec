@@ -59,7 +59,9 @@ describe('renderers', () => {
     expect(outputs['c4s-brief-implementer']).toContain('c4s mark-brief-implemented');
     // 0.1.108: Path 2 (code-fix) routes through native create-mode now — the old
     // `--ct chat` + `runTransagent` workaround is gone.
-    expect(outputs['c4s-refactor']).toContain('--ct brief --source analysis');
+    // 0.2.64: no provenance flag — passing no window is what keeps `to` open.
+    expect(outputs['c4s-refactor']).toContain('--ct brief');
+    expect(outputs['c4s-refactor']).not.toContain('--source');
     expect(outputs['c4s-refactor']).not.toContain('runTransagent');
     expect(outputs['c4s-refactor']).not.toMatch(/--ct chat/);
   });

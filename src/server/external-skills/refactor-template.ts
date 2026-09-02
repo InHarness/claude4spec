@@ -3,7 +3,7 @@ import { SERVER_REQUIRED_BLOCK } from './server-required.js';
 
 export const REFACTOR_FRONTMATTER = `---
 name: c4s-refactor
-description: Detect drift between the claude4spec specification and the code for a given topic, then route the fix — to the spec (a read-only plan via \`c4s ask\`) or to the code (an analysis brief via \`c4s agent --ct brief --source analysis\`). Use when reconciling spec with implementation ("check spec vs code for X", "reconcile topic Y"). Optional argument — the topic/scope (module, entity, slug, tag).
+description: Detect drift between the claude4spec specification and the code for a given topic, then route the fix — to the spec (a read-only plan via \`c4s ask\`) or to the code (a brief against the current state via \`c4s agent --ct brief\`). Use when reconciling spec with implementation ("check spec vs code for X", "reconcile topic Y"). Optional argument — the topic/scope (module, entity, slug, tag).
 ---
 `;
 
@@ -21,8 +21,8 @@ and hands off:
 
 1. drift that needs a **specification** change → open a read-only planning turn
    (\`c4s ask\`),
-2. drift that needs a **code** change → describe it in an **analysis brief**
-   (\`c4s agent --ct brief --source analysis\`).
+2. drift that needs a **code** change → describe it in a **brief against the
+   current state** (\`c4s agent --ct brief\`).
 
 Execution is downstream: a human continues the spec plan thread, and the
 \`c4s-brief-implementer\` skill implements the brief.
@@ -106,21 +106,24 @@ not execute." ${identity}
 **Record the returned \`threadId\`.** This skill does **not** apply the plan — a human
 continues the thread (\`c4s ask "..." --thread <threadId>\`, or in the UI).
 
-### 6. Path 2 — code-fix → analysis brief (\`c4s agent --ct brief --source analysis\`)
+### 6. Path 2 — code-fix → a brief against the current state (\`c4s agent --ct brief\`)
 
-Route a code fix into an **analysis brief** that the \`c4s-brief-implementer\` skill
-can implement later.
+Route a code fix into a **brief against the current state** that the
+\`c4s-brief-implementer\` skill can implement later.
 
 **Use create-mode, not attach-mode.** \`c4s-refactor\` is a standalone CLI caller —
 there's no parent thread in a foreign repo to attach to — so a fresh top-level
-thread via create-mode is the right shape. One command mints a new **analysis
-brief** (\`source: analysis\`, \`to_release: null\`) and runs a turn that fills its
-body from your message:
+thread via create-mode is the right shape. One command mints a new brief
+(\`to_release: null\`) and runs a turn that fills its body from your message:
 
 \`\`\`sh
 c4s agent "Code drift on <topic>: the spec says Y but the code does X. <what \\
-the implementer must change and why>" --ct brief --source analysis ${identity}
+the implementer must change and why>" --ct brief ${identity}
 \`\`\`
+
+Passing no release window is what makes this a brief **against the current
+state**: the window's \`to\` end stays open, so there is no second release to diff
+against.
 
 The command prints the created brief's path — record it for handing off to
 \`c4s-brief-implementer\`. **Never pass \`--brief <path>\`** (attach-mode) here —
@@ -148,9 +151,9 @@ Reading the spec and analyzing the code are not an exception to it: \`resolve\`,
   through a symlink, can even break resolution.
 - **\`c4s ask\` is read-only** — it yields a plan only and never mutates the spec;
   execution is a separate, human-driven step.
-- **Path 2 uses create-mode, not attach-mode.** Mint the analysis brief via
-  \`c4s agent --ct brief --source analysis\`. Don't pass \`--brief <path>\` — that's
-  attach-mode, which expects a pre-existing brief.
+- **Path 2 uses create-mode, not attach-mode.** Mint the brief via
+  \`c4s agent --ct brief\` with no window flags. Don't pass \`--brief <path>\` —
+  that's attach-mode, which expects a pre-existing brief.
 
 ## Notes
 
