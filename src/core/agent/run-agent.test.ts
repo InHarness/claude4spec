@@ -241,7 +241,7 @@ function stubBriefFlow(opts: { threads?: Array<{ id: string }>; briefPath?: stri
 describe('runAgent — brief mode predicate', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it('enters create-mode with no create argument at all — the common call', async () => {
+  it('[ac:ac-predykat-trybu-create-dla-ct-brief-cr] enters create-mode with no create argument at all — the common call', async () => {
     const { calls } = stubBriefFlow();
     await runAgent({ ...BASE, message: 'hi', contextType: 'brief' });
 
@@ -259,7 +259,7 @@ describe('runAgent — brief mode predicate', () => {
     ['briefPath with roots', { briefPath: 'a.md', roots: ['app'] }],
     ['briefPath with a suffix', { briefPath: 'a.md', suffix: 's' }],
     ['roots with no toReleaseName', { fromReleaseName: '0.1.0', roots: ['app'] }],
-  ])('rejects %s before any request reaches the server', async (_label, extra) => {
+  ])('[ac:ac-create-mode-ct-brief-source-spoza] rejects %s before any request reaches the server', async (_label, extra) => {
     const { calls } = stubBriefFlow();
     const err = await runAgent({ ...BASE, message: 'hi', contextType: 'brief', ...extra }).catch(
       (e) => e,
@@ -289,7 +289,7 @@ describe('runAgent — brief create-mode window mapping', () => {
     ['a window open at the start', { toReleaseName: '0.1.0' }, { fromReleaseName: null, toReleaseName: '0.1.0' }],
     ['a window open to the current state', { fromReleaseName: '0.2.0' }, { fromReleaseName: '0.2.0', toReleaseName: null }],
     ['no window at all', { suffix: 's' }, { toReleaseName: null, suffix: 's' }],
-  ])('posts %s verbatim', async (_label, params, body) => {
+  ])('[ac:ac-c4s-agent-ct-brief-w-create-mode-flag] posts %s verbatim', async (_label, params, body) => {
     const { calls } = stubBriefFlow();
     await runAgent({ ...BASE, message: 'go', contextType: 'brief', ...params });
 

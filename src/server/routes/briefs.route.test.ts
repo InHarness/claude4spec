@@ -102,7 +102,7 @@ describe('briefsRouter — POST /api/briefs', () => {
    * `from` from the latest release and leaves `to` open — a brief against the
    * current state, with nothing on the wire naming that provenance.
    */
-  it('accepts an empty body — window open to the current state, `from` resolved to latest', async () => {
+  it('[ac:ac-post-api-briefs-przyjmuje-opcjonalne-po] accepts an empty body — window open to the current state, `from` resolved to latest', async () => {
     const res = await request(app).post('/api/briefs').send({});
 
     expect(res.status).toBe(200);

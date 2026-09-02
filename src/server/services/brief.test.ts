@@ -171,13 +171,13 @@ describe('BriefService.createBrief — the window is the provenance', () => {
     ).resolves.toMatchObject({ fromReleaseName: null, toReleaseName: 'r2' });
   });
 
-  it('rejects a window with neither end', async () => {
+  it('[ac:ac-createbrief-wywolany-z-fromreleasename-n] rejects a window with neither end', async () => {
     await expect(
       makeService().createBrief({ fromReleaseName: null, toReleaseName: null }),
     ).rejects.toThrow(/at least one of fromReleaseName/);
   });
 
-  it('rejects a closed window whose ends are the same release', async () => {
+  it('[ac:ac-walidacja-proweniencji-createbrief-do] rejects a closed window whose ends are the same release', async () => {
     await expect(
       makeService().createBrief({ fromReleaseName: 'r1', toReleaseName: 'r1' }),
     ).rejects.toThrow(/from_release must differ/);
@@ -296,7 +296,7 @@ describe('BriefService — legacy briefs carrying source / generator_version', (
     ).resolves.toBeTruthy();
   });
 
-  it('still refuses a change to an end of the window', async () => {
+  it('[ac:ac-update-brief-odrzuca-probe-zmiany-kto] still refuses a change to an end of the window', async () => {
     const service = makeService();
     const current = await service.getBrief('legacy.md');
 
