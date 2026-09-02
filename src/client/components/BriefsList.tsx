@@ -52,8 +52,9 @@ export function BriefsList() {
   }, [releases]);
 
   const sortedBriefs = useMemo(() => {
-    // 0.1.69: analysis briefs carry `toRelease === null` (no target release) —
-    // they sort to the top (rank -1), ahead of any released target.
+    // 0.1.69: a window open to the current state carries `toRelease === null`
+    // (no target release) — those sort to the top (rank -1), ahead of any
+    // released target.
     const rankOf = (name: string | null) =>
       name === null
         ? -1

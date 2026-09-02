@@ -228,7 +228,8 @@ export class BriefService {
   }
 
   /**
-   * `to_release` DESCENDING, analysis briefs first, path as the tiebreak.
+   * `to_release` DESCENDING, briefs open to the current state first, path as
+   * the tiebreak.
    *
    * The order is part of the operation, not a presentation choice, which is why
    * it lives here rather than in a caller. The indexer answers in
@@ -245,8 +246,9 @@ export class BriefService {
   private static compareBriefs(a: BriefListItem, b: BriefListItem): number {
     const at = a.toRelease;
     const bt = b.toRelease;
-    // An analysis brief has no target release; it describes the state as of HEAD,
-    // so it sorts ahead of every named release rather than below all of them.
+    // A brief whose window is open at the `to` end has no target release; it
+    // describes the state as of HEAD, so it sorts ahead of every named release
+    // rather than below all of them.
     if (at === null && bt === null) return a.path.localeCompare(b.path);
     if (at === null) return -1;
     if (bt === null) return 1;
@@ -525,9 +527,11 @@ export class BriefService {
     // 0.1.96: scoped brief gains a roots segment (`-{root-slug}[-{root-slug}]`);
     // omitted for whole-release scope (roots undefined/empty).
     const rootsSeg = roots && roots.length > 0 ? `-${roots.map(slugify).join('-')}` : '';
-    // 0.1.69: analysis brief (to=null) — `{from-slug}-to-next[-{roots}][-{suffix}].md`.
+    // 0.1.69: window open to the current state (to=null) —
+    // `{from-slug}-to-next[-{roots}][-{suffix}].md`. `fromName` cannot be null
+    // here; a window with neither end is rejected in `createBrief`.
     const base = toName === null
-      ? `${slugify(fromName ?? 'head')}-to-next${rootsSeg}${suf}`
+      ? `${slugify(fromName as string)}-to-next${rootsSeg}${suf}`
       : fromName === null
         ? `initial-${slugify(toName)}${rootsSeg}${suf}`
         : `${slugify(fromName)}-to-${slugify(toName)}${rootsSeg}${suf}`;

@@ -1477,7 +1477,10 @@ function buildBriefSystemPrompt(input: {
         `<current_brief ${attrs({
           path: input.brief.path,
           from_release: fm.from_release ?? '(initial)',
-          to_release: fm.to_release,
+          // `attrs()` drops nulls, and an open `to` is now the DEFAULT window —
+          // the agent must be able to read that branch off the attribute rather
+          // than off its absence. Mirrors `from_release`'s `(initial)`.
+          to_release: fm.to_release ?? '(unreleased)',
           implemented: fm.implemented ? 'true' : 'false',
           hash: input.brief.hash,
           ...(scopeRoots.length > 0 ? { roots: scopeRoots.join(', ') } : {}),

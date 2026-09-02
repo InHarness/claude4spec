@@ -112,18 +112,13 @@ describe('BriefService.updateContent — the suppress token and a failed write',
  * by the `source` label instead: the `roots` guard, and the posture guard that
  * refused a brief against the current state while
  * `agent.disableDirectFilesystemAccess` was on. That refusal is gone — such a
- * brief reads no repository, it gets the analysis in the parent's `message`.
+ * brief reads no repository, it gets the analysis in the parent's `message` —
+ * and it is the TYPE that pins its removal: `BriefServiceDeps` no longer carries
+ * `cwd`, so the service cannot reach a project config to consult. There is no
+ * runtime case to write for it; one would pass whatever the flag said.
  */
 describe('BriefService.createBrief — the window is the provenance', () => {
   let cwd: string;
-
-  const writeConfig = async (agent: Record<string, unknown>) => {
-    await fs.mkdir(path.join(cwd, '.claude4spec'), { recursive: true });
-    await fs.writeFile(
-      path.join(cwd, '.claude4spec', 'config.json'),
-      JSON.stringify({ $schemaVersion: 4, name: 'test', agent }),
-    );
-  };
 
   function makeService(): BriefService {
     return new BriefService({
@@ -206,13 +201,6 @@ describe('BriefService.createBrief — the window is the provenance', () => {
     expect(fm).not.toHaveProperty('generator_version');
   });
 
-  it('creates a brief against the current state even with direct FS access blocked', async () => {
-    await writeConfig({ disableDirectFilesystemAccess: true });
-
-    await expect(makeService().createBrief({ fromReleaseName: 'r1' })).resolves.toMatchObject({
-      toReleaseName: null,
-    });
-  });
 });
 
 /**

@@ -38,6 +38,13 @@ export async function runAgentCmd(args: ParsedArgs): Promise<void> {
   const threadId = optionalString(args, 'thread');
   const ct = optionalString(args, 'ct');
   const briefPath = optionalString(args, 'brief');
+  // The mode predicate is now a single condition (`--brief` present → attach),
+  // so an EMPTY `--brief` would silently fall through to create-mode and mint a
+  // brief nobody asked for — exactly what `--brief "$UNSET_VAR"` produces in a
+  // script. Presence with no value is an argument error, not a create request.
+  if (args.flags.has('brief') && briefPath === undefined) {
+    throw new CliError('INVALID_ARGS', '--brief needs a path (got an empty value)');
+  }
   const server = optionalString(args, 'server');
   const effort = optionalString(args, 'effort');
   const model = parseModelFlag(args);
