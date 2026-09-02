@@ -90,6 +90,9 @@ export function CreateBriefDialog({ toReleaseName, onClose }: Props) {
     persistLastAdditionalPrompt(additionalPrompt);
     try {
       const result = await create.mutateAsync({
+        // BOTH ends of the window, always. The two open windows (to the current
+        // state, and from the very beginning) have no modal on purpose — they
+        // are reachable from POST /api/briefs and the CLI only.
         fromReleaseName: apiFromName,
         toReleaseName,
         suffix: suffix.trim() || undefined,

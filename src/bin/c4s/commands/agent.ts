@@ -6,7 +6,6 @@ import {
   runAgent,
   type AgentContextType,
   type AgentMessage,
-  type AgentParams,
 } from '../../../core/agent/run-agent.js';
 import { parseModelFlag } from '../model-flag.js';
 import { SERVER_DELEGATING_CODES, type CliCommandContribution } from '../registry.js';
@@ -21,10 +20,10 @@ import { SERVER_DELEGATING_CODES, type CliCommandContribution } from '../registr
  *
  *   c4s agent "<msg>" --ct chat
  *   c4s agent "<msg>" --ct ask                 # read-only peer consult
- *   c4s agent "<msg>" --ct brief --brief <path>                     # attach-mode
- *   c4s agent "<msg>" --ct brief --source release-diff --from <r> --to <r>  # create-mode
- *   c4s agent "<msg>" --ct brief --source initial --to <r>          # create-mode
- *   c4s agent "<msg>" --ct brief --source analysis [--from <r>]     # create-mode
+ *   c4s agent "<msg>" --ct brief --brief <path>       # attach-mode
+ *   c4s agent "<msg>" --ct brief                      # create-mode, window open to the current state
+ *   c4s agent "<msg>" --ct brief --from <r> --to <r>  # create-mode, closed window
+ *   c4s agent "<msg>" --ct brief --to <r>             # create-mode, window open at the start
  *   c4s agent "<msg>" --thread <id>            # continue (—ct not needed)
  *
  * The terse peer-consult shorthand lives in `ask.ts` (hardcodes --ct=ask,
@@ -46,7 +45,8 @@ export async function runAgentCmd(args: ParsedArgs): Promise<void> {
   const workspace = args.workspace;
 
   // Create-mode flags (only meaningful for --ct brief); forwarded verbatim.
-  const sourceFlag = optionalString(args, 'source');
+  // No provenance selector — provenance is the shape of the window, and these
+  // two ends are the window.
   const fromFlag = optionalString(args, 'from');
   const toFlag = optionalString(args, 'to');
   const rootsFlag = optionalStringList(args, 'roots');
@@ -58,8 +58,9 @@ export async function runAgentCmd(args: ParsedArgs): Promise<void> {
 
   if (!threadId) {
     // Early CLI-level validation (livelier hints) ograniczona do samego `--ct`.
-    // Mutex attach/create ORAZ mapowanie `--source` na cialo requestu naleza do
-    // `runAgent` — wspolnej biblioteki obu transportow — wiec CLI ich nie duplikuje.
+    // Predykat trybu (attach vs create) ORAZ mapowanie flag okna na cialo
+    // requestu naleza do `runAgent` — wspolnej biblioteki obu transportow —
+    // wiec CLI ich nie duplikuje.
     if (ct !== 'chat' && ct !== 'brief' && ct !== 'patch' && ct !== 'ask') {
       throw new CliError(
         'INVALID_ARGS',
@@ -85,7 +86,6 @@ export async function runAgentCmd(args: ParsedArgs): Promise<void> {
       threadId,
       briefPath,
       // Create-payload przekazywany plasko, dokladnie tak jak `effort`.
-      source: sourceFlag as AgentParams['source'],
       fromReleaseName: fromFlag,
       toReleaseName: toFlag,
       roots: rootsFlag,

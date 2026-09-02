@@ -36,7 +36,7 @@ const encodeBriefPath = encodeArtifactPath;
  */
 export interface BriefListItemView {
   path: string;
-  source: string;
+  /** `null` = window open at the start. */
   fromRelease: string | null;
   toRelease: string | null;
   implemented: boolean;
@@ -54,11 +54,9 @@ export interface BriefDetailResponse extends ArtifactResponse {
  */
 export interface BriefFrontmatterView {
   type: 'brief';
-  source: string;
   from_release: string | null;
   to_release: string | null;
   generated_at: string;
-  generator_version: string;
   implemented?: boolean;
   roots?: string[];
   [key: string]: unknown;
@@ -66,7 +64,6 @@ export interface BriefFrontmatterView {
 
 function toBriefListItemView(item: ArtifactListItem): BriefListItemView {
   const fm = item.frontmatter as {
-    source?: string;
     from_release?: string | null;
     to_release?: string | null;
     implemented?: boolean;
@@ -74,7 +71,6 @@ function toBriefListItemView(item: ArtifactListItem): BriefListItemView {
   };
   return {
     path: item.path,
-    source: fm.source === 'analysis' ? 'analysis' : 'release-diff',
     fromRelease: typeof fm.from_release === 'string' ? fm.from_release : null,
     toRelease: typeof fm.to_release === 'string' ? fm.to_release : null,
     implemented: fm.implemented === true,

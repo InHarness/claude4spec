@@ -341,7 +341,6 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
     ws,
   );
   const briefService = new BriefService({
-    cwd,
     briefsPages,
     briefsWatcher,
     briefsSerializer,

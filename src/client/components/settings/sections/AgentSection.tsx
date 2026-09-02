@@ -286,7 +286,6 @@ function DirectFilesystemAccessField({
             Unavailable while this is on:
             <ul className="mt-1 list-disc pl-4">
               <li>git recovery — “Fix it with Agent” in the git error dialog</li>
-              <li>briefs with source: analysis (reading another repository)</li>
               <li>the c4s CLI, which the agent runs from a shell</li>
               <li>scaffolding a new writing style into .claude/skills/</li>
             </ul>

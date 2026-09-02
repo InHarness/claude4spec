@@ -87,7 +87,6 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
     const chatService = new ChatService(db);
 
     const briefService = new BriefService({
-      cwd,
       briefsPages,
       briefsWatcher,
       briefsSerializer,
@@ -142,11 +141,9 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
         'v1-to-v2.md',
         {
           type: 'brief',
-          source: 'release-diff',
           from_release: 'v1',
           to_release: 'v2',
           generated_at: '2026-01-01T00:00:00.000Z',
-          generator_version: 'test',
           implemented: false,
         },
         '# Brief: v1 -> v2\n',
@@ -167,11 +164,9 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
           'long.md',
           {
             type: 'brief',
-            source: 'analysis',
             from_release: null,
             to_release: null,
             generated_at: '2026-01-01T00:00:00.000Z',
-            generator_version: 'test',
             implemented: false,
           },
           Array.from({ length: 20 }, (_, i) => `line ${i + 1}`).join('\n') + '\n',
@@ -207,11 +202,9 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
           'sep.md',
           {
             type: 'brief',
-            source: 'analysis',
             from_release: null,
             to_release: null,
             generated_at: '2026-01-01T00:00:00.000Z',
-            generator_version: 'test',
             implemented: false,
           },
           // A thematic break, then a line that is not valid YAML. Handing this
@@ -250,7 +243,10 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
       const all = await request(app).get('/api/artifacts/brief');
       expect(all.status).toBe(200);
       expect(all.body.data).toHaveLength(1);
-      expect(all.body.data[0]).toMatchObject({ path: 'v1-to-v2.md', frontmatter: { source: 'release-diff' } });
+      expect(all.body.data[0]).toMatchObject({
+        path: 'v1-to-v2.md',
+        frontmatter: { from_release: 'v1', to_release: 'v2' },
+      });
       expect(typeof all.body.data[0].hash).toBe('string');
       expect(all.body.data[0].hash.length).toBeGreaterThan(0);
 
@@ -261,7 +257,7 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
       expect(pendingOnly.body.data).toHaveLength(1);
     });
 
-    it('lists newest release first, analysis briefs ahead of them — not path-alphabetical', async () => {
+    it('lists newest release first, open-`to` briefs ahead of them — not path-alphabetical', async () => {
       /**
        * The order is part of the operation, and it has exactly one consumer for
        * whom it is load-bearing in a way nobody sees: `c4s list-briefs` prints
@@ -274,19 +270,17 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
        * `0-2-9` versus `0-2-13` is the case a plain string compare gets wrong,
        * so it is in the fixture on purpose.
        */
-      const fm = (to: string | null, source = 'release-diff') => ({
+      const fm = (to: string | null) => ({
         type: 'brief',
-        source,
         from_release: 'x',
         to_release: to,
         generated_at: '2026-01-01T00:00:00.000Z',
-        generator_version: 'test',
         implemented: false,
       });
       await writeArtifact('brief', '0-1-90-to-0-1-91.md', fm('0.1.91'), '# old\n');
       await writeArtifact('brief', '0-2-9-to-0-2-10.md', fm('0.2.10'), '# mid\n');
       await writeArtifact('brief', '0-2-12-to-0-2-13.md', fm('0.2.13'), '# new\n');
-      await writeArtifact('brief', 'aaa-analysis.md', fm(null, 'analysis'), '# analysis\n');
+      await writeArtifact('brief', 'aaa-analysis.md', fm(null), '# against the current state\n');
 
       const res = await request(app).get('/api/artifacts/brief');
       expect(res.body.data.map((r: { path: string }) => r.path)).toEqual([
@@ -382,7 +376,7 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
     it('PATCH .../frontmatter 400s IMMUTABLE_FIELD on an immutable key', async () => {
       const res = await request(app)
         .patch('/api/artifacts/brief/v1-to-v2.md/frontmatter')
-        .send({ frontmatter: { source: 'analysis' } });
+        .send({ frontmatter: { from_release: 'v0' } });
 
       expect(res.status).toBe(400);
       expect(res.body.error.code).toBe('IMMUTABLE_FIELD');

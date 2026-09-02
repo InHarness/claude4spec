@@ -886,39 +886,38 @@ export interface LastThreadForPlanResponse {
 
 export type BriefChangedBy = 'user' | 'agent' | 'filesystem';
 
-/** Reserved frontmatter keys agent cannot mutate via update_brief. */
+/**
+ * Reserved frontmatter keys agent cannot mutate via update_brief.
+ *
+ * 0.2.64: five, not seven. `source` and `generator_version` left the model —
+ * provenance is the SHAPE OF THE WINDOW (which end of `from_release` /
+ * `to_release` is null), so the two ends are the thing worth protecting and a
+ * separate provenance label has nothing left to guard.
+ */
 export const BRIEF_IMMUTABLE_FRONTMATTER_KEYS = [
   'type',
-  'source',
   'from_release',
   'to_release',
   'generated_at',
-  'generator_version',
   // 0.1.96: brief scope — the releasable roots this brief covers. Absent/omitted
   // = whole-release scope (every releasable root). Immutable once written.
   'roots',
 ] as const;
 
 /**
- * 0.1.69 brief provenance.
- *   - `release-diff` (default / legacy): self-contained brief grounded in a
- *     release diff (`from_release` → `to_release`).
- *   - `analysis`: non-self-contained brief whose grounding comes from a parent
- *     thread's analysis (passed via runTransagent(message)) rather than a
- *     release diff. Always has `to_release = null` (state relative to HEAD).
+ * 0.2.64: provenance is not a field here either — it is read off the window.
+ * `to_release: null` = window open to the current state; `from_release: null` =
+ * window open at the start; both non-null = closed window. Briefs written
+ * before this release still carry `source` / `generator_version` keys; the
+ * index signature below tolerates them, nothing reads them.
  */
-export type BriefSource = 'release-diff' | 'analysis';
-
 export interface BriefFrontmatter {
   type: 'brief';
-  /** 0.1.69: brief provenance. Absent in legacy briefs ⇒ defaults to 'release-diff' at parse time. */
-  source: BriefSource;
-  /** `null` = initial brief (no previous release; `to_release` opisuje stan startowy projektu). */
+  /** `null` = window open at the start (no previous release; `to_release` opisuje stan startowy projektu). */
   from_release: string | null;
-  /** `null` = analysis brief — state relative to HEAD, no target release. */
+  /** `null` = window open to the current state — no target release. */
   to_release: string | null;
   generated_at: string;
-  generator_version: string;
   implemented?: boolean;
   /**
    * 0.1.96: brief scope — the releasable root ids this brief covers (verbatim).
@@ -954,19 +953,25 @@ export interface Brief {
   truncationHint?: string;
 }
 
+/**
+ * 0.2.64: brief provenance is a **window**, not a label — the payload covers
+ * all three shapes with nothing but the nullability of its two ends, so it has
+ * no way to contradict itself. Closed window (both non-null), window open at
+ * the start (`fromReleaseName: null` — the project's first brief), window open
+ * to the current state (`toReleaseName: null`).
+ */
 export interface BriefCreateRequest {
-  /** 0.1.104: brief provenance. Defaults to 'release-diff' when absent. */
-  source?: BriefSource;
-  /** `null` = initial brief (no previous release to compare against). */
+  /** Start of the window. `null` = open at the start. Omitted = the latest release. */
   fromReleaseName?: string | null;
-  /** `null` = analysis brief (state relative to HEAD); required unless `source = 'analysis'`. */
+  /** End of the window. `null` / omitted = open to the current state. Non-null must differ from `fromReleaseName`. */
   toReleaseName?: string | null;
+  /** Forwarded to the initial thread's first message — never to the frontmatter. */
   additionalPrompt?: string;
   suffix?: string;
   /**
    * 0.1.96: brief scope — releasable root ids to cover. Omitted/empty =
-   * whole-release scope (all releasable roots). Not allowed when
-   * `source = 'analysis'` (dead field once `toReleaseName = null`).
+   * whole-release scope (all releasable roots). Not allowed when the window's
+   * `to` end is open (dead field once `toReleaseName = null`).
    */
   roots?: string[];
 }
@@ -1022,7 +1027,7 @@ export interface PatchFrontmatter {
 /** `GET /api/artifacts/:kind/:path` detail envelope (`{ data: ArtifactResponse }`). */
 export interface ArtifactResponse {
   path: string;
-  /** Parsed YAML frontmatter — kind-specific fields (source/status/patch_kind/...) live here. */
+  /** Parsed YAML frontmatter — kind-specific fields (status/patch_kind/from_release/...) live here. */
   frontmatter: Record<string, unknown>;
   body: string;
   /** Full file content (frontmatter + body, byte-faithful) — or the requested `?range=` window. */
@@ -1035,10 +1040,13 @@ export interface ArtifactResponse {
 }
 
 /**
- * `GET /api/artifacts/:kind` list item. No `name`/`title`/`source`/`threadCount`
- * at the list level — kind-specific data lives in `frontmatter`; the client
- * derives a display title from `frontmatter.title` (brief) or the body's first
- * heading (patch) rather than the server bolting a synthesized field on.
+ * `GET /api/artifacts/:kind` list item. No `name`/`title`/`threadCount` at the
+ * list level — kind-specific data lives in `frontmatter` (`patch_kind`,
+ * `brief`, `from_release`, `to_release`); the client derives a display title
+ * from `frontmatter.title` (brief) or the body's first heading (patch) rather
+ * than the server bolting a synthesized field on. For a brief, provenance is
+ * carried by `from_release` / `to_release`, because those are the ends of the
+ * window — there is no provenance field to list.
  */
 export interface ArtifactListItem {
   path: string;

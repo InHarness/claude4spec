@@ -233,62 +233,32 @@ function stubBriefFlow(opts: { threads?: Array<{ id: string }>; briefPath?: stri
   return { calls };
 }
 
-describe('runAgent — brief attach XOR create mutex', () => {
+/**
+ * 0.2.64 — the mode predicate has ONE condition: `briefPath` present → attach,
+ * absent → create. There is no mutex left to enforce, so `briefPath` next to a
+ * window argument is just a contradiction in the arguments.
+ */
+describe('runAgent — brief mode predicate', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it('rejects briefPath together with a create-payload field', async () => {
-    stubBriefFlow();
-    const err = await runAgent({
-      ...BASE,
-      message: 'hi',
-      contextType: 'brief',
-      briefPath: 'existing.md',
-      source: 'analysis',
-    }).catch((e) => e);
-
-    expect(err).toBeInstanceOf(AgentError);
-    expect((err as AgentError).code).toBe('INVALID_ARGS');
-  });
-
-  it('rejects neither briefPath nor a create-payload', async () => {
-    stubBriefFlow();
-    const err = await runAgent({ ...BASE, message: 'hi', contextType: 'brief' }).catch((e) => e);
-
-    expect(err).toBeInstanceOf(AgentError);
-    expect((err as AgentError).code).toBe('INVALID_ARGS');
-  });
-
-  /**
-   * Tryb create wyzwala KTORAKOLWIEK z pieciu flag — nie samo `source`. Bez
-   * tego `--suffix` w pojedynke wpadalby w galaz "brak obu" i konczyl sie
-   * mylacym bledem zamiast walidacja pol create-payloadu.
-   */
-  it('enters create-mode on a lone create-payload field other than source', async () => {
+  it('enters create-mode with no create argument at all — the common call', async () => {
     const { calls } = stubBriefFlow();
-    await runAgent({
-      ...BASE,
-      message: 'hi',
-      contextType: 'brief',
-      fromReleaseName: '0.1.0',
-      toReleaseName: '0.2.0',
-      suffix: 'scoped',
-    });
+    await runAgent({ ...BASE, message: 'hi', contextType: 'brief' });
 
-    const create = calls.find((c) => c.url.endsWith('/briefs'));
-    expect(create).toBeDefined();
-    expect((create?.body as { suffix?: string }).suffix).toBe('scoped');
+    expect(calls.find((c) => c.url.endsWith('/briefs'))?.body).toEqual({ toReleaseName: null });
   });
 
   /**
    * Walidacja argumentow biegnie PRZED `resolveServer`/`healthCheck`. Inaczej
-   * `--ct brief --source initial` bez `--to` konczy sie przy zgaszonym serwerze
-   * jako `SERVER_NOT_RUNNING` — diagnoza zupelnie innego problemu. Dowod: ani
-   * jeden fetch nie wychodzi.
+   * sprzecznosc flag konczy sie przy zgaszonym serwerze jako
+   * `SERVER_NOT_RUNNING` — diagnoza zupelnie innego problemu. Dowod: ani jeden
+   * fetch nie wychodzi.
    */
   it.each([
-    ['neither argument', {}],
-    ['both arguments', { briefPath: 'a.md', source: 'analysis' as const }],
-    ['a create-payload missing its required field', { source: 'initial' as const }],
+    ['briefPath with a window end', { briefPath: 'a.md', toReleaseName: '0.2.0' }],
+    ['briefPath with roots', { briefPath: 'a.md', roots: ['app'] }],
+    ['briefPath with a suffix', { briefPath: 'a.md', suffix: 's' }],
+    ['roots with no toReleaseName', { fromReleaseName: '0.1.0', roots: ['app'] }],
   ])('rejects %s before any request reaches the server', async (_label, extra) => {
     const { calls } = stubBriefFlow();
     const err = await runAgent({ ...BASE, message: 'hi', contextType: 'brief', ...extra }).catch(
@@ -301,87 +271,29 @@ describe('runAgent — brief attach XOR create mutex', () => {
   });
 });
 
-describe('runAgent — brief create-mode source mapping', () => {
+/**
+ * The whole mapping, one row per window shape. `to` is the discriminator, and
+ * the difference between an OMITTED `fromReleaseName` and an explicit `null`
+ * one is load-bearing: omitted means "the latest release" (resolved by the
+ * server), null means "from the beginning".
+ */
+describe('runAgent — brief create-mode window mapping', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("maps source 'release-diff' straight through", async () => {
-    const { calls } = stubBriefFlow();
-    await runAgent({
-      ...BASE,
-      message: 'go',
-      contextType: 'brief',
-      source: 'release-diff',
-      fromReleaseName: '0.1.0',
-      toReleaseName: '0.2.0',
-      roots: ['app'],
-    });
-
-    expect(calls.find((c) => c.url.endsWith('/briefs'))?.body).toEqual({
-      source: 'release-diff',
-      fromReleaseName: '0.1.0',
-      toReleaseName: '0.2.0',
-      roots: ['app'],
-      suffix: undefined,
-    });
-  });
-
-  /** `initial` nie jest wartoscia DTO — to `release-diff` z `fromReleaseName: null`. */
-  it("maps source 'initial' onto release-diff with a null fromReleaseName", async () => {
-    const { calls } = stubBriefFlow();
-    await runAgent({
-      ...BASE,
-      message: 'go',
-      contextType: 'brief',
-      source: 'initial',
-      toReleaseName: '0.1.0',
-    });
-
-    expect(calls.find((c) => c.url.endsWith('/briefs'))?.body).toEqual({
-      source: 'release-diff',
-      fromReleaseName: null,
-      toReleaseName: '0.1.0',
-      roots: undefined,
-      suffix: undefined,
-    });
-  });
-
-  it("maps source 'analysis' onto a null toReleaseName", async () => {
-    const { calls } = stubBriefFlow();
-    await runAgent({
-      ...BASE,
-      message: 'go',
-      contextType: 'brief',
-      source: 'analysis',
-      fromReleaseName: '0.2.0',
-    });
-
-    expect(calls.find((c) => c.url.endsWith('/briefs'))?.body).toEqual({
-      source: 'analysis',
-      fromReleaseName: '0.2.0',
-      toReleaseName: null,
-      suffix: undefined,
-    });
-  });
-
   it.each([
-    ['release-diff without toReleaseName', { source: 'release-diff', fromReleaseName: '0.1.0' }],
-    ['release-diff without fromReleaseName', { source: 'release-diff', toReleaseName: '0.2.0' }],
-    ['initial without toReleaseName', { source: 'initial', suffix: 's' }],
-    ['initial with fromReleaseName', { source: 'initial', fromReleaseName: '0.1.0', toReleaseName: '0.2.0' }],
-    ['analysis with toReleaseName', { source: 'analysis', toReleaseName: '0.2.0' }],
-    ['analysis with roots', { source: 'analysis', roots: ['app'] }],
-    ['an unknown source', { source: 'nonsense' }],
-  ])('rejects %s with INVALID_ARGS', async (_label, payload) => {
-    stubBriefFlow();
-    const err = await runAgent({
-      ...BASE,
-      message: 'go',
-      contextType: 'brief',
-      ...(payload as Record<string, unknown>),
-    } as Parameters<typeof runAgent>[0]).catch((e) => e);
+    [
+      'a closed window',
+      { fromReleaseName: '0.1.0', toReleaseName: '0.2.0', roots: ['app'] },
+      { fromReleaseName: '0.1.0', toReleaseName: '0.2.0', roots: ['app'] },
+    ],
+    ['a window open at the start', { toReleaseName: '0.1.0' }, { fromReleaseName: null, toReleaseName: '0.1.0' }],
+    ['a window open to the current state', { fromReleaseName: '0.2.0' }, { fromReleaseName: '0.2.0', toReleaseName: null }],
+    ['no window at all', { suffix: 's' }, { toReleaseName: null, suffix: 's' }],
+  ])('posts %s verbatim', async (_label, params, body) => {
+    const { calls } = stubBriefFlow();
+    await runAgent({ ...BASE, message: 'go', contextType: 'brief', ...params });
 
-    expect(err).toBeInstanceOf(AgentError);
-    expect((err as AgentError).code).toBe('INVALID_ARGS');
+    expect(calls.find((c) => c.url.endsWith('/briefs'))?.body).toEqual(body);
   });
 });
 
@@ -395,7 +307,6 @@ describe('runAgent — brief create-mode', () => {
       ...BASE,
       message: 'Code drift on X',
       contextType: 'brief',
-      source: 'analysis',
     });
 
     expect(result.briefPath).toBe('analysis-brief.md');
@@ -411,7 +322,6 @@ describe('runAgent — brief create-mode', () => {
       ...BASE,
       message: 'go',
       contextType: 'brief',
-      source: 'analysis',
     }).catch((e) => e);
 
     expect(err).toBeInstanceOf(AgentError);

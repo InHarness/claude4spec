@@ -158,9 +158,8 @@ export function BriefDetail({ briefPath }: Props) {
               <div className="text-[11px] font-mono space-y-0.5" style={{ color: 'var(--c-muted)' }}>
                 <div>type: {String(fm.type)}</div>
                 <div>from_release: {fm.from_release ?? '(initial)'}</div>
-                <div>to_release: {String(fm.to_release)}</div>
+                <div>to_release: {fm.to_release ?? '(unreleased)'}</div>
                 <div>generated_at: {String(fm.generated_at)}</div>
-                <div>generator_version: {String(fm.generator_version)}</div>
               </div>
             </div>
           </div>

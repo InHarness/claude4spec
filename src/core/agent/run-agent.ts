@@ -38,11 +38,11 @@ export type { AgentErrorCode } from './http.js';
  *   await runAgent({ message: '...', contextType: 'ask' })          // read-only peer consult
  *   await runAgent({ message: '...', server: 'http://other:4501', threadId: '...' })
  *   await runAgent({ message: '...', contextType: 'brief', briefPath: '...' })   // attach-mode
- *   await runAgent({ message: '...', contextType: 'brief', source: 'analysis' }) // create-mode
+ *   await runAgent({ message: '...', contextType: 'brief' })                     // create-mode
  *
- * Dla `contextType='brief'` attach i create wykluczaja sie wzajemnie — plik
- * briefu powstaje w kroku 3, PRZED tura: `runAgent` nie startuje tury na
- * nieistniejacym artefakcie i zaden tool wewnatrz tury go nie zaklada.
+ * Dla `contextType='brief'` tryb rozstrzyga `briefPath`: podany → attach, brak
+ * → create. Plik briefu powstaje w kroku 3, PRZED tura: `runAgent` nie startuje
+ * tury na nieistniejacym artefakcie i zaden tool wewnatrz tury go nie zaklada.
  */
 
 export type AgentContextType = 'chat' | 'brief' | 'patch' | 'ask';
@@ -76,33 +76,25 @@ export interface AgentParams {
   threadId?: string;
   /**
    * Attach-mode dla `contextType='brief'` — otwiera watek na istniejacym
-   * briefie. Mutex z create-payloadem ponizej (attach XOR create).
+   * briefie; jego OBECNOSC rozstrzyga tryb (podany → attach, brak → create).
    */
   briefPath?: string;
 
   /**
-   * Create-payload — wylacznie dla `contextType='brief'`, mutex z `briefPath`.
+   * Create-payload — wylacznie dla `contextType='brief'`. W CALOSCI opcjonalny,
+   * symetrycznie do `effort`: trybu nie wlacza zadne z tych pol, tylko BRAK
+   * `briefPath`. `runAgent({ message, contextType: 'brief' })` bez niczego
+   * wiecej jest poprawnym wywolaniem — brief wobec stanu biezacego.
    *
-   * Piec plaskich pol opcjonalnych, symetrycznie do juz istniejacego `effort`:
-   * zaden nowy wzorzec w sygnaturze. Tryb create wyzwala obecnosc
-   * KTOREJKOLWIEK z nich; `source` domyslne na `'release-diff'` dziala dopiero
-   * WEWNATRZ trybu create i samo trybu nie wlacza.
-   *
-   * Dokladnie jedno z (`briefPath`, create-payload) jest wymagane gdy
-   * `contextType='brief'` i brak `threadId` — inaczej `INVALID_ARGS`.
+   * Selektora proweniencji nie ma: proweniencja to ksztalt okna, ktory te dwa
+   * konce opisuja same — patrz tabela w {@link buildBriefCreateBody}.
    */
 
-  /**
-   * Trzy wartosci po tej stronie; DTO `brief-create-request` zna tylko dwie.
-   * Mapowanie 3→2 (`initial` → `release-diff` + `fromReleaseName: null`) robi
-   * ta warstwa, w {@link buildBriefCreateBody} — patrz tabela tamze.
-   */
-  source?: 'release-diff' | 'initial' | 'analysis';
-  /** Wymagane dla `source='release-diff'`; zabronione dla `'initial'`; opcjonalne dla `'analysis'`. */
+  /** Poczatek okna. Pominiete → serwer rozwija do ostatniego release'u. */
   fromReleaseName?: string;
-  /** Wymagane dla `source='release-diff'` i `'initial'`; zabronione dla `'analysis'`. */
+  /** Koniec okna. Pominiete → okno otwarte do stanu biezacego (`to = null`). */
   toReleaseName?: string;
-  /** Zakres briefu (releasable root ids). Zabronione dla `source='analysis'`. */
+  /** Zakres briefu (releasable root ids). Zabroniony przy otwartym `to`. */
   roots?: string[];
   suffix?: string;
   /**
@@ -152,11 +144,11 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
 
   // --- walidacja argumentow — PRZED discovery -----------------------------
   // Blad argumentow musi wrocic jako blad argumentow. Gdy ta walidacja stala za
-  // `resolveServer`, `--ct brief --source initial` bez `--to` konczyl sie
+  // `resolveServer`, `--ct brief --brief <p> --from <r>` konczyl sie
   // `SERVER_NOT_RUNNING` przy zgaszonym serwerze — diagnoza nie tego problemu.
   // Cala ta czesc jest offline, wiec idzie przed odkryciem serwera.
   const ct: AgentContextType = params.contextType ?? 'chat';
-  /** Cialo `POST /api/briefs` policzone z gory — tu zyje walidacja per-source. */
+  /** Cialo `POST /api/briefs` policzone z gory — tu zyje walidacja okna. */
   let briefCreateBody: Record<string, unknown> | undefined;
   let briefAttach = false;
   if (!params.threadId) {
@@ -174,27 +166,22 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
       );
     }
     if (ct === 'brief') {
-      // attach XOR create — dokladnie jedno z dwojga. Walidacja mutexu mieszka
-      // TUTAJ, nie w CLI: `runAgent` jest wspolna biblioteka obu transportow,
-      // wiec duplikat po stronie flag dawalby dwie odpowiedzi na jedno pytanie.
-      const hasCreatePayload = hasBriefCreatePayload(params);
-      if (params.briefPath && hasCreatePayload) {
-        throw new AgentError(
-          'INVALID_ARGS',
-          "contextType='brief' accepts briefPath (attach) or the create-payload " +
-            '(source/fromReleaseName/toReleaseName/roots/suffix), not both',
-        );
-      }
-      if (hasCreatePayload) {
-        briefCreateBody = buildBriefCreateBody(params);
-      } else if (params.briefPath) {
+      // Predykat trybu ma JEDEN warunek: `briefPath` podany → attach, brak →
+      // create. Zadne pole create-payloadu nie jest wymagane, wiec nie ma
+      // mutexu do pilnowania — `briefPath` razem z flaga okna to po prostu
+      // sprzecznosc argumentow. Walidacja mieszka TUTAJ, nie w CLI: `runAgent`
+      // jest wspolna biblioteka obu transportow.
+      if (params.briefPath) {
+        const windowFlags = briefWindowFlagsPresent(params);
+        if (windowFlags.length > 0) {
+          throw new AgentError(
+            'INVALID_ARGS',
+            `briefPath (attach) does not go with the window arguments (${windowFlags.join('/')})`,
+          );
+        }
         briefAttach = true;
       } else {
-        throw new AgentError(
-          'INVALID_ARGS',
-          "contextType='brief' requires briefPath (attach) or the create-payload " +
-            '(source/fromReleaseName/toReleaseName/roots/suffix)',
-        );
+        briefCreateBody = buildBriefCreateBody(params);
       }
     }
   }
@@ -291,73 +278,47 @@ function pickCreatedBriefThreadId(created: Record<string, unknown>): string {
   return id;
 }
 
-/** Czy wolajacy podal KTORAKOLWIEK czesc create-payloadu. */
-function hasBriefCreatePayload(params: AgentParams): boolean {
-  return (
-    params.source !== undefined ||
-    params.fromReleaseName !== undefined ||
-    params.toReleaseName !== undefined ||
-    params.roots !== undefined ||
-    params.suffix !== undefined
-  );
+/** Ktore argumenty okna podal wolajacy — nazwy do komunikatu bledu attach/create. */
+function briefWindowFlagsPresent(params: AgentParams): string[] {
+  const present: string[] = [];
+  if (params.fromReleaseName !== undefined) present.push('fromReleaseName');
+  if (params.toReleaseName !== undefined) present.push('toReleaseName');
+  if (params.roots !== undefined) present.push('roots');
+  if (params.suffix !== undefined) present.push('suffix');
+  return present;
 }
 
 /**
- * Create-payload → cialo `POST /api/briefs`, razem z mapowaniem 3-wartosciowego
- * `source` na 2-wartosciowe pole DTO. Tabela:
+ * Create-payload → cialo `POST /api/briefs`. Dyskryminatorem jest `to`:
  *
- * | `source`       | body                                                                  |
- * |----------------|-----------------------------------------------------------------------|
- * | `release-diff` | `release-diff`, `from=<fromReleaseName>`, `to=<toReleaseName>` (oba wymagane) |
- * | `initial`      | `release-diff`, `from=null`, `to=<toReleaseName>` (`from` zabroniony)  |
- * | `analysis`     | `analysis`, `from=<fromReleaseName ?? latest>`, `to=null` (`roots` zabroniony) |
+ * | wywolanie          | okno                       | body                                            |
+ * |--------------------|----------------------------|-------------------------------------------------|
+ * | `from` + `to`      | domkniete                  | `{from, to}`                                     |
+ * | samo `to`          | otwarte od poczatku        | `{from: null, to}`                               |
+ * | samo `from`        | otwarte do stanu biezacego | `{from, to: null}`                               |
+ * | brak obu           | otwarte do stanu biezacego | `{to: null}` — `from` rozwija serwer do latest   |
  *
- * `initial` NIE jest wartoscia pola `source` w DTO — to `release-diff`
- * z `fromReleaseName: null`.
+ * Zadnego mapowania etykiet tu nie ma, bo etykiet nie ma: kazdy z tych czterech
+ * wierszy to ta sama para pol o innej nullowosci.
  */
 function buildBriefCreateBody(params: AgentParams): Record<string, unknown> {
-  const source = params.source ?? 'release-diff';
   const { fromReleaseName, toReleaseName, roots, suffix } = params;
 
-  if (source === 'release-diff') {
-    if (!fromReleaseName || !toReleaseName) {
-      throw new AgentError(
-        'INVALID_ARGS',
-        "source 'release-diff' requires both fromReleaseName and toReleaseName",
-      );
-    }
-    return { source, fromReleaseName, toReleaseName, roots, suffix };
+  if (roots !== undefined && toReleaseName === undefined) {
+    // Zawezanie przestrzeni stron nie ma sensu bez drugiego konca okna.
+    throw new AgentError('INVALID_ARGS', 'roots requires toReleaseName (the window\'s `to` end)');
   }
 
-  if (source === 'initial') {
-    if (!toReleaseName) {
-      throw new AgentError('INVALID_ARGS', "source 'initial' requires toReleaseName");
-    }
-    if (fromReleaseName !== undefined) {
-      throw new AgentError(
-        'INVALID_ARGS',
-        "source 'initial' does not accept fromReleaseName (it is always null)",
-      );
-    }
-    return { source: 'release-diff', fromReleaseName: null, toReleaseName, roots, suffix };
-  }
-
-  if (source === 'analysis') {
-    if (toReleaseName !== undefined) {
-      throw new AgentError(
-        'INVALID_ARGS',
-        "source 'analysis' does not accept toReleaseName (it is always null)",
-      );
-    }
-    if (roots !== undefined) {
-      throw new AgentError('INVALID_ARGS', "source 'analysis' does not accept roots");
-    }
-    // `fromReleaseName` opcjonalny — serwer domysla latest release w `createBrief`.
-    return { source, fromReleaseName: fromReleaseName ?? null, toReleaseName: null, suffix };
-  }
-
-  throw new AgentError(
-    'INVALID_ARGS',
-    `source must be release-diff|initial|analysis (got '${String(source)}')`,
-  );
+  return {
+    // `to` podane ⇒ `from` pominiete znaczy "od poczatku" (jawny null);
+    // `to` pominiete ⇒ `from` pominiete zostawiamy serwerowi (→ latest).
+    ...(fromReleaseName !== undefined
+      ? { fromReleaseName }
+      : toReleaseName !== undefined
+        ? { fromReleaseName: null }
+        : {}),
+    toReleaseName: toReleaseName ?? null,
+    ...(roots !== undefined ? { roots } : {}),
+    ...(suffix !== undefined ? { suffix } : {}),
+  };
 }

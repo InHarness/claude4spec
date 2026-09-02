@@ -93,14 +93,12 @@ describe('spreadsheet declares all eight operations', () => {
 describe('c4s agent --ct brief can mint a brief', () => {
   it('parses the create flags and posts them to /briefs', () => {
     const cli = read('src/bin/c4s/commands/agent.ts');
-    for (const flag of ['source', 'from', 'to', 'roots', 'suffix']) {
+    for (const flag of ['from', 'to', 'roots', 'suffix']) {
       expect(cli, flag).toMatch(new RegExp(`'${flag}'`));
     }
-    // Validation per source: release-diff needs from+to, initial forces from
-    // null, analysis forces to null.
-    expect(cli).toMatch(/release-diff/);
-    expect(cli).toMatch(/initial/);
-    expect(cli).toMatch(/analysis/);
+    // 0.2.64: no provenance selector — the window's two ends are the whole
+    // create surface, and the mapping onto the request body lives in runAgent.
+    expect(cli).not.toMatch(/'source'/);
     expect(read('src/core/agent/run-agent.ts')).toMatch(/\/briefs/);
   });
 });
