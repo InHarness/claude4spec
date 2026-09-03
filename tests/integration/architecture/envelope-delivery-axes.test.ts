@@ -330,3 +330,84 @@ describe('the capability-class envelope — a plugin with no entity type', () =>
     expect(registry.listPluginRecords().map((r) => r.name)).not.toContain(PKG);
   });
 });
+
+/**
+ * 0.2.65 — the FORM CLAUSE, asserted on the bytes the agent actually receives.
+ *
+ * M15 makes the writing style the owner of *where* a result lands, and the entity
+ * type the owner of *when* content stops being prose or a fence — the promotion
+ * threshold. From that split falls one content obligation on a style: wherever it
+ * enumerates the admissible forms for recording something, the project entity is
+ * listed as an equal beside prose, table and fence, ORDERING INCLUDED, because the
+ * first form listed reads as the default.
+ *
+ * Nothing in the host enforces this — no M19 consistency rule parses a skill
+ * package's prose, and none is proposed. A style missing the clause is an
+ * INCOMPLETE STYLE, the same class of gap as a package with no `workflows/brief.md`.
+ * That is exactly why these two live as tests: `layered-vertical-slices` is the
+ * reference fulfilment of the clause, and the only thing standing between it and a
+ * silent regression is this file.
+ *
+ * Resolved through the real registry rather than by reading the `.md` off the disk:
+ * the package travels as literals compiled into the envelope, so the disk file is
+ * an input to the build, not the thing `load_skill_file` serves. Reading it would
+ * pass while the served bytes said something else.
+ */
+describe('the reference style fulfils the M15 form clause', () => {
+  const STYLE = 'layered-vertical-slices';
+
+  let resolved: ReturnType<SkillRegistry['resolve']>;
+
+  beforeAll(async () => {
+    const registry = await loadedRegistry();
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-form-clause-'));
+    try {
+      const skills = SkillRegistry.load(findSkillsRoots(tmp));
+      for (const skill of registry.listSkills()) skills.addPluginSkill(skill);
+      resolved = skills.resolve(STYLE);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * The enumeration is asserted as a LIST, by the position of two of its bullets.
+   * That is a known cost, named here rather than discovered later: rewriting the
+   * enumeration as running prose would not make this criterion false, it would make
+   * it undecidable — and the fix then is to rewrite the criterion, not to delete it.
+   */
+  it('[ac:ac-load-skill-file-layered-vertical-slic] lists the entity embed BEFORE the raw fence in the slice schema', () => {
+    const layer = resolved.files['templates/layer.md'];
+    expect(layer?.isText).toBe(true);
+
+    // Scoped to the enumeration under `## Module slice schema`: the same two
+    // phrases recur further down the file, where their order says nothing.
+    const schema = layer!.content.slice(layer!.content.indexOf('## Module slice schema'));
+    const entity = schema.indexOf('- an embed of project entities,');
+    const fence = schema.indexOf('- a fenced block (');
+
+    expect(entity, 'the entity form is not enumerated as a bullet').toBeGreaterThan(-1);
+    expect(fence, 'the fenced form is not enumerated as a bullet').toBeGreaterThan(-1);
+    expect(entity).toBeLessThan(fence);
+  });
+
+  /**
+   * A prohibition without a scope reads as a blanket, and then it APPEARS to
+   * contradict any entity type whose promotion threshold admits the very content it
+   * seems to forbid. The contradiction is only apparent — the split of ownership
+   * settles it, not the order of blocks in the prompt — but it is the style author's
+   * job to lift it, not the agent's in flight.
+   */
+  it('[ac:ac-load-skill-file-layered-vertical-slic-2] carries the no-code rule together with its scope', () => {
+    const rule = resolved.content.slice(resolved.content.indexOf('## 6. Quality rules'));
+
+    expect(rule).toContain('**No code, no tests, no build config.**');
+    // The scope names what the prohibition does NOT cover — the canonical shape of
+    // a contract, promoted by an active type — and it has to sit with the rule, not
+    // somewhere else in the package.
+    const prohibition = rule.indexOf('**No code, no tests, no build config.**');
+    const scope = rule.indexOf('**Scope.**', prohibition);
+    expect(scope, 'rule 6 states a prohibition with no scope').toBeGreaterThan(-1);
+    expect(rule.slice(scope, rule.indexOf('\n7. '))).toMatch(/not implementation/i);
+  });
+});

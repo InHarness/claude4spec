@@ -24,8 +24,8 @@ how to handle external/no implementor — see SKILL.md §2 (concepts), §5 (temp
 ```
 <Concrete schema. Pick a form that fits your project — pick one or mix:
  - prose with required headings,
- - a fenced block (Zod / TypeScript type / SQL / table-of-fields),
  - an embed of project entities,
+ - a fenced block (Zod / TypeScript type / SQL / table-of-fields),
  - a table the module fills,
  - or any combination.
 
@@ -36,6 +36,7 @@ how to handle external/no implementor — see SKILL.md §2 (concepts), §5 (temp
 ```
 
 *Recommended shape when the project models entities:* declare the slice as an entity type and embed the live list via `<tagged_list type="<entity-type>" tags="MNN"/>`. Module prose then explains *why*; the canonical list stays in entities, drift becomes impossible. Skip this shape if the project has no entity machinery or the slice doesn't warrant it.
+A single canonical contract that is not part of an enumerable set is embedded as a single project entity; use the tagged-list embed only when the layer describes a set the module enumerates.
 
 > **Implementor module:** `MNN — <name>` *(or "external — <name>" when the implementor lives outside our spec, e.g. PostgreSQL, Express; or "none — pure description convention")*
 
