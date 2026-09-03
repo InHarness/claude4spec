@@ -240,6 +240,113 @@ describe('M37 — contributes.skills (0.2.19)', () => {
     expect(registry.listSkills()).toEqual([]);
   });
 
+  it('carries a valid contextTypes through to the registry entry', () => {
+    const registry = new PluginRegistryImpl();
+    registry.registerPlugin(
+      skillManifest('@c4s/plugin-narrow', { skills: [skill({ contextTypes: ['chat'] })] }),
+    );
+    expect(registry.listSkills().map((x) => x.contextTypes)).toEqual([['chat']]);
+  });
+
+  it('leaves contextTypes undefined when the package omits it — the resolver reads the absence', () => {
+    const registry = new PluginRegistryImpl();
+    registry.registerPlugin(skillManifest('@c4s/plugin-wide', { skills: [skill()] }));
+    expect(registry.listSkills()[0].contextTypes).toBeUndefined();
+  });
+
+  /**
+   * 0.2.66 — the ONE skill defect that costs its own entry rather than the envelope.
+   * Every other malformed field throws and fails the plugin atomically (see the
+   * `scope` case above); `contextTypes` is a selector over turns, not part of the
+   * skill's identity, so a typo in it must not take an envelope's entities and
+   * subagents down with it.
+   */
+  it('skips a contribution whose contextTypes names a turn that does not exist, warning and loading the rest', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const registry = new PluginRegistryImpl();
+    try {
+      expect(() =>
+        registry.registerPlugin(
+          skillManifest('@c4s/plugin-mixed', {
+            skills: [
+              skill({ slug: 'bad', contextTypes: ['chat', 'review'] }),
+              skill({ slug: 'good', contextTypes: ['brief'] }),
+            ],
+          }),
+        ),
+      ).not.toThrow();
+
+      expect(registry.listSkills().map((x) => x.slug)).toEqual(['good']);
+      expect(warn.mock.calls.flat().join(' ')).toMatch(/"bad".*contextTypes.*"review"/);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('skips a contribution whose contextTypes is not an array at all', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const registry = new PluginRegistryImpl();
+    try {
+      registry.registerPlugin(
+        skillManifest('@c4s/plugin-nonarray', {
+          skills: [skill({ contextTypes: 'chat' as unknown as ['chat'] })],
+        }),
+      );
+      expect(registry.listSkills()).toEqual([]);
+      expect(warn.mock.calls.flat().join(' ')).toMatch(/must be an array/);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  /**
+   * The skip is priced against ONE LISTING ROW, and that price is only right for a
+   * contextual skill. A style reaches a turn through `config.writingStyle` and its
+   * own prompt block, never through the listing, so dropping it costs the project
+   * its selected style in both the selector and the prompt — over a field that
+   * does nothing for a style either way. Warn, keep, move on.
+   */
+  it('keeps a writing style whose contextTypes is unusable — the field has no effect on a style', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const registry = new PluginRegistryImpl();
+    try {
+      registry.registerPlugin(
+        skillManifest('@c4s/plugin-styled', {
+          skills: [
+            skill({
+              slug: 'terse',
+              scope: 'writing-style',
+              title: 'Terse',
+              contextTypes: ['chat', 'breif'] as unknown as ['chat'],
+            }),
+          ],
+        }),
+      );
+      expect(registry.listSkills().map((x) => x.slug)).toEqual(['terse']);
+      expect(warn.mock.calls.flat().join(' ')).toMatch(/"terse".*ignoring the field/);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('names a slugless contribution readably rather than warning about "undefined"', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const registry = new PluginRegistryImpl();
+    try {
+      registry.registerPlugin(
+        skillManifest('@c4s/plugin-slugless', {
+          skills: [skill({ slug: undefined, contextTypes: ['nope'] })],
+        }),
+      );
+      expect(registry.listSkills()).toEqual([]);
+      const said = warn.mock.calls.flat().join(' ');
+      expect(said).toContain('(no slug)');
+      expect(said).not.toContain('undefined');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('drops a plugin\'s skills again on unregister, so a hot-reload cannot leave a stale one behind', () => {
     const registry = new PluginRegistryImpl();
     registry.registerPlugin(skillManifest('@c4s/plugin-skills', { skills: [skill()] }));

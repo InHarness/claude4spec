@@ -32,7 +32,9 @@ import { resolvePluginSubagents, sanitizeSubagentDefinition } from './plugin-sub
  * (here), the dispatcher (`routes/agent-turn.ts`), and the enum validator (`services/chat.ts`)
  * only CONSUME it. Adding a context_type = one row here + extending the `ChatContextType` union
  * in `shared/entities.ts` — no edits to dispatch logic. NOT a SQLite table: the values are code
- * artifacts (bundled skills, MCP servers, React chrome, SubagentDefinition). */
+ * artifacts (MCP servers, React chrome, SubagentDefinition, prompt text). Skills are no longer
+ * among them — 0.2.66 took the `attachInternalSkills` dimension out, and the count above is what
+ * is left. */
 
 /**
  * 0.2.13 — `McpServerSet` moved to `operations/profiles.ts` and is now DERIVED
@@ -48,28 +50,32 @@ import { resolvePluginSubagents, sanitizeSubagentDefinition } from './plugin-sub
  */
 export type { McpServerSet } from '../operations/profiles.js';
 
-/** One registry row — the six dimensions spec `m05ctxreg` dispatches per thread. */
+/**
+ * One registry row — the five dimensions spec `m05ctxreg` dispatches per thread.
+ *
+ * 0.2.66 removed a sixth, `attachInternalSkills` — the host's map of which contextual
+ * skills to pin to which context type. It had been shrinking for two releases (0.2.19
+ * emptied `brief` and `patch`, leaving one entry in the whole catalogue) and the
+ * remaining entry moved to the package that owns the skill, which now declares its own
+ * reach through `PluginSkillContribution.contextTypes`. The row is no longer where a
+ * skill gets attached; `<available_skills>` is entirely the plugin fan-out's product.
+ *
+ * Nothing about the DATA layer changed with it: `chat_thread.context_type`, its CHECK,
+ * its default and its invariants are untouched, and there is no migration. This is a
+ * registry-and-prompt-builder change only.
+ */
 export interface ContextTypeEntry {
-  /** Dim 1 — M37: hardcoded contextual skills attached to `inlineSkills` on top of
-   *  `config.writingStyle` (which `resolveForContext` auto-appends to every context
-   *  type — deliberately not listed here) and on top of the unconditional fan-out of
-   *  plugin-contributed contextual skills (likewise not listed: it is the same for
-   *  every row). 0.2.19 emptied this for `brief` and `patch` — a mode's identity is
-   *  dim 6 below, not a skill — leaving exactly one entry in the whole catalogue.
-   *  None of these gets a `<project_skill>` block; that slot belongs to the writing
-   *  style alone. */
-  attachInternalSkills: string[];
-  /** Dim 2 — which MCP servers mount in `adapter.execute({ mcpServers })`. */
+  /** Dim 1 — which MCP servers mount in `adapter.execute({ mcpServers })`. */
   mcp: McpServerSet;
-  /** Dim 3 — chat-overlay chrome. Declarative marker only: the frontend `ChatOverlay.tsx`
+  /** Dim 2 — chat-overlay chrome. Declarative marker only: the frontend `ChatOverlay.tsx`
    *  switches on `contextType` directly; this records the dimension, no backend consumer. */
   uiChrome: 'overlay' | 'brief-detail';
-  /** Dim 4 — read-only `SubagentDefinition` injected into `adapter.execute({ subagents })`. */
+  /** Dim 3 — read-only `SubagentDefinition` injected into `adapter.execute({ subagents })`. */
   subagent: 'spec-explore' | 'diff-explore';
-  /** Dim 5 — builtin posture. `'force-plan'` pins `planMode=true` regardless of the thread's
+  /** Dim 4 — builtin posture. `'force-plan'` pins `planMode=true` regardless of the thread's
    *  `plan_mode` flag (read-only peer); `'follow-thread'` tracks the flag. */
   builtinPosture: 'follow-thread' | 'force-plan';
-  /** Dim 6 (0.2.19) — the body of `<interaction_context type="…">`: the domain rules of
+  /** Dim 5 (0.2.19) — the body of `<interaction_context type="…">`: the domain rules of
    *  this interaction type. The TEXT is owned by the module that owns the genre (M21
    *  brief / M23 patch / M11 ask) and lives in `interaction-rules.ts`; M05 only renders
    *  it. `chat` carries none, and an empty body is a legitimate value — the block is
@@ -85,7 +91,6 @@ export interface ContextTypeEntry {
  */
 export const CONTEXT_TYPE_REGISTRY: Record<ChatContextType, ContextTypeEntry> = {
   chat: {
-    attachInternalSkills: ['writing-style-author'],
     mcp: mcpServerSetForProfile('chat'),
     uiChrome: 'overlay',
     subagent: 'spec-explore',
@@ -93,10 +98,6 @@ export const CONTEXT_TYPE_REGISTRY: Record<ChatContextType, ContextTypeEntry> = 
     interactionRules: INTERACTION_RULES.chat,
   },
   brief: {
-    // 0.2.19: was `['brief-author']`, forced. The skill no longer exists: its identity
-    // half became `interactionRules` below, its methodology half belongs to the active
-    // writing style's `workflows/brief.md`.
-    attachInternalSkills: [],
     mcp: mcpServerSetForProfile('brief'),
     uiChrome: 'brief-detail',
     subagent: 'diff-explore',
@@ -104,8 +105,6 @@ export const CONTEXT_TYPE_REGISTRY: Record<ChatContextType, ContextTypeEntry> = 
     interactionRules: INTERACTION_RULES.brief,
   },
   patch: {
-    // 0.2.19: was `['patch-implementer']`, forced — same split as `brief` above.
-    attachInternalSkills: [],
     mcp: mcpServerSetForProfile('patch'),
     uiChrome: 'overlay',
     subagent: 'spec-explore',
@@ -121,7 +120,6 @@ export const CONTEXT_TYPE_REGISTRY: Record<ChatContextType, ContextTypeEntry> = 
     // mounted plugin servers are filtered out of `tools/list` rather than merely
     // being discouraged by forced plan mode. A peer may leave a plan; it cannot
     // mutate the spec it was consulted about.
-    attachInternalSkills: [],
     mcp: mcpServerSetForProfile('ask'),
     uiChrome: 'overlay',
     subagent: 'spec-explore',

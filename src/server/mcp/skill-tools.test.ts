@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { buildSkillToolsServer } from './skill-tools.js';
-import { SkillRegistry, type SkillRoot } from '../services/skill-registry.js';
+import { SkillRegistry, SkillResolver, type SkillRoot } from '../services/skill-registry.js';
 import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 
 /**
@@ -22,14 +22,14 @@ describe('skill-tools — load_skill_file', () => {
   let client: Client;
 
   function writeSkill(slug: string, opts: { description?: string; scope?: string } = {}): SkillRoot {
-    const root = path.join(tmp, 'bundled');
+    const root = path.join(tmp, 'styles');
     const dir = path.join(root, slug);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(
       path.join(dir, 'SKILL.md'),
       `---\ntitle: ${slug}\ndescription: ${opts.description ?? `about ${slug}`}\nversion: 1\nlanguage: en\nscope: ${opts.scope ?? 'writing-style'}\n---\n# ${slug}\nthe body\n`,
     );
-    return { dir: root, source: 'bundled' };
+    return { dir: root, source: 'user' };
   }
 
   async function mount(registry: SkillRegistry) {
@@ -92,8 +92,23 @@ describe('skill-tools — load_skill_file', () => {
     it('serves a skill the calling context never attached — the listing is not a permission boundary', async () => {
       // `resolveForContext` narrows what is WORTH opening; it does not narrow what
       // is reachable. A style is free to point at any skill the project has.
-      const root = writeSkill('unattached', { scope: 'contextual' });
-      await mount(SkillRegistry.load([root]));
+      // 0.2.66: a contextual skill is a package's contribution, and this one declares
+      // `contextTypes: ['chat']` — so no `brief` turn lists it, and it opens there all
+      // the same. The filter shapes the listing; it is not a gate on the reader.
+      const registry = SkillRegistry.load([writeSkill('house-style')]);
+      registry.addPluginSkill({
+        slug: 'unattached',
+        title: 'unattached',
+        description: 'about unattached',
+        version: 1,
+        language: 'en',
+        scope: 'contextual',
+        contextTypes: ['chat'],
+        content: '# unattached\nthe body',
+      });
+      await mount(registry);
+      const resolver = new SkillResolver(registry, tmp);
+      expect(resolver.resolveForContext('brief').listing).toEqual([]);
       expect((await call({ slug: 'unattached' })).isError).toBe(false);
     });
   });
@@ -250,17 +265,23 @@ describe('skill-tools — load_skill_file', () => {
   /**
    * 0.2.57 — a plugin-contributed package is served from the registry's MEMORY.
    *
-   * That is the one real cost difference against the `bundled` and `user` roots,
-   * which resolve a package off the disk on every read: a contribution has no
-   * `path` to read from, because its files are literals compiled into the
-   * plugin's module. The `fs` spy is the assertion — a passing content check
-   * alone would look identical if the tool had quietly found the files on disk.
+   * That is the one real cost difference against the FS roots, which resolve a
+   * package off the disk on every read: a contribution has no `path` to read from,
+   * because its files are literals compiled into the plugin's module. The `fs` spy is
+   * the assertion — a passing content check alone would look identical if the tool
+   * had quietly found the files on disk.
+   *
+   * The TTL is deliberately LARGE here, where the rest of this file uses `0`. Since
+   * 0.2.66 every FS root re-scans on demand (the cached-at-boot in-package root is
+   * gone), so a zero window would have the disk root's own re-scan trip the spy and
+   * say nothing about the plugin branch. The window makes the warm scan at `load()`
+   * the last disk touch before the assertions.
    */
   it('[ac:ac-podpliki-pakietu-stylu-workflows-brie] serves a plugin package\'s subfiles (slug, file) without touching the disk', async () => {
     // A real disk root beside it, holding a DIFFERENT skill: the claim under test
     // is about the plugin branch of `resolve()`, not about a registry that happens
     // to have nowhere to look.
-    const registry = SkillRegistry.load([writeSkill('house-style')], { rescanTtlMs: 0 });
+    const registry = SkillRegistry.load([writeSkill('house-style')], { rescanTtlMs: 60_000 });
     registry.addPluginStyle({
       slug: 'layered-vertical-slices',
       title: 'Layered Vertical Slices',
@@ -274,6 +295,10 @@ describe('skill-tools — load_skill_file', () => {
       },
     });
     await mount(registry);
+    // `addPluginSkill` invalidates the merged view, so the NEXT read re-scans the
+    // disk root once. Spend that read here, before the spy, or it lands inside the
+    // window and is mistaken for the plugin branch reaching for a file.
+    registry.list();
 
     const readFileSync = vi.spyOn(fs, 'readFileSync');
     const readdirSync = vi.spyOn(fs, 'readdirSync');

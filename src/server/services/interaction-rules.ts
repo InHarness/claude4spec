@@ -3,7 +3,7 @@ import type { ChatContextType } from '../../shared/entities.js';
 /* ─────────────────── 0.2.19: domain rules per interaction type ───────────────────
  *
  * The body of the `<interaction_context type="…">` prompt block, one string per
- * genre. Until 0.2.19 a mode's identity was smuggled in as a bundled skill force-
+ * genre. Until 0.2.19 a mode's identity was smuggled in as an in-package skill force-
  * attached to the thread (`brief-author`, `patch-implementer`), which tied three
  * unrelated things together: WHO the agent is, WHAT it may touch, and HOW the genre
  * is written. The third of those is methodology and belongs to the active writing

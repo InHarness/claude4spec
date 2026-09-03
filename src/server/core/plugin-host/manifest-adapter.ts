@@ -19,6 +19,7 @@
 import type { Router } from 'express';
 import type { Database } from 'better-sqlite3';
 import type {
+  ContextType,
   EntityContribution,
   PluginSkillContribution,
   WritingStyleContribution,
@@ -37,6 +38,81 @@ export class PluginManifestError extends Error {
     super(message);
     this.name = 'PluginManifestError';
   }
+}
+
+/** The closed enum `PluginSkillContribution.contextTypes` selects over. */
+const CONTEXT_TYPES: readonly ContextType[] = ['chat', 'brief', 'patch', 'ask'];
+
+/**
+ * Why this contribution's `contextTypes` is unusable, or `null` when it is fine.
+ *
+ * Deliberately NOT part of {@link validateSkillContribution}, which throws and so
+ * takes the WHOLE envelope down with the entry. 0.2.66 prices this one field
+ * differently: a bad `contextTypes` costs its own contribution and nothing else,
+ * because the field is a SELECTOR over turns rather than part of the skill's
+ * identity — the package's other skills, entities and subagents are unaffected by
+ * one of them naming a context type that does not exist. The subagent resolver
+ * prices its own `contextTypes` for the same reason but not the same way
+ * (`services/plugin-subagents.ts`): there only a NON-ARRAY is rejected, and an
+ * out-of-enum element is left to be silently non-matching. So `['chat', 'reveiw']`
+ * still delegates in `chat` on a subagent and disappears from `chat` on a skill.
+ * The stricter reading is the right one for a listing — a typo that removes a row
+ * everywhere is easier to notice than one that removes it in three turns out of
+ * four — and the two should converge on it rather than on the looser one.
+ *
+ * Omission is legal and means all four; an EMPTY array is not treated as an
+ * error either — a package that lists nothing has asked to appear nowhere on the
+ * listing, which is a coherent (if odd) request the resolver honours.
+ */
+export function skillContextTypesReason(c: PluginSkillContribution): string | null {
+  if (c.contextTypes === undefined) return null;
+  if (!Array.isArray(c.contextTypes)) return 'contextTypes must be an array when present';
+  const bad = c.contextTypes.filter((t) => !CONTEXT_TYPES.includes(t));
+  if (bad.length > 0) {
+    // `JSON.stringify(undefined)` is `undefined`, not a string — an array hole or
+    // an explicit `undefined` would otherwise render as nothing at all.
+    const shown = bad.map((b) => JSON.stringify(b) ?? String(b)).join(', ');
+    return `contextTypes contains ${shown}, outside 'chat' | 'brief' | 'patch' | 'ask'`;
+  }
+  return null;
+}
+
+/**
+ * Drop the CONTEXTUAL entries whose `contextTypes` is unusable, warning once per
+ * drop.
+ *
+ * Runs BEFORE `validateSkillContribution` so the skip beats the throw: an entry
+ * that is bad in both ways is skipped rather than aborting its envelope, which is
+ * the weaker and therefore safer of the two outcomes.
+ *
+ * A `scope: 'writing-style'` entry is WARNED BUT KEPT. It can only arrive through
+ * the `skills` slot (the `writingStyles` sugar has no `contextTypes` to get
+ * wrong), and dropping it would not cost the stated price of one listing row: a
+ * style reaches a turn through `config.writingStyle` and its own block, so
+ * skipping it takes the project's selected style out of the selector and out of
+ * the prompt entirely — over a field that has no effect on a style either way.
+ */
+export function admitSkillContextTypes(
+  pluginName: string,
+  list: PluginSkillContribution[],
+): PluginSkillContribution[] {
+  return list.filter((c) => {
+    const reason = c && typeof c === 'object' ? skillContextTypesReason(c) : null;
+    if (reason === null) return true;
+    // `slug` is not validated yet — it may be missing or not a string, and the
+    // warning has to stay readable when it is.
+    const label = typeof c.slug === 'string' && c.slug.length > 0 ? c.slug : '(no slug)';
+    if (c.scope === 'writing-style') {
+      console.warn(
+        `[plugin] ${pluginName}: writing style "${label}" — ${reason}; ignoring the field (a writing style is never listed)`,
+      );
+      return true;
+    }
+    console.warn(
+      `[plugin] ${pluginName}: skill "${label}" — ${reason}; skipping this contribution (the rest of the package still loads)`,
+    );
+    return false;
+  });
 }
 
 /**

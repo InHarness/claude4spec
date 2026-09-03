@@ -235,6 +235,18 @@ export interface EntityContribution extends EntityModuleManifest {
 }
 
 /**
+ * The four interaction types a turn can have — the plugin-author-facing spelling
+ * of the host's `ChatContextType`.
+ *
+ * Spelled out here rather than imported from `shared/entities.ts`: this module is
+ * the contract a plugin author compiles against and must not drag in the host's
+ * deps. It used to be written inline at each use site, which made it invisible as
+ * a concept; two slots now select on it (`PluginSubagentContribution.contextTypes`
+ * and `PluginSkillContribution.contextTypes`), so it is worth a name.
+ */
+export type ContextType = 'chat' | 'brief' | 'patch' | 'ask';
+
+/**
  * 0.2.19 (M37) — authoring shape for one contributed SKILL, the generalisation of
  * {@link WritingStyleContribution}. A plugin carries the skill inline (body +
  * optional attached files) rather than dropping a SKILL.md dir on disk;
@@ -247,19 +259,25 @@ export interface EntityContribution extends EntityModuleManifest {
  *   - `'writing-style'` — offered in the M15 selector, and at most ONE of them
  *     ever reaches a prompt: the one named by `config.writingStyle`. A plugin
  *     contributing three of these shows three choices and injects zero or one.
- *   - `'contextual'` — attached unconditionally and in full to ALL FOUR context
- *     types (chat/brief/patch/ask), with no selector entry, no config opt-in and
- *     no opt-out. There is deliberately no `contexts` field to narrow it. A
- *     plugin contributing three of these adds all three to every thread of every
- *     type. The only indirect brakes are the `trustProjectPlugins` gate and the
- *     fact that a user-authored skill of the same slug overrides the body.
+ *   - `'contextual'` — listed in `<available_skills>` with no selector entry and
+ *     no config opt-in. WHICH turns it is listed in is the package's own call
+ *     since 0.2.66, declared through {@link PluginSkillContribution.contextTypes};
+ *     omitting the field still means all four. The other brakes are the
+ *     `trustProjectPlugins` gate and the fact that a user-authored skill of the
+ *     same slug overrides the body.
  *
- * Either way a plugin skill only ever rides `inlineSkills` — it never earns a
- * `<project_skill/>` block, which since 0.2.19 belongs to the writing-style slot
- * alone.
+ * Either way a plugin skill only ever rides the listing — it never earns a
+ * `<project_writing_skill>` block, which since 0.2.19 belongs to the
+ * writing-style slot alone.
+ *
+ * 0.2.66: this is the ONLY way a `scope: 'contextual'` skill enters the registry.
+ * The FS roots admit writing styles and nothing else, and the in-package
+ * `bundled` root that used to carry `writing-style-author` no longer exists — so
+ * a contextual skill is a package's contribution by construction, not by
+ * convention.
  */
 export interface PluginSkillContribution {
-  /** Stable identifier; also the dedup key against bundled/user/other-plugin skills. */
+  /** Stable identifier; also the dedup key against user/other-plugin skills. */
   slug: string;
   title: string;
   description: string;
@@ -268,6 +286,27 @@ export interface PluginSkillContribution {
   language: 'en' | 'pl';
   /** See the asymmetry note above — this is the load-bearing field. */
   scope: 'writing-style' | 'contextual';
+  /**
+   * 0.2.66 — which context types this skill appears in on the `<available_skills>`
+   * listing. OMISSION MEANS ALL FOUR, which is the opposite default to
+   * {@link PluginSubagentContribution.contextTypes}; the asymmetry is priced by
+   * the cost of guessing wrong, one listing line against a whole delegated turn.
+   *
+   * The field NARROWS DISCOVERY, NOT ACCESS. A skill absent from this turn's
+   * listing stays openable by `load_skill_file(slug)` — the filter runs when the
+   * listing is built and nowhere else, so the listing never becomes a permission
+   * boundary.
+   *
+   * `contextTypes` is the host's concept (the enum, the resolver's predicate, the
+   * default); the VALUE belongs to the package. That is the whole of the change:
+   * the envelope says where it wants to appear, instead of the host holding a map
+   * of where to pin it.
+   *
+   * An element outside the enum costs the ENTRY, not the envelope: the loader
+   * warns and skips this contribution, and the package's other contributions
+   * register normally.
+   */
+  contextTypes?: ContextType[];
   /** The skill body markdown (the SKILL.md content without frontmatter). */
   content: string;
   /** The rest of the package keyed by rel path (e.g. `workflows/brief.md`). */
@@ -286,7 +325,7 @@ export interface PluginSkillContribution {
  * selection behaviour.
  */
 export interface WritingStyleContribution {
-  /** Stable identifier; also the dedup key against bundled/user styles. */
+  /** Stable identifier; also the dedup key against user styles. */
   slug: string;
   title: string;
   description: string;
@@ -401,10 +440,12 @@ export interface PluginSubagentContribution {
    * learns so from the docs, whereas one that reached it by oversight would
    * pollute brief composition with no opt-out available to the user.
    *
-   * Mirrors `ChatContextType`, spelled out rather than imported: this module is
-   * the plugin-author-facing contract and must not drag in the host's deps.
+   * Contrast {@link PluginSkillContribution.contextTypes}, whose omission means
+   * ALL FOUR. The two defaults differ by the cost of the mistake: a subagent
+   * reached by auto-delegation spends a whole turn and a model, a skill spends
+   * one line of a listing.
    */
-  contextTypes?: ('chat' | 'brief' | 'patch' | 'ask')[];
+  contextTypes?: ContextType[];
   /**
    * SELECTION over the host's delegable tool set — never a grant. Passes
    * through the host's sanitizer, which subtracts the non-delegable primitives

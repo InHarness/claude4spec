@@ -31,6 +31,7 @@ import {
 import {
   lowerEntityContribution,
   synthesizeMount,
+  admitSkillContextTypes,
   validateSkillContribution,
   validateWritingStyle,
 } from './manifest-adapter.js';
@@ -237,8 +238,14 @@ export async function loadProjectOverlay(
           overlayBatch.push(validated);
           return validated;
         });
+      // 0.2.66: same warn-and-skip on `contextTypes` as the base layer — see the
+      // note in `registry.ts`. Overlay packages are the ones most likely to carry
+      // a hand-written manifest, so the layer that must not abort on a typo is
+      // this one above all.
       pkgSkills = [
-        ...(manifest.contributes?.skills ?? []).map(validateSkillContribution),
+        ...admitSkillContextTypes(manifest.name, manifest.contributes?.skills ?? []).map(
+          validateSkillContribution,
+        ),
         ...(manifest.contributes?.writingStyles ?? []).map(validateWritingStyle),
       ];
     } catch (err) {

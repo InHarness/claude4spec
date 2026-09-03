@@ -389,8 +389,8 @@ async function buildInner(
   }
 
   // M15 phase 2 / M37: fan plugin-contributed skills into this project's
-  // SkillRegistry as `source: "plugin"` (precedence project > global > plugin >
-  // bundled). Base (workspace/npm) skills always; project-local overlay skills
+  // SkillRegistry as `source: "plugin"` (precedence project > global > plugin —
+  // 0.2.66 removed the rung below). Base (workspace/npm) skills always; overlay skills
   // only on the trusted path (overlayResult is set only when trust === true),
   // so an untrusted plugin contributes no skill — exactly as for its entities.
   //

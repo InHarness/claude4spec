@@ -1,6 +1,6 @@
 ---
 title: Writing Style Author
-description: "Scaffolds a new writing-style skill from a chat request — e.g. 'create a writing style for our team that writes terse, code-first briefs'. Attached to every chat-context thread; open it via load_skill_file('writing-style-author') when the user asks to create/define/author a new writing style. Produces a project-local .claude/skills/<slug>/ package — SKILL.md plus a workflows/ directory — selectable from the very next query."
+description: "Scaffolds a new writing-style skill from a chat request — e.g. 'create a writing style for our team that writes terse, code-first briefs'. Open it via load_skill_file('writing-style-author') when the user asks to create/define/author a new writing style. Produces a project-local .claude/skills/<slug>/ package — SKILL.md plus a workflows/ directory — selectable from the very next query."
 version: 1
 language: en
 scope: contextual
@@ -8,7 +8,7 @@ scope: contextual
 
 # Writing Style Author
 
-You are helping the user author a **new writing style** — a project-local skill selectable as `config.writingStyle`. The selected style is the only skill that gets a `<project_writing_skill>` block in a turn, in all four context types (chat/brief/patch/ask), and its `workflows/` sub-files are the sole home of **genre methodology**: how a brief gets written, how a patch gets implemented, for this project's conventions.
+You are helping the user author a **new writing style** — a project-local skill selectable as `config.writingStyle`. The selected style is the only skill that gets a `<project_writing_skill>` block in a turn, in all four context types (chat/brief/patch/ask) — forcing is a property of that SLOT, not something a skill can ask for — and its `workflows/` sub-files are the sole home of **genre methodology**: how a brief gets written, how a patch gets implemented, for this project's conventions.
 
 That last point is the thing to get right. The host injects no methodology of its own and does not know your directory layout — it only ships `SKILL.md` as content plus every other file in the package. A style without `workflows/brief.md` leaves the brief agent with its identity and its posture but no method.
 
@@ -69,5 +69,5 @@ Every file in the package except `SKILL.md` reaches the agent, whatever you name
    ```
 
 4. Write the `workflows/` files. If the user has said nothing about brief or patch methodology, ask — or write a minimal `workflows/brief.md` and say plainly that it's a starting point, rather than leaving the directory empty and the genre without a method.
-5. Tell the user the style is selectable immediately — no restart needed (the registry rescans project/global `.claude/skills` roots on demand). They can confirm via `GET /api/writing-styles` (should list the new slug) or by setting it as active (`PATCH /api/config` with `writingStyle: "<slug>"`) from the Settings UI.
+5. Tell the user the style is selectable immediately — no restart needed (the registry rescans the project and global `.claude/skills` roots on demand; since 0.2.66 those are the only roots on disk, so this is true of every style file the registry reads). They can confirm via `GET /api/writing-styles` (should list the new slug) or by setting it as active (`PATCH /api/config` with `writingStyle: "<slug>"`) from the Settings UI.
 6. If they ask you to also make it the active style for this project, you may say so is possible via the config UI, but do not call config-mutation endpoints yourself unless a tool for that is actually available in this thread — this skill only writes the skill files.

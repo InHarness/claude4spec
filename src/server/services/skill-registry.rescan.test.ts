@@ -24,12 +24,12 @@ function writeSkill(
 describe('SkillRegistry — on-demand user-root re-scan (0.1.87)', () => {
   let tmp: string;
   let userDir: string;
-  let bundledDir: string;
+  let globalDir: string;
 
   beforeEach(() => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-skill-rescan-'));
     userDir = path.join(tmp, 'user');
-    bundledDir = path.join(tmp, 'bundled');
+    globalDir = path.join(tmp, 'global');
   });
   afterEach(() => {
     fs.rmSync(tmp, { recursive: true, force: true });
@@ -61,29 +61,35 @@ describe('SkillRegistry — on-demand user-root re-scan (0.1.87)', () => {
     expect(registry.listSelectable()).toHaveLength(0);
   });
 
-  it('keeps bundled metadata cached from startup — disk changes are not picked up', () => {
-    const bundled = writeSkill(bundledDir, 'b', 'bundled');
-    const registry = SkillRegistry.load([{ dir: userDir, source: 'user' }, bundled], { rescanTtlMs: 0 });
+  /**
+   * 0.2.66 — this used to assert the OPPOSITE for the in-package root, which was
+   * scanned once at boot and cached for the process's life. That root is gone, and
+   * with it the second cadence: every root the registry reads from disk is now
+   * on-demand, so "ship a skill, restart the server" is no longer a step anyone has
+   * to know about.
+   */
+  it('re-scans the global root too — there is no cached-at-boot root left', () => {
+    const global = writeSkill(globalDir, 'b', 'user');
+    const registry = SkillRegistry.load([{ dir: userDir, source: 'user' }, global], { rescanTtlMs: 0 });
     expect(registry.has('b')).toBe(true);
 
-    // Removing the bundled dir does not drop it (cached); adding a new one is not seen.
-    fs.rmSync(path.join(bundledDir, 'b'), { recursive: true, force: true });
-    writeSkill(bundledDir, 'b2', 'bundled');
+    fs.rmSync(path.join(globalDir, 'b'), { recursive: true, force: true });
+    writeSkill(globalDir, 'b2', 'user');
 
-    expect(registry.has('b')).toBe(true); // still cached
-    expect(registry.has('b2')).toBe(false); // bundled cadence unchanged — needs a rebuild
+    expect(registry.has('b')).toBe(false); // dropped with the directory
+    expect(registry.has('b2')).toBe(true); // and the new one is seen without a restart
   });
 
-  it('a user style added on disk overrides a same-slug bundled style', () => {
-    const bundled = writeSkill(bundledDir, 'terse', 'bundled', { body: 'BUNDLED body' });
-    const registry = SkillRegistry.load([{ dir: userDir, source: 'user' }, bundled], { rescanTtlMs: 0 });
-    expect(registry.resolve('terse').metadata.source).toBe('bundled');
+  it('a project style added on disk overrides a same-slug global style', () => {
+    const global = writeSkill(globalDir, 'terse', 'user', { body: 'GLOBAL body' });
+    const registry = SkillRegistry.load([{ dir: userDir, source: 'user' }, global], { rescanTtlMs: 0 });
+    expect(registry.resolve('terse').content).toContain('GLOBAL body');
 
-    writeSkill(userDir, 'terse', 'user', { body: 'USER body' });
+    writeSkill(userDir, 'terse', 'user', { body: 'PROJECT body' });
 
     const resolved = registry.resolve('terse');
     expect(resolved.metadata.source).toBe('user');
-    expect(resolved.content).toContain('USER body');
+    expect(resolved.content).toContain('PROJECT body');
   });
 
   it('coalesces a burst of reads within the TTL window into a single disk scan', () => {

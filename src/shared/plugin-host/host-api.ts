@@ -525,6 +525,29 @@ export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] =
       'version — `ac` dropping `text` and `description` in this same release ' +
       'moves its payload 2 → 3 and leaves `hostApiVersion` untouched.',
   },
+  {
+    release: '0.2.66',
+    slot: 'PluginSkillContribution.contextTypes',
+    kind: 'slot-added',
+    summary:
+      'Which context types a contextual skill is LISTED in, declared by the ' +
+      'package that contributes it. Added because the host lost its own answer: ' +
+      "0.2.66 retires `CONTEXT_TYPE_REGISTRY[ct].attachInternalSkills`, the last " +
+      'hardcoded producer of `<available_skills>` rows, together with the ' +
+      "`bundled` skill source it existed to place. With no host-side map left, " +
+      'the reach of a skill can only come from the package that owns it. ' +
+      'ADDITIVE, INSIDE THE BASELINE, NO BUMP: the field is optional and its ' +
+      'omission means all four context types, which is exactly what every ' +
+      'already-published contribution gets — no manifest changes shape and no ' +
+      'package needs to do anything. Two asymmetries are deliberate and worth ' +
+      'recording next to the slot. Against the subagent field of the same name, ' +
+      'omission means all four here and `[\'chat\']` there, because a ' +
+      'mis-declared subagent costs a turn while a mis-declared skill costs one ' +
+      'line of a listing. And against every other field of the contribution, a ' +
+      'bad value here is warned-and-skipped rather than thrown: it selects over ' +
+      'turns instead of forming part of the skill\'s identity, so it may not ' +
+      'take its envelope down with it.',
+  },
 ];
 
 /** First numeric component of a semver RANGE (e.g. "^1.4.0" → 1, ">=2.5.0" → 2). */

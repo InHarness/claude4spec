@@ -65,9 +65,9 @@ describe('SkillRegistry — unselectableReason diagnostics', () => {
 
   it('drops the skip once a later root supplies a valid same-slug skill', () => {
     // Higher-precedence root skips (version too high); lower-precedence root is valid.
-    const userRoot = writeSkill(path.join(tmp, 'user'), 'dup', 'user', { version: 2 });
-    const bundledRoot = writeSkill(path.join(tmp, 'bundled'), 'dup', 'bundled', { version: 1 });
-    const registry = SkillRegistry.load([userRoot, bundledRoot]);
+    const projectRoot = writeSkill(path.join(tmp, 'project'), 'dup', 'user', { version: 2 });
+    const globalRoot = writeSkill(path.join(tmp, 'global'), 'dup', 'user', { version: 1 });
+    const registry = SkillRegistry.load([projectRoot, globalRoot]);
 
     expect(registry.isSelectable('dup')).toBe(true);
     // No stale skip reason — it resolves to the "Available" form, listing itself.

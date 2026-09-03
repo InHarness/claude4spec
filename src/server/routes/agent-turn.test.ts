@@ -636,24 +636,26 @@ describe('runAgentTurn — M37 per-context skill injection', () => {
       resolve: (slug: string) => {
         const s = skills[slug];
         if (!s) throw new Error(`unknown slug "${slug}"`);
-        return { metadata: { slug, title: s.title, description: s.description, version: 1, language: 'en', scope: s.scope ?? 'contextual', source: 'bundled', path: '' }, content: `${slug} body`, files: {} };
+        return { metadata: { slug, title: s.title, description: s.description, version: 1, language: 'en', scope: s.scope ?? 'contextual', source: 'plugin', path: '' }, content: `${slug} body`, files: {} };
       },
     };
     const skillResolver = {
       resolveWritingStyle: () => null,
-      // Mirrors the real resolveForContext, which since 0.2.19 takes the CONTEXT
-      // TYPE and reads the attach list off the registry itself: `chat` attaches
-      // `writing-style-author`, every other type attaches nothing hardcoded. An
-      // unknown slug degrades (bundled roots only rescan at server boot, so a slug
-      // missing from a running process's cache must not fail every turn).
+      // Mirrors the real resolveForContext. 0.2.66: there is no attach list to read
+      // any more — the listing is the plugin fan-out filtered by each contribution's
+      // own `contextTypes`, and this fake stands in for the one envelope that
+      // narrows itself (`writing-style-author`, chat only).
       //
       // 0.2.36: it answers METADATA — a `listing` for `<available_skills>` and the
       // writing style as its OWN field, never as a listing row.
       resolveForContext: (contextType: string) => {
-        const attach = contextType === 'chat' ? ['writing-style-author'] : [];
+        const contextual = Object.entries(skills)
+          .filter(([, s]) => (s.scope ?? 'contextual') === 'contextual')
+          .map(([slug]) => slug)
+          .filter((slug) => slug !== 'writing-style-author' || contextType === 'chat');
         const styleSlug = Object.entries(skills).find(([, s]) => s.scope === 'writing-style')?.[0];
-        const listing = attach
-          .filter((slug) => slug in skills && slug !== styleSlug)
+        const listing = contextual
+          .filter((slug) => slug !== styleSlug)
           .map((slug) => ({ slug, description: skills[slug]!.description }));
         return {
           listing,
@@ -730,10 +732,16 @@ describe('runAgentTurn — M37 per-context skill injection', () => {
     expect(prompt.match(/<project_writing_skill /g)?.length).toBe(1);
   });
 
-  it('a missing bundled attach-list skill degrades gracefully (no crash, no <project_skill> block for it) instead of failing every turn', async () => {
+  /**
+   * 0.2.66 — this used to guard a stale process whose in-package root had not been
+   * re-scanned. That root is gone, and so is the window; what the empty registry now
+   * stands for is the ORDINARY case of a project with no plugins loaded, which is
+   * exactly where `<available_skills>` is emitted with nothing in it.
+   */
+  it('emits an empty listing and no <project_skill> block when the registry is empty', async () => {
     hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
     const { deps } = makeDeps();
-    Object.assign(deps, fakeSkillDeps({})); // simulates a stale/not-yet-restarted process.
+    Object.assign(deps, fakeSkillDeps({})); // a project with no plugins loaded.
     const input = makeInput();
     (input.thread as unknown as { contextType: string }).contextType = 'chat';
 
@@ -743,6 +751,9 @@ describe('runAgentTurn — M37 per-context skill injection', () => {
     const prompt = String(hoisted.lastExecute?.systemPrompt);
     expect(prompt).not.toContain('<skill slug="writing-style-author"');
     expect(prompt).not.toContain('<project_skill');
+    // The block itself is still emitted — an absent block would be indistinguishable
+    // from "this host has no notion of skills".
+    expect(prompt).toContain('<available_skills>');
   });
 });
 

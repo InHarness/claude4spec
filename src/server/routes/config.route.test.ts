@@ -545,7 +545,7 @@ describe('PATCH /config — D4 write-target overlap (0.2.9)', () => {
  *
  * The whole point of the route here is the `source` field: it is the only place
  * a user can see WHERE a style comes from, and after this release the reference
- * style comes from an envelope rather than from the bundled root. Driven through
+ * style comes from an envelope rather than from the in-package root. Driven through
  * the real loader against the real `plugins/` tree — a stubbed registry would
  * assert that the route copies a field, which was never in doubt.
  */
@@ -574,7 +574,7 @@ describe('GET /writing-styles — where a style comes from (0.2.57)', () => {
 
   const app = () => express().use(express.json()).use(configRouter({ cwd: dir, skillRegistry }));
 
-  it('[ac:ac-styl-layered-vertical-slices-wraca-z] reports the reference style as source "plugin", not "bundled"', async () => {
+  it('[ac:ac-styl-layered-vertical-slices-wraca-z] reports the reference style as source "plugin"', async () => {
     const res = await request(app()).get('/writing-styles');
     expect(res.status).toBe(200);
     const entry = (res.body.available as Array<{ slug: string; source: string }>).find(
@@ -585,14 +585,18 @@ describe('GET /writing-styles — where a style comes from (0.2.57)', () => {
   });
 
   /**
-   * The bundled root stays in the precedence chain and the class stays legal for
-   * styles — it is simply empty of them now. Asserting "no bundled style" rather
-   * than "the root is gone" is the difference between the two.
+   * 0.2.57 emptied the in-package root of styles and this assertion said so; 0.2.66
+   * deleted the root and the `'bundled'` class outright, so the claim is no longer
+   * "nothing lives there" but "there are two sources a style can have". Asserted as
+   * a CLOSED SET rather than as the absence of one literal: what the DTO promises
+   * its consumers is that `source` is one of exactly two values, and a third
+   * appearing is the regression, whatever it is called.
    */
-  it('offers no bundled style any more, the root having been emptied of them', async () => {
+  it('serves every style as either "user" or "plugin" — the bundled class is gone', async () => {
     const res = await request(app()).get('/writing-styles');
     const sources = (res.body.available as Array<{ source: string }>).map((s) => s.source);
-    expect(sources).not.toContain('bundled');
+    expect(sources.length).toBeGreaterThan(0);
+    expect([...new Set(sources)].filter((x) => x !== 'user' && x !== 'plugin')).toEqual([]);
     expect(res.body.active).toBe(STYLE);
   });
 });

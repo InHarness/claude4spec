@@ -53,6 +53,10 @@ export type {
   // stays exported beside it — it is sugar, not a deprecation.
   PluginSkillContribution,
   WritingStyleContribution,
+  // 0.2.66 (M37): the four interaction types, promoted from an inline union at
+  // two use sites to a named contract type. A plugin author needs it to type
+  // `contextTypes` on either a skill or a subagent contribution.
+  ContextType,
   // 0.2.57 (M33/M05): the subagent slot's shape. It has been in the dictionary
   // since 0.2.53 but never reached this surface — an omission, not a policy:
   // without it a plugin author cannot type `contributes.subagents[]` at all.
