@@ -7,7 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`c4s list-workspaces` — the registry, readable before any server starts.** `~/.claude4spec/workspaces.json` has been CLI-*writable* since `trust-plugins`, but never readable, and "which server do I even start?" cannot by construction require a running server. The command takes no arguments and prints one row per workspace — `name`, `mode`, `defaultPort`, `projectCount`, `lastOpened` — most recently opened first, never-opened workspaces last in registry order. `projects[]` stays collapsed to its count (the expanded list is `list_projects`, and the two are kept disjoint) and `plugins[]` never travels at all: it is load configuration, not workspace identity. No registry file is not an error — a fresh machine gets `[]` and exit 0, and nothing is created; an unreadable one (invalid JSON, a foreign schema version, `EACCES`) gets `REGISTRY_READ_FAILED` on stderr and exit 22, with no partial result.
+
+- **Execution mode `registry-read`.** The mirror of `registry-write`: server-free read of the global registry, with no db-slot, no project `cwd` files and no project/workspace resolver — so `--project`/`--workspace` do not narrow `list-workspaces`. It takes no advisory lock either; the lock exists for read-modify-write paths like `setProjectTrust`, and a whole-file read has nothing to lose to a race. The set of commands that structurally bypass the server grows from three to four, which makes the boundary explicit: it is "navigation vs registry administration", not "read vs write". A REST `list workspaces` for the browser's workspace switcher is a different consumer of the same file and does not replace this.
+
+- **`CliCommandContribution.output`** — an optional declaration of the output payload's shape: the record's fields in order and the unit one row stands for. Commands whose only effect is a file write omit it. The shared M11 envelope (`--format`, `--compact`) stays outside the slot, since it is how every command renders rather than something any one of them declares.
+
 ### Changed
+
+- **`c4s plugins doctor` carries the migration descriptors where a reader looks for them.** On `HOST_API_INCOMPATIBLE` each incompatible package's row now has a top-level `migrations[]` alongside the existing `migration` object (which keeps `targetHostApiVersion` and `shimAvailable`). They were already in the payload one level down, which made the one part of the answer you act on the one part you had to go looking for. Crossing the `2.0.0` major this is exactly the envelope slots that major removed; an `engines` miss gets an empty list, since a Node version is not a slot you rewrite.
+
+- **`WorkspaceRecord.lastOpened` is optional.** A workspace that was never opened simply lacks the field — there is no zero value for it, and existing records are never backfilled with one. Every open still stamps it. Ordering that reads it (the bare-start workspace pick, and `list-workspaces`) now places the absent case explicitly instead of leaning on an empty-string fallback that only sorted correctly by accident.
 
 - **The system prompt is ordered by layer, and `<tooling>` is derived from the mount rather than described beside it.** `buildSystemPrompt` was seventeen `parts.push(…)` calls interleaved with `if`s, whose order recorded the release each block was written in; it is now a table of block descriptors in five layers — frame, project, access, writing conventions, current state — so the order can be read in one screen and asserted in one test. `<claude4spec_identity>` shrinks from ~15 KB to four sentences: the entity catalogue, the embed grammar, discovery, tags, anchors and the two handling blocks are separate blocks now, and each handling block sits below the block it explains instead of seven hundred lines above it. `<interaction_context>` opens every frame, as it already did for briefs.
 

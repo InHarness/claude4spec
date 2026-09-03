@@ -74,7 +74,12 @@ export type CliErrorCode =
   // the path segment), so it never travelled the `INVALID_ARGUMENT` path the
   // core would have used. Exits 4 with the other "you asked for something the
   // contract does not offer" codes.
-  | 'ROOT_NOT_FOUND';
+  | 'ROOT_NOT_FOUND'
+  // 0.2.65 M31 — `c4s list-workspaces` (mode `registry-read`) could not read
+  // `~/.claude4spec/workspaces.json` at all: invalid JSON, a shape that is not a
+  // registry, a schema version from a newer binary, or EACCES. A MISSING file is
+  // deliberately not this code — an absent registry is an empty one, exit 0.
+  | 'REGISTRY_READ_FAILED';
 
 export class CliError extends Error {
   constructor(public code: CliErrorCode, message: string, public hint?: string) {

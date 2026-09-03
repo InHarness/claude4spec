@@ -16,6 +16,14 @@ import type { CliErrorCode } from './errors.js';
  *                           `trust-plugins`): no project resolution, no db-slot, no
  *                           server; the project record is created on demand rather
  *                           than looked up.
+ *   - `registry-read`     — server-free READ of the same global registry (M31
+ *                           `list-workspaces`): no server, no db-slot, no project
+ *                           `cwd` files, no project/workspace resolver. The mirror
+ *                           of `registry-write` minus the write path, and without
+ *                           its advisory lock — a whole-file read has nothing to
+ *                           lose to a race. It exists because the question it
+ *                           answers ("which server do I even start?") conditions
+ *                           starting a server, so it cannot be delegated to one.
  *   - `scaffold`          — server-free bootstrap of a NEW directory under the CWD
  *                           (M38 `create-plugin`). The only mode that runs outside
  *                           any specification project: no `--project`/`--project-path`
@@ -73,7 +81,7 @@ export const SERVER_DELEGATING_CODES: readonly CliErrorCode[] = [
 export interface CliCommandContribution {
   /** Command name as typed on the CLI, e.g. `find-references`. */
   name: string;
-  executionMode: 'server-delegating' | 'fs-scoped' | 'registry-write' | 'scaffold';
+  executionMode: 'server-delegating' | 'fs-scoped' | 'registry-write' | 'registry-read' | 'scaffold';
   /**
    * The catalog operation this command RENDERS, when it renders one.
    *
@@ -90,6 +98,17 @@ export interface CliCommandContribution {
    * server-free modes.
    */
   operation?: string;
+  /**
+   * OPTIONAL shape of the output payload: the record's fields in order, and the
+   * unit one row stands for. A command declares it when it prints records;
+   * commands whose only effect is a file write omit it, because there is no
+   * record to describe.
+   *
+   * The shared M11 runtime envelope stays OUTSIDE this slot on purpose:
+   * `--format json|text` and `--compact` are how every command's payload is
+   * rendered, not something any one of them declares.
+   */
+  output?: { unit: string; fields: readonly string[] };
   /** Error codes contributed to the `CliErrorCode` union by this command specifically. */
   errorCodes: readonly CliErrorCode[];
   /** Delegates to the owning module's server route; the bin itself carries no domain logic. */

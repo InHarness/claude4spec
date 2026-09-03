@@ -116,6 +116,20 @@ export async function runPlugins(args: ParsedArgs): Promise<void> {
         // package would appear in the report as a name and three nulls.
         reason: p.reason ?? null,
         migration: p.migration ?? null,
+        /**
+         * 0.2.65 — the APPLICABLE migration descriptors, per incompatible
+         * package, at the top level of the row.
+         *
+         * They were already in the report, one level down inside `migration`,
+         * which made the one part of the answer a reader acts on the one part
+         * they had to go looking for. `migration` stays for what only it carries
+         * (`targetHostApiVersion`, `shimAvailable`); the descriptors are the
+         * repair path, so they sit next to the package they repair. Empty for an
+         * `engines` miss, which has no migration path — a Node version is not a
+         * slot you rewrite. Crossing the `2.0.0` major, this list is exactly the
+         * envelope slots that major removed (see `HOST_API_CHANGELOG`).
+         */
+        migrations: p.migration?.migrations ?? [],
       })),
       ok: incompatible.length === 0,
     },
