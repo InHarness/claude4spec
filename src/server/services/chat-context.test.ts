@@ -980,10 +980,19 @@ describe('buildSystemPrompt — task tracking (0.2.65)', () => {
       expect(body).not.toContain('Grep');
     });
 
-    it(`emits <task_tracking> naming both tools (access enabled=${enabled})`, () => {
+    /**
+     * `TodoWrite` FIRST, and that ordering is the assertion. Against the pinned
+     * published agent-adapters it is the only one of the three that reaches
+     * `chat_thread.current_todo_items` — the `TaskCreate`/`TaskUpdate` merge is
+     * still guarded there — so a block naming only the pair would steer the model
+     * onto the path that drops silently.
+     */
+    it(`leads with TodoWrite and still offers the pair (access enabled=${enabled})`, () => {
       const body = blockBody(build({ contextType: 'chat', agentFilesystemAccess: { enabled } }), 'task_tracking');
+      expect(body).toContain('TodoWrite');
       expect(body).toContain('TaskCreate');
       expect(body).toContain('TaskUpdate');
+      expect(body.indexOf('TodoWrite')).toBeLessThan(body.indexOf('TaskCreate'));
     });
   }
 
@@ -996,6 +1005,24 @@ describe('buildSystemPrompt — task tracking (0.2.65)', () => {
     const names = mainPromptBlockNames();
     expect(names).toContain('task_tracking');
     expect(names.indexOf('task_tracking')).toBe(names.indexOf('todo_markers') + 1);
+  });
+
+  /**
+   * The block promises a reader ("the user watches it advance"). `ask` is a
+   * headless peer consult with no viewer, so emitting it there would both waste
+   * the calls and state something untrue.
+   */
+  it('is omitted from the ask frame, and present in chat and patch', () => {
+    expect(build({ contextType: 'ask' })).not.toContain('<task_tracking>');
+    for (const contextType of ['chat', 'patch'] as const) {
+      expect(build({ contextType })).toContain('<task_tracking>');
+    }
+  });
+
+  /** The sweep must ask for the text, not just the page list. */
+  it('asks search_pages for hits, not the textless default', () => {
+    const body = blockBody(build({ contextType: 'chat' }), 'todo_markers');
+    expect(body).toContain("mode: 'hits'");
   });
 });
 

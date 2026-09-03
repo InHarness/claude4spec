@@ -93,6 +93,7 @@ import {
   AdapterTimeoutError,
 } from '@inharness-ai/agent-adapters';
 import { runAgentTurn, type AgentTurnDeps, type AgentTurnInput } from './agent-turn.js';
+import { CLAUDE_CODE_TASK_TRACKING_TOOLS } from '@inharness-ai/agent-adapters/claude-code';
 import { BACKGROUND_HOLD_CAP_MS, TURN_TIMEOUT_MS } from '../../shared/agent-turn.js';
 
 afterEach(() => {
@@ -346,18 +347,21 @@ describe('runAgentTurn — task-tool opt-in (0.2.65)', () => {
   }
 
   /**
-   * Auto-approval, not restriction: the SDK field this maps onto widens the
-   * permission surface and never narrows the catalog. A turn that started
-   * declaring a toolset here would be a different, much larger change.
+   * Pinned to the LIBRARY's constant, not to the five literals above. Spelling
+   * them out here and in the source would let an upstream rename pass both — the
+   * test would keep asserting the old names against a field the adapter no longer
+   * recognizes, which is the exact failure mode this opt-in exists to prevent.
    */
-  it('does not narrow the toolset while opting in', async () => {
+  it('takes the family from the library rather than a local literal', async () => {
     settle();
     const { deps } = makeDeps();
 
     await runAgentTurn(deps, makeInput());
 
-    expect(hoisted.lastExecute?.tools).toBeUndefined();
-    expect(hoisted.lastExecute?.allowedTools).toBeUndefined();
+    expect(hoisted.lastExecute?.autoApproveTools).toBe(CLAUDE_CODE_TASK_TRACKING_TOOLS);
+    // And the constant is what we think it is — a rename upstream fails HERE,
+    // with a message naming the tools, rather than silently at runtime.
+    expect(CLAUDE_CODE_TASK_TRACKING_TOOLS).toEqual(TASK_TOOLS);
   });
 });
 

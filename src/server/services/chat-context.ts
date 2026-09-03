@@ -532,7 +532,7 @@ On a page, consume a tag with \`<tagged_list type="..." tags="auth"/>\` for one 
 
 const TODO_MARKERS = `<todo_markers>
   <todo comment="..."/>
-Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'map' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal.
+Lightweight inline TODO marker. Lives only in markdown — never persisted as an entity. To survey open TODOs, call \`search_pages({ regex: '<todo comment=', mode: 'hits' })\` — the regex is matched per LINE, and this marker's opening never spans one, so the sweep is legal. Ask for \`hits\` explicitly: the default \`map\` returns identity rows with no prose, which tells you WHICH pages carry a TODO but never what any of them says.
 </todo_markers>`;
 
 /**
@@ -545,19 +545,33 @@ Lightweight inline TODO marker. Lives only in markdown — never persisted as an
  * which is why it did so less and less consistently. Stated here, the behaviour
  * stops being a function of that flag.
  *
- * Instruction only. It cannot restore the list on its own: the write path that
- * ends at `chat_thread.current_todo_items` is severed inside
- * `@inharness-ai/agent-adapters` (`mergeTaskToolInputIntoSnapshot` drops the
- * `TaskUpdate` and batch-`TaskCreate` shapes the model actually emits), and the
- * tools themselves are opted into explicitly in `agent-turn.ts` — see
- * `autoApproveTools` there. Three separate things; this is one of them.
+ * WHY IT LEADS WITH `TodoWrite`, and not with the `TaskCreate`/`TaskUpdate` pair
+ * the reporting brief prescribed: against the version this repo actually pins
+ * (`agent-adapters` ^0.9.9, published), those two are precisely the calls that do
+ * not persist. `mergeTaskToolInputIntoSnapshot` there merges only when the raw
+ * input carries a top-level `subject`/`description`/`activeForm`/`status`, so a
+ * batch `TaskCreate({ tasks: [...] })` returns nothing and a `TaskUpdate` keyed on
+ * `state` is a silent no-op. `TodoWrite` takes a different route entirely —
+ * `todoItemsFromTodoWriteInput`, a full-list replace with no such guard — and
+ * reaches `chat_thread.current_todo_items` TODAY. Naming only the pair would have
+ * steered the model off the one path that still works, and made the panel less
+ * likely to fill rather than more. The pair is named as an equal because it is
+ * the right shape once the library fix (unreleased at time of writing, commit
+ * `287d2cc`) ships; nothing here has to change then.
+ *
+ * The tools themselves are opted into explicitly in `agent-turn.ts` — see
+ * `autoApproveTools` there. Instruction and capability are separate things.
+ *
+ * Omitted from the `ask` frame. That turn is a headless read-only peer consult
+ * with no viewer, so its list would be written for nobody — and the block's whole
+ * premise, that someone is watching it advance, would be a false statement.
  */
 const TASK_TRACKING = `<task_tracking>
-Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live in the UI beside your reply, so it is a channel to them, not a private scratchpad.
+Work that takes more than a couple of steps gets a TASK LIST, and the user watches it advance while you work — the list is rendered live beside your reply, so it is a channel to them, not a private scratchpad.
 
-Open it with \`TaskCreate\` as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it: a list published at the end documents what you did, which the reply already does. Name each task as the outcome it produces, not as the tool you will reach for.
+Keep it with \`TodoWrite\`, which takes the WHOLE list every time: send it as soon as the shape of the work is clear, BEFORE the first substantive step rather than after it, and resend it with updated statuses as you go. A list published at the end documents what you did, which your reply already does. (\`TaskCreate\` / \`TaskUpdate\` express the same thing one task at a time and are equally welcome.)
 
-Advance it with \`TaskUpdate\` AS the work happens — mark a task in progress when you start it and completed the moment it is done. A list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting. Exactly one task is in progress at a time.
+Name each task as the outcome it produces, not as the tool you will reach for. Mark a task in progress when you start it and completed the moment it is done, with exactly one in progress at a time — a list that jumps from all-pending to all-completed in one burst told the user nothing while they were waiting.
 
 Skip the list for single-step work and for a question you can simply answer. A one-item list is noise.
 </task_tracking>`;
@@ -1821,7 +1835,7 @@ const MAIN_PROMPT_BLOCKS: readonly PromptBlock[] = [
   { layer: 'D', name: 'discovery_and_impact', render: () => buildDiscoveryAndImpact() },
   { layer: 'D', name: 'tags', render: () => buildTags() },
   { layer: 'D', name: 'todo_markers', render: () => TODO_MARKERS },
-  { layer: 'D', name: 'task_tracking', render: () => TASK_TRACKING },
+  { layer: 'D', name: 'task_tracking', render: (c) => (c.contextType === 'ask' ? null : TASK_TRACKING) },
   { layer: 'D', name: 'sections_and_anchors', render: () => SECTIONS_AND_ANCHORS },
   {
     layer: 'D',
