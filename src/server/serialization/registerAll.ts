@@ -9,6 +9,12 @@ import { onRegister as registerDiagram } from '../entities/diagram/plugin.js';
  *
  * Registers the TWO types still built in DIRECTLY (tier (a)).
  *
+ * 0.2.58 — "directly" now says only WHERE the module lives, not HOW it registers.
+ * `ac` goes through `registry.registerPlugin(acPlugin)` with a two-slot manifest
+ * (`entities[]` + `subagents[]`), because `registerEntityModule` knows the entity
+ * slot alone and the `ac-audit` subagent has to reach `subagentsFor()`. `diagram`
+ * contributes one kind of capability and keeps the narrower call.
+ *
  * `endpoint` and `dto` left in 0.2.2: they ship together in the builtin envelope
  * `plugins/c4s-plugin-api-contracts/`, registered through the M33 loader like any
  * other package — the second registration tier, and the pilot for the migration
