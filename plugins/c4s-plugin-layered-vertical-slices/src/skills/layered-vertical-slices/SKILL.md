@@ -29,7 +29,7 @@ A module groups *all* logic for one concern, regardless of how many entities bac
 
 A *layer* is a **convention** — it does not enumerate which modules exist; it fixes the *shape* in which each module describes its use of this layer. Two levels:
 
-1. **Layer-level convention** — what a module's section for this layer looks like: headings, required fields, the form (prose, fenced schema, table, embeds, references to project entities). Owned by the layer file, in its `## Module slice schema` section.
+1. **Layer-level convention** — what a module's section for this layer looks like: headings, required fields, the form (prose, an embed of project entities, a fenced schema, a table). Owned by the layer file, in its `## Module slice schema` section.
 2. **Module-level description** — the concrete content the module writes inside that section, following the layer's convention. Owned by the module file.
 
 The layer chooses the form. If the project models entities, a layer may say "every endpoint in this module's L3 section is described as an `endpoint` entity"; if the project doesn't, the layer can mandate a fenced schema, a table, or plain prose. This is a per-spec decision.

@@ -376,7 +376,20 @@ describe('the reference style fulfils the M15 form clause', () => {
    * enumeration as running prose would not make this criterion false, it would make
    * it undecidable — and the fix then is to rewrite the criterion, not to delete it.
    */
+  /**
+   * Registry precedence is `project user > global user > plugin > bundled`, and a
+   * `writing-style` skill in a user root is NOT filtered out the way a `contextual`
+   * one is. On a machine that still carries `~/.claude/skills/layered-vertical-slices/`
+   * — the style's pre-envelope home — every assertion below would pass against that
+   * disk copy while the shipped envelope had regressed. Assert the source first, or
+   * the whole describe proves nothing on exactly the machines that predate the move.
+   */
+  it('resolves the style from the envelope, not from a user root', () => {
+    expect(resolved.metadata.source).toBe('plugin');
+  });
+
   it('[ac:ac-load-skill-file-layered-vertical-slic] lists the entity embed BEFORE the raw fence in the slice schema', () => {
+    expect(resolved.metadata.source).toBe('plugin');
     const layer = resolved.files['templates/layer.md'];
     expect(layer?.isText).toBe(true);
 
@@ -408,6 +421,33 @@ describe('the reference style fulfils the M15 form clause', () => {
     const prohibition = rule.indexOf('**No code, no tests, no build config.**');
     const scope = rule.indexOf('**Scope.**', prohibition);
     expect(scope, 'rule 6 states a prohibition with no scope').toBeGreaterThan(-1);
-    expect(rule.slice(scope, rule.indexOf('\n7. '))).toMatch(/not implementation/i);
+    // Guarded: §7 of this very SKILL.md permits retiring a rule number, and an
+    // unguarded `-1` end would widen the slice to nearly the whole section — the
+    // match could then be satisfied by text outside the scope paragraph entirely.
+    const nextRule = rule.indexOf('\n7. ', scope);
+    expect(nextRule, 'rule 7 no longer follows rule 6 — rescope this assertion').toBeGreaterThan(-1);
+    expect(rule.slice(scope, nextRule)).toMatch(/not implementation/i);
+  });
+
+  /**
+   * The clause binds the style WHEREVER it enumerates admissible forms — the
+   * template was the loudest place, not the only one. SKILL.md §2 is read on every
+   * use of the style (the template only when one is copied), and `bootstrap.md`
+   * authors the very layer files the template shapes; either one listing the fence
+   * ahead of the entity re-seeds the default the template edit removed.
+   */
+  it('orders the entity form ahead of the fence everywhere it enumerates forms', () => {
+    const enumerations: Array<[string, string]> = [
+      ['SKILL.md §2', resolved.content],
+      ['workflows/bootstrap.md', resolved.files['workflows/bootstrap.md']?.content ?? ''],
+    ];
+
+    for (const [where, body] of enumerations) {
+      const entity = body.indexOf('an embed of project entities');
+      const fence = body.indexOf('a fenced schema');
+      expect(entity, `${where} stopped naming the entity form`).toBeGreaterThan(-1);
+      expect(fence, `${where} stopped naming the fenced form`).toBeGreaterThan(-1);
+      expect(entity, `${where} lists the fence before the entity`).toBeLessThan(fence);
+    }
   });
 });
