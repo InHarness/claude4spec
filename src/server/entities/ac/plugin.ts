@@ -1,10 +1,12 @@
-import type { BackendModule, PluginRegistry } from '../../core/plugin-host/types.js';
+import type { MountContext, PluginRegistry } from '../../core/plugin-host/types.js';
+import type { EntityContribution, PluginManifest } from '../../../shared/plugin-host/manifest.js';
 import { acSerialization } from './serializer.js';
 import { acSystemPrompt } from './system-prompt.js';
 import { createAcToolsServer } from './mcp-server.js';
+import { acAuditSubagent } from './subagents/ac-audit.js';
 import { acData, acSlugPattern } from '../../../shared/entities/ac/schema.js';
 
-export const acBackendModule: BackendModule = {
+export const acBackendModule: EntityContribution = {
   type: 'ac',
   data: acData,
   slugPattern: acSlugPattern,
@@ -31,9 +33,14 @@ export const acBackendModule: BackendModule = {
    * default, which is `systemPrompt.defaultPredicate` and applies to every
    * transport at once. The semantic audit below is a READER, so it takes the
    * reader; `ref: '$type'` on `verifies[].slug` repoints it after a rename.
+   *
+   * The server stays ONE-TOOL. `find_ac_conflicts` was considered and rejected:
+   * AC↔AC comparison is quadratic and the narrowing that makes it affordable is
+   * a judgement, not a filter over a schema field. That gap closes with the
+   * `ac-audit` subagent below instead.
    */
   backend: {
-    mcpServer: (_service, ctx) =>
+    mcpServer: (_service: unknown, ctx: MountContext) =>
       createAcToolsServer({
         reader: ctx.reader,
         cwd: ctx.cwd,
@@ -44,7 +51,29 @@ export const acBackendModule: BackendModule = {
   },
 };
 
+/**
+ * 0.2.58 — the envelope stops being a carrier of ONE kind of contribution.
+ *
+ * `ac` is still a tier-(a) type registered in-process rather than a package under
+ * `plugins/` (the specification says so itself: "Pakiet nie istnieje jeszcze w kodzie —
+ * opis wyprzedza implementację"), but the SHAPE of its registration is now the envelope's:
+ * a manifest with two slots. That is not cosmetic — `registerEntityModule` knows only the
+ * entity slot, and `registry.registerPlugin` is the only fan-out that reaches
+ * `contributes.subagents`, which `subagentsFor()` then pull-reads per turn.
+ *
+ * `hostApiVersion` is carried as the specification writes it. It gates nothing on this
+ * path — the semver gate is the M33 loader's, and this is a direct in-process call — but
+ * it would gate the day this envelope actually moves under `plugins/`. Filed as a
+ * clarification patch against brief 0-2-57-to-0-2-58 rather than silently corrected here.
+ */
+export const acPlugin: PluginManifest = {
+  name: 'c4s-plugin-ac',
+  version: '1.0.0',
+  hostApiVersion: '^1.0.0',
+  contributes: { entities: [acBackendModule], subagents: [acAuditSubagent] },
+};
+
 /** M31: self-registration side effect replaced by an explicit hook — called once per process by registerAllPlugins(registry). */
 export function onRegister(registry: PluginRegistry): void {
-  registry.registerEntityModule(acBackendModule);
+  registry.registerPlugin(acPlugin);
 }
