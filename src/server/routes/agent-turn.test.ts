@@ -93,6 +93,7 @@ import {
   AdapterTimeoutError,
 } from '@inharness-ai/agent-adapters';
 import { runAgentTurn, type AgentTurnDeps, type AgentTurnInput } from './agent-turn.js';
+import { CLAUDE_CODE_TASK_TRACKING_TOOLS } from '@inharness-ai/agent-adapters/claude-code';
 import { BACKGROUND_HOLD_CAP_MS, TURN_TIMEOUT_MS } from '../../shared/agent-turn.js';
 
 afterEach(() => {
@@ -315,6 +316,52 @@ describe('runAgentTurn — patch thread posture (0.2.30)', () => {
     // PROJECT CONSTANT still does, so the turn is not unrestricted — see the
     // posture suite below for what it carries.
     expect(hoisted.lastExecute?.planMode).toBe(false);
+  });
+});
+
+/**
+ * 0.2.65 — the task family is opted into EXPLICITLY, and the test that matters
+ * is the second one: the posture where the opt-in used to vanish.
+ *
+ * The library sets `options.tools` only when at least one group is denied, so a
+ * project with direct FS access allowed denies nothing and — past SDK 0.3.233,
+ * where these tools are off by default — would silently lose them. Asserting the
+ * field only under the default posture would have passed against that bug.
+ */
+describe('runAgentTurn — task-tool opt-in (0.2.65)', () => {
+  const settle = () => {
+    hoisted.events = [{ type: 'result', sessionId: 's1' }];
+  };
+  const TASK_TOOLS = ['TodoWrite', 'TaskCreate', 'TaskGet', 'TaskUpdate', 'TaskList'];
+
+  for (const disableDirectFilesystemAccess of [true, false]) {
+    it(`names the whole task family with disableDirectFilesystemAccess=${disableDirectFilesystemAccess}`, async () => {
+      settle();
+      hoisted.agent = { disableDirectFilesystemAccess };
+      const { deps } = makeDeps();
+
+      await runAgentTurn(deps, makeInput());
+
+      expect(hoisted.lastExecute?.autoApproveTools).toEqual(TASK_TOOLS);
+    });
+  }
+
+  /**
+   * Pinned to the LIBRARY's constant, not to the five literals above. Spelling
+   * them out here and in the source would let an upstream rename pass both — the
+   * test would keep asserting the old names against a field the adapter no longer
+   * recognizes, which is the exact failure mode this opt-in exists to prevent.
+   */
+  it('takes the family from the library rather than a local literal', async () => {
+    settle();
+    const { deps } = makeDeps();
+
+    await runAgentTurn(deps, makeInput());
+
+    expect(hoisted.lastExecute?.autoApproveTools).toBe(CLAUDE_CODE_TASK_TRACKING_TOOLS);
+    // And the constant is what we think it is — a rename upstream fails HERE,
+    // with a message naming the tools, rather than silently at runtime.
+    expect(CLAUDE_CODE_TASK_TRACKING_TOOLS).toEqual(TASK_TOOLS);
   });
 });
 

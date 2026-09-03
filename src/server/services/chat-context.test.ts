@@ -952,6 +952,80 @@ describe('buildSystemPrompt — <builtin> reflects the posture (0.2.53)', () => 
   });
 });
 
+/**
+ * 0.2.65 — the two prompt-side halves of the task-tracking repair.
+ *
+ * `<todo_markers>` used to send the sweep through `Grep`, which the default
+ * posture removes from the catalog entirely; `<task_tracking>` did not exist at
+ * all, so the only "keep a task list" instruction lived in the Claude Code
+ * preset — and a project running `claudeUsePreset: false` REPLACES that preset.
+ * Both assertions are about a route that survives the default posture.
+ */
+describe('buildSystemPrompt — task tracking (0.2.65)', () => {
+  /** Read one block's body out of the rendered prompt, by tag name. */
+  const blockBody = (out: string, tag: string): string => {
+    const open = out.indexOf(`<${tag}>`);
+    const close = out.indexOf(`</${tag}>`);
+    expect(open).toBeGreaterThan(-1);
+    expect(close).toBeGreaterThan(open);
+    return out.slice(open, close);
+  };
+
+  for (const enabled of [true, false]) {
+    it(`routes the TODO sweep through search_pages, not Grep (access enabled=${enabled})`, () => {
+      const body = blockBody(build({ contextType: 'chat', agentFilesystemAccess: { enabled } }), 'todo_markers');
+      // The whole point: MCP is never gated by tool group, so this one route
+      // works in BOTH postures — which `Grep` did not.
+      expect(body).toContain('search_pages');
+      expect(body).not.toContain('Grep');
+    });
+
+    /**
+     * `TodoWrite` FIRST, and that ordering is the assertion. Against the pinned
+     * published agent-adapters it is the only one of the three that reaches
+     * `chat_thread.current_todo_items` — the `TaskCreate`/`TaskUpdate` merge is
+     * still guarded there — so a block naming only the pair would steer the model
+     * onto the path that drops silently.
+     */
+    it(`leads with TodoWrite and still offers the pair (access enabled=${enabled})`, () => {
+      const body = blockBody(build({ contextType: 'chat', agentFilesystemAccess: { enabled } }), 'task_tracking');
+      expect(body).toContain('TodoWrite');
+      expect(body).toContain('TaskCreate');
+      expect(body).toContain('TaskUpdate');
+      expect(body.indexOf('TodoWrite')).toBeLessThan(body.indexOf('TaskCreate'));
+    });
+  }
+
+  /**
+   * Its own block, deliberately. Registered in the main table, it cannot be
+   * taken away by the preset flag — which is the entire reason it is not left
+   * to the Claude Code preset to say.
+   */
+  it('registers task_tracking in the main block table, beside todo_markers', () => {
+    const names = mainPromptBlockNames();
+    expect(names).toContain('task_tracking');
+    expect(names.indexOf('task_tracking')).toBe(names.indexOf('todo_markers') + 1);
+  });
+
+  /**
+   * The block promises a reader ("the user watches it advance"). `ask` is a
+   * headless peer consult with no viewer, so emitting it there would both waste
+   * the calls and state something untrue.
+   */
+  it('is omitted from the ask frame, and present in chat and patch', () => {
+    expect(build({ contextType: 'ask' })).not.toContain('<task_tracking>');
+    for (const contextType of ['chat', 'patch'] as const) {
+      expect(build({ contextType })).toContain('<task_tracking>');
+    }
+  });
+
+  /** The sweep must ask for the text, not just the page list. */
+  it('asks search_pages for hits, not the textless default', () => {
+    const body = blockBody(build({ contextType: 'chat' }), 'todo_markers');
+    expect(body).toContain("mode: 'hits'");
+  });
+});
+
 describe('buildSystemPrompt — <agent_path_scope> (0.1.90 / 0.1.130)', () => {
   // 0.1.130: artifactDenyDirs is always present (the implicit deny-set) → block always emitted.
   const ARTIFACT = [
