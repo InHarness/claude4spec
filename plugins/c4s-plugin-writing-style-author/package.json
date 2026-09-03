@@ -1,0 +1,35 @@
+{
+  "name": "@inharness-ai/c4s-plugin-writing-style-author",
+  "version": "0.2.66",
+  "description": "claude4spec builtin envelope contributing the `writing-style-author` contextual skill — the methodology for authoring a writing style. Contributes NO entity type and exactly one slot (host API 2.0.0).",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "peerDependencies": {
+    "@c4s/plugin-runtime": "*"
+  },
+  "peerDependenciesMeta": {
+    "@c4s/plugin-runtime": {
+      "optional": true
+    }
+  }
+}

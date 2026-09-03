@@ -1,6 +1,6 @@
 {
   "name": "@inharness-ai/claude4spec",
-  "version": "0.2.65",
+  "version": "0.2.66",
   "description": "Plan the whole system before your agent writes a line of code. Local-first planning layer with structured entities and typed relations.",
   "license": "MIT",
   "author": "Mike Tomala <mike@inharness.ai>",
@@ -56,7 +56,7 @@
     "dev": "tsx watch src/bin/claude4spec.ts --mode dev",
     "dev:default": "tsx src/bin/claude4spec.ts --mode dev --workspace default",
     "c4s": "tsx src/bin/c4s.ts",
-    "build:server": "tsc -p tsconfig.server.json && rm -rf dist/server/db/migrations && cp -R src/server/db/migrations dist/server/db/migrations && rm -rf dist/server/skills && cp -R src/server/skills dist/server/skills && chmod +x dist/bin/claude4spec.js dist/bin/c4s.js dist/bin/c4s-mcp.js",
+    "build:server": "tsc -p tsconfig.server.json && rm -rf dist/server/db/migrations && cp -R src/server/db/migrations dist/server/db/migrations && chmod +x dist/bin/claude4spec.js dist/bin/c4s.js dist/bin/c4s-mcp.js",
     "build:client": "vite build",
     "build:types": "tsc -p tsconfig.types.json && cp src/plugin-types/ambient.d.ts dist/plugin-types/ambient.d.ts",
     "build": "npm run build:client && npm run build:server && npm run build:types",
@@ -69,15 +69,15 @@
     "test:ac-coverage": "node scripts/ac-coverage.mjs",
     "deps:link": "node scripts/deps-link.mjs",
     "deps:unlink": "node scripts/deps-unlink.mjs",
-    "build:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts run build && npm --prefix plugins/c4s-plugin-spreadsheets run build && npm --prefix plugins/c4s-plugin-database-tables run build && npm --prefix plugins/c4s-plugin-frontend-mockups run build && npm --prefix plugins/c4s-plugin-mcp-tools run build && npm --prefix plugins/c4s-plugin-code-snippets run build && npm --prefix plugins/c4s-plugin-layered-vertical-slices run build",
-    "dev:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts run dev & npm --prefix plugins/c4s-plugin-spreadsheets run dev & npm --prefix plugins/c4s-plugin-database-tables run dev & npm --prefix plugins/c4s-plugin-frontend-mockups run dev & npm --prefix plugins/c4s-plugin-mcp-tools run dev & npm --prefix plugins/c4s-plugin-code-snippets run dev & npm --prefix plugins/c4s-plugin-layered-vertical-slices run dev",
+    "build:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts run build && npm --prefix plugins/c4s-plugin-spreadsheets run build && npm --prefix plugins/c4s-plugin-database-tables run build && npm --prefix plugins/c4s-plugin-frontend-mockups run build && npm --prefix plugins/c4s-plugin-mcp-tools run build && npm --prefix plugins/c4s-plugin-code-snippets run build && npm --prefix plugins/c4s-plugin-layered-vertical-slices run build && npm --prefix plugins/c4s-plugin-writing-style-author run build",
+    "dev:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts run dev & npm --prefix plugins/c4s-plugin-spreadsheets run dev & npm --prefix plugins/c4s-plugin-database-tables run dev & npm --prefix plugins/c4s-plugin-frontend-mockups run dev & npm --prefix plugins/c4s-plugin-mcp-tools run dev & npm --prefix plugins/c4s-plugin-code-snippets run dev & npm --prefix plugins/c4s-plugin-layered-vertical-slices run dev & npm --prefix plugins/c4s-plugin-writing-style-author run dev",
     "prebuild": "npm run build:envelopes",
     "predev": "npm run build:envelopes",
     "predev:default": "npm run build:envelopes",
     "pretest": "npm run build:envelopes",
     "pretest:watch": "npm run build:envelopes",
-    "test:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts test && npm --prefix plugins/c4s-plugin-spreadsheets test && npm --prefix plugins/c4s-plugin-database-tables test && npm --prefix plugins/c4s-plugin-frontend-mockups test && npm --prefix plugins/c4s-plugin-mcp-tools test && npm --prefix plugins/c4s-plugin-code-snippets test && npm --prefix plugins/c4s-plugin-layered-vertical-slices test",
-    "typecheck:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts run typecheck && npm --prefix plugins/c4s-plugin-spreadsheets run typecheck && npm --prefix plugins/c4s-plugin-database-tables run typecheck && npm --prefix plugins/c4s-plugin-frontend-mockups run typecheck && npm --prefix plugins/c4s-plugin-mcp-tools run typecheck && npm --prefix plugins/c4s-plugin-code-snippets run typecheck && npm --prefix plugins/c4s-plugin-layered-vertical-slices run typecheck"
+    "test:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts test && npm --prefix plugins/c4s-plugin-spreadsheets test && npm --prefix plugins/c4s-plugin-database-tables test && npm --prefix plugins/c4s-plugin-frontend-mockups test && npm --prefix plugins/c4s-plugin-mcp-tools test && npm --prefix plugins/c4s-plugin-code-snippets test && npm --prefix plugins/c4s-plugin-layered-vertical-slices test && npm --prefix plugins/c4s-plugin-writing-style-author test",
+    "typecheck:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts run typecheck && npm --prefix plugins/c4s-plugin-spreadsheets run typecheck && npm --prefix plugins/c4s-plugin-database-tables run typecheck && npm --prefix plugins/c4s-plugin-frontend-mockups run typecheck && npm --prefix plugins/c4s-plugin-mcp-tools run typecheck && npm --prefix plugins/c4s-plugin-code-snippets run typecheck && npm --prefix plugins/c4s-plugin-layered-vertical-slices run typecheck && npm --prefix plugins/c4s-plugin-writing-style-author run typecheck"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.210",

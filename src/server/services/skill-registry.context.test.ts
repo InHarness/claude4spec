@@ -29,6 +29,28 @@ function writeConfig(cwd: string, writingStyle: string | null): void {
   fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ writingStyle }));
 }
 
+/**
+ * A contextual skill, which since 0.2.66 can ONLY be a package's contribution: the
+ * FS roots admit `scope: 'writing-style'` and nothing else, and the in-package root
+ * that used to carry one is gone.
+ */
+function pushContextual(
+  registry: SkillRegistry,
+  slug: string,
+  opts: { description?: string; contextTypes?: ('chat' | 'brief' | 'patch' | 'ask')[] } = {},
+): void {
+  registry.addPluginSkill({
+    slug,
+    title: slug,
+    description: opts.description ?? `from plugin ${slug}`,
+    version: 1,
+    language: 'en',
+    scope: 'contextual',
+    ...(opts.contextTypes ? { contextTypes: opts.contextTypes } : {}),
+    content: `body of ${slug}`,
+  });
+}
+
 describe('SkillRegistry — legacy `injection` frontmatter (0.2.19: retired)', () => {
   let tmp: string;
 
@@ -40,7 +62,7 @@ describe('SkillRegistry — legacy `injection` frontmatter (0.2.19: retired)', (
   });
 
   it('loads a skill whose frontmatter still carries injection, ignoring the field', () => {
-    const root = writeSkill(path.join(tmp, 'bundled'), 'my-style', 'bundled', { injection: 'available' });
+    const root = writeSkill(path.join(tmp, 'styles'), 'my-style', 'user', { injection: 'available' });
     const registry = SkillRegistry.load([root]);
     expect(registry.has('my-style')).toBe(true);
     expect(registry.isSelectable('my-style')).toBe(true);
@@ -51,14 +73,14 @@ describe('SkillRegistry — legacy `injection` frontmatter (0.2.19: retired)', (
     // Pre-0.2.19 this threw during parse and dropped the style from selection.
     // Upgrading the host must not silently unselect a style authored against the
     // old frontmatter, so an invalid value of a retired field cannot be fatal.
-    const root = writeSkill(path.join(tmp, 'bundled'), 'legacy-style', 'bundled', { injection: 'sometimes' });
+    const root = writeSkill(path.join(tmp, 'styles'), 'legacy-style', 'user', { injection: 'sometimes' });
     const registry = SkillRegistry.load([root]);
     expect(registry.has('legacy-style')).toBe(true);
     expect(registry.listSelectable().map((s) => s.slug)).toContain('legacy-style');
   });
 
   it('carries no injection into what a turn resolves', () => {
-    const root = writeSkill(path.join(tmp, 'bundled'), 'house-style', 'bundled', { injection: 'forced' });
+    const root = writeSkill(path.join(tmp, 'styles'), 'house-style', 'user', { injection: 'forced' });
     const registry = SkillRegistry.load([root]);
     writeConfig(tmp, 'house-style');
     const { writingStyle } = new SkillResolver(registry, tmp).resolveForContext('chat');
@@ -79,7 +101,7 @@ describe('SkillRegistry — the whole package is held in memory (0.2.19; metrics
   it('collects every file except SKILL.md, whatever directory it sits in', () => {
     // The retired whitelist was ['templates','examples','workflows']; `reference/`
     // and a root-level file were silently invisible to the model.
-    const root = writeSkill(path.join(tmp, 'bundled'), 'house-style', 'bundled');
+    const root = writeSkill(path.join(tmp, 'styles'), 'house-style', 'user');
     const dir = path.join(root.dir, 'house-style');
     fs.mkdirSync(path.join(dir, 'workflows'), { recursive: true });
     fs.mkdirSync(path.join(dir, 'reference', 'deep'), { recursive: true });
@@ -99,7 +121,7 @@ describe('SkillRegistry — the whole package is held in memory (0.2.19; metrics
   });
 
   it('0.2.36: carries per-file metrics — the manifest load_skill_file emits', () => {
-    const root = writeSkill(path.join(tmp, 'bundled'), 'house-style', 'bundled');
+    const root = writeSkill(path.join(tmp, 'styles'), 'house-style', 'user');
     const dir = path.join(root.dir, 'house-style');
     fs.mkdirSync(path.join(dir, 'workflows'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'workflows', 'brief.md'), 'one\ntwo\nthree\n');
@@ -118,7 +140,7 @@ describe('SkillRegistry — the whole package is held in memory (0.2.19; metrics
     // It used to be dropped with a console warn, which made "the author never wrote
     // it" and "this channel will not serve it" the same observation from the model's
     // side. The manifest entry is what makes the later NOT_TEXT refusal predictable.
-    const root = writeSkill(path.join(tmp, 'bundled'), 'house-style', 'bundled');
+    const root = writeSkill(path.join(tmp, 'styles'), 'house-style', 'user');
     const dir = path.join(root.dir, 'house-style');
     fs.writeFileSync(path.join(dir, 'diagram.png'), Buffer.from([0x89, 0x50, 0x4e, 0x00, 0x01]));
 
@@ -147,22 +169,22 @@ describe('SkillResolver.resolveForContext', () => {
     // The whole point of the release: a turn costs one prompt line per skill, and
     // `registry.resolve()` (the only thing that reads a package off disk) has exactly
     // one consumer left, `load_skill_file`.
-    const bundled = writeSkill(path.join(tmp, 'bundled'), 'writing-style-author', 'bundled', { scope: 'contextual' });
-    writeSkill(bundled.dir, 'house-style', 'bundled');
-    const registry = SkillRegistry.load([bundled]);
+    const root = writeSkill(path.join(tmp, 'styles'), 'house-style', 'user');
+    const registry = SkillRegistry.load([root]);
+    pushContextual(registry, 'writing-style-author', { description: 'from plugin' });
     writeConfig(tmp, 'house-style');
     const spy = vi.spyOn(registry, 'resolve');
 
     const { listing, writingStyle } = new SkillResolver(registry, tmp).resolveForContext('chat');
 
     expect(spy).not.toHaveBeenCalled();
-    expect(listing).toEqual([{ slug: 'writing-style-author', description: 'from bundled' }]);
+    expect(listing).toEqual([{ slug: 'writing-style-author', description: 'from plugin' }]);
     expect(writingStyle).toEqual({ slug: 'house-style', title: 'house-style' });
   });
 
   it('gives a brief thread nothing but the active writing style — the mode skills are gone', () => {
-    const bundled = writeSkill(path.join(tmp, 'bundled'), 'house-style', 'bundled');
-    const registry = SkillRegistry.load([bundled]);
+    const root = writeSkill(path.join(tmp, 'styles'), 'house-style', 'user');
+    const registry = SkillRegistry.load([root]);
     writeConfig(tmp, 'house-style');
     const resolver = new SkillResolver(registry, tmp);
 
@@ -177,10 +199,10 @@ describe('SkillResolver.resolveForContext', () => {
     }
   });
 
-  it('resolves the chat attach list first, then the active writing style last', () => {
-    const bundled = writeSkill(path.join(tmp, 'bundled'), 'writing-style-author', 'bundled', { scope: 'contextual' });
-    writeSkill(bundled.dir, 'house-style', 'bundled');
-    const registry = SkillRegistry.load([bundled]);
+  it('lists the contextual contributions, and the active writing style in its own field', () => {
+    const root = writeSkill(path.join(tmp, 'styles'), 'house-style', 'user');
+    const registry = SkillRegistry.load([root]);
+    pushContextual(registry, 'writing-style-author');
     writeConfig(tmp, 'house-style');
     const resolver = new SkillResolver(registry, tmp);
 
@@ -189,22 +211,110 @@ describe('SkillResolver.resolveForContext', () => {
     expect(writingStyle).toEqual({ slug: 'house-style', title: 'house-style' });
   });
 
-  it('warns and skips an attach-list slug missing from the registry, without throwing (bundled roots only rescan at boot — a newly bundled skill not yet picked up by a running process must degrade gracefully, not fail every turn)', () => {
-    // `chat` names `writing-style-author`; an empty registry has no such skill.
+  /**
+   * 0.2.66's headline, stated as a test. With `attachInternalSkills` gone the host
+   * has no source of listing rows of its own, so a project that loaded no plugin gets
+   * an EMPTY `<available_skills>` block in `chat` — the context type that used to be
+   * the one row in the whole catalogue. An empty listing, never a fallback.
+   */
+  it('gives a chat turn an empty listing when no plugin is loaded — no hardcoded source is left', () => {
     const registry = SkillRegistry.load([]);
     const resolver = new SkillResolver(registry, tmp);
     expect(resolver.resolveForContext('chat')).toEqual({ listing: [], writingStyle: null });
   });
 
   it('names the active writing style in its own field, never as a listing row', () => {
-    const bundled = writeSkill(path.join(tmp, 'bundled'), 'house-style', 'bundled');
-    const registry = SkillRegistry.load([bundled]);
+    const root = writeSkill(path.join(tmp, 'styles'), 'house-style', 'user');
+    const registry = SkillRegistry.load([root]);
     writeConfig(tmp, 'house-style');
     const resolver = new SkillResolver(registry, tmp);
 
     const { listing, writingStyle } = resolver.resolveForContext('brief');
     expect(writingStyle).toEqual({ slug: 'house-style', title: 'house-style' });
     expect(listing).toEqual([]);
+  });
+
+  /**
+   * 0.2.66 — the fan-out stopped being INDISCRIMINATE without stopping being
+   * unconditional. There is still no config entry and no user opt-in; what changed is
+   * that the PACKAGE now says where its skill belongs, and the host stopped holding a
+   * map of where to pin it.
+   */
+  describe('contextTypes — the package declares its own reach', () => {
+    const ALL = ['chat', 'brief', 'patch', 'ask'] as const;
+
+    it('omitting the field means ALL FOUR, not none — the default leans wide', () => {
+      const registry = SkillRegistry.load([]);
+      pushContextual(registry, 'everywhere');
+      const resolver = new SkillResolver(registry, tmp);
+
+      for (const ct of ALL) {
+        expect(resolver.resolveForContext(ct).listing.map((x) => x.slug)).toEqual(['everywhere']);
+      }
+    });
+
+    it("['chat'] lists the skill in chat and in no other context type", () => {
+      const registry = SkillRegistry.load([]);
+      pushContextual(registry, 'writing-style-author', { contextTypes: ['chat'] });
+      const resolver = new SkillResolver(registry, tmp);
+
+      expect(resolver.resolveForContext('chat').listing.map((x) => x.slug)).toEqual([
+        'writing-style-author',
+      ]);
+      for (const ct of ['brief', 'patch', 'ask'] as const) {
+        expect(resolver.resolveForContext(ct).listing).toEqual([]);
+      }
+    });
+
+    it('honours a proper subset of more than one type', () => {
+      const registry = SkillRegistry.load([]);
+      pushContextual(registry, 'two-of-four', { contextTypes: ['brief', 'ask'] });
+      const resolver = new SkillResolver(registry, tmp);
+
+      const listed = ALL.filter((ct) => resolver.resolveForContext(ct).listing.length === 1);
+      expect(listed).toEqual(['brief', 'ask']);
+    });
+
+    /**
+     * The filter narrows DISCOVERY, not ACCESS. A model that knows the slug opens it
+     * in any turn — which is what keeps the listing from silently becoming a
+     * permission boundary. `load_skill_file` reads `registry.list()`, and this is the
+     * registry-level half of that guarantee.
+     */
+    it('leaves a skill hidden from a turn fully present in the registry', () => {
+      const registry = SkillRegistry.load([]);
+      pushContextual(registry, 'writing-style-author', { contextTypes: ['chat'] });
+
+      expect(new SkillResolver(registry, tmp).resolveForContext('brief').listing).toEqual([]);
+      expect(registry.has('writing-style-author')).toBe(true);
+      expect(registry.resolve('writing-style-author').content).toContain('writing-style-author');
+    });
+
+    /**
+     * Reach is the package's statement about its OWN contribution. A user who
+     * overrides the body has said nothing about which turns the skill belongs in, so
+     * the override changes the description (see the fan-out suite) and not the filter.
+     */
+    it('keeps the contribution\'s reach when a user overrides the body', () => {
+      const userRoot = writeSkill(path.join(tmp, 'user'), 'writing-style-author', 'user', {
+        scope: 'writing-style',
+      });
+      const registry = SkillRegistry.load([userRoot]);
+      pushContextual(registry, 'writing-style-author', { contextTypes: ['chat'] });
+      const resolver = new SkillResolver(registry, tmp);
+
+      expect(resolver.resolveForContext('chat').listing).toEqual([
+        { slug: 'writing-style-author', description: 'from user' },
+      ]);
+      expect(resolver.resolveForContext('ask').listing).toEqual([]);
+    });
+
+    it('an empty array asks to appear nowhere, and is honoured rather than corrected', () => {
+      const registry = SkillRegistry.load([]);
+      pushContextual(registry, 'nowhere', { contextTypes: [] });
+      const resolver = new SkillResolver(registry, tmp);
+      for (const ct of ALL) expect(resolver.resolveForContext(ct).listing).toEqual([]);
+    });
   });
 
   describe('the unconditional plugin fan-out (0.2.19)', () => {
@@ -286,8 +396,8 @@ describe('SkillResolver.resolveForContext', () => {
     it('never lets a contextual attachment shadow the ACTIVE writing style of the same slug', () => {
       // A style also named by a contextual source must not turn into a listing row:
       // that would advertise as optional the one skill the project declared binding.
-      const bundled = writeSkill(path.join(tmp, 'bundled'), 'house-style', 'bundled');
-      const registry = SkillRegistry.load([bundled]);
+      const root = writeSkill(path.join(tmp, 'styles'), 'house-style', 'user');
+      const registry = SkillRegistry.load([root]);
       registry.addPluginSkill({
         slug: 'house-style',
         title: 'House Style',
@@ -300,43 +410,32 @@ describe('SkillResolver.resolveForContext', () => {
       writeConfig(tmp, 'house-style');
 
       const { listing, writingStyle } = new SkillResolver(registry, tmp).resolveForContext('chat');
-      // Title from the WINNING entry: the bundled file outranks the plugin push.
+      // Title from the WINNING entry: the FS-root file outranks the plugin push.
       expect(writingStyle).toEqual({ slug: 'house-style', title: 'house-style' });
       expect(listing).toEqual([]);
     });
 
-    it('an attach-list slug overridden in a user root is a listing row, never the binding style', () => {
+    it("a user override of a contribution's slug is a listing row, never the binding style", () => {
       // A user root may only author `writing-style`-scoped skills, so that IS how an
-      // override of a bundled contextual slug is spelled. It must not thereby claim
+      // override of a contributed contextual slug is spelled. It must not thereby claim
       // the writing-style slot nobody selected it for — and since 0.2.36 it cannot:
       // that slot is fed by `config.writingStyle` alone, not by a file's scope.
       const userRoot = writeSkill(path.join(tmp, 'user'), 'writing-style-author', 'user', { scope: 'writing-style' });
-      const bundled = writeSkill(path.join(tmp, 'bundled'), 'writing-style-author', 'bundled', { scope: 'contextual' });
-      const registry = SkillRegistry.load([userRoot, bundled]);
+      const registry = SkillRegistry.load([userRoot]);
+      pushContextual(registry, 'writing-style-author');
       const { listing, writingStyle } = new SkillResolver(registry, tmp).resolveForContext('chat'); // no style selected
 
       expect(listing).toEqual([{ slug: 'writing-style-author', description: 'from user' }]);
       expect(writingStyle).toBeNull();
     });
 
-    it('emits one entry per slug even when a source names it twice', () => {
-      const bundled = writeSkill(path.join(tmp, 'bundled'), 'writing-style-author', 'bundled', { scope: 'contextual' });
-      const registry = SkillRegistry.load([bundled]);
-      // A plugin contributing the SAME slug the chat attach list hardcodes: both
-      // sources name it, and the turn must still carry it exactly once.
-      registry.addPluginSkill({
-        slug: 'writing-style-author',
-        title: 'Writing Style Author',
-        description: 'plugin copy',
-        version: 1,
-        language: 'en',
-        scope: 'contextual',
-        content: 'plugin copy',
-      });
-      const names = new SkillResolver(registry, tmp)
-        .resolveForContext('chat')
-        .listing.map((s) => s.slug);
-      expect(names).toEqual(['writing-style-author']);
+    it('emits one entry per slug even when two plugins contribute it', () => {
+      const registry = SkillRegistry.load([]);
+      pushContextual(registry, 'writing-style-author', { description: 'first' });
+      pushContextual(registry, 'writing-style-author', { description: 'second' });
+      const { listing } = new SkillResolver(registry, tmp).resolveForContext('chat');
+      // First plugin wins at push time; the turn carries the slug exactly once.
+      expect(listing).toEqual([{ slug: 'writing-style-author', description: 'first' }]);
     });
   });
 });
@@ -351,20 +450,16 @@ describe('SkillRegistry.listSelectable', () => {
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
-  it('never offers a contextual skill, whatever its source', () => {
-    const bundled = writeSkill(path.join(tmp, 'bundled'), 'writing-style-author', 'bundled', { scope: 'contextual' });
-    writeSkill(bundled.dir, 'house-style', 'bundled');
-    const registry = SkillRegistry.load([bundled]);
-    registry.addPluginSkill({
-      slug: 'plugin-rules',
-      title: 'Plugin Rules',
-      description: 'always on',
-      version: 1,
-      language: 'en',
-      scope: 'contextual',
-      content: 'body',
-    });
+  it('never offers a contextual skill, and an FS root cannot author one at all', () => {
+    const root = writeSkill(path.join(tmp, 'styles'), 'house-style', 'user');
+    // 0.2.66 admission rule: a contextual SKILL.md in an FS root is ignored outright,
+    // which is what stops a directory dropped into `.claude/skills` from swapping out
+    // an envelope's contribution.
+    writeSkill(root.dir, 'writing-style-author', 'user', { scope: 'contextual' });
+    const registry = SkillRegistry.load([root]);
+    pushContextual(registry, 'plugin-rules');
 
+    expect(registry.has('writing-style-author')).toBe(false);
     expect(registry.listSelectable().map((s) => s.slug)).toEqual(['house-style']);
   });
 });

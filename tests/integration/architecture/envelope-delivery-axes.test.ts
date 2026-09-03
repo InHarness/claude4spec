@@ -126,9 +126,12 @@ describe('axis B — activation is per project, per type', () => {
  * `ui-view-mockup-generator` reaches the agent through a chain with three links,
  * and only the middle one is obvious. The manifest fills `contributes.skills[]`;
  * the loader lowers it into the plugin record; and the M37 resolver picks it up
- * off `source: 'plugin'` ALONE — there is no entry for it in any context type's
- * `attachInternalSkills`, and adding one would be the wrong fix for a resolver
- * that stopped summing its third source.
+ * off `source: 'plugin'` ALONE.
+ *
+ * 0.2.66: there is no `attachInternalSkills` map left to add an entry to, so the
+ * fan-out is the only route there has ever been for this skill and is now the only
+ * route there is for any. This envelope deliberately declares NO `contextTypes`,
+ * which is why it stays in all four — a choice, not a missing mechanism.
  *
  * Driven through the real loader against the real `plugins/` tree for the same
  * reason as the axes above: a fixture would prove the machinery, and the wiring
@@ -139,10 +142,12 @@ describe('axis A, continued — the envelope contributes a SKILL, not only types
   const CONTEXTS = ['chat', 'brief', 'patch', 'ask'] as const;
   /**
    * A real selectable writing style, so the `<project_skill/>` slot is genuinely
-   * occupied. Since 0.2.57 it comes from an envelope rather than the bundled root —
-   * which changes nothing here and is asserted in its own suite below.
+   * occupied. Since 0.2.57 it comes from an envelope rather than the in-package
+   * root — which changes nothing here and is asserted in its own suite below.
    */
   const STYLE = 'layered-vertical-slices';
+  /** The sibling envelope's skill, which DOES narrow itself — the contrast case. */
+  const NARROWED = 'writing-style-author';
 
   /** A registry with the envelope's skills folded in the way `createProjectContext` folds them. */
   function skillRegistryWith(registry: PluginRegistryImpl, cwd: string): SkillRegistry {
@@ -176,11 +181,40 @@ describe('axis A, continued — the envelope contributes a SKILL, not only types
     expect(skills.list().find((s) => s.slug === SKILL)?.source).toBe('plugin');
   });
 
-  it.each(CONTEXTS)('rides the %s context\'s skill listing, with no attachInternalSkills entry', (contextType) => {
+  it.each(CONTEXTS)('rides the %s context\'s skill listing, declaring no contextTypes', (contextType) => {
     // 0.2.36: the fan-out reaches the prompt as a LISTING ROW, not as a delivered
     // package. The attachment is unchanged; only what it costs is.
     const resolver = new SkillResolver(skillRegistryWith(registry, tmp), tmp);
     expect(resolver.resolveForContext(contextType).listing.map((s) => s.slug)).toContain(SKILL);
+  });
+
+  /**
+   * 0.2.66's two worked examples, side by side and both real. Omitting the field
+   * and declaring `['chat']` are DIFFERENT STATEMENTS by two envelopes about their
+   * own contributions, which is the whole claim of the release: the package decides
+   * its reach, and the host holds no map of where to pin anything.
+   */
+  it.each(CONTEXTS)('sits beside a narrowed skill in %s, which is listed only in chat', (contextType) => {
+    const listing = new SkillResolver(skillRegistryWith(registry, tmp), tmp)
+      .resolveForContext(contextType)
+      .listing.map((s) => s.slug);
+
+    expect(listing).toContain(SKILL);
+    expect(listing.includes(NARROWED)).toBe(contextType === 'chat');
+  });
+
+  /**
+   * The filter narrows DISCOVERY, not ACCESS — asserted here on the real envelope
+   * rather than a fixture, because this is the guarantee that stops the listing from
+   * quietly becoming a permission boundary.
+   */
+  it('keeps the narrowed skill fully readable in a context that does not list it', () => {
+    const skills = skillRegistryWith(registry, tmp);
+    expect(new SkillResolver(skills, tmp).resolveForContext('brief').listing.map((s) => s.slug)).not.toContain(
+      NARROWED,
+    );
+    expect(skills.has(NARROWED)).toBe(true);
+    expect(skills.resolve(NARROWED).content.length).toBeGreaterThan(0);
   });
 
   it.each(CONTEXTS)('never earns a <project_skill/> in %s — forcing belongs to the writing-style slot', (contextType) => {
@@ -287,14 +321,15 @@ describe('the capability-class envelope — a plugin with no entity type', () =>
   });
 
   /**
-   * The bundled root did not merely stop being the style's home — it holds no
-   * style at all now. The class stays legal and the root stays in the precedence
-   * chain; nothing lives there.
+   * 0.2.57 emptied the in-package root of styles; 0.2.66 deleted the root and the
+   * `'bundled'` source class with it. So this is no longer "the class is legal but
+   * unpopulated" — there are two sources a style can have, and every style served
+   * here has one of them.
    */
-  it('is served as source "plugin", and no style is bundled any more', () => {
+  it('is served as source "plugin", the bundled class having been retired', () => {
     const selectable = skillRegistryWith(registry, tmp).listSelectable();
     expect(selectable.find((s) => s.slug === STYLE)?.source).toBe('plugin');
-    expect(selectable.filter((s) => s.source === 'bundled')).toEqual([]);
+    expect(selectable.map((s) => s.source).every((src) => src === 'user' || src === 'plugin')).toBe(true);
   });
 
   /**
@@ -328,6 +363,109 @@ describe('the capability-class envelope — a plugin with no entity type', () =>
     expect(registry.listSkills().map((s) => s.slug)).not.toContain(STYLE);
     expect(registry.listPluginRecords().flatMap((r) => r.subagents).map((s) => s.name)).not.toContain(SUBAGENT);
     expect(registry.listPluginRecords().map((r) => r.name)).not.toContain(PKG);
+  });
+});
+
+/**
+ * 0.2.66 — the SINGLE-SLOT envelope, and what the host stopped shipping.
+ *
+ * `writing-style-author` was the last inhabitant of the in-package skills root, so
+ * moving it into `c4s-plugin-writing-style-author` is what let that root be deleted
+ * outright. Everything below is driven through the real loader against the real
+ * `plugins/` tree, because the claim is about the wiring rather than the prose.
+ */
+describe('the single-slot envelope — c4s-plugin-writing-style-author', () => {
+  const PKG = 'c4s-plugin-writing-style-author';
+  const SKILL = 'writing-style-author';
+  const CONTEXTS = ['chat', 'brief', 'patch', 'ask'] as const;
+
+  function skillRegistryWith(registry: PluginRegistryImpl, cwd: string): SkillRegistry {
+    const skills = SkillRegistry.load(findSkillsRoots(cwd));
+    for (const skill of registry.listSkills()) skills.addPluginSkill(skill);
+    return skills;
+  }
+
+  let registry: PluginRegistryImpl;
+  let tmp: string;
+
+  beforeAll(async () => {
+    registry = await loadedRegistry();
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-single-slot-envelope-'));
+    fs.mkdirSync(path.join(tmp, '.claude4spec'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.claude4spec', 'config.json'), JSON.stringify({ writingStyle: null }));
+  });
+  afterAll(() => {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('loads with no trust gate and registers no entity type', () => {
+    const record = registry.listPluginRecords().find((r) => r.name === PKG);
+    expect(record, `${PKG} did not load`).toBeDefined();
+    expect(record!.contributedTypes).toEqual([]);
+  });
+
+  it('contributes exactly one contextual skill, narrowed to chat', () => {
+    const contributed = registry.listSkills().filter((s) => s.slug === SKILL);
+    expect(contributed).toHaveLength(1);
+    expect(contributed[0].scope).toBe('contextual');
+    expect(contributed[0].contextTypes).toEqual(['chat']);
+    expect(contributed[0].content.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * The scaffold is not a style, so it must never appear in the selector — the
+   * settings dropdown offering "Writing Style Author" would invite a project to be
+   * written IN the tool that writes styles.
+   */
+  it('is never selectable as a writing style', () => {
+    const skills = skillRegistryWith(registry, tmp);
+    expect(skills.listSelectable().map((x) => x.slug)).not.toContain(SKILL);
+    expect(skills.isSelectable(SKILL)).toBe(false);
+  });
+
+  /**
+   * The admission rule of the FS roots, end to end. A `writing-style-author`
+   * directory dropped into `<cwd>/.claude/skills` is ignored, so an envelope's
+   * contextual contribution cannot be swapped out the way a writing style can.
+   */
+  it('cannot be overridden by a contextual directory dropped into .claude/skills', () => {
+    const dir = path.join(tmp, '.claude', 'skills', SKILL);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'SKILL.md'),
+      `---\ntitle: ${SKILL}\ndescription: an impostor\nversion: 1\nlanguage: en\nscope: contextual\n---\nIMPOSTOR BODY\n`,
+    );
+    try {
+      const resolved = skillRegistryWith(registry, tmp).resolve(SKILL);
+      expect(resolved.metadata.source).toBe('plugin');
+      expect(resolved.content).not.toContain('IMPOSTOR BODY');
+    } finally {
+      fs.rmSync(path.join(tmp, '.claude'), { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * Item 13 of the brief, end to end. The record is what `listSkills()` reads, and
+   * the per-project `SkillRegistry` is rebuilt from it — which is why unregistering
+   * the envelope takes the skill out of every context and out of `load_skill_file`'s
+   * reach, without any registry-side removal step of its own.
+   */
+  it('one unregister takes the skill out of every context and out of the registry', () => {
+    const before = skillRegistryWith(registry, tmp);
+    expect(new SkillResolver(before, tmp).resolveForContext('chat').listing.map((x) => x.slug)).toContain(SKILL);
+
+    registry.unregisterPlugin(PKG);
+
+    const after = skillRegistryWith(registry, tmp);
+    const resolver = new SkillResolver(after, tmp);
+    for (const ct of CONTEXTS) {
+      expect(resolver.resolveForContext(ct).listing.map((x) => x.slug), ct).not.toContain(SKILL);
+    }
+    // `load_skill_file` reads `has()`/`resolve()`; an absent slug is its SKILL_NOT_FOUND.
+    expect(after.has(SKILL)).toBe(false);
+    expect(() => after.resolve(SKILL)).toThrow(/unknown slug/);
+    // The envelope carried no style, so config validation has nothing to re-check.
+    expect(resolver.resolveForContext('chat').writingStyle).toBeNull();
   });
 });
 
@@ -377,7 +515,7 @@ describe('the reference style fulfils the M15 form clause', () => {
    * it undecidable — and the fix then is to rewrite the criterion, not to delete it.
    */
   /**
-   * Registry precedence is `project user > global user > plugin > bundled`, and a
+   * Registry precedence is `project user > global user > plugin`, and a
    * `writing-style` skill in a user root is NOT filtered out the way a `contextual`
    * one is. On a machine that still carries `~/.claude/skills/layered-vertical-slices/`
    * — the style's pre-envelope home — every assertion below would pass against that

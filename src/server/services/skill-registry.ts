@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import matter from 'gray-matter';
 import type { PluginSkillContribution, WritingStyleContribution } from '../../shared/plugin-host/manifest.js';
 import type { ChatContextType } from '../../shared/entities.js';
@@ -11,12 +10,19 @@ import { readConfig } from '../config.js';
 export type SkillScope = 'writing-style' | 'contextual';
 
 /**
- * Where a skill was discovered: in-package bundle, a user `.claude/skills` root,
- * or a plugin contribution (M15). Selection precedence is
- * `project > global > plugin > bundled` — project/global are both `user`
- * (ordered by root scan), `plugin` outranks `bundled` but loses to `user`.
+ * Where a skill was discovered: a user `.claude/skills` root, or a plugin
+ * contribution (M15). Selection precedence is `project > global > plugin` —
+ * project/global are both `user` (ordered by root scan), and `plugin` is now LAST
+ * in the chain rather than merely above the in-package bundle.
+ *
+ * 0.2.66 retires the third class, `'bundled'`. The npm package no longer carries a
+ * skills root at all: the reference writing style left for
+ * `c4s-plugin-layered-vertical-slices` in 0.2.57 and `writing-style-author`, its
+ * last inhabitant, left for `c4s-plugin-writing-style-author` here. The host has
+ * no skill source of its own any more — every skill is either a file the user
+ * wrote or a package's contribution.
  */
-export type SkillSource = 'bundled' | 'user' | 'plugin';
+export type SkillSource = 'user' | 'plugin';
 
 export interface SkillMetadata {
   slug: string;
@@ -26,13 +32,26 @@ export interface SkillMetadata {
   language: 'en' | 'pl';
   scope: SkillScope;
   source: SkillSource;
+  /**
+   * 0.2.66 — which context types this skill is LISTED in, as declared by the
+   * package that contributed it. `undefined` means all four, which is also the
+   * only value an FS-scanned entry ever has: the field travels on
+   * `PluginSkillContribution` and there is no frontmatter key for it. A writing
+   * style ignores it entirely — it reaches a turn through `config.writingStyle`
+   * and its own block, not through the listing.
+   */
+  contextTypes?: ChatContextType[];
   path: string;
 }
 
 /**
- * A root scanned by {@link SkillRegistry.load}. Roots are scanned in array order
- * (highest precedence first); on a slug collision the first root wins, so callers
- * pass project before global before bundled. See {@link findSkillsRoots}.
+ * A filesystem root scanned by {@link SkillRegistry.load}. Roots are scanned in
+ * array order (highest precedence first); on a slug collision the first root wins,
+ * so callers pass project before global. See {@link findSkillsRoots}.
+ *
+ * `source` is `'user'` for every root there is — the field survives 0.2.66's
+ * removal of the `'bundled'` class because it is what the scanner stamps onto each
+ * entry, and narrowing it to a constant would only move the literal.
  */
 export interface SkillRoot {
   dir: string;
@@ -101,11 +120,11 @@ export interface SkillListingEntry {
 }
 
 const SUPPORTED_VERSION = 1;
-// 0.1.87: user roots (`source: 'user'`) re-scan on demand so a style dropped into
-// `.claude/skills` while the server runs is visible from the next query — no restart.
-// A short window coalesces the burst of registry calls one query makes (PATCH validate,
-// GET list, agent-turn has()+resolve()) into a single disk scan. Bundled stays cached
-// from startup; plugin styles stay pushed in memory — their cadence is unchanged.
+// 0.1.87: FS roots re-scan on demand so a style dropped into `.claude/skills` while the
+// server runs is visible from the next query — no restart. A short window coalesces the
+// burst of registry calls one query makes (PATCH validate, GET list, agent-turn
+// has()+resolve()) into a single disk scan. Plugin skills stay pushed in memory — their
+// cadence is the loader's, not the scan's.
 const DEFAULT_USER_RESCAN_TTL_MS = 500;
 
 /** Options for {@link SkillRegistry.load}. */
@@ -119,9 +138,8 @@ export interface SkillRegistryOptions {
 }
 
 export class SkillRegistry {
-  // Derived merged view (user ∪ bundled ∪ plugin), rebuilt by `rebuild()`. User-root
-  // entries are refreshed from disk on demand; bundled/plugin entries are folded in
-  // from their caches below.
+  // Derived merged view (user ∪ plugin), rebuilt by `rebuild()`. FS-root entries are
+  // refreshed from disk on demand; plugin entries are folded in from the cache below.
   private metadataBySlug = new Map<string, SkillMetadata>();
   // Slugs found on disk but dropped during scan (version too high, contextual in a
   // user root, missing/malformed SKILL.md), mapped to a human reason. Lets
@@ -134,8 +152,6 @@ export class SkillRegistry {
   // re-scan them. Bundled (and any other non-user) roots are scanned once at `load()`
   // into the caches below and never re-read.
   private userRoots: SkillRoot[] = [];
-  private bundledBySlug = new Map<string, SkillMetadata>();
-  private bundledSkips = new Map<string, string>();
   // M15: plugin-contributed skills carry their body inline (no FS path), so `resolve()`
   // reads them from here instead of disk. `pluginMeta` holds their metadata for the
   // merge; first plugin wins per slug (a later push for the same slug is ignored).
@@ -147,30 +163,32 @@ export class SkillRegistry {
   private lastScanAt = 0;
 
   /**
-   * Build a registry over `roots`. Non-user roots (the in-package bundle) are scanned
-   * once here and cached for the registry's life; `source: 'user'` roots are retained
-   * and re-scanned on demand by every read (`list`/`listSelectable`/`has`/`isSelectable`/
-   * `resolve`/`unselectableReason`), with a short coalescing window — so a style dropped
-   * into `.claude/skills` while the server runs is visible from the next query without a
-   * restart. An eager warm scan runs here too, so malformed-`SKILL.md` warnings still fire
-   * at boot. Merge precedence is unchanged: project > global > plugin > bundled. A missing
-   * or unreadable root is treated as empty (no throw); a malformed `SKILL.md` is skipped
-   * with a warning; a `scope: contextual` skill in a user root is ignored (package-only).
+   * Build a registry over `roots`. Every root is re-scanned on demand by every read
+   * (`list`/`listSelectable`/`has`/`isSelectable`/`resolve`/`unselectableReason`), with a
+   * short coalescing window — so a style dropped into `.claude/skills` while the server
+   * runs is visible from the next query without a restart. An eager warm scan runs here
+   * too, so malformed-`SKILL.md` warnings still fire at boot.
+   *
+   * 0.2.66 — there is no longer a second CADENCE to explain. The in-package root was the
+   * only one scanned once and cached for the process's life, which is what made a shipped
+   * skill need a restart to appear; with it gone, every root on disk is on-demand and only
+   * plugin pushes are held in memory (their cadence being the loader's, not the scan's).
+   *
+   * Merge precedence: project > global > plugin. A missing or unreadable root is treated as
+   * empty (no throw); a malformed `SKILL.md` is skipped with a warning; a `scope: contextual`
+   * skill in an FS root is ignored (contextual skills are package-only).
    */
   static load(roots: SkillRoot[], opts: SkillRegistryOptions = {}): SkillRegistry {
     const registry = new SkillRegistry();
     if (opts.rescanTtlMs !== undefined) registry.rescanTtlMs = opts.rescanTtlMs;
-    for (const root of roots) {
-      if (root.source === 'user') registry.userRoots.push(root);
-      else scanRootInto(root, registry.bundledBySlug, registry.bundledSkips);
-    }
+    registry.userRoots.push(...roots);
     registry.rebuild();
     registry.lastScanAt = Date.now();
     return registry;
   }
 
   /**
-   * Re-scan user roots if the coalescing window has elapsed, then recompute the merged
+   * Re-scan the FS roots if the coalescing window has elapsed, then recompute the merged
    * view. Called at the top of every read so a freshly added user style is picked up.
    */
   private ensureFresh(): void {
@@ -181,56 +199,39 @@ export class SkillRegistry {
   }
 
   /**
-   * Recompute the merged view from a fresh user-root scan plus the cached bundled and
-   * plugin entries. Precedence (highest first): project user > global user > plugin >
-   * bundled — reproduced by merging user first, then bundled, then plugins over the top
-   * (a plugin overrides a bundled writing-style but never a user style or a bundled
-   * `contextual` skill, preserving contextual resolution).
+   * Recompute the merged view from a fresh FS-root scan plus the cached plugin pushes.
+   * Precedence (highest first): project user > global user > plugin — reproduced by
+   * merging the roots first and then plugins over the top, where a plugin never
+   * displaces a user entry.
+   *
+   * 0.2.66 removed the middle step. The chain used to end `… > plugin > bundled`, and
+   * a plugin entry had a class BENEATH it that it could legitimately override; now it
+   * is last, so the only question this loop asks is whether a user already claimed the
+   * slug.
    */
   private rebuild(): void {
     const meta = new Map<string, SkillMetadata>();
     const skips = new Map<string, string>();
 
-    // 1. User roots — fresh from disk, project before global (first root wins per slug).
+    // 1. FS roots — fresh from disk, project before global (first root wins per slug).
     for (const root of this.userRoots) scanRootInto(root, meta, skips);
 
-    // 2. Bundled — cached at load. A valid bundled skill fills an unclaimed slug and
-    //    clears any user-root skip for it; bundled's own skips fold in only where no
-    //    higher-precedence root claimed or already explained the slug (first skip wins).
-    for (const [slug, m] of this.bundledBySlug) {
-      if (meta.has(slug)) continue;
-      meta.set(slug, m);
-      skips.delete(slug);
-    }
-    for (const [slug, reason] of this.bundledSkips) {
-      if (!meta.has(slug) && !skips.has(slug)) skips.set(slug, reason);
-    }
-
-    // 3. Plugins — cached pushes. A plugin never displaces a `user` skill (0.2.19: of
-    //    either scope — a user-authored skill sharing a slug with a plugin CONTEXTUAL
-    //    skill is meant to override its content, which is exactly this branch losing),
-    //    but otherwise claims the slug, overriding a same-slug bundled entry.
+    // 2. Plugins — cached pushes, and now the LAST rung. A plugin never displaces an
+    //    FS-root skill (0.2.19: of either scope — a user-authored skill sharing a slug
+    //    with a plugin CONTEXTUAL skill is meant to override its content, which is
+    //    exactly this branch losing).
     //
-    //    0.2.19 relaxed the second half of the old guard. It used to skip whenever the
-    //    incumbent was not a writing-style, which was written when plugins could only
-    //    contribute styles: a plugin entry landing on a bundled `contextual` slug could
-    //    then only be an accident. Now that `contributes.skills` carries contextual
-    //    skills too, that guard would silently drop a legitimate contribution.
-    //
-    //    What survives of it is the SCOPE check: an override may replace a bundled
-    //    entry's content, never reclassify it. A contextual plugin skill taking over a
-    //    bundled writing-style slug would drop that slug out of `listSelectable()` and
-    //    make `resolve()` return nothing for a project that has it selected — the
-    //    project loses its writing style to a plugin it merely installed.
+    //    0.2.66 dropped the scope-reclassification guard that stood beside it. Its job
+    //    was to stop a contextual contribution from taking over a writing-style slug and
+    //    dropping it out of `listSelectable()` — the project losing its style to a plugin
+    //    it merely installed. Two rules now make that unreachable rather than merely
+    //    refused: the FS roots admit `writing-style` only, so any incumbent here is a
+    //    style and loses to the guard above anyway, and `addPluginSkill` is first-wins,
+    //    so two plugins never both reach this map with one slug. A guard whose condition
+    //    can no longer hold is worse than no guard: it reads as a live rule and documents
+    //    a collision the design has since made impossible.
     for (const [slug, m] of this.pluginMeta) {
-      const existing = meta.get(slug);
-      if (existing && existing.source === 'user') continue;
-      if (existing && existing.scope !== m.scope) {
-        console.warn(
-          `[skill] plugin skill "${slug}" (${m.scope}) does not override the ${existing.source} skill of the same slug (${existing.scope}) — scopes differ, skipping`
-        );
-        continue;
-      }
+      if (meta.has(slug)) continue;
       meta.set(slug, m);
       skips.delete(slug);
     }
@@ -241,10 +242,9 @@ export class SkillRegistry {
 
   /**
    * M15/M37: push a plugin-contributed skill of either scope. Precedence
-   * `project > global > plugin > bundled` is applied at merge time (`rebuild`): a `user`
-   * skill already claiming this slug wins and the plugin skill's content is dropped;
-   * otherwise the plugin skill overrides any same-slug `bundled` entry. First plugin wins
-   * among plugins — a later push for the same slug is ignored here, and the CALLER (the
+   * `project > global > plugin` is applied at merge time (`rebuild`): a `user` skill
+   * already claiming this slug wins and the plugin skill's content is dropped. First
+   * plugin wins among plugins — a later push for the same slug is ignored here, and the CALLER (the
    * loader) is the one that warns about it, because only the loader knows which two
    * plugins collided. Loading is the caller's trust decision — untrusted project-local
    * plugins are never pushed here.
@@ -265,6 +265,10 @@ export class SkillRegistry {
       language: c.language,
       scope: c.scope,
       source: 'plugin',
+      // Carried verbatim, `undefined` included — the resolver reads the absence as
+      // "all four" rather than substituting a list here, so the two states stay
+      // distinguishable for anyone reading a registry dump.
+      contextTypes: c.contextTypes,
       path: '',
     };
     this.pluginMeta.set(c.slug, metadata);
@@ -323,10 +327,14 @@ export class SkillRegistry {
    * The writing-style selector's catalogue (M15). Serves the selector and nothing else —
    * it has no say over which skills are loaded into a thread.
    *
-   * `scope: 'contextual'` is excluded regardless of `source`: a contextual skill is not a
-   * choice a user makes. A bundled one is attached by the context-type registry; a
-   * plugin-contributed one is attached unconditionally to all four context types. Listing
-   * either as "selectable" would offer the user a switch that controls nothing.
+   * `scope: 'contextual'` is excluded: a contextual skill is not a choice a user makes.
+   * It reaches a turn through the `<available_skills>` listing, in whichever context types
+   * its package declared. Listing it as "selectable" would offer the user a switch that
+   * controls nothing.
+   *
+   * 0.2.66 — "regardless of `source`" is gone from this sentence because there is only one
+   * source it can have: the FS roots refuse contextual entries, so every contextual skill
+   * in the registry arrived through `contributes.skills[]`.
    */
   listSelectable(): SkillMetadata[] {
     return this.list().filter((m) => m.scope === 'writing-style');
@@ -448,63 +456,47 @@ export class SkillResolver {
   /**
    * M37: per-context-type resolution, called once per agent turn.
    *
-   * 0.2.36 changed WHAT this produces, not where it looks. The three sources are
-   * unchanged:
+   * 0.2.66 cut this from three sources to two, and the one it cut was the hardcoded
+   * one. `CONTEXT_TYPE_REGISTRY[contextType].attachInternalSkills` is gone as a
+   * concept: the host no longer holds a map of which skills to pin to which turn.
+   * What remains:
    *
-   *   1. `CONTEXT_TYPE_REGISTRY[contextType].attachInternalSkills` — the hardcoded
-   *      contextual slugs. This catalogue is down to a single entry
-   *      (`writing-style-author`, chat only); `brief-author` and `patch-implementer`
-   *      are gone, and with them the idea that a mode's identity is a skill.
-   *   2. The unconditional plugin fan-out: every `source: 'plugin'`,
-   *      `scope: 'contextual'` skill, attached to EVERY context type with no
-   *      selection, no config entry and no opt-out. This is the main producer of
-   *      contextual entries.
-   *   3. The active writing style — returned SEPARATELY, and deliberately NOT in
-   *      `listing`: it is the one skill with a `<project_skill>` block of its own.
+   *   1. The plugin fan-out — every `source: 'plugin'`, `scope: 'contextual'` skill
+   *      whose OWN `contextTypes` admits this turn. Unconditional in the sense that
+   *      matters (no config entry, no user opt-in), but no longer indiscriminate:
+   *      the package chooses its reach, and omitting the field still means all four.
+   *      This is now the SOLE producer of listing rows, which is why a project with
+   *      no plugins loaded gets `<available_skills>` with nothing in it — an empty
+   *      block, not a fallback.
+   *   2. The active writing style — returned SEPARATELY, and deliberately NOT in
+   *      `listing`: it is the one skill with a `<project_writing_skill>` block of its
+   *      own, and forcing is a property of THAT SLOT rather than of any skill. No
+   *      frontmatter key and no contribution field lets a skill force itself; the
+   *      "at most one" cardinality is just the slot being singular.
    *
-   * What changed is that none of this calls `registry.resolve()` any more. The
-   * resolver assembles METADATA — `{ slug, description }` — and nothing else. The
-   * precedence chain (`project > global > plugin > bundled`) still decides which
-   * body a slug names, but it decides it later, inside `load_skill_file`, against
-   * the LIVE registry rather than against a copy frozen into the first turn's
-   * prompt. That is why a skill edited mid-thread takes effect on the next call
-   * and not on the next thread.
+   * None of this calls `registry.resolve()`. The resolver assembles METADATA —
+   * `{ slug, description }` — and nothing else. The precedence chain
+   * (`project > global > plugin`) still decides which body a slug names, but it
+   * decides it later, inside `load_skill_file`, against the LIVE registry rather than
+   * against a copy frozen into the first turn's prompt. That is why a skill edited
+   * mid-thread takes effect on the next call and not on the next thread.
    *
-   * The scope-normalization the old version did (reporting every contextual entry
-   * as `scope: 'contextual'` whatever its file said, so a user override could not
-   * be mistaken for the active style) is no longer needed: `listing` carries no
-   * scope at all, and the style travels in its own field where it cannot be
-   * confused with anything.
-   *
-   * An unknown `attachInternalSkills` slug is warned and skipped rather than
-   * thrown — the bundled roots are scanned ONCE at boot, so on every real deploy
-   * there is a window (new code shipped, server not yet restarted) where a newly
-   * bundled skill exists on disk but not in the live process's cache. Throwing
-   * would turn that transient window into a hard per-request failure for every
-   * turn of the affected context type until restart (this happened for real once).
+   * The filter here narrows DISCOVERY, not ACCESS: a skill this turn does not list
+   * stays openable by slug through `load_skill_file`, which reads the whole registry.
    */
   resolveForContext(contextType: ChatContextType): ContextSkills {
     const style = this.resolveWritingStyle();
     const listing: SkillListingEntry[] = [];
-    // The style is excluded from both contextual sources. It has its own block;
-    // a duplicate listing row would advertise the one skill that is not optional
-    // as though it were.
+    // The style is excluded from the fan-out. It has its own block; a duplicate
+    // listing row would advertise the one skill that is not optional as though it
+    // were.
     const styleSlug = style?.slug;
-
-    for (const slug of CONTEXT_TYPE_REGISTRY[contextType].attachInternalSkills) {
-      if (slug === styleSlug) continue;
-      const meta = this.registry.list().find((m) => m.slug === slug);
-      if (!meta) {
-        console.warn(`[skill] attachInternalSkills slug "${slug}" not in registry, skipping`);
-        continue;
-      }
-      listing.push({ slug: meta.slug, description: meta.description });
-    }
 
     for (const meta of distinctBySlug(
       this.registry.listPluginContributions().filter((s) => s.scope === 'contextual'),
     )) {
       if (meta.slug === styleSlug) continue;
+      if (meta.contextTypes !== undefined && !meta.contextTypes.includes(contextType)) continue;
       /**
        * The DESCRIPTION comes from the winning entry, not from the contribution.
        *
@@ -514,6 +506,11 @@ export class SkillResolver {
        * only thing the model has to decide whether to open the skill, advertising
        * the plugin's while `load_skill_file` serves the user's body would describe
        * one document and hand over another.
+       *
+       * Note the split: the DESCRIPTION follows precedence, the `contextTypes`
+       * filter above does not. Reach is the package's declaration about its own
+       * contribution, and a user overriding the body has said nothing about which
+       * turns the skill belongs in.
        */
       const winning = this.registry.list().find((m) => m.slug === meta.slug) ?? meta;
       listing.push({ slug: winning.slug, description: winning.description });
@@ -533,34 +530,38 @@ export function distinctBySlug(skills: SkillMetadata[]): SkillMetadata[] {
 }
 
 /**
- * First entry per slug, order preserved. The contextual sources of
- * `resolveForContext` can legitimately name the same slug — a plugin contextual skill
- * whose slug also sits in `attachInternalSkills` — and listing it twice would offer
- * the model two rows addressing one document.
+ * First entry per slug, order preserved.
+ *
+ * With `attachInternalSkills` gone there is only one source left to collide with
+ * itself, and `distinctBySlug` already guards it upstream — so this is now a belt to
+ * that braces. Kept because the invariant it states is the one the prompt depends on:
+ * two rows addressing one document ask the model to choose between a skill and
+ * itself.
  */
 export function dedupeBySlug(skills: SkillListingEntry[]): SkillListingEntry[] {
   const seen = new Set<string>();
   return skills.filter((s) => (seen.has(s.slug) ? false : (seen.add(s.slug), true)));
 }
 
-export function findSkillsDir(): string {
-  // dev: <repo>/src/server/services/skill-registry.ts → ../skills/
-  // prod: <repo>/dist/server/services/skill-registry.js → ../skills/
-  // build:server kopiuje src/server/skills/ → dist/server/skills/.
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  return path.resolve(here, '..', 'skills');
-}
-
 /**
- * Roots to scan for selectable writing styles, highest precedence first:
- * project `<cwd>/.claude/skills` > global `~/.claude/skills` > in-package bundle.
- * Project/global are user-authored (`source: 'user'`); the bundle is `'bundled'`.
+ * Roots to scan for selectable writing styles, highest precedence first: project
+ * `<cwd>/.claude/skills` > global `~/.claude/skills`. Both are user-authored
+ * (`source: 'user'`).
+ *
+ * 0.2.66 — the third root, the one inside the npm package, is gone along with
+ * `findSkillsDir()` that located it. Nothing the host ships is a skill on disk any
+ * more; what used to live there travels as a plugin envelope's literals. The
+ * practical gain is that the two roots left have ONE cadence (on-demand re-scan)
+ * instead of two, so "edit a skill, see it next query" is now true of every file the
+ * registry reads.
+ *
+ * These roots admit `scope: 'writing-style'` and nothing else — see `scanRootInto`.
+ * A contextual skill reaches the registry only through `contributes.skills[]`.
  */
 export function findSkillsRoots(cwd: string): SkillRoot[] {
   return [
     { dir: path.join(cwd, '.claude', 'skills'), source: 'user' },
     { dir: path.join(os.homedir(), '.claude', 'skills'), source: 'user' },
-    { dir: findSkillsDir(), source: 'bundled' },
   ];
 }
 
@@ -573,8 +574,14 @@ function recordSkip(skips: Map<string, string>, slug: string, reason: string): v
  * Scan one root into the given `meta`/`skips` maps, deduplicated per slug: a slug already
  * in `meta` (claimed by a higher-precedence root) is left untouched. A missing or unreadable
  * root is treated as empty (no throw); a malformed `SKILL.md` is skipped with a warning and a
- * recorded reason; a `scope: contextual` skill in a `source: 'user'` root is ignored
- * (contextual skills are package-only). A valid skill clears any stale skip for its slug.
+ * recorded reason; a `scope: contextual` skill in an FS root is ignored (contextual skills are
+ * package-only). A valid skill clears any stale skip for its slug.
+ *
+ * 0.2.66 states that last rule as the ADMISSION RULE OF FS ROOTS rather than a quirk of the
+ * `user` class, now that no other class of root exists. Its practical edge: a
+ * `writing-style-author` directory dropped into `.claude/skills` is ignored — an envelope's
+ * contextual contribution cannot be swapped out this way, unlike a writing style, which a user
+ * overrides freely.
  */
 function scanRootInto(root: SkillRoot, meta: Map<string, SkillMetadata>, skips: Map<string, string>): void {
   let entries: fs.Dirent[];

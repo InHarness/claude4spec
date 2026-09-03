@@ -28,13 +28,14 @@ function body(raw: string): string {
 }
 
 /**
- * The reference writing style, moved out of the host's bundled skills root.
+ * The reference writing style, moved out of the host's in-package skills root —
+ * a root that 0.2.66 deleted outright, this having been the move that emptied it
+ * of styles.
  *
  * It travels as literals rather than as files, and that is the ONE real cost
- * difference against the `bundled` and `user` roots: those resolve a package
- * lazily off the disk on every read, this one sits in the registry's memory
- * from registration onwards. In exchange it is distributable — the whole point
- * of the move.
+ * difference against the FS roots: those resolve a package lazily off the disk on
+ * every read, this one sits in the registry's memory from registration onwards. In
+ * exchange it is distributable — the whole point of the move.
  *
  * `scope` is absent because `contributes.writingStyles[]` is sugar for
  * `contributes.skills[]` with `scope: 'writing-style'`; the host lowers it.

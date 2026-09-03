@@ -304,10 +304,15 @@ export interface WritingStyleItem {
   version: number;
   language: string;
   /**
-   * `bundled` = in-package; `user` = from a `.claude/skills` root (project or
-   * global); `plugin` = contributed by a plugin package (M15 phase 2).
+   * `user` = from a `.claude/skills` root (project or global); `plugin` =
+   * contributed by a plugin envelope.
+   *
+   * 0.2.66 dropped the third value, `'bundled'`. The npm package no longer carries
+   * a skills root, so the badge distinction the UI draws is now "yours" against
+   * "came with a package" rather than "yours" against "built in". No field was
+   * added or removed with it — only this union narrowed.
    */
-  source: 'bundled' | 'user' | 'plugin';
+  source: 'user' | 'plugin';
 }
 
 export interface WritingStylesResponse {

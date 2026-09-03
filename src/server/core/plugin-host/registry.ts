@@ -31,6 +31,7 @@ import {
   PluginManifestError,
   lowerEntityContribution,
   synthesizeMount,
+  admitSkillContextTypes,
   validateSkillContribution,
   validateWritingStyle,
   assertSerializationContribution,
@@ -138,8 +139,15 @@ export class PluginRegistryImpl implements PluginRegistry {
     // primary `skills` first, then `writingStyles` lowered to `scope:
     // 'writing-style'`. Order matters only for the first-wins slug rule applied
     // downstream, and the primary slot reasonably wins its own manifest.
+    //
+    // 0.2.66 — `admitSkillContextTypes` runs FIRST on the primary slot, and it
+    // warns-and-skips where the validators throw. A `contextTypes` naming a turn
+    // that does not exist is the one skill defect that must not abort its
+    // envelope: it is a selector over turns, not part of the skill's identity.
     const skills: PluginSkillContribution[] = [
-      ...(manifest.contributes.skills ?? []).map(validateSkillContribution),
+      ...admitSkillContextTypes(manifest.name, manifest.contributes.skills ?? []).map(
+        validateSkillContribution,
+      ),
       ...(manifest.contributes.writingStyles ?? []).map(validateWritingStyle),
     ];
 

@@ -151,7 +151,7 @@ export function buildSkillToolsServer(registry: SkillRegistry): CapturedMcpServe
           );
         }
         // Resolution — and the disk read — happen HERE, in the server process.
-        // Precedence (project > global > plugin > bundled) is applied by the
+        // Precedence (project > global > plugin) is applied by the
         // registry; the path it resolved does not enter the payload below.
         const resolved = registry.resolve(slug);
         const { metadata } = resolved;

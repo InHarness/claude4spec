@@ -1,8 +1,6 @@
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { beforeAll, afterAll, describe, expect, it } from 'vitest';
-import { SkillRegistry, findSkillsRoots } from '../../../src/server/services/skill-registry.js';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { SkillRegistry } from '../../../src/server/services/skill-registry.js';
+import { manifest } from '../../../plugins/c4s-plugin-writing-style-author/src/manifest.js';
 
 /**
  * 0.2.65 — the scaffold seeds the form clause, so a new style is not born blind.
@@ -20,15 +18,18 @@ import { SkillRegistry, findSkillsRoots } from '../../../src/server/services/ski
  * This is the cheaper guard beneath it: the clause cannot silently fall out of the
  * instruction between one release and the next.
  *
- * Read through the registry rather than off the path, because the bundled root is
- * what the host actually serves and it moves between `src/` and `dist/`.
+ * Read through the registry rather than off the path — what the host serves is the
+ * registry ENTRY, and since 0.2.66 the scaffold has no path at all: it left the
+ * retired in-package root for the `c4s-plugin-writing-style-author` envelope and now
+ * travels as literals compiled into that module. Pushing the manifest's own
+ * contribution through `addPluginSkill` is therefore both the shortest route to the
+ * served content and a check that the envelope really carries it.
  */
 describe('the writing-style scaffold carries the form clause it must emit', () => {
   const SCAFFOLD = 'writing-style-author';
 
   let content: string;
   let clause: string;
-  let tmp: string;
 
   /** The block the scaffold emits verbatim, bounded by its fence — not the rest
    *  of the instruction around it, which is free to name types illustratively. */
@@ -40,11 +41,11 @@ describe('the writing-style scaffold carries the form clause it must emit', () =
   }
 
   beforeAll(() => {
-    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-scaffold-clause-'));
-    content = SkillRegistry.load(findSkillsRoots(tmp)).resolve(SCAFFOLD).content;
+    const registry = SkillRegistry.load([]);
+    for (const skill of manifest.contributes.skills ?? []) registry.addPluginSkill(skill);
+    content = registry.resolve(SCAFFOLD).content;
     clause = formClause(content);
   });
-  afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
   it('emits the clause with the entity form listed before the fenced one', () => {
     expect(content).toContain('**Form clause.**');

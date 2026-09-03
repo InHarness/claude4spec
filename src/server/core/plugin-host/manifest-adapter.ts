@@ -19,6 +19,7 @@
 import type { Router } from 'express';
 import type { Database } from 'better-sqlite3';
 import type {
+  ContextType,
   EntityContribution,
   PluginSkillContribution,
   WritingStyleContribution,
@@ -37,6 +38,57 @@ export class PluginManifestError extends Error {
     super(message);
     this.name = 'PluginManifestError';
   }
+}
+
+/** The closed enum `PluginSkillContribution.contextTypes` selects over. */
+const CONTEXT_TYPES: readonly ContextType[] = ['chat', 'brief', 'patch', 'ask'];
+
+/**
+ * Why this contribution's `contextTypes` is unusable, or `null` when it is fine.
+ *
+ * Deliberately NOT part of {@link validateSkillContribution}, which throws and so
+ * takes the WHOLE envelope down with the entry. 0.2.66 prices this one field
+ * differently: a bad `contextTypes` costs its own contribution and nothing else,
+ * because the field is a SELECTOR over turns rather than part of the skill's
+ * identity — the package's other skills, entities and subagents are unaffected by
+ * one of them naming a context type that does not exist. Same shape, and for the
+ * same reason, as the subagent resolver's handling of its own `contextTypes`
+ * (`services/plugin-subagents.ts`).
+ *
+ * Omission is legal and means all four; an EMPTY array is not treated as an
+ * error either — a package that lists nothing has asked to appear nowhere on the
+ * listing, which is a coherent (if odd) request the resolver honours.
+ */
+export function skillContextTypesReason(c: PluginSkillContribution): string | null {
+  if (c.contextTypes === undefined) return null;
+  if (!Array.isArray(c.contextTypes)) return 'contextTypes must be an array when present';
+  const bad = c.contextTypes.filter((t) => !CONTEXT_TYPES.includes(t));
+  if (bad.length > 0) {
+    return `contextTypes contains ${bad.map((b) => JSON.stringify(b)).join(', ')}, outside 'chat' | 'brief' | 'patch' | 'ask'`;
+  }
+  return null;
+}
+
+/**
+ * Drop the entries whose `contextTypes` is unusable, warning once per drop.
+ *
+ * Runs BEFORE `validateSkillContribution` so the skip beats the throw: an entry
+ * that is bad in both ways is skipped rather than aborting its envelope, which is
+ * the weaker and therefore safer of the two outcomes. Applied to the `skills`
+ * slot only — `writingStyles` has no `contextTypes` to get wrong.
+ */
+export function admitSkillContextTypes(
+  pluginName: string,
+  list: PluginSkillContribution[],
+): PluginSkillContribution[] {
+  return list.filter((c) => {
+    const reason = c && typeof c === 'object' ? skillContextTypesReason(c) : null;
+    if (reason === null) return true;
+    console.warn(
+      `[plugin] ${pluginName}: skill "${c.slug}" — ${reason}; skipping this contribution (the rest of the package still loads)`,
+    );
+    return false;
+  });
 }
 
 /**

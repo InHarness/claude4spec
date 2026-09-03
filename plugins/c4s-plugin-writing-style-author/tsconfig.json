@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022"],
+    "strict": true,
+    "declaration": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "types": ["node"],
+    /*
+     * The envelope resolves the Host API from the surrounding repo. An external
+     * plugin gets the same names from its `@inharness-ai/claude4spec`
+     * devDependency via `/// <reference types=".../plugin-runtime/ambient" />`;
+     * swapping this entry for that line is the whole compile-time delta between
+     * this package and the same package extracted to its own repo. No import in
+     * `src/` changes either way.
+     *
+     * No `@c4s/plugin-runtime/ui` mapping and no DOM lib: this envelope has no
+     * frontend half at all — see the note in `manifest.ts`.
+     */
+    "paths": {
+      "@c4s/plugin-runtime": ["../../src/plugin-types/plugin-runtime.ts"]
+    }
+  },
+  "include": ["src", "test", "vite.config.ts"]
+}
