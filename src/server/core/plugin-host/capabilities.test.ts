@@ -299,6 +299,54 @@ describe('M37 — contributes.skills (0.2.19)', () => {
     }
   });
 
+  /**
+   * The skip is priced against ONE LISTING ROW, and that price is only right for a
+   * contextual skill. A style reaches a turn through `config.writingStyle` and its
+   * own prompt block, never through the listing, so dropping it costs the project
+   * its selected style in both the selector and the prompt — over a field that
+   * does nothing for a style either way. Warn, keep, move on.
+   */
+  it('keeps a writing style whose contextTypes is unusable — the field has no effect on a style', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const registry = new PluginRegistryImpl();
+    try {
+      registry.registerPlugin(
+        skillManifest('@c4s/plugin-styled', {
+          skills: [
+            skill({
+              slug: 'terse',
+              scope: 'writing-style',
+              title: 'Terse',
+              contextTypes: ['chat', 'breif'] as unknown as ['chat'],
+            }),
+          ],
+        }),
+      );
+      expect(registry.listSkills().map((x) => x.slug)).toEqual(['terse']);
+      expect(warn.mock.calls.flat().join(' ')).toMatch(/"terse".*ignoring the field/);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('names a slugless contribution readably rather than warning about "undefined"', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const registry = new PluginRegistryImpl();
+    try {
+      registry.registerPlugin(
+        skillManifest('@c4s/plugin-slugless', {
+          skills: [skill({ slug: undefined, contextTypes: ['nope'] })],
+        }),
+      );
+      expect(registry.listSkills()).toEqual([]);
+      const said = warn.mock.calls.flat().join(' ');
+      expect(said).toContain('(no slug)');
+      expect(said).not.toContain('undefined');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('drops a plugin\'s skills again on unregister, so a hot-reload cannot leave a stale one behind', () => {
     const registry = new PluginRegistryImpl();
     registry.registerPlugin(skillManifest('@c4s/plugin-skills', { skills: [skill()] }));

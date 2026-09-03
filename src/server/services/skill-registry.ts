@@ -49,13 +49,17 @@ export interface SkillMetadata {
  * array order (highest precedence first); on a slug collision the first root wins,
  * so callers pass project before global. See {@link findSkillsRoots}.
  *
- * `source` is `'user'` for every root there is — the field survives 0.2.66's
- * removal of the `'bundled'` class because it is what the scanner stamps onto each
- * entry, and narrowing it to a constant would only move the literal.
+ * `source` is the LITERAL `'user'` rather than `SkillSource`: 0.2.66 left exactly
+ * one class of root, and the scanner's admission rule (`scope: contextual` is
+ * refused) reads that field to decide. Typing it as the wider union would let
+ * `{ dir, source: 'plugin' }` type-check, which stamps disk entries as plugin
+ * pushes, silently disables that rule, and sends `resolve()` down the plugin
+ * branch to throw "has no body" for a skill that is right there on disk. The
+ * field stays because it is what `parseFrontmatter` writes onto each entry.
  */
 export interface SkillRoot {
   dir: string;
-  source: SkillSource;
+  source: 'user';
 }
 
 /**
@@ -578,10 +582,14 @@ function recordSkip(skips: Map<string, string>, slug: string, reason: string): v
  * package-only). A valid skill clears any stale skip for its slug.
  *
  * 0.2.66 states that last rule as the ADMISSION RULE OF FS ROOTS rather than a quirk of the
- * `user` class, now that no other class of root exists. Its practical edge: a
- * `writing-style-author` directory dropped into `.claude/skills` is ignored — an envelope's
- * contextual contribution cannot be swapped out this way, unlike a writing style, which a user
- * overrides freely.
+ * `user` class, now that no other class of root exists. Its practical edge is narrower than
+ * "an envelope's contextual skill cannot be shadowed": a `writing-style-author` directory
+ * declaring `scope: contextual` is ignored, but the SAME directory declaring `scope:
+ * writing-style` is admitted and wins the slug in `rebuild()` — an FS root outranks every
+ * plugin push. That is the deliberate 0.2.19 override (a user re-authors a plugin skill's
+ * content by slug) and it is unchanged here; what it costs is that the override also
+ * re-scopes, so the shadowed contextual skill turns up in `listSelectable()`. The rule this
+ * comment states is only about which SCOPE an FS root may introduce, not about who wins.
  */
 function scanRootInto(root: SkillRoot, meta: Map<string, SkillMetadata>, skips: Map<string, string>): void {
   let entries: fs.Dirent[];
