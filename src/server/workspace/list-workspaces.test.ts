@@ -63,6 +63,29 @@ describe('listWorkspaces (M31 registry-read core)', () => {
     expect(() => listWorkspaces(registry())).toThrow(WorkspaceRegistryReadError);
   });
 
+  // 0.2.65 review finding: an unreadable registry DIRECTORY used to read as
+  // "no registry" — `existsSync` cannot tell "absent" from "not allowed to
+  // look", so the command answered `[]` with exit 0 on a machine that has
+  // workspaces. Only ENOENT is an empty registry.
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'fails loudly when the registry directory cannot be traversed',
+    () => {
+      const walled = path.join(dir, 'walled');
+      fs.mkdirSync(walled);
+      fs.writeFileSync(
+        path.join(walled, 'workspaces.json'),
+        JSON.stringify({ $schemaVersion: 2, workspaces: [] }),
+        'utf8',
+      );
+      fs.chmodSync(walled, 0o000);
+      try {
+        expect(() => listWorkspaces(new WorkspaceRegistry(walled))).toThrow(WorkspaceRegistryReadError);
+      } finally {
+        fs.chmodSync(walled, 0o700);
+      }
+    },
+  );
+
   it('throws WorkspaceRegistryReadError on a schema version this binary cannot read', () => {
     fs.writeFileSync(
       path.join(dir, 'workspaces.json'),

@@ -1,4 +1,4 @@
-import { WorkspaceRegistry } from './registry.js';
+import { byLastOpenedDesc, WorkspaceRegistry } from './registry.js';
 import type { WorkspaceRecord } from './types.js';
 
 /**
@@ -68,12 +68,8 @@ export function listWorkspaces(registry: WorkspaceRegistry = new WorkspaceRegist
     ...(w.lastOpened !== undefined ? { lastOpened: w.lastOpened } : {}),
   }));
 
-  // Descending by `lastOpened`, never-opened workspaces last in registry order.
-  // Partitioned rather than sorted with a `?? ''` fallback: an empty string
-  // sorts below every ISO timestamp only by accident of the comparison, and the
-  // rule "no timestamp means last, in file order" is what it actually says.
-  const opened = rows.filter((r) => r.lastOpened !== undefined);
-  const neverOpened = rows.filter((r) => r.lastOpened === undefined);
-  opened.sort((a, b) => b.lastOpened!.localeCompare(a.lastOpened!));
-  return [...opened, ...neverOpened];
+  // Most-recently-opened first, never-opened last in registry order — the same
+  // helper the bare-start workspace pick uses, so the two orderings cannot
+  // disagree about where a workspace with no timestamp belongs.
+  return byLastOpenedDesc(rows);
 }

@@ -107,6 +107,23 @@ export function resolvePluginPackages(ws: Pick<WorkspaceRecord, 'plugins'>): str
 }
 
 /**
+ * Most-recently-opened first; never-opened last, in registry order.
+ *
+ * Partitioned rather than sorted with a `?? ''` fallback, because `lastOpened`
+ * is optional (`types.ts`) and an empty string only sorts below every ISO
+ * timestamp by accident of the comparison. The rule the readers want stated is
+ * "no timestamp means last, in file order", so it is stated. Shared by the two
+ * places that order workspaces — the bare-start pick below and
+ * `c4s list-workspaces` — so they cannot drift apart on the absent case.
+ */
+export function byLastOpenedDesc<T extends { lastOpened?: string }>(rows: readonly T[]): T[] {
+  const opened = rows.filter((r) => r.lastOpened !== undefined);
+  const neverOpened = rows.filter((r) => r.lastOpened === undefined);
+  opened.sort((a, b) => b.lastOpened!.localeCompare(a.lastOpened!));
+  return [...opened, ...neverOpened];
+}
+
+/**
  * Global registry root. `C4S_HOME` override exists for dev/E2E so a test run
  * never touches the real `~/.claude4spec/`.
  */
@@ -212,9 +229,7 @@ export class WorkspaceRegistry {
           data.workspaces.length === 1
             ? data.workspaces[0]
             : data.workspaces.find((w) => w.name === DEFAULT_WORKSPACE_NAME) ??
-              [...data.workspaces].sort((a, b) =>
-                (b.lastOpened ?? '').localeCompare(a.lastOpened ?? ''),
-              )[0];
+              byLastOpenedDesc(data.workspaces)[0];
       }
       if (!ws) {
         let name = opts.name ?? DEFAULT_WORKSPACE_NAME;
@@ -338,10 +353,23 @@ export class WorkspaceRegistry {
   // ─── persistence ─────────────────────────────────────────────────────────
 
   private read(): WorkspacesFile {
-    if (!fs.existsSync(this.file)) {
-      return { $schemaVersion: WORKSPACES_SCHEMA_VERSION, workspaces: [] };
+    // 0.2.65: the read is ATTEMPTED, not pre-checked with `existsSync`.
+    // `existsSync` answers false for two very different situations — the file
+    // is absent, and the file cannot be reached because its directory is
+    // unreadable (`~/.claude4spec` at mode 000, a root-owned home). Collapsing
+    // them made `c4s list-workspaces` answer `[]` with exit 0 on a machine that
+    // has workspaces, i.e. report "fresh machine" for "I am not allowed to
+    // look". Only ENOENT is an empty registry; a permission or path error is a
+    // read failure and propagates to REGISTRY_READ_FAILED.
+    let text: string;
+    try {
+      text = fs.readFileSync(this.file, 'utf8');
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return { $schemaVersion: WORKSPACES_SCHEMA_VERSION, workspaces: [] };
+      }
+      throw new Error(`${this.file}: ${(err as Error).message}`);
     }
-    const text = fs.readFileSync(this.file, 'utf8');
     let parsed: unknown;
     try {
       parsed = JSON.parse(text);
