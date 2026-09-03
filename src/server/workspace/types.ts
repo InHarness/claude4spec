@@ -30,8 +30,14 @@ export interface WorkspaceRecord {
   mode: 'dev' | 'prod';
   /** Port the server listens on when this workspace is started without --port. */
   defaultPort: number;
-  /** ISO timestamp of the last server start for this workspace. */
-  lastOpened: string;
+  /**
+   * ISO timestamp of the last server start for this workspace. OPTIONAL: a
+   * workspace that was never opened simply lacks the field — there is no zero
+   * value for it, and existing records are never backfilled with one. Ordering
+   * that reads it (the bare-start pick, `c4s list-workspaces`) has to place the
+   * absent case explicitly rather than lean on a fallback string.
+   */
+  lastOpened?: string;
   projects: ProjectRecord[];
   /**
    * M33: npm plugin package names loaded at process bootstrap, workspace-global

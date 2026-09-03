@@ -212,7 +212,9 @@ export class WorkspaceRegistry {
           data.workspaces.length === 1
             ? data.workspaces[0]
             : data.workspaces.find((w) => w.name === DEFAULT_WORKSPACE_NAME) ??
-              [...data.workspaces].sort((a, b) => b.lastOpened.localeCompare(a.lastOpened))[0];
+              [...data.workspaces].sort((a, b) =>
+                (b.lastOpened ?? '').localeCompare(a.lastOpened ?? ''),
+              )[0];
       }
       if (!ws) {
         let name = opts.name ?? DEFAULT_WORKSPACE_NAME;

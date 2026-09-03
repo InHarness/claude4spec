@@ -39,6 +39,7 @@ import { filePatchCommand } from './c4s/commands/file-patch.js';
 import { markBriefImplementedCommand } from './c4s/commands/mark-brief-implemented.js';
 import { installSkillsCommand } from './c4s/commands/install-skills.js';
 import { createPluginCommand } from './c4s/commands/create-plugin.js';
+import { listWorkspacesCommand } from './c4s/commands/list-workspaces.js';
 
 /**
  * L14 — CLI Commands: every command a module contributes to this bin, keyed
@@ -82,6 +83,7 @@ const COMMANDS: CliCommandContribution[] = [
   markBriefImplementedCommand,
   installSkillsCommand,
   createPluginCommand,
+  listWorkspacesCommand,
 ];
 const COMMANDS_BY_NAME = new Map(COMMANDS.map((c) => [c.name, c]));
 
@@ -212,6 +214,13 @@ Skills (M22 — filesystem-only, no server; on-demand, no bootstrap side-effect)
                   writes <dir|.claude/skills>/<name>/SKILL.md under process cwd (the
                   CODE repo), not the --project spec repo; --skills default: all three
 
+Workspace registry (M31 — mode \`registry-read\`: no server, no project, no db-slot):
+  list-workspaces  reads ~/.claude4spec/workspaces.json and prints one row per workspace
+                   (name, mode, defaultPort, projectCount, lastOpened), most recently
+                   opened first; never-opened workspaces last. Takes no arguments, and
+                   --project/--workspace do not narrow it. No registry file → [] and
+                   exit 0; an unreadable one → REGISTRY_READ_FAILED, exit 22.
+
 Plugin scaffolding (M38 — mode \`scaffold\`: no project, no workspace, no server):
   create-plugin <target-dir> [--template <git-url>] [--branch <name>] [--force] [--no-install]
                   creates <target-dir> under the current working directory and fills it from
@@ -223,9 +232,11 @@ Server required — for every step:
   specification files. It resolves an ADDRESS locally (.claude4spec/config.json,
   ~/.claude4spec/workspaces.json, defaultPort) and every command above delegates
   to \`npx @inharness-ai/claude4spec\`. Exceptions: install-skills, trust-plugins,
-  create-plugin. Those three address the machine rather than a specification —
-  a code repo's skills directory, the workspace registry, a new directory — so
-  there is no specification for them to ask a server about.
+  create-plugin, list-workspaces. Those four address the machine rather than a
+  specification — a code repo's skills directory, the workspace registry (written
+  by one, read by the other), a new directory — so there is no specification for
+  them to ask a server about. Note the boundary is "navigation vs registry
+  administration", not "read vs write": reading the registry skips the server too.
   No server → SERVER_NOT_RUNNING, exit 8. \`c4s\` never starts one for you.
 
 Global flags:
@@ -364,6 +375,11 @@ function codeToExit(code: string): number {
       return 20;
     case 'AMBIGUOUS_PAGE':
       return 21;
+    // 0.2.65 M31 — the registry itself is unreadable. Its own status, not folded
+    // into the exit-4 "you typed it wrong" group: the caller typed nothing wrong,
+    // and the repair is to the machine's `~/.claude4spec/`, not to the command.
+    case 'REGISTRY_READ_FAILED':
+      return 22;
     case 'BRIEF_NOT_FOUND':
       return 12;
     case 'PATCH_WRITE_FAILED':

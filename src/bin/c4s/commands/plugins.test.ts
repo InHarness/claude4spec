@@ -127,6 +127,9 @@ describe('c4s plugins reports the server host\'s loader', () => {
     // An engines miss has no migration path, so `reason` is the only thing the
     // report can offer — without it the row would be a name and three nulls.
     expect(rows[0]!.reason).toMatch(/engines\.node/);
+    // ...and no migration descriptors either: a Node version is not a slot the
+    // author rewrites, so the flattened list is empty rather than absent.
+    expect(rows[0]!.migrations).toEqual([]);
     expect(printed().ok).toBe(false);
   });
 
@@ -141,6 +144,31 @@ describe('c4s plugins reports the server host\'s loader', () => {
     const rows = printed().incompatible as Array<Record<string, unknown>>;
     expect(rows[0]!.builtAgainst).toMatch(/\^1\.0\.0/);
     expect(rows[0]!.migration).toMatchObject({ shimAvailable: false });
+  });
+
+  it('doctor carries the applicable migration descriptors per incompatible package', async () => {
+    /**
+     * 0.2.65 — the descriptors were already in the payload, nested inside
+     * `migration`. Flattening them onto the row puts the repair path next to the
+     * package it repairs, which is what a reader of `doctor` is there for.
+     * Crossing the `2.0.0` major these are the removed envelope slots.
+     */
+    const removed = {
+      fromMajor: 1,
+      toMajor: 2,
+      slot: 'serializer.{snapshot,restore}',
+      kind: 'slot-removed',
+      summary: 'drop the serializer snapshot/restore pair',
+    };
+    reply = {
+      hostApiVersion: '2.0.0',
+      packages: [
+        { package: 'old-plugin', status: 'incompatible', code: 'PLUGIN_HOST_API_MISMATCH', reason: 'host API 2.0.0 does not satisfy plugin requirement "^1.0.0"', layer: 'base', migration: { targetHostApiVersion: '2.0.0', migrations: [removed], shimAvailable: false } },
+      ],
+    };
+    await expect(runPlugins(args('plugins', 'doctor'))).rejects.toMatchObject({ code: 'HOST_API_INCOMPATIBLE' });
+    const rows = printed().incompatible as Array<Record<string, unknown>>;
+    expect(rows[0]!.migrations).toEqual([removed]);
   });
 
   it('a clean host exits 0', async () => {

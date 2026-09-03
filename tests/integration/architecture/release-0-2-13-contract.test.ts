@@ -329,6 +329,43 @@ describe('the CLI holds no handle on the specification', () => {
     );
   });
 
+  it('an unreadable workspace registry exits non-zero with its own status', () => {
+    /**
+     * 0.2.65 M31 — `list-workspaces` is the first command that can fail because
+     * the MACHINE's registry is broken rather than because the caller typed
+     * something wrong or a server is down. Unmapped it would fall to the
+     * `default: 1` bucket that also holds UNKNOWN_COMMAND and agent failures, so
+     * a wrapper could not tell "your ~/.claude4spec is corrupt" from "the turn
+     * errored". Exit > 0 is the observable half of the AC; the number is 22.
+     */
+    const bin = read('src/bin/c4s.ts');
+    const exit = /case 'REGISTRY_READ_FAILED':\s*(?:\n\s*case '[A-Z_]+':)*\s*\n\s*return (\d+);/.exec(bin);
+    expect(exit, 'REGISTRY_READ_FAILED is not mapped in codeToExit').toBeTruthy();
+    expect(Number(exit![1])).toBeGreaterThan(0);
+    expect(read('src/bin/c4s/errors.ts')).toContain("| 'REGISTRY_READ_FAILED'");
+  });
+
+  it('the registry-read command keeps the registry out of the bin directory', () => {
+    /**
+     * The "grep-proof" half of item 5: `list-workspaces` delegates to the M31
+     * core, so `workspaces.json` stays unsearchable under `src/bin/`. A handler
+     * that parsed the file itself would make the bin a second place that knows
+     * the registry's format — the same drift `readonly-reader` was deleted for.
+     * `c4s.ts`'s help text names the path to a HUMAN, which is not knowledge of
+     * the format; the command files are what must stay clean.
+     */
+    const dir = path.join(REPO_ROOT, 'src/bin/c4s');
+    const offenders: string[] = [];
+    for (const entry of fs.readdirSync(dir, { recursive: true, encoding: 'utf8' })) {
+      if (!entry.endsWith('.ts') || entry.endsWith('.test.ts')) continue;
+      const text = fs.readFileSync(path.join(dir, entry), 'utf8');
+      // Comments explain the mode; code must not read the file.
+      const code = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+      if (code.includes('workspaces.json')) offenders.push(entry);
+    }
+    expect(offenders).toEqual([]);
+  });
+
   it('[ac:ac-kazda-komenda-modulowa-wchodzi-do-bin-c] the execution-mode enum no longer offers a way to read without a server', () => {
     const registry = read('src/bin/c4s/registry.ts');
     const union = /executionMode:\s*([^;]+);/.exec(registry)?.[1] ?? '';

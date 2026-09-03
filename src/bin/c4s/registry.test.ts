@@ -40,7 +40,7 @@ describe('validateCommandContributions', () => {
   });
 
   it('refuses a catalog operation rendered in any other mode', () => {
-    for (const executionMode of ['fs-scoped', 'registry-write', 'scaffold'] as const) {
+    for (const executionMode of ['fs-scoped', 'registry-write', 'registry-read', 'scaffold'] as const) {
       const problems = validateCommandContributions(
         [contribution({ name: 'catalog', operation: 'overview', executionMode })],
         isCatalogOperation,
@@ -76,7 +76,7 @@ describe('validateCommandContributions', () => {
   });
 
   it('says nothing about the three server-free modes', () => {
-    for (const executionMode of ['fs-scoped', 'registry-write', 'scaffold'] as const) {
+    for (const executionMode of ['fs-scoped', 'registry-write', 'registry-read', 'scaffold'] as const) {
       expect(
         validateCommandContributions([contribution({ name: 'local', executionMode })], isCatalogOperation),
       ).toEqual([]);
