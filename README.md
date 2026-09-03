@@ -118,6 +118,26 @@ Two skills install with the package:
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
+### Which Agent SDK actually runs
+
+`@anthropic-ai/claude-agent-sdk` appears in this repo's `dependencies`, but **that version
+number is not authoritative** and nothing here imports the SDK directly. It is declared only
+to satisfy the peer dependency of `@inharness-ai/agent-adapters` (`>=0.3.0 <0.4.0`), which is
+the library that actually drives the agent runtime.
+
+The effective version is therefore chosen by `agent-adapters`, not by us — and when it is
+symlinked for local development (`npm run deps:link`), its own `node_modules` wins outright.
+Expect three numbers that legitimately disagree: what this repo declares, what a fresh
+`npm install` resolves, and what a linked checkout loads. To move the SDK for real, move it in
+`agent-adapters`; changing the range here only affects a fresh, unlinked install.
+
+One consequence is worth knowing about, because it has bitten this repo once. From SDK
+0.3.233 the task-tracking built-ins (`TodoWrite`, `TaskCreate`, `TaskGet`, `TaskUpdate`,
+`TaskList`) are off by default on opus-5 and later, and claude4spec's live task-list panel
+depends on them. The turn opts in explicitly (`autoApproveTools` in
+`src/server/routes/agent-turn.ts`), so crossing that boundary is safe — which is why the
+declared range is deliberately left open rather than pinned below it.
+
 ## FAQ
 
 **How is this different from a general knowledge base?**

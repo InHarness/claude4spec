@@ -16,6 +16,7 @@ import {
   type UserInputResponse,
   type McpServerConfig,
 } from '@inharness-ai/agent-adapters';
+import { CLAUDE_CODE_TASK_TRACKING_TOOLS } from '@inharness-ai/agent-adapters/claude-code';
 import { redactSecrets } from '../services/redact-secrets.js';
 import type { ChatService } from '../services/chat.js';
 import type { AgentCredentialService } from '../services/agent-credential.js';
@@ -1378,7 +1379,8 @@ export async function runAgentTurn(
        * now — the prompt names skills, `skill-tools` serves them.
        */
       // 0.1.67 m05ctxreg: inject the per-context read-only explorer subagent. Mapped onto the
-      // SDK's `options.agents`; does NOT narrow the parent's toolset (no allowedTools).
+      // SDK's `options.agents`; does NOT narrow the parent's toolset. (0.2.65: nor does
+      // `autoApproveTools` below — that field auto-approves, it does not restrict.)
       /**
        * 0.2.53: the run's deny-groups apply to each subagent by INTERSECTION —
        * the library does it (`subagentToolPolicy`), silently, and a `tools` entry
@@ -1404,6 +1406,31 @@ export async function runAgentTurn(
        * operations surviving it.
        */
       disallowedToolGroups,
+      /**
+       * 0.2.65: the task family, named EXPLICITLY — the one line that decides
+       * whether `<task_tracking>` in the prompt can be obeyed at all.
+       *
+       * From Agent SDK 0.3.233 `TodoWrite`/`TaskCreate`/`TaskGet`/`TaskUpdate`/
+       * `TaskList` are off by default on opus-5 and its generation, and a session
+       * opts back in by naming one of them. We used to opt in BY ACCIDENT: the
+       * library sets `options.tools` only when at least one group is denied, so a
+       * project with "Block direct file access" UNCHECKED — the posture we ship for
+       * env-runner — would silently lose the tools the moment the effective SDK
+       * crossed that boundary. That coupling is invisible from here and not part of
+       * any contract; this is.
+       *
+       * `autoApproveTools`, not `allowedTools`: the field was renamed in
+       * agent-adapters 0.9.6 with no alias, and it maps 1:1 onto the SDK's
+       * `options.allowedTools`, which the SDK documents as auto-approval and NOT as
+       * a restriction ("to restrict which tools are available, use the `tools`
+       * option instead"). So this widens nothing else and narrows nothing at all.
+       *
+       * Unconditional, and safe in both postures: the family sits on the library's
+       * residual allow-list `CLAUDE_CODE_UNGATED_BUILTINS`, so the deny filter this
+       * value passes through never strips it. The constant is imported rather than
+       * spelled out so a rename upstream cannot drift past us in silence.
+       */
+      autoApproveTools: CLAUDE_CODE_TASK_TRACKING_TOOLS,
       onUserInput: input.onUserInput,
       /**
        * Always bounded now. `ask` passes its own tighter 15 min; an interactive

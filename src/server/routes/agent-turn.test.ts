@@ -319,6 +319,49 @@ describe('runAgentTurn — patch thread posture (0.2.30)', () => {
 });
 
 /**
+ * 0.2.65 — the task family is opted into EXPLICITLY, and the test that matters
+ * is the second one: the posture where the opt-in used to vanish.
+ *
+ * The library sets `options.tools` only when at least one group is denied, so a
+ * project with direct FS access allowed denies nothing and — past SDK 0.3.233,
+ * where these tools are off by default — would silently lose them. Asserting the
+ * field only under the default posture would have passed against that bug.
+ */
+describe('runAgentTurn — task-tool opt-in (0.2.65)', () => {
+  const settle = () => {
+    hoisted.events = [{ type: 'result', sessionId: 's1' }];
+  };
+  const TASK_TOOLS = ['TodoWrite', 'TaskCreate', 'TaskGet', 'TaskUpdate', 'TaskList'];
+
+  for (const disableDirectFilesystemAccess of [true, false]) {
+    it(`names the whole task family with disableDirectFilesystemAccess=${disableDirectFilesystemAccess}`, async () => {
+      settle();
+      hoisted.agent = { disableDirectFilesystemAccess };
+      const { deps } = makeDeps();
+
+      await runAgentTurn(deps, makeInput());
+
+      expect(hoisted.lastExecute?.autoApproveTools).toEqual(TASK_TOOLS);
+    });
+  }
+
+  /**
+   * Auto-approval, not restriction: the SDK field this maps onto widens the
+   * permission surface and never narrows the catalog. A turn that started
+   * declaring a toolset here would be a different, much larger change.
+   */
+  it('does not narrow the toolset while opting in', async () => {
+    settle();
+    const { deps } = makeDeps();
+
+    await runAgentTurn(deps, makeInput());
+
+    expect(hoisted.lastExecute?.tools).toBeUndefined();
+    expect(hoisted.lastExecute?.allowedTools).toBeUndefined();
+  });
+});
+
+/**
  * 0.2.53 (M18 II) — the built-in tool posture handed to `adapter.execute`.
  *
  * Two axes with different lifetimes composed into ONE union, and the property
