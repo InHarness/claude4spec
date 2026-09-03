@@ -318,6 +318,97 @@ describe('code-snippet — envelope and system prompt', () => {
     }
   });
 
+  /**
+   * 0.2.65 — WHO owns the promotion threshold, asserted where the two candidates meet.
+   *
+   * The prompt carries two slots that could look like rivals for one decision:
+   * `<entity type=…>`, carrying a type's `narrativeBlock`, and
+   * `<project_writing_skill>`, carrying the active writing style. The contract
+   * settles it by OWNERSHIP, not by position: the type owns *when* content stops
+   * being prose or a fence and becomes an entity of that type; the style owns
+   * *where* the result lands in the spec's structure and how it is embedded.
+   *
+   * `code-snippet` is the type these are asserted on because its threshold is the
+   * one most exposed to a style's opinion — half of it is a line count and half a
+   * judgement, so it rides prose in the prompt at all, and a style forbidding "code"
+   * looks like it contradicts it. The invariants below are the builder's, not this
+   * type's; the order the two blocks are emitted in is deliberately NOT asserted,
+   * because position is not the hierarchy that resolves them.
+   */
+  const promptWith = (t: Awaited<ReturnType<typeof app>>, writingStyleSkill: { slug: string; title: string } | null) =>
+    buildSystemPrompt({
+      host: t.host,
+      projectName: 'My Spec',
+      cwd: t.cwd,
+      roots: [] as Root[],
+      currentPagePath: null,
+      currentPageBody: null,
+      entityCounts: {},
+      tagCount: 0,
+      writingStyleSkill,
+    });
+
+  const entityRow = (prompt: string) =>
+    /<entity type="code-snippet">[\s\S]*?<\/entity>/.exec(prompt)?.[0] ?? '';
+
+  it('[ac:ac-blok-entity-type-niosacy-prog-promocj] emits the threshold row byte-identically with a style active and with none', async () => {
+    const t = await app();
+    try {
+      const row = entityRow(promptWith(t, { slug: 'house-style', title: 'House Style' }));
+      expect(row).not.toBe('');
+      // Both halves of the threshold are in the row, so the identity asserted below
+      // is the identity of something that actually carries the rule.
+      expect(row).toMatch(/20 lines/);
+      expect(row).toMatch(/EXAMPLE OF A FORM/);
+
+      expect(entityRow(promptWith(t, null))).toBe(row);
+    } finally {
+      t.cleanup();
+    }
+  });
+
+  it('[ac:ac-prog-promocji-snippetu-20-linii-i-prz] keeps both halves of the snippet threshold independent of config.writingStyle', async () => {
+    const t = await app();
+    try {
+      // The same claim from the type's side: taking the style off does not touch a
+      // byte of the block, so no style can lower this threshold by being absent —
+      // or, in the styled case, by being present.
+      for (const style of [null, { slug: 'house-style', title: 'House Style' }]) {
+        const row = entityRow(promptWith(t, style));
+        expect(row, String(style?.slug)).toMatch(/at least 20 lines long/);
+        expect(row, String(style?.slug)).toMatch(/EXAMPLE OF A FORM/);
+        expect(row, String(style?.slug)).toMatch(/ONLY when BOTH hold/);
+      }
+    } finally {
+      t.cleanup();
+    }
+  });
+
+  it('[ac:ac-przy-aktywnym-stylu-i-aktywnym-typie] emits both blocks side by side with no cross-reference', async () => {
+    const t = await app();
+    try {
+      const prompt = promptWith(t, { slug: 'house-style', title: 'House Style' });
+      const style = /<project_writing_skill [\s\S]*?<\/project_writing_skill>/.exec(prompt)?.[0] ?? '';
+      expect(style).not.toBe('');
+
+      // The style block carries no copy of any type's threshold — it renders the
+      // style's address and the order to read it, never its content. A copy here is
+      // how a style would come to restate, and then quietly lower, a rule it does
+      // not own.
+      expect(style).not.toMatch(/20 lines/);
+      expect(style).not.toMatch(/code-snippet/);
+
+      // And the type's row does not reach back the other way: it names no style, and
+      // does not send the agent to the style to find out when the rule applies.
+      const row = entityRow(prompt);
+      expect(row).not.toMatch(/house-style/);
+      expect(row).not.toMatch(/writing style/i);
+      expect(row).not.toMatch(/load_skill_file/);
+    } finally {
+      t.cleanup();
+    }
+  });
+
   it('[ac:ac-typ-jest-ukryty-brak-listingu-i-brak] is hidden — no sidebar tab, no routes, no detail panel, no row slot', async () => {
     // Hidden-ness is what the OMISSIONS mean; the backend contribution carries
     // no frontend slots at all, and the frontend module declares only the three

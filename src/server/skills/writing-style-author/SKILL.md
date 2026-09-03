@@ -57,6 +57,17 @@ Every file in the package except `SKILL.md` reaches the agent, whatever you name
 1. Ask (if not already clear from the request) what the style should optimize for, and confirm a title if the user didn't give one outright.
 2. Compute `slug` per the algorithm above. If a directory `.claude/skills/<slug>/` already exists, tell the user and ask whether to overwrite, version-bump, or pick a different title/slug — don't silently clobber an existing style.
 3. Write `.claude/skills/<slug>/SKILL.md` with the frontmatter contract above and a body capturing the user's actual conventions (don't invent conventions they didn't ask for).
+
+   **Always include the form clause in the body you write.** Whatever the user's conventions are, the generated style must enumerate the entity form beside prose, table and fence — the first form a style lists reads as its default, so a style silent on entities teaches the agent to reach for a raw fence even in a project that models the thing as an entity type. Write the clause **without the slug of any concrete type**, conditionally, over the type variable; a hardcoded slug costs the style its portability between projects with different `config.entities` catalogues. Emit this block verbatim into the generated `SKILL.md` (adapt the surrounding prose to the style's voice, keep the ordering and the scope sentence):
+
+   ```
+   **Form clause.** Wherever this style enumerates the admissible forms for recording something,
+   list them in this order: prose, an embed of project entities (when the project models this kind
+   of thing as an entity type), a fenced block, a table. The entity form is not a fallback — it is
+   listed before the fenced block because the first form listed reads as the default. A rule that
+   forbids a class of content must state its scope: name what the prohibition does not cover.
+   ```
+
 4. Write the `workflows/` files. If the user has said nothing about brief or patch methodology, ask — or write a minimal `workflows/brief.md` and say plainly that it's a starting point, rather than leaving the directory empty and the genre without a method.
 5. Tell the user the style is selectable immediately — no restart needed (the registry rescans project/global `.claude/skills` roots on demand). They can confirm via `GET /api/writing-styles` (should list the new slug) or by setting it as active (`PATCH /api/config` with `writingStyle: "<slug>"`) from the Settings UI.
 6. If they ask you to also make it the active style for this project, you may say so is possible via the config UI, but do not call config-mutation endpoints yourself unless a tool for that is actually available in this thread — this skill only writes the skill files.

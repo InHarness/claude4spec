@@ -29,7 +29,7 @@ A module groups *all* logic for one concern, regardless of how many entities bac
 
 A *layer* is a **convention** — it does not enumerate which modules exist; it fixes the *shape* in which each module describes its use of this layer. Two levels:
 
-1. **Layer-level convention** — what a module's section for this layer looks like: headings, required fields, the form (prose, fenced schema, table, embeds, references to project entities). Owned by the layer file, in its `## Module slice schema` section.
+1. **Layer-level convention** — what a module's section for this layer looks like: headings, required fields, the form (prose, an embed of project entities, a fenced schema, a table). Owned by the layer file, in its `## Module slice schema` section.
 2. **Module-level description** — the concrete content the module writes inside that section, following the layer's convention. Owned by the module file.
 
 The layer chooses the form. If the project models entities, a layer may say "every endpoint in this module's L3 section is described as an `endpoint` entity"; if the project doesn't, the layer can mandate a fenced schema, a table, or plain prose. This is a per-spec decision.
@@ -126,6 +126,8 @@ Templates ship as files inside this skill, in `templates/`. Copy them when boots
 5. **Bounded scope per file.** If a module file heads past ~250 lines, propose splitting one or more layer slices out into a per-module subdirectory: convert `modules/MXX-<slug>.md` into `modules/MXX-<slug>/`, with the module's own substance in `MXX-<slug>.md` and each extracted layer slice in `LY-<slug>.md` (filename matches the corresponding `layers/LY-<slug>.md`).
 
 6. **No code, no tests, no build config.** You are writing specification. If the user asks for code, stay in-role: "This prompt is scoped to the spec — I can describe behavior; a separate implementation pass writes the code."
+
+   **Scope.** The canonical *shape* of a contract — a manifest, a schema, a convention — is not implementation. If the project models it as an entity type and the content clears that type's promotion threshold, record it as an entity rather than as a raw fenced block. What this rule forbids is implementation code, tests and build configuration written into spec prose.
 
 7. **Version-safe numbering.** Module *and layer* numbers are stable. If a module or layer is deleted mid-design, leave the number retired rather than renumbering survivors. Layers are appended in introduction order — do not reshuffle when a deeper-concern layer is added later. Mark in `<index>`: `M04 — (retired)` or `L3 — (retired)`.
 
