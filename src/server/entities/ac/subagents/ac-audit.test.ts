@@ -96,6 +96,15 @@ describe('c4s-plugin-ac — the ac-audit subagent it contributes', () => {
     }
     // The cost contract — verdicts up, bulk stays here — is why the delegation pays.
     expect(sub.promptBody).toContain('analyze_ac_against_entities');
+    // The expensive tool defaults to EVERY active AC in the project when called with
+    // neither argument — a whole-project LLM sweep, and the exact inversion of the
+    // narrow-first premise this subagent exists on. The body must name the scope.
+    expect(sub.promptBody).toContain('scope_tag');
+    // `list_entities` hands back a frozen { slug, title } and takes no `select`, so the
+    // fourth check has no `kind` to work from unless the body says where to get it.
+    expect(sub.promptBody).toContain('get_entities');
+    // `ac` defaults to status = 'active', so an empty scope is ambiguous by default.
+    expect(sub.promptBody).toContain("status = 'active'");
     // Mechanics the host frame owns. Restating them here is the failure mode.
     expect(sub.promptBody).not.toContain('truncated: true');
     expect(sub.promptBody).not.toContain('NEVER mutate');
@@ -106,6 +115,11 @@ describe('c4s-plugin-ac — the ac-audit subagent it contributes', () => {
     // `description` is the whole routing surface and the host never rewrites it. The
     // neighbouring question — where the criteria ARE — belongs to a spec explorer.
     expect(sub.description).toContain('spec-explore');
+    // Routing is the only guard: the host offers this subagent on pool+trust alone, so in
+    // a project with `ac` deactivated the `ac-tools` server is not mounted and a turn spent
+    // here is wasted. The description is where that has to be said.
+    expect(sub.description).toContain('nie jest');
+    expect(sub.description).toContain('ac-tools');
     expect(sub.description.toLowerCase()).toContain('read-only');
     expect(['spec-explore', 'diff-explore']).not.toContain(sub.name);
   });

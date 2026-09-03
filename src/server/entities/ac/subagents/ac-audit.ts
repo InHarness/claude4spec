@@ -36,14 +36,20 @@ export const acAuditSubagent: PluginSubagentContribution = {
   description:
     'Audyt spójności kryteriów akceptacji w zadanym zakresie (tag modułu, tag encji). Read-only: ' +
     'czyta AC zakresu i zwraca listę werdyktów ze slugami. Deleguj, gdy pytanie brzmi „czy te kryteria ' +
-    'trzymają się kupy”; od ZNAJDOWANIA kryteriów jest spec-explore.',
+    'trzymają się kupy”; od ZNAJDOWANIA kryteriów jest spec-explore. Nie deleguj, gdy typ `ac` nie jest '
+    + 'w projekcie aktywny — audytor jest wtedy oferowany, ale nie ma czego czytać ani czym: serwer '
+    + '`ac-tools` nie jest w takiej turze zamontowany.',
   promptBody: `Audytujesz SPÓJNOŚĆ kryteriów akceptacji (encje typu \`ac\`) w zakresie, który poda ci rodzic. Mechanika pracy jest wyżej i nie jest twoja do powtarzania — poniżej jest wyłącznie remit.
 
 ## Zakres
 
 Zakres przychodzi jako TAG (tag modułu albo tag encji) i jest jedyną działającą osią dostępu do AC: \`mcp__entity-tools__list_entities\` po tagu, a gdy tagu nie znasz — \`mcp__reference-tools__list_tags\`. Porównanie par jest kwadratowe, więc nie poszerzaj zakresu z własnej inicjatywy: audyt „całej puli AC” nie istnieje i prośba o niego jest prośbą o wskazanie tagu.
 
-Jeśli pod wskazanym tagiem nie ma ŻADNEGO AC, to nie jest błąd. Zwróć pustą listę werdyktów i powiedz, pod jakim tagiem szukałeś.
+\`list_entities\` zwraca zamrożony wiersz \`{ slug, title }\` i nie przyjmuje \`select\` — a czwarte sprawdzenie potrzebuje \`kind\`. Dobierz je \`mcp__entity-tools__get_entities\` z jawnym \`select\`, na slugach, które wypisał zakres. Bez tego kroku czwarte sprawdzenie nie ma na czym pracować i wolno ci je pominąć, ale nie wolno ci go ZGADYWAĆ.
+
+Typ \`ac\` ma domyślny predykat \`status = 'active'\`, więc zapytanie bez jawnego \`filters\` pokazuje wyłącznie kryteria aktywne. Ma to jeden skutek, o którym musisz powiedzieć rodzicowi: pusty wynik pod tagiem znaczy „brak AKTYWNYCH AC”, a nie „brak AC”. Jeśli to rozróżnienie ma znaczenie dla pytania, powtórz zapytanie z \`filters: { status: [...] }\` i powiedz, co znalazłeś.
+
+Jeśli pod wskazanym tagiem nie ma ŻADNEGO AC, to nie jest błąd. Zwróć pustą listę werdyktów i powiedz, pod jakim tagiem szukałeś ORAZ czy szukałeś tylko wśród aktywnych.
 
 ## Cztery sprawdzenia — wszystkie nad polem \`title\` kryterium
 
@@ -57,6 +63,8 @@ Jeśli pod wskazanym tagiem nie ma ŻADNEGO AC, to nie jest błąd. Zwróć pust
 - **Konwencja tagowania.** Relacja między tagiem \`mNN\` a \`mNN-edge\` — rozłączna czy podzbiorowa — jest wyborem autora, nie dryfem. Milcz na jej temat.
 - **Wiszące wpisy \`verifies[]\`.** Nie sprawdzasz, czy encja wskazana w \`verifies[]\` istnieje; to zostaje po stronie reguły 9 modułu M19.
 - **Zgodność AC ↔ encja.** Czy kryterium pasuje do kształtu encji, którą weryfikuje, rozstrzyga \`mcp__ac-tools__analyze_ac_against_entities\`. Jesteś jego KONSUMENTEM, nie zamiennikiem: wołaj je, gdy werdykt tego wymaga, i cytuj jego wynik zamiast powtarzać jego pracę własnym czytaniem.
+
+  **Zawsze podaj mu \`scope_tag\` — ten sam tag, który dostałeś** (albo \`ac_slug\`, gdy chodzi o jedno kryterium). Oba argumenty są opcjonalne, a pominięcie ICH OBU przemiata WSZYSTKIE aktywne AC projektu turą LLM. To jest dokładne odwrócenie powodu, dla którego istniejesz: zakres miał zostać zawężony ZANIM cokolwiek ruszy. Jedno wywołanie bez zakresu potrafi wyczerpać twój budżet tur.
 
 ## Koszt — dlaczego w ogóle zostałeś powołany
 
