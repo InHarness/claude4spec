@@ -60,6 +60,17 @@ describe('c4s-plugin-layered-vertical-slices — the reviewer it contributes', (
     expect(sub.promptBody).toContain('Never report it as a clean result');
   });
 
+  /**
+   * Exhaustion returns NOTHING — not a truncated report. A verdict composed at the end is
+   * therefore lost whole, which makes incremental reporting the only way a long review
+   * survives its own budget. The duty belongs in the body, not in the workflow: it governs
+   * how the reviewer WORKS, not how the caller reads it.
+   */
+  it('obliges the reviewer to report incrementally, not to hold a verdict', () => {
+    expect(sub.promptBody).toContain('Report INCREMENTALLY');
+    expect(sub.promptBody).toMatch(/held to the end is lost whole/);
+  });
+
   it('is offered in chat only — the one context its trigger lives in', () => {
     expect(sub.contextTypes).toEqual(['chat']);
   });
@@ -71,7 +82,7 @@ describe('c4s-plugin-layered-vertical-slices — the reviewer it contributes', (
   it('declares the model, effort and turn budget of a bounded review', () => {
     expect(sub.model).toBe('sonnet');
     expect(sub.effort).toBe('medium');
-    expect(sub.maxTurns).toBe(15);
+    expect(sub.maxTurns).toBe(40);
   });
 
   /**

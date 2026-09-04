@@ -9,6 +9,7 @@ import {
 } from './chat-context.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import { validateSubagents } from '@inharness-ai/agent-adapters';
+import { DEFAULT_SUBAGENT_TURNS } from './plugin-subagents.js';
 import type { PluginSubagentContribution } from '../../shared/plugin-host/manifest.js';
 import { acSystemPrompt } from '../entities/ac/system-prompt.js';
 import { diagramSystemPrompt } from '../entities/diagram/system-prompt.js';
@@ -792,6 +793,19 @@ describe('subagentsFor (0.1.67)', () => {
       // turn with it — so this is the assertion that the guards actually hold.
       expect(() => validateSubagents(subs)).not.toThrow();
       expect(subs.filter((s) => s.name === 'dup')).toHaveLength(1);
+    }
+  });
+
+  /**
+   * The built-ins declare no `maxTurns` and never pass through `hostFrame()`, so they are
+   * the case where the number in the prompt could most easily drift from the number the
+   * runtime enforces. Both halves are asserted together for that reason.
+   */
+  it('both built-ins take the host default turn budget and are told the number', () => {
+    for (const ct of ['chat', 'brief'] as const) {
+      const builtin = subagentsFor(ct, entityHost, true)[0];
+      expect(builtin.maxTurns).toBe(DEFAULT_SUBAGENT_TURNS);
+      expect(builtin.prompt).toContain(`${DEFAULT_SUBAGENT_TURNS} round-trips`);
     }
   });
 

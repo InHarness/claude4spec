@@ -463,7 +463,15 @@ export interface PluginSubagentContribution {
    */
   model?: 'sonnet' | 'haiku';
   effort?: 'low' | 'medium' | 'high';
-  /** A PROPOSAL: the host clamps it to a ceiling of 20 rather than throwing. */
+  /**
+   * A PROPOSAL from the envelope. OMISSION means the host's default turn budget; an excess
+   * is CLAMPED to the host's ceiling rather than throwing.
+   *
+   * Neither number is written here on purpose. Both are decided by the M33 loader
+   * (`services/plugin-subagents.ts`), and the same number living in two homes is a
+   * guaranteed drift: this contract would go on promising a ceiling the loader had already
+   * moved. Read them there.
+   */
   maxTurns?: number;
 }
 
