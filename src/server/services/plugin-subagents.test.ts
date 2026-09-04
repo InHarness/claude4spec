@@ -316,9 +316,18 @@ describe('resolvePluginSubagents — the turn must still START', () => {
     expect(messages).toEqual([]);
   });
 
-  it('a malformed or non-positive maxTurns falls back to the host default', () => {
-    for (const bad of [-1, 0, NaN]) {
-      expect(resolve([contrib({ maxTurns: bad })]).out[0]!.maxTurns).toBe(DEFAULT_SUBAGENT_TURNS);
+  /**
+   * The other half of the same rule, and the reason the two cases are separate tests: a field
+   * that is PRESENT but unusable is not an author declining to have an opinion, it is an
+   * author who meant something and shipped it broken. The envelope crosses the boundary as
+   * plain JSON, so `"40"` and `10.5` both arrive intact and both fail the guard. Silence here
+   * would hide a packaging defect behind a plausible-looking 40-turn run.
+   */
+  it('a present but unusable maxTurns takes the default AND warns', () => {
+    for (const bad of [-1, 0, NaN, 10.5, '40' as unknown as number]) {
+      const { out, messages } = resolve([contrib({ maxTurns: bad })]);
+      expect(out[0]!.maxTurns).toBe(DEFAULT_SUBAGENT_TURNS);
+      expect(messages.join('\n')).toMatch(/unusable maxTurns/);
     }
   });
 });

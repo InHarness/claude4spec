@@ -210,9 +210,16 @@ export function turnBudgetSection(turns: number): string {
  * Give a definition the host's turn budget: set `maxTurns` to it and tell the model.
  *
  * Used for the BUILT-INS, which never pass through `hostFrame()` — a contributed definition
- * gets the same section inside the frame instead. Setting the field is not decoration: the
- * frame promises a number, and without `maxTurns` on the definition the runtime would apply
- * a default of its own and the promise would be a lie.
+ * gets the same section inside the frame instead. Setting the field is not decoration, and
+ * the reason is the opposite of the obvious one: nothing downstream supplies a budget of its
+ * own. `agent-adapters` forwards `maxTurns` only when it is non-null and the SDK's
+ * `AgentDefinition` has no default, so a definition that omits the field runs UNBOUNDED. The
+ * frame would then state a ceiling the run does not actually have — a promise in the wrong
+ * direction, but still the host telling the model something untrue.
+ *
+ * That also means this is where the built-ins ACQUIRE a bound they did not have before
+ * 0.2.68. The trade is deliberate: a stated budget the model can ration against is worth
+ * more than an unbounded run whose only real limit is the wall clock.
  */
 export function withTurnBudget(def: SubagentDefinition, turns: number): SubagentDefinition {
   return { ...def, maxTurns: turns, prompt: `${def.prompt}\n\n${turnBudgetSection(turns)}` };
@@ -346,14 +353,23 @@ export function resolvePluginSubagents(opts: ResolveSubagentsOptions): SubagentD
       if (skills.length === 0) skills = undefined;
     }
 
-    // Always resolves to a number. An absent, malformed or non-positive proposal takes the
-    // host default SILENTLY — omission is a legal declaration ("no opinion"), not a defect,
-    // so it earns no warning. A proposal above the ceiling is CLAMPED, never rejected. The
-    // value below is the EFFECTIVE one, and it is what the frame states to the model.
-    const maxTurns =
-      typeof c.maxTurns === 'number' && Number.isFinite(c.maxTurns) && c.maxTurns > 0
-        ? Math.min(c.maxTurns, MAX_SUBAGENT_TURNS)
-        : DEFAULT_SUBAGENT_TURNS;
+    // Always resolves to a number, and the two ways of getting there are not the same event.
+    // ABSENCE is a legal declaration ("no opinion"): it takes the host default silently, with
+    // no warning and no diagnostic entry. A field that is PRESENT but unusable — a string, a
+    // zero, a negative, a NaN — is a packaging defect like any other malformed field in this
+    // resolver, so it warns and then takes the same default. A proposal above the ceiling is
+    // CLAMPED, never rejected. The value below is the EFFECTIVE one, and it is what the frame
+    // states to the model.
+    let maxTurns = DEFAULT_SUBAGENT_TURNS;
+    if (c.maxTurns !== undefined) {
+      if (typeof c.maxTurns === 'number' && Number.isInteger(c.maxTurns) && c.maxTurns > 0) {
+        maxTurns = Math.min(c.maxTurns, MAX_SUBAGENT_TURNS);
+      } else {
+        warn(
+          `[subagents] subagent "${name}" declares an unusable maxTurns (${JSON.stringify(c.maxTurns)}); using the host default of ${DEFAULT_SUBAGENT_TURNS}`,
+        );
+      }
+    }
 
     seen.add(name);
     out.push(
