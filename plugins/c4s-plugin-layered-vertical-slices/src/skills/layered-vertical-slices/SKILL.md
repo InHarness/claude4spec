@@ -57,7 +57,7 @@ For a layer **without** an implementor (pure description convention — persiste
 - **Does the user create/delete instances at runtime?** → module.
 - **Is it one coherent bundle of behavior owned by a single user job, even without persistent records of its own?** → module.
 
-**Anti-pattern — "Domain" is not a layer.** Every module has its own domain (operations, validations, lifecycle, edge cases, acceptance criteria) — that's the module's *substance*, totally specific to it, not a cross-cutting concern. The module file's `Purpose` / `Edge cases` / `Acceptance criteria` sections, plus its sections for the layers it touches, **already are** its domain. Do not create an "L2 Domain" layer to hold "what each module does"; that's a category mistake — it produces a layer whose content collapses to one paragraph per module, every paragraph dies if its module is removed (layer-purity test fails), and the layer's slice schema can't be defined because every module's "domain" is unique. If multiple modules genuinely share a *convention* (e.g. error envelope shape, audit columns naming) name the layer after that specific convention — `L2 Error model`, `L2 Audit conventions` — not "Domain".
+**Anti-pattern — "Domain" is not a layer.** Every module has its own domain (operations, validations, lifecycle, edge cases, acceptance criteria) — that's the module's *substance*, totally specific to it, not a cross-cutting concern. The module file's `Cel` / `Edge cases` / `Acceptance criteria` sections, plus its sections for the layers it touches, **already are** its domain. Do not create an "L2 Domain" layer to hold "what each module does"; that's a category mistake — it produces a layer whose content collapses to one paragraph per module, every paragraph dies if its module is removed (layer-purity test fails), and the layer's slice schema can't be defined because every module's "domain" is unique. If multiple modules genuinely share a *convention* (e.g. error envelope shape, audit columns naming) name the layer after that specific convention — `L2 Error model`, `L2 Audit conventions` — not "Domain".
 
 Edge case — agents and LLMs: by default an agent (chat, MCP tool host, prompt assembly) is a **module**, even when central to the UX. Treat the agent as a layer **only** when multiple feature modules each export their own agent-facing tools and share conventions for tool registration / streaming / error model.
 
@@ -74,7 +74,7 @@ The spec lives in the directory where the agent is invoked (CWD). The subdirecto
 │   ├── M01-<slug>.md         ← small module, single file
 │   ├── M02-<slug>.md
 │   └── M03-<slug>/           ← M03 was split — directory replaces the single file
-│       ├── M03-<slug>.md     ← module substance (Purpose, Edge cases, AC, inlined small layer sections)
+│       ├── M03-<slug>.md     ← module substance (Cel, Edge cases, AC, inlined small layer sections)
 │       ├── L1-<slug>.md      ← M03's L1 slice (filename matches layers/L1-<slug>.md)
 │       └── L5-<slug>.md      ← M03's L5 slice (filename matches layers/L5-<slug>.md)
 └── layers/
@@ -108,7 +108,7 @@ Templates ship as files inside this skill, in `templates/`. Copy them when boots
 
 - `templates/index.md` → `<root>/<index>`. Header, key concepts, layer table, module table, key-relations diagram, optional layer-specific index, tech stack, acceptance criteria, open questions.
 - `templates/layer.md` → `<root>/layers/LX-<slug>.md`. **Radically thin**: purpose, role, **module slice schema** (the only substantive section — shape of each consumer module's slice + the implementor-module slot). Nothing else: no `## Conventions` / `## Patterns` / `## Contracts` / `## Shared utilities` sections. Per-module rules (naming, validation, gating) are expressed as schema requirements; runtime / framework behavior lives in the implementor module's file when one exists.
-- `templates/module.md` → `<root>/modules/MXX-<slug>.md`. Hook, purpose, dependencies table, one section per touched layer (drop the rest), edge cases, acceptance criteria. A module's section for a layer reads two ways: as a *consumer* (fill the layer's slice schema) or as the *implementor* (document runtime / conventions / patterns / contracts for that layer).
+- `templates/module.md` → `<root>/modules/MXX-<slug>.md`. `## Cel` (the first H2, directly under the H1 — the template carries no hook block), dependencies table, one section per touched layer (drop the rest), edge cases, acceptance criteria. The `Cel` section's own rules are §7. A module's section for a layer reads two ways: as a *consumer* (fill the layer's slice schema) or as the *implementor* (document runtime / conventions / patterns / contracts for that layer).
 
 ## 6. Quality rules
 
@@ -136,3 +136,70 @@ Templates ship as files inside this skill, in `templates/`. Copy them when boots
 9. **No historical breadcrumbs in spec prose.** When you move content between files, **just move it**. Do not leave behind prose like *"(moved to M20)"*, *"see M07 for new location"*, or empty stub files that only redirect. Anchors (`<!-- anchor: xxxxxxxx -->`) are stable identifiers; the page/entity versioning subsystem owns move history.
 
    *Distinguish from referential cross-links, which stay:* sentences like *"M04 plugs into L6"* or *"see M03 for the endpoint contract"* describe architecture, not history — keep them. Only forbid prose whose sole purpose is to tell a reader *"this used to live somewhere else."* Tabular state markers like `M04 — (retired)` are fine.
+
+## 7. The module's `Cel` section
+
+Every module file opens with exactly one `## Cel`, and it is the file's **first** H2. Nothing stands between the H1 and it — no hook, no blockquote, no table. Content placed there gets no anchor of its own, which makes it invisible to the section index and to the cross-cutting read in §8; a hook that duplicates the purpose is therefore worse than no hook at all.
+
+**Composition.** One sentence naming the **user job** — who does what, to what end. Then **2–4 sentences** on how the module realizes that job and on what it explicitly does **not** do. **Budget: 1200 characters for the whole section.** The number is the rule, not a suggestion: a `Cel` that needs more than that is describing the module's substance, which belongs in the per-layer sections below it.
+
+**Self-sufficiency prohibition.** The `Cel` section carries **no entity embeds, no `section_ref`, and no module or layer identifiers — including its own**. `Cel` answers *why this module exists*; relational boundaries have their own tabular section (`## Dependencies`), and repeating them here produces two homes for one fact.
+
+Two notes on the reach of that prohibition, because both are read wrong:
+
+- It is a **narrowing** of the host's referential convention, not a fulfilment of it. The convention says "name an entity through an embed rather than in bare prose"; this rule closes **both** exits at once — inside `Cel`, an entity is named neither by an embed tag nor by untagged prose. Reading the prohibition as a licence for untagged prose is reading it backwards.
+- **Negative scope is allowed**, because it needs no foreign identifier: "introduces no tables of its own", "exposes no tool" are exactly the sentences the composition rule asks for. What is forbidden is naming someone else's thing, not disclaiming a kind of thing.
+
+### Rules decidable on the section text alone
+
+Each item below can be settled by reading the section, with no judgement about the subject matter, and each has a **named violation symptom** — the thing you will actually observe when it is broken:
+
+1. **Exactly one `## Cel`, and it is the first H2.** *Symptom:* a second `## Cel` later in the file, or another H2 (`## Dependencies`, a layer section) standing ahead of it.
+2. **No content between the H1 and it.** *Symptom:* a blockquote, paragraph, table or list sitting under the H1 with no heading of its own — an unanchored block.
+3. **No entity embeds and no `section_ref`.** *Symptom:* an XML embed tag (`<tagged_list …/>`, `<inline_mention …/>`, `<single_element …/>`) or a `section_ref` inside the section body.
+4. **No module or layer identifiers.** *Symptom:* a token matching `M\d+` or `L\d+` in the section body — the module's own number included.
+5. **Prose only.** *Symptom:* a `-`/`*`/`1.` list item, a `|` table row, or a `>` blockquote inside the section.
+6. **Within the character budget.** *Symptom:* the section body exceeds 1200 characters.
+
+**Item 7 is qualitative only, and the specification does not pretend otherwise.** Written as a yes/no question: *does the opening sentence name a user job?* No machine settles it. The negative test that catches the common failure is tautology — a sentence of the form "X handles X" ("M03 manages endpoints", "the workspace module manages workspaces") names the module's subject, not anyone's job, and fails the question however fluently it reads.
+
+## 8. Cross-cutting reading protocol
+
+This section is for an agent that **writes nothing** — one orienting itself in an existing corpus before routing a change, partitioning a diff, or locating a deviation. It collects the purpose of every module in **two calls**, and the steps below are the protocol, not a suggested shape for one.
+
+**Call 1 — map the `Cel` headings.**
+
+```
+search_pages({
+  regex: "^## Cel$",
+  mode: "map",
+  pathInclude: "(^|/)[Mm]odules/(?:([^/]+)/\\2|[^/]+)\\.md$"
+})
+```
+
+`mode: "map"` returns section identity — `{ rootId, path, anchor, heading, headingPath }` — with no prose, which is the whole point: you want the addresses now and the bodies once.
+
+**The path filter is a step of this protocol, not a variant of it.** A module's main file is named after the module — `modules/M03-endpoint.md`, or `modules/M03-endpoint/M03-endpoint.md` once the module is split — and its subpages never begin with that prefix, because they are named after the *layer* they carry (`L1-db.md`). That is exactly what the pattern above encodes: a file directly under `modules/`, or a file inside a module directory whose own name repeats the directory's (the `\2` backreference). Drop the filter and the sweep still succeeds, silently returning the purpose of a **file** rather than the purpose of a **module**. That is not a slower answer; it is a different one.
+
+Two properties of the pattern are deliberate and easy to lose in an edit:
+
+- **The path match is case-insensitive, and the pattern has to make it so.** `pathInclude` is a plain regex body: it is compiled with **no `i` flag, and JavaScript offers no inline `(?i)`**, so the insensitivity lives in the pattern's own character classes — hence `[Mm]odules` rather than `modules`, and, in any narrowing that names the module prefix, `[Mm]\d+` rather than `M\d+`. This document writes the naming rule as `M{NN}-{kebab-slug}.md` while a corpus on disk carries `m31-workspace.md`; a pattern spelling a bare `M` therefore works for one author and returns nothing at all for another, with no error in between.
+- **The leading alternation `(^|/)` is not decoration.** Whether the path handed to the filter is relative to its root or carries a prefix is not the protocol's to assume, and a bare `^` that guesses wrong matches nothing — silently. Over-matching is visible; under-matching is not.
+
+**Scope of the sweep.** The pattern deliberately says nothing about the `M{NN}` prefix, so a root whose modules are named otherwise — package pages such as `modules/c4s-plugin-<slug>.md` — is swept on the same terms. Narrow it to numbered modules only when you mean to, and then spell the prefix with the character classes above.
+
+**Call 2 — read the sections you mapped.**
+
+```
+get_sections({ anchors: [ …every anchor from call 1… ] })
+```
+
+One call, every anchor. This rests on the `Cel` section's **stable anchor**, assigned once at first indexing and unchanged by later edits: it is what makes the map from call 1 valid input to call 2. A change to how anchors are assigned breaks this protocol, not merely its performance.
+
+Both properties above — `map` mode and `pathInclude` — are **parts** of the protocol rather than optimizations of it. Degrading either does not slow the sweep down; it corrupts the result.
+
+### Failure mode this protocol introduces
+
+The sweep matches on the `## Cel` heading, so **a module that names that section anything else drops out of the result silently** — no error, no warning, no empty row. It is simply not there, and nothing in the response says a module is missing.
+
+The variant that causes this today is the English `## Purpose` in a module's main file. When a sweep returns fewer modules than the index lists, this is the first thing to check; the repair is to rename the heading to `## Cel` while keeping the section's existing anchor, which keeps every address already handed out valid.

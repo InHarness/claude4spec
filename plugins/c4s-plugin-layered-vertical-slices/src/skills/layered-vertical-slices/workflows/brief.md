@@ -22,7 +22,7 @@ A coding agent in another terminal cannot act on (2). Telling them "L3 API uses 
 | Diff inside `layers/LX-*.md` § `## Role in the system` | spec-format | **Drop.** Orientational prose for spec readers. |
 | New `layers/LX-*.md` file (whole file added) | mostly spec-format | Mention briefly that "the spec gained a new layer LX — \<name\> — which structures how modules describe \<topic\>" and stop. Do not transcribe the schema. The implementer cares only when modules start using this layer. |
 | Diff inside `modules/MXX-*.md` § per-layer (e.g. `## Database (L1)`, `## API (L3)`) | substantive | **Translate** to a system-level statement; inline the entities/fields/endpoints. |
-| Diff inside `modules/MXX-*.md` § `Purpose` / `Edge cases` / `Acceptance criteria` | substantive | **Translate** to system behavior. |
+| Diff inside `modules/MXX-*.md` § `Cel` / `Edge cases` / `Acceptance criteria` | substantive | **Translate** to system behavior. |
 | New `modules/MXX-*.md` file | substantive | Open with the module's purpose in one sentence, then walk its per-layer sections. |
 | Entity changes (DTO/Endpoint/Database Table/UI View — create/update/delete) | substantive | **Inline with full content.** See §B. |
 | Anchor injection (`<!-- anchor: xxxxxxxx -->`), heading rename, section reorder, typo fix, prose smoothing, comment edit | editorial | **Drop.** Editorial mechanics belong in version history, not in the brief. |
@@ -143,6 +143,7 @@ At any real release size, reading the diff head-on is how this turn fails: the h
    - `from_release === null` → an *initial* brief: every entry is `op: 'create'`. Frame it as "the project starts here", not as a delta.
    - `frontmatter.roots` non-empty → the brief is SCOPED. Pass the same `roots` to every `release_diff` call and to every subagent. It filters pages only; entities are never root-filtered.
 3. **Partition.** Split the map into disjoint slices covering EVERY slug and path, deletes included — by `entityTypes`, and/or by `limit`/`offset` windows (heavy mode defaults to `limit: 5`, so a bare call returns a fraction and reports the rest in `total`). Completeness is on you: a missed slice is a silently incomplete brief, and nothing downstream will catch it.
+   - To cut the `pages` dimension, borrow the **path pattern from the cross-cutting reading protocol** (SKILL.md §8): the same pattern that sifts module subpages out there separates this delta-map into module main files and their subpages here, so a module's slice carries its main file together with its subpages rather than half a module. You take the **pattern, not the call** — `search_pages` describes the repo's current state, and in a brief thread the only ground is `release_diff`; grounding a historical brief in HEAD breaks its self-containment.
 4. **Fan out.** One `diff-explore` subagent per slice, in parallel. Give each the `from`/`to`, the `roots` if scoped, and its exact window. It reads the heavy diff and returns a distillate — the facts worth inlining (signatures, field shapes, SQL, paths), not the raw dump. **The bulk stays there.** You consume the map from step 2 and these distillates, and nothing else: raw `before`/`after`/`content` must not enter your context by any path, including a heavy `release_diff` you call yourself.
 5. **Filter and compose** per §A–§D below.
 
