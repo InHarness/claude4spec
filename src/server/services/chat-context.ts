@@ -24,7 +24,12 @@ import { registerCoreOperations } from '../operations/core-operations.js';
  */
 registerCoreOperations();
 import { INTERACTION_RULES } from './interaction-rules.js';
-import { resolvePluginSubagents, sanitizeSubagentDefinition } from './plugin-subagents.js';
+import {
+  DEFAULT_SUBAGENT_TURNS,
+  resolvePluginSubagents,
+  sanitizeSubagentDefinition,
+  withTurnBudget,
+} from './plugin-subagents.js';
 
 /* ─────────────────────────── M05 m05ctxreg: context-type registry ───────────────────────────
  * Single code-level constant map (spec `m05ctxreg`), keyed by `context_type`, deciding the five
@@ -1053,10 +1058,20 @@ export function subagentsFor(
    * PROMPTS, which must stop promising file tools they will not have.
    */
   const { subagent } = CONTEXT_TYPE_REGISTRY[contextType];
-  const builtin = sanitizeSubagentDefinition(
-    subagent === 'diff-explore'
-      ? buildDiffExploreSubagent(builtinsEnabled)
-      : buildSpecExploreSubagent(pluginHost, builtinsEnabled),
+  /**
+   * The two built-ins declare no `maxTurns` of their own and never pass through
+   * `hostFrame()`, so `withTurnBudget` is what gives them the host default and states the
+   * number in their prompt. Both halves matter: a prompt naming a budget the definition
+   * does not actually carry would be the host lying to the model, which is the one thing
+   * the frame exists not to do.
+   */
+  const builtin = withTurnBudget(
+    sanitizeSubagentDefinition(
+      subagent === 'diff-explore'
+        ? buildDiffExploreSubagent(builtinsEnabled)
+        : buildSpecExploreSubagent(pluginHost, builtinsEnabled),
+    ),
+    DEFAULT_SUBAGENT_TURNS,
   );
   // Optional call: several fixtures reach this function through an
   // `as unknown as ProjectPluginHost` cast that predates the method.

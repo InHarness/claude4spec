@@ -46,6 +46,25 @@ describe('c4s-plugin-layered-vertical-slices — the writing style it contribute
   });
 
   /**
+   * The caller's protocol for reading `spec-review`'s answer, asserted on the file the
+   * caller actually loads. The set of shapes has to be DISJOINT and CLOSED, and one of the
+   * shapes has to be the empty return: that is the only outcome that arrives as silence,
+   * and a caller that has no name for it relays a review that never happened as a clean
+   * one. What is asserted is the shape of the set, not any particular wording.
+   */
+  it('daily.md names the empty return as one shape of a closed, disjoint set', () => {
+    const daily = style.files?.['workflows/daily.md'] ?? '';
+    expect(daily).toMatch(/exactly one of five shapes/);
+    expect(daily).toMatch(/set is closed/);
+    expect(daily).toMatch(/mutually exclusive/);
+    expect(daily).toMatch(/empty return/);
+    expect(daily).toMatch(/turn budget/);
+    expect(daily).toContain('review not performed');
+    // Not a retry: the second run exhausts the same way.
+    expect(daily).toMatch(/not\*\* re-run it on the same scope/);
+  });
+
+  /**
    * `contributes.writingStyles[]` is sugar for `contributes.skills[]` with
    * `scope: 'writing-style'` — the host lowers it, so declaring a scope here would
    * be the shape of the OTHER slot.

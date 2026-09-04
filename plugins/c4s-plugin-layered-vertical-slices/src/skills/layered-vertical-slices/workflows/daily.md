@@ -82,11 +82,15 @@ Delegate the saved change to the **`spec-review`** subagent and wait for its ans
 
 Hand it the scope — the files and addresses you touched in Step 4. It reads the rules from `SKILL.md` itself, so do not restate them in the delegation; it fetches the change through `release_diff` against the current state, so do not paste the diff either.
 
-Its answer comes back in one of four shapes, and they are not interchangeable:
-- **deviations** — carry each one into Step 7 with its address, verbatim enough that the user can see what the rule required;
-- **no deviations** — say so, once;
-- **no input / empty delta** — the reviewer had nothing to work from (no release to compare against, or nothing changed). Report it as that, never as a clean review;
+Its answer comes back in exactly one of five shapes. The set is closed — there is no sixth — and the shapes are mutually exclusive: read the answer, decide which one it is, and report that one. They are not interchangeable, and none of them collapses into another.
+
+- **deviations** — it judged the change and found something. Carry each one into Step 7 with its address, verbatim enough that the user can see what the rule required.
+- **no deviations** — it judged the change and found nothing. Say so, once.
+- **no input / empty delta** — it had nothing to work from: no release to compare against, or nothing changed. Report it as that, never as a clean review.
 - **partial review** — the delta did not fit and it judged a subset. Say which part went unreviewed. Do not re-run it hoping for a fuller pass; narrow the scope or leave the gap stated.
+- **an empty return — no text block at all — meaning its turn budget ran out.** The run was cut off before any report existed. Report it as **"review not performed — turn budget exhausted"**, naming the scope you handed over. Never as a clean review, and never as a crash: nothing broke, it simply ran out. Do **not** re-run it on the same scope — the second run exhausts the same way. Either hand it a narrower scope, or leave the gap stated and named.
+
+The last shape is the dangerous one, and it is why the set is spelled out as closed: the other four come back as something the reviewer SAID, and this one comes back as silence — indistinguishable, if you are not looking for it, from having delegated a review and been told everything is fine.
 
 One turn does not reach this step: a read-only one, which saved nothing. `spec-review` reviews a change, so with no edit behind you there is nothing to hand it — and it is not mounted in that turn anyway. Answer the question and stop; do not report a missing subagent as a failure.
 

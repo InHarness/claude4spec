@@ -26,11 +26,35 @@ import type { PluginSubagentContribution } from '../../shared/plugin-host/manife
  *  the two layers; everything else about them is equal. */
 export const RESERVED_SUBAGENT_NAMES: ReadonlySet<string> = new Set(['spec-explore', 'diff-explore']);
 
-/** Round-trip ceiling. Empirical: exploratory runs close out in a dozen-odd tool calls.
- *  A contribution PROPOSES `maxTurns`; the host clamps rather than rejecting, because a
- *  number too large is a misjudgement, not a permission escalation. There is no per-subagent
- *  timeout — the wall-clock bound is inherited from the parent run. */
-export const MAX_SUBAGENT_TURNS = 20;
+/**
+ * Round-trip CEILING — a loop-cutter, not a work budget.
+ *
+ * Set at 3× the highest budget any contribution in this project declares, so that a
+ * declaration equal to the highest real need is not clamped by a number chosen to catch
+ * runaways. A contribution PROPOSES `maxTurns`; the host clamps rather than rejecting,
+ * because a number too large is a misjudgement, not a permission escalation. A value equal
+ * to exactly this ceiling passes through untouched.
+ *
+ * `maxTurns` counts ROUND-TRIPS, not time. At this ceiling the binding limit on a long
+ * review is therefore the run's WALL-CLOCK TIMEOUT — inherited from the parent run, there
+ * being no per-subagent timeout — rather than the turn counter. Both exhaustions look the
+ * same from the caller's side: silence. Both are covered by the same duty on the subagent
+ * to report INCREMENTALLY rather than holding a verdict to the end.
+ */
+export const MAX_SUBAGENT_TURNS = 120;
+
+/**
+ * The budget a contribution that declares nothing is given. OMISSION IS LEGAL — an
+ * envelope saying nothing about `maxTurns` is declaring "I have no opinion", not shipping a
+ * packaging defect, so it draws no warning and no diagnostic entry.
+ *
+ * Sized for the two classes of work that legitimately have no opinion: exploratory runs,
+ * which settle in a dozen-odd round-trips and leave this with room to spare; and reviewing
+ * runs, whose read volume scales with the SIZE OF THE CHANGE rather than the difficulty of
+ * the question — which is why a reviewer is expected to declare its own number explicitly
+ * instead of leaning on this one.
+ */
+export const DEFAULT_SUBAGENT_TURNS = 40;
 
 /** Closed enum. `model` reaches the SDK verbatim, BYPASSING the model catalogue, so an
  *  alias the catalogue knows but the SDK does not is forwarded unchanged and rejected
@@ -159,6 +183,42 @@ export function sanitizeSubagentDefinition(
 }
 
 /**
+ * The turn budget, stated to the subagent as a number.
+ *
+ * A prompt may oblige a subagent to "stop reading and report before the budget runs out";
+ * without the number that is an obligation imposed without the information needed to meet
+ * it. So the host states it — once per definition, for EVERY definition in a run, the two
+ * built-in explorers included.
+ *
+ * Detecting exhaustion itself stays where it was: with the incremental-reporting duty
+ * below, the model's own count of its round-trips, and the run's wall-clock timeout.
+ */
+export function turnBudgetSection(turns: number): string {
+  return `Your turn budget for this run: ${turns} round-trips.
+
+- That number is EFFECTIVE, not proposed. It is what the host settled on after clamping or
+  defaulting whatever your definition asked for, so it is the number you actually have.
+- It is a CONSTANT, not a countdown. This prompt is composed once, at dispatch, and there is
+  no channel to update it mid-run: you see the same number on your first turn and on your
+  Nth. Counting your own round-trips against it is your job.
+- A run cut off by exhaustion returns NOTHING to the parent — not a partial report, not an
+  error, silence. So report INCREMENTALLY: surface the first finding while budget remains
+  rather than holding a verdict to the end, because a verdict held to the end is lost whole.`;
+}
+
+/**
+ * Give a definition the host's turn budget: set `maxTurns` to it and tell the model.
+ *
+ * Used for the BUILT-INS, which never pass through `hostFrame()` — a contributed definition
+ * gets the same section inside the frame instead. Setting the field is not decoration: the
+ * frame promises a number, and without `maxTurns` on the definition the runtime would apply
+ * a default of its own and the promise would be a lie.
+ */
+export function withTurnBudget(def: SubagentDefinition, turns: number): SubagentDefinition {
+  return { ...def, maxTurns: turns, prompt: `${def.prompt}\n\n${turnBudgetSection(turns)}` };
+}
+
+/**
  * The host's prompt frame. `SubagentDefinition.prompt` REPLACES the parent's system prompt
  * rather than extending it, so a subagent sees none of the blocks the host injects into the
  * parent — not the spec language, not the active writing style, not the entity/anchor
@@ -178,9 +238,11 @@ export function sanitizeSubagentDefinition(
  *
  * The built-in explorers keep their own copy of the same protocol: they do not pass through
  * this frame at all (only `sanitizeSubagentDefinition` touches them), so the duplication is
- * two audiences rather than one rule written twice.
+ * two audiences rather than one rule written twice. The TURN BUDGET is the exception — it
+ * reaches them too, through `withTurnBudget()` below, because the number has to be true for
+ * every definition in the run and a built-in has no body of its own to state it in.
  */
-export function hostFrame(contextType: ChatContextType): string {
+export function hostFrame(contextType: ChatContextType, turnBudget: number): string {
   return `You are a read-only explorer subagent working on behalf of a parent agent inside a claude4spec specification project (context: ${contextType}).
 
 The specification is written in its own language — follow the language of the material you read, and report in it.
@@ -198,6 +260,8 @@ Truncation protocol — how the read channels tell you they could not fit everyt
 - One case keeps a partial body: a single item too large for the entire budget comes back clipped, with the prose it did fit. Keep that prefix and use it; re-fetching returns the same bytes.
 - Do NOT repeat the same call. The budget is spent in input order, deterministically, so it will be cut at exactly the same place. Narrow instead — fewer items, or the few addresses from \`edges\` that actually lead where the parent asked.
 - An item with no \`edges\` was not truncated. Its references are in the content you already hold.
+
+${turnBudgetSection(turnBudget)}
 
 Your specific assignment follows.`;
 }
@@ -282,10 +346,14 @@ export function resolvePluginSubagents(opts: ResolveSubagentsOptions): SubagentD
       if (skills.length === 0) skills = undefined;
     }
 
+    // Always resolves to a number. An absent, malformed or non-positive proposal takes the
+    // host default SILENTLY — omission is a legal declaration ("no opinion"), not a defect,
+    // so it earns no warning. A proposal above the ceiling is CLAMPED, never rejected. The
+    // value below is the EFFECTIVE one, and it is what the frame states to the model.
     const maxTurns =
       typeof c.maxTurns === 'number' && Number.isFinite(c.maxTurns) && c.maxTurns > 0
         ? Math.min(c.maxTurns, MAX_SUBAGENT_TURNS)
-        : undefined;
+        : DEFAULT_SUBAGENT_TURNS;
 
     seen.add(name);
     out.push(
@@ -293,12 +361,12 @@ export function resolvePluginSubagents(opts: ResolveSubagentsOptions): SubagentD
         {
           name,
           description,
-          prompt: `${hostFrame(contextType)}\n\n${promptBody}`,
+          prompt: `${hostFrame(contextType, maxTurns)}\n\n${promptBody}`,
           tools: c.tools,
           ...(c.model ? { model: c.model } : {}),
           ...(c.effort ? { effort: c.effort } : {}),
           ...(skills ? { skills } : {}),
-          ...(maxTurns !== undefined ? { maxTurns } : {}),
+          maxTurns,
         },
         warn,
       ),

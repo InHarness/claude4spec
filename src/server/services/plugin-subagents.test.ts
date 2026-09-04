@@ -7,6 +7,7 @@ import {
   hostFrame,
   NON_DELEGABLE_TOOLS,
   RESERVED_SUBAGENT_NAMES,
+  DEFAULT_SUBAGENT_TURNS,
   MAX_SUBAGENT_TURNS,
   __resetSubagentWarnings,
 } from './plugin-subagents.js';
@@ -235,9 +236,28 @@ describe('resolvePluginSubagents — host prompt frame', () => {
 
   it('renders every context type with no unexpanded template expression', () => {
     for (const ct of ['chat', 'brief', 'patch', 'ask'] as const) {
-      expect(hostFrame(ct)).not.toMatch(/\$\{/);
-      expect(hostFrame(ct)).toContain(ct);
+      expect(hostFrame(ct, DEFAULT_SUBAGENT_TURNS)).not.toMatch(/\$\{/);
+      expect(hostFrame(ct, DEFAULT_SUBAGENT_TURNS)).toContain(ct);
     }
+  });
+
+  /**
+   * The frame states the EFFECTIVE budget — what the loader settled on — not the number the
+   * envelope proposed. A prompt obliging a subagent to report "before the budget runs out"
+   * while naming a budget it does not have is worse than naming none.
+   */
+  it('states the effective turn budget, not the declared one', () => {
+    expect(resolve([contrib({ maxTurns: 999 })]).out[0]!.prompt).toContain(
+      `${MAX_SUBAGENT_TURNS} round-trips`,
+    );
+    expect(resolve([contrib()]).out[0]!.prompt).toContain(`${DEFAULT_SUBAGENT_TURNS} round-trips`);
+    expect(resolve([contrib({ maxTurns: 999 })]).out[0]!.prompt).not.toContain('999');
+  });
+
+  /** One string composed once at dispatch — there is no channel to decrement it mid-run. */
+  it('says the number is a constant for the run, not a countdown', () => {
+    const prompt = resolve([contrib()]).out[0]!.prompt;
+    expect(prompt).toMatch(/CONSTANT, not a countdown/);
   });
 });
 
@@ -276,8 +296,29 @@ describe('resolvePluginSubagents — the turn must still START', () => {
   it('maxTurns above the ceiling is clamped, never an error', () => {
     expect(resolve([contrib({ maxTurns: 999 })]).out[0]!.maxTurns).toBe(MAX_SUBAGENT_TURNS);
     expect(resolve([contrib({ maxTurns: 5 })]).out[0]!.maxTurns).toBe(5);
+  });
+
+  /** The ceiling is a clamp, not a rejection band: the boundary value is a legal budget. */
+  it('maxTurns EQUAL to the ceiling passes through untouched', () => {
+    expect(resolve([contrib({ maxTurns: MAX_SUBAGENT_TURNS })]).out[0]!.maxTurns).toBe(
+      MAX_SUBAGENT_TURNS,
+    );
+  });
+
+  /**
+   * Omission is a legal declaration — "no opinion" — not a packaging defect, which is why
+   * this asserts the silence as hard as it asserts the number. A warning here would train
+   * plugin authors to write a value they have no basis for.
+   */
+  it('a contribution omitting maxTurns takes the host default, silently', () => {
+    const { out, messages } = resolve([contrib()]);
+    expect(out[0]!.maxTurns).toBe(DEFAULT_SUBAGENT_TURNS);
+    expect(messages).toEqual([]);
+  });
+
+  it('a malformed or non-positive maxTurns falls back to the host default', () => {
     for (const bad of [-1, 0, NaN]) {
-      expect(resolve([contrib({ maxTurns: bad })]).out[0]!.maxTurns).toBeUndefined();
+      expect(resolve([contrib({ maxTurns: bad })]).out[0]!.maxTurns).toBe(DEFAULT_SUBAGENT_TURNS);
     }
   });
 });

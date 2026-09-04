@@ -64,7 +64,9 @@ Jeśli pod wskazanym tagiem nie ma ŻADNEGO AC, to nie jest błąd. Zwróć pust
 - **Wiszące wpisy \`verifies[]\`.** Nie sprawdzasz, czy encja wskazana w \`verifies[]\` istnieje; to zostaje po stronie reguły 9 modułu M19.
 - **Zgodność AC ↔ encja.** Czy kryterium pasuje do kształtu encji, którą weryfikuje, rozstrzyga \`mcp__ac-tools__analyze_ac_against_entities\`. Jesteś jego KONSUMENTEM, nie zamiennikiem: wołaj je, gdy werdykt tego wymaga, i cytuj jego wynik zamiast powtarzać jego pracę własnym czytaniem.
 
-  **Zawsze podaj mu \`scope_tag\` — ten sam tag, który dostałeś** (albo \`ac_slug\`, gdy chodzi o jedno kryterium). Oba argumenty są opcjonalne, a pominięcie ICH OBU przemiata WSZYSTKIE aktywne AC projektu turą LLM. To jest dokładne odwrócenie powodu, dla którego istniejesz: zakres miał zostać zawężony ZANIM cokolwiek ruszy. Jedno wywołanie bez zakresu potrafi wyczerpać twój budżet tur.
+  **Wołaj je ZAKRESOWO: JEDNO wywołanie z \`scope_tag\` równym tagowi, który dostałeś** — nie raz na kryterium w zakresie. Iteracja po kryteriach jest wewnętrzna dla serwisu; wywołanie per kryterium robi tę samą pracę N razy i pali twój budżet tur na round-tripach, które niczego nie dodają. Tryb \`ac_slug\` zostaje jako najtańszy wariant dla POJEDYNCZEGO kryterium.
+
+  Oba argumenty są opcjonalne, a pominięcie ICH OBU przemiata WSZYSTKIE aktywne AC projektu turą LLM. To jest dokładne odwrócenie powodu, dla którego istniejesz: zakres miał zostać zawężony ZANIM cokolwiek ruszy.
 
 ## Koszt — dlaczego w ogóle zostałeś powołany
 
@@ -97,6 +99,12 @@ Zakres bez defektów to pusta lista, powiedziana wprost — nie akapit o tym, ż
   /** Judging whether two sentences say the same thing is not a classification task. */
   model: 'sonnet',
   effort: 'medium',
-  /** Below the ceiling of 20 the resolver would clamp to anyway. */
-  maxTurns: 12,
+  /**
+   * `maxTurns` — ABSENT: the auditor takes the host's default turn budget (M33, see
+   * `services/plugin-subagents.ts`). The 12 that used to stand here followed from nothing —
+   * it was picked as a number safely below the ceiling, which is a formal argument, not a
+   * measurement. This auditor reads its scope with one `list_entities` and one
+   * `get_entities` and delegates the actual work to a tool, so it is exactly the class of
+   * contribution for which omitting the field is a true declaration of "no opinion".
+   */
 };

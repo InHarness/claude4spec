@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ProjectPluginHost } from '../../../core/plugin-host/types.js';
 import { subagentsFor } from '../../../services/chat-context.js';
 import {
+  DEFAULT_SUBAGENT_TURNS,
   NON_DELEGABLE_TOOLS,
   isMutatingMcpTool,
   resolvePluginSubagents,
@@ -70,7 +71,10 @@ describe('c4s-plugin-ac — the ac-audit subagent it contributes', () => {
 
   it('lands inside the model, effort and turn bounds with no correction', () => {
     // `model` reaches the SDK verbatim, so an out-of-enum value would reject the whole
-    // entry; `maxTurns` above 20 would be silently clamped. Neither happens here.
+    // entry; a `maxTurns` above the host ceiling would be silently clamped. Neither
+    // happens here — and the envelope declares no budget at all, so the auditor takes the
+    // host default. The omission is the declaration; asserting it keeps a later "helpful"
+    // re-addition of a literal from passing unnoticed.
     const [def] = resolvePluginSubagents({
       contextType: 'chat',
       contributions: [sub],
@@ -80,8 +84,8 @@ describe('c4s-plugin-ac — the ac-audit subagent it contributes', () => {
     });
     expect(def.model).toBe('sonnet');
     expect(def.effort).toBe('medium');
-    expect(def.maxTurns).toBe(12);
-    expect(sub.maxTurns).toBe(def.maxTurns);
+    expect(sub.maxTurns).toBeUndefined();
+    expect(def.maxTurns).toBe(DEFAULT_SUBAGENT_TURNS);
     // No skills slot: four remit rules and three exclusions fit in the body, and a
     // skill file would be a second place for them to drift.
     expect(sub.attachInternalSkills).toBeUndefined();

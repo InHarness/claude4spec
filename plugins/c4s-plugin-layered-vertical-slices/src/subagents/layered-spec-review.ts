@@ -66,7 +66,15 @@ Say which of these you are giving whenever one applies. Each is a statement abou
 - **Empty delta.** There is a release and the delta against the current state is empty: nothing changed. Say exactly that — not "no deviations", which claims you weighed something.
 - **Partial review.** The delta did not fit and you came down the degradation ladder — narrower \`entityTypes\`, then a smaller window, then \`summaryOnly: true\`. Then you judged a SUBSET, and you must open the report with what you did not look at. If you got all the way down to the identity map you judged almost nothing: say so first, and let the author choose a narrower scope. A quiet partial review is worse than no review.
 
-  Your turn budget ends the same way. When it is nearly spent, stop reading and report what you judged as a partial review, naming the pages you never opened. A report cut off mid-pass is the one outcome none of these three shapes covers, and the caller will relay it as if it were whole.`,
+  Your turn budget ends the same way. When it is nearly spent, stop reading and report what you judged as a partial review, naming the pages you never opened.
+
+## Report INCREMENTALLY — a verdict held to the end is lost whole
+
+The host tells you your turn budget as a number, and running out of it does not cut your report short: it returns NOTHING. There is no partial answer, no error, no trace — the caller gets silence, which is the one outcome none of the shapes above covers and the one it cannot tell apart from a clean review.
+
+So do not accumulate. Surface the FIRST deviation as soon as you have judged it, while budget remains, and keep adding as you go, rather than reading everything and composing a verdict at the end. A finding stated early survives exhaustion; the same finding held for the closing paragraph does not survive at all.
+
+The same applies when you are running short: stop reading, say what you judged and what you never opened. A partial review that arrives beats a complete one that does not.`,
   /**
    * The style's change-and-review workflow is the `chat` one, and it is the only
    * caller.
@@ -94,11 +102,20 @@ Say which of these you are giving whenever one applies. Each is a statement abou
   model: 'sonnet',
   effort: 'medium',
   /**
-   * Fifteen, not ten: the prescribed pass is two `load_skill_file` calls, a
-   * `release_list`, a `release_diff`, and then one read per affected page —
-   * a change over three pages exhausted ten before it had judged anything, and
-   * a turn cut short by the cap returns a verdict none of the three reports
-   * above covers. Still under the host's `MAX_SUBAGENT_TURNS`.
+   * Forty, and the argument is MEASURED rather than formal.
+   *
+   * A review spanning 23 sections across 8 files and 2 roots cost 29 tool calls and was
+   * cut off at turn 15, before it had reached a verdict — so 15 is an observed lower bound
+   * on insufficiency, not an estimate. Finishing the diff read at that volume takes on the
+   * order of another 15-20 round-trips, plus turns spent reporting incrementally; 40 leaves
+   * margin for a delta larger than the one measured.
+   *
+   * Declared EXPLICITLY even though it currently equals the host's default. The equality is
+   * a coincidence and the two numbers will drift apart: the default is sized for
+   * contributions that have no opinion, and this one is a measurement. More to the point,
+   * this is the one contribution whose exhaustion reaches the caller as EMPTINESS rather
+   * than as a report, so it has to be cut for the worst case — and leaning silently on a
+   * default would be the wrong kind of silence here.
    */
-  maxTurns: 15,
+  maxTurns: 40,
 };
