@@ -33,7 +33,7 @@ for what they asked for.
 **CLI only — never call `curl` or the HTTP API directly.**
 
 This skill is bound to one specification project — every `c4s` command below
-carries its identity (`--project 'app-spec' --workspace 'default'`), so it works from any cwd. Do NOT `cd`
+carries its identity (`--project 'app-spec' --workspace 'claude4spec'`), so it works from any cwd. Do NOT `cd`
 into the spec repo; the identity is baked in, not derived from cwd.
 
 ## Input — a topic is required
@@ -55,11 +55,11 @@ Read the spec through the `c4s` reader — see the `c4s-spec-reader` skill for t
 full command reference. In short:
 
 ```sh
-c4s catalog --project 'app-spec' --workspace 'default'                                   # entity types + schemas
-c4s list-tags --with-counts --project 'app-spec' --workspace 'default'                   # tags + counts (counts are opt-in)
-c4s list-entities --type endpoint --project 'app-spec' --workspace 'default'             # { slug, title } rows for a type
-c4s single_element --type endpoint --slug <x> --project 'app-spec' --workspace 'default'
-c4s resolve modules/<module>.md --project 'app-spec' --workspace 'default'               # expand a page's tags inline
+c4s catalog --project 'app-spec' --workspace 'claude4spec'                                   # entity types + schemas
+c4s list-tags --with-counts --project 'app-spec' --workspace 'claude4spec'                   # tags + counts (counts are opt-in)
+c4s list-entities --type endpoint --project 'app-spec' --workspace 'claude4spec'             # { slug, title } rows for a type
+c4s single_element --type endpoint --slug <x> --project 'app-spec' --workspace 'claude4spec'
+c4s resolve modules/<module>.md --project 'app-spec' --workspace 'claude4spec'               # expand a page's tags inline
 ```
 
 **CLI-only — no filesystem fallback.** If `c4s` isn't installed, STOP and ask
@@ -112,7 +112,7 @@ reserved for differences that are *not* a spec problem at all.
 ```sh
 c4s ask "Spec drift on <topic>: <description>. Create a plan of specification \
 changes — list the entities/pages to change and the exact edits. Plan only, do \
-not execute." --project 'app-spec' --workspace 'default'
+not execute." --project 'app-spec' --workspace 'claude4spec'
 ```
 
 **Record the returned `threadId`.** This skill does **not** apply the plan — a human
@@ -130,7 +130,7 @@ thread via create-mode is the right shape. One command mints a new brief
 
 ```sh
 c4s agent "Code drift on <topic>: the spec says Y but the code does X. <what \
-the implementer must change and why>" --ct brief --project 'app-spec' --workspace 'default'
+the implementer must change and why>" --ct brief --project 'app-spec' --workspace 'claude4spec'
 ```
 
 Passing no release window is what makes this a brief **against the current
@@ -165,7 +165,7 @@ Reading the spec and analyzing the code are not an exception to it: `resolve`, t
 
 ## Hard dependency & gotchas
 
-- **The identity is baked in — never `cd`.** `--project 'app-spec' --workspace 'default'` is injected into every
+- **The identity is baked in — never `cd`.** `--project 'app-spec' --workspace 'claude4spec'` is injected into every
   command above; `cd`-ing into the spec repo is unnecessary and, if it's reached
   through a symlink, can even break resolution.
 - **`c4s ask` is read-only** — it yields a plan only and never mutates the spec;

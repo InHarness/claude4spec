@@ -7,7 +7,7 @@ description: Implement features described in claude4spec briefs. Briefs are self
 
 This skill describes how to implement a release brief in **your code repository** (not the spec repo). A brief is a self-contained markdown file that captures everything you need to ship the change: entity snapshots, section diffs, narrative, acceptance criteria. Briefs live in the **spec** repository, a different repo from the one you are working in — you never touch it directly; the `c4s` CLI reaches everything for you.
 
-**Reaching the briefs.** This skill is **CLI-only**: it reaches the briefs and writes patches solely through the `c4s` CLI, with the spec project's identity baked into this skill (`--project 'app-spec' --workspace 'default'`) — `c4s list-briefs` / `c4s read-brief` / `c4s file-patch` work from any directory, and each of them delegates to the server (see below). If `c4s` is not installed, **stop** and ask the user to install it — do not read or write the spec repo's files by hand.
+**Reaching the briefs.** This skill is **CLI-only**: it reaches the briefs and writes patches solely through the `c4s` CLI, with the spec project's identity baked into this skill (`--project 'app-spec' --workspace 'claude4spec'`) — `c4s list-briefs` / `c4s read-brief` / `c4s file-patch` work from any directory, and each of them delegates to the server (see below). If `c4s` is not installed, **stop** and ask the user to install it — do not read or write the spec repo's files by hand.
 
 ## Server required — for every step
 
@@ -28,7 +28,7 @@ Two neighbouring codes mean something else, and starting a server will not fix e
 List the briefs through `c4s` (paginated — briefs accumulate over time, so filter and page rather than dumping everything):
 
 ```sh
-c4s list-briefs --status pending --limit 10 --project 'app-spec' --workspace 'default'
+c4s list-briefs --status pending --limit 10 --project 'app-spec' --workspace 'claude4spec'
 ```
 
 `--status pending` hides briefs already marked `implemented: true`; drop it to see all. Use `--offset` to page. Output lists each brief's `path` (which you pass to `read-brief`) and whether it is already implemented.
@@ -40,7 +40,7 @@ c4s list-briefs --status pending --limit 10 --project 'app-spec' --workspace 'de
 Read the full brief by the `path` printed by `list-briefs`:
 
 ```sh
-c4s read-brief <brief-path> --project 'app-spec' --workspace 'default'
+c4s read-brief <brief-path> --project 'app-spec' --workspace 'claude4spec'
 ```
 
 The body contains everything you need — entity snapshots, section diffs, the narrative of what changes, and acceptance criteria. Read it and implement it; you do not need to understand how the brief was produced. **Do not read the main specification.**
@@ -52,16 +52,16 @@ If the brief is unclear — a missing detail, an ambiguous wording, a decision y
 Preferred — context of THIS brief plus its release diff (the agent sees only the change window of the brief you are implementing):
 
 ```bash
-c4s agent "Brief nie precyzuje X — czy chodzi o A czy B?" --ct brief --brief <brief-path> --project 'app-spec' --workspace 'default'
+c4s agent "Brief nie precyzuje X — czy chodzi o A czy B?" --ct brief --brief <brief-path> --project 'app-spec' --workspace 'claude4spec'
 ```
 
 Alternative — read-only peer-consult of the CURRENT spec state (may be ahead of the brief you are implementing); no brief context, no `--ct`/`--brief`:
 
 ```bash
-c4s ask "Jak dziala Y w aktualnej specce?" --project 'app-spec' --workspace 'default'
+c4s ask "Jak dziala Y w aktualnej specce?" --project 'app-spec' --workspace 'claude4spec'
 ```
 
-Continue the brief thread with `c4s agent "..." --thread <threadId> --project 'app-spec' --workspace 'default'` (the `threadId` is printed with the answer).
+Continue the brief thread with `c4s agent "..." --thread <threadId> --project 'app-spec' --workspace 'claude4spec'` (the `threadId` is printed with the answer).
 
 **2. Fall back to best judgment (self-contained — still not a question to the user).** When the agent cannot settle it — an `AGENT_UNAVAILABLE`, or a question the spec genuinely does not answer — proceed with your best judgement and file a patch afterwards (step 6) so the spec-author can fold the clarification into the next brief. Do not ask the user instead — this path resolves the ambiguity on its own. This is **not** the fallback for a server that is down: with no server you never read the brief, so there is nothing to proceed with — stop and ask for the server.
 
@@ -151,7 +151,7 @@ When you discover that the brief diverges from reality — a missing detail, an 
 ```sh
 printf '%s\n' "$PATCH_BODY" | c4s file-patch \
   --brief <brief-path> --desc "<short-desc>" --kind drift \
-  --project 'app-spec' --workspace 'default'
+  --project 'app-spec' --workspace 'claude4spec'
 ```
 
 **Never file a patch that says "already implemented".** If the brief's change turns out to be fully present in the code — nothing to add, the acceptance criteria already pass — that is **not** drift and **not** patch material. Say it plainly to the user instead ("brief `<path>` is already implemented in `<files>` — no code change needed") and ask whether to mark it implemented (step 9). The same goes for any patch body whose substance is "no changes were needed", "confirmed working as described", or "verified matches the spec": a patch is for something the spec-author must *act* on, not a status report.
@@ -189,7 +189,7 @@ The branch was already pushed in step 5; push again only if step 6 or later adde
 git push -u origin "brief/$brief_slug"   # no-op if nothing changed since step 5
 gh pr create --draft --base main \
   --title "$brief_slug: <short title>" \
-  --body "Implements brief <brief-path> — see: c4s read-brief <brief-path> --project 'app-spec' --workspace 'default'
+  --body "Implements brief <brief-path> — see: c4s read-brief <brief-path> --project 'app-spec' --workspace 'claude4spec'
 
 <one-paragraph summary of what changed + how it was tested>"
 ```
@@ -227,7 +227,7 @@ If the `envr destroy` request above didn't go through for some reason, follow up
 `implemented: true` is a **declaration**, set ONLY after the draft PR is reviewed and merged to main (or otherwise accepted) — never at PR-open time, never proactively, and a later revert on main does NOT roll it back:
 
 ```sh
-c4s mark-brief-implemented <brief-path> --project 'app-spec' --workspace 'default'
+c4s mark-brief-implemented <brief-path> --project 'app-spec' --workspace 'claude4spec'
 ```
 
 Like every other command in this skill, this one goes through the claude4spec server (see "Server required" above — and note it is not the env-runner sandbox you may have just destroyed in step 8). There is no by-hand file edit: this skill is CLI-only.
