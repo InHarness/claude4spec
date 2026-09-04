@@ -38,6 +38,15 @@ describe('the layered-vertical-slices package keeps the content contract it prom
     return doc.slice(after, next > -1 ? next : undefined);
   }
 
+  /** Same, one level down: a `### ` block, bounded by the next heading of either level. */
+  function h3(doc: string, heading: string): string {
+    const start = doc.indexOf(`\n### ${heading}`);
+    expect(start, `no "### ${heading}" section`).toBeGreaterThan(-1);
+    const after = start + 1;
+    const next = doc.slice(after + 1).search(/\n#{2,3} /);
+    return next > -1 ? doc.slice(after, after + 1 + next) : doc.slice(after);
+  }
+
   beforeAll(() => {
     const registry = SkillRegistry.load([]);
     for (const style of manifest.contributes.writingStyles ?? []) {
@@ -102,8 +111,11 @@ describe('the layered-vertical-slices package keeps the content contract it prom
   });
 
   it('[ac:ac-load-skill-file-layered-vertical-slic-6] catalogues the mechanically decidable `Cel` rules, each with a named violation symptom', () => {
-    const catalogue = skill.slice(skill.indexOf('### Rules decidable on the section text alone'));
-    expect(catalogue.length).toBeGreaterThan(0);
+    // Bounded at the next heading, and asserting the heading EXISTS: an
+    // `indexOf` miss returns -1, and `slice(-1)` would hand back the document's
+    // last character — a catalogue of nothing that passes a length check and
+    // counts `*Symptom:*` markers belonging to prose outside it.
+    const catalogue = h3(skill, 'Rules decidable on the section text alone');
     const items = [...catalogue.matchAll(/^\d+\. \*\*(.+?)\*\*/gm)];
     expect(items.length).toBeGreaterThanOrEqual(6);
     // Every item carries the thing you OBSERVE when it is broken — a rule with no

@@ -139,7 +139,7 @@ Templates ship as files inside this skill, in `templates/`. Copy them when boots
 
 ## 7. The module's `Cel` section
 
-Every module file opens with exactly one `## Cel`, and it is the file's **first** H2. Nothing stands between the H1 and it — no hook, no blockquote, no table. Content placed there gets no anchor of its own, which makes it invisible to the section index and to the cross-cutting read in §8; a hook that duplicates the purpose is therefore worse than no hook at all.
+Every module's **main file** — `modules/MXX-<slug>.md`, or `modules/MXX-<slug>/MXX-<slug>.md` once the module is split — opens with exactly one `## Cel`, and it is the file's **first** H2. A split module's layer subpages carry a layer slice rather than a purpose and have no `## Cel` at all; they are the same files the §8 path filter discards, and the rules below do not reach them. Nothing stands between the H1 and it — no hook, no blockquote, no table. Content placed there gets no anchor of its own, which makes it invisible to the section index and to the cross-cutting read in §8; a hook that duplicates the purpose is therefore worse than no hook at all.
 
 **Composition.** One sentence naming the **user job** — who does what, to what end. Then **2–4 sentences** on how the module realizes that job and on what it explicitly does **not** do. **Budget: 1200 characters for the whole section.** The number is the rule, not a suggestion: a `Cel` that needs more than that is describing the module's substance, which belongs in the per-layer sections below it.
 
@@ -173,11 +173,16 @@ This section is for an agent that **writes nothing** — one orienting itself in
 search_pages({
   regex: "^## Cel$",
   mode: "map",
-  pathInclude: "(^|/)[Mm]odules/(?:([^/]+)/\\2|[^/]+)\\.md$"
+  pathInclude: "(^|/)[Mm]odules/(?:([^/]+)/\\2|[^/]+)\\.md$",
+  limit: 200
 })
 ```
 
-`mode: "map"` returns section identity — `{ rootId, path, anchor, heading, headingPath }` — with no prose, which is the whole point: you want the addresses now and the bodies once.
+`mode: "map"` returns section identity — `{ rootId, path, anchor, heading, headingPath }`, plus the `kind` discriminator the next paragraph turns on — with no prose, which is the whole point: you want the addresses now and the bodies once.
+
+**`limit` is part of the call, because the default is 20.** Omit it and any corpus past twenty modules is answered with a windowed map that reports no shortfall of its own — the sweep looks complete and is not. The response carries `total` and `hasMore`: read both, and page on `offset` until `hasMore` is false rather than trusting one call. This matters more here than anywhere else in the protocol, because the failure it produces is indistinguishable from the one at the end of this section — a module missing from a truncated first page looks exactly like a module whose heading was renamed, and the repair for one does nothing for the other.
+
+**Branch on `kind`, never on the root.** A row carries an `anchor` if and only if its `kind` is `"section"`; on a root with no section index every row comes back `kind: "page"` with no anchor at all, and call 2 is then handed a list of `undefined`. This protocol needs a section-indexed root: if the map returns `kind: "page"` rows, stop and say so — the corpus cannot be swept this way, and no amount of retrying changes that.
 
 **The path filter is a step of this protocol, not a variant of it.** A module's main file is named after the module — `modules/M03-endpoint.md`, or `modules/M03-endpoint/M03-endpoint.md` once the module is split — and its subpages never begin with that prefix, because they are named after the *layer* they carry (`L1-db.md`). That is exactly what the pattern above encodes: a file directly under `modules/`, or a file inside a module directory whose own name repeats the directory's (the `\2` backreference). Drop the filter and the sweep still succeeds, silently returning the purpose of a **file** rather than the purpose of a **module**. That is not a slower answer; it is a different one.
 
@@ -194,7 +199,9 @@ Two properties of the pattern are deliberate and easy to lose in an edit:
 get_sections({ anchors: [ …every anchor from call 1… ] })
 ```
 
-One call, every anchor. This rests on the `Cel` section's **stable anchor**, assigned once at first indexing and unchanged by later edits: it is what makes the map from call 1 valid input to call 2. A change to how anchors are assigned breaks this protocol, not merely its performance.
+One call per batch of anchors, and **50 is the ceiling** — `get_sections` refuses a longer list outright with INVALID_ARGUMENT rather than truncating it, so a corpus of sixty modules needs two calls here, not one. Watch `truncated` on the way back as well: the response is width-budgeted, and at a 1200-character `Cel` the budget starts degrading bodies somewhere around a hundred sections. "Two calls" is the protocol's shape, not a promise that the second one is literally singular.
+
+This rests on the `Cel` section's **stable anchor**, assigned once at first indexing and unchanged by later edits: it is what makes the map from call 1 valid input to call 2. A change to how anchors are assigned breaks this protocol, not merely its performance.
 
 Both properties above — `map` mode and `pathInclude` — are **parts** of the protocol rather than optimizations of it. Degrading either does not slow the sweep down; it corrupts the result.
 
