@@ -60,6 +60,21 @@ describe('INTERACTION_RULES', () => {
     expect(rules).toContain('update_brief');
   });
 
+  /**
+   * The posture must not assert built-in AVAILABILITY either, in either direction.
+   * `agent.disableDirectFilesystemAccess` defaults to `true` and
+   * `resolveAgentToolGroups` denies file-read / file-write / shell for every context
+   * type — brief included — so "the built-ins are available" is false under the shipped
+   * default AND contradicts `<builtin>`, which the same prompt derives from that flag a
+   * few blocks earlier. The rules point at that line instead of racing it.
+   */
+  it('brief: defers to <builtin> on tool availability instead of asserting it', () => {
+    const rules = INTERACTION_RULES.brief;
+    expect(rules).toContain('<builtin>');
+    expect(rules).not.toContain('not cut off');
+    expect(rules).toContain('write-denied at the sandbox level');
+  });
+
   it('patch: says explicitly that it is NOT read-only, unlike brief', () => {
     const rules = INTERACTION_RULES.patch;
     expect(rules).toContain('NOT read-only');

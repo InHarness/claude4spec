@@ -1762,10 +1762,11 @@ describe('buildSystemPrompt — the block table under frames it was not written 
   });
 
   /**
-   * `<agent_path_scope>` reaches the brief frame since 0.2.50, and a brief thread
-   * mounts neither page-tools nor plan-tools. A block that names them anyway
-   * points the agent at tools it does not have — leaving the built-in `Write`,
-   * which this very block forbids, as its only remaining route.
+   * The block is chat/patch/ask only, but "which servers are mounted" varies inside
+   * those frames too: a thread without page-tools that is told to write pages with
+   * them is pointed at tools it does not have — leaving the built-in `Write`, which
+   * this very block forbids, as its only remaining route. So the wording is derived
+   * from the mount rather than fixed.
    */
   it('says nothing about writing pages when page-tools is not mounted', () => {
     const out = build({
