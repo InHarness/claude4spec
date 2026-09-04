@@ -1,17 +1,20 @@
 <!--
 Template for a module file (`modules/MXX-<slug>.md`) in a layered-vertical-slices spec.
-Copy this file, rename it, and replace placeholders. See SKILL.md §5 and §6 for guidance.
+Copy this file, rename it, and replace placeholders. See SKILL.md §5 and §6 for guidance,
+and §7 for the rules the `## Cel` section below must satisfy.
+
+Nothing goes between the H1 and `## Cel` — no hook, no blockquote, no table. Content placed
+there carries no anchor of its own, so it is invisible to the section index and to every
+cross-cutting read.
 -->
 
 # MXX — <Module Name>
 
-> <1-sentence hook — what is this module, in the voice of the spec.>
-
-## Purpose
+## Cel
 
 <First sentence: name the user job this module enables — who does what, to what end. Avoid tautology ("M03 manages endpoints"); name the value ("Endpoint authors can describe HTTP contracts once and have them stay consistent across docs, code, and the running system"). If you cannot write this sentence without circularity, the module is premature — defer it to `<index>`'s "Open questions" until the user job is clear.>
 
-<2–4 more sentences: how this module realizes that job — entity shape, scope boundary, what it explicitly does NOT do.>
+<2–4 more sentences: how this module realizes that job — entity shape, scope boundary, what it explicitly does NOT do. Prose only, and no entity embed, no `section_ref`, no module or layer identifier — not even this module's own. Relational boundaries belong to the Dependencies table below. Whole section: 1200 characters.>
 
 ## Dependencies
 

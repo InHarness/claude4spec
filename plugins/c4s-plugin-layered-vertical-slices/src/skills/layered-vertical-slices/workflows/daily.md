@@ -38,7 +38,11 @@ If you cannot decide between A and B in one read, ask the user a single short cl
 
 ## Step 3 — Translate (only Mode B)
 
-Map the idea or problem onto the specification grid. State your mapping out loud and ask for confirmation before editing. The candidate buckets:
+Map the idea or problem onto the specification grid. State your mapping out loud and ask for confirmation before editing.
+
+Routing needs the whole grid in view, and reading module files one by one to get it is how this step turns into a survey. Run the **cross-cutting reading protocol** (SKILL.md §8) instead: two calls give you every module's `Cel`, which is exactly the altitude at which "which module owns this?" is decided. Its silent failure mode is yours to remember here — a module whose section is not named `## Cel` is absent from the result with no warning, so check the sweep's count against `<index>`'s module table before concluding that no module owns the change. A short count has two causes that look identical — a renamed heading, or a first page you never paged past — so read `hasMore` before you go looking for the rename.
+
+The candidate buckets:
 
 - **New module.** The user introduces a new entity or feature. Propose a module number (next free), a slug, and which layers it touches.
 - **Change to an existing module.** New column, new operation, new edge case, new acceptance criterion, new dependency.
