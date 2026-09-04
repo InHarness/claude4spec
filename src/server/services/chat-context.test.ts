@@ -1120,21 +1120,19 @@ describe('buildSystemPrompt — <agent_path_scope> (0.1.90 / 0.1.130)', () => {
   });
 
   /**
-   * 0.2.50 — INVERTED. The brief frame now emits the block, and the assertion
-   * that it must not was encoding a two-way falsehood.
-   *
-   * `resolveAgentExecutionScope` runs unconditionally and its result reaches
-   * `baseExecuteArgs` for every context type, so a brief thread has always had a
-   * path scope: cwd writable, artifact dirs closed, page roots read-only. The
-   * frame simply never rendered it — while the brief interaction rules asserted
-   * "you have NO filesystem access", an enforcement set nowhere in production
-   * code. The agent was told it was forbidden something it could do, and told
-   * nothing of the limits that actually bound it.
+   * RE-INVERTED. 0.2.50 pushed the block into the brief frame and pinned that here;
+   * the specification never placed it there, and the pairing is what makes the
+   * omission coherent — the brief frame skips `<agent_filesystem_access>` too, so a
+   * path scope arriving alone told a brief turn it may write where its frame grants
+   * nothing, and forbade it built-ins its tool catalog does not contain. The block is
+   * conditional on `agentPathScope` everywhere it belongs, so absence has to be
+   * asserted WITH a scope supplied — an unset one would pass for the wrong reason.
    */
-  it('emits the block in the brief frame too — the scope applies there', () => {
+  it('[ac:ac-blok-agent-path-scope-jest-pomijany-gd] is absent from the brief frame, whatever the scope', () => {
+    expect(build({ contextType: 'brief', brief: null })).not.toContain('<agent_path_scope');
     const out = build({ contextType: 'brief', brief: null, agentPathScope: scope });
-    expect(out).toContain('<agent_path_scope>');
-    expect(out).toContain('ALWAYS DISALLOWED — C4S artifact dirs');
+    expect(out).not.toContain('<agent_path_scope');
+    expect(out).not.toContain('ALWAYS DISALLOWED — C4S artifact dirs');
   });
 
   it('drops the DISALLOWED line when only allowedPaths is set (artifact line still present)', () => {

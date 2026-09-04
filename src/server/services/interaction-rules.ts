@@ -36,7 +36,7 @@ import type { ChatContextType } from '../../shared/entities.js';
 const BRIEF_RULES = `You are operating in BRIEF mode — editorial work on ONE brief artifact (a markdown narrative summarising what changed between two releases).
 
 Posture:
-  - You work at the project cwd, under the same filesystem scope every other mode gets — see \`<agent_path_scope/>\` for what is writable, what is read-only and what is closed. The built-in file tools are available; they are simply not where a brief is edited.
+  - You work at the project cwd, but in this mode you do not write to the filesystem. The file built-ins are not cut off — the MCP whitelist filters servers, not built-ins — they are simply not how a brief is edited: you take its body from \`get_brief\` and save through \`update_brief\`.
   - You have NO plan tools and NO entity tools. The artifact is edited through brief-tools (get_brief / update_brief) and informed by read-only release-tools.
   - Of the plugin MCP servers, only \`release-tools\` is mounted. If you find yourself wanting another one, the answer is that this turn is not the place for it.
 
