@@ -42,22 +42,37 @@ describe('INTERACTION_RULES', () => {
   });
 
   /**
-   * 0.2.50 — the brief rules no longer claim there is no filesystem access, and
-   * the claim's removal is a correction rather than a relaxation.
-   *
-   * `disallowedTools` is set NOWHERE in production code, and the `brief` profile
-   * has `builtinPosture: 'follow-thread'` — so the built-in file tools were
-   * available all along. Worse, the claim ran in the opposite direction too:
-   * `resolveAgentExecutionScope` reaches `baseExecuteArgs` for every context
-   * type, so a brief thread DID have a path scope and was told nothing about it.
-   * The agent was forbidden what it could do and unaware of what bound it. The
-   * frame now emits `<agent_path_scope>` and the rules point at it.
+   * The brief rules must claim no filesystem ban that nothing enforces —
+   * `disallowedTools` is set NOWHERE in production code and the `brief` profile has
+   * `builtinPosture: 'follow-thread'`, so the file built-ins are available — and they
+   * must not point at `<agent_path_scope/>` either. 0.2.50 swapped the false ban for
+   * that pointer, but the brief frame does not emit the block: the pointer is a
+   * dangling forward reference, the same class of falsehood from the other side. The
+   * posture belongs in this text on its own terms — cwd, no writes by convention,
+   * built-ins uncut, the brief edited through get_brief/update_brief.
    */
-  it('brief: claims no filesystem ban that nothing enforces', () => {
+  it('brief: neither bans the filesystem nor points at a block its frame omits', () => {
     const rules = INTERACTION_RULES.brief;
     expect(rules).not.toContain('NO filesystem access');
     expect(rules).not.toContain('no Read/Write/Edit/Glob/Grep/Bash');
-    expect(rules).toContain('<agent_path_scope/>');
+    expect(rules).not.toContain('agent_path_scope');
+    expect(rules).toContain('get_brief');
+    expect(rules).toContain('update_brief');
+  });
+
+  /**
+   * The posture must not assert built-in AVAILABILITY either, in either direction.
+   * `agent.disableDirectFilesystemAccess` defaults to `true` and
+   * `resolveAgentToolGroups` denies file-read / file-write / shell for every context
+   * type — brief included — so "the built-ins are available" is false under the shipped
+   * default AND contradicts `<builtin>`, which the same prompt derives from that flag a
+   * few blocks earlier. The rules point at that line instead of racing it.
+   */
+  it('brief: defers to <builtin> on tool availability instead of asserting it', () => {
+    const rules = INTERACTION_RULES.brief;
+    expect(rules).toContain('<builtin>');
+    expect(rules).not.toContain('not cut off');
+    expect(rules).toContain('write-denied at the sandbox level');
   });
 
   it('patch: says explicitly that it is NOT read-only, unlike brief', () => {

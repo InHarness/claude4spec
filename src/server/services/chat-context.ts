@@ -1430,9 +1430,6 @@ function buildBriefSystemPrompt(input: {
   conversationalLanguage?: string;
   /** 0.2.50: the mounted set, for the derived `<tooling>` block. */
   mcpInventory: readonly McpInventoryEntry[];
-  /** 0.2.50: this frame emits `<agent_path_scope>` too — see the note at its push. */
-  roots: Root[];
-  agentPathScope?: SystemPromptInput['agentPathScope'];
 }): string {
   const parts: string[] = [];
   // Block #1 — where the chat/patch/ask frame has `<claude4spec_identity>` then this,
@@ -1456,21 +1453,20 @@ function buildBriefSystemPrompt(input: {
   parts.push(buildTooling(input.mcpInventory, input.builtinsEnabled));
   parts.push(BRIEF_TOOLS_USAGE);
   /**
-   * 0.2.50 — the brief frame gains `<agent_path_scope>`, and this is a straight
-   * correction of a two-way falsehood.
-   *
-   * `resolveAgentExecutionScope` runs unconditionally and its result reaches
-   * `baseExecuteArgs` for every context type, so a brief thread HAS a path scope
-   * and always did: cwd writable, artifact dirs closed, page roots read-only.
-   * The frame simply never rendered it. Meanwhile the brief interaction rules
-   * asserted "you have NO filesystem access" — an enforcement that is not set
-   * anywhere in production code. The agent was therefore told it was forbidden
-   * something it could do, and told nothing about the limits that actually bound
-   * it. Both halves are fixed by emitting the same block every other frame gets.
+   * NO `<agent_path_scope>` here — and the omission is deliberate, paired with the
+   * `<agent_filesystem_access>` one noted at `builtinsEnabled` above. 0.2.50 added the
+   * block to this frame; the specification never placed it here, and the result read as
+   * two falsehoods at once. Under the shipped `disableDirectFilesystemAccess = true`, a
+   * brief turn was handed `ALLOWED (you may read/write here): …` for directories its
+   * frame grants nothing in, and `never with built-in Read/Write/Edit/Bash` — a
+   * prohibition phrased in terms of built-ins absent from this frame's tool catalog —
+   * with no `<agent_filesystem_access>` block anywhere in the same prompt to qualify
+   * either. A brief thread's posture is not a path scope: it is stated by
+   * `<interaction_context type="brief">`, which says the thread edits ONE artifact
+   * through brief-tools, holds no plan or entity tools, and mounts release-tools
+   * read-only. Reintroducing either block alone recreates the inconsistency from one
+   * side; chat / patch / ask keep emitting the path scope.
    */
-  if (input.agentPathScope) {
-    parts.push(buildAgentPathScope(input.agentPathScope, input.cwd, input.roots, input.mcpInventory));
-  }
   // 0.1.51: only `<conversational_language>` in the brief frame — `<spec_language>`
   // is omitted (it governs spec content; the brief is a separate artifact).
   if (input.conversationalLanguage) {
@@ -1960,13 +1956,14 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
   const contextType = input.contextType ?? 'chat';
 
   // M05 m05ctxreg: the brief context (uiChrome='brief-detail' in the registry) uses a
-  // different frame — no entity counters, no plan tools, a narrow toolset. Since
-  // 0.2.50 it does carry `<agent_path_scope>`, which it always should have.
+  // different frame — no entity counters, no plan tools, a narrow toolset, and neither
+  // `<agent_path_scope>` nor `<agent_filesystem_access>`: it states its own posture in
+  // `<interaction_context type="brief">`. Hence no `roots` / `agentPathScope` below —
+  // they fed the path-scope block alone.
   if (CONTEXT_TYPE_REGISTRY[contextType].uiChrome === 'brief-detail') {
     return buildBriefSystemPrompt({
       projectName: input.projectName,
       cwd: input.cwd,
-      roots: input.roots,
       brief: input.brief ?? null,
       annotations: input.annotations ?? [],
       writingStyleSkill: input.writingStyleSkill ?? null,
@@ -1974,7 +1971,6 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
       interactionRules: input.interactionRules,
       conversationalLanguage: input.conversationalLanguage,
       mcpInventory: input.mcpInventory ?? [],
-      agentPathScope: input.agentPathScope,
       builtinsEnabled: input.agentFilesystemAccess?.enabled ?? false,
     });
   }
