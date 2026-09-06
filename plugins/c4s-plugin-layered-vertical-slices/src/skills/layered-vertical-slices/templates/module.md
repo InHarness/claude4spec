@@ -35,7 +35,7 @@ Relations with LAYERS are not dependencies in this sense and do not belong in
 this section — each one lives in that layer's own section below.
 -->
 
-<tagged_list type="module-dependency" tags="MXX"/>
+<tagged_list type="module-dependency" tags="mXX"/>
 
 <One sentence: why this module leans outward at all — the shape of what it takes
 from others, not a restatement of the list above.>
@@ -68,10 +68,14 @@ from others, not a restatement of the list above.>
 
 ## Acceptance criteria
 
-<!-- Preferred when the project models AC entities: the criteria live as `ac` entities tagged MXX
-     (edge cases under MXX-edge), created via the project's MCP tools. Embed them live and add one
-     sentence of prose explaining why; the list updates itself. -->
-<tagged_list type="ac" tags="MXX"/>
+<!-- Preferred when the project models AC entities: the criteria live as `ac` entities tagged mXX
+     (edge cases under mXX-edge), created via the project's MCP tools. Embed them live and add one
+     sentence of prose explaining why; the list updates itself.
+
+     Tag slugs are LOWER-CASE, as SKILL.md §6.8 writes them, while the prose spells a module `MXX`.
+     Both spellings are correct in their own place; an embed written with the prose spelling selects
+     on a tag nothing carries and renders empty, with no error to say why. -->
+<tagged_list type="ac" tags="mXX"/>
 
 <!-- Fallback — only when the project does not model AC as entities. Inline observable checklist:
 - [ ] <criterion 1>
