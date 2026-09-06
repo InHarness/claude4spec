@@ -92,16 +92,22 @@ describe('upgrading a pre-0.2.2 database', () => {
       //
       //    `created` is not empty, and must not be: a type this database predates
       //    has no table to adopt, so creating one is the correct outcome rather
-      //    than a rebuild. `spreadsheet`, `mcp_tool` and `code_snippet` all
-      //    shipped after this legacy schema was frozen. What matters is that
-      //    nothing the legacy chain DID write is in the list.
+      //    than a rebuild. `spreadsheet`, `mcp_tool`, `code_snippet` and
+      //    `module_dependency` all shipped after this legacy schema was frozen.
+      //    What matters is that nothing the legacy chain DID write is in the list.
       //
       //    Compared as a SET: `created` follows module registration order, which
       //    is the envelope discovery order, and that is not a contract — pinning
       //    it makes an unrelated envelope rename look like a schema regression.
       const legacyTables = ['dto', 'endpoint', 'ac'];
       expect(result.created).not.toEqual(expect.arrayContaining(legacyTables));
-      expect([...result.created].sort()).toEqual(['code_snippet', 'mcp_tool', 'spreadsheet']);
+      expect([...result.created].sort()).toEqual([
+        'code_snippet',
+        'mcp_tool',
+        // 0.2.70 — `c4s-plugin-layered-vertical-slices` grew an entity type.
+        'module_dependency',
+        'spreadsheet',
+      ]);
       /**
        * 0.2.22 — the adopted tables gain the reserved `title` column, and that
        * is the point of `reconcileColumns`: a legacy database reaches the new

@@ -3,18 +3,28 @@ import path from 'node:path';
 import { defineConfig } from 'vite';
 
 /**
- * Vite library mode with ONE entry, `src/index.ts`. There is no `frontend.tsx`
- * beside it and that is not an omission: this envelope contributes no entity
- * type, so it has nothing to render. The host discovers a plugin's frontend
- * bundle by file existence, so its absence simply means "no frontend entry" —
- * no declaration is needed anywhere to say so.
+ * Vite library mode, two entries since 0.2.70: `src/index.ts` (backend, imported
+ * by the host loader) and `src/frontend.tsx` (browser, fetched as native ESM
+ * through the host's plugin-asset route).
+ *
+ * The second entry is NEW, and its arrival is this release seen from the build.
+ * Until now there was one entry and no `frontend.tsx` beside it — not an
+ * omission but a consequence: the envelope contributed no entity type, so it had
+ * nothing to render. Contributing `module-dependency` gives it three render
+ * slots, and the host discovers a plugin's frontend bundle by file existence, so
+ * the file IS the declaration.
+ *
+ * Everything the host provides stays EXTERNAL. React must be external because
+ * two copies break hooks; the browser receives the host's singletons through its
+ * import map.
  *
  * OUTPUT GOES INTO THE HOST'S `dist/`, not into a `dist/` beside this source.
  *
  * Same reasoning as every other envelope: every mechanism that packages this
  * host copies `dist/` and only `dist/`. An artifact anywhere else is silently
  * absent at runtime — `discoverBuiltinEnvelopes()` returns `[]`, no error, and
- * the host simply has no `layered-vertical-slices` style.
+ * the host simply has no `layered-vertical-slices` style and no
+ * `module-dependency` type.
  *
  * The `?raw` imports in `src/skills/` are what makes the style's package travel
  * as LITERALS compiled into this module: Vite inlines each `.md` file's text at
@@ -22,20 +32,46 @@ import { defineConfig } from 'vite';
  * and never reads the disk. The markdown stays as real files here so it remains
  * reviewable and diffable against the history it was moved from.
  */
+const EXTERNAL = [
+  '@c4s/plugin-runtime',
+  '@c4s/plugin-runtime/ui',
+  'react',
+  'react-dom',
+  'react-dom/client',
+  'react/jsx-runtime',
+  'react/jsx-dev-runtime',
+  'lucide-react',
+];
+
 const OUT_DIR = path.resolve(
   import.meta.dirname,
   '../../dist/plugins/c4s-plugin-layered-vertical-slices',
 );
 
 export default defineConfig({
+  // Pin the stable automatic JSX runtime. Vite defaults `jsxDev` to
+  // `!isProduction`, which can be true even under `vite build` if NODE_ENV says
+  // development — and the host's production React ships `jsxDEV` as a no-op
+  // stub, so those calls would throw and take the whole plugin frontend down.
+  esbuild: { jsxDev: false },
   build: {
     lib: {
-      entry: { index: 'src/index.ts' },
+      entry: { index: 'src/index.ts', frontend: 'src/frontend.tsx' },
       formats: ['es'],
       fileName: (_format, entryName) => `${entryName}.js`,
+      /**
+       * `frontend.css`, NOT the default `<lib-name>.css`.
+       *
+       * The host serves a plugin's stylesheet from exactly one filename beside
+       * its bundle (`frontendAssetPath` / `hasCss` in `frontend-assets.ts`), and
+       * the frontend manifest advertises the sheet only when a file with that
+       * name exists. Vite's default name is derived from the package, so the
+       * emitted CSS would sit unreferenced next to the bundle.
+       */
+      cssFileName: 'frontend',
     },
     rollupOptions: {
-      external: (id) => id === '@c4s/plugin-runtime' || id.startsWith('node:'),
+      external: (id) => EXTERNAL.includes(id) || id.startsWith('node:'),
     },
     // Never minify: the loader reads the named `manifest` export off this module.
     minify: false,
@@ -50,7 +86,7 @@ export default defineConfig({
       name: 'c4s-envelope-manifest',
       /**
        * The loader resolves an envelope's entry through its `package.json`
-       * (`exports` → `main`), so a manifest has to sit beside the bundle it
+       * (`exports` → `main`), so a manifest has to sit beside the bundles it
        * points at. It is REWRITTEN rather than copied: the source manifest's
        * paths carry a `dist/` segment that is already consumed by the output
        * directory, and a copied one would send the loader to
@@ -67,6 +103,7 @@ export default defineConfig({
           type: 'module',
           exports: {
             '.': { import: './index.js', default: './index.js' },
+            './frontend': { import: './frontend.js', default: './frontend.js' },
           },
           main: './index.js',
         };

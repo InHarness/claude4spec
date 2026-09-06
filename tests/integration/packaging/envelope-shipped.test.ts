@@ -31,6 +31,10 @@ const ENVELOPES = [
   'c4s-plugin-database-tables',
   'c4s-plugin-frontend-mockups',
   'c4s-plugin-mcp-tools',
+  // 0.2.70: joined the list when it grew a frontend bundle. Until then it
+  // contributed no entity type and emitted no `frontend.js`, so it could not be
+  // held to the same two-entry rule as the rest.
+  'c4s-plugin-layered-vertical-slices',
 ];
 
 describe('npm package contents', () => {

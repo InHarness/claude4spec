@@ -108,7 +108,7 @@ Templates ship as files inside this skill, in `templates/`. Copy them when boots
 
 - `templates/index.md` → `<root>/<index>`. Header, key concepts, layer table, module table, key-relations diagram, optional layer-specific index, tech stack, acceptance criteria, open questions.
 - `templates/layer.md` → `<root>/layers/LX-<slug>.md`. **Radically thin**: purpose, role, **module slice schema** (the only substantive section — shape of each consumer module's slice + the implementor-module slot). Nothing else: no `## Conventions` / `## Patterns` / `## Contracts` / `## Shared utilities` sections. Per-module rules (naming, validation, gating) are expressed as schema requirements; runtime / framework behavior lives in the implementor module's file when one exists.
-- `templates/module.md` → `<root>/modules/MXX-<slug>.md`. `## Cel` (the first H2, directly under the H1 — the template carries no hook block), dependencies table, one section per touched layer (drop the rest), edge cases, acceptance criteria. The `Cel` section's own rules are §7. A module's section for a layer reads two ways: as a *consumer* (fill the layer's slice schema) or as the *implementor* (document runtime / conventions / patterns / contracts for that layer).
+- `templates/module.md` → `<root>/modules/MXX-<slug>.md`. `## Cel` (the first H2, directly under the H1 — the template carries no hook block), then `## Zależności` — the module's outward edges, **embedded rather than tabulated** (see §6 rule 3a) — then one section per touched layer (drop the rest), edge cases, acceptance criteria. The `Cel` section's own rules are §7. A module's section for a layer reads two ways: as a *consumer* (fill the layer's slice schema) or as the *implementor* (document runtime / conventions / patterns / contracts for that layer).
 
 ## 6. Quality rules
 
@@ -119,7 +119,14 @@ Templates ship as files inside this skill, in `templates/`. Copy them when boots
    - *Layer-purity:* "would this still be accurate if we deleted module MXX?" If no → it belongs in a module's file, not the layer.
    - *Filling vs behavior:* "is this a rule about **filling the module's section** (naming, validation, gating, allowed values, embed shape) or about **framework runtime behavior** (registry semantics, hook order, contract guarantees, shared utilities)?" Filling → bake it into the slice schema as a field requirement. Behavior → put it in the implementor module's file (how-mode). Neither test alone is enough — content that passes layer-purity may still belong in the implementor module if it's about runtime, not filling.
 
-3. **Every module lists every layer it touches.** In the module file, there's a section per touched layer with at minimum a 2-line note. Each section follows the schema declared in that layer's `## Module slice schema`.
+3. **Every module lists every layer it touches — and the set of layer sections is the ONLY declaration of that.** In the module file, there's a section per touched layer with at minimum a 2-line note, following the schema declared in that layer's `## Module slice schema`. There is no second place that says which layers a module touches: no summary section, no table of layers at the top of the file. Two lists of the same fact drift, and the one that drifts is always the summary. It follows that anything to say about this module's relationship with a layer belongs **inside that layer's section**, never in a roll-up above it.
+
+3a. **A module-to-module dependency is a record, not a table row.** The `## Zależności` section carries an embed of this module's outward edges plus one sentence of prose, and nothing else. Four rules govern the records themselves:
+
+   - **One record describes ONE direction.** The unit is the ordered pair "A requires B". A mutual relation is therefore **two** records, not one read both ways — which is what lets each side state its own reason.
+   - **The record carries the tag of the module that REQUIRES, and only that one.** That is what makes a module's `## Zależności` embed show its OUTGOING edges. Incoming edges carry the other module's tag and can never be embedded; they are a **query**, not an embed — see §8.
+   - **The reason field says WHAT would be lost, never BETWEEN WHOM.** The two parties are already named by the record's own fields; naming one again in the reason gives a single fact two homes, which §6.2 forbids. Concretely: **no `M\d+` token inside that prose**. Writing the module's *name* instead of its number is the same mistake and nothing will catch it for you.
+   - **Layers do not appear in these records at all.** A relation with a layer is not a dependency in this sense; it lives in that layer's section, per rule 3 above and §7.
 
 4. **Ask, don't assume.** When the user's answer is ambiguous, stop and ask one short clarification. Do not invent column names, endpoint paths, or business rules. **Special case — user-need rationale:** if the *why* behind a module or change is unclear, that is a hard stop. Name your gap and ask before authoring. Do not infer the user-need from technical context alone.
 
@@ -143,7 +150,14 @@ Every module's **main file** — `modules/MXX-<slug>.md`, or `modules/MXX-<slug>
 
 **Composition.** One sentence naming the **user job** — who does what, to what end. Then **2–4 sentences** on how the module realizes that job and on what it explicitly does **not** do. **Budget: 1200 characters for the whole section.** The number is the rule, not a suggestion: a `Cel` that needs more than that is describing the module's substance, which belongs in the per-layer sections below it.
 
-**Self-sufficiency prohibition.** The `Cel` section carries **no entity embeds, no `section_ref`, and no module or layer identifiers — including its own**. `Cel` answers *why this module exists*; relational boundaries have their own tabular section (`## Dependencies`), and repeating them here produces two homes for one fact.
+**Self-sufficiency prohibition.** The `Cel` section carries **no entity embeds, no `section_ref`, and no module or layer identifiers — including its own**. `Cel` answers *why this module exists*, and every relational boundary already has a home elsewhere, so repeating one here produces two homes for one fact.
+
+**Two homes, and they are not interchangeable.** Which one a boundary belongs to is decided by what sits on the other side of it:
+
+- **The other side is a MODULE** → `## Zależności`, as a record, one per direction (§6 rule 3a).
+- **The other side is a LAYER** → that layer's own section in this file (§6 rule 3).
+
+Neither of them is `Cel`, and neither is the other. This split is the whole reason `Cel` can be scoped so tightly: the prohibition below costs nothing, because nothing it forbids has nowhere else to go.
 
 Two notes on the reach of that prohibition, because both are read wrong:
 
@@ -154,7 +168,7 @@ Two notes on the reach of that prohibition, because both are read wrong:
 
 Each item below can be settled by reading the section, with no judgement about the subject matter, and each has a **named violation symptom** — the thing you will actually observe when it is broken:
 
-1. **Exactly one `## Cel`, and it is the first H2.** *Symptom:* a second `## Cel` later in the file, or another H2 (`## Dependencies`, a layer section) standing ahead of it.
+1. **Exactly one `## Cel`, and it is the first H2.** *Symptom:* a second `## Cel` later in the file, or another H2 (`## Zależności`, a layer section) standing ahead of it.
 2. **No content between the H1 and it.** *Symptom:* a blockquote, paragraph, table or list sitting under the H1 with no heading of its own — an unanchored block.
 3. **No entity embeds and no `section_ref`.** *Symptom:* an XML embed tag (`<tagged_list …/>`, `<inline_mention …/>`, `<single_element …/>`) or a `section_ref` inside the section body.
 4. **No module or layer identifiers.** *Symptom:* a token matching `M\d+` or `L\d+` in the section body — the module's own number included.
@@ -163,9 +177,13 @@ Each item below can be settled by reading the section, with no judgement about t
 
 **Item 7 is qualitative only, and the specification does not pretend otherwise.** Written as a yes/no question: *does the opening sentence name a user job?* No machine settles it. The negative test that catches the common failure is tautology — a sentence of the form "X handles X" ("M03 manages endpoints", "the workspace module manages workspaces") names the module's subject, not anyone's job, and fails the question however fluently it reads.
 
-## 8. Cross-cutting reading protocol
+## 8. Cross-cutting reading protocols
 
-This section is for an agent that **writes nothing** — one orienting itself in an existing corpus before routing a change, partitioning a diff, or locating a deviation. It collects the purpose of every module in **two calls**, and the steps below are the protocol, not a suggested shape for one.
+This section is for an agent that **writes nothing** — one orienting itself in an existing corpus before routing a change, partitioning a diff, or locating a deviation. There are **two** protocols here and they answer different questions: the first sweeps *what every module is for*, the second traces *what a module is wired to*. Neither is a suggested shape; both are the protocol.
+
+### 8.1 Sweeping every module's purpose
+
+It collects the purpose of every module in **two calls**, and the steps below are the protocol, not a suggested shape for one.
 
 **Call 1 — map the `Cel` headings.**
 
@@ -210,3 +228,29 @@ Both properties above — `map` mode and `pathInclude` — are **parts** of the 
 The sweep matches on the `## Cel` heading, so **a module that names that section anything else drops out of the result silently** — no error, no warning, no empty row. It is simply not there, and nothing in the response says a module is missing.
 
 The variant that causes this today is the English `## Purpose` in a module's main file. When a sweep returns fewer modules than the index lists, this is the first thing to check; the repair is to rename the heading to `## Cel` while keeping the section's existing anchor, which keeps every address already handed out valid.
+
+### 8.2 Tracing a module's dependencies
+
+The sweep above answers "what is each module for?". This one answers "what is this module wired to?", and it takes **four steps** rather than two because the edges are directed and only one direction is reachable by tag.
+
+1. **Identify the modules by substance, not by name.** Start from 8.1 — the `Cel` texts are the altitude at which "which modules is this about?" is decided. A module's slug is a label, not evidence.
+
+2. **Read the OUTGOING edges by tag.** A dependency record carries the tag of the module that requires, so the records tagged `mNN` are exactly what `mNN` depends on:
+
+   ```
+   list_entities({ type: "module-dependency", tags: ["mNN"] })
+   ```
+
+3. **Read the INCOMING edges by filter — never by tag.** The records naming `mNN` as the far side carry the *other* module's tag, so no tag query reaches them. They are a filter on the field itself:
+
+   ```
+   list_entities({ type: "module-dependency", filters: { provider: "MNN" } })
+   ```
+
+   **Step 3 is not optional and it is not a refinement of step 2.** It is the half of the graph step 2 structurally cannot see. Skipping it does not give you a smaller answer — it gives you a directed answer while looking like an undirected one, which is the more dangerous of the two. This is also why retiring a module takes **two** deletions, and why nothing checks that you did the second one: the far-side field is not a reference, so a leftover incoming edge dangles silently.
+
+   Mind the spelling: `tags` are lower-case (`m19`), while the field holds what the author wrote (`M19`). The filter matches the field, not the tag.
+
+4. **Pull the modules on the far side.** Each record names a module, not an entity — there is nothing to resolve a link through. Map the identifiers back to module files and read their `Cel` sections; that is what turns a list of edges into a picture.
+
+**What this protocol cannot tell you.** A record whose reason names a module in prose rather than by its fields reads as a dependency on something it is not wired to. The rules in §6.3a exist to keep that out of the corpus, but reading is where you will meet the ones that got in.

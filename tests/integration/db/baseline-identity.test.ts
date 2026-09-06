@@ -199,6 +199,10 @@ const NEW_SINCE_LEGACY = new Set([
   'mcp_tool',
   // 0.2.45 — `code-snippet`, contributed by `c4s-plugin-code-snippets`.
   'code_snippet',
+  // 0.2.70 — `module-dependency`, contributed by
+  // `c4s-plugin-layered-vertical-slices` when that envelope stopped being a
+  // capability and became a coupling.
+  'module_dependency',
 ]);
 
 const withoutNewTables = (schema: Record<string, TableShape>): Record<string, TableShape> =>

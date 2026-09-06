@@ -4,9 +4,11 @@
  * `registry.registerPlugin(manifest)`.
  *
  * That is the ONLY registration path: this package is never wired through the
- * host's `registerAllPlugins`, and it has no `registerAll` of its own. In
- * particular it does not go through `entities/index.ts` — it contributes no
- * entity type to put there.
+ * host's `registerAllPlugins`, and it has no `registerAll` of its own. Since
+ * 0.2.70 it does contribute an entity type (`module-dependency`), but that type
+ * still does not go through the core's `entities/index.ts` — it reaches
+ * `registerEntityModule` through the manifest fan-out, exactly as every other
+ * envelope's type does.
  */
 export { manifest } from './manifest.js';
 export { manifest as default } from './manifest.js';
