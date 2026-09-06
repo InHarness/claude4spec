@@ -19,7 +19,12 @@ import type { EntityCardProps } from '@c4s/plugin-runtime';
 import { DependencySentence } from './sentence.js';
 import type { ModuleDependency } from './types.js';
 
-export const ModuleDependencyCard: FC<EntityCardProps<unknown>> = ({ slug, entity, caption }) => {
+export const ModuleDependencyCard: FC<EntityCardProps<unknown>> = ({
+  slug,
+  entity,
+  caption,
+  onOpen,
+}) => {
   // The slot contract hands `entity` over as `unknown` — the host resolved the
   // slug and does not know this type's shape.
   const record = entity as ModuleDependency | null;
@@ -41,12 +46,36 @@ export const ModuleDependencyCard: FC<EntityCardProps<unknown>> = ({ slug, entit
     );
   }
 
+  /*
+   * The card OPENS the overlay too, not just the chip. The host builds `onOpen`
+   * the same way for both slots, and a card that ignores it is a card the reader
+   * can only look at — while the identical row beside it is clickable.
+   */
+  const interactive = typeof onOpen === 'function';
+
   return (
     <div
       data-testid="module-dependency-card"
       data-slug={slug}
+      role={interactive ? 'button' : undefined}
+      tabIndex={interactive ? 0 : undefined}
+      onClick={interactive ? onOpen : undefined}
+      onKeyDown={
+        interactive
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onOpen?.();
+              }
+            }
+          : undefined
+      }
       className="rounded px-3 py-2.5"
-      style={{ background: 'var(--c-panel)', border: '1px solid var(--c-hair)' }}
+      style={{
+        background: 'var(--c-panel)',
+        border: '1px solid var(--c-hair)',
+        cursor: interactive ? 'pointer' : 'default',
+      }}
     >
       <DependencySentence dependent={record.dependent} provider={record.provider} small={false} />
       <div className="mt-2">

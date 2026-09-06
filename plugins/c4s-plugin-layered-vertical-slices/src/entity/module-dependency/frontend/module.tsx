@@ -70,7 +70,16 @@ export const moduleDependencyFrontendModule: FrontendModule = {
         live = false;
       };
     }, [slug]);
-    return { data: data ?? null, isLoading: data === undefined };
+    /*
+     * `data` PASSED THROUGH, never coalesced to `null`.
+     *
+     * The slot's three states are distinct and the host reads all three: both
+     * resolvers gate their skeleton on `isLoading && data === undefined`, so
+     * collapsing `undefined` to `null` skips the skeleton and hands the chip and
+     * card an `entity` of `null` — which this type renders as the red "broken"
+     * state. Every load would flash a broken reference before resolving.
+     */
+    return { data, isLoading: data === undefined };
   },
 
   /**

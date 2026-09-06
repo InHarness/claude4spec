@@ -33,14 +33,18 @@ export const MODULE_DEPENDENCY_LABEL_PLURAL = 'Module dependencies';
  */
 export const MODULE_DEPENDENCY_DISPLAY_ORDER = 120;
 
-/**
- * The shape a module identifier takes in this style — `M03`, `m19`.
+/*
+ * NO `MODULE_ID_PATTERN` here.
  *
- * Used by the consistency rules, NEVER by the schema: `dependent` and `provider`
- * describe an OPEN set of modules, so neither `enum` nor `maxLength` can
- * express it, and the host's named-validator dictionary is closed. The shape is
- * therefore watched by a warning after the write, not enforced at it — which is
- * exactly why a typo'd module number produces a silent false edge rather than a
- * `broken` marker.
+ * The `M\d+` shape the consistency rules watch for inside `needs` is defined
+ * once, in `src/server/discovery/ops/module-dependency-rules.ts`, because the
+ * rules are the core's and the core cannot import from `plugins/`. A second copy
+ * beside the type would be free to drift from the one actually doing the work,
+ * and the drift would be invisible: both would look authoritative.
+ *
+ * What the schema deliberately does NOT do is enforce that shape. `dependent` and
+ * `provider` name an OPEN set of modules, which neither `enum` nor `maxLength`
+ * describes and which the host's named-validator dictionary has no entry for. So
+ * the shape is watched by a warning after the write rather than enforced at it —
+ * which is why a typo'd module number is a silent false edge and not an error.
  */
-export const MODULE_ID_PATTERN = /\bM\d+\b/i;

@@ -11,8 +11,11 @@
  * affordance at all — there is no popover and no slash command for this type
  * either, for the same reason.
  *
- * Two entrances, differing only in whether a record is already in hand: the card
- * passes the one it has, the chip passes nothing and this fetches on open.
+ * ONE entrance, and it always fetches. `EntityOverlayHost` is the only thing that
+ * mounts this slot and it passes `{ slug, caption, onClose }` — the slot type
+ * carries no `entity` prop at all, so there is no "the caller already has the
+ * record" path to take. The refetch is one bounded `GET`: nothing here is
+ * `contentBearing`, so the record arrives whole.
  */
 
 import React from 'react';
@@ -23,24 +26,17 @@ import { fetchModuleDependency, type ModuleDependency } from './types.js';
 
 export function ModuleDependencyOverlay({
   slug,
-  entity,
   caption,
   onClose,
 }: {
   slug: string;
-  entity?: ModuleDependency | null;
   caption?: string;
   onClose: () => void;
 }) {
-  const [record, setRecord] = React.useState<ModuleDependency | null>(entity ?? null);
-  const [loading, setLoading] = React.useState(!entity);
+  const [record, setRecord] = React.useState<ModuleDependency | null>(null);
+  const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
-    if (entity) {
-      setRecord(entity);
-      setLoading(false);
-      return;
-    }
     let live = true;
     setLoading(true);
     void fetchModuleDependency(slug).then((next) => {
@@ -51,7 +47,7 @@ export function ModuleDependencyOverlay({
     return () => {
       live = false;
     };
-  }, [slug, entity]);
+  }, [slug]);
 
   return (
     <div
