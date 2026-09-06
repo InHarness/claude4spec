@@ -47,7 +47,7 @@ The candidate buckets:
 - **New module.** The user introduces a new entity or feature. Propose a module number (next free), a slug, and which layers it touches.
 - **Change to an existing module.** New column, new operation, new edge case, new acceptance criterion, new dependency.
 - **Layer-level change.** A new convention, a new pattern, or a contract change that affects multiple modules. Apply the layer-purity rule (SKILL.md §6) *before* placing anything in a layer: if the candidate paragraph stops being true once you imagine any single module gone, it is not a layer change.
-- **Cross-module relation.** A new dependency between two existing modules. The change goes in *both* module files' `Dependencies` tables and possibly in `<index>`'s relations diagram.
+- **Cross-module relation.** A new dependency between two existing modules. It is written as a **dependency record**, not as a table row in either file — one record per direction, tagged with the tag of the module that *requires* (SKILL.md §6 rule 3a). So a one-way dependency is one record; a mutual one is **two**, each with its own reason. Neither module's file gains a row; `<index>`'s relations diagram may still need updating.
 - **Not a spec change at all.** Implementation detail, UX micro-decision, code style, choice of internal helper. Say so plainly and stop. The spec is for architecture; not every interesting thought belongs in it.
 - **Not yet decided.** The idea is real but unresolved. Add it to `<index>`'s `Open questions` section verbatim instead of editing modules. Move it out of `Open questions` later when the user resolves it.
 
@@ -71,7 +71,9 @@ After non-trivial edits, scan `<index>` against files-on-disk:
 
 - Every entry in the module table has a file? Every module file has a row?
 - Every layer touched by any module appears in the layer table?
-- Every relation declared in a module's `Dependencies` table appears in the index's relations diagram?
+- **Does every `L\d+` mentioned in a module file have a corresponding layer section in that same file?** A layer named in passing but never given a section is the drift rule 3 exists to catch — the set of sections is the only declaration of which layers a module touches, so a mention without a section is a claim with no home.
+- **Does every dependency record carry the tag of its own requiring module?** An untagged record is invisible to the module whose section should show it: the embed selects on that tag and nothing else, so the edge exists in the data and nowhere on the page.
+- Every relation declared in a module's `## Zależności` section appears in the index's relations diagram?
 - If something was removed, is it marked retired rather than silently deleted?
 
 If you find drift, surface it as a short punch list and ask the user before fixing — drift can be intentional (work-in-progress).

@@ -93,6 +93,10 @@ For each module (in the chosen order), fill its file in two parts:
 
 Do not ask "what does this module do at the domain level" as a separate per-layer question — that's already covered by the module's `Cel` and `Edge cases`. If the user starts describing operations and validations, capture them in the module's own substance, not in a "domain layer" section.
 
+3. **Inter-module relations — created as records, not written as rows.** Once a module's substance is in place, ask what it would lose without each of the other modules, and create **one dependency record per direction** (SKILL.md §6 rule 3a): tagged with the tag of the module that *requires*, with a reason saying what flows and never between whom. A mutual relation is two records. The module's `## Zależności` section holds only the embed and one sentence of prose — do not write a table there, and do not go back to the other module's file to add a mirroring row.
+
+   **Do not put layers in these records.** A relation with a layer is not a dependency of this kind; it belongs in that layer's own section, which step 2 above already wrote.
+
 After finishing a module, summarize what you captured and ask the user to confirm before moving to the next.
 
 ## Phase 6 — Layer fill-in

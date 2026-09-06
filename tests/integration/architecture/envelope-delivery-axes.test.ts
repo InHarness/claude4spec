@@ -262,25 +262,36 @@ describe('axis A, continued — the envelope contributes a SKILL, not only types
 });
 
 /**
- * 0.2.57 — the CAPABILITY-class envelope, and the first plugin in this repo that
- * carries no entity type.
+ * 0.2.70 — the envelope that changed CLASS, from capability to coupling.
  *
- * Every envelope above travels as one package because its contributions are
- * COUPLED: `ui-view` declares a fixed ref at `design-system`, so splitting the
- * pair would cut the declaration. `c4s-plugin-layered-vertical-slices` travels
- * as one package for a different reason — its two contributions are one
- * authorial capability, writable and distributable by someone outside this repo.
- * The test is "could a stranger want to write this and give it to others?"; a
- * writing style passes it, an `endpoint`/`dto` pair does not.
+ * From 0.2.57 this was the one plugin in the repo carrying no entity type. It
+ * travelled as a single package for a reason no other envelope used: its
+ * contributions were one authorial capability, writable and distributable by
+ * someone outside this repo ("could a stranger want to write this and give it to
+ * others?" — a writing style passes, an `endpoint`/`dto` pair does not).
+ *
+ * It now travels together for the ORDINARY reason instead, the one that binds
+ * `ui-view` to `design-system`: the contributions declare each other. `SKILL.md`
+ * mandates that a module-to-module relation is recorded as a `module-dependency`
+ * entity, by slug and unconditionally — a sentence it can only afford because
+ * the type rides in the same manifest and leaves on the same `unregisterPlugin`.
+ * Split them and the type could be detached, leaving a style that mandates
+ * writing into a type that is not there.
+ *
+ * So the last assertion below is no longer "one unregister takes two slots" but
+ * "one unregister takes THREE", and that is the claim the class change is made
+ * of.
  *
  * Driven through the real loader against the real `plugins/` tree for the same
  * reason as everything above it: a fixture would prove the machinery, and the
  * wiring is what changed.
  */
-describe('the capability-class envelope — a plugin with no entity type', () => {
+describe('the coupling-class envelope — a style that mandates its own type', () => {
   const PKG = 'c4s-plugin-layered-vertical-slices';
   const STYLE = 'layered-vertical-slices';
+  const TYPE = 'module-dependency';
   const SUBAGENT = 'layered-spec-explore';
+  const REVIEWER = 'spec-review';
 
   function skillRegistryWith(registry: PluginRegistryImpl, cwd: string): SkillRegistry {
     const skills = SkillRegistry.load(findSkillsRoots(cwd));
@@ -301,10 +312,29 @@ describe('the capability-class envelope — a plugin with no entity type', () =>
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
-  it('[ac:ac-manifest-koperty-c4s-plugin-layered-v] loads with an empty contributes.entities[] and registers no type', () => {
+  it('[ac:ac-manifest-koperty-c4s-plugin-layered-v] loads and contributes exactly module-dependency', () => {
     const record = registry.listPluginRecords().find((r) => r.name === PKG);
     expect(record, `${PKG} did not load`).toBeDefined();
-    expect(record!.contributedTypes).toEqual([]);
+    expect(record!.contributedTypes).toEqual([TYPE]);
+
+    // And no OTHER envelope claims it — the type has one carrier, which is what
+    // makes "the type is active" and "the package is active" the same question
+    // for the consistency rules that gate on it.
+    for (const other of registry.listPluginRecords().filter((p) => p.name !== PKG)) {
+      expect(other.contributedTypes).not.toContain(TYPE);
+    }
+  });
+
+  /**
+   * HIDDEN is a backend non-statement: the type declares no route and no sidebar
+   * tab on the client, and nothing on the manifest says "hidden" at all. What the
+   * backend half must show is that it is a fully ordinary registered type
+   * regardless — the host generates its whole write path.
+   */
+  it('is an ordinary active type, with no backend slot of its own', () => {
+    const module = registry.consolidate(null).getEntity(TYPE);
+    expect(module, `${TYPE} is not active`).toBeDefined();
+    expect(module!.pathPrefix).toBe('/module-dependencies');
   });
 
   /**
@@ -349,20 +379,35 @@ describe('the capability-class envelope — a plugin with no entity type', () =>
   });
 
   /**
-   * The two slots are one capability, so they come down together. Separately they
-   * lose their meaning: the subagent's `promptBody` REPLACES the parent's prompt,
-   * so without the style it does not know what it is moving through — and the
-   * style without it leaves the parent grepping.
+   * THE COUPLING ASSERTION. All three slots come down on one call, and the type
+   * is the one that makes this a correctness property rather than tidiness:
+   * `SKILL.md` mandates writing a `module-dependency` unconditionally, so a
+   * teardown that took the style and left the type — or took the type and left
+   * the style — would leave the project in a state the specification forbids.
+   *
+   * The subagents are coupled for the older reason and it still holds: a
+   * `promptBody` REPLACES the parent's prompt, so without the style neither knows
+   * what a module or a layer is.
    */
-  it('[ac:ac-jedno-registry-unregisterplugin-c4s-p] one unregister takes the style AND the subagent', () => {
+  it('[ac:ac-jedno-registry-unregisterplugin-c4s-p] one unregister takes the TYPE, the style AND both subagents', () => {
+    const subagentNames = () =>
+      registry.listPluginRecords().flatMap((r) => r.subagents).map((s) => s.name);
+
+    expect(registry.listAvailable().map((m) => m.type)).toContain(TYPE);
     expect(registry.listSkills().map((s) => s.slug)).toContain(STYLE);
-    expect(registry.listPluginRecords().flatMap((r) => r.subagents).map((s) => s.name)).toContain(SUBAGENT);
+    expect(subagentNames()).toContain(SUBAGENT);
+    expect(subagentNames()).toContain(REVIEWER);
 
     registry.unregisterPlugin(PKG);
 
+    expect(registry.listAvailable().map((m) => m.type)).not.toContain(TYPE);
     expect(registry.listSkills().map((s) => s.slug)).not.toContain(STYLE);
-    expect(registry.listPluginRecords().flatMap((r) => r.subagents).map((s) => s.name)).not.toContain(SUBAGENT);
+    expect(subagentNames()).not.toContain(SUBAGENT);
+    expect(subagentNames()).not.toContain(REVIEWER);
     expect(registry.listPluginRecords().map((r) => r.name)).not.toContain(PKG);
+
+    // Teardown is per envelope, not global — the neighbours are untouched.
+    expect(registry.listAvailable().map((m) => m.type)).toContain('endpoint');
   });
 });
 

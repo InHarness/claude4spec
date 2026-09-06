@@ -236,13 +236,16 @@ describe('builtin envelope — real load path', () => {
     // here would be the version gate, which is how `spreadsheet` was absent for
     // the whole of 2.0.0 while its plugin still declared `^1.0.0`.
     //
-    // EIGHT since 0.2.66, and the type list below is still EIGHT — which is a
-    // coincidence of arithmetic, not a correspondence. TWO of the eight packages
-    // contribute no entity type at all (`c4s-plugin-layered-vertical-slices`, a
-    // style plus two subagents; `c4s-plugin-writing-style-author`, one contextual
-    // skill and nothing else), while `c4s-plugin-frontend-mockups` contributes two
-    // types. The gap on either side is the capability-class envelope — a package
-    // that loads like any other and registers nothing in the type pool.
+    // EIGHT since 0.2.66, and the type list below is NINE — the two counts have
+    // never matched and are not meant to. ONE of the eight packages still
+    // contributes no entity type at all (`c4s-plugin-writing-style-author`, one
+    // contextual skill and nothing else), while `c4s-plugin-frontend-mockups`
+    // contributes two.
+    //
+    // 0.2.70 moved `c4s-plugin-layered-vertical-slices` from the first group to
+    // the ordinary one: it now brings `module-dependency`, so the list below grew
+    // by one while the status list did not. That package is no longer the
+    // capability-class example — `writing-style-author` is the last of them.
     expect(parsed.statuses).toEqual([
       'loaded',
       'loaded',
@@ -260,6 +263,7 @@ describe('builtin envelope — real load path', () => {
       'dto',
       'endpoint',
       'mcp-tool',
+      'module-dependency',
       'spreadsheet',
       'ui-view',
     ]);

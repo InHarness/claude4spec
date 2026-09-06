@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getEntityDef } from '../../../entities/registry.js';
 import { clientPluginHost, categoriseBrokenChip } from '../../../core/plugin-host/host.js';
 import { useEditorBridge } from '../../EditorContext.js';
-import type { EntityType } from '../../../../shared/entities.js';
+import { openEntityHandler } from '../../../entities/openEntity.js';
 import { useEditChipOnAltClick } from './useEditChipOnAltClick.js';
 import { BlockBrokenChip } from './BrokenChip.js';
 import { NotListable } from './NotListable.js';
@@ -99,7 +99,24 @@ export function TaggedListView(props: NodeViewProps) {
                 <RowComp
                   slug={slug}
                   entity={entity as any}
-                  onOpen={() => bridge?.openEntity(type as EntityType, slug)}
+                  /*
+                   * Through `openEntityHandler`, NOT straight to
+                   * `bridge.openEntity` — this is the fourth call site that
+                   * helper's docblock warns about, and it was the one that had
+                   * it wrong.
+                   *
+                   * Nothing noticed for a long time, because a row is only drawn
+                   * for a type declaring `renderRow`, and every such type also
+                   * had a detail route to navigate to. Listability and
+                   * hidden-ness are independent properties, though: a type may
+                   * declare `renderRow` and still omit `routes`/`detailPanel`,
+                   * and for that one the direct call navigated to a route
+                   * nothing registers and threw the reader off the page. The
+                   * helper sends it to the type's overlay instead, and returns
+                   * `undefined` for a type that resolves to nothing, which makes
+                   * a broken row inert rather than navigating into nowhere.
+                   */
+                  onOpen={openEntityHandler(type, slug, bridge)}
                 />
               </li>
             );

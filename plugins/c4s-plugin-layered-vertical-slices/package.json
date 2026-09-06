@@ -1,7 +1,7 @@
 {
   "name": "@inharness-ai/c4s-plugin-layered-vertical-slices",
-  "version": "0.2.62",
-  "description": "claude4spec builtin envelope contributing the `layered-vertical-slices` writing style and a spec explorer that knows the MXX-slug/LY-slug organisation. Contributes NO entity type — a capability-class envelope (host API 2.0.0).",
+  "version": "0.2.70",
+  "description": "claude4spec builtin envelope contributing the `module-dependency` entity type, the `layered-vertical-slices` writing style, and two subagents that know the MXX-slug/LY-slug organisation \u2014 a spec explorer and a `spec-review` reviewer. A coupling-class envelope: the style mandates the type unconditionally, so the two must not be split (host API 2.0.0).",
   "private": true,
   "type": "module",
   "exports": {
@@ -9,6 +9,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./frontend": {
+      "types": "./dist/frontend.d.ts",
+      "import": "./dist/frontend.js",
+      "default": "./dist/frontend.js"
     }
   },
   "main": "./dist/index.js",
@@ -25,10 +30,22 @@
     "test:watch": "vitest"
   },
   "peerDependencies": {
-    "@c4s/plugin-runtime": "*"
+    "@c4s/plugin-runtime": "*",
+    "lucide-react": "*",
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
   },
   "peerDependenciesMeta": {
     "@c4s/plugin-runtime": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    },
+    "lucide-react": {
       "optional": true
     }
   }
