@@ -101,14 +101,16 @@ export function TaggedListView(props: NodeViewProps) {
                   entity={entity as any}
                   /*
                    * Through `openEntityHandler`, NOT straight to
-                   * `bridge.openEntity` — this was the fourth call site that
+                   * `bridge.openEntity` — this is the fourth call site that
                    * helper's docblock warns about, and it was the one that had
                    * it wrong.
                    *
-                   * Nothing noticed until 0.2.70, because a row is only drawn
-                   * for a type declaring `renderRow`, and until `module-dependency`
-                   * every such type also had a detail route to navigate to. A
-                   * HIDDEN type has none, so the direct call navigated to a route
+                   * Nothing noticed for a long time, because a row is only drawn
+                   * for a type declaring `renderRow`, and every such type also
+                   * had a detail route to navigate to. Listability and
+                   * hidden-ness are independent properties, though: a type may
+                   * declare `renderRow` and still omit `routes`/`detailPanel`,
+                   * and for that one the direct call navigated to a route
                    * nothing registers and threw the reader off the page. The
                    * helper sends it to the type's overlay instead, and returns
                    * `undefined` for a type that resolves to nothing, which makes

@@ -17,8 +17,11 @@ import type { DataDeclaration, SlugPattern } from '@c4s/plugin-runtime';
  * NO FIELD CARRIES `ref`, and the cost is stated rather than discovered: a
  * module is a PARTY to this edge, not an entity type, so there is nothing for a
  * ref to point at. A typo in a module number therefore produces no `broken`
- * marker in `check_consistency` — it produces a silent false edge. That is what
- * the three warning rules in the host exist to catch.
+ * marker in `check_consistency` — it produces a silent false edge, which reads
+ * as fact. Nothing mechanical catches that: `check_consistency` is a generic
+ * tool that knows nothing about this type, and rightly so. The reader of these
+ * edges is the agent working under this style, which is why `SKILL.md` states
+ * the conventions as rules a reader can check rather than as a validator.
  */
 export const moduleDependencyData: DataDeclaration = {
   schema: {

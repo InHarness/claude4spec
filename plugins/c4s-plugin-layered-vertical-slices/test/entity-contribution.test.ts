@@ -64,8 +64,9 @@ describe('module-dependency — the schema decisions that carry behaviour', () =
   /**
    * NO `ref` ANYWHERE, and the cost is the point: a module is a party to the
    * edge, not an entity type, so a typo'd module number produces a silent false
-   * edge rather than a `broken` marker. That is what consistency rules 15-17
-   * exist to cover.
+   * edge rather than a `broken` marker. Nothing in the host covers that, and
+   * nothing should: `check_consistency` is generic, so the convention is stated
+   * in `SKILL.md` for the agent that reads these edges.
    */
   it.each(AUTHORED)('%s declares no ref', (field) => {
     expect((moduleDependencyData.schema[field] as ScalarNode).ref).toBeUndefined();

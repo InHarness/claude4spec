@@ -25,10 +25,11 @@ import { fetchModuleDependency, listModuleDependenciesByTags, type ModuleDepende
  * list of every edge in the specification would answer no question anyone has.
  *
  * LISTABLE is `renderRow`, and nothing else. The tagged-list component delegates
- * each row to it and needs no detail route to do so. This is the one place this
- * type diverges from `code-snippet`, the other hidden type in the repo, which
- * omits `renderRow` on purpose and whose tagged lists therefore fall through to
- * the host's `NotListable` placeholder.
+ * each row to it and needs no detail route to do so — the two properties are
+ * independent, and this is the one place this type diverges from every hidden
+ * type before it. `diagram`, `code-snippet` and `spreadsheet` are all hidden and
+ * all three omit `renderRow` on purpose, so their tagged lists fall through to
+ * the host's `NotListable` placeholder. This one lists.
  *
  * No `editorExtensions` and no `stateSlice`: edges are created in a workflow
  * step, after the prose is written, not while writing it. So the type

@@ -34,17 +34,17 @@ export const MODULE_DEPENDENCY_LABEL_PLURAL = 'Module dependencies';
 export const MODULE_DEPENDENCY_DISPLAY_ORDER = 120;
 
 /*
- * NO `MODULE_ID_PATTERN` here.
+ * NO PATTERN FOR THE MODULE IDENTIFIER, and no validator behind `dependent` /
+ * `provider` either.
  *
- * The `M\d+` shape the consistency rules watch for inside `needs` is defined
- * once, in `src/server/discovery/ops/module-dependency-rules.ts`, because the
- * rules are the core's and the core cannot import from `plugins/`. A second copy
- * beside the type would be free to drift from the one actually doing the work,
- * and the drift would be invisible: both would look authoritative.
+ * The two fields name an OPEN set of modules, which neither `enum` nor
+ * `maxLength` describes and which the host's named-validator dictionary has no
+ * entry for. So a typo'd module number is not an error the write path can
+ * refuse — it is a silent false edge, and the reader of these edges is the agent
+ * working under this style, guided by `SKILL.md`, not a check in the host.
  *
- * What the schema deliberately does NOT do is enforce that shape. `dependent` and
- * `provider` name an OPEN set of modules, which neither `enum` nor `maxLength`
- * describes and which the host's named-validator dictionary has no entry for. So
- * the shape is watched by a warning after the write rather than enforced at it —
- * which is why a typo'd module number is a silent false edge and not an error.
+ * That is deliberate rather than a gap waiting to be filled. `check_consistency`
+ * is generic: it belongs to every project regardless of which types, and which
+ * writing style, that project installed, so it is not the place to teach the
+ * conventions of one style.
  */

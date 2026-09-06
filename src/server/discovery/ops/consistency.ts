@@ -17,7 +17,6 @@
  */
 
 import { readConfig, type ConsistencySeverity } from '../../config.js';
-import { MODULE_DEPENDENCY_TYPE, MODULE_ID_PATTERN } from './module-dependency-rules.js';
 import { parseXmlTagsExcludingCode, taggedListVia } from '../../../shared/xml-tags.js';
 import { getExtensionReferenceType } from '../../../shared/reference-extensions.js';
 import { parseHeadings } from '../../services/section-indexer.js';
@@ -42,28 +41,6 @@ interface TagWithoutConsumerRow {
   /** How many entities carry it — the size of the edit if the tag is retired. */
   entityCount: number;
   severity: ConsistencySeverity;
-}
-
-/**
- * Rules 15-17 — the three ways a `module-dependency` edge can be wrong.
- *
- * All three are WARNINGS and all three are unconditional once the type is
- * active, which is a different gate from rules 10/11/14: those are config-keyed
- * because a project may legitimately not hold the convention. These are not
- * optional in the same way — a project that has the type at all has it because
- * the `layered-vertical-slices` style put it there, and the style mandates the
- * convention these rules check. Adding a config key would offer to switch off
- * the only thing watching a field the schema deliberately cannot constrain.
- *
- * They exist BECAUSE nothing else can catch this. A module is a PARTY to an edge
- * and not an entity type, so neither `dependent` nor `provider` is a `ref`, and
- * a typo in a module number produces no `broken` marker anywhere — it produces a
- * silent false edge that reads as fact.
- */
-interface ModuleDependencyRow {
-  slug: string;
-  dependent: string;
-  provider: string;
 }
 
 interface BrokenReferenceRow {
@@ -93,9 +70,6 @@ const RULES: Record<string, { id: number; bucket: string }> = {
   'invalid-tag-reference': { id: 4, bucket: 'invalidTagReferences' },
   'duplicate-anchor': { id: 13, bucket: 'duplicateAnchors' },
   'tag-without-consumer': { id: 14, bucket: 'tagsWithoutConsumer' },
-  'module-dependency-missing-tag': { id: 15, bucket: 'moduleDependenciesMissingTag' },
-  'module-dependency-identifier-in-needs': { id: 16, bucket: 'moduleDependenciesIdentifierInNeeds' },
-  'module-dependency-duplicate-pair': { id: 17, bucket: 'moduleDependenciesDuplicatePair' },
 };
 
 /** Buckets whose every row is an error, regardless of configuration. */
@@ -450,92 +424,6 @@ export async function checkConsistency(
     }
   }
 
-  /**
-   * Rules 15-17 — the `module-dependency` edge rules.
-   *
-   * GATED ON THE TYPE BEING ACTIVE, and that is the same thing as gating on the
-   * package: `module-dependency` ships in exactly one envelope, so a project
-   * where `host.getEntity` does not resolve it either never loaded that envelope
-   * or dropped the type from `config.entities`. Either way there are no edges to
-   * judge, and the three buckets stay empty rather than absent — a caller
-   * filtering on rule 15 gets an empty list, not a thrown unknown-rule.
-   *
-   * One pass over the type's own rows and no page sweep: everything these rules
-   * need is the payload plus `tags`, both of which the reader already holds.
-   */
-  const moduleDependenciesMissingTag: ModuleDependencyRow[] = [];
-  const moduleDependenciesIdentifierInNeeds: Array<ModuleDependencyRow & { needs: string }> = [];
-  const moduleDependenciesDuplicatePair: Array<{ dependent: string; provider: string; slugs: string[] }> = [];
-
-  const depModule = host.getEntity(MODULE_DEPENDENCY_TYPE);
-  if (depModule && reader.hasTable(MODULE_DEPENDENCY_TYPE)) {
-    // Keyed by the lower-cased ordered pair; the value keeps the pair as it was
-    // WRITTEN, so the report echoes the author's own spelling rather than the
-    // normalized key it was grouped by.
-    const byPair = new Map<string, { dependent: string; provider: string; slugs: string[] }>();
-    for (const slug of reader.listSlugs(MODULE_DEPENDENCY_TYPE)) {
-      const entity = reader.getEntity(MODULE_DEPENDENCY_TYPE, slug);
-      if (!entity) continue;
-      const dependent = String(entity.data.dependent ?? '');
-      const provider = String(entity.data.provider ?? '');
-      const needs = String(entity.data.needs ?? '');
-      const row: ModuleDependencyRow = { slug, dependent, provider };
-
-      /*
-       * Rule 15 — the edge does not carry its `dependent`'s tag.
-       *
-       * Compared case-INSENSITIVELY, because the two spellings are both correct
-       * in their own place: this style writes a module as `M19` in prose and the
-       * corpus carries the tag as `m19`. A case-sensitive comparison would
-       * report every correctly tagged edge in the specification.
-       */
-      const tags = (entity.tags ?? []).map((t) => t.toLowerCase());
-      if (dependent && !tags.includes(dependent.toLowerCase())) {
-        moduleDependenciesMissingTag.push(row);
-      }
-
-      /*
-       * Rule 16 — a module identifier inside `needs`.
-       *
-       * Deliberately fired on the SHAPE rather than on the subject. Legal
-       * occurrences of `M\d+` exist in the world — modules of a sibling
-       * specification, retired numbers — and this rule reports them anyway,
-       * because the ruling is that such text does not belong in this field at
-       * all: `needs` says WHAT flows, and the parties are already named by the
-       * two fields beside it.
-       *
-       * Its blind spot is worth stating: naming a module in PROSE ("Git Sync"
-       * rather than a number) is the same mistake and is not machine-detectable.
-       */
-      if (needs && MODULE_ID_PATTERN.test(needs)) {
-        moduleDependenciesIdentifierInNeeds.push({ ...row, needs });
-      }
-
-      if (dependent && provider) {
-        const key = `${dependent.toLowerCase()}\u0000${provider.toLowerCase()}`;
-        const seen = byPair.get(key);
-        if (seen) seen.slugs.push(slug);
-        else byPair.set(key, { dependent, provider, slugs: [slug] });
-      }
-    }
-
-    /*
-     * Rule 17 — the same ordered pair described twice.
-     *
-     * The host does NOT refuse the second write: `slugConflict: 'suffix'` files
-     * it as `…-2`, because refusing would throw away the author's second `needs`
-     * text at the moment of writing. The suffix is a signal, and this rule is
-     * what turns that signal into a report instead of leaving it to be noticed.
-     *
-     * Ordered, so `(M19, M13)` and `(M13, M19)` are two different pairs and
-     * never collide here — a mutual relation is two edges by design.
-     */
-    for (const [, pair] of [...byPair].sort((a, b) => a[0].localeCompare(b[0]))) {
-      if (pair.slugs.length < 2) continue;
-      moduleDependenciesDuplicatePair.push(pair);
-    }
-  }
-
   // Section-indexed roots the reference sweep above did NOT cover.
   for (const root of roots.sectionIndexed()) {
     if (scanned.some((r) => r.id === root.id)) continue;
@@ -550,9 +438,6 @@ export async function checkConsistency(
   const buckets: Record<string, unknown[]> = {
     brokenReferences,
     duplicateAnchors,
-    moduleDependenciesMissingTag,
-    moduleDependenciesIdentifierInNeeds,
-    moduleDependenciesDuplicatePair,
     orphanedEntityTags: [],
     unreferencedEntities,
     invalidTagReferences,
@@ -584,12 +469,7 @@ export async function checkConsistency(
   const warnings =
     unreferencedEntities.length +
     acWarnings +
-    tagsWithoutConsumer.filter((t) => t.severity === 'warn').length +
-    // Rules 15-17 are warnings outright — no per-row severity, no config key, so
-    // they neither enter `ERROR_BUCKETS` nor split across the two counters.
-    moduleDependenciesMissingTag.length +
-    moduleDependenciesIdentifierInNeeds.length +
-    moduleDependenciesDuplicatePair.length;
+    tagsWithoutConsumer.filter((t) => t.severity === 'warn').length;
 
   const report: ConsistencyReport = {
     brokenReferenceCounts: countBy(brokenReferences, (r) => r.category),
