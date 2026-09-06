@@ -203,8 +203,13 @@ describe.skipIf(!BASE)('module-dependency — a hidden type that lists', () => {
     await page.locator('[data-testid="module-dependency-row"]').first().click();
 
     const overlay = page.locator('[data-testid="module-dependency-overlay"]');
-    await expect.poll(() => overlay.count()).toBeGreaterThan(0);
-    expect(await overlay.innerText()).toContain(NEEDS_OUT);
+    /*
+     * Poll the CONTENT, not just the presence. The overlay always fetches on
+     * open — the slot receives a slug and nothing else — so it mounts in its
+     * loading state first, and asserting on `innerText` the moment it exists
+     * reads an empty skeleton.
+     */
+    await expect.poll(() => overlay.innerText().catch(() => '')).toContain(NEEDS_OUT);
     // Still on the page that carried the embed — the whole point.
     expect(page.url()).toBe(before);
 
