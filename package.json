@@ -80,7 +80,7 @@
     "typecheck:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts run typecheck && npm --prefix plugins/c4s-plugin-spreadsheets run typecheck && npm --prefix plugins/c4s-plugin-database-tables run typecheck && npm --prefix plugins/c4s-plugin-frontend-mockups run typecheck && npm --prefix plugins/c4s-plugin-mcp-tools run typecheck && npm --prefix plugins/c4s-plugin-code-snippets run typecheck && npm --prefix plugins/c4s-plugin-layered-vertical-slices run typecheck && npm --prefix plugins/c4s-plugin-writing-style-author run typecheck"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.3.210",
+    "@anthropic-ai/claude-agent-sdk": "^0.3.263",
     "@google/gemini-cli-core": "^0.38.2",
     "@inharness-ai/agent-adapters": "^0.9.9",
     "@inharness-ai/agent-chat": "^0.3.1",
