@@ -97,10 +97,10 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
     expect(lastArchitectureConfig()).not.toHaveProperty('claude_thinking_budget');
   });
 
-  it("adaptive model (fable-5) + effort -> claude_thinking: 'adaptive', no budget", async () => {
+  it("adaptive model (fable-5.1) + effort -> claude_thinking: 'adaptive', no budget", async () => {
     const res = await request(app())
       .post(`/threads/${thread.id}/ask`)
-      .send({ message: 'hi', model: 'fable-5', effort: 'low' });
+      .send({ message: 'hi', model: 'fable-5.1', effort: 'low' });
     expect(res.status).toBe(200);
     expect(lastArchitectureConfig()).toMatchObject({ claude_effort: 'low', claude_thinking: 'adaptive' });
     expect(lastArchitectureConfig()).not.toHaveProperty('claude_thinking_budget');

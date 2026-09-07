@@ -108,7 +108,7 @@ export function chatRouter(deps: AgentTurnDeps): Router {
            *
            * It used to be a hardcoded table in the badge itself, which was
            * defensible while the whole catalog was 200k and Opus was the one
-           * exception. It is not defensible now: `fable-5` / `sonnet-5` /
+           * exception. It is not defensible now: `fable-5.1` / `sonnet-5` /
            * `opus-5` carry 1M and `haiku-4.5` carries 200k, so a stale copy
            * would misreport occupancy by 5x on the default model.
            *

@@ -74,7 +74,7 @@ describe('GET /api/chat/config — the claude-code catalog', () => {
 
   it('offers exactly the 0.2.17 aliases, with opus-5 as the default', async () => {
     const cc = await config();
-    expect(cc.models).toEqual(['fable-5', 'sonnet-5', 'opus-5', 'haiku-4.5']);
+    expect(cc.models).toEqual(['fable-5.1', 'sonnet-5', 'opus-5', 'haiku-4.5']);
     expect(cc.default).toBe('opus-5');
     // The route must not carry its own literal — the default is resolved once,
     // in `runAgent`, and every channel reads it from there.
@@ -90,7 +90,7 @@ describe('GET /api/chat/config — the claude-code catalog', () => {
 
   it('reports 1M for the adaptive models and 200k for haiku-4.5', async () => {
     const cc = await config();
-    expect(cc.contextWindows['fable-5']).toBe(1_000_000);
+    expect(cc.contextWindows['fable-5.1']).toBe(1_000_000);
     expect(cc.contextWindows['sonnet-5']).toBe(1_000_000);
     expect(cc.contextWindows['opus-5']).toBe(1_000_000);
     expect(cc.contextWindows['haiku-4.5']).toBe(200_000);
