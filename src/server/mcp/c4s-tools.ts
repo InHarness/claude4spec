@@ -74,7 +74,7 @@ export function buildC4sToolsServer(callerWorkspace?: string): CapturedMcpServer
         .string()
         .optional()
         .describe(
-          'Peer turn model — claude-code: fable-5 / sonnet-5 / opus-5 / haiku-4.5. ' +
+          'Peer turn model — claude-code: fable-5.1 / sonnet-5 / opus-5 / haiku-4.5. ' +
             "Default: opus-5. Resume-immutable. Unknown values reach the peer and fail as AGENT_ERROR there.",
         ),
       effort: z

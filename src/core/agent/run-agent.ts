@@ -98,7 +98,7 @@ export interface AgentParams {
   roots?: string[];
   suffix?: string;
   /**
-   * Model tury; claude-code: `fable-5` / `sonnet-5` / `opus-5` / `haiku-4.5`.
+   * Model tury; claude-code: `fable-5.1` / `sonnet-5` / `opus-5` / `haiku-4.5`.
    * Domyslnie `'opus-5'` (rozwiazywany tutaj).
    */
   model?: string;

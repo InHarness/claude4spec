@@ -20,7 +20,7 @@ if (typeof window !== 'undefined') {
   }
 }
 
-export type ChatModel = 'fable-5' | 'sonnet-5' | 'opus-5' | 'haiku-4.5';
+export type ChatModel = 'fable-5.1' | 'sonnet-5' | 'opus-5' | 'haiku-4.5';
 export type ChatThinking = 'off' | 'low' | 'medium' | 'high' | 'max';
 
 // Models that use adaptive thinking + a reasoning-effort knob (claude_effort),
@@ -30,7 +30,7 @@ export type ChatThinking = 'off' | 'low' | 'medium' | 'high' | 'max';
 // "everything but Haiku" — spelled out rather than negated, because the next
 // model added is likelier to be adaptive than not and a negation would silently
 // class it wrong.
-export const ADAPTIVE_MODELS: ReadonlySet<ChatModel> = new Set(['fable-5', 'sonnet-5', 'opus-5']);
+export const ADAPTIVE_MODELS: ReadonlySet<ChatModel> = new Set(['fable-5.1', 'sonnet-5', 'opus-5']);
 export const isAdaptiveModel = (m: ChatModel): boolean => ADAPTIVE_MODELS.has(m);
 
 // Map UI thinking level → adapter architectureConfig.
@@ -48,7 +48,7 @@ export function thinkingToConfig(
   return { claude_thinking: 'enabled', claude_thinking_budget: budget };
 }
 
-const CHAT_MODELS: readonly ChatModel[] = ['fable-5', 'sonnet-5', 'opus-5', 'haiku-4.5'];
+const CHAT_MODELS: readonly ChatModel[] = ['fable-5.1', 'sonnet-5', 'opus-5', 'haiku-4.5'];
 export const isChatModel = (m: unknown): m is ChatModel =>
   typeof m === 'string' && (CHAT_MODELS as readonly string[]).includes(m);
 

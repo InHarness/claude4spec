@@ -433,7 +433,7 @@ export function ChatOverlay() {
   );
 
   const MODEL_LABELS: Record<ChatModel, string> = {
-    'fable-5': 'Fable 5',
+    'fable-5.1': 'Fable 5.1',
     'sonnet-5': 'Sonnet 5',
     'opus-5': 'Opus 5',
     'haiku-4.5': 'Haiku 4.5',
@@ -1009,7 +1009,7 @@ interface ModelSettingsPopoverProps {
 function ModelSettingsPopover({ model, setModel, thinking, setThinking, planMode, setPlanMode, currentPage, sessionLocked, resumeConstraints, planModeEnforceable, onClose }: ModelSettingsPopoverProps) {
   const models: Array<{ id: ChatModel; label: string; sub: string }> = [
     { id: 'opus-5', label: 'Opus 5', sub: 'Deep reasoning · default · 1M ctx' },
-    { id: 'fable-5', label: 'Fable 5', sub: 'Next-gen · deep reasoning · 1M ctx' },
+    { id: 'fable-5.1', label: 'Fable 5.1', sub: 'Next-gen · deep reasoning · 1M ctx' },
     { id: 'sonnet-5', label: 'Sonnet 5', sub: 'Balanced · 1M ctx' },
     { id: 'haiku-4.5', label: 'Haiku 4.5', sub: 'Fast · light · 200k ctx' },
   ];

@@ -7,7 +7,7 @@ import type { ChatModel } from '../state/chat.js';
  * się nie wczyta (albo gdy nie zna aliasu).
  *
  * Do 0.2.16 stała tu pełna, ręcznie utrzymywana tabela per model. Katalog
- * przestał być jednorodny (`fable-5` / `sonnet-5` / `opus-5` → 1M,
+ * przestał być jednorodny (`fable-5.1` / `sonnet-5` / `opus-5` → 1M,
  * `haiku-4.5` → 200k), więc kopia rozjeżdżałaby się z prawdą o 5x na modelu
  * domyślnym. Prawdę zna `getModelContextWindow('claude-code', model)` z
  * @inharness-ai/agent-adapters — ale main entry paczki ciągnie `fs/promises`
