@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { resolvePluginSubagents } from '../../../src/server/services/plugin-subagents.js';
 import { layeredSpecExplore as explorer } from '../src/subagents/layered-spec-explore.js';
+import { checksProjection } from '../src/skills/layered-vertical-slices.js';
 import { layeredSpecReview as sub } from '../src/subagents/layered-spec-review.js';
 
 /**
@@ -33,14 +34,18 @@ describe('c4s-plugin-layered-vertical-slices — the reviewer it contributes', (
   /**
    * One source for the rules. A `promptBody` that inlined them would enforce a
    * style the project may already have moved past — the failure is silent, which
-   * is why it is asserted rather than reviewed.
+   * is why it is asserted rather than reviewed. What it carries instead is the
+   * check list, and only as the projection the skill module derives from the
+   * same `parts/*` the workflow is composed from.
    */
-  it('fetches the rules instead of carrying them', () => {
+  it('fetches the rules instead of carrying them, and carries the checks only as the shared projection', () => {
     expect(sub.promptBody).toContain('load_skill_file');
+    expect(sub.promptBody).toContain('workflows/daily.md');
     expect(sub.promptBody).toContain('SKILL.md');
-    // The rules themselves — the vocabulary a copy of §6 would inevitably bring.
-    expect(sub.promptBody).not.toContain('~250 lines');
+    expect(sub.promptBody).toContain(checksProjection);
+    // The rules themselves — the vocabulary a copy of the catalogue would bring.
     expect(sub.promptBody).not.toContain('## Module slice schema');
+    expect(sub.promptBody).not.toContain('Before placing content, ask both');
   });
 
   it('leaves the host frame its mechanics', () => {

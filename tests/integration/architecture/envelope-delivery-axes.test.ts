@@ -595,7 +595,10 @@ describe('the reference style fulfils the M15 form clause', () => {
    * job to lift it, not the agent's in flight.
    */
   it('[ac:ac-load-skill-file-layered-vertical-slic-2] carries the no-code rule together with its scope', () => {
-    const rule = resolved.content.slice(resolved.content.indexOf('## 6. Quality rules'));
+    // Since the reformat the rules travel with the workflows, not in the core;
+    // `daily.md` carries the whole catalogue at its end.
+    const daily = resolved.files['workflows/daily.md']?.content ?? '';
+    const rule = daily.slice(daily.indexOf('## Authoring rules'));
 
     expect(rule).toContain('**No code, no tests, no build config.**');
     // The scope names what the prohibition does NOT cover — the canonical shape of

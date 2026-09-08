@@ -1,7 +1,7 @@
 <!--
 Template for the index file of a layered-vertical-slices spec.
 Copy this file, rename it (default `index.md`, or `SKILL.md` if the spec is also a Claude Code skill), and replace placeholders.
-See SKILL.md §5 and §6 for guidance.
+Placeholders only; the rules that shape it travel with the workflow you are running.
 -->
 
 # Specification: <Project Name>

@@ -1,4 +1,5 @@
 import type { PluginSubagentContribution } from '@c4s/plugin-runtime';
+import { checksProjection } from '../skills/layered-vertical-slices.js';
 
 /**
  * The style's own reviewer — the second half of the authorial capability.
@@ -15,11 +16,15 @@ import type { PluginSubagentContribution } from '@c4s/plugin-runtime';
  * explorer's says where; this one's says whether. Overlap the two and the model
  * picks between them at random.
  *
- * `promptBody` deliberately carries NO style rules. The rules live in `SKILL.md`,
- * this envelope publishes that file, and the reviewer reads it through
- * `load_skill_file` at the moment it judges. Copying them here would produce a
- * second copy that drifts from the first — and the reviewer would then enforce a
- * style the project no longer writes in, which is worse than no reviewer.
+ * `promptBody` carries NO copy of the style rules. The rules live in the style
+ * package — since the reformat in `workflows/daily.md`, which carries the whole
+ * catalogue at its end — and the reviewer reads them through `load_skill_file`
+ * at the moment it judges. What the prompt does carry is the CHECK LIST, and it
+ * is a projection, not a copy: `checksProjection` is extracted from the same
+ * `parts/*` the workflow is composed from, when this envelope loads, so a
+ * symptom reworded in its part is reworded here at the next load. A hand-kept
+ * copy would drift, and the reviewer would then enforce a style the project no
+ * longer writes in, which is worse than no reviewer.
  *
  * `contextTypes: ['chat']` is written out although it is the default. It is a
  * claim, not a formality: the only thing that calls this subagent is a closing
@@ -40,7 +45,11 @@ export const layeredSpecReview: PluginSubagentContribution = {
 
 ## Get the rules before you use them
 
-The rules are NOT in this prompt, on purpose: they live in the style package and they move. Open them at the start of every review with \`load_skill_file\` — \`SKILL.md\` for the conventions you judge against, and the \`workflows/\` or \`templates/\` file for the genre at hand when a rule's application is not obvious from \`SKILL.md\` alone. A rule you recall rather than read is a rule you may be enforcing in a version the project has moved past.
+The rules are NOT copied into this prompt, on purpose: they live in the style package and they move. Open them at the start of every review with \`load_skill_file("layered-vertical-slices", "workflows/daily.md")\` — that workflow carries the placement rules, the authoring rules and the reading protocols at its end; \`SKILL.md\` holds the concepts and the layout, and \`templates/\` the shape of the genre at hand. A rule you recall rather than read is a rule you may be enforcing in a version the project has moved past.
+
+What you look for, projected from that same source when this envelope loads so it cannot drift from it — the mechanically decidable symptoms, each named after the rule it belongs to:
+
+${checksProjection}
 
 ## Get the change
 
@@ -54,7 +63,7 @@ Then read the surrounding text. A diff shows what moved; most rules in this styl
 
 ## Report deviations
 
-Per deviation, three things and nothing else: the ADDRESS it sits at (\`MXX-slug/LY-slug\`, page path plus anchor), the RULE it breaks in the words of \`SKILL.md\`, and WHAT THE TEXT WOULD HAVE TO SAY instead. Order them by how much a later reader is misled. Say plainly when a change conforms — one line, no ceremony.
+Per deviation, three things and nothing else: the ADDRESS it sits at (\`MXX-slug/LY-slug\`, page path plus anchor), the RULE it breaks by its number and in the words of the catalogue, and WHAT THE TEXT WOULD HAVE TO SAY instead. Order them by how much a later reader is misled. Say plainly when a change conforms — one line, no ceremony.
 
 Judge the change, not the specification: a rule broken by text this change did not touch is pre-existing and belongs at the end, marked as such, if it belongs in the report at all.
 

@@ -2,9 +2,10 @@
 Template for a layer file (`layers/LX-<slug>.md`) in a layered-vertical-slices spec.
 Copy this file, rename it, and replace placeholders.
 
-A layer file is **radically thin**: Purpose + Role + Module slice schema. Nothing else.
-For the rules driving that — what belongs in the slice schema vs. the implementor module,
-how to handle external/no implementor — see SKILL.md §2 (concepts), §5 (templates), §6 (quality rules).
+A layer file is **radically thin**: Purpose + Role + Module slice schema, nothing else (rule 2).
+Its prose does not name modules: the `Implementor module:` slot below is the only place a
+module identifier appears, and the `MNN`/`mNN` inside the embed pattern is a placeholder of
+the template, not a reference (rule 2a).
 -->
 
 # LX — <Layer Name>

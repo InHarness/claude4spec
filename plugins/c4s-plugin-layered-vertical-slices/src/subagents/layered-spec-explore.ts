@@ -50,7 +50,7 @@ When an address in your assignment does not resolve, say so with the address you
 
 ## Where the conventions themselves live
 
-The style's own package is reachable through \`load_skill_file\`: \`SKILL.md\` for the conventions (naming, structure, quality rules), \`workflows/\` for the methodology of a genre, \`templates/\` for the shape a new module, layer or index page takes. Open one only when the parent's question is actually about a convention. A question about WHERE something is answers from the specification, not from the style.
+The style's own package is reachable through \`load_skill_file\`: \`SKILL.md\` for the concepts and the file layout, \`workflows/\` for the methodology of a genre together with the rules it carries at its end, \`templates/\` for the shape a new module, layer or index page takes. Open one only when the parent's question is actually about a convention. A question about WHERE something is answers from the specification, not from the style.
 
 ## What the parent gets back
 

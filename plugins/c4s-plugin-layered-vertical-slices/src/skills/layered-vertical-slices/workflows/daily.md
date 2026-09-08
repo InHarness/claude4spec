@@ -2,7 +2,7 @@
 
 Use this when **the `<index>` file already exists in the CWD** — the spec is in place and the user is feeding ideas, problems, or explicit edits into it. For greenfield bootstrap, see `workflows/bootstrap.md`.
 
-This is the mode you spend most hours in. The user almost never speaks in spec-language — they speak in *intent* ("what if endpoints could be versioned?"), in *complaint* ("this auth flow feels off"), or in concrete edits ("add a `retries` column to M03"). Your job is to translate, locate, and edit — without breaking the rules in SKILL.md §6.
+This is the mode you spend most hours in. The user almost never speaks in spec-language — they speak in *intent* ("what if endpoints could be versioned?"), in *complaint* ("this auth flow feels off"), or in concrete edits ("add a `retries` column to M03"). Your job is to translate, locate, and edit — within the rules carried at the end of this file.
 
 **Default to small, focused changes.** If a single user message implies a sweep across many files, propose splitting it before you touch anything.
 
@@ -16,9 +16,9 @@ Output a 2–3 line restatement and ask one targeted clarification if anything i
 
 Only after the user confirms (or after you've read enough of the existing spec to confidently restate without asking) move to Step 1.
 
-If the user is in **explicit-change mode** (Mode A in Step 2), the restatement is shorter — one line — but still mandatory. Routine edits still benefit from verifying the *why*; tautological "yes please add the column" is the cheap case, not a reason to skip. The cost of one extra line of confirmation is tiny; the cost of writing a column whose purpose dissolves in three months is real.
+If the user is in **explicit-change mode** (Mode A in Step 2), the restatement is one line — but still mandatory: the cost of one line of confirmation is tiny, the cost of a column whose purpose dissolves in three months is real.
 
-This step is also the place to push back: if you cannot construct a coherent user-need behind the request — if the request reads as architectural taste or speculative cleanup with no user-visible improvement — say so plainly and ask. The skill is not a stenographer; it's a translator, and a translator can refuse to translate noise.
+This step is also the place to push back: if you cannot construct a coherent user-need behind the request — architectural taste, speculative cleanup with no user-visible improvement — say so plainly and ask. A translator can refuse to translate noise.
 
 ## Step 1 — Orient
 
@@ -40,14 +40,14 @@ If you cannot decide between A and B in one read, ask the user a single short cl
 
 Map the idea or problem onto the specification grid. State your mapping out loud and ask for confirmation before editing.
 
-Routing needs the whole grid in view, and reading module files one by one to get it is how this step turns into a survey. Run the **cross-cutting reading protocol** (SKILL.md §8) instead: two calls give you every module's `Cel`, which is exactly the altitude at which "which module owns this?" is decided. Its silent failure mode is yours to remember here — a module whose section is not named `## Cel` is absent from the result with no warning, so check the sweep's count against `<index>`'s module table before concluding that no module owns the change. A short count has two causes that look identical — a renamed heading, or a first page you never paged past — so read `hasMore` before you go looking for the rename.
+Routing needs the whole grid in view, and reading module files one by one to get it is how this step turns into a survey. Run the **cross-cutting reading protocol** (carried at the end of this file) instead: two calls give you every module's `Cel`, which is exactly the altitude at which "which module owns this?" is decided. Its silent failure mode is yours to remember here — a module whose section is not named `## Cel` is absent from the result with no warning, so check the sweep's count against `<index>`'s module table before concluding that no module owns the change. A short count has two causes that look identical — a renamed heading, or a first page you never paged past — so read `hasMore` before you go looking for the rename.
 
 The candidate buckets:
 
 - **New module.** The user introduces a new entity or feature. Propose a module number (next free), a slug, and which layers it touches.
 - **Change to an existing module.** New column, new operation, new edge case, new acceptance criterion, new dependency.
-- **Layer-level change.** A new convention, a new pattern, or a contract change that affects multiple modules. Apply the layer-purity rule (SKILL.md §6) *before* placing anything in a layer: if the candidate paragraph stops being true once you imagine any single module gone, it is not a layer change.
-- **Cross-module relation.** A new dependency between two existing modules. It is written as a **dependency record**, not as a table row in either file — one record per direction, tagged with the tag of the module that *requires* (SKILL.md §6 rule 3a). So a one-way dependency is one record; a mutual one is **two**, each with its own reason. Neither module's file gains a row; `<index>`'s relations diagram may still need updating.
+- **Layer-level change.** A new convention, a new pattern, or a contract change that affects multiple modules. Apply the layer-purity test (rule 2) *before* placing anything in a layer: if the candidate paragraph stops being true once you imagine any single module gone, it is not a layer change.
+- **Cross-module relation.** A new dependency between two existing modules. It is a **dependency record** (rule 3a), not a row in either file — one per direction, so a mutual relation is two. `<index>`'s relations diagram may still need updating.
 - **Not a spec change at all.** Implementation detail, UX micro-decision, code style, choice of internal helper. Say so plainly and stop. The spec is for architecture; not every interesting thought belongs in it.
 - **Not yet decided.** The idea is real but unresolved. Add it to `<index>`'s `Open questions` section verbatim instead of editing modules. Move it out of `Open questions` later when the user resolves it.
 
@@ -57,47 +57,34 @@ Present your translation as 2–4 lines and wait for confirmation. Always thread
 
 ## Step 4 — Edit
 
-Make the focused change to the relevant file(s). Apply *all* of SKILL.md §6, especially:
-- Module-specific details stay in the module, not in the layer (layer-purity rule).
-- Each module-side section follows the schema declared in its layer's `## Module slice schema`.
-- The module lists every layer it actually touches.
-- When you relocate content between files (module → module, section → layer, sub-layer split-out), preserve the anchor and just move the content. Do **not** leave a "moved to MXX" line in the source file.
-
-If the change makes a module file head past ~250 lines, propose splitting it: convert `modules/MXX-<slug>.md` into `modules/MXX-<slug>/`, keep the module's own substance in `MXX-<slug>.md`, and move the dominant layer slice to `LY-<slug>.md` (filename matches `layers/LY-<slug>.md`).
+Make the focused change to the relevant file(s). The rules at the end of this file bind here: the placement rules (2, 2a, 3, 3a, 9) decide where content goes, the authoring rules (1, 4–8) what the file must then satisfy. Two that bite most often in an edit: a module-side section follows the schema in its layer's `## Module slice schema`, and content relocated between files keeps its anchor and leaves no breadcrumb behind (rule 9). A file the edit pushes past its budget is split per rule 5 — propose it, do not do it silently.
 
 ## Step 5 — Drift check
 
-After non-trivial edits, scan `<index>` against files-on-disk:
+After non-trivial edits, walk the check list — every mechanically decidable symptom of the rules this file carries — against `<index>` and the files on disk:
 
-- Every entry in the module table has a file? Every module file has a row?
-- Every layer touched by any module appears in the layer table?
-- **Does every `L\d+` mentioned in a module file have a corresponding layer section in that same file?** A layer named in passing but never given a section is the drift rule 3 exists to catch — the set of sections is the only declaration of which layers a module touches, so a mention without a section is a claim with no home.
-- **Does every dependency record carry the tag of its own requiring module?** An untagged record is invisible to the module whose section should show it: the embed selects on that tag and nothing else, so the edge exists in the data and nowhere on the page.
-- Every relation declared in a module's `## Zależności` section appears in the index's relations diagram?
-- If something was removed, is it marked retired rather than silently deleted?
+<!-- include: checks -->
 
 If you find drift, surface it as a short punch list and ask the user before fixing — drift can be intentional (work-in-progress).
 
 ## Step 6 — Style review (always, before you report)
 
-Delegate the saved change to the **`spec-review`** subagent and wait for its answer. This step is not conditional and not the user's to ask for: the point of it is that you are not the only reader of what you just wrote, and a reviewer you call only when you doubt yourself reviews nothing that needed reviewing.
+Delegate the saved change to the **`spec-review`** subagent and wait for its answer — hand it the files and addresses you touched in Step 4, nothing else: it reads the rules itself and fetches the change itself. This step is not conditional and not the user's to ask for; a reviewer you call only when you doubt yourself reviews nothing that needed reviewing.
 
-Hand it the scope — the files and addresses you touched in Step 4. It reads the rules from `SKILL.md` itself, so do not restate them in the delegation; it fetches the change through `release_diff` against the current state, so do not paste the diff either.
+Its answer comes back in exactly one of five shapes; the set is closed and the shapes are mutually exclusive: **deviations** (carry each into Step 7 with its address), **no deviations**, **no input / empty delta** (report it as that, never as a clean review), **partial review** (say which part went unreviewed), or **an empty return** — no text block at all — meaning its turn budget ran out. Report the last as **"review not performed — turn budget exhausted"**, naming the scope you handed over: neither a clean review nor a crash. Do **not** re-run it on the same scope — the second run exhausts the same way; hand it a narrower scope or leave the gap stated.
 
-Its answer comes back in exactly one of five shapes. The set is closed — there is no sixth — and the shapes are mutually exclusive: read the answer, decide which one it is, and report that one. They are not interchangeable, and none of them collapses into another.
-
-- **deviations** — it judged the change and found something. Carry each one into Step 7 with its address, verbatim enough that the user can see what the rule required.
-- **no deviations** — it judged the change and found nothing. Say so, once.
-- **no input / empty delta** — it had nothing to work from: no release to compare against, or nothing changed. Report it as that, never as a clean review.
-- **partial review** — the delta did not fit and it judged a subset. Say which part went unreviewed. Do not re-run it hoping for a fuller pass; narrow the scope or leave the gap stated.
-- **an empty return — no text block at all — meaning its turn budget ran out.** The run was cut off before any report existed. Report it as **"review not performed — turn budget exhausted"**, naming the scope you handed over. Never as a clean review, and never as a crash: nothing broke, it simply ran out. Do **not** re-run it on the same scope — the second run exhausts the same way. Either hand it a narrower scope, or leave the gap stated and named.
-
-The last shape is the dangerous one, and it is why the set is spelled out as closed: the other four come back as something the reviewer SAID, and this one comes back as silence — indistinguishable, if you are not looking for it, from having delegated a review and been told everything is fine.
-
-One turn does not reach this step: a read-only one, which saved nothing. `spec-review` reviews a change, so with no edit behind you there is nothing to hand it — and it is not mounted in that turn anyway. Answer the question and stop; do not report a missing subagent as a failure.
-
-Do not fix what it reports on your own initiative. A deviation is a finding for Step 7; whether to act on it is the user's call, exactly as with the drift punch list in Step 5.
+A read-only turn saved nothing, so it does not reach this step and `spec-review` is not mounted in it; answer the question and stop. Do not fix what the reviewer reports on your own initiative — a deviation is a finding for Step 7, and acting on it is the user's call, exactly as with the drift punch list in Step 5.
 
 ## Step 7 — Stop
 
 State what changed, point to the file(s), relay the reviewer's verdict from Step 6, and stop. Do not auto-loop into "what else can we improve?" — wait for the user. The user drives the next round.
+
+---
+
+<!-- include: parts/placement.md -->
+
+<!-- include: parts/authoring.md -->
+
+<!-- include: parts/reading-sweep.md -->
+
+<!-- include: parts/reading-deps.md -->
