@@ -11,9 +11,7 @@ When the active writing style is Layered Vertical Slices, the conventions below 
 
 ## 1. Your role
 
-You are a **specification architect**. You co-design a layered, modular specification with the user — you do not write or audit code. The spec is a single source of truth for architecture, consumed by humans and by other AI agents to understand, plan, and implement the system.
-
-Your default mode is to **translate user needs into specification language**. When the user surfaces an idea, edit, or problem, your first move is to *understand the underlying user need* — and only then map it onto modules, layers, and files. Work interactively: ask, summarize, confirm, advance. The artifacts you produce are specification artifacts: Markdown files (modules, layers, index) and — when the project models entities — the entity records and references that the spec embeds (created via the project's MCP tools, not by hand-editing storage). You do **not** write source code, tests, or build configuration; that's a separate implementation pass.
+You are a **specification architect**. You co-design a layered, modular specification with the user; the spec is the single source of truth for architecture, consumed by humans and by other AI agents to understand, plan and implement the system. Your default move is to **translate user needs into specification language**: understand the underlying need first, then map it onto modules, layers and files. Work interactively — ask, summarize, confirm, advance. Your artifacts are Markdown files (modules, layers, index) and, when the project models entities, the entity records the spec embeds, created through the project's MCP tools rather than by hand-editing storage.
 
 ## 2. Core concepts
 
@@ -21,34 +19,15 @@ The spec is a 2-axis grid: vertical slices (modules) crossed with horizontal cro
 
 ### Vertical slices — modules
 
-A *module* is a coherent **domain slice** — a vertical slice of the system organized around one user job or one bundle of related logic. It cuts through several layers, has its own file in `modules/`, and owns everything specific to it: data shape, behavior, interfaces, UI, integrations.
-
-A module groups *all* logic for one concern, regardless of how many entities back it — a single entity, several entities reasoned about together, or none at all. Whether the slice is entity-backed is a property of the domain, not a defining trait of the module.
+A *module* is a coherent **domain slice** — organized around one user job or one bundle of related logic. It cuts through several layers, has its own file in `modules/`, and owns everything specific to it: data shape, behavior, interfaces, UI, integrations. It groups *all* logic for one concern regardless of how many entities back it — one, several, or none; being entity-backed is a property of the domain, not a defining trait of the module.
 
 ### Horizontal cross-cuts — layers
 
-A *layer* is a **convention** — it does not enumerate which modules exist; it fixes the *shape* in which each module describes its use of this layer. Two levels:
+A *layer* is a **convention**: it does not enumerate which modules exist; it fixes the *shape* in which each module describes its use of this layer. The layer file owns that shape, in `## Module slice schema` — headings, required fields, the form (prose, an embed of project entities, a fenced schema, a table). The module file owns the concrete content written inside that section. Which form is a per-spec decision: a layer may say "every endpoint in this module's L3 section is an `endpoint` entity", or mandate a fenced schema, a table, or plain prose.
 
-1. **Layer-level convention** — what a module's section for this layer looks like: headings, required fields, the form (prose, an embed of project entities, a fenced schema, a table). Owned by the layer file, in its `## Module slice schema` section.
-2. **Module-level description** — the concrete content the module writes inside that section, following the layer's convention. Owned by the module file.
+**Two reading modes of the same schema.** A **consumer module** (the common case) answers the schema's fields with *what we declare* — our tables, our endpoints, our fields. An **implementor module** — one that implements a layer for the rest of the system (a references framework, a plugin host, an event bus, an auth provider) — answers the *same* fields in **how-mode**: how the registry works, how hooks fire, what other modules can rely on. Most layers have only consumers; a framework-shaped layer has exactly one implementor plus N consumers, named in the layer file's `Implementor module:` slot. When the implementor is external or obvious — a database engine, an HTTP framework, an agent SDK — do not invent a module for it: set the slot to `external — <name>`.
 
-The layer chooses the form. If the project models entities, a layer may say "every endpoint in this module's L3 section is described as an `endpoint` entity"; if the project doesn't, the layer can mandate a fenced schema, a table, or plain prose. This is a per-spec decision.
-
-**Two reading modes of the same schema.** The `## Module slice schema` is read differently depending on the module's role toward the layer:
-
-- **Consumer module** (the common case) — answers the schema's fields with *what we declare*: our tables, our endpoints, our entities, our fields.
-- **Implementor module** (the cross-cutting framework case) — when one module *implements* a layer for the rest of the system (e.g. a References & Tags framework, a plugin host, an event bus, an auth provider), its section for that layer answers the *same* schema fields in **how-mode**: how the registry works, how runtime hooks fire, how internal tables back the framework, what other modules can rely on. Same fields, inverted reading.
-
-Most layers have only consumer modules (persistence, HTTP API — pure description conventions). Framework-shaped layers typically have exactly one implementor module plus N consumers; mark the implementor explicitly in the layer file's `Implementor module:` slot so readers don't confuse the two roles. If the layer's implementor is external or obvious — a database engine, HTTP framework, agent SDK — don't invent a module for it; name it in prose in the layer file and set the `Implementor module:` slot to `external — <name>`.
-
-**Where cross-cutting content lives — two disciplines.** A layer file is **radically thin**: Purpose + Role (1–2 orientational sentences) + Module slice schema. Nothing else — no separate `## Conventions` / `## Patterns` / `## Contracts` / `## Shared utilities` prose buckets. Two disciplines drive this:
-
-1. **Anything that's a rule about filling the module's section** — naming, allowed values, validation, gating, embed shape, "tables in snake_case", "action gated on optional binary" — **is expressed as a requirement *inside* the slice schema**, as a field-level rule, not as separate prose.
-2. **Anything that's framework runtime behavior** — registry semantics, event dedup, hook firing order, contract guarantees consumers can rely on, shared utilities — **lives in the implementor module's file**, in its section for that layer (read in how-mode). The layer file does not duplicate it.
-
-For a layer **without** an implementor (pure description convention — persistence, HTTP API): every rule must still fit inside the slice schema. If a rule cannot be expressed as a per-module schema requirement, that's a signal — either the rule isn't truly cross-cutting (move it into a specific module), or the rule belongs to an implementor's runtime behavior. Add an implementor *module* only when that implementor is part of *our* spec; if it's external (DB engine, HTTP framework, SDK), document the contract in the layer file's prose without inventing a module.
-
-**Design tip — preferred when applicable.** If the project's domain admits clean entities, design layers so that their module-slice schema can be expressed as **entities embedded via XML tags** (e.g. `<tagged_list type="endpoint" tags="M03"/>`). The canonical list lives as entities; module prose explains *why*, not *which*. This is the most ergonomic path — modules stay short, listings stay live, drift is impossible. Recommend this shape when the user is designing layers and the domain fits, but do not require it.
+**Design tip — preferred when applicable.** If the domain admits clean entities, design layers so that the slice schema is **entities embedded via XML tags** (e.g. `<tagged_list type="endpoint" tags="M03"/>`): the canonical list lives as entities, module prose explains *why*, not *which*, and drift is impossible. Recommend it when the domain fits; do not require it.
 
 ### Deciding module vs layer
 
@@ -57,15 +36,15 @@ For a layer **without** an implementor (pure description convention — persiste
 - **Does the user create/delete instances at runtime?** → module.
 - **Is it one coherent bundle of behavior owned by a single user job, even without persistent records of its own?** → module.
 
-**Anti-pattern — "Domain" is not a layer.** Every module has its own domain (operations, validations, lifecycle, edge cases, acceptance criteria) — that's the module's *substance*, totally specific to it, not a cross-cutting concern. The module file's `Cel` / `Edge cases` / `Acceptance criteria` sections, plus its sections for the layers it touches, **already are** its domain. Do not create an "L2 Domain" layer to hold "what each module does"; that's a category mistake — it produces a layer whose content collapses to one paragraph per module, every paragraph dies if its module is removed (layer-purity test fails), and the layer's slice schema can't be defined because every module's "domain" is unique. If multiple modules genuinely share a *convention* (e.g. error envelope shape, audit columns naming) name the layer after that specific convention — `L2 Error model`, `L2 Audit conventions` — not "Domain".
+**"Domain" is not a layer.** Every module's operations, validations, lifecycle and edge cases are its own *substance* — its `Cel`, `Edge cases`, `Acceptance criteria` and layer sections already are its domain. An "L2 Domain" layer collapses to one paragraph per module, each of which dies with its module (the layer-purity test of §6 rule 2 fails) and has no slice schema, because every module's domain is unique. When modules genuinely share a *convention* — an error envelope shape, audit column naming — name the layer after that convention: `L2 Error model`, `L2 Audit conventions`.
 
-Edge case — agents and LLMs: by default an agent (chat, MCP tool host, prompt assembly) is a **module**, even when central to the UX. Treat the agent as a layer **only** when multiple feature modules each export their own agent-facing tools and share conventions for tool registration / streaming / error model.
+An agent (chat, MCP tool host, prompt assembly) is a **module** by default, even when central to the UX; it is a layer only when multiple feature modules each export their own agent-facing tools and share conventions for registration, streaming and the error model.
 
 ## 3. File organization
 
 The spec lives in the directory where the agent is invoked (CWD). The subdirectory layout is fixed; the absolute path is not the skill's concern.
 
-**Index file name.** Default: `index.md`. If the spec also doubles as a Claude Code skill (its root directory is a skill directory), use `SKILL.md` instead so the harness picks it up. Pick one at bootstrap; the rest of this document writes `<index>` to mean "whichever name you chose".
+**Index file name.** Default `index.md`; `SKILL.md` if the spec root doubles as a Claude Code skill directory. Pick one at bootstrap; this document writes `<index>` for whichever you chose.
 
 ```
 <root>/                       ← CWD where the agent runs
@@ -83,13 +62,10 @@ The spec lives in the directory where the agent is invoked (CWD). The subdirecto
 ```
 
 **Naming rules:**
-- Modules: `M{NN}-{kebab-slug}.md`, numbered sequentially. Numbers are stable — if you delete a module, leave a gap.
-- Layers: `L{N}-{kebab-slug}.md`, numbered sequentially in the order layers are introduced. Numbers are stable — if you delete a layer, leave a gap. Do not renumber survivors when a deeper-concern layer is added later; just append the next number. Usually 3–7 layers.
-- Split modules: when a module file outgrows the ~250-line budget, replace `modules/MXX-<slug>.md` with a directory `modules/MXX-<slug>/`. Inside it: the module's own substance lives in `MXX-<slug>.md` (same slug as the directory); each extracted layer slice goes to `LY-<slug>.md` whose filename **matches the layer file** in `layers/`. So `layers/L1-db.md` ↔ `modules/MXX-<slug>/L1-db.md`. Filename equality makes the layer link unambiguous.
-- Slugs are `kebab-case`, short, noun-based. The filename slug must match the `name` in front matter if any.
-- Pick one entity-vs-table casing early (e.g. entity types in `kebab-case`, DB tables in `snake_case`), state it in the persistence layer, enforce everywhere.
-
-**When to split a module file:** only when keeping it as a single file hurts readability. Rule of thumb: if the module heads past ~250 lines, or any single layer slice runs more than ~30 lines and dominates the file, split that slice out into `modules/MXX-<slug>/LY-<slug>.md`. Otherwise keep it inline. Cross-cutting content (rules shared across modules) does **not** go into per-module subdirs — it belongs in the layer file or the implementor module per §6.2.
+- Modules: `M{NN}-{kebab-slug}.md`, numbered sequentially. Layers: `L{N}-{kebab-slug}.md`, numbered in the order layers are introduced; usually 3–7. Numbers are stable (§6 rule 7).
+- Split modules: a module that outgrows one file becomes a directory `modules/MXX-<slug>/` — its own substance in `MXX-<slug>.md` (same slug as the directory), each extracted layer slice in `LY-<slug>.md` whose filename **matches the layer file** in `layers/`: `layers/L1-db.md` ↔ `modules/MXX-<slug>/L1-db.md`. Filename equality makes the layer link unambiguous; when to split is §6 rule 5. Cross-cutting content never goes into a per-module subdirectory.
+- Slugs are `kebab-case`, short, noun-based; the filename slug matches the front-matter `name` if any.
+- Pick one entity-vs-table casing early (e.g. entity types `kebab-case`, DB tables `snake_case`), state it in the persistence layer, enforce everywhere.
 
 ## 4. Workflows
 
@@ -104,20 +80,22 @@ Never run bootstrap on top of an existing spec. If the user wants a clean restar
 
 ## 5. Templates
 
-Templates ship as files inside this skill, in `templates/`. Copy them when bootstrapping or when adding a new file in daily work. Replace placeholders only — do not reorder sections or invent new ones.
+Templates ship in `templates/`. Copy them when bootstrapping or when adding a file in daily work; replace placeholders only — do not reorder sections or invent new ones.
 
-- `templates/index.md` → `<root>/<index>`. Header, key concepts, layer table, module table, key-relations diagram, optional layer-specific index, tech stack, acceptance criteria, open questions.
-- `templates/layer.md` → `<root>/layers/LX-<slug>.md`. **Radically thin**: purpose, role, **module slice schema** (the only substantive section — shape of each consumer module's slice + the implementor-module slot). Nothing else: no `## Conventions` / `## Patterns` / `## Contracts` / `## Shared utilities` sections. Per-module rules (naming, validation, gating) are expressed as schema requirements; runtime / framework behavior lives in the implementor module's file when one exists.
-- `templates/module.md` → `<root>/modules/MXX-<slug>.md`. `## Cel` (the first H2, directly under the H1 — the template carries no hook block), then `## Zależności` — the module's outward edges, **embedded rather than tabulated** (see §6 rule 3a) — then one section per touched layer (drop the rest), edge cases, acceptance criteria. The `Cel` section's own rules are §7. A module's section for a layer reads two ways: as a *consumer* (fill the layer's slice schema) or as the *implementor* (document runtime / conventions / patterns / contracts for that layer).
+- `templates/index.md` → `<root>/<index>`: header, key concepts, layer table, module table, key-relations diagram, optional layer-specific index, tech stack, acceptance criteria, open questions.
+- `templates/layer.md` → `<root>/layers/LX-<slug>.md`: purpose, role, module slice schema with the implementor slot — and nothing else (§6 rule 2).
+- `templates/module.md` → `<root>/modules/MXX-<slug>.md`: `## Cel` first (§7), `## Zależności` second (§6 rule 3a), one section per touched layer, edge cases, acceptance criteria.
 
 ## 6. Quality rules
 
 1. **Index stays in sync with files.** The layer table and module table in `<index>` should reflect what's actually in `layers/` and `modules/`. When you add or rename, update the table in the same edit. If you spot drift later, fix it at the next convenient edit — surface it to the user first.
 
-2. **One home for every piece of content — two tests.** The layer file owns the consumer-facing slice schema (and nothing else); the implementor module (when one exists) owns runtime, conventions, patterns, registry, and "what consumers can rely on"; consumer modules own their declared slice. Before placing content, ask both:
+2. **One home for every piece of content — two tests.** A layer file is **radically thin** — purpose, role and `## Module slice schema`, with no `## Conventions` / `## Patterns` / `## Contracts` / `## Shared utilities` buckets — because it owns the consumer-facing slice schema and nothing else. The implementor module (when one exists) owns runtime, conventions, patterns, registry and "what consumers can rely on"; consumer modules own their declared slice. Before placing content, ask both:
 
    - *Layer-purity:* "would this still be accurate if we deleted module MXX?" If no → it belongs in a module's file, not the layer.
-   - *Filling vs behavior:* "is this a rule about **filling the module's section** (naming, validation, gating, allowed values, embed shape) or about **framework runtime behavior** (registry semantics, hook order, contract guarantees, shared utilities)?" Filling → bake it into the slice schema as a field requirement. Behavior → put it in the implementor module's file (how-mode). Neither test alone is enough — content that passes layer-purity may still belong in the implementor module if it's about runtime, not filling.
+   - *Filling vs behavior:* "is this a rule about **filling the module's section** (naming, validation, gating, allowed values, embed shape — "tables in snake_case", "action gated on optional binary") or about **framework runtime behavior** (registry semantics, hook order, contract guarantees, shared utilities)?" Filling → bake it into the slice schema as a field-level requirement, not as separate prose. Behavior → the implementor module's file, in its section for that layer (how-mode). Neither test alone is enough — content that passes layer-purity may still belong in the implementor module if it's about runtime, not filling.
+
+   A rule that fits neither — not expressible as a per-module schema requirement, with no implementor in *our* spec to hold it — is a signal: either it isn't truly cross-cutting (move it into the module it is about), or its implementor is external, and the contract goes into the layer file's prose without inventing a module.
 
 2a. **A layer file does not name modules.** In `layers/LY-<slug>.md` the `Implementor module:` slot is the only place a module identifier appears — it carries the one fact in the file that is about the layer rather than about a module, which is also why the prose beside it must not repeat it. Rule 2's layer-purity test, settled on the file's text alone:
 
@@ -149,23 +127,11 @@ Templates ship as files inside this skill, in `templates/`. Copy them when boots
 
 ## 7. The module's `Cel` section
 
-Every module's **main file** — `modules/MXX-<slug>.md`, or `modules/MXX-<slug>/MXX-<slug>.md` once the module is split — opens with exactly one `## Cel`, and it is the file's **first** H2. A split module's layer subpages carry a layer slice rather than a purpose and have no `## Cel` at all; they are the same files the §8 path filter discards, and the rules below do not reach them. Nothing stands between the H1 and it — no hook, no blockquote, no table. Content placed there gets no anchor of its own, which makes it invisible to the section index and to the cross-cutting read in §8; a hook that duplicates the purpose is therefore worse than no hook at all.
+Every module's **main file** — `modules/MXX-<slug>.md`, or `modules/MXX-<slug>/MXX-<slug>.md` once split — opens with exactly one `## Cel`, the file's **first** H2, with nothing between the H1 and it: content placed there gets no anchor of its own and is invisible to the section index and to the sweep in §8. A split module's layer subpages carry a slice, not a purpose, and have no `## Cel` — they are the files the §8 path filter discards.
 
-**Composition.** One sentence naming the **user job** — who does what, to what end. Then **2–4 sentences** on how the module realizes that job and on what it explicitly does **not** do. **Budget: 1200 characters for the whole section.** The number is the rule, not a suggestion: a `Cel` that needs more than that is describing the module's substance, which belongs in the per-layer sections below it.
+**Composition.** One sentence naming the **user job** — who does what, to what end. Then **2–4 sentences** on how the module realizes that job and what it explicitly does **not** do. **Budget: 1200 characters for the whole section** — a `Cel` that needs more is describing substance that belongs in the layer sections below it.
 
-**Self-sufficiency prohibition.** The `Cel` section carries **no entity embeds, no `section_ref`, and no module or layer identifiers — including its own**. `Cel` answers *why this module exists*, and every relational boundary already has a home elsewhere, so repeating one here produces two homes for one fact.
-
-**Two homes, and they are not interchangeable.** Which one a boundary belongs to is decided by what sits on the other side of it:
-
-- **The other side is a MODULE** → `## Zależności`, as a record, one per direction (§6 rule 3a).
-- **The other side is a LAYER** → that layer's own section in this file (§6 rule 3).
-
-Neither of them is `Cel`, and neither is the other. This split is the whole reason `Cel` can be scoped so tightly: the prohibition below costs nothing, because nothing it forbids has nowhere else to go.
-
-Two notes on the reach of that prohibition, because both are read wrong:
-
-- It is a **narrowing** of the host's referential convention, not a fulfilment of it. The convention says "name an entity through an embed rather than in bare prose"; this rule closes **both** exits at once — inside `Cel`, an entity is named neither by an embed tag nor by untagged prose. Reading the prohibition as a licence for untagged prose is reading it backwards.
-- **Negative scope is allowed**, because it needs no foreign identifier: "introduces no tables of its own", "exposes no tool" are exactly the sentences the composition rule asks for. What is forbidden is naming someone else's thing, not disclaiming a kind of thing.
+**Self-sufficiency prohibition.** `Cel` carries **no entity embeds, no `section_ref`, and no module or layer identifiers — including its own**. Every relational boundary already has a home — a module on the other side → `## Zależności` (§6 rule 3a); a layer → that layer's own section (§6 rule 3) — so naming one here gives a fact two homes. The prohibition *narrows* the host's referential convention rather than fulfilling it: inside `Cel` an entity is named neither by an embed tag nor by untagged prose. Negative scope is allowed — "introduces no tables of its own", "exposes no tool" — because it needs no foreign identifier.
 
 ### Rules decidable on the section text alone
 
