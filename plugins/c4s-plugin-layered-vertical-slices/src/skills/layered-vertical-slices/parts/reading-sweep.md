@@ -13,7 +13,7 @@ search_pages({
 })
 ```
 
-Map mode returns addresses with no prose, which is the whole point: you want the anchors now and the bodies once. **`limit` is part of the call**, set well above any module count you expect, because a windowed map reports no shortfall of its own — the sweep looks complete and is not. Read `total` and `hasMore` in the answer and page on `offset` until `hasMore` is false. This matters more here than anywhere else in the protocol: a module missing from an unread second page looks exactly like a module whose heading was renamed (the failure mode at the end of this section), and the repair for one does nothing for the other.
+Map mode returns addresses with no prose: you want the anchors now and the bodies once. **`limit` is part of the call**, set well above any module count you expect — a windowed map reports no shortfall of its own. Read `total` and `hasMore` in the answer and page on `offset` until `hasMore` is false: a module missing from an unread second page looks exactly like a module whose heading was renamed (the failure mode below), and the repair for one does nothing for the other.
 
 A map row without an `anchor` cannot feed call 2. If that is what comes back, the root carries no section index and the corpus cannot be swept this way — stop and say so; no amount of retrying changes it.
 
@@ -34,12 +34,10 @@ get_sections({ anchors: [ …every anchor from call 1… ] })
 
 Batch the anchors into as many calls as the tool's per-call limit requires — it refuses a longer list rather than truncating it, and says so — and watch `truncated` on the way back: the response is width-budgeted, and at a 1200-character `Cel` a large corpus will start coming back with bodies degraded. "Two calls" is the protocol's shape, not a promise that the second one is literally singular.
 
-This rests on the `Cel` section's **stable anchor**, assigned once at first indexing and unchanged by later edits: it is what makes the map from call 1 valid input to call 2. A change to how anchors are assigned breaks this protocol, not merely its performance.
+This rests on the `Cel` section's **stable anchor**, assigned once at first indexing: it is what makes the map from call 1 valid input to call 2.
 
 Both properties above — `map` mode and `pathInclude` — are **parts** of the protocol rather than optimizations of it. Degrading either does not slow the sweep down; it corrupts the result.
 
 ### Failure mode this protocol introduces
 
-The sweep matches on the `## Cel` heading, so **a module that names that section anything else drops out of the result silently** — no error, no warning, no empty row. It is simply not there, and nothing in the response says a module is missing.
-
-The variant that causes this today is the English `## Purpose` in a module's main file. When a sweep returns fewer modules than the index lists, this is the first thing to check; the repair is to rename the heading to `## Cel` while keeping the section's existing anchor, which keeps every address already handed out valid.
+The sweep matches on the `## Cel` heading, so **a module that names that section anything else drops out of the result silently** — no error, no empty row, nothing in the response saying a module is missing. The variant that causes this today is the English `## Purpose`. When a sweep returns fewer modules than the index lists, check this first; the repair is to rename the heading to `## Cel` while keeping the section's existing anchor, so every address already handed out stays valid.

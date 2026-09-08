@@ -42,7 +42,7 @@ Based on the brief, propose a concrete set of layers specific to this project. E
 - An agent platform where every feature exposes agent tools: `L1 DB`, `L2 Agent Toolset Conventions`, `L3 HTTP API`, `L4 UI`.
 - A static content generator: `L1 Sources`, `L2 Transform`, `L3 Output`.
 
-**Do not propose `L2 Domain` (or `L Domain`, `Business Logic`, etc.).** Every module's domain — its operations, validations, lifecycle, edge cases — is the module's substance, not a layer (see SKILL.md §2 anti-pattern). If multiple modules share a specific cross-cutting *convention* (error envelope shape, audit columns, validation framework), name the layer after that convention precisely (`L2 Error model`, `L2 Audit conventions`) rather than the catch-all "Domain".
+**Do not propose `L2 Domain`** (or `Business Logic`): a module's domain is its own substance, not a layer (SKILL.md §2). A convention several modules genuinely share is a layer named after that convention — `L2 Error model`, `L2 Audit conventions` — never the catch-all.
 
 Present as a table:
 
@@ -65,7 +65,7 @@ From the entities + features, propose modules. For each, list which layers it to
 
 Guidance:
 - Each **entity type** from Phase 1 is a candidate module — sometimes one entity per module, sometimes several related entities (versioning, history, lookup tables) cluster into one domain slice. Decide per cluster, guided by user job rather than table count.
-- Non-entity features can also be modules (config, agent, sync) — see SKILL.md §2 "Vertical slices — modules".
+- Non-entity features can also be modules (config, agent, sync) (SKILL.md §2).
 - Bootstrap/project-config is usually the first module (`M01`).
 - Modules can skip layers they don't touch (e.g. a pure-UI module might not touch L1).
 - Aim for 3–10 modules. If you're heading toward 15+, suggest merging related ones or deferring scope.
@@ -86,32 +86,24 @@ After writing, list the created files back to the user and ask: *"Skeleton is in
 
 For each module (in the chosen order), fill its file in two parts:
 
-1. **Module's own substance** (its domain — *not* a layer): `Cel`, `Edge cases`, `Acceptance criteria`. Ask the user about the module's operations, validations, lifecycle, and edge cases here. This is the module file's heart and does not belong to any layer section. For `Acceptance criteria`, follow SKILL.md §6.8: when the project models AC entities, create the criteria as `ac` entities via the project's MCP tools (tagged `mNN` / `mNN-edge`, with `kind` and `verifies`) and embed them with `<tagged_list type="ac" tags="mNN"/>`; fall back to an inline `- [ ]` checklist only when the project does not model AC as entities.
+1. **Module's own substance** (its domain — *not* a layer): `Cel`, `Edge cases`, `Acceptance criteria`. Ask the user about the module's operations, validations, lifecycle, and edge cases here. This is the module file's heart and does not belong to any layer section. For `Acceptance criteria`, rule 8 (below) says which form: `ac` entities embedded by tag when the project models them, an inline `- [ ]` checklist otherwise.
 2. **Per-layer sections** — for each layer the module touches, ask a layer-scoped question and write the section following that layer's `## Module slice schema`. For example, for a module that touches L1 (persistence) and L3 (HTTP API):
    - *"M03 persistence (L1): what columns does the entity have? Any unique constraints? Any relations?"* → write the L1 section per the layer's schema (or, if it dominates the module file, split M03 into `modules/M03-<slug>/` and move the slice to `modules/M03-<slug>/L1-<slug>.md`).
    - *"M03 HTTP API (L3): what endpoints expose this entity?"* → write the L3 section per the layer's schema.
 
 Do not ask "what does this module do at the domain level" as a separate per-layer question — that's already covered by the module's `Cel` and `Edge cases`. If the user starts describing operations and validations, capture them in the module's own substance, not in a "domain layer" section.
 
-3. **Inter-module relations — created as records, not written as rows.** Once a module's substance is in place, ask what it would lose without each of the other modules, and create **one dependency record per direction** (SKILL.md §6 rule 3a): tagged with the tag of the module that *requires*, with a reason saying what flows and never between whom. A mutual relation is two records. The module's `## Zależności` section holds only the embed and one sentence of prose — do not write a table there, and do not go back to the other module's file to add a mirroring row.
-
-   **Do not put layers in these records.** A relation with a layer is not a dependency of this kind; it belongs in that layer's own section, which step 2 above already wrote.
+3. **Inter-module relations — created as records, not written as rows.** Once a module's substance is in place, ask what it would lose without each of the other modules, and create **one dependency record per direction** (rule 3a; what a record carries is the `module-dependency` type's own contract). A mutual relation is two records. `## Zależności` holds only the embed and one sentence — no table, and no mirroring row in the other module's file.
 
 After finishing a module, summarize what you captured and ask the user to confirm before moving to the next.
 
 ## Phase 6 — Layer fill-in
 
-After all modules are written, fill each `layers/LX-<slug>.md`. Layer files are **radically thin** — only three things:
-
-- The layer's role in the system (1–2 orientational sentences).
-- **Module slice schema** — the only substantive section. The form in which each consumer module declares its slice (headings, fields, an embed of project entities, a fenced schema, a table). **Bake every per-module rule into the schema as a field-level requirement** — naming ("table name in snake_case"), validation ("retries: positive int"), gating ("required if optional binary present, omitted otherwise"), allowed values, embed shape. No separate `## Conventions` / `## Patterns` / `## Contracts` sections. When the project models entities and the layer's slice is enumerable, prefer entities embedded via XML tags (e.g. `<tagged_list type="<entity-type>" tags="MNN"/>`) — modules stay short, listings stay live, drift becomes impossible.
-- **Implementor module slot** — name the module that implements this layer, or write `external — <name>` when the implementor lives outside our spec (DB engine, HTTP framework, SDK), or `none — pure description convention`. See SKILL.md §2 for when each applies.
-
-If a per-module rule won't fit inside the schema, that's a signal — see SKILL.md §2 ("Where cross-cutting content lives") for how to resolve it. Reflect on the layer instead of adding a prose bucket to the layer file.
+After all modules are written, fill each `layers/LX-<slug>.md`. A layer file is **radically thin** (rule 2) — three things: the layer's role (1–2 orientational sentences); the **module slice schema**, the form in which each consumer module declares its slice (headings, fields, an embed of project entities, a fenced schema, a table), with every per-module rule baked in as a field-level requirement — naming ("table name in snake_case"), validation ("retries: positive int"), gating, allowed values, embed shape — and an entity embed preferred wherever the slice is enumerable; and the **`Implementor module:` slot** — `MNN — <name>`, `external — <name>` for a DB engine, HTTP framework or SDK, or `none — pure description convention`. A per-module rule that will not fit the schema is a signal; rule 2 says where it goes instead of a prose bucket.
 
 **Implementor modules — second pass.** For every layer that names an *internal* implementor module, go to that module's file and expand its section for the layer to cover everything implementation-side: cross-cutting conventions (naming, error handling, structure), patterns consumers copy, contracts ("what consumers can rely on" / "what consumers must provide"), runtime registry, hooks, and shared utilities. The layer file does not duplicate any of this. Skip layers whose implementor is `external — <name>` or `none` — there is no in-spec module to expand.
 
-Apply the layer-purity rule (see SKILL.md §6) as you go: every line in a layer file must stay true if any single module is removed. If a sentence only makes sense because of M03, it belongs in M03, not here.
+Apply the layer-purity test (rule 2) as you go: every line in a layer file must stay true if any single module is removed.
 
 After all layers are written, update `<index>`:
 - Fill in the *Key relations / dependencies* diagram (which modules depend on which, which modules register into which framework layers).

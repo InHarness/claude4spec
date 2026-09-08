@@ -2,7 +2,7 @@
 
 Use this when **the `<index>` file already exists in the CWD** — the spec is in place and the user is feeding ideas, problems, or explicit edits into it. For greenfield bootstrap, see `workflows/bootstrap.md`.
 
-This is the mode you spend most hours in. The user almost never speaks in spec-language — they speak in *intent* ("what if endpoints could be versioned?"), in *complaint* ("this auth flow feels off"), or in concrete edits ("add a `retries` column to M03"). Your job is to translate, locate, and edit — without breaking the rules in SKILL.md §6.
+This is the mode you spend most hours in. The user almost never speaks in spec-language — they speak in *intent* ("what if endpoints could be versioned?"), in *complaint* ("this auth flow feels off"), or in concrete edits ("add a `retries` column to M03"). Your job is to translate, locate, and edit — within the rules carried at the end of this file.
 
 **Default to small, focused changes.** If a single user message implies a sweep across many files, propose splitting it before you touch anything.
 
@@ -16,9 +16,9 @@ Output a 2–3 line restatement and ask one targeted clarification if anything i
 
 Only after the user confirms (or after you've read enough of the existing spec to confidently restate without asking) move to Step 1.
 
-If the user is in **explicit-change mode** (Mode A in Step 2), the restatement is shorter — one line — but still mandatory. Routine edits still benefit from verifying the *why*; tautological "yes please add the column" is the cheap case, not a reason to skip. The cost of one extra line of confirmation is tiny; the cost of writing a column whose purpose dissolves in three months is real.
+If the user is in **explicit-change mode** (Mode A in Step 2), the restatement is one line — but still mandatory: the cost of one line of confirmation is tiny, the cost of a column whose purpose dissolves in three months is real.
 
-This step is also the place to push back: if you cannot construct a coherent user-need behind the request — if the request reads as architectural taste or speculative cleanup with no user-visible improvement — say so plainly and ask. The skill is not a stenographer; it's a translator, and a translator can refuse to translate noise.
+This step is also the place to push back: if you cannot construct a coherent user-need behind the request — architectural taste, speculative cleanup with no user-visible improvement — say so plainly and ask. A translator can refuse to translate noise.
 
 ## Step 1 — Orient
 
@@ -46,8 +46,8 @@ The candidate buckets:
 
 - **New module.** The user introduces a new entity or feature. Propose a module number (next free), a slug, and which layers it touches.
 - **Change to an existing module.** New column, new operation, new edge case, new acceptance criterion, new dependency.
-- **Layer-level change.** A new convention, a new pattern, or a contract change that affects multiple modules. Apply the layer-purity rule (SKILL.md §6) *before* placing anything in a layer: if the candidate paragraph stops being true once you imagine any single module gone, it is not a layer change.
-- **Cross-module relation.** A new dependency between two existing modules. It is written as a **dependency record**, not as a table row in either file — one record per direction, tagged with the tag of the module that *requires* (SKILL.md §6 rule 3a). So a one-way dependency is one record; a mutual one is **two**, each with its own reason. Neither module's file gains a row; `<index>`'s relations diagram may still need updating.
+- **Layer-level change.** A new convention, a new pattern, or a contract change that affects multiple modules. Apply the layer-purity test (rule 2) *before* placing anything in a layer: if the candidate paragraph stops being true once you imagine any single module gone, it is not a layer change.
+- **Cross-module relation.** A new dependency between two existing modules. It is a **dependency record** (rule 3a), not a row in either file — one per direction, so a mutual relation is two. `<index>`'s relations diagram may still need updating.
 - **Not a spec change at all.** Implementation detail, UX micro-decision, code style, choice of internal helper. Say so plainly and stop. The spec is for architecture; not every interesting thought belongs in it.
 - **Not yet decided.** The idea is real but unresolved. Add it to `<index>`'s `Open questions` section verbatim instead of editing modules. Move it out of `Open questions` later when the user resolves it.
 
@@ -57,13 +57,7 @@ Present your translation as 2–4 lines and wait for confirmation. Always thread
 
 ## Step 4 — Edit
 
-Make the focused change to the relevant file(s). Apply *all* of SKILL.md §6, especially:
-- Module-specific details stay in the module, not in the layer (layer-purity rule).
-- Each module-side section follows the schema declared in its layer's `## Module slice schema`.
-- The module lists every layer it actually touches.
-- When you relocate content between files (module → module, section → layer, sub-layer split-out), preserve the anchor and just move the content. Do **not** leave a "moved to MXX" line in the source file.
-
-If the change makes a module file head past ~250 lines, propose splitting it: convert `modules/MXX-<slug>.md` into `modules/MXX-<slug>/`, keep the module's own substance in `MXX-<slug>.md`, and move the dominant layer slice to `LY-<slug>.md` (filename matches `layers/LY-<slug>.md`).
+Make the focused change to the relevant file(s). The rules at the end of this file bind here: the placement rules (2, 2a, 3, 3a, 9) decide where content goes, the authoring rules (1, 4–8) what the file must then satisfy. Two that bite most often in an edit: a module-side section follows the schema in its layer's `## Module slice schema`, and content relocated between files keeps its anchor and leaves no breadcrumb behind (rule 9). A file the edit pushes past its budget is split per rule 5 — propose it, do not do it silently.
 
 ## Step 5 — Drift check
 
