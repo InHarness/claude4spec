@@ -234,6 +234,36 @@ export function markUserInputResolvedInReplay(
   }
 }
 
+/**
+ * Abort every turn in these registries and empty them — the sweep a
+ * ProjectContext runs when it is disposed.
+ *
+ * Lives here, next to the registries' own type and to the cancel helper, rather
+ * than inline in `dispose()`: the ordering is the load-bearing part and it is
+ * the same ordering the abort cascade uses. Pending input promises are rejected
+ * BEFORE the adapter is aborted, so a turn parked on a user question fails with
+ * the cancellation rather than hanging on a project that no longer exists.
+ *
+ * Tolerant by construction. An adapter that already finished is the normal case
+ * at shutdown, not an error, and a dispose that threw partway would skip
+ * everything after it — including closing the database.
+ */
+export function abortAllTurns(
+  activeAdapters: Map<string, ActiveAdapter>,
+  pendingInputs: Map<string, PendingInput>,
+): void {
+  for (const [, entry] of [...activeAdapters]) {
+    try {
+      cancelPendingForRequest(pendingInputs, entry.requestId, activeAdapters);
+      entry.adapter.abort();
+    } catch {
+      /* already-finished adapter — expected, not a failure */
+    }
+  }
+  activeAdapters.clear();
+  pendingInputs.clear();
+}
+
 export function cancelPendingForRequest(
   pendingInputs: Map<string, PendingInput>,
   requestId: string,

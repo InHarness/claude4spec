@@ -121,7 +121,7 @@ import {
 import { buildBasePluginPackages } from '../routes/plugins.js';
 import type { PluginLoadRecord } from '../core/plugin-host/loader.js';
 import type { ActiveAdapter, PendingInput } from '../routes/agent-turn.js';
-import { cancelPendingForRequest } from '../routes/agent-turn.js';
+import { abortAllTurns } from '../routes/agent-turn.js';
 import { ProjectWsEmitter } from '../ws/project-emitter.js';
 import { ensureWelcomePage } from './bootstrap.js';
 import type { WorkspaceRegistry } from './registry.js';
@@ -1691,16 +1691,7 @@ async function buildInner(
        * streaming rows, and the pending user-input promises reject instead of
        * hanging forever on a project that no longer exists.
        */
-      for (const [, entry] of [...activeAdapters]) {
-        try {
-          cancelPendingForRequest(pendingInputs, entry.requestId, activeAdapters);
-          entry.adapter.abort();
-        } catch {
-          /* an already-finished adapter is the normal case, not an error */
-        }
-      }
-      activeAdapters.clear();
-      pendingInputs.clear();
+      abortAllTurns(activeAdapters, pendingInputs);
       // One call retires every mount and subscription of THIS context —
       // pages, artifacts, entities, releases and the plugin overlay — and settles
       // its pending debounce timers. `scope: 'process'` mounts (the base plugin
