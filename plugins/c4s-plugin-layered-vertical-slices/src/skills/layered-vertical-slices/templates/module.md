@@ -18,22 +18,8 @@ cross-cutting read.
 
 ## Zależności
 
-<!--
-The second H2, and its heading is literal — `## Zależności`, with the diacritic.
-
-This section holds the EMBED and one sentence of prose. No markdown table: a
-module-to-module dependency is a `module-dependency` entity, one per ordered
-pair, and a mutual relation is therefore TWO entities rather than one row read
-in both directions. The entity carries the tag of the module that REQUIRES, so
-this embed shows this module's OUTGOING edges.
-
-Incoming edges are deliberately not here and cannot be embedded: they carry the
-other module's tag. Read them with
-`list_entities({ type: "module-dependency", filters: { provider: "MXX" } })`.
-
-Relations with LAYERS are not dependencies in this sense and do not belong in
-this section — each one lives in that layer's own section below.
--->
+<!-- The second H2, heading literal with the diacritic. The embed and one sentence, nothing
+     else — no table (SKILL.md §6 rule 3a). What a record is belongs to the `module-dependency` type. -->
 
 <tagged_list type="module-dependency" tags="mXX"/>
 

@@ -129,12 +129,7 @@ Templates ship as files inside this skill, in `templates/`. Copy them when boots
 
 3. **Every module lists every layer it touches — and the set of layer sections is the ONLY declaration of that.** In the module file, there's a section per touched layer with at minimum a 2-line note, following the schema declared in that layer's `## Module slice schema`. There is no second place that says which layers a module touches: no summary section, no table of layers at the top of the file. Two lists of the same fact drift, and the one that drifts is always the summary. It follows that anything to say about this module's relationship with a layer belongs **inside that layer's section**, never in a roll-up above it.
 
-3a. **A module-to-module dependency is a record, not a table row.** The `## Zależności` section carries an embed of this module's outward edges plus one sentence of prose, and nothing else. Four rules govern the records themselves:
-
-   - **One record describes ONE direction.** The unit is the ordered pair "A requires B". A mutual relation is therefore **two** records, not one read both ways — which is what lets each side state its own reason.
-   - **The record carries the tag of the module that REQUIRES, and only that one.** That is what makes a module's `## Zależności` embed show its OUTGOING edges. Incoming edges carry the other module's tag and can never be embedded; they are a **query**, not an embed — see §8.
-   - **The reason field says WHAT would be lost, never BETWEEN WHOM.** The two parties are already named by the record's own fields; naming one again in the reason gives a single fact two homes, which §6.2 forbids. Concretely: **no `M\d+` token inside that prose**. Writing the module's *name* instead of its number is the same mistake and nothing will catch it for you.
-   - **Layers do not appear in these records at all.** A relation with a layer is not a dependency in this sense; it lives in that layer's section, per rule 3 above and §7.
+3a. **A module-to-module dependency is a record, not a table row.** `## Zależności` is the module's second H2 and carries exactly two things: the embed of this module's outgoing edges (`<tagged_list type="module-dependency" tags="mXX"/>`) and one sentence on why the module leans outward. What a record *is* — one ordered pair, the requiring module's tag, a reason that says what flows — is the `module-dependency` type's own contract, stated in its system-prompt block, not here. Two decisions are this style's: **layers never appear in these records** (a relation with a layer lives in that layer's section, rule 3), and **retiring a module takes two deletions** — its outgoing records and the incoming ones, which carry other modules' tags and are reached by filter, not by tag (§8.2); nothing checks that you did the second one. *Symptom:* a markdown table under `## Zależności`; a record naming an `L\d+`; a reason with an `M\d+` token in it.
 
 4. **Ask, don't assume.** When the user's answer is ambiguous, stop and ask one short clarification. Do not invent column names, endpoint paths, or business rules. **Special case — user-need rationale:** if the *why* behind a module or change is unclear, that is a hard stop. Name your gap and ask before authoring. Do not infer the user-need from technical context alone.
 
@@ -187,7 +182,7 @@ Each item below can be settled by reading the section, with no judgement about t
 
 ## 8. Cross-cutting reading protocols
 
-This section is for an agent that **writes nothing** — one orienting itself in an existing corpus before routing a change, partitioning a diff, or locating a deviation. There are **two** protocols here and they answer different questions: the first sweeps *what every module is for*, the second traces *what a module is wired to*. Neither is a suggested shape; both are the protocol.
+This section is for an agent that **writes nothing** — one orienting itself in an existing corpus before routing a change, partitioning a diff, or locating a deviation. There are **two** protocols here and they answer different questions: the first sweeps *what every module is for*, the second traces *what a module is wired to*. Neither is a suggested shape; both are the protocol. Each names a tool and says why this style calls it the way it does; what the tool accepts, returns and refuses is the tool's own description, not this section's.
 
 ### 8.1 Sweeping every module's purpose
 
@@ -204,11 +199,9 @@ search_pages({
 })
 ```
 
-`mode: "map"` returns section identity — `{ rootId, path, anchor, heading, headingPath }`, plus the `kind` discriminator the next paragraph turns on — with no prose, which is the whole point: you want the addresses now and the bodies once.
+Map mode returns addresses with no prose, which is the whole point: you want the anchors now and the bodies once. **`limit` is part of the call**, set well above any module count you expect, because a windowed map reports no shortfall of its own — the sweep looks complete and is not. Read `total` and `hasMore` in the answer and page on `offset` until `hasMore` is false. This matters more here than anywhere else in the protocol: a module missing from an unread second page looks exactly like a module whose heading was renamed (the failure mode at the end of this section), and the repair for one does nothing for the other.
 
-**`limit` is part of the call, because the default is 20.** Omit it and any corpus past twenty modules is answered with a windowed map that reports no shortfall of its own — the sweep looks complete and is not. The response carries `total` and `hasMore`: read both, and page on `offset` until `hasMore` is false rather than trusting one call. This matters more here than anywhere else in the protocol, because the failure it produces is indistinguishable from the one at the end of this section — a module missing from a truncated first page looks exactly like a module whose heading was renamed, and the repair for one does nothing for the other.
-
-**Branch on `kind`, never on the root.** A row carries an `anchor` if and only if its `kind` is `"section"`; on a root with no section index every row comes back `kind: "page"` with no anchor at all, and call 2 is then handed a list of `undefined`. This protocol needs a section-indexed root: if the map returns `kind: "page"` rows, stop and say so — the corpus cannot be swept this way, and no amount of retrying changes that.
+A map row without an `anchor` cannot feed call 2. If that is what comes back, the root carries no section index and the corpus cannot be swept this way — stop and say so; no amount of retrying changes it.
 
 **The path filter is a step of this protocol, not a variant of it.** A module's main file is named after the module — `modules/M03-endpoint.md`, or `modules/M03-endpoint/M03-endpoint.md` once the module is split — and its subpages never begin with that prefix, because they are named after the *layer* they carry (`L1-db.md`). That is exactly what the pattern above encodes: a file directly under `modules/`, or a file inside a module directory whose own name repeats the directory's (the `\2` backreference). Drop the filter and the sweep still succeeds, silently returning the purpose of a **file** rather than the purpose of a **module**. That is not a slower answer; it is a different one.
 
@@ -225,7 +218,7 @@ Two properties of the pattern are deliberate and easy to lose in an edit:
 get_sections({ anchors: [ …every anchor from call 1… ] })
 ```
 
-One call per batch of anchors, and **50 is the ceiling** — `get_sections` refuses a longer list outright with INVALID_ARGUMENT rather than truncating it, so a corpus of sixty modules needs two calls here, not one. Watch `truncated` on the way back as well: the response is width-budgeted, and at a 1200-character `Cel` the budget starts degrading bodies somewhere around a hundred sections. "Two calls" is the protocol's shape, not a promise that the second one is literally singular.
+Batch the anchors into as many calls as the tool's per-call limit requires — it refuses a longer list rather than truncating it, and says so — and watch `truncated` on the way back: the response is width-budgeted, and at a 1200-character `Cel` a large corpus will start coming back with bodies degraded. "Two calls" is the protocol's shape, not a promise that the second one is literally singular.
 
 This rests on the `Cel` section's **stable anchor**, assigned once at first indexing and unchanged by later edits: it is what makes the map from call 1 valid input to call 2. A change to how anchors are assigned breaks this protocol, not merely its performance.
 
@@ -249,16 +242,12 @@ The sweep above answers "what is each module for?". This one answers "what is th
    list_entities({ type: "module-dependency", tags: ["mNN"] })
    ```
 
-3. **Read the INCOMING edges by filter — never by tag.** The records naming `mNN` as the far side carry the *other* module's tag, so no tag query reaches them. They are a filter on the field itself:
-
-   ```
-   list_entities({ type: "module-dependency", filters: { provider: "MNN" } })
-   ```
-
-   **Step 3 is not optional and it is not a refinement of step 2.** It is the half of the graph step 2 structurally cannot see. Skipping it does not give you a smaller answer — it gives you a directed answer while looking like an undirected one, which is the more dangerous of the two. This is also why retiring a module takes **two** deletions, and why nothing checks that you did the second one: the far-side field is not a reference, so a leftover incoming edge dangles silently.
+3. **Read the INCOMING edges by filter — never by tag.** The records naming `mNN` as the far side carry the *other* module's tag, so no tag query reaches them; the `module-dependency` type's own block gives the filter call. **Step 3 is not optional and it is not a refinement of step 2.** It is the half of the graph step 2 structurally cannot see. Skipping it does not give you a smaller answer — it gives you a directed answer while looking like an undirected one, which is the more dangerous of the two. This is also why retiring a module takes **two** deletions (§6 rule 3a): a leftover incoming edge dangles silently.
 
    Mind the spelling: `tags` are lower-case (`m19`), while the field holds what the author wrote (`M19`). The filter matches the field, not the tag.
 
+   **Reachability.** Filtering on a field is an argument of the entity tools, and a thread that mounts only the read-only reader has no way to issue it. In that thread the incoming half is unreachable: say so, rather than issuing a call that will not validate, and let the caller decide whether the outgoing half is enough.
+
 4. **Pull the modules on the far side.** Each record names a module, not an entity — there is nothing to resolve a link through. Map the identifiers back to module files and read their `Cel` sections; that is what turns a list of edges into a picture.
 
-**What this protocol cannot tell you.** A record whose reason names a module in prose rather than by its fields reads as a dependency on something it is not wired to. The rules in §6.3a exist to keep that out of the corpus, but reading is where you will meet the ones that got in.
+**What this protocol cannot tell you.** A record whose reason names a module in prose rather than by its fields reads as a dependency on something it is not wired to. The type's own rules exist to keep that out of the corpus, but reading is where you will meet the ones that got in.
