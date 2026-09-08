@@ -129,8 +129,14 @@ describe('the layered-vertical-slices package keeps the content contract it prom
     expect(catalogue).toMatch(/X handles X/);
   });
 
+  /**
+   * The protocols left the always-on core: they are for an agent that writes
+   * nothing yet, and the workflows that locate a change carry them at the end
+   * (`daily`, `patch`). Asserted on the composed `daily.md`, the document the
+   * agent actually reads them in.
+   */
   it('[ac:ac-load-skill-file-layered-vertical-slic-7] makes the module main-file path filter a step of the protocol, not a variant', () => {
-    const protocol = h2(skill, '8. Cross-cutting reading protocol');
+    const protocol = h2(files['workflows/daily.md'] ?? '', 'Cross-cutting reading protocol 1');
     expect(protocol).toContain('search_pages');
     expect(protocol).toMatch(/mode:\s*"map"/);
     expect(protocol).toContain('pathInclude');
@@ -142,7 +148,7 @@ describe('the layered-vertical-slices package keeps the content contract it prom
   });
 
   it('[ac:ac-protokol-odczytu-przekrojowego-w-skil] declares the path match case-insensitive, and spells it that way', () => {
-    const protocol = h2(skill, '8. Cross-cutting reading protocol');
+    const protocol = h2(files['workflows/daily.md'] ?? '', 'Cross-cutting reading protocol 1');
     expect(protocol).toMatch(/case-insensitive/i);
     // The declaration alone would be a claim the pattern does not honour:
     // `pathInclude` compiles with no `i` flag and JS has no inline `(?i)`, so the
@@ -151,7 +157,7 @@ describe('the layered-vertical-slices package keeps the content contract it prom
     expect(protocol).toContain('[Mm]odules');
   });
 
-  it('[ac:ac-kazdy-z-plikow-workflows-daily-md-wor] points daily, brief and patch at the protocol from their change-locating step', () => {
+  it('[ac:ac-kazdy-z-plikow-workflows-daily-md-wor] carries the protocol into daily and patch, and only its pattern into the brief', () => {
     for (const file of ['workflows/daily.md', 'workflows/brief.md', 'workflows/patch.md']) {
       const body = files[file] ?? '';
       expect({ file, present: body.length > 0 }).toEqual({ file, present: true });
@@ -159,12 +165,22 @@ describe('the layered-vertical-slices package keeps the content contract it prom
         file,
         ref: true,
       });
-      expect({ file, section: body.includes('SKILL.md §8') }).toEqual({ file, section: true });
+    }
+    // The two workflows that locate a change carry the protocol text itself —
+    // spliced at composition, not referenced by section number into a core
+    // that no longer holds it.
+    for (const file of ['workflows/daily.md', 'workflows/patch.md']) {
+      const body = files[file] ?? '';
+      expect({ file, sweep: body.includes('step of this protocol, not a variant') }).toEqual({ file, sweep: true });
+      expect({ file, deps: /Step 3 is not optional/.test(body) }).toEqual({ file, deps: true });
     }
     // The brief thread is the one that cannot RUN the protocol — `search_pages`
     // describes HEAD and a brief is grounded only in `release_diff`. It borrows
     // the path pattern as a classifier over the delta map, and says so, or the
-    // reference reads as an invitation to break §E.
-    expect(files['workflows/brief.md']).toMatch(/pattern, not the call/i);
+    // reference reads as an invitation to break the host's binding on its input.
+    const brief = files['workflows/brief.md'] ?? '';
+    expect(brief).toMatch(/pattern, not the call/i);
+    expect(brief).toContain('[Mm]odules/');
+    expect(brief).not.toContain('search_pages({');
   });
 });

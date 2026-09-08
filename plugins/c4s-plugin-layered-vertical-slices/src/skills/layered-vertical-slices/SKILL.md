@@ -107,7 +107,7 @@ Templates ship in `templates/`. Copy them when bootstrapping or when adding a fi
 
 3. **Every module lists every layer it touches — and the set of layer sections is the ONLY declaration of that.** In the module file, there's a section per touched layer with at minimum a 2-line note, following the schema declared in that layer's `## Module slice schema`. There is no second place that says which layers a module touches: no summary section, no table of layers at the top of the file. Two lists of the same fact drift, and the one that drifts is always the summary. It follows that anything to say about this module's relationship with a layer belongs **inside that layer's section**, never in a roll-up above it.
 
-3a. **A module-to-module dependency is a record, not a table row.** `## Zależności` is the module's second H2 and carries exactly two things: the embed of this module's outgoing edges (`<tagged_list type="module-dependency" tags="mXX"/>`) and one sentence on why the module leans outward. What a record *is* — one ordered pair, the requiring module's tag, a reason that says what flows — is the `module-dependency` type's own contract, stated in its system-prompt block, not here. Two decisions are this style's: **layers never appear in these records** (a relation with a layer lives in that layer's section, rule 3), and **retiring a module takes two deletions** — its outgoing records and the incoming ones, which carry other modules' tags and are reached by filter, not by tag (§8.2); nothing checks that you did the second one. *Symptom:* a markdown table under `## Zależności`; a record naming an `L\d+`; a reason with an `M\d+` token in it.
+3a. **A module-to-module dependency is a record, not a table row.** `## Zależności` is the module's second H2 and carries exactly two things: the embed of this module's outgoing edges (`<tagged_list type="module-dependency" tags="mXX"/>`) and one sentence on why the module leans outward. What a record *is* — one ordered pair, the requiring module's tag, a reason that says what flows — is the `module-dependency` type's own contract, stated in its system-prompt block, not here. Two decisions are this style's: **layers never appear in these records** (a relation with a layer lives in that layer's section, rule 3), and **retiring a module takes two deletions** — its outgoing records and the incoming ones, which carry other modules' tags and are reached by filter, not by tag (the dependency-tracing protocol, delivered with the workflows); nothing checks that you did the second one. *Symptom:* a markdown table under `## Zależności`; a record naming an `L\d+`; a reason with an `M\d+` token in it.
 
 4. **Ask, don't assume.** When the user's answer is ambiguous, stop and ask one short clarification. Do not invent column names, endpoint paths, or business rules. **Special case — user-need rationale:** if the *why* behind a module or change is unclear, that is a hard stop. Name your gap and ask before authoring. Do not infer the user-need from technical context alone.
 
@@ -127,7 +127,7 @@ Templates ship in `templates/`. Copy them when bootstrapping or when adding a fi
 
 ## 7. The module's `Cel` section
 
-Every module's **main file** — `modules/MXX-<slug>.md`, or `modules/MXX-<slug>/MXX-<slug>.md` once split — opens with exactly one `## Cel`, the file's **first** H2, with nothing between the H1 and it: content placed there gets no anchor of its own and is invisible to the section index and to the sweep in §8. A split module's layer subpages carry a slice, not a purpose, and have no `## Cel` — they are the files the §8 path filter discards.
+Every module's **main file** — `modules/MXX-<slug>.md`, or `modules/MXX-<slug>/MXX-<slug>.md` once split — opens with exactly one `## Cel`, the file's **first** H2, with nothing between the H1 and it: content placed there gets no anchor of its own and is invisible to the section index and to the cross-cutting sweep that reads every module's purpose. A split module's layer subpages carry a slice, not a purpose, and have no `## Cel` — they are the files the sweep's path filter discards.
 
 **Composition.** One sentence naming the **user job** — who does what, to what end. Then **2–4 sentences** on how the module realizes that job and what it explicitly does **not** do. **Budget: 1200 characters for the whole section** — a `Cel` that needs more is describing substance that belongs in the layer sections below it.
 
@@ -145,75 +145,3 @@ Each item below can be settled by reading the section, with no judgement about t
 6. **Within the character budget.** *Symptom:* the section body exceeds 1200 characters.
 
 **Item 7 is qualitative only, and the specification does not pretend otherwise.** Written as a yes/no question: *does the opening sentence name a user job?* No machine settles it. The negative test that catches the common failure is tautology — a sentence of the form "X handles X" ("M03 manages endpoints", "the workspace module manages workspaces") names the module's subject, not anyone's job, and fails the question however fluently it reads.
-
-## 8. Cross-cutting reading protocols
-
-This section is for an agent that **writes nothing** — one orienting itself in an existing corpus before routing a change, partitioning a diff, or locating a deviation. There are **two** protocols here and they answer different questions: the first sweeps *what every module is for*, the second traces *what a module is wired to*. Neither is a suggested shape; both are the protocol. Each names a tool and says why this style calls it the way it does; what the tool accepts, returns and refuses is the tool's own description, not this section's.
-
-### 8.1 Sweeping every module's purpose
-
-It collects the purpose of every module in **two calls**, and the steps below are the protocol, not a suggested shape for one.
-
-**Call 1 — map the `Cel` headings.**
-
-```
-search_pages({
-  regex: "^## Cel$",
-  mode: "map",
-  pathInclude: "(^|/)[Mm]odules/(?:([^/]+)/\\2|[^/]+)\\.md$",
-  limit: 200
-})
-```
-
-Map mode returns addresses with no prose, which is the whole point: you want the anchors now and the bodies once. **`limit` is part of the call**, set well above any module count you expect, because a windowed map reports no shortfall of its own — the sweep looks complete and is not. Read `total` and `hasMore` in the answer and page on `offset` until `hasMore` is false. This matters more here than anywhere else in the protocol: a module missing from an unread second page looks exactly like a module whose heading was renamed (the failure mode at the end of this section), and the repair for one does nothing for the other.
-
-A map row without an `anchor` cannot feed call 2. If that is what comes back, the root carries no section index and the corpus cannot be swept this way — stop and say so; no amount of retrying changes it.
-
-**The path filter is a step of this protocol, not a variant of it.** A module's main file is named after the module — `modules/M03-endpoint.md`, or `modules/M03-endpoint/M03-endpoint.md` once the module is split — and its subpages never begin with that prefix, because they are named after the *layer* they carry (`L1-db.md`). That is exactly what the pattern above encodes: a file directly under `modules/`, or a file inside a module directory whose own name repeats the directory's (the `\2` backreference). Drop the filter and the sweep still succeeds, silently returning the purpose of a **file** rather than the purpose of a **module**. That is not a slower answer; it is a different one.
-
-Two properties of the pattern are deliberate and easy to lose in an edit:
-
-- **The path match is case-insensitive, and the pattern has to make it so.** `pathInclude` is a plain regex body: it is compiled with **no `i` flag, and JavaScript offers no inline `(?i)`**, so the insensitivity lives in the pattern's own character classes — hence `[Mm]odules` rather than `modules`, and, in any narrowing that names the module prefix, `[Mm]\d+` rather than `M\d+`. This document writes the naming rule as `M{NN}-{kebab-slug}.md` while a corpus on disk carries `m31-workspace.md`; a pattern spelling a bare `M` therefore works for one author and returns nothing at all for another, with no error in between.
-- **The leading alternation `(^|/)` is not decoration.** Whether the path handed to the filter is relative to its root or carries a prefix is not the protocol's to assume, and a bare `^` that guesses wrong matches nothing — silently. Over-matching is visible; under-matching is not.
-
-**Scope of the sweep.** The pattern deliberately says nothing about the `M{NN}` prefix, so a root whose modules are named otherwise — package pages such as `modules/c4s-plugin-<slug>.md` — is swept on the same terms. Narrow it to numbered modules only when you mean to, and then spell the prefix with the character classes above.
-
-**Call 2 — read the sections you mapped.**
-
-```
-get_sections({ anchors: [ …every anchor from call 1… ] })
-```
-
-Batch the anchors into as many calls as the tool's per-call limit requires — it refuses a longer list rather than truncating it, and says so — and watch `truncated` on the way back: the response is width-budgeted, and at a 1200-character `Cel` a large corpus will start coming back with bodies degraded. "Two calls" is the protocol's shape, not a promise that the second one is literally singular.
-
-This rests on the `Cel` section's **stable anchor**, assigned once at first indexing and unchanged by later edits: it is what makes the map from call 1 valid input to call 2. A change to how anchors are assigned breaks this protocol, not merely its performance.
-
-Both properties above — `map` mode and `pathInclude` — are **parts** of the protocol rather than optimizations of it. Degrading either does not slow the sweep down; it corrupts the result.
-
-### Failure mode this protocol introduces
-
-The sweep matches on the `## Cel` heading, so **a module that names that section anything else drops out of the result silently** — no error, no warning, no empty row. It is simply not there, and nothing in the response says a module is missing.
-
-The variant that causes this today is the English `## Purpose` in a module's main file. When a sweep returns fewer modules than the index lists, this is the first thing to check; the repair is to rename the heading to `## Cel` while keeping the section's existing anchor, which keeps every address already handed out valid.
-
-### 8.2 Tracing a module's dependencies
-
-The sweep above answers "what is each module for?". This one answers "what is this module wired to?", and it takes **four steps** rather than two because the edges are directed and only one direction is reachable by tag.
-
-1. **Identify the modules by substance, not by name.** Start from 8.1 — the `Cel` texts are the altitude at which "which modules is this about?" is decided. A module's slug is a label, not evidence.
-
-2. **Read the OUTGOING edges by tag.** A dependency record carries the tag of the module that requires, so the records tagged `mNN` are exactly what `mNN` depends on:
-
-   ```
-   list_entities({ type: "module-dependency", tags: ["mNN"] })
-   ```
-
-3. **Read the INCOMING edges by filter — never by tag.** The records naming `mNN` as the far side carry the *other* module's tag, so no tag query reaches them; the `module-dependency` type's own block gives the filter call. **Step 3 is not optional and it is not a refinement of step 2.** It is the half of the graph step 2 structurally cannot see. Skipping it does not give you a smaller answer — it gives you a directed answer while looking like an undirected one, which is the more dangerous of the two. This is also why retiring a module takes **two** deletions (§6 rule 3a): a leftover incoming edge dangles silently.
-
-   Mind the spelling: `tags` are lower-case (`m19`), while the field holds what the author wrote (`M19`). The filter matches the field, not the tag.
-
-   **Reachability.** Filtering on a field is an argument of the entity tools, and a thread that mounts only the read-only reader has no way to issue it. In that thread the incoming half is unreachable: say so, rather than issuing a call that will not validate, and let the caller decide whether the outgoing half is enough.
-
-4. **Pull the modules on the far side.** Each record names a module, not an entity — there is nothing to resolve a link through. Map the identifiers back to module files and read their `Cel` sections; that is what turns a list of edges into a picture.
-
-**What this protocol cannot tell you.** A record whose reason names a module in prose rather than by its fields reads as a dependency on something it is not wired to. The type's own rules exist to keep that out of the corpus, but reading is where you will meet the ones that got in.

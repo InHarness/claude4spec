@@ -8,6 +8,8 @@ import workflowPatch from './layered-vertical-slices/workflows/patch.md?raw';
 import templateIndex from './layered-vertical-slices/templates/index.md?raw';
 import templateLayer from './layered-vertical-slices/templates/layer.md?raw';
 import templateModule from './layered-vertical-slices/templates/module.md?raw';
+import partReadingSweep from './layered-vertical-slices/parts/reading-sweep.md?raw';
+import partReadingDeps from './layered-vertical-slices/parts/reading-deps.md?raw';
 
 /**
  * Drop the leading YAML frontmatter block.
@@ -25,6 +27,65 @@ import templateModule from './layered-vertical-slices/templates/module.md?raw';
 function body(raw: string): string {
   const match = /^---\r?\n[\s\S]*?\r?\n---\r?\n/.exec(raw);
   return (match ? raw.slice(match[0].length) : raw).trimStart();
+}
+
+/**
+ * ONE HOME IN SOURCE, N DELIVERIES FROM THIS MODULE.
+ *
+ * A rule is written once, in `parts/`, and spliced into every document that
+ * needs it before its reader reaches the step that depends on it. The agent
+ * loads nothing beyond what it loads today — a workflow arrives already
+ * carrying the rules of its own steps — and the source keeps a single copy
+ * of each, which is the norm the style preaches in rule 2 and its own package
+ * used to break seven times over.
+ *
+ * `parts/*` are SOURCE, not addresses: they are absent from `files`, so no
+ * `load_skill_file` reaches one on its own and there is no second answer to
+ * "where does this rule live". Composition happens here, at import, with
+ * static `?raw` imports and a string replace — no Vite transform, because the
+ * runtime never reads markdown off the disk and three build pipelines (vite,
+ * the envelope's vitest, the host's tests off the source manifest) would be
+ * three chances at different bytes.
+ *
+ * Whitespace-neutral by construction: a marker sits on a line of its own and
+ * is replaced by the part's trimmed text, so the blank lines the author put
+ * around the marker are the blank lines around the splice.
+ */
+const PARTS: Readonly<Record<string, string>> = {
+  'parts/reading-sweep.md': partReadingSweep,
+  'parts/reading-deps.md': partReadingDeps,
+};
+
+/**
+ * The one line the brief workflow borrows from the purpose sweep: the module
+ * main-file pattern, read off the sweep's own call so the two cannot drift.
+ * A brief thread has no `search_pages`, so it takes the pattern, not the call.
+ */
+function modulePathPattern(): string {
+  const match = /^\s*pathInclude:\s*("(?:[^"\\]|\\.)*")/m.exec(partReadingSweep);
+  if (!match) throw new Error('parts/reading-sweep.md no longer carries a `pathInclude:` line');
+  return match[1];
+}
+
+/** Derived splices — text computed from a part rather than copied out of it. */
+const DERIVED: Readonly<Record<string, () => string>> = {
+  'module-path-pattern': () => `\`${modulePathPattern()}\``,
+};
+
+const INCLUDE = /^[ \t]*<!--\s*include:\s*(\S+)\s*-->[ \t]*$/gm;
+
+/** How many documents each include name was spliced into — for the tests. */
+export const includeUsage: Record<string, number> = Object.fromEntries(
+  [...Object.keys(PARTS), ...Object.keys(DERIVED)].map((name) => [name, 0]),
+);
+
+export function compose(doc: string): string {
+  return doc.replace(INCLUDE, (_marker, name: string) => {
+    const text = name in DERIVED ? DERIVED[name]!() : PARTS[name];
+    if (text === undefined) throw new Error(`unknown include "${name}" in the layered-vertical-slices package`);
+    includeUsage[name] = (includeUsage[name] ?? 0) + 1;
+    return text.trim();
+  });
 }
 
 /**
@@ -52,21 +113,21 @@ export const layeredVerticalSlicesStyle: WritingStyleContribution = {
     'Conventions for layered, vertical-slice specifications — module/layer structure, file layout, two workflows (bootstrap and daily), and quality rules. TRIGGER when the active writing style is this slug — editing a spec page, drafting plans, creating modules or layers, answering structural questions.',
   version: 1,
   language: 'en',
-  content: body(skillMd),
+  content: compose(body(skillMd)),
   /**
    * Keys are POSIX paths relative to the skill package — the same addresses
    * `load_skill_file(slug, file)` takes, and the same ones the directory used
    * on disk. A renamed key is a broken cross-reference in the prose, so the
    * shape of this map is part of the contribution, not an implementation
-   * detail of it.
+   * detail of it. `parts/*` are deliberately not keys — see `compose`.
    */
   files: {
-    'workflows/bootstrap.md': workflowBootstrap,
-    'workflows/brief.md': workflowBrief,
-    'workflows/daily.md': workflowDaily,
-    'workflows/patch.md': workflowPatch,
-    'templates/index.md': templateIndex,
-    'templates/layer.md': templateLayer,
-    'templates/module.md': templateModule,
+    'workflows/bootstrap.md': compose(workflowBootstrap),
+    'workflows/brief.md': compose(workflowBrief),
+    'workflows/daily.md': compose(workflowDaily),
+    'workflows/patch.md': compose(workflowPatch),
+    'templates/index.md': compose(templateIndex),
+    'templates/layer.md': compose(templateLayer),
+    'templates/module.md': compose(templateModule),
   },
 };

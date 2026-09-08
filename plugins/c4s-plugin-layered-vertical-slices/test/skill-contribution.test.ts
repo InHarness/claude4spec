@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { layeredVerticalSlicesStyle as style } from '../src/skills/layered-vertical-slices.js';
+import { includeUsage, layeredVerticalSlicesStyle as style } from '../src/skills/layered-vertical-slices.js';
 
 /**
  * The style travels as LITERALS compiled into this module — `?raw` imports that
@@ -62,6 +62,38 @@ describe('c4s-plugin-layered-vertical-slices — the writing style it contribute
     expect(daily).toContain('review not performed');
     // Not a retry: the second run exhausts the same way.
     expect(daily).toMatch(/not\*\* re-run it on the same scope/);
+  });
+
+  /**
+   * One home in source, N deliveries: `parts/*` are spliced in at import and
+   * are not addresses. What can break is a marker that survived into a shipped
+   * string (the agent would read an HTML comment where a rule should be), a
+   * part nobody delivers (a rule with a home and no reader), or a part that
+   * leaked into the address map (two answers to "where does this rule live").
+   */
+  it('splices every part somewhere and ships no unexpanded include marker', () => {
+    const shipped = [style.content, ...Object.values(style.files ?? {})];
+    for (const text of shipped) {
+      expect(text).not.toMatch(/<!--\s*include:/);
+    }
+    for (const [name, uses] of Object.entries(includeUsage)) {
+      expect({ name, uses: uses > 0 }).toEqual({ name, uses: true });
+    }
+    expect(Object.keys(style.files ?? {}).some((k) => k.startsWith('parts/'))).toBe(false);
+  });
+
+  it('delivers the reading protocols with the workflows that locate a change, and only the pattern to the brief', () => {
+    const daily = style.files?.['workflows/daily.md'] ?? '';
+    const patch = style.files?.['workflows/patch.md'] ?? '';
+    const brief = style.files?.['workflows/brief.md'] ?? '';
+    for (const doc of [daily, patch]) {
+      expect(doc).toContain('## Cross-cutting reading protocol 1');
+      expect(doc).toContain('## Cross-cutting reading protocol 2');
+    }
+    // The brief thread has no `search_pages`: it gets the one line it can use.
+    expect(brief).not.toContain('## Cross-cutting reading protocol');
+    expect(brief).toContain('[Mm]odules/');
+    expect(style.content).not.toContain('## Cross-cutting reading protocol');
   });
 
   /**

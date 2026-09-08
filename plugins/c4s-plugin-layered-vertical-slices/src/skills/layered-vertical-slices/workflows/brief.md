@@ -40,7 +40,11 @@ If after filtering nothing substantive remains in a release, say so explicitly: 
 
 The host's block says to probe, partition and fan out; this is how the `pages` dimension of the map is cut in this style. A module is one main file plus, once it is split, a directory of layer subpages — and a slice that carries half a module produces a brief that describes half a behaviour.
 
-Classify each page path with the module main-file pattern from the **cross-cutting reading protocol** (SKILL.md §8): a path that matches is a module's main file; a path under `modules/<dir>/` that does not match is one of that module's subpages. The pattern classifies, it does not group — nothing in a non-match names the module — so group by the path's directory afterwards: every entry under `modules/<dir>/` joins the slice of the main file that directory names. Layer files and `<index>` form their own slice. You take the **pattern, not the call**: `search_pages` describes the repository's current state, and in a brief thread the only ground is `release_diff`; grounding a historical brief in HEAD breaks its self-containment.
+Classify each page path with the module main-file pattern the **cross-cutting reading protocol** sweeps with — its `pathInclude`:
+
+<!-- include: module-path-pattern -->
+
+A path that matches is a module's main file; a path under `modules/<dir>/` that does not match is one of that module's subpages. The pattern classifies, it does not group — nothing in a non-match names the module — so group by the path's directory afterwards: every entry under `modules/<dir>/` joins the slice of the main file that directory names. Layer files and `<index>` form their own slice. You take the **pattern, not the call**: `search_pages` describes the repository's current state, and in a brief thread the only ground is `release_diff`; grounding a historical brief in HEAD breaks its self-containment.
 
 Entities partition by their own type; a deleted entity travels in the same slice as its type. Every slug and path lands in exactly one slice — a slice never handed out is a silently incomplete brief, and nothing downstream catches it.
 
