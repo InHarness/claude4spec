@@ -68,7 +68,9 @@ const PARTS: Readonly<Record<string, string>> = {
 function modulePathPattern(): string {
   const match = /^\s*pathInclude:\s*("(?:[^"\\]|\\.)*")/m.exec(partReadingSweep);
   if (!match) throw new Error('parts/reading-sweep.md no longer carries a `pathInclude:` line');
-  return match[1];
+  // The line is a JS string literal (`\\2`, `\\.md`); the brief gets the regex
+  // itself, not its source form — parsed, so what it reads is what the sweep runs.
+  return JSON.parse(match[1]) as string;
 }
 
 /**
@@ -87,7 +89,7 @@ export function extractChecks(...parts: string[]): string[] {
   for (const part of parts) {
     let section = '';
     let rule = '';
-    for (const line of part.split('\n')) {
+    for (const line of part.split(/\r?\n/)) {
       const heading = /^##+ (.+)$/.exec(line);
       if (heading) {
         section = heading[1]!;
@@ -159,7 +161,7 @@ export const layeredVerticalSlicesStyle: WritingStyleContribution = {
   slug: 'layered-vertical-slices',
   title: 'Layered Vertical Slices',
   description:
-    'Conventions for layered, vertical-slice specifications — module/layer structure, file layout, two workflows (bootstrap and daily), and quality rules. TRIGGER when the active writing style is this slug — editing a spec page, drafting plans, creating modules or layers, answering structural questions.',
+    'Conventions for layered, vertical-slice specifications — module/layer structure, file layout, and four workflows (bootstrap, daily, brief, patch) that carry the rules. TRIGGER when the active writing style is this slug — editing a spec page, drafting plans, creating modules or layers, answering structural questions.',
   /**
    * 2 since the reformat: the quality rules and the reading protocols left
    * `content` for the workflows, which is a change of what a reader of the

@@ -1,6 +1,6 @@
 ---
 title: Layered Vertical Slices
-description: "Conventions for layered, vertical-slice specifications — module/layer structure, file layout, two workflows (bootstrap and daily), and quality rules. TRIGGER when the active writing style is this slug — editing a spec page, drafting plans, creating modules or layers, answering structural questions."
+description: "Conventions for layered, vertical-slice specifications — module/layer structure, file layout, and four workflows (bootstrap, daily, brief, patch) that carry the rules. TRIGGER when the active writing style is this slug — editing a spec page, drafting plans, creating modules or layers, answering structural questions."
 version: 2
 language: en
 ---

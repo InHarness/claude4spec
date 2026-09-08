@@ -10,7 +10,13 @@ The sweep answers "what is each module for?". This one answers "what is this mod
    list_entities({ type: "module-dependency", tags: ["mNN"] })
    ```
 
-3. **Read the INCOMING edges by filter — never by tag.** The records naming `mNN` as the far side carry the *other* module's tag, so no tag query reaches them; the `module-dependency` type's own block gives the filter call. **Step 3 is not optional and it is not a refinement of step 2.** It is the half of the graph step 2 structurally cannot see. Skipping it does not give you a smaller answer — it gives you a directed answer while looking like an undirected one, which is the more dangerous of the two. This is also why retiring a module takes **two** deletions (rule 3a): a leftover incoming edge dangles silently.
+3. **Read the INCOMING edges by filter — never by tag.** The records naming `mNN` as the far side carry the *other* module's tag, so no tag query reaches them — read them by the `provider` filter:
+
+   ```
+   list_entities({ type: "module-dependency", filters: { provider: "MNN" } })
+   ```
+
+   **Step 3 is not optional and it is not a refinement of step 2.** It is the half of the graph step 2 structurally cannot see. Skipping it does not give you a smaller answer — it gives you a directed answer while looking like an undirected one, which is the more dangerous of the two. This is also why retiring a module takes **two** deletions (rule 3a): a leftover incoming edge dangles silently.
 
    Mind the spelling: `tags` are lower-case (`m19`), while the field holds what the author wrote (`M19`). The filter matches the field, not the tag.
 
