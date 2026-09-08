@@ -53,7 +53,16 @@ export function buildWorkspaceToolsServer(listProjects: () => ListProjectsResult
      */
     async () => {
       try {
-        return toolSuccess(listProjects(), { operation: 'list_projects', channel: 'mcp' });
+        /**
+         * `project: null` is the truth here, not a gap: `list_projects` reads
+         * the workspace registry and belongs to no single project. This is the
+         * one operation the telemetry ring may hold without a project key.
+         */
+        return toolSuccess(listProjects(), {
+          operation: 'list_projects',
+          channel: 'mcp',
+          project: null,
+        });
       } catch (err) {
         return toolFailure(err);
       }

@@ -110,6 +110,12 @@ export interface AgentTurnDeps {
    */
   workspaceName?: string;
   /**
+   * The project these turns run for, stamped onto the response-size telemetry
+   * record. Optional only because the hand-built test rigs omit it; a turn that
+   * cannot name its project measures as `null`, not as another project's.
+   */
+  projectId?: string;
+  /**
    * 0.2.13 M31: the `list_projects` operation, as a thunk so the registry is
    * re-read per call. Renders into the tool channel as `workspace-tools`.
    * Absent ⇒ the server is not mounted (hand-built test rigs).
@@ -1162,14 +1168,14 @@ export async function runAgentTurn(
             threadId: thread.id,
             planService: deps.planService,
             pageVersions: deps.pageVersions,
-          })
+          }, deps.projectId ?? null)
         : null;
       const briefTools = ctx.mcp.briefTools && thread.briefPath
         ? buildBriefToolsServer({
             threadId: thread.id,
             briefPath: thread.briefPath,
             briefService: deps.briefService,
-          })
+          }, deps.projectId ?? null)
         : null;
       /**
        * M23 `file_patch`. Same gate as the brief tools — it is a `brief`-class
@@ -1178,7 +1184,7 @@ export async function runAgentTurn(
        * brief thread can report drift against any brief it names.
        */
       const patchTools = ctx.mcp.briefTools && deps.patchWrite
-        ? createPatchToolsServer(deps.patchWrite)
+        ? createPatchToolsServer(deps.patchWrite, deps.projectId ?? null)
         : null;
       // M24 c4s-tools: cross-cutting MCP exposing the peer-consult flow. Fresh factory
       // per request; closes over `deps.workspaceName` so `ask` defaults to the caller's
@@ -1201,7 +1207,7 @@ export async function runAgentTurn(
        * host-owned server through for every profile, so "outside the catalog" and
        * "reachable from all four profiles" are the same fact here rather than two.
        */
-      const skillTools = buildSkillToolsServer(deps.skillRegistry);
+      const skillTools = buildSkillToolsServer(deps.skillRegistry, deps.projectId ?? null);
 
       // 0.2.13 workspace-tools: M31's `list_projects`. No registry dimension gates
       // it — see the note at its mount below. Absent only when the deps were built

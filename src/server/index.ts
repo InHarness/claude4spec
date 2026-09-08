@@ -269,7 +269,11 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   pluginLoad.records.unshift(...envelopeLoad.records);
 
   const httpServer = createHttpServer(app);
-  const gateway = new WsGateway(httpServer);
+  // Membership is re-read per upgrade (`getProject` re-resolves the workspace
+  // from the registry file), so a project added while the process runs becomes
+  // connectable without a restart — the same freshness the HTTP prefix
+  // middleware already has.
+  const gateway = new WsGateway(httpServer, (id) => registry.getProject(workspace, id) !== null);
 
   // M40: ONE file-watch runtime per PROCESS, not per ProjectContext. It has to
   // outlive context rebuilds for two reasons a context-owned watcher could never
@@ -497,6 +501,19 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     port,
     writingStyle: initialCtx?.writingStyle ?? null,
     shutdown: async () => {
+      /**
+       * FIRST, before the watcher can hand out another event to reschedule one.
+       *
+       * These are the one set of timers in the system with no owner: the base
+       * pool is the only `scope: 'process'` mount, so `disposeScope` never sees
+       * it and the sole `clearTimeout` above is the RESCHEDULE path. A burst
+       * timer pending at shutdown therefore held the event loop open for its
+       * remaining window and then fired `onBaseChange` — `reloadPlugin`,
+       * `cache.invalidateAll()`, `gateway.broadcast` — against contexts that
+       * had just been disposed underneath it.
+       */
+      for (const timer of burstTimers.values()) clearTimeout(timer);
+      burstTimers.clear();
       await watchRuntime.close();
       await cache.disposeAll();
       await gateway.close();

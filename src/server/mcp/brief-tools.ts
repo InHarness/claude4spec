@@ -93,6 +93,7 @@ const HEADING_RE = /^(#{2,6})\s+(.+?)\s*$/;
 
 export function buildBriefToolsServer(
   ctx: BriefToolsContext | ExplicitBriefToolsContext,
+  projectId: string | null = null,
 ): CapturedMcpServer {
   const { briefService } = ctx;
   const explicit = 'target' in ctx;
@@ -107,7 +108,8 @@ export function buildBriefToolsServer(
    * replaces dropped `hint` and `ConflictError.currentHash`, which on a brief
    * write is the same remedy it is on a page write.
    */
-  const ok = (data: unknown, operation: string) => toolSuccess(data, { operation, channel: 'mcp' });
+  const ok = (data: unknown, operation: string) =>
+    toolSuccess(data, { operation, channel: 'mcp', project: projectId });
   const fail = toolFailure;
 
   /**

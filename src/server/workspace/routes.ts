@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { readConfig } from '../config.js';
+import { readPeerConfigSummary } from './peer-config.js';
 import { workspaceMcpRouter } from '../routes/mcp.js';
 import { readPackageVersion } from '../../bin/c4s/package-version.js';
 
@@ -51,15 +51,11 @@ export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
   // Registry stores `name` as basename(cwd) at registration; prefer the
   // project's own configured name so the switcher lists project names.
   const serializeProjects = (ws: WorkspaceRecord) =>
-    ws.projects.map((p) => {
-      let name = p.name;
-      try {
-        name = readConfig(p.cwd).name;
-      } catch {
-        /* fall back to the registry name */
-      }
-      return { ...p, name, live: cache.isLive(p.id) };
-    });
+    ws.projects.map((p) => ({
+      ...p,
+      name: readPeerConfigSummary(p.cwd).name ?? p.name,
+      live: cache.isLive(p.id),
+    }));
 
   router.get('/health', (_req, res) => {
     res.json({ ok: true, mode, workspace: workspace.name });

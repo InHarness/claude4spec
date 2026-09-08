@@ -71,6 +71,11 @@ export interface ExternalSurfaceDeps {
   listProjects: () => ListProjectsResult;
   /** The caller's workspace, so `ask` defaults to it. */
   workspaceName: string;
+  /**
+   * The resolved project, stamped onto the response-size telemetry record so
+   * the process-level measurement ring is keyed rather than ambient.
+   */
+  projectId: string;
 }
 
 /** The composed server's name — see the header note before changing it. */
@@ -168,7 +173,7 @@ function sourceServers(deps: ExternalSurfaceDeps): Array<{ name: string; server:
         target: 'explicit',
         planService: deps.planService,
         pageVersions: deps.pageVersions,
-      }),
+      }, deps.projectId),
     });
   }
 
@@ -177,7 +182,10 @@ function sourceServers(deps: ExternalSurfaceDeps): Array<{ name: string; server:
       name: 'brief-tools',
       // Explicit mode: no thread, so every call names its brief. See
       // `requiresExplicitBriefTarget` in `operations/profiles.ts`.
-      server: buildBriefToolsServer({ briefService: deps.briefService, target: 'explicit' }),
+      server: buildBriefToolsServer(
+        { briefService: deps.briefService, target: 'explicit' },
+        deps.projectId,
+      ),
     });
   }
 
@@ -194,7 +202,10 @@ function sourceServers(deps: ExternalSurfaceDeps): Array<{ name: string; server:
    * reachable from nowhere, which is the exact defect it was written to fix.
    */
   if (set.briefTools) {
-    servers.push({ name: 'patch-tools', server: createPatchToolsServer(deps.patchWrite) });
+    servers.push({
+      name: 'patch-tools',
+      server: createPatchToolsServer(deps.patchWrite, deps.projectId),
+    });
   }
 
   if (set.c4sTools) {

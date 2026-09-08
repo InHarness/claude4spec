@@ -29,7 +29,7 @@
  * (`listWorkspacePeers`) has always had for the same field.
  */
 
-import { readConfig } from '../config.js';
+import { readPeerConfigSummary } from './peer-config.js';
 import type { WorkspaceRecord } from './types.js';
 
 export interface ProjectListItem {
@@ -51,13 +51,11 @@ export function listProjects(workspace: WorkspaceRecord): ListProjectsResult {
   return {
     projects: workspace.projects.map((p) => {
       const item: ProjectListItem = { id: p.id, slug: p.name, path: p.cwd };
-      try {
-        const cfg = readConfig(p.cwd);
-        if (cfg.name) item.name = cfg.name;
-      } catch {
-        // Unreadable/missing/invalid config → entry without `name`. Deliberately
-        // not an error: see the module note above.
-      }
+      // Unreadable/invalid config → entry without `name`, never an error. The
+      // degradation lives in `readPeerConfigSummary`, the one sanctioned read of
+      // a peer's config; see the module note above for why it is not an error.
+      const { name } = readPeerConfigSummary(p.cwd);
+      if (name) item.name = name;
       return item;
     }),
   };

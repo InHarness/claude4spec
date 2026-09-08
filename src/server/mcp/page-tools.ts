@@ -61,7 +61,10 @@ export interface PageToolsDeps extends SectionWriteDeps {
   isSectionIndexed?: (rootId: string) => boolean;
 }
 
-export function createPageToolsServer(deps: PageToolsDeps): CapturedMcpServer {
+export function createPageToolsServer(
+  deps: PageToolsDeps,
+  projectId: string | null = null,
+): CapturedMcpServer {
   /**
    * The shared envelope, not a local pair.
    *
@@ -71,7 +74,8 @@ export function createPageToolsServer(deps: PageToolsDeps): CapturedMcpServer {
    * That is why this file had its own `fail` to begin with; it now lives in
    * `operations/envelope.ts`, where every tool server gets it.
    */
-  const ok = (data: unknown, operation: string) => toolSuccess(data, { operation, channel: 'mcp' });
+  const ok = (data: unknown, operation: string) =>
+    toolSuccess(data, { operation, channel: 'mcp', project: projectId });
   const fail = toolFailure;
 
   const target = (rootId: string): PageWriteTarget => {
