@@ -20,6 +20,8 @@ If the patch needs no change at all — already fixed by an earlier one, or the 
 
 ---
 
+<!-- include: parts/placement.md -->
+
 <!-- include: parts/reading-sweep.md -->
 
 <!-- include: parts/reading-deps.md -->

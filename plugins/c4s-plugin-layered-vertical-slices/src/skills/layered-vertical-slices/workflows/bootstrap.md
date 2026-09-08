@@ -118,3 +118,9 @@ After all layers are written, update `<index>`:
 - Add a final top-of-file paragraph summarizing the system.
 
 Announce completion and offer: *"Spec skeleton and contents are complete. Want me to (a) do a coverage review, (b) generate a one-page summary for onboarding, or (c) stop here?"*
+
+---
+
+<!-- include: parts/placement.md -->
+
+<!-- include: parts/authoring.md -->

@@ -1,0 +1,28 @@
+## Placement rules — one fact, one home
+
+Rules keep their numbers from the style's catalogue (1–9, with 2a and 3a); a reviewer's deviation names a number, so numbers are addresses and a retired one is never reused. The rules below decide **where** content lives; the authoring rules (1, 4–8) decide **what** a file must satisfy. Each rule that can be settled on the text alone names its symptom — the thing you observe when it is broken.
+
+2. **One home for every piece of content — two tests.** A layer file is **radically thin** — purpose, role and `## Module slice schema`, with no `## Conventions` / `## Patterns` / `## Contracts` / `## Shared utilities` buckets — because it owns the consumer-facing slice schema and nothing else. The implementor module (when one exists) owns runtime, conventions, patterns, registry and "what consumers can rely on"; consumer modules own their declared slice. Before placing content, ask both:
+
+   - *Layer-purity:* "would this still be accurate if we deleted module MXX?" If no → it belongs in a module's file, not the layer.
+   - *Filling vs behavior:* "is this a rule about **filling the module's section** (naming, validation, gating, allowed values, embed shape — "tables in snake_case", "action gated on optional binary") or about **framework runtime behavior** (registry semantics, hook order, contract guarantees, shared utilities)?" Filling → bake it into the slice schema as a field-level requirement, not as separate prose. Behavior → the implementor module's file, in its section for that layer (how-mode). Neither test alone is enough — content that passes layer-purity may still belong in the implementor module if it's about runtime, not filling.
+
+   A rule that fits neither — not expressible as a per-module schema requirement, with no implementor in *our* spec to hold it — is a signal: either it isn't truly cross-cutting (move it into the module it is about), or its implementor is external, and the contract goes into the layer file's prose without inventing a module.
+
+2a. **A layer file does not name modules.** In `layers/LY-<slug>.md` the `Implementor module:` slot is the only place a module identifier appears — it carries the one fact in the file that is about the layer rather than about a module, which is also why the prose beside it must not repeat it. Rule 2's layer-purity test, settled on the file's text alone:
+
+   - **No token matching `[Mm]\d+` outside the slot.** *Symptom:* `M03` or `m19` in the prose, a heading or a table of `layers/L1-db.md`.
+   - **No `section_ref` anywhere in the file.** *Symptom:* a `section_ref` construct in a layer file.
+   - **The slot is not paraphrased beside itself.** *Symptom:* prose naming the implementor by its number and pointing at its section.
+
+   Out of scope, and both get read wrong: the `MNN`/`mNN` placeholder inside the embed pattern of `## Module slice schema` names no module; and `modules/MXX-<slug>/LY-<slug>.md` is a module slice under rule 5 — same filename, different directory, so the check reads the **path**.
+
+3. **Every module lists every layer it touches — and the set of layer sections is the ONLY declaration of that.** In the module file, there's a section per touched layer with at minimum a 2-line note, following the schema declared in that layer's `## Module slice schema`. There is no second place that says which layers a module touches: no summary section, no table of layers at the top of the file. Two lists of the same fact drift, and the one that drifts is always the summary. It follows that anything to say about this module's relationship with a layer belongs **inside that layer's section**, never in a roll-up above it. *Symptom:* an `L\d+` mentioned in a module file with no section for that layer; a summary list or table of layers above the sections.
+
+3a. **A module-to-module dependency is a record, not a table row.** `## Zależności` is the module's second H2 and carries exactly two things: the embed of this module's outgoing edges (`<tagged_list type="module-dependency" tags="mXX"/>`) and one sentence on why the module leans outward. What a record *is* — one ordered pair, the requiring module's tag, a reason that says what flows — is the `module-dependency` type's own contract, stated in its system-prompt block, not here. Two decisions are this style's: **layers never appear in these records** (a relation with a layer lives in that layer's section, rule 3), and **retiring a module takes two deletions** — its outgoing records and the incoming ones, which carry other modules' tags and are reached by filter, not by tag (the dependency-tracing protocol, delivered with the workflows); nothing checks that you did the second one. *Symptom:* a markdown table under `## Zależności`; a record naming an `L\d+`; a reason with an `M\d+` token in it.
+
+9. **No historical breadcrumbs in spec prose.** When you move content between files, **just move it**. Do not leave behind prose like *"(moved to M20)"*, *"see M07 for new location"*, or empty stub files that only redirect. Anchors (`<!-- anchor: xxxxxxxx -->`) are stable identifiers; the page/entity versioning subsystem owns move history.
+
+   *Distinguish from referential cross-links, which stay:* sentences like *"M04 plugs into L6"* or *"see M03 for the endpoint contract"* describe architecture, not history — keep them. Only forbid prose whose sole purpose is to tell a reader *"this used to live somewhere else."* Tabular state markers like `M04 — (retired)` are fine.
+
+   *Symptom:* prose whose only content is a former location ("moved to M20", "see M07 for new location"); a stub file that only redirects.

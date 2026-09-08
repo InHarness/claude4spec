@@ -25,7 +25,6 @@ import { manifest } from '../../../plugins/c4s-plugin-layered-vertical-slices/sr
 describe('the layered-vertical-slices package keeps the content contract it promises', () => {
   const SLUG = 'layered-vertical-slices';
 
-  let skill: string;
   let moduleTemplate: string;
   let files: Record<string, string>;
 
@@ -53,7 +52,6 @@ describe('the layered-vertical-slices package keeps the content contract it prom
       registry.addPluginSkill(validateWritingStyle(style));
     }
     const resolved = registry.resolve(SLUG);
-    skill = resolved.content;
     // `resolve` hands back `SkillPackageFile` records (path/bytes/lines/isText/
     // content); the contract below is about the bytes `load_skill_file` serves,
     // so flatten to the text and assert on that.
@@ -86,7 +84,7 @@ describe('the layered-vertical-slices package keeps the content contract it prom
   });
 
   it('[ac:ac-load-skill-file-layered-vertical-slic-4] states the `Cel` composition rule with an explicit character budget', () => {
-    const section = h2(skill, "7. The module's `Cel` section");
+    const section = h2(files['workflows/daily.md'] ?? '', "The module's `Cel` section");
     expect(section).toMatch(/user job/i);
     expect(section).toMatch(/2[–-]4 sentences/i);
     // The budget is checked as a LITERAL NUMBER, not as the rule around it: a
@@ -96,7 +94,7 @@ describe('the layered-vertical-slices package keeps the content contract it prom
   });
 
   it('[ac:ac-load-skill-file-layered-vertical-slic-5] prohibits entity embeds, `section_ref` and module/layer identifiers in `Cel`', () => {
-    const section = h2(skill, "7. The module's `Cel` section");
+    const section = h2(files['workflows/daily.md'] ?? '', "The module's `Cel` section");
     expect(section).toMatch(/no entity embeds/i);
     expect(section).toContain('section_ref');
     expect(section).toMatch(/module or layer identifiers/i);
@@ -115,7 +113,7 @@ describe('the layered-vertical-slices package keeps the content contract it prom
     // `indexOf` miss returns -1, and `slice(-1)` would hand back the document's
     // last character — a catalogue of nothing that passes a length check and
     // counts `*Symptom:*` markers belonging to prose outside it.
-    const catalogue = h3(skill, 'Rules decidable on the section text alone');
+    const catalogue = h3(files['workflows/daily.md'] ?? '', 'Rules decidable on the section text alone');
     const items = [...catalogue.matchAll(/^\d+\. \*\*(.+?)\*\*/gm)];
     expect(items.length).toBeGreaterThanOrEqual(6);
     // Every item carries the thing you OBSERVE when it is broken — a rule with no

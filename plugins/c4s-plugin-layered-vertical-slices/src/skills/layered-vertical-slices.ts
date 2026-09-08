@@ -8,6 +8,8 @@ import workflowPatch from './layered-vertical-slices/workflows/patch.md?raw';
 import templateIndex from './layered-vertical-slices/templates/index.md?raw';
 import templateLayer from './layered-vertical-slices/templates/layer.md?raw';
 import templateModule from './layered-vertical-slices/templates/module.md?raw';
+import partPlacement from './layered-vertical-slices/parts/placement.md?raw';
+import partAuthoring from './layered-vertical-slices/parts/authoring.md?raw';
 import partReadingSweep from './layered-vertical-slices/parts/reading-sweep.md?raw';
 import partReadingDeps from './layered-vertical-slices/parts/reading-deps.md?raw';
 
@@ -52,6 +54,8 @@ function body(raw: string): string {
  * around the marker are the blank lines around the splice.
  */
 const PARTS: Readonly<Record<string, string>> = {
+  'parts/placement.md': partPlacement,
+  'parts/authoring.md': partAuthoring,
   'parts/reading-sweep.md': partReadingSweep,
   'parts/reading-deps.md': partReadingDeps,
 };
@@ -67,9 +71,54 @@ function modulePathPattern(): string {
   return match[1];
 }
 
+/**
+ * The check list: one source, two projections.
+ *
+ * Every rule that can be settled on the text alone carries a `*Symptom:*`
+ * marker beside it in `parts/placement.md` and `parts/authoring.md`. This
+ * reads those markers into a flat list — one line per symptom, prefixed by
+ * the rule it belongs to — for the daily workflow's drift check and for the
+ * `spec-review` subagent's prompt. Neither holds a second copy of a rule: a
+ * symptom added or reworded in its part is in both projections at the next
+ * load, and a rule without a marker is, correctly, absent from both.
+ */
+export function extractChecks(...parts: string[]): string[] {
+  const checks: string[] = [];
+  for (const part of parts) {
+    let section = '';
+    let rule = '';
+    for (const line of part.split('\n')) {
+      const heading = /^##+ (.+)$/.exec(line);
+      if (heading) {
+        section = heading[1]!;
+        rule = '';
+        continue;
+      }
+      const item = /^\s*(\d+[a-z]?)\. \*\*(.+?)\*\*/.exec(line);
+      if (item) {
+        const inCel = /`Cel`/.test(section) || /section text alone/.test(section);
+        const title = item[2]!.replace(/[.:]$/, '');
+        rule = inCel ? `Cel ${item[1]} — ${title}` : `Rule ${item[1]} — ${title}`;
+      }
+      const marker = line.indexOf('*Symptom:*');
+      // A marker outside any rule is prose ABOUT markers, not a check.
+      if (marker === -1 || rule === '') continue;
+      const sub = /^\s*- \*\*(.+?)\*\*/.exec(line);
+      const symptom = line.slice(marker + '*Symptom:*'.length).trim();
+      const label = sub ? `${rule} (${sub[1]!.replace(/[.:]$/, '')})` : rule;
+      checks.push(`- **${label}.** ${symptom}`);
+    }
+  }
+  return checks;
+}
+
+/** The check list as it is delivered — to `daily.md` step 5 and to `spec-review`. */
+export const checksProjection: string = extractChecks(partPlacement, partAuthoring).join('\n');
+
 /** Derived splices — text computed from a part rather than copied out of it. */
 const DERIVED: Readonly<Record<string, () => string>> = {
   'module-path-pattern': () => `\`${modulePathPattern()}\``,
+  checks: () => checksProjection,
 };
 
 const INCLUDE = /^[ \t]*<!--\s*include:\s*(\S+)\s*-->[ \t]*$/gm;
@@ -111,7 +160,12 @@ export const layeredVerticalSlicesStyle: WritingStyleContribution = {
   title: 'Layered Vertical Slices',
   description:
     'Conventions for layered, vertical-slice specifications — module/layer structure, file layout, two workflows (bootstrap and daily), and quality rules. TRIGGER when the active writing style is this slug — editing a spec page, drafting plans, creating modules or layers, answering structural questions.',
-  version: 1,
+  /**
+   * 2 since the reformat: the quality rules and the reading protocols left
+   * `content` for the workflows, which is a change of what a reader of the
+   * core can expect to find there.
+   */
+  version: 2,
   language: 'en',
   content: compose(body(skillMd)),
   /**

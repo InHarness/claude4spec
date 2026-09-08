@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { includeUsage, layeredVerticalSlicesStyle as style } from '../src/skills/layered-vertical-slices.js';
+import { checksProjection, extractChecks, includeUsage, layeredVerticalSlicesStyle as style } from '../src/skills/layered-vertical-slices.js';
 
 /**
  * The style travels as LITERALS compiled into this module — `?raw` imports that
@@ -8,11 +8,14 @@ import { includeUsage, layeredVerticalSlicesStyle as style } from '../src/skills
  * import that resolved to nothing, a frontmatter block that survived into the
  * body, or a package key that drifted away from the address the prose uses.
  */
+/** Symptom markers across `parts/placement.md` + `parts/authoring.md`, after normalisation. */
+const CHECKS_PINNED = 17;
+
 describe('c4s-plugin-layered-vertical-slices — the writing style it contributes', () => {
   it('is the reference style, at the slug config.writingStyle names', () => {
     expect(style.slug).toBe('layered-vertical-slices');
     expect(style.title).toBe('Layered Vertical Slices');
-    expect(style.version).toBe(1);
+    expect(style.version).toBe(2);
     expect(style.language).toBe('en');
     expect(style.description.length).toBeGreaterThan(0);
   });
@@ -24,6 +27,16 @@ describe('c4s-plugin-layered-vertical-slices — the writing style it contribute
     expect(style.content).not.toContain('language: en');
     expect(style.content.startsWith('# Layered Specification Meta-Prompt')).toBe(true);
     expect(style.content.length).toBeGreaterThan(1000);
+  });
+
+  /**
+   * The core is what every thread pays for on every turn until the first
+   * compaction; the rules travel with the workflows. A thousand words is the
+   * gate, not a target — the target is lower — and a core that grows past it
+   * has absorbed something a workflow should carry.
+   */
+  it('keeps the always-on core under a thousand words', () => {
+    expect(style.content.split(/\s+/).length).toBeLessThanOrEqual(1000);
   });
 
   it('carries the whole package, addressed by POSIX path', () => {
@@ -80,6 +93,27 @@ describe('c4s-plugin-layered-vertical-slices — the writing style it contribute
       expect({ name, uses: uses > 0 }).toEqual({ name, uses: true });
     }
     expect(Object.keys(style.files ?? {}).some((k) => k.startsWith('parts/'))).toBe(false);
+  });
+
+  /**
+   * The check list is READ off the `*Symptom:*` markers, not kept as a list. The
+   * count is pinned so that a marker lost in an edit — a rule silently dropping
+   * out of both projections — fails here rather than in a review that never
+   * looks for it.
+   */
+  it('projects one check per symptom marker into daily step 5 and nowhere else twice', () => {
+    const daily = style.files?.['workflows/daily.md'] ?? '';
+    const checks = checksProjection.split('\n');
+    expect(checks.length).toBe(CHECKS_PINNED);
+    for (const check of checks) {
+      expect(check).toMatch(/^- \*\*(Rule \d+[a-z]? — |Cel \d+ — ).+\.\*\* .+/);
+    }
+    expect(daily).toContain(checksProjection);
+    // Every marker in the delivered rules is projected — none is orphaned.
+    const markers = (daily.match(/\*Symptom:\*/g) ?? []).length;
+    expect(markers).toBe(CHECKS_PINNED);
+    // And the extractor attributes a symptom to the rule it sits under.
+    expect(extractChecks('## X\n\n3. **Title.** Body. *Symptom:* thing.\n')).toEqual(['- **Rule 3 — Title.** thing.']);
   });
 
   it('delivers the reading protocols with the workflows that locate a change, and only the pattern to the brief', () => {

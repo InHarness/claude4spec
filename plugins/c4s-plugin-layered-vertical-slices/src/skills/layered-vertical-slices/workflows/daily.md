@@ -67,14 +67,9 @@ If the change makes a module file head past ~250 lines, propose splitting it: co
 
 ## Step 5 — Drift check
 
-After non-trivial edits, scan `<index>` against files-on-disk:
+After non-trivial edits, walk the check list — every mechanically decidable symptom of the rules this file carries — against `<index>` and the files on disk:
 
-- Every entry in the module table has a file? Every module file has a row?
-- Every layer touched by any module appears in the layer table?
-- **Does every `L\d+` mentioned in a module file have a corresponding layer section in that same file?** A layer named in passing but never given a section is the drift rule 3 exists to catch — the set of sections is the only declaration of which layers a module touches, so a mention without a section is a claim with no home.
-- **Does every dependency record carry the tag of its own requiring module?** An untagged record is invisible to the module whose section should show it: the embed selects on that tag and nothing else, so the edge exists in the data and nowhere on the page.
-- Every relation declared in a module's `## Zależności` section appears in the index's relations diagram?
-- If something was removed, is it marked retired rather than silently deleted?
+<!-- include: checks -->
 
 If you find drift, surface it as a short punch list and ask the user before fixing — drift can be intentional (work-in-progress).
 
@@ -91,6 +86,10 @@ A read-only turn saved nothing, so it does not reach this step and `spec-review`
 State what changed, point to the file(s), relay the reviewer's verdict from Step 6, and stop. Do not auto-loop into "what else can we improve?" — wait for the user. The user drives the next round.
 
 ---
+
+<!-- include: parts/placement.md -->
+
+<!-- include: parts/authoring.md -->
 
 <!-- include: parts/reading-sweep.md -->
 
