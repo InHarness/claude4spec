@@ -614,6 +614,7 @@ function PageRow({
   const [error, setError] = useState<string | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const move = useMovePage();
+  const navigate = useNavigate();
 
   const startRename = () => {
     setMenuOpen(false);
@@ -637,8 +638,21 @@ function PageRow({
      */
     try {
       const hash = (await api.read(rootId, node.path)).hash;
-      await move.mutateAsync({ rootId, from: node.path, to, expectedHash: hash });
+      const ack = await move.mutateAsync({ rootId, from: node.path, to, expectedHash: hash });
       setDraft(null);
+      /**
+       * If the page being renamed is the one on screen, FOLLOW IT.
+       *
+       * Without this the tree updates and the route does not: the reader is
+       * left looking at a document under an address that now 404s, so the
+       * rename appears to have worked until they reload — at which point the
+       * page they are editing is "missing". Only the active row navigates;
+       * renaming some other file must not yank the reader out of what they are
+       * reading.
+       */
+      if (active) {
+        void navigate({ to: '/space/$rootId/$', params: { rootId, _splat: ack.path } });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'rename failed');
     }
