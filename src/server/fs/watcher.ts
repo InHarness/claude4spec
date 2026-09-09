@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import chokidar, { type FSWatcher } from 'chokidar';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -49,26 +50,37 @@ export type WatchEventKind = 'add' | 'change' | 'unlink';
 export type WatchActor = 'user' | 'agent';
 
 /**
- * Execution order. NOTE this is deliberately NOT the order the taxonomy is
- * listed in: `projection | notification | reload` are mutually independent and
- * run first, then `write-back`, then `capture`.
+ * Execution order. `write-back` runs FIRST, then the three mutually independent
+ * phases, then `capture`.
  *
- * Why `capture` runs after `write-back`: the anchor-injection write is
- * suppressed, so it will not trigger a second capture. A snapshot taken BEFORE
- * injection would be the only version in the log and would freeze content that
- * never existed on disk as a final state — its `content_hash` would diverge from
- * the file, and restoring that version would strip the anchors.
+ * 0.2.76 moved `write-back` to the front. It is the only phase that MUTATES the
+ * file, so everything that reads the file has to run after it. Anchor injection
+ * adds lines; a section index holds line ranges; an index computed before
+ * `write-back` describes a file that no longer exists at the end of the chain,
+ * with coordinates shifted by exactly what was injected. A later write against
+ * those stale coordinates CORRUPTS content rather than merely showing a stale
+ * view — that defect is what forced the order.
+ *
+ * `capture` stays last: anchor writes are suppressed, so they never fire a
+ * second capture, and a snapshot taken before injection would be the only
+ * version in the log — freezing content that never existed on disk as a final
+ * state, with a `content_hash` diverging from the file.
+ *
+ * Consequence for subscribers: a `write-back` reads the FILE, never a
+ * projection, and always sees the state before its own write. The existing
+ * `after: [write-back]` declarations are now satisfied BY CONSTRUCTION; they are
+ * kept as redundant documentation of intent rather than removed.
  */
 const PHASE_RANK: Record<WatchPhase, number> = {
-  projection: 0,
-  notification: 0,
-  reload: 0,
-  'write-back': 1,
+  'write-back': 0,
+  projection: 1,
+  notification: 1,
+  reload: 1,
   capture: 2,
 };
 
-/** Rank-0 phases run in this order; ranks then run 0 → 1 → 2. */
-const PHASE_ORDER: WatchPhase[] = ['projection', 'notification', 'reload', 'write-back', 'capture'];
+/** Rank-1 phases run in this order; ranks then run 0 → 1 → 2. */
+const PHASE_ORDER: WatchPhase[] = ['write-back', 'projection', 'notification', 'reload', 'capture'];
 
 const PHASE_NAMES = new Set<string>(PHASE_ORDER);
 
@@ -130,6 +142,42 @@ interface Mount {
 const SELF_WRITE_WINDOW_MS = 600;
 
 /**
+ * A suppress token's owner, which decides who is allowed to retire it.
+ *
+ * `'chain'` — issued by a write-back from inside a running dispatch (arm 2 of
+ * `suppress`). The dispatch's own hash stamp already covers that write, so the
+ * dispatch clears it on the way out, exactly as before.
+ *
+ * `'primitive'` — issued by the record store immediately before its atomic
+ * write (arm 1). It is retired by its ISSUER, unconditionally, and NOT by the
+ * first matching event: a write that changes no byte produces no event at all,
+ * and an atomic `temp -> rename` is reported as one `change` by some providers
+ * and as `unlink` + `add` by others. Either way a one-shot token would either
+ * linger and swallow somebody else's later event, or be eaten by the first of a
+ * pair and let the second through.
+ */
+type SuppressOwner = 'chain' | 'primitive';
+
+interface SuppressToken {
+  until: number;
+  owner: SuppressOwner;
+}
+
+/**
+ * How long a primitive's token outlives the settled chain.
+ *
+ * The chain runs in-band and has already finished when the caller is answered,
+ * but the file provider may report the write LATER — after the debounce, after
+ * the response. The token therefore survives a guard window of the source's
+ * debounce plus a margin.
+ *
+ * Named cost: a genuinely external write landing on the same path inside that
+ * window is swallowed and runs no chain. State returns to agreement on the next
+ * write of that path, or on a full rebuild.
+ */
+const SUPPRESS_GUARD_MS = 300 + SELF_WRITE_WINDOW_MS;
+
+/**
  * Debounce lives EXCLUSIVELY in the mount, independently per mount — rapid
  * writes in one directory never block reactions in another. The subscriber
  * contract contains no debounce of its own.
@@ -143,6 +191,28 @@ const DEBOUNCE_MS = 300;
 
 const AWAIT_WRITE_FINISH = { stabilityThreshold: 80, pollInterval: 20 } as const;
 
+
+/**
+ * What a chain run reports back to the caller that drove it.
+ *
+ * The chain never fails an operation: past the commit point there is no
+ * "failure", only success or success WITH A WARNING (0.2.76 phase error
+ * classes). `projection` is the one critical phase — it gets one automatic
+ * retry, and a second failure marks the projection stale and lands here as a
+ * warning. Every other phase is incidental: its error is logged and changes
+ * nothing.
+ */
+export interface ChainResult {
+  /** Subscription ids whose critical phase failed twice. Empty on a clean run. */
+  staleProjections: string[];
+}
+
+/** The `(scope, source, relPath)` a dispatch is currently running for. */
+export interface DispatchContext {
+  scope: WatchScope;
+  source: string;
+  relPath: string;
+}
 
 /**
  * M40 provides the broadcast MECHANISM: an event reaches the WS room of the
@@ -174,12 +244,34 @@ export interface ScopedWatchRegistrar {
   unmountSource(source: string): Promise<void>;
   subscribe(source: string, handler: WatchSubscriber, opts: SubscribeOptions): void;
   markOrigin(source: string, relPath: string, actor: WatchActor): void;
-  suppress(source: string, relPath: string): void;
+  suppress(source: string, relPath: string, owner?: SuppressOwner): void;
   /** Hand a suppress token back when the write it covered failed. */
   unsuppress(source: string, relPath: string): void;
+  /**
+   * Run the reaction chain in-band, with the origin the CALLER declares.
+   *
+   * The second trigger of the two (`flush`/the watcher being the first). It is
+   * NOT a second registration: M42 mounts nothing and subscribes to nothing —
+   * it dispatches over the registry the directory owners and subscribers built.
+   *
+   * Unlike `flush` it never consults a suppress token: the primitive holds its
+   * own token across this call precisely so the provider's echo is swallowed,
+   * and a chain that honoured it would run no phase at all.
+   */
+  runChain(
+    source: string,
+    relPath: string,
+    event: WatchEventKind,
+    origin: WatchOrigin,
+    actor?: WatchActor,
+  ): Promise<ChainResult>;
+  /** Retire a `'primitive'` token once its chain has settled, after a guard window. */
+  releaseSuppress(source: string, relPath: string): void;
   flush(source: string, relPath: string, event?: WatchEventKind): Promise<void>;
   broadcast(event: WsEvent): void;
   isMounted(source: string): boolean;
+  /** The key of the dispatch running on this call stack, if any. */
+  currentDispatch(): DispatchContext | undefined;
   dispose(): Promise<void>;
 }
 
@@ -246,8 +338,20 @@ export class FileWatchRuntime {
   private readonly subs = new Map<string, Subscription[]>();
   /** Content hash of each file as the runtime last left it — see the self-writes section. */
   private readonly selfHash = new Map<string, string>();
-  /** Write-back suppress tokens issued outside a dispatch, with expiry. */
-  private readonly pendingSuppress = new Map<string, number>();
+  /** Suppress tokens, with expiry and the owner entitled to retire them. */
+  private readonly pendingSuppress = new Map<string, SuppressToken>();
+  /** Pending guard-window timers for primitive-owned tokens, so dispose can clear them. */
+  private readonly suppressTimers = new Map<string, NodeJS.Timeout>();
+  /**
+   * The dispatch running on the current call stack.
+   *
+   * `AsyncLocalStorage` rather than a flag or a Set: dispatches are concurrent
+   * across paths (`mount.inflight` is keyed per relPath), so a process-wide
+   * marker would attribute one path's chain to another's write. The record
+   * store reads this to recognise a write-back into the chain's OWN file, which
+   * must neither re-acquire that path's mutex nor start a second chain.
+   */
+  private readonly dispatchAls = new AsyncLocalStorage<DispatchContext>();
   /** `markOrigin` labels awaiting their event. Expiry only downgrades the label. */
   private readonly originHint = new Map<string, { actor: WatchActor; until: number }>();
   /** Actor of the in-flight dispatch, so `capture` can read it — see `peekActor`. */
@@ -423,21 +527,66 @@ export class FileWatchRuntime {
   }
 
   /**
-   * Swallow the event entirely — no phase runs. Called ONLY by write-backs,
-   * immediately before writing into an observed directory, to break the
-   * "my write → my reaction → another write" loop.
+   * Swallow the event entirely — no phase runs for it.
    *
-   * A reaction that does not WRITE into the observed directory never uses this;
-   * using it for an ordinary server write is a bug (that is what `markOrigin` is for).
+   * 0.2.76 — exactly two legal arms; any other call is a bug.
    *
-   * A suppress issued from INSIDE a dispatch needs no token at all — the
-   * post-dispatch hash stamp already covers that write — so the dispatch clears it
-   * on the way out. The token exists for write primitives that run outside any
-   * dispatch (the entity and release stores), where there is nothing to stamp
-   * against until the event arrives.
+   * 1. **From the write primitive that runs the chain itself.** Suppression and
+   *    the in-band call are ONE act: the event is redundant because the chain
+   *    already ran synchronously and settled before the provider reported
+   *    anything. This covers every write of spec content — pages, entities,
+   *    tags, plans, briefs, patches, release metadata.
+   * 2. **From a write-back inside a running chain, writing to the file that
+   *    chain is handling.** Without it the write would fire its own reaction,
+   *    which would write again, and loop. This is what legalises anchor
+   *    injection (M06) and build-artifact materialisation (M33).
+   *
+   * A write-back to a DIFFERENT file than the chain's is not arm 2 — it goes
+   * through the primitive and lands in arm 1.
+   *
+   * The old rule "`suppress` on an ordinary server write is a bug, `markOrigin`
+   * is correct there" is withdrawn as historically true but no longer current:
+   * it held only while a server write existed that did not go through the
+   * primitive. None does.
+   *
+   * Token lifetime: see {@link SuppressToken}. An arm-2 token is cleared by the
+   * dispatch that encloses it; an arm-1 token is retired by its issuer through
+   * {@link releaseSuppress}, unconditionally, however many events arrived —
+   * including none.
    */
-  suppress(scope: WatchScope, source: string, relPath: string): void {
-    this.pendingSuppress.set(writeKey(scope, source, relPath), Date.now() + SELF_WRITE_WINDOW_MS);
+  suppress(scope: WatchScope, source: string, relPath: string, owner: SuppressOwner = 'chain'): void {
+    const key = writeKey(scope, source, relPath);
+    const existing = this.suppressTimers.get(key);
+    if (existing) {
+      clearTimeout(existing);
+      this.suppressTimers.delete(key);
+    }
+    this.pendingSuppress.set(key, {
+      until: Date.now() + (owner === 'primitive' ? SUPPRESS_GUARD_MS : SELF_WRITE_WINDOW_MS),
+      owner,
+    });
+  }
+
+  /**
+   * Retire a primitive's token after its chain has settled, plus a guard window.
+   *
+   * Not immediate: the file provider may report the write after the caller has
+   * already been answered, so the token has to outlive the response by the
+   * source's debounce plus a margin.
+   */
+  releaseSuppress(scope: WatchScope, source: string, relPath: string): void {
+    const key = writeKey(scope, source, relPath);
+    const existing = this.suppressTimers.get(key);
+    if (existing) clearTimeout(existing);
+    const timer = setTimeout(() => {
+      this.suppressTimers.delete(key);
+      const token = this.pendingSuppress.get(key);
+      // Only retire our OWN token: a later writer may already have replaced it.
+      if (token?.owner === 'primitive') this.pendingSuppress.delete(key);
+    }, SUPPRESS_GUARD_MS);
+    // Never hold the process open for a suppression token.
+    timer.unref?.();
+    this.suppressTimers.set(key, timer);
   }
 
   /**
@@ -461,7 +610,13 @@ export class FileWatchRuntime {
    * is a worse failure than the one it fixes.
    */
   unsuppress(scope: WatchScope, source: string, relPath: string): void {
-    this.pendingSuppress.delete(writeKey(scope, source, relPath));
+    const key = writeKey(scope, source, relPath);
+    const timer = this.suppressTimers.get(key);
+    if (timer) {
+      clearTimeout(timer);
+      this.suppressTimers.delete(key);
+    }
+    this.pendingSuppress.delete(key);
   }
 
   /**
@@ -493,13 +648,23 @@ export class FileWatchRuntime {
     return hint.actor;
   }
 
-  /** Consume a pending suppress token, if one is still live. */
-  private takeSuppress(scope: WatchScope, source: string, relPath: string): boolean {
+  /**
+   * Does a live suppress token cover this path?
+   *
+   * 0.2.76 — a matching event PEEKS rather than consumes. "The token lives until
+   * the first matching event" is named and rejected in {@link SuppressToken}: it
+   * cannot survive a write that changes no byte (no event at all) nor an atomic
+   * rename reported as an `unlink` + `add` pair. An arm-2 token is retired by
+   * the enclosing dispatch, an arm-1 token by its issuer.
+   */
+  private peekSuppress(scope: WatchScope, source: string, relPath: string): boolean {
     const key = writeKey(scope, source, relPath);
-    const until = this.pendingSuppress.get(key);
-    if (until === undefined) return false;
+    const token = this.pendingSuppress.get(key);
+    if (token === undefined) return false;
+    if (Date.now() < token.until) return true;
+    // Expired: retire it here so it cannot mask a later event.
     this.pendingSuppress.delete(key);
-    return Date.now() < until;
+    return false;
   }
 
   // ------------------------------------------------------------------- flush
@@ -541,7 +706,7 @@ export class FileWatchRuntime {
       resolvedEvent = queued.event;
       origin = queued.origin;
     } else {
-      if (this.takeSuppress(scope, source, relPath)) {
+      if (this.peekSuppress(scope, source, relPath)) {
         this.stampSelfHash(mount, relPath);
         await mount.inflight.get(relPath);
         return;
@@ -570,13 +735,13 @@ export class FileWatchRuntime {
     if (event === 'unlink') {
       // Nothing to hash — a delete falls back to the token, and clears any stamp.
       this.selfHash.delete(key);
-      if (this.takeSuppress(mount.scope, mount.source, relPath)) return;
+      if (this.peekSuppress(mount.scope, mount.source, relPath)) return;
     } else {
       // Our own echo, whether the provider emitted one event for several writes
       // or several for one.
       const hash = this.hashFile(mount.dir, relPath);
       if (hash !== null && this.selfHash.get(key) === hash) return;
-      if (this.takeSuppress(mount.scope, mount.source, relPath)) {
+      if (this.peekSuppress(mount.scope, mount.source, relPath)) {
         // A write made outside any dispatch (the entity/release store primitives).
         // Record what it left behind so its later echoes are recognized too.
         if (hash !== null) this.selfHash.set(key, hash);
@@ -609,8 +774,16 @@ export class FileWatchRuntime {
    * subscriber runs on its own (that is how a root without `sectionIndexed`
    * leaves M14 with no M06 to wait for).
    */
-  private dispatch(mount: Mount, relPath: string, event: WatchEventKind, origin: WatchOrigin): Promise<void> {
-    const run = (async () => {
+  private dispatch(
+    mount: Mount,
+    relPath: string,
+    event: WatchEventKind,
+    origin: WatchOrigin,
+  ): Promise<ChainResult> {
+    const ctx: DispatchContext = { scope: mount.scope, source: mount.source, relPath };
+    const staleProjections: string[] = [];
+
+    const run = this.dispatchAls.run(ctx, async () => {
       const all = this.subs.get(mountKey(mount.scope, mount.source)) ?? [];
       const matching = all.filter((s) => !s.filter || s.filter.test(relPath));
       if (matching.length === 0) return;
@@ -623,36 +796,137 @@ export class FileWatchRuntime {
           // disposing the scope. Stop advancing the chain the moment the mount is
           // gone, so no later subscriber runs against a closed handle.
           if (mount.closed) return;
-          try {
-            if (event === 'unlink') {
-              await sub.handler.onUnlink(mount.scope, mount.source, relPath, origin);
-            } else {
-              await sub.handler.onChange(mount.scope, mount.source, relPath, origin);
-            }
-          } catch (err) {
-            // One subscriber's failure never aborts the dispatch for the rest — a
-            // late-phase subscriber that finds the file already gone skips it
-            // idempotently rather than derailing its siblings.
-            console.error(`[m40] subscription '${sub.id}' failed on ${mount.source}:${relPath}:`, err);
+          const failure = await this.runSubscriber(mount, sub, relPath, event, origin);
+          if (!failure) continue;
+          /**
+           * 0.2.76 phase error classes.
+           *
+           * `projection` is CRITICAL: an index that silently did not update is
+           * a wrong answer, not a missing one. One automatic retry, and on a
+           * second failure the projection is marked stale and the fact is
+           * reported to the caller. The operation still SUCCEEDS — with a
+           * warning. Nothing is ever rolled back: the commit point is the file
+           * on disk, and undoing it would be another write, another suppression
+           * and a recursion risk.
+           *
+           * Every other phase is INCIDENTAL: the error is logged and changes
+           * neither the operation's result nor the remaining phases of this
+           * run. A missing version-log row loses history; it does not damage
+           * content.
+           */
+          if (sub.phase !== 'projection') {
+            console.error(`[m40] subscription '${sub.id}' failed on ${mount.source}:${relPath}:`, failure);
+            continue;
           }
+          if (mount.closed) return;
+          const retry = await this.runSubscriber(mount, sub, relPath, event, origin);
+          if (!retry) continue;
+          staleProjections.push(sub.id);
+          console.error(
+            `[m40] projection '${sub.id}' failed twice on ${mount.source}:${relPath} — marking it stale:`,
+            retry,
+          );
+          this.broadcast(mount.scope, {
+            kind: 'projection:stale',
+            source: mount.source,
+            path: relPath,
+            subscription: sub.id,
+          });
         }
       }
-    })();
+    });
 
     // Chain so `flush()` can await work already in flight for this key.
-    const chained: Promise<void> = run.finally(() => {
-      const key = writeKey(mount.scope, mount.source, relPath);
-      // Whatever the write-backs left on disk is now OUR content: stamp it so the
-      // resulting echoes are recognized. This also subsumes any `suppress()` a
-      // write-back issued during the dispatch, so no token outlives it.
-      if (event === 'unlink') this.selfHash.delete(key);
-      else this.stampSelfHash(mount, relPath);
-      this.pendingSuppress.delete(key);
-      this.dispatchActor.delete(key);
-      if (mount.inflight.get(relPath) === chained) mount.inflight.delete(relPath);
-    });
-    mount.inflight.set(relPath, chained);
+    const chained: Promise<ChainResult> = run
+      .then(() => ({ staleProjections }))
+      .finally(() => {
+        const key = writeKey(mount.scope, mount.source, relPath);
+        // Whatever the write-backs left on disk is now OUR content: stamp it so the
+        // resulting echoes are recognized.
+        if (event === 'unlink') this.selfHash.delete(key);
+        else this.stampSelfHash(mount, relPath);
+        /**
+         * Clear only a token this dispatch's own write-backs issued (arm 2) —
+         * the post-dispatch stamp above already covers those writes. A
+         * `'primitive'` token belongs to the caller that wrapped this chain and
+         * must outlive it by its guard window, or the provider's late echo
+         * would dispatch a second time.
+         */
+        if (this.pendingSuppress.get(key)?.owner === 'chain') this.pendingSuppress.delete(key);
+        this.dispatchActor.delete(key);
+        if (mount.inflight.get(relPath) === chained) mount.inflight.delete(relPath);
+      });
+    mount.inflight.set(relPath, chained.then(() => undefined));
     return chained;
+  }
+
+  /** One subscriber call. Returns the error it threw, or `null` on success. */
+  private async runSubscriber(
+    mount: Mount,
+    sub: Subscription,
+    relPath: string,
+    event: WatchEventKind,
+    origin: WatchOrigin,
+  ): Promise<unknown> {
+    try {
+      if (event === 'unlink') {
+        await sub.handler.onUnlink(mount.scope, mount.source, relPath, origin);
+      } else {
+        await sub.handler.onChange(mount.scope, mount.source, relPath, origin);
+      }
+      return null;
+    } catch (err) {
+      return err ?? new Error('subscriber threw a falsy value');
+    }
+  }
+
+  /**
+   * The SECOND trigger: run the chain now, with the origin the caller declares.
+   *
+   * Called synchronously by the record store right after its commit point, and
+   * returns only once every phase has settled — which is the sole reason a write
+   * operation can answer with settled state instead of the state before its own
+   * reactions.
+   *
+   * The trigger is INVISIBLE to subscribers: the same `onChange` / `onUnlink`
+   * contract either way. Only `origin` distinguishes them, and M40 does not pass
+   * the trigger itself. A two-trigger reaction is still ONE registration.
+   *
+   * It deliberately does not consult `pendingSuppress`: the caller holds a token
+   * across this call so the provider's echo is swallowed, and honouring it here
+   * would run no phase at all.
+   */
+  async runChain(
+    scope: WatchScope,
+    source: string,
+    relPath: string,
+    event: WatchEventKind,
+    origin: WatchOrigin,
+    actor?: WatchActor,
+  ): Promise<ChainResult> {
+    const mount = this.mounts.get(mountKey(scope, source));
+    if (!mount) return { staleProjections: [] };
+    /**
+     * The actor travels as an argument now, not as a `markOrigin` label left
+     * lying around before the write. `origin` is binary and M17's `changed_by`
+     * needs three values, so `capture` still reads it through `peekActor` — it
+     * is simply set by the caller that KNOWS, for exactly this dispatch.
+     */
+    if (actor) this.dispatchActor.set(writeKey(scope, source, relPath), actor);
+    // A queued watcher event for this path is now redundant — this chain covers it.
+    const timer = mount.timers.get(relPath);
+    if (timer) {
+      clearTimeout(timer);
+      mount.timers.delete(relPath);
+    }
+    mount.pending.delete(relPath);
+    await mount.inflight.get(relPath);
+    return await this.dispatch(mount, relPath, event, origin);
+  }
+
+  /** The dispatch running on this call stack, if any. */
+  currentDispatch(): DispatchContext | undefined {
+    return this.dispatchAls.getStore();
   }
 
   // ------------------------------------------------------------------- scope
@@ -664,11 +938,15 @@ export class FileWatchRuntime {
       unmountSource: (source) => this.unmountSource(source, scope),
       subscribe: (source, handler, opts) => this.subscribe(source, handler, { ...opts, scope }),
       markOrigin: (source, relPath, actor) => this.markOrigin(scope, source, relPath, actor),
-      suppress: (source, relPath) => this.suppress(scope, source, relPath),
+      suppress: (source, relPath, owner) => this.suppress(scope, source, relPath, owner),
       unsuppress: (source, relPath) => this.unsuppress(scope, source, relPath),
+      runChain: (source, relPath, event, origin, actor) =>
+        this.runChain(scope, source, relPath, event, origin, actor),
+      releaseSuppress: (source, relPath) => this.releaseSuppress(scope, source, relPath),
       flush: (source, relPath, event) => this.flush(scope, source, relPath, event),
       broadcast: (event) => this.broadcast(scope, event),
       isMounted: (source) => this.isMounted(source, scope),
+      currentDispatch: () => this.currentDispatch(),
       dispose: () => this.disposeScope(scope),
     };
   }
@@ -682,6 +960,13 @@ export class FileWatchRuntime {
     const owned = [...this.mounts.values()].filter((m) => m.scope === scope);
     for (const m of owned) await this.unmountSource(m.source, scope);
     const prefix = `${scope}${SEP}`;
+    // Guard-window timers first: a timer that outlived its scope would fire
+    // against a context whose mounts and database are already gone.
+    for (const [key, timer] of [...this.suppressTimers]) {
+      if (!key.startsWith(prefix)) continue;
+      clearTimeout(timer);
+      this.suppressTimers.delete(key);
+    }
     for (const m of [this.selfHash, this.pendingSuppress, this.originHint] as Array<Map<string, unknown>>) {
       for (const key of [...m.keys()]) if (key.startsWith(prefix)) m.delete(key);
     }
@@ -695,6 +980,8 @@ export class FileWatchRuntime {
     for (const mount of [...this.mounts.values()]) {
       await this.unmountSource(mount.source, mount.scope);
     }
+    for (const timer of this.suppressTimers.values()) clearTimeout(timer);
+    this.suppressTimers.clear();
     this.selfHash.clear();
     this.pendingSuppress.clear();
     this.originHint.clear();

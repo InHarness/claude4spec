@@ -174,7 +174,7 @@ describe('M40 — phases and ordering', () => {
     expect(captured).toContain('<!-- anchor: abc123 -->');
   });
 
-  it('rank-0 phases run before write-back, which runs before capture', async () => {
+  it('write-back runs before the independent phases, which run before capture', async () => {
     const r = runtime();
     r.mountSource({ source: 'pages:pages', dir: tmp(), scope: CTX });
     const log: string[] = [];
@@ -186,7 +186,7 @@ describe('M40 — phases and ordering', () => {
     r.subscribe('pages:pages', recorder(log, 'proj'), { id: 'm06-index', phase: 'projection', scope: CTX });
 
     await r.flush(CTX, 'pages:pages', 'a.md');
-    expect(log).toEqual(['proj', 'notify', 'reload', 'wb', 'cap']);
+    expect(log).toEqual(['wb', 'proj', 'notify', 'reload', 'cap']);
   });
 
   it('[ac:ac-w-roocie-z-sectionindexed-true-link-i] `after: [m06-section-indexer]` is honoured within a phase', async () => {
