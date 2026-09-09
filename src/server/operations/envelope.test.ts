@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { toolSuccess } from './envelope.js';
+import { recentResponseSizes, toolSuccess } from './envelope.js';
 
 /**
  * The response-size instrumentation, which exists so the echo-free rule is
@@ -13,7 +13,7 @@ describe('response-size telemetry', () => {
 
   it('is silent unless explicitly enabled', () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
-    toolSuccess({ hash: 'abc' }, { operation: 'update_page', channel: 'mcp' });
+    toolSuccess({ hash: 'abc' }, { operation: 'update_page', channel: 'mcp', project: 'proj-a' });
     expect(log).not.toHaveBeenCalled();
   });
 
@@ -21,16 +21,16 @@ describe('response-size telemetry', () => {
     process.env.C4S_RESPONSE_SIZE = '1';
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const payload = { anchor: 'aaaa1111', hash: 'f'.repeat(64), version: 3, affectedAnchors: [] };
-    toolSuccess(payload, { operation: 'update_sections', channel: 'mcp' });
+    toolSuccess(payload, { operation: 'update_sections', channel: 'mcp', project: 'proj-a' });
     expect(log).toHaveBeenCalledWith(
-      `[response-size] update_sections mcp ${JSON.stringify(payload).length}`,
+      `[response-size] update_sections mcp proj-a ${JSON.stringify(payload).length}`,
     );
   });
 
   it('measures the string it actually returned, so the log cannot drift from the wire', () => {
     process.env.C4S_RESPONSE_SIZE = '1';
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const env = toolSuccess({ a: 1, b: [1, 2, 3] }, { operation: 'x', channel: 'mcp' });
+    const env = toolSuccess({ a: 1, b: [1, 2, 3] }, { operation: 'x', channel: 'mcp', project: 'proj-a' });
     const reported = Number(String(log.mock.calls[0]?.[0]).split(' ').pop());
     expect(reported).toBe(env.content[0]!.text.length);
   });
@@ -38,7 +38,7 @@ describe('response-size telemetry', () => {
   it('never lets the context leak into the envelope', () => {
     process.env.C4S_RESPONSE_SIZE = '1';
     vi.spyOn(console, 'log').mockImplementation(() => {});
-    const env = toolSuccess({ hash: 'abc' }, { operation: 'update_page', channel: 'mcp' });
+    const env = toolSuccess({ hash: 'abc' }, { operation: 'update_page', channel: 'mcp', project: 'proj-a' });
     // The wire shape is the channel's and stays exactly what it was before the
     // instrumentation existed — that is the whole reason `ctx` is a parameter
     // rather than a field.
@@ -46,12 +46,30 @@ describe('response-size telemetry', () => {
     expect(env.content[0]!.text).not.toContain('update_page');
   });
 
+  it('keys every measurement by project, so the process-wide ring is not ambient', () => {
+    /**
+     * The ring lives at module scope for the life of the process. Without this
+     * field it held every project's numbers under no key at all — a process
+     * resource carrying project data, which is the no-ambient rule's plainest
+     * violation. `null` is reserved for operations that genuinely belong to no
+     * project (`list_projects`), so it can never be confused with a call site
+     * that simply forgot to say.
+     */
+    toolSuccess({ hash: 'abc' }, { operation: 'update_page', channel: 'mcp', project: 'proj-b' });
+    const last = recentResponseSizes().at(-1);
+    expect(last?.project).toBe('proj-b');
+    expect(last?.operation).toBe('update_page');
+
+    toolSuccess({ projects: [] }, { operation: 'list_projects', channel: 'mcp', project: null });
+    expect(recentResponseSizes().at(-1)?.project).toBeNull();
+  });
+
   it('still answers when a caller has not been instrumented yet', () => {
     process.env.C4S_RESPONSE_SIZE = '1';
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const env = toolSuccess({ ok: true });
     expect(env.content[0]!.text).toBe('{"ok":true}');
-    expect(log).toHaveBeenCalledWith('[response-size] unknown unknown 11');
+    expect(log).toHaveBeenCalledWith('[response-size] unknown unknown - 11');
   });
 });
 
@@ -67,7 +85,7 @@ describe('toolSuccess payload guard', () => {
   });
 
   it('serializes undefined data to `null` rather than an envelope with no text', () => {
-    const env = toolSuccess(undefined, { operation: 'x', channel: 'mcp' });
+    const env = toolSuccess(undefined, { operation: 'x', channel: 'mcp', project: 'proj-a' });
     // Before the guard this was `text: undefined` — a `ToolEnvelope` whose own
     // type says `string`, which MCP validation drops without a word.
     expect(env.content[0]!.text).toBe('null');
@@ -77,13 +95,13 @@ describe('toolSuccess payload guard', () => {
   it('measures the guarded string, so telemetry cannot report a length it never sent', () => {
     process.env.C4S_RESPONSE_SIZE = '1';
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const env = toolSuccess(undefined, { operation: 'x', channel: 'mcp' });
+    const env = toolSuccess(undefined, { operation: 'x', channel: 'mcp', project: 'proj-a' });
     const reported = Number(String(log.mock.calls[0]?.[0]).split(' ').pop());
     expect(reported).toBe(env.content[0]!.text.length);
   });
 
   it('refuses a Promise instead of quietly reporting `{}` success', () => {
-    const env = toolSuccess(Promise.resolve({ real: 'data' }), { operation: 'x', channel: 'mcp' });
+    const env = toolSuccess(Promise.resolve({ real: 'data' }), { operation: 'x', channel: 'mcp', project: 'proj-a' });
     expect(env.isError).toBe(true);
     const body = JSON.parse(env.content[0]!.text) as { code: string; hint?: string };
     expect(body.code).toBe('INTERNAL');
@@ -93,7 +111,7 @@ describe('toolSuccess payload guard', () => {
   it('turns a cyclic payload into an error envelope rather than a throw', () => {
     const cyclic: Record<string, unknown> = { name: 'loop' };
     cyclic.self = cyclic;
-    const env = toolSuccess(cyclic, { operation: 'x', channel: 'mcp' });
+    const env = toolSuccess(cyclic, { operation: 'x', channel: 'mcp', project: 'proj-a' });
     expect(env.isError).toBe(true);
     expect(env.content[0]!.text).toContain('circular');
   });

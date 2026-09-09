@@ -39,6 +39,7 @@ function stubDeps(overrides: Partial<ExternalSurfaceDeps> = {}): ExternalSurface
     patchWrite: { briefsDirAbs: '/tmp/nonexistent-briefs', patchesDirAbs: '/tmp/nonexistent-patches' },
     listProjects: () => ({ projects: [] }),
     workspaceName: 'default',
+    projectId: 'proj-test',
     ...overrides,
   };
 }

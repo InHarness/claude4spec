@@ -45,6 +45,17 @@ export interface ToolCallContext {
   operation: string;
   /** The rendering channel — `mcp` and `internal` both land here. */
   channel: string;
+  /**
+   * The project this call answered for, or `null` for a genuinely
+   * process-level operation (`list_projects` is the only one today).
+   *
+   * `null` rather than `'unknown'`: the measurement ring lives at module scope
+   * for the life of the process, so without this field it held every project's
+   * numbers under no key at all — the no-ambient rule's plainest violation.
+   * An `'unknown'` sentinel would have re-created it, by making "no project
+   * exists here" indistinguishable from "nobody passed one".
+   */
+  project: string | null;
 }
 
 /**
@@ -57,6 +68,8 @@ const measurements: ResponseSizeRecord[] = [];
 export interface ResponseSizeRecord {
   operation: string;
   channel: string;
+  /** Project the measured call belongs to; `null` only for process-level ops. */
+  project: string | null;
   chars: number;
   /** True when this response alone exceeded the whole budget. */
   overBudget: boolean;
@@ -86,13 +99,16 @@ function recordResponseSize(chars: number, ctx: ToolCallContext | undefined): vo
   const record: ResponseSizeRecord = {
     operation: ctx?.operation ?? 'unknown',
     channel: ctx?.channel ?? 'unknown',
+    project: ctx?.project ?? null,
     chars,
     overBudget: chars > DEFAULT_BUDGET_CHARS,
   };
   measurements.push(record);
   if (measurements.length > MEASUREMENT_RING) measurements.shift();
   if (process.env.C4S_RESPONSE_SIZE === '1') {
-    console.log(`[response-size] ${record.operation} ${record.channel} ${chars}`);
+    console.log(
+      `[response-size] ${record.operation} ${record.channel} ${record.project ?? '-'} ${chars}`,
+    );
   }
   /**
    * A response that blows the budget on its own is warned about unconditionally.
@@ -103,7 +119,7 @@ function recordResponseSize(chars: number, ctx: ToolCallContext | undefined): vo
    */
   if (record.overBudget) {
     console.warn(
-      `[response-size] ${record.operation} (${record.channel}) returned ${chars} chars, over the ${DEFAULT_BUDGET_CHARS} budget`,
+      `[response-size] ${record.operation} (${record.channel}, project ${record.project ?? '-'}) returned ${chars} chars, over the ${DEFAULT_BUDGET_CHARS} budget`,
     );
   }
 }

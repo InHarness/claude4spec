@@ -40,7 +40,10 @@ export interface PlanToolsContext {
 }
 
 
-export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
+export function buildPlanToolsServer(
+  ctx: PlanToolsContext,
+  projectId: string | null = null,
+): CapturedMcpServer {
   const { threadId, planService, pageVersions } = ctx;
   const explicit = ctx.target === 'explicit';
   /** `path` is required exactly when there is no thread to default it from. */
@@ -75,7 +78,8 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
    * the `VALIDATION` above whose hint is the only thing that tells a caller to
    * run `list_plans` first.
    */
-  const ok = (data: unknown, operation: string) => toolSuccess(data, { operation, channel: 'mcp' });
+  const ok = (data: unknown, operation: string) =>
+    toolSuccess(data, { operation, channel: 'mcp', project: projectId });
   const fail = toolFailure;
 
   const getPlan = mcpTool(

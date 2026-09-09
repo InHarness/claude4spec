@@ -11,6 +11,35 @@
 import type { DefaultPredicate, DataDeclaration } from './data-schema.js';
 import type { SlugPattern } from './slug-pattern.js';
 
+/**
+ * ## No teardown hook — and why a plugin with native handles must clean up itself
+ *
+ * This contract has no counterpart to registration: nothing here is called when
+ * a ProjectContext is disposed, and nothing can be. Node's ESM registry caches
+ * modules by URL and exposes no API to unload one, so a manifest, once
+ * imported, stays imported for the life of the process.
+ *
+ * What that buys and what it costs:
+ *
+ * - **Isolation between projects** rests entirely on the import URL carrying the
+ *   project's path — two projects load two module instances because they load
+ *   two URLs, not because anything separates them afterwards.
+ * - **Freshness** rests on the content-hash cache-bust (`plugin-host/cache-bust.ts`):
+ *   an edited file is a new URL, hence a new instance.
+ * - **A context REBUILD is neither.** Same path, same content, same URL — so the
+ *   rebuilt context re-imports the *same object*. `dispose()` drops the host's
+ *   references (the parity move to `clearMcpFactories`), but the module itself
+ *   is still in Node's cache with whatever state it accumulated.
+ *
+ * The consequence for plugin authors is a single rule: a **stateless manifest is
+ * safe**, and a plugin that opens **native handles** — file descriptors, sockets
+ * or database connections, worker threads, watchers — owns closing them itself,
+ * because no host callback will ever ask it to. Prefer opening such a resource
+ * lazily, per call, and releasing it in the same call. This is a documented
+ * boundary, not a defect to code around; a plugin that genuinely needs
+ * process-lifetime native resources is the signal to add a teardown slot here,
+ * not a reason to assume one exists.
+ */
 export interface EntityModuleManifest {
   /** Stable type discriminator, kebab-case. 1:1 with XML tag attribute. */
   type: string;

@@ -110,6 +110,12 @@ export interface AgentTurnDeps {
    */
   workspaceName?: string;
   /**
+   * The project these turns run for, stamped onto the response-size telemetry
+   * record. Optional only because the hand-built test rigs omit it; a turn that
+   * cannot name its project measures as `null`, not as another project's.
+   */
+  projectId?: string;
+  /**
    * 0.2.13 M31: the `list_projects` operation, as a thunk so the registry is
    * re-read per call. Renders into the tool channel as `workspace-tools`.
    * Absent ⇒ the server is not mounted (hand-built test rigs).
@@ -156,6 +162,16 @@ export interface TurnReplay {
 export interface ActiveAdapter {
   requestId: string;
   adapter: RuntimeAdapter;
+  /**
+   * Settles when this turn's `finally` has finished — its last write to the
+   * database included. `abortAllTurns` awaits it so a context's dispose does
+   * not close the handle out from under a turn it has just aborted.
+   *
+   * Optional because the map is also populated by tests and by callers that
+   * construct an entry by hand; a missing signal simply means "nothing to wait
+   * for", which is the old behaviour.
+   */
+  finished?: Promise<void>;
   emitter: EventEmitter;
   replay: TurnReplay;
   /**
@@ -226,6 +242,72 @@ export function markUserInputResolvedInReplay(
       events[i] = { ...current, resolved: true, response };
     }
   }
+}
+
+/**
+ * Abort every turn in these registries and empty them — the sweep a
+ * ProjectContext runs when it is disposed.
+ *
+ * Lives here, next to the registries' own type and to the cancel helper, rather
+ * than inline in `dispose()`: the ordering is the load-bearing part and it is
+ * the same ordering the abort cascade uses. Pending input promises are rejected
+ * BEFORE the adapter is aborted, so a turn parked on a user question fails with
+ * the cancellation rather than hanging on a project that no longer exists.
+ *
+ * Tolerant by construction. An adapter that already finished is the normal case
+ * at shutdown, not an error, and a dispose that threw partway would skip
+ * everything after it — including closing the database. The two steps get their
+ * OWN try/catch for that reason: they are independent, and a throw out of the
+ * cancel step must not cost this entry its abort.
+ *
+ * AWAITS the aborted turns. `adapter.abort()` only starts the unwinding — it
+ * surfaces as an asynchronous AdapterAbortError, and the turn's `finally`
+ * (`finalizeRunningBackgroundTasks`, `finalizeStreamingRows`) runs after it.
+ * Returning here without waiting would let the caller close the database first,
+ * leaving those writes to fail into their local try/catch and the turn's rows
+ * stuck in `status='streaming'` — the exact defect this sweep exists to close,
+ * merely made narrower. The wait is BOUNDED: shutdown must not hang on an
+ * adapter that never settles, and a turn still running after the grace window
+ * is no worse off than it was before this function existed.
+ */
+export const ABORT_DRAIN_TIMEOUT_MS = 2_000;
+
+export async function abortAllTurns(
+  activeAdapters: Map<string, ActiveAdapter>,
+  pendingInputs: Map<string, PendingInput>,
+): Promise<void> {
+  const draining: Array<Promise<void>> = [];
+  for (const [, entry] of [...activeAdapters]) {
+    try {
+      cancelPendingForRequest(pendingInputs, entry.requestId, activeAdapters);
+    } catch {
+      /* replay-buffer annotation failed — must not cost this entry its abort */
+    }
+    try {
+      entry.adapter.abort();
+    } catch {
+      /* already-finished adapter — expected, not a failure */
+    }
+    if (entry.finished) draining.push(entry.finished);
+  }
+  activeAdapters.clear();
+  pendingInputs.clear();
+  if (draining.length === 0) return;
+  let timer: NodeJS.Timeout | undefined;
+  await Promise.race([
+    Promise.allSettled(draining),
+    new Promise<void>((resolve) => {
+      timer = setTimeout(() => {
+        console.warn(
+          `[chat] ${draining.length} turn(s) did not finish within ${ABORT_DRAIN_TIMEOUT_MS}ms of abort; disposing anyway`,
+        );
+        resolve();
+      }, ABORT_DRAIN_TIMEOUT_MS);
+    }),
+  ]);
+  // The timer holds the event loop open for its full window otherwise — the
+  // very thing item 8 of this release fixes for the base-reload burst timers.
+  if (timer) clearTimeout(timer);
 }
 
 export function cancelPendingForRequest(
@@ -651,12 +733,21 @@ export async function runAgentTurn(
    * Still AFTER `emit` is defined — the out-of-band queue routes (`POST/DELETE
    * /api/chat/queue/...`) broadcast `queue_updated`/`queue_cleared` through it.
    */
+  // Resolved by this turn's `finally`, below. `abortAllTurns` awaits it, so a
+  // context dispose that aborts this turn waits for its last write before
+  // closing the database.
+  let markFinished: () => void = () => {};
+  const finished = new Promise<void>((resolve) => {
+    markFinished = resolve;
+  });
+
   try {
     deps.activeAdapters.set(thread.id, {
       requestId,
       adapter,
       emitter,
       replay,
+      finished,
       emit,
       // 0.1.69 Transagents: lets the abort cascade find this turn's children (when
       // this turn IS a child, parentThreadId is set from the row).
@@ -1162,14 +1253,14 @@ export async function runAgentTurn(
             threadId: thread.id,
             planService: deps.planService,
             pageVersions: deps.pageVersions,
-          })
+          }, deps.projectId ?? null)
         : null;
       const briefTools = ctx.mcp.briefTools && thread.briefPath
         ? buildBriefToolsServer({
             threadId: thread.id,
             briefPath: thread.briefPath,
             briefService: deps.briefService,
-          })
+          }, deps.projectId ?? null)
         : null;
       /**
        * M23 `file_patch`. Same gate as the brief tools — it is a `brief`-class
@@ -1178,7 +1269,7 @@ export async function runAgentTurn(
        * brief thread can report drift against any brief it names.
        */
       const patchTools = ctx.mcp.briefTools && deps.patchWrite
-        ? createPatchToolsServer(deps.patchWrite)
+        ? createPatchToolsServer(deps.patchWrite, deps.projectId ?? null)
         : null;
       // M24 c4s-tools: cross-cutting MCP exposing the peer-consult flow. Fresh factory
       // per request; closes over `deps.workspaceName` so `ask` defaults to the caller's
@@ -1201,7 +1292,7 @@ export async function runAgentTurn(
        * host-owned server through for every profile, so "outside the catalog" and
        * "reachable from all four profiles" are the same fact here rather than two.
        */
-      const skillTools = buildSkillToolsServer(deps.skillRegistry);
+      const skillTools = buildSkillToolsServer(deps.skillRegistry, deps.projectId ?? null);
 
       // 0.2.13 workspace-tools: M31's `list_projects`. No registry dimension gates
       // it — see the note at its mount below. Absent only when the deps were built
@@ -1922,7 +2013,14 @@ export async function runAgentTurn(
     // every still-unanswered request of this turn un-annotated.
     cancelPendingForRequest(deps.pendingInputs, requestId, deps.activeAdapters);
     deps.activeAdapters.delete(thread.id);
-    deps.onTurnFinished?.();
+    try {
+      deps.onTurnFinished?.();
+    } finally {
+      // LAST, and in a `finally` of its own: a dispose parked on this promise
+      // must be released even when the callback above throws, or the timeout in
+      // `abortAllTurns` becomes the only way out of a shutdown.
+      markFinished();
+    }
   }
 
   // 0.1.79: slice the messages this turn persisted (id > pre-turn snapshot).

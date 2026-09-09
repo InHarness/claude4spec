@@ -3,23 +3,81 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import type { WsEvent } from '../../shared/types.js';
 
 /**
+ * Does this workspace know the project? Injected rather than imported: the
+ * gateway is built before any registry lookup is bound (see `startServer`), and
+ * membership must be re-read per upgrade — a project registered while the
+ * process runs has to become connectable without a restart.
+ */
+export type ProjectIsRegistered = (projectId: string) => boolean;
+
+/**
  * M31: per-project rooms. Clients connect with `/ws?project=<id>` (the SPA
  * reads the id from `window.__C4S_PROJECT__`); a missing/empty param is
  * refused — there is no process-wide broadcast channel anymore.
+ *
+ * The id is a TRANSPORT ADDRESS here, exactly as in the `/api/projects/:id`
+ * prefix: resolved by id alone, never by display name. The upgrade used to
+ * accept any non-empty string and open a room for it, which made the same key
+ * mean two different things on two transports — HTTP answered
+ * `404 PROJECT_NOT_IN_WORKSPACE` for a project this channel happily served. It
+ * was harmless only because rooms are written to exclusively by services that
+ * already hold a context, i.e. by accident of who emits rather than by the
+ * check that was missing.
  */
+/**
+ * Refuse an upgrade with a complete, well-formed HTTP response.
+ *
+ * Two things here are load-bearing, and the bare
+ * `socket.write('HTTP/1.1 404 Not Found\\r\\n\\r\\n')` this replaces had neither.
+ *
+ * `Connection: close` plus a zero-length body makes the response parseable as a
+ * finished message. Without them a browser is entitled to treat the reply as
+ * truncated when the socket is destroyed in the same tick — Chrome reports the
+ * generic "WebSocket is closed before the connection is established" and fires
+ * no handshake-response event at all, so a rejected upgrade is indistinguishable
+ * in DevTools from a client-side abort. That cost real debugging time on this
+ * very release.
+ *
+ * And it LOGS. The refusal is a decision this server made about a client's
+ * request; leaving no trace of it meant the only place the 404 existed was the
+ * browser's own error text, where it did not say 404.
+ */
+function rejectUpgrade(
+  socket: { write: (s: string) => unknown; destroy: () => unknown },
+  status: number,
+  statusText: string,
+  reason: string,
+): void {
+  console.warn(`[ws] upgrade rejected ${status} — ${reason}`);
+  socket.write(
+    `HTTP/1.1 ${status} ${statusText}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`,
+  );
+  socket.destroy();
+}
+
 export class WsGateway {
   private wss: WebSocketServer;
   private rooms = new Map<string, Set<WebSocket>>();
 
-  constructor(server: HttpServer) {
+  constructor(server: HttpServer, isRegistered?: ProjectIsRegistered) {
     this.wss = new WebSocketServer({ noServer: true });
     server.on('upgrade', (req, socket, head) => {
       const url = new URL(req.url ?? '', 'http://localhost');
       if (url.pathname !== '/ws') return;
       const projectId = url.searchParams.get('project');
       if (!projectId) {
-        socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
-        socket.destroy();
+        rejectUpgrade(socket, 400, 'Bad Request', 'missing ?project');
+        return;
+      }
+      /**
+       * Rejected at UPGRADE with an HTTP status, not accepted and then closed
+       * with a WS code — the same shape as the missing-param case just above,
+       * which is this file's only precedent. `404` rather than `400` because
+       * the request is well-formed and the project is simply not here, which is
+       * the distinction `PROJECT_NOT_IN_WORKSPACE` draws on the HTTP side.
+       */
+      if (isRegistered && !this.isMember(isRegistered, projectId)) {
+        rejectUpgrade(socket, 404, 'Not Found', `project '${projectId}' not in workspace`);
         return;
       }
       this.wss.handleUpgrade(req, socket, head, (ws) => {
@@ -36,6 +94,30 @@ export class WsGateway {
         this.send(ws, { kind: 'hello', ts: Date.now() });
       });
     });
+  }
+
+  /**
+   * The membership predicate, called where NOTHING can catch it.
+   *
+   * Its real implementation reads the workspace registry, which THROWS rather
+   * than answering false on invalid JSON, on an unreadable `~/.claude4spec`,
+   * and on a `$schemaVersion` newer than this build. The HTTP side makes the
+   * identical call inside an Express handler, so those surface as a 500; here
+   * the call sits in a `server.on('upgrade')` listener, and this process
+   * installs no `uncaughtException` handler — a hand-edited registry file plus
+   * the client's reconnect loop would take the server down.
+   *
+   * Fails CLOSED: membership that cannot be established is not membership. The
+   * client sees the same 404 it would get for an unknown project and retries,
+   * which is recoverable in a way a dead process is not.
+   */
+  private isMember(isRegistered: ProjectIsRegistered, projectId: string): boolean {
+    try {
+      return isRegistered(projectId);
+    } catch (err) {
+      console.warn(`[ws] membership check failed for '${projectId}', rejecting upgrade:`, err);
+      return false;
+    }
   }
 
   broadcast(projectId: string, event: WsEvent): void {

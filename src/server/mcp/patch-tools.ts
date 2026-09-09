@@ -24,8 +24,12 @@ import { filePatch, type PatchWriteDeps } from '../services/patch-write.js';
  * own shape: the patch body travels TO the server, and echoing it back would be
  * the caller paying twice for text it just wrote.
  */
-export function createPatchToolsServer(deps: PatchWriteDeps): CapturedMcpServer {
-  const ok = (data: unknown, operation: string) => toolSuccess(data, { operation, channel: 'mcp' });
+export function createPatchToolsServer(
+  deps: PatchWriteDeps,
+  projectId: string | null = null,
+): CapturedMcpServer {
+  const ok = (data: unknown, operation: string) =>
+    toolSuccess(data, { operation, channel: 'mcp', project: projectId });
   const fail = toolFailure;
 
   const filePatchTool = mcpTool(

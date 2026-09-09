@@ -43,6 +43,7 @@ import { briefsRouter } from '../routes/briefs.js';
 import { patchesRouter } from '../routes/patches.js';
 import { metaRouter } from '../routes/meta.js';
 import { listProjects } from './list-projects.js';
+import { readPeerConfigSummary } from './peer-config.js';
 import { PatchService } from '../services/patch.js';
 import { artifactsRouter } from '../routes/artifacts.js';
 import { RemoteAuthService } from '../services/remote-auth.js';
@@ -120,6 +121,7 @@ import {
 import { buildBasePluginPackages } from '../routes/plugins.js';
 import type { PluginLoadRecord } from '../core/plugin-host/loader.js';
 import type { ActiveAdapter, PendingInput } from '../routes/agent-turn.js';
+import { abortAllTurns } from '../routes/agent-turn.js';
 import { ProjectWsEmitter } from '../ws/project-emitter.js';
 import { ensureWelcomePage } from './bootstrap.js';
 import type { WorkspaceRegistry } from './registry.js';
@@ -856,7 +858,7 @@ async function buildInner(
       ...sectionWriteDeps,
       rootIds: () => [...rootById.keys()],
       isSectionIndexed: (rootId) => rootById.get(rootId)?.root.sectionIndexed ?? true,
-    }),
+    }, projectId),
   );
 
   // M13: generic write-side CRUD server for every active entity type — the
@@ -1153,13 +1155,11 @@ async function buildInner(
       .filter((p) => p.cwd !== cwd)
       .map((p) => {
         const peer: PeerProject = { path: p.cwd, registryName: p.name };
-        try {
-          const peerCfg = readConfig(p.cwd);
-          if (peerCfg.name) peer.name = peerCfg.name;
-          if (peerCfg.description) peer.description = peerCfg.description;
-        } catch {
-          /* unreadable/missing config → no display name, not an error */
-        }
+        // The one sanctioned peer-config read; unreadable → no display name,
+        // not an error. See `peer-config.ts` for why this bypass exists.
+        const { name, description } = readPeerConfigSummary(p.cwd);
+        if (name) peer.name = name;
+        if (description) peer.description = description;
         return peer;
       });
   };
@@ -1168,6 +1168,7 @@ async function buildInner(
   // (POST /chat, SSE) dziela ten sam runtime i rejestr `activeAdapters`.
   const agentDeps = {
     pluginHost,
+    projectId,
     activeAdapters,
     pendingInputs,
     onTurnFinished: deps.onTurnFinished,
@@ -1231,6 +1232,7 @@ async function buildInner(
     patchWrite: patchWriteDeps,
     listProjects: agentDeps.listWorkspaceProjects,
     workspaceName: workspace.name,
+    projectId,
   });
   // `project-bound`: the project parameter's default comes from the URL this
   // router is already mounted under. See `routes/mcp.ts`.
@@ -1670,8 +1672,33 @@ async function buildInner(
     writingStyle,
     hasInFlightTurn: () => activeAdapters.size > 0,
     mcpSurfaceDeps,
-    // M31 dispose sequence: this scope's mounts → MCP factories → room → db handle.
+    // M31 dispose sequence: turn registries → this scope's mounts → MCP
+    // factories → room → db handle.
     dispose: async () => {
+      /**
+       * The turn registries are context-lifetime state keyed by `threadId`, and
+       * until now nothing released them: dispose closed the db and left every
+       * entry in place. That was safe only by accident — `ProjectContextCache`
+       * refuses to EVICT a context with an in-flight turn, so the leak was
+       * covered by somebody else's guard rather than by this module's own
+       * cleanup. The two paths that ignore that guard, `retire()` (project
+       * purge) and `disposeAll()` (process shutdown), disposed underneath a
+       * running turn, whose `finally` then mutated a disposed context and wrote
+       * through a closed handle.
+       *
+       * Aborting first is what makes the sweep safe rather than merely tidy: the
+       * adapter raises AdapterAbortError, the turn's own `finally` finalizes its
+       * streaming rows, and the pending user-input promises reject instead of
+       * hanging forever on a project that no longer exists.
+       *
+       * AWAITED, because that `finally` is asynchronous: `abort()` starts the
+       * unwinding and returns, so an unawaited sweep would reach `db.close()`
+       * below while the finalization writes were still in flight — a narrower
+       * version of the same bug, not a fix for it. The wait is bounded inside
+       * `abortAllTurns`; a turn that outlives the grace window is logged and
+       * disposed around, which is where this code stood before.
+       */
+      await abortAllTurns(activeAdapters, pendingInputs);
       // One call retires every mount and subscription of THIS context —
       // pages, artifacts, entities, releases and the plugin overlay — and settles
       // its pending debounce timers. `scope: 'process'` mounts (the base plugin

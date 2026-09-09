@@ -110,7 +110,10 @@ function normalizeFileArg(raw: string): string {
   return cleaned;
 }
 
-export function buildSkillToolsServer(registry: SkillRegistry): CapturedMcpServer {
+export function buildSkillToolsServer(
+  registry: SkillRegistry,
+  projectId: string | null = null,
+): CapturedMcpServer {
   const loadSkillFile = mcpTool(
     'load_skill_file',
     [
@@ -171,7 +174,7 @@ export function buildSkillToolsServer(registry: SkillRegistry): CapturedMcpServe
                 .map(({ path, bytes, lines, isText }) => ({ path, bytes, lines, isText }))
                 .sort((a, b) => a.path.localeCompare(b.path)),
             },
-            { operation: 'load_skill_file', channel: 'mcp' },
+            { operation: 'load_skill_file', channel: 'mcp', project: projectId },
           );
         }
 
@@ -181,7 +184,7 @@ export function buildSkillToolsServer(registry: SkillRegistry): CapturedMcpServe
           // rather than refusing the one path every caller can guess.
           return toolSuccess(
             { slug: metadata.slug, path: file, ...budgeted(resolved.content, slug, file) },
-            { operation: 'load_skill_file', channel: 'mcp' },
+            { operation: 'load_skill_file', channel: 'mcp', project: projectId },
           );
         }
 
@@ -210,7 +213,7 @@ export function buildSkillToolsServer(registry: SkillRegistry): CapturedMcpServe
 
         return toolSuccess(
           { slug: metadata.slug, path: file, ...budgeted(entry.content, slug, file) },
-          { operation: 'load_skill_file', channel: 'mcp' },
+          { operation: 'load_skill_file', channel: 'mcp', project: projectId },
         );
       } catch (err) {
         return toolFailure(err);
