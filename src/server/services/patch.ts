@@ -25,6 +25,8 @@ import type { PatchFrontmatter, PatchKind } from '../../shared/entities.js';
 import { PATCH_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
 import { BRIEF_ROOT_MARKER, PATCH_ROOT_MARKER } from '../../shared/types.js';
 import type { PagesService } from './pages.js';
+import type { RecordStore } from '../fs/record-store.js';
+import type { MarkdownRecord } from '../fs/record-adapters.js';
 import type { SelfWriteMarker } from '../fs/sources.js';
 import type { FileVersionService } from './file-version.js';
 import { hashContent, toIso } from './artifact-content.js';
@@ -39,6 +41,24 @@ import { ConflictError } from './brief.js';
 export interface PatchServiceDeps {
   patchesPages: PagesService;
   patchesWatcher: SelfWriteMarker;
+  /**
+   * 0.2.76 — the M42 record store for this artifact source.
+   *
+   * The bytes go through the shared primitive: atomic `temp -> rename` (these
+   * writes had no atomicity at all), the source's path guard, per-path
+   * serialization and the shared suppression contract.
+   *
+   * It writes with `chain: false`, and that is deliberate rather than a shortcut:
+   * this service authors its own `file_version` row because it carries a
+   * `change_summary`, which the `capture` phase has no way to receive. Running
+   * the chain as well would write the row twice. Nothing is lost by skipping it
+   * here — briefs and patches register no `write-back`, and plans inject their
+   * anchors synchronously before writing, so the settled state IS the committed
+   * state on these sources.
+   *
+   * Optional: the hand-rolled rigs have no mount, and keep the plain write.
+   */
+  patchesRecords?: RecordStore<MarkdownRecord> | null;
   patchesSerializer: FileSerializer;
   pageVersions: FileVersionService;
   chatService: ChatService;
@@ -218,6 +238,25 @@ export class PatchService {
 
   // ─── Mutations ──────────────────────────────────────────────────────────
 
+
+  /** The bytes of one patch, through the shared primitive. See `BriefService.writeBytes`. */
+  private async writeBytes(relPath: string, content: string): Promise<void> {
+    const records = this.deps.patchesRecords;
+    if (records) {
+      await records.write(relPath, { raw: content }, { actor: 'user', chain: false });
+      return;
+    }
+    const abs = this.absPath(relPath);
+    await fs.mkdir(path.dirname(abs), { recursive: true });
+    this.deps.patchesWatcher.suppress(relPath);
+    try {
+      await fs.writeFile(abs, content, 'utf-8');
+    } catch (err) {
+      this.deps.patchesWatcher.unsuppress?.(relPath);
+      throw err;
+    }
+  }
+
   async updateContent(opts: PatchUpdateContentOpts): Promise<PatchDetail> {
     const current = await this.getPatch(opts.path);
     if (typeof opts.expectedHash === 'string' && opts.expectedHash !== current.hash) {
@@ -234,9 +273,7 @@ export class PatchService {
         `cannot mutate immutable frontmatter keys: ${violated.join(', ')}`,
       );
     }
-    const abs = this.absPath(opts.path);
-    this.deps.patchesWatcher.suppress(opts.path);
-    await fs.writeFile(abs, opts.content, 'utf-8');
+    await this.writeBytes(opts.path, opts.content);
     await this.deps.pageVersions.recordVersion(
       opts.path,
       'update',
@@ -255,9 +292,7 @@ export class PatchService {
     // write untouched (gray-matter pass-through), it is simply never read.
     const next: PatchFrontmatter = { ...current.frontmatter, applied: opts.applied };
     const newContent = matter.stringify(current.body, next as Record<string, unknown>);
-    const abs = this.absPath(opts.path);
-    this.deps.patchesWatcher.suppress(opts.path);
-    await fs.writeFile(abs, newContent, 'utf-8');
+    await this.writeBytes(opts.path, newContent);
     await this.deps.pageVersions.recordVersion(
       opts.path,
       'update',

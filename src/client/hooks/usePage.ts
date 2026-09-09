@@ -57,6 +57,16 @@ export interface PageWriteVars {
  * the next save reads it from — the deliberate no-re-read policy documented
  * above means a hash left at its read-time value would be stale from the first
  * save onward, and every subsequent one would 409.
+ *
+ * 0.2.76 — the ack now also carries `content`: the file as it SETTLED, anchors
+ * injected. The cache is still seeded from `vars.body` and NOT from it, and that
+ * is deliberate. Those settled bytes are exactly the ones the comment at the top
+ * of this file says must not be fed back into the editor: the trailing newline
+ * `matter.stringify` leaves and the `<!-- anchor: … -->` lines the write-back
+ * injects both miss Editor's echo guard, ProseMirror rebuilds, and the caret
+ * drops mid-typing. `hash` already keeps the next save honest, so the editor
+ * does not need the bytes to stay correct — adopting them needs the echo guard
+ * fixed first, which is its own change.
  */
 export function applyPageWriteToCache(qc: QueryClient, vars: PageWriteVars, ack?: PageWriteAck): void {
   qc.setQueryData(['page', vars.rootId, vars.path], (prev: PageContent | undefined) =>

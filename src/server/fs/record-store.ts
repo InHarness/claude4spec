@@ -78,6 +78,20 @@ export interface RecordWriteOptions {
   actor?: WatchActor;
   /** Defaults to `'server'` — this primitive is only ever driven by the app. */
   origin?: WatchOrigin;
+  /**
+   * Run the phase chain in-band. Default true.
+   *
+   * `false` is for a source whose owner still authors its own version row —
+   * M36's artifacts, whose `recordVersion` carries a `change_summary` the
+   * `capture` phase has no way to receive. Such a caller still gets the commit,
+   * the path serialization and the suppression; it simply keeps the bookkeeping
+   * it already owns instead of having it done twice.
+   *
+   * It costs nothing there: briefs and patches register no `write-back`, and
+   * `PlanService` injects its anchors synchronously before writing, so the
+   * settled state IS the committed state on those sources.
+   */
+  chain?: boolean;
 }
 
 export interface RecordWriteResult<T> {
@@ -235,7 +249,10 @@ export class RecordStore<T> {
     return await this.withPathLock(relPath, async () => {
       const exists = this.readRaw(relPath) !== null;
       this.commit(relPath, record, opts.expectedHash, 'primitive');
-      const chain = await this.runChain(relPath, exists ? 'change' : 'add', opts);
+      const chain =
+        opts.chain === false
+          ? (this.opts.registrar.releaseSuppress(this.opts.source, relPath), { staleProjections: [] })
+          : await this.runChain(relPath, exists ? 'change' : 'add', opts);
       // 6 — read the settled state, NOT what was handed in. The chain's
       // write-back phase may have rewritten the file after the commit.
       const content = this.readRaw(relPath) ?? '';

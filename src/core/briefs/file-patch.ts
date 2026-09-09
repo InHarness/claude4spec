@@ -14,6 +14,16 @@ export interface WritePatchOpts {
   kind: PatchKind;
   body: string;
   createdBy: string;
+  /**
+   * How the bytes reach disk, when the caller has an M42 record store for
+   * `artifacts:patch`. Left out by the CLI, which has no watch runtime — this
+   * module is `src/core`, reached from both sides.
+   *
+   * Awaited before this returns: the filename was reserved by a collision
+   * search over the directory, and the reservation is only real once the file
+   * exists.
+   */
+  writeRecord?: (relPath: string, content: string) => Promise<void>;
 }
 
 export interface WritePatchResult {
@@ -62,7 +72,7 @@ function uniqueFilename(dirAbs: string, stem: string): string {
   );
 }
 
-export function writePatchFs(opts: WritePatchOpts): WritePatchResult {
+export async function writePatchFs(opts: WritePatchOpts): Promise<WritePatchResult> {
   assertBriefExists(opts.briefsDirAbs, opts.briefRelPath);
 
   // Slugify the whole relative path (not just its basename) so briefs that
@@ -87,8 +97,20 @@ export function writePatchFs(opts: WritePatchOpts): WritePatchResult {
   const content = matter.stringify(`# Patch — ${opts.desc}\n\n${opts.body}\n`, frontmatter);
 
   try {
-    fs.mkdirSync(opts.patchesDirAbs, { recursive: true });
-    fs.writeFileSync(path.join(opts.patchesDirAbs, filename), content, 'utf8');
+    /**
+     * 0.2.76 — through the M42 primitive when the caller has a mount for
+     * `artifacts:patch`, and by hand when it does not.
+     *
+     * The fallback is not dead weight: this function is reached from the CLI as
+     * well as from the server route, and the CLI has no watch runtime at all.
+     * The primitive owns directories it is HANDED; it does not construct them.
+     */
+    if (opts.writeRecord) {
+      await opts.writeRecord(filename, content);
+    } else {
+      fs.mkdirSync(opts.patchesDirAbs, { recursive: true });
+      fs.writeFileSync(path.join(opts.patchesDirAbs, filename), content, 'utf8');
+    }
   } catch (err) {
     throw new BriefFsError('PATCH_WRITE_FAILED', `failed to write patch file: ${(err as Error).message}`);
   }

@@ -24,6 +24,16 @@ const PATCH_KINDS: readonly PatchKind[] = ['drift', 'missing', 'incorrect', 'cla
 export interface PatchWriteDeps {
   briefsDirAbs: string;
   patchesDirAbs: string;
+  /**
+   * 0.2.76 — the M42 write for `artifacts:patch`, when the caller has a mount.
+   *
+   * This one runs the FULL chain, unlike the other artifact writes: `file_patch`
+   * never authored its own `file_version` row or index entry — it always left
+   * both to the watcher. Running the chain in-band keeps that arrangement and
+   * simply stops it waiting for a debounce, so the patch is listable the moment
+   * the call returns.
+   */
+  writePatchRecord?: (relPath: string, content: string) => Promise<void>;
 }
 
 /** The operation's input, channel-independent. `brief` is relative to `briefsDir`. */
@@ -48,11 +58,11 @@ export interface FilePatchResult {
  * itself: `'rest'`, `'agent'`, and so on. A caller that stays anonymous still
  * leaves a truthful record of HOW it arrived.
  */
-export function filePatch(
+export async function filePatch(
   deps: PatchWriteDeps,
   input: FilePatchInput,
   fallbackActor: string,
-): FilePatchResult {
+): Promise<FilePatchResult> {
   if (typeof input.brief !== 'string' || input.brief.trim() === '') {
     throw new DomainError('VALIDATION', 'brief is required (path relative to briefsDir)');
   }
@@ -88,7 +98,7 @@ export function filePatch(
    * filesystem source, so the watcher indexes the new file and captures it in
    * `file_version` by the same reaction that handles a hand-written one.
    */
-  return writePatchFs({
+  return await writePatchFs({
     briefsDirAbs: deps.briefsDirAbs,
     patchesDirAbs: deps.patchesDirAbs,
     briefRelPath: input.brief,
@@ -96,5 +106,6 @@ export function filePatch(
     kind,
     body: input.body,
     createdBy: (input.createdBy as string | undefined)?.trim() || fallbackActor,
+    ...(deps.writePatchRecord ? { writeRecord: deps.writePatchRecord } : {}),
   });
 }

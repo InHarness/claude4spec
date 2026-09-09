@@ -382,6 +382,103 @@ describe('M40 — self-writes', () => {
   });
 });
 
+describe('M40 — the second trigger and token lifetime', () => {
+  it('runChain runs every phase despite a live suppress token, unlike flush', async () => {
+    const r = runtime();
+    r.mountSource({ source: 'pages:pages', dir: tmp(), scope: CTX });
+    const log: string[] = [];
+    r.subscribe('pages:pages', recorder(log, 'proj'), { id: 'm06-index', phase: 'projection', scope: CTX });
+
+    // Arm 1: the primitive suppresses its own write and then drives the chain
+    // itself. A chain that honoured the token would run nothing at all, which is
+    // exactly why this cannot be `flush`.
+    r.suppress(CTX, 'pages:pages', 'a.md', 'primitive');
+    const res = await r.runChain(CTX, 'pages:pages', 'a.md', 'change', 'server');
+    expect(log).toEqual(['proj']);
+    expect(res.staleProjections).toEqual([]);
+  });
+
+  it('a primitive token survives its own chain, so the provider’s late echo is still swallowed', async () => {
+    const r = runtime();
+    r.mountSource({ source: 'pages:pages', dir: tmp(), scope: CTX });
+    const log: string[] = [];
+    r.subscribe('pages:pages', recorder(log, 'proj'), { id: 'm06-index', phase: 'projection', scope: CTX });
+
+    r.suppress(CTX, 'pages:pages', 'a.md', 'primitive');
+    await r.runChain(CTX, 'pages:pages', 'a.md', 'change', 'server');
+    expect(log).toEqual(['proj']);
+
+    // The echo arrives after the caller was already answered. Pre-0.2.76 the
+    // dispatch cleared the token on its way out and this dispatched a second time.
+    await r.flush(CTX, 'pages:pages', 'a.md');
+    expect(log).toEqual(['proj']);
+  });
+
+  it('a token is not consumed by the first matching event — a write of zero bytes emits none', async () => {
+    const r = runtime();
+    r.mountSource({ source: 'pages:pages', dir: tmp(), scope: CTX });
+    const log: string[] = [];
+    r.subscribe('pages:pages', recorder(log, 'proj'), { id: 'm06-index', phase: 'projection', scope: CTX });
+
+    r.suppress(CTX, 'pages:pages', 'a.md', 'primitive');
+    // An atomic rename is reported once by one provider and as a PAIR by another.
+    // A one-shot token would be eaten by the first and let the second through.
+    await r.flush(CTX, 'pages:pages', 'a.md', 'unlink');
+    await r.flush(CTX, 'pages:pages', 'a.md', 'add');
+    expect(log).toEqual([]);
+  });
+
+  it('a chain-owned token is still cleared by the dispatch that encloses it', async () => {
+    const r = runtime();
+    r.mountSource({ source: 'pages:pages', dir: tmp(), scope: CTX });
+    const log: string[] = [];
+    // Arm 2: a write-back inside a running chain, writing the chain's own file.
+    r.subscribe(
+      'pages:pages',
+      { onChange: () => r.suppress(CTX, 'pages:pages', 'a.md'), onUnlink: () => {} },
+      { id: 'm06-anchor', phase: 'write-back', scope: CTX },
+    );
+    r.subscribe('pages:pages', recorder(log, 'proj'), { id: 'm06-index', phase: 'projection', scope: CTX });
+
+    await r.flush(CTX, 'pages:pages', 'a.md');
+    expect(log).toEqual(['proj']);
+    // Nothing of it outlives the run: the next genuine edit still dispatches.
+    await r.flush(CTX, 'pages:pages', 'a.md');
+    expect(log).toEqual(['proj', 'proj']);
+  });
+
+  it('runChain carries the actor, so capture still has three values without markOrigin', async () => {
+    const r = runtime();
+    r.mountSource({ source: 'pages:pages', dir: tmp(), scope: CTX });
+    let seen: string | undefined;
+    r.subscribe(
+      'pages:pages',
+      {
+        onChange: () => void (seen = r.peekActor(CTX, 'pages:pages', 'a.md')),
+        onUnlink: () => {},
+      },
+      { id: 'm17-capture', phase: 'capture', scope: CTX },
+    );
+    await r.runChain(CTX, 'pages:pages', 'a.md', 'change', 'server', 'agent');
+    expect(seen).toBe('agent');
+  });
+
+  it('exposes the running dispatch’s key, and nothing outside one', async () => {
+    const r = runtime();
+    r.mountSource({ source: 'pages:pages', dir: tmp(), scope: CTX });
+    let inside: unknown;
+    r.subscribe(
+      'pages:pages',
+      { onChange: () => void (inside = r.currentDispatch()), onUnlink: () => {} },
+      { id: 'm06-index', phase: 'projection', scope: CTX },
+    );
+    expect(r.currentDispatch()).toBeUndefined();
+    await r.flush(CTX, 'pages:pages', 'a.md');
+    expect(inside).toEqual({ scope: CTX, source: 'pages:pages', relPath: 'a.md' });
+    expect(r.currentDispatch()).toBeUndefined();
+  });
+});
+
 describe('M40 — flush', () => {
   it('drives the chain with no fs provider at all (the harness property)', async () => {
     const r = runtime({ fsEvents: false });

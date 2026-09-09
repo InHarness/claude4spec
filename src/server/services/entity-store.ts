@@ -9,8 +9,18 @@
  * of an unchanged entity are byte-identical (the determinism invariant — any
  * non-deterministic field would produce git-diff noise on every rebuild).
  *
- * Writes are atomic (temp→rename) and `suppress()` the dedicated entities
- * watcher so a programmatic write does not trigger its own reindex.
+ * 0.2.76 — the bytes go through the M42 record store with the JSON adapter, so
+ * atomicity, the path guard, per-path serialization and self-write suppression
+ * are the shared implementation rather than this file's own.
+ *
+ * What does NOT move is the mutation ORDER. An entity mutation writes the row,
+ * its projections and the `entity_version` capture in ONE SQLite transaction and
+ * only then derives the file (`persist`, below) — file-last, not file-first — so
+ * a rolled-back transaction leaves no file behind. The reindex is therefore not
+ * a phase of this write's chain; it is the INBOUND direction, for edits that
+ * arrive from outside the app. The write stays synchronous for the same reason:
+ * `TagsService.rename`/`remove` and the projection write path are synchronous by
+ * signature all the way up.
  */
 
 import fs from 'node:fs';
@@ -22,6 +32,7 @@ import { canonicalize } from '../serialization/snapshot.js';
 import { attachPayloadVersion } from '../serialization/payload-upgrade.js';
 import { DomainError } from './tags.js';
 import type { SelfWriteSuppressor } from '../fs/sources.js';
+import type { RecordStore } from '../fs/record-store.js';
 
 const TAGS_FILE = 'tags.json';
 const KEBAB_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -42,6 +53,12 @@ export interface EntityStoreFile {
 
 export class EntityStore {
   readonly root: string;
+  /**
+   * The M42 record store for `entities`. Set after construction — the mount it
+   * binds to is claimed later in `buildProjectContext`. `null` in the rigs that
+   * have no watcher, which keep the store's own temp→rename.
+   */
+  records: RecordStore<SnapshotData> | null = null;
 
   constructor(
     cwd: string,
@@ -151,6 +168,10 @@ export class EntityStore {
   }
 
   private writeRel(relPath: string, data: SnapshotData): void {
+    if (this.records) {
+      this.records.writeSync(relPath, data);
+      return;
+    }
     const abs = this.absFor(relPath);
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     const body = JSON.stringify(canonicalize(data), null, 2) + '\n';
@@ -163,6 +184,10 @@ export class EntityStore {
   /** Remove `<type>/<slug>.json` (atomic suppress; ignore if already gone). */
   remove(type: string, slug: string): void {
     const relPath = this.relPathFor(type, slug);
+    if (this.records) {
+      this.records.removeSync(relPath);
+      return;
+    }
     this.watcher.suppress(relPath);
     try {
       fs.unlinkSync(this.absFor(relPath));

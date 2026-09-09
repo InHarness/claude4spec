@@ -66,7 +66,7 @@ export function createPatchToolsServer(
     },
     async (args) => {
       try {
-        return ok(filePatch(deps, args, 'agent'), 'file_patch');
+        return ok(await filePatch(deps, args, 'agent'), 'file_patch');
       } catch (err) {
         return fail(err);
       }
