@@ -24,6 +24,37 @@ export type ProjectIsRegistered = (projectId: string) => boolean;
  * already hold a context, i.e. by accident of who emits rather than by the
  * check that was missing.
  */
+/**
+ * Refuse an upgrade with a complete, well-formed HTTP response.
+ *
+ * Two things here are load-bearing, and the bare
+ * `socket.write('HTTP/1.1 404 Not Found\\r\\n\\r\\n')` this replaces had neither.
+ *
+ * `Connection: close` plus a zero-length body makes the response parseable as a
+ * finished message. Without them a browser is entitled to treat the reply as
+ * truncated when the socket is destroyed in the same tick — Chrome reports the
+ * generic "WebSocket is closed before the connection is established" and fires
+ * no handshake-response event at all, so a rejected upgrade is indistinguishable
+ * in DevTools from a client-side abort. That cost real debugging time on this
+ * very release.
+ *
+ * And it LOGS. The refusal is a decision this server made about a client's
+ * request; leaving no trace of it meant the only place the 404 existed was the
+ * browser's own error text, where it did not say 404.
+ */
+function rejectUpgrade(
+  socket: { write: (s: string) => unknown; destroy: () => unknown },
+  status: number,
+  statusText: string,
+  reason: string,
+): void {
+  console.warn(`[ws] upgrade rejected ${status} — ${reason}`);
+  socket.write(
+    `HTTP/1.1 ${status} ${statusText}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`,
+  );
+  socket.destroy();
+}
+
 export class WsGateway {
   private wss: WebSocketServer;
   private rooms = new Map<string, Set<WebSocket>>();
@@ -35,8 +66,7 @@ export class WsGateway {
       if (url.pathname !== '/ws') return;
       const projectId = url.searchParams.get('project');
       if (!projectId) {
-        socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
-        socket.destroy();
+        rejectUpgrade(socket, 400, 'Bad Request', 'missing ?project');
         return;
       }
       /**
@@ -47,8 +77,7 @@ export class WsGateway {
        * the distinction `PROJECT_NOT_IN_WORKSPACE` draws on the HTTP side.
        */
       if (isRegistered && !this.isMember(isRegistered, projectId)) {
-        socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
-        socket.destroy();
+        rejectUpgrade(socket, 404, 'Not Found', `project '${projectId}' not in workspace`);
         return;
       }
       this.wss.handleUpgrade(req, socket, head, (ws) => {
