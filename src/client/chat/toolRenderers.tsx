@@ -575,10 +575,11 @@ const planRenderers: Record<string, ToolRenderer> = {
         Array.isArray(row.droppedAnchors) ? (row.droppedAnchors as string[]) : [],
       );
       /**
-       * The mirror of `dropped`, and read the same structural way. `update_plan`
-       * does not fill it today — the field is `update_sections`' — but the reader
-       * is shared, and showing what a write BROUGHT IN next to what it cost is
-       * the pair that makes either number mean anything.
+       * The mirror of `dropped`, read the same structural way. `update_plan` does
+       * not fill it today — the field is `update_sections`', which has a reader of
+       * its own below — but showing what a write BROUGHT IN next to what it cost
+       * is the pair that makes either number mean anything, so the row is read
+       * here too rather than waiting for the plan path to grow one.
        */
       const added = results.flatMap((row) =>
         Array.isArray(row.addedAnchors) ? (row.addedAnchors as string[]) : [],
@@ -1152,6 +1153,67 @@ const builtinRenderers: Record<string, ToolRenderer> = {
   },
 };
 
+/**
+ * --- Page tools — the write path's anchor accounting.
+ *
+ * `update_sections` is the only tool that fills `addedAnchors`, so without a
+ * reader keyed to ITS name the field never reaches a screen: the shape is
+ * identical to `update_plan`'s, but the registry keys on the full tool name and
+ * nothing was registered under `mcp__page-tools__`. No link out — the result
+ * carries a page path but not the root it lives in, and a link that guesses the
+ * root is worse than none.
+ */
+const pageRenderers: Record<string, ToolRenderer> = {
+  update_sections: {
+    summary(i) {
+      const { input } = cx(i);
+      const changeSummary = input.changeSummary;
+      const edits = Array.isArray(input.edits) ? input.edits.length : 0;
+      const what = edits === 1 ? '1 section' : `${edits} sections`;
+      return changeSummary ? `Page ${what}: ${String(changeSummary)}` : `Page ${what}`;
+    },
+    renderInput(i) {
+      const { input } = cx(i);
+      const edits = Array.isArray(input.edits) ? (input.edits as Array<Record<string, unknown>>) : null;
+      if (!edits) return null;
+      return (
+        <div className="font-mono text-[11.5px]" style={{ color: 'var(--c-subtle)' }}>
+          {edits.map((e) => `${String(e.action ?? '?')} ${String(e.anchor ?? '?')}`).join('\n')}
+        </div>
+      );
+    },
+    renderResult(r) {
+      const { result } = cx2({}, r);
+      const pagePath = result?.path;
+      if (typeof pagePath !== 'string') return null;
+      const results = Array.isArray(result?.results) ? (result.results as Array<Record<string, unknown>>) : [];
+      const anchorsNamed = (key: string) =>
+        results.flatMap((row) => (Array.isArray(row[key]) ? (row[key] as string[]) : []));
+      const dropped = anchorsNamed('droppedAnchors');
+      const added = anchorsNamed('addedAnchors');
+      const version = result?.version;
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div className="text-[12px]" style={{ color: 'var(--c-ink)' }}>
+            {pagePath}
+            {typeof version === 'number' && version > 0 ? ` — v${version}` : ''}
+          </div>
+          {dropped.length > 0 ? (
+            <div className="text-[11.5px]" style={{ color: 'var(--c-subtle)' }}>
+              dropped anchors: {dropped.join(', ')}
+            </div>
+          ) : null}
+          {added.length > 0 ? (
+            <div className="text-[11.5px]" style={{ color: 'var(--c-subtle)' }}>
+              added anchors: {added.join(', ')}
+            </div>
+          ) : null}
+        </div>
+      );
+    },
+  },
+};
+
 // --- Registry (keyed by full tool name) ---
 
 export const toolRenderers: Record<string, ToolRenderer> = {
@@ -1166,6 +1228,9 @@ export const toolRenderers: Record<string, ToolRenderer> = {
   ),
   ...Object.fromEntries(
     Object.entries(planRenderers).map(([k, v]) => [`mcp__plan-tools__${k}`, v]),
+  ),
+  ...Object.fromEntries(
+    Object.entries(pageRenderers).map(([k, v]) => [`mcp__page-tools__${k}`, v]),
   ),
   ...Object.fromEntries(
     Object.entries(briefRenderers).map(([k, v]) => [`mcp__brief-tools__${k}`, v]),

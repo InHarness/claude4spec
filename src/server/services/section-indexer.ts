@@ -17,7 +17,16 @@ import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 // Generator stays strict 8 (per M06 spec `15u7sazr` — auto-inject contract).
 const nanoid8 = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8);
 
-const ANCHOR_RE = new RegExp(ANCHOR_PATTERN_SOURCE);
+/**
+ * The anchor pattern as a WHOLE LINE — an anchor comment is a line, and a
+ * sentence that merely quotes the syntax is prose about an anchor, not one.
+ * `parseHeadings` walks upward over a block of these, so an unanchored match
+ * would let a line of prose mentioning the syntax be swallowed into the block
+ * and silently pushed out of the previous section's body. Kept identical to
+ * the rule `anchorValuesIn` applies, so the write path's accounting and the
+ * indexer's ownership recognize exactly the same set of lines.
+ */
+const ANCHOR_LINE_RE = new RegExp(`^${ANCHOR_PATTERN_SOURCE}$`);
 const HEADING_RE = /^(#{1,6})\s+(.+?)\s*$/;
 
 export interface ParsedHeading {
@@ -645,7 +654,7 @@ export function parseHeadings(lines: string[]): ParsedHeading[] {
     for (let j = i - 1; j >= 0; j--) {
       const above = (lines[j] ?? '').trim();
       if (above === '') continue;
-      const am = ANCHOR_RE.exec(above);
+      const am = ANCHOR_LINE_RE.exec(above);
       if (!am) break;
       if (anchor === null) {
         anchor = am[1] ?? null;

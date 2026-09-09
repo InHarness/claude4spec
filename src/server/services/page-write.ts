@@ -1398,7 +1398,21 @@ export async function updateSections(
     }
     if (!netAdded.includes(value)) netAdded.push(value);
   }
-  if (netAdded.length > 0) {
+  /**
+   * Ownership is asked of EVERY brought-in value, netting or not; only the
+   * global collision is a question about the net-new ones.
+   *
+   * The netting says an identity did not multiply — it does not say the line
+   * carrying it landed anywhere sensible. A within-page move that takes a
+   * section out and writes back only its anchor comment, heading omitted, nets
+   * to zero and would otherwise sail through, leaving on disk exactly the
+   * orphan this guard exists to refuse.
+   */
+  const broughtInAll: string[] = [];
+  for (const value of [...broughtInOf.values()].flat()) {
+    if (!broughtInAll.includes(value)) broughtInAll.push(value);
+  }
+  if (broughtInAll.length > 0) {
     /**
      * Which anchor comment lines the page ENDS UP with an owner for. A brought-in
      * value is only tolerable when its line is the one a heading answers to:
@@ -1412,14 +1426,18 @@ export async function updateSections(
       owners.set(h.anchor, [...(owners.get(h.anchor) ?? []), h.text]);
     }
     const duplicates: AnchorDuplicate[] = [];
-    for (const anchor of netAdded) {
+    for (const anchor of broughtInAll) {
       /**
        * GLOBAL, across every `sectionIndexed` root: `getByAnchor` is keyed on the
        * anchor alone. An anchor is an identity for the whole project — a
        * `page.md#anchor` link does not say which root it meant — so a value taken
        * on another page is just as taken.
+       *
+       * Net-new values only: a value the batch also took out is held by THIS
+       * page's own index row, and asking would report the section as its own
+       * collision.
        */
-      const held = deps.sections.getByAnchor(anchor);
+      const held = netAdded.includes(anchor) ? deps.sections.getByAnchor(anchor) : null;
       if (held) {
         duplicates.push({ anchor, page: held.pagePath, headingText: held.headingText });
         continue;

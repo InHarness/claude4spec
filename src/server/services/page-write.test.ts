@@ -1613,6 +1613,40 @@ describe('update_sections — the anchor-loss guard', () => {
       expect(res.results[0]!.droppedAnchors).toEqual([]);
       expect(res.results[1]!.addedAnchors).toEqual([childOne]);
     });
+
+    /**
+     * The same move with the heading LEFT OUT, which nets to zero just as
+     * cleanly and must still be refused. Netting says the identity did not
+     * multiply; it says nothing about where the line carrying it landed. Asking
+     * about the net-new values alone would let a batch write an anchor comment
+     * that names no section at all — the exact state this guard exists to keep
+     * off the disk, arrived at from the one direction the arithmetic hides.
+     */
+    it('still refuses a move that reinstates the anchor over NO heading', async () => {
+      await index('doc.md', nested);
+      const childOne = anchorOf('Child one');
+
+      const err = await updateSections(
+        deps(),
+        {
+          expectedHash: await hashOfPage('doc.md'),
+          edits: [
+            { anchor: childOne, action: 'delete' },
+            {
+              anchor: anchorOf('Sibling'),
+              action: 'insert_after',
+              content: `<!-- anchor: ${childOne} -->\n\nCHILD ONE BODY, HEADING FORGOTTEN\n`,
+            },
+          ],
+        },
+        'agent',
+      ).catch((e: unknown) => e);
+
+      expect((err as DomainError).code).toBe('ANCHOR_DUPLICATE');
+      expect((err as AnchorDuplicateError).details.map((d) => d.anchor)).toEqual([childOne]);
+      // Transactional, as ever: the section is still where it started.
+      expect((await pages.read('doc.md')).body).toContain('### Child one');
+    });
   });
 });
 

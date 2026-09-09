@@ -84,8 +84,14 @@ export function anchorsInLineSpans(lines: string[], spans: readonly LineSpan[]):
  * duplicates included.
  *
  * Line-wise rather than a free scan of the string: an anchor comment is a LINE,
- * and a value mentioned inside a code fence or mid-sentence is prose about an
- * anchor, not one. Duplicates are kept because the answer is used as a multiset
+ * and a value mentioned mid-sentence is prose about an anchor, not one. Fences
+ * are deliberately NOT tracked, because `parseHeadings` does not track them
+ * either — a fenced anchor line above a fenced heading is adopted by the
+ * indexer, so a guard that looked away from fences would wave through exactly
+ * the duplicate the indexer then creates. The cost is the mirror case: a page
+ * DOCUMENTING the anchor syntax with a real value in a fence is refused, and
+ * the way through is to quote a value nothing holds.
+ * Duplicates are kept because the answer is used as a multiset
  * — a value that leaves a range and re-enters it is a net zero, and collapsing
  * the two would report a move as an addition.
  */
