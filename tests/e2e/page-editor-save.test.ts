@@ -78,7 +78,7 @@ describe.skipIf(!BASE)('page editor — content survives a save', () => {
     await browser?.close();
   });
 
-  it('a write answers with the delta, carrying neither body nor frontmatter', async () => {
+  it('a write answers with the delta and the settled file, and the settled file is not an echo', async () => {
     const current = (await (
       await fetch(`${BASE}/api/projects/${project.id}/pages/pages/${PAGE_PATH}`)
     ).json()) as { hash: string };
@@ -88,8 +88,19 @@ describe.skipIf(!BASE)('page editor — content survives a save', () => {
       body: JSON.stringify({ body: `# Editor save\n\n${MARKER}\n`, expectedHash: current.hash }),
     });
     const ack = (await res.json()) as Record<string, unknown>;
-    expect(Object.keys(ack).sort()).toEqual(['changedAnchors', 'hash', 'version']);
-    expect(JSON.stringify(ack)).not.toContain(MARKER);
+    expect(Object.keys(ack).sort()).toEqual(['changedAnchors', 'content', 'hash', 'version']);
+    /**
+     * 0.2.76 — `content` is the file AFTER the in-band `write-back` phase, so it
+     * does contain the marker. That is the narrowed echo-free rule, not a breach:
+     * these bytes carry the `<!-- anchor: … -->` the indexer minted for the new
+     * heading, which the caller could not have predicted and needs in order to
+     * write again without stripping it.
+     */
+    expect(ack.content).toContain(MARKER);
+    expect(ack.content).toContain('anchor:');
+    // The parsed halves stay out: the caller already had those.
+    expect(ack).not.toHaveProperty('frontmatter');
+    expect(ack).not.toHaveProperty('body');
   });
 
   /**
