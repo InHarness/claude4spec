@@ -2,7 +2,7 @@ import { describe, expect, it, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { openDb } from './index.js';
+import { forgetDbSlot, openDb } from './index.js';
 import type { WorkspaceRecord } from '../workspace/types.js';
 
 /**
@@ -96,6 +96,45 @@ describe('M41 openDb — one handle per slot, refcounted', () => {
       } finally {
         a.close();
         b.close();
+      }
+    });
+  });
+
+  /**
+   * The purge path deletes the slot DIRECTORY. Because the map is keyed by
+   * path, an entry that outlives the file would hand the next context that
+   * registers this cwd a handle onto the unlinked inode — the project would
+   * boot on a ghost database and every write would land somewhere unreachable
+   * by name. Purge therefore forgets the key explicitly.
+   */
+  it('forgets a purged slot so the next open is a fresh file, not the deleted inode', () => {
+    withHome(() => {
+      // A reference the purge does not own — a retired context mid-dispose.
+      const stillHeld = openDb(ws, 'proj-1');
+      try {
+        forgetDbSlot(ws, 'proj-1');
+
+        const reopened = openDb(ws, 'proj-1');
+        try {
+          expect(reopened.handle).not.toBe(stillHeld.handle);
+        } finally {
+          reopened.close();
+        }
+      } finally {
+        stillHeld.close();
+      }
+    });
+  });
+
+  it('leaves a still-held handle usable after its slot is forgotten', () => {
+    withHome(() => {
+      const held = openDb(ws, 'proj-1');
+      try {
+        // Forgetting is not closing: an in-flight read must not fail mid-statement.
+        forgetDbSlot(ws, 'proj-1');
+        expect(held.handle.open).toBe(true);
+      } finally {
+        held.close();
       }
     });
   });

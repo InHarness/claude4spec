@@ -1690,8 +1690,15 @@ async function buildInner(
        * adapter raises AdapterAbortError, the turn's own `finally` finalizes its
        * streaming rows, and the pending user-input promises reject instead of
        * hanging forever on a project that no longer exists.
+       *
+       * AWAITED, because that `finally` is asynchronous: `abort()` starts the
+       * unwinding and returns, so an unawaited sweep would reach `db.close()`
+       * below while the finalization writes were still in flight — a narrower
+       * version of the same bug, not a fix for it. The wait is bounded inside
+       * `abortAllTurns`; a turn that outlives the grace window is logged and
+       * disposed around, which is where this code stood before.
        */
-      abortAllTurns(activeAdapters, pendingInputs);
+      await abortAllTurns(activeAdapters, pendingInputs);
       // One call retires every mount and subscription of THIS context —
       // pages, artifacts, entities, releases and the plugin overlay — and settles
       // its pending debounce timers. `scope: 'process'` mounts (the base plugin

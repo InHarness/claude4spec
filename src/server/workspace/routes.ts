@@ -5,6 +5,7 @@ import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readPeerConfigSummary } from './peer-config.js';
+import { forgetDbSlot } from '../db/index.js';
 import { workspaceMcpRouter } from '../routes/mcp.js';
 import { readPackageVersion } from '../../bin/c4s/package-version.js';
 
@@ -158,8 +159,13 @@ export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
     }
     registry.removeProject(workspace, id);
     if (purge) {
-      // Await dispose (closes the db handle) before removing the slot dir.
+      // Await dispose (releases this context's db reference) before removing
+      // the slot dir. `retire` no longer guarantees the handle is CLOSED — a
+      // retired predecessor may still hold a reference to the same slot — so
+      // the map entry is dropped explicitly: without it, re-registering this
+      // cwd would reuse a handle onto the deleted file. See `forgetDbSlot`.
       await cache.retire(id);
+      forgetDbSlot(workspace, id);
       fs.rmSync(registry.slotDir(workspace, id), { recursive: true, force: true });
     } else {
       // Context retires/disposes; the DB slot stays on disk (re-register = same index).

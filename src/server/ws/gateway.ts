@@ -46,7 +46,7 @@ export class WsGateway {
        * the request is well-formed and the project is simply not here, which is
        * the distinction `PROJECT_NOT_IN_WORKSPACE` draws on the HTTP side.
        */
-      if (isRegistered && !isRegistered(projectId)) {
+      if (isRegistered && !this.isMember(isRegistered, projectId)) {
         socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
         socket.destroy();
         return;
@@ -65,6 +65,30 @@ export class WsGateway {
         this.send(ws, { kind: 'hello', ts: Date.now() });
       });
     });
+  }
+
+  /**
+   * The membership predicate, called where NOTHING can catch it.
+   *
+   * Its real implementation reads the workspace registry, which THROWS rather
+   * than answering false on invalid JSON, on an unreadable `~/.claude4spec`,
+   * and on a `$schemaVersion` newer than this build. The HTTP side makes the
+   * identical call inside an Express handler, so those surface as a 500; here
+   * the call sits in a `server.on('upgrade')` listener, and this process
+   * installs no `uncaughtException` handler — a hand-edited registry file plus
+   * the client's reconnect loop would take the server down.
+   *
+   * Fails CLOSED: membership that cannot be established is not membership. The
+   * client sees the same 404 it would get for an unknown project and retries,
+   * which is recoverable in a way a dead process is not.
+   */
+  private isMember(isRegistered: ProjectIsRegistered, projectId: string): boolean {
+    try {
+      return isRegistered(projectId);
+    } catch (err) {
+      console.warn(`[ws] membership check failed for '${projectId}', rejecting upgrade:`, err);
+      return false;
+    }
   }
 
   broadcast(projectId: string, event: WsEvent): void {

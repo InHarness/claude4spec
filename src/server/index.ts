@@ -273,6 +273,11 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // from the registry file), so a project added while the process runs becomes
   // connectable without a restart — the same freshness the HTTP prefix
   // middleware already has.
+  //
+  // This THROWS on a registry it cannot read (invalid JSON, an unreadable
+  // `~/.claude4spec`, a `$schemaVersion` from a newer build). The gateway
+  // catches that and fails closed — see `WsGateway.isMember` for why the guard
+  // belongs there and not here.
   const gateway = new WsGateway(httpServer, (id) => registry.getProject(workspace, id) !== null);
 
   // M40: ONE file-watch runtime per PROCESS, not per ProjectContext. It has to
@@ -514,6 +519,15 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
        */
       for (const timer of burstTimers.values()) clearTimeout(timer);
       burstTimers.clear();
+      // Cancelling the pending timers only closes half of it. A burst that
+      // ALREADY fired has queued its reload on `baseReloadChain` —
+      // `reloadPlugin` → `cache.invalidateAll()` → `gateway.broadcast` — and
+      // that work is not a timer, so nothing above stops it. Draining the chain
+      // here is what actually establishes "no base reload runs after this
+      // point"; without it the sequence described above still happens, just
+      // from the queue instead of from a timer. A failed reload has already
+      // been logged by the chain's own catch, so settling is enough.
+      await baseReloadChain.catch(() => {});
       await watchRuntime.close();
       await cache.disposeAll();
       await gateway.close();

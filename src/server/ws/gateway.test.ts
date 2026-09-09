@@ -83,4 +83,38 @@ describe('WsGateway upgrade — project membership', () => {
     registered.add('later');
     expect((await upgrade('?project=later')).opened).toBe(true);
   });
+
+  /**
+   * The real predicate reads the workspace registry, which throws rather than
+   * answering false when that file cannot be read. Nothing catches a throw out
+   * of an `upgrade` listener, and the server installs no `uncaughtException`
+   * handler — so before the guard, a hand-edited registry plus the client's
+   * reconnect loop was a way to kill the process from the browser.
+   */
+  it('rejects instead of crashing when the membership check throws', async () => {
+    await start(() => {
+      throw new Error('workspaces.json: invalid JSON');
+    });
+
+    // Fails closed: unestablished membership is not membership.
+    await expect(upgrade('?project=whatever')).resolves.toMatchObject({
+      status: 404,
+      opened: false,
+    });
+  });
+
+  it('stays up for the next upgrade after a throwing check', async () => {
+    let broken = true;
+    await start((id) => {
+      if (broken) throw new Error('registry temporarily unreadable');
+      return id === 'known';
+    });
+
+    await upgrade('?project=known');
+    broken = false;
+
+    // A transient read failure must not be terminal — the next upgrade, once
+    // the registry is readable again, is served normally.
+    await expect(upgrade('?project=known')).resolves.toMatchObject({ status: 101 });
+  });
 });

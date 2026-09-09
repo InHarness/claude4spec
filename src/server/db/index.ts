@@ -81,6 +81,28 @@ function sharedHandle(dbPath: string, slot: DbSlot): Db {
 }
 
 /**
+ * Drop a slot from the map WITHOUT closing it — the purge path's counterpart to
+ * `openDb`.
+ *
+ * Purge (`DELETE /workspace/projects/:id?purgeData=true`) `fs.rm`s the slot
+ * directory. `retire()` awaits the context's dispose first, which releases ONE
+ * reference — but since `invalidate` became fire-and-forget a retired
+ * predecessor and its successor can both hold the same slot, so the count need
+ * not reach zero and the entry survives the file's deletion. Keyed by path, it
+ * would then hand the next context that registers the same cwd a handle onto
+ * the unlinked inode: a project booting on a ghost database, every write
+ * landing on a file no longer reachable by name.
+ *
+ * Forgetting the key is the whole fix. Handles still held by a live owner stay
+ * open and valid until that owner closes them (that is what keeps an in-flight
+ * read from failing mid-statement); the NEXT `openDb` for this slot simply
+ * opens the file afresh.
+ */
+export function forgetDbSlot(workspace: WorkspaceRecord, projectId: string): void {
+  openSlots.delete(path.join(slotDirFor(workspace.name, projectId), 'db.sqlite'));
+}
+
+/**
  * The raw opener: a NEW connection every call, no sharing and no refcount.
  * `openDb` is the keyed entry point; this one takes an arbitrary path and is
  * for callers that genuinely want a private handle (migrations tests, tooling).
