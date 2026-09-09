@@ -496,6 +496,41 @@ describe('PUT /api/sections — the rest rendering of update_sections', () => {
     }
   });
 
+  it('renders ANCHOR_DUPLICATE as 400 with details, not as a 409', async () => {
+    /**
+     * The mirror of the case above, and 400 for the identical reason: no retry
+     * of the same request can come out differently, because the offending value
+     * is in the request. `details` says where the value is currently held, which
+     * is the only thing that makes an opaque 8-character token actionable.
+     */
+    const { app, pages, dir } = appWithWrites({});
+    try {
+      await pages.ensureRoot();
+      await pages.write('a.md', { body: NESTED });
+      const res = await request(app)
+        .put('/api/sections')
+        .send({
+          expectedHash: (await pages.read('a.md')).hash,
+          edits: [
+            {
+              anchor: 'aaaa1111',
+              action: 'replace',
+              content: 'new body\n\n<!-- anchor: bbbb2222 -->\n## Stolen\nbody',
+            },
+          ],
+          dropAnchors: ['cccc3333'],
+        })
+        .expect(400);
+      expect(res.body.error.code).toBe('ANCHOR_DUPLICATE');
+      // Two headings would answer to `bbbb2222` — the copy and the original.
+      // `headingText` names the first of them, so the caller can see the clash.
+      expect(res.body.error.details).toEqual([{ anchor: 'bbbb2222', page: 'a.md', headingText: 'Stolen' }]);
+      expect((await pages.read('a.md')).body).toContain('old body');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('forwards dropAnchors rather than dropping it', async () => {
     // Same failure mode as `expectedHash` above: a route that silently discards
     // the field turns an accepted loss into a permanent refusal, and the caller

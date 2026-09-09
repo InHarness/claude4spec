@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
-import { parseHeadings } from './section-indexer.js';
+import { headingStart, parseHeadings } from './section-indexer.js';
+import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
 import type { MatchPosition, PositionResolver } from './text-edits.js';
 
 /**
@@ -79,13 +80,34 @@ export function anchorsInLineSpans(lines: string[], spans: readonly LineSpan[]):
 }
 
 /**
+ * Every anchor VALUE carried by an anchor comment line in this text, in order,
+ * duplicates included.
+ *
+ * Line-wise rather than a free scan of the string: an anchor comment is a LINE,
+ * and a value mentioned inside a code fence or mid-sentence is prose about an
+ * anchor, not one. Duplicates are kept because the answer is used as a multiset
+ * — a value that leaves a range and re-enters it is a net zero, and collapsing
+ * the two would report a move as an addition.
+ */
+export function anchorValuesIn(text: string): string[] {
+  const re = new RegExp(`^${ANCHOR_PATTERN_SOURCE}$`);
+  const out: string[] = [];
+  for (const line of text.split('\n')) {
+    const m = re.exec(line.trim());
+    if (m?.[1]) out.push(m[1]);
+  }
+  return out;
+}
+
+/**
  * Where the anchored section lives in THESE lines: `[lineStart, lineEnd)`,
  * 1-based start (the heading line), exclusive end — the same pair
  * `section_index` stores, recomputed from the file.
  *
  * The end rule is the indexer's, not an approximation of it: a section runs to
- * the next heading of equal or higher level, and stops at that heading's ANCHOR
- * comment when it has one, so the neighbour's anchor is never inside the range.
+ * the next heading of equal or higher level, and stops at the top of that
+ * heading's ANCHOR BLOCK when it has one, so the neighbour's anchor is never
+ * inside the range — `headingStart` is the one place that number is decided.
  * Duplicating five lines from `section-indexer.ts` would be exactly the drift
  * this release exists to remove, so the parser is imported and only the walk
  * lives here.
@@ -120,7 +142,7 @@ export function sectionRanges(lines: string[]): Array<{ anchor: string; lineStar
     for (let j = idx + 1; j < headings.length; j++) {
       const next = headings[j]!;
       if (next.level <= self.level) {
-        lineEnd = next.anchorLineIndex ?? next.lineIndex;
+        lineEnd = headingStart(next);
         break;
       }
     }
@@ -147,14 +169,14 @@ export function sectionRanges(lines: string[]): Array<{ anchor: string; lineStar
  */
 export function ownEndOf(lines: string[], range: { lineStart: number; lineEnd: number }): number {
   const nextHeading = parseHeadings(lines)
-    .map((h) => h.anchorLineIndex ?? h.lineIndex)
+    .map(headingStart)
     .find((s) => s >= range.lineStart);
   return Math.min(range.lineEnd, nextHeading ?? range.lineEnd);
 }
 
 export function sectionDigests(body: string): Map<string, string> {
   const lines = body.split('\n');
-  const starts = parseHeadings(lines).map((h) => h.anchorLineIndex ?? h.lineIndex);
+  const starts = parseHeadings(lines).map(headingStart);
   const out = new Map<string, string>();
   for (const r of sectionRanges(lines)) {
     const nextHeading = starts.find((s) => s >= r.lineStart);

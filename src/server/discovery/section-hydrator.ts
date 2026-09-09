@@ -21,6 +21,7 @@ import type { Database } from 'better-sqlite3';
 import { parseXmlTagsExcludingCode } from '../../shared/xml-tags.js';
 import { extractSlugs, extractTags } from '../../shared/xml-tags.js';
 import { parseLinks } from '../services/pages-link-indexer.js';
+import { headingStart, parseHeadings } from '../services/section-indexer.js';
 import type { PageSource } from './page-source.js';
 import type { RawSection } from './raw-entity-reader.js';
 import type { SectionEdges } from './types.js';
@@ -49,13 +50,19 @@ export function sliceBody(pageContent: string, section: RawSection, includeSubtr
  * With `includeSubtree`, the section runs to the next heading of the SAME OR
  * SHALLOWER level — i.e. it swallows its children. That is the middle of the
  * three read granularities (page / subtree / section), each with its own budget.
+ *
+ * The end comes from `headingStart`, the indexer's own definition, rather than
+ * from a heading scan of its own. A hand-rolled scan is what this used to be,
+ * and it stopped at the next heading LINE — which left that heading's anchor
+ * comment inside the subtree, handing a reader an identity belonging to the
+ * section after the one it asked for. Deriving the number instead of
+ * re-deriving it is the whole point of 0.2.75.
  */
 function subtreeEnd(lines: string[], section: RawSection): number {
-  for (let i = section.lineStart; i < lines.length; i++) {
-    const match = /^(#{1,6})\s+\S/.exec(lines[i] ?? '');
-    if (match && match[1]!.length <= section.headingLevel) return i;
-  }
-  return lines.length;
+  const next = parseHeadings(lines).find(
+    (h) => h.lineIndex >= section.lineStart && h.level <= section.headingLevel,
+  );
+  return next ? headingStart(next) : lines.length;
 }
 
 export async function hydrateSection(

@@ -503,4 +503,93 @@ describe('discovery core over the real section indexer', () => {
       expect(bodyOf('Edited')).not.toContain('FIRST CONTENT');
     });
   });
+
+  /**
+   * 0.2.75 — an anchor line belongs to exactly one section: the one it names.
+   *
+   * The bug these cover was worth exactly one line and cascaded from there. The
+   * next heading's anchor comment fell inside the PREVIOUS section's range, so
+   * it left in the body on read, came back in the content on write, and after
+   * the next indexing pass stood on the page twice — once as prose in the
+   * section above, once as the heading's own anchor.
+   */
+  describe('the anchor line of the NEXT section is never in this one', () => {
+    it('keeps a neighbour\'s anchor comment out of the indexed body', async () => {
+      await index(
+        'own.md',
+        ['# Top', '', '## Alpha', '', 'ALPHA BODY', '', '## Beta', '', 'BETA BODY', ''].join('\n'),
+      );
+      // Second pass: now every heading HAS an anchor comment on disk, which is
+      // the only state in which the boundary can be got wrong.
+      await index('own.md', await pages.read('own.md').then((p) => p.body));
+
+      const alpha = sectionItem(await core.getSections({ anchors: [anchorOf('Alpha')] }));
+      expect(alpha.body).toContain('ALPHA BODY');
+      expect(alpha.body).not.toContain('anchor:');
+    });
+
+    it('cuts the WHOLE stacked block, not just the anchor that owns the heading', async () => {
+      const orphan = '<!-- anchor: orphanaa -->';
+      await index(
+        'block.md',
+        [
+          '# Top',
+          '',
+          '## Alpha',
+          '',
+          'ALPHA BODY',
+          '',
+          orphan,
+          '<!-- anchor: betaown1 -->',
+          '## Beta',
+          '',
+          'BETA BODY',
+          '',
+        ].join('\n'),
+      );
+
+      /**
+       * The nearest comment owns the heading; the one above it owns nothing.
+       * But an orphan is not the previous section's CONTENT either — it sits in
+       * the gap between two sections, so the range stops above the whole block.
+       */
+      const alpha = sectionItem(await core.getSections({ anchors: [anchorOf('Alpha')] }));
+      expect(alpha.body).toContain('ALPHA BODY');
+      expect(alpha.body).not.toContain('orphanaa');
+      expect(alpha.body).not.toContain('betaown1');
+      expect(anchorOf('Beta')).toBe('betaown1');
+    });
+
+    it('keeps it out of a SUBTREE read too, which used to compute its own end', async () => {
+      await index(
+        'subtree.md',
+        [
+          '# Top',
+          '',
+          '## Alpha',
+          '',
+          'ALPHA BODY',
+          '',
+          '### Alpha child',
+          '',
+          'CHILD BODY',
+          '',
+          '## Beta',
+          '',
+          'BETA BODY',
+          '',
+        ].join('\n'),
+      );
+      await index('subtree.md', await pages.read('subtree.md').then((p) => p.body));
+
+      const alpha = sectionItem(
+        await core.getSections({ anchors: [anchorOf('Alpha')], includeSubtree: true }),
+      );
+      expect(alpha.body).toContain('CHILD BODY');
+      expect(alpha.body).not.toContain('BETA BODY');
+      // The child's own anchor is inside the subtree and belongs there; Beta's
+      // is not, and used to be — `subtreeEnd` stopped at the heading LINE.
+      expect(alpha.body).not.toContain(anchorOf('Beta'));
+    });
+  });
 });

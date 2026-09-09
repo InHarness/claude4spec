@@ -574,6 +574,15 @@ const planRenderers: Record<string, ToolRenderer> = {
       const dropped = results.flatMap((row) =>
         Array.isArray(row.droppedAnchors) ? (row.droppedAnchors as string[]) : [],
       );
+      /**
+       * The mirror of `dropped`, and read the same structural way. `update_plan`
+       * does not fill it today — the field is `update_sections`' — but the reader
+       * is shared, and showing what a write BROUGHT IN next to what it cost is
+       * the pair that makes either number mean anything.
+       */
+      const added = results.flatMap((row) =>
+        Array.isArray(row.addedAnchors) ? (row.addedAnchors as string[]) : [],
+      );
       const replacements = results.reduce(
         (n, row) => n + (typeof row.replacements === 'number' ? row.replacements : 0),
         0,
@@ -591,6 +600,11 @@ const planRenderers: Record<string, ToolRenderer> = {
           {dropped.length > 0 ? (
             <div className="text-[11.5px]" style={{ color: 'var(--c-subtle)' }}>
               dropped anchors: {dropped.join(', ')}
+            </div>
+          ) : null}
+          {added.length > 0 ? (
+            <div className="text-[11.5px]" style={{ color: 'var(--c-subtle)' }}>
+              added anchors: {added.join(', ')}
             </div>
           ) : null}
           <Link

@@ -7,7 +7,15 @@ import { createTestDb } from '../../../tests/helpers/test-db.js';
 import { PagesService } from './pages.js';
 import { SectionsService } from './sections.js';
 import { SectionIndexerService } from './section-indexer.js';
-import { createPage, deletePage, updatePage, updateSections, type PageWriteTarget } from './page-write.js';
+import {
+  createPage,
+  deletePage,
+  updatePage,
+  updateSections,
+  type AnchorDuplicateError,
+  type PageWriteTarget,
+} from './page-write.js';
+import { DomainError } from './tags.js';
 
 /**
  * 0.2.15 — `expectedHash` is REQUIRED, including on the create-through-update
@@ -421,6 +429,7 @@ describe('update_sections over a real section index', () => {
     expect(res).not.toHaveProperty('rootId');
     expect(Object.keys(res.results[0]!).sort()).toEqual([
       'action',
+      'addedAnchors',
       'affectedAnchors',
       'anchor',
       'droppedAnchors',
@@ -1409,6 +1418,201 @@ describe('update_sections — the anchor-loss guard', () => {
     );
 
     expect(res.results[0]!.droppedAnchors).toContain(childOne);
+  });
+
+  /**
+   * 0.2.75 — the mirror of `droppedAnchors`, and the guard that mirror made
+   * possible.
+   *
+   * The caller is never a legitimate SOURCE of an anchor value — only the
+   * indexer mints them — so an anchor comment arriving in `content` is a copied
+   * line by construction. Before this it was caught after the fact, by an
+   * indexer warning and `check_consistency`; now it is refused in the operation
+   * that produced it, before anything reaches disk.
+   */
+  /**
+   * 0.2.75 records this as a KNOWN edge case rather than a shipped fix, so the
+   * test states the criterion outright: whatever the write returns as `hash`
+   * must be usable as the very next `expectedHash`.
+   *
+   * The trap it guards is a write that introduces a NEW heading. The indexer
+   * mints that heading's anchor and the write-back phase injects the comment
+   * into the file — so a hash taken before that injection describes a page that
+   * no longer exists on disk, and the caller's next write is refused with
+   * `PAGE_CONFLICT` although nobody else touched anything.
+   */
+  describe('[ac:ac-zapis-strony-wprowadzajacy-nowy-naglo] the hash a write returns is armed for the next one', () => {
+    /**
+     * A `writer` whose `flush` drives the same two phases production does —
+     * projection (mint) then write-back (inject) — because that ordering is the
+     * whole question. `commit` re-reads the file after `flush` returns, so a rig
+     * that indexes afterwards would report a stale hash no matter what the write
+     * path does, and prove nothing about either.
+     */
+    beforeEach(() => {
+      target.writer = {
+        markOrigin: () => {},
+        suppress: () => {},
+        flush: async (relPath: string) => {
+          indexer ??= new SectionIndexerService(
+            db,
+            new Map([['pages', { pages }]]),
+            { broadcast: () => {} } as never,
+            host,
+          );
+          injection ??= indexer.anchorInjectionSubscriber(() => {});
+          await indexer.indexPage('pages', relPath);
+          await injection.onChange('context:test', 'pages:pages', relPath, 'external');
+          await indexer.indexPage('pages', relPath);
+        },
+      };
+    });
+
+    it('survives update_sections introducing a heading with no anchor', async () => {
+      await index('doc.md', nested);
+      const first = await updateSections(
+        deps(),
+        {
+          expectedHash: await hashOfPage('doc.md'),
+          edits: [{ anchor: anchorOf('Sibling'), action: 'append', content: '\n### Fresh heading\n\nFRESH BODY\n' }],
+        },
+        'agent',
+      );
+
+      const second = await updateSections(
+        deps(),
+        {
+          expectedHash: first.hash,
+          edits: [{ anchor: anchorOf('Sibling'), action: 'append', content: 'ONE MORE LINE\n' }],
+        },
+        'agent',
+      ).catch((e: unknown) => e);
+
+      expect(second).not.toBeInstanceOf(Error);
+    });
+
+    it('survives update_page introducing a heading with no anchor', async () => {
+      await index('doc.md', nested);
+      const first = await updatePage(
+        target,
+        { path: 'doc.md', body: `${nested}\n## Brand new\n\nNEW BODY\n`, expectedHash: await hashOfPage('doc.md') },
+        'agent',
+      );
+
+      const second = await updatePage(
+        target,
+        { path: 'doc.md', body: (await pages.read('doc.md')).body + '\nTRAILING\n', expectedHash: first.hash },
+        'agent',
+      ).catch((e: unknown) => e);
+
+      expect(second).not.toBeInstanceOf(Error);
+    });
+  });
+
+  describe('addedAnchors and the ANCHOR_DUPLICATE guard', () => {
+    it('reports an empty addedAnchors on a write that brings in nothing', async () => {
+      await index('doc.md', nested);
+      const res = await replaceParent('NEW PARENT BODY\n', [anchorOf('Child one'), anchorOf('Child two')]);
+      expect(res.results[0]!.addedAnchors).toEqual([]);
+    });
+
+    it('reports a FREE, heading-adjacent value it let through', async () => {
+      await index('doc.md', nested);
+      const res = await replaceParent(
+        ['NEW PARENT BODY', '', '<!-- anchor: brandnew1 -->', '### Brand new', '', 'NEW BODY', ''].join('\n'),
+        [anchorOf('Child one'), anchorOf('Child two')],
+      );
+      expect(res.results[0]!.addedAnchors).toEqual(['brandnew1']);
+    });
+
+    it('refuses the batch when the value is already held — anywhere in the project', async () => {
+      await index('doc.md', nested);
+      await index('other.md', ['# Other', '', '## Elsewhere', '', 'ELSEWHERE BODY', ''].join('\n'));
+      const taken = anchorOf('Elsewhere');
+
+      const err = await replaceParent(
+        ['NEW PARENT BODY', '', `<!-- anchor: ${taken} -->`, '### Stolen', '', 'BODY', ''].join('\n'),
+        [anchorOf('Child one'), anchorOf('Child two')],
+      ).catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(DomainError);
+      expect((err as DomainError).code).toBe('ANCHOR_DUPLICATE');
+      expect((err as AnchorDuplicateError).details).toEqual([
+        { anchor: taken, page: 'other.md', headingText: 'Elsewhere' },
+      ]);
+      // Transactional: the refusal left the file untouched.
+      expect((await pages.read('doc.md')).body).toContain('PARENT BODY');
+    });
+
+    it('refuses an anchor line that ends up over no heading of its own', async () => {
+      await index('doc.md', nested);
+      const err = await replaceParent(
+        ['NEW PARENT BODY', '', '<!-- anchor: orphanaa -->', '', 'JUST PROSE, NO HEADING', ''].join('\n'),
+        [anchorOf('Child one'), anchorOf('Child two')],
+      ).catch((e: unknown) => e);
+
+      expect((err as DomainError).code).toBe('ANCHOR_DUPLICATE');
+      expect((err as AnchorDuplicateError).details).toEqual([
+        { anchor: 'orphanaa', page: 'doc.md', headingText: '' },
+      ]);
+    });
+
+    it('refuses the upper half of a stacked block — the heading below already has one', async () => {
+      await index('doc.md', nested);
+      const err = await replaceParent(
+        [
+          'NEW PARENT BODY',
+          '',
+          '<!-- anchor: upperone -->',
+          '<!-- anchor: lowerone -->',
+          '### Two comments',
+          '',
+          'BODY',
+          '',
+        ].join('\n'),
+        [anchorOf('Child one'), anchorOf('Child two')],
+      ).catch((e: unknown) => e);
+
+      expect((err as DomainError).code).toBe('ANCHOR_DUPLICATE');
+      // The nearest comment owns the heading and is fine; the one above owns
+      // nothing, and a value naming no section is the thing being refused.
+      expect((err as AnchorDuplicateError).details.map((d) => d.anchor)).toEqual(['upperone']);
+    });
+
+    /**
+     * The case the guard must NOT catch. A move within one page is `delete` at
+     * the source plus `insert_after` at the target in ONE batch: the value goes
+     * out and comes back, the net is zero, and the section keeps the identity
+     * every `page.md#anchor` link already points at.
+     */
+    it('lets a section MOVE within a page, identity intact', async () => {
+      await index('doc.md', nested);
+      const childOne = anchorOf('Child one');
+      const moved = ['<!-- anchor: ' + childOne + ' -->', '### Child one', '', 'CHILD ONE BODY', ''].join('\n');
+
+      const res = await updateSections(
+        deps(),
+        {
+          expectedHash: await hashOfPage('doc.md'),
+          edits: [
+            { anchor: childOne, action: 'delete' },
+            { anchor: anchorOf('Sibling'), action: 'insert_after', content: moved },
+          ],
+        },
+        'agent',
+      );
+
+      const body = (await pages.read('doc.md')).body;
+      expect(body.split(`anchor: ${childOne}`).length - 1).toBe(1);
+      expect(body.indexOf('CHILD ONE BODY')).toBeGreaterThan(body.indexOf('SIBLING BODY'));
+      /**
+       * Nothing was DROPPED: `droppedAnchors` asks what the page lost, and the
+       * page lost nothing — the anchor is still on it, further down. What the
+       * `insert_after` entry did carry in is what its own row reports.
+       */
+      expect(res.results[0]!.droppedAnchors).toEqual([]);
+      expect(res.results[1]!.addedAnchors).toEqual([childOne]);
+    });
   });
 });
 

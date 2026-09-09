@@ -80,6 +80,17 @@ export const STATUS_FOR_CODE: Record<string, number> = {
    */
   ANCHOR_LOSS: 400,
   /**
+   * 0.2.75 (M06) — `update_sections` would bring in an anchor value the caller
+   * cannot own: one already held in `section_index`, or one whose comment line
+   * belongs to no heading.
+   *
+   * 400 for the same reason as the line above, and the mirror of it: the caller
+   * is never the source of a new anchor value, so this refusal is a statement
+   * about the REQUEST and no retry of it can come out differently. The repair
+   * is to drop the anchor comment from the content and let the indexer mint one.
+   */
+  ANCHOR_DUPLICATE: 400,
+  /**
    * 0.2.37 (M02/M06) — the differential write's own two refusals.
    *
    * Both are 400 for the reason stated one comment above: they are
