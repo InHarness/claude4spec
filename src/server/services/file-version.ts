@@ -68,7 +68,7 @@ export class FileVersionService {
     serializer?: FileSerializer,
     rootId: string = 'pages',
     changeSummary?: string | null,
-  ): Promise<FileVersionListItem> {
+  ): Promise<FileVersionListItem | null> {
     const ser = serializer ?? this.serializer;
     const data: FileSnapshotData =
       op === 'delete' && fallbackContent !== undefined
@@ -76,6 +76,37 @@ export class FileVersionService {
         : op === 'delete'
           ? this.synthesizeDeleteFromLastVersion(relPath, rootId)
           : await ser.snapshot(relPath);
+
+    /**
+     * 0.2.79 — a write that changes no content records NO row.
+     *
+     * The page axis of the same rule the entity axis applies in
+     * `VersionService.captureEntitySnapshot`: "mutation" means a change of
+     * CONTENT, so writing a page's existing bytes back makes no entry. This is
+     * the capture phase's call, not the record-write primitive's — the write
+     * chain (temp -> rename, write-backs) still runs unconditionally above.
+     *
+     * `content` is the whole comparison: `snapshot()` reads it byte-for-byte
+     * (BOM and line endings preserved) and every other field of the snapshot —
+     * `frontmatter`, `anchors`, `xml_refs` — is DERIVED from it by
+     * `snapshotFromContent`. Identical content therefore means an identical
+     * snapshot, and comparing the one authoritative field says so directly.
+     *
+     * Only an `update` is suppressed, and only against an existing predecessor.
+     * A `create` has nothing to compare against; a `delete` tombstone carries
+     * the last-known content that makes the page restorable.
+     *
+     * Applies regardless of `changedBy` — `user`, `agent` and `filesystem` are
+     * all the same write here. Sitting at the single INSERT site is what makes
+     * that true for the watcher-driven page capture and for the artifact
+     * services (brief, plan, patch, release) in one place.
+     *
+     * Returning `null` is SUCCESS: no row was needed. It is not a refusal.
+     */
+    if (op === 'update') {
+      const previous = this.getLatestForPath(relPath, undefined, rootId);
+      if (previous && previous.data.content === data.content) return null;
+    }
 
     const next = this.nextVersionNumber(relPath, rootId);
     const summary = typeof changeSummary === 'string' && changeSummary.length > 0
