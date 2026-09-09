@@ -72,22 +72,43 @@ const DEFS: readonly ProjectionDef[] = [
 
 interface Entry {
   state: ProjectionState;
-  /** Marked artifacts; empty with `state==='stale'` means a GLOBAL marking. */
-  artifacts: Set<string>;
+  /**
+   * Marked artifacts, each with the sequence number of the marking that recorded
+   * it; empty with `state==='stale'` means a GLOBAL marking. The sequence is what
+   * lets a finishing rebuild clear the markings it set out to fix WITHOUT erasing
+   * one that arrived while it was running — see `finishRebuild`.
+   */
+  artifacts: Map<string, number>;
+  /** Sequence of the current global marking; `0` when there is none. */
+  globalSeq: number;
   lastRebuiltAt: number | null;
   rebuild?: () => Promise<void>;
   /** A pass already running — a second request joins it instead of starting one. */
   inFlight?: Promise<void>;
 }
 
+/**
+ * Opaque handle from `beginRebuild()`. Hand it back to `finishRebuild()` and the
+ * registry clears exactly the markings that predate the pass.
+ */
+export type RebuildToken = number;
+
 export class ProjectionStatusRegistry {
   private readonly entries = new Map<ProjectionId, Entry>();
+
+  /** Monotonic; every marking is stamped with it. Never reset. */
+  private seq = 0;
 
   constructor(private readonly ws?: WsEmitter) {
     for (const def of DEFS) {
       // `not_materialized` is the honest starting state: at construction time no
       // `indexAll()` has run yet. Boot flips each one to `fresh` as it succeeds.
-      this.entries.set(def.id, { state: 'not_materialized', artifacts: new Set(), lastRebuiltAt: null });
+      this.entries.set(def.id, {
+        state: 'not_materialized',
+        artifacts: new Map(),
+        globalSeq: 0,
+        lastRebuiltAt: null,
+      });
     }
   }
 
@@ -110,11 +131,13 @@ export class ProjectionStatusRegistry {
     if (!e) return;
     const wasState = e.state;
     const wasScope = this.scopeOf(e);
+    const seq = ++this.seq;
     if (artifact === undefined) {
       e.artifacts.clear();
+      e.globalSeq = seq;
     } else {
       // An already-global marking does not narrow to a local one.
-      if (!(e.state === 'stale' && e.artifacts.size === 0)) e.artifacts.add(artifact);
+      if (!(e.state === 'stale' && e.artifacts.size === 0)) e.artifacts.set(artifact, seq);
     }
     e.state = 'stale';
     if (wasState !== e.state || !sameScope(wasScope, this.scopeOf(e))) this.emit(id, e);
@@ -135,17 +158,71 @@ export class ProjectionStatusRegistry {
     if (!e) return;
     const wasState = e.state;
     const wasScope = this.scopeOf(e);
-    if (artifact !== undefined && e.state === 'stale' && e.artifacts.size > 0) {
-      e.artifacts.delete(artifact);
+    if (artifact !== undefined) {
+      // One artifact recomputed. It can clear its OWN marking and nothing else:
+      // a global marking says the whole projection is unusable, and a single
+      // page succeeding is no evidence against that — clearing it here would
+      // report health nobody established. Same for a projection already fresh:
+      // there is nothing to clear, and `lastRebuiltAt` must not move, because a
+      // per-artifact success is not the full recompute that field reports.
+      if (e.state !== 'stale' || e.artifacts.size === 0) return;
+      if (!e.artifacts.delete(artifact)) return;
       if (e.artifacts.size > 0) {
         if (!sameScope(wasScope, this.scopeOf(e))) this.emit(id, e);
         return;
       }
-    } else {
-      e.artifacts.clear();
+      e.state = 'fresh';
+      this.emit(id, e);
+      return;
     }
+    e.artifacts.clear();
+    e.globalSeq = 0;
     e.state = 'fresh';
     e.lastRebuiltAt = Date.now();
+    if (wasState !== e.state || !sameScope(wasScope, this.scopeOf(e))) this.emit(id, e);
+  }
+
+  /**
+   * Open a rebuild pass. Take the token BEFORE the recompute starts.
+   *
+   * The pair `beginRebuild`/`finishRebuild` exists because a full recompute is
+   * not instantaneous and the world does not hold still for it. Two things can
+   * mark a projection while its own rebuild is running: a watcher reaction that
+   * fails on some page, and the rebuild ITSELF — `EntityIndexerService.indexAll`
+   * marks every declared type whose table no migration created, from inside the
+   * pass. A blanket `markFresh()` at the end would erase both, and the second one
+   * is the worse loss: the pass would report health it had just disproved.
+   */
+  beginRebuild(): RebuildToken {
+    return this.seq;
+  }
+
+  /**
+   * Close a rebuild pass: clear the markings it was answering for, keep the ones
+   * that arrived while it ran. `lastRebuiltAt` moves only when that leaves the
+   * projection genuinely clean.
+   */
+  finishRebuild(id: ProjectionId, token: RebuildToken): void {
+    const e = this.entries.get(id);
+    if (!e) return;
+    const wasState = e.state;
+    const wasScope = this.scopeOf(e);
+    if (e.state === 'stale') {
+      if (e.artifacts.size === 0) {
+        if (e.globalSeq <= token) {
+          e.globalSeq = 0;
+          e.state = 'fresh';
+        }
+      } else {
+        for (const [artifact, seq] of [...e.artifacts]) {
+          if (seq <= token) e.artifacts.delete(artifact);
+        }
+        if (e.artifacts.size === 0) e.state = 'fresh';
+      }
+    } else {
+      e.state = 'fresh';
+    }
+    if (e.state === 'fresh') e.lastRebuiltAt = Date.now();
     if (wasState !== e.state || !sameScope(wasScope, this.scopeOf(e))) this.emit(id, e);
   }
 
@@ -165,6 +242,25 @@ export class ProjectionStatusRegistry {
     const def = DEFS.find((d) => d.id === id);
     if (def?.localMarkPoisonsAll) return true;
     return e.artifacts.has(artifact);
+  }
+
+  /**
+   * Is the WHOLE projection marked, as opposed to some of its artifacts?
+   *
+   * The distinction matters wherever a caller must be refused BEFORE the
+   * projection is consulted at all. A global marking usually means the index is
+   * empty or half-built, so a lookup into it does not fail loudly — it comes back
+   * empty, and the caller gets "not found" for something that exists. Asking this
+   * first buys the right error without giving up per-artifact precision.
+   */
+  isGloballyStale(id: ProjectionId): boolean {
+    const e = this.entries.get(id);
+    return !!e && e.state === 'stale' && e.artifacts.size === 0;
+  }
+
+  /** `isGloballyStale` as a gate. */
+  assertNotGloballyStale(id: ProjectionId): void {
+    if (this.isGloballyStale(id)) throw indexStale(id, 'global');
   }
 
   /**
@@ -218,10 +314,11 @@ export class ProjectionStatusRegistry {
     if (!e) throw new Error(`unknown projection '${id}'`);
     if (e.inFlight) return await e.inFlight;
     if (!e.rebuild) throw new Error(`projection '${id}' has no rebuild registered`);
+    const token = this.beginRebuild();
     const run = e
       .rebuild()
       .then(() => {
-        this.markFresh(id);
+        this.finishRebuild(id, token);
       })
       .finally(() => {
         if (e.inFlight === run) e.inFlight = undefined;
@@ -251,7 +348,7 @@ export class ProjectionStatusRegistry {
 
   private scopeOf(e: Entry): ProjectionScope | undefined {
     if (e.state !== 'stale') return undefined;
-    return e.artifacts.size === 0 ? 'global' : [...e.artifacts].sort();
+    return e.artifacts.size === 0 ? 'global' : [...e.artifacts.keys()].sort();
   }
 
   /**

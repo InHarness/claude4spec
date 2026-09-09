@@ -255,6 +255,12 @@ export interface ScopedWatchRegistrar {
    * the rest. That call belongs to the owner, and only the owner can make it.
    */
   onProjectionStale(listener: (info: { subscription: string; source: string; relPath: string }) => void): void;
+  /**
+   * The mirror of `onProjectionStale`: a `projection`-phase reaction that ran
+   * clean on this artifact. The owner decides whether that retires a marking —
+   * only it knows how its projection divides.
+   */
+  onProjectionFresh(listener: (info: { subscription: string; source: string; relPath: string }) => void): void;
   suppress(source: string, relPath: string, owner?: SuppressOwner): void;
   /** Hand a suppress token back when the write it covered failed. */
   unsuppress(source: string, relPath: string): void;
@@ -371,6 +377,11 @@ export class FileWatchRuntime {
   private broadcaster: WatchBroadcaster | null;
   /** Per-scope projection-owner listeners — see `ScopedWatchRegistrar.onProjectionStale`. */
   private readonly projectionStaleListeners = new Map<
+    WatchScope,
+    Array<(info: { subscription: string; source: string; relPath: string }) => void>
+  >();
+  /** Per-scope listeners for the other direction — see `onProjectionFresh`. */
+  private readonly projectionFreshListeners = new Map<
     WatchScope,
     Array<(info: { subscription: string; source: string; relPath: string }) => void>
   >();
@@ -831,7 +842,16 @@ export class FileWatchRuntime {
           // gone, so no later subscriber runs against a closed handle.
           if (mount.closed) return;
           const failure = await this.runSubscriber(mount, sub, relPath, event, origin);
-          if (!failure) continue;
+          if (!failure) {
+            // 0.2.77 — a `projection` reaction that SUCCEEDS is the only thing
+            // that can retire a marking on this artifact without a full
+            // rebuild. Without it a transient failure (a briefly locked file,
+            // a full disk) would leave the page refusing reads long after the
+            // index had caught up, and the only way back would be a button in
+            // Settings the caller cannot press.
+            if (sub.phase === 'projection') this.notifyProjectionFresh(mount, sub.id, relPath);
+            continue;
+          }
           /**
            * 0.2.76 phase error classes.
            *
@@ -854,7 +874,10 @@ export class FileWatchRuntime {
           }
           if (mount.closed) return;
           const retry = await this.runSubscriber(mount, sub, relPath, event, origin);
-          if (!retry) continue;
+          if (!retry) {
+            this.notifyProjectionFresh(mount, sub.id, relPath);
+            continue;
+          }
           staleProjections.push(sub.id);
           console.error(
             `[m40] projection '${sub.id}' failed twice on ${mount.source}:${relPath} — marking it stale:`,
@@ -988,6 +1011,23 @@ export class FileWatchRuntime {
     return this.dispatchAls.getStore();
   }
 
+  /** Tell the owner a `projection` reaction ran clean on this artifact. */
+  private notifyProjectionFresh(
+    mount: { scope: WatchScope; source: string },
+    subscription: string,
+    relPath: string,
+  ): void {
+    const listeners = this.projectionFreshListeners.get(mount.scope);
+    if (!listeners?.length) return;
+    for (const listener of listeners) {
+      try {
+        listener({ subscription, source: mount.source, relPath });
+      } catch (e) {
+        console.error('[m40] projection-fresh listener threw:', e);
+      }
+    }
+  }
+
   // ------------------------------------------------------------------- scope
 
   scoped(scope: WatchScope): ScopedWatchRegistrar {
@@ -1001,6 +1041,11 @@ export class FileWatchRuntime {
         const existing = this.projectionStaleListeners.get(scope) ?? [];
         existing.push(listener);
         this.projectionStaleListeners.set(scope, existing);
+      },
+      onProjectionFresh: (listener) => {
+        const existing = this.projectionFreshListeners.get(scope) ?? [];
+        existing.push(listener);
+        this.projectionFreshListeners.set(scope, existing);
       },
       suppress: (source, relPath, owner) => this.suppress(scope, source, relPath, owner),
       unsuppress: (source, relPath) => this.unsuppress(scope, source, relPath),
@@ -1022,6 +1067,7 @@ export class FileWatchRuntime {
    */
   async disposeScope(scope: WatchScope): Promise<void> {
     this.projectionStaleListeners.delete(scope);
+    this.projectionFreshListeners.delete(scope);
     const owned = [...this.mounts.values()].filter((m) => m.scope === scope);
     for (const m of owned) await this.unmountSource(m.source, scope);
     const prefix = `${scope}${SEP}`;

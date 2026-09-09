@@ -160,6 +160,65 @@ describe('0.2.77 — projection staleness as a first-class state', () => {
     expect(rebuild).toHaveBeenCalledTimes(2);
   });
 
+  it('a rebuild keeps what it marked ITSELF, and clears only what predates the pass', async () => {
+    const { reg } = rig();
+    // The shape `EntityIndexerService.indexAll` has: the pass succeeds, and
+    // reports from inside that one declared type has no table to read.
+    reg.registerRebuild(PROJECTION_IDS.entities, async () => {
+      reg.markStale(PROJECTION_IDS.entities, 'ghost');
+    });
+    reg.markStale(PROJECTION_IDS.entities, 'widget');
+
+    await reg.rebuild(PROJECTION_IDS.entities);
+
+    const row = reg.snapshot().find((r) => r.id === PROJECTION_IDS.entities)!;
+    // `widget` is what the pass was for; `ghost` is what it just disproved.
+    // Reporting the projection fresh here would hand `list_entities({type:'ghost'})`
+    // back out of a table that was never filled.
+    expect(row.state).toBe('stale');
+    expect(row.scope).toEqual(['ghost']);
+    expect(reg.isStale(PROJECTION_IDS.entities, 'widget')).toBe(false);
+    expect(row.lastRebuiltAt).toBeNull();
+  });
+
+  it('a rebuild does not swallow a failure that arrived while it was running', async () => {
+    const { reg } = rig();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    reg.registerRebuild(PROJECTION_IDS.sections, () => gate);
+    reg.markFresh(PROJECTION_IDS.sections);
+
+    const pass = reg.rebuild(PROJECTION_IDS.sections);
+    // A watcher reaction fails on a page the pass had already walked past.
+    reg.markStale(PROJECTION_IDS.sections, 'pages:c.md');
+    release();
+    await pass;
+
+    expect(reg.isStale(PROJECTION_IDS.sections, 'pages:c.md')).toBe(true);
+  });
+
+  it('one artifact recomputing does not lift a GLOBAL marking', () => {
+    const { reg } = rig();
+    reg.markStale(PROJECTION_IDS.sections);
+    reg.markFresh(PROJECTION_IDS.sections, 'pages:a.md');
+    // Global says the whole projection is unusable — usually because the index
+    // is empty or half-built. One page succeeding is no evidence against that,
+    // and treating it as such would declare health nobody established.
+    expect(reg.isGloballyStale(PROJECTION_IDS.sections)).toBe(true);
+    expect(reg.snapshot().find((r) => r.id === PROJECTION_IDS.sections)?.lastRebuiltAt).toBeNull();
+  });
+
+  it('separates the whole-projection question from the per-artifact one', () => {
+    const { reg } = rig();
+    reg.markStale(PROJECTION_IDS.sections, 'pages:a.md');
+    // What `update_sections` asks before it knows which page it addresses: a
+    // marking on one page must not refuse a write to another.
+    expect(reg.isGloballyStale(PROJECTION_IDS.sections)).toBe(false);
+    expect(() => reg.assertNotGloballyStale(PROJECTION_IDS.sections)).not.toThrow();
+    reg.markStale(PROJECTION_IDS.sections);
+    expect(() => reg.assertNotGloballyStale(PROJECTION_IDS.sections)).toThrow(/INDEX_STALE|marked stale/);
+  });
+
   it('reports which projections refuse reads and which only carry the flag', () => {
     const { reg } = rig();
     const by = Object.fromEntries(reg.snapshot().map((r) => [r.id, r.refusesReads]));

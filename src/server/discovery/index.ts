@@ -87,8 +87,18 @@ function gated(deps: DiscoveryDeps, core: DiscoveryCore): DiscoveryCore {
       return await core.getPageOutline(input);
     },
     getSections: async (input) => {
-      for (const key of pagesForAnchors(input.anchors)) {
-        status.assertFresh(PROJECTION_IDS.sections, key);
+      // Nothing marked ⇒ no lookup. The per-page precision below costs a query
+      // against `section_index`, and the overwhelmingly common case is a healthy
+      // projection that has no page to refuse for.
+      if (status.isStale(PROJECTION_IDS.sections)) {
+        // A global marking is answered without asking the index which pages the
+        // anchors belong to: when it is empty or half-built that question comes
+        // back with no rows, the loop below never runs, and the gate would pass
+        // exactly when it must not.
+        status.assertNotGloballyStale(PROJECTION_IDS.sections);
+        for (const key of pagesForAnchors(input.anchors)) {
+          status.assertFresh(PROJECTION_IDS.sections, key);
+        }
       }
       return await core.getSections(input);
     },

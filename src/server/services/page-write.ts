@@ -1283,6 +1283,21 @@ export async function updateSections(
     seen.add(edit.anchor);
   }
 
+  /**
+   * 0.2.77 — the project-wide half of the refusal, and it has to come BEFORE the
+   * anchor lookup just below, which reads the very projection under question. A
+   * global marking usually means the index is empty or half-built, so that
+   * lookup does not fail loudly: it misses, and the caller is told
+   * `SECTION_NOT_FOUND` with a hint to list the page's anchors — which then
+   * refuses with `INDEX_STALE` anyway. Two errors to learn one fact.
+   *
+   * Only the GLOBAL marking is answered here. A marking on one page must not
+   * refuse a write to another, and which page this batch addresses is not known
+   * until the anchors resolve — so the per-page check stays below, where it can
+   * be precise.
+   */
+  deps.projectionStatus?.assertNotGloballyStale(PROJECTION_IDS.sections);
+
   const located = edits.map((edit) => {
     const section = deps.sections.getByAnchor(edit.anchor);
     if (!section) {

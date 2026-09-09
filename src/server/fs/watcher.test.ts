@@ -382,6 +382,93 @@ describe('M40 — self-writes', () => {
   });
 });
 
+describe('0.2.77 — reporting a projection to its owner', () => {
+  it('reports the reaction and its artifact after a projection fails twice', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const r = runtime();
+    r.mountSource({ source: 'pages:pages', dir: tmp(), scope: CTX });
+    const marked: Array<{ subscription: string; source: string; relPath: string }> = [];
+    r.scoped(CTX).onProjectionStale((info) => void marked.push(info));
+    r.subscribe(
+      'pages:pages',
+      { onChange: () => { throw new Error('disk full'); }, onUnlink: () => {} },
+      { id: 'm06-section-indexer', phase: 'projection', scope: CTX },
+    );
+
+    const res = await r.runChain(CTX, 'pages:pages', 'a.md', 'change', 'server');
+
+    expect(res.staleProjections).toEqual(['m06-section-indexer']);
+    // The runtime reports WHICH reaction failed on WHICH artifact and stops
+    // there. What that costs — a page, a type, the whole projection — is the
+    // owner's to decide; M40 has no way to know how somebody else's index
+    // divides.
+    expect(marked).toEqual([{ subscription: 'm06-section-indexer', source: 'pages:pages', relPath: 'a.md' }]);
+    spy.mockRestore();
+  });
+
+  it('reports the way back too, so a marking does not outlive its cause', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const r = runtime();
+    r.mountSource({ source: 'pages:pages', dir: tmp(), scope: CTX });
+    const fresh: string[] = [];
+    r.scoped(CTX).onProjectionFresh(({ relPath }) => void fresh.push(relPath));
+    let locked = true;
+    r.subscribe(
+      'pages:pages',
+      { onChange: () => { if (locked) throw new Error('EBUSY'); }, onUnlink: () => {} },
+      { id: 'm06-section-indexer', phase: 'projection', scope: CTX },
+    );
+
+    await r.runChain(CTX, 'pages:pages', 'a.md', 'change', 'server');
+    expect(fresh).toEqual([]);
+
+    // The lock was transient; the next save recomputes the page correctly. Only
+    // the reaction knows that, and without this report the page would go on
+    // refusing reads until a human found the button in Settings.
+    locked = false;
+    await r.runChain(CTX, 'pages:pages', 'a.md', 'change', 'server');
+    expect(fresh).toEqual(['a.md']);
+    spy.mockRestore();
+  });
+
+  it('reports fresh on the retry that succeeds, not only on a clean first run', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const r = runtime();
+    r.mountSource({ source: 'pages:pages', dir: tmp(), scope: CTX });
+    const fresh: string[] = [];
+    r.scoped(CTX).onProjectionFresh(({ relPath }) => void fresh.push(relPath));
+    let attempts = 0;
+    r.subscribe(
+      'pages:pages',
+      { onChange: () => { if (++attempts === 1) throw new Error('once'); }, onUnlink: () => {} },
+      { id: 'm06-section-indexer', phase: 'projection', scope: CTX },
+    );
+
+    const res = await r.runChain(CTX, 'pages:pages', 'a.md', 'change', 'server');
+    // The one automatic retry is what the phase class buys; a projection that
+    // recovered on it is as fresh as one that never failed.
+    expect(attempts).toBe(2);
+    expect(res.staleProjections).toEqual([]);
+    expect(fresh).toEqual(['a.md']);
+    spy.mockRestore();
+  });
+
+  it('does not report incidental phases — only `projection` marks or clears anything', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const r = runtime();
+    r.mountSource({ source: 'pages:pages', dir: tmp(), scope: CTX });
+    const fresh: string[] = [];
+    r.scoped(CTX).onProjectionFresh(({ subscription }) => void fresh.push(subscription));
+    r.subscribe('pages:pages', recorder([], 'wb'), { id: 'm06-anchor-injection', phase: 'write-back', scope: CTX });
+    r.subscribe('pages:pages', recorder([], 'cap'), { id: 'm17-capture', phase: 'capture', scope: CTX });
+
+    await r.runChain(CTX, 'pages:pages', 'a.md', 'change', 'server');
+
+    expect(fresh).toEqual([]);
+    spy.mockRestore();
+  });
+});
+
 describe('M40 — the second trigger and token lifetime', () => {
   it('runChain runs every phase despite a live suppress token, unlike flush', async () => {
     const r = runtime();

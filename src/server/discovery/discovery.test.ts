@@ -2191,6 +2191,20 @@ describe('the fail-closed read gate', () => {
     });
   });
 
+  it('refuses get_sections under a GLOBAL marking, even when the anchors resolve to no page', async () => {
+    const status = new ProjectionStatusRegistry();
+    const c = gatedCore(status);
+    // A failed full rebuild leaves the marking global and `section_index` empty
+    // — so the per-page gate has no page to ask about, and its loop body never
+    // runs. The gate has to answer the whole-projection question first, or it
+    // passes exactly when it must not.
+    status.markStale(PROJECTION_IDS.sections);
+
+    await expect(c.getSections({ anchors: ['deadbeef'] })).rejects.toMatchObject({
+      code: 'INDEX_STALE',
+    });
+  });
+
   it('[ac:ac-get-page-zwraca-tresc-i-wazny-expecte] keeps get_page answering while the outline and sections refuse', async () => {
     await fs.writeFile(path.join(cwd, 'pages', 'a.md'), '# A\n\nbody\n', 'utf-8');
     const status = new ProjectionStatusRegistry();

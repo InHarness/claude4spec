@@ -830,6 +830,28 @@ describe('update_sections under a stale section index', () => {
     expect(await fs.readFile(path.join(pages.root, 'doc.md'), 'utf-8')).toBe(before);
   });
 
+  it('answers a GLOBAL marking with INDEX_STALE, not with SECTION_NOT_FOUND from the emptied index', async () => {
+    await index('doc.md', '# Doc\n\n## One\n\nfirst\n');
+    const anchor = anchorOf('One');
+    // What a failed boot rebuild leaves behind: the marking is global and the
+    // index is empty or half-built, so the anchor lookup MISSES rather than
+    // failing loudly.
+    db.prepare('DELETE FROM section_index').run();
+    projectionStatus.markStale(PROJECTION_IDS.sections);
+
+    const err = await updateSections(
+      deps(),
+      { edits: [{ anchor, action: 'replace', content: 'rewritten\n' }] },
+      'agent',
+    ).catch((e) => e as { code?: string });
+
+    // Without the global check ahead of the lookup this is `SECTION_NOT_FOUND`,
+    // whose hint sends the caller to `get_page_outline` — which then refuses
+    // with `INDEX_STALE` anyway. Two errors to learn one fact, and the first of
+    // them says the section does not exist, which is false.
+    expect(err.code).toBe('INDEX_STALE');
+  });
+
   it('[ac:ac-oznaczenie-nieswiezosci-indeksu-sekcj] leaves section writes to OTHER pages of the same root working', async () => {
     await index('marked.md', '# Marked\n\n## A\n\naaa\n');
     await index('other.md', '# Other\n\n## B\n\nbbb\n');

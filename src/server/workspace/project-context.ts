@@ -90,6 +90,7 @@ import {
   HTML_FILTER,
   JSON_FILTER,
   type SelfWriteMarker,
+  rootIdFromSource,
 } from '../fs/sources.js';
 import { pageChangedNotifier, htmlPreviewNotifier, artifactChangedNotifier } from '../fs/notifications.js';
 import { FileVersionCapture } from '../services/file-version-capture.js';
@@ -661,6 +662,78 @@ async function buildInner(
    * the discovery core's read gate reads it on every gated call.
    */
   const projectionStatus = new ProjectionStatusRegistry(ws);
+  /**
+   * 0.2.77 — the live half of the marking, from M40's report to the owner's decision.
+   *
+   * The runtime hands over a REACTION id and the artifact its chain was handling.
+   * This map turns the first into a projection, and each owner's own rule turns
+   * the second into a scope. That split is the whole contract: M40 knows which
+   * subscriber failed, the owner knows what its failure costs.
+   *
+   * `m06-anchor-injection` is absent on purpose — it is a `write-back`, an
+   * INCIDENTAL phase that is never retried and never marks anything. Only
+   * `projection`-phase reactions reach this listener at all.
+   *
+   * Wired HERE, next to the registry, and not further down with the rebuild
+   * entry points: mounts are live from `mountSource` and the boot rebuilds below
+   * take minutes on a large project. A reaction that failed inside that window
+   * with nobody listening would be broadcast to clients and dropped on the
+   * server — the exact gap this release exists to close.
+   */
+  const PROJECTION_FOR_REACTION: Record<string, ProjectionId> = {
+    'm06-section-indexer': PROJECTION_IDS.sections,
+    'm14-link-indexer': PROJECTION_IDS.pageLinks,
+    'm29-entity-indexer': PROJECTION_IDS.entities,
+    'm29-release-cache': PROJECTION_IDS.releases,
+    'm02-frontmatter-indexer': PROJECTION_IDS.frontmatter,
+    'm08-todos-indexer': PROJECTION_IDS.todos,
+  };
+  /**
+   * The scope each owner asks for, in its OWN key vocabulary — which is what the
+   * read gate later matches against:
+   *
+   *  - the release cache does not divide into artifacts at all (list and detail
+   *    are one thing), so it can only ever be global — `undefined` here;
+   *  - the entity index keys on the entity TYPE, which is what every read gates
+   *    on: a file path would never match a `listEntities({ type })`. `tags.json`
+   *    parses to no type and so marks globally — it belongs to every type at once;
+   *  - everything else keys on `rootId:path`, and `rootIdFromSource` is the one
+   *    place that knows how a source name carries its root — artifact mounts
+   *    included, which spell theirs `artifacts:brief`, not `pages:brief`.
+   */
+  const projectionScopeFor = (
+    projection: ProjectionId,
+    source: string,
+    relPath: string,
+  ): string | undefined => {
+    if (projection === PROJECTION_IDS.releases) return undefined;
+    if (projection === PROJECTION_IDS.entities) return entityStore.parseRelPath(relPath)?.type;
+    const rootId = rootIdFromSource(source);
+    return rootId ? `${rootId}:${relPath}` : undefined;
+  };
+  w.onProjectionStale(({ subscription, source, relPath }) => {
+    const projection = PROJECTION_FOR_REACTION[subscription];
+    if (!projection) return;
+    projectionStatus.markStale(projection, projectionScopeFor(projection, source, relPath));
+  });
+  /**
+   * And the way back. A marking retired only by the Settings button would
+   * outlive its cause: a file briefly locked by another process fails a reaction
+   * twice, the next save succeeds, the index is correct again — and the page
+   * would still refuse reads until a human noticed. The reaction that fixed it
+   * is the one thing that knows it is fixed, so it is what clears it.
+   *
+   * Only the artifact's own marking is retired; a GLOBAL marking survives, since
+   * one page recomputing says nothing about the rest of the projection.
+   */
+  w.onProjectionFresh(({ subscription, source, relPath }) => {
+    const projection = PROJECTION_FOR_REACTION[subscription];
+    if (!projection) return;
+    const scope = projectionScopeFor(projection, source, relPath);
+    if (scope === undefined) return;
+    projectionStatus.markFresh(projection, scope);
+  });
+
   const entityIndexer = new EntityIndexerService(
     db.handle,
     entityStore,
@@ -1542,10 +1615,17 @@ async function buildInner(
   // The boot rebuild mints anchors but nothing dispatches for those files, so the
   // `write-back` phase never runs — drain the stash explicitly or the anchors
   // would live only in `section_index` and never reach the .md files.
+  const sectionsBootPass = projectionStatus.beginRebuild();
   sectionIndexer
     .indexAll()
     .then(() => sectionIndexer.flushPendingInjections((source, relPath) => w.suppress(source, relPath)))
-    .then(() => projectionStatus.markFresh(PROJECTION_IDS.sections))
+    /**
+     * `finishRebuild`, not `markFresh` — the boot rebuild is slow and mounts are
+     * already live, so a reaction can fail on some page while it runs. Clearing
+     * everything at the end would erase a failure this pass never covered; the
+     * token clears only what predates it.
+     */
+    .then(() => projectionStatus.finishRebuild(PROJECTION_IDS.sections, sectionsBootPass))
     .catch((err) => {
     console.error('[section-indexer] initial indexAll failed:', err);
     /**
@@ -1558,9 +1638,10 @@ async function buildInner(
     projectionStatus.markStale(PROJECTION_IDS.sections);
   });
 
+  const todosBootPass = projectionStatus.beginRebuild();
   todosIndexer
     .indexAll()
-    .then(() => projectionStatus.markFresh(PROJECTION_IDS.todos))
+    .then(() => projectionStatus.finishRebuild(PROJECTION_IDS.todos, todosBootPass))
     .catch((err) => {
       console.error('[todos-indexer] initial indexAll failed:', err);
       // Marked, but M08 never REFUSES a read: `line`/`col`/`anchor` on a
@@ -1569,9 +1650,10 @@ async function buildInner(
       projectionStatus.markStale(PROJECTION_IDS.todos);
     });
 
+  const pageLinksBootPass = projectionStatus.beginRebuild();
   pagesLinkIndexer
     .indexAll()
-    .then(() => projectionStatus.markFresh(PROJECTION_IDS.pageLinks))
+    .then(() => projectionStatus.finishRebuild(PROJECTION_IDS.pageLinks, pageLinksBootPass))
     .catch((err) => {
       console.error('[pages-link-indexer] initial indexAll failed:', err);
       projectionStatus.markStale(PROJECTION_IDS.pageLinks);
@@ -1612,8 +1694,9 @@ async function buildInner(
       }
     }
     try {
+      const pass = projectionStatus.beginRebuild();
       await pagesFrontmatterIndexer.indexAll();
-      projectionStatus.markFresh(PROJECTION_IDS.frontmatter);
+      projectionStatus.finishRebuild(PROJECTION_IDS.frontmatter, pass);
     } catch (err) {
       console.warn('[pages-frontmatter-indexer] initial sync failed:', (err as Error).message);
       // Flagged, never refusing — a frontmatter record is `{ rootId, path,
@@ -1684,17 +1767,15 @@ async function buildInner(
       console.warn('[timestamp-backfill] skipped:', (err as Error).message);
     }
 
-    await entityIndexer.indexAll();
     /**
-     * `markFresh` AFTER `indexAll`, and it does not undo what the rebuild itself
-     * marked: a rebuild that skipped a declared type's table marks that TYPE
-     * stale from inside, and a global `markFresh` here would erase the very fact
-     * it just recorded. `markFresh()` with no artifact clears the whole
-     * projection, so it runs only when the rebuild reported nothing skipped.
+     * The token is taken BEFORE `indexAll`, and closing the pass with it does not
+     * undo what the rebuild itself marked: a rebuild that skipped a declared
+     * type's table marks that TYPE stale from inside, and a blanket `markFresh`
+     * here would erase the very fact it just recorded.
      */
-    if (!projectionStatus.isStale(PROJECTION_IDS.entities)) {
-      projectionStatus.markFresh(PROJECTION_IDS.entities);
-    }
+    const pass = projectionStatus.beginRebuild();
+    await entityIndexer.indexAll();
+    projectionStatus.finishRebuild(PROJECTION_IDS.entities, pass);
   } catch (err) {
     console.error('[entity-indexer] boot indexAll failed:', err);
     projectionStatus.markStale(PROJECTION_IDS.entities);
@@ -1764,8 +1845,9 @@ async function buildInner(
   // 0.1.118: boot rebuild of the spec_release derived cache from releasesDir.
   // Order relative to the entity rebuild doesn't matter (independent tables).
   try {
+    const pass = projectionStatus.beginRebuild();
     await releaseIndexer.indexAll();
-    projectionStatus.markFresh(PROJECTION_IDS.releases);
+    projectionStatus.finishRebuild(PROJECTION_IDS.releases, pass);
   } catch (err) {
     console.error('[release-indexer] boot indexAll failed:', err);
     // The release cache does not divide into artifacts — list and detail are one
@@ -1778,55 +1860,6 @@ async function buildInner(
    * recompute, the same one that runs at context build. Registered here because
    * this is the only place that holds all six owners at once.
    */
-  /**
-   * 0.2.77 — the live half of the marking, from M40's report to the owner's decision.
-   *
-   * The runtime hands over a REACTION id and the artifact its chain was handling.
-   * This map turns the first into a projection, and each owner's own rule turns
-   * the second into a scope. That split is the whole contract: M40 knows which
-   * subscriber failed, the owner knows what its failure costs.
-   *
-   * `m06-anchor-injection` is absent on purpose — it is a `write-back`, an
-   * INCIDENTAL phase that is never retried and never marks anything. Only
-   * `projection`-phase reactions reach this listener at all.
-   */
-  const PROJECTION_FOR_REACTION: Record<string, ProjectionId> = {
-    'm06-section-indexer': PROJECTION_IDS.sections,
-    'm14-link-indexer': PROJECTION_IDS.pageLinks,
-    'm29-entity-indexer': PROJECTION_IDS.entities,
-    'm29-release-cache': PROJECTION_IDS.releases,
-    'm02-frontmatter-indexer': PROJECTION_IDS.frontmatter,
-    'm08-todos-indexer': PROJECTION_IDS.todos,
-  };
-  w.onProjectionStale(({ subscription, source, relPath }) => {
-    const projection = PROJECTION_FOR_REACTION[subscription];
-    if (!projection) return;
-    /**
-     * The scope each owner asks for, in its OWN key vocabulary — which is what
-     * the read gate later matches against:
-     *
-     *  - the release cache does not divide into artifacts at all (list and detail
-     *    are one thing), so it can only ever be global;
-     *  - the entity index keys on the entity TYPE, which is what every read gates
-     *    on — a file path would never match a `listEntities({ type })`;
-     *  - everything else keys on `rootId:path`, and `rootId` is the page source's
-     *    own suffix.
-     */
-    if (projection === PROJECTION_IDS.releases) {
-      projectionStatus.markStale(projection);
-      return;
-    }
-    if (projection === PROJECTION_IDS.entities) {
-      const parsed = entityStore.parseRelPath(relPath);
-      // No parseable type ⇒ nothing narrower can be honestly claimed. `tags.json`
-      // lands here, and it belongs to every type at once.
-      projectionStatus.markStale(projection, parsed?.type);
-      return;
-    }
-    const rootId = source.startsWith('pages:') ? source.slice('pages:'.length) : source;
-    projectionStatus.markStale(projection, `${rootId}:${relPath}`);
-  });
-
   projectionStatus.registerRebuild(PROJECTION_IDS.sections, async () => {
     await sectionIndexer.indexAll();
     await sectionIndexer.flushPendingInjections((source, relPath) => w.suppress(source, relPath));
