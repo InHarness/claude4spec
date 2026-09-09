@@ -189,8 +189,12 @@ describe('the seeded catalog', () => {
     const op = CATALOG.get('find_references');
     expect(op).toBeDefined();
     // Exactly the shared read-operation set — no per-operation additions.
+    // 0.2.77 — `INDEX_STALE` joins that shared set: `find_references` reads the
+    // M14 link map, and its backref answer is exactly the kind a caller writes
+    // against (rename-sync rewrites every page in it).
     expect([...op!.errorCodes].sort()).toEqual([
       'INDEX_NOT_MATERIALIZED',
+      'INDEX_STALE',
       'INVALID_ARGUMENT',
       'INVALID_TYPE',
     ]);

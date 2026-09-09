@@ -33,6 +33,7 @@ import type { RestoreContext } from '../serialization/types.js';
 import { topoSortModules } from '../core/plugin-host/entity-order.js';
 import { compositionOf } from '../../shared/plugin-host/composition.js';
 import { HostEntityWriter } from './entity-writer.js';
+import { PROJECTION_IDS, type ProjectionStatusRegistry } from './projection-status.js';
 import { projectStamp, safeTable } from './system-stamp-projection.js';
 import { readSystemFields } from '../serialization/system-fields.js';
 import {
@@ -52,6 +53,12 @@ export class EntityIndexerService implements WatchSubscriber {
     private host: PluginHost,
     private tags: TagsService,
     private reader: RawEntityReader,
+    /**
+     * 0.2.77 — where a rebuild that could not fully finish records that fact.
+     * Optional: hand-rolled rigs construct this service with no registry, and a
+     * rig that owns no projection status has nothing to mark.
+     */
+    private projectionStatus?: ProjectionStatusRegistry,
   ) {}
 
   // ─── index-path restore (no version capture, no file writes) ──────────────
@@ -170,6 +177,17 @@ export class EntityIndexerService implements WatchSubscriber {
   async indexAll(): Promise<void> {
     const startedAt = performance.now();
     let count = 0;
+    /**
+     * 0.2.77 — types whose table this rebuild could not refill.
+     *
+     * Collected DURING the transaction and acted on only AFTER it closes. Marking
+     * from inside would be a write we might roll back, and the marking must
+     * survive precisely the case where the data did not: the whole point is that
+     * the index is now known-incomplete for these types. This is deliberately NOT
+     * a rollback — one type's missing migration must not cost the project every
+     * other type's index.
+     */
+    const skippedTypes = new Set<string>();
     // ONE transaction for the whole rebuild: clear the derived entity/tag/junction
     // tables (children before parents), then rebuild from the files. The inner
     // per-entity `db.transaction()` (service upserts, indexTagsFile) nest as
@@ -220,6 +238,17 @@ export class EntityIndexerService implements WatchSubscriber {
         for (const table of this.clearableTables()) {
           if (!clearOrder.includes(table)) clearOrder.push(table);
         }
+        /**
+         * Which DECLARED type each table belongs to. The staleness flag is keyed
+         * on the entity TYPE, not on the table name, because that is the
+         * vocabulary every reader gates on (`listEntities({ type })`); a marker
+         * spelled as a table name would never match a read.
+         */
+        const typeForTable = new Map<string, string>();
+        for (const m of ordered) {
+          const t = this.safeTable(compositionOf(m).mainTable, m.type);
+          if (t) typeForTable.set(t, m.type);
+        }
         for (const table of clearOrder) {
           // A type may declare a table whose migration never ran (a plugin that
           // shipped no `backend.migrations`, or whose migration failed). Without
@@ -231,6 +260,19 @@ export class EntityIndexerService implements WatchSubscriber {
               `[entity-indexer] table '${table}' does not exist — skipping it in the ` +
                 `rebuild (its type declared a table no migration created)`,
             );
+            /**
+             * 0.2.77 — the skip is no longer only a log line.
+             *
+             * Skipping keeps the rest of the rebuild alive, which is right, but it
+             * leaves this type's rows unrefilled while every read goes on
+             * answering from them. That is the same condition a failed
+             * `projection` phase produces, so it sets the SAME per-type flag —
+             * two roads, one state, one degradation rule. Only a DECLARED type
+             * counts: a table with no owning module is a phantom nobody reads
+             * through a type gate.
+             */
+            const declaredType = typeForTable.get(table);
+            if (declaredType) skippedTypes.add(declaredType);
             continue;
           }
           this.db.exec(`DELETE FROM ${table};`);
@@ -257,6 +299,12 @@ export class EntityIndexerService implements WatchSubscriber {
           }
         }
       })();
+    // AFTER the transaction has closed — see `skippedTypes`. A rebuild that
+    // skipped a declared type's table did not fail, so it reports success; what
+    // it cannot claim is that the index for THAT type is complete.
+    for (const type of skippedTypes) {
+      this.projectionStatus?.markStale(PROJECTION_IDS.entities, type);
+    }
     const ms = Math.round(performance.now() - startedAt);
     console.log(`[entity-indexer] indexed ${count} entities from ${this.store.root} in ${ms}ms`);
   }

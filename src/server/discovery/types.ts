@@ -1,3 +1,4 @@
+import type { ProjectionStatusRegistry } from '../services/projection-status.js';
 /**
  * M39 — the discovery core's contract.
  *
@@ -40,6 +41,16 @@ export interface DiscoveryDeps {
   /** Absolute path of the project directory; page roots are resolved under it. */
   projectDir: string;
   packageVersion: string;
+  /**
+   * 0.2.77 — the fail-closed read gate's source of truth.
+   *
+   * OPTIONAL, and that is not laziness: the core is constructed by several
+   * hand-rolled rigs (tests, the CLI's own short-lived contexts) that own no
+   * projections at all and therefore have nothing that could be stale. Absent ⇒
+   * nothing refuses, which is the correct answer for a rig with no file watcher,
+   * not a hole in the rule.
+   */
+  projectionStatus?: ProjectionStatusRegistry;
 }
 
 // ── Meta ────────────────────────────────────────────────────────────────────

@@ -5,6 +5,9 @@ import type Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { FileWatchRuntime, type WatchScope } from '../fs/watcher.js';
+import { RecordStore } from '../fs/record-store.js';
+import { markdownAdapter, type MarkdownRecord } from '../fs/record-adapters.js';
 import { createTestDb } from '../../../tests/helpers/test-db.js';
 import { createPageToolsServer } from './page-tools.js';
 import { PagesService } from '../services/pages.js';
@@ -29,18 +32,37 @@ function recordingWriter(calls: Array<{ relPath: string; actor: WriteActor }>): 
   };
 }
 
+/** One scope for this rig — the primitive keys its re-entrancy check on it. */
+const RIG_SCOPE: WatchScope = 'context:page-tools-rig';
+
 describe('page-tools', () => {
   let cwd: string;
   let db: Database.Database;
   let pages: PagesService;
   let client: Client;
   let origins: Array<{ relPath: string; actor: WriteActor }>;
+  let runtime: FileWatchRuntime;
 
   beforeEach(async () => {
     cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-page-tools-'));
     db = createTestDb();
     pages = new PagesService(cwd, 'pages', 'pages');
     await pages.ensureRoot();
+    /**
+     * 0.2.77 — a real M42 primitive, because spec content now has exactly ONE
+     * writer: the `markOrigin` → write → `flush` fallback this rig used to run
+     * on is gone from production, so a rig without a record store would be
+     * exercising a path that no longer exists. `fsEvents: false` — this file is
+     * about the MCP envelope, not about the file provider.
+     */
+    runtime = new FileWatchRuntime({ fsEvents: false });
+    runtime.mountSource({ source: 'pages:pages', dir: pages.root, scope: RIG_SCOPE });
+    pages.records = new RecordStore<MarkdownRecord>({
+      registrar: runtime.scoped(RIG_SCOPE),
+      source: 'pages:pages',
+      dir: pages.root,
+      adapter: markdownAdapter,
+    });
     origins = [];
     const target = { pages, writer: recordingWriter(origins) };
     const { server } = createPageToolsServer({
@@ -55,6 +77,7 @@ describe('page-tools', () => {
   });
 
   afterEach(async () => {
+    await runtime.close();
     db.close();
     await fs.rm(cwd, { recursive: true, force: true });
   });
@@ -140,10 +163,28 @@ describe('page-tools', () => {
   });
 
   it('stamps its writes as `agent` — the axis on which this channel differs from REST', async () => {
+    /**
+     * 0.2.77 — read off the CHAIN, not off `markOrigin`.
+     *
+     * The claim is unchanged and is the point of this file: every write through
+     * this channel is attributed to `agent`, where REST attributes to `user`.
+     * What changed is where the label lives. It used to be a hint parked beside
+     * the path for a later file event to collect; it is now an argument of the
+     * in-band chain, which `capture` reads through `peekActor`. Probing the
+     * chain asserts the property the version log actually depends on.
+     */
+    const seen: Array<{ relPath: string; actor: WriteActor | undefined }> = [];
+    const probe = (relPath: string) =>
+      void seen.push({ relPath, actor: runtime.peekActor(RIG_SCOPE, 'pages:pages', relPath) });
+    runtime.scoped(RIG_SCOPE).subscribe(
+      'pages:pages',
+      { onChange: (_s, _src, relPath) => probe(relPath), onUnlink: (_s, _src, relPath) => probe(relPath) },
+      { id: 'actor-probe', phase: 'capture' },
+    );
     const created = await call('create_page', { rootId: 'pages', path: 'a.md', content: '# A' });
     await call('update_page', { rootId: 'pages', path: 'a.md', body: '# A2', expectedHash: created.body.hash });
     await call('delete_page', { rootId: 'pages', path: 'a.md' });
-    expect(origins).toEqual([
+    expect(seen).toEqual([
       { relPath: 'a.md', actor: 'agent' },
       { relPath: 'a.md', actor: 'agent' },
       { relPath: 'a.md', actor: 'agent' },

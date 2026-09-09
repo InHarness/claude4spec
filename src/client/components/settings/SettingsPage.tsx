@@ -10,6 +10,7 @@ import { ExternalSkillsSection } from './sections/ExternalSkillsSection.js';
 import { PluginPoolSection } from './sections/PluginPoolSection.js';
 import { PluginSettingsSection } from './sections/PluginSettingsSection.js';
 import { AgentSection } from './sections/AgentSection.js';
+import { IndexStatusSection } from './sections/IndexStatusSection.js';
 import { AboutSection } from './sections/AboutSection.js';
 import { DangerZoneSection } from './sections/DangerZoneSection.js';
 
@@ -57,6 +58,7 @@ export function SettingsPage() {
           <PluginSettingsSection />
           <AgentSection />
           <AboutSection />
+          <IndexStatusSection />
           <DangerZoneSection />
         </div>
       </div>

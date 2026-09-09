@@ -26,6 +26,7 @@ import {
 } from './index.js';
 import { DEFAULT_BUDGET_CHARS } from './budget.js';
 import { RawEntityReader } from './raw-entity-reader.js';
+import { PROJECTION_IDS, ProjectionStatusRegistry } from '../services/projection-status.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
 import { serializeSection } from '../serialization/serializers/section.js';
 import type { DiscoveryCore, SectionResultItem } from './types.js';
@@ -121,7 +122,11 @@ describe('discovery core', () => {
   let cwd: string;
   let db: Database.Database;
 
-  function core(roots: Root[], modules: BackendModule[] = [widgetModule()]): DiscoveryCore {
+  function core(
+    roots: Root[],
+    modules: BackendModule[] = [widgetModule()],
+    projectionStatus?: ProjectionStatusRegistry,
+  ): DiscoveryCore {
     const pluginHost = host(modules);
     const reader = new RawEntityReader(db, pluginHost);
     return createDiscoveryCore({
@@ -132,6 +137,7 @@ describe('discovery core', () => {
       roots,
       projectDir: cwd,
       packageVersion: 'test',
+      ...(projectionStatus ? { projectionStatus } : {}),
     });
   }
 
@@ -2087,5 +2093,137 @@ describe('applyPagesOverride, through the core that consumes it', () => {
     const hit = (await narrowed.findReferences({ target: 'entity', type: 'widget', slug: 'flow' })).references[0]!;
     expect(hit.pagePath).toBe('notes.md');
     expect(hit.anchor).toBeUndefined();
+  });
+});
+
+/**
+ * 0.2.77 — the FAIL-CLOSED read gate, and the one operation deliberately outside it.
+ *
+ * The rule: a read that hands out coordinates or identities the caller then
+ * WRITES against is refused while its projection is marked, rather than answered
+ * from pre-recompute state. A quiet answer off old data is content corruption,
+ * not a stale view.
+ */
+describe('the fail-closed read gate', () => {
+  let cwd: string;
+  let db: Database.Database;
+
+  beforeEach(async () => {
+    cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-stale-gate-'));
+    db = createTestDb();
+    applyProjection(db, [widgetModule()]);
+    await fs.mkdir(path.join(cwd, 'pages'), { recursive: true });
+  });
+
+  afterEach(async () => {
+    db.close();
+    await fs.rm(cwd, { recursive: true, force: true });
+  });
+
+  function gatedCore(status: ProjectionStatusRegistry): DiscoveryCore {
+    const pluginHost = host([widgetModule()]);
+    return createDiscoveryCore({
+      reader: new RawEntityReader(db, pluginHost),
+      db,
+      host: pluginHost,
+      serialization: new SerializationEngine(pluginHost),
+      roots: [
+        {
+          id: 'pages',
+          name: 'Pages',
+          dir: 'pages',
+          ...DEFAULT_PAGES_ROOT_PROPS,
+        } as Root,
+      ],
+      projectDir: cwd,
+      packageVersion: 'test',
+      projectionStatus: status,
+    });
+  }
+
+  it('[ac:ac-odczyt-typu-encji-oznaczonego-jako-ni] refuses a marked entity type with INDEX_STALE, never an empty list', () => {
+    db.prepare(`INSERT INTO widget (slug, format, source) VALUES ('flow', 'mermaid', 'graph TD')`).run();
+    const status = new ProjectionStatusRegistry();
+    const c = gatedCore(status);
+    // Fresh: the row is there, so an empty answer later cannot be mistaken for
+    // "there is nothing".
+    expect(c.listEntities({ type: 'widget', mode: 'items' })).toMatchObject({ mode: 'items' });
+
+    status.markStale(PROJECTION_IDS.entities, 'widget');
+
+    /**
+     * The two wrong answers this refuses are named in the criterion itself: an
+     * EMPTY LIST (which reads as "no such entities" and is acted on as a fact)
+     * and the LIST FROM BEFORE the recompute (which reads as current). Both are
+     * indistinguishable from a correct answer at the call site.
+     */
+    expect(() => c.listEntities({ type: 'widget', mode: 'items' })).toThrowError(
+      expect.objectContaining({ code: 'INDEX_STALE' }),
+    );
+    expect(() => c.getEntities({ type: 'widget', slugs: ['flow'] })).toThrowError(
+      expect.objectContaining({ code: 'INDEX_STALE' }),
+    );
+  });
+
+  it('leaves an UNMARKED entity type answering normally', () => {
+    db.prepare(`INSERT INTO widget (slug, format, source) VALUES ('flow', 'mermaid', 'graph TD')`).run();
+    const status = new ProjectionStatusRegistry();
+    const c = gatedCore(status);
+    status.markStale(PROJECTION_IDS.entities, 'some-other-type');
+    // The entity projection keys on the TYPE, so one bad table does not take the
+    // whole store down with it.
+    expect(c.listEntities({ type: 'widget', mode: 'items' })).toMatchObject({ mode: 'items' });
+  });
+
+  it('[ac:ac-odczyt-backrefow-przy-oznaczonej-nies] refuses backrefs on ANY link-map marking, whichever target is asked about', async () => {
+    const status = new ProjectionStatusRegistry();
+    const c = gatedCore(status);
+    status.markStale(PROJECTION_IDS.pageLinks, 'pages:some-other-source.md');
+
+    /**
+     * The refusal sits on the QUERY, not on the caller, and it is global from a
+     * local marking — the one projection where that is true. `reverseIndex`
+     * aggregates over every source page, so an unrecomputed source makes the
+     * source list wrong for every target.
+     */
+    await expect(c.findReferences({ target: 'page', rootId: 'pages', path: 'anything.md' })).rejects.toMatchObject({
+      code: 'INDEX_STALE',
+    });
+  });
+
+  it('refuses get_sections under a GLOBAL marking, even when the anchors resolve to no page', async () => {
+    const status = new ProjectionStatusRegistry();
+    const c = gatedCore(status);
+    // A failed full rebuild leaves the marking global and `section_index` empty
+    // — so the per-page gate has no page to ask about, and its loop body never
+    // runs. The gate has to answer the whole-projection question first, or it
+    // passes exactly when it must not.
+    status.markStale(PROJECTION_IDS.sections);
+
+    await expect(c.getSections({ anchors: ['deadbeef'] })).rejects.toMatchObject({
+      code: 'INDEX_STALE',
+    });
+  });
+
+  it('[ac:ac-get-page-zwraca-tresc-i-wazny-expecte] keeps get_page answering while the outline and sections refuse', async () => {
+    await fs.writeFile(path.join(cwd, 'pages', 'a.md'), '# A\n\nbody\n', 'utf-8');
+    const status = new ProjectionStatusRegistry();
+    const c = gatedCore(status);
+    status.markStale(PROJECTION_IDS.sections, 'pages:a.md');
+
+    await expect(c.getPageOutline({ rootId: 'pages', path: 'a.md' })).rejects.toMatchObject({
+      code: 'INDEX_STALE',
+    });
+
+    /**
+     * `get_page` is EXCLUDED BY CONSTRUCTION, not by oversight: it reads the
+     * file through `PageSource`, not a projection, so there is nothing about it
+     * that could be stale. That makes it the rescue path — content plus a hash
+     * that is valid RIGHT NOW, which is everything `update_page` needs. Gate it
+     * too and a marked section index would leave no way to write the page at all.
+     */
+    const page = await c.getPage({ rootId: 'pages', path: 'a.md' });
+    expect(page.content).toContain('# A');
+    expect(page.hash).toMatch(/^[a-f0-9]{64}$/);
   });
 });

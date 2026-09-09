@@ -773,6 +773,44 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
     });
   });
 
+  /**
+   * 0.2.77 — the timeline groups by release, which makes `createRelease()`'s
+   * sweep a VISIBLE move rather than an internal bookkeeping detail.
+   */
+  describe('createRelease and the "Unreleased" group', () => {
+    it('[ac:ac-po-createrelease-grupa-niewydane-na-t] moves every unreleased entry into the new release in one step', () => {
+      const pagesDir = path.join(dir, 'pages');
+      fs.mkdirSync(pagesDir, { recursive: true });
+      const { releaseService } = buildReleaseService(pagesDir);
+
+      const insert = db.prepare(
+        `INSERT INTO entity_version (entity_type, entity_slug, version, data, changed_by, release_id, serializer_version, op)
+         VALUES ('endpoint', ?, ?, '{}', 'user', NULL, 'v1', 'create')`,
+      );
+      insert.run('e1', 1);
+      insert.run('e2', 1);
+      insert.run('e2', 2);
+
+      const unreleased = () =>
+        (db.prepare(`SELECT COUNT(*) AS n FROM entity_version WHERE release_id IS NULL`).get() as { n: number }).n;
+      expect(unreleased()).toBe(3);
+
+      const rel = releaseService.createRelease({ name: 'v1', description: 'First' }, 'user');
+
+      /**
+       * ONE `UPDATE` sets `release_id` on all of them, which is what makes this a
+       * single move on the timeline rather than three rows migrating one by one.
+       * Afterwards the "Unreleased" group is EMPTY — not merely smaller — and its
+       * former contents stand under the new release's heading.
+       */
+      expect(unreleased()).toBe(0);
+      const moved = db
+        .prepare(`SELECT COUNT(*) AS n FROM entity_version WHERE release_id = ?`)
+        .get(rel.id) as { n: number };
+      expect(moved.n).toBe(3);
+    });
+  });
+
   describe('0.1.124 updateRelease commit-then-assign race guard (code-review fix)', () => {
     it('re-checks the frozen/latest invariant after the awaited commitPull — a release created during that window blocks assignment instead of silently misattributing fresh work', async () => {
       const pagesDir = path.join(dir, 'pages');

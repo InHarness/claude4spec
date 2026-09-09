@@ -17,6 +17,7 @@ import { PopoverHost } from './ui/Popover.js';
 import { ModalHost } from './ui/ConfirmModal.js';
 import { EntityOverlayHost } from './ui/EntityOverlayHost.js';
 import { GitErrorRecoveryModal } from './ui/GitErrorRecoveryModal.js';
+import { IndexStaleBanner } from './components/IndexStaleBanner.js';
 import { ToastHost } from './ui/ToastHost.js';
 import { TrustPluginsModal } from './components/TrustPluginsModal.js';
 import { PageRefPopoverHost } from './tiptap/extensions/PageRefPopover.js';
@@ -177,10 +178,18 @@ function MainShell({ projectName }: { projectName: string | null }) {
 
   return (
     <ThreadListProvider>
+    {/*
+      * 0.2.77 — the column wrapper exists for exactly one child: the global
+      * staleness bar, the single recorded exception to "nothing is rendered above
+      * the flex-row". The flex-row below is unchanged and still owns the whole
+      * remaining height; the bar renders `null` in every state but a GLOBAL
+      * marking, so in normal operation this wrapper adds nothing at all.
+      */}
+    <div className="h-full w-full flex flex-col" style={{ color: 'var(--c-ink)' }}>
+    <IndexStaleBanner />
     <div
       ref={rootRef}
-      className="h-full w-full flex"
-      style={{ color: 'var(--c-ink)' }}
+      className="flex-1 min-h-0 w-full flex"
     >
       <div style={{ width: sidebarW, flexShrink: 0 }} className="flex">
         <Sidebar
@@ -212,6 +221,7 @@ function MainShell({ projectName }: { projectName: string | null }) {
       <EntityOverlayHost />
       <GitErrorRecoveryModal />
       <ToastHost />
+    </div>
     </div>
     </ThreadListProvider>
   );

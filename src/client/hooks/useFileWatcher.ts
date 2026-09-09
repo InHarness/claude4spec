@@ -95,6 +95,14 @@ export function useFileWatcher() {
             if (data.threadId) batcher.queue(['plan', 'by-thread', data.threadId]);
             batcher.queue(['plans-list']);
             batcher.queue(['threads']);
+          } else if (data.kind === 'index:status-changed') {
+            /**
+             * 0.2.77 — a projection changed freshness, in either direction.
+             * Invalidating the card's key is the whole client-side mechanism:
+             * there is no polling loop, and none is wanted. The banner, the
+             * sidebar indicator and the settings card all render off this one key.
+             */
+            batcher.queue(['index-status']);
           } else if (data.kind === 'plugin:reloaded') {
             // M33 phase 3: a plugin in the pool was installed/removed/edited.
             // Re-import its frontend (cache-bust), re-pin editor extensions +

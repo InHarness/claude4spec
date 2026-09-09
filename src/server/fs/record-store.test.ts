@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { FileWatchRuntime, type WatchScope, type WatchSubscriber } from './watcher.js';
-import { RecordStore, RecordConflictError, RecordPathError } from './record-store.js';
+import { RecordStore, RecordConflictError, RecordPathError, RecordTargetExistsError } from './record-store.js';
 import { markdownAdapter, jsonAdapter, type MarkdownRecord } from './record-adapters.js';
 
 /**
@@ -372,5 +372,81 @@ describe('M42 — the markdown adapter', () => {
   it('passes `raw` through untouched, which is what byte-for-byte restore needs', () => {
     const bytes = '---\nz: 1\na: 2\n---\nbody';
     expect(markdownAdapter.serialize({ raw: bytes })).toBe(bytes);
+  });
+});
+
+/**
+ * 0.2.77 — the MOVE sequence: the primitive's second sequence, equal in standing
+ * to the write.
+ */
+describe('M42 — the move sequence', () => {
+  it('[ac:ac-przeniesienie-rekordu-na-sciezke-juz] refuses an occupied destination BEFORE the commit', async () => {
+    const { store, dir } = harness();
+    await store.write('from.md', { body: '# from' });
+    await store.write('to.md', { body: '# occupied' });
+
+    await expect(store.move('from.md', 'to.md')).rejects.toBeInstanceOf(RecordTargetExistsError);
+
+    /**
+     * The refusal has to land BEFORE the commit, and these two reads are what
+     * says so. `fs.renameSync` would happily clobber the destination, so a check
+     * made after it — or not at all — would destroy the occupant and leave no
+     * trace of it. The source staying put is the other half: a move that refused
+     * must not have half-happened.
+     */
+    expect(fs.readFileSync(path.join(dir, 'from.md'), 'utf-8')).toContain('# from');
+    expect(fs.readFileSync(path.join(dir, 'to.md'), 'utf-8')).toContain('# occupied');
+  });
+
+  it('[ac:ac-przeniesienie-rekordu-ktorego-sciezka] refuses a destination in another source instead of writing plus deleting', async () => {
+    const { store, dir } = harness();
+    await store.write('from.md', { body: '# from' });
+
+    /**
+     * A destination outside this store's directory is a destination in ANOTHER
+     * source. It is refused as an ADDRESSING error, and — the part that matters
+     * — it is not quietly emulated as "write the content over there, then delete
+     * it here". That emulation would need two mutexes and two chains, so it is a
+     * different operation with a different failure surface, not a move.
+     */
+    await expect(store.move('from.md', '../elsewhere/to.md')).rejects.toBeInstanceOf(RecordPathError);
+    expect(fs.readFileSync(path.join(dir, 'from.md'), 'utf-8')).toContain('# from');
+    expect(fs.existsSync(path.join(dir, '..', 'elsewhere', 'to.md'))).toBe(false);
+  });
+
+  it('renames atomically without re-serializing, and runs the chain on BOTH paths', async () => {
+    const { store, runtime, dir } = harness();
+    const events: string[] = [];
+    runtime.scoped(CTX).subscribe(
+      SOURCE,
+      {
+        onChange: (_s, _src, relPath) => void events.push(`add:${relPath}`),
+        onUnlink: (_s, _src, relPath) => void events.push(`unlink:${relPath}`),
+      },
+      { id: 'move-probe', phase: 'projection' },
+    );
+    // Frontmatter whose key order `matter.stringify` would normalise: if the
+    // adapter took part, these bytes would come back different.
+    const raw = '---\nb: 2\na: 1\n---\nbody\n';
+    fs.writeFileSync(path.join(dir, 'from.md'), raw, 'utf-8');
+
+    const res = await store.move('from.md', 'to.md');
+
+    expect(res.path).toBe('to.md');
+    // Byte-for-byte: the format adapter does not participate in a move, so the
+    // record's hash is unchanged by definition.
+    expect(fs.readFileSync(path.join(dir, 'to.md'), 'utf-8')).toBe(raw);
+    expect(res.hash).toBe(markdownAdapter.hash(raw));
+    expect(fs.existsSync(path.join(dir, 'from.md'))).toBe(false);
+    // Old path first — its projection row must be gone before the new one is built.
+    expect(events).toEqual(['unlink:from.md', 'add:to.md']);
+  });
+
+  it('checks expectedHash on the SOURCE, like a write', async () => {
+    const { store } = harness();
+    await store.write('from.md', { body: '# from' });
+    await expect(store.move('from.md', 'to.md', { expectedHash: 'f'.repeat(64) })).rejects.toBeInstanceOf(
+      RecordConflictError,
+    );
   });
 });

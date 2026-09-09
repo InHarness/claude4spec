@@ -9,8 +9,9 @@ import type {
   UnresolvedMention,
 } from '../../shared/page-links.js';
 import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
-import type { WatchSubscriber, WatchScope } from '../fs/watcher.js';
+import type { WatchSubscriber, WatchScope, WatchActor } from '../fs/watcher.js';
 import { requireRootId } from '../fs/sources.js';
+import { PROJECTION_IDS, type ProjectionStatusRegistry } from './projection-status.js';
 
 const AT_RE = /(?<![\w])@([a-zA-Z0-9_][a-zA-Z0-9_\-/.]*[a-zA-Z0-9_\-/])(?:#([a-f0-9]{8}))?/g;
 const LINK_RE = /\[([^\]\n]*)\]\(([^)\s]+)\)/g;
@@ -50,7 +51,78 @@ export class PagesLinkIndexerService implements WatchSubscriber {
   private reverseIndex = new Map<string, Set<string>>();
   private unresolved = new Map<string, UnresolvedMention[]>();
 
-  constructor(private roots: Map<string, PagesService>, private ws: WsEmitter) {}
+  constructor(
+    private roots: Map<string, PagesService>,
+    private ws: WsEmitter,
+    /**
+     * 0.2.77 — the fail-closed guard's source of truth. Optional: a rig with no
+     * projection registry owns nothing that could be marked.
+     */
+    private projectionStatus?: ProjectionStatusRegistry,
+  ) {}
+
+  /**
+   * 0.2.77 — RENAME-SYNC. Rewrite every citation of `from` to `to`, across every
+   * source page of one root.
+   *
+   * Two roads lead here, and only one of them is new. A move performed BY THE
+   * APPLICATION hands over both paths outright — there is nothing to infer, and
+   * no window to wait out. A move performed by something else (a plain
+   * `fs.rename` from an editor or a script) is still only visible as separate
+   * events, and is not this method's business.
+   *
+   * ## The guard, before the first write
+   *
+   * If the link projection carries ANY staleness marker the whole propagation is
+   * abandoned BEFORE a single file is written: no source page gets rewritten
+   * links, so the move is aborted rather than half-applied. The refusal is
+   * global by design — `reverseIndex` aggregates over every source page, so one
+   * source that did not recompute means the list of pages to rewrite is itself
+   * unreliable, and rewriting from an unreliable list is how citations get lost.
+   *
+   * ## Not atomic across files, and not pretending to be
+   *
+   * Each rewritten page is its OWN write through the record primitive, with its
+   * own commit, its own suppressed event and its own full phase chain. There is
+   * no transaction spanning N files and none is simulated: a failure partway
+   * leaves the pages already rewritten rewritten.
+   *
+   * Scope is the ROOT. `reverseIndex` does not cover briefs and patches, so their
+   * `@page.md` citations stay unsynchronised — unchanged from before.
+   */
+  async renameSync(rootId: string, from: string, to: string, actor: WatchActor = 'user'): Promise<string[]> {
+    this.projectionStatus?.assertFresh(PROJECTION_IDS.pageLinks);
+
+    const svc = this.roots.get(rootId);
+    if (!svc?.records) return [];
+    // Read the citing pages BEFORE anything is written — the index is about to
+    // be rewritten underneath us by each write's own chain.
+    /**
+     * `reverseIndex` stores COMPOSITE keys (`${rootId}:${relPath}`) — the same
+     * keying every map in this class uses — so the prefix has to come off before
+     * a path reaches the record store, which addresses records relative to the
+     * root. Passing the composite through would produce `absFor` refusals for
+     * every citing page, i.e. a propagation that silently rewrote nothing.
+     */
+    const prefix = `${rootId}:`;
+    const sources = this.getReverseLinks(rootId, from)
+      .filter((k) => k.startsWith(prefix))
+      .map((k) => k.slice(prefix.length));
+    const rewritten: string[] = [];
+    for (const sourcePath of sources) {
+      if (sourcePath === from) continue;
+      const raw = svc.records.readRaw(sourcePath);
+      if (raw === null) continue;
+      const next = rewritePageCitations(raw, from, to);
+      if (next === raw) continue;
+      // Attributed to whoever performed the MOVE: the rewrite is a consequence of
+      // their action, not an authorless background edit, and `capture` records it
+      // under that name in each rewritten page's own version row.
+      await svc.records.write(sourcePath, { raw: next }, { actor });
+      rewritten.push(sourcePath);
+    }
+    return rewritten;
+  }
 
   private key(rootId: string, relPath: string): string {
     return `${rootId}:${relPath}`;
@@ -529,4 +601,34 @@ function fuzzyScore(q: string, pathStr: string, title: string): number {
   const exactBonus = p === q || t === q ? 500 : 0;
   const baseBonus = path.posix.basename(p, '.md') === q ? 200 : 0;
   return Math.max(pScore, tScore) + exactBonus + baseBonus;
+}
+
+
+/**
+ * The three citation FORMS a page may carry, rewritten together.
+ *
+ * They are three spellings of one edge, so a rename that fixed only the `@`
+ * mentions would leave the markdown links and the backticked paths pointing at a
+ * file that is no longer there — a half-done rename is worse than none, because
+ * it looks done.
+ *
+ * The optional `#anchor` suffix on the first two forms is PRESERVED: a move
+ * changes where a page lives, never which section of it was cited.
+ *
+ * Exported for its own test — the substitution is the part worth pinning, and it
+ * is pure.
+ */
+export function rewritePageCitations(content: string, from: string, to: string): string {
+  const esc = from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return content
+    // `@a.md` and `@a.md#1a2b3c4d`
+    .replace(new RegExp(`(?<![\\w])@${esc}(?=(#[a-f0-9]{8})?(?![\\w\\-/.]))`, 'g'), `@${to}`)
+    // `` `a.md` `` and `` `a.md#1a2b3c4d` ``
+    .replace(new RegExp('`' + esc + '(#[a-f0-9]{8})?`', 'g'), (_m, anchor: string | undefined) =>
+      '`' + to + (anchor ?? '') + '`',
+    )
+    // `](a.md)`
+    .replace(new RegExp(`\\]\\(${esc}(#[a-f0-9]{8})?\\)`, 'g'), (_m, anchor: string | undefined) =>
+      `](${to}${anchor ?? ''})`,
+    );
 }
