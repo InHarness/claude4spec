@@ -17,7 +17,16 @@ import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 // Generator stays strict 8 (per M06 spec `15u7sazr` — auto-inject contract).
 const nanoid8 = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8);
 
-const ANCHOR_RE = new RegExp(ANCHOR_PATTERN_SOURCE);
+/**
+ * The anchor pattern as a WHOLE LINE — an anchor comment is a line, and a
+ * sentence that merely quotes the syntax is prose about an anchor, not one.
+ * `parseHeadings` walks upward over a block of these, so an unanchored match
+ * would let a line of prose mentioning the syntax be swallowed into the block
+ * and silently pushed out of the previous section's body. Kept identical to
+ * the rule `anchorValuesIn` applies, so the write path's accounting and the
+ * indexer's ownership recognize exactly the same set of lines.
+ */
+const ANCHOR_LINE_RE = new RegExp(`^${ANCHOR_PATTERN_SOURCE}$`);
 const HEADING_RE = /^(#{1,6})\s+(.+?)\s*$/;
 
 export interface ParsedHeading {
@@ -26,6 +35,31 @@ export interface ParsedHeading {
   lineIndex: number;
   anchor: string | null;
   anchorLineIndex: number | null;
+  /**
+   * 0.2.75 — the TOPMOST line of the anchor-comment block above this heading,
+   * where `anchorLineIndex` is the bottom-most (the owner).
+   *
+   * The two differ only when several anchor comments are stacked over one
+   * heading. Exactly one of them can own it — the nearest — but none of the
+   * others is content of the section ABOVE either: they are orphans sitting in
+   * the gap between two sections. So the boundary is drawn at the top of the
+   * whole block, which is what {@link headingStart} answers.
+   */
+  anchorBlockStart: number | null;
+}
+
+/**
+ * Where a heading's territory begins: its anchor block when it has one, the
+ * heading line itself when it does not.
+ *
+ * The single definition of a section's END, since a section runs up to the next
+ * heading's start. Every derived range — the indexed `line_end`, the section
+ * read, the section overwrite — reads it from here rather than recomputing it,
+ * because two independent computations of this number is precisely the drift
+ * that put a neighbour's anchor comment inside the previous section's body.
+ */
+export function headingStart(h: ParsedHeading): number {
+  return h.anchorBlockStart ?? h.lineIndex;
 }
 
 interface SectionInfo {
@@ -375,6 +409,9 @@ export class SectionIndexerService implements WatchSubscriber {
         shiftHeadingLines(headings, h.lineIndex, 1);
         h.anchor = newAnchor;
         h.anchorLineIndex = h.lineIndex - 1;
+        // A minted anchor is the only line in its block: it was just spliced in
+        // directly above the heading, so the block starts where it does.
+        h.anchorBlockStart = h.lineIndex - 1;
         bodyChanged = true;
       }
     }
@@ -607,17 +644,25 @@ export function parseHeadings(lines: string[]): ParsedHeading[] {
     const text = (m[2] ?? '').trim();
     let anchor: string | null = null;
     let anchorLineIndex: number | null = null;
+    let anchorBlockStart: number | null = null;
+    /**
+     * Upward past blank lines AND past further anchor comments: the FIRST one
+     * found owns the heading, every one above it is an orphan, and the walk
+     * keeps going only to learn where that block starts. Any other non-blank
+     * line ends it — prose above a heading is the previous section's content.
+     */
     for (let j = i - 1; j >= 0; j--) {
       const above = (lines[j] ?? '').trim();
       if (above === '') continue;
-      const am = ANCHOR_RE.exec(above);
-      if (am) {
+      const am = ANCHOR_LINE_RE.exec(above);
+      if (!am) break;
+      if (anchor === null) {
         anchor = am[1] ?? null;
         anchorLineIndex = j;
       }
-      break;
+      anchorBlockStart = j;
     }
-    out.push({ level, text, lineIndex: i, anchor, anchorLineIndex });
+    out.push({ level, text, lineIndex: i, anchor, anchorLineIndex, anchorBlockStart });
   }
   return out;
 }
@@ -627,6 +672,9 @@ function shiftHeadingLines(headings: ParsedHeading[], fromIndex: number, delta: 
     if (h.lineIndex >= fromIndex) h.lineIndex += delta;
     if (h.anchorLineIndex !== null && h.anchorLineIndex >= fromIndex) {
       h.anchorLineIndex += delta;
+    }
+    if (h.anchorBlockStart !== null && h.anchorBlockStart >= fromIndex) {
+      h.anchorBlockStart += delta;
     }
   }
 }
@@ -682,7 +730,7 @@ function buildSections(lines: string[], headings: ParsedHeading[]): SectionInfo[
     let endLine = lines.length;
     for (let j = idx + 1; j < headings.length; j++) {
       if (headings[j]!.level <= h.level) {
-        endLine = headings[j]!.anchorLineIndex ?? headings[j]!.lineIndex;
+        endLine = headingStart(headings[j]!);
         break;
       }
     }

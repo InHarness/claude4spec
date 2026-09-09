@@ -652,6 +652,7 @@ export function registerCoreOperations(): void {
         'ROOT_NOT_FOUND',
         'INVALID_ARGUMENT',
         'ANCHOR_LOSS',
+        'ANCHOR_DUPLICATE',
         'FIND_NOT_FOUND',
         'MATCH_COUNT_MISMATCH',
       ],
