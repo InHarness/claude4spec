@@ -135,6 +135,25 @@ import type { EntityModuleManifest, SystemPromptContribution } from './types.js'
  * five other subsystems consume it as a declaration of the type's custom
  * operations. A slot is retired when its last consumer goes, not when its first
  * one does; the doc comment on the field now says which consumers remain.
+ *
+ * 0.2.79 — `MountContext` gains the M39 read core's five-operation plugin
+ * surface (`getEntities`, `listEntities`, `searchEntities`, `describeTypes`,
+ * `resolveIdentity`), and the baseline stays at `2.0.0`. This is the fourth
+ * additive-within-baseline change, beside the `contributes.skills` slot, the
+ * `contentBearing` flag in `data.schema` and the named-validator registry
+ * (`kind: <name>`, whose only entry is `sql-identifier`).
+ *
+ * It is a surface change on BOTH sides, not only M39's: the binding goes through
+ * `MountContext`, and `mountBackend(ctx: MountContext)` is itself a versioned
+ * signature, so widening the context widens M13's surface too. The five
+ * signatures — together with the shape of the record they issue — are versioned
+ * from here on, which is what makes "widen later, never narrow" the rule that
+ * governs them.
+ *
+ * Additive, and no bump: nothing that existed changes signature or semantics,
+ * and there is no published external plugin that could break. Note what this is
+ * NOT — the operations are BOUND, not CONTRIBUTED, so the envelope declares
+ * nothing about them and the loader gains no new check.
  */
 export const HOST_API_VERSION = '2.0.0';
 

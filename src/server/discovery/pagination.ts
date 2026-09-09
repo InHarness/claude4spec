@@ -42,23 +42,15 @@ export interface PageRequest {
   offset?: number;
 }
 
-export interface Page<T> {
-  items: T[];
-  total: number;
-  /** More rows exist past this window — a fact about PAGING. */
-  hasMore: boolean;
-  /**
-   * 0.2.15 — the window was cut SHORT of the requested `limit` because the
-   * response budget ran out.
-   *
-   * Distinct from `hasMore`, and both can be true at once. `hasMore` answers
-   * "did you ask for a window of a larger set", which the caller usually knows;
-   * `truncated` answers "did you get less than you asked for", which it cannot
-   * know without being told — the alternative is a caller comparing
-   * `items.length` against a `limit` it may have left defaulted.
-   */
-  truncated: boolean;
-}
+/**
+ * 0.2.79 — `Page` itself now lives in `shared/discovery/read-surface.ts`, with
+ * the other DTOs the plugin read surface publishes; a paginated result is part
+ * of what `list_entities` / `search_entities` hand a plugin, so its shape is
+ * versioned with them. Re-exported here so this module stays the place the core
+ * reaches for pagination.
+ */
+import type { Page } from '../../shared/discovery/read-surface.js';
+export type { Page };
 
 export function resolvePageRequest(
   req: PageRequest,
