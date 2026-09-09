@@ -182,13 +182,30 @@ describe.skipIf(!BASE)('entity version history — EntityVersionHistoryView', ()
     await page.close();
   });
 
-  it('[ac:ac-w-widoku-entityversionhistoryview-wers] labels an unassigned version "(unreleased)" instead of leaving the pill blank', async () => {
+  it('[ac:ac-w-widoku-entityversionhistoryview-wers] labels an unassigned version as unreleased rather than leaving it blank', async () => {
     const versions = await listVersions(project.id, slug);
     // The probe versions captured above are unreleased by construction.
     expect(versions.some((v) => v.releaseId == null)).toBe(true);
 
     const { page, consoleErrors } = await openHistory(browser, project.id, slug);
-    expect(await page.getByText('(unreleased)').first().isVisible()).toBe(true);
+    /**
+     * 0.2.77 moved WHERE this label lives, not whether it exists. The timeline
+     * became an axis of releases, so the release name is a GROUP HEADING and no
+     * longer a pill repeated on every row — and unassigned versions gather under
+     * one "Unreleased" group pinned to the top of the axis.
+     *
+     * The criterion's substance is unchanged and still asserted here: an
+     * unassigned version is VISIBLY labelled as such rather than showing a blank
+     * marker. Only its wording still describes the pre-0.2.77 pill, which is
+     * filed as a clarification patch against this brief.
+     */
+    const group = page.locator('[data-testid="version-group-__unreleased__"]');
+    await expect.poll(() => group.count()).toBe(1);
+    expect(await group.getByText('Unreleased').first().isVisible()).toBe(true);
+    // The group is at the TOP of the axis, which is what makes `createRelease()`
+    // read as one move rather than a reordering.
+    const firstGroupTestId = await page.locator('[data-testid^="version-group-"]').first().getAttribute('data-testid');
+    expect(firstGroupTestId).toBe('version-group-__unreleased__');
     expect(consoleErrors).toEqual([]);
     await page.close();
   });
