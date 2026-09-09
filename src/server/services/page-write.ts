@@ -6,7 +6,8 @@ import type { FileVersionService } from './file-version.js';
 import type { PagesService } from './pages.js';
 import type { SectionsService } from './sections.js';
 import { ConflictError } from './brief.js';
-import { RecordConflictError } from '../fs/record-store.js';
+import { RecordConflictError, RecordPathError, RecordTargetExistsError } from '../fs/record-store.js';
+import { PROJECTION_IDS, type ProjectionStatusRegistry } from './projection-status.js';
 import { DomainError } from './tags.js';
 import { parseHeadings } from './section-indexer.js';
 import {
@@ -454,12 +455,27 @@ async function writeThroughPrimitive(
   input: { body: string; frontmatter?: Record<string, unknown> },
   expectedHash?: string,
 ): Promise<string> {
+  /**
+   * 0.2.77 — `markOrigin()` is no longer a WRITE MECHANISM of the server.
+   *
+   * Until now this function had a second body: the pre-0.2.76 `markOrigin` →
+   * write → `flush` → re-read dance, taken whenever a target arrived without a
+   * record store. It is gone, and the primitive is the only way spec content is
+   * written. The fallback was never atomic, never serialized per path, and
+   * checked its conflict OUTSIDE the mutex — so the same call could be a
+   * deterministic `PAGE_CONFLICT` or a silent last-write-wins depending on which
+   * rig constructed the target.
+   *
+   * `markOrigin` itself stays in M40 for the job it still has: labelling a change
+   * the app CAUSED but did not write — a branch checkout, an archive unpacked
+   * under a watched directory.
+   */
   const records = target.pages.records;
   if (!records) {
-    target.writer?.markOrigin(relPath, actor);
-    await target.pages.write(relPath, input);
-    await target.writer?.flush(relPath);
-    return await fs.readFile(path.join(target.pages.root, relPath), 'utf-8');
+    throw new DomainError(
+      'INTERNAL',
+      `root '${target.pages.rootId}' has no record store — spec content is only written through the M42 primitive`,
+    );
   }
   try {
     const res = await records.write(
@@ -818,14 +834,82 @@ export async function deletePage(
    * suppress: the token is bounded in TIME, not in events.
    */
   const records = target.pages.records;
-  if (records) {
-    await records.remove(relPath, { actor });
-  } else {
-    target.writer?.markOrigin(relPath, actor);
-    await target.pages.remove(relPath);
-    await target.writer?.flush(relPath, 'unlink');
+  if (!records) {
+    // Same rule as the write above: one writer, no second path.
+    throw new DomainError(
+      'INTERNAL',
+      `root '${target.pages.rootId}' has no record store — spec content is only deleted through the M42 primitive`,
+    );
   }
+  await records.remove(relPath, { actor });
   return { ok: true, deleted: true };
+}
+
+/** The settled answer of a page move. */
+export interface MovePageResult {
+  rootId: string;
+  path: string;
+  hash: string;
+  version: number;
+}
+
+/**
+ * 0.2.77 — move a page, then rewrite what cited it.
+ *
+ * Two things happen, in this order and no other: the record primitive performs
+ * the move (one atomic rename, both paths' chains, both paths' events
+ * suppressed), and only then does rename-sync rewrite `@a.md` → `@b.md` across
+ * the root. The pair of paths is handed over EXPLICITLY — there is no inference
+ * from a pair of file events, and therefore no window in which a coincidence
+ * could be mistaken for a move.
+ *
+ * Rename-sync's own fail-closed guard fires BEFORE its first write, so a marked
+ * link projection aborts the propagation instead of rewriting from a list it
+ * cannot trust.
+ *
+ * INFRASTRUCTURE WITH NO TRIGGER WIRED, deliberately: nothing calls this yet —
+ * no UI action, no agent tool, no route. Who invokes a move and under what name
+ * belongs to the store's owner, exactly as it does for a write.
+ */
+export async function movePage(
+  target: PageWriteTarget,
+  rootId: string,
+  input: { from: string; to: string; expectedHash?: string },
+  actor: WriteActor,
+  renameSync?: (rootId: string, from: string, to: string, actor: WriteActor) => Promise<string[]>,
+): Promise<MovePageResult> {
+  const records = target.pages.records;
+  if (!records) {
+    throw new DomainError('NOT_IMPLEMENTED', 'this root has no record store — a move needs the write primitive');
+  }
+  let settled;
+  try {
+    settled = await records.move(input.from, input.to, {
+      actor,
+      ...(input.expectedHash !== undefined ? { expectedHash: input.expectedHash } : {}),
+    });
+  } catch (err) {
+    // The primitive knows nothing about pages; the operation names the refusal.
+    if (err instanceof RecordConflictError) {
+      throw new ConflictError('PAGE_CONFLICT', 'page changed since last read', err.currentHash);
+    }
+    if (err instanceof RecordTargetExistsError) {
+      throw new DomainError('PAGE_EXISTS', `a page already exists at '${input.to}'`);
+    }
+    if (err instanceof RecordPathError) {
+      throw new DomainError('INVALID_ARGUMENT', err.message, 'a move stays inside one source — it is not a write plus a delete');
+    }
+    throw err;
+  }
+  // After the move has settled, so the propagation rewrites citations to a page
+  // that is already at its destination.
+  await renameSync?.(rootId, input.from, input.to, actor);
+  return {
+    rootId,
+    path: settled.path,
+    hash: settled.hash,
+    version: currentVersionOf(target, settled.path),
+  };
 }
 
 /** Who cites a section: one page, and the section of it the citation sits in. */
@@ -851,6 +935,13 @@ export interface SectionWriteDeps {
    * lies. A real project always wires it.
    */
   findSectionReferents?: (anchor: string) => Promise<SectionReferent[]>;
+  /**
+   * 0.2.77 — the fail-closed guard for the WRITE side.
+   *
+   * Optional for the same reason `findSectionReferents` is: a rig with no
+   * projections has nothing that could be marked. A real project always wires it.
+   */
+  projectionStatus?: ProjectionStatusRegistry;
 }
 
 /** One doomed anchor and who would be left pointing at nothing. */
@@ -1222,6 +1313,26 @@ export async function updateSections(
       'split the batch into one update_sections call per page',
     );
   }
+
+  /**
+   * 0.2.77 — the fail-closed refusal, and it comes BEFORE everything that could
+   * touch the file: before the hash guard, before the read, before a single edit
+   * is computed. The WHOLE batch is refused.
+   *
+   * This is the write half of the rule the read gate enforces. `update_sections`
+   * addresses lines by anchor, and the anchor→line mapping comes from exactly the
+   * projection that is marked: applying an edit against coordinates known not to
+   * match the file does not produce a stale view, it overwrites the wrong lines.
+   * Partial application is not on the table either — the batch is transactional
+   * because every edit rewrites one file.
+   *
+   * The refusal is per PAGE, so a marking on one page leaves section writes to
+   * every other page of the same root working normally.
+   */
+  deps.projectionStatus?.assertFresh(
+    PROJECTION_IDS.sections,
+    `${first.rootId}:${first.pagePath}`,
+  );
 
   const target = deps.resolveRoot(first.rootId);
   if (!target) {

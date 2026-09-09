@@ -29,6 +29,7 @@ import { useRoots } from '../hooks/useConfig.js';
 import { usePersistedState, projectKey } from '../state/persisted.js';
 import { UserSection } from './UserSection.js';
 import { GitStatusBadge } from './GitStatusBadge.js';
+import { IndexStatusBadge } from './IndexStatusBadge.js';
 import { clientPluginHost } from '../core/plugin-host/host.js';
 import { Popover } from '../host-ui-kit/overlay-feedback/Popover.js';
 
@@ -139,6 +140,8 @@ export function Sidebar({
 
       <UserSection />
       <GitStatusBadge />
+      {/* 0.2.77 — the same conventional status slot as the git badge. */}
+      <IndexStatusBadge />
 
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         <SectionHeader

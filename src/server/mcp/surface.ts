@@ -109,6 +109,19 @@ export const EXTERNAL_MCP_ERROR_CODES: readonly string[] = [
   'PROJECT_BUILD_FAILED',
   'VALIDATION',
   'NOT_FOUND',
+  /**
+   * 0.2.77 — arrives, and deliberately so, one list above the sibling this
+   * surface RETIRED.
+   *
+   * `INDEX_NOT_MATERIALIZED` left because it described the internal state of a
+   * separate process the caller could do nothing about. `INDEX_STALE` is the
+   * opposite: it is actionable (rebuild the projection, retry the identical
+   * call), and suppressing it would mean answering an external agent with
+   * coordinates from a projection that is known not to match the files. That is
+   * precisely the corruption the fail-closed rule exists to refuse, so the code
+   * has to be able to reach this channel too.
+   */
+  'INDEX_STALE',
   'INTERNAL',
 ];
 

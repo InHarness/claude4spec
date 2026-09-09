@@ -123,8 +123,17 @@ function EntityVersionHistoryViewImpl({
     createdAt: v.createdAt,
     changedBy: v.changedBy,
     ...(v.changeSummary ? { summary: v.changeSummary } : {}),
-    ...(showReleasePill
-      ? { releaseLabel: (v.releaseId != null ? releaseNameById.get(v.releaseId) : undefined) ?? '(unreleased)' }
+    /**
+     * 0.2.77 — `releaseId` travels ALWAYS, `releaseLabel` only when the caller
+     * asked for release names. The id is the timeline's grouping key, not a
+     * decoration: without it every version would fall into one anonymous group,
+     * and `showReleasePill: false` would silently turn the release axis back into
+     * a flat list. The label is still optional — a group with no name falls back
+     * to `Release <id>`.
+     */
+    releaseId: v.releaseId ?? null,
+    ...(showReleasePill && v.releaseId != null
+      ? { releaseLabel: releaseNameById.get(v.releaseId) ?? `Release ${v.releaseId}` }
       : {}),
   }));
 

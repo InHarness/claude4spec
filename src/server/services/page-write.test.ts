@@ -10,6 +10,7 @@ import { SectionIndexerService } from './section-indexer.js';
 import {
   createPage,
   deletePage,
+  movePage,
   updatePage,
   updateSections,
   type AnchorDuplicateError,
@@ -26,7 +27,53 @@ import { DomainError } from './tags.js';
 const NO_PRIOR_STATE = 'a'.repeat(64);
 import type { SelfWriteMarker, WriteActor } from '../fs/sources.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
-import type { WatchSubscriber } from '../fs/watcher.js';
+import { FileWatchRuntime, type WatchScope, type WatchSubscriber } from '../fs/watcher.js';
+import { RecordStore } from '../fs/record-store.js';
+import { PROJECTION_IDS, ProjectionStatusRegistry } from './projection-status.js';
+import { PagesLinkIndexerService } from './pages-link-indexer.js';
+import { markdownAdapter, type MarkdownRecord } from '../fs/record-adapters.js';
+
+/** One scope for the whole rig — the primitive keys its re-entrancy check on it. */
+const RIG_SCOPE: WatchScope = 'context:page-write-rig';
+
+/**
+ * 0.2.77 — every rig in this file now mounts a REAL M42 primitive.
+ *
+ * They used to run without one, exercising the `markOrigin` → write → `flush`
+ * fallback this release deleted: spec content has exactly one writer, so a rig
+ * with no record store would be testing a path production no longer has.
+ * `fsEvents: false` — nothing in this file is about chokidar.
+ */
+const rigRuntimes: FileWatchRuntime[] = [];
+
+/** The runtime backing a rig's `PagesService` — for probing the chain it drives. */
+const runtimeByPages = new WeakMap<PagesService, FileWatchRuntime>();
+function runtimeFor(pages: PagesService): FileWatchRuntime {
+  const r = runtimeByPages.get(pages);
+  if (!r) throw new Error('this PagesService was not built by rigPages()');
+  return r;
+}
+
+async function rigPages(dir: string, rootId = 'pages'): Promise<PagesService> {
+  const pages = new PagesService(dir, rootId, rootId);
+  await pages.ensureRoot();
+  const runtime = new FileWatchRuntime({ fsEvents: false });
+  rigRuntimes.push(runtime);
+  const source = `pages:${rootId}`;
+  runtime.mountSource({ source, dir: pages.root, scope: RIG_SCOPE });
+  pages.records = new RecordStore<MarkdownRecord>({
+    registrar: runtime.scoped(RIG_SCOPE),
+    source,
+    dir: pages.root,
+    adapter: markdownAdapter,
+  });
+  runtimeByPages.set(pages, runtime);
+  return pages;
+}
+
+afterEach(async () => {
+  for (const r of rigRuntimes.splice(0)) await r.close();
+});
 import { createDiscoveryCore, findReferencesAll } from '../discovery/index.js';
 import type { DiscoveryCore } from '../discovery/types.js';
 import { RawEntityReader } from '../discovery/raw-entity-reader.js';
@@ -74,8 +121,7 @@ describe('the page write primitive', () => {
 
   beforeEach(async () => {
     cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-page-write-'));
-    pages = new PagesService(cwd, 'pages', 'pages');
-    await pages.ensureRoot();
+    pages = await rigPages(cwd);
     target = { pages, writer: recordingWriter() };
   });
 
@@ -87,15 +133,26 @@ describe('the page write primitive', () => {
     /**
      * `WriteActor` has been `'user' | 'agent'` since M40 and only `'user'` was
      * ever passed, because REST was the only writer. This is the assertion that
-     * makes the second value real — and `flush` before the return is what makes
-     * the write read-after-write consistent, so a caller told "done" can
-     * immediately read the re-indexed page.
+     * makes the second value real.
+     *
+     * 0.2.77 — asserted through the PRIMITIVE rather than through a
+     * `markOrigin` call. The label used to travel as a hint parked beside the
+     * path for a later event to pick up; it now travels as an ARGUMENT of the
+     * in-band chain, which is why the subscriber can read it synchronously and
+     * why the write is read-after-write consistent without a separate `flush`.
      */
+    const seen: Array<{ relPath: string; actor: string | undefined }> = [];
+    runtimeFor(pages).scoped(RIG_SCOPE).subscribe(
+      'pages:pages',
+      {
+        onChange: (_scope, _source, relPath) => {
+          seen.push({ relPath, actor: runtimeFor(pages).peekActor(RIG_SCOPE, 'pages:pages', relPath) });
+        },
+      },
+      { id: 'actor-probe', phase: 'capture' },
+    );
     await createPage(target, { path: 'a.md', content: '# A' }, 'agent');
-    expect(target.writer.calls).toEqual([
-      { op: 'markOrigin', relPath: 'a.md', actor: 'agent' },
-      { op: 'flush:change', relPath: 'a.md' },
-    ]);
+    expect(seen).toEqual([{ relPath: 'a.md', actor: 'agent' }]);
   });
 
   it('answers with the hash of what LANDED, not of what was sent', async () => {
@@ -233,7 +290,7 @@ describe('the page write primitive', () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-hash-rt-'));
     const db = createTestDb();
     try {
-      const pagesSvc = new PagesService(dir, 'pages', 'pages');
+      const pagesSvc = await rigPages(dir);
       await pagesSvc.ensureRoot();
       const t = { pages: pagesSvc, writer: null };
       await updatePage(t, { path: 'h.md', body: '# Hello', frontmatter: { order: 1 }, expectedHash: NO_PRIOR_STATE }, 'user');
@@ -295,12 +352,19 @@ describe('the page write primitive', () => {
      * off the flush instead.
      */
     await createPage(target, { path: 'gone.md', content: 'x' }, 'user');
-    target.writer.calls.length = 0;
+    const events: string[] = [];
+    runtimeFor(pages).scoped(RIG_SCOPE).subscribe(
+      'pages:pages',
+      {
+        onChange: (_s, _src, relPath) => void events.push(`change:${relPath}`),
+        onUnlink: (_s, _src, relPath) => void events.push(`unlink:${relPath}`),
+      },
+      { id: 'unlink-probe', phase: 'capture' },
+    );
     expect(await deletePage(target, { path: 'gone.md' }, 'agent')).toEqual({ ok: true, deleted: true });
-    expect(target.writer.calls).toEqual([
-      { op: 'markOrigin', relPath: 'gone.md', actor: 'agent' },
-      { op: 'flush:unlink', relPath: 'gone.md' },
-    ]);
+    // The chain ran for an `unlink`, in-band — which is what lets `capture`
+    // author the tombstone before this call returns.
+    expect(events).toEqual(['unlink:gone.md']);
     expect(await pages.exists('gone.md')).toBe(false);
   });
 
@@ -342,9 +406,9 @@ describe('update_sections over a real section index', () => {
     injection = undefined;
     cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-section-write-'));
     db = createTestDb();
-    pages = new PagesService(cwd, 'pages', 'pages');
-    await pages.ensureRoot();
+    pages = await rigPages(cwd);
     sections = new SectionsService(db);
+    projectionStatus = new ProjectionStatusRegistry();
     target = { pages, writer: null };
     core = createDiscoveryCore({
       reader: new RawEntityReader(db, host),
@@ -362,7 +426,13 @@ describe('update_sections over a real section index', () => {
     await fs.rm(cwd, { recursive: true, force: true });
   });
 
-  const deps = () => ({ sections, resolveRoot: (id: string) => (id === 'pages' ? target : undefined) });
+  /** 0.2.77 — the rig's projection registry, so the write gate can be exercised. */
+  let projectionStatus: ProjectionStatusRegistry;
+  const deps = () => ({
+    sections,
+    resolveRoot: (id: string) => (id === 'pages' ? target : undefined),
+    projectionStatus,
+  });
 
   /**
    * 0.2.15 — `update_sections` takes a batch and a mandatory page hash. Most of
@@ -668,6 +738,152 @@ describe('update_sections over a real section index', () => {
 /**
  * 0.2.15 — the properties that only exist because the operation became plural.
  */
+/**
+ * 0.2.77 — the WRITE half of the fail-closed rule.
+ *
+ * `update_sections` addresses lines by anchor, and the anchor→line mapping comes
+ * from exactly the projection that gets marked. Applying an edit against
+ * coordinates known not to match the file does not produce a stale view — it
+ * overwrites the wrong lines.
+ */
+describe('update_sections under a stale section index', () => {
+  let cwd: string;
+  let db: Database.Database;
+  let pages: PagesService;
+  let sections: SectionsService;
+  let indexer: SectionIndexerService | undefined;
+  let injection: WatchSubscriber | undefined;
+  let target: PageWriteTarget;
+  let projectionStatus: ProjectionStatusRegistry;
+
+  beforeEach(async () => {
+    indexer = undefined;
+    injection = undefined;
+    cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-stale-write-'));
+    db = createTestDb();
+    pages = await rigPages(cwd);
+    sections = new SectionsService(db);
+    projectionStatus = new ProjectionStatusRegistry();
+    target = { pages, writer: null };
+  });
+
+  afterEach(async () => {
+    db.close();
+    await fs.rm(cwd, { recursive: true, force: true });
+  });
+
+  const deps = () => ({
+    sections,
+    resolveRoot: (id: string) => (id === 'pages' ? target : undefined),
+    projectionStatus,
+  });
+
+  async function index(relPath: string, content: string): Promise<void> {
+    await pages.write(relPath, { body: content });
+    indexer ??= new SectionIndexerService(db, new Map([['pages', { pages }]]), { broadcast: () => {} } as never, host);
+    injection ??= indexer.anchorInjectionSubscriber(() => {});
+    await indexer.indexPage('pages', relPath);
+    await injection!.onChange('context:test', 'pages:pages', relPath, 'external');
+    await indexer.indexPage('pages', relPath);
+  }
+
+  async function hashOfPage(relPath: string): Promise<string> {
+    const { createHash } = await import('node:crypto');
+    const raw = await fs.readFile(path.join(pages.root, relPath), 'utf-8');
+    return createHash('sha256').update(raw, 'utf-8').digest('hex');
+  }
+
+  function anchorOf(heading: string): string {
+    const row = db.prepare('SELECT anchor FROM section_index WHERE heading_text = ?').get(heading) as
+      | { anchor: string }
+      | undefined;
+    if (!row) throw new Error(`no anchor for '${heading}'`);
+    return row.anchor;
+  }
+
+  it('[ac:ac-paczka-update-sections-adresujaca-str] refuses the WHOLE batch with INDEX_STALE, and no edit reaches the file', async () => {
+    await index('doc.md', '# Doc\n\n## One\n\nfirst\n\n## Two\n\nsecond\n');
+    const before = await fs.readFile(path.join(pages.root, 'doc.md'), 'utf-8');
+    const hash = await hashOfPage('doc.md');
+    projectionStatus.markStale(PROJECTION_IDS.sections, 'pages:doc.md');
+
+    const err = await updateSections(
+      deps(),
+      {
+        expectedHash: hash,
+        edits: [
+          { anchor: anchorOf('One'), action: 'replace', content: 'rewritten\n' },
+          { anchor: anchorOf('Two'), action: 'replace', content: 'rewritten\n' },
+        ],
+      },
+      'agent',
+    ).catch((e) => e as { code?: string });
+
+    expect(err.code).toBe('INDEX_STALE');
+    /**
+     * "In its entirety" is the load-bearing word, and this is the assertion for
+     * it: the batch is transactional because every edit rewrites the same file,
+     * so a refusal that had already applied the first edit would be the exact
+     * corruption the code exists to prevent. Byte-for-byte equality is the only
+     * check that says so.
+     */
+    expect(await fs.readFile(path.join(pages.root, 'doc.md'), 'utf-8')).toBe(before);
+  });
+
+  it('[ac:ac-oznaczenie-nieswiezosci-indeksu-sekcj] leaves section writes to OTHER pages of the same root working', async () => {
+    await index('marked.md', '# Marked\n\n## A\n\naaa\n');
+    await index('other.md', '# Other\n\n## B\n\nbbb\n');
+    projectionStatus.markStale(PROJECTION_IDS.sections, 'pages:marked.md');
+
+    await expect(
+      updateSections(
+        deps(),
+        { expectedHash: await hashOfPage('marked.md'), edits: [{ anchor: anchorOf('A'), action: 'replace', content: 'nope\n' }] },
+        'agent',
+      ),
+    ).rejects.toMatchObject({ code: 'INDEX_STALE' });
+
+    // The marking is an ARTIFACT-level fact. One page that failed to recompute
+    // must not take every other page of the root down with it.
+    const ok = await updateSections(
+      deps(),
+      { expectedHash: await hashOfPage('other.md'), edits: [{ anchor: anchorOf('B'), action: 'replace', content: 'rewritten\n' }] },
+      'agent',
+    );
+    expect(ok.results).toHaveLength(1);
+    expect(await fs.readFile(path.join(pages.root, 'other.md'), 'utf-8')).toContain('rewritten');
+  });
+
+  it('[ac:ac-odczyt-nastepujacy-po-zapisie-wykonan] a read after an app write sees that write — there is no window', async () => {
+    await index('ryw.md', '# RYW\n\n## Sec\n\nbefore\n');
+    const anchor = anchorOf('Sec');
+    // Subscribe the indexer the way a real project does — as the `projection`
+    // phase of the chain — so the write itself brings the index up to date.
+    runtimeFor(pages)
+      .scoped(RIG_SCOPE)
+      .subscribe('pages:pages', indexer!, { id: 'm06-section-indexer', phase: 'projection' });
+
+    await updateSections(
+      deps(),
+      { expectedHash: await hashOfPage('ryw.md'), edits: [{ anchor, action: 'replace', content: 'after\n' }] },
+      'agent',
+    );
+
+    /**
+     * No `flush`, no timer, no await on a debounce, and — the point — no manual
+     * re-index either. The section indexer is subscribed as this rig's
+     * `projection` phase, the write ran its chain SYNCHRONOUSLY, and the call
+     * only answered once the chain had settled. So by the time `updateSections`
+     * returned, the index already described the new bytes. That is exactly the
+     * window the criterion says does not exist.
+     */
+    const row = db.prepare('SELECT body FROM section_index WHERE anchor = ?').get(anchor) as { body: string };
+    expect(row.body).toContain('after');
+    expect(row.body).not.toContain('before');
+    expect(await fs.readFile(path.join(pages.root, 'ryw.md'), 'utf-8')).toContain('after');
+  });
+});
+
 describe('update_sections — the batch contract', () => {
   let cwd: string;
   let db: Database.Database;
@@ -682,8 +898,7 @@ describe('update_sections — the batch contract', () => {
     injection = undefined;
     cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-section-batch-'));
     db = createTestDb();
-    pages = new PagesService(cwd, 'pages', 'pages');
-    await pages.ensureRoot();
+    pages = await rigPages(cwd);
     sections = new SectionsService(db);
     target = { pages, writer: null };
   });
@@ -1060,8 +1275,7 @@ describe('update_sections — the anchor-loss guard', () => {
     injection = undefined;
     cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-anchor-loss-'));
     db = createTestDb();
-    pages = new PagesService(cwd, 'pages', 'pages');
-    await pages.ensureRoot();
+    pages = await rigPages(cwd);
     sections = new SectionsService(db);
     target = { pages, writer: null };
     core = createDiscoveryCore({
@@ -1684,8 +1898,7 @@ describe('differential writes — textEdits', () => {
     injection = undefined;
     cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-text-edits-'));
     db = createTestDb();
-    pages = new PagesService(cwd, 'pages', 'pages');
-    await pages.ensureRoot();
+    pages = await rigPages(cwd);
     sections = new SectionsService(db);
     target = { pages, writer: null };
     core = createDiscoveryCore({
@@ -2147,5 +2360,76 @@ describe('differential writes — textEdits', () => {
     expect(err.code).toBe('FIND_NOT_FOUND');
     // All or nothing: the `replace` half did not land either.
     expect((await pages.read('doc.md')).body).toBe(after);
+  });
+});
+
+
+/**
+ * 0.2.77 — a page move performed BY THE APPLICATION.
+ *
+ * Infrastructure with no trigger wired: nothing calls `movePage` yet — no UI
+ * action, no agent tool, no route — because who invokes a move and under what
+ * name belongs to the store's owner, exactly as it does for a write. What is
+ * settled here is the SEQUENCE.
+ */
+describe('movePage — the application\'s own move', () => {
+  let cwd: string;
+  let pages: PagesService;
+  let target: PageWriteTarget;
+  let links: PagesLinkIndexerService;
+
+  beforeEach(async () => {
+    cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-move-page-'));
+    pages = await rigPages(cwd);
+    target = { pages, writer: null };
+    links = new PagesLinkIndexerService(new Map([['pages', pages]]), { broadcast: () => {} } as never);
+  });
+
+  afterEach(async () => {
+    await fs.rm(cwd, { recursive: true, force: true });
+  });
+
+  it('[ac:ac-przeniesienie-strony-wykonane-przez-a] moves the page and rewrites @a.md to @b.md across the root, with both paths given outright', async () => {
+    await createPage(target, { path: 'a.md', content: '# A' }, 'user');
+    await createPage(target, { path: 'one.md', content: '# One\n\ncites @a.md\n' }, 'user');
+    await createPage(target, { path: 'two.md', content: '# Two\n\nalso [x](a.md)\n' }, 'user');
+    await links.indexAll();
+
+    const res = await movePage(target, 'pages', { from: 'a.md', to: 'b.md' }, 'user', (rootId, from, to, actor) =>
+      links.renameSync(rootId, from, to, actor),
+    );
+
+    expect(res.path).toBe('b.md');
+    expect(await pages.exists('a.md')).toBe(false);
+    expect(await pages.exists('b.md')).toBe(true);
+
+    /**
+     * No 500 ms window was waited out and no `unlink`+`add` pair was correlated:
+     * the primitive handed rename-sync both paths directly, so the propagation is
+     * a consequence of the move rather than a guess about it. The move also
+     * SUPPRESSES its own events, so nothing it produced could reach a pairing
+     * heuristic even if one existed.
+     */
+    expect(await fs.readFile(path.join(pages.root, 'one.md'), 'utf-8')).toContain('@b.md');
+    expect(await fs.readFile(path.join(pages.root, 'two.md'), 'utf-8')).toContain('[x](b.md)');
+  });
+
+  it('refuses an occupied destination as PAGE_EXISTS, leaving both files untouched', async () => {
+    await createPage(target, { path: 'a.md', content: '# A' }, 'user');
+    await createPage(target, { path: 'b.md', content: '# B' }, 'user');
+
+    await expect(movePage(target, 'pages', { from: 'a.md', to: 'b.md' }, 'user')).rejects.toMatchObject({
+      code: 'PAGE_EXISTS',
+    });
+    expect(await fs.readFile(path.join(pages.root, 'a.md'), 'utf-8')).toContain('# A');
+    expect(await fs.readFile(path.join(pages.root, 'b.md'), 'utf-8')).toContain('# B');
+  });
+
+  it('reports a stale source hash as PAGE_CONFLICT, the same refusal a write gives', async () => {
+    await createPage(target, { path: 'a.md', content: '# A' }, 'user');
+    await expect(
+      movePage(target, 'pages', { from: 'a.md', to: 'b.md', expectedHash: 'f'.repeat(64) }, 'user'),
+    ).rejects.toMatchObject({ code: 'PAGE_CONFLICT' });
+    expect(await pages.exists('a.md')).toBe(true);
   });
 });

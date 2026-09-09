@@ -2,7 +2,7 @@ import express from 'express';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { crossRootPagesRouter, pagesRouter, type PageRootRuntime } from '../../../src/server/routes/pages.js';
 import { sectionsRouter } from '../../../src/server/routes/sections.js';
@@ -11,6 +11,13 @@ import type Database from 'better-sqlite3';
 import { SECTION_CONTENT_SNIPPET_CHARS, SectionsService } from '../../../src/server/services/sections.js';
 import { createTestDb } from '../../helpers/test-db.js';
 import { PagesService } from '../../../src/server/services/pages.js';
+import { FileWatchRuntime, type WatchScope } from '../../../src/server/fs/watcher.js';
+import { RecordStore } from '../../../src/server/fs/record-store.js';
+import { markdownAdapter, type MarkdownRecord } from '../../../src/server/fs/record-adapters.js';
+import {
+  PROJECTION_IDS,
+  ProjectionStatusRegistry,
+} from '../../../src/server/services/projection-status.js';
 
 /**
  * 0.2.13 (tier C) — the page and section renderings, against a RECORDING core.
@@ -77,6 +84,36 @@ function appWithSections(core: DiscoveryCore) {
   app.use('/api/sections', sectionsRouter(service, core));
   return app;
 }
+
+/**
+ * 0.2.77 — every rig here mounts a real M42 primitive.
+ *
+ * Spec content has exactly one writer since this release: the `markOrigin` →
+ * write → `flush` fallback these fixtures relied on is gone from production, so
+ * a rig without a record store would exercise a path that no longer exists.
+ * `fsEvents: false` — these tests are about REST envelopes, not the file provider.
+ */
+const rigRuntimes: FileWatchRuntime[] = [];
+const RIG_SCOPE: WatchScope = 'context:catalog-rest-pages-rig';
+
+function withRecords(pages: PagesService): PagesService {
+  fs.mkdirSync(pages.root, { recursive: true });
+  const runtime = new FileWatchRuntime({ fsEvents: false });
+  rigRuntimes.push(runtime);
+  const source = `pages:${pages.rootId}`;
+  runtime.mountSource({ source, dir: pages.root, scope: RIG_SCOPE });
+  pages.records = new RecordStore<MarkdownRecord>({
+    registrar: runtime.scoped(RIG_SCOPE),
+    source,
+    dir: pages.root,
+    adapter: markdownAdapter,
+  });
+  return pages;
+}
+
+afterEach(async () => {
+  for (const r of rigRuntimes.splice(0)) await r.close();
+});
 
 describe('GET /api/pages/search — the cross-root search_pages', () => {
   it('is matched before `:rootId`, so `search` is not read as a root id', async () => {
@@ -311,7 +348,10 @@ describe('PUT /api/sections — the rest rendering of update_sections', () => {
    *   refusal as a 400 carrying `details`. Whether the guard finds the right
    *   referents is settled over real pages in `page-write.test.ts`.
    */
-  function appWithWrites(referents: Record<string, Array<{ page: string }>> = {}) {
+  function appWithWrites(
+    referents: Record<string, Array<{ page: string }>> = {},
+    projectionStatus?: ProjectionStatusRegistry,
+  ) {
     const { core } = recordingCore();
     const app = express();
     app.use(express.json());
@@ -320,7 +360,7 @@ describe('PUT /api/sections — the rest rendering of update_sections', () => {
     // answer the one question this route exists to answer — whether the page
     // came out spliced or replaced — because the splice happens against bytes.
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-put-section-'));
-    const pages = new PagesService(dir, 'pages', 'mainspec');
+    const pages = withRecords(new PagesService(dir, 'pages', 'mainspec'));
     const writeDeps = {
       sections: {
         /**
@@ -342,6 +382,7 @@ describe('PUT /api/sections — the rest rendering of update_sections', () => {
       },
       resolveRoot: (id: string) => (id === 'mainspec' ? { pages, writer: null } : undefined),
       findSectionReferents: async (anchor: string) => referents[anchor] ?? [],
+      projectionStatus,
     };
     app.use('/api/sections', sectionsRouter(service, core, writeDeps as never));
     return { app, pages, dir };
@@ -368,6 +409,51 @@ describe('PUT /api/sections — the rest rendering of update_sections', () => {
         .expect(400);
       expect(res.body.error.code).toBe('SECTION_NOT_FOUND');
       expect(res.body.error.hint).toContain('get_page_outline');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('[ac:ac-patch-api-sections-odpowiada-statusem] answers 409 for INDEX_STALE as it does for PAGE_CONFLICT, and the codes tell them apart', async () => {
+    /**
+     * NOTE ON THE CRITERION'S WORDING: it names `PATCH /api/sections`; the route
+     * has always been `PUT /api/sections` (0.2.15 moved it from `PUT /:anchor`).
+     * Asserted against the verb that exists — filed as a patch against the brief.
+     *
+     * Two 409s side by side are not an ambiguity trap. The retry instruction is
+     * identical ("refresh and retry"); the CODE says only WHAT to refresh — the
+     * page hash, or the index. A client that cannot tell them apart retries the
+     * wrong thing forever, which is why the code, not the status, is the contract.
+     */
+    const status = new ProjectionStatusRegistry();
+    const { app, pages, dir } = appWithWrites({}, status);
+    try {
+      await pages.ensureRoot();
+      await pages.write('a.md', {
+        body: '<!-- anchor: aaaa1111 -->\n# H\nold body\n',
+      });
+      const hash = (await pages.read('a.md')).hash;
+
+      // 1 — a stale CALLER hash.
+      const conflict = await request(app)
+        .put('/api/sections')
+        .send({
+          expectedHash: 'a'.repeat(64),
+          edits: [{ anchor: 'aaaa1111', action: 'replace', content: 'x' }],
+        })
+        .expect(409);
+      expect(conflict.body.error.code).toBe('PAGE_CONFLICT');
+
+      // 2 — a perfectly current caller hash, and a stale INDEX.
+      status.markStale(PROJECTION_IDS.sections, 'mainspec:a.md');
+      const stale = await request(app)
+        .put('/api/sections')
+        .send({ expectedHash: hash, edits: [{ anchor: 'aaaa1111', action: 'replace', content: 'x' }] })
+        .expect(409);
+      expect(stale.body.error.code).toBe('INDEX_STALE');
+      expect(stale.body.error.hint).toContain('rebuild');
+      // Nothing was written: the batch is refused in its entirety.
+      expect((await pages.read('a.md')).body).toContain('old body');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -574,7 +660,7 @@ describe('PATCH /api/pages/:rootId/* — the differential rendering of update_pa
     const app = express();
     app.use(express.json());
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-patch-page-'));
-    const pages = new PagesService(dir, 'pages', 'mainspec');
+    const pages = withRecords(new PagesService(dir, 'pages', 'mainspec'));
     fs.mkdirSync(path.join(dir, 'pages'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'pages', 'a.md'), PAGE, 'utf-8');
     const root: PageRootRuntime = {

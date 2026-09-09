@@ -63,6 +63,20 @@ export class RecordConflictError extends Error {
   }
 }
 
+/**
+ * 0.2.77 — refused before the commit of a MOVE: the destination is taken.
+ *
+ * Its own class rather than a `RecordPathError` because the path is perfectly
+ * well-formed and inside the source; what it is not is free. The caller's repair
+ * differs too — pick another name, or delete the occupant deliberately.
+ */
+export class RecordTargetExistsError extends Error {
+  constructor(readonly relPath: string) {
+    super(`a record already exists at '${relPath}'`);
+    this.name = 'RecordTargetExistsError';
+  }
+}
+
 /** Refused in step 1, before serialization: an addressing error, not an authorization one. */
 export class RecordPathError extends Error {
   constructor(message: string) {
@@ -92,6 +106,17 @@ export interface RecordWriteOptions {
    * settled state IS the committed state on those sources.
    */
   chain?: boolean;
+}
+
+/** The answer of a settled {@link RecordStore.move}. */
+export interface RecordMoveResult {
+  /** Where the record now lives — the destination, echoed after settling. */
+  path: string;
+  /** Hash of the bytes on disk once both chains have run. */
+  hash: string;
+  content: string;
+  /** Subscription ids whose critical phase failed twice, across BOTH paths. */
+  staleProjections: string[];
 }
 
 export interface RecordWriteResult<T> {
@@ -301,6 +326,96 @@ export class RecordStore<T> {
     } catch {
       return fallback;
     }
+  }
+
+  /**
+   * 0.2.77 — MOVE: the primitive's second sequence, equal in standing to the write.
+   *
+   * A move is not a write. The content is not touched, so there is nothing to
+   * serialize and **the format adapter does not participate at all** — there are
+   * no bytes to produce, and the record's hash comes out unchanged. What differs
+   * from a write, step by step:
+   *
+   *   1. Conflict check on the SOURCE, via `expectedHash`, exactly as a write does.
+   *   2. Destination check: same source, and not already occupied. Both refusals
+   *      land BEFORE the commit — the source file stays where it is and the
+   *      destination is left untouched. A destination in ANOTHER source is refused
+   *      in the same step and must NOT be emulated as write-plus-delete: that
+   *      would need two mutexes and two chains, which is a different operation
+   *      with a different failure surface, not a move.
+   *   3. The atomic `rename` IS the commit point.
+   *   4. Suppression on BOTH paths. The number of events a rename produces cannot
+   *      be predicted — one `change`, or an `unlink` + `add` pair, depending on
+   *      the provider — which is exactly the case a token retired by its ISSUER
+   *      after a guard window handles and a one-shot token cannot.
+   *   5. The phase chain runs on both paths: `unlink` on the old (its projection
+   *      row goes), `add` on the new (a fresh one is built, capture records the
+   *      move, link propagation goes out as write-back).
+   *   6. The answer is read after settling: new path, hash, version.
+   *
+   * ## Both paths, one critical section
+   *
+   * The mutex is taken on BOTH paths at once, in a deterministic order by the
+   * `(scope, source, relPath)` key — here that reduces to comparing `relPath`,
+   * since a move cannot leave its source. Without a fixed order two crossing
+   * moves (a→b and b→a) would each hold one lock and wait for the other forever.
+   * This is the only place where a critical section spans more than one path.
+   */
+  async move(fromRel: string, toRel: string, opts: RecordWriteOptions = {}): Promise<RecordMoveResult> {
+    // Step 2, first half — done before any lock, because a destination outside
+    // this source can never become valid by waiting. `absFor` refuses anything
+    // that escapes `dir`, which is precisely "a different source".
+    const fromAbs = this.absFor(fromRel);
+    const toAbs = this.absFor(toRel);
+    if (fromRel === toRel) throw new RecordPathError(`move source and destination are the same: ${fromRel}`);
+
+    // Deterministic lock order — see the docblock. Both paths, one nesting.
+    const [first, second] = fromRel < toRel ? [fromRel, toRel] : [toRel, fromRel];
+    return await this.withPathLock(first, async () =>
+      await this.withPathLock(second, async () => {
+        // 1 — the source must exist and match what the caller believes it wrote over.
+        const raw = this.readRaw(fromRel);
+        if (raw === null) throw new RecordPathError(`no record at '${fromRel}'`);
+        if (opts.expectedHash !== undefined) {
+          const currentHash = this.opts.adapter.hash(raw);
+          if (currentHash !== opts.expectedHash) throw new RecordConflictError(currentHash, raw);
+        }
+        // 2, second half — an occupied destination is refused, never overwritten.
+        // `fs.renameSync` would silently clobber it, which is the one outcome a
+        // move must not have.
+        if (fs.existsSync(toAbs)) throw new RecordTargetExistsError(toRel);
+
+        fs.mkdirSync(path.dirname(toAbs), { recursive: true });
+        // 4 — tokens up on both paths, immediately before the commit and not earlier.
+        this.opts.registrar.suppress(this.opts.source, fromRel, 'primitive');
+        this.opts.registrar.suppress(this.opts.source, toRel, 'primitive');
+        try {
+          // 3 — THE COMMIT POINT. No serialization: the bytes move as they are.
+          fs.renameSync(fromAbs, toAbs);
+        } catch (err) {
+          // Nothing landed, so neither token has an event of its own to swallow
+          // and both would eat somebody else's next genuine one.
+          this.opts.registrar.unsuppress(this.opts.source, fromRel);
+          this.opts.registrar.unsuppress(this.opts.source, toRel);
+          throw err;
+        }
+
+        // 5 — the chain on both paths. Old first: its projection row must be gone
+        // before the new one is built, or an index keyed on content could see the
+        // same record under two paths at once.
+        const gone = await this.runChain(fromRel, 'unlink', opts);
+        const landed = await this.runChain(toRel, 'add', opts);
+
+        // 6 — settled state, read off the destination.
+        const content = this.readRaw(toRel) ?? '';
+        return {
+          path: toRel,
+          hash: this.opts.adapter.hash(content),
+          content,
+          staleProjections: [...gone.staleProjections, ...landed.staleProjections],
+        };
+      }),
+    );
   }
 
   /** Steps 1–4 only, for callers that are synchronous all the way up. */

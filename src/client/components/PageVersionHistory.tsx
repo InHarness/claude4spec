@@ -72,7 +72,18 @@ export function PageVersionHistory({ rootId, path, onBack }: Props) {
                 No versions yet.
               </div>
             )}
-            {versions.map((v, i) => {
+            {groupPageVersions(versions).map((group) => (
+              <div key={group.key} data-testid={`page-version-group-${group.key}`}>
+                <div
+                  className="px-1 pt-2 pb-1 text-[11px] font-medium truncate"
+                  style={{ color: group.unreleased ? 'var(--c-accent-ink)' : 'var(--c-ink)' }}
+                >
+                  {group.unreleased ? 'Unreleased' : (releaseNameById.get(Number(group.key)) ?? `Release ${group.key}`)}
+                  <span className="ml-1.5 text-[10.5px]" style={{ color: 'var(--c-subtle)' }}>
+                    {group.items.length}
+                  </span>
+                </div>
+                {group.items.map((v, i) => {
               const active = v.version === selected;
               const releaseName = v.releaseId != null ? releaseNameById.get(v.releaseId) : null;
               const canRestore = v.releaseId != null;
@@ -97,7 +108,7 @@ export function PageVersionHistory({ rootId, path, onBack }: Props) {
                         background: dotColor(v.changedBy),
                       }}
                     />
-                    {i < versions.length - 1 && (
+                    {i < group.items.length - 1 && (
                       <span
                         className="absolute"
                         style={{
@@ -122,26 +133,12 @@ export function PageVersionHistory({ rootId, path, onBack }: Props) {
                         {v.createdAt.split(' ')[1] ?? v.createdAt}
                       </span>
                     </div>
+                    {/*
+                      * 0.2.77 — the release pill is gone from the row: the release
+                      * name is the group heading above. What tells versions apart
+                      * INSIDE a group is time (in the line above) and the op.
+                      */}
                     <div className="flex items-center gap-1.5 mt-0.5">
-                      {releaseName ? (
-                        <span
-                          className="rounded px-1.5 py-0.5 text-[9.5px] font-mono"
-                          style={{
-                            background: 'var(--c-accent-soft)',
-                            color: 'var(--c-accent-ink)',
-                          }}
-                          title={`Captured into release ${releaseName}`}
-                        >
-                          {releaseName}
-                        </span>
-                      ) : (
-                        <span
-                          className="rounded px-1.5 py-0.5 text-[9.5px] font-mono italic"
-                          style={{ color: 'var(--c-subtle)' }}
-                        >
-                          (unreleased)
-                        </span>
-                      )}
                       <span className="text-[11.5px]" style={{ color: 'var(--c-muted)' }}>
                         {v.op}
                       </span>
@@ -163,7 +160,9 @@ export function PageVersionHistory({ rootId, path, onBack }: Props) {
                   )}
                 </div>
               );
-            })}
+                })}
+              </div>
+            ))}
           </div>
 
           <div
@@ -205,4 +204,34 @@ function pillFg(by: string): string {
   if (by === 'agent') return 'var(--c-blue)';
   if (by === 'filesystem') return 'var(--c-muted)';
   return 'var(--c-green)';
+}
+
+
+/**
+ * 0.2.77 — the page timeline's release axis, mirroring the entity one.
+ *
+ * Kept local rather than shared with the kit's `groupByRelease` because the two
+ * consume different row types: the kit groups `VersionHistoryItem`s it was handed,
+ * this groups `file_version` rows straight from the API. The RULE is the same and
+ * is the part that matters — unreleased first, then releases newest-first in the
+ * order the (already newest-first) rows introduce them.
+ */
+function groupPageVersions<T extends { releaseId?: number | null }>(
+  versions: readonly T[],
+): Array<{ key: string; unreleased: boolean; items: T[] }> {
+  const unreleased: T[] = [];
+  const groups: Array<{ key: string; unreleased: boolean; items: T[] }> = [];
+  for (const v of versions) {
+    if (v.releaseId == null) {
+      unreleased.push(v);
+      continue;
+    }
+    const key = String(v.releaseId);
+    const last = groups[groups.length - 1];
+    if (last && last.key === key) last.items.push(v);
+    else groups.push({ key, unreleased: false, items: [v] });
+  }
+  return unreleased.length > 0
+    ? [{ key: '__unreleased__', unreleased: true, items: unreleased }, ...groups]
+    : groups;
 }

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { withStability } from '../stability.js';
 import { EmptyState } from '../list/EmptyState.js';
 
@@ -11,8 +12,16 @@ export interface VersionHistoryItem {
   label: string;
   createdAt: string;
   author?: string;
-  /** M13/M34: shown per-row in the `timeline` variant (kit doesn't fetch releases — author supplies it). */
+  /** M13/M34: the release this version belongs to. 0.2.77 — now the GROUP HEADING in `timeline`, no longer a per-row pill. */
   releaseLabel?: string;
+  /**
+   * 0.2.77 — the grouping key. `null`/absent means unreleased.
+   *
+   * Distinct from `releaseLabel` because two releases could in principle carry
+   * the same display name, and because "unreleased" has to be recognisable
+   * without depending on a label being empty.
+   */
+  releaseId?: number | null;
   /** M13/M34: who made the change — rendered in `timeline` as a colour-coded badge so an agent edit is visually distinct from a user edit. */
   changedBy?: 'user' | 'agent' | 'filesystem';
   /** M13/M34: one-line description of what the change did (the version's change summary). */
@@ -30,6 +39,47 @@ export interface VersionHistoryProps {
   compareVersion?: string;
   /** M13/M34: fired when a `timeline` row's "Compare to" action is used. */
   onCompare?(id: string): void;
+}
+
+/**
+ * 0.2.77 — the timeline stops being an axis of TIME and becomes an axis of
+ * RELEASES.
+ *
+ * Versions arrive newest-first, so walking them in order and starting a new group
+ * whenever the release changes yields groups in the same newest-first order —
+ * no sorting, and no assumption about release ids being monotonic.
+ *
+ * Unreleased entries form ONE group pinned to the top. They are pulled out rather
+ * than left where they fall because `createRelease()` moves the whole group at
+ * once: after it runs, "Unreleased" is empty and its former contents stand under
+ * the new release's heading. A group that could appear in the middle of the axis
+ * would make that move look like a reordering.
+ *
+ * Pure, and exported for its own test — the grouping is the part worth pinning.
+ */
+export interface VersionGroup {
+  key: string;
+  label: string;
+  unreleased: boolean;
+  items: VersionHistoryItem[];
+}
+
+export function groupByRelease(versions: readonly VersionHistoryItem[]): VersionGroup[] {
+  const unreleased: VersionHistoryItem[] = [];
+  const groups: VersionGroup[] = [];
+  for (const v of versions) {
+    if (v.releaseId === null || v.releaseId === undefined) {
+      unreleased.push(v);
+      continue;
+    }
+    const key = String(v.releaseId);
+    const last = groups[groups.length - 1];
+    if (last && last.key === key) last.items.push(v);
+    else groups.push({ key, label: v.releaseLabel ?? `Release ${key}`, unreleased: false, items: [v] });
+  }
+  return unreleased.length > 0
+    ? [{ key: '__unreleased__', label: 'Unreleased', unreleased: true, items: unreleased }, ...groups]
+    : groups;
 }
 
 function VersionHistoryImpl({
@@ -154,7 +204,69 @@ type TimelineListProps = Pick<
 >;
 
 /** `variant='timeline'` — two-column dots/connector layout + "Compare to". Fetch-free, same as flat. */
+/**
+ * The release axis. One row per release by default, expandable to the individual
+ * records inside it.
+ *
+ * A group starts expanded when it holds the active or the compared version — a
+ * collapsed group hiding the row the user is looking at would be a worse default
+ * than no collapsing at all — and "Unreleased" starts expanded because it is
+ * where current work lives.
+ */
 function TimelineList({ versions, activeVersion, onSelect, onRestore, compareVersion, onCompare }: TimelineListProps) {
+  const groups = groupByRelease(versions);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  return (
+    <div className="flex flex-col gap-2">
+      {groups.map((g) => {
+        const holdsSelection = g.items.some((v) => v.id === activeVersion || v.id === compareVersion);
+        const isOpen = collapsed[g.key] === undefined ? g.unreleased || holdsSelection : !collapsed[g.key];
+        return (
+          <div key={g.key} data-testid={`version-group-${g.key}`} data-open={isOpen}>
+            <button
+              type="button"
+              onClick={() => setCollapsed((c) => ({ ...c, [g.key]: isOpen }))}
+              className="flex items-center gap-1.5 w-full text-left px-1 py-1"
+            >
+              <span className="text-[10px]" style={{ color: 'var(--c-muted)' }}>
+                {isOpen ? '▾' : '▸'}
+              </span>
+              <span
+                className="text-[11.5px] font-medium truncate"
+                style={{ color: g.unreleased ? 'var(--c-accent-ink)' : 'var(--c-ink)' }}
+              >
+                {g.label}
+              </span>
+              <span className="text-[10.5px]" style={{ color: 'var(--c-muted)' }}>
+                {g.items.length}
+              </span>
+            </button>
+            {isOpen && (
+              <TimelineRows
+                versions={g.items}
+                activeVersion={activeVersion}
+                onSelect={onSelect}
+                onRestore={onRestore}
+                compareVersion={compareVersion}
+                onCompare={onCompare}
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * The rows inside one group.
+ *
+ * The release pill is GONE from the row: the release name is the group's heading
+ * now, and repeating it on every row would be noise. What distinguishes versions
+ * WITHIN a group is time and author, which `VersionMeta` already renders — so
+ * nothing had to be added, only the redundant badge removed.
+ */
+function TimelineRows({ versions, activeVersion, onSelect, onRestore, compareVersion, onCompare }: TimelineListProps) {
   return (
     <ul className="flex flex-col">
       {versions.map((v, i) => {
@@ -190,14 +302,6 @@ function TimelineList({ versions, activeVersion, onSelect, onRestore, compareVer
                   {v.label}
                 </div>
                 {v.changedBy && <ChangedByBadge changedBy={v.changedBy} />}
-                {v.releaseLabel && (
-                  <span
-                    className="text-[10px] rounded px-1.5 py-0.5 flex-shrink-0"
-                    style={{ background: 'var(--c-accent-soft)', color: 'var(--c-accent-ink)' }}
-                  >
-                    {v.releaseLabel}
-                  </span>
-                )}
               </div>
               <VersionMeta v={v} />
               {(onCompare || (onRestore && !isActive)) && (

@@ -22,6 +22,13 @@ export type CliErrorCode =
   // M31 workspace model — registry-based resolution + per-project URL prefix.
   | 'AMBIGUOUS_WORKSPACE'
   | 'INDEX_NOT_MATERIALIZED'
+  // 0.2.77 M39 — MAPPED FROM THE DISCOVERY CORE like the block further down.
+  // Kept next to its sibling because the pair is only useful together: one says
+  // "nothing is built", the other "what is built is out of date". Deliberately
+  // NOT given an exit code of its own — `codeToExit` leaves it at the generic 1,
+  // as the `AMBIGUOUS_*` codes are, because the recovery is in the message
+  // (rebuild the projection, retry), not in a shell-level branch.
+  | 'INDEX_STALE'
   | 'PROJECT_NOT_IN_WORKSPACE'
   // 0.1.103 — --project resolved as a NAME/slug (not a path): distinguishes
   // an injected, externally-copied SKILL.md identity from the path-based

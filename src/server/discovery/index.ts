@@ -30,6 +30,7 @@ import { RootSet } from './roots.js';
 import { searchPages } from './search/page-search.js';
 import { MAX_SLUGS_PER_CALL } from './budget.js';
 import { MAX_LIMIT, type Page } from './pagination.js';
+import { PROJECTION_IDS } from '../services/projection-status.js';
 import type {
   DiscoveryCore,
   DiscoveryDeps,
@@ -43,11 +44,117 @@ import type {
   TagListItem,
 } from './types.js';
 
+/**
+ * 0.2.77 — THE fail-closed read gate, applied in ONE place.
+ *
+ * The rule it enforces: a read that hands the caller coordinates or identities it
+ * will then WRITE against must be REFUSED while its projection is marked stale,
+ * not answered from pre-recompute state. "A quiet answer off old data is content
+ * corruption, not a stale view."
+ *
+ * It sits here, at the factory, rather than inside each op, for one reason worth
+ * the indirection: `get_page`'s EXEMPTION has to be visible. Scattered across
+ * seventeen operations, "no gate on this one" reads as an oversight; in a single
+ * list it reads as the decision it is. `get_page` and `list_pages` go through
+ * `PageSource` — the filesystem — so there is nothing about them that could be
+ * stale, and `get_page` is therefore the RESCUE PATH: while the outline and the
+ * section reads refuse, it still answers with content and a valid `expectedHash`,
+ * which is enough to write through `update_page`.
+ *
+ * `checkConsistency` is likewise ungated: it is a diagnostic whose whole job is
+ * to report on a possibly-broken project, and refusing it exactly when something
+ * is wrong would take away the tool for finding out what.
+ */
+function gated(deps: DiscoveryDeps, core: DiscoveryCore): DiscoveryCore {
+  const status = deps.projectionStatus;
+  if (!status) return core;
+
+  /** The pages a batch of anchors resolves to — so one bad page refuses only its own anchors. */
+  const pagesForAnchors = (anchors: readonly string[]): string[] => {
+    if (anchors.length === 0) return [];
+    const rows = deps.db
+      .prepare(
+        `SELECT DISTINCT rootId, page_path FROM section_index WHERE anchor IN (${anchors.map(() => '?').join(', ')})`,
+      )
+      .all(...anchors) as Array<{ rootId: string; page_path: string }>;
+    return rows.map((r) => `${r.rootId}:${r.page_path}`);
+  };
+
+  return {
+    ...core,
+    getPageOutline: async (input) => {
+      status.assertFresh(PROJECTION_IDS.sections, `${input.rootId}:${input.path}`);
+      return await core.getPageOutline(input);
+    },
+    getSections: async (input) => {
+      for (const key of pagesForAnchors(input.anchors)) {
+        status.assertFresh(PROJECTION_IDS.sections, key);
+      }
+      return await core.getSections(input);
+    },
+    /**
+     * Project-wide, not per page: a search RANKS across pages and attributes each
+     * hit to a section. One page whose sections did not recompute is enough to
+     * put a hit under the wrong anchor — the old "a hit attributed to a
+     * neighbouring section" defect — so the aggregate refuses as a whole.
+     */
+    searchPages: async (input) => {
+      status.assertFresh(PROJECTION_IDS.sections);
+      return await core.searchPages(input);
+    },
+    /**
+     * M14 is the one projection where a LOCAL marking refuses GLOBALLY, and it is
+     * deliberate: `reverseIndex` aggregates over every source page, so one
+     * unrecomputed source corrupts the backref answer for every target. The
+     * refusal is decided by the EXISTENCE of a marker, not by what was asked.
+     */
+    findReferences: async (input) => {
+      status.assertFresh(PROJECTION_IDS.pageLinks);
+      return await core.findReferences(input);
+    },
+    listEntities: (input) => {
+      status.assertFresh(PROJECTION_IDS.entities, input.type);
+      return core.listEntities(input);
+    },
+    getEntities: (input) => {
+      status.assertFresh(PROJECTION_IDS.entities, input.type);
+      return core.getEntities(input);
+    },
+    searchEntities: (input) => {
+      status.assertFresh(PROJECTION_IDS.entities, input.type);
+      return core.searchEntities(input);
+    },
+    getFieldContent: (input) => {
+      status.assertFresh(PROJECTION_IDS.entities, input.type);
+      return core.getFieldContent(input);
+    },
+    collectionOverview: (input) => {
+      status.assertFresh(PROJECTION_IDS.entities, input.type);
+      return core.collectionOverview(input);
+    },
+    collectionWindow: (input) => {
+      status.assertFresh(PROJECTION_IDS.entities, input.type);
+      return core.collectionWindow(input);
+    },
+    /** Ranks across every type it is allowed to see, so any marking refuses it. */
+    resolveIdentity: (input) => {
+      if (input.types?.length) for (const t of input.types) status.assertFresh(PROJECTION_IDS.entities, t);
+      else status.assertFresh(PROJECTION_IDS.entities);
+      return core.resolveIdentity(input);
+    },
+    /** The tag registry is rebuilt by the entity indexer, so it rides its flag. */
+    listTags: (input) => {
+      status.assertFresh(PROJECTION_IDS.entities);
+      return core.listTags(input);
+    },
+  };
+}
+
 export function createDiscoveryCore(deps: DiscoveryDeps): DiscoveryCore {
   const roots = new RootSet(deps.roots);
   const pages = new PageSource(deps.projectDir, deps.roots);
 
-  return {
+  return gated(deps, {
     overview: () => overview(deps, pages, roots),
     describeTypes: (input) => describeTypes(deps, input),
     listPages: (input) => listPages(deps.db, pages, roots, input),
@@ -65,7 +172,7 @@ export function createDiscoveryCore(deps: DiscoveryDeps): DiscoveryCore {
     getFieldContent: (input) => getFieldContent(deps, input),
     collectionOverview: (input) => collectionOverview(deps, input),
     collectionWindow: (input) => collectionWindow(deps, input),
-  };
+  });
 }
 
 /**

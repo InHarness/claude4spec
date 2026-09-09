@@ -32,6 +32,20 @@ export const STATUS_FOR_DISCOVERY_CODE: Record<DiscoveryErrorCode, number> = {
   AMBIGUOUS_ENTITY: 409,
   AMBIGUOUS_PAGE: 409,
   INDEX_NOT_MATERIALIZED: 503,
+  /**
+   * 0.2.77 (M39/M06) — the projection is there but marked stale.
+   *
+   * 409 and NOT 503, one line below the sibling that IS 503, because the two ask
+   * the caller for opposite things. `INDEX_NOT_MATERIALIZED` is "this server has
+   * nothing built for you" — an availability problem the caller cannot fix from
+   * where it stands. This is a CONFLICT with server state the caller can resolve:
+   * rebuild the projection, retry the identical request, and it succeeds.
+   *
+   * It shares 409 with `PAGE_CONFLICT` deliberately, and the pair is not an
+   * ambiguity trap: the retry instruction is the same either way ("refresh and
+   * retry"), and the code says only WHAT to refresh — the page hash, or the index.
+   */
+  INDEX_STALE: 409,
 };
 
 /** Domain codes, mapped onto HTTP. Anything absent is a client error (400). */

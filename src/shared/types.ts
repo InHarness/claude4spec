@@ -1,3 +1,4 @@
+import type { ProjectionScope, ProjectionState } from './projection-status.js';
 export type PageNodeType = 'file' | 'folder';
 
 /** M30: discriminator for a `type='file'` node. Missing ⇒ `'markdown'` (backward compatible). */
@@ -71,6 +72,25 @@ export type WsEvent =
    * this release; nor is the UI warning.
    */
   | { kind: 'projection:stale'; source: string; path: string; subscription: string }
+  /**
+   * 0.2.77 — a projection changed freshness. The fifth server→client event, and
+   * the half `projection:stale` above deliberately left open.
+   *
+   * `projection:stale` is M40 REPORTING a reaction that failed twice; this is the
+   * projection's OWNER stating what it decided that means. Only the owner can:
+   * M40 does not know how many artifacts somebody else's projection divides into,
+   * so it cannot say whether one bad page poisons the whole thing.
+   *
+   * Emitted in BOTH directions — the return to `fresh` is what takes the banner
+   * down. The client invalidates the index-status cache key on it; nothing polls.
+   */
+  | {
+      kind: 'index:status-changed';
+      projection: string;
+      state: ProjectionState;
+      /** Present only with `state: 'stale'`: `'global'` or the marked artifacts. */
+      scope?: ProjectionScope;
+    }
   // M29: emitted by EntityIndexerService after a file-watch reindex (external
   // edit / git pull / self-write that slipped past suppress). `op: 'delete'`
   // when the entity file was unlinked. Boot indexAll() does NOT emit (runs

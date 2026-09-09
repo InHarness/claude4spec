@@ -42,6 +42,8 @@ import { BriefService } from '../services/brief.js';
 import { briefsRouter } from '../routes/briefs.js';
 import { patchesRouter } from '../routes/patches.js';
 import { metaRouter } from '../routes/meta.js';
+import { indexStatusRouter } from '../routes/index-status.js';
+import { PROJECTION_IDS, ProjectionStatusRegistry, type ProjectionId } from '../services/projection-status.js';
 import { listProjects } from './list-projects.js';
 import { readPeerConfigSummary } from './peer-config.js';
 import { PatchService } from '../services/patch.js';
@@ -651,6 +653,14 @@ async function buildInner(
   });
   // M34/L11: wire version-restore deps now that entityStore exists.
   versionService.configureRestore(entityStore, tagsService);
+  /**
+   * 0.2.77 — where projection freshness is kept for this project.
+   *
+   * Constructed before every projection owner, because each of them either marks
+   * it (a failed recompute) or is driven by it (the manual rebuild button), and
+   * the discovery core's read gate reads it on every gated call.
+   */
+  const projectionStatus = new ProjectionStatusRegistry(ws);
   const entityIndexer = new EntityIndexerService(
     db.handle,
     entityStore,
@@ -659,6 +669,7 @@ async function buildInner(
     pluginHost,
     tagsService,
     rawReader,
+    projectionStatus,
   );
   // 0.1.118: sibling triad for the on-disk release-identity store — mirrors
   // the entities triad above exactly (its own mount, atomic file store,
@@ -707,7 +718,7 @@ async function buildInner(
   const todosIndexer = new TodosIndexerService(sidebarRoots, ws);
   // pages-link indexer covers every page root (autocomplete/meta), resolving links
   // within each root (self-scope); cross-root @-scope is applied client-side.
-  const pagesLinkIndexer = new PagesLinkIndexerService(allRootServices, ws);
+  const pagesLinkIndexer = new PagesLinkIndexerService(allRootServices, ws, projectionStatus);
   // M17: page versioning — shared instance; per-root serializer + rootId passed per recordVersion.
   const pageVersions = new FileVersionService(db.handle, pageSerializer);
   // M36: in-memory frontmatter indexer over every page root + the artifact mounts.
@@ -881,6 +892,7 @@ async function buildInner(
    */
   const sectionWriteDeps: SectionWriteDeps = {
     sections: sectionsService,
+    projectionStatus,
     resolveRoot: (rootId) => {
       const rt = rootById.get(rootId);
       return rt ? { pages: rt.pages, writer: rt.writer, versions: pageVersions } : undefined;
@@ -934,6 +946,7 @@ async function buildInner(
     roots: effectiveRoots,
     projectDir: cwd,
     packageVersion: readPackageVersion(),
+    projectionStatus,
   });
   discoveryCore = discovery;
   /**
@@ -958,6 +971,8 @@ async function buildInner(
       roots: applyPagesOverride(effectiveRoots, pagesOverride, cwd),
       projectDir: cwd,
       packageVersion: readPackageVersion(),
+      // Narrowing the root list does not narrow the fail-closed rule.
+      projectionStatus,
     });
   pluginHost.registerMcpServer('entity-tools', () =>
     createEntityToolsServer({
@@ -1137,6 +1152,13 @@ async function buildInner(
    * `/_meta` prefix with `pluginHostRouter` above, which owns activation and
    * plugin diagnostics; the paths are disjoint, so both mount.
    */
+  /**
+   * 0.2.77 (M26) — mounted at a LONGER path than `metaRouter` just below, and
+   * before it, so the two never contend for `/_meta/index-status`. Express tries
+   * mounts in registration order; `metaRouter` declares no such route and would
+   * fall through anyway, but relying on that is a trap for whoever adds one.
+   */
+  router.use('/_meta/index-status', indexStatusRouter(projectionStatus));
   router.use('/_meta', metaRouter(discovery, pluginHost));
   /**
    * 0.2.13 — `POST /api/patches`. A slice-specific route, deliberately outside
@@ -1523,17 +1545,37 @@ async function buildInner(
   sectionIndexer
     .indexAll()
     .then(() => sectionIndexer.flushPendingInjections((source, relPath) => w.suppress(source, relPath)))
+    .then(() => projectionStatus.markFresh(PROJECTION_IDS.sections))
     .catch((err) => {
     console.error('[section-indexer] initial indexAll failed:', err);
+    /**
+     * 0.2.77 — a boot rebuild that rejected used to be a log line and nothing
+     * more, which is the worst of the three ways a projection goes stale: the
+     * index is empty or half-built, and every read answers off it as if it were
+     * whole. A failed FULL rebuild has no single artifact to blame, so the
+     * marking is global.
+     */
+    projectionStatus.markStale(PROJECTION_IDS.sections);
   });
 
-  todosIndexer.indexAll().catch((err) => {
-    console.error('[todos-indexer] initial indexAll failed:', err);
-  });
+  todosIndexer
+    .indexAll()
+    .then(() => projectionStatus.markFresh(PROJECTION_IDS.todos))
+    .catch((err) => {
+      console.error('[todos-indexer] initial indexAll failed:', err);
+      // Marked, but M08 never REFUSES a read: `line`/`col`/`anchor` on a
+      // `TodoHit` are navigation targets, not write addresses, so the cost of
+      // staleness here is a wrong count or a wrong jump — a view, never content.
+      projectionStatus.markStale(PROJECTION_IDS.todos);
+    });
 
-  pagesLinkIndexer.indexAll().catch((err) => {
-    console.error('[pages-link-indexer] initial indexAll failed:', err);
-  });
+  pagesLinkIndexer
+    .indexAll()
+    .then(() => projectionStatus.markFresh(PROJECTION_IDS.pageLinks))
+    .catch((err) => {
+      console.error('[pages-link-indexer] initial indexAll failed:', err);
+      projectionStatus.markStale(PROJECTION_IDS.pageLinks);
+    });
 
   // M17: initial sync of file_version. For each markdown file with no captured
   // version — or whose latest captured version is a `delete` tombstone while the
@@ -1571,8 +1613,13 @@ async function buildInner(
     }
     try {
       await pagesFrontmatterIndexer.indexAll();
+      projectionStatus.markFresh(PROJECTION_IDS.frontmatter);
     } catch (err) {
       console.warn('[pages-frontmatter-indexer] initial sync failed:', (err as Error).message);
+      // Flagged, never refusing — a frontmatter record is `{ rootId, path,
+      // frontmatter }`, whose key the WRITER supplied. It carries no coordinates
+      // into the file, so there is nothing here to address a bad write with.
+      projectionStatus.markStale(PROJECTION_IDS.frontmatter);
     }
   })();
 
@@ -1638,8 +1685,19 @@ async function buildInner(
     }
 
     await entityIndexer.indexAll();
+    /**
+     * `markFresh` AFTER `indexAll`, and it does not undo what the rebuild itself
+     * marked: a rebuild that skipped a declared type's table marks that TYPE
+     * stale from inside, and a global `markFresh` here would erase the very fact
+     * it just recorded. `markFresh()` with no artifact clears the whole
+     * projection, so it runs only when the rebuild reported nothing skipped.
+     */
+    if (!projectionStatus.isStale(PROJECTION_IDS.entities)) {
+      projectionStatus.markFresh(PROJECTION_IDS.entities);
+    }
   } catch (err) {
     console.error('[entity-indexer] boot indexAll failed:', err);
+    projectionStatus.markStale(PROJECTION_IDS.entities);
   }
   // M29: enable tags.json persistence only AFTER the boot rebuild, so any
   // auto-created tag during indexAll does not write files mid-rebuild.
@@ -1707,9 +1765,77 @@ async function buildInner(
   // Order relative to the entity rebuild doesn't matter (independent tables).
   try {
     await releaseIndexer.indexAll();
+    projectionStatus.markFresh(PROJECTION_IDS.releases);
   } catch (err) {
     console.error('[release-indexer] boot indexAll failed:', err);
+    // The release cache does not divide into artifacts — list and detail are one
+    // thing — so its only scope is global.
+    projectionStatus.markStale(PROJECTION_IDS.releases);
   }
+
+  /**
+   * 0.2.77 — the manual rebuild button's entry points: each projection's OWN full
+   * recompute, the same one that runs at context build. Registered here because
+   * this is the only place that holds all six owners at once.
+   */
+  /**
+   * 0.2.77 — the live half of the marking, from M40's report to the owner's decision.
+   *
+   * The runtime hands over a REACTION id and the artifact its chain was handling.
+   * This map turns the first into a projection, and each owner's own rule turns
+   * the second into a scope. That split is the whole contract: M40 knows which
+   * subscriber failed, the owner knows what its failure costs.
+   *
+   * `m06-anchor-injection` is absent on purpose — it is a `write-back`, an
+   * INCIDENTAL phase that is never retried and never marks anything. Only
+   * `projection`-phase reactions reach this listener at all.
+   */
+  const PROJECTION_FOR_REACTION: Record<string, ProjectionId> = {
+    'm06-section-indexer': PROJECTION_IDS.sections,
+    'm14-link-indexer': PROJECTION_IDS.pageLinks,
+    'm29-entity-indexer': PROJECTION_IDS.entities,
+    'm29-release-cache': PROJECTION_IDS.releases,
+    'm02-frontmatter-indexer': PROJECTION_IDS.frontmatter,
+    'm08-todos-indexer': PROJECTION_IDS.todos,
+  };
+  w.onProjectionStale(({ subscription, source, relPath }) => {
+    const projection = PROJECTION_FOR_REACTION[subscription];
+    if (!projection) return;
+    /**
+     * The scope each owner asks for, in its OWN key vocabulary — which is what
+     * the read gate later matches against:
+     *
+     *  - the release cache does not divide into artifacts at all (list and detail
+     *    are one thing), so it can only ever be global;
+     *  - the entity index keys on the entity TYPE, which is what every read gates
+     *    on — a file path would never match a `listEntities({ type })`;
+     *  - everything else keys on `rootId:path`, and `rootId` is the page source's
+     *    own suffix.
+     */
+    if (projection === PROJECTION_IDS.releases) {
+      projectionStatus.markStale(projection);
+      return;
+    }
+    if (projection === PROJECTION_IDS.entities) {
+      const parsed = entityStore.parseRelPath(relPath);
+      // No parseable type ⇒ nothing narrower can be honestly claimed. `tags.json`
+      // lands here, and it belongs to every type at once.
+      projectionStatus.markStale(projection, parsed?.type);
+      return;
+    }
+    const rootId = source.startsWith('pages:') ? source.slice('pages:'.length) : source;
+    projectionStatus.markStale(projection, `${rootId}:${relPath}`);
+  });
+
+  projectionStatus.registerRebuild(PROJECTION_IDS.sections, async () => {
+    await sectionIndexer.indexAll();
+    await sectionIndexer.flushPendingInjections((source, relPath) => w.suppress(source, relPath));
+  });
+  projectionStatus.registerRebuild(PROJECTION_IDS.todos, () => todosIndexer.indexAll());
+  projectionStatus.registerRebuild(PROJECTION_IDS.pageLinks, () => pagesLinkIndexer.indexAll());
+  projectionStatus.registerRebuild(PROJECTION_IDS.frontmatter, () => pagesFrontmatterIndexer.indexAll());
+  projectionStatus.registerRebuild(PROJECTION_IDS.entities, () => entityIndexer.indexAll());
+  projectionStatus.registerRebuild(PROJECTION_IDS.releases, () => releaseIndexer.indexAll());
 
   // NOTE: mounts are live from the moment `mountSource` runs (M40 phase A). The
   // boot export/rebuild below therefore writes through the entity store's

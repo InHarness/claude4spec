@@ -21,7 +21,8 @@ export type DiscoveryErrorCode =
   | 'INVALID_ARGUMENT'
   | 'AMBIGUOUS_ENTITY'
   | 'AMBIGUOUS_PAGE'
-  | 'INDEX_NOT_MATERIALIZED';
+  | 'INDEX_NOT_MATERIALIZED'
+  | 'INDEX_STALE';
 
 export class DiscoveryError extends Error {
   readonly name = 'DiscoveryError';
@@ -130,5 +131,41 @@ export function indexNotMaterialized(): DiscoveryError {
     'INDEX_NOT_MATERIALIZED',
     'no index has been built for this project yet',
     'Run `npx @inharness-ai/claude4spec` in the project directory once — it builds the index. Do not delete anything to fix this.',
+  );
+}
+
+/**
+ * 0.2.77 (M39) — the projection EXISTS but has been marked as no longer
+ * describing the state of the files.
+ *
+ * The sibling one line up, `INDEX_NOT_MATERIALIZED`, is a different answer to a
+ * different question, and that difference is what earned this a code of its own:
+ * `INDEX_NOT_MATERIALIZED` means "there is no projection for this project — give
+ * up", `INDEX_STALE` means "there is one, and it is out of date — rebuild and
+ * retry". The two send the caller in opposite directions.
+ *
+ * The refusal is FAIL-CLOSED and applies to every projection owner: a read that
+ * hands out coordinates or identities the caller then WRITES against is refused
+ * rather than answered from pre-recompute state. A quiet answer off stale data is
+ * content corruption, not a stale view.
+ *
+ * `message` carries the marking's SCOPE (global, or the artifacts marked) because
+ * that is what tells the caller whether anything else still works; `hint` carries
+ * the rebuild path, because a refusal with no way out is just a dead end.
+ */
+export function indexStale(
+  projection: string,
+  scope: 'global' | readonly string[],
+): DiscoveryError {
+  const where =
+    scope === 'global'
+      ? 'the whole projection is marked'
+      : `marked artifacts: ${sample(scope)}`;
+  return new DiscoveryError(
+    'INDEX_STALE',
+    `projection '${projection}' is marked stale and no longer describes the files on disk (${where})`,
+    `Rebuild it — POST /api/projects/:id/_meta/index-status/rebuild with { "projection": "${projection}" }, ` +
+      'or open Settings → Index status and press Rebuild — then retry. ' +
+      'get_page still answers with content and a valid expectedHash while this projection refuses.',
   );
 }

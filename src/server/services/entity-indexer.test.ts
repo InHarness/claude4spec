@@ -17,6 +17,7 @@ import type { TagsService } from './tags.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import type { SelfWriteSuppressor } from '../fs/sources.js';
 import type { RawEntityReader } from '../discovery/raw-entity-reader.js';
+import { PROJECTION_IDS, ProjectionStatusRegistry } from './projection-status.js';
 
 let db: Database.Database;
 let warn: ReturnType<typeof vi.spyOn>;
@@ -40,7 +41,7 @@ function hostWith(available: Mod[], activeTypes?: string[]): PluginHost {
   } as unknown as PluginHost;
 }
 
-function makeIndexer(host: PluginHost, store: Partial<EntityStore> = {}) {
+function makeIndexer(host: PluginHost, store: Partial<EntityStore> = {}, projectionStatus?: ProjectionStatusRegistry) {
   const fullStore = {
     root: '/tmp/entities',
     listType: () => [],
@@ -58,6 +59,7 @@ function makeIndexer(host: PluginHost, store: Partial<EntityStore> = {}) {
     host,
     { assignTags: vi.fn(), listAll: () => [] } as unknown as TagsService,
     {} as RawEntityReader,
+    projectionStatus,
   );
   return { indexer, ws };
 }
@@ -166,6 +168,40 @@ describe('indexAll — clearing', () => {
 
     await expect(makeIndexer(host).indexer.indexAll()).resolves.toBeUndefined();
     expect(rowCount('endpoint')).toBe(0);
+  });
+
+  it('[ac:ac-rebuild-ktory-pominal-tabele-zadeklar] raises the per-type staleness flag AFTER the transaction closes for a skipped declared type', async () => {
+    /**
+     * A declared type whose table no migration ever created. Skipping it is
+     * right — throwing would roll the WHOLE rebuild back and cost every other
+     * type its index over one plugin's missing migration — but a skip that only
+     * logged left this type's rows unrefilled while every read went on answering
+     * from them. That is the same condition a failed `projection` phase produces,
+     * so it sets the SAME flag: two roads, one state, one degradation rule.
+     */
+    db.prepare(`INSERT INTO endpoint (slug) VALUES ('e1')`).run();
+    const host = hostWith([
+      { type: 'endpoint', table: 'endpoint' },
+      { type: 'ghost', table: 'ghost_never_migrated' },
+    ]);
+    const status = new ProjectionStatusRegistry();
+
+    await expect(makeIndexer(host, {}, status).indexer.indexAll()).resolves.toBeUndefined();
+
+    // Per TYPE, which is the vocabulary every read gates on — a marker spelled
+    // as a table name would never match `listEntities({ type })`.
+    expect(status.isStale(PROJECTION_IDS.entities, 'ghost')).toBe(true);
+    // And NOT a rollback: the type that rebuilt cleanly is untouched and usable.
+    expect(status.isStale(PROJECTION_IDS.entities, 'endpoint')).toBe(false);
+    expect(status.snapshot().find((r) => r.id === PROJECTION_IDS.entities)?.scope).toEqual(['ghost']);
+  });
+
+  it('leaves the entity projection fresh when every declared table exists', async () => {
+    db.prepare(`INSERT INTO endpoint (slug) VALUES ('e1')`).run();
+    const status = new ProjectionStatusRegistry();
+    const host = hostWith([{ type: 'endpoint', table: 'endpoint' }]);
+    await makeIndexer(host, {}, status).indexer.indexAll();
+    expect(status.isStale(PROJECTION_IDS.entities)).toBe(false);
   });
 
   it('refuses an auxiliary table name that is not a bare SQL identifier', async () => {

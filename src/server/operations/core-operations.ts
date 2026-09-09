@@ -87,7 +87,26 @@ const paging = {
  * in `select` answers `INVALID_ARGUMENT`. There is no third code, because a
  * type that is active always yields a record derived from its logical schema.
  */
-const READ_CODES = ['INVALID_TYPE', 'INVALID_ARGUMENT', 'INDEX_NOT_MATERIALIZED'] as const;
+/**
+ * 0.2.77 adds `INDEX_STALE` here rather than to each read that happens to be
+ * projection-backed. The fail-closed rule is a property of the CORE, not of a
+ * handful of operations: any read that hands out coordinates or identities a
+ * caller then writes against refuses when its projection is marked. Declaring it
+ * once means a channel cannot learn the code from one operation and be surprised
+ * by it from the next.
+ *
+ * `get_page` is the deliberate exception, and it is excluded at the GATE
+ * (`discovery/index.ts`), not here — it reads the file, not a projection, so it
+ * is the rescue path to content and a valid `expectedHash` while the rest refuse.
+ * Declaring a code it cannot raise is harmless; omitting it from the reads that
+ * CAN raise it would not be.
+ */
+const READ_CODES = [
+  'INVALID_TYPE',
+  'INVALID_ARGUMENT',
+  'INDEX_NOT_MATERIALIZED',
+  'INDEX_STALE',
+] as const;
 
 /** All four channels render it themselves — the M39 parity shape. */
 const fullParity = () => ({
@@ -655,6 +674,11 @@ export function registerCoreOperations(): void {
         'ANCHOR_DUPLICATE',
         'FIND_NOT_FOUND',
         'MATCH_COUNT_MISMATCH',
+        // 0.2.77 — the whole batch is refused before any edit reaches the file
+        // when the addressed page's section projection is marked stale. A write
+        // that takes its coordinates from a projection that did not recompute
+        // lands in the wrong place, which is the one outcome worth refusing for.
+        'INDEX_STALE',
       ],
       'literal+diff',
     ),

@@ -244,6 +244,17 @@ export interface ScopedWatchRegistrar {
   unmountSource(source: string): Promise<void>;
   subscribe(source: string, handler: WatchSubscriber, opts: SubscribeOptions): void;
   markOrigin(source: string, relPath: string, actor: WatchActor): void;
+  /**
+   * 0.2.77 — tell this scope's projection owners that a critical reaction gave up.
+   *
+   * The runtime reports the FACT and stops there: which reaction failed
+   * (`subscription`) and which artifact its chain was handling (`source`,
+   * `relPath`), or no artifact at all when a full rebuild failed. It does not
+   * decide the SCOPE of the marking — M40 does not know how many artifacts
+   * somebody else's projection divides into, or whether one bad artifact poisons
+   * the rest. That call belongs to the owner, and only the owner can make it.
+   */
+  onProjectionStale(listener: (info: { subscription: string; source: string; relPath: string }) => void): void;
   suppress(source: string, relPath: string, owner?: SuppressOwner): void;
   /** Hand a suppress token back when the write it covered failed. */
   unsuppress(source: string, relPath: string): void;
@@ -358,6 +369,11 @@ export class FileWatchRuntime {
   private readonly dispatchActor = new Map<string, WatchActor>();
   private readonly fsEvents: boolean;
   private broadcaster: WatchBroadcaster | null;
+  /** Per-scope projection-owner listeners — see `ScopedWatchRegistrar.onProjectionStale`. */
+  private readonly projectionStaleListeners = new Map<
+    WatchScope,
+    Array<(info: { subscription: string; source: string; relPath: string }) => void>
+  >();
 
   constructor(opts: FileWatchRuntimeOptions = {}) {
     this.fsEvents = opts.fsEvents !== false;
@@ -850,6 +866,16 @@ export class FileWatchRuntime {
             path: relPath,
             subscription: sub.id,
           });
+          // 0.2.77 — and tell the owner, in-process. The broadcast above informs
+          // CLIENTS that a reaction failed; this informs whoever owns the
+          // projection, which is the only party that can say what it means.
+          for (const listener of this.projectionStaleListeners.get(mount.scope) ?? []) {
+            try {
+              listener({ subscription: sub.id, source: mount.source, relPath });
+            } catch (e) {
+              console.error('[m40] projection-stale listener threw:', e);
+            }
+          }
         }
       }
     });
@@ -971,6 +997,11 @@ export class FileWatchRuntime {
       unmountSource: (source) => this.unmountSource(source, scope),
       subscribe: (source, handler, opts) => this.subscribe(source, handler, { ...opts, scope }),
       markOrigin: (source, relPath, actor) => this.markOrigin(scope, source, relPath, actor),
+      onProjectionStale: (listener) => {
+        const existing = this.projectionStaleListeners.get(scope) ?? [];
+        existing.push(listener);
+        this.projectionStaleListeners.set(scope, existing);
+      },
       suppress: (source, relPath, owner) => this.suppress(scope, source, relPath, owner),
       unsuppress: (source, relPath) => this.unsuppress(scope, source, relPath),
       runChain: (source, relPath, event, origin, actor) =>
@@ -990,6 +1021,7 @@ export class FileWatchRuntime {
    * other contexts' mounts stay active.
    */
   async disposeScope(scope: WatchScope): Promise<void> {
+    this.projectionStaleListeners.delete(scope);
     const owned = [...this.mounts.values()].filter((m) => m.scope === scope);
     for (const m of owned) await this.unmountSource(m.source, scope);
     const prefix = `${scope}${SEP}`;
