@@ -520,7 +520,9 @@ export class PlanService {
             applied: false,
           };
           const fullContent = matter.stringify(injected, frontmatter as Record<string, unknown>);
-          const abs = this.absPath(allocated);
+          // `absPath` is still called for its path validation — the write itself
+          // no longer needs the absolute path now the record store resolves it.
+          this.absPath(allocated);
           await this.writeBytes(allocated, fullContent);
           await this.deps.pageVersions.recordVersion(
             allocated,

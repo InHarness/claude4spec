@@ -463,6 +463,43 @@ describe('M40 — the second trigger and token lifetime', () => {
     expect(seen).toBe('agent');
   });
 
+  it('a dispatch already in flight for the path cannot wipe the actor runChain was given', async () => {
+    const r = runtime();
+    r.mountSource({ source: 'pages:pages', dir: tmp(), scope: CTX });
+    let release!: () => void;
+    let enter!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const entered = new Promise<void>((resolve) => (enter = resolve));
+    let first = true;
+    let seen: string | undefined;
+    r.subscribe(
+      'pages:pages',
+      {
+        onChange: async () => {
+          // The FIRST dispatch — an external edit, no actor — parks inside the
+          // chain. Its `.finally` deletes the actor key on the way out, so the
+          // second dispatch must not have stamped its actor before awaiting it.
+          if (first) {
+            first = false;
+            enter();
+            await gate;
+            return;
+          }
+          seen = r.peekActor(CTX, 'pages:pages', 'a.md');
+        },
+        onUnlink: () => {},
+      },
+      { id: 'm17-capture', phase: 'capture', scope: CTX },
+    );
+
+    const external = r.runChain(CTX, 'pages:pages', 'a.md', 'change', 'external');
+    await entered; // the first chain is genuinely in flight before the second starts
+    const byAgent = r.runChain(CTX, 'pages:pages', 'a.md', 'change', 'server', 'agent');
+    release();
+    await Promise.all([external, byAgent]);
+    expect(seen).toBe('agent');
+  });
+
   it('exposes the running dispatch’s key, and nothing outside one', async () => {
     const r = runtime();
     r.mountSource({ source: 'pages:pages', dir: tmp(), scope: CTX });

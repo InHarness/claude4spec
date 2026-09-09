@@ -198,6 +198,96 @@ describe('M42 — the write sequence', () => {
   });
 });
 
+describe('M42 — the key is (scope, source, path), all three', () => {
+  it('a write from another scope mid-dispatch runs its own chain instead of joining ours', async () => {
+    // Two project contexts in ONE process, the same source name and the same
+    // relative path — `pages:pages` / `index.md` exists in every context. The
+    // re-entrancy shortcut reads a process-wide AsyncLocalStorage, so without
+    // the scope in the comparison, B's write would silently take A's arm-2 path:
+    // no chain, and a hash taken off pre-chain bytes.
+    const a = harness();
+    const other: WatchScope = 'context:p2';
+    const dirB = tmp();
+    a.runtime.mountSource({ source: SOURCE, dir: dirB, scope: other });
+    const storeB = new RecordStore<MarkdownRecord>({
+      registrar: a.runtime.scoped(other),
+      source: SOURCE,
+      dir: dirB,
+      adapter: markdownAdapter,
+    });
+
+    let bChainRan = 0;
+    a.runtime.subscribe(SOURCE, { onChange: () => void bChainRan++, onUnlink: () => {} }, { id: 'b-proj', phase: 'projection', scope: other });
+
+    let fromInsideA: string | undefined;
+    a.runtime.subscribe(
+      SOURCE,
+      {
+        onChange: async () => {
+          if (fromInsideA !== undefined) return;
+          fromInsideA = (await storeB.write('index.md', { raw: 'from B\n' })).content;
+        },
+        onUnlink: () => {},
+      },
+      { id: 'a-proj', phase: 'projection', scope: CTX },
+    );
+
+    await a.store.write('index.md', { raw: 'from A\n' });
+    expect(fromInsideA).toBe('from B\n');
+    expect(bChainRan).toBe(1); // B got a real chain of its own, not A's
+  });
+});
+
+describe('M42 — nothing past the commit point may fail the write', () => {
+  it('a settled file the adapter cannot parse still reports success and its bytes', async () => {
+    const dir = tmp();
+    const runtime = new FileWatchRuntime({ fsEvents: false });
+    runtimes.push(runtime);
+    runtime.mountSource({ source: SOURCE, dir, scope: CTX });
+    // Serializes fine, cannot read back — gray-matter on a historic snapshot
+    // whose frontmatter it chokes on, which is exactly what `restorePage` feeds
+    // it. The file IS written and the chain HAS run: reporting a failure here
+    // would tell the caller a completed restore had failed.
+    const store = new RecordStore<MarkdownRecord>({
+      registrar: runtime.scoped(CTX),
+      source: SOURCE,
+      dir,
+      adapter: {
+        ...markdownAdapter,
+        deserialize: () => {
+          throw new Error('unparseable frontmatter');
+        },
+      },
+    });
+
+    const res = await store.write('a.md', { raw: '---\nbad: [\n---\nbody\n' });
+    expect(res.content).toBe('---\nbad: [\n---\nbody\n');
+    expect(fs.readFileSync(path.join(dir, 'a.md'), 'utf-8')).toBe(res.content);
+  });
+
+  it('a delete issued from inside the chain for that same file does not deadlock', async () => {
+    const { store, runtime, dir } = harness();
+    let removed: boolean | undefined;
+    runtime.subscribe(
+      SOURCE,
+      {
+        onChange: async (_scope, _source, relPath) => {
+          if (removed !== undefined) return;
+          // `write` has the arm-2 shortcut; `remove` must have it too, or this
+          // awaits the path mutex its own enclosing write still holds — forever.
+          removed = await store.remove(relPath);
+        },
+        onUnlink: () => {},
+      },
+      { id: 'reaper', phase: 'write-back', scope: CTX },
+    );
+
+    await store.write('a.md', { raw: 'gone in a moment\n' });
+    expect(removed).toBe(true);
+    expect(fs.existsSync(path.join(dir, 'a.md'))).toBe(false);
+  });
+});
+
 describe('M42 — phase error classes', () => {
   it('retries a failed projection once, then reports it stale and still succeeds', async () => {
     const { store, runtime } = harness();

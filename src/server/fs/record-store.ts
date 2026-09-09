@@ -183,7 +183,20 @@ export class RecordStore<T> {
    */
   private isInOwnChain(relPath: string): boolean {
     const ctx = this.opts.registrar.currentDispatch();
-    return ctx !== undefined && ctx.source === this.opts.source && ctx.relPath === relPath;
+    /**
+     * All THREE parts of the key, scope included. `currentDispatch()` reads one
+     * process-wide `AsyncLocalStorage`, and a source name is only unique WITHIN
+     * a scope — `pages:pages` exists in every project context. Comparing source
+     * and path alone let a write from project B, issued while project A was
+     * dispatching the same source and path, take this shortcut: no mutex, no
+     * chain, no version row, and a hash taken off pre-chain bytes.
+     */
+    return (
+      ctx !== undefined &&
+      ctx.scope === this.opts.registrar.scope &&
+      ctx.source === this.opts.source &&
+      ctx.relPath === relPath
+    );
   }
 
   /**
@@ -214,7 +227,14 @@ export class RecordStore<T> {
     // 4 — the token goes up immediately before the write, never earlier.
     this.opts.registrar.suppress(this.opts.source, relPath, owner);
     // 3 — THE COMMIT POINT.
-    const tmp = `${abs}.tmp`;
+    /**
+     * DOT-PREFIXED, and that is not cosmetic: `makeWatchIgnore` skips dotfile
+     * basenames, so the temp file produces no chokidar event and no per-path
+     * bookkeeping in a directory the provider is watching. A plain `foo.md.tmp`
+     * sitting next to `foo.md` would also be a visible artefact in the user's
+     * own pages directory if a crash landed between the write and the rename.
+     */
+    const tmp = path.join(path.dirname(abs), `.${path.basename(abs)}.tmp`);
     try {
       fs.writeFileSync(tmp, bytes, 'utf-8');
       fs.renameSync(tmp, abs);
@@ -259,10 +279,28 @@ export class RecordStore<T> {
       return {
         hash: this.opts.adapter.hash(content),
         content,
-        record: this.opts.adapter.deserialize(content),
+        /**
+         * Parsing the settled bytes must NOT be able to fail the operation. We
+         * are past the commit point: the file is written, the chain has run, the
+         * version row exists. An adapter throwing here — gray-matter on a `raw`
+         * restore of a historic snapshot whose frontmatter it cannot parse — would
+         * report a 500 for a write that fully succeeded, and the caller would
+         * believe it had failed. `content` is the authoritative answer; `record`
+         * is a convenience, so it falls back to what was handed in.
+         */
+        record: this.parseSettled(content, record),
         staleProjections: chain.staleProjections,
       };
     });
+  }
+
+  /** Best-effort parse of the settled bytes; the handed-in record on failure. */
+  private parseSettled(content: string, fallback: T): T {
+    try {
+      return this.opts.adapter.deserialize(content);
+    } catch {
+      return fallback;
+    }
   }
 
   /** Steps 1–4 only, for callers that are synchronous all the way up. */
@@ -275,6 +313,14 @@ export class RecordStore<T> {
 
   /** Delete a record and run the chain for the unlink. Absent ⇒ nothing to do. */
   async remove(relPath: string, opts: RecordWriteOptions = {}): Promise<boolean> {
+    /**
+     * The same arm-2 shortcut `write` takes, for the same reason. Without it a
+     * subscriber deleting the file its own chain is handling would await the
+     * path mutex its enclosing `write` still holds — a permanent hang rather
+     * than an error. No subscriber does this today; a primitive whose purpose is
+     * that callers stop hand-rolling this must not leave the trap open.
+     */
+    if (this.isInOwnChain(relPath)) return this.removeSync(relPath);
     return await this.withPathLock(relPath, async () => {
       if (!this.removeSync(relPath)) return false;
       await this.runChain(relPath, 'unlink', opts);

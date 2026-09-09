@@ -689,13 +689,21 @@ export class FileWatchRuntime {
    * consistent (`markOrigin` → write → `await flush` → HTTP 200), and what lets
    * the runtime work with `fsEvents: false`.
    *
-   * It honours a live `suppress()` (AC: a suppressed write runs no reaction), but
-   * CONSUMES the token in doing so. The earlier design left tokens behind and
-   * popped the oldest of a queue, so a stale token from one write silently dropped
-   * the NEXT one — losing the user's edit outright once `capture` became the sole
-   * author of `file_version`. Nothing lingers now: a token issued by a write-back
-   * inside a dispatch is cleared when that dispatch ends, and echo recognition is
-   * by content hash rather than by counting events.
+   * It honours a live `suppress()` (AC: a suppressed write runs no reaction). It
+   * PEEKS at the token rather than consuming it: since 0.2.76 a token has an
+   * owner and a lifetime, and consuming someone else's would reopen the hole it
+   * was issued to close. So `flush()` on a path the record store is holding a
+   * `'primitive'` token for is a no-op for that token's guard window, not for a
+   * single event — which is correct, because within that window the primitive
+   * has already run the chain in-band and there is nothing left to flush.
+   *
+   * The queue this replaced was the real defect: it popped the OLDEST of a stack
+   * of tokens, so a stale one from one write silently dropped the NEXT — losing
+   * the user's edit outright once `capture` became the sole author of
+   * `file_version`. Nothing lingers now: a token issued by a write-back inside a
+   * dispatch is cleared when that dispatch ends, a token issued by the primitive
+   * is retired by its issuer, and echo recognition is by content hash rather
+   * than by counting events.
    */
   async flush(scope: WatchScope, source: string, relPath: string, event: WatchEventKind = 'change'): Promise<void> {
     const mount = this.mounts.get(mountKey(scope, source));
@@ -929,7 +937,6 @@ export class FileWatchRuntime {
      * needs three values, so `capture` still reads it through `peekActor` — it
      * is simply set by the caller that KNOWS, for exactly this dispatch.
      */
-    if (actor) this.dispatchActor.set(writeKey(scope, source, relPath), actor);
     // A queued watcher event for this path is now redundant — this chain covers it.
     const timer = mount.timers.get(relPath);
     if (timer) {
@@ -938,6 +945,15 @@ export class FileWatchRuntime {
     }
     mount.pending.delete(relPath);
     await mount.inflight.get(relPath);
+    /**
+     * Set the actor AFTER the wait, never before it. A dispatch already in
+     * flight for this same path — an external edit whose debounce fired first —
+     * clears the actor key in its own `.finally`, and the path mutex does not
+     * serialize watcher-driven dispatches against ours. Setting it earlier let
+     * that dispatch wipe our label on the way out, and `capture` then recorded
+     * an agent's write as `changed_by: 'user'`.
+     */
+    if (actor) this.dispatchActor.set(writeKey(scope, source, relPath), actor);
     return await this.dispatch(mount, relPath, event, origin);
   }
 
