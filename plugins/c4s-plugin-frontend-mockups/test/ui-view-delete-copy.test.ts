@@ -33,8 +33,10 @@ describe('deleteUiViewBody', () => {
     expect(deleteUiViewBody('Login', 0)).not.toContain('reference this view');
   });
 
-  it('agrees the verb with the count', () => {
-    expect(deleteUiViewBody('Login', 1)).toContain('1 page reference');
-    expect(deleteUiViewBody('Login', 2)).toContain('2 pages reference');
+  it('agrees BOTH the noun and the verb with the count', () => {
+    // The singular is the case a plural-`s` on the noun alone gets wrong, and it
+    // is not a rare one: a view cited by exactly one page is the common shape.
+    expect(deleteUiViewBody('Login', 1)).toContain('1 page references this view');
+    expect(deleteUiViewBody('Login', 2)).toContain('2 pages reference this view');
   });
 });

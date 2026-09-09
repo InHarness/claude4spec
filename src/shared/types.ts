@@ -64,6 +64,13 @@ export interface PageMoveAck {
   path: string;
   hash: string;
   version: number;
+  /**
+   * The citation rewrite that followed the move — reported, never thrown. The
+   * move had already committed when it ran, so a failure here leaves the page
+   * moved and some `@old/path.md` unrewritten; `error` says so instead of
+   * turning a completed move into an error the caller would undo nothing for.
+   */
+  citationSync: { rewritten: string[]; error?: string };
 }
 
 export interface PageWriteInput {

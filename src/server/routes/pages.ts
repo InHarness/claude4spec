@@ -351,20 +351,12 @@ export function pagesRouter(
       if (!rt) return;
       const body = (req.body ?? {}) as { from?: string; to?: string; expectedHash?: string };
       /**
-       * `expectedHash` is REQUIRED here, unlike on a delete, and the reason is
-       * specific rather than a general preference for guards: a move never READS
-       * the content it relocates. Every other write either produces the bytes or
-       * has just been handed them, so a stale caller is at least holding a copy
-       * of something. Without this check a move would relocate a file the caller
-       * has never seen, on the strength of a path alone.
+       * The three fields are coerced, not validated. `movePage` requires all of
+       * them — `expectedHash` because a move never READS the content it
+       * relocates, so without it a caller could move a file it has never seen on
+       * the strength of a path alone. Checking it here TOO would be a second
+       * copy of a rule, and the one that drifts is the one nobody is looking at.
        */
-      if (typeof body.expectedHash !== 'string' || body.expectedHash.length === 0) {
-        throw new DomainError(
-          'INVALID_ARGUMENT',
-          'expectedHash is required',
-          'read the page first and pass back the `hash` it answered with',
-        );
-      }
       res.json(
         await movePage(
           rt,
@@ -372,7 +364,7 @@ export function pagesRouter(
           {
             from: typeof body.from === 'string' ? body.from : '',
             to: typeof body.to === 'string' ? body.to : '',
-            expectedHash: body.expectedHash,
+            expectedHash: typeof body.expectedHash === 'string' ? body.expectedHash : '',
           },
           'user',
           writeDeps?.propagateRename,

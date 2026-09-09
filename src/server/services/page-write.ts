@@ -874,12 +874,26 @@ export async function deletePage(
   return { ok: true, deleted: true };
 }
 
+/**
+ * What became of the citations after a move committed.
+ *
+ * Reported rather than thrown: the propagation runs after the commit point, so
+ * its failure is news about the citations, not about the move. `error` present
+ * means the pages in `rewritten` were rewritten and the rest were not — there
+ * is no transaction spanning them and none is simulated.
+ */
+export interface CitationSyncResult {
+  rewritten: string[];
+  error?: string;
+}
+
 /** The settled answer of a page move. */
 export interface MovePageResult {
   rootId: string;
   path: string;
   hash: string;
   version: number;
+  citationSync: CitationSyncResult;
 }
 
 /**
@@ -896,14 +910,16 @@ export interface MovePageResult {
  * link projection aborts the propagation instead of rewriting from a list it
  * cannot trust.
  *
- * INFRASTRUCTURE WITH NO TRIGGER WIRED, deliberately: nothing calls this yet —
- * no UI action, no agent tool, no route. Who invokes a move and under what name
- * belongs to the store's owner, exactly as it does for a write.
+ * Three triggers reach it as of 0.2.78: the sidebar's Rename action, the
+ * `move_page` agent tool and `POST /api/pages/:rootId/move`. They all arrive
+ * HERE, and the argument checks below are the reason — a guard placed in a
+ * channel's schema guards that channel only, and the first rendering to forget
+ * one becomes the way around all of them.
  */
 export async function movePage(
   target: PageWriteTarget,
   rootId: string,
-  input: { from: string; to: string; expectedHash?: string },
+  input: { from: string; to: string; expectedHash: string },
   actor: WriteActor,
   renameSync?: (rootId: string, from: string, to: string, actor: WriteActor) => Promise<string[]>,
 ): Promise<MovePageResult> {
@@ -911,12 +927,36 @@ export async function movePage(
   if (!records) {
     throw new DomainError('NOT_IMPLEMENTED', 'this root has no record store — a move needs the write primitive');
   }
+  /**
+   * Both paths are checked before either reaches the primitive, and separately,
+   * because an empty `from` does not fail like a missing one: `readRaw('')`
+   * finds nothing, which the mapping below renders as `NOT_FOUND` — telling a
+   * caller who simply omitted a field that its work has already landed.
+   */
+  if (!input.from) {
+    throw new DomainError('INVALID_ARGUMENT', 'from is required', 'the path to move, relative to the root');
+  }
+  if (!input.to) {
+    throw new DomainError('INVALID_ARGUMENT', 'to is required', 'the destination path, relative to the same root');
+  }
+  /**
+   * `expectedHash` is REQUIRED for a move, unlike for a delete, and the check
+   * sits in the operation rather than in each channel's schema for the reason
+   * `assertUnchanged` already states: no rendering may be laxer than another.
+   * Passing an empty string down instead would reach the primitive's comparison
+   * and come back as `PAGE_CONFLICT` — "your copy is stale" in answer to a
+   * caller who never claimed to have one.
+   */
+  if (!input.expectedHash) {
+    throw new DomainError(
+      'INVALID_ARGUMENT',
+      'expectedHash is required',
+      'read the page first and pass back the `hash` it answered with',
+    );
+  }
   let settled;
   try {
-    settled = await records.move(input.from, input.to, {
-      actor,
-      ...(input.expectedHash !== undefined ? { expectedHash: input.expectedHash } : {}),
-    });
+    settled = await records.move(input.from, input.to, { actor, expectedHash: input.expectedHash });
   } catch (err) {
     // The primitive knows nothing about pages; the operation names the refusal.
     if (err instanceof RecordConflictError) {
@@ -941,14 +981,32 @@ export async function movePage(
     }
     throw err;
   }
-  // After the move has settled, so the propagation rewrites citations to a page
-  // that is already at its destination.
-  await renameSync?.(rootId, input.from, input.to, actor);
+  /**
+   * After the move has settled, so the propagation rewrites citations to a page
+   * that is already at its destination — and OUTSIDE the move's own success,
+   * which is what the catch is for.
+   *
+   * The rename has committed by the time this runs. Letting the propagation
+   * throw would report a move that happened as a move that failed: the file is
+   * at its new path, the caller is told `INDEX_STALE`, and every consequence of
+   * success — the cache key, the route the reader is on — is skipped. So the
+   * failure is answered WITH the move rather than instead of it. `citationSync`
+   * carries which pages were rewritten, or why none were; a caller that cares
+   * about the citations reads it, and one that only moved a file does not have
+   * to.
+   */
+  let citationSync: CitationSyncResult = { rewritten: [] };
+  try {
+    citationSync = { rewritten: (await renameSync?.(rootId, input.from, input.to, actor)) ?? [] };
+  } catch (err) {
+    citationSync = { rewritten: [], error: err instanceof Error ? err.message : String(err) };
+  }
   return {
     rootId,
     path: settled.path,
     hash: settled.hash,
     version: currentVersionOf(target, settled.path),
+    citationSync,
   };
 }
 

@@ -36,15 +36,24 @@ import { confirmAndDeleteUiView } from './delete-confirm.js';
  * looking, which is why both are also reachable from the detail panel — these
  * are accelerators for someone already writing, not the only door.
  */
-function entityGestures(entity: UiView | null | undefined, refresh?: () => void) {
+/**
+ * Alt+click edits, Shift+Alt+click deletes — on every surface that renders a
+ * view, so the two gestures cannot drift apart between the chip and the card.
+ *
+ * Nothing is called on a successful DELETE, deliberately. The obvious candidate
+ * is the surface's `onOpen`, and it is exactly wrong: that callback opens the
+ * entity's detail panel, so using it as a "refresh" would navigate the reader
+ * to a slug that no longer resolves, immediately after telling them it is gone.
+ * The delete already invalidates the shared query cache, which is what actually
+ * re-renders the list.
+ */
+function entityGestures(entity: UiView | null | undefined) {
   return (e: React.MouseEvent): boolean => {
     if (!entity || !e.altKey) return false;
     e.preventDefault();
     e.stopPropagation();
     if (e.shiftKey) {
-      void confirmAndDeleteUiView(entity.slug, entity.title).then((gone) => {
-        if (gone) refresh?.();
-      });
+      void confirmAndDeleteUiView(entity.slug, entity.title);
     } else {
       openUiViewEditPopover({ entity });
     }
@@ -108,7 +117,7 @@ function UiViewChip({ slug, entity, onOpen }: EntityChipProps<UiView>) {
       </button>
     );
   }
-  const gestures = entityGestures(entity, onOpen);
+  const gestures = entityGestures(entity);
   return (
     <button
       onClick={(e) => {
@@ -156,7 +165,7 @@ function UiViewCard({ slug, entity, onOpen }: EntityCardProps<UiView>) {
   const sortedParams = [...entity.params].sort(
     (a, b) => (ORDER[a.in] ?? 9) - (ORDER[b.in] ?? 9)
   );
-  const gestures = entityGestures(entity, onOpen);
+  const gestures = entityGestures(entity);
   return (
     <button
       onClick={(e) => {

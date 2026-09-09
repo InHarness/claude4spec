@@ -1,6 +1,6 @@
 import { uiViewsApi } from './api.js';
 import { confirmDestructive, toast } from '../../../frontend-kit/host-events.js';
-import { apiFetch, unwrap } from '../../../frontend-kit/api-core.js';
+import { apiFetch, handle } from '../../../frontend-kit/api-core.js';
 
 /**
  * 0.2.78 — the ONE place a `ui-view` deletion is confirmed.
@@ -24,7 +24,10 @@ import { apiFetch, unwrap } from '../../../frontend-kit/api-core.js';
 export function deleteUiViewBody(title: string, refCount: number): string {
   const base = `Delete UI view "${title}"? This cannot be undone.`;
   if (refCount <= 0) return base;
-  return `${base} ${refCount} page${refCount === 1 ? '' : 's'} reference this view and will become broken.`;
+  // The verb agrees with the count too — "1 page reference this view" reads as
+  // a string built by a machine, in the one sentence that has to be believed.
+  const subject = refCount === 1 ? '1 page references' : `${refCount} pages reference`;
+  return `${base} ${subject} this view and will become broken.`;
 }
 
 /**
@@ -42,7 +45,14 @@ async function countReferences(slug: string): Promise<number> {
     const res = await apiFetch(
       `/api/references?type=ui-view&slug=${encodeURIComponent(slug)}&limit=1`,
     );
-    const body = await unwrap<{ references?: unknown[]; total?: number }>(res);
+    /**
+     * `handle`, NOT `unwrap`. `/api/references` is not one of the generated
+     * `/api/{type}s` routes, so it answers `{ references, total, hasMore }` flat
+     * — with no `data` key for `unwrap` to reach through. Unwrapping it yields
+     * `undefined`, and the `catch` below then turns a TypeError into a count of
+     * zero: the warning would never appear, and nothing would say why.
+     */
+    const body = await handle<{ references?: unknown[]; total?: number }>(res);
     return body.total ?? body.references?.length ?? 0;
   } catch {
     return 0;

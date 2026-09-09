@@ -2409,10 +2409,10 @@ describe('differential writes — textEdits', () => {
 /**
  * 0.2.77 — a page move performed BY THE APPLICATION.
  *
- * Infrastructure with no trigger wired: nothing calls `movePage` yet — no UI
- * action, no agent tool, no route — because who invokes a move and under what
- * name belongs to the store's owner, exactly as it does for a write. What is
- * settled here is the SEQUENCE.
+ * 0.2.78 wired the triggers — the sidebar's Rename, the `move_page` tool and
+ * `POST /api/pages/:rootId/move` — but what is settled HERE is still the
+ * SEQUENCE, and the argument checks, because all three arrive through this one
+ * function and a rule proven per-channel is a rule three renderings can drift on.
  */
 describe('movePage — the application\'s own move', () => {
   let cwd: string;
@@ -2432,12 +2432,12 @@ describe('movePage — the application\'s own move', () => {
   });
 
   it('[ac:ac-przeniesienie-strony-wykonane-przez-a] moves the page and rewrites @a.md to @b.md across the root, with both paths given outright', async () => {
-    await createPage(target, { path: 'a.md', content: '# A' }, 'user');
+    const a = await createPage(target, { path: 'a.md', content: '# A' }, 'user');
     await createPage(target, { path: 'one.md', content: '# One\n\ncites @a.md\n' }, 'user');
     await createPage(target, { path: 'two.md', content: '# Two\n\nalso [x](a.md)\n' }, 'user');
     await links.indexAll();
 
-    const res = await movePage(target, 'pages', { from: 'a.md', to: 'b.md' }, 'user', (rootId, from, to, actor) =>
+    const res = await movePage(target, 'pages', { from: 'a.md', to: 'b.md', expectedHash: a.hash }, 'user', (rootId, from, to, actor) =>
       links.renameSync(rootId, from, to, actor),
     );
 
@@ -2457,12 +2457,12 @@ describe('movePage — the application\'s own move', () => {
   });
 
   it('refuses an occupied destination as PAGE_EXISTS, leaving both files untouched', async () => {
-    await createPage(target, { path: 'a.md', content: '# A' }, 'user');
+    const a = await createPage(target, { path: 'a.md', content: '# A' }, 'user');
     await createPage(target, { path: 'b.md', content: '# B' }, 'user');
 
-    await expect(movePage(target, 'pages', { from: 'a.md', to: 'b.md' }, 'user')).rejects.toMatchObject({
-      code: 'PAGE_EXISTS',
-    });
+    await expect(
+      movePage(target, 'pages', { from: 'a.md', to: 'b.md', expectedHash: a.hash }, 'user'),
+    ).rejects.toMatchObject({ code: 'PAGE_EXISTS' });
     expect(await fs.readFile(path.join(pages.root, 'a.md'), 'utf-8')).toContain('# A');
     expect(await fs.readFile(path.join(pages.root, 'b.md'), 'utf-8')).toContain('# B');
   });
@@ -2488,11 +2488,11 @@ describe('movePage — the application\'s own move', () => {
      * instead of to conclude that its work already landed. `NOT_FOUND` is the
      * only answer that lets it tell the two apart.
      */
-    await createPage(target, { path: 'a.md', content: '# A' }, 'user');
-    await movePage(target, 'pages', { from: 'a.md', to: 'b.md' }, 'user');
-    await expect(movePage(target, 'pages', { from: 'a.md', to: 'b.md' }, 'user')).rejects.toMatchObject({
-      code: 'NOT_FOUND',
-    });
+    const a = await createPage(target, { path: 'a.md', content: '# A' }, 'user');
+    await movePage(target, 'pages', { from: 'a.md', to: 'b.md', expectedHash: a.hash }, 'user');
+    await expect(
+      movePage(target, 'pages', { from: 'a.md', to: 'b.md', expectedHash: a.hash }, 'user'),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
     // The first call's result stands: a failed replay undoes nothing.
     expect(await pages.exists('b.md')).toBe(true);
   });
@@ -2501,11 +2501,54 @@ describe('movePage — the application\'s own move', () => {
     // The mirror of the case above, and the reason the two cannot share a code:
     // no state of the world makes `../escaped.md` a valid destination, so the
     // repair is in the request and a retry is pointless.
-    await createPage(target, { path: 'a.md', content: '# A' }, 'user');
+    const a = await createPage(target, { path: 'a.md', content: '# A' }, 'user');
     await expect(
-      movePage(target, 'pages', { from: 'a.md', to: '../escaped.md' }, 'user'),
+      movePage(target, 'pages', { from: 'a.md', to: '../escaped.md', expectedHash: a.hash }, 'user'),
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
     expect(await pages.exists('a.md')).toBe(true);
+  });
+
+  it.each([
+    ['from', { from: '', to: 'b.md', expectedHash: 'x' }],
+    ['to', { from: 'a.md', to: '', expectedHash: 'x' }],
+    ['expectedHash', { from: 'a.md', to: 'b.md', expectedHash: '' }],
+  ])('refuses a missing %s as INVALID_ARGUMENT, in the operation rather than per channel', async (_field, input) => {
+    /**
+     * Each of these used to be reported as something else, and each wrong answer
+     * sent the caller somewhere useless. An empty `from` reached `readRaw('')`,
+     * found nothing and came back `NOT_FOUND` — "your work already landed" to
+     * someone who omitted a field. An empty `expectedHash` reached the
+     * primitive's comparison and came back `PAGE_CONFLICT` — "your copy is
+     * stale" to someone who never claimed to hold one.
+     */
+    await createPage(target, { path: 'a.md', content: '# A' }, 'user');
+    await expect(movePage(target, 'pages', input, 'user')).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+    });
+    expect(await pages.exists('a.md')).toBe(true);
+    expect(await pages.exists('b.md')).toBe(false);
+  });
+
+  it('reports a failed citation propagation WITHOUT failing the move that already committed', async () => {
+    /**
+     * The propagation runs after the commit point. It can throw for reasons that
+     * have nothing to do with this move — a page-links projection marked stale
+     * refuses before its first write — and letting that reach the caller would
+     * report a move that HAPPENED as a move that failed: the file is at its new
+     * path, the client is handed an error, and every consequence of success is
+     * skipped. The route the reader is on stays at the old address, which now
+     * 404s, and the tree never learns the page exists elsewhere.
+     */
+    const a = await createPage(target, { path: 'a.md', content: '# A' }, 'user');
+    const res = await movePage(target, 'pages', { from: 'a.md', to: 'b.md', expectedHash: a.hash }, 'user', async () => {
+      throw new DomainError('INDEX_STALE', 'the page-links projection is stale');
+    });
+
+    expect(res.path).toBe('b.md');
+    expect(await pages.exists('b.md')).toBe(true);
+    // The failure is told, not swallowed — it is news about the citations.
+    expect(res.citationSync.rewritten).toEqual([]);
+    expect(res.citationSync.error).toContain('stale');
   });
 
   it('leaves the hash untouched — the content is never re-serialized', async () => {
@@ -2517,7 +2560,7 @@ describe('movePage — the application\'s own move', () => {
      * never asked to touch.
      */
     const created = await createPage(target, { path: 'a.md', content: '# A\n\nbody\n' }, 'user');
-    const res = await movePage(target, 'pages', { from: 'a.md', to: 'moved.md' }, 'user');
+    const res = await movePage(target, 'pages', { from: 'a.md', to: 'moved.md', expectedHash: created.hash }, 'user');
     expect(res.hash).toBe(created.hash);
   });
 });

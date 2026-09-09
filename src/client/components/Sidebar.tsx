@@ -613,6 +613,12 @@ function PageRow({
   const [draft, setDraft] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  /**
+   * A ref, not state: it has to be readable by the very next synchronous call,
+   * and a `setState` would not have landed yet when the disable-induced blur
+   * re-enters `commit`.
+   */
+  const submitting = useRef(false);
   const move = useMovePage();
   const navigate = useNavigate();
 
@@ -623,8 +629,19 @@ function PageRow({
   };
 
   const commit = async () => {
+    /**
+     * Re-entry guard, and the second half of it is the one that matters.
+     *
+     * The field is `disabled` while the mutation is in flight, and a browser
+     * BLURS an element the moment it becomes disabled — so `onBlur` fires from
+     * inside the first commit and starts a second one for the same row: another
+     * read, another move. The loser answers NOT_FOUND or PAGE_EXISTS and paints
+     * a failure over a rename that worked.
+     */
+    if (move.isPending || submitting.current) return;
     const to = (draft ?? '').trim();
     if (!to || to === node.path) return setDraft(null);
+    submitting.current = true;
     /**
      * The guard value: this client's own record of the page if it has one, and
      * a read only when it does not.
@@ -655,6 +672,8 @@ function PageRow({
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'rename failed');
+    } finally {
+      submitting.current = false;
     }
   };
 
