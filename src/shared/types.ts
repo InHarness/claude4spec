@@ -35,6 +35,14 @@ export interface PageContent {
 export interface PageWriteAck {
   hash: string;
   version: number;
+  /**
+   * 0.2.76 — the file as it SETTLED, after the in-band `write-back` phase.
+   *
+   * Still not `PageContent`, and still not an echo: the chain injects anchors
+   * for headings the caller introduced, so these are bytes the caller could not
+   * have predicted. See `UpdatePageResult.content`.
+   */
+  content: string;
   changedAnchors: string[];
 }
 

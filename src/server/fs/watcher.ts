@@ -837,6 +837,9 @@ export class FileWatchRuntime {
     });
 
     // Chain so `flush()` can await work already in flight for this key.
+    // The tail `flush()` awaits. Kept as its own handle because the chain's own
+    // promise resolves a ChainResult, and `inflight` only cares that it settled.
+    let tail: Promise<void>;
     const chained: Promise<ChainResult> = run
       .then(() => ({ staleProjections }))
       .finally(() => {
@@ -854,9 +857,13 @@ export class FileWatchRuntime {
          */
         if (this.pendingSuppress.get(key)?.owner === 'chain') this.pendingSuppress.delete(key);
         this.dispatchActor.delete(key);
-        if (mount.inflight.get(relPath) === chained) mount.inflight.delete(relPath);
+        if (mount.inflight.get(relPath) === tail) mount.inflight.delete(relPath);
       });
-    mount.inflight.set(relPath, chained.then(() => undefined));
+    tail = chained.then(
+      () => undefined,
+      () => undefined,
+    );
+    mount.inflight.set(relPath, tail);
     return chained;
   }
 

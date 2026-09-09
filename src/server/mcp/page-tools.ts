@@ -151,7 +151,10 @@ export function createPageToolsServer(
 
   const createPageTool = mcpTool(
     'create_page',
-    'Create a page that does not exist yet. Fails PAGE_EXISTS rather than overwriting — use update_page for an existing one.',
+    [
+      'Create a page that does not exist yet. Fails PAGE_EXISTS rather than overwriting — use update_page for an existing one.',
+      'Returns { rootId, path, hash, version, content, anchors }. `content` is the file AS IT SETTLED: omit `content` and it is the generated template, and in either case the reaction chain has already injected `<!-- anchor: … -->` comments for your headings. Edit from it, not from what you sent.',
+    ].join('\n'),
     {
       rootId: rootIdParam,
       path: pathParam,
@@ -197,7 +200,7 @@ export function createPageToolsServer(
       'The batch is a SET, not a sequence: every `find` is matched against the file as it stands BEFORE the call, so substitutions never cascade and order never matters. Matches may not overlap or contain one another (INVALID_ARGUMENT).',
       'NOT IDEMPOTENT in differential mode. Repeating a successful call with a refreshed expectedHash answers FIND_NOT_FOUND, because the text you looked for is gone — treat it like `delete`, not like `replace`. Literal `body` mode stays idempotent.',
       'ANCHOR LOSS: if a `find` swallows an `<!-- anchor: … -->` comment that something cites, the write is refused with ANCHOR_LOSS (400) naming each anchor and who cites it. Name those anchors in `dropAnchors` to go ahead; every entry there must lie inside a fragment your patterns actually match (otherwise INVALID_ARGUMENT). The guard does not exist in `body` mode, and does not run on a root without a section index.',
-      'Returns { hash, version, changedAnchors }, plus `replacements` in differential mode. The page itself does not come back — read it if you need to see the result.',
+      'Returns { hash, version, content, changedAnchors }, plus `replacements` in differential mode. `content` is the file AS IT SETTLED — the reaction chain runs before this answers and injects `<!-- anchor: … -->` comments for headings you introduced, so it is NOT an echo of what you sent. Write your next edit against `content`, not against the body you had: sending your pre-injection text back would strip the anchors again.',
     ].join('\n'),
     {
       rootId: rootIdParam,

@@ -106,11 +106,12 @@ describe('discovery core over the real section indexer', () => {
       host,
     );
     injection ??= indexer.anchorInjectionSubscriber(() => {});
-    // 0.2.10: the projection MINTS anchors and hands them to the write-back
-    // phase; production runs that phase right after. Driving both here keeps the
-    // file on disk in the same state the old single-pass indexer left it in.
-    await indexer.indexPage('pages', relPath);
+    // 0.2.76: `write-back` runs FIRST and mints the anchors itself, then the
+    // projection indexes an already-anchored file. Driving them in that order
+    // here is what keeps this rig honest about production — the reverse order
+    // would index coordinates the injection then shifts.
     await injection.onChange('context:test', 'pages:pages', relPath, 'external');
+    await indexer.indexPage('pages', relPath);
   }
 
   function anchorOf(heading: string): string {

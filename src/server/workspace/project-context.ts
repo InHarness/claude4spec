@@ -94,6 +94,10 @@ import { FileVersionCapture } from '../services/file-version-capture.js';
 import { EntityStore } from '../services/entity-store.js';
 import { EntityIndexerService } from '../services/entity-indexer.js';
 import { ReleaseFileStore, toReleaseFileData } from '../services/release-store.js';
+import { RecordStore, RecordPathError } from '../fs/record-store.js';
+import type { ScopedWatchRegistrar } from '../fs/watcher.js';
+import { isMarkdownPath } from '../../shared/page-files.js';
+import { markdownAdapter, jsonAdapter, type MarkdownRecord } from '../fs/record-adapters.js';
 import { ReleaseIndexerService } from '../services/release-indexer.js';
 import { createReferenceToolsServer } from '../mcp/reference-tools.js';
 import { createPageToolsServer } from '../mcp/page-tools.js';
@@ -254,6 +258,33 @@ export interface ProjectContext {
 let contextInstanceSeq = 0;
 function nextContextInstance(): number {
   return ++contextInstanceSeq;
+}
+
+/**
+ * One M42 record store per markdown mount.
+ *
+ * The store is bound to `(scope, source)` — the scope comes from the registrar
+ * the mount owner already holds — so its path mutex and its suppression tokens
+ * are per project, and two projects sharing a `relPath` never mask each other.
+ *
+ * The path rule is the source's, not the primitive's: only `.md` / `.mdx` are
+ * records here, and anything else is refused in step 1 as an addressing error
+ * rather than serialized and written.
+ */
+function markdownRecordStore(
+  registrar: ScopedWatchRegistrar,
+  source: string,
+  dir: string,
+): RecordStore<MarkdownRecord> {
+  return new RecordStore<MarkdownRecord>({
+    registrar,
+    source,
+    dir,
+    adapter: markdownAdapter,
+    validatePath: (relPath) => {
+      if (!isMarkdownPath(relPath)) throw new RecordPathError(`only .md / .mdx paths allowed: ${relPath}`);
+    },
+  });
 }
 
 export async function buildProjectContext(deps: ProjectContextDeps): Promise<ProjectContext> {
@@ -492,6 +523,7 @@ async function buildInner(
     const staticSvc = new StaticHtmlService(cwd, root.dir);
     const source = pageSource(root.id);
     w.mountSource({ source, dir: pagesSvc.root });
+    pagesSvc.records = markdownRecordStore(w, source, pagesSvc.root);
     rootRuntimes.push({
       root,
       pages: pagesSvc,
@@ -538,6 +570,7 @@ async function buildInner(
       await mountPages.ensureRoot();
       const source = artifactSource(entry.kind);
       w.mountSource({ source, dir: mountPages.root });
+      mountPages.records = markdownRecordStore(w, source, mountPages.root);
       artifactMounts.set(entry.kind, {
         entry,
         pages: mountPages,
@@ -942,6 +975,7 @@ async function buildInner(
     cwd,
     releasableRootIds,
     releasableRootDirs,
+    (rootId) => rootById.get(rootId)?.pages.records ?? null,
   );
   // M29: release restore must persist restored entities' files.
   releaseService.setEntityStore(entityStore);
