@@ -7,6 +7,7 @@ import type { PagesService } from './pages.js';
 import type { SectionsService } from './sections.js';
 import { ConflictError } from './brief.js';
 import { DomainError } from './tags.js';
+import { parseHeadings } from './section-indexer.js';
 import {
   applyTextEdits,
   type MatchPosition,
@@ -21,6 +22,7 @@ import {
  */
 import {
   anchorDelta,
+  anchorValuesIn,
   anchorsInLineSpans,
   applySectionEdit,
   liveRangeOf,
@@ -314,6 +316,21 @@ export interface SectionEditResult {
    * swallowed, not everything that happened to sit under the heading it aimed at.
    */
   droppedAnchors: string[];
+  /**
+   * 0.2.75 — the mirror of {@link droppedAnchors}: anchors this edit BROUGHT IN
+   * to the page's `section_index`, rather than the ones it cost.
+   *
+   * Present on success too, for the same reason its mirror is: a caller learns
+   * what a write did to the page's identities by reading the write, not by
+   * re-reading the page. A value here is one the caller's own `content` carried
+   * — the indexer's freshly minted anchors are not edits' doing and are not
+   * reported here.
+   *
+   * Usually empty. The caller is never a legitimate SOURCE of anchor values, so
+   * anything in this list survived the `ANCHOR_DUPLICATE` guard by being both
+   * unclaimed and adjacent to a heading of its own.
+   */
+  addedAnchors: string[];
   /** `edit` only — how many substitutions this entry performed. */
   replacements?: number;
 }
@@ -776,6 +793,48 @@ export class AnchorLossError extends DomainError {
   }
 }
 
+/** One anchor value the batch would bring in, and where that value already lives. */
+export interface AnchorDuplicate {
+  anchor: string;
+  page: string;
+  headingText: string;
+}
+
+/**
+ * `ANCHOR_DUPLICATE` — the batch carries an anchor value it has no right to.
+ *
+ * The mirror refusal of `ANCHOR_LOSS`, and it exists because the caller is
+ * never a legitimate source of a NEW anchor value: only the indexer mints them.
+ * So an anchor comment arriving in `content` is, by construction, a line that
+ * was copied from somewhere — either from a section that still holds that value
+ * (a duplicate identity, two headings answering to one anchor) or from nowhere
+ * at all (an orphan comment attached to no heading). Both used to be caught
+ * only afterwards, by an indexer warning and `check_consistency`; this stops
+ * them in the operation that produced them, before anything reaches disk.
+ *
+ * Deliberately without a `dropAnchors` counterpart. Dropping an anchor can be
+ * meant and said out loud ("this section is going away"); bringing in a taken
+ * value cannot — there is no intent it could express, only an accident it would
+ * legalize.
+ *
+ * 400 rather than 409 for `ANCHOR_LOSS`'s reason exactly: the refusal is
+ * deterministic, so the repair is in the REQUEST — remove the anchor comment
+ * from the content and let the indexer mint a fresh one on its next pass.
+ */
+export class AnchorDuplicateError extends DomainError {
+  readonly details: AnchorDuplicate[];
+  constructor(details: AnchorDuplicate[]) {
+    const names = details.map((d) => `'${d.anchor}'`).join(', ');
+    super(
+      'ANCHOR_DUPLICATE',
+      `this batch would bring in ${details.length === 1 ? 'an anchor' : 'anchors'} it cannot own: ${names}`,
+      'remove the anchor comments from the content you send — a new heading is given a fresh anchor by the indexer',
+    );
+    this.name = 'AnchorDuplicateError';
+    this.details = details;
+  }
+}
+
 /**
  * Which lines a set of character spans covers, translated from the FULL FILE's
  * offsets into the BODY's line numbering.
@@ -1180,6 +1239,16 @@ export async function updateSections(
 
   const scopeOf = new Map<string, string[]>();
   const replacementsOf = new Map<string, number>();
+  /**
+   * The anchor values each edit CARRIES IN and the ones it takes OUT, measured
+   * as text at the moment of the splice, when both halves are still in hand.
+   *
+   * Not derivable afterwards from the section ranges: a value that arrives in
+   * `content` without a heading of its own never becomes a range at all, and it
+   * is precisely one of the two things the guard below has to refuse.
+   */
+  const broughtInOf = new Map<string, string[]>();
+  const takenOutOf = new Map<string, string[]>();
   for (const { edit } of order) {
     const range = liveRangeOf(lines, edit.anchor);
     if (!range) {
@@ -1199,6 +1268,8 @@ export async function updateSections(
       const subtreeText = lines.slice(range.lineStart, range.lineEnd).join('\n');
       const applied = applyTextEdits(subtreeText, edit.textEdits ?? [], subtreePositionResolver(edit.anchor));
       replacementsOf.set(edit.anchor, applied.replacements);
+      broughtInOf.set(edit.anchor, anchorValuesIn(applied.text));
+      takenOutOf.set(edit.anchor, anchorValuesIn(subtreeText));
       /**
        * Scope from the MATCHED FRAGMENTS, not from the addressed subtree — the
        * one place `edit` parts company with the other four actions. A
@@ -1219,6 +1290,24 @@ export async function updateSections(
       .filter((r) => r.lineStart > range.lineStart && r.lineStart < range.lineEnd)
       .map((r) => r.anchor);
     scopeOf.set(edit.anchor, edit.action === 'delete' ? [edit.anchor, ...inRange] : inRange);
+    /**
+     * What leaves is what the splice OVERWRITES, which is the action's own
+     * span: `replace` and `delete` take a range out (`delete` including the
+     * heading's own anchor comment above `lineStart`), while `append` and
+     * `insert_after` overwrite nothing and can only add.
+     */
+    broughtInOf.set(edit.anchor, anchorValuesIn(edit.content ?? ''));
+    takenOutOf.set(
+      edit.anchor,
+      edit.action === 'replace'
+        ? anchorValuesIn(lines.slice(range.lineStart, range.lineEnd).join('\n'))
+        : edit.action === 'delete'
+          ? // Its own anchor comment sits ABOVE the heading, outside the range,
+            // and `applySectionEdit` takes it with the section — so it is named
+            // rather than sliced for.
+            [edit.anchor, ...anchorValuesIn(lines.slice(range.lineStart, range.lineEnd).join('\n'))]
+          : [],
+    );
     applySectionEdit(lines, edit, range);
   }
 
@@ -1238,6 +1327,25 @@ export async function updateSections(
   const finalAnchors = new Set(sectionRanges(lines).map((r) => r.anchor));
   const droppedOf = new Map<string, string[]>(
     [...scopeOf].map(([anchor, scope]) => [anchor, scope.filter((a) => !finalAnchors.has(a))]),
+  );
+  /**
+   * Per edit, what IT brought in that it did not also take out — the row-level
+   * mirror of `droppedAnchors`. The guard above nets across the whole batch (a
+   * move is one intention split over two entries); a result row answers for its
+   * own entry, so a moved anchor shows up as added on the entry that reinstated
+   * it and dropped on the one that removed it.
+   */
+  const addedOf = new Map<string, string[]>(
+    [...broughtInOf].map(([anchor, broughtIn]) => {
+      const out = [...(takenOutOf.get(anchor) ?? [])];
+      const added: string[] = [];
+      for (const value of broughtIn) {
+        const returned = out.indexOf(value);
+        if (returned >= 0) out.splice(returned, 1);
+        else if (!added.includes(value)) added.push(value);
+      }
+      return [anchor, added];
+    }),
   );
 
   /**
@@ -1267,6 +1375,89 @@ export async function updateSections(
       `dropAnchors names '${stranger}', which none of this batch's sections contains`,
       'dropAnchors may only name anchors inside the sections the edits address',
     );
+  }
+
+  /**
+   * `ANCHOR_DUPLICATE`, on the spliced lines and still before `commit`.
+   *
+   * Accounted BATCH-WIDE as a multiset, not per edit, and that is what keeps a
+   * within-page move legal: `delete` at the source plus `insert_after` at the
+   * target carry the same value out and back in, so the net is zero and the
+   * section keeps its identity across the move. Between pages there is no such
+   * netting — two writes, two hashes — so the value has to leave the source
+   * before it may appear in the target. That ordering is the remedy; an
+   * exemption from the guard is not.
+   */
+  const takenOut = [...takenOutOf.values()].flat();
+  const netAdded: string[] = [];
+  for (const value of [...broughtInOf.values()].flat()) {
+    const returned = takenOut.indexOf(value);
+    if (returned >= 0) {
+      takenOut.splice(returned, 1);
+      continue;
+    }
+    if (!netAdded.includes(value)) netAdded.push(value);
+  }
+  /**
+   * Ownership is asked of EVERY brought-in value, netting or not; only the
+   * global collision is a question about the net-new ones.
+   *
+   * The netting says an identity did not multiply — it does not say the line
+   * carrying it landed anywhere sensible. A within-page move that takes a
+   * section out and writes back only its anchor comment, heading omitted, nets
+   * to zero and would otherwise sail through, leaving on disk exactly the
+   * orphan this guard exists to refuse.
+   */
+  const broughtInAll: string[] = [];
+  for (const value of [...broughtInOf.values()].flat()) {
+    if (!broughtInAll.includes(value)) broughtInAll.push(value);
+  }
+  if (broughtInAll.length > 0) {
+    /**
+     * Which anchor comment lines the page ENDS UP with an owner for. A brought-in
+     * value is only tolerable when its line is the one a heading answers to:
+     * an orphan comment, or the upper half of a stacked block over a heading that
+     * already has a nearer anchor, names a section that does not exist.
+     */
+    const headings = parseHeadings(lines);
+    const owners = new Map<string, string[]>();
+    for (const h of headings) {
+      if (h.anchor === null) continue;
+      owners.set(h.anchor, [...(owners.get(h.anchor) ?? []), h.text]);
+    }
+    const duplicates: AnchorDuplicate[] = [];
+    for (const anchor of broughtInAll) {
+      /**
+       * GLOBAL, across every `sectionIndexed` root: `getByAnchor` is keyed on the
+       * anchor alone. An anchor is an identity for the whole project — a
+       * `page.md#anchor` link does not say which root it meant — so a value taken
+       * on another page is just as taken.
+       *
+       * Net-new values only: a value the batch also took out is held by THIS
+       * page's own index row, and asking would report the section as its own
+       * collision.
+       */
+      const held = netAdded.includes(anchor) ? deps.sections.getByAnchor(anchor) : null;
+      if (held) {
+        duplicates.push({ anchor, page: held.pagePath, headingText: held.headingText });
+        continue;
+      }
+      /**
+       * Asked of the RESULTING PAGE as well, not of the index alone. The index
+       * is a projection and can be behind the file — a page written before its
+       * first indexing pass has no rows at all — and a value answering to two
+       * headings is a duplicate whether or not anything has noticed yet.
+       */
+      const headingsWithIt = owners.get(anchor) ?? [];
+      if (headingsWithIt.length !== 1) {
+        duplicates.push({ anchor, page: first.pagePath, headingText: headingsWithIt[0] ?? '' });
+      }
+    }
+    /**
+     * The WHOLE batch, for the same reason `ANCHOR_LOSS` refuses it whole: one
+     * file, one `expectedHash`, no partial application to fall back to.
+     */
+    if (duplicates.length > 0) throw new AnchorDuplicateError(duplicates);
   }
 
   const undeclared = [...new Set([...droppedOf.values()].flat())].filter((a) => !declared.has(a));
@@ -1315,6 +1506,7 @@ export async function updateSections(
       action: edit.action,
       affectedAnchors: affected.filter((a) => a !== edit.anchor),
       droppedAnchors: droppedOf.get(edit.anchor) ?? [],
+      addedAnchors: addedOf.get(edit.anchor) ?? [],
       // Only `edit` has a count; the other four rows stay the shape they were.
       ...(edit.action === 'edit' ? { replacements: replacementsOf.get(edit.anchor) ?? 0 } : {}),
     })),

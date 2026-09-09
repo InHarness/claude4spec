@@ -2,42 +2,26 @@
 
 Use this when **the active context is a patch thread** and you have just been called via `load_skill_file("layered-vertical-slices")`.
 
-A patch is feedback a coding agent recorded in its own repository while implementing a brief: it found the specification diverged from reality and wrote down what it hit. The `<current_patch>` block carries it verbatim — that is *what* to fix. This file is *how*, for this specification's layout.
+The `<current_patch>` block carries the implementer's account verbatim — that is *what* to fix — and its `patch_kind` attr says what kind of gap the fix closes: `drift` (reality was ahead of the brief — update the spec to what the code does), `missing` (a detail the implementer had to decide alone — add it so the next brief does not reproduce the gap), `incorrect` (the brief was wrong about existing code — correct the entity or section describing it), `clarification` (the implementer guessed — take a position and write it down; an ambiguity resolved in a chat reply is one that returns). The posture of the turn — implement what the patch establishes, say what you did not do and why, verify before you claim — is the host's `<interaction_context type="patch">` block. This file is only *where* a fix lands in this specification's layout.
 
-## A. Read the kind first
+The `## What I found` account is authoritative — they were looking at the code. The `## Suggestion` is a starting point: you can see the whole current specification and they could not, so a better fix is allowed and frequently right; when you take a different route, say so.
 
-`patch_kind` sits in the `<current_patch>` attrs and frames the whole turn:
+## Where the fix goes in this specification
 
-| `patch_kind` | What it means | Where the fix usually lands |
-| --- | --- | --- |
-| `drift` | The brief described X; the code already did Y when the implementer arrived. | Update the spec to Y — reality was ahead of the brief. |
-| `missing` | The brief was silent on a detail the implementer had to decide alone. | Add the detail (entity field, endpoint behaviour, edge case) so the next brief does not reproduce the gap. |
-| `incorrect` | The brief was factually wrong about existing code. | Correct the entity or module section describing that code. |
-| `clarification` | The brief was ambiguous; the implementer guessed and flagged it. | Take a position and write it down. An ambiguity resolved in a chat reply is an ambiguity that returns. |
-
-The body is `## What I found` (the implementer's own account) and `## Suggestion` (what they think should change). The account is authoritative — they were looking at the code. The suggestion is a starting point: you can see the whole current specification and they could not, so a better fix is allowed and frequently right. When you take a different route, say so.
-
-## B. Where the fix goes in this specification
-
-The patch names a behaviour; you have to find its home in the layered layout before editing:
-
-1. **Entity or prose?** A change to a DTO field, an endpoint signature, a table column or a UI view is an ENTITY mutation (`update_entities` / `create_entities`) — never a hand-edit of the markdown that embeds it. A change to how the system behaves, why, or under what constraint is a module-section edit.
-2. **Which module, which layer?** Locate the module that owns the behaviour, then the layer section within it (L1 database, L3 API, L5 UI, …). A patch touching one behaviour across layers touches one module in several sections, not several modules. When the owning module is not obvious from the patch's own words, locate it with the **cross-cutting reading protocol** (SKILL.md §8) rather than by opening module files in turn: two calls put every module's `Cel` in front of you, which is the level the ownership question is actually settled at. Mind its silent failure mode — a module whose section is not named `## Cel` never appears in the sweep, so a module missing from the result is not proof that none owns the behaviour.
+1. **Entity or prose?** A change to a DTO field, an endpoint signature, a table column or a UI view is an ENTITY mutation — never a hand-edit of the markdown that embeds it. A change to how the system behaves, why, or under what constraint is a module-section edit.
+2. **Which module, which layer?** Locate the module that owns the behaviour, then the layer section within it. A patch touching one behaviour across layers touches one module in several sections, not several modules. When the owning module is not obvious from the patch's own words, locate it with the **cross-cutting reading protocol** (carried at the end of this file) rather than by opening module files in turn: it puts every module's `Cel` in front of you, which is the level the ownership question is settled at. Mind its silent failure mode — a module whose section is not named `## Cel` never appears in the sweep, so a module missing from the result is not proof that none owns the behaviour.
 3. **Does it belong in a layer file instead?** Only if the patch is about how the spec itself is written — a rule every module must now follow. That is rare; the default is a module.
-4. **Acceptance criteria.** If the patch establishes behaviour that a test could pin, check whether an AC exists for it. A `missing` patch is often an AC that was never written.
+4. **A dependency the implementer hit that the spec never recorded** is a `module-dependency` record, one per direction, tagged by the module that requires — not a sentence in either module's prose. Check the incoming side too (protocol 2 below): a `drift` patch about a coupling often means the far side's record is the one that is stale.
+5. **Acceptance criteria.** If the patch establishes behaviour that a test could pin, check whether an AC exists for it. A `missing` patch is often an AC that was never written.
 
 Read the current content before you edit it. The patch tells you what is wrong, not what is around it.
 
-## C. Verification
+If the patch needs no change at all — already fixed by an earlier one, or the account does not hold up on inspection — say that plainly. Marking the patch `completed` is the user's action in the UI; there is no tool for it here.
 
-- Re-read what you changed, in the file, after writing it. `update_entities` returning success means the write landed, not that it said what you meant.
-- When checking a claim means sweeping more of the spec than fits in this turn — "is this documented anywhere else?", "does any other module assume the old behaviour?" — delegate to an explorer subagent, chosen by its own description, rather than guessing or skimming.
-- If the `## Suggestion` assumed something the current spec contradicts, follow the spec and say which assumption failed.
+---
 
-## D. Reporting
+<!-- include: parts/placement.md -->
 
-Close the turn with what changed, page by page and entity by entity — and, explicitly, with anything the patch asked for that you did NOT do, and why. A patch half-applied in silence is worse than one openly declined: the next reader cannot tell which half.
+<!-- include: parts/reading-sweep.md -->
 
-If the patch needs no change at all — already fixed by an earlier one, or the account does not hold up on inspection — say that plainly. Do not manufacture an edit to have something to report.
-
-Marking the patch `completed` is the user's action in the UI. There is no tool for it here; do not claim you did it.
+<!-- include: parts/reading-deps.md -->

@@ -58,7 +58,7 @@ import { layeredSpecReview } from './subagents/layered-spec-review.js';
  */
 export const manifest: PluginManifest = {
   name: 'c4s-plugin-layered-vertical-slices',
-  version: '0.2.70',
+  version: '0.2.73',
   hostApiVersion: '^2.0.0',
   engines: { node: '>=20' },
   contributes: {

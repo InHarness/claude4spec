@@ -246,22 +246,26 @@ describe('discovery core over the real section indexer', () => {
     });
 
     /**
-     * The mirror image, and the one that matters more: the indexer's anchor
-     * matcher is NOT anchored to the whole line, so a comment sitting
-     * mid-sentence directly above a heading DOES become that heading's anchor.
-     * A rule that only recognised whole-line anchors would call this clean while
-     * the index quietly lost one of the two sections — precisely the silent loss
-     * the rule exists to catch.
+     * The mirror image, and what 0.2.75 changed about it. The indexer's anchor
+     * matcher used to accept a comment sitting MID-SENTENCE above a heading, so
+     * a line of prose about the format became that heading's identity and the
+     * rule had to report it to keep the two honest.
+     *
+     * It no longer does: an anchor comment is a whole LINE. The rule follows
+     * without being touched — it resolves occurrences through the indexer's own
+     * `parseHeadings` — and the section keeps the anchor the writer gave it,
+     * which is why the two headings below are anchorless rather than colliding.
+     * The reason the matcher had to tighten is the upward walk: it now crosses a
+     * BLOCK of anchor lines, and a loose match would let a sentence quoting the
+     * syntax be swallowed into that block and out of the previous section's body.
      */
-    it('an inline anchor that the indexer DOES accept is reported when duplicated', async () => {
+    it('an anchor mid-sentence above a heading is prose, not that heading\'s identity', async () => {
       const inline = `The format is ${dup} by the way.`;
       await index('inline-a.md', ['# Top', '', inline, '## One', '', 'ONE', ''].join('\n'));
       await index('inline-b.md', ['# Top', '', inline, '## Two', '', 'TWO', ''].join('\n'));
 
       const report = await core.checkConsistency({ rule: 'duplicate-anchor' });
-      const rows = report.duplicateAnchors as Array<{ anchor: string; occurrences: unknown[] }>;
-      expect(rows.map((r) => r.anchor)).toEqual(['dupdupdu']);
-      expect(rows[0]!.occurrences).toHaveLength(2);
+      expect(report.duplicateAnchors).toEqual([]);
     });
 
     it('an anchor line that heads nothing is not an occurrence', async () => {
@@ -501,6 +505,128 @@ describe('discovery core over the real section indexer', () => {
       expect(anchorOf('Edited')).toBe(anchor);
       expect(bodyOf('Edited')).toContain('SECOND CONTENT');
       expect(bodyOf('Edited')).not.toContain('FIRST CONTENT');
+    });
+  });
+
+  /**
+   * 0.2.75 — an anchor line belongs to exactly one section: the one it names.
+   *
+   * The bug these cover was worth exactly one line and cascaded from there. The
+   * next heading's anchor comment fell inside the PREVIOUS section's range, so
+   * it left in the body on read, came back in the content on write, and after
+   * the next indexing pass stood on the page twice — once as prose in the
+   * section above, once as the heading's own anchor.
+   */
+  describe('the anchor line of the NEXT section is never in this one', () => {
+    it('keeps a neighbour\'s anchor comment out of the indexed body', async () => {
+      await index(
+        'own.md',
+        ['# Top', '', '## Alpha', '', 'ALPHA BODY', '', '## Beta', '', 'BETA BODY', ''].join('\n'),
+      );
+      // Second pass: now every heading HAS an anchor comment on disk, which is
+      // the only state in which the boundary can be got wrong.
+      await index('own.md', await pages.read('own.md').then((p) => p.body));
+
+      const alpha = sectionItem(await core.getSections({ anchors: [anchorOf('Alpha')] }));
+      expect(alpha.body).toContain('ALPHA BODY');
+      expect(alpha.body).not.toContain('anchor:');
+    });
+
+    it('cuts the WHOLE stacked block, not just the anchor that owns the heading', async () => {
+      const orphan = '<!-- anchor: orphanaa -->';
+      await index(
+        'block.md',
+        [
+          '# Top',
+          '',
+          '## Alpha',
+          '',
+          'ALPHA BODY',
+          '',
+          orphan,
+          '<!-- anchor: betaown1 -->',
+          '## Beta',
+          '',
+          'BETA BODY',
+          '',
+        ].join('\n'),
+      );
+
+      /**
+       * The nearest comment owns the heading; the one above it owns nothing.
+       * But an orphan is not the previous section's CONTENT either — it sits in
+       * the gap between two sections, so the range stops above the whole block.
+       */
+      const alpha = sectionItem(await core.getSections({ anchors: [anchorOf('Alpha')] }));
+      expect(alpha.body).toContain('ALPHA BODY');
+      expect(alpha.body).not.toContain('orphanaa');
+      expect(alpha.body).not.toContain('betaown1');
+      expect(anchorOf('Beta')).toBe('betaown1');
+    });
+
+    it('keeps it out of a SUBTREE read too, which used to compute its own end', async () => {
+      await index(
+        'subtree.md',
+        [
+          '# Top',
+          '',
+          '## Alpha',
+          '',
+          'ALPHA BODY',
+          '',
+          '### Alpha child',
+          '',
+          'CHILD BODY',
+          '',
+          '## Beta',
+          '',
+          'BETA BODY',
+          '',
+        ].join('\n'),
+      );
+      await index('subtree.md', await pages.read('subtree.md').then((p) => p.body));
+
+      const alpha = sectionItem(
+        await core.getSections({ anchors: [anchorOf('Alpha')], includeSubtree: true }),
+      );
+      expect(alpha.body).toContain('CHILD BODY');
+      expect(alpha.body).not.toContain('BETA BODY');
+      // The child's own anchor is inside the subtree and belongs there; Beta's
+      // is not, and used to be — `subtreeEnd` stopped at the heading LINE.
+      expect(alpha.body).not.toContain(anchorOf('Beta'));
+    });
+
+    /**
+     * The other edge of the same walk. Crossing a BLOCK of anchor lines is only
+     * safe while "an anchor line" means a whole line: a sentence that merely
+     * quotes the syntax, sitting immediately above the next section's comment,
+     * would otherwise be read as part of that block and silently pushed out of
+     * the previous section's body — a line of the author's prose lost from the
+     * indexed content, from `get_sections`, and from what a `replace` overwrites.
+     */
+    it('does not swallow a line of PROSE that merely quotes the syntax', async () => {
+      const quoting = 'Every heading carries a <!-- anchor: k3n9q1z8 --> above it.';
+      await index(
+        'prose.md',
+        [
+          '# Top',
+          '',
+          '## Alpha',
+          '',
+          'ALPHA BODY',
+          quoting,
+          '<!-- anchor: betaown2 -->',
+          '## Beta',
+          '',
+          'BETA BODY',
+          '',
+        ].join('\n'),
+      );
+
+      const alpha = sectionItem(await core.getSections({ anchors: [anchorOf('Alpha')] }));
+      expect(alpha.body).toContain(quoting);
+      expect(alpha.body).not.toContain('betaown2');
+      expect(anchorOf('Beta')).toBe('betaown2');
     });
   });
 });

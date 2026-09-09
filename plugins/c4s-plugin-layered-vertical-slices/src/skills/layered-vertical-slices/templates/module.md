@@ -1,7 +1,7 @@
 <!--
 Template for a module file (`modules/MXX-<slug>.md`) in a layered-vertical-slices spec.
-Copy this file, rename it, and replace placeholders. See SKILL.md §5 and §6 for guidance,
-and §7 for the rules the `## Cel` section below must satisfy.
+Copy this file, rename it, and replace placeholders. `## Cel` must satisfy the Cel rules,
+`## Zależności` rule 3a — both travel with the workflow you are running.
 
 Nothing goes between the H1 and `## Cel` — no hook, no blockquote, no table. Content placed
 there carries no anchor of its own, so it is invisible to the section index and to every
@@ -18,22 +18,8 @@ cross-cutting read.
 
 ## Zależności
 
-<!--
-The second H2, and its heading is literal — `## Zależności`, with the diacritic.
-
-This section holds the EMBED and one sentence of prose. No markdown table: a
-module-to-module dependency is a `module-dependency` entity, one per ordered
-pair, and a mutual relation is therefore TWO entities rather than one row read
-in both directions. The entity carries the tag of the module that REQUIRES, so
-this embed shows this module's OUTGOING edges.
-
-Incoming edges are deliberately not here and cannot be embedded: they carry the
-other module's tag. Read them with
-`list_entities({ type: "module-dependency", filters: { provider: "MXX" } })`.
-
-Relations with LAYERS are not dependencies in this sense and do not belong in
-this section — each one lives in that layer's own section below.
--->
+<!-- The second H2, heading literal with the diacritic. The embed and one sentence, nothing
+     else — no table (rule 3a). What a record is belongs to the `module-dependency` type. -->
 
 <tagged_list type="module-dependency" tags="mXX"/>
 
@@ -72,7 +58,7 @@ from others, not a restatement of the list above.>
      (edge cases under mXX-edge), created via the project's MCP tools. Embed them live and add one
      sentence of prose explaining why; the list updates itself.
 
-     Tag slugs are LOWER-CASE, as SKILL.md §6.8 writes them, while the prose spells a module `MXX`.
+     Tag slugs are LOWER-CASE (rule 8), while the prose spells a module `MXX`.
      Both spellings are correct in their own place; an embed written with the prose spelling selects
      on a tag nothing carries and renders empty, with no error to say why. -->
 <tagged_list type="ac" tags="mXX"/>
