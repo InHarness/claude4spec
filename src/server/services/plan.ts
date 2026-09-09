@@ -40,6 +40,8 @@ import { PLAN_ROOT_MARKER } from '../../shared/types.js';
 import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
 import { slugify } from './slug.js';
 import type { PagesService } from './pages.js';
+import type { RecordStore } from '../fs/record-store.js';
+import type { MarkdownRecord } from '../fs/record-adapters.js';
 import type { SelfWriteMarker } from '../fs/sources.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import type { FileVersionService } from './file-version.js';
@@ -70,6 +72,24 @@ const PLAN_HEADING_RE = /^(#{2,4})\s+(.+?)\s*$/;
 export interface PlanServiceDeps {
   plansPages: PagesService;
   plansWatcher: SelfWriteMarker;
+  /**
+   * 0.2.76 — the M42 record store for this artifact source.
+   *
+   * The bytes go through the shared primitive: atomic `temp -> rename` (these
+   * writes had no atomicity at all), the source's path guard, per-path
+   * serialization and the shared suppression contract.
+   *
+   * It writes with `chain: false`, and that is deliberate rather than a shortcut:
+   * this service authors its own `file_version` row because it carries a
+   * `change_summary`, which the `capture` phase has no way to receive. Running
+   * the chain as well would write the row twice. Nothing is lost by skipping it
+   * here — briefs and patches register no `write-back`, and plans inject their
+   * anchors synchronously before writing, so the settled state IS the committed
+   * state on these sources.
+   *
+   * Optional: the hand-rolled rigs have no mount, and keep the plain write.
+   */
+  plansRecords?: RecordStore<MarkdownRecord> | null;
   plansSerializer: FileSerializer;
   pageVersions: FileVersionService;
   chatService: ChatService;
@@ -500,10 +520,10 @@ export class PlanService {
             applied: false,
           };
           const fullContent = matter.stringify(injected, frontmatter as Record<string, unknown>);
-          const abs = this.absPath(allocated);
-          await fs.mkdir(path.dirname(abs), { recursive: true });
-          this.deps.plansWatcher.suppress(allocated);
-          await fs.writeFile(abs, fullContent, 'utf-8');
+          // `absPath` is still called for its path validation — the write itself
+          // no longer needs the absolute path now the record store resolves it.
+          this.absPath(allocated);
+          await this.writeBytes(allocated, fullContent);
           await this.deps.pageVersions.recordVersion(
             allocated,
             'create',
@@ -587,6 +607,35 @@ export class PlanService {
    * One row per CALL, not per edit — a batch touching five sections is one
    * version carrying one `changeSummary`, because it is one act.
    */
+
+  /**
+   * The bytes of one plan, through the shared primitive. See
+   * `BriefService.writeBytes` for why this writes with `chain: false`.
+   *
+   * Plans are the one artifact kind with a registered `write-back`, and it stays
+   * unreachable from here on purpose: `PlanService` runs `injectAnchors`
+   * SYNCHRONOUSLY before composing the bytes, because `insert_after_section`
+   * must see the anchors with no window in between. The registered subscriber
+   * exists for writes that bypass this service entirely — an agent or a user
+   * editing `plansDir` on disk.
+   */
+  private async writeBytes(relPath: string, content: string): Promise<void> {
+    const records = this.deps.plansRecords;
+    if (records) {
+      await records.write(relPath, { raw: content }, { actor: 'user', chain: false });
+      return;
+    }
+    const abs = this.absPath(relPath);
+    await fs.mkdir(path.dirname(abs), { recursive: true });
+    this.deps.plansWatcher.suppress(relPath);
+    try {
+      await fs.writeFile(abs, content, 'utf-8');
+    } catch (err) {
+      this.deps.plansWatcher.unsuppress?.(relPath);
+      throw err;
+    }
+  }
+
   private async persist(args: {
     planPath: string;
     body: string;
@@ -605,9 +654,7 @@ export class PlanService {
     changeSummary?: string;
     changedBy: PlanChangedBy;
   }): Promise<{ version: number; plan: Plan }> {
-    const abs = this.absPath(args.planPath);
-    this.deps.plansWatcher.suppress(args.planPath);
-    await fs.writeFile(abs, args.fullContent, 'utf-8');
+    await this.writeBytes(args.planPath, args.fullContent);
     await this.deps.pageVersions.recordVersion(
       args.planPath,
       'update',
@@ -732,9 +779,7 @@ export class PlanService {
         next.applied = opts.patch.applied;
       }
       const newContent = matter.stringify(current.body, next as Record<string, unknown>);
-      const abs = this.absPath(opts.path);
-      this.deps.plansWatcher.suppress(opts.path);
-      await fs.writeFile(abs, newContent, 'utf-8');
+      await this.writeBytes(opts.path, newContent);
       await this.deps.frontmatterIndexer.indexPage(PLAN_ROOT_MARKER, opts.path);
       const updated = await this.getByPath(opts.path);
       this.deps.ws.broadcast({

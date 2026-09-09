@@ -22,6 +22,8 @@ import { BRIEF_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
 import { BRIEF_ROOT_MARKER } from '../../shared/types.js';
 import type { PagesService } from './pages.js';
 import { hashContent } from './artifact-content.js';
+import type { RecordStore } from '../fs/record-store.js';
+import type { MarkdownRecord } from '../fs/record-adapters.js';
 import type { SelfWriteMarker } from '../fs/sources.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import type { FileVersionService } from './file-version.js';
@@ -36,6 +38,24 @@ import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 export interface BriefServiceDeps {
   briefsPages: PagesService;
   briefsWatcher: SelfWriteMarker;
+  /**
+   * 0.2.76 — the M42 record store for this artifact source.
+   *
+   * The bytes go through the shared primitive: atomic `temp -> rename` (these
+   * writes had no atomicity at all), the source's path guard, per-path
+   * serialization and the shared suppression contract.
+   *
+   * It writes with `chain: false`, and that is deliberate rather than a shortcut:
+   * this service authors its own `file_version` row because it carries a
+   * `change_summary`, which the `capture` phase has no way to receive. Running
+   * the chain as well would write the row twice. Nothing is lost by skipping it
+   * here — briefs and patches register no `write-back`, and plans inject their
+   * anchors synchronously before writing, so the settled state IS the committed
+   * state on these sources.
+   *
+   * Optional: the hand-rolled rigs have no mount, and keep the plain write.
+   */
+  briefsRecords?: RecordStore<MarkdownRecord> | null;
   briefsSerializer: FileSerializer;
   pageVersions: FileVersionService;
   chatService: ChatService;
@@ -388,10 +408,7 @@ export class BriefService {
           : `# Brief: ${fromName} → ${toName}\n`);
     const fullContent = matter.stringify(body, frontmatter as Record<string, unknown>);
 
-    const abs = this.absPath(briefPath);
-    await fs.mkdir(path.dirname(abs), { recursive: true });
-    this.deps.briefsWatcher.suppress(briefPath);
-    await fs.writeFile(abs, fullContent, 'utf-8');
+    await this.writeBytes(briefPath, fullContent);
     await this.deps.pageVersions.recordVersion(
       briefPath,
       'create',
@@ -405,6 +422,37 @@ export class BriefService {
     await this.deps.frontmatterIndexer.indexPage(BRIEF_ROOT_MARKER, briefPath);
 
     return { briefPath, fromReleaseName: fromName, toReleaseName: toName };
+  }
+
+
+  /**
+   * The bytes of one brief, through the shared primitive when this mount has one.
+   *
+   * `raw` because a brief's content is already a serialized markdown file, not a
+   * frontmatter/body pair — re-splitting and re-stringifying it would normalise
+   * bytes the caller's `expectedHash` was computed over.
+   *
+   * The suppress token is issued before the write and handed back if the write
+   * throws (the primitive does that), so a failed write cannot leave a live token
+   * to swallow the next genuine edit. Once the bytes ARE on disk the echo really
+   * is ours, and a later throw from `recordVersion`/`indexPage` must leave the
+   * suppression standing.
+   */
+  private async writeBytes(relPath: string, content: string): Promise<void> {
+    const records = this.deps.briefsRecords;
+    if (records) {
+      await records.write(relPath, { raw: content }, { actor: 'user', chain: false });
+      return;
+    }
+    const abs = this.absPath(relPath);
+    await fs.mkdir(path.dirname(abs), { recursive: true });
+    this.deps.briefsWatcher.suppress(relPath);
+    try {
+      await fs.writeFile(abs, content, 'utf-8');
+    } catch (err) {
+      this.deps.briefsWatcher.unsuppress?.(relPath);
+      throw err;
+    }
   }
 
   async updateContent(opts: BriefUpdateContentOpts): Promise<{ newHash: string }> {
@@ -433,25 +481,7 @@ export class BriefService {
         `cannot mutate immutable frontmatter keys: ${violated.join(', ')}`,
       );
     }
-    const abs = this.absPath(opts.path);
-    this.deps.briefsWatcher.suppress(opts.path);
-    /**
-     * The token is issued BEFORE the write, so a write that throws leaves it live
-     * with no event of its own — and the next genuine edit of this brief, inside
-     * the self-write window, gets swallowed instead. Hand it back on failure.
-     *
-     * The guard covers `fs.writeFile` ONLY, and deliberately not the rest of the
-     * method: once the bytes are on disk the echo really is ours, so a later throw
-     * from `recordVersion`/`indexPage` must leave the suppression standing. A
-     * `finally` over the whole block would resurrect exactly the event the token
-     * exists to eat.
-     */
-    try {
-      await fs.writeFile(abs, opts.content, 'utf-8');
-    } catch (err) {
-      this.deps.briefsWatcher.unsuppress?.(opts.path);
-      throw err;
-    }
+    await this.writeBytes(opts.path, opts.content);
     await this.deps.pageVersions.recordVersion(
       opts.path,
       'update',
@@ -484,9 +514,7 @@ export class BriefService {
       summaries.push(`set implemented=${opts.patch.implemented}`);
     }
     const newContent = matter.stringify(current.body, next as Record<string, unknown>);
-    const abs = this.absPath(opts.path);
-    this.deps.briefsWatcher.suppress(opts.path);
-    await fs.writeFile(abs, newContent, 'utf-8');
+    await this.writeBytes(opts.path, newContent);
     await this.deps.pageVersions.recordVersion(
       opts.path,
       'update',

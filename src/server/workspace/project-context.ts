@@ -93,7 +93,17 @@ import { pageChangedNotifier, htmlPreviewNotifier, artifactChangedNotifier } fro
 import { FileVersionCapture } from '../services/file-version-capture.js';
 import { EntityStore } from '../services/entity-store.js';
 import { EntityIndexerService } from '../services/entity-indexer.js';
-import { ReleaseFileStore, toReleaseFileData } from '../services/release-store.js';
+import { ReleaseFileStore, toReleaseFileData, type ReleaseFileData } from '../services/release-store.js';
+import { RecordStore, RecordPathError } from '../fs/record-store.js';
+import type { SnapshotData } from '../serialization/types.js';
+import type { ScopedWatchRegistrar } from '../fs/watcher.js';
+import { isMarkdownPath } from '../../shared/page-files.js';
+import {
+  markdownAdapter,
+  jsonAdapter,
+  type MarkdownRecord,
+  type RecordFormatAdapter,
+} from '../fs/record-adapters.js';
 import { ReleaseIndexerService } from '../services/release-indexer.js';
 import { createReferenceToolsServer } from '../mcp/reference-tools.js';
 import { createPageToolsServer } from '../mcp/page-tools.js';
@@ -254,6 +264,33 @@ export interface ProjectContext {
 let contextInstanceSeq = 0;
 function nextContextInstance(): number {
   return ++contextInstanceSeq;
+}
+
+/**
+ * One M42 record store per markdown mount.
+ *
+ * The store is bound to `(scope, source)` — the scope comes from the registrar
+ * the mount owner already holds — so its path mutex and its suppression tokens
+ * are per project, and two projects sharing a `relPath` never mask each other.
+ *
+ * The path rule is the source's, not the primitive's: only `.md` / `.mdx` are
+ * records here, and anything else is refused in step 1 as an addressing error
+ * rather than serialized and written.
+ */
+function markdownRecordStore(
+  registrar: ScopedWatchRegistrar,
+  source: string,
+  dir: string,
+): RecordStore<MarkdownRecord> {
+  return new RecordStore<MarkdownRecord>({
+    registrar,
+    source,
+    dir,
+    adapter: markdownAdapter,
+    validatePath: (relPath) => {
+      if (!isMarkdownPath(relPath)) throw new RecordPathError(`only .md / .mdx paths allowed: ${relPath}`);
+    },
+  });
 }
 
 export async function buildProjectContext(deps: ProjectContextDeps): Promise<ProjectContext> {
@@ -492,6 +529,7 @@ async function buildInner(
     const staticSvc = new StaticHtmlService(cwd, root.dir);
     const source = pageSource(root.id);
     w.mountSource({ source, dir: pagesSvc.root });
+    pagesSvc.records = markdownRecordStore(w, source, pagesSvc.root);
     rootRuntimes.push({
       root,
       pages: pagesSvc,
@@ -538,6 +576,7 @@ async function buildInner(
       await mountPages.ensureRoot();
       const source = artifactSource(entry.kind);
       w.mountSource({ source, dir: mountPages.root });
+      mountPages.records = markdownRecordStore(w, source, mountPages.root);
       artifactMounts.set(entry.kind, {
         entry,
         pages: mountPages,
@@ -604,6 +643,12 @@ async function buildInner(
   // project with entity edits that were never reindexed for the whole life of the
   // context. (The page and artifact mounts above already await `ensureRoot()`.)
   w.mountSource({ source: ENTITIES_SOURCE, dir: entitiesAbs });
+  entityStore.records = new RecordStore({
+    registrar: w,
+    source: ENTITIES_SOURCE,
+    dir: entityStore.root,
+    adapter: jsonAdapter as unknown as RecordFormatAdapter<SnapshotData>,
+  });
   // M34/L11: wire version-restore deps now that entityStore exists.
   versionService.configureRestore(entityStore, tagsService);
   const entityIndexer = new EntityIndexerService(
@@ -620,6 +665,12 @@ async function buildInner(
   // upsert-by-slug indexer keeping spec_release.id stable — see
   // ReleaseIndexerService's header comment for why it must NOT delete-all).
   const releaseFileStore = new ReleaseFileStore(cwd, releasesDir, boundSuppress(w, RELEASES_SOURCE));
+  releaseFileStore.records = new RecordStore({
+    registrar: w,
+    source: RELEASES_SOURCE,
+    dir: releaseFileStore.root,
+    adapter: jsonAdapter as unknown as RecordFormatAdapter<ReleaseFileData>,
+  });
   releaseFileStore.ensureRoot();
   w.mountSource({ source: RELEASES_SOURCE, dir: releasesAbs });
   const releaseIndexer = new ReleaseIndexerService(db.handle, releaseFileStore, boundSuppress(w, RELEASES_SOURCE));
@@ -942,6 +993,7 @@ async function buildInner(
     cwd,
     releasableRootIds,
     releasableRootDirs,
+    (rootId) => rootById.get(rootId)?.pages.records ?? null,
   );
   // M29: release restore must persist restored entities' files.
   releaseService.setEntityStore(entityStore);
@@ -1006,6 +1058,7 @@ async function buildInner(
   const briefService = new BriefService({
     briefsPages: briefsMount.pages,
     briefsWatcher: briefsMount.writer,
+    briefsRecords: briefsMount.pages.records,
     briefsSerializer: briefsMount.serializer,
     pageVersions,
     chatService,
@@ -1019,6 +1072,7 @@ async function buildInner(
   const patchService = new PatchService({
     patchesPages: patchesMount.pages,
     patchesWatcher: patchesMount.writer,
+    patchesRecords: patchesMount.pages.records,
     patchesSerializer: patchesMount.serializer,
     pageVersions,
     chatService,
@@ -1031,6 +1085,7 @@ async function buildInner(
   const planService = new PlanService({
     plansPages: plansMount.pages,
     plansWatcher: plansMount.writer,
+    plansRecords: plansMount.pages.records,
     plansSerializer: plansMount.serializer,
     pageVersions,
     chatService,
@@ -1098,6 +1153,13 @@ async function buildInner(
   const patchWriteDeps = {
     briefsDirAbs: path.resolve(cwd, briefsDir),
     patchesDirAbs: path.resolve(cwd, patchesDir),
+    ...(patchesMount.pages.records
+      ? {
+          writePatchRecord: async (relPath: string, content: string): Promise<void> => {
+            await patchesMount.pages.records!.write(relPath, { raw: content }, { actor: 'agent' });
+          },
+        }
+      : {}),
   };
   router.use('/patches', patchesRouter(patchWriteDeps));
   /**

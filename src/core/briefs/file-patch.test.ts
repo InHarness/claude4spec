@@ -26,8 +26,8 @@ describe('writePatchFs', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('writes a patch file with the expected frontmatter, filename slug, and body header', () => {
-    const result = writePatchFs({
+  it('writes a patch file with the expected frontmatter, filename slug, and body header', async () => {
+    const result = await writePatchFs({
       briefsDirAbs,
       patchesDirAbs,
       briefRelPath: 'v0-1-to-v0-2.md',
@@ -52,7 +52,7 @@ describe('writePatchFs', () => {
     expect(parsed.content).toContain('Explanation of the gap.');
   });
 
-  it('two briefs with the same basename in different subdirectories produce distinct patch filenames', () => {
+  it('two briefs with the same basename in different subdirectories produce distinct patch filenames', async () => {
     fs.mkdirSync(path.join(briefsDirAbs, 'scoped-a'), { recursive: true });
     fs.mkdirSync(path.join(briefsDirAbs, 'scoped-b'), { recursive: true });
     fs.writeFileSync(
@@ -66,7 +66,7 @@ describe('writePatchFs', () => {
       'utf8',
     );
 
-    const resultA = writePatchFs({
+    const resultA = await writePatchFs({
       briefsDirAbs,
       patchesDirAbs,
       briefRelPath: 'scoped-a/foo.md',
@@ -75,7 +75,7 @@ describe('writePatchFs', () => {
       body: 'body A',
       createdBy: 'test',
     });
-    const resultB = writePatchFs({
+    const resultB = await writePatchFs({
       briefsDirAbs,
       patchesDirAbs,
       briefRelPath: 'scoped-b/foo.md',
@@ -90,9 +90,9 @@ describe('writePatchFs', () => {
     expect(fs.readFileSync(path.join(patchesDirAbs, resultB.path), 'utf8')).toContain('body B');
   });
 
-  it('creates patchesDir lazily when it does not exist yet', () => {
+  it('creates patchesDir lazily when it does not exist yet', async () => {
     expect(fs.existsSync(patchesDirAbs)).toBe(false);
-    writePatchFs({
+    await writePatchFs({
       briefsDirAbs,
       patchesDirAbs,
       briefRelPath: 'v0-1-to-v0-2.md',
@@ -104,8 +104,8 @@ describe('writePatchFs', () => {
     expect(fs.existsSync(patchesDirAbs)).toBe(true);
   });
 
-  it('throws BRIEF_NOT_FOUND before writing anything when --brief does not exist', () => {
-    expect(() =>
+  it('throws BRIEF_NOT_FOUND before writing anything when --brief does not exist', async () => {
+    await expect(
       writePatchFs({
         briefsDirAbs,
         patchesDirAbs,
@@ -115,16 +115,16 @@ describe('writePatchFs', () => {
         body: 'body',
         createdBy: 'test',
       }),
-    ).toThrow(BriefFsError);
+    ).rejects.toThrow(BriefFsError);
     expect(fs.existsSync(patchesDirAbs)).toBe(false);
   });
 
-  it('throws PATCH_WRITE_FAILED when patchesDir is read-only', () => {
+  it('throws PATCH_WRITE_FAILED when patchesDir is read-only', async () => {
     if (process.platform === 'win32') return; // chmod semantics differ; skip
     fs.mkdirSync(patchesDirAbs, { recursive: true });
     fs.chmodSync(patchesDirAbs, 0o400);
     try {
-      expect(() =>
+      await expect(
         writePatchFs({
           briefsDirAbs,
           patchesDirAbs,
@@ -134,7 +134,7 @@ describe('writePatchFs', () => {
           body: 'body',
           createdBy: 'test',
         }),
-      ).toThrow(BriefFsError);
+      ).rejects.toThrow(BriefFsError);
     } finally {
       fs.chmodSync(patchesDirAbs, 0o700);
     }

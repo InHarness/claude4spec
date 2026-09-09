@@ -6,6 +6,7 @@ import type { FileVersionService } from './file-version.js';
 import type { PagesService } from './pages.js';
 import type { SectionsService } from './sections.js';
 import { ConflictError } from './brief.js';
+import { RecordConflictError } from '../fs/record-store.js';
 import { DomainError } from './tags.js';
 import { parseHeadings } from './section-indexer.js';
 import {
@@ -88,9 +89,17 @@ export type { TextEdit } from './text-edits.js';
  *
  * The shapes below are per operation, on purpose. A shared result type is how
  * the echo got in: the widest consumer's needs became every operation's output.
- * What a write reports now is only what the caller could NOT have predicted —
+ * What a write reports is only what the caller could NOT have predicted —
  * the hash of what landed, the version the capture recorded, and which anchors
  * moved under it.
+ *
+ * 0.2.76 narrows the rule rather than withdrawing it. `create_page` and
+ * `update_page` now also answer with `content`, because the reaction chain runs
+ * IN-BAND and its `write-back` phase injects anchors for headings the caller
+ * introduced: the bytes that landed are genuinely not the bytes sent, and a hash
+ * cannot say so. That is the rule's own test — "what the caller could not have
+ * predicted" — met, not evaded. `update_sections` is left alone precisely
+ * because it fails that test: its caller replaced one paragraph.
  *
  * This binds every channel, not just the agent-facing ones. L3: "the output
  * shape is the operation's, the channel adapter does not widen it" — a REST
@@ -270,6 +279,14 @@ export interface CreatePageResult {
   rootId: string;
   path: string;
   hash: string;
+  /** The version `capture` recorded, in-band, before this answer was built. */
+  version: number;
+  /**
+   * The file as it SETTLED — see {@link UpdatePageResult.content}. On a create
+   * with no `content` this is the generated template, which the caller could not
+   * have predicted at all.
+   */
+  content: string;
   /** Every anchor the page now carries, in document order. */
   anchors: string[];
 }
@@ -278,6 +295,23 @@ export interface CreatePageResult {
 export interface UpdatePageResult {
   hash: string;
   version: number;
+  /**
+   * 0.2.76 — the file as it stands AFTER the `write-back` phase, frontmatter
+   * included.
+   *
+   * The narrow, deliberate exception to the echo-free rule above, and it is
+   * still an instance of that rule rather than a breach of it: what comes back
+   * is precisely what the caller could NOT have predicted. The chain runs
+   * in-band and injects anchors for headings the caller introduced, so the bytes
+   * on disk are not the bytes sent. A hash alone cannot communicate that — a
+   * client holding its pre-injection text would write it straight back and undo
+   * the write-back on every cycle.
+   *
+   * `update_sections` deliberately does NOT get this field: its caller edits a
+   * paragraph, and handing it the whole page back is the exact cost the rule
+   * exists to refuse.
+   */
+  content: string;
   /** Anchors added, removed, or whose section text changed. See {@link anchorDelta}. */
   changedAnchors: string[];
   /**
@@ -354,6 +388,8 @@ export interface UpdateSectionsResult {
 /** What `commit` hands its three callers to build their own, narrower answers from. */
 interface CommitResult {
   hash: string;
+  /** The settled bytes, frontmatter included — what `content` in the answer is built from. */
+  content: string;
   version: number;
   /** Anchors as they stand AFTER the write, in document order. */
   anchors: string[];
@@ -383,24 +419,62 @@ async function commit(
   relPath: string,
   actor: WriteActor,
   input: { body: string; frontmatter?: Record<string, unknown> },
+  expectedHash?: string,
 ): Promise<CommitResult> {
-  target.writer?.markOrigin(relPath, actor);
-  await target.pages.write(relPath, input);
-  await target.writer?.flush(relPath);
-  const written = await fs.readFile(path.join(target.pages.root, relPath), 'utf-8');
+  const written = await writeThroughPrimitive(target, relPath, actor, input, expectedHash);
   /**
-   * The body is re-parsed rather than taken from the input because `flush` has
-   * already run the `write-back` phase, which INJECTS anchors the indexer minted
-   * for new headings. Those are the anchors the caller could not predict, so
-   * they must be read off what landed, not off what was sent.
+   * The body is re-parsed off what LANDED rather than taken from the input,
+   * because the chain's `write-back` phase injects anchors the indexer minted
+   * for new headings. Those are exactly the anchors the caller could not have
+   * predicted, so they have to be read off the settled file.
    */
   const body = matter(written).content;
   return {
     hash: sha256(written),
+    content: written,
     version: currentVersionOf(target, relPath),
     anchors: [...sectionRanges(body.split('\n'))].map((r) => r.anchor),
     digests: sectionDigests(body),
   };
+}
+
+/**
+ * One atomic, serialized, chain-settling write — or, for the hand-rolled rigs
+ * that have no mount, the pre-0.2.76 dance.
+ *
+ * Through the primitive the conflict check happens INSIDE the path mutex, which
+ * is what makes a conflict deterministic rather than a race: two writes to one
+ * page are serialized, so the second is checked against what the first actually
+ * left instead of sometimes slipping past it.
+ */
+async function writeThroughPrimitive(
+  target: PageWriteTarget,
+  relPath: string,
+  actor: WriteActor,
+  input: { body: string; frontmatter?: Record<string, unknown> },
+  expectedHash?: string,
+): Promise<string> {
+  const records = target.pages.records;
+  if (!records) {
+    target.writer?.markOrigin(relPath, actor);
+    await target.pages.write(relPath, input);
+    await target.writer?.flush(relPath);
+    return await fs.readFile(path.join(target.pages.root, relPath), 'utf-8');
+  }
+  try {
+    const res = await records.write(
+      relPath,
+      { body: input.body, ...(input.frontmatter !== undefined ? { frontmatter: input.frontmatter } : {}) },
+      { actor, ...(expectedHash !== undefined ? { expectedHash } : {}) },
+    );
+    return res.content;
+  } catch (err) {
+    // The primitive knows nothing about pages; the operation names the refusal.
+    if (err instanceof RecordConflictError) {
+      throw new ConflictError('PAGE_CONFLICT', 'page changed since last read', err.currentHash);
+    }
+    throw err;
+  }
 }
 
 /**
@@ -461,7 +535,14 @@ export async function createPage(
           body: '',
           frontmatter: { title: input.title?.trim() || titleFromPath(relPath) },
         });
-  return { rootId: target.pages.rootId, path: relPath, hash: written.hash, anchors: written.anchors };
+  return {
+    rootId: target.pages.rootId,
+    path: relPath,
+    hash: written.hash,
+    version: written.version,
+    content: written.content,
+    anchors: written.anchors,
+  };
 }
 
 /**
@@ -558,13 +639,17 @@ export async function updatePage(
     return await updatePageByTextEdits(target, relPath, input, actor, before, diffDeps);
   }
 
-  const written = await commit(target, relPath, actor, {
-    body: input.body as string,
-    ...(input.frontmatter !== undefined ? { frontmatter: input.frontmatter } : {}),
-  });
+  const written = await commit(
+    target,
+    relPath,
+    actor,
+    { body: input.body as string, ...(input.frontmatter !== undefined ? { frontmatter: input.frontmatter } : {}) },
+    input.expectedHash,
+  );
   return {
     hash: written.hash,
     version: written.version,
+    content: written.content,
     changedAnchors: anchorDelta(before, written.digests),
   };
 }
@@ -630,13 +715,17 @@ async function updatePageByTextEdits(
     });
   }
 
-  const written = await commit(target, relPath, actor, {
-    body: parsed.content,
-    ...(Object.keys(parsed.data).length > 0 ? { frontmatter: parsed.data } : {}),
-  });
+  const written = await commit(
+    target,
+    relPath,
+    actor,
+    { body: parsed.content, ...(Object.keys(parsed.data).length > 0 ? { frontmatter: parsed.data } : {}) },
+    input.expectedHash,
+  );
   return {
     hash: written.hash,
     version: written.version,
+    content: written.content,
     changedAnchors: anchorDelta(before, written.digests),
     replacements: applied.replacements,
   };
@@ -718,15 +807,24 @@ export async function deletePage(
    */
   if (!(await target.pages.exists(relPath))) return { ok: true, deleted: false };
   /**
-   * Deletes go through `markOrigin` + `flush` like every other server write,
-   * and must NOT suppress. A suppress token issued here has no event of its own
-   * to be consumed by if the file is re-created immediately, and would then
-   * swallow that re-create — leaving no version row at all. `capture` authors
-   * the tombstone, synthesizing content from the last version.
+   * A delete runs the chain in-band like every other write of spec content, so
+   * `capture` authors the tombstone — synthesizing content from the last version
+   * — before this answers.
+   *
+   * 0.2.76 — the token it holds while doing so is retired by its ISSUER after a
+   * guard window rather than by the first matching event. That is what makes the
+   * old hazard ("delete, then immediately re-create; the re-create's event gets
+   * eaten and no version row is written") impossible without also refusing to
+   * suppress: the token is bounded in TIME, not in events.
    */
-  target.writer?.markOrigin(relPath, actor);
-  await target.pages.remove(relPath);
-  await target.writer?.flush(relPath, 'unlink');
+  const records = target.pages.records;
+  if (records) {
+    await records.remove(relPath, { actor });
+  } else {
+    target.writer?.markOrigin(relPath, actor);
+    await target.pages.remove(relPath);
+    await target.writer?.flush(relPath, 'unlink');
+  }
   return { ok: true, deleted: true };
 }
 
@@ -1482,10 +1580,16 @@ export async function updateSections(
   }
 
   const before = sectionDigests(page.body);
-  const written = await commit(target, first.pagePath, actor, {
-    body: lines.join('\n'),
-    ...(Object.keys(page.frontmatter).length > 0 ? { frontmatter: page.frontmatter } : {}),
-  });
+  const written = await commit(
+    target,
+    first.pagePath,
+    actor,
+    {
+      body: lines.join('\n'),
+      ...(Object.keys(page.frontmatter).length > 0 ? { frontmatter: page.frontmatter } : {}),
+    },
+    input.expectedHash,
+  );
 
   /**
    * One delta for the whole batch, filtered per edit.

@@ -167,19 +167,81 @@ export class SectionIndexerService implements WatchSubscriber {
   anchorInjectionSubscriber(suppress: (source: string, relPath: string) => void): WatchSubscriber {
     return {
       onChange: async (_scope, source, relPath) => {
-        const rootId = requireRootId(source);
-        const k = this.key(rootId, relPath);
-        const injection = this.pendingInjections.get(k);
-        if (!injection) return;
-        this.pendingInjections.delete(k);
-        const root = this.roots.get(rootId);
-        if (!root) return;
-        await this.persistInjection(root, source, relPath, injection, suppress);
+        await this.mintAnchors(requireRootId(source), source, relPath, suppress);
       },
       onUnlink: (_scope, source, relPath) => {
         this.pendingInjections.delete(this.key(requireRootId(source), relPath));
       },
     };
+  }
+
+  /**
+   * Mint every missing anchor for one file and write them, all in this call.
+   *
+   * 0.2.76 — `write-back` now runs BEFORE `projection`, so this can no longer be
+   * the second half of a hand-off. Until 0.2.75 the projection (`indexPage`)
+   * minted the anchors and stashed them in `pendingInjections`, and this
+   * subscriber only drained the stash; under the new order that stash is always
+   * empty at write-back time and anchors would silently stop reaching disk.
+   *
+   * So the write-back reads the FILE and does the minting itself, which is what
+   * the phase is for — and `indexPage` then indexes an already-anchored file, so
+   * its line ranges describe the bytes that will still be there at the end of
+   * the chain rather than ones shifted by a later injection.
+   *
+   * The write suppresses its own event and stays a step INSIDE the running
+   * chain (arm 2): it writes the very file the chain is handling, so it must not
+   * start a second one.
+   */
+  async mintAnchors(
+    rootId: string,
+    source: string,
+    relPath: string,
+    suppress: (source: string, relPath: string) => void,
+  ): Promise<boolean> {
+    const root = this.roots.get(rootId);
+    if (!root) return false;
+    let page;
+    try {
+      page = await root.pages.read(relPath);
+    } catch {
+      return false; // gone — nothing to inject into
+    }
+    const minted = this.mintInto(page.body);
+    if (!minted) return false;
+    suppress(source, relPath);
+    await root.pages.write(relPath, { frontmatter: page.frontmatter, body: minted });
+    return true;
+  }
+
+  /**
+   * The minting itself: every heading without an anchor gets a fresh one.
+   *
+   * Returns the new body, or `null` when nothing was missing. Shared by the
+   * write-back above and by `indexPage`, which still needs it on the boot sweep
+   * where no chain runs at all.
+   *
+   * Uniqueness is checked PROJECT-WIDE through `freshAnchor`, grown as we mint so
+   * two headings in one pass cannot collide with each other, and seeded with what
+   * this file already carries — the file may not be in the index yet.
+   */
+  private mintInto(body: string): string | null {
+    const lines = body.split('\n');
+    const headings = parseHeadings(lines);
+    const taken = new Set(headings.map((h) => h.anchor).filter((a): a is string => a !== null));
+    let changed = false;
+    for (const h of headings) {
+      if (h.anchor !== null) continue;
+      const newAnchor = this.freshAnchor(taken);
+      taken.add(newAnchor);
+      lines.splice(h.lineIndex, 0, `<!-- anchor: ${newAnchor} -->`);
+      shiftHeadingLines(headings, h.lineIndex, 1);
+      h.anchor = newAnchor;
+      h.anchorLineIndex = h.lineIndex - 1;
+      h.anchorBlockStart = h.lineIndex - 1;
+      changed = true;
+    }
+    return changed ? lines.join('\n') : null;
   }
 
   /**
@@ -391,48 +453,33 @@ export class SectionIndexerService implements WatchSubscriber {
     }
     let body = page.body;
 
-    const lines = body.split('\n');
-    const headings = parseHeadings(lines);
-    let bodyChanged = false;
-
-    // Every anchor already spoken for, so a freshly minted one cannot land on
-    // top of an existing section. Seeded with what THIS file already carries
-    // (the file may not be in the index yet, or may be mid-rewrite) and grown
-    // as we mint — two headings in one pass must not collide with each other.
-    const taken = new Set(headings.map((h) => h.anchor).filter((a): a is string => a !== null));
-
-    for (const h of headings) {
-      if (h.anchor === null) {
-        const newAnchor = this.freshAnchor(taken);
-        taken.add(newAnchor);
-        lines.splice(h.lineIndex, 0, `<!-- anchor: ${newAnchor} -->`);
-        shiftHeadingLines(headings, h.lineIndex, 1);
-        h.anchor = newAnchor;
-        h.anchorLineIndex = h.lineIndex - 1;
-        // A minted anchor is the only line in its block: it was just spliced in
-        // directly above the heading, so the block starts where it does.
-        h.anchorBlockStart = h.lineIndex - 1;
-        bodyChanged = true;
-      }
-    }
-
-    if (bodyChanged) {
-      // Hand the minted anchors to the `write-back` phase rather than writing
-      // here: `capture` runs after `write-back`, so the version it records
-      // contains the anchors. The sections below are built from `lines`, which
-      // already carries them, so the index never waits for the disk write.
-      const injected = lines.join('\n');
+    /**
+     * 0.2.76 — on the chain path this normally finds NOTHING to mint: the
+     * `write-back` phase now runs first and has already put every anchor on
+     * disk, so this pass indexes an already-anchored file and its line ranges
+     * describe the bytes that survive to the end of the chain.
+     *
+     * The minting below is still reachable, and still needed, on the boot sweep
+     * (`indexAll`), which calls this directly with no chain to run a write-back
+     * in. There the anchors go to `pendingInjections` and are written by
+     * `flushPendingInjections` once the sweep is over.
+     */
+    const minted = this.mintInto(body);
+    if (minted !== null) {
       this.pendingInjections.set(this.key(rootId, relPath), {
         frontmatter: page.frontmatter,
-        body: injected,
+        body: minted,
         sourceBody: page.body,
       });
-      body = injected;
+      body = minted;
     } else {
       // Nothing to inject THIS pass — drop any older stash for this page, or the
       // write-back would later apply it on top of newer content.
       this.pendingInjections.delete(this.key(rootId, relPath));
     }
+
+    const lines = body.split('\n');
+    const headings = parseHeadings(lines);
 
     const sections = buildSections(lines, headings);
 

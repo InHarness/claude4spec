@@ -147,25 +147,34 @@ describe('the page write primitive', () => {
     expect(onDisk).toBe('');
   });
 
-  it('create_page answers with the page identity and its anchors, never its content', async () => {
+  it('create_page answers with the page identity, its anchors and the settled file', async () => {
     const res = await createPage(target, { path: 'made.md', content: '# A\n\nlots of text\n' }, 'agent');
-    expect(Object.keys(res).sort()).toEqual(['anchors', 'hash', 'path', 'rootId']);
+    expect(Object.keys(res).sort()).toEqual(['anchors', 'content', 'hash', 'path', 'rootId', 'version']);
     expect(res.rootId).toBe('pages');
     expect(res.path).toBe('made.md');
-    expect(JSON.stringify(res)).not.toContain('lots of text');
+    /**
+     * 0.2.76 — `content` is the SETTLED file, so it does carry the body back.
+     * That is the narrowed echo-free rule, not a breach of it: the chain runs
+     * in-band and injects anchors the caller could not have predicted, so these
+     * bytes are not the bytes sent. What still must never come back is anything
+     * the caller could have worked out for itself.
+     */
+    expect(res.content).toContain('lots of text');
   });
 
-  it('update_page answers with the delta, and echoes neither body nor frontmatter', async () => {
+  it('update_page answers with the delta and the settled file, never a plain echo', async () => {
     const res = await updatePage(
       target,
       { path: 'u.md', body: '# A\n\nSECRET CONTENT\n', frontmatter: { order: 1 }, expectedHash: NO_PRIOR_STATE },
       'user',
     );
-    expect(Object.keys(res).sort()).toEqual(['changedAnchors', 'hash', 'version']);
+    expect(Object.keys(res).sort()).toEqual(['changedAnchors', 'content', 'hash', 'version']);
     // `path` is gone too: the caller named it in the request a moment ago.
     expect(res).not.toHaveProperty('path');
-    expect(JSON.stringify(res)).not.toContain('SECRET CONTENT');
-    expect(JSON.stringify(res)).not.toContain('order');
+    // The frontmatter comes back only as part of the settled bytes, never as a
+    // parsed field of its own — the caller already has that half.
+    expect(res).not.toHaveProperty('frontmatter');
+    expect(res.content).toContain('SECRET CONTENT');
   });
 
   it('a duplicated hand-authored anchor is counted once, the way the index counts it', async () => {

@@ -4,9 +4,23 @@ import path from 'node:path';
 import matter from 'gray-matter';
 import type { PageContent, PageNode, PageWriteInput, PageSearchHit } from '../../shared/types.js';
 import { hasDotSegment, isMarkdownPath } from '../../shared/page-files.js';
+import type { RecordStore } from '../fs/record-store.js';
+import type { MarkdownRecord } from '../fs/record-adapters.js';
 
 export class PagesService {
   readonly root: string;
+  /**
+   * 0.2.76 — the M42 record store this root writes through.
+   *
+   * `PagesService` is now a FAÇADE: the tree, the hidden-page filter and L13
+   * ownership stay here, the markdown adapter sits below it and the primitive
+   * below that — three links, not two. Set after construction because the mount
+   * this store is bound to is claimed later in `buildProjectContext`.
+   *
+   * `null` for the hand-rolled rigs that have no watcher at all; those keep the
+   * plain write, which is exactly as atomic as it ever was.
+   */
+  records: RecordStore<MarkdownRecord> | null = null;
   /** 0.1.96: which root this service serves ('pages' | user slug | 'brief' | 'patch'). */
   readonly rootId: string;
 
@@ -89,6 +103,28 @@ export class PagesService {
   }
 
   async write(relPath: string, input: PageWriteInput): Promise<PageContent> {
+    const written = await this.writeBytes(relPath, input);
+    return {
+      path: relPath,
+      frontmatter: input.frontmatter ?? {},
+      body: input.body,
+      // Of the bytes actually written — same basis as `read`.
+      // Note this is NOT the hash callers should hold: `page-write.commit` reads
+      // the SETTLED state, after the write-back phase has injected anchors this
+      // string predates. See its own comment.
+      hash: crypto.createHash('sha256').update(written, 'utf-8').digest('hex'),
+    };
+  }
+
+  /** The bytes that landed. Through the primitive when this root has one. */
+  private async writeBytes(relPath: string, input: PageWriteInput): Promise<string> {
+    if (this.records) {
+      const res = await this.records.write(relPath, {
+        body: input.body,
+        ...(input.frontmatter !== undefined ? { frontmatter: input.frontmatter } : {}),
+      });
+      return res.content;
+    }
     const abs = this.resolveSafe(relPath);
     await fs.mkdir(path.dirname(abs), { recursive: true });
     const hasFrontmatter = input.frontmatter && Object.keys(input.frontmatter).length > 0;
@@ -96,16 +132,7 @@ export class PagesService {
       ? matter.stringify(input.body, input.frontmatter as Record<string, unknown>)
       : input.body;
     await fs.writeFile(abs, serialized, 'utf-8');
-    return {
-      path: relPath,
-      frontmatter: input.frontmatter ?? {},
-      body: input.body,
-      // Of `serialized`, the bytes actually written — same basis as `read`.
-      // Note this is NOT the hash callers should hold: `page-write.commit`
-      // re-reads after the write-back phase, which injects anchors this string
-      // predates. See its own comment.
-      hash: crypto.createHash('sha256').update(serialized, 'utf-8').digest('hex'),
-    };
+    return serialized;
   }
 
   async remove(relPath: string): Promise<void> {

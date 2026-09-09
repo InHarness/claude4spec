@@ -54,6 +54,8 @@ import { readConfig, builtinPagesRoot } from '../config.js';
 import { slugify } from '../../shared/slug.js';
 import { hasDotSegment } from '../../shared/page-files.js';
 import { toReleaseFileData, type ReleaseFileStore } from './release-store.js';
+import type { RecordStore } from '../fs/record-store.js';
+import type { MarkdownRecord } from '../fs/record-adapters.js';
 import type { GitService } from './git.js';
 import type { GitRefDiff } from '../../shared/git.js';
 import type { FileDiff, FileSnapshotData } from './file-serializer.js';
@@ -285,6 +287,16 @@ export class ReleaseService {
      * the git-anchored `getReleaseDiff` branch.
      */
     private releasableRootDirs: string[] = [],
+    /**
+     * 0.2.76 — the M42 record store of a root, when it has a mount. LAST in the
+     * list on purpose: every existing positional construction keeps working.
+     *
+     * A bundle can carry a root the destination project does not have configured
+     * yet (the clone case, where `config.json` is itself being restored from the
+     * bundle). There is no mount and so no store for it, and the import falls
+     * back to writing the bytes and authoring its own version row.
+     */
+    private recordsFor: (rootId: string) => RecordStore<MarkdownRecord> | null = () => null,
   ) {}
 
   /**
@@ -1546,14 +1558,14 @@ export class ReleaseService {
     if (!target || target.op === 'delete') {
       // Snapshot says page didn't exist — delete current file if present.
       if (await this.pagesService.exists(input.path)) {
-        // Same as the pages route: mark, remove, flush. A suppress here would
-        // linger and swallow an immediate re-create; `capture` synthesizes the
-        // tombstone from the last recorded version.
-        const deleteWriter = this.writerFor('pages');
-        deleteWriter?.markOrigin(input.path, 'user');
-        await this.pagesService.remove(input.path);
-        if (deleteWriter) await deleteWriter.flush(input.path, 'unlink');
-        else await this.pageVersions.recordVersion(input.path, 'delete', 'user');
+        // Same as the pages route: through the primitive, chain in-band, so
+        // `capture` synthesizes the tombstone from the last recorded version.
+        const records = this.pagesService.records;
+        if (records) await records.remove(input.path, { actor: 'user' });
+        else {
+          await this.pagesService.remove(input.path);
+          await this.pageVersions.recordVersion(input.path, 'delete', 'user');
+        }
         return { path: input.path, op: 'deleted' };
       }
       return { path: input.path, op: 'noop' };
@@ -1575,21 +1587,35 @@ export class ReleaseService {
       return { path: input.path, op: 'noop' };
     }
 
-    // Restore must land byte-for-byte, so it SUPPRESSES rather than marking origin:
-    // a marked write would run the M06 anchor write-back, which rewrites the file
-    // through `pages.write` — re-serializing frontmatter and injecting anchors the
-    // restored version never had. Because the reaction chain is suppressed, this is
-    // one of the few places that must author its own `file_version` row.
-    const restoreWriter = this.writerFor('pages');
-    restoreWriter?.suppress(input.path);
-    // Write raw content directly — bypass frontmatter splitting so byte-for-byte fidelity is preserved.
-    const fsP = await import('node:fs/promises');
-    const pathMod = await import('node:path');
-    const abs = pathMod.join(this.pagesService.root, input.path);
-    await fsP.mkdir(pathMod.dirname(abs), { recursive: true });
-    await fsP.writeFile(abs, data.content, 'utf-8');
     const op: 'created' | 'updated' = exists ? 'updated' : 'created';
-    await this.pageVersions.recordVersion(input.path, op === 'created' ? 'create' : 'update', 'user');
+    /**
+     * 0.2.76 — restore writes through the primitive like everything else, so
+     * `capture` sees it IN-BAND and the old "author your own `file_version` row"
+     * construction is gone.
+     *
+     * It uses the markdown adapter's `raw` record, and that is load-bearing: the
+     * snapshot has to land BYTE FOR BYTE. Going through the frontmatter split
+     * would re-serialize through gray-matter — normalising key order and quoting
+     * and appending a newline — and the restored file would then no longer
+     * compare equal to its own snapshot, so the `currentContent === data.content`
+     * shortcut above would never fire again and every repeat restore would mint
+     * a fresh version.
+     *
+     * Anchor injection is not a hazard here: the snapshot was captured AFTER the
+     * write-back phase, so it already carries its anchors, and the injector only
+     * mints for headings that have none.
+     */
+    const records = this.pagesService.records;
+    if (records) {
+      await records.write(input.path, { raw: data.content }, { actor: 'user' });
+    } else {
+      const fsP = await import('node:fs/promises');
+      const pathMod = await import('node:path');
+      const abs = pathMod.join(this.pagesService.root, input.path);
+      await fsP.mkdir(pathMod.dirname(abs), { recursive: true });
+      await fsP.writeFile(abs, data.content, 'utf-8');
+      await this.pageVersions.recordVersion(input.path, op === 'created' ? 'create' : 'update', 'user');
+    }
     return { path: input.path, op };
   }
 
@@ -1873,13 +1899,14 @@ export class ReleaseService {
           // configured yet — the clone case, where config.json is itself being
           // restored FROM the bundle. There is no mount and no writer for it, so
           // `capture` cannot author the row and this must.
-          const rootWriter = this.writerFor(root.id);
-          nodeFs.mkdirSync(nodePath.dirname(abs), { recursive: true });
-          if (rootWriter) {
-            rootWriter.markOrigin(rel, 'user');
-            nodeFs.writeFileSync(abs, content, 'utf8');
-            await rootWriter.flush(rel);
+          const rootRecords = this.recordsFor(root.id);
+          if (rootRecords) {
+            // `raw` for the same reason restore uses it: a bundle's bytes are
+            // the artefact, and re-serializing them would make the imported file
+            // differ from what was exported.
+            await rootRecords.write(rel, { raw: content }, { actor: 'user' });
           } else {
+            nodeFs.mkdirSync(nodePath.dirname(abs), { recursive: true });
             nodeFs.writeFileSync(abs, content, 'utf8');
             await this.pageVersions.recordVersion(rel, 'create', 'user', undefined, undefined, root.id);
           }

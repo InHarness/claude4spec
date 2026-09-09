@@ -9,13 +9,23 @@
  * links (`entity_version.release_id` / `file_version.release_id`) live
  * EXCLUSIVELY in SQLite and are never reconstructed from disk.
  *
- * Writes are atomic (temp→rename) and `suppress()` the dedicated releases
- * watcher so a programmatic write does not trigger its own reindex.
+ * 0.2.76 — the bytes go through the M42 record store with the JSON adapter, so
+ * atomicity, the path guard, per-path serialization and self-write suppression
+ * are the shared implementation rather than this file's own.
+ *
+ * As with entities the write stays SYNCHRONOUS and does not run the chain
+ * in-band, and for a sharper reason than "the callers are sync": `spec_release`
+ * is not derived from this file on the write path at all. `createRelease()`
+ * INSERTs the row first and writes the identity file afterwards, so the cache is
+ * already current before it returns. The `m29-release-cache` projection exists
+ * for the INBOUND direction — a file edited outside the app, or arriving with a
+ * git pull.
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import type { SelfWriteSuppressor } from '../fs/sources.js';
+import type { RecordStore } from '../fs/record-store.js';
 
 export interface ReleaseFileData {
   name: string;
@@ -51,6 +61,8 @@ export function toReleaseFileData(
 
 export class ReleaseFileStore {
   readonly root: string;
+  /** The M42 record store for `releases`; `null` in rigs with no watcher. */
+  records: RecordStore<ReleaseFileData> | null = null;
 
   constructor(
     cwd: string,
@@ -97,6 +109,10 @@ export class ReleaseFileStore {
   /** Write `<slug>.json` (atomic + suppress). */
   write(slug: string, data: ReleaseFileData): void {
     const relPath = this.relPathFor(slug);
+    if (this.records) {
+      this.records.writeSync(relPath, data);
+      return;
+    }
     const abs = this.absFor(relPath);
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     const body = JSON.stringify(data, null, 2) + '\n';
@@ -109,6 +125,10 @@ export class ReleaseFileStore {
   /** Remove `<slug>.json` (atomic suppress; ignore if already gone). */
   remove(slug: string): void {
     const relPath = this.relPathFor(slug);
+    if (this.records) {
+      this.records.removeSync(relPath);
+      return;
+    }
     this.watcher.suppress(relPath);
     try {
       fs.unlinkSync(this.absFor(relPath));

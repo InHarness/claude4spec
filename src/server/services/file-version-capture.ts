@@ -11,10 +11,22 @@ import { requireRootId } from '../fs/sources.js';
  * no gate: it covers every observed file, and the `releasable` filter only
  * applies later, at `assignToRelease()`.
  *
- * It is the SOLE author of `file_version`. Services and routes no longer record
- * their own rows — they `markOrigin(...)` and then `flush(...)`, which drives
- * this subscriber before they respond. That is what keeps "one mutation, one
- * entry" true without any content-hash de-duplication.
+ * It is the SOLE author of `file_version` for pages. Services and routes do not
+ * record their own rows — they write through the M42 primitive, which runs the
+ * chain IN-BAND and so drives this subscriber before they respond. That is what
+ * keeps "one mutation, one entry" true without any content-hash de-duplication.
+ *
+ * 0.2.76 — a page's own writes no longer pass through the watcher's 300 ms
+ * coalescing window, because they no longer pass through the watcher at all. A
+ * burst of auto-saves now produces ONE row PER WRITE rather than one per debounce
+ * window. That density is deliberate: it brings pages level with the entities'
+ * existing "one mutation, one entry" guarantee, and it is the condition for
+ * restoring to an intermediate state working the same way for both. The declared
+ * cost is a longer timeline; grouping it for presentation is out of scope.
+ *
+ * The exception, and it is narrow: M36's artifact services still author their own
+ * rows, because they carry a `change_summary` this subscriber has no way to
+ * receive. They write with the chain switched off so the row is not written twice.
  *
  * It never calls `suppress()`: it does not write into an observed directory.
  */
@@ -28,9 +40,9 @@ export class FileVersionCapture implements WatchSubscriber {
   ) {}
 
   /**
-   * `origin: 'external'` → `filesystem`. A server write reports the actor that
-   * `markOrigin` recorded (an agent writing with its built-in Write tool is
-   * external to the server, so it correctly lands as `filesystem`).
+   * `origin: 'external'` → `filesystem`. A server write reports the actor the
+   * primitive passed into `runChain` (an agent writing with its built-in Write
+   * tool is external to the server, so it correctly lands as `filesystem`).
    */
   private changedBy(scope: WatchScope, source: string, relPath: string, origin: WatchOrigin): FileChangedBy {
     if (origin !== 'server') return 'filesystem';

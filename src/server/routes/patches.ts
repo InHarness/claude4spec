@@ -57,7 +57,7 @@ export interface PatchCreateRequest {
 export function patchesRouter(deps: PatchesRouterDeps): Router {
   const router = Router();
 
-  router.post('/', (req, res, next) => {
+  router.post('/', async (req, res, next) => {
     try {
       const body = (req.body ?? {}) as Partial<PatchCreateRequest>;
 
@@ -71,7 +71,7 @@ export function patchesRouter(deps: PatchesRouterDeps): Router {
        * The channel is the identity of last resort: a caller that does not say
        * who it is still leaves a truthful record of HOW it arrived.
        */
-      const result = filePatch(deps, body, 'rest');
+      const result = await filePatch(deps, body, 'rest');
 
       /** 201 with the path relative to `patchesDir` — never the patch's own text. */
       res.status(201).json({ data: { path: result.path } });

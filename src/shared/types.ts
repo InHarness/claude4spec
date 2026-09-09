@@ -35,6 +35,14 @@ export interface PageContent {
 export interface PageWriteAck {
   hash: string;
   version: number;
+  /**
+   * 0.2.76 — the file as it SETTLED, after the in-band `write-back` phase.
+   *
+   * Still not `PageContent`, and still not an echo: the chain injects anchors
+   * for headings the caller introduced, so these are bytes the caller could not
+   * have predicted. See `UpdatePageResult.content`.
+   */
+  content: string;
   changedAnchors: string[];
 }
 
@@ -53,6 +61,16 @@ export interface PageSearchHit {
 export type WsEvent =
   | { kind: 'file:changed'; event: 'add' | 'change' | 'unlink'; path: string; rootId: string; origin: 'server' | 'external' }
   | { kind: 'entity:changed'; entityType: string; slug: string }
+  /**
+   * M40 0.2.76 — a `projection`-phase reaction failed twice on one path, so the
+   * projection it owns is out of step with the file.
+   *
+   * The signal only STATES the fact. M40 does not know what the projection's
+   * owner will do with it, and neither marking a projection stale nor enforcing
+   * staleness (refusing to serve coordinates from a marked one) is closed in
+   * this release; nor is the UI warning.
+   */
+  | { kind: 'projection:stale'; source: string; path: string; subscription: string }
   // M29: emitted by EntityIndexerService after a file-watch reindex (external
   // edit / git pull / self-write that slipped past suppress). `op: 'delete'`
   // when the entity file was unlinked. Boot indexAll() does NOT emit (runs
