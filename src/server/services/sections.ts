@@ -200,6 +200,9 @@ export class SectionsService {
         const current = await root.pages.read(rel);
         const newBody = rewriteSectionRefAnchor(current.body, oldAnchor, newAnchor);
         if (newBody !== current.body) {
+          // See `ReferencesService.propagateSlugChange`: this is the no-store
+          // fallback; with a record store the primitive issues its own token and
+          // runs a full chain on this file's own path.
           root.watcher.suppress(rel);
           await root.pages.write(rel, { frontmatter: current.frontmatter, body: newBody });
           changed.push(key);

@@ -183,6 +183,18 @@ export class ReferencesService {
         const current = await pages.read(relPath);
         const newBody = rewriteTagsInBody(current.body, mutate);
         if (newBody !== current.body) {
+          /**
+           * 0.2.76 — a cascading write-back: it writes a DIFFERENT file from the
+           * one whose rename started this, so it takes the normal route through
+           * the primitive and gets its own conflict check, its own commit and its
+           * own full chain on its own path. This token is the fallback for a root
+           * with no record store (the hand-rolled rigs); where there is one, the
+           * primitive issues its own immediately before the write and this is
+           * simply replaced.
+           *
+           * The old asymmetry — one propagation site suppressing outright and
+           * another labelling with `markOrigin` — is gone with `markOrigin`.
+           */
           this.watcherFor(rootId)?.suppress(relPath);
           await pages.write(relPath, { frontmatter: current.frontmatter, body: newBody });
           changed.push(relPath);

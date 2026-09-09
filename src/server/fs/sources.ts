@@ -76,11 +76,16 @@ export function boundSuppress(
 /**
  * The handle an ordinary server write needs, bound to one source.
  *
- * `markOrigin` labels the write — it does NOT suppress, so every phase still
- * runs and the event carries `origin: 'server'`. `flush` then drives that
- * reaction chain to completion, which is what makes the write read-after-write
- * consistent: `capture` (M17) is the sole author of `file_version`, so the
- * version must exist before the caller responds.
+ * 0.2.76 — this handle is now the FALLBACK path, for a caller with no M42 record
+ * store: the hand-rolled rigs, and a bundle carrying a root this project has not
+ * configured. Every mounted source writes through the primitive instead, which
+ * suppresses its own event and runs the chain in-band.
+ *
+ * On that fallback path `markOrigin` labels the write — it does NOT suppress, so
+ * every phase still runs and the event carries `origin: 'server'`. `flush` then
+ * drives that reaction chain to completion, which is what makes the write
+ * read-after-write consistent: `capture` (M17) is the sole author of
+ * `file_version`, so the version must exist before the caller responds.
  */
 export interface SelfWriteMarker {
   markOrigin(relPath: string, actor: WriteActor): void;

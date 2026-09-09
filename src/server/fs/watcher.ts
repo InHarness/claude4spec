@@ -515,12 +515,22 @@ export class FileWatchRuntime {
   }
 
   /**
-   * Label a server write. Does NOT suppress: the event travels on with
-   * `origin: 'server'` and every phase runs normally. Called before EVERY server
-   * write, so the UI can tell its own write from an external edit.
+   * Label a change the app CAUSED but did not itself write.
    *
-   * This is a LABEL only — if it expires unused the write is merely reported as
-   * `external`, never dropped.
+   * 0.2.76 narrowed this. It used to cover UI auto-save, rename propagation and
+   * restore — anything the server wrote byte for byte. Now that every write of
+   * specification content goes through the M42 primitive, a server write
+   * suppresses its own event and runs the chain in-band with `origin: 'server'`
+   * directly, so **`markOrigin` no longer means "the app wrote this"**.
+   *
+   * What is left is the other class: a branch checked out from the UI, an
+   * archive unpacked, an external tool run. The chain MUST run from the
+   * `watcher` trigger — that is the only way to see the change at all — but the
+   * UI must not show a "changed externally" dialog for something the user just
+   * asked for. Suppression would take both; labelling gives only the provenance.
+   *
+   * Called by whoever CAUSES the change, before causing it. A label that expires
+   * unused merely reports the change as `external`; it never drops it.
    */
   markOrigin(scope: WatchScope, source: string, relPath: string, actor: WatchActor): void {
     this.originHint.set(writeKey(scope, source, relPath), { actor, until: Date.now() + SELF_WRITE_WINDOW_MS });
