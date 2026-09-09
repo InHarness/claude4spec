@@ -158,6 +158,33 @@ export function useCreatePage() {
   });
 }
 
+/**
+ * 0.2.78 — move a page, and re-point this client's caches at the new address.
+ *
+ * The cache surgery is the whole reason this is a hook rather than a bare call.
+ * A page lives under `['page', rootId, path]`, so after a move the OLD key holds
+ * a document that is no longer there and the new key holds nothing. Dropping the
+ * old entry and invalidating the tree is what keeps a stale row from being
+ * rendered as if the file were still at the address it just left.
+ *
+ * `['page-links']` is invalidated too: the move rewrote `@old/path.md`
+ * citations across the root as a write-back, so every link projection this
+ * client is showing is a pass behind.
+ */
+export function useMovePage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { rootId: string; from: string; to: string; expectedHash: string }) =>
+      api.move(args.rootId, args.from, args.to, args.expectedHash),
+    onSuccess: (ack, vars) => {
+      qc.removeQueries({ queryKey: ['page', vars.rootId, vars.from] });
+      qc.invalidateQueries({ queryKey: ['page', vars.rootId, ack.path] });
+      qc.invalidateQueries({ queryKey: ['pages', vars.rootId] });
+      qc.invalidateQueries({ queryKey: ['page-links'] });
+    },
+  });
+}
+
 export function useDeletePage() {
   const qc = useQueryClient();
   return useMutation({

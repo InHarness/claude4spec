@@ -14,6 +14,7 @@ import {
   GitCommit,
   Link2,
   MoreHorizontal,
+  Pencil,
   Plus,
   Search,
   Settings as SettingsIcon,
@@ -25,6 +26,8 @@ import {
 import type { PageNode, PageSearchHit, Root } from '../../shared/types.js';
 import { markdownExtension, countFiles } from '../../shared/page-files.js';
 import { usePages, usePagesSearch } from '../hooks/usePages.js';
+import { useMovePage } from '../hooks/usePage.js';
+import { api } from '../lib/api.js';
 import { useRoots } from '../hooks/useConfig.js';
 import { usePersistedState, projectKey } from '../state/persisted.js';
 import { UserSection } from './UserSection.js';
@@ -560,38 +563,220 @@ function PagesTree({
         // 0.1.96: todos-indexer keys counts by `${rootId}:${path}`.
         const todoCount = todoCountByPath?.[`${rootId}:${n.path}`] ?? 0;
         return (
-          <Link
+          <PageRow
             key={n.path}
-            to="/space/$rootId/$"
-            params={{ rootId, _splat: n.path }}
-            className="w-full flex items-center gap-1.5 px-2 py-[3px] rounded text-[13px] transition text-left"
-            style={{
-              paddingLeft: 6 + depth * 12 + 14,
-              color: active ? 'var(--c-ink)' : 'var(--c-muted)',
-              background: active ? 'var(--c-accent-soft)' : 'transparent',
-              fontWeight: active ? 600 : 400,
-            }}
-          >
-            {n.fileType === 'html' ? (
-              <FileCode2 size={12} style={{ color: 'var(--c-accent)' }} />
-            ) : markdownExtension(n.name) === 'mdx' ? (
-              <FileCode size={12} style={{ color: 'var(--c-accent)' }} />
-            ) : (
-              <FileText size={12} />
-            )}
-            <span className="truncate flex-1">{n.name}</span>
-            {todoCount > 0 && (
-              <span
-                className="font-mono shrink-0"
-                style={{ fontSize: 10, color: '#a87033' }}
-                title={`${todoCount} TODO${todoCount === 1 ? '' : 's'}`}
-              >
-                {todoCount}
-              </span>
-            )}
-          </Link>
+            rootId={rootId}
+            node={n}
+            depth={depth}
+            active={active}
+            todoCount={todoCount}
+          />
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * 0.2.78 — one file row, and the only place a page can be renamed from.
+ *
+ * ## Why "Rename" is one menu item and not two
+ *
+ * The field takes a PATH relative to the root, not a bare filename, so typing
+ * `guides/auth.md` over `auth.md` files the page into `guides/` and typing
+ * `login.md` over `auth.md` renames it in place. Those are the same server
+ * operation (`move_page` differs only in how `to` is filled), so offering them
+ * as separate menu entries would be the UI inventing a distinction the model
+ * does not have — and then having to explain it.
+ *
+ * Crossing roots is not offered, and it is the field's shape that withholds it
+ * rather than a check: the value is read relative to THIS root, so another
+ * accordion tree has no spelling here. A page's identity is `(rootId, path)`, so
+ * a cross-root move would be a write in one store plus a delete in another —
+ * which is not a move. A path that tries to climb out with `../` is refused by
+ * the server as `INVALID_ARGUMENT` and surfaced inline below the field.
+ */
+function PageRow({
+  rootId,
+  node,
+  depth,
+  active,
+  todoCount,
+}: {
+  rootId: string;
+  node: PageNode;
+  depth: number;
+  active: boolean;
+  todoCount: number;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [draft, setDraft] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  /**
+   * A ref, not state: it has to be readable by the very next synchronous call,
+   * and a `setState` would not have landed yet when the disable-induced blur
+   * re-enters `commit`.
+   */
+  const submitting = useRef(false);
+  const move = useMovePage();
+  const navigate = useNavigate();
+
+  const startRename = () => {
+    setMenuOpen(false);
+    setError(null);
+    setDraft(node.path);
+  };
+
+  const commit = async () => {
+    /**
+     * Re-entry guard, and the second half of it is the one that matters.
+     *
+     * The field is `disabled` while the mutation is in flight, and a browser
+     * BLURS an element the moment it becomes disabled — so `onBlur` fires from
+     * inside the first commit and starts a second one for the same row: another
+     * read, another move. The loser answers NOT_FOUND or PAGE_EXISTS and paints
+     * a failure over a rename that worked.
+     */
+    if (move.isPending || submitting.current) return;
+    const to = (draft ?? '').trim();
+    if (!to || to === node.path) return setDraft(null);
+    submitting.current = true;
+    /**
+     * The guard value: this client's own record of the page if it has one, and
+     * a read only when it does not.
+     *
+     * `useWritePage` refuses to read-for-the-hash, and rightly — writing back
+     * bytes you re-read a moment ago guards nothing. A move is the opposite
+     * case and the read is honest work: the operation never opens the file, so
+     * `expectedHash` is the ONLY thing standing between a mistyped path and
+     * relocating a page nobody looked at. Reading it here is how the tree, which
+     * genuinely has not read the page, produces one.
+     */
+    try {
+      const hash = (await api.read(rootId, node.path)).hash;
+      const ack = await move.mutateAsync({ rootId, from: node.path, to, expectedHash: hash });
+      setDraft(null);
+      /**
+       * If the page being renamed is the one on screen, FOLLOW IT.
+       *
+       * Without this the tree updates and the route does not: the reader is
+       * left looking at a document under an address that now 404s, so the
+       * rename appears to have worked until they reload — at which point the
+       * page they are editing is "missing". Only the active row navigates;
+       * renaming some other file must not yank the reader out of what they are
+       * reading.
+       */
+      if (active) {
+        void navigate({ to: '/space/$rootId/$', params: { rootId, _splat: ack.path } });
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'rename failed');
+    } finally {
+      submitting.current = false;
+    }
+  };
+
+  if (draft !== null) {
+    return (
+      <div style={{ paddingLeft: 6 + depth * 12 + 14 }} className="px-2 py-[3px]">
+        <input
+          autoFocus
+          value={draft}
+          disabled={move.isPending}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            setError(null);
+          }}
+          onBlur={() => void commit()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void commit();
+            if (e.key === 'Escape') {
+              setDraft(null);
+              setError(null);
+            }
+          }}
+          className="w-full bg-transparent text-[13px] outline-none"
+          style={{ color: 'var(--c-ink)', borderBottom: '1px solid var(--c-accent)' }}
+          aria-label="New page path, relative to this root"
+        />
+        {error && (
+          <div className="text-[11px] pt-0.5" style={{ color: 'var(--c-danger, #b3261e)' }}>
+            {error}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="group relative flex items-center">
+      <Link
+        to="/space/$rootId/$"
+        params={{ rootId, _splat: node.path }}
+        className="w-full flex items-center gap-1.5 px-2 py-[3px] rounded text-[13px] transition text-left"
+        style={{
+          paddingLeft: 6 + depth * 12 + 14,
+          color: active ? 'var(--c-ink)' : 'var(--c-muted)',
+          background: active ? 'var(--c-accent-soft)' : 'transparent',
+          fontWeight: active ? 600 : 400,
+        }}
+      >
+        {node.fileType === 'html' ? (
+          <FileCode2 size={12} style={{ color: 'var(--c-accent)' }} />
+        ) : markdownExtension(node.name) === 'mdx' ? (
+          <FileCode size={12} style={{ color: 'var(--c-accent)' }} />
+        ) : (
+          <FileText size={12} />
+        )}
+        <span className="truncate flex-1">{node.name}</span>
+        {todoCount > 0 && (
+          <span
+            className="font-mono shrink-0"
+            style={{ fontSize: 10, color: '#a87033' }}
+            title={`${todoCount} TODO${todoCount === 1 ? '' : 's'}`}
+          >
+            {todoCount}
+          </span>
+        )}
+      </Link>
+      <button
+        ref={triggerRef}
+        onClick={(e) => {
+          e.preventDefault();
+          setMenuOpen((v) => !v);
+        }}
+        className="absolute right-1 opacity-0 group-hover:opacity-100 focus:opacity-100 rounded p-0.5"
+        style={{ color: 'var(--c-muted)', opacity: menuOpen ? 1 : undefined }}
+        title={`Actions for ${node.name}`}
+        aria-label={`Actions for ${node.name}`}
+      >
+        <MoreHorizontal size={12} />
+      </button>
+      {/*
+       * The published `Popover`, not a twin of it — same rule as the OTHERS
+       * flyout below: the primitive owns the z-tier, the viewport clamp and the
+       * mousedown/Escape dismissal, and naming any of that here is the anatomy
+       * the one-implementation scan looks for.
+       */}
+      <Popover
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        anchorRef={triggerRef}
+        placement="right"
+        width={180}
+      >
+        <button
+          onClick={startRename}
+          className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-[13px] text-left transition"
+          style={{ color: 'var(--c-ink)' }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--c-panel)')}
+          onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+        >
+          <Pencil size={13} />
+          <span>Rename…</span>
+        </button>
+      </Popover>
     </div>
   );
 }

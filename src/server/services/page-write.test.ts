@@ -271,6 +271,15 @@ describe('the page write primitive', () => {
     expect(err.code).toBe('PAGE_CONFLICT');
     // The remedy travels with the refusal: re-read, re-apply, pass this back.
     expect(err.currentHash).toHaveLength(64);
+    /**
+     * 0.2.78 — and the CONTENT travels with it too.
+     *
+     * The hash alone says the caller's copy is stale; it cannot say how, so the
+     * only move left was a second round trip for bytes the server was holding
+     * while it refused. The envelope has forwarded `currentContent` since briefs
+     * needed it — this is the page path finally filling it in.
+     */
+    expect(err.currentContent).toBe('someone else');
     expect(await fs.readFile(path.join(pages.root, 'c.md'), 'utf-8')).toBe('someone else');
   });
 
@@ -689,15 +698,21 @@ describe('update_sections over a real section index', () => {
     expect(body).toContain('BETA BODY');
   });
 
-  it('refuses PAGE_CONFLICT when the anchor is gone from the file entirely', async () => {
+  it('refuses INDEX_STALE when the anchor is gone from the file entirely', async () => {
     // The other direction of staleness: the row survives, its anchor does not.
     // Nothing in the file identifies the section any more, so there is no
     // defensible place to splice.
+    //
+    // 0.2.78 — INDEX_STALE, not PAGE_CONFLICT. Both are 409 and the retry advice
+    // is "refresh and retry" either way, but they disagree about WHAT is stale:
+    // here the caller's hash is fine and the INDEX is behind, so re-reading the
+    // page — the whole of the PAGE_CONFLICT recovery — changes nothing and the
+    // caller loops. The code is the only thing that separates them.
     await index('doc.md', page);
     const alpha = anchorOf('Alpha');
     await pages.write('doc.md', { body: '# Top\n\nrewritten by hand, anchors dropped\n' });
     const err = await replaceOne(alpha, 'x').catch((e) => e);
-    expect(err.code).toBe('PAGE_CONFLICT');
+    expect(err.code).toBe('INDEX_STALE');
     expect((await pages.read('doc.md')).body).toContain('rewritten by hand');
   });
 
@@ -1228,11 +1243,16 @@ describe('update_sections — the batch contract', () => {
     });
   });
 
-  it('a stale anchor 409s WITH the current hash, so the documented retry has one', async () => {
+  it('a stale anchor 409s INDEX_STALE WITH the current hash, so the documented retry has one', async () => {
     /**
-     * `PAGE_CONFLICT` carrying `''` is worse than no hash at all: a client
-     * following the documented recovery retries with it and gets
-     * `INVALID_ARGUMENT`, turning a recoverable conflict into a dead end.
+     * A 409 carrying `''` is worse than no hash at all: a client following the
+     * documented recovery retries with it and gets `INVALID_ARGUMENT`, turning a
+     * recoverable conflict into a dead end.
+     *
+     * 0.2.78 — the code is `INDEX_STALE` (the index is behind the file, the
+     * caller's hash is current), but the hash still rides along for exactly the
+     * reason above: a client that does not branch on the code must still find a
+     * usable value where the envelope promises one.
      */
     await index('doc.md', page);
     const alpha = anchorOf('Alpha');
@@ -1248,7 +1268,7 @@ describe('update_sections — the batch contract', () => {
       },
       'agent',
     ).catch((e) => e);
-    expect(err.code).toBe('PAGE_CONFLICT');
+    expect(err.code).toBe('INDEX_STALE');
     expect(err.currentHash).toBe(await hashOfPage('doc.md'));
   });
 });
@@ -2389,10 +2409,10 @@ describe('differential writes — textEdits', () => {
 /**
  * 0.2.77 — a page move performed BY THE APPLICATION.
  *
- * Infrastructure with no trigger wired: nothing calls `movePage` yet — no UI
- * action, no agent tool, no route — because who invokes a move and under what
- * name belongs to the store's owner, exactly as it does for a write. What is
- * settled here is the SEQUENCE.
+ * 0.2.78 wired the triggers — the sidebar's Rename, the `move_page` tool and
+ * `POST /api/pages/:rootId/move` — but what is settled HERE is still the
+ * SEQUENCE, and the argument checks, because all three arrive through this one
+ * function and a rule proven per-channel is a rule three renderings can drift on.
  */
 describe('movePage — the application\'s own move', () => {
   let cwd: string;
@@ -2412,12 +2432,12 @@ describe('movePage — the application\'s own move', () => {
   });
 
   it('[ac:ac-przeniesienie-strony-wykonane-przez-a] moves the page and rewrites @a.md to @b.md across the root, with both paths given outright', async () => {
-    await createPage(target, { path: 'a.md', content: '# A' }, 'user');
+    const a = await createPage(target, { path: 'a.md', content: '# A' }, 'user');
     await createPage(target, { path: 'one.md', content: '# One\n\ncites @a.md\n' }, 'user');
     await createPage(target, { path: 'two.md', content: '# Two\n\nalso [x](a.md)\n' }, 'user');
     await links.indexAll();
 
-    const res = await movePage(target, 'pages', { from: 'a.md', to: 'b.md' }, 'user', (rootId, from, to, actor) =>
+    const res = await movePage(target, 'pages', { from: 'a.md', to: 'b.md', expectedHash: a.hash }, 'user', (rootId, from, to, actor) =>
       links.renameSync(rootId, from, to, actor),
     );
 
@@ -2437,12 +2457,12 @@ describe('movePage — the application\'s own move', () => {
   });
 
   it('refuses an occupied destination as PAGE_EXISTS, leaving both files untouched', async () => {
-    await createPage(target, { path: 'a.md', content: '# A' }, 'user');
+    const a = await createPage(target, { path: 'a.md', content: '# A' }, 'user');
     await createPage(target, { path: 'b.md', content: '# B' }, 'user');
 
-    await expect(movePage(target, 'pages', { from: 'a.md', to: 'b.md' }, 'user')).rejects.toMatchObject({
-      code: 'PAGE_EXISTS',
-    });
+    await expect(
+      movePage(target, 'pages', { from: 'a.md', to: 'b.md', expectedHash: a.hash }, 'user'),
+    ).rejects.toMatchObject({ code: 'PAGE_EXISTS' });
     expect(await fs.readFile(path.join(pages.root, 'a.md'), 'utf-8')).toContain('# A');
     expect(await fs.readFile(path.join(pages.root, 'b.md'), 'utf-8')).toContain('# B');
   });
@@ -2453,5 +2473,94 @@ describe('movePage — the application\'s own move', () => {
       movePage(target, 'pages', { from: 'a.md', to: 'b.md', expectedHash: 'f'.repeat(64) }, 'user'),
     ).rejects.toMatchObject({ code: 'PAGE_CONFLICT' });
     expect(await pages.exists('a.md')).toBe(true);
+  });
+
+  it('[ac:ac-powtorzone-wywolanie-move-page-z-tymi] answers NOT_FOUND on a replay — the delete class, not the replace class', async () => {
+    /**
+     * 0.2.78. The distinction this asserts is between two refusals that a
+     * careless mapping puts in one bucket, because both arrive as an addressing
+     * failure from the primitive.
+     *
+     * A replayed move is a REQUEST THAT WAS FINE and a world that has moved on:
+     * the first call succeeded and took the source with it. Reporting that as
+     * `INVALID_ARGUMENT` tells a client retrying after a timeout that its
+     * arguments are wrong — sending it to fix a path that was never broken,
+     * instead of to conclude that its work already landed. `NOT_FOUND` is the
+     * only answer that lets it tell the two apart.
+     */
+    const a = await createPage(target, { path: 'a.md', content: '# A' }, 'user');
+    await movePage(target, 'pages', { from: 'a.md', to: 'b.md', expectedHash: a.hash }, 'user');
+    await expect(
+      movePage(target, 'pages', { from: 'a.md', to: 'b.md', expectedHash: a.hash }, 'user'),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    // The first call's result stands: a failed replay undoes nothing.
+    expect(await pages.exists('b.md')).toBe(true);
+  });
+
+  it('refuses a destination outside the root as INVALID_ARGUMENT — this one IS about the request', async () => {
+    // The mirror of the case above, and the reason the two cannot share a code:
+    // no state of the world makes `../escaped.md` a valid destination, so the
+    // repair is in the request and a retry is pointless.
+    const a = await createPage(target, { path: 'a.md', content: '# A' }, 'user');
+    await expect(
+      movePage(target, 'pages', { from: 'a.md', to: '../escaped.md', expectedHash: a.hash }, 'user'),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    expect(await pages.exists('a.md')).toBe(true);
+  });
+
+  it.each([
+    ['from', { from: '', to: 'b.md', expectedHash: 'x' }],
+    ['to', { from: 'a.md', to: '', expectedHash: 'x' }],
+    ['expectedHash', { from: 'a.md', to: 'b.md', expectedHash: '' }],
+  ])('refuses a missing %s as INVALID_ARGUMENT, in the operation rather than per channel', async (_field, input) => {
+    /**
+     * Each of these used to be reported as something else, and each wrong answer
+     * sent the caller somewhere useless. An empty `from` reached `readRaw('')`,
+     * found nothing and came back `NOT_FOUND` — "your work already landed" to
+     * someone who omitted a field. An empty `expectedHash` reached the
+     * primitive's comparison and came back `PAGE_CONFLICT` — "your copy is
+     * stale" to someone who never claimed to hold one.
+     */
+    await createPage(target, { path: 'a.md', content: '# A' }, 'user');
+    await expect(movePage(target, 'pages', input, 'user')).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+    });
+    expect(await pages.exists('a.md')).toBe(true);
+    expect(await pages.exists('b.md')).toBe(false);
+  });
+
+  it('reports a failed citation propagation WITHOUT failing the move that already committed', async () => {
+    /**
+     * The propagation runs after the commit point. It can throw for reasons that
+     * have nothing to do with this move — a page-links projection marked stale
+     * refuses before its first write — and letting that reach the caller would
+     * report a move that HAPPENED as a move that failed: the file is at its new
+     * path, the client is handed an error, and every consequence of success is
+     * skipped. The route the reader is on stays at the old address, which now
+     * 404s, and the tree never learns the page exists elsewhere.
+     */
+    const a = await createPage(target, { path: 'a.md', content: '# A' }, 'user');
+    const res = await movePage(target, 'pages', { from: 'a.md', to: 'b.md', expectedHash: a.hash }, 'user', async () => {
+      throw new DomainError('INDEX_STALE', 'the page-links projection is stale');
+    });
+
+    expect(res.path).toBe('b.md');
+    expect(await pages.exists('b.md')).toBe(true);
+    // The failure is told, not swallowed — it is news about the citations.
+    expect(res.citationSync.rewritten).toEqual([]);
+    expect(res.citationSync.error).toContain('stale');
+  });
+
+  it('leaves the hash untouched — the content is never re-serialized', async () => {
+    /**
+     * The claim that makes a move different from every other write in this file:
+     * the format adapter does not run. The bytes are relocated by rename, so a
+     * hash that CHANGED would mean something had round-tripped the content
+     * through gray-matter on the way — silently reflowing frontmatter the caller
+     * never asked to touch.
+     */
+    const created = await createPage(target, { path: 'a.md', content: '# A\n\nbody\n' }, 'user');
+    const res = await movePage(target, 'pages', { from: 'a.md', to: 'moved.md', expectedHash: created.hash }, 'user');
+    expect(res.hash).toBe(created.hash);
   });
 });

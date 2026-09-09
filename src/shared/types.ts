@@ -47,6 +47,32 @@ export interface PageWriteAck {
   changedAnchors: string[];
 }
 
+/**
+ * What `POST /api/pages/:rootId/move` answers with.
+ *
+ * `hash` is deliberately the SAME value the page had before the move: the
+ * content is relocated by an atomic rename and never re-serialized, so nothing
+ * about it changed. It is reported anyway because the caller needs it to arm its
+ * next write at the new path, and re-reading a file it just moved to get a value
+ * it already held would be a round trip for nothing.
+ *
+ * No `content`: a move is the one write that never reads what it writes.
+ */
+export interface PageMoveAck {
+  rootId: string;
+  /** The NEW path. */
+  path: string;
+  hash: string;
+  version: number;
+  /**
+   * The citation rewrite that followed the move — reported, never thrown. The
+   * move had already committed when it ran, so a failure here leaves the page
+   * moved and some `@old/path.md` unrewritten; `error` says so instead of
+   * turning a completed move into an error the caller would undo nothing for.
+   */
+  citationSync: { rewritten: string[]; error?: string };
+}
+
 export interface PageWriteInput {
   frontmatter?: Record<string, unknown>;
   body: string;

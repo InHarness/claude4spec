@@ -328,7 +328,7 @@ describe("GET /api/sections/get, and the /list route 0.2.59 removed", () => {
 });
 
 /**
- * 0.2.13 (tier C-3) — the `rest` rendering of M06's write, `PUT /api/sections`.
+ * 0.2.13 (tier C-3) — the `rest` rendering of M06's write, `PATCH /api/sections`.
  *
  * The one page-write operation that had no REST route at all before that tier,
  * because it had no implementation at all. 0.2.15 moved it from `PUT /:anchor`
@@ -340,7 +340,7 @@ describe("GET /api/sections/get, and the /list route 0.2.59 removed", () => {
  * handler gets wrong is the mapping and the ordering, not the file I/O, which
  * `page-write.test.ts` covers against a real filesystem.
  */
-describe('PUT /api/sections — the rest rendering of update_sections', () => {
+describe('PATCH /api/sections — the rest rendering of update_sections', () => {
   /**
    * @param referents Who cites a given anchor, for the anchor-loss guard. A
    *   stub rather than the real discovery core: what these cases are about is
@@ -389,7 +389,7 @@ describe('PUT /api/sections — the rest rendering of update_sections', () => {
   }
 
   it('does not shadow the static GET routes declared above it', async () => {
-    // `PUT /` is method-scoped so it cannot, but the ordering claim is worth an
+    // `PATCH /` is method-scoped so it cannot, but the ordering claim is worth an
     // assertion rather than an argument. Since 0.2.59 `/get` is the only static
     // segment left here — `/list` went with `list_sections`.
     const { app, dir } = appWithWrites();
@@ -404,7 +404,7 @@ describe('PUT /api/sections — the rest rendering of update_sections', () => {
     const { app, dir } = appWithWrites();
     try {
       const res = await request(app)
-        .put('/api/sections')
+        .patch('/api/sections')
         .send({ expectedHash: 'a'.repeat(64), edits: [{ anchor: 'nope', action: 'replace', content: 'x' }] })
         .expect(400);
       expect(res.body.error.code).toBe('SECTION_NOT_FOUND');
@@ -416,9 +416,11 @@ describe('PUT /api/sections — the rest rendering of update_sections', () => {
 
   it('[ac:ac-patch-api-sections-odpowiada-statusem] answers 409 for INDEX_STALE as it does for PAGE_CONFLICT, and the codes tell them apart', async () => {
     /**
-     * NOTE ON THE CRITERION'S WORDING: it names `PATCH /api/sections`; the route
-     * has always been `PUT /api/sections` (0.2.15 moved it from `PUT /:anchor`).
-     * Asserted against the verb that exists — filed as a patch against the brief.
+     * 0.2.78 — the route is `PATCH /api/sections` now, so this criterion and the
+     * code finally name the same thing. It read `PUT` from 0.2.15 (which moved it
+     * off `PUT /:anchor`) until the verb was corrected: the batch describes
+     * CHANGES to a few sections, which is what `PATCH` means, where `PUT` claimed
+     * the payload was the whole resource.
      *
      * Two 409s side by side are not an ambiguity trap. The retry instruction is
      * identical ("refresh and retry"); the CODE says only WHAT to refresh — the
@@ -436,7 +438,7 @@ describe('PUT /api/sections — the rest rendering of update_sections', () => {
 
       // 1 — a stale CALLER hash.
       const conflict = await request(app)
-        .put('/api/sections')
+        .patch('/api/sections')
         .send({
           expectedHash: 'a'.repeat(64),
           edits: [{ anchor: 'aaaa1111', action: 'replace', content: 'x' }],
@@ -447,7 +449,7 @@ describe('PUT /api/sections — the rest rendering of update_sections', () => {
       // 2 — a perfectly current caller hash, and a stale INDEX.
       status.markStale(PROJECTION_IDS.sections, 'mainspec:a.md');
       const stale = await request(app)
-        .put('/api/sections')
+        .patch('/api/sections')
         .send({ expectedHash: hash, edits: [{ anchor: 'aaaa1111', action: 'replace', content: 'x' }] })
         .expect(409);
       expect(stale.body.error.code).toBe('INDEX_STALE');
@@ -476,7 +478,7 @@ describe('PUT /api/sections — the rest rendering of update_sections', () => {
         body: '<!-- anchor: aaaa1111 -->\n# H\nold body\n\n<!-- anchor: bbbb2222 -->\n# Next\nkeep me',
       });
       const res = await request(app)
-        .put('/api/sections')
+        .patch('/api/sections')
         .send({
           expectedHash: (await pages.read('a.md')).hash,
           edits: [{ anchor: 'aaaa1111', action: 'replace', content: 'new body' }],
@@ -510,7 +512,7 @@ describe('PUT /api/sections — the rest rendering of update_sections', () => {
         body: '<!-- anchor: aaaa1111 -->\n# H\nold body\n\n<!-- anchor: bbbb2222 -->\n# Next\nkeep me',
       });
       const res = await request(app)
-        .put('/api/sections')
+        .patch('/api/sections')
         .send({
           expectedHash: (await pages.read('a.md')).hash,
           edits: [{ anchor: 'aaaa1111', action: 'replace', content: 'new body' }],
@@ -533,7 +535,7 @@ describe('PUT /api/sections — the rest rendering of update_sections', () => {
       await pages.ensureRoot();
       await pages.write('a.md', { body: '# H\nold body' });
       const res = await request(app)
-        .put('/api/sections')
+        .patch('/api/sections')
         .send({
           expectedHash: 'c'.repeat(64),
           edits: [{ anchor: 'aaaa1111', action: 'replace', content: 'x' }],
@@ -565,7 +567,7 @@ describe('PUT /api/sections — the rest rendering of update_sections', () => {
       await pages.ensureRoot();
       await pages.write('a.md', { body: NESTED });
       const res = await request(app)
-        .put('/api/sections')
+        .patch('/api/sections')
         .send({
           expectedHash: (await pages.read('a.md')).hash,
           edits: [{ anchor: 'aaaa1111', action: 'replace', content: 'new body' }],
@@ -594,7 +596,7 @@ describe('PUT /api/sections — the rest rendering of update_sections', () => {
       await pages.ensureRoot();
       await pages.write('a.md', { body: NESTED });
       const res = await request(app)
-        .put('/api/sections')
+        .patch('/api/sections')
         .send({
           expectedHash: (await pages.read('a.md')).hash,
           edits: [
@@ -626,7 +628,7 @@ describe('PUT /api/sections — the rest rendering of update_sections', () => {
       await pages.ensureRoot();
       await pages.write('a.md', { body: NESTED });
       const res = await request(app)
-        .put('/api/sections')
+        .patch('/api/sections')
         .send({
           expectedHash: (await pages.read('a.md')).hash,
           edits: [{ anchor: 'aaaa1111', action: 'replace', content: 'new body' }],
@@ -799,5 +801,176 @@ describe('PATCH /api/pages/:rootId/* — the differential rendering of update_pa
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  /**
+   * 0.2.78 — `POST /api/pages/:rootId/move`, the `rest` rendering of `move_page`.
+   *
+   * The addressing is the unusual part and the first test is about it: both
+   * paths travel in the BODY. This family addresses pages with a splat, so
+   * `…/foo.md/move` is a legal address for a page called `move` inside a
+   * directory called `foo.md` — the URL cannot carry a verb here at all. The
+   * verb therefore goes on the root COLLECTION, exactly where `GET /search`
+   * already sits.
+   */
+  describe('POST /api/pages/:rootId/move — the rest rendering of move_page', () => {
+    const read = (dir: string, rel: string) => fs.readFileSync(path.join(dir, 'pages', rel), 'utf-8');
+    const exists = (dir: string, rel: string) => fs.existsSync(path.join(dir, 'pages', rel));
+
+    it('moves the page, answers the NEW path, and leaves the hash unchanged', async () => {
+      const { app, dir } = appWithPageWrites();
+      try {
+        const before = await hashOf(dir);
+        const res = await request(app)
+          .post('/api/pages/mainspec/move')
+          .send({ from: 'a.md', to: 'guides/b.md', expectedHash: before })
+          .expect(200);
+        expect(res.body.path).toBe('guides/b.md');
+        expect(res.body.rootId).toBe('mainspec');
+        /**
+         * The hash is the SAME value, and that is the contract rather than an
+         * accident of the fixture: a move relocates bytes by rename and never
+         * runs the format adapter, so re-serialization cannot have happened. It
+         * is echoed at all because the caller needs it to arm its next write at
+         * the new address — re-reading a file it just moved, to learn a value it
+         * already held, is the round trip this saves.
+         */
+        expect(res.body.hash).toBe(before);
+        // A move answers no content: it is the one write that never reads what
+        // it writes.
+        expect(res.body.content).toBeUndefined();
+        expect(exists(dir, 'a.md')).toBe(false);
+        expect(read(dir, 'guides/b.md')).toContain('alpha');
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('is NOT idempotent — the replay is NOT_FOUND, because the source is gone', async () => {
+      // The `delete` class, not the `replace` class. A caller that retries on a
+      // timeout has to be able to tell "it already worked" from "it never did",
+      // and this refusal is the only honest answer to the second call.
+      const { app, dir } = appWithPageWrites();
+      try {
+        const hash = await hashOf(dir);
+        await request(app).post('/api/pages/mainspec/move').send({ from: 'a.md', to: 'b.md', expectedHash: hash }).expect(200);
+        const res = await request(app)
+          .post('/api/pages/mainspec/move')
+          .send({ from: 'a.md', to: 'b.md', expectedHash: hash })
+          .expect(404);
+        /**
+         * `NOT_FOUND`, not `INVALID_ARGUMENT`. The request was well formed and
+         * the first call is what made it fail — a retrying client has to be able
+         * to tell "my path was wrong" from "my work already landed", and only
+         * the code carries that.
+         */
+        expect(res.body.error.code).toBe('NOT_FOUND');
+        expect(res.body.error.message).toContain('a.md');
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('refuses PAGE_EXISTS rather than overwriting the destination', async () => {
+      const { app, dir } = appWithPageWrites();
+      try {
+        fs.writeFileSync(path.join(dir, 'pages', 'taken.md'), '# Taken\n', 'utf-8');
+        const res = await request(app)
+          .post('/api/pages/mainspec/move')
+          .send({ from: 'a.md', to: 'taken.md', expectedHash: await hashOf(dir) })
+          .expect(409);
+        expect(res.body.error.code).toBe('PAGE_EXISTS');
+        // NEITHER file is touched. `fs.renameSync` would have clobbered the
+        // destination silently, which is the one outcome a move must not have.
+        expect(read(dir, 'taken.md')).toContain('Taken');
+        expect(exists(dir, 'a.md')).toBe(true);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('refuses PAGE_CONFLICT on a stale expectedHash, and moves nothing', async () => {
+      const { app, dir } = appWithPageWrites();
+      try {
+        const res = await request(app)
+          .post('/api/pages/mainspec/move')
+          .send({ from: 'a.md', to: 'b.md', expectedHash: 'a'.repeat(64) })
+          .expect(409);
+        expect(res.body.error.code).toBe('PAGE_CONFLICT');
+        expect(res.body.currentHash).toBe(await hashOf(dir));
+        expect(exists(dir, 'a.md')).toBe(true);
+        expect(exists(dir, 'b.md')).toBe(false);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('requires expectedHash — a move never reads the file it relocates', async () => {
+      /**
+       * The guard is mandatory here for a sharper reason than on a write. Every
+       * other write either produces the bytes or has just been handed them, so
+       * an unguarded caller is at least holding a copy of SOMETHING. A move
+       * opens nothing: without this the caller relocates a file it has never
+       * seen, on the strength of a path it may have mistyped.
+       */
+      const { app, dir } = appWithPageWrites();
+      try {
+        const res = await request(app)
+          .post('/api/pages/mainspec/move')
+          .send({ from: 'a.md', to: 'b.md' })
+          .expect(400);
+        expect(res.body.error.code).toBe('INVALID_ARGUMENT');
+        expect(res.body.error.message).toContain('expectedHash');
+        expect(exists(dir, 'a.md')).toBe(true);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('refuses a destination that climbs out of the root — a move stays in one source', async () => {
+      // A page's identity is `(rootId, path)`. A destination elsewhere is a write
+      // in one store plus a delete in another: two mutexes, two chains, a
+      // different failure surface. That is not this operation.
+      const { app, dir } = appWithPageWrites();
+      try {
+        const res = await request(app)
+          .post('/api/pages/mainspec/move')
+          .send({ from: 'a.md', to: '../escaped.md', expectedHash: await hashOf(dir) })
+          .expect(400);
+        expect(res.body.error.code).toBe('INVALID_ARGUMENT');
+        expect(exists(dir, 'a.md')).toBe(true);
+        expect(fs.existsSync(path.join(dir, 'escaped.md'))).toBe(false);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('is not shadowed by the page splat — `move` reaches the verb, not a page called move', async () => {
+      // The whole reason both paths are in the body. Registration order is what
+      // keeps this true, so it is asserted rather than assumed.
+      const { app, dir } = appWithPageWrites();
+      try {
+        await request(app)
+          .post('/api/pages/mainspec/move')
+          .send({ from: 'a.md', to: 'b.md', expectedHash: await hashOf(dir) })
+          .expect(200);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('answers ROOT_NOT_FOUND with the roots that do exist', async () => {
+      const { app, dir } = appWithPageWrites();
+      try {
+        const res = await request(app)
+          .post('/api/pages/nope/move')
+          .send({ from: 'a.md', to: 'b.md', expectedHash: 'a'.repeat(64) })
+          .expect(404);
+        expect(res.body.error.code).toBe('ROOT_NOT_FOUND');
+        expect(res.body.error.hint).toContain('mainspec');
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
   });
 });

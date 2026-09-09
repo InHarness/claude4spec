@@ -1,3 +1,4 @@
+import React from 'react';
 import { uiViewData, uiViewSlugPattern } from '../schema.js';
 import { ChevronRight, Monitor } from 'lucide-react';
 import type { UiView } from '../../../types.js';
@@ -18,6 +19,47 @@ import {
 } from '../../../identity.js';
 import { UiViewDetail } from './detail-panel.js';
 import { uiViewRoutes } from './routes.js';
+import { openUiViewEditPopover } from './popover.js';
+import { confirmAndDeleteUiView } from './delete-confirm.js';
+
+/**
+ * 0.2.78 — the two gestures a chip and a card answer, beyond opening.
+ *
+ * ALT+CLICK edits, SHIFT+ALT+CLICK deletes. Both are declared here, once, so the
+ * chip and the card cannot drift into disagreeing about which modifier does
+ * what — an author builds ONE habit for this entity type, not one per surface.
+ * A plain click is left strictly alone: inside the editor it must still place
+ * the caret, and outside it, it opens the entity.
+ *
+ * Delete asks first, through the shared confirmation that counts the pages
+ * citing this view (see `delete-confirm.ts`). Neither gesture is discoverable by
+ * looking, which is why both are also reachable from the detail panel — these
+ * are accelerators for someone already writing, not the only door.
+ */
+/**
+ * Alt+click edits, Shift+Alt+click deletes — on every surface that renders a
+ * view, so the two gestures cannot drift apart between the chip and the card.
+ *
+ * Nothing is called on a successful DELETE, deliberately. The obvious candidate
+ * is the surface's `onOpen`, and it is exactly wrong: that callback opens the
+ * entity's detail panel, so using it as a "refresh" would navigate the reader
+ * to a slug that no longer resolves, immediately after telling them it is gone.
+ * The delete already invalidates the shared query cache, which is what actually
+ * re-renders the list.
+ */
+function entityGestures(entity: UiView | null | undefined) {
+  return (e: React.MouseEvent): boolean => {
+    if (!entity || !e.altKey) return false;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.shiftKey) {
+      void confirmAndDeleteUiView(entity.slug, entity.title);
+    } else {
+      openUiViewEditPopover({ entity });
+    }
+    return true;
+  };
+}
 
 function UiViewRow({ entity, active, onOpen }: EntityRowProps<UiView>) {
   return (
@@ -75,9 +117,14 @@ function UiViewChip({ slug, entity, onOpen }: EntityChipProps<UiView>) {
       </button>
     );
   }
+  const gestures = entityGestures(entity);
   return (
     <button
-      onClick={onOpen}
+      onClick={(e) => {
+        if (gestures(e)) return;
+        onOpen?.();
+      }}
+      title={`${entity.title} — Alt+click to edit, Shift+Alt+click to delete`}
       className="inline-flex items-center gap-1 align-middle rounded px-1.5 py-[1px] transition"
       style={{
         border: '1px solid var(--c-hair)',
@@ -118,9 +165,14 @@ function UiViewCard({ slug, entity, onOpen }: EntityCardProps<UiView>) {
   const sortedParams = [...entity.params].sort(
     (a, b) => (ORDER[a.in] ?? 9) - (ORDER[b.in] ?? 9)
   );
+  const gestures = entityGestures(entity);
   return (
     <button
-      onClick={onOpen}
+      onClick={(e) => {
+        if (gestures(e)) return;
+        onOpen?.();
+      }}
+      title="Alt+click to edit, Shift+Alt+click to delete"
       className="w-full text-left rounded-md p-3 transition"
       style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)' }}
       onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--c-accent)')}

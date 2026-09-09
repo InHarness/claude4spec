@@ -988,6 +988,21 @@ async function buildInner(
         page: hit.pagePath,
         ...(hit.anchor !== undefined ? { anchor: hit.anchor } : {}),
       })),
+    /**
+     * 0.2.78 — `move_page`'s link propagation, wired once for both channels.
+     *
+     * `renameSync` landed in 0.2.77 with nothing calling it: the move primitive
+     * existed, the rewrite existed, and no channel joined them. This is that
+     * join, and it deliberately sits on the object BOTH the REST router and
+     * `page-tools` are built from — a move over HTTP and a move from an agent
+     * turn rewrite citations through the same indexer or the parity claim in
+     * the catalog is false.
+     *
+     * Its own fail-closed guard (`assertFresh` on the page-links projection)
+     * fires before the first rewrite, so a stale link index aborts the
+     * propagation instead of rewriting from a list it cannot trust.
+     */
+    propagateRename: (rootId, from, to, actor) => pagesLinkIndexer.renameSync(rootId, from, to, actor),
   };
   pluginHost.registerMcpServer('page-tools', () =>
     createPageToolsServer({

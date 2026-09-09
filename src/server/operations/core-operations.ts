@@ -642,6 +642,29 @@ export function registerCoreOperations(): void {
     ),
   );
 
+  /**
+   * 0.2.78 — a move is its own operation, not a create plus a delete.
+   *
+   * `contentInput: 'n/a'` because it never sees the content: the bytes are
+   * relocated by an atomic rename and the format adapter is not invoked at all.
+   * `idempotent: false` for the reason `create_page` is — a replay names a
+   * source that no longer exists and answers `NOT_FOUND`, which puts it in the
+   * `delete` class rather than the `replace` class.
+   *
+   * `rest` renders it as `POST /api/pages/:rootId/move`, with both paths in the
+   * body; the route's own comment carries why the URL cannot hold them.
+   */
+  CATALOG.register(
+    pageWrite(
+      'move_page',
+      'Move a page to another path within the SAME root — one call covers both renaming a file and moving it to a different directory. The content is never read or re-serialized, so the hash is unchanged; citations of the old path are rewritten afterwards, each as its own write. NOT idempotent: a replay answers NOT_FOUND.',
+      { rootId: z.string(), from: z.string(), to: z.string(), ...expectedHash },
+      false,
+      ['PAGE_CONFLICT', 'PAGE_EXISTS', 'NOT_FOUND', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT', 'NOT_IMPLEMENTED'],
+      'n/a',
+    ),
+  );
+
   CATALOG.register(
     pageWrite(
       'update_sections',

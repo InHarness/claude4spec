@@ -381,7 +381,7 @@ describe('the profile gate', () => {
 
   it('[ac:ac-crud-stron-dziala-przez-ui-i-wbudowane-n] withholds the whole page write path from a read-only profile', () => {
     /**
-     * 0.2.13 item 28. `page-tools` is host-owned, so without these four rows the
+     * 0.2.13 item 28. `page-tools` is host-owned, so without these rows the
      * gate's permissive default would hand a consulted peer — and, through the
      * generated `mcp.json`, every editor the user opens — the ability to
      * overwrite any page in the specification it was asked a question about.
@@ -390,7 +390,7 @@ describe('the profile gate', () => {
      * it writes, so `ask` and `brief` are left with nothing and the server is
      * dropped rather than mounted empty.
      */
-    const pageTools = ['create_page', 'update_page', 'delete_page', 'update_sections'].map((name) => ({
+    const pageTools = ['create_page', 'update_page', 'delete_page', 'move_page', 'update_sections'].map((name) => ({
       name,
       description: '',
       inputSchema: {},
@@ -401,11 +401,12 @@ describe('the profile gate', () => {
       expect(withheldTools(profile, pageTools).sort(), profile).toEqual([
         'create_page',
         'delete_page',
+        'move_page',
         'update_page',
         'update_sections',
       ]);
     }
-    // The profiles that author a specification keep all four.
+    // The profiles that author a specification keep all five.
     expect(withheldTools('chat', pageTools)).toEqual([]);
     expect(withheldTools('patch', pageTools)).toEqual([]);
   });
