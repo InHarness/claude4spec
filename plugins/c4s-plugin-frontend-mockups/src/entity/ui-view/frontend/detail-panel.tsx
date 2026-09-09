@@ -18,6 +18,7 @@ import { useDesignSystems } from '../../design-system/frontend/hooks.js';
 import { useTags } from '@c4s/plugin-runtime';
 import { useReferences } from '@c4s/plugin-runtime';
 import { confirmDestructive, toast } from '../../../frontend-kit/host-events.js';
+import { deleteUiViewBody } from './delete-confirm.js';
 import { slugify } from '../../../identity.js';
 import { computeWarnings } from '../lint.js';
 import type {
@@ -137,13 +138,23 @@ export function UiViewDetail({
 
   async function handleDelete() {
     if (!view) return;
-    const refCount = refs.length;
-    const body = refCount
-      ? `Delete UI view "${view.title}"? ${refCount} page${refCount === 1 ? '' : 's'} reference this view and will become broken.`
-      : `Delete UI view "${view.title}"? This cannot be undone.`;
+    /**
+     * 0.2.78 — the wording comes from `deleteUiViewBody`, shared with the chip
+     * and the card.
+     *
+     * It was inline here, and the sentence it built was subtly wrong: the
+     * reference warning REPLACED "This cannot be undone" instead of following
+     * it, so the more dangerous case — a view several pages cite — was the one
+     * that dropped the irreversibility notice. Now that three surfaces can
+     * delete, the sentence lives in one place and says both things in both
+     * cases.
+     *
+     * The count still comes from the panel's own `refs`, which it already holds
+     * and displays; only the phrasing is shared.
+     */
     const ok = await confirmDestructive({
       title: 'Delete UI view?',
-      body,
+      body: deleteUiViewBody(view.title, refs.length),
       confirmLabel: 'Delete',
     });
     if (!ok) return;

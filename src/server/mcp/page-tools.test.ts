@@ -149,14 +149,83 @@ describe('page-tools', () => {
     });
   });
 
-  it('carries the four operations of the page write path, and nothing else', async () => {
-    // A fifth tool here would be a capability the catalog has no row for, which
+  /**
+   * 0.2.78 — `move_page` over the MCP adapter.
+   *
+   * The sequence itself belongs to `page-write.test.ts` and the primitive; what
+   * only this adapter can get wrong is whether it forwards `from`/`to` at all,
+   * and whether the refusals survive the envelope. A handler that accepted the
+   * schema and dropped a field would answer a clean success having moved nothing.
+   */
+  describe('move_page', () => {
+    async function seed(rel: string, body: string) {
+      const created = await call('create_page', { rootId: 'pages', path: rel, content: body });
+      return created.body.hash as string;
+    }
+
+    it('moves the page and answers the new path with the hash unchanged', async () => {
+      const hash = await seed('a.md', '# A\n\nbody\n');
+      const res = await call('move_page', { rootId: 'pages', from: 'a.md', to: 'guides/b.md', expectedHash: hash });
+      expect(res.isError).toBe(false);
+      expect(res.body.path).toBe('guides/b.md');
+      // Unchanged because the content is never re-serialized — the adapter does
+      // not run at all on this path.
+      expect(res.body.hash).toBe(hash);
+      expect(await pages.exists('a.md')).toBe(false);
+      expect(await pages.exists('guides/b.md')).toBe(true);
+    });
+
+    it('keeps PAGE_CONFLICT recoverable — the envelope carries the current hash', async () => {
+      // The one thing the envelope must not lose: without `currentHash` the
+      // documented recovery (re-read, re-apply, pass it back) has no input.
+      await seed('a.md', '# A\n');
+      const res = await call('move_page', {
+        rootId: 'pages',
+        from: 'a.md',
+        to: 'b.md',
+        expectedHash: 'f'.repeat(64),
+      });
+      expect(res.isError).toBe(true);
+      expect(res.body.code).toBe('PAGE_CONFLICT');
+      expect(res.body.currentHash).toHaveLength(64);
+    });
+
+    it('refuses an occupied destination as PAGE_EXISTS', async () => {
+      const hash = await seed('a.md', '# A\n');
+      await seed('b.md', '# B\n');
+      const res = await call('move_page', { rootId: 'pages', from: 'a.md', to: 'b.md', expectedHash: hash });
+      expect(res.isError).toBe(true);
+      expect(res.body.code).toBe('PAGE_EXISTS');
+    });
+
+    it('names the roots that exist when the rootId is unknown', async () => {
+      const res = await call('move_page', {
+        rootId: 'nope',
+        from: 'a.md',
+        to: 'b.md',
+        expectedHash: 'f'.repeat(64),
+      });
+      expect(res.isError).toBe(true);
+      expect(res.body.code).toBe('ROOT_NOT_FOUND');
+      expect(res.body.hint).toContain('guides');
+    });
+  });
+
+  it('carries the five operations of the page write path, and nothing else', async () => {
+    // A SIXTH tool here would be a capability the catalog has no row for, which
     // the profile gate would then wave through on the strength of this being a
-    // host-owned server.
+    // host-owned server. The list grows only alongside a `CATALOG.register` —
+    // that pairing is the whole reason this assertion is exhaustive rather than
+    // a `toContain`.
+    //
+    // 0.2.78 adds `move_page`. It is the one operation here that never touches
+    // content, and it is still a write: it changes a page's identity, which is
+    // `(rootId, path)`.
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       'create_page',
       'delete_page',
+      'move_page',
       'update_page',
       'update_sections',
     ]);

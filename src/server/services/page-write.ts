@@ -6,7 +6,12 @@ import type { FileVersionService } from './file-version.js';
 import type { PagesService } from './pages.js';
 import type { SectionsService } from './sections.js';
 import { ConflictError } from './brief.js';
-import { RecordConflictError, RecordPathError, RecordTargetExistsError } from '../fs/record-store.js';
+import {
+  RecordConflictError,
+  RecordMissingError,
+  RecordPathError,
+  RecordTargetExistsError,
+} from '../fs/record-store.js';
 import { PROJECTION_IDS, type ProjectionStatusRegistry } from './projection-status.js';
 import { DomainError } from './tags.js';
 import { parseHeadings } from './section-indexer.js';
@@ -795,9 +800,33 @@ async function assertUnchanged(
       `pass back the \`hash\` of the file as you last read it — get_page returns it, and so does the \`get_page_outline({ rootId: "${target.pages.rootId}", path: "${relPath}" })\` envelope, which is the cheaper source on a large page; for a page that does not exist yet, create it with create_page({ rootId: "${target.pages.rootId}", path: "${relPath}" })`,
     );
   }
-  const currentHash = await hashOf(target.pages, relPath);
-  if (currentHash === null || currentHash === expectedHash) return;
-  throw new ConflictError('PAGE_CONFLICT', 'page changed since last read', currentHash);
+  const current = await readIfPresent(target.pages, relPath);
+  if (current === null || current.hash === expectedHash) return;
+  /**
+   * 0.2.78 — the refusal carries the CONTENT as well as the hash.
+   *
+   * The hash alone tells a caller its copy is stale; it cannot tell it how. A
+   * caller holding a stale page had exactly two moves — re-read the whole page,
+   * or give up — and the re-read is a second round trip for bytes the server had
+   * in hand while refusing. `ConflictError` has carried an optional
+   * `currentContent` since briefs used it, and `routes/errors.ts` already
+   * forwards it, so this is the producer catching up with an envelope that was
+   * always ready for it.
+   */
+  throw new ConflictError('PAGE_CONFLICT', 'page changed since last read', current.hash, current.content);
+}
+
+/** The bytes and their hash in one read, so a refusal can report both. */
+async function readIfPresent(
+  pages: PagesService,
+  relPath: string,
+): Promise<{ hash: string; content: string } | null> {
+  try {
+    const content = await fs.readFile(path.join(pages.root, relPath), 'utf-8');
+    return { hash: sha256(content), content };
+  } catch {
+    return null;
+  }
 }
 
 export async function deletePage(
@@ -896,6 +925,17 @@ export async function movePage(
     if (err instanceof RecordTargetExistsError) {
       throw new DomainError('PAGE_EXISTS', `a page already exists at '${input.to}'`);
     }
+    /**
+     * Before the generic path refusal, because it IS one — a subclass — and the
+     * two want opposite things from the caller. A missing source is `NOT_FOUND`:
+     * nothing is wrong with the request, the page is simply not there, which is
+     * exactly what a replay of a successful move looks like. Collapsing it into
+     * `INVALID_ARGUMENT` told a retrying client its arguments were bad when the
+     * truth was that its first call had worked.
+     */
+    if (err instanceof RecordMissingError) {
+      throw new DomainError('NOT_FOUND', `no page at '${input.from}'`, 'a move is not idempotent — a replay finds the source already gone');
+    }
     if (err instanceof RecordPathError) {
       throw new DomainError('INVALID_ARGUMENT', err.message, 'a move stays inside one source — it is not a write plus a delete');
     }
@@ -942,6 +982,21 @@ export interface SectionWriteDeps {
    * projections has nothing that could be marked. A real project always wires it.
    */
   projectionStatus?: ProjectionStatusRegistry;
+  /**
+   * 0.2.78 — link propagation for `move_page`, handed to both channels as ONE
+   * closure.
+   *
+   * It lives on this object rather than on each adapter's own deps for the
+   * reason the comment above `findSectionReferents` gives: the REST route and
+   * the MCP tool are built from this single value, so a move over HTTP and a
+   * move from an agent turn cannot rewrite citations differently. `movePage`
+   * takes it as a parameter instead of reaching for it, so the core stays
+   * ignorant of who owns the link index.
+   *
+   * Optional because the hand-rolled rigs have no link indexer; absent, a move
+   * still happens and simply propagates nothing.
+   */
+  propagateRename?: (rootId: string, from: string, to: string, actor: WriteActor) => Promise<string[]>;
 }
 
 /** One doomed anchor and who would be left pointing at nothing. */
@@ -1396,8 +1451,24 @@ export async function updateSections(
   const currentHash = (await hashOf(target.pages, first.pagePath)) ?? '';
   for (const { edit } of located) {
     if (!startOfAnchor.has(edit.anchor)) {
+      /**
+       * 0.2.78 — `INDEX_STALE`, not `PAGE_CONFLICT`, and the difference is what
+       * the caller has to refresh.
+       *
+       * Both are 409, so the status cannot tell them apart and the CODE is the
+       * whole signal. `PAGE_CONFLICT` says "your hash is stale" — re-read the
+       * page and the identical batch lands. Here the hash MATCHED a line above:
+       * the page is exactly what the caller thinks it is, and it is the SECTION
+       * INDEX that is behind, so re-reading the page changes nothing and the
+       * repair is to rebuild the index. Reporting both refusals under one code
+       * sent a caller round a loop that could not terminate.
+       *
+       * `currentHash` still rides along: the recovery is documented as reading
+       * it back out of the envelope, and it costs nothing to keep that true for
+       * a client that does not branch on the code.
+       */
       throw new ConflictError(
-        'PAGE_CONFLICT',
+        'INDEX_STALE',
         `anchor '${edit.anchor}' is not in '${first.pagePath}' any more — the section index is behind the file`,
         currentHash,
       );

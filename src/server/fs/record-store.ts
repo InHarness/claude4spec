@@ -85,6 +85,27 @@ export class RecordPathError extends Error {
   }
 }
 
+/**
+ * A move whose SOURCE is not there — separated from its parent in 0.2.78.
+ *
+ * Both are addressing failures, which is why this is a subclass rather than a
+ * sibling: a caller that only cares "the path was no good" keeps working
+ * unchanged. But the two ask different things of the caller, and a move is where
+ * that first bites. `RecordPathError` proper means the path is UNUSABLE — it
+ * escapes the source, or names the file it is already on — and no state of the
+ * world makes it valid, so the repair is in the request. This one means the path
+ * was fine and the record is gone, which is what a REPLAYED move looks like:
+ * the operation is not idempotent, and the second call has to be able to say
+ * "not found" rather than "bad argument", or a retrying client cannot tell a
+ * mistyped path from work that already succeeded.
+ */
+export class RecordMissingError extends RecordPathError {
+  constructor(readonly relPath: string) {
+    super(`no record at '${relPath}'`);
+    this.name = 'RecordMissingError';
+  }
+}
+
 export interface RecordWriteOptions {
   /** The state the caller believes it is writing over. Omitted ⇒ no check. */
   expectedHash?: string;
@@ -375,7 +396,7 @@ export class RecordStore<T> {
       await this.withPathLock(second, async () => {
         // 1 — the source must exist and match what the caller believes it wrote over.
         const raw = this.readRaw(fromRel);
-        if (raw === null) throw new RecordPathError(`no record at '${fromRel}'`);
+        if (raw === null) throw new RecordMissingError(fromRel);
         if (opts.expectedHash !== undefined) {
           const currentHash = this.opts.adapter.hash(raw);
           if (currentHash !== opts.expectedHash) throw new RecordConflictError(currentHash, raw);

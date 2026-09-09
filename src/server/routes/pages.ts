@@ -4,6 +4,7 @@ import type { SelfWriteMarker } from '../fs/sources.js';
 import {
   createPage,
   deletePage,
+  movePage,
   updatePage,
   type PageDiffDeps,
   type SectionWriteDeps,
@@ -318,6 +319,65 @@ export function pagesRouter(
         'user',
       );
       res.status(201).json(result);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * 0.2.78 — the `rest` rendering of `move_page`.
+   *
+   * BOTH paths travel in the BODY, which is unusual enough to state the reason:
+   * this family addresses files with a splat (`/api/pages/:rootId/*`), so a verb
+   * glued after it would be indistinguishable from a page. `…/foo.md/move` is a
+   * perfectly legal address for a page called `move` inside a directory called
+   * `foo.md`, and no amount of route ordering can tell the two apart — the URL
+   * simply does not carry the difference. So the verb goes on the ROOT
+   * COLLECTION, the same shape `GET /search` already uses, and the operands go
+   * where a POST body puts them.
+   *
+   * `POST` rather than `PUT` or `PATCH`: a move is an ACT. It does not declare a
+   * target state (`PUT`) and it does not modify content (`PATCH`) — it never
+   * touches the bytes at all. And it is not idempotent: replay it and the source
+   * is gone, which is `NOT_FOUND`, the `delete` class of behaviour.
+   *
+   * Registered above the `/*` wildcards for the reason every static segment in
+   * this file is — registration order is the contract that keeps `move` from
+   * being read as a page path.
+   */
+  router.post('/move', async (req, res, next) => {
+    try {
+      const rt = resolve(req, res);
+      if (!rt) return;
+      const body = (req.body ?? {}) as { from?: string; to?: string; expectedHash?: string };
+      /**
+       * `expectedHash` is REQUIRED here, unlike on a delete, and the reason is
+       * specific rather than a general preference for guards: a move never READS
+       * the content it relocates. Every other write either produces the bytes or
+       * has just been handed them, so a stale caller is at least holding a copy
+       * of something. Without this check a move would relocate a file the caller
+       * has never seen, on the strength of a path alone.
+       */
+      if (typeof body.expectedHash !== 'string' || body.expectedHash.length === 0) {
+        throw new DomainError(
+          'INVALID_ARGUMENT',
+          'expectedHash is required',
+          'read the page first and pass back the `hash` it answered with',
+        );
+      }
+      res.json(
+        await movePage(
+          rt,
+          rt.root.id,
+          {
+            from: typeof body.from === 'string' ? body.from : '',
+            to: typeof body.to === 'string' ? body.to : '',
+            expectedHash: body.expectedHash,
+          },
+          'user',
+          writeDeps?.propagateRename,
+        ),
+      );
     } catch (err) {
       next(err);
     }

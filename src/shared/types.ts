@@ -47,6 +47,25 @@ export interface PageWriteAck {
   changedAnchors: string[];
 }
 
+/**
+ * What `POST /api/pages/:rootId/move` answers with.
+ *
+ * `hash` is deliberately the SAME value the page had before the move: the
+ * content is relocated by an atomic rename and never re-serialized, so nothing
+ * about it changed. It is reported anyway because the caller needs it to arm its
+ * next write at the new path, and re-reading a file it just moved to get a value
+ * it already held would be a round trip for nothing.
+ *
+ * No `content`: a move is the one write that never reads what it writes.
+ */
+export interface PageMoveAck {
+  rootId: string;
+  /** The NEW path. */
+  path: string;
+  hash: string;
+  version: number;
+}
+
 export interface PageWriteInput {
   frontmatter?: Record<string, unknown>;
   body: string;

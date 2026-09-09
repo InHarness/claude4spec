@@ -76,15 +76,29 @@ export function sectionsRouter(
    * 0.2.15 — the operation is `update_sections` and takes a BATCH, so its REST
    * rendering can no longer be `PUT /:anchor`: the anchor is inside the payload
    * now, once per edit, and a URL naming one of them would be naming an
-   * arbitrary member of the set. `PUT /` addresses "the sections", which is what
-   * the batch is.
+   * arbitrary member of the set. `/` addresses "the sections", which is what the
+   * batch is.
    *
-   * Declared before the `GET /:anchor` below. `PUT` on `/` could not shadow it
-   * in any case — Express matches method first — but registration order is a
-   * contract in this repo, and a reader checking it should not have to reason
-   * about which routes are method-scoped.
+   * 0.2.78 — `PATCH`, not `PUT`, and it is the ONLY write this family has.
+   *
+   * `PUT` is the wrong verb for what this does. It states a target state for the
+   * resource it addresses, and the batch does the opposite: it names a handful
+   * of sections and describes CHANGES to them, leaving the rest of the page
+   * exactly as it found it. Sending it as `PUT /` said "here is the entire
+   * section index", which no caller has ever meant. The page family already
+   * draws this distinction on one path (`PUT` literal, `PATCH` differential);
+   * here there is only the differential mode, so there is only `PATCH`.
+   *
+   * Note the address carries NEITHER an anchor NOR a root: the page is resolved
+   * from the section index by the anchors in the batch, which are globally
+   * unique on any root that indexes sections.
+   *
+   * Declared before the `GET /:anchor` below. It could not shadow it in any case
+   * — Express matches method first — but registration order is a contract in
+   * this repo, and a reader checking it should not have to reason about which
+   * routes are method-scoped.
    */
-  router.put('/', async (req, res, next) => {
+  router.patch('/', async (req, res, next) => {
     try {
       if (!writeDeps) {
         throw new DomainError('NOT_IMPLEMENTED', 'this project mounts no writable page roots');

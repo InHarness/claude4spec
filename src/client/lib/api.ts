@@ -2,6 +2,7 @@ import type {
   PageContent,
   PageNode,
   PageSearchHit,
+  PageMoveAck,
   PageWriteAck,
   Root,
   TodoCounts,
@@ -116,6 +117,27 @@ export const api = {
       body: JSON.stringify({ body, frontmatter, expectedHash }),
     });
     return handle<PageWriteAck>(res);
+  },
+
+  /**
+   * 0.2.78 — move a page WITHIN one root; renaming and re-filing are the same call.
+   *
+   * Both paths go in the body, not the URL, because this family addresses pages
+   * with a splat: `…/foo.md/move` would be a legal address for a page named
+   * `move`, so a verb cannot live at the end of the path. The server puts the
+   * verb on the root collection instead, exactly as `search` already is.
+   *
+   * `expectedHash` is required, and unusually so — a move never reads the
+   * content it relocates, so without it the client could move a file it has
+   * never seen. The caller passes the hash it last read or last wrote.
+   */
+  async move(rootId: string, from: string, to: string, expectedHash: string): Promise<PageMoveAck> {
+    const res = await apiFetch(`/api/pages/${encodeURIComponent(rootId)}/move`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to, expectedHash }),
+    });
+    return handle<PageMoveAck>(res);
   },
 
   async remove(rootId: string, path: string): Promise<void> {

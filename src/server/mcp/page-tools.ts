@@ -5,6 +5,7 @@ import { DomainError } from '../services/tags.js';
 import {
   createPage,
   deletePage,
+  movePage,
   updatePage,
   updateSections,
   type PageWriteTarget,
@@ -265,6 +266,56 @@ export function createPageToolsServer(
     },
   );
 
+  /**
+   * 0.2.78 — `move_page`, the operation a rename used to be faked with.
+   *
+   * The fake was create-at-the-new-path plus delete-at-the-old, and every part
+   * of the system that keys on a path paid for it: `file_version` recorded a
+   * birth and a death instead of one move, the section index dropped the page's
+   * anchors and minted fresh ones for the same headings, and the link map saw a
+   * pair of events indistinguishable from somebody else's rename. Naming the act
+   * is what lets all three follow it.
+   */
+  const movePageTool = mcpTool(
+    'move_page',
+    [
+      'Move a page to a different path WITHIN THE SAME ROOT. Renaming a file and moving it to another directory are the same call — only `to` differs.',
+      '`to` is a whole path relative to the root, not a bare filename: moving "guides/auth.md" to "auth.md" means to: "auth.md", and to: "auth.md" is NOT how you rename it in place inside `guides/`.',
+      'The content is never read, re-serialized or returned, so `hash` comes back UNCHANGED — it is echoed because you need it to arm your next write at the new path, not because anything happened to it.',
+      'Citations follow: every `@old/path.md` in the root is rewritten to the new path afterwards, each rewritten page as its own write. That propagation is NOT atomic across those pages, and it is not part of the move — the move has already committed when it runs.',
+      'NOT IDEMPOTENT. Replaying a successful call answers NOT_FOUND, because the source is gone — this is the `delete` class, not the `replace` class.',
+      'Refusals: PAGE_EXISTS (the destination is occupied — it is never overwritten), PAGE_CONFLICT (your `expectedHash` does not match the source), NOT_FOUND (no page at `from`), INVALID_ARGUMENT (a `to` that leaves this root, or equals `from`). None of them touches either file.',
+      'ONE FILE per call. A directory move is N of these with no atomicity between them.',
+    ].join('\n'),
+    {
+      rootId: rootIdParam,
+      from: z.string().describe('The page\'s current path relative to the root, e.g. "guides/auth.md".'),
+      to: z
+        .string()
+        .describe(
+          'The destination path, relative to the SAME root and complete — directories included. A path outside this root is INVALID_ARGUMENT; a move between roots is not a move.',
+        ),
+      expectedHash: expectedHashParam,
+    },
+    async (args) => {
+      try {
+        const rootId = String(args.rootId);
+        return ok(
+          await movePage(
+            target(rootId),
+            rootId,
+            { from: String(args.from), to: String(args.to), expectedHash: String(args.expectedHash ?? '') },
+            'agent',
+            deps.propagateRename,
+          ),
+          'move_page',
+        );
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
   const updateSectionsTool = mcpTool(
     'update_sections',
     [
@@ -336,6 +387,6 @@ export function createPageToolsServer(
 
   return createMcpServer({
     name: 'page-tools',
-    tools: [createPageTool, updatePageTool, deletePageTool, updateSectionsTool],
+    tools: [createPageTool, updatePageTool, deletePageTool, movePageTool, updateSectionsTool],
   });
 }
