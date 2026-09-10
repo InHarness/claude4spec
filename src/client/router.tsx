@@ -82,13 +82,6 @@ export interface RouterContext {
   queryClient: QueryClient;
 }
 
-// M33 phase 3: exported so a de-hardcoded entity route fragment reuses the exact
-// list search-param schema the host's other list routes use.
-export const listSearchSchema = z.object({
-  q: z.string().optional(),
-  tag: z.string().optional(),
-});
-
 // 0.1.122: `/releases` gained a Compare tab (release vs. current unreleased
 // state) alongside the existing releases list — deep-linkable via `?tab=compare`
 // (the unreleased-changes counter links here, presetting `latest → current`).
@@ -573,38 +566,6 @@ function PlanRoute() {
         <PlanPage key={decoded} planPath={decoded} />
       </EditorBridgeProvider>
     </main>
-  );
-}
-
-// M33 phase 3: exported for the transitional `database-table/routes.tsx` fragment.
-export function EntityNotFound({ type }: { type: EntityType }) {
-  const navigate = useNavigate();
-  const mod = clientPluginHost.getAvailable(type);
-  const label = mod?.label ?? 'Entity';
-  const listLabel = mod?.labelPlural ?? 'Entities';
-  function goBack() {
-    navigateToEntityList(navigate, type);
-  }
-  return (
-    <RoutePane>
-      <div className="flex-1 flex items-center justify-center px-10">
-        <div className="max-w-md text-center" style={{ color: 'var(--c-muted)' }}>
-          <div className="text-[15px] font-semibold mb-2" style={{ color: 'var(--c-ink)' }}>
-            {label} not found
-          </div>
-          <div className="text-[12.5px] mb-4" style={{ color: 'var(--c-subtle)' }}>
-            The {type} slug in the URL does not match any entity in the database.
-          </div>
-          <button
-            onClick={goBack}
-            className="rounded-md px-3 py-1.5 text-[12.5px]"
-            style={{ background: 'var(--c-accent)', color: '#fff' }}
-          >
-            Back to {listLabel}
-          </button>
-        </div>
-      </div>
-    </RoutePane>
   );
 }
 

@@ -20,7 +20,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { hostDefaultFields, resolveSearchFields, valuesAtPath } from './fields.js';
-import { acData } from '../../../shared/entities/ac/schema.js';
+import { acFixtureData as acData } from '../../../../tests/helpers/ac-fixture.js';
 import type { BackendModule } from '../../core/plugin-host/types.js';
 import type { DataDeclaration } from '../../../shared/plugin-host/data-schema.js';
 

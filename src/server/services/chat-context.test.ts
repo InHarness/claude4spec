@@ -11,7 +11,7 @@ import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import { validateSubagents } from '@inharness-ai/agent-adapters';
 import { DEFAULT_SUBAGENT_TURNS } from './plugin-subagents.js';
 import type { PluginSubagentContribution } from '../../shared/plugin-host/manifest.js';
-import { acSystemPrompt } from '../entities/ac/system-prompt.js';
+import { acFixtureSystemPrompt as acSystemPrompt } from '../../../tests/helpers/ac-fixture.js';
 import { diagramSystemPrompt } from '../entities/diagram/system-prompt.js';
 import { DEFAULT_PAGES_ROOT_PROPS, type Root } from '../../shared/types.js';
 

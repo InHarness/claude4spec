@@ -2,6 +2,7 @@ import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
 import { getEntityDef } from '../../../entities/registry.js';
 import { ChipResolver } from '../../../entities/ChipResolver.js';
 import { categoriseBrokenChip } from '../../../core/plugin-host/host.js';
+import { useRegistryVersion } from '../../../core/plugin-host/useRegistryVersion.js';
 import { openEntityHandler } from '../../../entities/openEntity.js';
 import { useEditorBridge } from '../../EditorContext.js';
 import { useEditChipOnAltClick } from './useEditChipOnAltClick.js';
@@ -9,6 +10,9 @@ import { InlineBrokenChip } from './BrokenChip.js';
 
 export function InlineMentionView(props: NodeViewProps) {
   const { node } = props;
+  // Re-render when a plugin frontend registers: this inline chip can mount before the
+  // envelope that owns its type has finished loading. See the hook.
+  useRegistryVersion();
   const type = String(node.attrs.type ?? '');
   const slug = String(node.attrs.slug ?? '');
   const def = getEntityDef(type);

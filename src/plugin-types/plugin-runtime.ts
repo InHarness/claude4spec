@@ -50,6 +50,8 @@ import type {
   DescribeTypesResult,
   GetEntitiesInput,
   GetEntitiesResult,
+  GetFieldContentInput,
+  GetFieldContentResult,
   ListEntitiesInput,
   ListEntitiesResult,
   ResolveIdentityInput,
@@ -65,6 +67,8 @@ export type {
   EntityRow,
   GetEntitiesInput,
   GetEntitiesResult,
+  GetFieldContentInput,
+  GetFieldContentResult,
   ListEntitiesInput,
   ListEntitiesResult,
   Page,
@@ -186,6 +190,34 @@ export interface MountContext {
   searchEntities(input: SearchEntitiesInput): SearchEntitiesResult;
   describeTypes(input?: DescribeTypesInput): DescribeTypesResult;
   resolveIdentity(input: ResolveIdentityInput): ResolveIdentityResult;
+  /**
+   * The sixth operation, and the one that FOLLOWS a descriptor.
+   *
+   * A read record answers a content-bearing field with `<field>Has` /
+   * `<field>Bytes` / `<field>Operation` and never with the value — right for a
+   * catalogue listing, wrong for an envelope whose question is whether some
+   * text matches an entity whose substance IS its content. `describeTypes`
+   * hands you the descriptors; this is what turns one into the body.
+   *
+   * Only the default single-value operation resolves. A field that issues its
+   * content through a windowed collection op keeps its descriptor, because there
+   * is no one value to inline.
+   */
+  getFieldContent(input: GetFieldContentInput): GetFieldContentResult;
+  /**
+   * 0.2.79 — the resolved scope for an adapter turn the envelope runs itself.
+   *
+   * An envelope MAY run an LLM turn (the AC semantic audit does). It may not
+   * resolve the SCOPE of one: that reads the project's `config.json` and
+   * `.claude/settings.json`, and the two have to agree with what the chat turn
+   * runs under. Omitting it is not a smaller scope but NO scope — the library's
+   * gate is `allowed.length || disallowed.length`, so an empty scope means
+   * `bypassPermissions` and the full mutating toolset.
+   *
+   * Spread the result straight into `adapter.execute({...})`. Call it PER TURN,
+   * not at mount: config edits hot-reload.
+   */
+  agentScope(opts?: { planMode?: boolean }): AgentTurnScope;
   cwd: string;
   ws: { broadcast(msg: unknown): void };
   tagsService: any;
@@ -198,6 +230,24 @@ export interface MountContext {
   registerRenameListener(fn: (ev: EntityRenamedEvent) => void): void;
 }
 export type PluginMountFn = (ctx: MountContext) => void;
+
+/**
+ * What `MountContext.agentScope()` hands back: the scope of one adapter turn,
+ * already in the shape `execute()` takes. Results only — the resolvers behind
+ * them are host-owned and not on this surface.
+ */
+export interface AgentTurnScope {
+  allowedPaths: string[];
+  disallowedPaths: string[];
+  /** Opaque group names from the adapter library; pass through verbatim. */
+  disallowedToolGroups: string[];
+  architectureConfig: {
+    claude_sandbox: {
+      enabled: true;
+      filesystem: { denyRead: string[]; denyWrite: string[]; allowWrite: string[] };
+    };
+  };
+}
 
 /** 0.2.2 — an entity changed slug. See `registerRenameListener`. */
 export interface EntityRenamedEvent {
@@ -335,6 +385,15 @@ export declare function validatorMessage(
 // numbers the read descriptors advertise; `.length` counts UTF-16 units and would
 // disagree on the first non-ASCII character.
 export declare function contentBytes(value: unknown): number;
+
+/**
+ * The operation a content-bearing field is issued through by default.
+ *
+ * `describeTypes` reports one per `contentFields` entry. Only fields naming THIS
+ * operation have a single value `getFieldContent` can return; the rest issue
+ * their content through a windowed collection op and keep their descriptor.
+ */
+export declare const DEFAULT_CONTENT_OPERATION: string;
 
 // zod facade (0.1.134→next). A plugin's backend schema code (the `backend.crud`
 // create/update schemas, a custom `backend.mcpServer`'s `mcpTool` shapes) MUST build
@@ -615,6 +674,41 @@ export declare const clientPluginHost: {
    * pointing at a type it knows nothing about.
    */
   getEntity(type: string): EntityModuleManifest | null;
+  /**
+   * 0.2.80 — every ACTIVE module, for a plugin that renders across types it does
+   * not own.
+   *
+   * Published because a POLYMORPHIC ref cannot be edited without it. A fixed ref
+   * names its target type, so its picker asks for one module by name;
+   * `ac.verifies[]` targets any active type, and its picker has to offer one
+   * group per type, each fed from that type's own `listByTags`. There is no
+   * other way to enumerate them, and reaching through the index signature forces
+   * a cast on the FUNCTION — which unbinds the receiver and throws at render
+   * while type-checking cleanly.
+   *
+   * ACTIVE, not available: a deactivated type has no routes and no list query,
+   * so offering it as a picker group would produce candidates that cannot be
+   * opened.
+   */
+  listEntities(): FrontendModule[];
+  /**
+   * 0.2.80 — subscribe to registry CHANGES; returns an unsubscribe.
+   *
+   * Published for the same reason the host needed it internally: plugin
+   * frontends are imported non-blocking, after first paint, so ANY read of
+   * `getEntity`/`listEntities` during render can happen before the module it
+   * wants has registered. A route recovers on the next navigation; a picker
+   * built from `listEntities()` does not — it renders a short list once and
+   * nothing gives it a reason to run again, so the reader sees a subset of the
+   * types with no indication that anything is missing.
+   *
+   * Pair it with `registryVersion` through `useSyncExternalStore`. The counter
+   * is the host's, so a change that lands between a render and its subscription
+   * is still visible on the re-read React does right after subscribing.
+   */
+  onRegistryChanged(listener: () => void): () => void;
+  /** The registry's change counter — the snapshot half of the pair above. */
+  registryVersion(): number;
   [key: string]: unknown;
 };
 export declare function registerFrontendModule(module: FrontendModule): void;
@@ -770,3 +864,24 @@ export declare function lineDiffHunks(
   before: unknown,
   after: unknown
 ): { op: 'add' | 'del' | 'ctx'; line: string }[];
+
+// ── Chat orchestration (M05, published 0.2.79) ──
+
+export interface StartSeededThreadOptions {
+  /** When true, the seed prompt is auto-submitted to the agent immediately. */
+  autoSubmit?: boolean;
+}
+
+/**
+ * Open the chat overlay on a FRESH thread and seed its editor with `prompt`.
+ *
+ * The published equivalent of a host-only facade, in the same sense as
+ * `Popover` and `useToast`: it drives the M05 chat store, which is a singleton
+ * rather than a window event, so a plugin cannot reproduce it by dispatching one
+ * the way it can `toast`.
+ *
+ * `autoSubmit` sends the seed as an ordinary user message (persisted in
+ * `chat_message`) when the thread is empty; without it the text is left in the
+ * editor for the user to edit and send.
+ */
+export declare function startSeededThread(prompt: string, opts?: StartSeededThreadOptions): void;

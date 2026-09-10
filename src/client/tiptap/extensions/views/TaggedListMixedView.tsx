@@ -5,10 +5,15 @@ import { clientPluginHost } from '../../../core/plugin-host/host.js';
 import { useEditorBridge } from '../../EditorContext.js';
 import type { EntityType } from '../../../../shared/entities.js';
 import { useEditChipOnAltClick } from './useEditChipOnAltClick.js';
+import { useRegistryVersion } from '../../../core/plugin-host/useRegistryVersion.js';
 
 type Entity = { slug: string };
 
 export function TaggedListMixedView(props: NodeViewProps) {
+  // Re-read the registry when a plugin frontend registers late. This view lists
+  // EVERY active type, so a late registration does not break it — it silently
+  // shortens it, which is worse. See the hook.
+  useRegistryVersion();
   const { node } = props;
   const rawTags = String(node.attrs.tags ?? '');
   const filter: 'and' | 'or' = node.attrs.filter === 'or' ? 'or' : 'and';

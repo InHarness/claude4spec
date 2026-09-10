@@ -21,8 +21,7 @@ import { parseXmlTagsExcludingCode, taggedListVia } from '../../../shared/xml-ta
 import { getExtensionReferenceType } from '../../../shared/reference-extensions.js';
 import { parseHeadings } from '../../services/section-indexer.js';
 import { invalidArgument } from '../errors.js';
-import { classifyVerifies } from '../../entities/ac/classify-verifies.js';
-import { readActiveAcs } from '../../entities/ac/read-acs.js';
+import { classifyVerifies, readActiveAcs } from './ac-rules.js';
 import type { PageSource } from '../page-source.js';
 import type { RootSet } from '../roots.js';
 import type { CheckConsistencyInput, ConsistencyReport, DiscoveryDeps } from '../types.js';

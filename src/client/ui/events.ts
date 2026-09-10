@@ -1,5 +1,4 @@
 import type {
-  AcCreateInput,
   DtoCreateInput,
   EndpointCreateInput,
   EntityType,
@@ -150,7 +149,6 @@ export type DiagramResult =
 
 export type PopoverMap = {
   'new-page': { props: Record<string, never>; result: NewPageResult };
-  'create-ac': { props: { defaultTags?: string[] }; result: AcCreateInput };
   'create-tag': { props: { contextLabel?: string }; result: TagCreateInput };
   mention: { props: Record<string, never>; result: MentionResult };
   element: { props: Record<string, never>; result: ElementResult };

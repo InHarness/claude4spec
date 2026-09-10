@@ -9,13 +9,18 @@
  * collide with the base tree (deduped away, so the page would 404), and a
  * fragment that throws (skipped with a warning, same result). Neither shows up
  * in a type check.
+ *
+ * 0.2.80 — every fragment in here is now synthesised. `ac` was the last one the
+ * host could import; it left with the rest of its vertical, into
+ * `c4s-plugin-ac`. That is not a loss of fidelity: what `mountFrontend` has to
+ * get right is a fragment arriving from a package the host cannot import, and
+ * that is now ALL of them.
  */
 
 import { describe, expect, it, vi } from 'vitest';
 import { FIXTURE_DATA, FIXTURE_SLUG_PATTERN } from '../../../tests/helpers/fixture-module.js';
 import type { FrontendModule } from '../core/plugin-host/types.js';
 import { BASE_ROUTE_CHILDREN, rootRoute } from '../router.js';
-import { acRoutes } from '../entities/ac/routes.js';
 import { createRoute } from '@tanstack/react-router';
 import { mountFrontend } from './mountFrontend.js';
 
@@ -25,10 +30,9 @@ const Noop = (() => null) as unknown as FrontendModule['renderCard'];
  * A route fragment the host does not own.
  *
  * `ui-view` and `design-system` played this part until 0.2.18 moved them into
- * the `c4s-plugin-frontend-mockups` envelope, leaving `ac` as the only in-host
- * fragment. Synthesising the other two is closer to the real thing anyway: what
- * `mountFrontend` has to get right is a fragment arriving from a package the
- * host cannot import, which is now every fragment but one.
+ * the `c4s-plugin-frontend-mockups` envelope; `ac` followed in 0.2.80. Every
+ * fragment this test mounts is therefore synthesised, which is what the real
+ * thing looks like now.
  */
 function fragmentFor(prefix: string): FrontendModule['routes'] {
   const make = createRoute as unknown as (opts: {
@@ -40,6 +44,12 @@ function fragmentFor(prefix: string): FrontendModule['routes'] {
     [
       make({ getParentRoute: () => parent, path: prefix, component: Noop }),
       make({ getParentRoute: () => parent, path: `${prefix}/$slug`, component: Noop }),
+      // A THIRD, nested path. Every real entity fragment mounts a history route,
+      // and it is the one most easily lost in a move: nothing links to it from
+      // the list, so a fragment that forgot it 404s only for someone who clicked
+      // the History tab. A synthetic fragment with two flat paths would never
+      // ask the host to mount one.
+      make({ getParentRoute: () => parent, path: `${prefix}/$slug/history`, component: Noop }),
     ] as never;
 }
 
@@ -88,7 +98,7 @@ const mountedPaths = (): Array<string | undefined> =>
 describe('mountFrontend collects the hoisted entity routes', () => {
   it('mounts every path of three fragments, none deduped against the base tree', () => {
     mountFrontend(fakeRouter(), [
-      moduleWith('ac', acRoutes),
+      moduleWith('ac', fragmentFor('/acs')),
       moduleWith('ui-view', uiViewRoutes),
       moduleWith('design-system', designSystemRoutes),
     ]);
@@ -100,6 +110,7 @@ describe('mountFrontend collects the hoisted entity routes', () => {
         '/acs/$slug/history',
         '/ui-views',
         '/ui-views/$slug',
+        '/ui-views/$slug/history',
         '/design-systems',
         '/design-systems/$slug',
       ]),
@@ -139,7 +150,7 @@ describe('mountFrontend collects the hoisted entity routes', () => {
 
     // ...and back on. Idempotent rebuild from the frozen base, so re-mounting is
     // the whole repair — no accumulated duplicate of `/ui-views`.
-    mountFrontend(fakeRouter(), [moduleWith('ac', acRoutes), moduleWith('ui-view', uiViewRoutes)]);
+    mountFrontend(fakeRouter(), [moduleWith('ac', fragmentFor('/acs')), moduleWith('ui-view', uiViewRoutes)]);
     expect(mountedPaths()).toContain('/acs');
     expect(mountedPaths().filter((p) => p === '/ui-views')).toHaveLength(1);
   });
@@ -151,7 +162,7 @@ describe('mountFrontend collects the hoisted entity routes', () => {
       throw new Error('boom');
     }) as unknown as FrontendModule['routes'];
 
-    mountFrontend(fakeRouter(), [moduleWith('exploder', exploding), moduleWith('ac', acRoutes)]);
+    mountFrontend(fakeRouter(), [moduleWith('exploder', exploding), moduleWith('ac', fragmentFor('/acs'))]);
 
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('boom'));
     // The healthy module still mounted — one bad fragment does not take the rest.

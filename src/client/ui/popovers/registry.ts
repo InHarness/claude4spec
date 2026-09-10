@@ -2,7 +2,6 @@ import type { ComponentType, ReactNode } from 'react';
 import type { PopoverFormProps } from '../Popover.js';
 import type { PopoverKind } from '../events.js';
 import { NewPageForm } from './NewPageForm.js';
-import { CreateAcForm } from './CreateAcForm.js';
 import { CreateTagForm } from './CreateTagForm.js';
 import { MentionForm, ElementForm } from './EntityRefForm.js';
 import { ListForm } from './ListForm.js';
@@ -17,7 +16,6 @@ type RendererMap = {
 
 export const POPOVER_RENDERERS: RendererMap = {
   'new-page': NewPageForm,
-  'create-ac': CreateAcForm,
   'create-tag': CreateTagForm,
   mention: MentionForm,
   element: ElementForm,

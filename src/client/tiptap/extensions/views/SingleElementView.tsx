@@ -2,12 +2,16 @@ import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
 import { getEntityDef } from '../../../entities/registry.js';
 import { openEntityHandler } from '../../../entities/openEntity.js';
 import { categoriseBrokenChip } from '../../../core/plugin-host/host.js';
+import { useRegistryVersion } from '../../../core/plugin-host/useRegistryVersion.js';
 import { useEditorBridge } from '../../EditorContext.js';
 import { useEditChipOnAltClick } from './useEditChipOnAltClick.js';
 import { BlockBrokenChip } from './BrokenChip.js';
 
 export function SingleElementView(props: NodeViewProps) {
   const { node } = props;
+  // Re-render when a plugin frontend registers: this block embed can mount before the
+  // envelope that owns its type has finished loading. See the hook.
+  useRegistryVersion();
   const type = String(node.attrs.type ?? '');
   const slug = String(node.attrs.slug ?? '');
   // 0.2.15 — per-reference prose, absent unless the tag carried it.

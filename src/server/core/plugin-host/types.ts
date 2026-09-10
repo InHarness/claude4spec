@@ -24,6 +24,8 @@ import type {
   DiscoveryCore,
   GetEntitiesInput,
   GetEntitiesResult,
+  GetFieldContentInput,
+  GetFieldContentResult,
   ListEntitiesInput,
   ListEntitiesResult,
   ResolveIdentityInput,
@@ -31,6 +33,7 @@ import type {
   SearchEntitiesInput,
   SearchEntitiesResult,
 } from '../../discovery/types.js';
+import type { AgentTurnScope } from '../../services/agent-execution-scope.js';
 import type { UpsertResult } from '../../serialization/writer.js';
 import type { SystemStamp } from '../../serialization/system-fields.js';
 import type {
@@ -248,6 +251,40 @@ export interface MountContext {
   searchEntities(input: SearchEntitiesInput): SearchEntitiesResult;
   describeTypes(input?: DescribeTypesInput): DescribeTypesResult;
   resolveIdentity(input: ResolveIdentityInput): ResolveIdentityResult;
+  /**
+   * The sixth operation, added with the surface itself.
+   *
+   * `describeTypes` hands back a type's `contentFields` DESCRIPTORS; nothing
+   * else on the surface FOLLOWS one. A read record answers a content-bearing
+   * field with `<field>Has` / `<field>Bytes` / `<field>Operation` and never with
+   * the value, so an envelope that audits entities of other types — which is
+   * what `c4s-plugin-ac` does with the targets of `verifies[]` — would be handed
+   * `{sourceHas: true, sourceBytes: 412}` and asked to judge a body it was never
+   * shown. That is the exact regression 0.2.24 fixed for the in-core audit, and
+   * it would come straight back on extraction.
+   *
+   * Widening the surface later is allowed and narrowing it is not, so this is
+   * additive within the `2.0.0` baseline like the five: `HOST_API_VERSION` does
+   * not move and the loader gains no new check.
+   */
+  getFieldContent(input: GetFieldContentInput): GetFieldContentResult;
+  /**
+   * 0.2.79 — the execution scope of an LLM turn, already resolved by the host.
+   *
+   * An envelope may run an adapter turn itself (`c4s-plugin-ac`'s semantic
+   * audit does), but it must not resolve the SCOPE of one: that reads the
+   * project's `config.json` and `.claude/settings.json`, and a plugin
+   * reproducing it would drift from the chat turn the moment either changed.
+   * Worse, a plugin that simply omitted it would run unscoped — the library's
+   * gate is `allowed.length || disallowed.length`, so an empty scope means
+   * `bypassPermissions` — which is the 0.2.8 (A19) regression, re-introduced
+   * from outside the host where nothing would catch it.
+   *
+   * So the resolvers stay host-owned and only their RESULT crosses the
+   * boundary. Resolved per call, not at mount, so a config edit hot-reloads
+   * exactly as it does for the chat turn.
+   */
+  agentScope(opts?: { planMode?: boolean }): AgentTurnScope;
   /** Project root — needed by plugins that run an LLM adapter (e.g. ac-tools analyze). */
   cwd: string;
   /**

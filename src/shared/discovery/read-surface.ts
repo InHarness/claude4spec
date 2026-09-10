@@ -228,3 +228,29 @@ export interface GetEntitiesResult {
    */
   message?: string;
 }
+
+/**
+ * `(type, slug, field)` — the single coordinate a content-bearing field is read
+ * by. See `discovery/ops/content.ts` for why one axis rather than two.
+ *
+ * 0.2.79 — moved here from `server/discovery/types.ts` when `getFieldContent`
+ * joined the plugin surface. A read record answers a content-bearing field with
+ * a DESCRIPTOR (`<field>Has` / `<field>Bytes` / `<field>Operation`) and never
+ * with the value, so an envelope auditing entities of other types — which is the
+ * whole job of `c4s-plugin-ac` — has the descriptor from `describeTypes` and,
+ * without this, nothing that follows it. Widening the surface is allowed;
+ * narrowing it is not.
+ */
+export interface GetFieldContentInput {
+  type: string;
+  slug: string;
+  field: string;
+}
+
+export interface GetFieldContentResult {
+  type: string;
+  slug: string;
+  field: string;
+  content: string;
+  bytes: number;
+}

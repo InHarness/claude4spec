@@ -1,47 +1,21 @@
 import type { Editor } from '@tiptap/core';
 import type { QueryClient } from '@tanstack/react-query';
 import type { SlashCommand } from './extensions/SlashMenu.js';
-import { acsApi } from '../entities/ac/api.js';
 import { diagramsApi } from '../entities/diagram/api.js';
 import type { DiagramFormat } from '../../shared/entities.js';
 import { dispatchTodoPopover } from '../components/TodoPopover.js';
 import { openPopover, toast } from '../ui/events.js';
-import { clientPluginHost } from '../core/plugin-host/host.js';
 
 export interface SlashInvokeDeps {
   qc: QueryClient;
-  /** Page path the editor is currently mounted on. Used to pre-fill AC tags. */
+  /**
+   * Page path the editor is currently mounted on.
+   *
+   * 0.2.80 — no longer read here. It is forwarded on the `c4s:plugin-command`
+   * event so a plugin's create form can default from context; `c4s-plugin-ac`
+   * uses it for exactly what this comment used to describe, from its own side.
+   */
   currentPath?: string | null;
-}
-
-/**
- * The tagging convention (see `acSystemPrompt.narrativeBlock`) applied to the
- * page the author is standing on, so `/ac` opens with the right tag already in
- * the box. Two axes:
- *
- *  - a host module page (`modules/mNN-*`) → `mNN`;
- *  - a page named for an entity type → `entity-{type}`.
- *
- * The second used to match `entities/<slug>.md`, a layout that stopped existing
- * once entity-type pages moved out into their own root — so it had quietly
- * stopped firing at all. It now resolves the type by ASKING THE HOST rather
- * than munging the path: the pages are named for their plugin envelope as often
- * as for their type (`c4s-plugin-database-tables.md` holds `database-table`),
- * so no string rule gets it right.
- *
- * Deliberately NOT gated on a root id. Which root holds the entity-type pages
- * is each project's own naming choice (`plugins` here, `types` elsewhere), and
- * a hardcoded id makes the branch dead everywhere but one repo. The host lookup
- * is the real predicate: a page whose basename names no registered type
- * pre-fills nothing, which is the honest answer in any root.
- */
-function detectAcDefaultTags(currentPath: string | null | undefined): string[] {
-  if (!currentPath) return [];
-  const m = currentPath.match(/^modules\/(m\d{2})-/i);
-  if (m) return [m[1]!.toLowerCase()];
-  const base = currentPath.split('/').pop()?.replace(/\.mdx?$/i, '') ?? '';
-  if (base && clientPluginHost.getAvailable(base)) return [`entity-${base}`];
-  return [];
 }
 
 /** M33: window event a delivered plugin frontend listens for to run its popover. */
@@ -68,6 +42,18 @@ export async function invokeSlash(
           // fixed spot at the top of the viewport — jumping away from the text
           // the user was writing. The plugin owns whether to use it.
           coords: tryCoordsAt(editor),
+          /**
+           * 0.2.80 — the page the command was typed on, as a HINT.
+           *
+           * The host arm this replaces for `/ac` pre-filled the new criterion's
+           * tags from the path (`modules/m17-…` → `m17`; a page named for a
+           * registered type → `entity-<type>`), and the envelope cannot compute
+           * it: nothing else on this event says where the caret is. Sending it
+           * is additive and useful to any envelope whose create form wants to
+           * default from context — the plugin owns whether to use it, and a
+           * plugin that ignores it loses nothing.
+           */
+          currentPath: deps.currentPath ?? null,
         },
       }),
     );
@@ -88,9 +74,6 @@ export async function invokeSlash(
       return;
     case 'tagged-mixed':
       await runTaggedMixed(editor);
-      return;
-    case 'ac':
-      await runCreateAc(editor, deps);
       return;
     case 'todo':
       runTodo(editor);
@@ -265,21 +248,4 @@ async function runTaggedMixed(editor: Editor): Promise<void> {
     .run();
 }
 
-async function runCreateAc(editor: Editor, deps: SlashInvokeDeps): Promise<void> {
-  const defaultTags = detectAcDefaultTags(deps.currentPath ?? null);
-  const result = await openPopover('create-ac', coordsAt(editor), { defaultTags });
-  if (!result) return;
-  try {
-    const ac = await acsApi.create(result);
-    deps.qc.invalidateQueries({ queryKey: ['acs'] });
-    editor
-      .chain()
-      .focus()
-      .insertContent({ type: 'single_element', attrs: { type: 'ac', slug: ac.slug } })
-      .run();
-    toast.success('AC created');
-  } catch (err) {
-    toast.error((err as Error).message);
-  }
-}
 

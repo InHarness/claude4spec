@@ -1,5 +1,4 @@
 import type { PluginRegistry } from '../core/plugin-host/types.js';
-import { onRegister as registerAc } from '../entities/ac/plugin.js';
 import { onRegister as registerDiagram } from '../entities/diagram/plugin.js';
 
 /**
@@ -7,23 +6,29 @@ import { onRegister as registerDiagram } from '../entities/diagram/plugin.js';
  * singleton. Called ONCE at process start (startServer / CLI binaries) on a
  * fresh PluginRegistry; the registry is immutable afterwards.
  *
- * Registers the TWO types still built in DIRECTLY (tier (a)).
+ * Registers the ONE type still built in DIRECTLY (tier (a)).
  *
- * 0.2.58 — "directly" now says only WHERE the module lives, not HOW it registers.
- * `ac` goes through `registry.registerPlugin(acPlugin)` with a two-slot manifest
- * (`entities[]` + `subagents[]`), because `registerEntityModule` knows the entity
- * slot alone and the `ac-audit` subagent has to reach `subagentsFor()`. `diagram`
- * contributes one kind of capability and keeps the narrower call.
+ * 0.2.80 — `ac` left, and took the last reason this function needed two shapes
+ * with it. It had been registering through `registry.registerPlugin(acPlugin)`
+ * with a two-slot manifest (`entities[]` + `subagents[]`) since 0.2.58, because
+ * `registerEntityModule` knows the entity slot alone and the `ac-audit` subagent
+ * had to reach `subagentsFor()` — an envelope's SHAPE without an envelope's
+ * address. It now has both, in `plugins/c4s-plugin-ac/`, loaded by the M33 path
+ * like every other built-in envelope. `diagram` contributes one kind of
+ * capability and keeps the narrower call.
  *
  * `endpoint` and `dto` left in 0.2.2: they ship together in the builtin envelope
  * `plugins/c4s-plugin-api-contracts/`, registered through the M33 loader like any
  * other package — the second registration tier, and the pilot for the migration
  * this function is the remainder of. `spreadsheet` and `database-table`
  * followed, in `plugins/c4s-plugin-spreadsheets/` and
- * `plugins/c4s-plugin-database-tables/`; `ui-view` and `design-system` completed
- * it in 0.2.18, travelling together in `plugins/c4s-plugin-frontend-mockups/`
- * because `ui-view.designSystemSlug` declares `ref: 'design-system'` and a fixed
- * single-target ref needs its target from the first registration. The canonical
+ * `plugins/c4s-plugin-database-tables/`; `ui-view` and `design-system` went in
+ * 0.2.18, travelling together in `plugins/c4s-plugin-frontend-mockups/` because
+ * `ui-view.designSystemSlug` declares `ref: 'design-system'` and a fixed
+ * single-target ref needs its target from the first registration; `ac`
+ * completed it in 0.2.80, in `plugins/c4s-plugin-ac/` with `ac-audit` — paired
+ * by the OTHER rule, that the unit of distribution is an envelope's whole
+ * contribution, since `ac.verifies[]` is polymorphic and binds no single type. The canonical
  * list of built-in envelopes lives in M13, not here. All of them load right
  * after this call.
  *
@@ -33,6 +38,5 @@ import { onRegister as registerDiagram } from '../entities/diagram/plugin.js';
  * loader's gate dropped them and the type was not preinstalled — it was absent.
  */
 export function registerAllPlugins(registry: PluginRegistry): void {
-  registerAc(registry);
   registerDiagram(registry);
 }

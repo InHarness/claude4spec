@@ -33,7 +33,7 @@ import type { DiscoveryCore, SectionResultItem } from './types.js';
 import type { BackendModule, ProjectPluginHost } from '../core/plugin-host/types.js';
 import type { Root } from '../../shared/types.js';
 import { DEFAULT_PAGES_ROOT_PROPS, DEFAULT_USER_ROOT_PROPS } from '../../shared/types.js';
-import { acBackendModule } from '../entities/ac/plugin.js';
+import { acFixtureModule as acBackendModule } from '../../../tests/helpers/ac-fixture.js';
 import { z } from 'zod';
 import matter from 'gray-matter';
 

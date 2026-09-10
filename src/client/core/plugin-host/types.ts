@@ -157,4 +157,26 @@ export interface ClientPluginHost {
   getEntity(type: string): FrontendModule | null;
   getAvailable(type: string): FrontendModule | null;
   isActive(type: string): boolean;
+  /**
+   * 0.2.80 — subscribe to registry CHANGES. Returns an unsubscribe.
+   *
+   * Plugin frontends are imported non-blocking, after first paint, so anything
+   * that reads the registry during render can read it BEFORE the type it is
+   * looking for arrives. For a route that is merely late; for a chip it is
+   * wrong and permanent, because a ProseMirror NodeView renders once and has no
+   * reason of its own to run again — the reader is left with "unknown type" on
+   * a type that registered a moment later.
+   *
+   * This is what lets those readers re-render instead of guessing at a delay.
+   */
+  onRegistryChanged(listener: () => void): () => void;
+
+  /**
+   * A monotonic counter of those changes, bumped by the host itself.
+   *
+   * The pair exists so a `useSyncExternalStore` snapshot can be read at any
+   * moment, including BEFORE anything subscribed — see the note on the
+   * implementation.
+   */
+  registryVersion(): number;
 }
