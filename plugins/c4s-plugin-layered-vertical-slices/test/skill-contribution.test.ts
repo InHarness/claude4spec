@@ -153,18 +153,30 @@ describe('c4s-plugin-layered-vertical-slices — the writing style it contribute
     // code span or fence is prose quoting the syntax (SKILL.md §2 illustrates the
     // slice-schema form with `<tagged_list type="endpoint" .../>`); neither ships
     // an embed. Everything left is live.
+    //
+    // Order matters: fences and code spans come off FIRST. This package's prose
+    // quotes comment syntax (`parts/placement.md` ships a backticked
+    // `<!-- anchor: xxxxxxxx -->`), and an unbalanced `<!--` stripped as if it
+    // opened a real comment would swallow the document down to the next `-->` —
+    // in both templates, exactly the region holding the `ac` embeds. The test
+    // would then pass on a file that ships one.
     const live = (text: string) =>
       text
-        .replace(/<!--[\s\S]*?-->/g, '')
         .replace(/```[\s\S]*?```/g, '')
-        .replace(/`[^`\n]*`/g, '');
+        .replace(/`[^`\n]*`/g, '')
+        .replace(/<!--[\s\S]*?-->/g, '');
     const shipped: Array<[string, string]> = [
       ['SKILL.md', style.content],
       ...Object.entries(style.files ?? {}),
     ];
     for (const [where, text] of shipped) {
+      const stripped = live(text);
+      // A `<!--` surviving the strip is an unclosed comment: from here on the
+      // assertion below would be reading a document the renderer reads
+      // differently, so fail on the ambiguity rather than pass through it.
+      expect({ where, unclosedComment: stripped.includes('<!--') }).toEqual({ where, unclosedComment: false });
       const embed = /<(?:tagged_list|element_list|inline_mention|single_element)\b[^>]*\btype="([^"]+)"/g;
-      for (const [, type] of live(text).matchAll(embed)) {
+      for (const [, type] of stripped.matchAll(embed)) {
         expect({ where, type }).toEqual({ where, type: 'module-dependency' });
       }
     }
@@ -182,8 +194,17 @@ describe('c4s-plugin-layered-vertical-slices — the writing style it contribute
   it('gives both templates an inline checklist as the live body of `## Acceptance criteria`', () => {
     for (const file of ['templates/module.md', 'templates/index.md']) {
       const text = style.files?.[file] ?? '';
-      const section = text.slice(text.indexOf('## Acceptance criteria'));
-      const body = section.slice(0, section.indexOf('<!--'));
+      const start = text.indexOf('## Acceptance criteria');
+      expect({ file, hasSection: start !== -1 }).toEqual({ file, hasSection: true });
+      // Bounded at the next H2: unbounded, a `- [ ]` line in a LATER section
+      // (`## Open questions` in the index template) would satisfy the check and
+      // the test would stop proving anything about this section's live body.
+      const after = text.slice(start + 1);
+      const next = after.search(/^## /m);
+      const section = next === -1 ? text.slice(start) : text.slice(start, start + 1 + next);
+      // No variant comment is the legitimate case where the body IS the section.
+      const comment = section.indexOf('<!--');
+      const body = comment === -1 ? section : section.slice(0, comment);
       expect({ file, checklist: /^- \[ \] /m.test(body) }).toEqual({ file, checklist: true });
     }
   });
