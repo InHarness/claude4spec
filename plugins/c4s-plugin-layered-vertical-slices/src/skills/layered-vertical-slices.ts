@@ -12,6 +12,7 @@ import partPlacement from './layered-vertical-slices/parts/placement.md?raw';
 import partAuthoring from './layered-vertical-slices/parts/authoring.md?raw';
 import partReadingSweep from './layered-vertical-slices/parts/reading-sweep.md?raw';
 import partReadingDeps from './layered-vertical-slices/parts/reading-deps.md?raw';
+import partDomain from './layered-vertical-slices/parts/domain.md?raw';
 
 /**
  * Drop the leading YAML frontmatter block.
@@ -58,6 +59,7 @@ const PARTS: Readonly<Record<string, string>> = {
   'parts/authoring.md': partAuthoring,
   'parts/reading-sweep.md': partReadingSweep,
   'parts/reading-deps.md': partReadingDeps,
+  'parts/domain.md': partDomain,
 };
 
 /**
@@ -87,20 +89,23 @@ function modulePathPattern(): string {
 export function extractChecks(...parts: string[]): string[] {
   const checks: string[] = [];
   for (const part of parts) {
-    let section = '';
+    // The label prefix comes from the nearest **H2**, never from the `###` the
+    // items sit under: two of those sub-catalogues now carry the same kind of
+    // heading, and keying off it would file the `Domain` rules under `Cel`.
+    let owner = '';
     let rule = '';
     for (const line of part.split(/\r?\n/)) {
-      const heading = /^##+ (.+)$/.exec(line);
+      const heading = /^(##+) (.+)$/.exec(line);
       if (heading) {
-        section = heading[1]!;
+        if (heading[1]!.length === 2) owner = heading[2]!;
         rule = '';
         continue;
       }
       const item = /^\s*(\d+[a-z]?)\. \*\*(.+?)\*\*/.exec(line);
       if (item) {
-        const inCel = /`Cel`/.test(section) || /section text alone/.test(section);
+        const prefix = /`Domain`/.test(owner) ? 'Dom' : /`Cel`/.test(owner) ? 'Cel' : 'Rule';
         const title = item[2]!.replace(/[.:]$/, '');
-        rule = inCel ? `Cel ${item[1]} — ${title}` : `Rule ${item[1]} — ${title}`;
+        rule = `${prefix} ${item[1]} — ${title}`;
       }
       const marker = line.indexOf('*Symptom:*');
       // A marker outside any rule is prose ABOUT markers, not a check.
@@ -115,7 +120,7 @@ export function extractChecks(...parts: string[]): string[] {
 }
 
 /** The check list as it is delivered — to `daily.md` step 5 and to `spec-review`. */
-export const checksProjection: string = extractChecks(partPlacement, partAuthoring).join('\n');
+export const checksProjection: string = extractChecks(partPlacement, partAuthoring, partDomain).join('\n');
 
 /** Derived splices — text computed from a part rather than copied out of it. */
 const DERIVED: Readonly<Record<string, () => string>> = {

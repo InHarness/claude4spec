@@ -45,7 +45,7 @@ Routing needs the whole grid in view, and reading module files one by one to get
 The candidate buckets:
 
 - **New module.** The user introduces a new entity or feature. Propose a module number (next free), a slug, and which layers it touches.
-- **Change to an existing module.** New column, new operation, new edge case, new acceptance criterion, new dependency.
+- **Change to an existing module.** New column, new operation, new edge case, new acceptance criterion, new dependency. Before you place the content, ask the residual question **first — does any layer of this project ask for it?** A sentence answering a field of some layer's `## Module slice schema` belongs in that layer's section; only what no layer asks about is a candidate for the module's `## Domain` (its rules are carried at the end of this file).
 - **Layer-level change.** A new convention, a new pattern, or a contract change that affects multiple modules. Apply the layer-purity test (rule 2) *before* placing anything in a layer: if the candidate paragraph stops being true once you imagine any single module gone, it is not a layer change.
 - **Cross-module relation.** A new dependency between two existing modules. It is a **dependency record** (rule 3a), not a row in either file — one per direction, so a mutual relation is two. `<index>`'s relations diagram may still need updating.
 - **Not a spec change at all.** Implementation detail, UX micro-decision, code style, choice of internal helper. Say so plainly and stop. The spec is for architecture; not every interesting thought belongs in it.
@@ -84,6 +84,8 @@ State what changed, point to the file(s), relay the reviewer's verdict from Step
 <!-- include: parts/placement.md -->
 
 <!-- include: parts/authoring.md -->
+
+<!-- include: parts/domain.md -->
 
 <!-- include: parts/reading-sweep.md -->
 

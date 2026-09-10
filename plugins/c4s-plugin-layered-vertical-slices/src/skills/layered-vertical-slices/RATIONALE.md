@@ -26,4 +26,4 @@ Dropping the path filter from the sweep does not slow it down; it answers a diff
 
 ## Why "Domain" is not a layer
 
-A layer's content must survive the deletion of any single module. A "Domain" layer collapses to one paragraph per module, each of which dies with its module, and it has no slice schema because every module's domain is unique. The category mistake is stable enough to name in the core.
+A layer's content must survive the deletion of any single module. A "Domain" layer collapses to one paragraph per module, each of which dies with its module, and it has no slice schema because every module's domain is unique. The category mistake is stable enough to name in the core. What the prohibition costs is nothing, because the content has an address: the module file's own `## Domain` section, third H2, whose membership test is a residuum — what no layer of *this* project asks about. That makes the test relative rather than topical, and makes the section's budgets a detector: the same shape recurring in several modules' `Domain` sections is a shared convention, which is what a layer is.
