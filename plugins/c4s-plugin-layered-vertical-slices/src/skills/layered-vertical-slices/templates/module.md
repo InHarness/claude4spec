@@ -28,6 +28,7 @@ cross-cutting read.
 from others, not a restatement of the list above.>
 
 ## Domain
+
 <!-- The third H2, literal — no layer number, no suffix. This is the module's own substance:
      what NO layer of this project asks about — its model, the rules its operations obey, the
      process it owns end to end, what it deliberately does not do. Test each paragraph against
