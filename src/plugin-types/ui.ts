@@ -515,3 +515,4 @@ export interface UiKitComponentEntry {
 }
 export declare const UI_KIT_CATALOG: readonly UiKitComponentEntry[];
 export declare const STABLE_UI_KIT_COMPONENTS: readonly string[];
+

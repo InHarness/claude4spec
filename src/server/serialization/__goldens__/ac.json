@@ -1,0 +1,134 @@
+{
+  "ac.payloadVersion": 3,
+  "ac/ac-bez-powiazan/snapshot": {
+    "kind": "edge-case",
+    "slug": "ac-bez-powiazan",
+    "status": "active",
+    "tags": [],
+    "title": "Kryterium bez powiązań.",
+    "verifies": []
+  },
+  "ac/ac-bez-powiazan/record": {
+    "type": "ac",
+    "slug": "ac-bez-powiazan",
+    "tags": [],
+    "title": "Kryterium bez powiązań.",
+    "kind": "edge-case",
+    "status": "active",
+    "verifies": []
+  },
+  "ac/ac-koszyk-sumuje-pozycje/snapshot": {
+    "kind": "requirement",
+    "slug": "ac-koszyk-sumuje-pozycje",
+    "status": "active",
+    "tags": [],
+    "title": "Koszyk sumuje pozycje i pokazuje wynik w nagłówku.",
+    "verifies": [
+      {
+        "slug": "flow-checkout",
+        "type": "diagram"
+      }
+    ]
+  },
+  "ac/ac-koszyk-sumuje-pozycje/record": {
+    "type": "ac",
+    "slug": "ac-koszyk-sumuje-pozycje",
+    "tags": [],
+    "title": "Koszyk sumuje pozycje i pokazuje wynik w nagłówku.",
+    "kind": "requirement",
+    "status": "active",
+    "verifies": [
+      {
+        "type": "diagram",
+        "slug": "flow-checkout"
+      }
+    ]
+  },
+  "ac/ac-te-same-referencje-inna-kolejnosc/snapshot": {
+    "kind": "requirement",
+    "slug": "ac-te-same-referencje-inna-kolejnosc",
+    "status": "deprecated",
+    "tags": [],
+    "title": "Te same referencje, odwrotna kolejność zapisu.",
+    "verifies": [
+      {
+        "slug": "never-existed",
+        "type": "diagram"
+      },
+      {
+        "slug": "whatever",
+        "type": "not-a-type"
+      }
+    ]
+  },
+  "ac/ac-te-same-referencje-inna-kolejnosc/record": {
+    "type": "ac",
+    "slug": "ac-te-same-referencje-inna-kolejnosc",
+    "tags": [],
+    "title": "Te same referencje, odwrotna kolejność zapisu.",
+    "kind": "requirement",
+    "status": "deprecated",
+    "verifies": [
+      {
+        "type": "not-a-type",
+        "slug": "whatever"
+      },
+      {
+        "type": "diagram",
+        "slug": "never-existed"
+      }
+    ]
+  },
+  "ac/ac-tytul-na-pelnej-granicy/snapshot": {
+    "kind": "requirement",
+    "slug": "ac-tytul-na-pelnej-granicy",
+    "status": "active",
+    "tags": [],
+    "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "verifies": []
+  },
+  "ac/ac-tytul-na-pelnej-granicy/record": {
+    "type": "ac",
+    "slug": "ac-tytul-na-pelnej-granicy",
+    "tags": [],
+    "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "kind": "requirement",
+    "status": "active",
+    "verifies": []
+  },
+  "ac/ac-wiszace-referencje/snapshot": {
+    "kind": "requirement",
+    "slug": "ac-wiszace-referencje",
+    "status": "deprecated",
+    "tags": [],
+    "title": "Kryterium wskazujące na to, czego nie ma.",
+    "verifies": [
+      {
+        "slug": "never-existed",
+        "type": "diagram"
+      },
+      {
+        "slug": "whatever",
+        "type": "not-a-type"
+      }
+    ]
+  },
+  "ac/ac-wiszace-referencje/record": {
+    "type": "ac",
+    "slug": "ac-wiszace-referencje",
+    "tags": [],
+    "title": "Kryterium wskazujące na to, czego nie ma.",
+    "kind": "requirement",
+    "status": "deprecated",
+    "verifies": [
+      {
+        "type": "diagram",
+        "slug": "never-existed"
+      },
+      {
+        "type": "not-a-type",
+        "slug": "whatever"
+      }
+    ]
+  }
+}

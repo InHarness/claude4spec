@@ -96,6 +96,8 @@ import type {
   ListEntitiesResult,
   GetEntitiesInput,
   GetEntitiesResult,
+  GetFieldContentInput,
+  GetFieldContentResult,
 } from '../../shared/discovery/read-surface.js';
 
 export type {
@@ -111,6 +113,8 @@ export type {
   ListEntitiesResult,
   GetEntitiesInput,
   GetEntitiesResult,
+  GetFieldContentInput,
+  GetFieldContentResult,
 };
 
 // ── Pages and sections ──────────────────────────────────────────────────────
@@ -430,23 +434,6 @@ export type SearchPagesResult =
   | { mode: 'count'; total: number; matches: number };
 
 
-/**
- * `(type, slug, field)` — the single coordinate a content-bearing field is read
- * by. See `ops/content.ts` for why one axis rather than two.
- */
-export interface GetFieldContentInput {
-  type: string;
-  slug: string;
-  field: string;
-}
-
-export interface GetFieldContentResult {
-  type: string;
-  slug: string;
-  field: string;
-  content: string;
-  bytes: number;
-}
 
 
 // ── Graph ───────────────────────────────────────────────────────────────────

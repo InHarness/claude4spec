@@ -1,13 +1,17 @@
 import { readConfig } from '../config.js';
 import { resolveAgentPathScope } from './agent-path-scope.js';
+import { resolveAgentToolGroups } from './agent-tool-posture.js';
+import type { ToolGroup } from '@inharness-ai/agent-adapters';
 import type { Root } from '../../shared/types.js';
 
 /**
  * 0.2.8 (A19): the ONE place that composes an agent turn's filesystem scope from
  * config. Every `adapter.execute` call site in the server goes through here — the chat
- * turn (`routes/agent-turn.ts`) and the AC analysis turn
- * (`entities/ac/ac-analysis.service.ts`) — so the implicit artifact deny-set can never
- * again be present on one path and absent on the other.
+ * turn (`routes/agent-turn.ts`) and the AC analysis turn, which since 0.2.79 runs
+ * from the `c4s-plugin-ac` envelope and reaches this module through
+ * `MountContext.agentScope` — so the implicit artifact deny-set can never
+ * again be present on one path and absent on the other, and cannot be dropped by
+ * an envelope re-deriving the scope for itself.
  *
  * Config is read **per call** (`readConfig` is a pure disk read, no cache), so editing
  * `.claude4spec/config.json` takes effect on the next turn without a process restart.
@@ -130,4 +134,46 @@ export function resolveAgentExecutionScope(
  */
 export function normalizeResumePathScope(paths: string[]): string[] {
   return [...new Set(paths)].sort();
+}
+
+/**
+ * 0.2.79 — the whole scope of ONE adapter turn, in the shape `execute()` wants.
+ *
+ * `AgentExecutionScope` is the path half; the tool-group half comes from
+ * `resolveAgentToolGroups`, and both read the same project config. A caller that
+ * takes one and forgets the other is not "partly scoped" — the path gate is
+ * `allowed.length || disallowed.length`, so an empty scope means
+ * `bypassPermissions`, and a missing tool-group list means the full mutating
+ * toolset. Bundling them is what stops that being a per-call decision.
+ *
+ * This is the shape crossing the plugin boundary (`MountContext.agentScope`),
+ * so it holds RESULTS only — never the resolvers, which stay host-owned.
+ */
+export interface AgentTurnScope {
+  allowedPaths: string[];
+  disallowedPaths: string[];
+  disallowedToolGroups: ToolGroup[];
+  architectureConfig: { claude_sandbox: AgentExecutionScope['claudeSandbox'] };
+}
+
+/**
+ * Both halves of a turn's scope, resolved together, from the same `cwd`.
+ *
+ * `planMode` is passed through to the tool-group resolver rather than assumed:
+ * the library unions the plan-mode preset with whatever groups come back, so a
+ * caller running plan-mode must say so here or the union is computed against the
+ * wrong baseline.
+ */
+export function resolveAgentTurnScope(input: {
+  cwd: string;
+  roots: Root[];
+  planMode?: boolean;
+}): AgentTurnScope {
+  const scope = resolveAgentExecutionScope({ cwd: input.cwd, roots: input.roots });
+  return {
+    allowedPaths: scope.allowedPaths,
+    disallowedPaths: scope.disallowedPaths,
+    disallowedToolGroups: resolveAgentToolGroups({ cwd: input.cwd, planMode: input.planMode ?? false }),
+    architectureConfig: { claude_sandbox: scope.claudeSandbox },
+  };
 }

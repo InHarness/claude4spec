@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { migrateConfigToV4, readConfig, resolveDirAbs, validateRootDirs } from '../config.js';
 import type { Root } from '../../shared/types.js';
+import { resolveAgentTurnScope } from '../services/agent-execution-scope.js';
 import type { PageRootRuntime } from '../routes/pages.js';
 import type { SectionIndexRoot } from '../services/section-indexer.js';
 import { openDb, type Db } from '../db/index.js';
@@ -928,6 +929,22 @@ async function buildInner(
     searchEntities: (input) => requireDiscoveryCore().searchEntities(input),
     describeTypes: (input) => requireDiscoveryCore().describeTypes(input),
     resolveIdentity: (input) => requireDiscoveryCore().resolveIdentity(input),
+    /**
+     * The sixth: what FOLLOWS a `contentFields` descriptor. Same lazy shape and
+     * same reason as the five — a record answers a content-bearing field with a
+     * descriptor, and an envelope auditing another type's entities needs the
+     * value the descriptor points at.
+     */
+    getFieldContent: (input) => requireDiscoveryCore().getFieldContent(input),
+    /**
+     * 0.2.79 — the resolved scope of one adapter turn, for an envelope that runs
+     * an LLM turn of its own. Both halves (paths + tool groups) come back
+     * together and are resolved PER CALL, so a config edit hot-reloads for the
+     * envelope exactly as it does for the chat turn. `roots` is fixed at mount,
+     * matching the chat turn's own boot-time `deps.roots`.
+     */
+    agentScope: (opts) =>
+      resolveAgentTurnScope({ cwd, roots: effectiveRoots, planMode: opts?.planMode }),
     cwd,
     roots: effectiveRoots,
     ws,

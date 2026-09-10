@@ -44,6 +44,23 @@ export { useTags, useEntityTags, useAssignTags, useRemoveEntityTag, useCreateTag
 export { useReferences } from '../hooks/useReferences.js';
 export { useReleases } from '../hooks/useReleases.js';
 
+/**
+ * 0.2.79 — the published equivalent of a host-only facade.
+ *
+ * `startSeededThread` opens the chat overlay on a fresh thread and seeds it. It
+ * lives over the M05 chat store, which is a Zustand singleton rather than a
+ * window event — so unlike `toast`, an envelope cannot re-create it by
+ * dispatching. `c4s-plugin-ac`'s list screen needs exactly it: the "Analyze
+ * consistency" action is specified as `startSeededThread(SEED_PROMPT,
+ * {autoSubmit: true})`, and it left the host with the rest of the AC vertical.
+ *
+ * Published the same way `openPopover` / `toast.*` became `Popover` / `useToast`
+ * when the host-only versions turned out to be things plugins legitimately
+ * needed. Additive within the `2.0.0` baseline.
+ */
+export { startSeededThread } from '../chat/startSeededThread.js';
+export type { StartSeededThreadOptions } from '../chat/startSeededThread.js';
+
 // M13/L11: a PURE FUNCTION, not a singleton — no single-instance requirement.
 export { lineDiffHunks } from './line-diff.js';
 
