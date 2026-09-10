@@ -256,6 +256,7 @@ describe.skipIf(!BASE)('c4s-plugin-ac envelope', () => {
   it('chips resolve on a cold load, for every envelope-delivered type', async () => {
     const api = `${BASE}/api/projects/${project.id}`;
     const stamp = Date.now();
+    const tag = `cold-load-${stamp}`;
     const acSlug = track('acs', `ac-cold-${stamp}`);
     const viewSlug = track('ui-views', `view-cold-${stamp}`);
 
@@ -264,7 +265,10 @@ describe.skipIf(!BASE)('c4s-plugin-ac envelope', () => {
         await fetch(`${api}/acs`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ slug: acSlug, title: 'A cold-load criterion.' }),
+          // The tag is what makes the `tagged_list` chips below resolvable —
+          // an empty tag set matches nothing, deliberately, so a list with no
+          // tag would render empty whether or not the registry was ready.
+          body: JSON.stringify({ slug: acSlug, title: 'A cold-load criterion.', tags: [tag] }),
         })
       ).status,
     ).toBe(201);
@@ -273,7 +277,13 @@ describe.skipIf(!BASE)('c4s-plugin-ac envelope', () => {
         await fetch(`${api}/ui-views`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ slug: viewSlug, title: 'ColdLoadView', url: '/cold', params: [] }),
+          body: JSON.stringify({
+            slug: viewSlug,
+            title: 'ColdLoadView',
+            url: '/cold',
+            params: [],
+            tags: [tag],
+          }),
         })
       ).status,
     ).toBe(201);
@@ -287,7 +297,15 @@ describe.skipIf(!BASE)('c4s-plugin-ac envelope', () => {
         body:
           `# Cold load chips\n\n` +
           `<inline_mention type="ac" slug="${acSlug}"/>\n\n` +
-          `<inline_mention type="ui-view" slug="${viewSlug}"/>\n`,
+          `<inline_mention type="ui-view" slug="${viewSlug}"/>\n\n` +
+          // All FOUR chip NodeViews read the registry during render, and each
+          // needs its own subscription — the first fix reached three of them and
+          // a page carrying only the mention chips went green with the other two
+          // still broken. `tagged_list_mixed` is the one that fails SILENTLY:
+          // it lists every active type, so a registry read too early does not
+          // break it, it just shortens it.
+          `<tagged_list type="ac" tags="${tag}"/>\n\n` +
+          `<tagged_list_mixed tags="${tag}"/>\n`,
       }),
     });
     expect(put.status).toBe(200);
@@ -311,6 +329,10 @@ describe.skipIf(!BASE)('c4s-plugin-ac envelope', () => {
       const body = await page.locator('body').innerText();
       expect(body, 'ac chip resolved').not.toContain('unknown type: ac');
       expect(body, 'ui-view chip resolved').not.toContain('unknown type: ui-view');
+      // The `tagged_list` renders the AC by title, and the mixed list renders
+      // both — so seeing the ui-view's title twice is what says the mixed list
+      // enumerated a registry that had finished loading.
+      expect(body.match(/ColdLoadView/g)?.length ?? 0, 'mixed list enumerated every type').toBeGreaterThanOrEqual(2);
 
       expect(consoleErrors, 'console errors').toEqual([]);
       expect(badResponses, 'responses >= 400').toEqual([]);
