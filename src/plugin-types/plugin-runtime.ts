@@ -386,6 +386,15 @@ export declare function validatorMessage(
 // disagree on the first non-ASCII character.
 export declare function contentBytes(value: unknown): number;
 
+/**
+ * The operation a content-bearing field is issued through by default.
+ *
+ * `describeTypes` reports one per `contentFields` entry. Only fields naming THIS
+ * operation have a single value `getFieldContent` can return; the rest issue
+ * their content through a windowed collection op and keep their descriptor.
+ */
+export declare const DEFAULT_CONTENT_OPERATION: string;
+
 // zod facade (0.1.134→next). A plugin's backend schema code (the `backend.crud`
 // create/update schemas, a custom `backend.mcpServer`'s `mcpTool` shapes) MUST build
 // with the host's `z`, obtained here — NOT a bundled `import { z } from 'zod'`. The
@@ -665,6 +674,23 @@ export declare const clientPluginHost: {
    * pointing at a type it knows nothing about.
    */
   getEntity(type: string): EntityModuleManifest | null;
+  /**
+   * 0.2.80 — every ACTIVE module, for a plugin that renders across types it does
+   * not own.
+   *
+   * Published because a POLYMORPHIC ref cannot be edited without it. A fixed ref
+   * names its target type, so its picker asks for one module by name;
+   * `ac.verifies[]` targets any active type, and its picker has to offer one
+   * group per type, each fed from that type's own `listByTags`. There is no
+   * other way to enumerate them, and reaching through the index signature forces
+   * a cast on the FUNCTION — which unbinds the receiver and throws at render
+   * while type-checking cleanly.
+   *
+   * ACTIVE, not available: a deactivated type has no routes and no list query,
+   * so offering it as a picker group would produce candidates that cannot be
+   * opened.
+   */
+  listEntities(): FrontendModule[];
   [key: string]: unknown;
 };
 export declare function registerFrontendModule(module: FrontendModule): void;

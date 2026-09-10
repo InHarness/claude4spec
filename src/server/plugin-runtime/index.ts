@@ -150,4 +150,15 @@ export { checkValidator, validatorMessage } from '../../shared/plugin-host/named
  * outside ASCII — `.length` counts UTF-16 units, not bytes.
  */
 export { contentBytes } from '../../shared/plugin-host/data-schema.js';
+/**
+ * 0.2.80 — the operation a content-bearing field is issued through by default.
+ *
+ * Published with `getFieldContent` and for the same caller: a descriptor names
+ * the operation that will serve it, and only the default single-value one can be
+ * inlined into a record. A field issuing its content through a windowed
+ * collection op has no ONE value to inline, so an envelope has to compare
+ * against this constant rather than assume. Re-deriving the string would make
+ * the two disagree the first time the default moved.
+ */
+export { DEFAULT_CONTENT_OPERATION } from '../../shared/plugin-host/data-schema.js';
 export type { ValidatorKind, ValidatorFailure } from '../../shared/plugin-host/named-validators.js';

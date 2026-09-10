@@ -459,9 +459,19 @@ export interface RawDelta {
 
 // --- v0.1.13: Acceptance Criteria ---
 
-export type AcKind = 'requirement' | 'edge-case';
-export type AcStatus = 'active' | 'deprecated';
-
+/**
+ * 0.2.80 — what is left here after `ac` moved into the `c4s-plugin-ac` envelope.
+ *
+ * `Ac`, `AcKind`, `AcStatus`, `AcCreateInput`, `AcUpdateInput`, `AcListQuery`
+ * and `AcDeleteResult` went with the type: they describe the envelope's own
+ * transport and record shapes, and the host has no caller for any of them.
+ *
+ * These two stay, because they are not `ac`'s shapes — they are M19's. Rules
+ * 9-11 of `check_consistency` are AC rules by definition and remain in the core
+ * (see `discovery/ops/ac-rules.ts`), so the vocabulary those rules report in has
+ * to remain reachable from the core too. The envelope re-declares nothing: it
+ * reads `verifies[]` off its own schema.
+ */
 export interface AcVerifyRef {
   type: string;
   slug: string;
@@ -469,69 +479,6 @@ export interface AcVerifyRef {
 
 export interface AcBrokenVerify extends AcVerifyRef {
   reason: 'missing' | 'inactive' | 'unknown';
-}
-
-export interface Ac {
-  slug: string;
-  /**
-   * 0.2.51 — the criterion itself, not a label for it.
-   *
-   * `text` (the criterion) and `description` (optional prose beside it) were
-   * collapsed into this one field, bounded at 500 characters. Nothing else on
-   * the type carries prose any more.
-   */
-  title: string;
-  kind: AcKind;
-  status: AcStatus;
-  verifies: AcVerifyRef[];
-  tags: string[];
-  createdAt: string;
-  updatedAt: string;
-  /**
-   * 0.2.23 — no `brokenVerifies` here.
-   *
-   * It was filled by the `ac` detail view, and a type contributes no read code
-   * now: the record is its `data.schema` and nothing else. The AC panel derives
-   * the marker from the candidate lists it already loads, and `classifyVerifies`
-   * remains the server-side answer for `check_consistency`, which is a
-   * project-wide report rather than a field on one record.
-   */
-}
-
-export interface AcCreateInput {
-  /** The criterion. Required — the type derives no default for it. */
-  title: string;
-  kind?: AcKind;
-  status?: AcStatus;
-  verifies?: AcVerifyRef[];
-  tags?: string[];
-  /** Optional explicit slug — used by M17 restore to preserve identity. */
-  slug?: string;
-}
-
-export interface AcUpdateInput {
-  title?: string;
-  kind?: AcKind;
-  status?: AcStatus;
-  verifies?: AcVerifyRef[];
-  tags?: string[];
-  /** A rename. Editing `title` does NOT re-derive the slug. */
-  newSlug?: string;
-}
-
-export interface AcListQuery {
-  status?: AcStatus | 'all';
-  kind?: AcKind;
-  tags?: string[];
-  tagFilter?: 'and' | 'or';
-  search?: string;
-  limit?: number;
-  offset?: number;
-}
-
-export interface AcDeleteResult {
-  deleted: true;
-  brokenReferences: BrokenReference[];
 }
 
 // --- M06: Section Index ---

@@ -53,6 +53,9 @@ const PUBLISHED_PLUGIN_RUNTIME_NAMES = [
   'useCreateTag',
   'useReferences',
   'useReleases',
+  // 0.2.80 — the published equivalent of the host-only chat facade, added with
+  // `c4s-plugin-ac`, whose list screen is specified to seed a thread.
+  'startSeededThread',
   'lineDiffHunks',
 ] as const;
 

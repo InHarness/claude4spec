@@ -46,12 +46,13 @@ describe('axis A — registration is per envelope', () => {
   });
 
   it('the core bootstrap alone contributes neither type', () => {
-    // `registerAllPlugins` is the whole of tier (a). If either type came back
-    // into it, this is where a "convenient" import would show up.
+    // `registerAllPlugins` is the whole of tier (a), and as of 0.2.80 it holds
+    // exactly ONE type. If any other came back into it, this is where a
+    // "convenient" import would show up.
     const coreOnly = new PluginRegistryImpl();
     registerAllPlugins(coreOnly);
     const types = coreOnly.listAvailable().map((m) => m.type).sort();
-    expect(types).toEqual(['ac', 'diagram']);
+    expect(types).toEqual(['diagram']);
   });
 
   it('both types arrive through the envelope loader', () => {
@@ -635,5 +636,68 @@ describe('the reference style fulfils the M15 form clause', () => {
       expect(fence, `${where} stopped naming the fenced form`).toBeGreaterThan(-1);
       expect(entity, `${where} lists the fence before the entity`).toBeLessThan(fence);
     }
+  });
+});
+
+/**
+ * 0.2.80 — the SAME two axes for `c4s-plugin-ac`, whose pairing is the other
+ * rule.
+ *
+ * `ui-view` + `design-system` travel together because of a fixed single-target
+ * `ref`: the target must be registered before the referrer, so splitting them
+ * would cut the declaration. `ac` + `ac-audit` travel together for a different
+ * reason entirely — the unit of distribution is an envelope's WHOLE
+ * contribution. The subagent reads acceptance criteria and nothing else, so in a
+ * project with no active `ac` type it has no subject matter.
+ *
+ * The distinction is worth pinning because applying the ref rule here would be
+ * wrong in a specific, expensive way: `ac.verifies[]` is polymorphic — `{type,
+ * slug}[]` aimed at any active type — so "put the ref's target in the same
+ * envelope" would mean putting every type in one envelope.
+ */
+describe('axis A — c4s-plugin-ac ships one type and one subagent, as one unit', () => {
+  const AC_ENVELOPE = 'c4s-plugin-ac';
+  let registry: PluginRegistryImpl;
+  beforeAll(async () => {
+    registry = await loadedRegistry();
+  });
+
+  it('the type arrives through the envelope loader, not the core bootstrap', () => {
+    expect(registry.listAvailable().map((m) => m.type)).toContain('ac');
+    const record = registry.listPluginRecords().find((p) => p.name === AC_ENVELOPE);
+    expect(record, `${AC_ENVELOPE} is not registered`).toBeDefined();
+    expect([...record!.contributedTypes].sort()).toEqual(['ac']);
+  });
+
+  it('the subagent is contributed by the SAME envelope', () => {
+    const record = registry.listPluginRecords().find((p) => p.name === AC_ENVELOPE);
+    expect(record?.subagents?.map((sa) => sa.name)).toEqual(['ac-audit']);
+  });
+
+  it('unregistering takes the type AND the subagent down together', () => {
+    const types = () => registry.listAvailable().map((m) => m.type);
+    // Read by PULL off the registry, exactly as `subagentsFor()` does when a
+    // turn is built — no copy is kept anywhere, which is why unregistering needs
+    // no teardown step of its own.
+    const subagents = () =>
+      registry
+        .listPluginRecords()
+        .flatMap((p) => p.subagents ?? [])
+        .map((sa) => sa.name);
+
+    expect(types()).toContain('ac');
+    expect(subagents()).toContain('ac-audit');
+
+    registry.unregisterPlugin(AC_ENVELOPE);
+
+    // Both, in one call — which is what "the unit of distribution is the whole
+    // contribution" means in practice. A subagent left behind would be offered
+    // in every turn with no entities to read.
+    expect(types()).not.toContain('ac');
+    expect(subagents()).not.toContain('ac-audit');
+
+    // Other envelopes untouched: teardown is per envelope, not global.
+    expect(types()).toContain('endpoint');
+    expect(() => registry.unregisterPlugin(AC_ENVELOPE)).not.toThrow();
   });
 });

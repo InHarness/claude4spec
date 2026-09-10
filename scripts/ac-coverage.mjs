@@ -60,7 +60,22 @@ function* walkTestFiles(dir) {
 
 function coveredSlugs() {
   const covered = new Map(); // slug -> [files]
-  for (const base of ['src', 'tests']) {
+  /**
+   * 0.2.80 — `plugins` joined the walk, and it was overdue.
+   *
+   * A `[ac:<slug>]` marker only counts if this walker sees the file it sits in,
+   * and until now the walk stopped at `src` and `tests`. Every test that moved
+   * into an envelope took its markers out of coverage with it, silently — the
+   * slug simply reappeared as uncovered, with no hint that a test for it exists.
+   * `c4s-plugin-code-snippets` and `c4s-plugin-layered-vertical-slices` already
+   * had orphans this way; extracting `ac`, whose subagent test carries three
+   * markers, would have added more.
+   *
+   * The directory walk already skips `node_modules` and `dist`, so adding the
+   * root costs nothing but the envelopes' own `test/` trees, which is exactly
+   * what was missing.
+   */
+  for (const base of ['src', 'tests', 'plugins']) {
     for (const file of walkTestFiles(path.join(ROOT, base))) {
       const text = fs.readFileSync(file, 'utf8');
       for (const match of text.matchAll(/\[ac:([a-z0-9-]+)\]/g)) {

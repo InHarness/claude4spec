@@ -53,15 +53,16 @@ describe('M33 plugins router', () => {
     const builtin = res.body.packages.find((p: { package: string }) => p.package === '@c4s/builtin');
     expect(builtin.status).toBe('loaded');
     /*
-     * 0.2.18: the built-in record is down to `ac` and `diagram`.
+     * 0.2.80: the built-in record is down to `diagram` alone.
      *
      * Every other type is contributed by an envelope, each of which is its own
      * record: `endpoint`/`dto` since 0.2.2, `database-table` and `spreadsheet`
-     * since 0.2.11, and `ui-view`/`design-system` since 0.2.18. Asserting the
-     * exact set rather than one member is what makes a type silently slipping
-     * back into the core bootstrap fail here.
+     * since 0.2.11, `ui-view`/`design-system` since 0.2.18, and `ac` since
+     * 0.2.80. Asserting the exact set rather than one member is what makes a
+     * type silently slipping back into the core bootstrap fail here.
      */
-    expect([...builtin.contributedTypes].sort()).toEqual(['ac', 'diagram']);
+    expect([...builtin.contributedTypes].sort()).toEqual(['diagram']);
+
     expect(res.body.packages.some((p: { package: string }) => p.package === 'pkg-x')).toBe(true);
   });
 });

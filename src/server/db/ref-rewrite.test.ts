@@ -7,17 +7,22 @@
  * more different in SQL — plus the two ways a naive implementation gets the
  * polymorphic `$type` ref wrong.
  *
- * `ac.verifies[]` is exercised against the REAL `acData` declaration rather than
- * a fixture: it is the case the deleted ac hook covered, its shape (`ref: '$type'`
- * inside an embedded-JSON collection) is the one no other type has, and pinning
- * it to a fixture would let the real declaration drift out from under it.
+ * The `$type` shape below is a FIXTURE, and its real-declaration twin lives in
+ * `plugins/c4s-plugin-ac/test/ref-rewrite.test.ts`.
+ *
+ * Until 0.2.80 this file read the real `acData`, on the argument that pinning
+ * the case to a fixture would let the declaration drift out from under it. That
+ * argument still holds — which is why the case went WITH the declaration when
+ * `ac` moved into its envelope, rather than being downgraded. What stays here is
+ * the generic rule: a polymorphic `ref: '$type'` inside an embedded-JSON
+ * collection, whatever type happens to declare one. The host has to get that
+ * right for a shape no built-in type has any more.
  */
 
 import { describe, expect, it } from 'vitest';
 import Database from 'better-sqlite3';
 import { applyProjection, type ProjectableModule } from './projection.js';
 import { declaresRefs, rewriteRefsForRename } from './ref-rewrite.js';
-import { acData } from '../../shared/entities/ac/schema.js';
 
 /** A parent whose reference sits in a column on its own row. */
 const viewer: ProjectableModule = {
@@ -83,7 +88,40 @@ const roster: ProjectableModule = {
 /** The referenced types, so the generated FKs have something to point at. */
 const theme: ProjectableModule = { type: 'theme', data: { schema: { title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' } } } };
 const shape: ProjectableModule = { type: 'shape', data: { schema: { title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' } } } };
-const ac: ProjectableModule = { type: 'ac', data: acData };
+/**
+ * The polymorphic shape: a value collection of `{type, slug}` pairs where the
+ * ref's TARGET TYPE is the sibling field rather than a fixed name.
+ *
+ * Mirrors `ac.verifies[]`, which is where the shape came from and still the only
+ * declaration in the repo that has it — see the note at the top of this file on
+ * why the real one is exercised in that envelope's own suite.
+ */
+const criterion: ProjectableModule = {
+  type: 'criterion',
+  data: {
+    schema: {
+      title: { type: 'string', required: true, maxLength: 500 },
+      verifies: {
+        type: 'collection',
+        collection: { kind: 'value', identity: ['type', 'slug'] },
+        unordered: true,
+        item: {
+          type: 'object',
+          fields: {
+            type: { type: 'string', required: true },
+            slug: {
+              type: 'string',
+              required: true,
+              ref: '$type',
+              onMissing: 'warn',
+              onDelete: 'leave-dangling',
+            },
+          },
+        },
+      },
+    },
+  },
+};
 
 function projectDb(modules: ProjectableModule[]): Database.Database {
   const db = new Database(':memory:');
@@ -136,26 +174,26 @@ describe('rewriteRefsForRename', () => {
     }
   });
 
-  it('rewrites a $type ref inside an embedded-JSON collection — ac.verifies', () => {
-    const db = projectDb([ac]);
+  it('rewrites a $type ref inside an embedded-JSON collection', () => {
+    const db = projectDb([criterion]);
     try {
-      const insert = db.prepare('INSERT INTO ac (slug, title, verifies) VALUES (?, ?, ?)');
+      const insert = db.prepare('INSERT INTO criterion (slug, title, verifies) VALUES (?, ?, ?)');
       insert.run('ac-1', 'A', JSON.stringify([{ type: 'endpoint', slug: 'get-users' }]));
       insert.run('ac-2', 'B', JSON.stringify([{ type: 'dto', slug: 'get-users' }]));
       insert.run('ac-3', 'C', JSON.stringify([{ type: 'endpoint', slug: 'other' }]));
 
-      expect(rewriteRefsForRename(db, ac, 'endpoint', 'get-users', 'list-users')).toEqual(['ac-1']);
+      expect(rewriteRefsForRename(db, criterion, 'endpoint', 'get-users', 'list-users')).toEqual(['ac-1']);
 
       // Only the entry whose SIBLING type matches moves. `ac-2` names the same
       // slug under a different type, and collapsing the two is the bug the
       // discriminator exists to prevent.
-      expect(db.prepare('SELECT verifies FROM ac WHERE slug = ?').get('ac-1')).toEqual({
+      expect(db.prepare('SELECT verifies FROM criterion WHERE slug = ?').get('ac-1')).toEqual({
         verifies: JSON.stringify([{ type: 'endpoint', slug: 'list-users' }]),
       });
-      expect(db.prepare('SELECT verifies FROM ac WHERE slug = ?').get('ac-2')).toEqual({
+      expect(db.prepare('SELECT verifies FROM criterion WHERE slug = ?').get('ac-2')).toEqual({
         verifies: JSON.stringify([{ type: 'dto', slug: 'get-users' }]),
       });
-      expect(db.prepare('SELECT verifies FROM ac WHERE slug = ?').get('ac-3')).toEqual({
+      expect(db.prepare('SELECT verifies FROM criterion WHERE slug = ?').get('ac-3')).toEqual({
         verifies: JSON.stringify([{ type: 'endpoint', slug: 'other' }]),
       });
     } finally {
@@ -167,15 +205,15 @@ describe('rewriteRefsForRename', () => {
     // The `LIKE` is a prefilter, not the match. A verifies entry pointing at
     // `get-users-legacy` contains `get-users`, and rewriting it would silently
     // repoint an unrelated reference.
-    const db = projectDb([ac]);
+    const db = projectDb([criterion]);
     try {
-      db.prepare('INSERT INTO ac (slug, title, verifies) VALUES (?, ?, ?)').run(
+      db.prepare('INSERT INTO criterion (slug, title, verifies) VALUES (?, ?, ?)').run(
         'ac-1',
         'A',
         JSON.stringify([{ type: 'endpoint', slug: 'get-users-legacy' }]),
       );
-      expect(rewriteRefsForRename(db, ac, 'endpoint', 'get-users', 'list-users')).toEqual([]);
-      expect(db.prepare('SELECT verifies FROM ac WHERE slug = ?').get('ac-1')).toEqual({
+      expect(rewriteRefsForRename(db, criterion, 'endpoint', 'get-users', 'list-users')).toEqual([]);
+      expect(db.prepare('SELECT verifies FROM criterion WHERE slug = ?').get('ac-1')).toEqual({
         verifies: JSON.stringify([{ type: 'endpoint', slug: 'get-users-legacy' }]),
       });
     } finally {
@@ -241,7 +279,7 @@ describe('declaresRefs', () => {
   it('is true for a ref at any depth, and false for a schema with none', () => {
     expect(declaresRefs(viewer)).toBe(true); // scalar, top level
     expect(declaresRefs(route)).toBe(true); // inside a collection item
-    expect(declaresRefs(ac)).toBe(true); // `$type`, inside a collection item
+    expect(declaresRefs(criterion)).toBe(true); // `$type`, inside a collection item
     expect(declaresRefs(roster)).toBe(true); // on a collection item / record value
     expect(declaresRefs(theme)).toBe(false);
     expect(declaresRefs({ type: 'schemaless' })).toBe(false);

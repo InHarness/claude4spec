@@ -16,19 +16,27 @@
  * it cannot drift into being accidental: the `slug` PK gains `NOT NULL` on the
  * tables that lacked it.
  *
- * SCOPE: the two types this repo contributes directly. Every other type lives
- * in an envelope and is covered by the same assertions in that workspace's own
+ * SCOPE: the ONE type this repo contributes directly. Every other type lives in
+ * an envelope and is covered by the same assertions in that workspace's own
  * suite (`plugins/<name>/test/projection-golden.test.ts`) — `dto`/`endpoint`
- * since 0.2.2, `ui-view`/`design-system` since 0.2.18. Importing their source
- * here would pull files that import `@c4s/plugin-runtime` into the root TS
- * program, where the specifier resolves to the BUILT `dist/` .d.ts rather than
- * to source, making this file's typecheck depend on build order.
+ * since 0.2.2, `ui-view`/`design-system` since 0.2.18, `ac` since 0.2.80.
+ * Importing their source here would pull files that import
+ * `@c4s/plugin-runtime` into the root TS program, where the specifier resolves
+ * to the BUILT `dist/` .d.ts rather than to source, making this file's typecheck
+ * depend on build order.
+ *
+ * `ac` still appears BELOW the golden, as the reconciliation block's subject —
+ * but as a synthetic fixture (`tests/helpers/ac-fixture.ts`), not as the real
+ * declaration. Those cases are about the generator's behaviour on a populated
+ * database (widening, dropping, refusing), and any ac-shaped schema exercises
+ * them; the BASELINE-IDENTITY claim, which does need the real declaration, went
+ * with the type.
  */
 
 import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
 import { applyProjection, generateProjectionDDL, type ProjectableModule } from './projection.js';
-import { acData } from '../../shared/entities/ac/schema.js';
+import { acFixtureData as acData } from '../../../tests/helpers/ac-fixture.js';
 import { diagramData } from '../../shared/entities/diagram/schema.js';
 
 /**
@@ -50,19 +58,6 @@ import { diagramData } from '../../shared/entities/diagram/schema.js';
  * is exercised further down.
  */
 const RETIRED_DDL: Record<string, string> = {
-  ac: `
-    CREATE TABLE IF NOT EXISTS ac (
-      slug TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      kind TEXT NOT NULL DEFAULT 'requirement',
-      status TEXT NOT NULL DEFAULT 'active',
-      verifies TEXT NOT NULL DEFAULT '[]',
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE INDEX IF NOT EXISTS idx_ac_status ON ac(status);
-    CREATE INDEX IF NOT EXISTS idx_ac_kind   ON ac(kind);
-  `,
   diagram: `
     CREATE TABLE IF NOT EXISTS diagram (
       slug       TEXT NOT NULL PRIMARY KEY,
@@ -75,7 +70,26 @@ const RETIRED_DDL: Record<string, string> = {
   `,
 };
 
-const MODULES: ProjectableModule[] = [
+/**
+ * What the GOLDEN compares: the types whose retired DDL is frozen above.
+ *
+ * `ac` left this list in 0.2.80 with the rest of its vertical. Its retired DDL
+ * and the index assertion travelled to
+ * `plugins/c4s-plugin-ac/test/projection-golden.test.ts`, where they can read
+ * the real declaration.
+ */
+const MODULES: ProjectableModule[] = [{ type: 'diagram', data: diagramData }];
+
+/**
+ * What the RECONCILIATION block operates on.
+ *
+ * An ac-shaped fixture rather than `diagram`, deliberately: these cases need a
+ * table with an enum, an embedded collection and generated indexes, and
+ * `diagram` has none of the three. What they assert is the generator's
+ * behaviour on a populated database, which is a property of the generator and
+ * not of any one contributor's schema.
+ */
+const RECONCILE_MODULES: ProjectableModule[] = [
   { type: 'ac', data: acData },
   { type: 'diagram', data: diagramData },
 ];
@@ -159,8 +173,13 @@ describe('projection generator — equivalence with the retired hand-written DDL
         )
         .sort();
 
-    // `ac`: idx_ac_status / idx_ac_kind, reproduced from `data.access` hints.
-    expect(coveredColumns(generatedDb(), 'ac')).toEqual(coveredColumns(retiredDb(), 'ac'));
+    // `diagram` declares no `access` hints, so neither database creates an
+    // index — the assertion is that the generator agrees about the ABSENCE too.
+    // The `access`-driven case (`idx_ac_status` / `idx_ac_kind`) travelled with
+    // `ac` into its envelope's copy of this file.
+    expect(coveredColumns(generatedDb(), 'diagram')).toEqual(
+      coveredColumns(retiredDb(), 'diagram'),
+    );
   });
 });
 
@@ -175,7 +194,7 @@ describe('projection generator — reconciling an existing database', () => {
    */
   it('adds a computedDefault column to a POPULATED table without a non-constant default', () => {
     const db = new Database(':memory:');
-    applyProjection(db, MODULES);
+    applyProjection(db, RECONCILE_MODULES);
     db.prepare(`INSERT INTO ac (slug, title) VALUES ('a', 'something holds')`).run();
 
     const widened = {
@@ -210,8 +229,8 @@ describe('projection generator — reconciling an existing database', () => {
 
   it('is a no-op on a database that already matches', () => {
     const db = new Database(':memory:');
-    applyProjection(db, MODULES);
-    expect(applyProjection(db, MODULES)).toEqual({ created: [], alteredColumns: [] });
+    applyProjection(db, RECONCILE_MODULES);
+    expect(applyProjection(db, RECONCILE_MODULES)).toEqual({ created: [], alteredColumns: [] });
     db.close();
   });
 
@@ -230,12 +249,12 @@ describe('projection generator — reconciling an existing database', () => {
    */
   it('drops a column the schema no longer declares', () => {
     const db = new Database(':memory:');
-    applyProjection(db, MODULES);
+    applyProjection(db, RECONCILE_MODULES);
     db.exec(`ALTER TABLE ac ADD COLUMN legacy_note TEXT NOT NULL DEFAULT ''`);
     const names = () => columnsOf(db, 'ac').map((c) => c.name);
     expect(names()).toContain('legacy_note');
 
-    const result = applyProjection(db, MODULES);
+    const result = applyProjection(db, RECONCILE_MODULES);
     expect(result.alteredColumns).toContain('ac.legacy_note');
     expect(names()).not.toContain('legacy_note');
     db.close();
@@ -243,11 +262,11 @@ describe('projection generator — reconciling an existing database', () => {
 
   it('a stale NOT NULL column would otherwise make the next write impossible', () => {
     const db = new Database(':memory:');
-    applyProjection(db, MODULES);
+    applyProjection(db, RECONCILE_MODULES);
     // No DEFAULT: exactly the shape a removed required field leaves behind.
     db.exec(`ALTER TABLE ac ADD COLUMN gone TEXT`);
     db.exec(`UPDATE ac SET gone = 'x'`);
-    applyProjection(db, MODULES);
+    applyProjection(db, RECONCILE_MODULES);
     expect(() =>
       db.prepare(`INSERT INTO ac (slug, title) VALUES ('b', 't')`).run(),
     ).not.toThrow();
@@ -262,11 +281,11 @@ describe('projection generator — reconciling an existing database', () => {
    */
   it('drops the generated index that would block the column', () => {
     const db = new Database(':memory:');
-    applyProjection(db, MODULES);
+    applyProjection(db, RECONCILE_MODULES);
     db.exec(`ALTER TABLE ac ADD COLUMN legacy_note TEXT`);
     db.exec(`CREATE INDEX idx_ac_legacy_note ON ac(legacy_note)`);
 
-    applyProjection(db, MODULES);
+    applyProjection(db, RECONCILE_MODULES);
     expect(columnsOf(db, 'ac').map((c) => c.name)).not.toContain('legacy_note');
     expect(
       db
@@ -284,7 +303,7 @@ describe('projection generator — reconciling an existing database', () => {
    */
   it('leaves a column it cannot drop rather than failing the boot', () => {
     const db = new Database(':memory:');
-    applyProjection(db, MODULES);
+    applyProjection(db, RECONCILE_MODULES);
     // The real table, plus an undeclared column held by a table-level UNIQUE —
     // the one form of constraint only a full table rebuild could rewrite.
     const { sql } = db
@@ -293,7 +312,7 @@ describe('projection generator — reconciling an existing database', () => {
     db.exec(`DROP TABLE ac`);
     db.exec(sql.replace(/\)\s*$/, ',\n  gone TEXT,\n  UNIQUE(gone)\n)'));
 
-    expect(() => applyProjection(db, MODULES)).not.toThrow();
+    expect(() => applyProjection(db, RECONCILE_MODULES)).not.toThrow();
     expect(columnsOf(db, 'ac').map((c) => c.name)).toContain('gone');
     db.close();
   });
@@ -307,9 +326,9 @@ describe('projection generator — reconciling an existing database', () => {
    */
   it('never drops the identity or binding columns', () => {
     const db = new Database(':memory:');
-    applyProjection(db, MODULES);
+    applyProjection(db, RECONCILE_MODULES);
     const before = tablesOf(db).map((t) => [t, columnsOf(db, t)] as const);
-    applyProjection(db, MODULES);
+    applyProjection(db, RECONCILE_MODULES);
     for (const [table, columns] of before) {
       expect(columnsOf(db, table)).toEqual(columns);
       const names = columns.map((c) => c.name);
@@ -321,17 +340,23 @@ describe('projection generator — reconciling an existing database', () => {
 
 describe('projection generator — idempotency', () => {
   it('is a pure function of the declaration', () => {
-    for (const module of MODULES) {
+    for (const module of RECONCILE_MODULES) {
       expect(generateProjectionDDL(module)).toEqual(generateProjectionDDL(module));
     }
   });
 
   it('applying twice leaves the schema unchanged', () => {
-    const db = generatedDb();
+    // Built from the SAME list it re-applies. `generatedDb()` is the golden's
+    // database and holds only the directly-contributed types, so seeding from it
+    // and re-applying a wider list would be measuring the difference between two
+    // lists rather than idempotency.
+    const db = new Database(':memory:');
+    applyProjection(db, RECONCILE_MODULES);
     const before = tablesOf(db).map((t) => columnsOf(db, t));
-    for (const module of MODULES) {
+    for (const module of RECONCILE_MODULES) {
       for (const statement of generateProjectionDDL(module)) db.exec(statement);
     }
     expect(tablesOf(db).map((t) => columnsOf(db, t))).toEqual(before);
+    db.close();
   });
 });

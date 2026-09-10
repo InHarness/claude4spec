@@ -27,7 +27,7 @@ import { z } from 'zod';
 import type { ZodRawShape } from 'zod';
 
 import { buildCreateShape, buildUpdateShape } from './crud-schema-gen.js';
-import { acData } from '../../../shared/entities/ac/schema.js';
+import { acFixtureData as acData } from '../../../../tests/helpers/ac-fixture.js';
 import { diagramData } from '../../../shared/entities/diagram/schema.js';
 import type { DataDeclaration } from '../../../shared/plugin-host/data-schema.js';
 import type { SlugPattern } from '../../../shared/plugin-host/slug-pattern.js';

@@ -103,6 +103,16 @@ export const PLUGIN_RUNTIME_EXPORT_NAMES = [
   'useCreateTag',
   'useReferences',
   'useReleases',
+  /**
+   * M05/0.2.80 — the published equivalent of a host-only facade.
+   *
+   * It drives the chat store, a singleton rather than a window event, so an
+   * envelope cannot reproduce it by dispatching the way it can `toast`. Named
+   * here because a shim that omitted it would leave `c4s-plugin-ac`'s list
+   * screen importing `undefined` and its "Analyze consistency" action throwing
+   * on click — the failure this parity test exists to make impossible.
+   */
+  'startSeededThread',
   // M13/L11: a pure function, deliberately not a singleton.
   'lineDiffHunks',
   'HOST_API_VERSION',

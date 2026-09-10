@@ -236,8 +236,8 @@ describe('builtin envelope — real load path', () => {
     // here would be the version gate, which is how `spreadsheet` was absent for
     // the whole of 2.0.0 while its plugin still declared `^1.0.0`.
     //
-    // EIGHT since 0.2.66, and the type list below is NINE — the two counts have
-    // never matched and are not meant to. ONE of the eight packages still
+    // NINE since 0.2.80, and the type list below is TEN — the two counts have
+    // never matched and are not meant to. ONE of the nine packages still
     // contributes no entity type at all (`c4s-plugin-writing-style-author`, one
     // contextual skill and nothing else), while `c4s-plugin-frontend-mockups`
     // contributes two.
@@ -246,7 +246,13 @@ describe('builtin envelope — real load path', () => {
     // the ordinary one: it now brings `module-dependency`, so the list below grew
     // by one while the status list did not. That package is no longer the
     // capability-class example — `writing-style-author` is the last of them.
+    //
+    // 0.2.80 grew BOTH by one: `c4s-plugin-ac` is a new package contributing a
+    // new type. It is also the first envelope to contribute a SUBAGENT alongside
+    // its type, which this assertion does not see — `envelope-delivery-axes`
+    // covers that half.
     expect(parsed.statuses).toEqual([
+      'loaded',
       'loaded',
       'loaded',
       'loaded',
@@ -257,6 +263,7 @@ describe('builtin envelope — real load path', () => {
       'loaded',
     ]);
     expect(parsed.types).toEqual([
+      'ac',
       'code-snippet',
       'database-table',
       'design-system',

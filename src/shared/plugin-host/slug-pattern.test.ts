@@ -12,7 +12,7 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateSlugPattern, previewSlugPattern, type SlugPattern } from './slug-pattern.js';
 import { slugify } from '../slug.js';
-import { acSlugPattern } from '../entities/ac/schema.js';
+import { acFixtureSlugPattern as acSlugPattern } from '../../../tests/helpers/ac-fixture.js';
 import { diagramSlugPattern } from '../entities/diagram/schema.js';
 
 /**
