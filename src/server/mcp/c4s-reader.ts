@@ -3,8 +3,8 @@ import { z } from 'zod';
 import { toolError } from '../operations/envelope.js';
 import type Database from 'better-sqlite3';
 import type { RawEntityReader } from '../discovery/raw-entity-reader.js';
-import { isDiscoveryError, MAX_ANCHORS_PER_CALL, type DiscoveryCore } from '../discovery/index.js';
-import { GET_PAGE_OUTLINE_RETURN, GET_PAGE_RETURN } from './tool-contract-text.js';
+import { isDiscoveryError, type DiscoveryCore } from '../discovery/index.js';
+import { GET_PAGE_OUTLINE_RETURN, GET_PAGE_RETURN, GET_SECTIONS_RETURN } from './tool-contract-text.js';
 
 /**
  * `c4s-reader` — the external stdio transport over the M39 discovery core.
@@ -245,12 +245,18 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
 
   const getSections = op(
     'get_sections',
-    `Read sections BY ANCHOR — pass every anchor you need in ONE call; one anchor is simply a list of one. Search hits, a reference sweep and a page outline all hand you a LIST of anchors, and fetching them one per call is the cost this operation exists to remove. Each comes back as its own item in \`results\`, in the order asked for (duplicates silently collapsed), carrying the heading, the coordinates and the body as authored — XML tags left untouched, because a tag is an edge and expanding it would paste the payload in and destroy the edge. The item is \`{ anchor, rootId, page_path, heading_text, heading_level, line_start, line_end, body, truncated?, edges? }\`. \`edges\` accompanies an item IF AND ONLY IF it carries \`truncated: true\`: a full body already contains its own edges as authored tags and links, so parsing them out a second time would spend the budget on a copy. When they are there, they are the parsed outgoing edges of the WHOLE section — \`edges.sectionRefs: [{ anchor }]\`, \`edges.entityEmbeds: [{ tagType, type, slug?, slugs?, tags?, filter? }]\`, \`edges.pageLinks: [{ rootId, path, anchor? }]\` — identifiers only, in order of occurrence, so a truncated item still reports everything its section points at; to follow an embed, call get_entities with the slug it carries. There is no \`content_hash\`: the response carries the content itself, so there is nothing left for a version of it to settle. An anchor that is not addressable comes back as \`{ anchor, error, code: "SECTION_NOT_FOUND" }\` in its own slot rather than failing the batch, and that happens two ways with two different remedies: the anchor is unknown (the message points at search_pages / get_page_outline), or it resolves onto a root that carries no section index (the message points at get_page). \`anchors\` has a hard length limit of ${MAX_ANCHORS_PER_CALL} (exceeding it, or passing none, is INVALID_ARGUMENT stating the limit) and the response has a size budget: past it, items keep their coordinates, GAIN \`edges\` and lose \`body\`, and are marked \`truncated: true\` — never dropped in silence, and the envelope's \`message\` says how to retry. The remedy is not the same batch again: pick the anchors actually needed out of the \`edges\` handed back and call again, narrower. The FIRST item never degrades that way: if its body alone exceeds the budget it comes back shortened as text with \`truncated: true\` AND with \`edges\` (its tail is invisible, so the edges are the only view of it), because a one-anchor call is already the smallest retry and "ask for fewer" would otherwise be unfollowable. \`includeSubtree\` adds the lower headings beneath each anchor — it is an option for reading CONTENT, NOT a cheap listing of a subtree; for that, get_page_outline is the call, and the \`size\` it reports per node is exactly the granularity this operation yields WITHOUT \`includeSubtree\`. An anchor already covered by another one's subtree comes back as \`{ anchor, coveredBy }\` instead of repeating the body. An anchor names exactly ONE section. If a duplicate anchor slips into the pages anyway, the read is still deterministic rather than a coin flip on directory order: the occurrence with the lowest (rootId, page_path) owns the anchor, and within one page the first (lowest line) occurrence wins. \`check_consistency\` rule 13 reports the collision with every location so it gets fixed.`,
+    `Read sections BY ANCHOR — pass every anchor you need in ONE call; one anchor is simply a list of one. Search hits, a reference sweep and a page outline all hand you a LIST of anchors, and fetching them one per call is the cost this operation exists to remove. Each section comes back as its own item carrying the heading, the coordinates and the body as authored — XML tags left untouched, because a tag is an edge and expanding it would paste the payload in and destroy the edge; to follow an embed, call get_entities with the slug it carries. An anchor that is not addressable comes back as \`{ anchor, error, code: "SECTION_NOT_FOUND" }\` in its own slot rather than failing the batch, and that happens two ways with two different remedies: the anchor is unknown (the message points at search_pages / get_page_outline), or it resolves onto a root that carries no section index (the message points at get_page). ${GET_SECTIONS_RETURN} An anchor names exactly ONE section. If a duplicate anchor slips into the pages anyway, the read is still deterministic rather than a coin flip on directory order: the occurrence with the lowest (rootId, page_path) owns the anchor, and within one page the first (lowest line) occurrence wins. \`check_consistency\` rule 13 reports the collision with every location so it gets fixed.`,
     {
       anchors: z
         .array(z.string())
         .describe('Section anchors (6-12 lowercase alphanumerics each), in order'),
-      includeSubtree: z.boolean().optional().describe('Include the subtree of lower headings'),
+      includeSubtree: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe(
+          'Also return every section beneath each anchor as its OWN item, in document order behind it. Widens the set of items, never an item\'s body — a parent carries only its own body either way.',
+        ),
     },
     (discovery, args) =>
       discovery.getSections({

@@ -157,10 +157,12 @@ export interface GetPageOutlineInput {
 /**
  * One heading in the outline.
  *
- * `size` is the section's body measured in bytes — the same granularity
- * `get_sections` yields without `includeSubtree`, which is what makes it a usable
- * price tag: what you measure here is what you pay for there. (`includeSubtree` is
- * an option for reading CONTENT; it is not a cheap subtree listing.)
+ * `size` is the section's OWN body measured in bytes — the prose up to its first
+ * child heading — which is exactly the granularity `get_sections` yields at EITHER
+ * setting of `includeSubtree` (0.2.84: the flag widens the set of items, never an
+ * item's body). That is what makes it a usable price tag: what you measure here
+ * is what you pay for there. (`includeSubtree` is an option for reading CONTENT;
+ * it is not a cheap subtree listing — this tree is.)
  *
  * `children` is present ONLY when the node has any. A leaf omits the key rather than
  * carrying `[]` — an empty array on every leaf of a large page is pure envelope
@@ -219,6 +221,11 @@ export interface GetPageOutlineResult {
  * `includeSubtree` stays a flag of the whole call rather than of each anchor.
  * Per-anchor granularity would let one call mix two definitions of what a
  * section is, and the caller can always split the call instead.
+ *
+ * 0.2.84 — it widens the SET of items, not an item's body: every section under
+ * each requested anchor comes back as its own item, spliced into `results`
+ * directly behind it in document order, and the parent carries only its own
+ * body. An expanded item is indistinguishable from an explicitly requested one.
  */
 export interface GetSectionsInput {
   anchors: string[];
@@ -265,6 +272,12 @@ export interface SectionEdges {
  * the absence of `body`: the first item is never degraded to meta-only, but
  * when its own body overflows it comes back text-clipped, and everything past
  * the cut is invisible — so it gets edges despite having a `body`.
+ *
+ * 0.2.84 — `body` and `edges` are the section's OWN: the text up to its first
+ * child heading, and the tags parsed from exactly that text. `line_end` is the
+ * end of that own body, not the indexed range (which runs over the subtree and
+ * is what the write side edits by). A child's text and tags come back on the
+ * child's own item.
  */
 export interface SectionResultItem {
   anchor: string;
@@ -281,23 +294,6 @@ export interface SectionResultItem {
 }
 
 /**
- * An anchor that was asked for explicitly AND fell inside another requested
- * anchor's subtree. Its body is not repeated — it is already in `coveredBy`'s
- * item.
- *
- * `truncated` is inherited from the covering item when that one was cut. The
- * absence of `truncated` is therefore a GUARANTEE that the body is present
- * upstream; without the inheritance, `coveredBy` would sometimes point at an
- * item that has no body either, and the caller would follow the pointer to
- * nothing.
- */
-export interface SectionCoveredItem {
-  anchor: string;
-  coveredBy: string;
-  truncated?: boolean;
-}
-
-/**
  * A per-ITEM failure. One unknown anchor does not fail the batch — the other
  * sections still come back with their bodies, which is the whole reason the
  * operation takes a list.
@@ -308,13 +304,35 @@ export interface SectionErrorItem {
   code: DiscoveryErrorCode;
 }
 
-export type GetSectionsItem = SectionResultItem | SectionCoveredItem | SectionErrorItem;
+/**
+ * 0.2.84 — two variants, section or error. The `{ anchor, coveredBy }` variant
+ * (an anchor requested explicitly and swallowed by another requested anchor's
+ * subtree) is gone with the body it pointed at: a subtree no longer lives inside
+ * a parent's item, so there is nothing to be covered by.
+ */
+export type GetSectionsItem = SectionResultItem | SectionErrorItem;
 
 export interface GetSectionsResult {
-  /** In input order, after silently de-duplicating anchors. */
+  /**
+   * ONE ITEM PER SECTION. The explicit anchors in input order (silently
+   * de-duplicated, first occurrence wins), and with `includeSubtree` each one's
+   * subtree in document order directly behind its item. De-duplication is
+   * global: an anchor that is both requested and inside another's subtree sits
+   * at its own input position, so a parent and its child both requested yield
+   * exactly one item each, and for `[child, parent]` the parent's subtree is
+   * not contiguous.
+   *
+   * At most `MAX_SECTION_ITEMS_PER_RESPONSE` entries: past that the list is a
+   * PREFIX in this order, applied before the response budget degrades what is
+   * left. Error items count.
+   */
   results: GetSectionsItem[];
   truncated?: boolean;
-  /** Present only on a cut: how to fetch the remainder. */
+  /**
+   * Present only on a cut, and it says WHICH cut: the item ceiling (go to
+   * get_page_outline for the anchors — never "retry with fewer"), the response
+   * budget (retry with a smaller subset), or one oversized body clipped as text.
+   */
   message?: string;
 }
 

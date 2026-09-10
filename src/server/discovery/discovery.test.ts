@@ -476,17 +476,16 @@ describe('discovery core', () => {
      * 0.2.5 — the operation batches, so every assertion below reaches through
      * `results[]`. `one()` keeps the single-anchor cases readable without
      * hiding the envelope: it asserts the item IS a section (rather than an
-     * error or a `coveredBy` pointer), which is exactly what a bare
-     * `results[0]` would let slip past.
+     * error), which is exactly what a bare `results[0]` would let slip past.
      *
-     * 0.2.16 — the test is on what the OTHER two variants carry. A section item
+     * 0.2.16 — the test is on what the OTHER variant carries. A section item
      * used to be recognisable by its `edges`; now those ride only on a
      * truncated one, and `body` is optional too, so neither field identifies it.
      */
     const one = (result: Awaited<ReturnType<DiscoveryCore['getSections']>>): SectionResultItem => {
       expect(result.results).toHaveLength(1);
       const item = result.results[0]!;
-      if ('error' in item || 'coveredBy' in item) {
+      if ('error' in item) {
         throw new Error(`expected a section item, got ${JSON.stringify(item)}`);
       }
       return item;
@@ -854,7 +853,14 @@ describe('discovery core', () => {
       expect((first.results[0] as SectionResultItem).body).toBeTruthy();
     });
 
-    it('a section covered by another requested subtree points at it instead of repeating the body', async () => {
+    /**
+     * 0.2.84 — `includeSubtree` widens the SET of items, not the parent's body.
+     * The child comes back as a sibling item directly behind its parent, the
+     * parent's body stops before the first child heading, and a sibling
+     * section is not expanded (the subtree ends at the next same-or-shallower
+     * heading).
+     */
+    it('[ac:ac-get-sections-z-includesubtree-true-zw] a subtree comes back as separate items, one per section, in document order behind its parent', async () => {
       await writePage(
         'pages',
         'tree.md',
@@ -871,6 +877,11 @@ describe('discovery core', () => {
           '',
           'CHILD BODY',
           '',
+          '#### Grand',
+          '<!-- anchor: dddddd44 -->',
+          '',
+          'GRAND BODY',
+          '',
           '## Sibling',
           '<!-- anchor: cccccc33 -->',
           '',
@@ -881,124 +892,251 @@ describe('discovery core', () => {
       await indexPageLikeTheIndexer('pages', 'pages', 'tree.md');
       const c = core([pagesRoot()]);
 
-      const result = await c.getSections({ anchors: ['aaaaaa11', 'bbbbbb22', 'cccccc33'], includeSubtree: true });
+      const result = await c.getSections({ anchors: ['aaaaaa11'], includeSubtree: true });
 
-      const parent = result.results[0] as SectionResultItem;
-      expect(parent.body).toContain('CHILD BODY');
-      // No duplicate body: the child's text is already inside the parent's item.
-      expect(result.results[1]).toEqual({ anchor: 'bbbbbb22', coveredBy: 'aaaaaa11' });
-      // A SIBLING is not covered — the subtree ends at the next same-or-shallower
-      // heading, so `cccccc33` still gets its own body.
-      expect((result.results[2] as SectionResultItem).body).toContain('SIBLING BODY');
+      // [ac:ac-poddrzewo-wraca-w-kolejnosci-dokument] — document order, directly behind the parent.
+      expect(result.results.map((i) => i.anchor)).toEqual(['aaaaaa11', 'bbbbbb22', 'dddddd44']);
+      const [parent, child, grand] = result.results as SectionResultItem[];
+      // [ac:ac-item-sekcji-nadrzednej-przy-includesu] — the parent carries ONLY its own body.
+      expect(parent!.body).toContain('PARENT BODY');
+      expect(parent!.body).not.toContain('CHILD BODY');
+      expect(parent!.body).not.toContain('bbbbbb22');
+      expect(child!.body).toContain('CHILD BODY');
+      expect(child!.body).not.toContain('GRAND BODY');
+      expect(grand!.body).toContain('GRAND BODY');
+      // [ac:ac-item-pochodzacy-z-rozwiniecia-poddrze] — an expanded item has the
+      // full shape of a requested one and no marker of where it came from.
+      expect(child).toMatchObject({
+        anchor: 'bbbbbb22',
+        rootId: 'pages',
+        page_path: 'tree.md',
+        heading_text: 'Child',
+        heading_level: 3,
+        line_start: expect.any(Number),
+        line_end: expect.any(Number),
+      });
+      expect(Object.keys(child!).sort()).toEqual(Object.keys(parent!).sort());
+      expect(result.truncated).toBeUndefined();
+
+      // Without the flag: the same parent, the same own body — the flag never
+      // changes what an item's body is, only how many items there are.
+      const bare = await c.getSections({ anchors: ['aaaaaa11'] });
+      expect(bare.results).toHaveLength(1);
+      expect((bare.results[0] as SectionResultItem).body).toBe(parent!.body);
+      expect((bare.results[0] as SectionResultItem).line_end).toBe(parent!.line_end);
     });
 
-    it('a covered item inherits truncation from the item that holds its body', async () => {
-      const big = 'y'.repeat(130_000);
+    /**
+     * `line_end` on the item is the end of the OWN body. The index keeps the
+     * subtree range (the write side edits by it), so the two are allowed to
+     * differ — and for a parent they do.
+     */
+    it('an item\'s line_end is the end of its own body, not of the indexed subtree range', async () => {
       await writePage(
         'pages',
-        'cut.md',
+        'range.md',
+        ['# Top', '', '## Parent', '<!-- anchor: aaaaaa11 -->', '', 'P', '', '### Child', '<!-- anchor: bbbbbb22 -->', '', 'C', ''].join('\n'),
+      );
+      await indexPageLikeTheIndexer('pages', 'pages', 'range.md');
+      const indexed = db.prepare('SELECT line_end FROM section_index WHERE anchor = ?').get('aaaaaa11') as { line_end: number };
+      const c = core([pagesRoot()]);
+
+      const [parent, child] = (await c.getSections({ anchors: ['aaaaaa11'], includeSubtree: true })).results as SectionResultItem[];
+
+      expect(parent!.line_end).toBeLessThan(indexed.line_end);
+      // The own range ends where the child's anchor block begins: no gap, no overlap.
+      expect(child!.line_start).toBeGreaterThan(parent!.line_end);
+      expect(child!.line_end).toBe(indexed.line_end);
+    });
+
+    /**
+     * De-duplication is GLOBAL and first-occurrence-wins. An anchor that is
+     * both requested and inside another requested anchor's subtree is one
+     * item, at its own input position — not at the expansion's.
+     */
+    it('[ac:ac-anchor-rodzica-i-anchor-jego-dziecka] a parent and its child both requested yield exactly one item each', async () => {
+      await writePage(
+        'pages',
+        'both.md',
+        ['# Top', '', '## Parent', '<!-- anchor: aaaaaa11 -->', '', 'P', '', '### Child', '<!-- anchor: bbbbbb22 -->', '', 'C', '', '### Other', '<!-- anchor: cccccc33 -->', '', 'O', ''].join('\n'),
+      );
+      await indexPageLikeTheIndexer('pages', 'pages', 'both.md');
+      const c = core([pagesRoot()]);
+
+      const result = await c.getSections({ anchors: ['aaaaaa11', 'bbbbbb22'], includeSubtree: true });
+
+      // The explicit anchors keep their input order and the parent's subtree
+      // is spliced in behind the parent — minus the child, which is an explicit
+      // anchor of its own and sits at ITS position, after the expansion.
+      expect(result.results.map((i) => i.anchor)).toEqual(['aaaaaa11', 'cccccc33', 'bbbbbb22']);
+      expect(result.results.every((i) => !('error' in i))).toBe(true);
+      expect((result.results[2] as SectionResultItem).body).toContain('C');
+    });
+
+    it('[ac:ac-anchor-pochloniety-rozwinieciem-inneg] an anchor absorbed by another\'s expansion sits at its first position in anchors[], so the subtree is not contiguous', async () => {
+      await writePage(
+        'pages',
+        'order.md',
+        ['# Top', '', '## Parent', '<!-- anchor: aaaaaa11 -->', '', 'P', '', '### Child', '<!-- anchor: bbbbbb22 -->', '', 'C', '', '### Other', '<!-- anchor: cccccc33 -->', '', 'O', ''].join('\n'),
+      );
+      await indexPageLikeTheIndexer('pages', 'pages', 'order.md');
+      const c = core([pagesRoot()]);
+
+      const result = await c.getSections({ anchors: ['bbbbbb22', 'aaaaaa11'], includeSubtree: true });
+
+      // The child keeps position 0; the parent's expansion skips it and only
+      // adds the sibling it did not already cover.
+      expect(result.results.map((i) => i.anchor)).toEqual(['bbbbbb22', 'aaaaaa11', 'cccccc33']);
+    });
+
+    /**
+     * Valve 2 — the item ceiling. Structural: decided from the index before a
+     * body is read, cut to a PREFIX of the output order, and its `message` is
+     * the ceiling's, not the budget's: the anchors past the cut are invisible
+     * to the caller, so "retry with fewer" would name a call that returns the
+     * same thing.
+     */
+    it('[ac:ac-rozwiniecie-dajace-wiecej-niz-50-item] an expansion past the ceiling comes back as the first 50 items in output order, with the ceiling named', async () => {
+      const lines = ['# Top', '', '## Parent', '<!-- anchor: aaaaaa11 -->', '', 'P', ''];
+      for (let i = 1; i <= 60; i++) {
+        const anchor = `child${String(i).padStart(3, '0')}`;
+        lines.push(`### Child ${i}`, `<!-- anchor: ${anchor} -->`, '', `BODY ${i}`, '');
+      }
+      await writePage('pages', 'many.md', lines.join('\n'));
+      await indexPageLikeTheIndexer('pages', 'pages', 'many.md');
+      const c = core([pagesRoot()]);
+
+      const result = await c.getSections({ anchors: ['nosuch01', 'aaaaaa11'], includeSubtree: true });
+
+      expect(result.results).toHaveLength(50);
+      // The error item took a slot: it counts toward the ceiling like any other.
+      expect(result.results[0]).toMatchObject({ anchor: 'nosuch01', code: 'SECTION_NOT_FOUND' });
+      expect(result.results[1]!.anchor).toBe('aaaaaa11');
+      expect(result.results.slice(2).map((i) => i.anchor)).toEqual(
+        Array.from({ length: 48 }, (_, i) => `child${String(i + 1).padStart(3, '0')}`),
+      );
+      // [ac:ac-przy-ucieciu-sufitem-liczby-itemow-ko]
+      expect(result.truncated).toBe(true);
+      // [ac:ac-message-przy-ucieciu-sufitem-liczby-i] — names the ceiling,
+      // points at get_page_outline, never at a smaller anchors[].
+      expect(result.message).toContain('50');
+      expect(result.message).toContain('get_page_outline');
+      expect(result.message).not.toContain('smaller subset');
+      // Nothing that survived was degraded: the cut was by count, not by size.
+      for (const item of result.results.slice(1)) expect((item as SectionResultItem).body).toBeTruthy();
+    });
+
+    it('the ceiling bites before the budget, and the message carries both remedies', async () => {
+      const big = 'z'.repeat(70_000);
+      const lines = ['# Top', '', '## Parent', '<!-- anchor: aaaaaa11 -->', '', big, ''];
+      for (let i = 1; i <= 55; i++) {
+        const anchor = `child${String(i).padStart(3, '0')}`;
+        lines.push(`### Child ${i}`, `<!-- anchor: ${anchor} -->`, '', i === 1 ? big : `BODY ${i}`, '');
+      }
+      await writePage('pages', 'cap-budget.md', lines.join('\n'));
+      await indexPageLikeTheIndexer('pages', 'pages', 'cap-budget.md');
+      const c = core([pagesRoot()]);
+
+      const result = await c.getSections({ anchors: ['aaaaaa11'], includeSubtree: true });
+
+      expect(result.results).toHaveLength(50);
+      // The first item survives both cuts; degradation starts at item two.
+      expect((result.results[0] as SectionResultItem).body).toBeTruthy();
+      expect((result.results[1] as SectionResultItem).body).toBeUndefined();
+      expect((result.results[1] as SectionResultItem).truncated).toBe(true);
+      expect(result.message!.indexOf('item ceiling')).toBeLessThan(result.message!.indexOf('response budget'));
+      expect(result.message).toContain('smaller subset');
+    });
+
+    /**
+     * `edges` describe the OWN body. A child's tag comes back on the child's
+     * item — through the prose scan AND through the `section_entity_link`
+     * augmentation, which the indexer fills from the subtree range.
+     */
+    it('[ac:ac-edges-ucietego-itemu-sa-liczone-z-pel] a cut parent reports the edges of its own body only, never its children\'s', async () => {
+      const big = 'x'.repeat(80_000);
+      await writePage(
+        'pages',
+        'own-edges.md',
         [
           '# Top',
           '',
           '## Lead',
           '<!-- anchor: dddddd44 -->',
           '',
-          'y'.repeat(119_000),
+          big,
           '',
           '## Parent',
           '<!-- anchor: aaaaaa11 -->',
+          '',
+          'Own <single_element type="widget" slug="mine"/> here.',
           '',
           big,
           '',
           '### Child',
           '<!-- anchor: bbbbbb22 -->',
           '',
-          'CHILD BODY',
+          'Child <single_element type="widget" slug="theirs"/> and a link to @other.md#abcdef01.',
           '',
         ].join('\n'),
       );
-      await indexPageLikeTheIndexer('pages', 'pages', 'cut.md');
+      await indexPageLikeTheIndexer('pages', 'pages', 'own-edges.md');
+      // The link table as the indexer writes it: the parent's range spans the child.
+      const link = db.prepare('INSERT INTO section_entity_link (rootId, anchor, entity_type, entity_slug) VALUES (?, ?, ?, ?)');
+      link.run('pages', 'aaaaaa11', 'widget', 'mine');
+      link.run('pages', 'aaaaaa11', 'widget', 'theirs');
+      link.run('pages', 'bbbbbb22', 'widget', 'theirs');
       const c = core([pagesRoot()]);
 
-      const result = await c.getSections({
-        anchors: ['dddddd44', 'aaaaaa11', 'bbbbbb22'],
-        includeSubtree: true,
-      });
+      const result = await c.getSections({ anchors: ['dddddd44', 'aaaaaa11'], includeSubtree: true });
 
       const parent = result.results[1] as SectionResultItem;
       expect(parent.truncated).toBe(true);
       expect(parent.body).toBeUndefined();
-      /**
-       * The flag has to travel. `coveredBy` promises the body lives upstream;
-       * when the upstream item was cut, an un-flagged pointer would send the
-       * caller to fetch something that is not there — worse than saying nothing,
-       * because it looks like a successful answer.
-       */
-      expect(result.results[2]).toEqual({ anchor: 'bbbbbb22', coveredBy: 'aaaaaa11', truncated: true });
+      expect(parent.edges!.entityEmbeds.map((e) => e.slug)).toEqual(['mine']);
+      expect(parent.edges!.pageLinks).toEqual([]);
+      const child = result.results[2] as SectionResultItem;
+      expect(child.edges!.entityEmbeds.map((e) => e.slug)).toEqual(['theirs']);
+      expect(child.edges!.pageLinks).toEqual([{ rootId: 'pages', path: 'other.md', anchor: 'abcdef01' }]);
     });
 
     /**
-     * Three levels deep, requested INNERMOST FIRST. The middle section claims
-     * the deepest one before the outermost claims the middle, so a
-     * first-writer-wins map left `cccccc33 -> bbbbbb22` — a pointer at an item
-     * that has no body of its own. `coveredBy` without `truncated` is a promise
-     * that the body is present upstream, so it has to name the item that
-     * actually holds it, not the nearest ancestor that happens to be requested.
+     * The outline's `size` and the item's body are ONE granularity at either
+     * setting of the flag — the measurement before fetching has no hole for
+     * the expanded case.
      */
-    it('a coveredBy pointer always names an item that has a body, never a covered one', async () => {
+    it('get_page_outline.size equals the byte length of the get_sections body at either setting of includeSubtree', async () => {
       await writePage(
         'pages',
-        'chain.md',
-        [
-          '# Top',
-          '',
-          '## Parent',
-          '<!-- anchor: aaaaaa11 -->',
-          '',
-          'PARENT BODY',
-          '',
-          '### Child',
-          '<!-- anchor: bbbbbb22 -->',
-          '',
-          'CHILD BODY',
-          '',
-          '#### Grand',
-          '<!-- anchor: cccccc33 -->',
-          '',
-          'GRAND BODY',
-          '',
-        ].join('\n'),
+        'measure.md',
+        ['# Top', '', '## Parent', '<!-- anchor: aaaaaa11 -->', '', 'Parent prose, zażółć.', '', '### Child', '<!-- anchor: bbbbbb22 -->', '', 'Child prose.', ''].join('\n'),
       );
-      await indexPageLikeTheIndexer('pages', 'pages', 'chain.md');
+      await indexPageLikeTheIndexer('pages', 'pages', 'measure.md');
       const c = core([pagesRoot()]);
 
-      const result = await c.getSections({
-        anchors: ['bbbbbb22', 'aaaaaa11', 'cccccc33'],
-        includeSubtree: true,
-      });
+      const outline = await c.getPageOutline({ rootId: 'pages', path: 'measure.md' });
+      const sizes = new Map<string, number>();
+      const walk = (nodes: typeof outline.sections) => {
+        for (const n of nodes) {
+          sizes.set(n.anchor, n.size);
+          if (n.children) walk(n.children);
+        }
+      };
+      walk(outline.sections);
 
-      const holder = result.results[1] as SectionResultItem;
-      expect(holder.anchor).toBe('aaaaaa11');
-      expect(holder.body).toContain('GRAND BODY');
-      expect(result.results[0]).toEqual({ anchor: 'bbbbbb22', coveredBy: 'aaaaaa11' });
-      expect(result.results[2]).toEqual({ anchor: 'cccccc33', coveredBy: 'aaaaaa11' });
-
-      // The property, stated once so it survives a rewrite of the fixture: every
-      // pointer resolves in ONE hop to an item carrying a body.
-      for (const item of result.results) {
-        if (!('coveredBy' in item)) continue;
-        const target = result.results.find((i) => i.anchor === item.coveredBy);
-        expect((target as SectionResultItem).body).toBeTruthy();
+      for (const includeSubtree of [false, true]) {
+        const result = await c.getSections({ anchors: ['aaaaaa11', 'bbbbbb22'], includeSubtree });
+        for (const item of result.results as SectionResultItem[]) {
+          expect(Buffer.byteLength(item.body!, 'utf8')).toBe(sizes.get(item.anchor));
+        }
       }
     });
 
     /**
-     * A root that lost its section index takes its whole page down together, so
-     * the child cannot be answered with "your body is upstream" — upstream is an
-     * error item. Coverage is therefore resolved only among anchors that can
-     * actually produce a body.
+     * A root that lost its section index takes its whole page down together:
+     * every anchor on it is an error item, and there is no subtree to expand.
      */
-    it('a de-indexed root produces per-item errors, never a coveredBy at an error', async () => {
+    it('a de-indexed root produces per-item errors, and nothing to expand', async () => {
       await writePage(
         'pages',
         'gone.md',
@@ -1008,13 +1146,10 @@ describe('discovery core', () => {
       // Same rows, but the root no longer declares a section index.
       const c = core([flatRoot()]);
 
-      const result = await c.getSections({
-        anchors: ['aaaaaa11', 'bbbbbb22'],
-        includeSubtree: true,
-      });
+      const result = await c.getSections({ anchors: ['aaaaaa11'], includeSubtree: true });
 
+      expect(result.results).toHaveLength(1);
       expect(result.results.every((i) => 'error' in i)).toBe(true);
-      expect(result.results.some((i) => 'coveredBy' in i)).toBe(false);
     });
 
     /**

@@ -46,12 +46,12 @@ const pagesRoot: Root = { id: 'pages', name: 'Pages', dir: 'pages', builtin: tru
 /**
  * Unwraps a single-anchor `get_sections` call, asserting the item IS a section.
  *
- * Keyed on what the other two variants carry: since 0.2.16 a section item's own
+ * Keyed on what the error variant carries: since 0.2.16 a section item's own
  * `body` and `edges` are both optional, so neither one identifies it.
  */
 function sectionItem(result: GetSectionsResult): SectionResultItem {
   const item = result.results[0];
-  if (!item || 'error' in item || 'coveredBy' in item) {
+  if (!item || 'error' in item) {
     throw new Error(`expected a section item, got ${JSON.stringify(item)}`);
   }
   return item;
@@ -565,7 +565,7 @@ describe('discovery core over the real section indexer', () => {
       expect(anchorOf('Beta')).toBe('betaown1');
     });
 
-    it('keeps it out of a SUBTREE read too, which used to compute its own end', async () => {
+    it('keeps it out of a SUBTREE read too, where the child is its own item', async () => {
       await index(
         'subtree.md',
         [
@@ -587,14 +587,20 @@ describe('discovery core over the real section indexer', () => {
       );
       await index('subtree.md', await pages.read('subtree.md').then((p) => p.body));
 
-      const alpha = sectionItem(
-        await core.getSections({ anchors: [anchorOf('Alpha')], includeSubtree: true }),
-      );
-      expect(alpha.body).toContain('CHILD BODY');
-      expect(alpha.body).not.toContain('BETA BODY');
-      // The child's own anchor is inside the subtree and belongs there; Beta's
-      // is not, and used to be — `subtreeEnd` stopped at the heading LINE.
-      expect(alpha.body).not.toContain(anchorOf('Beta'));
+      const result = await core.getSections({ anchors: [anchorOf('Alpha')], includeSubtree: true });
+      // 0.2.84 — the subtree widens the SET of items: Alpha's own body, then the
+      // child as its own item. Beta is a sibling and is not expanded.
+      expect(result.results.map((i) => i.anchor)).toEqual([anchorOf('Alpha'), anchorOf('Alpha child')]);
+      const [alpha, child] = result.results as SectionResultItem[];
+      expect(alpha!.body).toContain('ALPHA BODY');
+      expect(alpha!.body).not.toContain('CHILD BODY');
+      // Neither the child's anchor comment nor Beta's leaks into a body — the
+      // child's own item starts at its anchor block, and Beta's used to be
+      // swallowed when `subtreeEnd` stopped at the heading LINE.
+      expect(alpha!.body).not.toContain(anchorOf('Alpha child'));
+      expect(child!.body).toContain('CHILD BODY');
+      expect(child!.body).not.toContain('BETA BODY');
+      expect(child!.body).not.toContain(anchorOf('Beta'));
     });
 
     /**
