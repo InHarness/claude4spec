@@ -80,16 +80,18 @@ and a pointer.>
 
 ## Acceptance criteria
 
-<!-- Preferred when the project models AC entities: the criteria live as `ac` entities tagged mXX
-     (edge cases under mXX-edge), created via the project's MCP tools. Embed them live and add one
-     sentence of prose explaining why; the list updates itself.
+- [ ] <criterion 1: observable — something a reader could verify by using the system>
+- [ ] <criterion 2>
+
+<!-- Variant — ONLY if this project models acceptance criteria as entities (rule 8). Then the
+     criteria live as `ac` entities tagged mXX (edge cases under mXX-edge), created via the
+     project's MCP tools, and this section replaces the checklist above with a live embed plus one
+     sentence of prose explaining why; the list then updates itself:
+
+     <tagged_list type="ac" tags="mXX"/>
 
      Tag slugs are LOWER-CASE (rule 8), while the prose spells a module `MXX`.
      Both spellings are correct in their own place; an embed written with the prose spelling selects
-     on a tag nothing carries and renders empty, with no error to say why. -->
-<tagged_list type="ac" tags="mXX"/>
+     on a tag nothing carries and renders empty, with no error to say why.
 
-<!-- Fallback — only when the project does not model AC as entities. Inline observable checklist:
-- [ ] <criterion 1>
-- [ ] <criterion 2>
--->
+     No `ac` type in this project? Leave the checklist — it is the form the style prescribes. -->

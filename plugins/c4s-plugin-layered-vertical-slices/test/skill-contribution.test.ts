@@ -136,6 +136,59 @@ describe('c4s-plugin-layered-vertical-slices — the writing style it contribute
   });
 
   /**
+   * A PACKAGE NAMES ONLY THE TYPES IT SHIPS.
+   *
+   * This envelope registers exactly one entity type — `module-dependency` — so
+   * that is the only `type` identifier its authored content may name outright.
+   * `ac` is registered by a different envelope (`c4s-plugin-ac`) and may be
+   * absent, so no shipped surface may put a LIVE `ac` embed in front of a reader:
+   * in a project without the type it selects nothing and renders empty, with no
+   * error to say why. The conditional prose that names `ac` behind an explicit
+   * "only if this project models AC as entities" is fine — what is pinned here is
+   * that nothing UNCOMMENTED embeds it.
+   */
+  it('ships no live embed of a type this envelope does not register', () => {
+    // What counts is an embed a reader would COPY into a spec file. An HTML
+    // comment is where the conditional variant is allowed to show the tag, and a
+    // code span or fence is prose quoting the syntax (SKILL.md §2 illustrates the
+    // slice-schema form with `<tagged_list type="endpoint" .../>`); neither ships
+    // an embed. Everything left is live.
+    const live = (text: string) =>
+      text
+        .replace(/<!--[\s\S]*?-->/g, '')
+        .replace(/```[\s\S]*?```/g, '')
+        .replace(/`[^`\n]*`/g, '');
+    const shipped: Array<[string, string]> = [
+      ['SKILL.md', style.content],
+      ...Object.entries(style.files ?? {}),
+    ];
+    for (const [where, text] of shipped) {
+      const embed = /<(?:tagged_list|element_list|inline_mention|single_element)\b[^>]*\btype="([^"]+)"/g;
+      for (const [, type] of live(text).matchAll(embed)) {
+        expect({ where, type }).toEqual({ where, type: 'module-dependency' });
+      }
+    }
+
+    // The counterexample that keeps the assertion honest: the one type this
+    // envelope DOES register keeps its live embed, in the module template.
+    expect(style.files?.['templates/module.md']).toContain('<tagged_list type="module-dependency" tags="mXX"/>');
+  });
+
+  /**
+   * And the section itself stays — the style owns `## Acceptance criteria`
+   * unconditionally, only the entity type backing it is conditional. What a
+   * copied template lands is therefore the inline observable checklist.
+   */
+  it('gives both templates an inline checklist as the live body of `## Acceptance criteria`', () => {
+    for (const file of ['templates/module.md', 'templates/index.md']) {
+      const text = style.files?.[file] ?? '';
+      const section = text.slice(text.indexOf('## Acceptance criteria'));
+      const body = section.slice(0, section.indexOf('<!--'));
+      expect({ file, checklist: /^- \[ \] /m.test(body) }).toEqual({ file, checklist: true });
+    }
+  });
+
+  /**
    * `contributes.writingStyles[]` is sugar for `contributes.skills[]` with
    * `scope: 'writing-style'` — the host lowers it, so declaring a scope here would
    * be the shape of the OTHER slot.

@@ -88,16 +88,21 @@ M01 Project      -- infrastructure --> all modules
 
 ## Acceptance criteria
 
-<!-- Preferred when the project models AC entities: embed the high-level, project-wide criteria as
-     `ac` entities — either by a shared tag (`<tagged_list type="ac" tags="<project-tag>"/>`) or a
-     curated set (`<element_list type="ac" slugs="ac-...,ac-..."/>`). -->
-<tagged_list type="ac" tags="<project-tag>"/>
-
-<!-- Fallback — only when the project does not model AC as entities. Inline observable checklist:
-- [ ] <high-level outcome 1>
+- [ ] <high-level outcome 1: observable — something a reader could verify by using the system>
 - [ ] <high-level outcome 2>
 - [ ] …
--->
+
+<!-- Variant — ONLY if this project models acceptance criteria as entities (rule 8). Then the
+     high-level, project-wide criteria live as `ac` entities and this section replaces the checklist
+     above with a live embed of them — either by a shared tag:
+
+     <tagged_list type="ac" tags="<project-tag>"/>
+
+     or as a curated set:
+
+     <element_list type="ac" slugs="ac-...,ac-..."/>
+
+     No `ac` type in this project? Leave the checklist — it is the form the style prescribes. -->
 
 ## Open questions
 
