@@ -1,6 +1,7 @@
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
 import { getEntityDef } from '../../../entities/registry.js';
 import { categoriseBrokenChip } from '../../../core/plugin-host/host.js';
+import { useRegistryVersion } from '../../../core/plugin-host/useRegistryVersion.js';
 import { useEditorBridge } from '../../EditorContext.js';
 import type { EntityType } from '../../../../shared/entities.js';
 import { useEditChipOnAltClick } from './useEditChipOnAltClick.js';
@@ -9,6 +10,9 @@ import { NotListable } from './NotListable.js';
 
 export function ElementListView(props: NodeViewProps) {
   const { node } = props;
+  // Re-render when a plugin frontend registers: this list can mount before the
+  // envelope that owns its type has finished loading. See the hook.
+  useRegistryVersion();
   const type = String(node.attrs.type ?? '');
   const rawSlugs = String(node.attrs.slugs ?? '');
   const slugs = rawSlugs.split(',').map((s) => s.trim()).filter(Boolean);
