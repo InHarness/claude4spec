@@ -11,8 +11,9 @@ import {
 } from '@c4s/plugin-runtime/ui';
 import { clientPluginHost, useReferences, useTags } from '@c4s/plugin-runtime';
 import { useEntityDraftEditor } from '../../../frontend-kit/useEntityDraftEditor.js';
+import { useRegistryVersion } from '../../../frontend-kit/useRegistryVersion.js';
 import { confirmDestructive, toast } from '../../../frontend-kit/host-events.js';
-import { slugify as tagSlug, AC_TITLE_MAX_LENGTH } from '../../../identity.js';
+import { slugify as tagSlug, AC_TITLE_MAX_LENGTH, AC_TYPE } from '../../../identity.js';
 import type { Ac, AcKind, AcStatus, AcVerifyRef } from '../../../types.js';
 import { useAc, useDeleteAc, useUpdateAc } from './hooks.js';
 import { verifyGroupItems, verifyGroupTypes } from './verify-groups.js';
@@ -331,7 +332,12 @@ function VerifiesPanel({
   // through. A group that already holds refs loads eagerly — see `enabled`.
   const [opened, setOpened] = useState<Set<string>>(() => new Set());
 
-  const modules = clientPluginHost.listEntities().filter((m) => m.type !== 'ac');
+  // The picker's groups ARE the registry. On a cold load the other envelopes'
+  // frontends may not have registered yet, and a picker that renders once
+  // against a short list shows a subset of the types with nothing to say so —
+  // indistinguishable from a project that genuinely has little to verify.
+  useRegistryVersion();
+  const modules = clientPluginHost.listEntities().filter((m) => m.type !== AC_TYPE);
   const moduleByType = new Map(modules.map((m) => [m.type as string, m]));
 
   const selected: Record<string, string[]> = {};

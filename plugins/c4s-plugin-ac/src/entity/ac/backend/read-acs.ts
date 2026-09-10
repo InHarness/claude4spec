@@ -45,15 +45,22 @@ export interface ActiveAc {
 /**
  * How many slugs to ask for in one `getEntities`.
  *
- * The host caps a single call and reports the overflow rather than throwing, so
- * the honest way to read a whole type is to page deliberately instead of asking
- * for everything and reading `truncated` afterwards. 100 is comfortably under
- * the host's own budget and keeps the number of round trips sane on a corpus of
- * a few hundred criteria.
+ * 50 is not a taste — it is the host's hard cap (`MAX_SLUGS_PER_CALL`), and the
+ * op THROWS on the 51st rather than truncating. A batch size above it turns the
+ * whole audit into an `INTERNAL` error on any project with more than 50 active
+ * criteria, which is most of them. The value is duplicated rather than imported
+ * because the cap is not on the published plugin surface; the fake in
+ * `test/read-acs.test.ts` throws exactly where the host does, which is what
+ * keeps the duplicate honest.
  */
-const SLUGS_PER_CALL = 100;
+export const SLUGS_PER_CALL = 50;
 
-/** One page of the active set. Sized to match the batch above. */
+/**
+ * One page of the active set.
+ *
+ * Independent of the batch above — this feeds a slug array that is then
+ * re-chunked — so the two need not, and do not, match.
+ */
 const LIST_PAGE = 200;
 
 function verifiesOf(record: Record<string, unknown>): AcVerifyRef[] {
@@ -111,21 +118,9 @@ export function readActiveAcs(ops: ReadOps): ActiveAc[] {
   const acs: ActiveAc[] = [];
 
   for (let i = 0; i < slugs.length; i += SLUGS_PER_CALL) {
-    const batch = slugs.slice(i, i + SLUGS_PER_CALL);
-    const got = ops.getEntities({
-      type: AC_TYPE,
-      slugs: batch,
-      // `slug` and `tags` survive every projection as identity fields; naming
-      // them anyway is what makes this call say what it reads.
-      select: ['slug', 'title', 'kind', 'tags', 'verifies'],
-    });
-    for (const result of got.results) {
-      // `entity: null` is a slug that vanished between the two calls — a delete
-      // racing the audit. Skipping it is the same answer the reader gave.
-      if (!result.entity) continue;
-      const record = result.entity as Record<string, unknown>;
+    for (const [slug, record] of fetchBatch(ops, slugs.slice(i, i + SLUGS_PER_CALL))) {
       acs.push({
-        slug: result.slug,
+        slug,
         title: str(record.title),
         kind: str(record.kind, 'requirement'),
         tags: Array.isArray(record.tags) ? record.tags.filter((t): t is string => typeof t === 'string') : [],
@@ -134,4 +129,48 @@ export function readActiveAcs(ops: ReadOps): ActiveAc[] {
     }
   }
   return acs;
+}
+
+/**
+ * One `getEntities` call, with the response budget honoured rather than read as
+ * a delete.
+ *
+ * The host answers every slug it was NAMED — that is the contract that stops a
+ * key looking like it vanished — but everything past the budget line comes back
+ * `entity: null` with `truncated` set on the envelope. Treating those nulls the
+ * way a raced delete is treated would silently shrink the audit's input, and
+ * "the audit found fewer criteria than there are" is a failure nothing else in
+ * the system would report. So a truncated answer is re-asked as halves; a
+ * single-slug call is never degraded, so the recursion terminates. A slug that
+ * comes back null from an UNtruncated answer really is gone.
+ */
+function fetchBatch(ops: ReadOps, batch: string[]): Array<[string, Record<string, unknown>]> {
+  if (batch.length === 0) return [];
+  const got = ops.getEntities({
+    type: AC_TYPE,
+    slugs: batch,
+    // `slug` and `tags` survive every projection as identity fields; naming
+    // them anyway is what makes this call say what it reads.
+    select: ['slug', 'title', 'kind', 'tags', 'verifies'],
+  });
+
+  const out: Array<[string, Record<string, unknown>]> = [];
+  const deferred: string[] = [];
+  for (const result of got.results) {
+    if (result.entity) {
+      out.push([result.slug, result.entity as Record<string, unknown>]);
+    } else if (got.truncated) {
+      deferred.push(result.slug);
+    }
+  }
+
+  // `batch.length > 1` guards the one case the host cannot shrink further: if a
+  // single entity alone exceeds the budget it is returned degraded, and asking
+  // again would loop forever on the same answer.
+  if (deferred.length > 0 && batch.length > 1) {
+    const half = Math.ceil(deferred.length / 2);
+    out.push(...fetchBatch(ops, deferred.slice(0, half)));
+    out.push(...fetchBatch(ops, deferred.slice(half)));
+  }
+  return out;
 }

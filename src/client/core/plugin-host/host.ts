@@ -61,6 +61,7 @@ class ClientPluginHostImpl implements ClientPluginHost {
   private modules = new Map<string, FrontendModule>();
   private activeTypes: Set<string> | null = null; // null = all active
   private listeners = new Set<() => void>();
+  private version = 0;
 
   registerFrontendModule(module: FrontendModule): void {
     if (!module.type) {
@@ -88,11 +89,27 @@ class ClientPluginHostImpl implements ClientPluginHost {
   }
 
   /**
+   * The registry's change counter, owned HERE rather than by the subscriber.
+   *
+   * A counter a listener increments only moves while something is subscribed,
+   * and `useSyncExternalStore` reads the snapshot once during render and again
+   * right after it subscribes, specifically to catch a change that landed in
+   * between. With a listener-owned counter that second read cannot see the
+   * registration that happened in the gap — which is the exact window the cold
+   * load loses. Bumping in `notify()` makes the change visible whether or not
+   * anyone was listening when it happened.
+   */
+  registryVersion(): number {
+    return this.version;
+  }
+
+  /**
    * A listener that throws must not stop the others, and must not fail the
    * REGISTRATION that triggered it — a broken chip subscriber taking down the
    * plugin that registered would turn a rendering bug into a missing type.
    */
   private notify(): void {
+    this.version += 1;
     for (const listener of this.listeners) {
       try {
         listener();

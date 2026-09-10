@@ -44,6 +44,12 @@ function fragmentFor(prefix: string): FrontendModule['routes'] {
     [
       make({ getParentRoute: () => parent, path: prefix, component: Noop }),
       make({ getParentRoute: () => parent, path: `${prefix}/$slug`, component: Noop }),
+      // A THIRD, nested path. Every real entity fragment mounts a history route,
+      // and it is the one most easily lost in a move: nothing links to it from
+      // the list, so a fragment that forgot it 404s only for someone who clicked
+      // the History tab. A synthetic fragment with two flat paths would never
+      // ask the host to mount one.
+      make({ getParentRoute: () => parent, path: `${prefix}/$slug/history`, component: Noop }),
     ] as never;
 }
 
@@ -101,8 +107,10 @@ describe('mountFrontend collects the hoisted entity routes', () => {
       expect.arrayContaining([
         '/acs',
         '/acs/$slug',
+        '/acs/$slug/history',
         '/ui-views',
         '/ui-views/$slug',
+        '/ui-views/$slug/history',
         '/design-systems',
         '/design-systems/$slug',
       ]),

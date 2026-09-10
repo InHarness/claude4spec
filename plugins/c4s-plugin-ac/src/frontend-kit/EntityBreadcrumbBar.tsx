@@ -10,8 +10,9 @@
  * contributes; every other type's branch belongs to its own package.
  *
  * The type literals below are legal HERE and only here: `plugins/<name>/src/`
- * is where a type is allowed to know its own name. The host's copy is now
- * branchless.
+ * is where a type is allowed to know its own name. 0.2.80 removed the host's
+ * copy altogether — `ac` was its last consumer, so there is no longer a
+ * branchless original to keep in step with.
  */
 
 import { useNavigate } from '@tanstack/react-router';
@@ -39,10 +40,10 @@ interface Props {
   /**
    * View-specific controls, rendered in the topbar to the left of the switcher.
    *
-   * An opaque node on purpose: this bar is vendored kit shared by both types in
-   * the envelope, so it must not learn what any one view's action DOES. The
-   * `preview` view passes its "open the mockup top-level" link through here
-   * (0.2.28); every other route omits it.
+   * An opaque node on purpose: this is vendored kit, so it must not learn what
+   * any one view's action DOES — the envelope it is copied INTO decides that.
+   * No `ac` route passes one today; the slot is kept rather than trimmed so the
+   * copy stays diffable against the other envelopes' copies of the same file.
    */
   actions?: React.ReactNode;
 }

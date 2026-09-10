@@ -691,6 +691,24 @@ export declare const clientPluginHost: {
    * opened.
    */
   listEntities(): FrontendModule[];
+  /**
+   * 0.2.80 — subscribe to registry CHANGES; returns an unsubscribe.
+   *
+   * Published for the same reason the host needed it internally: plugin
+   * frontends are imported non-blocking, after first paint, so ANY read of
+   * `getEntity`/`listEntities` during render can happen before the module it
+   * wants has registered. A route recovers on the next navigation; a picker
+   * built from `listEntities()` does not — it renders a short list once and
+   * nothing gives it a reason to run again, so the reader sees a subset of the
+   * types with no indication that anything is missing.
+   *
+   * Pair it with `registryVersion` through `useSyncExternalStore`. The counter
+   * is the host's, so a change that lands between a render and its subscription
+   * is still visible on the re-read React does right after subscribing.
+   */
+  onRegistryChanged(listener: () => void): () => void;
+  /** The registry's change counter — the snapshot half of the pair above. */
+  registryVersion(): number;
   [key: string]: unknown;
 };
 export declare function registerFrontendModule(module: FrontendModule): void;

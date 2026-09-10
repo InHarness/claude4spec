@@ -3,14 +3,12 @@ import { CheckSquare, ScanSearch } from 'lucide-react';
 import { useAcs } from './hooks.js';
 import { AcCreateDialog } from './create-dialog.js';
 import { toast } from '../../../frontend-kit/host-events.js';
-import { ActionBar } from '@c4s/plugin-runtime/ui';
+import { ActionBar, EntityListRow, TagFilterBar } from '@c4s/plugin-runtime/ui';
 import { startSeededThread } from '@c4s/plugin-runtime';
 import type { AcKind, AcStatus } from '../../../types.js';
 import { ListPageLayout } from '../../../frontend-kit/ListPageLayout.js';
 import { ListPageHeader } from '../../../frontend-kit/ListPageHeader.js';
-import { TagFilterBar } from '../../../frontend-kit/TagFilterBar.js';
 import { ListScrollArea } from '../../../frontend-kit/ListScrollArea.js';
-import { EntityListRow } from '../../../frontend-kit/EntityListRow.js';
 import { useEntityListQuery } from '../../../frontend-kit/useEntityListQuery.js';
 import { AC_LABEL_PLURAL } from '../../../identity.js';
 

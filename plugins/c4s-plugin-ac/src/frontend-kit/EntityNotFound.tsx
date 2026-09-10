@@ -1,12 +1,12 @@
 /**
  * The host's `EntityNotFound`, vendored.
  *
- * The `ui-view` and `design-system` detail routes both declared it as their
+ * The `ac` detail and history routes both declared it as their
  * `notFoundComponent` before the move, and dropping it would have been a silent
  * UX regression rather than a refactor: the route would fall through to the
  * router's generic not-found instead of offering the "Back to <Entities>" way
- * out. The api-contracts envelope's routes never had one, so there was nothing
- * to copy from there.
+ * out. 0.2.80 removed the host's original along with the rest of the vertical,
+ * so this copy is now the only one this envelope can reach.
  *
  * `clientPluginHost.getAvailable` is ALWAYS a method call — see the note in
  * `EntityBreadcrumbBar`; pulling it into a local unbinds the receiver.

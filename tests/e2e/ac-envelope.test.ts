@@ -56,12 +56,33 @@ describe.skipIf(!BASE)('c4s-plugin-ac envelope', () => {
   let browser: Browser;
   let project: WorkspaceProject;
 
+  /**
+   * Everything these cases create, so `afterAll` can remove it.
+   *
+   * Setup without teardown is not a tidiness question here: this suite runs
+   * against a long-lived environment shared with every other e2e file, several
+   * of which assert on COUNTS ("N results"). A run that leaves four entities
+   * behind changes what the next run sees, and the failure lands on whichever
+   * suite happens to poll a number — never on this one.
+   */
+  const created: Array<{ collection: string; id: string }> = [];
+  const track = (collection: string, id: string): string => {
+    created.push({ collection, id });
+    return id;
+  };
+
   beforeAll(async () => {
     browser = await chromium.launch();
     project = await firstProject();
   });
   afterAll(async () => {
     await browser?.close();
+    const api = `${BASE}/api/projects/${project?.id}`;
+    // Reverse order, and never let a failed delete fail the run: teardown that
+    // reports someone else's problem is worse than teardown that is quiet.
+    for (const { collection, id } of created.reverse()) {
+      await fetch(`${api}/${collection}/${id}`, { method: 'DELETE' }).catch(() => undefined);
+    }
   });
 
   /**
@@ -186,7 +207,7 @@ describe.skipIf(!BASE)('c4s-plugin-ac envelope', () => {
     const { consoleErrors, badResponses } = watch(page);
 
     const api = `${BASE}/api/projects/${project.id}`;
-    const slug = `ac-e2e-envelope-${Date.now()}`;
+    const slug = track('acs', `ac-e2e-envelope-${Date.now()}`);
     const created = await fetch(`${api}/acs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -235,8 +256,8 @@ describe.skipIf(!BASE)('c4s-plugin-ac envelope', () => {
   it('chips resolve on a cold load, for every envelope-delivered type', async () => {
     const api = `${BASE}/api/projects/${project.id}`;
     const stamp = Date.now();
-    const acSlug = `ac-cold-${stamp}`;
-    const viewSlug = `view-cold-${stamp}`;
+    const acSlug = track('acs', `ac-cold-${stamp}`);
+    const viewSlug = track('ui-views', `view-cold-${stamp}`);
 
     expect(
       (
@@ -310,7 +331,7 @@ describe.skipIf(!BASE)('c4s-plugin-ac envelope', () => {
     const { consoleErrors, badResponses } = watch(page);
 
     const api = `${BASE}/api/projects/${project.id}`;
-    const slug = `ac-e2e-history-${Date.now()}`;
+    const slug = track('acs', `ac-e2e-history-${Date.now()}`);
     const created = await fetch(`${api}/acs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

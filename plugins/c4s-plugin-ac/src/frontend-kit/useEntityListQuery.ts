@@ -1,8 +1,8 @@
 /**
- * HOST-LOCAL — the catalog publishes the list PRESENTATION, not its query.
+ * ENVELOPE-LOCAL — the catalog publishes the list PRESENTATION, not its query.
  *
- * `TagFilterBar` / `EntityListLayout` / `EntityListHeader` are all imported from
- * the kit below and in the list panels; what has no catalog counterpart is the
+ * `TagFilterBar` / `EntityListLayout` / `EntityListHeader` all come straight
+ * from `@c4s/plugin-runtime/ui`; what has no catalog counterpart is the
  * assembly above them — the search + tag-filter query key, the and/or tag mode,
  * and the `TagBarProps` value handed down to the kit component. No slot,
  * primitive or hook in `@c4s/plugin-runtime/ui` covers that, so this is a gap in

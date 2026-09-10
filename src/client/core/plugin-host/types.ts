@@ -170,4 +170,13 @@ export interface ClientPluginHost {
    * This is what lets those readers re-render instead of guessing at a delay.
    */
   onRegistryChanged(listener: () => void): () => void;
+
+  /**
+   * A monotonic counter of those changes, bumped by the host itself.
+   *
+   * The pair exists so a `useSyncExternalStore` snapshot can be read at any
+   * moment, including BEFORE anything subscribed — see the note on the
+   * implementation.
+   */
+  registryVersion(): number;
 }

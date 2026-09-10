@@ -7,10 +7,13 @@ import { openEntityHandler } from '../../../entities/openEntity.js';
 import { useEditChipOnAltClick } from './useEditChipOnAltClick.js';
 import { BlockBrokenChip } from './BrokenChip.js';
 import { NotListable } from './NotListable.js';
+import { useRegistryVersion } from '../../../core/plugin-host/useRegistryVersion.js';
 
 type Listed = { slug: string };
 
 export function TaggedListView(props: NodeViewProps) {
+  // Re-read the registry when a plugin frontend registers late. See the hook.
+  useRegistryVersion();
   const { node } = props;
   const type = String(node.attrs.type ?? '');
   const rawTags = String(node.attrs.tags ?? '');

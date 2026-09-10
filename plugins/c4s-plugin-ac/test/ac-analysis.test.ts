@@ -269,4 +269,50 @@ describe('AcAnalysisService — adapter execution scope (A19)', () => {
 
     expect(getFieldContent).not.toHaveBeenCalled();
   });
+
+  /**
+   * The audit is a BULK read, and it used to issue one round trip per
+   * `verifies[]` entry — so a few hundred criteria averaging two refs each meant
+   * a few hundred calls, most of them for entities several ACs verify in common.
+   * Grouping by type and de-duplicating by key is the same information in about
+   * a call per type. This case pins the shape, because nothing about the audit's
+   * OUTPUT would change if it silently went back to one call per ref.
+   */
+  it('reads each referenced entity once, batched by type', async () => {
+    const verifies = [
+      { type: 'endpoint', slug: 'e-1' },
+      { type: 'endpoint', slug: 'e-2' },
+      // The same entity twice: two ACs verifying one endpoint is the common
+      // case, and the de-duplication is what makes the batch worth having.
+      { type: 'endpoint', slug: 'e-1' },
+      { type: 'dto', slug: 'd-1' },
+    ];
+    const getEntities = vi.fn(({ type, slugs }: { type: string; slugs: string[] }) =>
+      type === 'ac'
+        ? {
+            type,
+            selectedFields: [],
+            results: slugs.map((slug) => ({
+              slug,
+              entity: { slug, title: 'the thing works', kind: 'requirement', tags: [], verifies },
+            })),
+          }
+        : { type, selectedFields: [], results: slugs.map((slug) => ({ slug, entity: { slug } })) },
+    );
+
+    await new AcAnalysisService({
+      cwd,
+      ...readOps(verifies, { getEntities }),
+      host: host(),
+      agentScope,
+    } as never).analyze();
+
+    const byType = (getEntities.mock.calls as Array<[{ type: string; slugs: string[] }]>).filter(
+      ([a]) => a.type !== 'ac',
+    );
+    // One call per referenced TYPE — not one per ref, and not one per AC.
+    expect(byType.map(([a]) => a.type).sort()).toEqual(['dto', 'endpoint']);
+    const endpoint = byType.find(([a]) => a.type === 'endpoint')![0];
+    expect(endpoint.slugs).toEqual(['e-1', 'e-2']);
+  });
 });

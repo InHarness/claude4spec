@@ -2,7 +2,7 @@ import { createAdapter, extractText } from '@inharness-ai/agent-adapters';
 import { DEFAULT_CONTENT_OPERATION } from '@c4s/plugin-runtime';
 import type { AcMountContext, HostRegistryView, ReadOps } from '../../../host-kit/host-types.js';
 import { AC_TYPE } from '../../../identity.js';
-import { readActiveAcs } from './read-acs.js';
+import { readActiveAcs, SLUGS_PER_CALL } from './read-acs.js';
 
 export interface AcAnalysisOptions {
   /** Limit to ACs carrying this tag slug. Omit for no tag filter. */
@@ -100,6 +100,25 @@ export class AcAnalysisService {
       linked: Array<Record<string, unknown>>;
     }> = [];
 
+    /**
+     * Every referenced entity, read ONCE, batched by type.
+     *
+     * 0.2.24 established that the dossier is built from the M39 READ RECORD
+     * rather than the raw projection row: `entity.data` is the projection's own
+     * shape — column-ish key names, and nothing from a collection that lives in
+     * its own table — so an AC verifying an endpoint was judged against a
+     * payload with no `linkedDtos` in it, and the model was asked whether the
+     * criterion matched a shape the criterion could not see.
+     *
+     * 0.2.80 keeps the record and drops the round trip per ref. The audit is a
+     * BULK operation: a few hundred criteria averaging two refs each is a few
+     * hundred calls, most of them for entities several ACs verify in common, and
+     * every one of them re-runs `requireActiveType`/`validateSelect`/the budget
+     * pass. Grouping by type and de-duplicating by key is the same information
+     * in about a call per type.
+     */
+    const resolved = this.readReferenced(ops, host, targets);
+
     for (const ac of targets) {
       if (ac.verifies.length === 0) {
         skipped_reasons.push({ ac_slug: ac.slug, reason: 'no_verifies' });
@@ -112,22 +131,10 @@ export class AcAnalysisService {
         if (!host.getEntity(v.type)) {
           return { type: v.type, slug: v.slug, status: 'unknown-type' as const };
         }
-        const record = ops.getEntities({ type: v.type, slugs: [v.slug] }).results[0];
-        if (!record || record.entity === null) {
+        const data = resolved.get(`${v.type}\u0000${v.slug}`);
+        if (!data) {
           return { type: v.type, slug: v.slug, status: 'missing' as const };
         }
-        /**
-         * 0.2.24 — the M39 READ RECORD, one call per ref, not the raw row.
-         *
-         * `entity.data` is the projection's own shape: column-ish key names,
-         * and nothing from a collection that lives in its own table. So an AC
-         * verifying an endpoint was judged against a payload with no
-         * `linkedDtos` in it, and the model was asked whether the criterion
-         * matched a shape the criterion could not see. The record is what every
-         * other reader of this type gets.
-         */
-        const data = { ...(record.entity as Record<string, unknown>) };
-        this.attachContent(ops, v.type, v.slug, data);
         return { type: v.type, slug: v.slug, status: 'active' as const, data };
       });
       // An AC whose every verify is missing/unknown-type has nothing to compare
@@ -150,21 +157,6 @@ export class AcAnalysisService {
     }
 
     const prompt = buildPrompt(dossier);
-    // 0.2.8 (A19): this is the second `adapter.execute` call site in the server and it used
-    // to run with NO path scope at all. Without `allowedPaths`/`disallowedPaths` the
-    // library's scope gate (`allowed.length || disallowed.length`) never engages, which also
-    // means `permissionMode: 'bypassPermissions'` — so this turn, reachable as the MCP tool
-    // `analyze_ac_against_entities` from ANY turn including a read-only `ask` one, could
-    // hand-edit the C4S artifact dirs. It now takes the identical scope the chat turn takes,
-    // from the identical builder, resolved PER CALL so config edits hot-reload (the MCP
-    // server itself is constructed once at mount, so `roots` is fixed there — same as the
-    // chat turn's boot-time `deps.roots`; only the config half reloads).
-    //
-    // Side effect worth knowing: requesting a path scope makes the library set
-    // `settingSources: ['project','local']`, so the project's `.claude/settings.json` now
-    // loads into this audit turn too. That matches every chat turn, and the turn is still
-    // strictly more restricted than before (it used to run bypassPermissions, unscoped,
-    // with the full mutating toolset).
     /**
      * 0.2.8 (A19): this turn used to run with NO path scope at all. Without
      * `allowedPaths`/`disallowedPaths` the library's gate (`allowed.length ||
@@ -244,6 +236,56 @@ export class AcAnalysisService {
    * resolved; a field that issues its content through a windowed collection op
    * keeps its descriptor, because there is no one value to inline.
    */
+  /**
+   * Read every entity the target ACs reference, batched by type.
+   *
+   * Keyed by `type\u0000slug` — a NUL joiner rather than a `/`, because a slug
+   * pattern is a plugin's to choose and a separator that can appear in a key is
+   * how two different references collapse into one.
+   *
+   * A type the registry does not know is skipped rather than requested: the op
+   * throws `INVALID_TYPE` for it, and one unresolvable `verifies[]` entry must
+   * not fail the whole audit. Those refs are classified by the caller, which is
+   * where the three-way verdict lives.
+   */
+  private readReferenced(
+    ops: ReadOps,
+    host: HostRegistryView,
+    targets: Array<{ verifies: Array<{ type: string; slug: string }> }>,
+  ): Map<string, Record<string, unknown>> {
+    const wanted = new Map<string, Set<string>>();
+    for (const ac of targets) {
+      for (const v of ac.verifies) {
+        if (!host.getEntity(v.type)) continue;
+        (wanted.get(v.type) ?? wanted.set(v.type, new Set()).get(v.type)!).add(v.slug);
+      }
+    }
+
+    const out = new Map<string, Record<string, unknown>>();
+    for (const [type, slugSet] of wanted) {
+      const slugs = [...slugSet];
+      for (let i = 0; i < slugs.length; i += SLUGS_PER_CALL) {
+        let results: Array<{ slug: string; entity: unknown }>;
+        try {
+          results = ops.getEntities({ type, slugs: slugs.slice(i, i + SLUGS_PER_CALL) })
+            .results as Array<{ slug: string; entity: unknown }>;
+        } catch {
+          // The type answered `getEntity` a moment ago and will not answer now —
+          // a deactivation racing the audit. Its refs read as `missing`, which is
+          // the same answer the per-ref call gave.
+          continue;
+        }
+        for (const r of results) {
+          if (!r.entity) continue;
+          const data = { ...(r.entity as Record<string, unknown>) };
+          this.attachContent(ops, type, r.slug, data);
+          out.set(`${type}\u0000${r.slug}`, data);
+        }
+      }
+    }
+    return out;
+  }
+
   private attachContent(
     ops: ReadOps,
     type: string,

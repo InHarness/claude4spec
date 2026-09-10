@@ -74,6 +74,24 @@ describe('clientPluginHost.onRegistryChanged', () => {
     }
   });
 
+  /**
+   * The counter must move whether or not anyone was listening.
+   *
+   * This is the half of the pair that is easy to get wrong, and getting it wrong
+   * restores the original bug in a narrower window. `useSyncExternalStore` reads
+   * the snapshot during render, subscribes in an effect, and then reads it AGAIN
+   * to catch a change that landed in between — the gap being exactly the moment
+   * a non-blocking `bootFrontendPlugins` import tends to resolve. A counter that
+   * only advanced from inside a listener would read the same value on both
+   * sides of that gap and schedule no re-render, and the chip would stay on
+   * "unknown type" permanently, as before the fix.
+   */
+  it('advances the version even with nothing subscribed', () => {
+    const before = clientPluginHost.registryVersion();
+    clientPluginHost.registerFrontendModule(moduleOf('signal-probe-unwatched'));
+    expect(clientPluginHost.registryVersion()).toBeGreaterThan(before);
+  });
+
   it('stops firing after unsubscribe', () => {
     const seen = vi.fn();
     clientPluginHost.onRegistryChanged(seen)();

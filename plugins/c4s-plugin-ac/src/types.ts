@@ -5,7 +5,11 @@
  * 0.2.80 — moved out of the host's `shared/entities.ts`. Nothing in the host
  * referenced them once the vertical left; what stayed behind is `AcVerifyRef` /
  * `AcBrokenVerify`, which are M19's vocabulary for consistency rules 9-11, not
- * this type's.
+ * this type's. `AcBrokenVerify` is therefore NOT re-declared here: classifying a
+ * broken ref is `check_consistency`'s job, over the host's own copy in
+ * `src/server/discovery/ops/ac-rules.ts`, and the detail panel derives its
+ * marker inline from candidate lists it has already loaded. A second classifier
+ * in this package would be a copy with no caller.
  *
  * `verifies[]` is re-declared here rather than imported back, because the
  * envelope owning the declaration is the point of the move: the pair `(type,
@@ -19,15 +23,6 @@ export type AcStatus = 'active' | 'deprecated';
 export interface AcVerifyRef {
   type: string;
   slug: string;
-}
-
-/**
- * Why a `verifies[]` entry does not resolve. Reported by `check_consistency`
- * (rule 9, host-side) and derived independently by the detail panel from the
- * candidate lists it already loads.
- */
-export interface AcBrokenVerify extends AcVerifyRef {
-  reason: 'missing' | 'inactive' | 'unknown';
 }
 
 export interface Ac {

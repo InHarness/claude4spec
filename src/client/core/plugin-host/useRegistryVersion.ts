@@ -26,16 +26,18 @@ export function useRegistryVersion(): number {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
-const subscribe = (onChange: () => void): (() => void) =>
-  clientPluginHost.onRegistryChanged(() => {
-    version += 1;
-    onChange();
-  });
+const subscribe = (onChange: () => void): (() => void) => clientPluginHost.onRegistryChanged(onChange);
 
 /**
  * A counter, not the module list. `getSnapshot` must return something
  * `Object.is`-stable between changes — an array rebuilt per call would make
  * React re-render forever.
+ *
+ * The counter is the HOST's, not this module's. A counter this file bumped from
+ * inside the listener would only move while something was subscribed, and the
+ * gap this hook exists to close — between the render that reads the registry
+ * and the effect that subscribes — is exactly when nothing is. React re-reads
+ * the snapshot right after subscribing for that reason; it has to be able to
+ * see a registration that happened in the gap.
  */
-let version = 0;
-const getSnapshot = (): number => version;
+const getSnapshot = (): number => clientPluginHost.registryVersion();

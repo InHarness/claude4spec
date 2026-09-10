@@ -23,6 +23,13 @@ import type { ReadOps } from '../src/host-kit/host-types.js';
 type Row = { slug: string; title: string };
 
 /**
+ * The host's own cap, restated. `get_entities` THROWS on the 51st slug rather
+ * than truncating, and a fake without this is how a batch size of 100 passed
+ * every case here while failing on any real project with 51 criteria.
+ */
+const HOST_MAX_SLUGS = 50;
+
+/**
  * A surface that pages. `pageSize` is deliberately tiny so the loop runs several
  * times over a handful of rows — the real page is 200, and a test that never
  * crossed a boundary would pass with the loop deleted.
@@ -52,6 +59,9 @@ function opsOver(
     }) as ReadOps['listEntities'],
     getEntities: ((input: { type: string; slugs: string[]; select?: string[] }) => {
       calls.get.push(input);
+      if (input.slugs.length > HOST_MAX_SLUGS) {
+        throw new Error(`get_entities accepts at most ${HOST_MAX_SLUGS} slugs (got ${input.slugs.length})`);
+      }
       return {
         type: input.type,
         selectedFields: input.select ?? [],
@@ -166,6 +176,50 @@ describe('readActiveAcs — over the bound read operations', () => {
     }) as ReadOps['getEntities'];
 
     expect(readActiveAcs(ops)).toEqual([]);
+  });
+
+  it('never asks for more slugs in one call than the host accepts', () => {
+    // 120 criteria is an ordinary project — this repo's own spec has 253. The
+    // fake throws exactly where the host does, so a batch size above the cap
+    // fails here instead of failing the whole audit in production.
+    const ops = opsOver(
+      Array.from({ length: 120 }, (_, i) => ({ slug: `ac-${i}`, title: `criterion ${i}` })),
+      500,
+    );
+
+    expect(readActiveAcs(ops)).toHaveLength(120);
+    for (const call of ops.calls.get as Array<{ slugs: string[] }>) {
+      expect(call.slugs.length).toBeLessThanOrEqual(HOST_MAX_SLUGS);
+    }
+  });
+
+  it('re-asks for entities the response budget degraded, instead of reading them as deletes', () => {
+    const ops = opsOver(
+      Array.from({ length: 4 }, (_, i) => ({ slug: `ac-${i}`, title: `criterion ${i}` })),
+      10,
+    );
+    const original = ops.getEntities;
+    // The host answers every slug it was named, but everything past the budget
+    // line comes back meta-only with `truncated` on the envelope. Only the
+    // first item is guaranteed whole, so shrinking the ask is the retry.
+    ops.getEntities = ((input: Parameters<ReadOps['getEntities']>[0]) => {
+      const res = original(input) as {
+        results: Array<{ slug: string; entity: unknown }>;
+        truncated?: boolean;
+        message?: string;
+      };
+      if (res.results.length < 2) return res;
+      return {
+        ...res,
+        truncated: true,
+        message: 'response budget reached',
+        results: res.results.map((r, i) => (i === 0 ? r : { ...r, entity: null })),
+      };
+    }) as ReadOps['getEntities'];
+
+    // Read as deletes, this returns one AC and reports nothing wrong — the
+    // silent-undercount failure the whole file is guarding.
+    expect(readActiveAcs(ops).map((a) => a.slug).sort()).toEqual(['ac-0', 'ac-1', 'ac-2', 'ac-3']);
   });
 
   it('stops on an empty page rather than looping forever', () => {
