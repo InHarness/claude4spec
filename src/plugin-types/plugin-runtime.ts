@@ -40,6 +40,39 @@ import type {
   SystemPromptContribution,
 } from '../shared/plugin-host/types.js';
 import type { ValidatorFailure, ValidatorKind } from '../shared/plugin-host/named-validators.js';
+// 0.2.79 (M39/L11) — the plugin READ SURFACE's DTOs. Imported (not just
+// re-exported) so `MountContext` below can state the five signatures for real
+// instead of typing them `any` the way the server-coupled handles are: as of
+// 0.2.79 these signatures AND the shape of the record they issue count toward
+// the surface `hostApiVersion` versions, so an author must be able to see them.
+import type {
+  DescribeTypesInput,
+  DescribeTypesResult,
+  GetEntitiesInput,
+  GetEntitiesResult,
+  ListEntitiesInput,
+  ListEntitiesResult,
+  ResolveIdentityInput,
+  ResolveIdentityResult,
+  SearchEntitiesInput,
+  SearchEntitiesResult,
+} from '../shared/discovery/read-surface.js';
+
+export type {
+  DescribeTypesInput,
+  DescribeTypesResult,
+  DescribedType,
+  EntityRow,
+  GetEntitiesInput,
+  GetEntitiesResult,
+  ListEntitiesInput,
+  ListEntitiesResult,
+  Page,
+  ResolveIdentityInput,
+  ResolveIdentityResult,
+  SearchEntitiesInput,
+  SearchEntitiesResult,
+} from '../shared/discovery/read-surface.js';
 
 // ── L11/L1 contract — dep-free, re-exported from the canonical host modules ──
 // These are the interfaces the brief names as "the contract's home"; keeping
@@ -124,6 +157,35 @@ export interface MountContext {
    * is host-internal and held to a single caller.
    */
   discovery(): any;
+  /**
+   * 0.2.79 — the M39 read core's plugin surface: EXACTLY five operations, for
+   * reading entities of types owned by another plugin or module.
+   *
+   * Unlike the handles above, these are typed for real. They are bound through
+   * `MountContext` at parity with `versionService` / `tagsService` /
+   * `referencesService` rather than re-exported from a barrel, because the
+   * handle is project-scoped BY CONSTRUCTION — it comes from the transport that
+   * already resolved the project, and a per-process singleton would not know
+   * which project a read is for.
+   *
+   * What you get back is the SERIALIZED RECORD, never a raw projection row: the
+   * projection's shape is a host detail, and the `contentBearing` field filter
+   * lives in serialization, so a raw read would bypass it. `RawEntityReader` and
+   * the `serialize` helper stay host-internal and are not on this surface.
+   *
+   * The remaining operations of the core's catalogue (page-, section-, tag- and
+   * reference-scoped) are deliberately absent. A signature once exposed is
+   * versioned forever, so the surface may be WIDENED later and never narrowed —
+   * which is why it starts at exactly what an envelope has been shown to need.
+   *
+   * Nothing here is declared in a manifest, so the loader gates none of it: core
+   * operations are BOUND, not contributed.
+   */
+  getEntities(input: GetEntitiesInput): GetEntitiesResult;
+  listEntities(input: ListEntitiesInput): ListEntitiesResult;
+  searchEntities(input: SearchEntitiesInput): SearchEntitiesResult;
+  describeTypes(input?: DescribeTypesInput): DescribeTypesResult;
+  resolveIdentity(input: ResolveIdentityInput): ResolveIdentityResult;
   cwd: string;
   ws: { broadcast(msg: unknown): void };
   tagsService: any;

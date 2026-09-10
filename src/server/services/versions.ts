@@ -12,6 +12,7 @@ import type { EntityStore } from './entity-store.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
 import type { RestoreContext } from '../serialization/types.js';
 import { stripSystemFields } from '../serialization/system-fields.js';
+import { diffEntity } from '../serialization/snapshot.js';
 import { upgradeCapture } from '../serialization/payload-upgrade.js';
 import { payloadVersionOfCapture } from '../serialization/payload-version.js';
 import type { SnapshotData } from '../serialization/types.js';
@@ -151,7 +152,17 @@ export class VersionService {
     // M29: persist the restored entity's file (host.restore used writeFile:false).
     entityStore.persist(type, entitySlug);
 
-    return this.captureEntitySnapshot(type, entitySlug, 'update', actor, `Restored to version ${version}`);
+    /**
+     * 0.2.79 — capture returns `null` when the restore changed no content
+     * (restoring an entity to the state it is already in). That is a success,
+     * not a failure, and the caller still wants the version it now sits at — the
+     * same shape the delete branch above resolves through `getLatestVersionForEntity`.
+     */
+    const captured = this.captureEntitySnapshot(type, entitySlug, 'update', actor, `Restored to version ${version}`);
+    if (captured) return captured;
+    const current = this.getLatestVersionForEntity(type, entitySlug);
+    if (current) return current;
+    throw new DomainError('NOT_FOUND', `${type} '${entitySlug}' not found`);
   }
 
   /**
@@ -176,7 +187,7 @@ export class VersionService {
      * type's integer `payloadVersion` — the version the upgrade chain acts on.
      */
     serializerVersion?: string
-  ): VersionListItem {
+  ): VersionListItem | null {
     const captured = serializerVersion ?? this.payloadVersionOf(type);
     if (!this.snapshotDeps) {
       // Fallback: deps not yet wired. Store legacy domain object via createVersion.
@@ -213,6 +224,49 @@ export class VersionService {
       console.error(`[entity_version] snapshot capture failed for ${type}/${entitySlug} (op=${op}):`, err);
       throw err;
     }
+    /**
+     * 0.2.79 — a mutation that changes no content writes NO row.
+     *
+     * "Mutation" means a change of CONTENT: a write of identical content makes
+     * no entry. The dedup lives HERE rather than in the record-write primitive
+     * (M42), which still runs its chain unconditionally — capture already reads
+     * the content through `snapshot()` above, so the comparison costs no extra
+     * read, and the primitive has no snapshot to compare with.
+     *
+     * The comparison is `diffEntity`, NOT byte equality of the two JSON blobs:
+     * a snapshot carries a `system: {createdAt, updatedAt}` envelope that moves
+     * on every write, so raw equality would never hold. `diffEntity` strips that
+     * envelope and skips `systemManaged` fields — the same predicate
+     * `ReleaseService.restoreEntity` already uses to skip its own no-op write.
+     *
+     * Only an `update` is suppressed. A `create` has no predecessor to compare
+     * against, and a `delete` tombstone carries the last-known data that makes
+     * the entity restorable — dropping either would lose information rather than
+     * withhold a duplicate.
+     *
+     * The predecessor must not itself be a tombstone. A `delete` row stores the
+     * FULL pre-delete snapshot, so an entity recreated at a slug that once held
+     * identical data diffs to `noop` against it — and suppressing that write
+     * would leave the log's head saying `delete` while the entity is live, which
+     * every consumer reads as "gone" (release restore would then delete it). A
+     * resurrection is a genuine change of state and always records a row.
+     *
+     * Skipping is a SUCCESS: the phase returns `null`, which is "no row was
+     * needed", not a rejected write. The rule "1 mutation = 1 row" is untouched;
+     * two genuinely different writes are never merged.
+     */
+    if (op === 'update') {
+      const previous = this.getLatestVersionForEntity(type, entitySlug);
+      if (
+        previous &&
+        previous.op !== 'delete' &&
+        previous.data !== null &&
+        diffEntity(this.snapshotDeps.host, type, previous.data as SnapshotData, snapshot).op === 'noop'
+      ) {
+        return null;
+      }
+    }
+
     return this.createVersion(type, entitySlug, snapshot, actor, summary, op, captured);
   }
 

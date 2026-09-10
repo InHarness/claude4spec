@@ -217,6 +217,16 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
      * its design system) 500s without this.
      */
     discovery: () => discovery,
+    /**
+     * 0.2.79 — the five M39 read operations bound onto the mount context, as
+     * `buildProjectContext` binds them. Thunk-deferred for the same reason
+     * `discovery` above is: the core does not exist at this line.
+     */
+    getEntities: (input) => discovery.getEntities(input),
+    listEntities: (input) => discovery.listEntities(input),
+    searchEntities: (input) => discovery.searchEntities(input),
+    describeTypes: (input) => discovery.describeTypes(input),
+    resolveIdentity: (input) => discovery.resolveIdentity(input),
     cwd,
     ws,
     tagsService,

@@ -18,7 +18,19 @@ import type {
 } from '../../../shared/plugin-host/types.js';
 import type { ChangedBy } from '../../../shared/entities.js';
 import type { Root } from '../../../shared/types.js';
-import type { DiscoveryCore } from '../../discovery/types.js';
+import type {
+  DescribeTypesInput,
+  DescribeTypesResult,
+  DiscoveryCore,
+  GetEntitiesInput,
+  GetEntitiesResult,
+  ListEntitiesInput,
+  ListEntitiesResult,
+  ResolveIdentityInput,
+  ResolveIdentityResult,
+  SearchEntitiesInput,
+  SearchEntitiesResult,
+} from '../../discovery/types.js';
 import type { UpsertResult } from '../../serialization/writer.js';
 import type { SystemStamp } from '../../serialization/system-fields.js';
 import type {
@@ -206,6 +218,36 @@ export interface MountContext {
    * M39 exists to close.
    */
   discovery: () => DiscoveryCore;
+  /**
+   * 0.2.79 — the M39 read core's PLUGIN SURFACE: exactly five operations, by
+   * which an envelope reads entities of types belonging to other plugins or
+   * modules.
+   *
+   * Bound HERE, at parity with `versionService` / `tagsService` /
+   * `referencesService`, rather than re-exported from a barrel. The reason is
+   * that the handle is project-scoped BY CONSTRUCTION — it comes from the
+   * transport that has already resolved which project this is — and a
+   * per-process singleton would not know which project a read is for.
+   *
+   * Enumerated PER OPERATION, not bound as a class: a class would carry
+   * mechanism the envelope cannot see. `RawEntityReader` and the `serialize`
+   * helper stay host-internal, and the other operations of the catalogue
+   * (page-, section-, tag- and reference-scoped) are deliberately NOT here — a
+   * signature once exposed is versioned forever, so widening the surface later
+   * is allowed and narrowing it is not.
+   *
+   * What comes back is the SERIALIZED RECORD, never a raw projection row. The
+   * projection's shape is a host detail, and the `contentBearing` field filter
+   * lives in serialization — a raw read would bypass it.
+   *
+   * Lazy for the same reason `discovery()` is a thunk: mounting runs before the
+   * core exists, so these resolve it at call time, not at mount time.
+   */
+  getEntities(input: GetEntitiesInput): GetEntitiesResult;
+  listEntities(input: ListEntitiesInput): ListEntitiesResult;
+  searchEntities(input: SearchEntitiesInput): SearchEntitiesResult;
+  describeTypes(input?: DescribeTypesInput): DescribeTypesResult;
+  resolveIdentity(input: ResolveIdentityInput): ResolveIdentityResult;
   /** Project root — needed by plugins that run an LLM adapter (e.g. ac-tools analyze). */
   cwd: string;
   /**

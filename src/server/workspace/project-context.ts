@@ -898,17 +898,36 @@ async function buildInner(
    */
   let discoveryCore: DiscoveryCore | null = null;
 
+  /**
+   * The core, or a refusal naming why it is not there yet. Shared by the
+   * `discovery()` thunk and by the five bound read operations below, so both
+   * report the same thing when a plugin reaches for a read during mount.
+   */
+  const requireDiscoveryCore = (): DiscoveryCore => {
+    if (!discoveryCore) {
+      throw new Error('discovery core requested during mount — it does not exist until mounting finishes');
+    }
+    return discoveryCore;
+  };
+
   pluginHost.mountBackend({
     app: router,
     reader: rawReader,
     crud: crudFacade,
     host: pluginHost,
-    discovery: () => {
-      if (!discoveryCore) {
-        throw new Error('discovery core requested during mount — it does not exist until mounting finishes');
-      }
-      return discoveryCore;
-    },
+    discovery: requireDiscoveryCore,
+    /**
+     * 0.2.79 — the five M39 read operations a plugin may use to read entities of
+     * a type that is not its own. Project-scoped by construction: this function
+     * has already resolved the project, so the core they close over is this
+     * project's. Resolved lazily, at call time — mounting runs before the core
+     * exists.
+     */
+    getEntities: (input) => requireDiscoveryCore().getEntities(input),
+    listEntities: (input) => requireDiscoveryCore().listEntities(input),
+    searchEntities: (input) => requireDiscoveryCore().searchEntities(input),
+    describeTypes: (input) => requireDiscoveryCore().describeTypes(input),
+    resolveIdentity: (input) => requireDiscoveryCore().resolveIdentity(input),
     cwd,
     roots: effectiveRoots,
     ws,
