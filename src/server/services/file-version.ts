@@ -92,9 +92,14 @@ export class FileVersionService {
      * `snapshotFromContent`. Identical content therefore means an identical
      * snapshot, and comparing the one authoritative field says so directly.
      *
-     * Only an `update` is suppressed, and only against an existing predecessor.
-     * A `create` has nothing to compare against; a `delete` tombstone carries
-     * the last-known content that makes the page restorable.
+     * Only an `update` is suppressed, and only against an existing predecessor
+     * that is not itself a tombstone. A `create` has nothing to compare against;
+     * a `delete` tombstone carries the last-known content that makes the page
+     * restorable — and because it carries exactly that content, a page recreated
+     * with its pre-delete bytes would compare equal to it. Suppressing THAT
+     * write would leave the log's head reading `delete` for a file that exists,
+     * which release restore takes as licence to delete it. A resurrection always
+     * records a row.
      *
      * Applies regardless of `changedBy` — `user`, `agent` and `filesystem` are
      * all the same write here. Sitting at the single INSERT site is what makes
@@ -105,7 +110,7 @@ export class FileVersionService {
      */
     if (op === 'update') {
       const previous = this.getLatestForPath(relPath, undefined, rootId);
-      if (previous && previous.data.content === data.content) return null;
+      if (previous && previous.op !== 'delete' && previous.data.content === data.content) return null;
     }
 
     const next = this.nextVersionNumber(relPath, rootId);

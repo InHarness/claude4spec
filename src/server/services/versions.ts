@@ -244,6 +244,13 @@ export class VersionService {
      * the entity restorable — dropping either would lose information rather than
      * withhold a duplicate.
      *
+     * The predecessor must not itself be a tombstone. A `delete` row stores the
+     * FULL pre-delete snapshot, so an entity recreated at a slug that once held
+     * identical data diffs to `noop` against it — and suppressing that write
+     * would leave the log's head saying `delete` while the entity is live, which
+     * every consumer reads as "gone" (release restore would then delete it). A
+     * resurrection is a genuine change of state and always records a row.
+     *
      * Skipping is a SUCCESS: the phase returns `null`, which is "no row was
      * needed", not a rejected write. The rule "1 mutation = 1 row" is untouched;
      * two genuinely different writes are never merged.
@@ -252,6 +259,7 @@ export class VersionService {
       const previous = this.getLatestVersionForEntity(type, entitySlug);
       if (
         previous &&
+        previous.op !== 'delete' &&
         previous.data !== null &&
         diffEntity(this.snapshotDeps.host, type, previous.data as SnapshotData, snapshot).op === 'noop'
       ) {

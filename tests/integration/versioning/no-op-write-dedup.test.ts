@@ -93,6 +93,53 @@ describe('a write that changes no content writes no version row', () => {
   });
 
   /**
+   * The tombstone is the one predecessor that must never suppress a write.
+   *
+   * A `delete` row stores the FULL last-known snapshot, so an entity or a page
+   * recreated with its pre-delete content compares equal to it. Withholding that
+   * row would leave the log's head reading `delete` for something that exists —
+   * and every consumer of the head reads that as "gone": release restore would
+   * delete the live file, and `countUnreleased` would see nothing to release.
+   * Resurrection is a genuine change of state, so it always records.
+   */
+  it('records a row when a deleted page is recreated with its pre-delete content', async () => {
+    const relPath = 'resurrected-page.md';
+    const abs = path.join(t.plansPages.root, relPath);
+    const content = '# Resurrected\n\nOriginal body.\n';
+
+    fs.writeFileSync(abs, content, 'utf-8');
+    await t.pageVersions.recordVersion(relPath, 'create', 'user', undefined, t.plansSerializer, PLAN_ROOT_MARKER);
+    fs.rmSync(abs);
+    await t.pageVersions.recordVersion(relPath, 'delete', 'user', undefined, t.plansSerializer, PLAN_ROOT_MARKER);
+    const afterDelete = t.pageVersions.listVersions(relPath, PLAN_ROOT_MARKER).length;
+
+    // The path was captured once, so the capture service classifies this as an
+    // `update` — there is no second `create` for a path the log has ever seen.
+    fs.writeFileSync(abs, content, 'utf-8');
+    await t.pageVersions.recordVersion(relPath, 'update', 'user', undefined, t.plansSerializer, PLAN_ROOT_MARKER);
+
+    expect(t.pageVersions.listVersions(relPath, PLAN_ROOT_MARKER)).toHaveLength(afterDelete + 1);
+    expect(t.pageVersions.getLatestForPath(relPath, undefined, PLAN_ROOT_MARKER)?.op).toBe('update');
+  });
+
+  it('records a row when an entity is renamed back onto a deleted slug', async () => {
+    const { slug } = await t.crud.create('widget', { title: 'Ghost' }, 'user');
+    await t.crud.delete('widget', slug, 'user');
+    const afterDelete = t.versionService.listVersions('widget', slug).length;
+
+    // A rename onto the freed slug captures an `update` AT THAT SLUG, and its
+    // declared values are the deleted entity's — `diffEntity` ignores the slug,
+    // so the snapshot diffs `noop` against the tombstone and only the op guard
+    // keeps the row.
+    const other = await t.crud.create('widget', { title: 'Other' }, 'user');
+    await t.crud.update('widget', other.slug, { title: 'Ghost', newSlug: slug }, 'user');
+
+    const log = t.versionService.listVersions('widget', slug);
+    expect(log.length).toBeGreaterThan(afterDelete);
+    expect(log[0]!.op).not.toBe('delete');
+  });
+
+  /**
    * Rollback is unaffected, and that is the claim worth pinning: a state the log
    * skipped is byte-identical to one already in it, so every intermediate state
    * remains reachable. Restoring to the version that survived the suppressed
