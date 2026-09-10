@@ -1,7 +1,8 @@
 <!--
 Template for a module file (`modules/MXX-<slug>.md`) in a layered-vertical-slices spec.
 Copy this file, rename it, and replace placeholders. `## Cel` must satisfy the Cel rules,
-`## Zależności` rule 3a — both travel with the workflow you are running.
+`## Zależności` rule 3a, `## Domain` the Domain rules — all three travel with the workflow you
+are running.
 
 Nothing goes between the H1 and `## Cel` — no hook, no blockquote, no table. Content placed
 there carries no anchor of its own, so it is invisible to the section index and to every
@@ -25,6 +26,31 @@ cross-cutting read.
 
 <One sentence: why this module leans outward at all — the shape of what it takes
 from others, not a restatement of the list above.>
+
+## Domain
+
+<!-- The third H2, literal — no layer number, no suffix. This is the module's own substance:
+     what NO layer of this project asks about — its model, the rules its operations obey, the
+     process it owns end to end, what it deliberately does not do. Test each paragraph against
+     the layer files: an answer to a field of some layer's `## Module slice schema` belongs in
+     that layer's section, not here.
+
+     Content lives only under `###` headings YOU name (these two are placeholders, not a fixed
+     set); `####` does not occur, and at most one paragraph stands directly under this heading.
+     Budget: 3500 characters per subsection, 12000 for the section — past them, look for the
+     same shape in other modules' `Domain` sections and propose a layer instead.
+
+     A module with no substance of its own DELETES this section: there is no `n/d` variant. -->
+
+### <Subsection the module names — e.g. the shape of the thing it owns>
+
+<What the concepts are, how they are identified, which states they move through.>
+
+### <Second subsection the module names — e.g. the rules its operations obey>
+
+<Invariants and decisions with their reason, negative scope included; or the lifecycle this
+module owns from beginning to end, one line per step, a step owned elsewhere being a sentence
+and a pointer.>
 
 ## <Layer 1 name> (L1)
 

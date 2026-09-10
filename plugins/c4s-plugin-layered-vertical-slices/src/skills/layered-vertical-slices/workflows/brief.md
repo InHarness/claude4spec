@@ -23,6 +23,7 @@ A coding agent in another terminal cannot act on (2). Telling them "L3 API uses 
 | New `layers/LX-*.md` file (whole file added) | mostly spec-format | Mention briefly that "the spec gained a new layer LX — \<name\> — which structures how modules describe \<topic\>" and stop. Do not transcribe the schema. The implementer cares only when modules start using this layer. |
 | Diff inside `modules/MXX-*.md` § per-layer (e.g. `## Database (L1)`, `## API (L3)`) | substantive | **Translate** to a system-level statement; inline the entities/fields/endpoints. |
 | Diff inside `modules/MXX-*.md` § `Cel` / `Edge cases` / `Acceptance criteria` | substantive | **Translate** to system behavior. |
+| Diff inside `modules/MXX-*.md` § `Domain` | substantive | **Translate** to system behavior, exactly as a `Cel` diff — it is the module's own substance (model, invariants, owned lifecycle, boundary), not a rule about writing the spec. |
 | Diff inside `modules/MXX-*.md` § `Zależności` | usually drop | A dependency record says what one module needs from another; it becomes brief material only when the *system* gained or lost a coupling an implementer must wire. |
 | New `modules/MXX-*.md` file | substantive | Open with the module's purpose in one sentence, then walk its per-layer sections. |
 | Entity changes (DTO/Endpoint/Database Table/UI View — create/update/delete) | substantive | **Inline with full content** — the field table, the method and path with its DTOs and status codes, the SQL fragment, the route and what it loads. |

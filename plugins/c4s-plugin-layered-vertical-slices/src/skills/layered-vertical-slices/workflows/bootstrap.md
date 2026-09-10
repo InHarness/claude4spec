@@ -42,7 +42,7 @@ Based on the brief, propose a concrete set of layers specific to this project. E
 - An agent platform where every feature exposes agent tools: `L1 DB`, `L2 Agent Toolset Conventions`, `L3 HTTP API`, `L4 UI`.
 - A static content generator: `L1 Sources`, `L2 Transform`, `L3 Output`.
 
-**Do not propose `L2 Domain`** (or `Business Logic`): a module's domain is its own substance, not a layer (SKILL.md §2). A convention several modules genuinely share is a layer named after that convention — `L2 Error model`, `L2 Audit conventions` — never the catch-all.
+**Do not propose `L2 Domain`** (or `Business Logic`): a module's domain is its own substance, not a layer (SKILL.md §2). The prohibition has an address — that substance's home is the module file's own `## Domain` section, whose rules are carried at the end of this file — so nothing is left homeless by refusing the layer. A convention several modules genuinely share is a layer named after that convention — `L2 Error model`, `L2 Audit conventions` — never the catch-all.
 
 Present as a table:
 
@@ -116,3 +116,5 @@ Announce completion and offer: *"Spec skeleton and contents are complete. Want m
 <!-- include: parts/placement.md -->
 
 <!-- include: parts/authoring.md -->
+
+<!-- include: parts/domain.md -->

@@ -8,8 +8,8 @@ import { checksProjection, extractChecks, includeUsage, layeredVerticalSlicesSty
  * import that resolved to nothing, a frontmatter block that survived into the
  * body, or a package key that drifted away from the address the prose uses.
  */
-/** Symptom markers across `parts/placement.md` + `parts/authoring.md`, after normalisation. */
-const CHECKS_PINNED = 17;
+/** Symptom markers across `parts/placement.md` + `parts/authoring.md` + `parts/domain.md`. */
+const CHECKS_PINNED = 23;
 
 describe('c4s-plugin-layered-vertical-slices — the writing style it contributes', () => {
   it('is the reference style, at the slug config.writingStyle names', () => {
@@ -106,7 +106,7 @@ describe('c4s-plugin-layered-vertical-slices — the writing style it contribute
     const checks = checksProjection.split('\n');
     expect(checks.length).toBe(CHECKS_PINNED);
     for (const check of checks) {
-      expect(check).toMatch(/^- \*\*(Rule \d+[a-z]? — |Cel \d+ — ).+\.\*\* .+/);
+      expect(check).toMatch(/^- \*\*(Rule \d+[a-z]? — |Cel \d+ — |Dom \d+ — ).+\.\*\* .+/);
     }
     expect(daily).toContain(checksProjection);
     // Every marker in the delivered rules is projected — none is orphaned.
@@ -114,6 +114,11 @@ describe('c4s-plugin-layered-vertical-slices — the writing style it contribute
     expect(markers).toBe(CHECKS_PINNED);
     // And the extractor attributes a symptom to the rule it sits under.
     expect(extractChecks('## X\n\n3. **Title.** Body. *Symptom:* thing.\n')).toEqual(['- **Rule 3 — Title.** thing.']);
+    // The prefix comes from the nearest H2, not from the `###` the items sit under:
+    // the `Cel` and `Domain` catalogues carry the same kind of sub-heading.
+    expect(
+      extractChecks("## The module's `Domain` section\n\n### Rules\n\n2. **T.** *Symptom:* s.\n"),
+    ).toEqual(['- **Dom 2 — T.** s.']);
   });
 
   it('delivers the reading protocols with the workflows that locate a change, and only the pattern to the brief', () => {
