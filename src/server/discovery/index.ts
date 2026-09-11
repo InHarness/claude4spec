@@ -325,6 +325,6 @@ export function getEntitiesAll(
 
 export { DiscoveryError, isDiscoveryError, type DiscoveryErrorCode } from './errors.js';
 export type * from './types.js';
-export { MAX_ANCHORS_PER_CALL, MAX_SLUGS_PER_CALL } from './budget.js';
+export { MAX_ANCHORS_PER_CALL, MAX_SECTION_ITEMS_PER_RESPONSE, MAX_SLUGS_PER_CALL } from './budget.js';
 export { MAX_WINDOW_CELLS } from './ops/collections.js';
 export { MAX_LIMIT } from './pagination.js';

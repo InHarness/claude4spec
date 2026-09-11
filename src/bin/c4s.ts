@@ -172,7 +172,9 @@ Pages and sections (a page is (rootId, path); an anchor is globally unique):
                                     the page's headings as a TREE in document order — a table of
                                     contents; each node carries its anchor, level and body size
   get-sections --anchors <a,b,c> [--include-subtree]
-                                    bodies of several sections in ONE call; an unknown anchor
+                                    bodies of several sections in ONE call, one item PER SECTION:
+                                    the anchors in input order and, with --include-subtree, each
+                                    one's subtree behind it in document order; an unknown anchor
                                     errors inside its own item and the exit code stays 0
   get-page --root-id <id> --path <p> [--range <from:to>]
                                     the page as authored, XML tags untouched; --range is

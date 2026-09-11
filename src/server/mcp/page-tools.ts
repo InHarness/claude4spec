@@ -343,7 +343,10 @@ export function createPageToolsServer(
               .string()
               .optional()
               .describe(
-                'The text this edit contributes, heading line EXCLUDED — exactly the shape get_sections returns. ' +
+                'The text this edit contributes, heading line EXCLUDED — the shape of a get_sections `body`. Mind ' +
+                  'the range: get_sections hands back a section\'s OWN body (up to its first child heading), while ' +
+                  'replace/delete act on the whole indexed SUBTREE — so replacing a parent with its edited own body ' +
+                  'removes its children unless you paste them back or edit the children as their own anchors. ' +
                   'Required for replace / append / insert_after; forbidden for delete and edit.',
               ),
             textEdits: textEditsParam

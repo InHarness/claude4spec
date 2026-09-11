@@ -221,6 +221,7 @@ export function registerCoreOperations(): void {
   CATALOG.register(
     coreRead('get_sections', 'Content of several sections addressed by anchor, in ONE call. The singular `get_section` was removed without a transition period: N sections cost N model turns, which was not acceptable.', {
       anchors: z.array(z.string()).min(1),
+      includeSubtree: z.boolean().optional(),
     }, ['SECTION_NOT_FOUND', 'AMBIGUOUS_ANCHOR']),
   );
 

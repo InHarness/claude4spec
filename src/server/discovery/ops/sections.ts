@@ -28,14 +28,20 @@
  */
 
 import type { Database } from 'better-sqlite3';
-import type { DiscoveryError, DiscoveryErrorCode } from '../errors.js';
-import { invalidArgument, sectionNotFound } from '../errors.js';
+import type { DiscoveryErrorCode } from '../errors.js';
+import { DiscoveryError, invalidArgument, sectionNotFound } from '../errors.js';
 import type { PageSource } from '../page-source.js';
 import type { RawEntityReader, RawSection } from '../raw-entity-reader.js';
 import type { RootSet } from '../roots.js';
 import { serializeSection } from '../../serialization/serializers/section.js';
-import { bodySize, hydrateSection } from '../section-hydrator.js';
-import { applyItemBudget, DEFAULT_BUDGET_CHARS, MAX_ANCHORS_PER_CALL, truncateText } from '../budget.js';
+import { hydrateSectionFrom, PageLines } from '../section-hydrator.js';
+import {
+  applyItemBudget,
+  DEFAULT_BUDGET_CHARS,
+  MAX_ANCHORS_PER_CALL,
+  MAX_SECTION_ITEMS_PER_RESPONSE,
+  truncateText,
+} from '../budget.js';
 import type {
   GetSectionsInput,
   GetSectionsItem,
@@ -108,15 +114,16 @@ function buildOutline(
   pageBody: string,
 ): { sections: OutlineNode[]; truncated?: true; message?: string } {
   const nodes = new Map<string, OutlineNode>();
+  // The page is split and its headings parsed ONCE for the whole outline, not
+  // once per section: measurement before fetching is the point of the
+  // operation, and paying a parse per heading to deliver it would defeat it.
+  const page = new PageLines(pageBody);
   for (const row of rows) {
     nodes.set(row.anchor, {
       anchor: row.anchor,
       heading: row.headingText,
       level: row.headingLevel,
-      // The page is read ONCE for the whole outline, not once per section:
-      // measurement before fetching is the point of the operation, and paying a
-      // read per heading to deliver it would defeat it.
-      size: bodySize(pageBody, row),
+      size: page.size(row),
     });
   }
 
@@ -215,14 +222,32 @@ export function toRawSection(row: Record<string, unknown>): RawSection {
  * 0.2.5 — `get_sections`, the batched successor to `get_section`.
  *
  * The batching lives HERE and nowhere below: the section serializer (M06) still
- * serializes exactly one section, and this loop calls it once per anchor. A
+ * serializes exactly one section, and this loop calls it once per section. A
  * serializer that knew about lists would be a second definition of what a
  * section is.
  *
- * Four rules, in the order they are applied — the order matters, because
- * coverage has to be known before anything is fetched (or the covered bodies
- * are read and thrown away), and budget has to be applied before `truncated` is
- * propagated (or a covered item inherits a flag its parent does not have yet).
+ * 0.2.84 — ONE ITEM PER SECTION, not one per requested anchor. `includeSubtree`
+ * used to widen a single record (the children rode inside the parent's `body`,
+ * and a requested anchor swallowed that way came back as `{ anchor, coveredBy }`).
+ * It now widens the SET of records: every section of the subtree is its own
+ * full item, the parent carries only its own body, and the covered variant is
+ * gone. A child's anchor is then a key of the response rather than an HTML
+ * comment buried in someone else's body, and when the budget cuts, the caller
+ * learns exactly which anchors lost their text.
+ *
+ * Three valves, in the order they bite:
+ *
+ * 1. `anchors[]` length — a REFUSAL at the input (`MAX_ANCHORS_PER_CALL`).
+ * 2. Item ceiling after expansion — a CUT (`MAX_SECTION_ITEMS_PER_RESPONSE`),
+ *    decided structurally from the index before a single body is read. Every
+ *    explicit anchor keeps its seat; the expansion is cut to a prefix of what
+ *    room is left, in output order. Error items count.
+ * 3. Response budget — the existing degradation, over what survived 2.
+ *
+ * The two cuts have DISJOINT remedies and the envelope's `message` says which
+ * one applies: the budget regime can be retried with a smaller subset, the
+ * ceiling regime cannot (the caller does not know what it is missing), so it is
+ * sent to `get_page_outline` for the anchors instead.
  */
 export async function getSections(
   db: Database,
@@ -244,25 +269,11 @@ export async function getSections(
   const anchors = [...new Set(requested)];
   const includeSubtree = input.includeSubtree ?? false;
 
-  const rows = new Map<string, RawSection | null>();
-  for (const anchor of anchors) rows.set(anchor, reader.getSection(anchor) ?? null);
-
-  /**
-   * Which anchors can actually produce a body — resolved BEFORE coverage, not
-   * after. `coveredBy` is a pointer at another item's body, so pointing it at an
-   * anchor that turns out to be an error item would report a section's
-   * unavailability as "your body is upstream", which is the one thing that
-   * pointer must never say. A de-indexed root takes its whole page down
-   * together, so nothing on it can cover anything either.
-   */
   const indexed = new Set(roots.sectionIndexed().map((r) => r.id));
-  const resolvable = new Map<string, RawSection>();
-  for (const anchor of anchors) {
-    const section = rows.get(anchor);
-    if (section && indexed.has(section.rootId)) resolvable.set(anchor, section);
-  }
-
-  const coveredBy = includeSubtree ? computeCoverage(db, anchors, resolvable) : new Map<string, string>();
+  const cache = new PageCache(db, pages);
+  const explicit: Slot[] = anchors.map((anchor) => ({ anchor, section: reader.getSection(anchor) ?? null, explicit: true }));
+  const slots = includeSubtree ? expandSubtrees(explicit, indexed, cache) : explicit;
+  const { kept, capped } = applyItemCeiling(slots);
 
   const items: GetSectionsItem[] = [];
   // Text truncation of one oversized body is a DIFFERENT cut from the response
@@ -275,28 +286,21 @@ export async function getSections(
    * They ride along only on a `truncated` item (0.2.16), and the budget prices
    * an item by its serialized length — so an item that will ship without edges
    * must not be priced with them, or a full-bodied section pays for a payload
-   * the caller never receives. Every entry here was parsed from the WHOLE
-   * section, before any text clipping, which is what makes a meta-only item
-   * still report everything its section embeds.
+   * the caller never receives. Every entry here was parsed from the whole OWN
+   * body, before any text clipping, which is what makes a meta-only item still
+   * report everything its section embeds — and nothing its children do.
    */
   const edgesByAnchor = new Map<string, SectionEdges>();
-  for (const anchor of anchors) {
-    const cover = coveredBy.get(anchor);
-    if (cover) {
-      items.push({ anchor, coveredBy: cover });
-      continue;
-    }
-    const section = rows.get(anchor) ?? null;
+  for (const { anchor, section } of kept) {
     if (!section) {
       items.push({ anchor, ...itemError(sectionNotFound(anchor, nearbyAnchors(db))) });
       continue;
     }
     /**
-     * A section on a root that has LOST its section index is not addressable —
-     * the same gate `get_section` applied, but demoted from a throw to a
-     * per-item error. In a batch a throw would let one de-indexed root suppress
-     * every other section the caller asked for, which contradicts the rule that
-     * makes this operation worth having.
+     * The de-indexed root, demoted from a throw to a per-item error. In a batch
+     * a throw would let one de-indexed root suppress every other section the
+     * caller asked for, which contradicts the rule that makes this operation
+     * worth having.
      *
      * The remedy travels WITH the error. Both tool descriptions promise that
      * this variant "points at get_page", and a promise kept only in the
@@ -304,7 +308,7 @@ export async function getSections(
      * pointer is followable by construction — the root has no section index, so
      * get_page is exactly the operation that serves it (with `range`, even).
      */
-    if (!resolvable.has(anchor)) {
+    if (!indexed.has(section.rootId)) {
       items.push({
         anchor,
         error:
@@ -314,7 +318,20 @@ export async function getSections(
       });
       continue;
     }
-    const fetched = await fetchOne(db, pages, section, includeSubtree);
+    /**
+     * A page the index knows but the disk no longer has (renamed or deleted
+     * after indexing, before the watcher caught up) is the same shape of
+     * failure as a de-indexed root: one bad page must not fail the batch. With
+     * expansion one page can be fifty slots, so the read's error is cached
+     * beside its content and every slot on that page becomes an error item
+     * carrying the read's own message.
+     */
+    const page = await cache.contentOf(section);
+    if (page instanceof DiscoveryError) {
+      items.push({ anchor, ...itemError(page) });
+      continue;
+    }
+    const fetched = fetchOne(db, page, section);
     items.push(fetched.item);
     edgesByAnchor.set(anchor, fetched.edges);
     if (fetched.hint) textHints.push(fetched.hint);
@@ -322,33 +339,183 @@ export async function getSections(
 
   const budgeted = applyItemBudget(items, (item) => metaOnly(item, edgesByAnchor), RETRY_HINT);
   const messages = [
+    ...(capped ? [ITEM_CAP_HINT] : []),
     ...(budgeted.truncated ? [budgeted.truncationHint ?? RETRY_HINT] : []),
     ...textHints.slice(0, 1),
   ];
   return {
-    results: propagateTruncation(budgeted.items),
+    results: budgeted.items,
     ...(messages.length ? { truncated: true, message: messages.join(' ') } : {}),
   };
+}
+
+/**
+ * One position of the output. `section` is null for an anchor the index does
+ * not know (it becomes an error item); `explicit` tells the ceiling which slots
+ * the caller named and can therefore see missing.
+ */
+interface Slot {
+  anchor: string;
+  section: RawSection | null;
+  explicit: boolean;
+}
+
+/**
+ * The output order of a subtree-expanded call: the explicit anchors in input
+ * order, and behind each one its subtree in document order.
+ *
+ * Global de-duplication, FIRST occurrence wins: an anchor that is both requested
+ * and inside another requested anchor's subtree sits at its own input position,
+ * never at the expansion's — and so does its WHOLE SUBTREE, which is emitted
+ * behind that anchor's own item, not behind the outer parent's. Walking past an
+ * explicit anchor into its descendants would put a grandchild in front of the
+ * requested child it belongs to, and a reader placing items by `heading_level`
+ * and position would hang it off the wrong parent. Two consequences the caller
+ * can observe: a parent and its child both named in `anchors[]` yield exactly
+ * one item each, and for `[child, parent]` the parent's expansion skips the
+ * child and everything under it, so its subtree is not contiguous.
+ *
+ * An unresolvable anchor (unknown, or on a root without a section index) stays
+ * a slot of its own — it becomes an error item and counts toward the ceiling —
+ * it just has nothing to expand. The walk is over `section_index` rows, not
+ * page text: the rows are what the batch is keyed from, so an index-derived
+ * answer cannot disagree with the items being assembled, and it costs no page
+ * read. A section is inside the subtree while its heading is DEEPER than the
+ * parent's; the first row at the same or a shallower level ends it.
+ */
+function expandSubtrees(explicit: readonly Slot[], indexed: ReadonlySet<string>, cache: PageCache): Slot[] {
+  const seen = new Set(explicit.map((s) => s.anchor));
+  const slots: Slot[] = [];
+  for (const slot of explicit) {
+    slots.push(slot);
+    const parent = slot.section;
+    if (!parent || !indexed.has(parent.rootId)) continue;
+    const page = cache.rowsOf(parent);
+    const start = page.findIndex((s) => s.anchor === parent.anchor);
+    if (start === -1) continue;
+    // Deeper than this level is inside a subtree already accounted for.
+    let skipBelow = Infinity;
+    for (let i = start + 1; i < page.length; i++) {
+      const row = page[i]!;
+      if (row.headingLevel <= parent.headingLevel) break;
+      if (row.headingLevel > skipBelow) continue;
+      skipBelow = Infinity;
+      if (seen.has(row.anchor)) {
+        skipBelow = row.headingLevel;
+        continue;
+      }
+      seen.add(row.anchor);
+      slots.push({ anchor: row.anchor, section: row, explicit: false });
+    }
+  }
+  return slots;
+}
+
+/**
+ * Valve 2, BEFORE any content is read.
+ *
+ * The cut keeps output order but is not a plain prefix of it: every EXPLICIT
+ * anchor is seated first, and the expansion fills whatever room is left, in
+ * order. A prefix would let one large subtree push a later requested anchor out
+ * of the response with no error item to say so — an anchor the caller named,
+ * can see missing, and is told not to retry for. The explicit anchors always
+ * fit (valve 1 caps them at the same number), so what the ceiling drops is only
+ * ever expansion, which is what `get_page_outline` can list.
+ *
+ * Because the explicit anchors are seated out of turn, the kept expansion is a
+ * prefix of the expansion only, and — unlike `get_page_outline`'s cut — it
+ * carries no "no orphaned node" guarantee: for `[child, parent]` the parent's
+ * subtree is not contiguous, and a cut can keep a child whose parent never made
+ * it in.
+ */
+function applyItemCeiling(slots: readonly Slot[]): { kept: readonly Slot[]; capped: boolean } {
+  if (slots.length <= MAX_SECTION_ITEMS_PER_RESPONSE) return { kept: slots, capped: false };
+  let room = MAX_SECTION_ITEMS_PER_RESPONSE - slots.filter((s) => s.explicit).length;
+  return { kept: slots.filter((s) => s.explicit || room-- > 0), capped: true };
+}
+
+/**
+ * Everything the batch needs from a page, fetched once per page however many
+ * anchors land on it: its `section_index` rows (the expansion walks them) and
+ * its text (every item on it is sliced from it). One key builder for both.
+ */
+class PageCache {
+  private readonly rows = new Map<string, RawSection[]>();
+  private readonly contents = new Map<string, Promise<PageLines | DiscoveryError>>();
+  constructor(
+    private readonly db: Database,
+    private readonly pages: PageSource,
+  ) {}
+
+  rowsOf(section: RawSection): RawSection[] {
+    const key = PageCache.key(section);
+    let page = this.rows.get(key);
+    if (!page) {
+      page = selectSections(this.db, 'WHERE rootId = ? AND page_path = ?', [section.rootId, section.pagePath]);
+      this.rows.set(key, page);
+    }
+    return page;
+  }
+
+  /**
+   * The page's body, or the discovery error its read produced. A read that
+   * fails for a reason the core classifies (the page is gone, the path escapes
+   * its root) is an answer for the items on that page; anything else is a
+   * broken server and still throws.
+   */
+  contentOf(section: RawSection): Promise<PageLines | DiscoveryError> {
+    const key = PageCache.key(section);
+    let content = this.contents.get(key);
+    if (!content) {
+      // readBody, NOT read: `line_start`/`line_end` index the frontmatter-
+      // stripped body (see PageSource.readBody). Slicing the raw file by them
+      // shifts every section by the height of the frontmatter block.
+      content = this.pages.readBody(section.rootId, section.pagePath).then(
+        (body) => new PageLines(body),
+        (err: unknown) => {
+          if (err instanceof DiscoveryError) return err;
+          throw err;
+        },
+      );
+      this.contents.set(key, content);
+    }
+    return content;
+  }
+
+  private static key(section: RawSection): string {
+    return `${section.rootId}\0${section.pagePath}`;
+  }
 }
 
 const RETRY_HINT =
   'response budget reached — every item after the first oversized one came back without its `body` (coordinates kept, `edges` added, `truncated: true`). Pick the anchors you actually need out of those `edges` and retry as a smaller subset.';
 
 /**
- * Serializes ONE section, exactly as the pre-batch operation did.
+ * The ceiling's message, and what it must NOT say.
+ *
+ * Items past the ceiling are not in the response at all, so their anchors are
+ * invisible to the caller — a "retry with a smaller subset" here would name a
+ * call that returns the same thing, because the caller cannot know what to
+ * leave out. The way on is the operation that lists a subtree's anchors without
+ * reading it, and from there back to this one with the anchors chosen.
+ */
+const ITEM_CAP_HINT =
+  `item ceiling reached — the subtree expansion produced more than ${MAX_SECTION_ITEMS_PER_RESPONSE} sections and only the first ${MAX_SECTION_ITEMS_PER_RESPONSE} in output order came back; the rest are absent, not truncated. Do not retry with fewer anchors (you cannot see what is missing): list the subtree's anchors with get_page_outline({ rootId, path }) and read the ones you need with get_sections({ anchors }).`;
+
+/**
+ * Serializes ONE section over a page the caller has already read and parsed.
  *
  * Returns the remediation `hint` alongside the item rather than embedding it:
  * the item shape lost `truncationHint` in 0.2.5, and the envelope's `message` is
  * where the instruction now lives. Dropping it on the floor would leave a
  * `truncated: true` item with nothing saying what to do about it.
  */
-async function fetchOne(
+function fetchOne(
   db: Database,
-  pages: PageSource,
+  page: PageLines,
   section: RawSection,
-  includeSubtree: boolean,
-): Promise<{ item: SectionResultItem; edges: SectionEdges; hint?: string }> {
-  const hydrated = await hydrateSection(db, pages, section, includeSubtree);
+): { item: SectionResultItem; edges: SectionEdges; hint?: string } {
+  const hydrated = hydrateSectionFrom(db, page, section);
   // The section serializer IS the source for this operation — the core does not
   // hand-roll a second section shape beside it. What it does own is the WIRE
   // naming: the operation's contract is snake_case, while the serializer's
@@ -385,6 +552,10 @@ async function fetchOne(
    * not alternatives. Its tail is invisible, so the edges are the only way to
    * learn what the part that did not fit points at. The condition is the
    * `truncated` flag, never `body === undefined`.
+   *
+   * `line_end` is the end of the OWN body, not the indexed range: the index
+   * keeps the subtree range because the write side lives off it, while this
+   * item's coordinates describe the text it carries.
    */
   return {
     item: {
@@ -394,7 +565,7 @@ async function fetchOne(
       heading_text: section.headingText,
       heading_level: section.headingLevel,
       line_start: section.lineStart,
-      line_end: section.lineEnd,
+      line_end: hydrated.bodyEnd,
       body: budgeted.text,
       ...(budgeted.truncated ? { truncated: true, edges } : {}),
     },
@@ -415,77 +586,12 @@ function nearbyAnchors(db: Database): string[] {
 }
 
 /**
- * Which requested anchors fall inside another requested anchor's subtree.
- *
- * Derived from `section_index`, NOT from re-scanning page text the way
- * `sliceBody(includeSubtree)` does. Both answer the same question, but the rows
- * are what the batch was keyed from, so an index-derived answer cannot disagree
- * with the items being assembled — and it needs no page read at all. A section
- * is inside `covering`'s subtree while its heading is DEEPER than covering's;
- * the first row at the same or shallower level ends the subtree.
- *
- * Ties are resolved by input order: the first requested anchor that covers
- * another wins, so `coveredBy` is stable regardless of page layout.
- *
- * `rows` holds only the RESOLVABLE anchors — one that will end up an error item
- * must not appear on either side of the relation.
- */
-function computeCoverage(
-  db: Database,
-  anchors: readonly string[],
-  rows: ReadonlyMap<string, RawSection>,
-): Map<string, string> {
-  const byPage = new Map<string, RawSection[]>();
-  const covered = new Map<string, string>();
-
-  for (const anchor of anchors) {
-    const section = rows.get(anchor);
-    if (!section) continue;
-    const key = `${section.rootId}\0${section.pagePath}`;
-    if (!byPage.has(key)) {
-      byPage.set(key, selectSections(db, 'WHERE rootId = ? AND page_path = ?', [section.rootId, section.pagePath]));
-    }
-  }
-
-  const requested = new Set(anchors);
-  for (const anchor of anchors) {
-    const covering = rows.get(anchor);
-    if (!covering || covered.has(anchor)) continue;
-    const page = byPage.get(`${covering.rootId}\0${covering.pagePath}`) ?? [];
-    const start = page.findIndex((s) => s.anchor === covering.anchor);
-    if (start === -1) continue;
-    for (let i = start + 1; i < page.length; i++) {
-      const row = page[i]!;
-      if (row.headingLevel <= covering.headingLevel) break;
-      if (requested.has(row.anchor) && !covered.has(row.anchor)) covered.set(row.anchor, anchor);
-    }
-  }
-
-  /**
-   * Collapse chains to the OUTERMOST coverer. Containment is transitive, but the
-   * loop above is first-writer-wins per covered anchor, so an intermediate
-   * section can claim a deeper one and then itself be claimed by a shallower
-   * ancestor — leaving `#### Grand -> ### Child` where `### Child` has no body of
-   * its own. Following that pointer lands on nothing, which is exactly what the
-   * `coveredBy`-without-`truncated` guarantee forbids. The walk terminates
-   * because each hop is strictly shallower than the last.
-   */
-  const resolved = new Map<string, string>();
-  for (const [anchor, cover] of covered) {
-    let outermost = cover;
-    while (covered.has(outermost)) outermost = covered.get(outermost)!;
-    resolved.set(anchor, outermost);
-  }
-  return resolved;
-}
-
-/**
  * Strips the expensive half, keeping everything that says what was cut.
  *
  * The edges come BACK here rather than surviving from the un-degraded item:
  * they were parked outside it so the budget would price the item as it ships.
- * They describe the whole section, not the fragment that fit — a meta-only item
- * has no fragment at all, and still reports everything the section embeds.
+ * They describe the whole own body, not the fragment that fit — a meta-only
+ * item has no fragment at all, and still reports everything the section embeds.
  */
 function metaOnly(item: GetSectionsItem, edgesByAnchor: ReadonlyMap<string, SectionEdges>): GetSectionsItem {
   if (!isResultItem(item)) return item;
@@ -495,25 +601,10 @@ function metaOnly(item: GetSectionsItem, edgesByAnchor: ReadonlyMap<string, Sect
 }
 
 /**
- * Which of the three item variants this is. Keyed on what the OTHER two carry,
+ * Which of the two item variants this is. Keyed on what the error item carries,
  * because since 0.2.16 both of the result item's own distinguishing fields
  * (`body`, `edges`) are optional and a meta-only item has neither.
  */
 function isResultItem(item: GetSectionsItem): item is SectionResultItem {
-  return !('coveredBy' in item) && !('error' in item);
-}
-
-/**
- * A `coveredBy` item promises its body lives in the covering item. When that one
- * was cut, the promise is void — so the flag travels down, and `coveredBy`
- * WITHOUT `truncated` stays a guarantee rather than a hopeful pointer.
- */
-function propagateTruncation(items: readonly GetSectionsItem[]): GetSectionsItem[] {
-  const truncatedAnchors = new Set(
-    items.filter(isResultItem).filter((i) => i.truncated).map((i) => i.anchor),
-  );
-  if (!truncatedAnchors.size) return [...items];
-  return items.map((item) =>
-    'coveredBy' in item && truncatedAnchors.has(item.coveredBy) ? { ...item, truncated: true } : item,
-  );
+  return !('error' in item);
 }

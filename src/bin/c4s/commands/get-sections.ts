@@ -17,8 +17,15 @@ import type { CliCommandContribution } from '../registry.js';
  *    the entire reason the operation is batched, and a non-zero exit would make
  *    every shell caller throw the good results away.
  * 2. No `--root-id`, and no `--limit`/`--offset`. Anchors are globally unique,
- *    and the caller named the rows, so the valve is the input-length cap plus
- *    the response budget.
+ *    and the caller named the rows. The valves — the input-length cap, the
+ *    item ceiling after `--include-subtree` expansion, the response budget —
+ *    and both truncation regimes are DEFINED BY THE CORE and restated nowhere
+ *    here: the CLI passes the envelope through, `message` included.
+ *
+ * 0.2.84 — `--include-subtree` renders a FLAT list: one item per section, the
+ * requested anchors in input order and each one's subtree behind it in
+ * document order. No flag and no error code changed; what changed is the shape
+ * of what lands in `results`.
  *
  * 0.2.13 — `server-delegating`, over `GET /api/sections/get`. Property 1 is what
  * makes that route answer 200 with a per-item error rather than 404 for the

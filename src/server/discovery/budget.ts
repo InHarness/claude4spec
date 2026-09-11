@@ -27,6 +27,20 @@ export const MAX_SLUGS_PER_CALL = 50;
  */
 export const MAX_ANCHORS_PER_CALL = 50;
 
+/**
+ * 0.2.84 — the ceiling on ITEMS a `get_sections` response carries, applied
+ * AFTER `includeSubtree` has expanded the anchor list into one item per section
+ * and BEFORE any body is read.
+ *
+ * The same number as `MAX_ANCHORS_PER_CALL`, and deliberately a different
+ * constant: at the input the number is a REFUSAL (the caller can shorten the
+ * list), after expansion it is a CUT (the caller cannot know which sections a
+ * subtree holds, so "ask for fewer" would be unfollowable — the remedy is
+ * `get_page_outline`). It is a property of `get_sections` only: `get_entities`
+ * has no expansion, so it has no third valve.
+ */
+export const MAX_SECTION_ITEMS_PER_RESPONSE = 50;
+
 export interface Budgeted<T> {
   items: T[];
   truncated: boolean;

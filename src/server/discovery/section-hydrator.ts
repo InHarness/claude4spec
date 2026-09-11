@@ -22,66 +22,77 @@ import { parseXmlTagsExcludingCode } from '../../shared/xml-tags.js';
 import { extractSlugs, extractTags } from '../../shared/xml-tags.js';
 import { parseLinks } from '../services/pages-link-indexer.js';
 import { headingStart, parseHeadings } from '../services/section-indexer.js';
-import type { PageSource } from './page-source.js';
+import { ownEndOf } from '../services/section-text.js';
 import type { RawSection } from './raw-entity-reader.js';
 import type { SectionEdges } from './types.js';
 
 export interface HydratedSection extends RawSection {
   body: string;
+  /** 0-based exclusive end line of `body` — the own-body end, not the indexed `lineEnd`. */
+  bodyEnd: number;
   edges: SectionEdges;
 }
 
 /**
- * Slices the section's body out of its page.
+ * A page split into lines with its headings parsed ONCE.
  *
- * `lineStart` is the 1-based heading line and `lineEnd` is the 1-based
- * inclusive last line, which is exactly the indexer's own convention
- * (`lines.slice(startLine, endLine)` over a 0-based array). Reproducing that
- * arithmetic rather than re-deriving it keeps the body identical to what was
- * hashed into `content_hash`.
+ * Every read-side consumer of a section's own body goes through this: a
+ * subtree expansion hands `get_sections` up to fifty sections of ONE file, and
+ * `get_page_outline` measures every heading of a page. Parsing the headings
+ * per section made each of those quadratic in the page's heading count, and
+ * `line_end` on the item cost a second parse on top.
+ *
+ * 0.2.84 — a body ends at the FIRST HEADING OF A CHILD, not at the next heading
+ * of the same or shallower level. The indexed `line_end` still runs to the
+ * latter (the write side — `replace`, `delete`, `content_hash` — lives off that
+ * range), so an H1 row's index range carries a whole page while its BODY here
+ * carries only the prose above its first `##`. There is no `includeSubtree`
+ * variant any more: with the flag, `get_sections` widens the SET of items
+ * rather than any one item's body, so every item — parent included — is sliced
+ * by this one rule, and `get_page_outline`'s `size` measures exactly what
+ * `get_sections` yields at either setting.
+ *
+ * The rule itself is `ownEndOf`, the write side's definition (`append` lands
+ * there, `changedAnchors` digests are taken to there) — not a re-implementation
+ * beside it that the next edit to either would let drift.
  */
-export function sliceBody(pageContent: string, section: RawSection, includeSubtree = false): string {
-  const lines = pageContent.split('\n');
-  const end = includeSubtree ? subtreeEnd(lines, section) : section.lineEnd;
-  return lines.slice(section.lineStart, end).join('\n');
+export class PageLines {
+  readonly lines: string[];
+  private readonly headingStarts: number[];
+
+  constructor(pageContent: string) {
+    this.lines = pageContent.split('\n');
+    this.headingStarts = parseHeadings(this.lines).map(headingStart);
+  }
+
+  /** Where the section's own body ends — a 0-based exclusive line index, capped by the indexed `lineEnd`. */
+  ownEnd(section: RawSection): number {
+    return ownEndOf(this.lines, section, this.headingStarts);
+  }
+
+  /**
+   * The own body. `lineStart` is the 1-based heading line, so slicing the
+   * 0-based array from it starts at the first line AFTER the heading, which is
+   * exactly the indexer's own convention.
+   */
+  body(section: RawSection): string {
+    return this.lines.slice(section.lineStart, this.ownEnd(section)).join('\n');
+  }
+
+  /** Byte size of the own body — what `get_page_outline` reports so a caller can measure before fetching. */
+  size(section: RawSection): number {
+    return Buffer.byteLength(this.body(section), 'utf8');
+  }
 }
 
 /**
- * With `includeSubtree`, the section runs to the next heading of the SAME OR
- * SHALLOWER level — i.e. it swallows its children. That is the middle of the
- * three read granularities (page / subtree / section), each with its own budget.
- *
- * The end comes from `headingStart`, the indexer's own definition, rather than
- * from a heading scan of its own. A hand-rolled scan is what this used to be,
- * and it stopped at the next heading LINE — which left that heading's anchor
- * comment inside the subtree, handing a reader an identity belonging to the
- * section after the one it asked for. Deriving the number instead of
- * re-deriving it is the whole point of 0.2.75.
+ * Hydration over a page the caller already holds. `bodyEnd` is the end the
+ * body was sliced to, so an item's `line_end` is the number the body was cut
+ * at rather than a second computation of it.
  */
-function subtreeEnd(lines: string[], section: RawSection): number {
-  const next = parseHeadings(lines).find(
-    (h) => h.lineIndex >= section.lineStart && h.level <= section.headingLevel,
-  );
-  return next ? headingStart(next) : lines.length;
-}
-
-export async function hydrateSection(
-  db: Database,
-  pages: PageSource,
-  section: RawSection,
-  includeSubtree = false,
-): Promise<HydratedSection> {
-  // readBody, NOT read: `line_start`/`line_end` index the frontmatter-stripped
-  // body (see PageSource.readBody). Slicing the raw file by them shifts every
-  // section by the height of the frontmatter block.
-  const pageContent = await pages.readBody(section.rootId, section.pagePath);
-  const body = sliceBody(pageContent, section, includeSubtree);
-  return { ...section, body, edges: parseEdges(db, section, body) };
-}
-
-/** Byte size of a section's body — what `get_page_outline` reports so a caller can measure before fetching. */
-export function bodySize(pageContent: string, section: RawSection): number {
-  return Buffer.byteLength(sliceBody(pageContent, section), 'utf8');
+export function hydrateSectionFrom(db: Database, page: PageLines, section: RawSection): HydratedSection {
+  const body = page.body(section);
+  return { ...section, body, bodyEnd: page.ownEnd(section), edges: parseEdges(db, section, body) };
 }
 
 export function parseEdges(db: Database, section: RawSection, body: string): SectionEdges {
@@ -129,11 +140,29 @@ export function parseEdges(db: Database, section: RawSection, body: string): Sec
 
   // The structural half: `section_entity_link` is written by the indexer with
   // the same tag parser, and it is the join the graph is actually built on.
-  // Anything it knows that the prose scan missed (a tag inside a construct the
-  // parser excludes) still belongs in the edges.
+  // Anything it knows that the prose scan missed (a `tagged_list` resolved to
+  // the entities it lists) still belongs in the edges.
+  //
+  // 0.2.84 — MINUS whatever a DESCENDANT section links. The index derives a
+  // section's links from its whole indexed range, which runs over its subtree,
+  // while `edges` describe the OWN body: a child's tags come back on the child's
+  // own item, so repeating them here would hand the caller the same edge twice
+  // and misattribute it. The subtraction is by (type, slug): a parent whose own
+  // `tagged_list` resolves to an entity a child also embeds loses that one
+  // entry from the augmentation (its prose-scanned edges are untouched) — an
+  // accepted imprecision, cheaper than re-resolving tagged lists per body.
   const linked = db
-    .prepare('SELECT entity_type AS type, entity_slug AS slug FROM section_entity_link WHERE anchor = ?')
-    .all(section.anchor) as Array<{ type: string; slug: string }>;
+    .prepare(
+      `SELECT l.entity_type AS type, l.entity_slug AS slug FROM section_entity_link l
+        WHERE l.anchor = ?
+          AND NOT EXISTS (
+            SELECT 1 FROM section_entity_link d
+              JOIN section_index s ON s.anchor = d.anchor AND s.rootId = d.rootId
+             WHERE s.rootId = ? AND s.page_path = ? AND s.line_start > ? AND s.line_start < ?
+               AND d.entity_type = l.entity_type AND d.entity_slug = l.entity_slug
+          )`,
+    )
+    .all(section.anchor, section.rootId, section.pagePath, section.lineStart, section.lineEnd) as Array<{ type: string; slug: string }>;
   for (const row of linked) {
     const already = edges.entityEmbeds.some((e) => e.type === row.type && (e.slug === row.slug || e.slugs?.includes(row.slug)));
     if (already) continue;
