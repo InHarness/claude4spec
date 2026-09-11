@@ -173,10 +173,18 @@ export function sectionRanges(lines: string[]): Array<{ anchor: string; lineStar
  * the end of its range when it has no descendants. Shared by `append` and by
  * `sectionDigests` so the two cannot drift apart.
  */
-export function ownEndOf(lines: string[], range: { lineStart: number; lineEnd: number }): number {
-  const nextHeading = parseHeadings(lines)
-    .map(headingStart)
-    .find((s) => s >= range.lineStart);
+export function ownEndOf(
+  lines: string[],
+  range: { lineStart: number; lineEnd: number },
+  /**
+   * The heading starts of `lines`, when the caller already has them. A batch
+   * over one page (the read side's `get_sections`, `sectionDigests` below)
+   * parses the headings ONCE and asks per section; a single call lets this
+   * function parse for itself.
+   */
+  headingStarts: readonly number[] = parseHeadings(lines).map(headingStart),
+): number {
+  const nextHeading = headingStarts.find((s) => s >= range.lineStart);
   return Math.min(range.lineEnd, nextHeading ?? range.lineEnd);
 }
 
@@ -185,8 +193,7 @@ export function sectionDigests(body: string): Map<string, string> {
   const starts = parseHeadings(lines).map(headingStart);
   const out = new Map<string, string>();
   for (const r of sectionRanges(lines)) {
-    const nextHeading = starts.find((s) => s >= r.lineStart);
-    out.set(r.anchor, sha256(lines.slice(r.lineStart, Math.min(r.lineEnd, nextHeading ?? r.lineEnd)).join('\n')));
+    out.set(r.anchor, sha256(lines.slice(r.lineStart, ownEndOf(lines, r, starts)).join('\n')));
   }
   return out;
 }

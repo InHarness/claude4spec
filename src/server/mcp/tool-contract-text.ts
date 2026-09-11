@@ -45,14 +45,18 @@ export const GET_SECTIONS_RETURN =
   'is `{ anchor, rootId, page_path, heading_text, heading_level, line_start, line_end, body, truncated?, ' +
   'edges? }` or `{ anchor, error, code }` — nothing else; an expanded item is indistinguishable from a ' +
   'requested one (read its place in the tree from `heading_level` and position), and a parent carries ' +
-  'ONLY ITS OWN BODY, ending before its first child heading, at either setting of the flag. De-duplication ' +
+  'ONLY ITS OWN BODY, ending before its first child heading, at either setting of the flag; `line_end` is the ' +
+  'end of that own body, NOT the index\'s subtree end that /api/sections and find_references report for the ' +
+  'same anchor (and that update_sections `replace`/`delete` operate on — a parent\'s body is not its whole ' +
+  'range). De-duplication ' +
   'is global: an anchor that is both requested and inside another requested anchor\'s subtree appears once, ' +
   'at its own input position — a parent and its child both in `anchors` give exactly one item each, and ' +
   'for `[child, parent]` the parent\'s subtree is not contiguous. Expansion is not a cheap subtree listing ' +
   '(every expanded section is read); for the anchors alone, call get_page_outline. THREE VALVES: ' +
   `\`anchors\` longer than ${MAX_ANCHORS_PER_CALL} (or empty) is INVALID_ARGUMENT stating the limit; after ` +
   `expansion, more than ${MAX_SECTION_ITEMS_PER_RESPONSE} items is CUT to the first ` +
-  `${MAX_SECTION_ITEMS_PER_RESPONSE} in output order (error items count) with \`truncated: true\` and a ` +
+  `${MAX_SECTION_ITEMS_PER_RESPONSE} (every requested anchor keeps its item; the EXPANSION is cut to a ` +
+  'prefix in output order; error items count) with `truncated: true` and a ' +
   '`message` naming the ceiling — the rest are ABSENT, so do not retry with fewer anchors (you cannot see ' +
   'what is missing): list the subtree with get_page_outline and read the anchors you need; THEN the ' +
   'response budget degrades what is left: past it, items keep their coordinates, GAIN `edges` and lose ' +

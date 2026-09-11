@@ -22,78 +22,77 @@ import { parseXmlTagsExcludingCode } from '../../shared/xml-tags.js';
 import { extractSlugs, extractTags } from '../../shared/xml-tags.js';
 import { parseLinks } from '../services/pages-link-indexer.js';
 import { headingStart, parseHeadings } from '../services/section-indexer.js';
-import type { PageSource } from './page-source.js';
+import { ownEndOf } from '../services/section-text.js';
 import type { RawSection } from './raw-entity-reader.js';
 import type { SectionEdges } from './types.js';
 
 export interface HydratedSection extends RawSection {
   body: string;
+  /** 0-based exclusive end line of `body` — the own-body end, not the indexed `lineEnd`. */
+  bodyEnd: number;
   edges: SectionEdges;
 }
 
 /**
- * Slices the section's OWN body out of its page.
+ * A page split into lines with its headings parsed ONCE.
  *
- * `lineStart` is the 1-based heading line and `lineEnd` is the 1-based
- * inclusive last line, which is exactly the indexer's own convention
- * (`lines.slice(startLine, endLine)` over a 0-based array). Reproducing that
- * arithmetic rather than re-deriving it keeps the body aligned with what was
- * indexed.
+ * Every read-side consumer of a section's own body goes through this: a
+ * subtree expansion hands `get_sections` up to fifty sections of ONE file, and
+ * `get_page_outline` measures every heading of a page. Parsing the headings
+ * per section made each of those quadratic in the page's heading count, and
+ * `line_end` on the item cost a second parse on top.
  *
- * 0.2.84 — the body ends at the FIRST HEADING OF A CHILD, not at the next
- * heading of the same or shallower level. The indexed `line_end` still runs to
- * the latter (the write side — `replace`, `delete`, `content_hash` — lives off
- * that range), so an H1 row's index range carries a whole page while its BODY
- * here carries only the prose above its first `##`. There is no
- * `includeSubtree` variant any more: with the flag, `get_sections` widens the
- * SET of items rather than any one item's body, so every item — parent
- * included — is sliced by this one function, and `get_page_outline`'s `size`
- * (which calls `bodySize` below) measures exactly what `get_sections` yields
- * at either setting.
+ * 0.2.84 — a body ends at the FIRST HEADING OF A CHILD, not at the next heading
+ * of the same or shallower level. The indexed `line_end` still runs to the
+ * latter (the write side — `replace`, `delete`, `content_hash` — lives off that
+ * range), so an H1 row's index range carries a whole page while its BODY here
+ * carries only the prose above its first `##`. There is no `includeSubtree`
+ * variant any more: with the flag, `get_sections` widens the SET of items
+ * rather than any one item's body, so every item — parent included — is sliced
+ * by this one rule, and `get_page_outline`'s `size` measures exactly what
+ * `get_sections` yields at either setting.
+ *
+ * The rule itself is `ownEndOf`, the write side's definition (`append` lands
+ * there, `changedAnchors` digests are taken to there) — not a re-implementation
+ * beside it that the next edit to either would let drift.
  */
-export function sliceBody(pageContent: string, section: RawSection): string {
-  const lines = pageContent.split('\n');
-  return lines.slice(section.lineStart, ownBodyEnd(lines, section)).join('\n');
+export class PageLines {
+  readonly lines: string[];
+  private readonly headingStarts: number[];
+
+  constructor(pageContent: string) {
+    this.lines = pageContent.split('\n');
+    this.headingStarts = parseHeadings(this.lines).map(headingStart);
+  }
+
+  /** Where the section's own body ends — a 0-based exclusive line index, capped by the indexed `lineEnd`. */
+  ownEnd(section: RawSection): number {
+    return ownEndOf(this.lines, section, this.headingStarts);
+  }
+
+  /**
+   * The own body. `lineStart` is the 1-based heading line, so slicing the
+   * 0-based array from it starts at the first line AFTER the heading, which is
+   * exactly the indexer's own convention.
+   */
+  body(section: RawSection): string {
+    return this.lines.slice(section.lineStart, this.ownEnd(section)).join('\n');
+  }
+
+  /** Byte size of the own body — what `get_page_outline` reports so a caller can measure before fetching. */
+  size(section: RawSection): number {
+    return Buffer.byteLength(this.body(section), 'utf8');
+  }
 }
 
 /**
- * Where a section's OWN body ends: the start of the first heading after its own
- * (any level), capped by the indexed `lineEnd`. A shallower or equal heading is
- * already what `lineEnd` points at, so the cap only bites on pages where the
- * index and the file have drifted apart.
- *
- * The end comes from `headingStart`, the indexer's own definition, rather than
- * from a heading scan of its own. A hand-rolled scan stopped at the next heading
- * LINE — which left that heading's anchor comment inside the previous body,
- * handing a reader an identity belonging to the section after the one it asked
- * for (0.2.75).
+ * Hydration over a page the caller already holds. `bodyEnd` is the end the
+ * body was sliced to, so an item's `line_end` is the number the body was cut
+ * at rather than a second computation of it.
  */
-export function ownBodyEnd(lines: readonly string[], section: RawSection): number {
-  const next = parseHeadings(lines as string[]).find((h) => h.lineIndex >= section.lineStart);
-  const end = next ? headingStart(next) : lines.length;
-  return Math.min(end, section.lineEnd);
-}
-
-export async function hydrateSection(db: Database, pages: PageSource, section: RawSection): Promise<HydratedSection> {
-  // readBody, NOT read: `line_start`/`line_end` index the frontmatter-stripped
-  // body (see PageSource.readBody). Slicing the raw file by them shifts every
-  // section by the height of the frontmatter block.
-  return hydrateSectionFrom(db, await pages.readBody(section.rootId, section.pagePath), section);
-}
-
-/**
- * The same hydration over page content the caller already holds. A subtree
- * expansion hands `get_sections` up to fifty sections of ONE page, and reading
- * that page once per section would be fifty reads for one file.
- */
-export function hydrateSectionFrom(db: Database, pageContent: string, section: RawSection): HydratedSection {
-  const body = sliceBody(pageContent, section);
-  return { ...section, body, edges: parseEdges(db, section, body) };
-}
-
-/** Byte size of a section's own body — what `get_page_outline` reports so a caller can measure before fetching. */
-export function bodySize(pageContent: string, section: RawSection): number {
-  return Buffer.byteLength(sliceBody(pageContent, section), 'utf8');
+export function hydrateSectionFrom(db: Database, page: PageLines, section: RawSection): HydratedSection {
+  const body = page.body(section);
+  return { ...section, body, bodyEnd: page.ownEnd(section), edges: parseEdges(db, section, body) };
 }
 
 export function parseEdges(db: Database, section: RawSection, body: string): SectionEdges {

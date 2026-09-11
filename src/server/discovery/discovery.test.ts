@@ -1026,6 +1026,96 @@ describe('discovery core', () => {
       for (const item of result.results.slice(1)) expect((item as SectionResultItem).body).toBeTruthy();
     });
 
+    /**
+     * The ceiling seats every EXPLICIT anchor before the expansion fills the
+     * rest. A plain prefix of the output order would let one large subtree push
+     * a later requested anchor out with no error item — an anchor the caller
+     * named, can see missing, and is told not to retry for.
+     */
+    it('an explicit anchor requested AFTER a large expansion keeps its item; only the expansion is cut', async () => {
+      const lines = ['# Top', '', '## Parent', '<!-- anchor: aaaaaa11 -->', '', 'P', ''];
+      for (let i = 1; i <= 60; i++) {
+        const anchor = `child${String(i).padStart(3, '0')}`;
+        lines.push(`### Child ${i}`, `<!-- anchor: ${anchor} -->`, '', `BODY ${i}`, '');
+      }
+      lines.push('## Other', '<!-- anchor: cccccc33 -->', '', 'O', '');
+      await writePage('pages', 'seated.md', lines.join('\n'));
+      await indexPageLikeTheIndexer('pages', 'pages', 'seated.md');
+      const c = core([pagesRoot()]);
+
+      const result = await c.getSections({ anchors: ['aaaaaa11', 'cccccc33', 'nosuch01'], includeSubtree: true });
+
+      expect(result.results).toHaveLength(50);
+      expect(result.truncated).toBe(true);
+      const anchors = result.results.map((i) => i.anchor);
+      // Output order is kept: the parent, 47 of its children, then the two
+      // explicit anchors that came after it in `anchors[]` — one of them an
+      // error item, which is still an item the caller asked for.
+      expect(anchors[0]).toBe('aaaaaa11');
+      expect(anchors.slice(1, 48)).toEqual(Array.from({ length: 47 }, (_, i) => `child${String(i + 1).padStart(3, '0')}`));
+      expect(anchors.slice(48)).toEqual(['cccccc33', 'nosuch01']);
+      expect(result.results[49]).toMatchObject({ anchor: 'nosuch01', code: 'SECTION_NOT_FOUND' });
+    });
+
+    /**
+     * An explicit anchor met inside another's expansion is skipped TOGETHER
+     * WITH ITS SUBTREE: its descendants belong behind its own item. Walking
+     * past it would put a grandchild in front of the requested child, and a
+     * reader placing items by `heading_level` and position would hang it off
+     * the wrong parent.
+     */
+    it('a requested child inside a requested parent brings its own descendants behind ITSELF, not behind the parent', async () => {
+      await writePage(
+        'pages',
+        'grandchild.md',
+        [
+          '# Top', '',
+          '## A', '<!-- anchor: aaaaaa11 -->', '', 'A', '',
+          '### B', '<!-- anchor: bbbbbb22 -->', '', 'B', '',
+          '#### C', '<!-- anchor: cccccc33 -->', '', 'C', '',
+          '### D', '<!-- anchor: dddddd44 -->', '', 'D', '',
+        ].join('\n'),
+      );
+      await indexPageLikeTheIndexer('pages', 'pages', 'grandchild.md');
+      const c = core([pagesRoot()]);
+
+      const result = await c.getSections({ anchors: ['aaaaaa11', 'bbbbbb22'], includeSubtree: true });
+
+      // A's expansion: skip B and everything under it (C), keep D. Then B's
+      // own item, and its expansion: C.
+      expect(result.results.map((i) => i.anchor)).toEqual(['aaaaaa11', 'dddddd44', 'bbbbbb22', 'cccccc33']);
+
+      // The mirror: [child, parent] — the child and its subtree first, the
+      // parent's expansion then contributes only what is not under the child.
+      const mirrored = await c.getSections({ anchors: ['bbbbbb22', 'aaaaaa11'], includeSubtree: true });
+      expect(mirrored.results.map((i) => i.anchor)).toEqual(['bbbbbb22', 'cccccc33', 'aaaaaa11', 'dddddd44']);
+    });
+
+    /**
+     * A page the index knows but the disk no longer has is a per-item error,
+     * not a failed batch — and with expansion every slot on that page is one.
+     */
+    it('a page missing from disk yields an error item per section on it, and the rest of the batch still answers', async () => {
+      await writePage(
+        'pages',
+        'gone.md',
+        ['# Top', '', '## Parent', '<!-- anchor: aaaaaa11 -->', '', 'P', '', '### Child', '<!-- anchor: bbbbbb22 -->', '', 'C', ''].join('\n'),
+      );
+      await writePage('pages', 'here.md', ['# Top', '', '## Here', '<!-- anchor: cccccc33 -->', '', 'H', ''].join('\n'));
+      await indexPageLikeTheIndexer('pages', 'pages', 'gone.md');
+      await indexPageLikeTheIndexer('pages', 'pages', 'here.md');
+      await fs.rm(path.join(cwd, 'pages', 'gone.md'));
+      const c = core([pagesRoot()]);
+
+      const result = await c.getSections({ anchors: ['aaaaaa11', 'cccccc33'], includeSubtree: true });
+
+      expect(result.results.map((i) => i.anchor)).toEqual(['aaaaaa11', 'bbbbbb22', 'cccccc33']);
+      expect(result.results[0]).toMatchObject({ anchor: 'aaaaaa11', code: 'PAGE_NOT_FOUND' });
+      expect(result.results[1]).toMatchObject({ anchor: 'bbbbbb22', code: 'PAGE_NOT_FOUND' });
+      expect((result.results[2] as SectionResultItem).body).toContain('H');
+      expect(result.truncated).toBeUndefined();
+    });
+
     it('the ceiling bites before the budget, and the message carries both remedies', async () => {
       const big = 'z'.repeat(70_000);
       const lines = ['# Top', '', '## Parent', '<!-- anchor: aaaaaa11 -->', '', big, ''];

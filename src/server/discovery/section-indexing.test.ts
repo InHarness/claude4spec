@@ -594,9 +594,10 @@ describe('discovery core over the real section indexer', () => {
       const [alpha, child] = result.results as SectionResultItem[];
       expect(alpha!.body).toContain('ALPHA BODY');
       expect(alpha!.body).not.toContain('CHILD BODY');
-      // Neither the child's anchor comment nor Beta's leaks into a body — the
-      // child's own item starts at its anchor block, and Beta's used to be
-      // swallowed when `subtreeEnd` stopped at the heading LINE.
+      // Neither the child's anchor comment nor Beta's leaks into a body — every
+      // body ends at the START of the next heading's anchor block (`ownEndOf`),
+      // not at the heading LINE, so no item carries the identity of the one
+      // after it.
       expect(alpha!.body).not.toContain(anchorOf('Alpha child'));
       expect(child!.body).toContain('CHILD BODY');
       expect(child!.body).not.toContain('BETA BODY');
