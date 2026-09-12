@@ -4,6 +4,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import '../tiptap/registrations.js';
 import { EditorFactory } from '../tiptap/EditorFactory.js';
 import { invokeSlash } from '../tiptap/slashInvoke.js';
+import {
+  useEditorCarry,
+  useEditorCarryApply,
+  useEditorSchemaVersion,
+} from '../tiptap/useEditorSchema.js';
 import { refreshAnnotations } from '../tiptap/extensions/AnnotationHighlight.js';
 import { AnnotationBubble } from '../tiptap/AnnotationBubble.js';
 import { OutlineFloater } from './OutlineFloater.js';
@@ -28,6 +33,7 @@ export function PlanEditor({ content, onChange, currentPage }: Props) {
   // @-mention, annotation highlighting). 0.1.127: the plan-only BlameDecoration
   // extension is gone along with the plan_version table it read from (see brief
   // 0-1-126-to-0-1-127) — plan_mode's active decorations are annotations only now.
+  const schemaVersion = useEditorSchemaVersion();
   const extensions = useMemo(
     () =>
       EditorFactory.buildExtensions(
@@ -44,28 +50,38 @@ export function PlanEditor({ content, onChange, currentPage }: Props) {
             'The plan is empty. The agent will fill it via update_plan during the conversation in PLAN MODE.',
         },
       ),
-    [qc, currentPage],
+    [qc, currentPage, schemaVersion],
   );
+  const carry = useEditorCarry(extensions);
 
-  const editor = useEditor({
-    extensions,
-    content: '',
-    editorProps: {
-      attributes: {
-        class: 'prose-spec focus:outline-none',
+  const editor = useEditor(
+    {
+      extensions,
+      content: '',
+      editorProps: {
+        attributes: {
+          class: 'prose-spec focus:outline-none',
+        },
+      },
+      onUpdate: ({ editor }) => {
+        const md = editor.storage.markdown.getMarkdown() as string;
+        onChange(md, md !== lastServerBodyRef.current);
       },
     },
-    onUpdate: ({ editor }) => {
-      const md = editor.storage.markdown.getMarkdown() as string;
-      onChange(md, md !== lastServerBodyRef.current);
-    },
-  });
+    [extensions],
+  );
+  useEditorCarryApply(carry, editor);
 
   // Load server content into editor when it changes externally.
   useEffect(() => {
     if (!editor) return;
     const current = editor.storage.markdown.getMarkdown() as string;
     if (current === content) return;
+    // Server body unchanged and the document is non-empty ⇒ what differs is
+    // the user's unsaved edits (carried across a schema re-init, see
+    // `useEditorSchema.ts`). The plan saves only on explicit Save; never
+    // overwrite them with the older server copy.
+    if (content === lastServerBodyRef.current && current !== '') return;
     lastServerBodyRef.current = content;
     queueMicrotask(() => {
       if (editor.isDestroyed) return;

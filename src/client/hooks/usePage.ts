@@ -85,8 +85,8 @@ export function applyPageWriteToCache(qc: QueryClient, vars: PageWriteVars, ack?
 /**
  * One save per page at a time, each guarded by the previous one's ACK.
  *
- * The editor debounces, it does not serialize: a save that outlives the 500 ms
- * window is still in flight when the next one is queued, and both read the same
+ * The editor debounces, it does not serialize: a save that outlives the debounce
+ * window (`AUTOSAVE_DEBOUNCE_MS`) is still in flight when the next one is queued, and both read the same
  * hash — the one from before either landed. With the guard mandatory, the second
  * write is then refused as a conflict against a file only the first write
  * touched. That is not a conflict, it is this client racing itself, and the cost

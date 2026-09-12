@@ -23,11 +23,16 @@ import { pageLinksApi } from '../lib/api.js';
 import { FileText } from 'lucide-react';
 import { createElement } from 'react';
 
+// L8 `ctxregst`: the `description` context is core + `InlineMentionNode` +
+// `AnchorMarker`, with `/mention` as its only slash command and no `@` mention
+// framework. The anchor marker mounts there so an indexer-written
+// `<!-- anchor: … -->` in an entity description round-trips instead of
+// rendering as text; nothing inserts anchors by hand in any context.
 registerEditorExtension({
   name: 'anchor_marker',
   extension: AnchorMarker,
   priority: 400,
-  availableIn: ['page', 'plan'],
+  availableIn: ['page', 'description', 'plan'],
   markdownIt: { kind: 'block', pattern: new RegExp(`^${ANCHOR_PATTERN_SOURCE}\\s*$`) },
 });
 
@@ -223,8 +228,12 @@ registerEditorExtension({
 registerEditorExtension({
   name: 'slash_commands',
   priority: 1100,
-  availableIn: ['page', 'plan'],
-  extension: (ctx) => SlashCommands.configure({ onInvoke: ctx.onSlashInvoke }),
+  availableIn: ['page', 'description', 'plan'],
+  extension: (ctx) =>
+    SlashCommands.configure({
+      onInvoke: ctx.onSlashInvoke,
+      contextId: ctx.contextId ?? 'page',
+    }),
 });
 
 // ────────────────────────────────────────────────────────────────────────────

@@ -67,5 +67,36 @@ export function useEntityDraftEditor<E, D>({ entity, toDraft, save }: Options<E,
     });
   }
 
-  return { draft, dirty, patch };
+  /**
+   * Update the draft WITHOUT scheduling the whole-draft autosave. For a field
+   * that has its own save policy — the description editor persists on blur
+   * with a single-field PATCH (L8 `description` context) — the panel keeps the
+   * draft in step here and persists through `saveField`.
+   */
+  function patchLocal(partial: Partial<D>) {
+    setDraft((d) => (d ? { ...d, ...partial } : d));
+  }
+
+  /**
+   * Persist ONE field now, through `persist`, and move the baseline to the
+   * server's answer so `dirty` clears for it. A no-op when the field equals
+   * its baseline (a blur without an edit is not a write). Other fields keep
+   * their own pending edits and their debounced whole-draft save.
+   */
+  async function saveField<K extends keyof D>(
+    key: K,
+    persist: (value: D[K], entity: E) => Promise<E>,
+  ) {
+    if (!entity || !draft) return;
+    const baseline = baselineRef.current ? (JSON.parse(baselineRef.current) as D) : null;
+    if (baseline && JSON.stringify(baseline[key]) === JSON.stringify(draft[key])) return;
+    try {
+      const updated = await persist(draft[key], entity);
+      baselineRef.current = JSON.stringify(toDraft(updated));
+    } catch (err) {
+      console.error('field save failed', err);
+    }
+  }
+
+  return { draft, dirty, patch, patchLocal, saveField };
 }

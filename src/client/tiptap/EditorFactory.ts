@@ -61,18 +61,22 @@ function coreExtensions(contextId: EditorContextId, options: EditorFactoryOption
         }),
       ];
     case 'description':
+      // 0.2.85: what `DocEditor` (host and host-ui-kit) has always mounted as
+      // its core — headings from h2 down (h1 is the entity title), lists and
+      // tables included. Until now this arm was dead code: both DocEditors
+      // built their core inline and pulled the registry with the context-blind
+      // `'shared'` scope, which mounted EVERY registered extension (todo,
+      // section refs, heading actions, the `@` framework, the full slash
+      // palette) into a one-field description. Routing them through the
+      // factory is what makes the context whitelist bind for descriptions.
       return [
-        StarterKit.configure({
-          heading: false,
-          bulletList: false,
-          orderedList: false,
-          listItem: false,
-          blockquote: false,
-          codeBlock: false,
-          horizontalRule: false,
-        }),
+        StarterKit.configure({ heading: { levels: [2, 3, 4, 5, 6] } }),
+        Table.configure({ resizable: false }),
+        TableRow,
+        TableHeader,
+        TableCell,
         Markdown.configure({ html: true, transformPastedText: true, breaks: false }),
-        Placeholder.configure({ placeholder: options.placeholder ?? '' }),
+        Placeholder.configure({ placeholder: options.placeholder ?? 'Description…' }),
       ];
     case 'chat-input':
       return [

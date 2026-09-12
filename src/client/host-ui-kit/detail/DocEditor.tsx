@@ -1,15 +1,14 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { useQueryClient } from '@tanstack/react-query';
-import StarterKit from '@tiptap/starter-kit';
-import Placeholder from '@tiptap/extension-placeholder';
-import Table from '@tiptap/extension-table';
-import TableRow from '@tiptap/extension-table-row';
-import TableHeader from '@tiptap/extension-table-header';
-import TableCell from '@tiptap/extension-table-cell';
-import { Markdown } from 'tiptap-markdown';
 import '../../tiptap/registrations.js';
-import { getEditorExtensions } from '../../tiptap/registry.js';
+import { EditorFactory } from '../../tiptap/EditorFactory.js';
+import { invokeSlash } from '../../tiptap/slashInvoke.js';
+import {
+  useEditorCarry,
+  useEditorCarryApply,
+  useEditorSchemaVersion,
+} from '../../tiptap/useEditorSchema.js';
 import { EditorBridgeProvider, useEditorBridge } from '../../tiptap/EditorContext.js';
 import { withStability } from '../stability.js';
 
@@ -40,11 +39,18 @@ import { withStability } from '../stability.js';
 export interface DocEditorProps {
   value: string;
   onChange(md: string): void;
+  /**
+   * 0.2.85 — fires when the editor loses focus. The L8 `description` context's
+   * save policy is "on blur, one `PATCH { description }`" (spec `ctxregst`, and
+   * the DTO / Endpoint / Design System detail pages); a panel wires its
+   * single-field save here and keeps `onChange` for local draft state only.
+   */
+  onBlur?(): void;
   readOnly?: boolean;
   placeholder?: string;
 }
 
-function DocEditorImpl({ value, onChange, readOnly, placeholder }: DocEditorProps) {
+function DocEditorImpl({ value, onChange, onBlur, readOnly, placeholder }: DocEditorProps) {
   const qc = useQueryClient();
   // Last markdown this editor emitted OR applied via setContent; a `value` equal
   // to it is already reflected in the doc — skip the rebuild so normalization
@@ -67,39 +73,56 @@ function DocEditorImpl({ value, onChange, readOnly, placeholder }: DocEditorProp
    * clearing the field, which stays a legitimate edit.
    */
   const seededRef = useRef(false);
+  // `onBlur` is read through a ref so a panel passing a fresh closure every
+  // render does not rebuild the editor.
+  const onBlurRef = useRef(onBlur);
+  onBlurRef.current = onBlur;
+  const schemaVersion = useEditorSchemaVersion();
+  // L8 `description` context: core + inline mention + anchor marker, `/mention`
+  // the only slash command. Before 0.2.85 this pulled the registry with the
+  // context-blind `'shared'` scope and mounted every extension the page editor
+  // has — and its slash handler was a no-op, so `/mention` did nothing here.
   const extensions = useMemo(
-    () => [
-      StarterKit.configure({ heading: { levels: [2, 3, 4, 5, 6] } }),
-      Table.configure({ resizable: false }),
-      TableRow,
-      TableHeader,
-      TableCell,
-      Markdown.configure({ html: true, transformPastedText: true, breaks: false }),
-      Placeholder.configure({ placeholder: placeholder ?? 'Description…' }),
-      ...getEditorExtensions(
-        { qc, currentPath: null, onSlashInvoke: () => {}, getAnnotations: () => [] },
-        'shared',
+    () =>
+      EditorFactory.buildExtensions(
+        'description',
+        {
+          qc,
+          currentPath: null,
+          onSlashInvoke: (editor, command) =>
+            void invokeSlash(editor, command, { qc, currentPath: null }),
+          getAnnotations: () => [],
+        },
+        { placeholder: placeholder ?? 'Description…' },
       ),
-    ],
-    [placeholder, qc],
+    [placeholder, qc, schemaVersion],
   );
+  const carry = useEditorCarry(extensions);
 
-  const editor = useEditor({
-    extensions,
-    content: '',
-    editable: !readOnly,
-    editorProps: {
-      attributes: { class: 'prose-spec focus:outline-none' },
+  const editor = useEditor(
+    {
+      extensions,
+      content: '',
+      editable: !readOnly,
+      editorProps: {
+        attributes: { class: 'prose-spec focus:outline-none' },
+      },
+      onUpdate: ({ editor }) => {
+        // Pre-seed updates describe the empty placeholder document, not the
+        // user's content — see `seededRef`.
+        if (!seededRef.current) return;
+        const md = editor.storage.markdown.getMarkdown() as string;
+        lastSyncedRef.current = md;
+        onChange(md);
+      },
+      onBlur: () => {
+        if (!seededRef.current) return;
+        onBlurRef.current?.();
+      },
     },
-    onUpdate: ({ editor }) => {
-      // Pre-seed updates describe the empty placeholder document, not the
-      // user's content — see `seededRef`.
-      if (!seededRef.current) return;
-      const md = editor.storage.markdown.getMarkdown() as string;
-      lastSyncedRef.current = md;
-      onChange(md);
-    },
-  });
+    [extensions],
+  );
+  useEditorCarryApply(carry, editor);
 
   useEffect(() => {
     if (!editor) return;

@@ -6,6 +6,12 @@ import { useScrollToAnchor } from '../hooks/useScrollToAnchor.js';
 import '../tiptap/registrations.js';
 import { EditorFactory } from '../tiptap/EditorFactory.js';
 import { invokeSlash } from '../tiptap/slashInvoke.js';
+import { AUTOSAVE_DEBOUNCE_MS } from '../tiptap/autosave.js';
+import {
+  useEditorCarry,
+  useEditorCarryApply,
+  useEditorSchemaVersion,
+} from '../tiptap/useEditorSchema.js';
 import { EditorBridgeProvider } from '../tiptap/EditorContext.js';
 import { refreshAnnotations } from '../tiptap/extensions/AnnotationHighlight.js';
 import { AnnotationBubble } from '../tiptap/AnnotationBubble.js';
@@ -38,6 +44,7 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
   const externalChange = useFileEventsStore((s) => s.externalChange);
   const clearExternalChange = useFileEventsStore((s) => s.clearExternalChange);
   const pagesIndex = usePagesIndex();
+  const schemaVersion = useEditorSchemaVersion();
 
   const extensions = useMemo(
     () =>
@@ -48,31 +55,36 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
           void invokeSlash(editor, command, { qc, currentPath: path }),
         getAnnotations: () => useChatStore.getState().annotations,
       }),
-    [qc, path],
+    [qc, path, schemaVersion],
   );
+  const carry = useEditorCarry(extensions);
 
-  const editor = useEditor({
-    extensions,
-    content: '',
-    editorProps: {
-      attributes: {
-        class: 'prose-spec focus:outline-none',
+  const editor = useEditor(
+    {
+      extensions,
+      content: '',
+      editorProps: {
+        attributes: {
+          class: 'prose-spec focus:outline-none',
+        },
+      },
+      onUpdate: ({ editor }) => {
+        const md = editor.storage.markdown.getMarkdown() as string;
+        if (md === lastSavedBodyRef.current) return;
+        isDirtyRef.current = true;
+        if (saveTimer.current) clearTimeout(saveTimer.current);
+        saveTimer.current = window.setTimeout(() => {
+          const activePath = currentPathRef.current;
+          if (!activePath) return;
+          lastSavedBodyRef.current = md;
+          isDirtyRef.current = false;
+          write.mutate({ rootId, path: activePath, body: md, frontmatter: data?.frontmatter });
+        }, AUTOSAVE_DEBOUNCE_MS);
       },
     },
-    onUpdate: ({ editor }) => {
-      const md = editor.storage.markdown.getMarkdown() as string;
-      if (md === lastSavedBodyRef.current) return;
-      isDirtyRef.current = true;
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-      saveTimer.current = window.setTimeout(() => {
-        const activePath = currentPathRef.current;
-        if (!activePath) return;
-        lastSavedBodyRef.current = md;
-        isDirtyRef.current = false;
-        write.mutate({ rootId, path: activePath, body: md, frontmatter: data?.frontmatter });
-      }, 500);
-    },
-  });
+    [extensions],
+  );
+  useEditorCarryApply(carry, editor);
 
   useEffect(() => {
     currentPathRef.current = path;

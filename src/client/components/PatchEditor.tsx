@@ -5,6 +5,12 @@ import { usePatch, useUpdatePatchContent } from '../hooks/usePatches.js';
 import '../tiptap/registrations.js';
 import { EditorFactory } from '../tiptap/EditorFactory.js';
 import { invokeSlash } from '../tiptap/slashInvoke.js';
+import { AUTOSAVE_DEBOUNCE_MS } from '../tiptap/autosave.js';
+import {
+  useEditorCarry,
+  useEditorCarryApply,
+  useEditorSchemaVersion,
+} from '../tiptap/useEditorSchema.js';
 import { ApiError } from '../lib/api-core.js';
 import { withFrontmatterOf } from '../lib/artifact-frontmatter.js';
 
@@ -27,6 +33,7 @@ export function PatchEditor({ patchPath }: Props) {
   const isDirtyRef = useRef(false);
   const [conflict, setConflict] = useState<boolean>(false);
 
+  const schemaVersion = useEditorSchemaVersion();
   const extensions = useMemo(
     () =>
       EditorFactory.buildExtensions('page', {
@@ -36,26 +43,31 @@ export function PatchEditor({ patchPath }: Props) {
           void invokeSlash(editor, command, { qc, currentPath: patchPath }),
         getAnnotations: () => [],
       }),
-    [qc, patchPath],
+    [qc, patchPath, schemaVersion],
   );
+  const carry = useEditorCarry(extensions);
 
-  const editor = useEditor({
-    extensions,
-    content: '',
-    editorProps: {
-      attributes: { class: 'prose-spec focus:outline-none' },
+  const editor = useEditor(
+    {
+      extensions,
+      content: '',
+      editorProps: {
+        attributes: { class: 'prose-spec focus:outline-none' },
+      },
+      onUpdate: ({ editor }) => {
+        if (!patch) return;
+        const md = editor.storage.markdown.getMarkdown() as string;
+        if (md === lastSavedBodyRef.current) return;
+        isDirtyRef.current = true;
+        if (saveTimer.current) clearTimeout(saveTimer.current);
+        saveTimer.current = window.setTimeout(() => {
+          void doSave(md);
+        }, AUTOSAVE_DEBOUNCE_MS);
+      },
     },
-    onUpdate: ({ editor }) => {
-      if (!patch) return;
-      const md = editor.storage.markdown.getMarkdown() as string;
-      if (md === lastSavedBodyRef.current) return;
-      isDirtyRef.current = true;
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-      saveTimer.current = window.setTimeout(() => {
-        void doSave(md);
-      }, 800);
-    },
-  });
+    [extensions],
+  );
+  useEditorCarryApply(carry, editor);
 
   async function doSave(newBody: string) {
     if (!patch) return;

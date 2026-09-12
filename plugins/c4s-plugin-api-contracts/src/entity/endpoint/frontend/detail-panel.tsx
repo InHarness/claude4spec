@@ -68,7 +68,7 @@ export function EndpointDetail({
   const { data: allDtos = [] } = useDtos();
   const { data: refs = [] } = useReferences('endpoint', endpoint?.slug ?? null);
 
-  const { draft, dirty, patch } = useEntityDraftEditor({
+  const { draft, dirty, patch, patchLocal, saveField } = useEntityDraftEditor({
     entity: endpoint,
     toDraft,
     save: async (current, ep) => {
@@ -203,9 +203,20 @@ export function EndpointDetail({
 
         <div className="mt-6">
         <FieldRow label="Description" align="start">
+          {/* L8 `description` context save policy: on blur, one
+              `PATCH { description }` — not the whole-draft debounced save the
+              other fields use (spec `ctxregst`, Endpoint detail page). */}
           <DocEditor
             value={draft.description}
-            onChange={(md) => patch({ description: md })}
+            onChange={(md) => patchLocal({ description: md })}
+            onBlur={() =>
+              void saveField('description', (description, entity) =>
+                update.mutateAsync({
+                  slug: entity.slug,
+                  input: { description: description || null },
+                }),
+              )
+            }
             placeholder="Describe what this endpoint does, invariants, gotchas…"
           />
         </FieldRow>

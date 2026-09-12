@@ -97,10 +97,61 @@ const ROOT_PROP_GATES: Record<string, 'sectionIndexed' | 'referenceValidated'> =
 
 const REGISTRY: EditorExtensionRegistration[] = [];
 
+// ────────────────────────────────────────────────────────────────────────────
+// Schema version (L8 `m33l8wir` / `m20l11sc` ordering invariant)
+// ────────────────────────────────────────────────────────────────────────────
+//
+// Tiptap freezes its ProseMirror schema when an editor instance is created. A
+// node type registered AFTER that moment is silently dropped by ProseMirror —
+// no error, an empty render, and an embed of that type shows "unknown type".
+// The plugin boot is deliberately non-blocking (main.tsx), so an editor mounted
+// on a deep link can be created before a plugin's extensions arrive; the same
+// window reopens on every `plugin:reloaded`.
+//
+// The spec allows two implementations: gate editor creation on a plugins-ready
+// signal, or re-initialise live instances once the extensions land. This is the
+// second one. Every registration that changes the SCHEMA (adds, replaces or
+// removes an entry carrying `extension`) bumps `schemaVersion`; editors include
+// it in their `useEditor` deps (see `useEditorSchema.ts`) and rebuild with the
+// current document carried across. Slash commands and mention sources are read
+// from the registry live, so a registration carrying only those does not bump —
+// today no shipped plugin contributes a schema extension, which keeps the boot
+// free of rebuilds while still closing the race for the day one does.
+let schemaVersion = 0;
+const schemaListeners = new Set<() => void>();
+let notifyQueued = false;
+
+function bumpSchemaVersion(): void {
+  schemaVersion += 1;
+  if (notifyQueued) return;
+  notifyQueued = true;
+  // Coalesce: one plugin registers several extensions back to back; the
+  // editors should rebuild once per settled batch, not once per call.
+  queueMicrotask(() => {
+    notifyQueued = false;
+    for (const listener of schemaListeners) listener();
+  });
+}
+
+/** Monotonic counter of schema-affecting registry changes. */
+export function getEditorSchemaVersion(): number {
+  return schemaVersion;
+}
+
+/** Subscribe to schema-affecting registry changes; returns the unsubscribe. */
+export function subscribeEditorSchema(listener: () => void): () => void {
+  schemaListeners.add(listener);
+  return () => {
+    schemaListeners.delete(listener);
+  };
+}
+
 export function registerEditorExtension(reg: EditorExtensionRegistration): void {
   const existing = REGISTRY.findIndex((r) => r.name === reg.name);
+  const touchesSchema = !!reg.extension || (existing >= 0 && !!REGISTRY[existing]!.extension);
   if (existing >= 0) REGISTRY[existing] = reg;
   else REGISTRY.push(reg);
+  if (touchesSchema) bumpSchemaVersion();
 }
 
 /**
@@ -128,9 +179,13 @@ export function registerEditorExtension(reg: EditorExtensionRegistration): void 
  * filed as a patch on this brief rather than guessed at here.
  */
 export function unregisterEditorExtensionsByPrefix(prefix: string): void {
+  let touchedSchema = false;
   for (let i = REGISTRY.length - 1; i >= 0; i--) {
-    if (REGISTRY[i]!.name.startsWith(prefix)) REGISTRY.splice(i, 1);
+    if (!REGISTRY[i]!.name.startsWith(prefix)) continue;
+    if (REGISTRY[i]!.extension) touchedSchema = true;
+    REGISTRY.splice(i, 1);
   }
+  if (touchedSchema) bumpSchemaVersion();
 }
 
 export function getEditorExtensions(

@@ -3,10 +3,18 @@ import Suggestion, { type SuggestionProps } from '@tiptap/suggestion';
 import { PluginKey } from '@tiptap/pm/state';
 import { ReactRenderer } from '@tiptap/react';
 import { SlashMenu, type SlashMenuHandle, type SlashCommand } from './SlashMenu.js';
-import { getRegisteredSlashCommands } from '../registry.js';
+import { getRegisteredSlashCommandsForContext, type EditorContextId } from '../registry.js';
 
 export interface SlashCommandsOptions {
   onInvoke: (editor: Editor, command: SlashCommand) => void;
+  /**
+   * L8: the palette lists only the commands whitelisted for THIS context
+   * (`EditorContextSpec.slashCommands`). Before 0.2.85 it listed every
+   * registered command regardless of where the editor was mounted — an entity
+   * description offered `/todo` and `/section` although neither node was in
+   * its schema, so picking one inserted nothing.
+   */
+  contextId: EditorContextId;
 }
 
 export const SlashCommands = Extension.create<SlashCommandsOptions>({
@@ -14,6 +22,7 @@ export const SlashCommands = Extension.create<SlashCommandsOptions>({
   addOptions() {
     return {
       onInvoke: () => {},
+      contextId: 'page',
     };
   },
   addProseMirrorPlugins() {
@@ -25,7 +34,7 @@ export const SlashCommands = Extension.create<SlashCommandsOptions>({
         char: '/',
         allowSpaces: false,
         startOfLine: false,
-        items: ({ query }) => filterCommands(query),
+        items: ({ query }) => filterCommands(query, options.contextId),
         command: ({ editor, range, props }) => {
           editor.chain().focus().deleteRange(range).run();
           options.onInvoke(editor, props);
@@ -78,8 +87,8 @@ export const SlashCommands = Extension.create<SlashCommandsOptions>({
   },
 });
 
-function filterCommands(query: string): SlashCommand[] {
-  const commands = getRegisteredSlashCommands();
+function filterCommands(query: string, contextId: EditorContextId): SlashCommand[] {
+  const commands = getRegisteredSlashCommandsForContext(contextId);
   const q = query.trim().toLowerCase();
   if (!q) return commands;
   return commands.filter((c) => c.id.includes(q) || c.label.toLowerCase().includes(q));

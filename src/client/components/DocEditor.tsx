@@ -1,15 +1,14 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { useQueryClient } from '@tanstack/react-query';
-import StarterKit from '@tiptap/starter-kit';
-import Placeholder from '@tiptap/extension-placeholder';
-import Table from '@tiptap/extension-table';
-import TableRow from '@tiptap/extension-table-row';
-import TableHeader from '@tiptap/extension-table-header';
-import TableCell from '@tiptap/extension-table-cell';
-import { Markdown } from 'tiptap-markdown';
 import '../tiptap/registrations.js';
-import { getEditorExtensions } from '../tiptap/registry.js';
+import { EditorFactory } from '../tiptap/EditorFactory.js';
+import { invokeSlash } from '../tiptap/slashInvoke.js';
+import {
+  useEditorCarry,
+  useEditorCarryApply,
+  useEditorSchemaVersion,
+} from '../tiptap/useEditorSchema.js';
 import { EditorBridgeProvider } from '../tiptap/EditorContext.js';
 import type { EntityType } from '../../shared/entities.js';
 
@@ -29,37 +28,44 @@ export function DocEditor({ value, onChange, placeholder, onOpenEntity }: Props)
   // emit) means a `value` that returns to an earlier string after an external
   // change is still re-applied rather than stranded.
   const lastSyncedRef = useRef<string | null>(null);
+  const schemaVersion = useEditorSchemaVersion();
+  // L8 `description` context: core + inline mention + anchor marker, `/mention`
+  // the only slash command. Before 0.2.85 this pulled the registry with the
+  // context-blind `'shared'` scope and mounted every extension the page editor
+  // has — and its slash handler was a no-op, so `/mention` did nothing here.
   const extensions = useMemo(
-    () => [
-      StarterKit.configure({ heading: { levels: [2, 3, 4, 5, 6] } }),
-      Table.configure({ resizable: false }),
-      TableRow,
-      TableHeader,
-      TableCell,
-      Markdown.configure({ html: true, transformPastedText: true, breaks: false }),
-      Placeholder.configure({ placeholder: placeholder ?? 'Description…' }),
-      ...getEditorExtensions({
-        qc,
-        currentPath: null,
-        onSlashInvoke: () => {},
-        getAnnotations: () => [],
-      }, 'shared'),
-    ],
-    [placeholder, qc]
+    () =>
+      EditorFactory.buildExtensions(
+        'description',
+        {
+          qc,
+          currentPath: null,
+          onSlashInvoke: (editor, command) =>
+            void invokeSlash(editor, command, { qc, currentPath: null }),
+          getAnnotations: () => [],
+        },
+        { placeholder: placeholder ?? 'Description…' },
+      ),
+    [placeholder, qc, schemaVersion],
   );
+  const carry = useEditorCarry(extensions);
 
-  const editor = useEditor({
-    extensions,
-    content: '',
-    editorProps: {
-      attributes: { class: 'prose-spec focus:outline-none' },
+  const editor = useEditor(
+    {
+      extensions,
+      content: '',
+      editorProps: {
+        attributes: { class: 'prose-spec focus:outline-none' },
+      },
+      onUpdate: ({ editor }) => {
+        const md = editor.storage.markdown.getMarkdown() as string;
+        lastSyncedRef.current = md;
+        onChange(md);
+      },
     },
-    onUpdate: ({ editor }) => {
-      const md = editor.storage.markdown.getMarkdown() as string;
-      lastSyncedRef.current = md;
-      onChange(md);
-    },
-  });
+    [extensions],
+  );
+  useEditorCarryApply(carry, editor);
 
   useEffect(() => {
     if (!editor) return;
