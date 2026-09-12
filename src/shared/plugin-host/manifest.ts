@@ -415,7 +415,11 @@ export interface PluginCommandContribution {
   description?: string;
   /** Argument hint, e.g. `METHOD /path`. Defaults to `/<trigger>`. */
   hint?: string;
-  /** Editor contexts the command is available in. Omitted = all contexts. */
+  /**
+   * Editor contexts the command is available in. Omitted = `page` and `plan`
+   * (0.2.85; it used to mean every context, which leaked create commands into
+   * entity description fields, whose L8 context spec allows `/mention` alone).
+   */
   availableIn?: string[];
 }
 

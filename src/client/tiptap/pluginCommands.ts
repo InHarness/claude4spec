@@ -19,6 +19,9 @@ import type { PluginCommandContribution } from '../../shared/plugin-host/manifes
 /** Prefix so plugin command registrations never collide with built-in extension names. */
 const PLUGIN_CMD_PREFIX = 'plugin-cmd:';
 
+/** Where a manifest command lands when its `availableIn` is empty. */
+const DEFAULT_COMMAND_CONTEXTS: EditorContextId[] = ['page', 'plan'];
+
 export function registerPluginCommands(commands: PluginCommandContribution[]): void {
   // 0.2.29 — REPLACE, not merge. `commands` is always the complete list pulled
   // from `/_meta/plugin-commands`, so anything already registered under the
@@ -40,7 +43,13 @@ export function registerPluginCommands(commands: PluginCommandContribution[]): v
     try {
       registerEditorExtension({
         name: `${PLUGIN_CMD_PREFIX}${cmd.name}`,
-        availableIn: availableIn.length > 0 ? availableIn : undefined,
+        // 0.2.85 — a manifest command that names no contexts is offered where
+        // documents are written: `page` and `plan`. It used to default to
+        // EVERY context, which put `/ac`, `/dto`, `/database-table`… into an
+        // entity's description field, whose context spec (L8 `ctxregst`)
+        // allows `/mention` alone. A manifest can still opt into other
+        // contexts explicitly.
+        availableIn: availableIn.length > 0 ? availableIn : DEFAULT_COMMAND_CONTEXTS,
         slashCommand: {
           id: cmd.name,
           label: cmd.label,

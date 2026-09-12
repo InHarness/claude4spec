@@ -12,6 +12,7 @@
 import { describe, expect, it } from 'vitest';
 import './registrations.js';
 import { getRegisteredSlashCommandsForContext } from './registry.js';
+import { registerPluginCommands } from './pluginCommands.js';
 
 describe('slash commands per editor context', () => {
   it('description offers /mention and nothing else built-in', () => {
@@ -20,6 +21,18 @@ describe('slash commands per editor context', () => {
     for (const gone of ['todo', 'section', 'element', 'list', 'tagged', 'tagged-mixed']) {
       expect(ids).not.toContain(gone);
     }
+  });
+
+  it('a manifest command without contexts lands in page and plan, not description', () => {
+    registerPluginCommands([
+      { name: 'ctx-probe', trigger: 'ctx-probe', label: 'Probe', popoverKind: 'ctx-probe' },
+    ]);
+    expect(getRegisteredSlashCommandsForContext('page').map((c) => c.id)).toContain('ctx-probe');
+    expect(getRegisteredSlashCommandsForContext('plan').map((c) => c.id)).toContain('ctx-probe');
+    expect(getRegisteredSlashCommandsForContext('description').map((c) => c.id)).not.toContain(
+      'ctx-probe',
+    );
+    registerPluginCommands([]);
   });
 
   it('page keeps the full built-in set', () => {
