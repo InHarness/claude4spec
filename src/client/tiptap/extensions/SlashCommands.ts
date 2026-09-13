@@ -17,6 +17,9 @@ export interface SlashCommandsOptions {
   contextId: EditorContextId;
 }
 
+/** The `/` suggestion plugin's key — lets a host read whether the palette is open. */
+export const SLASH_SUGGESTION_KEY = new PluginKey('c4s-suggestion-slash');
+
 export const SlashCommands = Extension.create<SlashCommandsOptions>({
   name: 'slash_commands',
   addOptions() {
@@ -29,7 +32,7 @@ export const SlashCommands = Extension.create<SlashCommandsOptions>({
     const options = this.options;
     return [
       Suggestion<SlashCommand>({
-        pluginKey: new PluginKey('c4s-suggestion-slash'),
+        pluginKey: SLASH_SUGGESTION_KEY,
         editor: this.editor,
         char: '/',
         allowSpaces: false,

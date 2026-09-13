@@ -11,9 +11,13 @@ import { chromium, type Browser, type Page, type Request } from 'playwright';
  *   whole-draft save the rest of the panel uses. Before 0.2.85 the field
  *   mounted every registered extension and PATCHed the whole entity 500 ms
  *   after each keystroke.
+ * - `description` context, palette pick by MOUSE: clicking a `/mention` row
+ *   must not blur-save the half-typed palette query (`… /men`); the only PATCH
+ *   is the final one, after the user leaves the field.
  * - `page` context: autosave lands after `AUTOSAVE_DEBOUNCE_MS` (1000 ms) —
  *   not the earlier 500 ms — so a PUT is NOT observed 600 ms after typing and
- *   IS observed by 2500 ms.
+ *   IS observed by 2500 ms. Leaving the page INSIDE that window flushes the
+ *   pending save instead of dropping it.
  * - A hard load of a page that embeds a plugin-delivered entity renders the
  *   embed (no "unknown type" chip): the ordering invariant for the non-blocking
  *   plugin boot holds.
@@ -54,6 +58,7 @@ describe.skipIf(!BASE)('editor L8 contexts', () => {
   const stamp = Math.random().toString(36).slice(2, 8);
   const endpointSlug = `e2e-l8-ctx-${stamp}`;
   const pagePath = `e2e-l8-ctx-${stamp}.md`;
+  const otherPagePath = `e2e-l8-ctx-${stamp}-other.md`;
   let api: string;
 
   beforeAll(async () => {
@@ -86,11 +91,18 @@ describe.skipIf(!BASE)('editor L8 contexts', () => {
       }),
     });
     if (![200, 201].includes(pg.status)) throw new Error(`PUT page → ${pg.status}`);
+    const other = await fetch(`${api}/pages/pages/${otherPagePath}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body: `# L8 other\n`, expectedHash: 'a'.repeat(64) }),
+    });
+    if (![200, 201].includes(other.status)) throw new Error(`PUT other page → ${other.status}`);
   }, 60_000);
 
   afterAll(async () => {
     await fetch(`${api}/endpoints/${endpointSlug}`, { method: 'DELETE' }).catch(() => {});
     await fetch(`${api}/pages/pages/${pagePath}`, { method: 'DELETE' }).catch(() => {});
+    await fetch(`${api}/pages/pages/${otherPagePath}`, { method: 'DELETE' }).catch(() => {});
     await browser?.close();
   });
 
@@ -138,6 +150,82 @@ describe.skipIf(!BASE)('editor L8 contexts', () => {
     await page.locator('body').click({ position: { x: 5, y: 5 } });
     await sleep(800);
     expect(patches.length, 'PATCH after an edit-less blur').toBe(1);
+
+    expect(consoleErrors, 'console errors').toEqual([]);
+    expect(badResponses, 'responses >= 400').toEqual([]);
+    await page.close();
+  }, 60_000);
+
+  it('description context: a mouse pick from the palette does not blur-save the query', async () => {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    const { consoleErrors, badResponses } = watch(page);
+    const patches: Array<Record<string, unknown>> = [];
+    page.on('request', (r: Request) => {
+      if (r.method() === 'PATCH' && r.url().includes(`/endpoints/${endpointSlug}`)) {
+        patches.push(r.postDataJSON() as Record<string, unknown>);
+      }
+    });
+
+    await page.goto(`${BASE}/p/${project.id}/endpoints/${endpointSlug}`, { waitUntil: 'networkidle' });
+    const editor = page.locator('.ProseMirror').first();
+    await expect.poll(() => editor.count(), { timeout: 15_000 }).toBe(1);
+    await expect.poll(() => editor.innerText()).toContain('initial');
+
+    await editor.click();
+    await page.keyboard.press('End');
+    await page.keyboard.type(` pick-${stamp} /men`);
+    const row = page.locator('[data-slash-menu] button').first();
+    await expect.poll(() => row.count()).toBe(1);
+    await row.click(); // mouse, not Enter — the path that used to blur the editor
+    // The mention popover takes focus; that is not "leaving the field" either.
+    await expect.poll(() => page.locator('[role="dialog"]').count(), { timeout: 5_000 }).toBe(1);
+    await sleep(800);
+    expect(patches, 'PATCH while the palette / popover had focus').toEqual([]);
+    await page.keyboard.press('Escape');
+    await expect.poll(() => page.locator('[role="dialog"]').count()).toBe(0);
+
+    await page.locator('body').click({ position: { x: 5, y: 5 } });
+    await expect.poll(() => patches.length, { timeout: 5_000 }).toBeGreaterThan(0);
+    for (const body of patches) {
+      expect(Object.keys(body), 'PATCH payload keys').toEqual(['description']);
+      expect(String(body.description), 'palette query persisted').not.toContain('/men');
+      expect(String(body.description)).toContain(`pick-${stamp}`);
+    }
+
+    expect(consoleErrors, 'console errors').toEqual([]);
+    expect(badResponses, 'responses >= 400').toEqual([]);
+    await page.close();
+  }, 60_000);
+
+  it('page context: leaving the page inside the debounce window flushes the save', async () => {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    const { consoleErrors, badResponses } = watch(page);
+    const puts: Array<Record<string, unknown>> = [];
+    page.on('request', (r: Request) => {
+      if (r.method() === 'PUT' && r.url().includes(`/pages/pages/${pagePath}`)) {
+        puts.push(r.postDataJSON() as Record<string, unknown>);
+      }
+    });
+
+    await page.goto(`${BASE}/p/${project.id}/space/pages/${pagePath}`, { waitUntil: 'networkidle' });
+    const editor = page.locator('.ProseMirror').first();
+    await expect.poll(() => editor.count(), { timeout: 15_000 }).toBe(1);
+    await expect.poll(() => editor.innerText()).toContain('L8 probe');
+
+    await editor.click();
+    await page.keyboard.press('End');
+    await page.keyboard.type(` flush-${stamp}`);
+    // Client-side navigation well inside the 1000 ms window: the router
+    // listens to popstate, so this unmounts the editor without a page load.
+    await page.evaluate((href) => {
+      history.pushState({}, '', href);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }, `/p/${project.id}/space/pages/${otherPagePath}`);
+    await expect.poll(() => editor.innerText(), { timeout: 10_000 }).toContain('L8 other');
+    await expect.poll(() => puts.length, { timeout: 5_000 }).toBeGreaterThan(0);
+    expect(String(puts[puts.length - 1]!.body), 'flushed body').toContain(`flush-${stamp}`);
+    const served = (await (await fetch(`${api}/pages/pages/${pagePath}`)).json()) as { body?: string; data?: { body?: string } };
+    expect(JSON.stringify(served), 'server copy').toContain(`flush-${stamp}`);
 
     expect(consoleErrors, 'console errors').toEqual([]);
     expect(badResponses, 'responses >= 400').toEqual([]);

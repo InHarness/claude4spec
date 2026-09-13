@@ -15,7 +15,13 @@ import {
 } from './registry.js';
 
 export interface EditorFactoryOptions {
-  placeholder?: string;
+  /**
+   * A function is read at render time by `@tiptap/extension-placeholder`, so a
+   * caller whose placeholder changes often (the chat composer swaps it on every
+   * agent turn) can keep it OUT of the extension list — the list is the
+   * `useEditor` deps array since 0.2.85, and rebuilding it recreates the editor.
+   */
+  placeholder?: string | (() => string);
 }
 
 /**

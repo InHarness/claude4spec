@@ -1204,6 +1204,25 @@ const DatabaseTableDetailForm: FC<{
     });
   };
 
+  /**
+   * L8 `description` context save policy: the editor persists ON BLUR, not on
+   * the debounce (spec `ctxregst`). `scheduleSave` already diffs against the
+   * baseline, so a blur after a description edit sends `PATCH { description }`
+   * alone — and a blur without one sends nothing.
+   */
+  const patchDescription = (description: string) => {
+    setDraft((d) => ({ ...d, description }));
+  };
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const saveDescription = () => {
+    if (debounceRef.current) {
+      window.clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    scheduleSave(draftRef.current);
+  };
+
   const handleDelete = () => {
     if (del.isPending) return;
     del.mutate(
@@ -1262,7 +1281,8 @@ const DatabaseTableDetailForm: FC<{
               free, which the bare textarea it replaced could never match. */}
           <DocEditor
             value={draft.description}
-            onChange={(md) => patch({ description: md })}
+            onChange={(md) => patchDescription(md)}
+            onBlur={saveDescription}
             placeholder="What is this table for?"
           />
         </div>

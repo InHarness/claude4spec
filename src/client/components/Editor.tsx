@@ -11,6 +11,7 @@ import {
   useEditorCarry,
   useEditorCarryApply,
   useEditorSchemaVersion,
+  useSeededEditor,
 } from '../tiptap/useEditorSchema.js';
 import { EditorBridgeProvider } from '../tiptap/EditorContext.js';
 import { refreshAnnotations } from '../tiptap/extensions/AnnotationHighlight.js';
@@ -36,8 +37,17 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
   const write = useWritePage();
   const qc = useQueryClient();
   const saveTimer = useRef<number | null>(null);
+  // The save the pending timer would perform. Flushed on unmount: the editor is
+  // keyed per path (`router.tsx`), so navigating away within the debounce window
+  // used to `clearTimeout` the timer and silently drop the last keystrokes.
+  const pendingSaveRef = useRef<(() => void) | null>(null);
+  // Writes sent and not yet acknowledged. While one is in flight the cached
+  // `data.body` is older than what the editor holds; a schema re-init in that
+  // window must not re-seed from it.
+  const inflightRef = useRef(0);
   const lastSavedBodyRef = useRef<string | null>(null);
   const isDirtyRef = useRef(false);
+  const seeded = useSeededEditor();
   const currentPathRef = useRef<string>(path);
   const prevPagesIndexRef = useRef<ReturnType<typeof usePagesIndex>>(undefined);
   const annotations = useChatStore((s) => s.annotations);
@@ -73,13 +83,21 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
         if (md === lastSavedBodyRef.current) return;
         isDirtyRef.current = true;
         if (saveTimer.current) clearTimeout(saveTimer.current);
-        saveTimer.current = window.setTimeout(() => {
+        const flush = () => {
+          pendingSaveRef.current = null;
+          saveTimer.current = null;
           const activePath = currentPathRef.current;
           if (!activePath) return;
           lastSavedBodyRef.current = md;
           isDirtyRef.current = false;
-          write.mutate({ rootId, path: activePath, body: md, frontmatter: data?.frontmatter });
-        }, AUTOSAVE_DEBOUNCE_MS);
+          inflightRef.current += 1;
+          write.mutate(
+            { rootId, path: activePath, body: md, frontmatter: data?.frontmatter },
+            { onSettled: () => void (inflightRef.current -= 1) },
+          );
+        };
+        pendingSaveRef.current = flush;
+        saveTimer.current = window.setTimeout(flush, AUTOSAVE_DEBOUNCE_MS);
       },
     },
     [extensions],
@@ -94,10 +112,16 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
 
   useEffect(() => {
     if (!editor || !data) return;
-    // Echo of our own write.mutate — user may have typed more since; don't overwrite.
-    if (data.body === lastSavedBodyRef.current) return;
-    // Pending local edits — debounce will flush them; don't overwrite.
-    if (isDirtyRef.current) return;
+    // A rebuilt instance (schema re-init) holds the carried document, which is
+    // lossy for exactly the node type that just landed — re-seed it from the
+    // server body unless there is something unsaved. A seeded instance skips
+    // the echo of our own write (the user may have typed more since).
+    const fresh = seeded.isFresh(editor);
+    if (!fresh && data.body === lastSavedBodyRef.current) return;
+    // Pending local edits — debounce will flush them; don't overwrite. A write
+    // in flight means `data` is older than the editor; wait for its ack.
+    if (isDirtyRef.current || inflightRef.current > 0) return;
+    seeded.markSeeded(editor);
     const current = editor.storage.markdown.getMarkdown() as string;
     if (current === data.body) {
       lastSavedBodyRef.current = data.body;
@@ -115,6 +139,9 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
   useEffect(() => {
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
+      // Never drop a pending save: flush it now (the mutation outlives the
+      // component). Cleared when an external-change dialog took it over.
+      pendingSaveRef.current?.();
     };
   }, []);
 
@@ -170,6 +197,7 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
     if (saveTimer.current) {
       clearTimeout(saveTimer.current);
       saveTimer.current = null;
+      pendingSaveRef.current = null;
     }
     void confirmDestructive({
       title: 'File changed externally',

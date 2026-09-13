@@ -111,7 +111,7 @@ export function UiViewDetail({
 
   const [warnings, setWarnings] = useState<string[]>([]);
 
-  const { draft, dirty, patch } = useEntityDraftEditor({
+  const { draft, dirty, patch, saveField } = useEntityDraftEditor({
     entity: view,
     toDraft,
     save: async (current, v) => {
@@ -133,6 +133,10 @@ export function UiViewDetail({
       setWarnings(computeWarnings(updated.url, updated.params));
       if (updated.slug !== v.slug) onRenamed(updated.slug);
       return updated;
+    },
+    fieldSaves: {
+      description: (description, entity) =>
+        update.mutateAsync({ slug: entity.slug, input: { description: description || null } }),
     },
   });
 
@@ -327,9 +331,13 @@ export function UiViewDetail({
 
         <div className="mt-6">
         <FieldRow label="Description" align="start">
+          {/* L8 `description` context save policy: on blur, one
+              `PATCH { description }` (`fieldSaves`), not the whole-draft
+              debounced save the other fields use (spec `ctxregst`). */}
           <DocEditor
             value={draft.description}
             onChange={(md) => patch({ description: md })}
+            onBlur={() => void saveField('description')}
             placeholder="What this screen does, when it appears, key invariants…"
           />
         </FieldRow>

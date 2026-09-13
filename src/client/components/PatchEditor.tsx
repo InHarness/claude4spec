@@ -10,6 +10,7 @@ import {
   useEditorCarry,
   useEditorCarryApply,
   useEditorSchemaVersion,
+  useSeededEditor,
 } from '../tiptap/useEditorSchema.js';
 import { ApiError } from '../lib/api-core.js';
 import { withFrontmatterOf } from '../lib/artifact-frontmatter.js';
@@ -31,6 +32,7 @@ export function PatchEditor({ patchPath }: Props) {
   const saveTimer = useRef<number | null>(null);
   const lastSavedBodyRef = useRef<string | null>(null);
   const isDirtyRef = useRef(false);
+  const seeded = useSeededEditor();
   const [conflict, setConflict] = useState<boolean>(false);
 
   const schemaVersion = useEditorSchemaVersion();
@@ -98,14 +100,20 @@ export function PatchEditor({ patchPath }: Props) {
 
   useEffect(() => {
     if (!editor || !patch) return;
+    // A rebuilt instance (schema re-init) holds the carried, possibly lossy,
+    // document: re-seed from the server body unless there are unsaved edits.
+    const fresh = seeded.isFresh(editor);
     const current = editor.storage.markdown.getMarkdown() as string;
     if (current === patch.body) {
+      seeded.markSeeded(editor);
       lastSavedBodyRef.current = patch.body;
       return;
     }
     if (isDirtyRef.current) return;
-    editor.commands.setContent(patch.body);
+    if (!fresh && patch.body === lastSavedBodyRef.current) return;
+    seeded.markSeeded(editor);
     lastSavedBodyRef.current = patch.body;
+    editor.commands.setContent(patch.body, false);
   }, [editor, patch]);
 
   if (isLoading) {

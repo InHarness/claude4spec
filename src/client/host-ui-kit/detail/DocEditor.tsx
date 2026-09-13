@@ -3,11 +3,13 @@ import { EditorContent, useEditor } from '@tiptap/react';
 import { useQueryClient } from '@tanstack/react-query';
 import '../../tiptap/registrations.js';
 import { EditorFactory } from '../../tiptap/EditorFactory.js';
+import { SLASH_SUGGESTION_KEY } from '../../tiptap/extensions/SlashCommands.js';
 import { invokeSlash } from '../../tiptap/slashInvoke.js';
 import {
   useEditorCarry,
   useEditorCarryApply,
   useEditorSchemaVersion,
+  useSeededEditor,
 } from '../../tiptap/useEditorSchema.js';
 import { EditorBridgeProvider, useEditorBridge } from '../../tiptap/EditorContext.js';
 import { withStability } from '../stability.js';
@@ -32,9 +34,9 @@ import { withStability } from '../stability.js';
  * (not a proxy back to the singleton — that would recurse) when used with no
  * ambient bridge at all, e.g. standalone on a plugin's own unwired page.
  *
- * Distinct from `src/client/components/DocEditor.tsx` (the host's own,
- * page-scoped internal editor which takes `onOpenEntity`/`onOpenSection`
- * props directly) — this one has no navigation props at all.
+ * 0.2.85: the only `DocEditor`. The host's former private copy
+ * (`src/client/components/DocEditor.tsx`, navigation via props) had no
+ * importers left and was removed rather than kept in step with this one.
  */
 export interface DocEditorProps {
   value: string;
@@ -77,6 +79,7 @@ function DocEditorImpl({ value, onChange, onBlur, readOnly, placeholder }: DocEd
   // render does not rebuild the editor.
   const onBlurRef = useRef(onBlur);
   onBlurRef.current = onBlur;
+  const seeded = useSeededEditor();
   const schemaVersion = useEditorSchemaVersion();
   // L8 `description` context: core + inline mention + anchor marker, `/mention`
   // the only slash command. Before 0.2.85 this pulled the registry with the
@@ -115,8 +118,20 @@ function DocEditorImpl({ value, onChange, onBlur, readOnly, placeholder }: DocEd
         lastSyncedRef.current = md;
         onChange(md);
       },
-      onBlur: () => {
+      onBlur: ({ editor, event }) => {
         if (!seededRef.current) return;
+        // Not a "leave the field" blur: focus went to the `/` palette, an `@`
+        // list or a slash popover (they refocus the editor when done). Saving
+        // here would persist the palette query or the deleted-but-not-yet-
+        // inserted range.
+        if (SLASH_SUGGESTION_KEY.getState(editor.state)?.active) return;
+        const to = event.relatedTarget;
+        if (
+          to instanceof Element &&
+          to.closest('[role="dialog"], [data-slash-menu], [data-mention-menu]')
+        ) {
+          return;
+        }
         onBlurRef.current?.();
       },
     },
@@ -131,6 +146,16 @@ function DocEditorImpl({ value, onChange, onBlur, readOnly, placeholder }: DocEd
 
   useEffect(() => {
     if (!editor) return;
+    // A rebuilt instance (schema re-init) holds the carried document, lossy for
+    // the node type that just landed; `value` is the panel's draft, which
+    // already includes every edit the user made. Re-apply it.
+    if (seeded.isFresh(editor)) {
+      seeded.markSeeded(editor);
+      lastSyncedRef.current = value;
+      editor.commands.setContent(value, false);
+      seededRef.current = true;
+      return;
+    }
     // Already reflected in the doc (our own echo, or a value we just applied) —
     // don't rebuild under the caret. Each of these arms still marks the document
     // as seeded: "the doc already holds `value`" is exactly what they assert.

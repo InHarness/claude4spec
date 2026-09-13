@@ -67,6 +67,13 @@ export const ChatInputEditor = forwardRef<ChatInputEditorHandle, Props>(
       onSubmitRef.current = onSubmit;
     }, [onSubmit]);
 
+    // Read through a ref: `extensions` is the `useEditor` deps array, and a
+    // placeholder change (every agent turn start/end) must not destroy the
+    // composer mid-typing — focus, selection and open suggestion popups would
+    // go with it.
+    const placeholderRef = useRef(placeholder);
+    placeholderRef.current = placeholder;
+
     const schemaVersion = useEditorSchemaVersion();
     const extensions = useMemo(
       () =>
@@ -78,9 +85,9 @@ export const ChatInputEditor = forwardRef<ChatInputEditorHandle, Props>(
             onSlashInvoke: () => {},
             getAnnotations: () => [],
           },
-          { placeholder: placeholder ?? "Message…" },
+          { placeholder: () => placeholderRef.current ?? "Message…" },
         ),
-      [qc, placeholder, schemaVersion],
+      [qc, schemaVersion],
     );
     const carry = useEditorCarry(extensions);
 
@@ -121,6 +128,13 @@ export const ChatInputEditor = forwardRef<ChatInputEditorHandle, Props>(
       if (!editor) return;
       editor.setEditable(!disabled);
     }, [editor, disabled]);
+
+    // The placeholder decoration is computed per transaction; nudge one so a
+    // new placeholder shows on an idle, empty composer.
+    useEffect(() => {
+      if (!editor || editor.isDestroyed) return;
+      editor.view.dispatch(editor.state.tr);
+    }, [editor, placeholder]);
 
     useEffect(() => {
       if (!editor) return;

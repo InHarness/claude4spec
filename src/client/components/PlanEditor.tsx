@@ -8,6 +8,7 @@ import {
   useEditorCarry,
   useEditorCarryApply,
   useEditorSchemaVersion,
+  useSeededEditor,
 } from '../tiptap/useEditorSchema.js';
 import { refreshAnnotations } from '../tiptap/extensions/AnnotationHighlight.js';
 import { AnnotationBubble } from '../tiptap/AnnotationBubble.js';
@@ -25,6 +26,8 @@ interface Props {
 
 export function PlanEditor({ content, onChange, currentPage }: Props) {
   const lastServerBodyRef = useRef<string>(content);
+  const prevContentRef = useRef<string>(content);
+  const seeded = useSeededEditor();
   const annotations = useChatStore((s) => s.annotations);
   const qc = useQueryClient();
   const pagesIndex = usePagesIndex();
@@ -75,13 +78,19 @@ export function PlanEditor({ content, onChange, currentPage }: Props) {
   // Load server content into editor when it changes externally.
   useEffect(() => {
     if (!editor) return;
+    const contentChanged = content !== prevContentRef.current;
+    prevContentRef.current = content;
+    // A rebuilt instance (schema re-init, see `useEditorSchema.ts`) with unsaved
+    // edits: PlanPage feeds the dirty text back as `content`, so `content`
+    // differs from the server body while the prop itself did not change. The
+    // carry restored those edits; never overwrite them with the server copy.
+    // Every other case — first mount, a plan switch, an external change, and
+    // Discard (the prop flips back to the server body) — applies `content`.
+    const fresh = seeded.isFresh(editor);
+    if (fresh && !contentChanged && content !== lastServerBodyRef.current) return;
+    seeded.markSeeded(editor);
     const current = editor.storage.markdown.getMarkdown() as string;
     if (current === content) return;
-    // Server body unchanged and the document is non-empty ⇒ what differs is
-    // the user's unsaved edits (carried across a schema re-init, see
-    // `useEditorSchema.ts`). The plan saves only on explicit Save; never
-    // overwrite them with the older server copy.
-    if (content === lastServerBodyRef.current && current !== '') return;
     lastServerBodyRef.current = content;
     queueMicrotask(() => {
       if (editor.isDestroyed) return;

@@ -396,7 +396,7 @@ export const McpToolDetail: FC<EntityDetailProps> = ({ slug, onDeleted, onRename
   const update = useUpdateMcpTool();
   const remove = useDeleteMcpTool();
 
-  const { draft, dirty, patch } = useEntityDraftEditor<McpTool, Draft>({
+  const { draft, dirty, patch, saveField } = useEntityDraftEditor<McpTool, Draft>({
     entity: tool,
     toDraft,
     save: async (current, entity) => {
@@ -421,6 +421,10 @@ export const McpToolDetail: FC<EntityDetailProps> = ({ slug, onDeleted, onRename
       });
       if (updated.slug !== entity.slug) onRenamed?.(updated.slug);
       return updated;
+    },
+    fieldSaves: {
+      description: (description, entity) =>
+        update.mutateAsync({ slug: entity.slug, body: { description } }),
     },
   });
 
@@ -547,9 +551,13 @@ export const McpToolDetail: FC<EntityDetailProps> = ({ slug, onDeleted, onRename
         */}
         <div className="mt-6">
           <SectionHeading title="Description" note="goes to the model verbatim" />
+          {/* L8 `description` context save policy: on blur, one
+              `PATCH { description }` (`fieldSaves`), not the whole-draft
+              debounced save the other fields use (spec `ctxregst`). */}
           <DocEditor
             value={draft.description}
             onChange={(md) => patch({ description: md })}
+            onBlur={() => void saveField('description')}
             placeholder="What the tool does, and when a model should reach for it…"
           />
           <Hint>

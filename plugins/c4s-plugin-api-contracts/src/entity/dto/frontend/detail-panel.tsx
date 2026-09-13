@@ -54,7 +54,7 @@ export function DtoDetail({
   const { data: allTags = [] } = useTags();
   const { data: refs = [] } = useReferences('dto', dto?.slug ?? null);
 
-  const { draft, dirty, patch, patchLocal, saveField } = useEntityDraftEditor({
+  const { draft, dirty, patch, saveField } = useEntityDraftEditor({
     entity: dto,
     toDraft,
     save: async (current, d) => {
@@ -70,6 +70,10 @@ export function DtoDetail({
       });
       if (updated.slug !== d.slug) onRenamed(updated.slug);
       return updated;
+    },
+    fieldSaves: {
+      description: (description, entity) =>
+        update.mutateAsync({ slug: entity.slug, input: { description: description || null } }),
     },
   });
 
@@ -194,19 +198,13 @@ export function DtoDetail({
         <div className="mt-6">
         <FieldRow label="Description" align="start">
           {/* L8 `description` context save policy: on blur, one
-              `PATCH { description }` — not the whole-draft debounced save the
-              other fields use (spec `ctxregst`, DTO detail page). */}
+              `PATCH { description }` — declared in `fieldSaves`, so the
+              whole-draft debounced save the other fields use never carries
+              an in-progress description (spec `ctxregst`, DTO detail page). */}
           <DocEditor
             value={draft.description}
-            onChange={(md) => patchLocal({ description: md })}
-            onBlur={() =>
-              void saveField('description', (description, entity) =>
-                update.mutateAsync({
-                  slug: entity.slug,
-                  input: { description: description || null },
-                }),
-              )
-            }
+            onChange={(md) => patch({ description: md })}
+            onBlur={() => void saveField('description')}
             placeholder="What this DTO represents, which endpoints use it, invariants…"
           />
         </FieldRow>

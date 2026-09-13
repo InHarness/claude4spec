@@ -1,16 +1,13 @@
-/**
- * HOST-LOCAL — the catalog carries no state hook of this shape.
- *
- * `@c4s/plugin-runtime/ui` is a catalog of COMPONENTS (plus, from
- * `@c4s/plugin-runtime`, the L11 data hooks `useTags` / `useReferences`); it
- * publishes no debounced entity-draft editor, and the L11 surfaces it does
- * publish are read-side. So there is nothing here to import instead — this is a
- * missing surface, not a duplicated one, and it is legal on exactly that ground.
- *
- * It shrinks to a shim the day the catalog publishes a draft-editing hook.
- */
-
 import { useEffect, useMemo, useRef, useState } from 'react';
+
+/**
+ * Persist one field on its own — `PATCH { <field> }` — instead of through the
+ * debounced whole-draft `save`. The L8 `description` context's save policy is
+ * "on blur, one single-field PATCH" (spec `ctxregst`, and the DTO / Endpoint /
+ * Design System detail pages); a panel declares the field here and calls
+ * `saveField(key)` from the editor's `onBlur`.
+ */
+export type FieldSave<E, V> = (value: V, entity: E) => Promise<E>;
 
 interface Options<E, D> {
   /** Current entity from the detail query; null/undefined while loading. */
@@ -19,31 +16,62 @@ interface Options<E, D> {
   toDraft: (entity: E) => D;
   /**
    * Persist the draft and return the updated entity. Called debounced (500ms).
-   * Receives the non-null entity captured at scheduling time. Panel-specific
-   * post-save side effects (onRenamed, setWarnings) belong here, before returning.
+   * Receives the non-null entity captured at scheduling time, with every
+   * `fieldSaves` field held at its BASELINE value — those fields travel only
+   * through their own PATCH. Panel-specific post-save side effects (onRenamed,
+   * setWarnings) belong here, before returning.
    */
   save: (draft: D, entity: E) => Promise<E>;
+  /** Fields with their own save policy (see `FieldSave`). */
+  fieldSaves?: { [K in keyof D]?: FieldSave<E, D[K]> };
 }
 
-export function useEntityDraftEditor<E, D>({ entity, toDraft, save }: Options<E, D>) {
+export function useEntityDraftEditor<E, D extends object>({ entity, toDraft, save, fieldSaves }: Options<E, D>) {
   const [draft, setDraft] = useState<D | null>(null);
   const baselineRef = useRef<string | null>(null);
   const saveTimer = useRef<number | null>(null);
+  // What the pending timer would save, and the latest draft/entity, for the
+  // unmount flush below. Read by closures that outlive the render.
+  const pendingRef = useRef<D | null>(null);
+  const latestRef = useRef<{ draft: D | null; entity: E | null | undefined }>({ draft: null, entity });
+  latestRef.current = { draft, entity };
+  const fieldKeys = Object.keys(fieldSaves ?? {}) as (keyof D)[];
 
   useEffect(() => {
     if (!entity) return;
     const next = toDraft(entity);
     const snapshot = JSON.stringify(next);
     if (baselineRef.current === snapshot) return;
+    const previous = baselineRef.current ? (JSON.parse(baselineRef.current) as D) : null;
     baselineRef.current = snapshot;
-    setDraft(next);
+    // A refetch (a live-update event, another client's write) must not wipe
+    // what the user is still typing: keep every field that differs from the
+    // OLD baseline — a local, unsaved edit — and take the rest from the server.
+    setDraft((current) => {
+      if (!current || !previous) return next;
+      const merged = { ...next };
+      for (const key of Object.keys(next) as (keyof D)[]) {
+        if (JSON.stringify(current[key]) !== JSON.stringify(previous[key])) merged[key] = current[key];
+      }
+      return merged;
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entity]);
 
+  // Unmount: nothing waits for a timer or a blur that will never come
+  // (tiptap's `destroy()` emits no blur; keyboard navigation and a closed tab
+  // skip it too). Flush the pending whole-draft save and every dirty
+  // single-policy field.
   useEffect(
     () => () => {
       if (saveTimer.current) window.clearTimeout(saveTimer.current);
+      const { draft: current, entity: live } = latestRef.current;
+      const queued = pendingRef.current;
+      pendingRef.current = null;
+      if (queued && live) void runSave(queued, live);
+      if (current && live) for (const key of fieldKeys) void runFieldSave(key, current, live);
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
 
@@ -52,32 +80,102 @@ export function useEntityDraftEditor<E, D>({ entity, toDraft, save }: Options<E,
     return JSON.stringify(draft) !== baselineRef.current;
   }, [draft, entity]);
 
+  function baseline(): D | null {
+    return baselineRef.current ? (JSON.parse(baselineRef.current) as D) : null;
+  }
+
   // Intentionally plain per-render functions (no useCallback/refs): the debounce
   // timer must fire the save closure from the render in which the edit happened,
   // mirroring the pre-refactor closure semantics exactly.
-  async function runSave(current: D) {
-    if (!entity) return;
+  async function runSave(current: D, live: E) {
+    pendingRef.current = null;
+    // Single-policy fields never ride the whole-draft save: send them at their
+    // baseline so an in-progress description is neither written early nor
+    // duplicated by the later blur PATCH.
+    const base = baseline();
+    const toSave = { ...current };
+    if (base) for (const key of fieldKeys) toSave[key] = base[key];
+    // A draft identical to the last saved state is not a save: `DocEditor`
+    // normalises through tiptap and can emit a respelling of what is stored;
+    // an undone edit's timer fires too. Neither deserves a version.
+    if (JSON.stringify(toSave) === baselineRef.current) return;
     try {
-      const updated = await save(current, entity);
-      baselineRef.current = JSON.stringify(toDraft(updated));
+      const updated = await save(toSave, live);
+      const nextBase = toDraft(updated);
+      // Keep the local value of a single-policy field the user is still
+      // editing: the server answer carries the baseline we just sent.
+      const before = base;
+      const after = latestRef.current.draft;
+      if (before && after) {
+        for (const key of fieldKeys) {
+          if (JSON.stringify(after[key]) !== JSON.stringify(before[key])) nextBase[key] = before[key];
+        }
+      }
+      baselineRef.current = JSON.stringify(nextBase);
     } catch (err) {
       console.error('autosave failed', err);
     }
   }
 
-  function scheduleAutosave(next: D) {
-    if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => void runSave(next), 500);
+  async function runFieldSave<K extends keyof D>(key: K, current: D, live: E) {
+    const persist = fieldSaves?.[key];
+    if (!persist) return;
+    const base = baseline();
+    if (base && JSON.stringify(base[key]) === JSON.stringify(current[key])) return;
+    try {
+      const updated = await persist(current[key], live);
+      const nextBase = toDraft(updated);
+      // The draft may have moved on for OTHER fields since; the baseline must
+      // reflect only what this PATCH acknowledged.
+      const stillBase = baseline();
+      if (stillBase) {
+        for (const k of Object.keys(nextBase) as (keyof D)[]) {
+          if (k !== key) nextBase[k] = stillBase[k];
+        }
+      }
+      baselineRef.current = JSON.stringify(nextBase);
+      // Re-render so `dirty` clears for the field.
+      setDraft((d) => (d ? { ...d } : d));
+    } catch (err) {
+      console.error('field save failed', err);
+    }
   }
 
+  function scheduleAutosave(next: D) {
+    if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    pendingRef.current = next;
+    const live = entity;
+    saveTimer.current = window.setTimeout(() => {
+      saveTimer.current = null;
+      if (live) void runSave(next, live);
+    }, 500);
+  }
+
+  /**
+   * Update the draft. Fields declared in `fieldSaves` only change the local
+   * draft (their PATCH is `saveField`'s); anything else schedules the
+   * debounced whole-draft save.
+   */
   function patch(partial: Partial<D>) {
+    const wholeDraft = Object.keys(partial).some((k) => !fieldKeys.includes(k as keyof D));
     setDraft((d) => {
       if (!d) return d;
       const next = { ...d, ...partial };
-      scheduleAutosave(next);
+      if (wholeDraft) scheduleAutosave(next);
       return next;
     });
   }
 
-  return { draft, dirty, patch };
+  /**
+   * Persist ONE declared field now (`PATCH { <field> }`) and move its baseline
+   * to the server's answer so `dirty` clears for it. A no-op when the field
+   * equals its baseline (a blur without an edit is not a write).
+   */
+  async function saveField<K extends keyof D>(key: K) {
+    const { draft: current, entity: live } = latestRef.current;
+    if (!live || !current) return;
+    await runFieldSave(key, current, live);
+  }
+
+  return { draft, dirty, patch, saveField };
 }

@@ -10,6 +10,7 @@ import {
   useEditorCarry,
   useEditorCarryApply,
   useEditorSchemaVersion,
+  useSeededEditor,
 } from '../tiptap/useEditorSchema.js';
 import { ApiError } from '../lib/api-core.js';
 import { withFrontmatterOf } from '../lib/artifact-frontmatter.js';
@@ -40,6 +41,7 @@ export function BriefEditor({ briefPath }: Props) {
   const saveTimer = useRef<number | null>(null);
   const lastSavedBodyRef = useRef<string | null>(null);
   const isDirtyRef = useRef(false);
+  const seeded = useSeededEditor();
   const [conflict, setConflict] = useState<{ currentHash: string } | null>(null);
   const briefExternalChange = useFileEventsStore((s) => s.briefExternalChange);
   const clearBriefExternalChange = useFileEventsStore((s) => s.clearBriefExternalChange);
@@ -115,12 +117,18 @@ export function BriefEditor({ briefPath }: Props) {
   // refetch — see external-change effect below).
   useEffect(() => {
     if (!editor || !brief) return;
+    // A rebuilt instance (schema re-init) holds the carried, possibly lossy,
+    // document: re-seed from the server body unless there are unsaved edits.
+    const fresh = seeded.isFresh(editor);
     const current = editor.storage.markdown.getMarkdown() as string;
     if (current === brief.body) {
+      seeded.markSeeded(editor);
       lastSavedBodyRef.current = brief.body;
       return;
     }
     if (isDirtyRef.current) return;
+    if (!fresh && brief.body === lastSavedBodyRef.current) return;
+    seeded.markSeeded(editor);
     // Set the ref before setContent and pass emitUpdate=false so the swap never
     // re-enters onUpdate as a phantom edit (mirrors Editor.tsx for pages).
     lastSavedBodyRef.current = brief.body;

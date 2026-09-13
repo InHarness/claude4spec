@@ -23,6 +23,15 @@
  * still alive, and `useEditorCarryApply` (declared after) re-applies it to the
  * NEW instance before any later effect compares the document against server
  * data. The re-apply uses `emitUpdate: false`, so it never counts as an edit.
+ *
+ * The carry is a bridge, not the source of truth. The old instance's markdown
+ * is exactly what was lossy in the case this mechanism exists for: a plugin
+ * node type that landed after `create` was dropped by the OLD schema, so its
+ * `getMarkdown()` no longer contains the tag. A rebuilt editor with nothing
+ * unsaved must therefore be re-seeded from the server body, not left with the
+ * carried string — `useSeededEditor` tells a seed effect whether the instance
+ * it sees is one it has already seeded (the carry alone is fine) or a fresh
+ * one (re-apply the source of truth unless there are unsaved edits).
  */
 
 import { useEffect, useRef, useSyncExternalStore } from 'react';
@@ -72,4 +81,26 @@ export function useEditorCarryApply(handle: EditorCarryHandle, editor: Editor | 
     editor.commands.setContent(md, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor]);
+}
+
+export interface SeededEditor {
+  /** True until `markSeeded(editor)` has been called for THIS instance. */
+  isFresh(editor: Editor): boolean;
+  markSeeded(editor: Editor): void;
+}
+
+/**
+ * Which editor instance has the caller's seed effect already applied its
+ * source of truth to? A schema re-init creates a new instance; the seed
+ * effect re-runs (`editor` is in its deps) and must not treat the carried
+ * document as authoritative — see the file header.
+ */
+export function useSeededEditor(): SeededEditor {
+  const ref = useRef<Editor | null>(null);
+  return useRef<SeededEditor>({
+    isFresh: (editor) => ref.current !== editor,
+    markSeeded: (editor) => {
+      ref.current = editor;
+    },
+  }).current;
 }
