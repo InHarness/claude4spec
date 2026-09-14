@@ -87,8 +87,20 @@ export async function invokeSlash(
   }
 }
 
+/**
+ * A host popover takes focus away from the editor; a cancelled one (Escape,
+ * click-outside) must hand it back. Otherwise the caret is simply gone — and
+ * an editor that saves on blur (the L8 `description` context) never sees the
+ * blur that would persist what was typed before the `/`.
+ */
+async function popoverFromEditor<T>(editor: Editor, open: () => Promise<T>): Promise<T> {
+  const result = await open();
+  if (!result && !editor.isDestroyed) editor.commands.focus();
+  return result;
+}
+
 async function runSection(editor: Editor): Promise<void> {
-  const result = await openPopover('section', coordsAt(editor), {});
+  const result = await popoverFromEditor(editor, () => openPopover('section', coordsAt(editor), {}));
   if (!result) return;
   if ('__action' in result) return;
   editor
@@ -125,7 +137,7 @@ function coordsAt(editor: Editor): { x: number; y: number } {
 
 async function runDiagram(editor: Editor, deps: SlashInvokeDeps): Promise<void> {
   const coords = coordsAt(editor);
-  const result = await openPopover('diagram', coords, { mode: 'create' });
+  const result = await popoverFromEditor(editor, () => openPopover('diagram', coords, { mode: 'create' }));
   if (!result) return;
   if ('__action' in result) return;
   try {
@@ -183,7 +195,7 @@ function runTodo(editor: Editor): void {
 }
 
 async function runMention(editor: Editor): Promise<void> {
-  const result = await openPopover('mention', coordsAt(editor), {});
+  const result = await popoverFromEditor(editor, () => openPopover('mention', coordsAt(editor), {}));
   if (!result) return;
   editor
     .chain()
@@ -193,7 +205,7 @@ async function runMention(editor: Editor): Promise<void> {
 }
 
 async function runElement(editor: Editor): Promise<void> {
-  const result = await openPopover('element', coordsAt(editor), {});
+  const result = await popoverFromEditor(editor, () => openPopover('element', coordsAt(editor), {}));
   if (!result) return;
   editor
     .chain()
@@ -203,7 +215,7 @@ async function runElement(editor: Editor): Promise<void> {
 }
 
 async function runList(editor: Editor): Promise<void> {
-  const result = await openPopover('list', coordsAt(editor), {});
+  const result = await popoverFromEditor(editor, () => openPopover('list', coordsAt(editor), {}));
   if (!result) return;
   editor
     .chain()
@@ -216,7 +228,7 @@ async function runList(editor: Editor): Promise<void> {
 }
 
 async function runTagged(editor: Editor): Promise<void> {
-  const result = await openPopover('tagged', coordsAt(editor), {});
+  const result = await popoverFromEditor(editor, () => openPopover('tagged', coordsAt(editor), {}));
   if (!result) return;
   editor
     .chain()
@@ -233,7 +245,7 @@ async function runTagged(editor: Editor): Promise<void> {
 }
 
 async function runTaggedMixed(editor: Editor): Promise<void> {
-  const result = await openPopover('tagged-mixed', coordsAt(editor), {});
+  const result = await popoverFromEditor(editor, () => openPopover('tagged-mixed', coordsAt(editor), {}));
   if (!result) return;
   editor
     .chain()
