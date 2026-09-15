@@ -52,6 +52,8 @@ export function buildTransagentToolsServer(ctx: TransagentToolsContext): Capture
       '    is unattached and creates its own plan on its first `update_plan`. A planPath naming no',
       '    existing plan is INVALID_ARGS and NO child is created.',
       'Continue an existing child by passing its `threadId` (omit `contextType` semantics then).',
+      '    `payload` is IGNORED on that path — every binding (planPath, patchPath, the brief window)',
+      '    is fixed when the child is created and cannot be changed by continuing it.',
       'At most one child runs per turn (this tool_use blocks until the child finishes).',
       '`planMode: true` opens the child in plan mode (read-only builtins) — a top-level field, NOT a',
       'payload key. It is NOT inherited: omit it and the child runs unrestricted even if YOU are in',

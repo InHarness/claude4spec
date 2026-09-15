@@ -105,6 +105,10 @@ export class TransagentDispatcher {
     //    step below — so `input.planMode` is deliberately ignored here: an
     //    existing banka keeps the posture it was created with. Nothing on this
     //    branch may `UPDATE chat_thread SET plan_mode`.
+    //    `input.payload` is ignored for the same reason and with the same reach:
+    //    every binding (plan_path, patch_path, the brief window) is decided at
+    //    creation, so a continuation cannot re-point an existing banka at another
+    //    plan. The tool description states it — this is the code that means it.
     let child: ChatThread;
     if (input.threadId) {
       const existing = this.deps.chatService.getThreadMeta(input.threadId);
