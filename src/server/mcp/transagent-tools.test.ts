@@ -132,3 +132,33 @@ describe('runTransagent — error taxonomy', () => {
     });
   });
 });
+
+/**
+ * Brief 0-2-89-to-next M46: the description string is the only place a parent
+ * agent can learn that `contextType='chat'` takes a payload at all. The binding
+ * being implemented in the dispatcher is half the fix — an undocumented key is
+ * one nobody passes.
+ */
+describe('runTransagent — documented chat payload', () => {
+  const description = (): string => {
+    const dispatcher = { run: async () => ({ threadId: 'c', summary: '' }) } as unknown as TransagentDispatcher;
+    const server = buildTransagentToolsServer({ parentThreadId: 'parent_1', dispatcher });
+    const tool = server.tools.find((t) => t.name === 'runTransagent');
+    if (!tool) throw new Error('runTransagent not registered');
+    return tool.description ?? '';
+  };
+
+  it('names planPath as the chat payload key, alongside the brief and patch payloads', () => {
+    const text = description();
+    expect(text).toContain('planPath');
+    // Still documents the other two — this is an addition, not a replacement.
+    expect(text).toContain('fromReleaseName');
+    expect(text).toContain('patchPath');
+  });
+
+  it('states both outcomes: omitted ⇒ the child makes its own plan, unknown path ⇒ INVALID_ARGS', () => {
+    const text = description();
+    expect(text).toMatch(/update_plan/);
+    expect(text).toMatch(/existing plan is INVALID_ARGS/);
+  });
+});

@@ -315,6 +315,23 @@ export class PlanService {
     };
   }
 
+  /**
+   * "Is this path a real, well-formed plan?" — the ONE gate every attach path
+   * takes, exposed so a caller that binds `plan_path` WITHOUT reading the plan
+   * (the `runTransagent` chat branch, which only needs the path validated
+   * before the child thread is inserted) checks the same thing the reading
+   * callers do. It delegates to {@link loadFile}, which is already the single
+   * decision point behind `getByPath` / `readForWrite` / `attachThreadToPlan`;
+   * a second `exists()` somewhere else is exactly how the two ends drift apart.
+   *
+   * Throws the loader's own codes — `NOT_FOUND` for a missing file,
+   * `PLAN_INVALID_FRONTMATTER` for a file that is not a plan. A caller whose
+   * contract names a different code translates at ITS boundary, not here.
+   */
+  async assertPlanExists(planPath: string): Promise<void> {
+    await this.loadFile(planPath);
+  }
+
   /** Existence, bytes and frontmatter validation — shared by both reads above. */
   private async loadFile(
     planPath: string,

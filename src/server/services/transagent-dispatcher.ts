@@ -33,7 +33,7 @@ export interface TransagentRunInput {
   parentThreadId: string;
   contextType: 'brief' | 'chat' | 'patch';
   message: string;
-  /** Per-contextType binding hints (e.g. `{ fromReleaseName, patchPath, suffix }`). */
+  /** Per-contextType binding hints (e.g. `{ fromReleaseName, patchPath, suffix, planPath }`). */
   payload?: Record<string, unknown>;
   /**
    * 0.2.30: open the child banka in plan mode. TOP-LEVEL on purpose, never a
@@ -182,7 +182,9 @@ export class TransagentDispatcher {
    *     brief thread. The channel is reserved for that window shape, which is
    *     described by the window itself — there is no provenance label to set.
    *   - patch → child patch thread (requires payload.patchPath).
-   *   - chat  → plain child chat thread.
+   *   - chat  → plain child chat thread, optionally already attached to an
+   *     EXISTING plan (payload.planPath); omitted ⇒ plan_path NULL and the
+   *     child creates its own plan on its first `update_plan`.
    *
    * Each branch spreads `generic` (parent_thread_id, spawned_by_tool_use_id,
    * plan_mode) and adds ONLY its own binding fields — the generic columns are
@@ -231,10 +233,53 @@ export class TransagentDispatcher {
     }
 
     // chat — plain child thread; title seeded from the message.
+    const planPath = await this.resolveChatPlanPath(payload);
     const title = message.slice(0, 60) + (message.length > 60 ? '...' : '');
     return this.deps.chatService.createThread(title || 'Transagent', {
       contextType: 'chat',
+      ...(planPath !== null ? { planPath } : {}),
       ...generic,
     });
+  }
+
+  /**
+   * `contextType='chat'`'s only payload key: the plan the child starts attached
+   * to. Three outcomes, and the two refusals are the point of it existing —
+   * `payload` is typed `z.record(z.string(), z.unknown())` at the tool boundary,
+   * so nothing upstream rejects a malformed or dangling key and a silently
+   * dropped `planPath` is exactly the bug this replaced (the child looked as if
+   * the parent had never named a plan).
+   *
+   *   - key absent (or explicitly null) → `null`: nothing is passed to
+   *     `createThread`, `plan_path` stays NULL, and the child upserts its own
+   *     plan. This is the default path and must not change.
+   *   - key present but not a string → `VALIDATION`.
+   *   - key present as a string → validated through the ONE shared gate,
+   *     {@link PlanService.assertPlanExists}, so this and
+   *     `POST /api/plans/:planId/create-thread` cannot disagree about what
+   *     counts as a plan. A dangling path is `VALIDATION`, never an attach.
+   *
+   * Every refusal is raised HERE, before any thread is created, so a bad path
+   * leaves no orphan child behind. `VALIDATION` is the repo-wide service code;
+   * the MCP wrapper renames it to this tool's documented `INVALID_ARGS`.
+   */
+  private async resolveChatPlanPath(payload: Record<string, unknown>): Promise<string | null> {
+    const raw = payload.planPath;
+    if (raw === undefined || raw === null) return null;
+    if (typeof raw !== 'string' || raw.trim() === '') {
+      throw new DomainError('VALIDATION', 'payload.planPath must be a non-empty string');
+    }
+    try {
+      await this.deps.planService.assertPlanExists(raw);
+    } catch (err) {
+      if (err instanceof DomainError) {
+        throw new DomainError(
+          'VALIDATION',
+          `payload.planPath '${raw}' is not an existing plan: ${err.message}`,
+        );
+      }
+      throw err;
+    }
+    return raw;
   }
 }
