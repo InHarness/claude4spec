@@ -32,7 +32,9 @@ function watch(page: Page, pagePath: string) {
   const consoleErrors: string[] = [];
   const badResponses: string[] = [];
   page.on('console', (m) => {
-    if (m.type() === 'error' && !/websocket/i.test(m.text())) consoleErrors.push(m.text());
+    // The browser itself logs the expected 409 as "Failed to load resource";
+    // that line is the conflict under test, not an error of the page.
+    if (m.type() === 'error' && !/websocket|status of 409/i.test(m.text())) consoleErrors.push(m.text());
   });
   page.on('response', (r) => {
     const expectedConflict = r.status() === 409 && r.url().includes(`/pages/pages/${pagePath}`);
