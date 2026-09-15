@@ -48,6 +48,13 @@ export class ApiError extends Error {
     public status: number,
     /** Full `error` envelope from the server — carries extras like `field` for 422. */
     public details?: Record<string, unknown>,
+    /**
+     * 0.2.88 — the WHOLE response body. A 409 `PAGE_CONFLICT` puts
+     * `currentHash` / `currentContent` BESIDE `error`, not inside it
+     * (`routes/errors.ts`), so `details` alone cannot carry what the page
+     * editor's conflict dialog needs to offer "Reload".
+     */
+    public body?: Record<string, unknown>,
   ) {
     super(message);
   }
@@ -56,11 +63,14 @@ export class ApiError extends Error {
 export async function handle<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as
-      | { error?: { code?: string; message?: string } & Record<string, unknown> }
+      | ({ error?: { code?: string; message?: string } & Record<string, unknown> } & Record<
+          string,
+          unknown
+        >)
       | null;
     const message = body?.error?.message ?? res.statusText;
     const code = body?.error?.code ?? 'HTTP_ERROR';
-    throw new ApiError(code, message, res.status, body?.error);
+    throw new ApiError(code, message, res.status, body?.error, body ?? undefined);
   }
   return res.json() as Promise<T>;
 }

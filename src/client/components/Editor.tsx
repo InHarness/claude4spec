@@ -24,6 +24,7 @@ import { useFileEventsStore } from '../state/fileEvents.js';
 import { confirmDestructive } from '../ui/events.js';
 import { usePagesIndex } from '../hooks/usePagesIndex.js';
 import type { EntityType } from '../../shared/entities.js';
+import type { PageContent } from '../../shared/types.js';
 
 interface Props {
   /** 0.1.96 multiroot: which page root the document belongs to. */
@@ -133,7 +134,13 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
           isDirtyRef.current = false;
           inflightRef.current += 1;
           write.mutate(
-            { rootId, path: activePath, body: md, frontmatter: data?.frontmatter },
+            {
+              rootId,
+              path: activePath,
+              body: md,
+              frontmatter: data?.frontmatter,
+              onConflict: (conflict) => onConflictRef.current(activePath, conflict),
+            },
             { onSettled: () => void (inflightRef.current -= 1) },
           );
         };
@@ -224,6 +231,66 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
 
   useScrollToAnchor(editor, !!data, path);
 
+  /**
+   * 0.2.88 — a 409 `PAGE_CONFLICT` on autosave: somebody else wrote the page
+   * since this client last read or saved it. Pages get the two-branch dialog
+   * (artifacts get a Reload-only banner): "Reload" adopts the server's copy —
+   * hash and content come with the 409, so no re-read — and "Keep my changes"
+   * overwrites it, behind the destructive confirmation, with a FORCED write
+   * guarded by the server's current hash. Not deferred to the next autosave
+   * cycle: that cycle would carry the same stale hash and 409 again. No manual
+   * merge. Read through a ref so the mutation callback created at debounce time
+   * sees the current editor and path.
+   */
+  const onConflictRef = useRef<(forPath: string, c: { currentHash: string; currentContent: string }) => void>(
+    () => {},
+  );
+  onConflictRef.current = (forPath, conflict) => {
+    if (!editor || editor.isDestroyed || forPath !== currentPathRef.current) return;
+    isDirtyRef.current = true;
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+      pendingSaveRef.current = null;
+    }
+    void confirmDestructive({
+      title: 'Page changed on the server',
+      body: 'This page was saved by someone else since you opened it. Reload to take the server version and discard your edits, or keep your changes and overwrite it?',
+      confirmLabel: 'Keep my changes',
+      cancelLabel: 'Reload',
+      danger: true,
+    }).then((keepMine) => {
+      if (editor.isDestroyed || forPath !== currentPathRef.current) return;
+      if (keepMine) {
+        const md = editor.storage.markdown.getMarkdown() as string;
+        lastSavedBodyRef.current = md;
+        isDirtyRef.current = false;
+        inflightRef.current += 1;
+        write.mutate(
+          {
+            rootId,
+            path: forPath,
+            body: md,
+            frontmatter: data?.frontmatter,
+            expectedHash: conflict.currentHash,
+            onConflict: (again) => onConflictRef.current(forPath, again),
+          },
+          { onSettled: () => void (inflightRef.current -= 1) },
+        );
+        return;
+      }
+      // Reload: the 409 already carries the server's copy — seed the cache from
+      // it (hash included, so the next save is guarded by the right value) and
+      // let the hydrate effect below re-seed the document.
+      lastSavedBodyRef.current = null;
+      isDirtyRef.current = false;
+      qc.setQueryData(['page', rootId, forPath], (prev: PageContent | undefined) =>
+        prev ? { ...prev, body: conflict.currentContent, hash: conflict.currentHash } : prev,
+      );
+      qc.invalidateQueries({ queryKey: ['page', rootId, forPath] });
+    });
+  };
+
   useEffect(() => {
     if (!editor || !externalChange) return;
     // 0.1.96: match on (rootId, path) — a same-named file in another root must not
@@ -257,7 +324,17 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
         const md = editor.storage.markdown.getMarkdown() as string;
         lastSavedBodyRef.current = md;
         isDirtyRef.current = false;
-        write.mutate({ rootId, path, body: md, frontmatter: data?.frontmatter });
+        // The user already confirmed the overwrite. The cached hash is stale by
+        // definition here, so the write 409s — take the server's hash from the
+        // conflict and force it through, without a second dialog.
+        write.mutate({
+          rootId,
+          path,
+          body: md,
+          frontmatter: data?.frontmatter,
+          onConflict: (c) =>
+            write.mutate({ rootId, path, body: md, frontmatter: data?.frontmatter, expectedHash: c.currentHash }),
+        });
       }
     });
     return () => {

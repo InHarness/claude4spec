@@ -37,7 +37,15 @@ export interface SanitizedChip {
   attrs: Record<string, string>;
 }
 
-export function preprocessXmlChips(text: string, activeTypes: Set<string>): string {
+/**
+ * `activeTypes` — the whitelist of entity types, as `host.listAvailable()`
+ * hands it over (0.2.88 contract: `preprocessXmlChips(text, activeTypes: string[])`).
+ */
+export function preprocessXmlChips(text: string, activeTypes: readonly string[]): string {
+  return preprocessXmlChipsWith(text, new Set(activeTypes));
+}
+
+function preprocessXmlChipsWith(text: string, activeTypes: Set<string>): string {
   if (!text || (!text.includes('<inline_mention') && !text.includes('<single_element')
     && !text.includes('<element_list') && !text.includes('<tagged_list')
     && !text.includes('<section_ref'))) {

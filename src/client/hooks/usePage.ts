@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
+import { ApiError } from '../lib/api-core.js';
 import { toast } from '../ui/events.js';
 import type { PageContent, PageWriteAck } from '../../shared/types.js';
 
@@ -47,6 +48,18 @@ export interface PageWriteVars {
    * editor's case and the common one.
    */
   expectedHash?: string;
+  /**
+   * 0.2.88 — the editor's branch for a 409 `PAGE_CONFLICT`: the server's
+   * current hash and content, so the caller can offer "Reload" without a
+   * re-read, or overwrite with `expectedHash: currentHash`. Callers without
+   * one get the generic failure toast.
+   */
+  onConflict?: (conflict: PageConflict) => void;
+}
+
+export interface PageConflict {
+  currentHash: string;
+  currentContent: string;
 }
 
 /**
@@ -138,8 +151,24 @@ export function useWritePage() {
      * used to leave the user typing into a document that was no longer being
      * persisted, and looked identical to a document that was.
      */
-    onError: (err: Error) => toast.error(`Save failed: ${err.message}`),
+    onError: (err: Error, vars) => {
+      const conflict = pageConflictOf(err);
+      if (conflict && vars.onConflict) {
+        vars.onConflict(conflict);
+        return;
+      }
+      toast.error(`Save failed: ${err.message}`);
+    },
   });
+}
+
+/** The `PAGE_CONFLICT` payload of a failed write, or null for any other failure. */
+export function pageConflictOf(err: unknown): PageConflict | null {
+  if (!(err instanceof ApiError) || err.code !== 'PAGE_CONFLICT') return null;
+  const hash = err.body?.currentHash;
+  const content = err.body?.currentContent;
+  if (typeof hash !== 'string' || typeof content !== 'string') return null;
+  return { currentHash: hash, currentContent: content };
 }
 
 /**

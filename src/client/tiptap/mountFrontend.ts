@@ -6,14 +6,16 @@
  *   - registers `editorExtensions` (NodeViews, slash commands, mention sources)
  *     into the shared extension REGISTRY, bound to the host's @tiptap/core;
  *   - auto-adds the entity-type name to the markdown-it xml_inline/xml_block
- *     allowlist so `<type .../>` parses as a native embed in prose;
+ *     allowlist so `<type .../>` parses as a native embed in prose (not for
+ *     hidden types — 0.2.88);
  *   - (Phase 3) collects each module's `routes` fragment and mounts them into the
  *     host's single TanStack Router, deduped by path against the base routes; and
  *   - (Phase 3) acknowledges each module's `stateSlice` (typed but unconsumed).
  *
  * Editor wiring must run BEFORE the first editor is created (Tiptap freezes its
- * schema at `create`). A module whose slots fail validation is skipped with a
- * warning. Idempotent: route mounting rebuilds from the frozen base each call, and
+ * schema at `create`). A module whose slots fail the structural check is skipped
+ * with a warning; a slot that fails the smoke test is replaced by the host
+ * fallback and the module still mounts (0.2.88). Idempotent: route mounting rebuilds from the frozen base each call, and
  * editor/XML registration replace-by-name / set-add, so the sync built-in mount
  * and the later async plugin mount (and hot-reloads) never accumulate state.
  */
@@ -21,7 +23,9 @@
 import { registerEditorExtension, ALL_EDITOR_CONTEXTS } from './registry.js';
 import { registerXmlEntityType } from './extensions/xmlNodes.js';
 import type { FrontendModule, StateSliceContribution } from '../core/plugin-host/types.js';
-import { validateFrontendModule } from '../runtime/validate-slots.js';
+import { validateFrontendModule, type SmokeSlot } from '../runtime/validate-slots.js';
+import { rejectedSlotFallback } from '../runtime/RejectedSlotFallback.js';
+import { isHiddenModule } from '../core/plugin-host/slot-rules.js';
 import {
   rootRoute,
   rebuildRouteTree,
@@ -71,9 +75,23 @@ export function mountFrontend(router: AppRouter, modules: FrontendModule[]): voi
       );
       continue;
     }
+    // 0.2.88 — a slot that threw in the smoke test degrades instead of
+    // blocking: swap in the host fallback ON THE MODULE (the same object the
+    // plugin host resolves chips and cards from) and carry on with the rest.
+    for (const { slot, reason } of validation.smoke?.rejected ?? []) {
+      console.warn(
+        `[plugin-host] slot "${slot}" of "${m.type}" was rejected by the smoke test — rendering the host fallback: ${reason}`,
+      );
+      (m as Record<SmokeSlot, unknown>)[slot] = rejectedSlotFallback(m.type, slot, reason);
+    }
 
-    // Auto-allow `<type .../>` as an inline + block XML embed in prose.
-    registerXmlEntityType(m.type);
+    // Auto-allow `<type .../>` as an inline + block XML embed in prose — for
+    // types with a surface of their own. A HIDDEN type (no routes, no detail
+    // panel) is reachable through the generic M19 embeds
+    // (`<single_element type="…"/>`) and contributes no tag name of its own
+    // (0.2.88: the dispatch allowlist is derived from the registry, and hidden
+    // entities do not extend it).
+    if (!isHiddenModule(m)) registerXmlEntityType(m.type);
 
     // Pin the plugin's editor extensions onto the shared Tiptap registry.
     for (const ext of m.editorExtensions ?? []) {

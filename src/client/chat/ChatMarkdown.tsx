@@ -24,10 +24,7 @@ export function ChatMarkdown({
   text: string;
   className?: string;
 }) {
-  const activeTypes = useMemo(
-    () => new Set(clientPluginHost.listEntities().map((m) => m.type)),
-    [],
-  );
+  const activeTypes = useMemo(() => clientPluginHost.listEntities().map((m) => m.type), []);
   const processed = useMemo(() => preprocessXmlChips(text, activeTypes), [text, activeTypes]);
 
   return (
@@ -55,22 +52,32 @@ export function ChatMarkdown({
             </ChatCodeBlock>
           );
         },
-        a({ href, children, ...rest }) {
-          if (typeof href === 'string' && href.startsWith(CHIP_HREF_PREFIX)) {
-            const payload = href.slice(CHIP_HREF_PREFIX.length);
-            const chip = decodePayload(payload);
-            if (chip) return <XmlChipDispatcher chip={chip} />;
-          }
-          return (
-            <a href={href} {...rest}>
-              {children}
-            </a>
-          );
-        },
+        a: ChipOrLink,
       }}
     >
       {processed}
     </Markdown>
+  );
+}
+
+/**
+ * The `components.a` override: a placeholder link minted by `preprocessXmlChips`
+ * becomes the chip it encodes; any other link stays a link.
+ */
+function ChipOrLink({
+  href,
+  children,
+  ...rest
+}: React.ComponentPropsWithoutRef<'a'>) {
+  if (typeof href === 'string' && href.startsWith(CHIP_HREF_PREFIX)) {
+    const payload = href.slice(CHIP_HREF_PREFIX.length);
+    const chip = decodePayload(payload);
+    if (chip) return <XmlChipDispatcher chip={chip} />;
+  }
+  return (
+    <a href={href} {...rest}>
+      {children}
+    </a>
   );
 }
 

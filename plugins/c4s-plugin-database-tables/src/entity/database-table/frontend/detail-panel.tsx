@@ -1078,12 +1078,12 @@ const DatabaseTableDetailForm: FC<{
   const currentSlugRef = useRef(entity.slug);
   const titleRef = useRef<HTMLTextAreaElement>(null);
 
-  // Unmount and page unload flush whatever is still unsaved: the debounced
-  // whole-draft save AND the description, whose policy is "on blur" (L8
-  // `description` context) — tiptap's `destroy()` emits no blur, in-app
-  // navigation skips it, a reload runs no React cleanup at all. `scheduleSave`
-  // diffs against the baseline, so a clean draft sends nothing. The listener
-  // reads through a ref so it always sees the latest closure.
+  // Unmount and page unload flush whatever the debounce has not sent yet
+  // (description included — 0.2.88 puts it on the same delayed autosave as the
+  // other fields): in-app navigation runs the cleanup, a reload runs none, so
+  // `pagehide`/`beforeunload` cover it. `scheduleSave` diffs against the
+  // baseline, so a clean draft sends nothing. The listener reads through a ref
+  // so it always sees the latest closure.
   const flushRef = useRef<() => void>(() => {});
   useEffect(() => {
     let unloadFlushed = false;
@@ -1225,24 +1225,21 @@ const DatabaseTableDetailForm: FC<{
   };
 
   /**
-   * L8 `description` context save policy: the editor persists ON BLUR, not on
-   * the debounce (spec `ctxregst`). `scheduleSave` already diffs against the
-   * baseline, so a blur after a description edit sends `PATCH { description }`
-   * alone — and a blur without one sends nothing.
+   * 0.2.88 — `description` rides the panel's delayed autosave like every other
+   * field. The prose control is the host's `DocEditor`, but this panel is not
+   * an editor surface: its field is NOT an instance of the host's `description`
+   * context and does not inherit that context's on-blur policy. Unmount and
+   * page unload still flush whatever the debounce has not sent yet.
    */
-  const patchDescription = (description: string) => {
-    setDraft((d) => ({ ...d, description }));
-  };
   const draftRef = useRef(draft);
   draftRef.current = draft;
-  const saveDescription = () => {
+  flushRef.current = () => {
     if (debounceRef.current) {
       window.clearTimeout(debounceRef.current);
       debounceRef.current = null;
     }
     scheduleSave(draftRef.current);
   };
-  flushRef.current = saveDescription;
 
   const handleDelete = () => {
     if (del.isPending) return;
@@ -1302,8 +1299,7 @@ const DatabaseTableDetailForm: FC<{
               free, which the bare textarea it replaced could never match. */}
           <DocEditor
             value={draft.description}
-            onChange={(md) => patchDescription(md)}
-            onBlur={saveDescription}
+            onChange={(md) => patch({ description: md })}
             placeholder="What is this table for?"
           />
         </div>

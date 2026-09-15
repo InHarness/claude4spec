@@ -23,6 +23,24 @@ import type { FrontendModule } from '../core/plugin-host/types.js';
 import { BASE_ROUTE_CHILDREN, rootRoute } from '../router.js';
 import { createRoute } from '@tanstack/react-router';
 import { mountFrontend } from './mountFrontend.js';
+import { isRegisteredXmlTag } from './extensions/xmlNodes.js';
+
+// 0.2.88 — the smoke test needs a DOM this suite does not have (node env), so
+// the per-slot rejection path is driven by a controllable validator: `real`
+// delegates to the actual one, `rejectChipOf` names a type whose `renderChip`
+// is reported as thrown.
+const smokeControl = vi.hoisted(() => ({ rejectChipOf: null as string | null }));
+vi.mock('../runtime/validate-slots.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../runtime/validate-slots.js')>();
+  return {
+    ...actual,
+    validateFrontendModule: (m: FrontendModule) => {
+      const real = actual.validateFrontendModule(m);
+      if (!real.ok || m.type !== smokeControl.rejectChipOf) return real;
+      return { ok: true, smoke: { rejected: [{ slot: 'renderChip', reason: 'renderChip render threw: boom' }] } };
+    },
+  };
+});
 
 const Noop = (() => null) as unknown as FrontendModule['renderCard'];
 
@@ -168,5 +186,41 @@ describe('mountFrontend collects the hoisted entity routes', () => {
     // The healthy module still mounted — one bad fragment does not take the rest.
     expect(mountedPaths()).toContain('/acs');
     warn.mockRestore();
+  });
+
+  it('a slot rejected by the smoke test degrades to the host fallback; the module still mounts', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    smokeControl.rejectChipOf = 'flaky';
+    const flaky = moduleWith('flaky', fragmentFor('/flakies'));
+    const originalCard = flaky.renderCard;
+    try {
+      mountFrontend(fakeRouter(), [flaky]);
+    } finally {
+      smokeControl.rejectChipOf = null;
+    }
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('boom'));
+    // Only the rejected slot is swapped — the card the plugin shipped stays.
+    expect((flaky.renderChip as { displayName?: string }).displayName).toBe('RejectedSlotFallback(flaky.renderChip)');
+    expect(flaky.renderCard).toBe(originalCard);
+    // Registration was not blocked: routes and the tag landed as usual.
+    expect(mountedPaths()).toContain('/flakies');
+    expect(isRegisteredXmlTag('flaky')).toBe(true);
+    warn.mockRestore();
+  });
+});
+
+describe('mountFrontend and the XML tag allowlist (0.2.88)', () => {
+  it('a hidden type contributes no tag name of its own; a surfaced type does', () => {
+    const hidden = {
+      ...moduleWith('shy', undefined),
+      routes: undefined,
+      detailPanel: undefined,
+      renderOverlay: Noop,
+    } as unknown as FrontendModule;
+    mountFrontend(fakeRouter(), [hidden, moduleWith('loud', fragmentFor('/louds'))]);
+
+    expect(isRegisteredXmlTag('shy')).toBe(false);
+    expect(isRegisteredXmlTag('loud')).toBe(true);
   });
 });
