@@ -311,7 +311,7 @@ describe.skipIf(!BASE)('editor L8 contexts', () => {
     await expect.poll(() => editor.count(), { timeout: 15_000 }).toBe(1);
     await expect.poll(() => editor.innerText()).toContain('Lead text');
     // The whitelist decides what RENDERS: both tags show as raw code, not chips.
-    const raw = editor.locator('.c4s-raw-jsx textarea');
+    const raw = editor.locator('.c4s-raw-jsx textarea, .c4s-raw-jsx input');
     await expect.poll(() => raw.count()).toBe(2);
     expect(await raw.nth(0).inputValue()).toBe(tag);
     expect(await raw.nth(1).inputValue()).toBe('<todo comment="keep me"/>');
@@ -372,7 +372,8 @@ describe.skipIf(!BASE)('editor L8 contexts', () => {
     await expect.poll(() => editor.count(), { timeout: 15_000 }).toBe(1);
     await expect.poll(() => editor.innerText()).toContain('cell 2');
     for (const [sel, text] of [['h2', 'Two'], ['h3', 'Three'], ['h4', 'Four'], ['h5', 'Five'], ['h6', 'Six']]) {
-      expect(await editor.locator(sel!).innerText(), `${sel} rendered as a heading`).toBe(text);
+      // textContent, not innerText: the theme upper-cases some heading levels via CSS.
+      expect(await editor.locator(sel!).evaluate((el) => el.textContent), `${sel} rendered as a heading`).toBe(text);
     }
     expect(await editor.locator('table td, table th').count(), 'table cells').toBe(4);
 
@@ -388,7 +389,7 @@ describe.skipIf(!BASE)('editor L8 contexts', () => {
     }
     expect(saved).toMatch(/\|\s*col a\s*\|\s*col b\s*\|/);
     expect(saved).toMatch(new RegExp(`\\|\\s*cell 1\\s*\\|\\s*cell 2 z${stamp}\\s*\\|`));
-    expect(saved).not.toContain('# Two\n'); // no heading got promoted to h1
+    expect(saved).not.toMatch(/^# /m); // no heading got promoted to h1
 
     expect(consoleErrors, 'console errors').toEqual([]);
     expect(badResponses, 'responses >= 400').toEqual([]);
@@ -449,7 +450,7 @@ describe.skipIf(!BASE)('editor L8 contexts', () => {
       await expect.poll(() => editor.count(), { timeout: 15_000 }).toBe(1);
       await expect.poll(() => editor.innerText()).toContain('Minimal root');
       await sleep(1500); // let the non-blocking plugin boot settle
-      const raw = editor.locator('.c4s-raw-jsx textarea');
+      const raw = editor.locator('.c4s-raw-jsx textarea, .c4s-raw-jsx input');
       await expect.poll(() => raw.count()).toBe(2);
       expect(await raw.nth(0).inputValue()).toBe(mention);
       expect(await raw.nth(1).inputValue()).toBe(tag);
