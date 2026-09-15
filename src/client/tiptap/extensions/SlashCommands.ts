@@ -2,6 +2,7 @@ import { Extension, type Editor } from '@tiptap/core';
 import Suggestion, { type SuggestionProps } from '@tiptap/suggestion';
 import { PluginKey } from '@tiptap/pm/state';
 import { ReactRenderer } from '@tiptap/react';
+import { setSuggestionPopupOpen } from '../suggestionState.js';
 import { SlashMenu, type SlashMenuHandle, type SlashCommand } from './SlashMenu.js';
 import {
   getRegisteredSlashCommandsForContext,
@@ -25,6 +26,8 @@ export interface SlashCommandsOptions {
 
 /** The `/` suggestion plugin's key — lets a host read whether the palette is open. */
 export const SLASH_SUGGESTION_KEY = new PluginKey('c4s-suggestion-slash');
+/** Its popup's key in `suggestionState` — what `isSuggestionActive` reads. */
+const SLASH_POPUP = 'slash';
 
 export const SlashCommands = Extension.create<SlashCommandsOptions>({
   name: 'slash_commands',
@@ -71,24 +74,28 @@ export const SlashCommands = Extension.create<SlashCommandsOptions>({
               popup.appendChild(reactRenderer.element);
               document.body.appendChild(popup);
               updatePos(props.clientRect?.() ?? null);
+              setSuggestionPopupOpen(props.editor.view, SLASH_POPUP, props.items.length > 0);
             },
             onUpdate(props: SuggestionProps<SlashCommand>) {
               reactRenderer?.updateProps(props);
               updatePos(props.clientRect?.() ?? null);
+              setSuggestionPopupOpen(props.editor.view, SLASH_POPUP, popup !== null && props.items.length > 0);
             },
             onKeyDown(props) {
               if (props.event.key === 'Escape') {
                 popup?.remove();
                 popup = null;
+                setSuggestionPopupOpen(props.view, SLASH_POPUP, false);
                 return true;
               }
               return reactRenderer?.ref?.onKeyDown(props.event) ?? false;
             },
-            onExit() {
+            onExit(props: SuggestionProps<SlashCommand>) {
               popup?.remove();
               popup = null;
               reactRenderer?.destroy();
               reactRenderer = null;
+              setSuggestionPopupOpen(props.editor.view, SLASH_POPUP, false);
             },
           };
         },

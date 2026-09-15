@@ -21,7 +21,8 @@ import { OutlineFloater } from './OutlineFloater.js';
 import { useOutlineStore } from '../state/outline.js';
 import { useChatStore } from '../state/chat.js';
 import { useFileEventsStore } from '../state/fileEvents.js';
-import { confirmDestructive } from '../ui/events.js';
+import { confirmDestructive, toast } from '../ui/events.js';
+import { bodyOf } from '../lib/artifact-frontmatter.js';
 import { usePagesIndex } from '../hooks/usePagesIndex.js';
 import type { EntityType } from '../../shared/entities.js';
 import type { PageContent } from '../../shared/types.js';
@@ -241,12 +242,23 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
    * cycle: that cycle would carry the same stale hash and 409 again. No manual
    * merge. Read through a ref so the mutation callback created at debounce time
    * sees the current editor and path.
+   *
+   * Polarity: "Reload" is the confirm button (red — it discards the unsaved
+   * edits, the one thing nobody can get back), "Keep my changes" the cancel
+   * one. Escape, the scrim and ✕ all resolve as cancel, so a dismissed dialog
+   * keeps the user's text — same as the external-change dialog below.
    */
   const onConflictRef = useRef<(forPath: string, c: { currentHash: string; currentContent: string }) => void>(
     () => {},
   );
   onConflictRef.current = (forPath, conflict) => {
-    if (!editor || editor.isDestroyed || forPath !== currentPathRef.current) return;
+    if (!editor || editor.isDestroyed || forPath !== currentPathRef.current) {
+      // The write was the unmount / navigation flush: there is no editor left
+      // to ask, and `useWritePage` left the toast to us. Silence here would
+      // look exactly like a saved page.
+      toast.error(`Save failed: ${forPath} changed on the server — your last edits to it were not saved`);
+      return;
+    }
     isDirtyRef.current = true;
     if (saveTimer.current) {
       clearTimeout(saveTimer.current);
@@ -256,12 +268,12 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
     void confirmDestructive({
       title: 'Page changed on the server',
       body: 'This page was saved by someone else since you opened it. Reload to take the server version and discard your edits, or keep your changes and overwrite it?',
-      confirmLabel: 'Keep my changes',
-      cancelLabel: 'Reload',
+      confirmLabel: 'Reload',
+      cancelLabel: 'Keep my changes',
       danger: true,
-    }).then((keepMine) => {
+    }).then((reload) => {
       if (editor.isDestroyed || forPath !== currentPathRef.current) return;
-      if (keepMine) {
+      if (!reload) {
         const md = editor.storage.markdown.getMarkdown() as string;
         lastSavedBodyRef.current = md;
         isDirtyRef.current = false;
@@ -281,11 +293,13 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
       }
       // Reload: the 409 already carries the server's copy — seed the cache from
       // it (hash included, so the next save is guarded by the right value) and
-      // let the hydrate effect below re-seed the document.
+      // let the hydrate effect below re-seed the document. `currentContent` is
+      // the whole file; `body` is the body alone, so strip the frontmatter.
+      // The frontmatter object itself comes with the refetch.
       lastSavedBodyRef.current = null;
       isDirtyRef.current = false;
       qc.setQueryData(['page', rootId, forPath], (prev: PageContent | undefined) =>
-        prev ? { ...prev, body: conflict.currentContent, hash: conflict.currentHash } : prev,
+        prev ? { ...prev, body: bodyOf(conflict.currentContent), hash: conflict.currentHash } : prev,
       );
       qc.invalidateQueries({ queryKey: ['page', rootId, forPath] });
     });

@@ -17,14 +17,34 @@
  * or reformat dates, so a body-only edit produces a body-only diff.
  */
 export function withFrontmatterOf(rawContent: string, newBody: string): string {
+  const block = frontmatterBlockOf(rawContent);
+  // No frontmatter to preserve (hand-written file, or a kind that has none) —
+  // the body IS the whole file.
+  return block === null ? newBody : `${block}${newBody}`;
+}
+
+/**
+ * The body of a raw file — what `gray-matter(raw).content` is on the server.
+ *
+ * A `409 PAGE_CONFLICT` carries the server's copy as the FULL file (that is
+ * what an MCP caller needs to re-apply an edit), while `PageContent.body`
+ * everywhere on the client is the body alone. The page editor's "Reload"
+ * seeds its cache from the 409, so it strips here; seeding the raw bytes put
+ * the frontmatter block into the document as prose.
+ */
+export function bodyOf(rawContent: string): string {
+  const block = frontmatterBlockOf(rawContent);
+  return block === null ? rawContent : rawContent.slice(block.length);
+}
+
+function frontmatterBlockOf(rawContent: string): string | null {
   // The middle group is optional so an EMPTY block (`---\n---\n`) still
   // matches — otherwise it falls through and the delimiters are dropped, and
   // the server then rejects the save for mutating every immutable key. The
   // leading `\uFEFF?` keeps a UTF-8 BOM from defeating the `^---` anchor;
   // gray-matter strips one server-side, so a BOM'd file parses fine there and
-  // would otherwise only break here.
+  // would otherwise only break here. Like gray-matter, exactly ONE newline
+  // after the closing delimiter belongs to the block.
   const match = /^\uFEFF?---[ \t]*\r?\n(?:[\s\S]*?\r?\n)?---[ \t]*\r?\n?/.exec(rawContent);
-  // No frontmatter to preserve (hand-written file, or a kind that has none) —
-  // the body IS the whole file.
-  return match ? `${match[0]}${newBody}` : newBody;
+  return match ? match[0] : null;
 }

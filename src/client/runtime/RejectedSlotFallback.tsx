@@ -4,12 +4,13 @@
  * A slot that throws while rendering is skipped with a warning instead of
  * blocking the plugin's registration (M13 / M33): the module keeps its routes,
  * editor extensions and tag, and every place that would have rendered the
- * rejected slot renders this instead. Styled as the M19 broken state — one
- * look for "there is no chip to show here" — so a reader sees a labelled gap,
- * not a crash and not a silent hole.
+ * rejected slot renders this instead. It IS the M19 broken chip (one look for
+ * "there is no chip to show here"), in its `rejected-slot` category — so a
+ * reader sees a labelled gap, not a crash and not a silent hole.
  */
 
 import type { ComponentType } from 'react';
+import { InlineBrokenChip } from '../tiptap/extensions/views/BrokenChip.js';
 
 export type RejectedSlotName = 'renderChip';
 
@@ -18,11 +19,10 @@ export function rejectedSlotFallback(
   slot: RejectedSlotName,
   reason: string,
 ): ComponentType<{ slug: string }> {
-  const label = `[broken: ${type}]`;
-  const title = `${type}: ${slot} was rejected by the plugin host — ${reason}`;
+  const hint = `${type}: ${slot} was rejected by the plugin host — ${reason}`;
   const Fallback = ({ slug }: { slug: string }) => (
-    <span className="c4s-chip c4s-chip--broken" data-rejected-slot={slot} data-slug={slug} title={title}>
-      {label}
+    <span data-rejected-slot={slot} data-slug={slug}>
+      <InlineBrokenChip category="rejected-slot" type={type} slug={slug} hint={hint} />
     </span>
   );
   Fallback.displayName = `RejectedSlotFallback(${type}.${slot})`;

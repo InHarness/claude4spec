@@ -2,6 +2,7 @@ import { Extension } from '@tiptap/core';
 import Suggestion, { type SuggestionOptions, type SuggestionProps } from '@tiptap/suggestion';
 import { PluginKey } from '@tiptap/pm/state';
 import { ReactRenderer } from '@tiptap/react';
+import { setSuggestionPopupOpen } from '../suggestionState.js';
 import {
   getRegisteredMentionSources,
   type EditorContextId,
@@ -35,6 +36,7 @@ export const MentionExtension = Extension.create<MentionExtensionOptions>({
 });
 
 function buildSuggestionPlugin(editor: import('@tiptap/core').Editor, source: MentionSource<unknown>) {
+  const popupKey = `mention:${source.id}`;
   const suggestionOptions: Omit<SuggestionOptions<unknown>, 'editor'> = {
     char: source.trigger,
     allowSpaces: false,
@@ -95,10 +97,12 @@ function buildSuggestionPlugin(editor: import('@tiptap/core').Editor, source: Me
           // decision uses real dimensions (otherwise first paint always lands below).
           resizeObs = new ResizeObserver(() => updatePos(lastRect));
           resizeObs.observe(popup);
+          setSuggestionPopupOpen(props.editor.view, popupKey, props.items.length > 0);
         },
         onUpdate(props: SuggestionProps<unknown>) {
           reactRenderer?.updateProps({ ...props, source });
           updatePos(props.clientRect?.() ?? null);
+          setSuggestionPopupOpen(props.editor.view, popupKey, popup !== null && props.items.length > 0);
         },
         onKeyDown(props) {
           if (props.event.key === 'Escape') {
@@ -106,11 +110,12 @@ function buildSuggestionPlugin(editor: import('@tiptap/core').Editor, source: Me
             resizeObs = null;
             popup?.remove();
             popup = null;
+            setSuggestionPopupOpen(props.view, popupKey, false);
             return true;
           }
           return reactRenderer?.ref?.onKeyDown(props.event) ?? false;
         },
-        onExit() {
+        onExit(props: SuggestionProps<unknown>) {
           resizeObs?.disconnect();
           resizeObs = null;
           popup?.remove();
@@ -118,6 +123,7 @@ function buildSuggestionPlugin(editor: import('@tiptap/core').Editor, source: Me
           lastRect = null;
           reactRenderer?.destroy();
           reactRenderer = null;
+          setSuggestionPopupOpen(props.editor.view, popupKey, false);
         },
       };
     },

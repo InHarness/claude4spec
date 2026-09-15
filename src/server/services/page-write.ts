@@ -491,8 +491,11 @@ async function writeThroughPrimitive(
     return res.content;
   } catch (err) {
     // The primitive knows nothing about pages; the operation names the refusal.
+    // Content included: the client's conflict dialog (0.2.88) is keyed on
+    // BOTH fields, and a refusal raised under the store's path lock is the
+    // same refusal as the pre-lock one in `assertUnchanged`.
     if (err instanceof RecordConflictError) {
-      throw new ConflictError('PAGE_CONFLICT', 'page changed since last read', err.currentHash);
+      throw new ConflictError('PAGE_CONFLICT', 'page changed since last read', err.currentHash, err.currentContent);
     }
     throw err;
   }
@@ -959,8 +962,11 @@ export async function movePage(
     settled = await records.move(input.from, input.to, { actor, expectedHash: input.expectedHash });
   } catch (err) {
     // The primitive knows nothing about pages; the operation names the refusal.
+    // Content included: the client's conflict dialog (0.2.88) is keyed on
+    // BOTH fields, and a refusal raised under the store's path lock is the
+    // same refusal as the pre-lock one in `assertUnchanged`.
     if (err instanceof RecordConflictError) {
-      throw new ConflictError('PAGE_CONFLICT', 'page changed since last read', err.currentHash);
+      throw new ConflictError('PAGE_CONFLICT', 'page changed since last read', err.currentHash, err.currentContent);
     }
     if (err instanceof RecordTargetExistsError) {
       throw new DomainError('PAGE_EXISTS', `a page already exists at '${input.to}'`);

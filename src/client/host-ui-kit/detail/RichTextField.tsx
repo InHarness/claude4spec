@@ -80,7 +80,7 @@ function RichTextFieldImpl({
 
   useEffect(() => {
     if (!editor) return;
-    editor.setEditable(!readOnly);
+    editor.setEditable(!readOnly, false);
   }, [editor, readOnly]);
 
   useEffect(() => {

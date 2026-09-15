@@ -74,7 +74,11 @@ function DocEditorImpl({ value, onChange, onBlur, readOnly, placeholder }: DocEd
    * After that every update is the user's and is passed on unchanged — including
    * clearing the field, which stays a legitimate edit.
    */
-  const seededRef = useRef(false);
+  // Tracked per INSTANCE through `seeded` (below): a rebuilt editor (schema
+  // re-init) starts unseeded again, so the updates it emits before the seed
+  // effect re-applies `value` — the carry, `setEditable` — are not passed up.
+  // A plain boolean survived the rebuild and let the carried, lossy document
+  // through as if the user had typed it.
   // `onBlur` is read through a ref so a panel passing a fresh closure every
   // render does not rebuild the editor.
   const onBlurRef = useRef(onBlur);
@@ -118,14 +122,14 @@ function DocEditorImpl({ value, onChange, onBlur, readOnly, placeholder }: DocEd
       },
       onUpdate: ({ editor }) => {
         // Pre-seed updates describe the empty placeholder document, not the
-        // user's content — see `seededRef`.
-        if (!seededRef.current) return;
+        // user's content — see `seeded`.
+        if (seeded.isFresh(editor)) return;
         const md = editor.storage.markdown.getMarkdown() as string;
         lastSyncedRef.current = md;
         onChange(md);
       },
-      onBlur: ({ event }) => {
-        if (!seededRef.current) return;
+      onBlur: ({ editor, event }) => {
+        if (seeded.isFresh(editor)) return;
         // Not a "leave the field" blur: focus went to a slash popover or a
         // dialog (they refocus the editor when done). Saving here would persist
         // the deleted-but-not-yet-inserted range. The `/` palette and the `@`
@@ -149,7 +153,10 @@ function DocEditorImpl({ value, onChange, onBlur, readOnly, placeholder }: DocEd
 
   useEffect(() => {
     if (!editor) return;
-    editor.setEditable(!readOnly);
+    // `emitUpdate: false` — tiptap emits `update` on `setEditable` by default,
+    // and on a rebuilt instance this effect runs BEFORE the seed effect below,
+    // i.e. on the carried document.
+    editor.setEditable(!readOnly, false);
   }, [editor, readOnly]);
 
   useEffect(() => {
@@ -161,24 +168,20 @@ function DocEditorImpl({ value, onChange, onBlur, readOnly, placeholder }: DocEd
       seeded.markSeeded(editor);
       lastSyncedRef.current = value;
       editor.commands.setContent(value, false);
-      seededRef.current = true;
       return;
     }
     // Already reflected in the doc (our own echo, or a value we just applied) —
     // don't rebuild under the caret. Each of these arms still marks the document
     // as seeded: "the doc already holds `value`" is exactly what they assert.
     if (value === lastSyncedRef.current) {
-      seededRef.current = true;
       return;
     }
     const current = editor.storage.markdown.getMarkdown() as string;
     if (current === value) {
-      seededRef.current = true;
       return;
     }
     lastSyncedRef.current = value;
     editor.commands.setContent(value, false);
-    seededRef.current = true;
   }, [editor, value]);
 
   const ambientBridge = useEditorBridge();

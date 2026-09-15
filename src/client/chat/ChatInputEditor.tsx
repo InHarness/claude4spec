@@ -110,7 +110,7 @@ export const ChatInputEditor = forwardRef<ChatInputEditorHandle, Props>(
             // A `/` palette or `@` list is open: Enter (and the arrows) belong
             // to it. Direct view props run before plugin props, so without this
             // the composer would submit the half-typed query as a message.
-            if (isSuggestionActive(view.state)) return false;
+            if (isSuggestionActive(view)) return false;
             if (
               event.key === "Enter" &&
               !event.shiftKey &&
@@ -137,7 +137,7 @@ export const ChatInputEditor = forwardRef<ChatInputEditorHandle, Props>(
 
     useEffect(() => {
       if (!editor) return;
-      editor.setEditable(!disabled);
+      editor.setEditable(!disabled, false);
     }, [editor, disabled]);
 
     // The placeholder decoration is computed per transaction; nudge one so a
