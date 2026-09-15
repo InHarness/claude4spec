@@ -3,6 +3,7 @@ import { EditorContent, useEditor } from '@tiptap/react';
 import { useQueryClient } from '@tanstack/react-query';
 import '../../tiptap/registrations.js';
 import { EditorFactory } from '../../tiptap/EditorFactory.js';
+import { assertSaveMode, getContextSpec } from '../../tiptap/registry.js';
 import { SLASH_SUGGESTION_KEY } from '../../tiptap/extensions/SlashCommands.js';
 import { invokeSlash } from '../../tiptap/slashInvoke.js';
 import {
@@ -81,10 +82,16 @@ function DocEditorImpl({ value, onChange, onBlur, readOnly, placeholder }: DocEd
   onBlurRef.current = onBlur;
   const seeded = useSeededEditor();
   const schemaVersion = useEditorSchemaVersion();
+  // Rule 4: `blur` — one single-field PATCH when focus leaves (wired by the
+  // panel through `onBlur`); the assertion pins the mode against the spec.
+  assertSaveMode(getContextSpec('description'), 'blur');
   // L8 `description` context: core + inline mention + anchor marker, `/mention`
   // the only slash command. Before 0.2.85 this pulled the registry with the
   // context-blind `'shared'` scope and mounted every extension the page editor
   // has — and its slash handler was a no-op, so `/mention` did nothing here.
+  // Any other reference tag in a description (`<single_element/>` written
+  // before 0.2.85) is not parsed into a chip here — it passes through the raw
+  // node and survives the blur-save byte for byte (rule 6).
   const extensions = useMemo(
     () =>
       EditorFactory.buildExtensions(

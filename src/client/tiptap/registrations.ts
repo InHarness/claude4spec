@@ -171,24 +171,29 @@ registerEditorExtension({
 // INFRA module (`inline_mention`, `section_ref`, `todo`, the raw-JSX nodes, …).
 // None of them is an entity type, and none ever will be again.
 
-// M20 — unknown `.mdx` JSX component tags (name ∉ dispatch allowlist) → raw code
-// node, preserved byte-perfect and serialized verbatim (no fence). Reactivates the
-// L8 `block_content` contract for paired `<Tag>…</Tag>`; the inline node covers
-// self-closing and mid-prose paired tags. The `markdownIt` field is declarative —
-// the real rules are wired via buildMarkdownIt → setupRawJsxRules.
+// M20 — the raw code node. Gate 1: unknown `.mdx` JSX component tags (name ∉
+// dispatch allowlist) preserved byte-perfect and serialized verbatim (no
+// fence). Gate 2 (`ctx4prof` rule 6): an allowlisted tag whose node is NOT in
+// this context's whitelist passes through the same node instead of being
+// dropped by ProseMirror. Mounted in EVERY context for that reason, and at a
+// priority below every XML node so its markdown-it rules sit ahead of theirs.
+// The `markdownIt` field is declarative — the real rules are wired via
+// buildMarkdownIt → setupRawJsxRules.
 registerEditorExtension({
   name: 'raw_jsx_block',
-  extension: RawJsxBlockNode,
-  priority: 695,
-  availableIn: ['page', 'plan'],
+  extension: (ctx) =>
+    RawJsxBlockNode.configure({ mountedTags: ctx.contextSpec?.extensions ?? null }),
+  priority: 300,
+  availableIn: ['page', 'description', 'plan', 'chat-input'],
   markdownIt: { kind: 'block_content', pattern: /^<[A-Z][\w.-]*(\s[^>]*?)?>\s*$/ },
 });
 
 registerEditorExtension({
   name: 'raw_jsx_inline',
-  extension: RawJsxInlineNode,
-  priority: 696,
-  availableIn: ['page', 'plan'],
+  extension: (ctx) =>
+    RawJsxInlineNode.configure({ mountedTags: ctx.contextSpec?.extensions ?? null }),
+  priority: 301,
+  availableIn: ['page', 'description', 'plan', 'chat-input'],
   markdownIt: { kind: 'inline', pattern: /^<[A-Z][\w.-]*(\s[^>]*?)?\/?\s*>/ },
 });
 
@@ -222,17 +227,19 @@ registerEditorExtension({
   name: 'mention_extension',
   priority: 1100,
   availableIn: ['page', 'plan', 'chat-input'],
-  extension: (ctx) => MentionExtension.configure({ contextId: ctx.contextId ?? 'page' }),
+  extension: (ctx) =>
+    MentionExtension.configure({ contextId: ctx.contextId ?? 'page', rootProps: ctx.rootProps }),
 });
 
 registerEditorExtension({
   name: 'slash_commands',
   priority: 1100,
-  availableIn: ['page', 'description', 'plan'],
+  availableIn: ['page', 'description', 'plan', 'chat-input'],
   extension: (ctx) =>
     SlashCommands.configure({
       onInvoke: ctx.onSlashInvoke,
       contextId: ctx.contextId ?? 'page',
+      rootProps: ctx.rootProps,
     }),
 });
 

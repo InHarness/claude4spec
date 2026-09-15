@@ -6,12 +6,15 @@ import {
   getRegisteredMentionSources,
   type EditorContextId,
   type MentionSource,
+  type RootEditorProps,
 } from '../registry.js';
 import { MentionMenu, type MentionMenuHandle } from './MentionMenu.js';
 
 export interface MentionExtensionOptions {
   /** Context in which this extension is mounted — filters mention sources. */
   contextId: EditorContextId;
+  /** The page root's props — the derived `page` spec depends on them. */
+  rootProps?: RootEditorProps;
 }
 
 /**
@@ -22,11 +25,11 @@ export interface MentionExtensionOptions {
 export const MentionExtension = Extension.create<MentionExtensionOptions>({
   name: 'mention_extension',
   addOptions() {
-    return { contextId: 'page' };
+    return { contextId: 'page', rootProps: undefined };
   },
   addProseMirrorPlugins() {
     const contextId = this.options.contextId;
-    const sources = getRegisteredMentionSources(contextId);
+    const sources = getRegisteredMentionSources(contextId, this.options.rootProps);
     return sources.map((source) => buildSuggestionPlugin(this.editor, source));
   },
 });

@@ -19,7 +19,14 @@ import type { PluginCommandContribution } from '../../shared/plugin-host/manifes
 /** Prefix so plugin command registrations never collide with built-in extension names. */
 const PLUGIN_CMD_PREFIX = 'plugin-cmd:';
 
-/** Where a manifest command lands when its `availableIn` is empty. */
+/**
+ * The `availableIn` HINT a manifest command carries when it names no contexts.
+ * The context spec decides where the command is actually offered (M20
+ * `ctx4prof`, rule 3): the derived `page` spec admits every registered command
+ * id, the static `plan` / `chat-input` specs admit `/section` alone and
+ * `description` admits `/mention` alone — so today a plugin command surfaces on
+ * pages only, whatever the hint says.
+ */
 const DEFAULT_COMMAND_CONTEXTS: EditorContextId[] = ['page', 'plan'];
 
 export function registerPluginCommands(commands: PluginCommandContribution[]): void {

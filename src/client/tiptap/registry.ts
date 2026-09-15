@@ -3,6 +3,27 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { ReactElement } from 'react';
 import type { Annotation } from '../../shared/entities.js';
 import type { SlashCommand } from './extensions/SlashMenu.js';
+import {
+  resolveContextSpec,
+  FULL_ROOT_EDITOR_PROPS,
+  type EditorContextId,
+  type EditorContextSpec,
+  type RootEditorProps,
+} from './contextSpec.js';
+
+// The context contract lives in `contextSpec.ts` (it must not depend on this
+// registry); re-exported here so existing imports keep working.
+export {
+  ALL_EDITOR_CONTEXTS,
+  assertSaveMode,
+  FULL_ROOT_EDITOR_PROPS,
+  MINIMAL_ROOT_EDITOR_PROPS,
+  ARTEFACT_ROOT_EDITOR_PROPS,
+  type EditorContextId,
+  type EditorContextSpec,
+  type EditorSavePolicy,
+  type RootEditorProps,
+} from './contextSpec.js';
 
 export interface RegistryContext {
   qc: QueryClient;
@@ -17,83 +38,32 @@ export interface RegistryContext {
    * `rootProps.linkTargets` to scope their link/autocomplete targets.
    */
   rootProps?: RootEditorProps;
+  /**
+   * The materialized `EditorContextSpec` this instance is built from. Set by
+   * the registry when instantiating factory extensions; the raw-JSX nodes read
+   * `contextSpec.extensions` to know which allowlisted tags have NO node here
+   * and must pass through verbatim (M20 `ctx4prof`, rule 6).
+   */
+  contextSpec?: EditorContextSpec;
 }
-
-/**
- * 0.1.96: the subset of a `Root`'s behaviour flags that gate which editor
- * extensions mount. Mirrors the three gating fields of the shared `Root` type
- * (kept structurally local so this client module doesn't depend on server-side
- * config types). Threaded through `RegistryContext` by EditorFactory.
- */
-export interface RootEditorProps {
-  /** Section-indexed ⇒ Anchor / SectionRef / heading-outline extensions. */
-  sectionIndexed: boolean;
-  /** Reference-validated ⇒ the 5 reference nodes + broken-ref decorations. */
-  referenceValidated: boolean;
-  /** Root ids whose pages are valid `@`-autocomplete / link targets (in addition to self). */
-  linkTargets: string[];
-}
-
-/**
- * Full-behaviour props — the built-in `pages` root editor. Used as the default
- * when a caller does not pass root props, preserving pre-0.1.96 behaviour.
- */
-export const FULL_ROOT_EDITOR_PROPS: RootEditorProps = {
-  sectionIndexed: true,
-  referenceValidated: true,
-  linkTargets: [],
-};
-
-/** Minimal-behaviour props — a default user root / brief / patch editor. */
-export const MINIMAL_ROOT_EDITOR_PROPS: RootEditorProps = {
-  sectionIndexed: false,
-  referenceValidated: false,
-  linkTargets: [],
-};
 
 export type EditorExtensionFactory = AnyExtension | ((ctx: RegistryContext) => AnyExtension);
-
-export type ExtensionScope = 'shared' | 'full';
-
-export type EditorContextId = 'page' | 'description' | 'plan' | 'chat-input';
-
-export const ALL_EDITOR_CONTEXTS: EditorContextId[] = ['page', 'description', 'plan', 'chat-input'];
 
 export interface EditorExtensionRegistration {
   name: string;
   extension?: EditorExtensionFactory;
   priority?: number;
-  /** @deprecated Prefer `availableIn`. Kept for backward compat until all registrations migrate. */
-  scope?: ExtensionScope;
-  /** Whitelist of contexts in which this extension is mounted. If omitted, derived from `scope`. */
+  /**
+   * HINT per context — the module declares where its extension makes sense.
+   * It does NOT decide what mounts: the context's `EditorContextSpec`
+   * whitelist is authoritative (M20 `ctx4prof`, rule 3). A name whitelisted by
+   * a context but not declared here still mounts, with a one-time warning so
+   * the declaration gets fixed.
+   */
   availableIn?: EditorContextId[];
   slashCommand?: SlashCommand;
   markdownIt?: { kind: 'inline' | 'block' | 'block_content'; pattern: RegExp };
 }
-
-/**
- * 0.1.96: root-property gates keyed by registration name. Kept centrally here (not
- * on each registration) so that per-root behaviour is gated on a root PROPERTY and
- * the registration list stays declarative. Only applied in the `page` context — the
- * sole context backed by a configurable root. Extensions absent from this map mount
- * in every page root (the "minimal" base editor: pages / user roots / briefs / patches).
- *
- * GOLDEN RULE: gating keys on a Root property (sectionIndexed / referenceValidated),
- * never on `rootId === 'pages'`.
- */
-const ROOT_PROP_GATES: Record<string, 'sectionIndexed' | 'referenceValidated'> = {
-  // sectionIndexed ⇒ Anchor / SectionRef / heading-outline actions.
-  anchor_marker: 'sectionIndexed',
-  section_ref: 'sectionIndexed',
-  heading_actions: 'sectionIndexed',
-  // referenceValidated ⇒ the 5 reference nodes (broken-ref decorations render inside
-  // their node views).
-  inline_mention: 'referenceValidated',
-  single_element: 'referenceValidated',
-  element_list: 'referenceValidated',
-  tagged_list: 'referenceValidated',
-  tagged_list_mixed: 'referenceValidated',
-};
 
 const REGISTRY: EditorExtensionRegistration[] = [];
 
@@ -188,86 +158,68 @@ export function unregisterEditorExtensionsByPrefix(prefix: string): void {
   if (touchedSchema) bumpSchemaVersion();
 }
 
-export function getEditorExtensions(
-  ctx: RegistryContext,
-  scope: ExtensionScope = 'full',
-): AnyExtension[] {
-  return [...REGISTRY]
-    .filter((r) => r.extension && (scope === 'full' || (r.scope ?? 'shared') === 'shared'))
-    .sort((a, b) => (a.priority ?? 1000) - (b.priority ?? 1000))
-    .map((r) =>
-      typeof r.extension === 'function'
-        ? (r.extension as (ctx: RegistryContext) => AnyExtension)(ctx)
-        : (r.extension as AnyExtension),
-    );
+const registryView = {
+  extensionNames: () => REGISTRY.filter((r) => r.extension).map((r) => r.name),
+  slashCommandIds: () => REGISTRY.filter((r) => r.slashCommand).map((r) => r.slashCommand!.id),
+};
+
+/**
+ * The `EditorContextSpec` an instance of `contextId` is built from. `page` is
+ * derived from `rootProps` and the live registry (plugins contribute to pages);
+ * the other contexts are static. Components read `.save` from here.
+ */
+export function getContextSpec(
+  contextId: EditorContextId,
+  rootProps: RootEditorProps = FULL_ROOT_EDITOR_PROPS,
+): EditorContextSpec {
+  return resolveContextSpec(contextId, rootProps, registryView);
+}
+
+const hintWarned = new Set<string>();
+
+function warnHintMismatch(reg: EditorExtensionRegistration, contextId: EditorContextId): void {
+  if (!reg.availableIn || reg.availableIn.includes(contextId)) return;
+  const key = `${reg.name}@${contextId}`;
+  if (hintWarned.has(key)) return;
+  hintWarned.add(key);
+  console.warn(
+    `[editor] context "${contextId}" whitelists extension "${reg.name}" which does not declare it in availableIn — the context wins; fix the registration`,
+  );
 }
 
 /**
- * Returns extensions whitelisted for a given editor context.
- * Resolution order:
- *   1. If `availableIn` is set → use it literally.
- *   2. Fallback to `scope`: 'shared' → all contexts, 'full' → ['page', 'plan'].
- *   3. In the `page` context, additionally gate on the page root's PROPERTIES
- *      (`rootProps`) via `ROOT_PROP_GATES`.
+ * Registry ∩ `spec.extensions` — the extensions an editor mounts for
+ * `contextId` (M20 `ctx4prof`, rule 3: the context whitelist is authoritative,
+ * `availableIn` is a hint). A name absent from the whitelist is not in the
+ * returned array at all: no keymap, no input rules, no parser tokens.
  * Sorted by priority asc (lower = earlier).
- *
- * `rootProps` defaults to full-behaviour props so callers that have not yet been
- * migrated keep the pre-0.1.96 `pages`-root editor.
  */
 export function getEditorExtensionsForContext(
   ctx: RegistryContext,
   contextId: EditorContextId,
   rootProps: RootEditorProps = FULL_ROOT_EDITOR_PROPS,
 ): AnyExtension[] {
-  const ctxWithId: RegistryContext = { ...ctx, contextId, rootProps };
+  const spec = getContextSpec(contextId, rootProps);
+  const allowed = new Set(spec.extensions);
+  const ctxWithId: RegistryContext = { ...ctx, contextId, rootProps, contextSpec: spec };
   return [...REGISTRY]
-    .filter(
-      (r) =>
-        r.extension &&
-        isAvailableInContext(r, contextId) &&
-        satisfiesRootProps(r, contextId, rootProps),
-    )
+    .filter((r) => r.extension && allowed.has(r.name))
     .sort((a, b) => (a.priority ?? 1000) - (b.priority ?? 1000))
-    .map((r) =>
-      typeof r.extension === 'function'
+    .map((r) => {
+      warnHintMismatch(r, contextId);
+      return typeof r.extension === 'function'
         ? (r.extension as (ctx: RegistryContext) => AnyExtension)(ctxWithId)
-        : (r.extension as AnyExtension),
-    );
+        : (r.extension as AnyExtension);
+    });
 }
 
-function isAvailableInContext(
-  reg: EditorExtensionRegistration,
+/** Registry ∩ `spec.slashCommands` (by `SlashCommand.id`). Read live so plugin commands that arrive later show up. */
+export function getRegisteredSlashCommandsForContext(
   contextId: EditorContextId,
-): boolean {
-  if (reg.availableIn) return reg.availableIn.includes(contextId);
-  const scope = reg.scope ?? 'shared';
-  if (scope === 'shared') return true;
-  return contextId === 'page' || contextId === 'plan';
-}
-
-/**
- * 0.1.96 root-property gate. Only the `page` context is backed by a configurable
- * root, so non-page contexts (plan / description / chat-input) are never filtered
- * by root props. In the `page` context, an extension named in `ROOT_PROP_GATES`
- * mounts only when the corresponding root property is enabled.
- */
-function satisfiesRootProps(
-  reg: EditorExtensionRegistration,
-  contextId: EditorContextId,
-  rootProps: RootEditorProps,
-): boolean {
-  if (contextId !== 'page') return true;
-  const gate = ROOT_PROP_GATES[reg.name];
-  if (!gate) return true;
-  return rootProps[gate];
-}
-
-export function getRegisteredSlashCommands(): SlashCommand[] {
-  return REGISTRY.filter((r) => r.slashCommand).map((r) => r.slashCommand!);
-}
-
-export function getRegisteredSlashCommandsForContext(contextId: EditorContextId): SlashCommand[] {
-  return REGISTRY.filter((r) => r.slashCommand && isAvailableInContext(r, contextId)).map(
+  rootProps: RootEditorProps = FULL_ROOT_EDITOR_PROPS,
+): SlashCommand[] {
+  const allowed = new Set(getContextSpec(contextId, rootProps).slashCommands);
+  return REGISTRY.filter((r) => r.slashCommand && allowed.has(r.slashCommand.id)).map(
     (r) => r.slashCommand!,
   );
 }
@@ -281,7 +233,7 @@ export interface MentionSource<T = unknown> {
   id: string;
   /** Trigger character (typically '@'). */
   trigger: string;
-  /** Contexts in which this source is active. If omitted, active in all contexts. */
+  /** HINT per context; the context's `EditorContextSpec.mentions` whitelist is authoritative. */
   availableIn?: EditorContextId[];
   /** Async or sync search. Returns up to `limit` items for `query`. */
   search: (query: string, limit?: number) => Promise<T[]> | T[];
@@ -303,14 +255,20 @@ export function registerMentionSource<T>(source: MentionSource<T>): void {
   else MENTION_REGISTRY.push(source as MentionSource<unknown>);
 }
 
-export function getRegisteredMentionSources(contextId?: EditorContextId): MentionSource<unknown>[] {
+/** Registry ∩ `spec.mentions`; without a context, every registered source. */
+export function getRegisteredMentionSources(
+  contextId?: EditorContextId,
+  rootProps: RootEditorProps = FULL_ROOT_EDITOR_PROPS,
+): MentionSource<unknown>[] {
   if (!contextId) return [...MENTION_REGISTRY];
-  return MENTION_REGISTRY.filter((s) => !s.availableIn || s.availableIn.includes(contextId));
+  const allowed = new Set(getContextSpec(contextId, rootProps).mentions ?? []);
+  return MENTION_REGISTRY.filter((s) => allowed.has(s.id));
 }
 
 export function getMentionSourceByTrigger(
   trigger: string,
   contextId?: EditorContextId,
+  rootProps?: RootEditorProps,
 ): MentionSource<unknown> | undefined {
-  return getRegisteredMentionSources(contextId).find((s) => s.trigger === trigger);
+  return getRegisteredMentionSources(contextId, rootProps).find((s) => s.trigger === trigger);
 }

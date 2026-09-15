@@ -47,6 +47,11 @@ export function registerXmlEntityType(
   if (block) PLUGIN_BLOCK_TAGS.add(name);
 }
 
+/** True for a plugin embed tag admitted via `registerXmlEntityType` (either shape). */
+export function isRegisteredXmlTag(name: string): boolean {
+  return PLUGIN_INLINE_TAGS.has(name) || PLUGIN_BLOCK_TAGS.has(name);
+}
+
 /** Match a registered plugin tag (returns the match only when the name is allowed). */
 function matchRegisteredTag(line: string, re: RegExp, set: Set<string>): RegExpExecArray | null {
   if (set.size === 0) return null;
@@ -60,6 +65,12 @@ function toPairedHtml(kind: string | undefined, attrs: string | undefined): stri
   return `<${kind ?? ''}${attrPart}></${kind ?? ''}>`;
 }
 
+// These rules cover ALL six core tag names at once, whichever node installed
+// them — so a mounted `inline_mention` also claims `<single_element/>`. In a
+// context whose whitelist leaves that node out, the tag must never reach here:
+// `RawJsxNode` registers its rules first (lower priority ⇒ earlier setup ⇒
+// earlier in the ruler chain) and routes every allowlisted-but-unmounted name to
+// the raw node, which is why it is whitelisted in every context.
 function setupXmlMarkdownRules(md: any) {
   if (md.__claude4specXmlRules) return;
   md.__claude4specXmlRules = true;

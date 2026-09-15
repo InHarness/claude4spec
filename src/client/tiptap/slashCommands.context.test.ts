@@ -23,16 +23,24 @@ describe('slash commands per editor context', () => {
     }
   });
 
-  it('a manifest command without contexts lands in page and plan, not description', () => {
+  it('a manifest command lands on pages only — plan and description whitelist by id', () => {
+    // `availableIn` on the registration is a hint; the context spec decides
+    // (M20 `ctx4prof`, rule 3). `plan` admits `/section` alone, so a plugin
+    // command declaring `plan` still does not show up there.
     registerPluginCommands([
-      { name: 'ctx-probe', trigger: 'ctx-probe', label: 'Probe', popoverKind: 'ctx-probe' },
+      { name: 'ctx-probe', trigger: 'ctx-probe', label: 'Probe', popoverKind: 'ctx-probe', availableIn: ['page', 'plan'] },
     ]);
     expect(getRegisteredSlashCommandsForContext('page').map((c) => c.id)).toContain('ctx-probe');
-    expect(getRegisteredSlashCommandsForContext('plan').map((c) => c.id)).toContain('ctx-probe');
+    expect(getRegisteredSlashCommandsForContext('plan').map((c) => c.id)).not.toContain('ctx-probe');
     expect(getRegisteredSlashCommandsForContext('description').map((c) => c.id)).not.toContain(
       'ctx-probe',
     );
     registerPluginCommands([]);
+  });
+
+  it('plan and chat-input offer /section and nothing else', () => {
+    expect(getRegisteredSlashCommandsForContext('plan').map((c) => c.id)).toEqual(['section']);
+    expect(getRegisteredSlashCommandsForContext('chat-input').map((c) => c.id)).toEqual(['section']);
   });
 
   it('page keeps the full built-in set', () => {

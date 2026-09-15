@@ -8,6 +8,8 @@ import {
 import { EditorContent, useEditor } from "@tiptap/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { EditorFactory } from "../tiptap/EditorFactory.js";
+import { assertSaveMode, getContextSpec } from "../tiptap/registry.js";
+import { invokeSlash } from "../tiptap/slashInvoke.js";
 import {
   useEditorCarry,
   useEditorCarryApply,
@@ -74,6 +76,8 @@ export const ChatInputEditor = forwardRef<ChatInputEditorHandle, Props>(
     const placeholderRef = useRef(placeholder);
     placeholderRef.current = placeholder;
 
+    // Rule 4: `explicit` — the composer submits on Enter, it never saves.
+    assertSaveMode(getContextSpec("chat-input"), "explicit");
     const schemaVersion = useEditorSchemaVersion();
     const extensions = useMemo(
       () =>
@@ -82,7 +86,9 @@ export const ChatInputEditor = forwardRef<ChatInputEditorHandle, Props>(
           {
             qc,
             currentPath: null,
-            onSlashInvoke: () => {},
+            // `/section` — the one slash command of `chat-input` (M20 `ctxregst`).
+            onSlashInvoke: (editor, command) =>
+              void invokeSlash(editor, command, { qc, currentPath: null }),
             getAnnotations: () => [],
           },
           { placeholder: () => placeholderRef.current ?? "Message…" },

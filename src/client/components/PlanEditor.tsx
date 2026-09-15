@@ -3,6 +3,7 @@ import { EditorContent, useEditor } from '@tiptap/react';
 import { useQueryClient } from '@tanstack/react-query';
 import '../tiptap/registrations.js';
 import { EditorFactory } from '../tiptap/EditorFactory.js';
+import { assertSaveMode, getContextSpec } from '../tiptap/registry.js';
 import { invokeSlash } from '../tiptap/slashInvoke.js';
 import {
   useEditorCarry,
@@ -32,10 +33,14 @@ export function PlanEditor({ content, onChange, currentPage }: Props) {
   const qc = useQueryClient();
   const pagesIndex = usePagesIndex();
 
-  // Same registry-driven extension set as the page editor (chips, slash-commands,
-  // @-mention, annotation highlighting). 0.1.127: the plan-only BlameDecoration
-  // extension is gone along with the plan_version table it read from (see brief
-  // 0-1-126-to-0-1-127) — plan_mode's active decorations are annotations only now.
+  // The `plan` context (M20 `ctxregst`): the 5 generic chips, section refs,
+  // `@`-mention, annotation highlighting — and `/section` as its only slash
+  // command; no todo marker (a `<todo/>` in a plan passes through verbatim).
+  // 0.1.127: the plan-only BlameDecoration extension is gone along with the
+  // plan_version table it read from (see brief 0-1-126-to-0-1-127).
+  // Rule 4: `explicit` — persistence is PlanPage's Save/Discard, never this
+  // component's; the assertion pins the mode against the context spec.
+  assertSaveMode(getContextSpec('plan'), 'explicit');
   const schemaVersion = useEditorSchemaVersion();
   const extensions = useMemo(
     () =>

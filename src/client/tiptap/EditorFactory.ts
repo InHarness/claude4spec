@@ -26,9 +26,15 @@ export interface EditorFactoryOptions {
 
 /**
  * Build the full extension list for a given editor context.
- * Core extensions (tiptap StarterKit, tables, Markdown, Placeholder) are included per
- * the context spec (L8 `ctxregst`), followed by registry-provided extensions filtered
- * by `availableIn` and — in the `page` context — by the page root's PROPERTIES.
+ *
+ * The factory's contract is WHAT IS MOUNTED, not who creates the instance
+ * (L8 `editor-context-spec`): it returns the extension list, every mounting
+ * component calls `useEditor` itself. Core extensions (tiptap StarterKit,
+ * tables, Markdown, Placeholder) are included per the context spec (`ctxregst`),
+ * followed by registry ∩ `EditorContextSpec.extensions` (`contextSpec.ts`) —
+ * an extension outside the whitelist is not in the returned array at all: no
+ * keymap, no input rules, no parser tokens. `availableIn` on a registration is
+ * a hint, not a gate.
  *
  * `rootProps` (0.1.96) gate the page-root extension set:
  *   - built-in `pages` root ⇒ FULL_ROOT_EDITOR_PROPS (today's full editor),

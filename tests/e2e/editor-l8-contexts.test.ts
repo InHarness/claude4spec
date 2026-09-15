@@ -22,6 +22,17 @@ import { chromium, type Browser, type Page, type Request } from 'playwright';
  *   embed (no "unknown type" chip): the ordering invariant for the non-blocking
  *   plugin boot holds.
  *
+ * Brief 0-2-87-to-next (the context whitelist is authoritative, M20 `ctx4prof`):
+ * - `[ac:ac-zapis-w-kontekscie-o-zawezonej-whitel]` a `<single_element/>` in a
+ *   description — a tag whose node the `description` context does not mount —
+ *   renders as a raw code node and comes back in the blur-save PATCH byte for
+ *   byte instead of being dropped.
+ * - `[ac:ac-opis-encji-zawierajacy-naglowki-h2-h6]` headings h2–h6, a list and
+ *   a table in a description survive the blur-save.
+ * - A page under a user root with `referenceValidated: false` (the derived
+ *   `page` context, L13) shows reference tags as raw code and autosaves them
+ *   verbatim.
+ *
  * Every case asserts zero console errors and zero responses >= 400.
  */
 const BASE = process.env.C4S_E2E_BASE_URL?.replace(/\/$/, '');
@@ -276,4 +287,194 @@ describe.skipIf(!BASE)('editor L8 contexts', () => {
     expect(badResponses, 'responses >= 400').toEqual([]);
     await page.close();
   }, 60_000);
+  it('[ac:ac-zapis-w-kontekscie-o-zawezonej-whitel] description: an unmounted reference tag survives the blur-save verbatim', async () => {
+    const tag = `<single_element type="endpoint" slug="${endpointSlug}"/>`;
+    const seeded = `Lead text.\n\n${tag}\n\nTrailing <todo comment="keep me"/> text.\n`;
+    const put = await fetch(`${api}/endpoints/${endpointSlug}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: seeded }),
+    });
+    expect(put.status, 'seed PATCH').toBeLessThan(300);
+
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    const { consoleErrors, badResponses } = watch(page);
+    const patches: Array<Record<string, unknown>> = [];
+    page.on('request', (r: Request) => {
+      if (r.method() === 'PATCH' && r.url().includes(`/endpoints/${endpointSlug}`)) {
+        patches.push(r.postDataJSON() as Record<string, unknown>);
+      }
+    });
+
+    await page.goto(`${BASE}/p/${project.id}/endpoints/${endpointSlug}`, { waitUntil: 'networkidle' });
+    const editor = page.locator('.ProseMirror').first();
+    await expect.poll(() => editor.count(), { timeout: 15_000 }).toBe(1);
+    await expect.poll(() => editor.innerText()).toContain('Lead text');
+    // The whitelist decides what RENDERS: both tags show as raw code, not chips.
+    const raw = editor.locator('.c4s-raw-jsx textarea');
+    await expect.poll(() => raw.count()).toBe(2);
+    expect(await raw.nth(0).inputValue()).toBe(tag);
+    expect(await raw.nth(1).inputValue()).toBe('<todo comment="keep me"/>');
+
+    await editor.locator('p').first().click();
+    await page.keyboard.press('End');
+    await page.keyboard.type(` edited-${stamp}`);
+    await page.locator('body').click({ position: { x: 5, y: 5 } });
+    await expect.poll(() => patches.length, { timeout: 5_000 }).toBe(1);
+    const saved = String((patches[0] as { description?: unknown }).description);
+    expect(saved).toContain(`edited-${stamp}`);
+    // …and what SURVIVES the save: the exact bytes, no fence, no chip markup.
+    expect(saved).toContain(tag);
+    expect(saved).toContain('<todo comment="keep me"/>');
+    expect(saved).not.toContain('```');
+    const served = (await (await fetch(`${api}/endpoints/${endpointSlug}`)).json()) as { data?: { description?: string } };
+    expect(String(served.data?.description ?? JSON.stringify(served))).toContain(tag);
+
+    expect(consoleErrors, 'console errors').toEqual([]);
+    expect(badResponses, 'responses >= 400').toEqual([]);
+    await page.close();
+  }, 60_000);
+
+  it('[ac:ac-opis-encji-zawierajacy-naglowki-h2-h6] description: h2–h6, a list and a table pass through the blur-save', async () => {
+    const lines = [
+      '## Two',
+      '### Three',
+      '#### Four',
+      '##### Five',
+      '###### Six',
+      '',
+      '- alpha',
+      '- beta',
+      '',
+      '| col a | col b |',
+      '| --- | --- |',
+      '| cell 1 | cell 2 |',
+      '',
+    ];
+    const put = await fetch(`${api}/endpoints/${endpointSlug}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: lines.join('\n') }),
+    });
+    expect(put.status, 'seed PATCH').toBeLessThan(300);
+
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    const { consoleErrors, badResponses } = watch(page);
+    const patches: Array<Record<string, unknown>> = [];
+    page.on('request', (r: Request) => {
+      if (r.method() === 'PATCH' && r.url().includes(`/endpoints/${endpointSlug}`)) {
+        patches.push(r.postDataJSON() as Record<string, unknown>);
+      }
+    });
+
+    await page.goto(`${BASE}/p/${project.id}/endpoints/${endpointSlug}`, { waitUntil: 'networkidle' });
+    const editor = page.locator('.ProseMirror').first();
+    await expect.poll(() => editor.count(), { timeout: 15_000 }).toBe(1);
+    await expect.poll(() => editor.innerText()).toContain('cell 2');
+    for (const [sel, text] of [['h2', 'Two'], ['h3', 'Three'], ['h4', 'Four'], ['h5', 'Five'], ['h6', 'Six']]) {
+      expect(await editor.locator(sel!).innerText(), `${sel} rendered as a heading`).toBe(text);
+    }
+    expect(await editor.locator('table td, table th').count(), 'table cells').toBe(4);
+
+    // Edit the last table cell so the whole document is re-serialized on blur.
+    await editor.locator('table td').last().click();
+    await page.keyboard.press('End');
+    await page.keyboard.type(` z${stamp}`);
+    await page.locator('body').click({ position: { x: 5, y: 5 } });
+    await expect.poll(() => patches.length, { timeout: 5_000 }).toBe(1);
+    const saved = String((patches[0] as { description?: unknown }).description);
+    for (const line of ['## Two', '### Three', '#### Four', '##### Five', '###### Six', '- alpha', '- beta']) {
+      expect(saved, `line kept: ${line}`).toContain(line);
+    }
+    expect(saved).toMatch(/\|\s*col a\s*\|\s*col b\s*\|/);
+    expect(saved).toMatch(new RegExp(`\\|\\s*cell 1\\s*\\|\\s*cell 2 z${stamp}\\s*\\|`));
+    expect(saved).not.toContain('# Two\n'); // no heading got promoted to h1
+
+    expect(consoleErrors, 'console errors').toEqual([]);
+    expect(badResponses, 'responses >= 400').toEqual([]);
+    await page.close();
+  }, 60_000);
+
+  it('page context derived from root props: a non-validated user root shows reference tags as raw code and autosaves them verbatim', async () => {
+    const rootId = `e2e-min-${stamp}`;
+    const cfg = (await (await fetch(`${api}/config`)).json()) as { roots: Array<Record<string, unknown>> };
+    const roots = cfg.roots;
+    expect(Array.isArray(roots) && roots.length > 0, 'config.roots').toBe(true);
+    const withRoot = [
+      ...roots,
+      {
+        id: rootId,
+        name: 'E2E minimal root',
+        dir: rootId,
+        builtin: false,
+        releasable: false,
+        sectionIndexed: false,
+        referenceValidated: false,
+        linkTargets: ['pages'],
+        sidebar: 'accordion',
+        briefTarget: false,
+      },
+    ];
+    const patched = await fetch(`${api}/config`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roots: withRoot }),
+    });
+    expect(patched.status, `PATCH config roots → ${await patched.clone().text()}`).toBeLessThan(300);
+    const minPath = `min-${stamp}.md`;
+    const tag = `<single_element type="endpoint" slug="${endpointSlug}"/>`;
+    const mention = `<inline_mention type="endpoint" slug="${endpointSlug}"/>`;
+    try {
+      const pg = await fetch(`${api}/pages/${rootId}/${minPath}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          body: `# Minimal root\n\nInline ${mention} here.\n\n${tag}\n`,
+          expectedHash: 'a'.repeat(64),
+        }),
+      });
+      expect([200, 201], `PUT page under ${rootId}`).toContain(pg.status);
+
+      const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+      const { consoleErrors, badResponses } = watch(page);
+      const puts: Array<Record<string, unknown>> = [];
+      page.on('request', (r: Request) => {
+        if (r.method() === 'PUT' && r.url().includes(`/pages/${rootId}/${minPath}`)) {
+          puts.push(r.postDataJSON() as Record<string, unknown>);
+        }
+      });
+
+      await page.goto(`${BASE}/p/${project.id}/space/${rootId}/${minPath}`, { waitUntil: 'networkidle' });
+      const editor = page.locator('.ProseMirror').first();
+      await expect.poll(() => editor.count(), { timeout: 15_000 }).toBe(1);
+      await expect.poll(() => editor.innerText()).toContain('Minimal root');
+      await sleep(1500); // let the non-blocking plugin boot settle
+      const raw = editor.locator('.c4s-raw-jsx textarea');
+      await expect.poll(() => raw.count()).toBe(2);
+      expect(await raw.nth(0).inputValue()).toBe(mention);
+      expect(await raw.nth(1).inputValue()).toBe(tag);
+      expect(await editor.innerText()).not.toMatch(/unknown type/i);
+
+      await editor.locator('h1').click();
+      await page.keyboard.press('End');
+      await page.keyboard.type(` v${stamp}`);
+      await expect.poll(() => puts.length, { timeout: 5_000 }).toBeGreaterThan(0);
+      const body = String(puts[puts.length - 1]!.body);
+      expect(body).toContain(`Minimal root v${stamp}`);
+      expect(body).toContain(mention);
+      expect(body).toContain(tag);
+      expect(body).not.toContain('```');
+
+      expect(consoleErrors, 'console errors').toEqual([]);
+      expect(badResponses, 'responses >= 400').toEqual([]);
+      await page.close();
+    } finally {
+      await fetch(`${api}/pages/${rootId}/${minPath}`, { method: 'DELETE' }).catch(() => {});
+      await fetch(`${api}/config`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roots }),
+      }).catch(() => {});
+    }
+  }, 90_000);
 });

@@ -6,7 +6,8 @@ import { useScrollToAnchor } from '../hooks/useScrollToAnchor.js';
 import '../tiptap/registrations.js';
 import { EditorFactory } from '../tiptap/EditorFactory.js';
 import { invokeSlash } from '../tiptap/slashInvoke.js';
-import { AUTOSAVE_DEBOUNCE_MS } from '../tiptap/autosave.js';
+import { assertSaveMode, getContextSpec, FULL_ROOT_EDITOR_PROPS, type RootEditorProps } from '../tiptap/registry.js';
+import { useRoots } from '../hooks/useConfig.js';
 import {
   useEditorCarry,
   useEditorCarryApply,
@@ -56,16 +57,46 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
   const pagesIndex = usePagesIndex();
   const schemaVersion = useEditorSchemaVersion();
 
+  // L13: the `page` context is derived from the page root's properties, not a
+  // fixed list — a user root without section indexing gets no anchors, one
+  // without reference validation gets no entity chips (their tags pass through
+  // verbatim). Keyed by value so the roots query settling does not rebuild the
+  // editor for the built-in `pages` root, whose props equal the default.
+  const roots = useRoots();
+  const root = roots.find((r) => r.id === rootId);
+  const rootKey = root
+    ? `${root.sectionIndexed}|${root.referenceValidated}|${root.linkTargets.join(',')}`
+    : null;
+  const rootProps = useMemo<RootEditorProps>(
+    () =>
+      root
+        ? {
+            sectionIndexed: root.sectionIndexed,
+            referenceValidated: root.referenceValidated,
+            linkTargets: [...root.linkTargets],
+          }
+        : FULL_ROOT_EDITOR_PROPS,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rootKey],
+  );
+  // Rule 4: the save mechanics come from the context, not from this component.
+  const save = assertSaveMode(getContextSpec('page', rootProps), 'debounce');
+
   const extensions = useMemo(
     () =>
-      EditorFactory.buildExtensions('page', {
-        qc,
-        currentPath: path,
-        onSlashInvoke: (editor, command) =>
-          void invokeSlash(editor, command, { qc, currentPath: path }),
-        getAnnotations: () => useChatStore.getState().annotations,
-      }),
-    [qc, path, schemaVersion],
+      EditorFactory.buildExtensions(
+        'page',
+        {
+          qc,
+          currentPath: path,
+          onSlashInvoke: (editor, command) =>
+            void invokeSlash(editor, command, { qc, currentPath: path }),
+          getAnnotations: () => useChatStore.getState().annotations,
+        },
+        {},
+        rootProps,
+      ),
+    [qc, path, schemaVersion, rootProps],
   );
   const carry = useEditorCarry(extensions);
 
@@ -97,7 +128,7 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
           );
         };
         pendingSaveRef.current = flush;
-        saveTimer.current = window.setTimeout(flush, AUTOSAVE_DEBOUNCE_MS);
+        saveTimer.current = window.setTimeout(flush, save.debounceMs);
       },
     },
     [extensions],

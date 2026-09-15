@@ -3,7 +3,11 @@ import Suggestion, { type SuggestionProps } from '@tiptap/suggestion';
 import { PluginKey } from '@tiptap/pm/state';
 import { ReactRenderer } from '@tiptap/react';
 import { SlashMenu, type SlashMenuHandle, type SlashCommand } from './SlashMenu.js';
-import { getRegisteredSlashCommandsForContext, type EditorContextId } from '../registry.js';
+import {
+  getRegisteredSlashCommandsForContext,
+  type EditorContextId,
+  type RootEditorProps,
+} from '../registry.js';
 
 export interface SlashCommandsOptions {
   onInvoke: (editor: Editor, command: SlashCommand) => void;
@@ -15,6 +19,8 @@ export interface SlashCommandsOptions {
    * its schema, so picking one inserted nothing.
    */
   contextId: EditorContextId;
+  /** The page root's props — the derived `page` spec depends on them. */
+  rootProps?: RootEditorProps;
 }
 
 /** The `/` suggestion plugin's key — lets a host read whether the palette is open. */
@@ -26,6 +32,7 @@ export const SlashCommands = Extension.create<SlashCommandsOptions>({
     return {
       onInvoke: () => {},
       contextId: 'page',
+      rootProps: undefined,
     };
   },
   addProseMirrorPlugins() {
@@ -37,7 +44,7 @@ export const SlashCommands = Extension.create<SlashCommandsOptions>({
         char: '/',
         allowSpaces: false,
         startOfLine: false,
-        items: ({ query }) => filterCommands(query, options.contextId),
+        items: ({ query }) => filterCommands(query, options.contextId, options.rootProps),
         command: ({ editor, range, props }) => {
           editor.chain().focus().deleteRange(range).run();
           options.onInvoke(editor, props);
@@ -90,8 +97,12 @@ export const SlashCommands = Extension.create<SlashCommandsOptions>({
   },
 });
 
-function filterCommands(query: string, contextId: EditorContextId): SlashCommand[] {
-  const commands = getRegisteredSlashCommandsForContext(contextId);
+function filterCommands(
+  query: string,
+  contextId: EditorContextId,
+  rootProps?: RootEditorProps,
+): SlashCommand[] {
+  const commands = getRegisteredSlashCommandsForContext(contextId, rootProps);
   const q = query.trim().toLowerCase();
   if (!q) return commands;
   return commands.filter((c) => c.id.includes(q) || c.label.toLowerCase().includes(q));

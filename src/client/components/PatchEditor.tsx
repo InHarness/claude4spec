@@ -5,7 +5,7 @@ import { usePatch, useUpdatePatchContent } from '../hooks/usePatches.js';
 import '../tiptap/registrations.js';
 import { EditorFactory } from '../tiptap/EditorFactory.js';
 import { invokeSlash } from '../tiptap/slashInvoke.js';
-import { AUTOSAVE_DEBOUNCE_MS } from '../tiptap/autosave.js';
+import { assertSaveMode, getContextSpec, ARTEFACT_ROOT_EDITOR_PROPS } from '../tiptap/registry.js';
 import {
   useEditorCarry,
   useEditorCarryApply,
@@ -38,15 +38,23 @@ export function PatchEditor({ patchPath }: Props) {
   const schemaVersion = useEditorSchemaVersion();
   const extensions = useMemo(
     () =>
-      EditorFactory.buildExtensions('page', {
-        qc,
-        currentPath: patchPath,
-        onSlashInvoke: (editor, command) =>
-          void invokeSlash(editor, command, { qc, currentPath: patchPath }),
-        getAnnotations: () => [],
-      }),
+      // A patch has no context of its own: `page` with the artefact property
+      // bag (M23 `m23l13rt`) — see BriefEditor.
+      EditorFactory.buildExtensions(
+        'page',
+        {
+          qc,
+          currentPath: patchPath,
+          onSlashInvoke: (editor, command) =>
+            void invokeSlash(editor, command, { qc, currentPath: patchPath }),
+          getAnnotations: () => [],
+        },
+        {},
+        ARTEFACT_ROOT_EDITOR_PROPS,
+      ),
     [qc, patchPath, schemaVersion],
   );
+  const save = assertSaveMode(getContextSpec('page', ARTEFACT_ROOT_EDITOR_PROPS), 'debounce');
   const carry = useEditorCarry(extensions);
 
   const editor = useEditor(
@@ -64,7 +72,7 @@ export function PatchEditor({ patchPath }: Props) {
         if (saveTimer.current) clearTimeout(saveTimer.current);
         saveTimer.current = window.setTimeout(() => {
           void doSave(md);
-        }, AUTOSAVE_DEBOUNCE_MS);
+        }, save.debounceMs);
       },
     },
     [extensions],

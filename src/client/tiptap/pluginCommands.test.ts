@@ -2,7 +2,11 @@ import { describe, expect, it, vi, beforeAll } from 'vitest';
 import type { Editor } from '@tiptap/core';
 import type { QueryClient } from '@tanstack/react-query';
 import { registerPluginCommands } from './pluginCommands.js';
-import { getRegisteredSlashCommands } from './registry.js';
+import { getRegisteredSlashCommandsForContext } from './registry.js';
+
+// Plugin commands are offered on pages (the derived `page` spec admits every
+// registered command id); the static contexts whitelist by id.
+const getRegisteredSlashCommands = () => getRegisteredSlashCommandsForContext('page');
 import { invokeSlash, PLUGIN_COMMAND_EVENT } from './slashInvoke.js';
 
 // Minimal window/CustomEvent stubs — the suite runs under the `node` env (no

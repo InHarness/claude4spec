@@ -5,7 +5,7 @@ import { useBrief, useUpdateBriefContent } from '../hooks/useBriefs.js';
 import '../tiptap/registrations.js';
 import { EditorFactory } from '../tiptap/EditorFactory.js';
 import { invokeSlash } from '../tiptap/slashInvoke.js';
-import { AUTOSAVE_DEBOUNCE_MS } from '../tiptap/autosave.js';
+import { assertSaveMode, getContextSpec, ARTEFACT_ROOT_EDITOR_PROPS } from '../tiptap/registry.js';
 import {
   useEditorCarry,
   useEditorCarryApply,
@@ -49,14 +49,25 @@ export function BriefEditor({ briefPath }: Props) {
   const schemaVersion = useEditorSchemaVersion();
   const extensions = useMemo(
     () =>
-      EditorFactory.buildExtensions('page', {
-        qc,
-        currentPath: briefPath,
-        onSlashInvoke: (editor, command) => void invokeSlash(editor, command, { qc, currentPath: briefPath }),
-        getAnnotations: () => [],
-      }),
+      // A brief has no context of its own: it mounts `page` with the artefact
+      // property bag (M21 `m21l13rt`) — no section index, no reference
+      // validation, `@` reaching the `pages` root. Entity tags in the body
+      // survive the autosave verbatim through the raw node (rule 6).
+      EditorFactory.buildExtensions(
+        'page',
+        {
+          qc,
+          currentPath: briefPath,
+          onSlashInvoke: (editor, command) =>
+            void invokeSlash(editor, command, { qc, currentPath: briefPath }),
+          getAnnotations: () => [],
+        },
+        {},
+        ARTEFACT_ROOT_EDITOR_PROPS,
+      ),
     [qc, briefPath, schemaVersion],
   );
+  const save = assertSaveMode(getContextSpec('page', ARTEFACT_ROOT_EDITOR_PROPS), 'debounce');
   const carry = useEditorCarry(extensions);
 
   const editor = useEditor(
@@ -74,7 +85,7 @@ export function BriefEditor({ briefPath }: Props) {
         if (saveTimer.current) clearTimeout(saveTimer.current);
         saveTimer.current = window.setTimeout(() => {
           void doSave(md);
-        }, AUTOSAVE_DEBOUNCE_MS);
+        }, save.debounceMs);
       },
     },
     [extensions],
