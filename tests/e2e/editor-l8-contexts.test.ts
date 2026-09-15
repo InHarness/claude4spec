@@ -346,6 +346,8 @@ describe.skipIf(!BASE)('editor L8 contexts', () => {
       '- alpha',
       '- beta',
       '',
+      'Tasks:',
+      '',
       '- [ ] open task',
       '- [x] done task',
       '',
