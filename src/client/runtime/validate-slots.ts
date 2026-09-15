@@ -4,7 +4,7 @@
  * Two checks, with different blast radius:
  *   1. Structural — required render slots are functions/components. A failure
  *      skips the whole module with a warning.
- *   2. Pure-React smoke test — `renderChip` / `renderCard` must render without
+ *   2. Pure-React smoke test — `renderChip` must render without
  *      an editor context (no `useEditor()` / `editor.commands.*`), because the
  *      same chip renders in the react-markdown chat pipeline where no Tiptap
  *      editor exists. A failure rejects THAT slot only (0.2.88): the host swaps
@@ -32,7 +32,7 @@ function structurallyValid(m: FrontendModule): SlotValidation {
   return problem ? { ok: false, reason: problem } : { ok: true };
 }
 
-export type SmokeSlot = 'renderChip' | 'renderCard';
+export type SmokeSlot = 'renderChip';
 
 export interface SlotSmokeResult {
   /** Slots whose one render threw, with the reason. Empty = all passed. */
@@ -61,16 +61,23 @@ function renderOnce(component: unknown, props: Record<string, unknown>): string 
 
 /**
  * 0.2.88 — the pure-React smoke test, run in the browser at `mountFrontend`
- * (the server-side `registerPlugin` has no DOM to run it in). Each of
- * `renderChip` / `renderCard` renders ONCE in an isolated React tree — no
- * tiptap, no router — and a thrown exception rejects THAT slot, not the module.
+ * (the server-side `registerPlugin` has no DOM to run it in). `renderChip`
+ * renders ONCE in an isolated React tree — no tiptap, no router, no data
+ * providers — and a thrown exception rejects THAT slot, not the module.
  *
- * The entity handed in is `null`: both slots take `entity: T | null` and must
+ * The entity handed in is `null`: the chip takes `entity: T | null` and must
  * render the M19 broken state for it, so it is the one input every plugin has
  * to survive and the only one the host can produce before any entity has been
- * resolved. `renderRow` is not rendered here — its contract is `entity: T`
- * non-null and no entity of the type exists at mount time; it keeps the
- * structural check only.
+ * resolved.
+ *
+ * Only the chip. The spec names `renderCard` / `renderRow` too, but neither
+ * can be rendered honestly here: a card handed no entity fetches its own
+ * (by contract — the host injects nothing, so it reads the record), which in
+ * a detached tree means a stray request for a slug that does not exist and a
+ * hook with no provider behind it — a healthy card would be rejected and a
+ * request would leave the page for nothing (seen on `code-snippet`); a row's
+ * contract is `entity: T` non-null and no entity of the type exists at mount
+ * time. Both keep the structural check. Filed as a patch on the brief.
  *
  * Known limit (spec-documented): one render pass is behavioural, not a scan
  * for hook names — a chip that calls `useEditor()` only inside a click
@@ -79,10 +86,8 @@ function renderOnce(component: unknown, props: Record<string, unknown>): string 
 export function chipSmokeTest(m: FrontendModule): SlotSmokeResult {
   if (typeof document === 'undefined') return { rejected: [] }; // non-DOM env: skip
   const rejected: SlotSmokeResult['rejected'] = [];
-  for (const slot of ['renderChip', 'renderCard'] as const) {
-    const reason = renderOnce(m[slot], { slug: '__c4s_smoke__', entity: null });
-    if (reason !== null) rejected.push({ slot, reason: `${slot} render threw: ${reason}` });
-  }
+  const reason = renderOnce(m.renderChip, { slug: '__c4s_smoke__', entity: null });
+  if (reason !== null) rejected.push({ slot: 'renderChip', reason: `renderChip render threw: ${reason}` });
   return { rejected };
 }
 

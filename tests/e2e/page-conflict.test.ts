@@ -158,7 +158,7 @@ describe.skipIf(!BASE)('page autosave conflict (409 PAGE_CONFLICT)', () => {
     const served = await readPage();
     expect(served.body).toContain(`keep-${stamp}`);
     expect(served.body, 'server copy overwritten').not.toContain(`server2-${stamp}`);
-    expect(page.getByText('Page changed on the server'), 'dialog closed').toHaveCount(0);
+    await expect.poll(() => page.getByText('Page changed on the server').count(), { timeout: 3_000 }).toBe(0);
 
     expect(consoleErrors, 'console errors').toEqual([]);
     expect(badResponses, 'responses >= 400 other than the 409').toEqual([]);

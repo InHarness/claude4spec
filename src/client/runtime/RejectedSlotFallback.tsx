@@ -11,7 +11,7 @@
 
 import type { ComponentType } from 'react';
 
-export type RejectedSlotName = 'renderChip' | 'renderCard' | 'renderRow';
+export type RejectedSlotName = 'renderChip';
 
 export function rejectedSlotFallback(
   type: string,
