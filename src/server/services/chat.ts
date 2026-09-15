@@ -152,6 +152,20 @@ export class ChatService {
        * through here. Absent ⇒ false, exactly like a hand-created thread.
        */
       planMode?: boolean;
+      /**
+       * M46 (brief 0-2-89-to-next): the plan this thread is attached to, bound
+       * AT INSERT.
+       * `runTransagent({ contextType: 'chat', payload: { planPath } })` reaches
+       * the column through here, and it is bound here rather than by a
+       * follow-up {@link attachPlanToThread} so the child turn can never observe
+       * the intermediate state of a thread that has no plan yet. The caller
+       * validates the path first — this method writes what it is given.
+       *
+       * Absent ⇒ NULL, i.e. an unattached thread that creates its own plan on
+       * the first `update_plan` (which is what still calls
+       * {@link attachPlanToThread}).
+       */
+      planPath?: string | null;
     } = {},
   ): ChatThread {
     const id = nanoid(12);
@@ -161,6 +175,7 @@ export class ChatService {
     const parentThreadId = opts.parentThreadId ?? null;
     const spawnedByToolUseId = opts.spawnedByToolUseId ?? null;
     const planMode = opts.planMode ?? false;
+    const planPath = opts.planPath ?? null;
     // Invariant L2: context_type='brief' ⇒ brief_path IS NOT NULL.
     if (contextType === 'brief' && !briefPath) {
       throw new DomainError('VALIDATION', "context_type='brief' requires brief_path");
@@ -171,10 +186,10 @@ export class ChatService {
     }
     this.db
       .prepare(
-        `INSERT INTO chat_thread (id, title, context_type, brief_path, patch_path, parent_thread_id, spawned_by_tool_use_id, plan_mode)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO chat_thread (id, title, context_type, brief_path, patch_path, parent_thread_id, spawned_by_tool_use_id, plan_mode, plan_path)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(id, title, contextType, briefPath, patchPath, parentThreadId, spawnedByToolUseId, planMode ? 1 : 0);
+      .run(id, title, contextType, briefPath, patchPath, parentThreadId, spawnedByToolUseId, planMode ? 1 : 0, planPath);
     return this.getThreadRow(id);
   }
 

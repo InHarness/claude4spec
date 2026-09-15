@@ -315,6 +315,25 @@ export class PlanService {
     };
   }
 
+  /**
+   * "Is this path a real, well-formed plan?" — the check for a caller that binds
+   * `plan_path` but has no use for the plan's CONTENT (the `runTransagent` chat
+   * branch, which only needs the path settled before the child thread is
+   * inserted). It answers through {@link loadFile}, the same decision point
+   * `getByPath` / `readForWrite` — and so `attachThreadToPlan`, which reads
+   * through `getByPath` — already reach, so both ends of the attach agree on
+   * what counts as a plan; a separate `exists()` here is exactly how they would
+   * drift apart. It is not a cheaper check, just a shared one: `loadFile` reads
+   * and parses the file, and the bytes are discarded.
+   *
+   * Throws the loader's own codes — `NOT_FOUND` for a missing file,
+   * `PLAN_INVALID_FRONTMATTER` for a file that is not a plan. A caller whose
+   * contract names a different code translates at ITS boundary, not here.
+   */
+  async assertPlanExists(planPath: string): Promise<void> {
+    await this.loadFile(planPath);
+  }
+
   /** Existence, bytes and frontmatter validation — shared by both reads above. */
   private async loadFile(
     planPath: string,

@@ -4,6 +4,7 @@ import { runMigrations } from '../db/migrate.js';
 import { ChatService } from './chat.js';
 import { TransagentDispatcher, type TransagentRunInput } from './transagent-dispatcher.js';
 import type { AgentTurnDeps, AgentTurnInput } from '../routes/agent-turn.js';
+import { DomainError } from './tags.js';
 
 /**
  * 0.2.30 M05: `runTransagent`'s `planMode` — the generic step of the dispatcher.
@@ -183,5 +184,127 @@ describe('TransagentDispatcher — planMode (0.2.30)', () => {
 
     expect(planModeOf(threadId)).toBe(0);
     expect(turnThreads[0]?.planMode).toBe(false);
+  });
+});
+
+/**
+ * Brief 0-2-89-to-next M46: `runTransagent({ contextType: 'chat' })` binds the
+ * child's `plan_path` from `payload.planPath`.
+ *
+ * Asserted on the `chat_thread` row of a real migrated schema, because the
+ * column IS the attachment — everything downstream (the child's `update_plan`
+ * upsert vs. compose, `getByThread`, the plan chip) reads it from there. The
+ * dangling-path case additionally asserts the thread COUNT, which is the part
+ * that cannot be seen from the returned value: a refusal must leave no orphan
+ * child behind.
+ */
+describe('TransagentDispatcher — chat payload.planPath (M46)', () => {
+  const EXISTING_PLAN = 'plans/ship-it.md';
+
+  let db: Database.Database;
+  let chat: ChatService;
+  let turnThreads: AgentTurnInput['thread'][];
+  /** Paths the shared existence gate was asked about, in call order. */
+  let checkedPaths: string[];
+
+  const planPathOf = (threadId: string): string | null =>
+    (db.prepare(`SELECT plan_path FROM chat_thread WHERE id = ?`).get(threadId) as {
+      plan_path: string | null;
+    }).plan_path;
+
+  const threadCount = (): number =>
+    (db.prepare(`SELECT COUNT(*) AS n FROM chat_thread`).get() as { n: number }).n;
+
+  const makeDispatcher = (): TransagentDispatcher => {
+    // Stands in for PlanService.assertPlanExists — the ONE gate the dispatcher
+    // shares with POST /api/plans/:planId/create-thread. It throws the loader's
+    // own NOT_FOUND; translating that into VALIDATION is the dispatcher's job,
+    // which is exactly what the dangling-path case below pins.
+    const planService = {
+      assertPlanExists: async (planPath: string) => {
+        checkedPaths.push(planPath);
+        if (planPath !== EXISTING_PLAN) {
+          throw new DomainError('NOT_FOUND', `plan '${planPath}' not found`);
+        }
+      },
+    };
+    const deps = {
+      chatService: chat,
+      planService,
+      activeAdapters: new Map(),
+    } as unknown as AgentTurnDeps;
+
+    return new TransagentDispatcher(deps, {
+      model: 'claude-opus-5' as never,
+      architectureConfig: {},
+      takeToolUseId: async () => 'tu_1',
+      runTurn: async (input: AgentTurnInput) => {
+        turnThreads.push(input.thread);
+        return { answer: 'done' } as never;
+      },
+    });
+  };
+
+  const run = (payload?: Record<string, unknown>) =>
+    makeDispatcher().run({
+      parentThreadId,
+      contextType: 'chat',
+      message: 'continue the plan',
+      payload,
+    } as TransagentRunInput);
+
+  let parentThreadId: string;
+
+  beforeEach(() => {
+    db = new Database(':memory:');
+    runMigrations(db);
+    chat = new ChatService(db);
+    turnThreads = [];
+    checkedPaths = [];
+    parentThreadId = chat.createThread('parent', { contextType: 'chat' }).id;
+  });
+
+  afterEach(() => db.close());
+
+  it('attaches the child to an existing plan named by payload.planPath', async () => {
+    const { threadId } = await run({ planPath: EXISTING_PLAN });
+
+    expect(planPathOf(threadId)).toBe(EXISTING_PLAN);
+    // The turn is handed the already-attached row — the child never observes an
+    // intermediate state without its plan, which is why the binding is at INSERT.
+    expect(turnThreads[0]?.planPath).toBe(EXISTING_PLAN);
+    expect(checkedPaths).toEqual([EXISTING_PLAN]);
+  });
+
+  it('refuses a planPath that names no plan with VALIDATION, creating no child thread', async () => {
+    const before = threadCount();
+
+    await expect(run({ planPath: 'plans/nope.md' })).rejects.toMatchObject({
+      code: 'VALIDATION', // the MCP wrapper renames this to INVALID_ARGS
+    });
+
+    expect(threadCount()).toBe(before);
+    expect(turnThreads).toEqual([]);
+  });
+
+  it('refuses a planPath that is present but not a string, rather than dropping it', async () => {
+    // `payload` is z.record(z.string(), z.unknown()) at the tool boundary, so
+    // nothing upstream rejects this shape. Silently ignoring it is the failure
+    // this branch was written to remove.
+    await expect(run({ planPath: 42 })).rejects.toMatchObject({ code: 'VALIDATION' });
+    expect(threadCount()).toBe(1); // the parent only
+  });
+
+  it('leaves plan_path NULL when payload carries no planPath — the child creates its own plan', async () => {
+    const { threadId } = await run();
+
+    expect(planPathOf(threadId)).toBeNull();
+    expect(checkedPaths).toEqual([]);
+  });
+
+  it('leaves plan_path NULL for an empty payload object too', async () => {
+    const { threadId } = await run({});
+
+    expect(planPathOf(threadId)).toBeNull();
   });
 });
