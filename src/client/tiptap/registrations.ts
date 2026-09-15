@@ -40,14 +40,14 @@ registerEditorExtension({
   name: 'task_list',
   extension: TaskList,
   priority: 450,
-  availableIn: ['page', 'plan'],
+  availableIn: ['page', 'plan', 'description'],
 });
 
 registerEditorExtension({
   name: 'task_item',
   extension: TaskItem.configure({ nested: true }),
   priority: 451,
-  availableIn: ['page', 'plan'],
+  availableIn: ['page', 'plan', 'description'],
 });
 
 registerEditorExtension({

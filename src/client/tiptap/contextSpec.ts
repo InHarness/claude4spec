@@ -115,6 +115,26 @@ const ROOT_PROP_GATES: Record<string, keyof Pick<RootEditorProps, 'sectionIndexe
   tagged_list_mixed: 'referenceValidated',
 };
 
+/**
+ * The same gates for the `page` SLASH palette. A command whose node the root
+ * gates out of the schema must not be offered: `SlashCommands` deletes the
+ * `/query` range BEFORE invoking, and `insertContent` of an unknown node type
+ * inserts nothing — the pick would eat the query and leave a blank. `null` =
+ * ungated (`/todo` inserts a `todo` marker, mounted in every page root). An id
+ * absent here is a plugin command (M33 `contributes.commands`): its popover
+ * inserts an entity embed, so it takes the reference gate.
+ */
+const SLASH_COMMAND_GATES: Record<string, keyof Pick<RootEditorProps, 'sectionIndexed' | 'referenceValidated'> | null> = {
+  mention: 'referenceValidated',
+  element: 'referenceValidated',
+  list: 'referenceValidated',
+  tagged: 'referenceValidated',
+  'tagged-mixed': 'referenceValidated',
+  diagram: 'referenceValidated',
+  section: 'sectionIndexed',
+  todo: null,
+};
+
 /** The two raw-JSX nodes — mounted in EVERY context (rule 6: passthrough verbatim). */
 const RAW_NODES = ['raw_jsx_block', 'raw_jsx_inline'];
 
@@ -127,7 +147,11 @@ const M19_NODES = ['inline_mention', 'single_element', 'element_list', 'tagged_l
  * `description`: StarterKit h2–h6 + lists + tables (core, built by
  * EditorFactory) + `InlineMentionNode` (the only generic M19 node allowed) +
  * `AnchorMarker` (passthrough) + the slash framework with `/mention` alone. No
- * `@` mention framework (the field is too short).
+ * `@` mention framework (the field is too short). `task_list`/`task_item` are
+ * not in the `ctxregst` row but are GFM syntax the pre-0.2.85 description
+ * editor parsed: without them an existing `- [ ] x` is re-serialised as
+ * `- \[ \] x` on the next blur-save (rule 7 — the core must cover syntax
+ * already in the content; patch filed on brief 0-2-87-to-next).
  *
  * `plan`: starter-kit + 5 generic M19 + `SectionRefNode` + `AnchorMarker` +
  * `MentionExtension` + `OutlineExtension` (`heading_actions`); `/section` is
@@ -145,7 +169,7 @@ const M19_NODES = ['inline_mention', 'single_element', 'element_list', 'tagged_l
 const STATIC_SPECS: Record<Exclude<EditorContextId, 'page'>, EditorContextSpec> = {
   description: {
     id: 'description',
-    extensions: ['anchor_marker', 'inline_mention', ...RAW_NODES, 'slash_commands'],
+    extensions: ['anchor_marker', 'task_list', 'task_item', 'inline_mention', ...RAW_NODES, 'slash_commands'],
     slashCommands: ['mention'],
     decorations: ['broken_refs'],
     mentions: [],
@@ -198,7 +222,10 @@ export function resolveContextSpec(
       const gate = ROOT_PROP_GATES[name];
       return gate ? rootProps[gate] : true;
     }),
-    slashCommands: registry.slashCommandIds(),
+    slashCommands: registry.slashCommandIds().filter((id) => {
+      const gate = id in SLASH_COMMAND_GATES ? SLASH_COMMAND_GATES[id] : 'referenceValidated';
+      return gate ? rootProps[gate] : true;
+    }),
     decorations: rootProps.referenceValidated ? ['annotations', 'broken_refs'] : ['annotations'],
     // Scope = the edited page's `linkTargets` (M14); the autocomplete API does
     // not take a scope parameter yet, so the id list is the binding part.

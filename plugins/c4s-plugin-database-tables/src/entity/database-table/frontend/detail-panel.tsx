@@ -1078,9 +1078,29 @@ const DatabaseTableDetailForm: FC<{
   const currentSlugRef = useRef(entity.slug);
   const titleRef = useRef<HTMLTextAreaElement>(null);
 
+  // Unmount and page unload flush whatever is still unsaved: the debounced
+  // whole-draft save AND the description, whose policy is "on blur" (L8
+  // `description` context) — tiptap's `destroy()` emits no blur, in-app
+  // navigation skips it, a reload runs no React cleanup at all. `scheduleSave`
+  // diffs against the baseline, so a clean draft sends nothing. The listener
+  // reads through a ref so it always sees the latest closure.
+  const flushRef = useRef<() => void>(() => {});
   useEffect(() => {
+    let unloadFlushed = false;
+    const onPageHide = () => {
+      if (!unloadFlushed) flushRef.current();
+      unloadFlushed = false;
+    };
+    const onBeforeUnload = () => {
+      unloadFlushed = true;
+      flushRef.current();
+    };
+    window.addEventListener('pagehide', onPageHide);
+    window.addEventListener('beforeunload', onBeforeUnload);
     return () => {
-      if (debounceRef.current) window.clearTimeout(debounceRef.current);
+      window.removeEventListener('pagehide', onPageHide);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      flushRef.current();
     };
   }, []);
 
@@ -1222,6 +1242,7 @@ const DatabaseTableDetailForm: FC<{
     }
     scheduleSave(draftRef.current);
   };
+  flushRef.current = saveDescription;
 
   const handleDelete = () => {
     if (del.isPending) return;

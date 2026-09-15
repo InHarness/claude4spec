@@ -4,7 +4,6 @@ import { useQueryClient } from '@tanstack/react-query';
 import '../../tiptap/registrations.js';
 import { EditorFactory } from '../../tiptap/EditorFactory.js';
 import { assertSaveMode, getContextSpec } from '../../tiptap/registry.js';
-import { SLASH_SUGGESTION_KEY } from '../../tiptap/extensions/SlashCommands.js';
 import { invokeSlash } from '../../tiptap/slashInvoke.js';
 import {
   useEditorCarry,
@@ -125,13 +124,15 @@ function DocEditorImpl({ value, onChange, onBlur, readOnly, placeholder }: DocEd
         lastSyncedRef.current = md;
         onChange(md);
       },
-      onBlur: ({ editor, event }) => {
+      onBlur: ({ event }) => {
         if (!seededRef.current) return;
-        // Not a "leave the field" blur: focus went to the `/` palette, an `@`
-        // list or a slash popover (they refocus the editor when done). Saving
-        // here would persist the palette query or the deleted-but-not-yet-
-        // inserted range.
-        if (SLASH_SUGGESTION_KEY.getState(editor.state)?.active) return;
+        // Not a "leave the field" blur: focus went to a slash popover or a
+        // dialog (they refocus the editor when done). Saving here would persist
+        // the deleted-but-not-yet-inserted range. The `/` palette and the `@`
+        // list never take focus (their rows swallow mousedown), so they need
+        // no gate — and the Suggestion plugin's `active` flag is NOT one: it
+        // follows the text, not the focus, so a description left as `foo /`
+        // would stay "active" through a real blur and never be saved.
         const to = event.relatedTarget;
         if (
           to instanceof Element &&

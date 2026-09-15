@@ -27,8 +27,8 @@ import { chromium, type Browser, type Page, type Request } from 'playwright';
  *   description — a tag whose node the `description` context does not mount —
  *   renders as a raw code node and comes back in the blur-save PATCH byte for
  *   byte instead of being dropped.
- * - `[ac:ac-opis-encji-zawierajacy-naglowki-h2-h6]` headings h2–h6, a list and
- *   a table in a description survive the blur-save.
+ * - `[ac:ac-opis-encji-zawierajacy-naglowki-h2-h6]` headings h2–h6, a list, a
+ *   GFM task list and a table in a description survive the blur-save.
  * - A page under a user root with `referenceValidated: false` (the derived
  *   `page` context, L13) shows reference tags as raw code and autosaves them
  *   verbatim.
@@ -346,6 +346,9 @@ describe.skipIf(!BASE)('editor L8 contexts', () => {
       '- alpha',
       '- beta',
       '',
+      '- [ ] open task',
+      '- [x] done task',
+      '',
       '| col a | col b |',
       '| --- | --- |',
       '| cell 1 | cell 2 |',
@@ -376,6 +379,8 @@ describe.skipIf(!BASE)('editor L8 contexts', () => {
       expect(await editor.locator(sel!).evaluate((el) => el.textContent), `${sel} rendered as a heading`).toBe(text);
     }
     expect(await editor.locator('table td, table th').count(), 'table cells').toBe(4);
+    // GFM task list parsed as one (rule 7), not as a bullet whose text starts with `[ ]`.
+    expect(await editor.locator('input[type="checkbox"]').count(), 'task checkboxes').toBe(2);
 
     // Edit the last table cell so the whole document is re-serialized on blur.
     await editor.locator('table td').last().click();
@@ -384,9 +389,10 @@ describe.skipIf(!BASE)('editor L8 contexts', () => {
     await page.locator('body').click({ position: { x: 5, y: 5 } });
     await expect.poll(() => patches.length, { timeout: 5_000 }).toBe(1);
     const saved = String((patches[0] as { description?: unknown }).description);
-    for (const line of ['## Two', '### Three', '#### Four', '##### Five', '###### Six', '- alpha', '- beta']) {
+    for (const line of ['## Two', '### Three', '#### Four', '##### Five', '###### Six', '- alpha', '- beta', '- [ ] open task', '- [x] done task']) {
       expect(saved, `line kept: ${line}`).toContain(line);
     }
+    expect(saved, 'task brackets not escaped').not.toContain('\\[');
     expect(saved).toMatch(/\|\s*col a\s*\|\s*col b\s*\|/);
     expect(saved).toMatch(new RegExp(`\\|\\s*cell 1\\s*\\|\\s*cell 2 z${stamp}\\s*\\|`));
     expect(saved).not.toMatch(/^# /m); // no heading got promoted to h1
@@ -465,6 +471,21 @@ describe.skipIf(!BASE)('editor L8 contexts', () => {
       expect(body).toContain(mention);
       expect(body).toContain(tag);
       expect(body).not.toContain('```');
+
+      // The `/` palette follows the schema: a root without reference
+      // validation / section indexing offers neither `/mention` nor
+      // `/section` (their nodes are not mounted — a pick would insert
+      // nothing), while `/todo` stays.
+      await page.keyboard.press('Enter');
+      await page.keyboard.type('/');
+      const menu = page.locator('[data-slash-menu]');
+      await expect.poll(() => menu.count(), { timeout: 5_000 }).toBe(1);
+      const offered = await menu.locator('button > span:first-child').evaluateAll((els) => els.map((el) => el.textContent ?? ''));
+      expect(offered.some((t) => /todo/i.test(t)), `offers /todo: ${offered.join(' | ')}`).toBe(true);
+      expect(offered.some((t) => /mention/i.test(t)), `hides /mention: ${offered.join(' | ')}`).toBe(false);
+      expect(offered.some((t) => /section/i.test(t)), `hides /section: ${offered.join(' | ')}`).toBe(false);
+      await page.keyboard.press('Escape');
+      await page.keyboard.press('Backspace');
 
       expect(consoleErrors, 'console errors').toEqual([]);
       expect(badResponses, 'responses >= 400').toEqual([]);

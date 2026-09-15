@@ -46,6 +46,8 @@ describe('resolveContextSpec — the four contexts (M20 ctxregst)', () => {
     expect(spec.extensions).toEqual(
       expect.arrayContaining(['inline_mention', 'anchor_marker', 'raw_jsx_inline', 'raw_jsx_block']),
     );
+    // Rule 7: GFM task lists were parsed here before the whitelist existed.
+    expect(spec.extensions).toEqual(expect.arrayContaining(['task_list', 'task_item']));
     for (const gone of ['single_element', 'todo', 'section_ref', 'mention_extension', 'page_ref']) {
       expect(spec.extensions).not.toContain(gone);
     }
@@ -85,6 +87,17 @@ describe('resolveContextSpec — the four contexts (M20 ctxregst)', () => {
 
     const minimal = resolveContextSpec('page', MINIMAL_ROOT_EDITOR_PROPS, reg);
     expect(minimal.extensions).toEqual(['todo', 'plugin:thing']);
+    // The palette follows the schema: a command whose node the root gates out
+    // is not offered (the pick would delete the `/query` and insert nothing).
+    // `/todo` stays; a plugin command inserts an entity embed, so it goes with
+    // the reference gate.
+    expect(minimal.slashCommands).toEqual(['todo']);
+    const sectionsOnly = resolveContextSpec(
+      'page',
+      { ...MINIMAL_ROOT_EDITOR_PROPS, sectionIndexed: true },
+      { ...reg, slashCommandIds: () => ['section', 'element', 'todo'] },
+    );
+    expect(sectionsOnly.slashCommands).toEqual(['section', 'todo']);
 
     const artefact = resolveContextSpec('page', ARTEFACT_ROOT_EDITOR_PROPS, reg);
     expect(artefact.extensions).toEqual(minimal.extensions);

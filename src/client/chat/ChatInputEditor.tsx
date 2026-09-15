@@ -10,6 +10,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { EditorFactory } from "../tiptap/EditorFactory.js";
 import { assertSaveMode, getContextSpec } from "../tiptap/registry.js";
 import { invokeSlash } from "../tiptap/slashInvoke.js";
+import { isSuggestionActive } from "../tiptap/suggestionState.js";
 import {
   useEditorCarry,
   useEditorCarryApply,
@@ -105,7 +106,11 @@ export const ChatInputEditor = forwardRef<ChatInputEditorHandle, Props>(
           attributes: {
             class: "chat-input-pm focus:outline-none",
           },
-          handleKeyDown: (_view, event) => {
+          handleKeyDown: (view, event) => {
+            // A `/` palette or `@` list is open: Enter (and the arrows) belong
+            // to it. Direct view props run before plugin props, so without this
+            // the composer would submit the half-typed query as a message.
+            if (isSuggestionActive(view.state)) return false;
             if (
               event.key === "Enter" &&
               !event.shiftKey &&

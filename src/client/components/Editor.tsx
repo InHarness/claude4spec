@@ -33,6 +33,10 @@ interface Props {
   onOpenSection?: (pagePath: string, anchor: string) => void;
 }
 
+function rootPropsKey(p: RootEditorProps): string {
+  return `${p.sectionIndexed}|${p.referenceValidated}|${p.linkTargets.join(',')}`;
+}
+
 export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
   const { data, isLoading } = usePage(rootId, path);
   const write = useWritePage();
@@ -60,13 +64,19 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
   // L13: the `page` context is derived from the page root's properties, not a
   // fixed list — a user root without section indexing gets no anchors, one
   // without reference validation gets no entity chips (their tags pass through
-  // verbatim). Keyed by value so the roots query settling does not rebuild the
-  // editor for the built-in `pages` root, whose props equal the default.
+  // verbatim). Keyed by VALUE, and the not-yet-loaded fallback keys as the
+  // default it stands in for: on a cold deep link the config query settles
+  // after the editor mounted, and a key that flipped from `null` to the same
+  // props would rebuild the instance once for nothing (focus, selection and
+  // an open `/` popup lost). A user root whose props differ from the default
+  // still rebuilds once, carrying the document.
   const roots = useRoots();
   const root = roots.find((r) => r.id === rootId);
-  const rootKey = root
-    ? `${root.sectionIndexed}|${root.referenceValidated}|${root.linkTargets.join(',')}`
-    : null;
+  const rootKey = rootPropsKey(
+    root
+      ? { sectionIndexed: root.sectionIndexed, referenceValidated: root.referenceValidated, linkTargets: root.linkTargets }
+      : FULL_ROOT_EDITOR_PROPS,
+  );
   const rootProps = useMemo<RootEditorProps>(
     () =>
       root

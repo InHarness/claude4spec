@@ -36,6 +36,18 @@ export function useEntityDraftEditor<E, D extends object>({ entity, toDraft, sav
   const latestRef = useRef<{ draft: D | null; entity: E | null | undefined }>({ draft: null, entity });
   latestRef.current = { draft, entity };
   const fieldKeys = Object.keys(fieldSaves ?? {}) as (keyof D)[];
+  // Every PATCH of this entity runs through ONE chain. The whole-draft save
+  // carries a single-policy field at its baseline and the field's own PATCH
+  // carries the new value; sent concurrently, a last-write-wins server could
+  // apply them in either order and keep the OLD value while the local baseline
+  // moved to the new one — `dirty` clean, the edit gone. Serialised, each save
+  // also reads the baseline the previous one left.
+  const chainRef = useRef<Promise<void>>(Promise.resolve());
+  function enqueue(task: () => Promise<void>): Promise<void> {
+    const next = chainRef.current.then(task, task);
+    chainRef.current = next;
+    return next;
+  }
 
   useEffect(() => {
     if (!entity) return;
@@ -58,22 +70,57 @@ export function useEntityDraftEditor<E, D extends object>({ entity, toDraft, sav
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entity]);
 
-  // Unmount: nothing waits for a timer or a blur that will never come
-  // (tiptap's `destroy()` emits no blur; keyboard navigation and a closed tab
-  // skip it too). Flush the pending whole-draft save and every dirty
-  // single-policy field.
-  useEffect(
-    () => () => {
-      if (saveTimer.current) window.clearTimeout(saveTimer.current);
-      const { draft: current, entity: live } = latestRef.current;
-      const queued = pendingRef.current;
-      pendingRef.current = null;
-      if (queued && live) void runSave(queued, live);
-      if (current && live) for (const key of fieldKeys) void runFieldSave(key, current, live);
-    },
+  // Flush the pending whole-draft save and every dirty single-policy field.
+  // Nothing else waits for a timer or a blur that will never come: tiptap's
+  // `destroy()` emits no blur, keyboard navigation skips it, and a page unload
+  // (reload, closed tab, lost connection) runs no React cleanup at all.
+  function flushAll() {
+    if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    saveTimer.current = null;
+    const { draft: current, entity: live } = latestRef.current;
+    const queued = pendingRef.current;
+    pendingRef.current = null;
+    if (queued && live) void runSave(queued, live);
+    if (current && live) for (const key of fieldKeys) void runFieldSave(key, current, live);
+  }
+  const flushRef = useRef(flushAll);
+  flushRef.current = flushAll;
+
+  // Unmount (in-app navigation) and page unload. On unload the requests are
+  // started synchronously; React has no hook there, so the window listeners
+  // do it. `beforeunload` additionally asks before a dirty field is lost —
+  // the browser may cancel a fetch started this late.
+  useEffect(() => {
+    // `beforeunload` precedes `pagehide` on the same unload; flush once.
+    let unloadFlushed = false;
+    const onPageHide = () => {
+      if (!unloadFlushed) flushRef.current();
+      unloadFlushed = false;
+    };
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      unloadFlushed = true;
+      const { draft: current } = latestRef.current;
+      const base = baselineRef.current ? (JSON.parse(baselineRef.current) as D) : null;
+      const dirtyField =
+        !!current &&
+        !!base &&
+        (pendingRef.current !== null ||
+          fieldKeys.some((key) => JSON.stringify(current[key]) !== JSON.stringify(base[key])));
+      flushRef.current();
+      if (!dirtyField) return;
+      e.preventDefault();
+      // Legacy browsers read the return value; modern ones show their own text.
+      e.returnValue = '';
+    };
+    window.addEventListener('pagehide', onPageHide);
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => {
+      window.removeEventListener('pagehide', onPageHide);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      flushRef.current();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
-  );
+  }, []);
 
   const dirty = useMemo(() => {
     if (!draft || !entity) return false;
@@ -87,58 +134,64 @@ export function useEntityDraftEditor<E, D extends object>({ entity, toDraft, sav
   // Intentionally plain per-render functions (no useCallback/refs): the debounce
   // timer must fire the save closure from the render in which the edit happened,
   // mirroring the pre-refactor closure semantics exactly.
-  async function runSave(current: D, live: E) {
+  function runSave(current: D, live: E): Promise<void> {
     pendingRef.current = null;
-    // Single-policy fields never ride the whole-draft save: send them at their
-    // baseline so an in-progress description is neither written early nor
-    // duplicated by the later blur PATCH.
-    const base = baseline();
-    const toSave = { ...current };
-    if (base) for (const key of fieldKeys) toSave[key] = base[key];
-    // A draft identical to the last saved state is not a save: `DocEditor`
-    // normalises through tiptap and can emit a respelling of what is stored;
-    // an undone edit's timer fires too. Neither deserves a version.
-    if (JSON.stringify(toSave) === baselineRef.current) return;
-    try {
-      const updated = await save(toSave, live);
-      const nextBase = toDraft(updated);
-      // Keep the local value of a single-policy field the user is still
-      // editing: the server answer carries the baseline we just sent.
-      const before = base;
-      const after = latestRef.current.draft;
-      if (before && after) {
-        for (const key of fieldKeys) {
-          if (JSON.stringify(after[key]) !== JSON.stringify(before[key])) nextBase[key] = before[key];
+    return enqueue(async () => {
+      // Single-policy fields never ride the whole-draft save: send them at
+      // their baseline so an in-progress description is neither written early
+      // nor duplicated by the later blur PATCH. The baseline is read HERE, once
+      // the chain reaches this save, so a field PATCH that ran before it is
+      // reflected.
+      const base = baseline();
+      const toSave = { ...current };
+      if (base) for (const key of fieldKeys) toSave[key] = base[key];
+      // A draft identical to the last saved state is not a save: `DocEditor`
+      // normalises through tiptap and can emit a respelling of what is stored;
+      // an undone edit's timer fires too. Neither deserves a version.
+      if (JSON.stringify(toSave) === baselineRef.current) return;
+      try {
+        const updated = await save(toSave, live);
+        const nextBase = toDraft(updated);
+        // Keep the local value of a single-policy field the user is still
+        // editing: the server answer carries the baseline we just sent.
+        const before = base;
+        const after = latestRef.current.draft;
+        if (before && after) {
+          for (const key of fieldKeys) {
+            if (JSON.stringify(after[key]) !== JSON.stringify(before[key])) nextBase[key] = before[key];
+          }
         }
+        baselineRef.current = JSON.stringify(nextBase);
+      } catch (err) {
+        console.error('autosave failed', err);
       }
-      baselineRef.current = JSON.stringify(nextBase);
-    } catch (err) {
-      console.error('autosave failed', err);
-    }
+    });
   }
 
-  async function runFieldSave<K extends keyof D>(key: K, current: D, live: E) {
+  function runFieldSave<K extends keyof D>(key: K, current: D, live: E): Promise<void> {
     const persist = fieldSaves?.[key];
-    if (!persist) return;
-    const base = baseline();
-    if (base && JSON.stringify(base[key]) === JSON.stringify(current[key])) return;
-    try {
-      const updated = await persist(current[key], live);
-      const nextBase = toDraft(updated);
-      // The draft may have moved on for OTHER fields since; the baseline must
-      // reflect only what this PATCH acknowledged.
-      const stillBase = baseline();
-      if (stillBase) {
-        for (const k of Object.keys(nextBase) as (keyof D)[]) {
-          if (k !== key) nextBase[k] = stillBase[k];
+    if (!persist) return Promise.resolve();
+    return enqueue(async () => {
+      const base = baseline();
+      if (base && JSON.stringify(base[key]) === JSON.stringify(current[key])) return;
+      try {
+        const updated = await persist(current[key], live);
+        const nextBase = toDraft(updated);
+        // The draft may have moved on for OTHER fields since; the baseline must
+        // reflect only what this PATCH acknowledged.
+        const stillBase = baseline();
+        if (stillBase) {
+          for (const k of Object.keys(nextBase) as (keyof D)[]) {
+            if (k !== key) nextBase[k] = stillBase[k];
+          }
         }
+        baselineRef.current = JSON.stringify(nextBase);
+        // Re-render so `dirty` clears for the field.
+        setDraft((d) => (d ? { ...d } : d));
+      } catch (err) {
+        console.error('field save failed', err);
       }
-      baselineRef.current = JSON.stringify(nextBase);
-      // Re-render so `dirty` clears for the field.
-      setDraft((d) => (d ? { ...d } : d));
-    } catch (err) {
-      console.error('field save failed', err);
-    }
+    });
   }
 
   function scheduleAutosave(next: D) {
