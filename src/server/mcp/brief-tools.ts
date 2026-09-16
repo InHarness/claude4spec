@@ -270,7 +270,7 @@ export function buildBriefToolsServer(
         let newBody: string;
         let replacements: number | undefined;
         if (hasTextEdits) {
-          const applied = applyTextEdits(current.body, args.textEdits as TextEdit[], bodyPositionResolver(current.body));
+          const applied = applyTextEdits(current.body, args.textEdits as TextEdit[], bodyPositionResolver(current.content, current.body));
           newBody = applied.text;
           replacements = applied.replacements;
         } else {
@@ -361,11 +361,14 @@ export function buildBriefToolsServer(
 
 /**
  * Mismatch positions as anchor + line (M43 `match-count-declared`), never a
- * byte offset. The text handed to the engine is the body alone, so its lines
- * are body lines; the innermost anchored section containing the hit wins.
+ * byte offset. The engine matches over the body alone, but the reported line
+ * is a WHOLE-FILE line — the frame `get_brief`'s `range` counts in, so a caller
+ * can re-read the hit with it (same rule as `pagePositionResolver`). The
+ * innermost anchored section containing the hit wins.
  */
-function bodyPositionResolver(body: string): PositionResolver {
+function bodyPositionResolver(fullText: string, body: string): PositionResolver {
   const ranges = sectionRanges(body.split('\n'));
+  const bodyFirstLine = Math.max(0, fullText.split('\n').length - body.split('\n').length);
   return (offset): MatchPosition => {
     const line = body.slice(0, offset).split('\n').length - 1;
     const innermost = ranges
@@ -374,7 +377,7 @@ function bodyPositionResolver(body: string): PositionResolver {
         (best, r) => (best === null || r.lineStart > best.lineStart ? r : best),
         null,
       );
-    return { anchor: innermost?.anchor ?? null, line: line + 1 };
+    return { anchor: innermost?.anchor ?? null, line: bodyFirstLine + line + 1 };
   };
 }
 

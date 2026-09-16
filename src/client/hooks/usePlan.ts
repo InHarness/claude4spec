@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '../lib/api-core.js';
 import { encodeArtifactPath } from '../lib/artifact-path.js';
-import type { Plan, PlanFrontmatter } from '../../shared/entities.js';
+import type { ArtifactWriteResponse, Plan, PlanFrontmatter } from '../../shared/entities.js';
 import {
   artifactVersionsKey,
   useArtifactVersions,
@@ -159,7 +159,7 @@ export function useSavePlan() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: { planPath: string; content: string; expectedHash: string }) => {
-      const body = await fetchJson<Envelope<PlanArtifactResponse>>(
+      const body = await fetchJson<Envelope<ArtifactWriteResponse>>(
         `/api/artifacts/plan/${encodeArtifactPath(input.planPath)}/content`,
         {
           method: 'PUT',
@@ -182,7 +182,7 @@ export function useUpdatePlanTitle() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: { planPath: string; title: string }) => {
-      const body = await fetchJson<Envelope<PlanArtifactResponse>>(
+      const body = await fetchJson<Envelope<ArtifactWriteResponse>>(
         `/api/artifacts/plan/${encodeArtifactPath(input.planPath)}/frontmatter`,
         {
           method: 'PATCH',
@@ -213,7 +213,7 @@ export function useSetPlanApplied() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: { planPath: string; applied: boolean }) => {
-      const body = await fetchJson<Envelope<PlanArtifactResponse>>(
+      const body = await fetchJson<Envelope<ArtifactWriteResponse>>(
         `/api/artifacts/plan/${encodeArtifactPath(input.planPath)}/frontmatter`,
         {
           method: 'PATCH',

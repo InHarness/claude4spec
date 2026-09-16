@@ -309,6 +309,9 @@ describe('update_brief textEdits + brief version tools', () => {
     const positions = JSON.stringify(res.body);
     expect(positions).toContain('aaaaaaaa');
     expect(positions).toContain('bbbbbbbb');
+    // Whole-file lines (3 frontmatter lines above the body) — the frame `get_brief.range` reads in.
+    expect(positions).toContain('"line":7');
+    expect(positions).toContain('"line":12');
     expect(written).toEqual([]);
   });
 

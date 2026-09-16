@@ -16,6 +16,7 @@ import type {
   ArtifactListItem,
   ArtifactResponse,
   ArtifactThreadCreateRequest,
+  ArtifactWriteResponse,
   BriefCreateRequest,
   BriefResponse,
 } from '../../shared/entities.js';
@@ -109,9 +110,9 @@ export const briefsApi = {
   async updateContent(
     briefPath: string,
     input: { content: string; expectedHash: string },
-  ): Promise<ArtifactResponse> {
+  ): Promise<ArtifactWriteResponse> {
     const body: ArtifactContentUpdateRequest = input;
-    const env = await handle<Envelope<ArtifactResponse>>(
+    const env = await handle<Envelope<ArtifactWriteResponse>>(
       await apiFetch(`/api/artifacts/brief/${encodeBriefPath(briefPath)}/content`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -124,9 +125,9 @@ export const briefsApi = {
   async updateFrontmatter(
     briefPath: string,
     frontmatter: Record<string, unknown>,
-  ): Promise<ArtifactResponse> {
+  ): Promise<ArtifactWriteResponse> {
     const body: ArtifactFrontmatterUpdateRequest = { frontmatter };
-    const env = await handle<Envelope<ArtifactResponse>>(
+    const env = await handle<Envelope<ArtifactWriteResponse>>(
       await apiFetch(`/api/artifacts/brief/${encodeBriefPath(briefPath)}/frontmatter`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },

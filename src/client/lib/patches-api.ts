@@ -15,6 +15,7 @@ import type {
   ArtifactListItem,
   ArtifactResponse,
   ArtifactThreadCreateRequest,
+  ArtifactWriteResponse,
   PatchKind,
 } from '../../shared/entities.js';
 import { handle, apiFetch } from './api-core.js';
@@ -110,31 +111,35 @@ export const patchesApi = {
   async updateContent(
     patchPath: string,
     input: { content: string; expectedHash: string },
-  ): Promise<PatchArtifactView> {
+  ): Promise<ArtifactWriteResponse> {
     const body: ArtifactContentUpdateRequest = input;
-    const env = await handle<Envelope<ArtifactResponse>>(
+    const env = await handle<Envelope<ArtifactWriteResponse>>(
       await apiFetch(`/api/artifacts/patch/${encodePatchPath(patchPath)}/content`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       }),
     );
-    return toPatchArtifactView(env.data);
+    // Echo-free (0.2.86): a write answers `{ path, frontmatter, hash }` — no
+    // body to derive a title from, and callers only refetch on success.
+    return env.data;
   },
 
   async updateFrontmatter(
     patchPath: string,
     frontmatter: Record<string, unknown>,
-  ): Promise<PatchArtifactView> {
+  ): Promise<ArtifactWriteResponse> {
     const body: ArtifactFrontmatterUpdateRequest = { frontmatter };
-    const env = await handle<Envelope<ArtifactResponse>>(
+    const env = await handle<Envelope<ArtifactWriteResponse>>(
       await apiFetch(`/api/artifacts/patch/${encodePatchPath(patchPath)}/frontmatter`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       }),
     );
-    return toPatchArtifactView(env.data);
+    // Echo-free (0.2.86): a write answers `{ path, frontmatter, hash }` — no
+    // body to derive a title from, and callers only refetch on success.
+    return env.data;
   },
 
   async createThread(patchPath: string, name?: string): Promise<{ threadId: string }> {
