@@ -331,7 +331,7 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
       expect(res.body.data[0].op).toBe('create');
     });
 
-    it('PUT .../content updates on a hash match and returns the fresh ArtifactResponse', async () => {
+    it('PUT .../content updates on a hash match and answers echo-free: path, frontmatter, hash — no body/content', async () => {
       const detail = await request(app).get('/api/artifacts/brief/v1-to-v2.md');
       const newContent = matter.stringify('# Brief: v1 -> v2 (edited)\n', detail.body.data.frontmatter);
 
@@ -340,8 +340,11 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
         .send({ content: newContent, expectedHash: detail.body.data.hash });
 
       expect(res.status).toBe(200);
-      expect(res.body.data.body).toContain('edited');
+      expect(Object.keys(res.body.data).sort()).toEqual(['frontmatter', 'hash', 'path']);
       expect(res.body.data.hash).not.toBe(detail.body.data.hash);
+      const after = await request(app).get('/api/artifacts/brief/v1-to-v2.md');
+      expect(after.body.data.body).toContain('edited');
+      expect(after.body.data.hash).toBe(res.body.data.hash);
     });
 
     it('PUT .../content 409s on a hash mismatch, with currentHash + currentContent', async () => {
@@ -532,6 +535,27 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
       // gray-matter pass-through: the unknown key is not migrated away.
       expect(flipped.body.data.frontmatter.status).toBe('completed');
       expect(flipped.body.data.frontmatter.applied).toBe(true);
+    });
+
+    it('[0.2.86] PUT .../content cannot flip `applied` — only PATCH .../frontmatter may', async () => {
+      const detail = await request(app).get('/api/artifacts/patch/v1-to-v2-drift.md');
+      const flipped = matter.stringify(detail.body.data.body, { ...detail.body.data.frontmatter, applied: true });
+      const refused = await request(app)
+        .put('/api/artifacts/patch/v1-to-v2-drift.md/content')
+        .send({ content: flipped, expectedHash: detail.body.data.hash });
+      expect(refused.status).toBe(400);
+      expect(refused.body.error.code).toBe('IMMUTABLE_FIELD');
+      expect(refused.body.error.message).toContain('applied');
+
+      // A body edit that preserves the flag goes through, and answers echo-free.
+      const edited = matter.stringify('# Patch — drift (edited)\n', detail.body.data.frontmatter);
+      const ok = await request(app)
+        .put('/api/artifacts/patch/v1-to-v2-drift.md/content')
+        .send({ content: edited, expectedHash: detail.body.data.hash });
+      expect(ok.status).toBe(200);
+      expect(ok.body.data.body).toBeUndefined();
+      expect(ok.body.data.content).toBeUndefined();
+      expect(ok.body.data.frontmatter.applied).toBe(false);
     });
 
     it('PATCH .../frontmatter 400s IMMUTABLE_FIELD on an immutable key', async () => {

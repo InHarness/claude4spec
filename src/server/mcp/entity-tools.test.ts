@@ -673,3 +673,15 @@ describe('entity-tools: describe_entity_type', () => {
     expect(bad.__error).toMatch(/^describe-throw: boom-describe/);
   });
 });
+
+describe('entity-tools: overview (0.2.86, M05 internal channel)', () => {
+  it('renders the M39 core overview so the agent can refresh the <project/> snapshot mid-turn', async () => {
+    const { deps } = fakeDeps();
+    const snapshot = { roots: [{ id: 'pages', pageCount: 3 }], entityTypes: [], tagCount: 0, version: 'x' };
+    (deps.discovery as unknown as { overview: () => unknown }).overview = () => snapshot;
+    const result = await tool(deps, 'overview').handler({});
+    expect(result.isError).toBeFalsy();
+    const text = (result.content as Array<{ text: string }>)[0]!.text;
+    expect(JSON.parse(text)).toEqual(snapshot);
+  });
+});

@@ -638,17 +638,19 @@ const briefRenderers: Record<string, ToolRenderer> = {
   },
   update_brief: {
     summary(i) {
-      const { action, changeSummary } = cx(i).input;
-      const label = BRIEF_ACTION_LABEL[String(action ?? '')] ?? String(action ?? '?');
+      const { action, changeSummary, textEdits } = cx(i).input;
+      const label = Array.isArray(textEdits)
+        ? 'edit'
+        : (BRIEF_ACTION_LABEL[String(action ?? '')] ?? String(action ?? '?'));
       return changeSummary ? `Brief ${label}: ${changeSummary}` : `Brief ${label}`;
     },
     renderInput(i, r) {
-      const { action, changeSummary, anchor, heading, content } = cx(i).input;
+      const { action, changeSummary, anchor, heading, content, textEdits } = cx(i).input;
       const { result } = cx2(i, r);
       const newHash = typeof result?.newHash === 'string' ? (result.newHash as string) : null;
       return (
         <BriefUpdateCard
-          action={String(action ?? '?')}
+          action={Array.isArray(textEdits) ? 'edit' : String(action ?? '?')}
           changeSummary={typeof changeSummary === 'string' ? changeSummary : null}
           anchor={typeof anchor === 'string' ? anchor : null}
           heading={typeof heading === 'string' ? heading : null}

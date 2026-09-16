@@ -1,8 +1,9 @@
 /**
  * M21 brief-tools MCP server.
  *
- * Two tools (get_brief, update_brief) — no `create_brief`/`list_briefs`/
- * `brief_generate` (UI/user surface, not agent loop).
+ * Four tools (get_brief, update_brief, list_brief_versions, get_brief_version)
+ * — no `create_brief`/`list_briefs`/`brief_generate` (UI/user surface, not
+ * agent loop).
  *
  * ## Two ways the brief gets addressed
  *
@@ -26,6 +27,8 @@ import type { BriefService } from '../services/brief.js';
 import { toolFailure, toolSuccess } from '../operations/envelope.js';
 import { DomainError } from '../services/tags.js';
 import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
+import { applyTextEdits, type MatchPosition, type PositionResolver, type TextEdit } from '../services/text-edits.js';
+import { sectionRanges } from '../services/section-text.js';
 
 export interface BriefToolsContext {
   threadId: string;
@@ -160,14 +163,47 @@ export function buildBriefToolsServer(
     },
   );
 
+  /**
+   * 0.2.86 (M43 `diff-field-names`) — the differential payload, described in the
+   * SAME words as `update_plan`'s and the page tools'. One edit grammar across
+   * every content write; the engine is `services/text-edits.ts`.
+   */
+  const textEditsParam = z
+    .array(
+      z.object({
+        find: z
+          .string()
+          .describe(
+            'Searched LITERALLY, byte for byte — no regex, no whitespace normalization. ' +
+              'Copy it out of what you just read. Zero hits → FIND_NOT_FOUND, whose envelope tells you ' +
+              'whether the pattern would have matched with whitespace collapsed.',
+          ),
+        replaceWith: z.string().describe('Inserted in place of every hit. "" deletes the matched text.'),
+        expectedMatches: z
+          .union([z.number().int().min(1), z.literal('all')])
+          .optional()
+          .describe(
+            'How many hits you expect. OMITTING IT MEANS EXACTLY 1 — not "any number". ' +
+              'Pass "all" to substitute every occurrence without committing to a count. ' +
+              'Anything else → MATCH_COUNT_MISMATCH, which answers with the real count and each hit as anchor + line.',
+          ),
+      }),
+    )
+    .min(1);
+
   const updateBrief = mcpTool(
     'update_brief',
     [
-      'Edit the brief markdown body. Three actions:',
+      'Edit the brief markdown body through EXACTLY ONE of two input shapes:',
+      '(A) `action` + `content`:',
       '- replace: full rewrite (provide complete markdown in `content`).',
       '- append: append fragment at end of body.',
       '- insert_after_section: insert fragment after a section identified by `anchor`',
       '  (preferred — 8-char nanoid in `<!-- anchor: ... -->`) or `heading` (text match).',
+      '(B) `textEdits`: literal find/replaceWith substitutions counted over the WHOLE body',
+      '(frontmatter excluded). All finds are evaluated against the body BEFORE the write;',
+      'overlapping matches are INVALID_ARGUMENT. The response carries `replacements`.',
+      'Both shapes, or neither, → INVALID_ARGUMENT.',
       'You CANNOT modify frontmatter (type, from_release, to_release, roots,',
       'generated_at, implemented). `roots` is the brief scope (the',
       "releasable roots this brief covers; absent = whole-release) — pass it to release_diff",
@@ -177,14 +213,18 @@ export function buildBriefToolsServer(
       'REQUIRED `expectedHash` (sha256 from get_brief) — read the brief, then pass the hash',
       'you read back here. Mismatch → BRIEF_CONFLICT (re-read brief before retrying);',
       'omitting it → VALIDATION. There is no unguarded write.',
+      'Returns { newHash, replacements? } — never the content you sent.',
       'Each mutation captures a row in file_version with changed_by="agent".',
     ].join(' '),
     {
       ...(explicit ? EXPLICIT_BRIEF_ARG : {}),
-      action: AGENT_ACTIONS,
-      content: z.string(),
+      action: AGENT_ACTIONS.optional().describe('Shape (A). Mutually exclusive with textEdits.'),
+      content: z.string().optional().describe('Shape (A): the fragment or full body for `action`.'),
       anchor: z.string().optional(),
       heading: z.string().optional(),
+      textEdits: textEditsParam
+        .optional()
+        .describe('Shape (B): literal substitutions over the whole body. Mutually exclusive with action/content.'),
       expectedHash: z
         .string()
         .describe('sha256 of the brief as you last read it (the `hash` from get_brief). Required.'),
@@ -215,15 +255,36 @@ export function buildBriefToolsServer(
             'call get_brief and send its `hash` as `expectedHash`',
           );
         }
-        const action = args.action as 'replace' | 'append' | 'insert_after_section';
+        const hasTextEdits = args.textEdits !== undefined;
+        const hasAction = args.action !== undefined || args.content !== undefined;
+        if (hasTextEdits === hasAction) {
+          throw new DomainError(
+            'INVALID_ARGUMENT',
+            hasTextEdits
+              ? 'pass either `textEdits` or `action` + `content`, not both'
+              : 'nothing to write: pass `textEdits`, or `action` + `content`',
+            'textEdits for a punctual change; action/content for a rewrite, append or section insert',
+          );
+        }
         const current = await briefService.getBrief(briefPath);
-        const newBody = composeBody(
-          current.body,
-          action,
-          String(args.content ?? ''),
-          typeof args.anchor === 'string' ? args.anchor : undefined,
-          typeof args.heading === 'string' ? args.heading : undefined,
-        );
+        let newBody: string;
+        let replacements: number | undefined;
+        if (hasTextEdits) {
+          const applied = applyTextEdits(current.body, args.textEdits as TextEdit[], bodyPositionResolver(current.body));
+          newBody = applied.text;
+          replacements = applied.replacements;
+        } else {
+          if (args.action === undefined || typeof args.content !== 'string') {
+            throw new DomainError('INVALID_ARGUMENT', '`action` and `content` go together');
+          }
+          newBody = composeBody(
+            current.body,
+            args.action as 'replace' | 'append' | 'insert_after_section',
+            args.content,
+            typeof args.anchor === 'string' ? args.anchor : undefined,
+            typeof args.heading === 'string' ? args.heading : undefined,
+          );
+        }
         // Reconstruct full content with original frontmatter (immutable for agent).
         const matter = await import('gray-matter');
         const newContent = matter.default.stringify(newBody, current.frontmatter as Record<string, unknown>);
@@ -234,7 +295,58 @@ export function buildBriefToolsServer(
           changedBy: 'agent',
           changeSummary: typeof args.changeSummary === 'string' ? args.changeSummary : undefined,
         });
-        return ok({ newHash: result.newHash }, 'update_brief');
+        /** echo-free: the timeline, plus the one count the caller could not predict. */
+        return ok(
+          { newHash: result.newHash, ...(replacements !== undefined ? { replacements } : {}) },
+          'update_brief',
+        );
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  const listBriefVersions = mcpTool(
+    'list_brief_versions',
+    [
+      explicit
+        ? 'List the versions of the brief named by `path` (metadata only, no content), oldest first — offset 0 is version 1.'
+        : "List the versions of this thread's brief (metadata only, no content), oldest first — offset 0 is version 1.",
+      'Use before get_brief_version.',
+    ].join(' '),
+    {
+      ...(explicit ? EXPLICIT_BRIEF_ARG : {}),
+      limit: z.number().int().positive().optional(),
+      offset: z.number().int().nonnegative().optional(),
+    },
+    async (args) => {
+      try {
+        const briefPath = resolveBrief(args);
+        // Existence first, so an unknown path is NOT_FOUND with alternatives, not an empty list.
+        await briefService.getBrief(briefPath, { range: { start: 1, end: 1 } });
+        const all = [...briefService.listVersions(briefPath)].reverse();
+        const offset = typeof args.offset === 'number' ? args.offset : 0;
+        const limit = typeof args.limit === 'number' ? args.limit : all.length;
+        return ok({ versions: all.slice(offset, offset + limit), total: all.length }, 'list_brief_versions');
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  const getBriefVersion = mcpTool(
+    'get_brief_version',
+    'Get one version snapshot of the brief with its full content. Use to inspect a historical state or to diff locally.',
+    {
+      ...(explicit ? EXPLICIT_BRIEF_ARG : {}),
+      version: z.number().int().positive(),
+    },
+    async (args) => {
+      try {
+        const briefPath = resolveBrief(args);
+        const v = briefService.getVersion(briefPath, Number(args.version));
+        if (!v) throw new DomainError('VERSION_NOT_FOUND', `version ${args.version} of brief '${briefPath}' not found`);
+        return ok(v, 'get_brief_version');
       } catch (err) {
         return fail(err);
       }
@@ -243,8 +355,27 @@ export function buildBriefToolsServer(
 
   return createMcpServer({
     name: 'brief-tools',
-    tools: [getBrief, updateBrief],
+    tools: [getBrief, updateBrief, listBriefVersions, getBriefVersion],
   });
+}
+
+/**
+ * Mismatch positions as anchor + line (M43 `match-count-declared`), never a
+ * byte offset. The text handed to the engine is the body alone, so its lines
+ * are body lines; the innermost anchored section containing the hit wins.
+ */
+function bodyPositionResolver(body: string): PositionResolver {
+  const ranges = sectionRanges(body.split('\n'));
+  return (offset): MatchPosition => {
+    const line = body.slice(0, offset).split('\n').length - 1;
+    const innermost = ranges
+      .filter((r) => line >= r.lineStart - 1 && line < r.lineEnd)
+      .reduce<{ anchor: string; lineStart: number } | null>(
+        (best, r) => (best === null || r.lineStart > best.lineStart ? r : best),
+        null,
+      );
+    return { anchor: innermost?.anchor ?? null, line: line + 1 };
+  };
 }
 
 function composeBody(

@@ -987,6 +987,17 @@ export interface ArtifactResponse {
 }
 
 /**
+ * 0.2.86 (M43 `echo-free`) — what `PUT .../content` and `PATCH .../frontmatter`
+ * answer. The address, the timeline and the frontmatter as it now stands; never
+ * the body or content the caller just sent. Read the detail route for those.
+ */
+export interface ArtifactWriteResponse {
+  path: string;
+  frontmatter: Record<string, unknown>;
+  hash: string;
+}
+
+/**
  * `GET /api/artifacts/:kind` list item. No `name`/`title`/`threadCount` at the
  * list level — kind-specific data lives in `frontmatter` (`patch_kind`,
  * `brief`, `from_release`, `to_release`); the client derives a display title
