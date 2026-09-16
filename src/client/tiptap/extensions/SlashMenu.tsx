@@ -99,6 +99,10 @@ export const SlashMenu = forwardRef<SlashMenuHandle, SuggestionProps<SlashComman
             <button
               key={item.id}
               onClick={() => run(i)}
+            // Keep focus in the editor: a mousedown on the row would blur it
+            // BEFORE the command runs, and an editor that saves on blur would
+            // persist the half-typed `/men` query.
+            onMouseDown={(e) => e.preventDefault()}
               onMouseEnter={() => setSelected(i)}
               className="w-full flex items-center gap-3 px-3 py-1.5 text-left"
               style={{

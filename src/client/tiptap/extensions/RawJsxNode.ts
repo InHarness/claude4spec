@@ -1,11 +1,13 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer } from '@tiptap/react';
 import {
+  getDispatchAllowlist,
   isPassthroughTag,
   matchJsxTagOpen,
   findJsxSpanEnd,
 } from '../../../shared/jsx-passthrough.js';
 import { escapeRawAttr } from '../../../shared/raw-jsx-escape.js';
+import { isRegisteredXmlTag } from './xmlNodes.js';
 import { RawJsxView } from './views/RawJsxView.js';
 
 /**
@@ -25,7 +27,43 @@ import { RawJsxView } from './views/RawJsxView.js';
  * Mapping: self-closing tags (anywhere) and mid-prose paired tags → inline node
  * (inline `<code>`); a paired `<Tag>…</Tag>` opening at line start and closing a
  * line → block node (code block).
+ *
+ * Two disjoint gates route a tag here (M20 `m20mdxjsx`, `ctx4prof` rule 6):
+ *   1. `isPassthroughTag(name)` — component-shaped name ∉ dispatch allowlist
+ *      (`<Callout/>`), in every context;
+ *   2. name ∈ dispatch allowlist (or a plugin embed tag) but its node is NOT
+ *      mounted in THIS context (`name ∉ spec.extensions`) — `<single_element/>`
+ *      in an entity description, `<todo/>` in a plan, every reference tag in a
+ *      brief or patch. Without this gate the XML rule of a sibling node turned
+ *      the tag into HTML for a node type the schema does not have, and
+ *      ProseMirror dropped it silently on the first save.
+ * The context whitelist decides what RENDERS, not what SURVIVES a save: a tag
+ * routed by gate 2 stays on disk byte for byte and remains a live reference for
+ * the server-side M19 operations.
+ *
+ * The mounted set arrives through `options.mountedTags` (set by the registry
+ * factory from `RegistryContext.contextSpec`); `null` means "everything
+ * registered is mounted" — gate 2 is then inert, which is the pre-whitelist
+ * behaviour and what `buildMarkdownIt` (read-only rendering) relies on.
  */
+
+export interface RawJsxOptions {
+  /** Names of the extensions mounted in this editor instance; `null` = gate 2 off. */
+  mountedTags: readonly string[] | null;
+}
+
+export type RawTagPredicate = (name: string) => boolean;
+
+/** Build the "route to raw node" predicate for one editor instance. */
+export function rawTagPredicate(mountedTags: readonly string[] | null): RawTagPredicate {
+  if (!mountedTags) return isPassthroughTag;
+  const mounted = new Set(mountedTags);
+  return (name) => {
+    if (isPassthroughTag(name)) return true;
+    if (mounted.has(name)) return false;
+    return getDispatchAllowlist().has(name) || isRegisteredXmlTag(name);
+  };
+}
 
 function emitInline(raw: string): string {
   return `<raw_jsx_inline data-c4s-raw="${escapeRawAttr(raw)}"></raw_jsx_inline>`;
@@ -35,7 +73,7 @@ function emitBlock(raw: string): string {
   return `<raw_jsx_block data-c4s-raw="${escapeRawAttr(raw)}"></raw_jsx_block>`;
 }
 
-export function setupRawJsxRules(md: any): void {
+export function setupRawJsxRules(md: any, isRaw: RawTagPredicate = isPassthroughTag): void {
   if (md.__claude4specRawJsxRules) return;
   md.__claude4specRawJsxRules = true;
 
@@ -51,7 +89,7 @@ export function setupRawJsxRules(md: any): void {
       const pos = state.bMarks[startLine] + state.tShift[startLine];
       if (state.src.charCodeAt(pos) !== 0x3c /* < */) return false;
       const open = matchJsxTagOpen(state.src, pos);
-      if (!open || !isPassthroughTag(open.name)) return false;
+      if (!open || !isRaw(open.name)) return false;
 
       // Self-closing alone on its own line → block raw node.
       if (open.selfClosing) {
@@ -93,7 +131,7 @@ export function setupRawJsxRules(md: any): void {
     const pos = state.pos;
     if (state.src.charCodeAt(pos) !== 0x3c /* < */) return false;
     const open = matchJsxTagOpen(state.src, pos);
-    if (!open || !isPassthroughTag(open.name)) return false;
+    if (!open || !isRaw(open.name)) return false;
 
     let end: number;
     if (open.selfClosing) {
@@ -118,13 +156,25 @@ function readRaw(dom: HTMLElement): string {
   return dom.getAttribute('data-c4s-raw') ?? '';
 }
 
-export const RawJsxInlineNode = Node.create({
+/**
+ * tiptap-markdown invokes `parse.setup` as `setup.call({ editor, options }, md)`,
+ * so the instance's `mountedTags` option is reachable as `this.options`.
+ */
+function setupFromOptions(this: { options?: Partial<RawJsxOptions> } | void, md: any): void {
+  const mounted = (this && this.options && this.options.mountedTags) ?? null;
+  setupRawJsxRules(md, rawTagPredicate(mounted));
+}
+
+export const RawJsxInlineNode = Node.create<RawJsxOptions>({
   name: 'raw_jsx_inline',
   group: 'inline',
   inline: true,
   atom: true,
   selectable: true,
   draggable: true,
+  addOptions() {
+    return { mountedTags: null };
+  },
   addAttributes() {
     return { raw: { default: '' } };
   },
@@ -148,18 +198,21 @@ export const RawJsxInlineNode = Node.create({
         serialize(state: any, node: any) {
           state.write(String(node.attrs.raw ?? ''));
         },
-        parse: { setup: setupRawJsxRules },
+        parse: { setup: setupFromOptions },
       },
     };
   },
 });
 
-export const RawJsxBlockNode = Node.create({
+export const RawJsxBlockNode = Node.create<RawJsxOptions>({
   name: 'raw_jsx_block',
   group: 'block',
   atom: true,
   selectable: true,
   draggable: true,
+  addOptions() {
+    return { mountedTags: null };
+  },
   addAttributes() {
     return { raw: { default: '' } };
   },
@@ -184,7 +237,7 @@ export const RawJsxBlockNode = Node.create({
           state.write(String(node.attrs.raw ?? ''));
           state.closeBlock(node);
         },
-        parse: { setup: setupRawJsxRules },
+        parse: { setup: setupFromOptions },
       },
     };
   },

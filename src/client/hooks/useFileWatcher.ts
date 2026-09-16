@@ -7,7 +7,12 @@ import { useFileEventsStore } from '../state/fileEvents.js';
 import { reloadFrontendPlugins } from '../runtime/boot-plugins.js';
 import { clientPluginHost } from '../core/plugin-host/host.js';
 
-/** M33 phase 3: window event a live editor listens for to re-apply extensions (no setContent). */
+/**
+ * M33 phase 3: window event dispatched once a plugin reload has re-pinned the
+ * registry. Editors do NOT listen for it — they follow the registry's schema
+ * version directly (`tiptap/useEditorSchema.ts`), which also covers the initial
+ * non-blocking boot. Kept for any non-editor consumer.
+ */
 export const PLUGINS_RELOADED_EVENT = 'c4s:plugins-reloaded';
 
 /**
@@ -106,9 +111,9 @@ export function useFileWatcher() {
           } else if (data.kind === 'plugin:reloaded') {
             // M33 phase 3: a plugin in the pool was installed/removed/edited.
             // Re-import its frontend (cache-bust), re-pin editor extensions +
-            // commands, then invalidate the plugin-derived caches. NO setContent
-            // — an open document survives. A live editor re-applies extensions
-            // on the dispatched window event.
+            // commands, then invalidate the plugin-derived caches. An open
+            // document survives: a live editor rebuilds on the registry's
+            // schema version and carries its content across.
             void reloadFrontendPlugins().finally(() => {
               window.dispatchEvent(new CustomEvent(PLUGINS_RELOADED_EVENT, { detail: data }));
             });

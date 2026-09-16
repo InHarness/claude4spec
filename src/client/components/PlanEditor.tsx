@@ -3,7 +3,14 @@ import { EditorContent, useEditor } from '@tiptap/react';
 import { useQueryClient } from '@tanstack/react-query';
 import '../tiptap/registrations.js';
 import { EditorFactory } from '../tiptap/EditorFactory.js';
+import { assertSaveMode, getContextSpec } from '../tiptap/registry.js';
 import { invokeSlash } from '../tiptap/slashInvoke.js';
+import {
+  useEditorCarry,
+  useEditorCarryApply,
+  useEditorSchemaVersion,
+  useSeededEditor,
+} from '../tiptap/useEditorSchema.js';
 import { refreshAnnotations } from '../tiptap/extensions/AnnotationHighlight.js';
 import { AnnotationBubble } from '../tiptap/AnnotationBubble.js';
 import { OutlineFloater } from './OutlineFloater.js';
@@ -20,14 +27,21 @@ interface Props {
 
 export function PlanEditor({ content, onChange, currentPage }: Props) {
   const lastServerBodyRef = useRef<string>(content);
+  const prevContentRef = useRef<string>(content);
+  const seeded = useSeededEditor();
   const annotations = useChatStore((s) => s.annotations);
   const qc = useQueryClient();
   const pagesIndex = usePagesIndex();
 
-  // Same registry-driven extension set as the page editor (chips, slash-commands,
-  // @-mention, annotation highlighting). 0.1.127: the plan-only BlameDecoration
-  // extension is gone along with the plan_version table it read from (see brief
-  // 0-1-126-to-0-1-127) — plan_mode's active decorations are annotations only now.
+  // The `plan` context (M20 `ctxregst`): the 5 generic chips, section refs,
+  // `@`-mention, annotation highlighting — and `/section` as its only slash
+  // command; no todo marker (a `<todo/>` in a plan passes through verbatim).
+  // 0.1.127: the plan-only BlameDecoration extension is gone along with the
+  // plan_version table it read from (see brief 0-1-126-to-0-1-127).
+  // Rule 4: `explicit` — persistence is PlanPage's Save/Discard, never this
+  // component's; the assertion pins the mode against the context spec.
+  assertSaveMode(getContextSpec('plan'), 'explicit');
+  const schemaVersion = useEditorSchemaVersion();
   const extensions = useMemo(
     () =>
       EditorFactory.buildExtensions(
@@ -44,26 +58,42 @@ export function PlanEditor({ content, onChange, currentPage }: Props) {
             'The plan is empty. The agent will fill it via update_plan during the conversation in PLAN MODE.',
         },
       ),
-    [qc, currentPage],
+    [qc, currentPage, schemaVersion],
   );
+  const carry = useEditorCarry(extensions);
 
-  const editor = useEditor({
-    extensions,
-    content: '',
-    editorProps: {
-      attributes: {
-        class: 'prose-spec focus:outline-none',
+  const editor = useEditor(
+    {
+      extensions,
+      content: '',
+      editorProps: {
+        attributes: {
+          class: 'prose-spec focus:outline-none',
+        },
+      },
+      onUpdate: ({ editor }) => {
+        const md = editor.storage.markdown.getMarkdown() as string;
+        onChange(md, md !== lastServerBodyRef.current);
       },
     },
-    onUpdate: ({ editor }) => {
-      const md = editor.storage.markdown.getMarkdown() as string;
-      onChange(md, md !== lastServerBodyRef.current);
-    },
-  });
+    [extensions],
+  );
+  useEditorCarryApply(carry, editor);
 
   // Load server content into editor when it changes externally.
   useEffect(() => {
     if (!editor) return;
+    const contentChanged = content !== prevContentRef.current;
+    prevContentRef.current = content;
+    // A rebuilt instance (schema re-init, see `useEditorSchema.ts`) with unsaved
+    // edits: PlanPage feeds the dirty text back as `content`, so `content`
+    // differs from the server body while the prop itself did not change. The
+    // carry restored those edits; never overwrite them with the server copy.
+    // Every other case — first mount, a plan switch, an external change, and
+    // Discard (the prop flips back to the server body) — applies `content`.
+    const fresh = seeded.isFresh(editor);
+    if (fresh && !contentChanged && content !== lastServerBodyRef.current) return;
+    seeded.markSeeded(editor);
     const current = editor.storage.markdown.getMarkdown() as string;
     if (current === content) return;
     lastServerBodyRef.current = content;

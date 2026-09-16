@@ -41,8 +41,8 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
     try {
       const title = typeof req.body?.title === 'string' ? req.body.title : null;
       // 0.1.79: optional context_type. Only 'chat' (default) and 'ask' are
-      // accepted on THIS generic path; 'brief'/'patch' have dedicated
-      // create-thread endpoints (POST /briefs/:path/threads, /patches/...).
+      // accepted on THIS generic path; 'brief'/'patch' have a dedicated
+      // create-thread endpoint (POST /api/artifacts/:kind/:path/threads).
       const rawCt = req.body?.context_type;
       let contextType: 'chat' | 'ask' = 'chat';
       if (rawCt !== undefined) {

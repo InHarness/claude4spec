@@ -112,7 +112,7 @@ export function DesignSystemDetail({ slug, onDeleted, onRenamed, onOpenEntity }:
   const [activeMode, setActiveMode] = useState<string>(BASE_MODE);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
-  const { draft, dirty, patch } = useEntityDraftEditor({
+  const { draft, dirty, patch, saveField } = useEntityDraftEditor({
     entity: ds,
     toDraft,
     save: async (current, entity) => {
@@ -136,6 +136,10 @@ export function DesignSystemDetail({ slug, onDeleted, onRenamed, onOpenEntity }:
       if (saved.length) toast.warning(`${saved.length} linter warning(s)`);
       if (updated.slug !== entity.slug) onRenamed(updated.slug);
       return updated;
+    },
+    fieldSaves: {
+      description: (description, entity) =>
+        update.mutateAsync({ slug: entity.slug, input: { description: description || null } }),
     },
   });
 
@@ -357,9 +361,14 @@ export function DesignSystemDetail({ slug, onDeleted, onRenamed, onOpenEntity }:
         {/* description */}
         <div className="mt-6">
           <FieldRow label="Description" align="start">
+            {/* L8 `description` context save policy: on blur, one
+                `PATCH { description }` — declared in `fieldSaves`, so the
+                whole-draft debounced save the other fields use never carries
+                an in-progress description (spec `ctxregst`, `dsdetail`). */}
             <DocEditor
               value={draft.description}
               onChange={(md) => patch({ description: md })}
+              onBlur={() => void saveField('description')}
               placeholder="What this design system covers, when to use it, conventions…"
             />
           </FieldRow>

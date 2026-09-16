@@ -45,9 +45,16 @@ const router = createAppRouter(queryClient);
 mountFrontend(router, clientPluginHost.listEntities());
 
 // M33: load runtime plugins WITHOUT blocking first paint (the import map is
-// injected server-side and the editor isn't mounted on first paint). This
-// re-runs `mountFrontend` once the manifest resolves — idempotent, rebuilding the
-// route tree from the frozen base so the built-in routes above are not duplicated.
+// injected server-side). This re-runs `mountFrontend` once the manifest
+// resolves — idempotent, rebuilding the route tree from the frozen base so the
+// built-in routes above are not duplicated.
+//
+// L8 ordering invariant (`m33l8wir`): a deep link CAN mount an editor before
+// this boot settles, and Tiptap freezes its schema at create. The editors
+// therefore follow the registry's schema version and re-initialise themselves
+// when a schema-bearing extension lands (`tiptap/useEditorSchema.ts`) — the
+// spec's "re-initialise live instances" implementation, so this call may stay
+// non-blocking.
 void bootFrontendPlugins(router).catch((err) => {
   console.warn('[plugin-host] plugin boot failed', err);
 });

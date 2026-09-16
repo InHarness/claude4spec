@@ -5,6 +5,13 @@ import { usePatch, useUpdatePatchContent } from '../hooks/usePatches.js';
 import '../tiptap/registrations.js';
 import { EditorFactory } from '../tiptap/EditorFactory.js';
 import { invokeSlash } from '../tiptap/slashInvoke.js';
+import { assertSaveMode, getContextSpec, ARTEFACT_ROOT_EDITOR_PROPS } from '../tiptap/registry.js';
+import {
+  useEditorCarry,
+  useEditorCarryApply,
+  useEditorSchemaVersion,
+  useSeededEditor,
+} from '../tiptap/useEditorSchema.js';
 import { ApiError } from '../lib/api-core.js';
 import { withFrontmatterOf } from '../lib/artifact-frontmatter.js';
 
@@ -25,37 +32,52 @@ export function PatchEditor({ patchPath }: Props) {
   const saveTimer = useRef<number | null>(null);
   const lastSavedBodyRef = useRef<string | null>(null);
   const isDirtyRef = useRef(false);
+  const seeded = useSeededEditor();
   const [conflict, setConflict] = useState<boolean>(false);
 
+  const schemaVersion = useEditorSchemaVersion();
   const extensions = useMemo(
     () =>
-      EditorFactory.buildExtensions('page', {
-        qc,
-        currentPath: patchPath,
-        onSlashInvoke: (editor, command) =>
-          void invokeSlash(editor, command, { qc, currentPath: patchPath }),
-        getAnnotations: () => [],
-      }),
-    [qc, patchPath],
+      // A patch has no context of its own: `page` with the artefact property
+      // bag (M23 `m23l13rt`) — see BriefEditor.
+      EditorFactory.buildExtensions(
+        'page',
+        {
+          qc,
+          currentPath: patchPath,
+          onSlashInvoke: (editor, command) =>
+            void invokeSlash(editor, command, { qc, currentPath: patchPath }),
+          getAnnotations: () => [],
+        },
+        {},
+        ARTEFACT_ROOT_EDITOR_PROPS,
+      ),
+    [qc, patchPath, schemaVersion],
   );
+  const save = assertSaveMode(getContextSpec('page', ARTEFACT_ROOT_EDITOR_PROPS), 'debounce');
+  const carry = useEditorCarry(extensions);
 
-  const editor = useEditor({
-    extensions,
-    content: '',
-    editorProps: {
-      attributes: { class: 'prose-spec focus:outline-none' },
+  const editor = useEditor(
+    {
+      extensions,
+      content: '',
+      editorProps: {
+        attributes: { class: 'prose-spec focus:outline-none' },
+      },
+      onUpdate: ({ editor }) => {
+        if (!patch) return;
+        const md = editor.storage.markdown.getMarkdown() as string;
+        if (md === lastSavedBodyRef.current) return;
+        isDirtyRef.current = true;
+        if (saveTimer.current) clearTimeout(saveTimer.current);
+        saveTimer.current = window.setTimeout(() => {
+          void doSave(md);
+        }, save.debounceMs);
+      },
     },
-    onUpdate: ({ editor }) => {
-      if (!patch) return;
-      const md = editor.storage.markdown.getMarkdown() as string;
-      if (md === lastSavedBodyRef.current) return;
-      isDirtyRef.current = true;
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-      saveTimer.current = window.setTimeout(() => {
-        void doSave(md);
-      }, 800);
-    },
-  });
+    [extensions],
+  );
+  useEditorCarryApply(carry, editor);
 
   async function doSave(newBody: string) {
     if (!patch) return;
@@ -86,14 +108,20 @@ export function PatchEditor({ patchPath }: Props) {
 
   useEffect(() => {
     if (!editor || !patch) return;
+    // A rebuilt instance (schema re-init) holds the carried, possibly lossy,
+    // document: re-seed from the server body unless there are unsaved edits.
+    const fresh = seeded.isFresh(editor);
     const current = editor.storage.markdown.getMarkdown() as string;
     if (current === patch.body) {
+      seeded.markSeeded(editor);
       lastSavedBodyRef.current = patch.body;
       return;
     }
     if (isDirtyRef.current) return;
-    editor.commands.setContent(patch.body);
+    if (!fresh && patch.body === lastSavedBodyRef.current) return;
+    seeded.markSeeded(editor);
     lastSavedBodyRef.current = patch.body;
+    editor.commands.setContent(patch.body, false);
   }, [editor, patch]);
 
   if (isLoading) {

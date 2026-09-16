@@ -155,10 +155,13 @@ async function bootFrontendPluginsInner(router: AppRouter): Promise<void> {
 /**
  * M33 — react to a `plugin:reloaded` WS event WITHOUT a page reload.
  * Refetch the frontend-manifest, re-import each entry with a cache-bust, re-pin
- * editor extensions, and re-register declarative commands. Crucially this NEVER
- * touches ProseMirror document state (no `setContent`), so an open/unsaved
- * document survives the extension remount; a live editor re-applies the shared
- * registry on the `c4s:plugins-reloaded` event dispatched by the caller.
+ * editor extensions, and re-register declarative commands. This never calls
+ * `setContent` itself. A live editor follows the registry's schema version
+ * (`tiptap/registry.ts` → `tiptap/useEditorSchema.ts`): when a re-pinned
+ * extension changes the schema, the editor rebuilds its instance and carries
+ * the open document across, so unsaved edits survive the remount. (Until
+ * 0.2.85 this comment promised a listener on `c4s:plugins-reloaded` that no
+ * editor had; the window event is still dispatched for other consumers.)
  */
 export async function reloadFrontendPlugins(): Promise<void> {
   if (!activeRouter) {

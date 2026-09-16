@@ -20,7 +20,7 @@ type ViewTab = 'artifact' | 'threads';
  * M23 patch detail page. Modelled on BriefDetail — two panes (artifact +
  * threads) collapsed into tabs. A patch has no version history endpoint, so
  * there is no `history` tab. The settings popover toggles the only mutable
- * frontmatter field, `status`.
+ * frontmatter field, `applied`.
  */
 export function PatchDetail({ patchPath }: Props) {
   const { data: patch, isLoading } = usePatch(patchPath);

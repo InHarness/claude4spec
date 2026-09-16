@@ -1,28 +1,39 @@
 import type { ChipBrokenCategory } from '../../../core/plugin-host/host.js';
 
-const CATEGORY_LABEL: Record<ChipBrokenCategory | 'broken-reference', string> = {
+/**
+ * `rejected-slot` (0.2.88): the plugin is active and the entity may well exist,
+ * but the plugin's `renderChip` threw in the host's smoke test and was
+ * replaced by the host's stand-in (`RejectedSlotFallback`).
+ */
+export type BrokenChipCategory = ChipBrokenCategory | 'broken-reference' | 'rejected-slot';
+
+const CATEGORY_LABEL: Record<BrokenChipCategory, string> = {
   'inactive-plugin': 'inactive plugin',
   'unknown-type': 'unknown type',
   'broken-reference': 'broken reference',
+  'rejected-slot': 'broken',
 };
 
-const CATEGORY_HINT: Record<ChipBrokenCategory | 'broken-reference', string> = {
+const CATEGORY_HINT: Record<BrokenChipCategory, string> = {
   'inactive-plugin':
     'Type registered but disabled via config.entities. Re-enable in project config to render.',
   'unknown-type':
     'No plugin registered for this type. Likely a typo or a plugin that was removed.',
   'broken-reference':
     'Plugin active but the referenced entity does not exist (deleted or renamed).',
+  'rejected-slot': 'The plugin\'s chip renderer threw and was rejected by the plugin host.',
 };
 
 interface InlineBrokenChipProps {
-  category: ChipBrokenCategory | 'broken-reference';
+  category: BrokenChipCategory;
   type: string;
   slug?: string;
+  /** Overrides the category's generic tooltip (e.g. with the rejection reason). */
+  hint?: string;
 }
 
-/** Compact inline chip — used by InlineMentionView. */
-export function InlineBrokenChip({ category, type, slug }: InlineBrokenChipProps) {
+/** Compact inline chip — used by InlineMentionView and RejectedSlotFallback. */
+export function InlineBrokenChip({ category, type, slug, hint }: InlineBrokenChipProps) {
   const text =
     category === 'broken-reference'
       ? `⚠ missing: ${type}/${slug ?? '?'}`
@@ -35,7 +46,7 @@ export function InlineBrokenChip({ category, type, slug }: InlineBrokenChipProps
         color: 'var(--c-red, #c45a3b)',
         border: '1px solid var(--c-red, #c45a3b)',
       }}
-      title={CATEGORY_HINT[category]}
+      title={hint ?? CATEGORY_HINT[category]}
     >
       {text}
     </span>
@@ -43,7 +54,7 @@ export function InlineBrokenChip({ category, type, slug }: InlineBrokenChipProps
 }
 
 interface BlockBrokenChipProps {
-  category: ChipBrokenCategory | 'broken-reference';
+  category: BrokenChipCategory;
   type: string;
   slug?: string;
 }

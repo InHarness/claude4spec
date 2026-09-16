@@ -63,6 +63,7 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
 
   return (
     <div
+      data-mention-menu=""
       className="rounded-md py-1"
       style={{
         background: 'var(--c-card)',
@@ -80,6 +81,10 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
           <button
             key={key}
             onClick={() => run(i)}
+            // Keep focus in the editor: a mousedown on the row would blur it
+            // BEFORE the command runs, and an editor that saves on blur would
+            // persist the half-typed `/men` query.
+            onMouseDown={(e) => e.preventDefault()}
             onMouseEnter={() => setSelected(i)}
             style={{
               background: active ? 'var(--c-accent-soft)' : 'transparent',

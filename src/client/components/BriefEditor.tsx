@@ -5,6 +5,13 @@ import { useBrief, useUpdateBriefContent } from '../hooks/useBriefs.js';
 import '../tiptap/registrations.js';
 import { EditorFactory } from '../tiptap/EditorFactory.js';
 import { invokeSlash } from '../tiptap/slashInvoke.js';
+import { assertSaveMode, getContextSpec, ARTEFACT_ROOT_EDITOR_PROPS } from '../tiptap/registry.js';
+import {
+  useEditorCarry,
+  useEditorCarryApply,
+  useEditorSchemaVersion,
+  useSeededEditor,
+} from '../tiptap/useEditorSchema.js';
 import { ApiError } from '../lib/api-core.js';
 import { withFrontmatterOf } from '../lib/artifact-frontmatter.js';
 import { useFileEventsStore } from '../state/fileEvents.js';
@@ -18,9 +25,9 @@ interface Props {
  * M21 brief artifact panel. Reuse Tiptap factory + extensions z M02 (page
  * context — brief renderuje wszystkie te same XML refs / mentions / diagrams),
  * ale storage przez briefs-api (osobny endpoint, optimistic concurrency
- * przez expectedHash sha256). Save: debounced 800ms (slowsze niz Editor.tsx
- * dla pages, bo PUT brief content uruchamia indexer + version capture +
- * ws broadcast — drozszy round-trip).
+ * przez expectedHash sha256). Save: debounced `AUTOSAVE_DEBOUNCE_MS` — ta sama
+ * polityka co Editor.tsx dla pages (spec M21: brief dziedziczy politykę zapisu
+ * przez reuse komponentu M02; do 0.2.85 było tu osobne 800 ms).
  *
  * Uwaga: Editor wsadza tylko BODY (bez frontmatter) do Tiptap. Przy save
  * skladamy z powrotem przez gray-matter na backendzie (brief.updateContent
@@ -34,38 +41,56 @@ export function BriefEditor({ briefPath }: Props) {
   const saveTimer = useRef<number | null>(null);
   const lastSavedBodyRef = useRef<string | null>(null);
   const isDirtyRef = useRef(false);
+  const seeded = useSeededEditor();
   const [conflict, setConflict] = useState<{ currentHash: string } | null>(null);
   const briefExternalChange = useFileEventsStore((s) => s.briefExternalChange);
   const clearBriefExternalChange = useFileEventsStore((s) => s.clearBriefExternalChange);
 
+  const schemaVersion = useEditorSchemaVersion();
   const extensions = useMemo(
     () =>
-      EditorFactory.buildExtensions('page', {
-        qc,
-        currentPath: briefPath,
-        onSlashInvoke: (editor, command) => void invokeSlash(editor, command, { qc, currentPath: briefPath }),
-        getAnnotations: () => [],
-      }),
-    [qc, briefPath],
+      // A brief has no context of its own: it mounts `page` with the artefact
+      // property bag (M21 `m21l13rt`) — no section index, no reference
+      // validation, `@` reaching the `pages` root. Entity tags in the body
+      // survive the autosave verbatim through the raw node (rule 6).
+      EditorFactory.buildExtensions(
+        'page',
+        {
+          qc,
+          currentPath: briefPath,
+          onSlashInvoke: (editor, command) =>
+            void invokeSlash(editor, command, { qc, currentPath: briefPath }),
+          getAnnotations: () => [],
+        },
+        {},
+        ARTEFACT_ROOT_EDITOR_PROPS,
+      ),
+    [qc, briefPath, schemaVersion],
   );
+  const save = assertSaveMode(getContextSpec('page', ARTEFACT_ROOT_EDITOR_PROPS), 'debounce');
+  const carry = useEditorCarry(extensions);
 
-  const editor = useEditor({
-    extensions,
-    content: '',
-    editorProps: {
-      attributes: { class: 'prose-spec focus:outline-none' },
+  const editor = useEditor(
+    {
+      extensions,
+      content: '',
+      editorProps: {
+        attributes: { class: 'prose-spec focus:outline-none' },
+      },
+      onUpdate: ({ editor }) => {
+        if (!brief) return;
+        const md = editor.storage.markdown.getMarkdown() as string;
+        if (md === lastSavedBodyRef.current) return;
+        isDirtyRef.current = true;
+        if (saveTimer.current) clearTimeout(saveTimer.current);
+        saveTimer.current = window.setTimeout(() => {
+          void doSave(md);
+        }, save.debounceMs);
+      },
     },
-    onUpdate: ({ editor }) => {
-      if (!brief) return;
-      const md = editor.storage.markdown.getMarkdown() as string;
-      if (md === lastSavedBodyRef.current) return;
-      isDirtyRef.current = true;
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-      saveTimer.current = window.setTimeout(() => {
-        void doSave(md);
-      }, 800);
-    },
-  });
+    [extensions],
+  );
+  useEditorCarryApply(carry, editor);
 
   async function doSave(newBody: string) {
     if (!brief) return;
@@ -103,12 +128,18 @@ export function BriefEditor({ briefPath }: Props) {
   // refetch — see external-change effect below).
   useEffect(() => {
     if (!editor || !brief) return;
+    // A rebuilt instance (schema re-init) holds the carried, possibly lossy,
+    // document: re-seed from the server body unless there are unsaved edits.
+    const fresh = seeded.isFresh(editor);
     const current = editor.storage.markdown.getMarkdown() as string;
     if (current === brief.body) {
+      seeded.markSeeded(editor);
       lastSavedBodyRef.current = brief.body;
       return;
     }
     if (isDirtyRef.current) return;
+    if (!fresh && brief.body === lastSavedBodyRef.current) return;
+    seeded.markSeeded(editor);
     // Set the ref before setContent and pass emitUpdate=false so the swap never
     // re-enters onUpdate as a phantom edit (mirrors Editor.tsx for pages).
     lastSavedBodyRef.current = brief.body;

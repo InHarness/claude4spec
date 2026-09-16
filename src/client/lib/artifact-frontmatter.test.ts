@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { withFrontmatterOf } from './artifact-frontmatter.js';
+import { bodyOf, withFrontmatterOf } from './artifact-frontmatter.js';
 
 /**
  * The regression this guards is subtle and was live on `main`: both artifact
@@ -51,5 +51,27 @@ describe('withFrontmatterOf', () => {
     expect(withFrontmatterOf('---\r\ntype: plan\r\n---\r\nold', 'new')).toBe(
       '---\r\ntype: plan\r\n---\r\nnew',
     );
+  });
+});
+
+describe('bodyOf', () => {
+  it('strips the frontmatter block the way gray-matter does (one trailing newline)', () => {
+    expect(bodyOf('---\ntitle: Foo\n---\n# Foo\n')).toBe('# Foo\n');
+    expect(bodyOf('---\ntitle: Foo\n---\n\n# Foo')).toBe('\n# Foo');
+  });
+
+  it('is the identity for a file with no frontmatter', () => {
+    expect(bodyOf('# Just a body\n')).toBe('# Just a body\n');
+  });
+
+  it('handles an empty block, a BOM and CRLF', () => {
+    expect(bodyOf('---\n---\nbody')).toBe('body');
+    expect(bodyOf('\uFEFF---\ntype: plan\n---\nbody')).toBe('body');
+    expect(bodyOf('---\r\ntype: plan\r\n---\r\nbody')).toBe('body');
+  });
+
+  it('round-trips with withFrontmatterOf', () => {
+    const raw = '---\ntitle: Foo\n---\n# Foo';
+    expect(withFrontmatterOf(raw, bodyOf(raw))).toBe(raw);
   });
 });

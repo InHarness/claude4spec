@@ -68,7 +68,7 @@ export function EndpointDetail({
   const { data: allDtos = [] } = useDtos();
   const { data: refs = [] } = useReferences('endpoint', endpoint?.slug ?? null);
 
-  const { draft, dirty, patch } = useEntityDraftEditor({
+  const { draft, dirty, patch, saveField } = useEntityDraftEditor({
     entity: endpoint,
     toDraft,
     save: async (current, ep) => {
@@ -84,6 +84,10 @@ export function EndpointDetail({
       });
       if (updated.slug !== ep.slug) onRenamed(updated.slug);
       return updated;
+    },
+    fieldSaves: {
+      description: (description, entity) =>
+        update.mutateAsync({ slug: entity.slug, input: { description: description || null } }),
     },
   });
 
@@ -203,9 +207,14 @@ export function EndpointDetail({
 
         <div className="mt-6">
         <FieldRow label="Description" align="start">
+          {/* L8 `description` context save policy: on blur, one
+              `PATCH { description }` — declared in `fieldSaves`, so the
+              whole-draft debounced save the other fields use never carries
+              an in-progress description (spec `ctxregst`, Endpoint detail page). */}
           <DocEditor
             value={draft.description}
             onChange={(md) => patch({ description: md })}
+            onBlur={() => void saveField('description')}
             placeholder="Describe what this endpoint does, invariants, gotchas…"
           />
         </FieldRow>

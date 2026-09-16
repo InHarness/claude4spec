@@ -1078,9 +1078,29 @@ const DatabaseTableDetailForm: FC<{
   const currentSlugRef = useRef(entity.slug);
   const titleRef = useRef<HTMLTextAreaElement>(null);
 
+  // Unmount and page unload flush whatever the debounce has not sent yet
+  // (description included — 0.2.88 puts it on the same delayed autosave as the
+  // other fields): in-app navigation runs the cleanup, a reload runs none, so
+  // `pagehide`/`beforeunload` cover it. `scheduleSave` diffs against the
+  // baseline, so a clean draft sends nothing. The listener reads through a ref
+  // so it always sees the latest closure.
+  const flushRef = useRef<() => void>(() => {});
   useEffect(() => {
+    let unloadFlushed = false;
+    const onPageHide = () => {
+      if (!unloadFlushed) flushRef.current();
+      unloadFlushed = false;
+    };
+    const onBeforeUnload = () => {
+      unloadFlushed = true;
+      flushRef.current();
+    };
+    window.addEventListener('pagehide', onPageHide);
+    window.addEventListener('beforeunload', onBeforeUnload);
     return () => {
-      if (debounceRef.current) window.clearTimeout(debounceRef.current);
+      window.removeEventListener('pagehide', onPageHide);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      flushRef.current();
     };
   }, []);
 
@@ -1107,6 +1127,17 @@ const DatabaseTableDetailForm: FC<{
 
   /** A draft that arrived while a PATCH was in flight, waiting for its turn. */
   const pendingRef = useRef<Draft | null>(null);
+  /**
+   * The PATCH in flight, held HERE rather than read off `update.isPending`.
+   *
+   * The drain after a settled PATCH has to work after the panel is gone: an
+   * unmount flush that lands while a PATCH is in flight is parked in
+   * `pendingRef`, and @tanstack/query skips the mutate-level `onSettled` of an
+   * observer that has unsubscribed — so the parked draft was never sent. The
+   * promise from `mutateAsync` settles regardless of subscribers, and a ref
+   * (unlike the `isPending` of the last render) is still true-to-life then.
+   */
+  const inflightRef = useRef<Promise<unknown> | null>(null);
 
   const scheduleSave = (next: Draft) => {
     // A blank title would `slugify` to an empty slug.
@@ -1120,7 +1151,7 @@ const DatabaseTableDetailForm: FC<{
      * sequence is ordinary: type, pause past the debounce so a PATCH fires,
      * type once more, stop. `onSettled` below flushes whatever landed here.
      */
-    if (update.isPending || del.isPending) {
+    if (inflightRef.current || del.isPending) {
       pendingRef.current = next;
       return;
     }
@@ -1169,10 +1200,10 @@ const DatabaseTableDetailForm: FC<{
     const nextSlug = slugify(next.title);
     if (body.title !== undefined && nextSlug !== currentSlugRef.current) body.newSlug = nextSlug;
 
-    update.mutate(
-      { slug: currentSlugRef.current, body },
-      {
-        onSuccess: (saved) => {
+    const inflight = update
+      .mutateAsync({ slug: currentSlugRef.current, body })
+      .then(
+        (saved) => {
           currentSlugRef.current = saved.slug;
           setBaseline({
             title: saved.title,
@@ -1183,16 +1214,19 @@ const DatabaseTableDetailForm: FC<{
           // Notify the host ONLY on a real slug change.
           if (saved.slug !== entity.slug) onRenamed?.(saved.slug);
         },
-        onSettled: () => {
-          // Flush whatever arrived mid-flight. On failure too: the draft is
-          // still what the user typed, and a retry is better than silence.
-          const queued = pendingRef.current;
-          if (!queued) return;
-          pendingRef.current = null;
-          scheduleSave(queued);
-        },
-      },
-    );
+        // The failure is on `update.error` (rendered below); nothing else to do.
+        () => undefined,
+      )
+      .finally(() => {
+        if (inflightRef.current === inflight) inflightRef.current = null;
+        // Flush whatever arrived mid-flight. On failure too: the draft is
+        // still what the user typed, and a retry is better than silence.
+        const queued = pendingRef.current;
+        if (!queued) return;
+        pendingRef.current = null;
+        scheduleSave(queued);
+      });
+    inflightRef.current = inflight;
   };
 
   const patch = (partial: Partial<Draft>) => {
@@ -1202,6 +1236,23 @@ const DatabaseTableDetailForm: FC<{
       debounceRef.current = window.setTimeout(() => scheduleSave(next), AUTOSAVE_DELAY_MS);
       return next;
     });
+  };
+
+  /**
+   * 0.2.88 — `description` rides the panel's delayed autosave like every other
+   * field. The prose control is the host's `DocEditor`, but this panel is not
+   * an editor surface: its field is NOT an instance of the host's `description`
+   * context and does not inherit that context's on-blur policy. Unmount and
+   * page unload still flush whatever the debounce has not sent yet.
+   */
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  flushRef.current = () => {
+    if (debounceRef.current) {
+      window.clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    scheduleSave(draftRef.current);
   };
 
   const handleDelete = () => {

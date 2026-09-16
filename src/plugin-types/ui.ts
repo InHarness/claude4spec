@@ -361,6 +361,12 @@ export declare const DocumentBody: ComponentType<DocumentBodyProps>;
 export interface DocEditorProps {
   value: string;
   onChange(md: string): void;
+  /**
+   * Fires when the editor loses focus. The L8 `description` context saves on
+   * blur with a single-field `PATCH { description }`; wire that save here and
+   * keep `onChange` for local draft state.
+   */
+  onBlur?(): void;
   readOnly?: boolean;
   placeholder?: string;
 }
