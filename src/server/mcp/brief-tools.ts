@@ -23,12 +23,12 @@
 
 import { createMcpServer, mcpTool, type CapturedMcpServer } from '../plugin-runtime/index.js';
 import { z } from 'zod';
-import type { BriefService } from '../services/brief.js';
+import { ConflictError, type BriefService } from '../services/brief.js';
 import { toolFailure, toolSuccess } from '../operations/envelope.js';
 import { DomainError } from '../services/tags.js';
 import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
 import { applyTextEdits, type MatchPosition, type PositionResolver, type TextEdit } from '../services/text-edits.js';
-import { sectionRanges } from '../services/section-text.js';
+import { bodyPositionResolver } from '../services/section-text.js';
 
 export interface BriefToolsContext {
   threadId: string;
@@ -257,6 +257,20 @@ export function buildBriefToolsServer(
         }
         const hasTextEdits = args.textEdits !== undefined;
         const hasAction = args.action !== undefined || args.content !== undefined;
+        /*
+         * `anchor`/`heading` address `insert_after_section`'s insertion point and
+         * nothing else. Sent with `textEdits` they used to be dropped in silence,
+         * which reads to the caller as "my substitutions were scoped to that
+         * section" — they never are; a `find` is matched over the whole body.
+         * `update_page` refuses the analogous combination for the same reason.
+         */
+        if (hasTextEdits && (args.anchor !== undefined || args.heading !== undefined)) {
+          throw new DomainError(
+            'INVALID_ARGUMENT',
+            '`anchor`/`heading` do not scope `textEdits`: every `find` is matched over the whole body',
+            'drop them, or make the `find` itself unambiguous',
+          );
+        }
         if (hasTextEdits === hasAction) {
           throw new DomainError(
             'INVALID_ARGUMENT',
@@ -266,11 +280,28 @@ export function buildBriefToolsServer(
             'textEdits for a punctual change; action/content for a rewrite, append or section insert',
           );
         }
-        const current = await briefService.getBrief(briefPath);
+        const current = await briefService.getBrief(briefPath, { full: true });
+        /*
+         * The guard runs BEFORE the edits, as it does in `update_page`
+         * (`page-write.ts`) and `update_plan` (`plan.ts`) — `updateContent`
+         * re-checks it under the write lock and that is what actually protects
+         * the file, but reaching it only after `applyTextEdits` means a stale
+         * caller is answered by the DIFF: `FIND_NOT_FOUND` against a body it
+         * never read, telling it to copy the fragment more carefully. The thing
+         * it needs to hear is `BRIEF_CONFLICT` — someone else wrote, re-read.
+         */
+        if (expectedHash !== current.hash) {
+          throw new ConflictError(
+            'BRIEF_CONFLICT',
+            'brief changed since last read',
+            current.hash,
+            current.content,
+          );
+        }
         let newBody: string;
         let replacements: number | undefined;
         if (hasTextEdits) {
-          const applied = applyTextEdits(current.body, args.textEdits as TextEdit[], bodyPositionResolver(current.content, current.body));
+          const applied = applyTextEdits(current.body, args.textEdits as TextEdit[], briefPositionResolver(current.content, current.body));
           newBody = applied.text;
           replacements = applied.replacements;
         } else {
@@ -344,6 +375,10 @@ export function buildBriefToolsServer(
     async (args) => {
       try {
         const briefPath = resolveBrief(args);
+        // Existence first, for the same reason as `list_brief_versions`: a
+        // near-miss filename must be answered with the real paths, not with
+        // "version 1 not found" — which sends the caller looking for a version.
+        await briefService.getBrief(briefPath, { range: { start: 1, end: 1 } });
         const v = briefService.getVersion(briefPath, Number(args.version));
         if (!v) throw new DomainError('VERSION_NOT_FOUND', `version ${args.version} of brief '${briefPath}' not found`);
         return ok(v, 'get_brief_version');
@@ -361,23 +396,21 @@ export function buildBriefToolsServer(
 
 /**
  * Mismatch positions as anchor + line (M43 `match-count-declared`), never a
- * byte offset. The engine matches over the body alone, but the reported line
- * is a WHOLE-FILE line — the frame `get_brief`'s `range` counts in, so a caller
- * can re-read the hit with it (same rule as `pagePositionResolver`). The
- * innermost anchored section containing the hit wins.
+ * byte offset. The section walk itself is `bodyPositionResolver` — shared with
+ * the page and plan writers, because a second copy of the innermost-section
+ * rule is a second thing to get wrong, and this file carried one.
+ *
+ * What is brief-specific is only the frame: the engine matches over the body
+ * alone, but the reported line is a WHOLE-FILE line — the frame `get_brief`'s
+ * `range` counts in, so a caller can re-read the hit with it (same rule as
+ * `pagePositionResolver`).
  */
-function bodyPositionResolver(fullText: string, body: string): PositionResolver {
-  const ranges = sectionRanges(body.split('\n'));
+function briefPositionResolver(fullText: string, body: string): PositionResolver {
   const bodyFirstLine = Math.max(0, fullText.split('\n').length - body.split('\n').length);
-  return (offset): MatchPosition => {
-    const line = body.slice(0, offset).split('\n').length - 1;
-    const innermost = ranges
-      .filter((r) => line >= r.lineStart - 1 && line < r.lineEnd)
-      .reduce<{ anchor: string; lineStart: number } | null>(
-        (best, r) => (best === null || r.lineStart > best.lineStart ? r : best),
-        null,
-      );
-    return { anchor: innermost?.anchor ?? null, line: bodyFirstLine + line + 1 };
+  const inBody = bodyPositionResolver(body);
+  return (offset, sourceText): MatchPosition => {
+    const pos = inBody(offset, sourceText);
+    return { anchor: pos.anchor, line: pos.line + bodyFirstLine };
   };
 }
 

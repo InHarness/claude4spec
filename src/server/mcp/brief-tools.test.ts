@@ -84,13 +84,22 @@ describe('update_brief — the guard is the operation\'s, not the caller\'s disc
     expect(forwarded).toEqual([]);
   });
 
-  it('makes BRIEF_CONFLICT reachable — a stale hash is forwarded verbatim and bounces', async () => {
+  it('makes BRIEF_CONFLICT reachable — a stale hash bounces without reaching the write', async () => {
     const res = await update({ expectedHash: 'c'.repeat(64) });
     expect(res.isError).toBe(true);
     expect(res.body.code).toBe('BRIEF_CONFLICT');
     // The remedy travels with the refusal: re-read, re-apply, pass this back.
     expect(res.body.currentHash).toBe(STORED_HASH);
-    expect(forwarded).toEqual(['c'.repeat(64)]);
+    /*
+     * Nothing is forwarded: the comparison moved AHEAD of the edit composition,
+     * as it already sat in `update_page` and `update_plan`. `updateContent`
+     * still re-checks it under the write lock — that is what protects the file —
+     * but reaching it only at the end meant a stale caller was answered by the
+     * diff (`FIND_NOT_FOUND` against a body it never read) instead of by the
+     * conflict. The assertion that matters here is the outcome above; this one
+     * records that the refusal is now the adapter's own.
+     */
+    expect(forwarded).toEqual([]);
   });
 
   it('two writers racing on one brief: the second is refused rather than silently winning', async () => {
@@ -342,5 +351,130 @@ describe('update_brief textEdits + brief version tools', () => {
 
     const unknown = await call('list_brief_versions', { path: 'nope.md' });
     expect(unknown.body.code).toBe('NOT_FOUND');
+  });
+
+  it('answers an unknown path with NOT_FOUND on get_brief_version too, not "that version is missing"', async () => {
+    // The version lookup returns null for a brief that does not exist, so
+    // without the existence check the caller with a near-miss filename is sent
+    // looking through a history instead of being handed the real paths.
+    const res = await call('get_brief_version', { path: 'nope.md', version: 1 });
+    expect(res.isError).toBe(true);
+    expect(res.body.code).toBe('NOT_FOUND');
+  });
+
+  it('refuses anchor/heading alongside textEdits instead of dropping them in silence', async () => {
+    const res = await call('update_brief', {
+      path: 'b.md',
+      expectedHash: HASH,
+      anchor: 'aaaaaaaa',
+      textEdits: [{ find: 'alpha', replaceWith: 'A' }],
+    });
+    expect(res.isError).toBe(true);
+    expect(res.body.code).toBe('INVALID_ARGUMENT');
+    // The message has to say WHY: the caller believed it had scoped the
+    // substitutions to one section, and a `find` is never scoped.
+    expect(JSON.stringify(res.body)).toMatch(/whole body/i);
+    expect(written).toEqual([]);
+  });
+});
+
+/**
+ * The two ways a differential write on a brief went wrong quietly.
+ *
+ * Both are about WHICH body the new file is composed from, and neither shows up
+ * in a small fixture — which is why the fixture here is a brief big enough to be
+ * windowed, and a service that moves under the caller's feet.
+ */
+describe('update_brief composes from the whole brief, and checks the hash first', () => {
+  const HASH = 'e'.repeat(64);
+  const HEAD = '## Head\n\nalpha\n';
+  const TAIL = '## Tail\n\n' + 'filler line\n'.repeat(200);
+  const BODY = HEAD + TAIL;
+  const CONTENT = `---\ntype: brief\n---\n${BODY}`;
+
+  async function connect(briefService: BriefService) {
+    const { server } = buildBriefToolsServer({ briefService, target: 'explicit' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: 'test-client', version: '0.0.0' });
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    return async (args: Record<string, unknown>) => {
+      const res = await client.callTool({ name: 'update_brief', arguments: { path: 'b.md', ...args } });
+      const text = (res.content as Array<{ type: string; text?: string }>)[0]?.text ?? '{}';
+      return { isError: res.isError === true, body: JSON.parse(text) as Record<string, any> };
+    };
+  }
+
+  it('reads the brief with `full`, so the text past the response budget is not deleted by the edit', async () => {
+    /*
+     * The bug: `getBrief` with no `full` returns a body cut to the response
+     * budget while `hash` stays the whole file's. The tool composed the new file
+     * out of that cut body and passed the matching hash, so the guard saw
+     * nothing wrong — one successful substitution and everything past the window
+     * was gone from disk.
+     */
+    const written: string[] = [];
+    let sawFull = false;
+    const briefService = {
+      getBrief: async (_p: string, opts?: { full?: boolean }) => {
+        if (opts?.full === true) sawFull = true;
+        const body = opts?.full === true ? BODY : HEAD;
+        return {
+          path: 'b.md',
+          frontmatter: { type: 'brief' },
+          body,
+          content: opts?.full === true ? CONTENT : `---\ntype: brief\n---\n${HEAD}`,
+          hash: HASH,
+          ...(opts?.full === true ? {} : { truncated: true, truncationHint: 'use range' }),
+        };
+      },
+      updateContent: async (opts: { content: string }) => {
+        written.push(opts.content);
+        return { newHash: 'f'.repeat(64) };
+      },
+    } as unknown as BriefService;
+
+    const update = await connect(briefService);
+    const res = await update({
+      expectedHash: HASH,
+      textEdits: [{ find: 'alpha', replaceWith: 'ALPHA' }],
+    });
+
+    expect(res.isError).toBe(false);
+    expect(sawFull).toBe(true);
+    expect(written[0]).toContain('ALPHA');
+    // The decisive assertion: the tail survived the edit.
+    expect(written[0]).toContain('## Tail');
+    expect(written[0]!.match(/filler line/g)).toHaveLength(200);
+  });
+
+  it('answers a stale hash with BRIEF_CONFLICT, not with a diff failure against a body it never read', async () => {
+    const written: string[] = [];
+    const briefService = {
+      getBrief: async () => ({
+        path: 'b.md',
+        frontmatter: { type: 'brief' },
+        // The other writer already replaced the word this caller means to edit.
+        body: '## Head\n\nomega\n',
+        content: '---\ntype: brief\n---\n## Head\n\nomega\n',
+        hash: HASH,
+      }),
+      updateContent: async (opts: { content: string }) => {
+        written.push(opts.content);
+        return { newHash: 'f'.repeat(64) };
+      },
+    } as unknown as BriefService;
+
+    const update = await connect(briefService);
+    const res = await update({
+      expectedHash: 'a'.repeat(64),
+      textEdits: [{ find: 'alpha', replaceWith: 'ALPHA' }],
+    });
+
+    expect(res.isError).toBe(true);
+    // Before the reorder this was FIND_NOT_FOUND, whose repair hint ("copy the
+    // fragment verbatim") is advice for a caller that is not the problem.
+    expect(res.body.code).toBe('BRIEF_CONFLICT');
+    expect(written).toEqual([]);
   });
 });

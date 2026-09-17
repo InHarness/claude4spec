@@ -299,3 +299,75 @@ describe('BriefService — legacy briefs carrying source / generator_version', (
     ).rejects.toThrow(/from_release/);
   });
 });
+
+/**
+ * `getBrief`'s response budget vs. the writer that composes from its answer.
+ *
+ * The window is right for a reader and wrong for a writer, and the two are the
+ * same method — so the only thing standing between a punctual edit and a
+ * silently amputated brief is which flag the write path passes.
+ */
+describe('BriefService.getBrief — `full` is the writer’s read', () => {
+  let cwd: string;
+  // Comfortably past DEFAULT_BUDGET_CHARS / 2, so the window really cuts.
+  const BIG = ['---', 'type: brief', 'from_release: r1', 'to_release: r2', 'implemented: false', '---', '# Brief', '']
+    .join('\n') + 'x'.repeat(200_000) + '\nTAIL MARKER\n';
+
+  function makeService(): BriefService {
+    return new BriefService({
+      briefsPages: new PagesService(cwd, 'briefs', 'briefs'),
+      briefsWatcher: {
+        markOrigin: () => {},
+        flush: async () => {},
+        suppress: () => {},
+        unsuppress: () => {},
+      } as SelfWriteMarker,
+      briefsSerializer: {} as BriefServiceDeps['briefsSerializer'],
+      pageVersions: { recordVersion: async () => {} } as unknown as BriefServiceDeps['pageVersions'],
+      chatService: {} as BriefServiceDeps['chatService'],
+      releaseService: {} as BriefServiceDeps['releaseService'],
+      frontmatterIndexer: { indexPage: async () => {} } as unknown as BriefServiceDeps['frontmatterIndexer'],
+      ws: { broadcast: () => {} } as unknown as BriefServiceDeps['ws'],
+    });
+  }
+
+  beforeEach(async () => {
+    cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-brief-full-'));
+    await fs.mkdir(path.join(cwd, 'briefs'), { recursive: true });
+    await fs.writeFile(path.join(cwd, 'briefs', 'big.md'), BIG, 'utf-8');
+  });
+  afterEach(async () => {
+    await fs.rm(cwd, { recursive: true, force: true });
+  });
+
+  it('cuts a long brief for a plain read, and says so', async () => {
+    const brief = await makeService().getBrief('big.md');
+    expect(brief.truncated).toBe(true);
+    expect(brief.content).not.toContain('TAIL MARKER');
+    // The hash is still the WHOLE file's — which is exactly what made composing
+    // from this body pass the `expectedHash` guard.
+    expect(brief.hash).toHaveLength(64);
+  });
+
+  it('returns the whole body under `full`, so an edit cannot amputate the tail', async () => {
+    const brief = await makeService().getBrief('big.md', { full: true });
+    expect(brief.truncated).toBeUndefined();
+    expect(brief.body).toContain('TAIL MARKER');
+    expect(brief.content).toBe(BIG);
+  });
+
+  it('a differential write through the service keeps the text past the window', async () => {
+    const service = makeService();
+    const current = await service.getBrief('big.md', { full: true });
+    await service.updateContent({
+      path: 'big.md',
+      content: current.content.replace('# Brief', '# Brief edited'),
+      expectedHash: current.hash,
+      changedBy: 'agent',
+    });
+    const after = await fs.readFile(path.join(cwd, 'briefs', 'big.md'), 'utf-8');
+    expect(after).toContain('# Brief edited');
+    expect(after).toContain('TAIL MARKER');
+    expect(after.length).toBeGreaterThan(200_000);
+  });
+});

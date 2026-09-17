@@ -185,7 +185,7 @@ export class BriefService {
    * frontmatter removed. That duplication predates this window; halving the
    * budget is what keeps the envelope inside it anyway.
    */
-  async getBrief(path: string, opts?: { range?: ArtifactRange }): Promise<Brief> {
+  async getBrief(path: string, opts?: { range?: ArtifactRange; full?: boolean }): Promise<Brief> {
     if (!(await this.deps.briefsPages.exists(path))) {
       /**
        * The hint is the repair path, and it used to exist.
@@ -215,6 +215,22 @@ export class BriefService {
       );
     }
     const hash = hashContent(content);
+    /*
+     * `full` is the WRITER's read, and it is not an optimization.
+     *
+     * Every other caller wants the window: the budget is what keeps a 90 KB
+     * brief from blowing the response. A writer does not, because it composes
+     * the new file out of the body it was handed — `applyTextEdits(current.body,
+     * …)` or `composeBody(current.body, 'append', …)`, then `matter.stringify`.
+     * Hand it a window and the text past the cut is not "omitted from the
+     * response", it is DELETED from the file: `hash` is the whole file's, so the
+     * `expectedHash` guard sees nothing wrong and the write lands silently.
+     * Refusing the write instead would be safe and useless — it is the long
+     * briefs that most need punctual edits.
+     */
+    if (opts?.full === true) {
+      return { path, frontmatter, body: parsed.content, content, hash };
+    }
     const windowed = readArtifactWindow(
       content,
       opts?.range,
@@ -471,7 +487,9 @@ export class BriefService {
   }
 
   async updateContent(opts: BriefUpdateContentOpts): Promise<{ newHash: string }> {
-    const current = await this.getBrief(opts.path);
+    // `full`: the conflict payload hands the client the other writer's bytes to
+    // diff against, so a window here would be a window in the dialog.
+    const current = await this.getBrief(opts.path, { full: true });
     if (typeof opts.expectedHash !== 'string' || opts.expectedHash === '') {
       throw new DomainError('VALIDATION', 'expectedHash is required for brief content updates');
     }
