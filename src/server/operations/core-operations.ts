@@ -907,6 +907,81 @@ export function registerCoreOperations(): void {
   });
 
   /**
+   * 0.2.94 — brief creation, and the release that stops mediating it.
+   *
+   * Until 0.2.93 the row read `agent-mediated`: every channel but `rest` went
+   * `via run_turn` with a `brief` context, because the BODY was the turn's
+   * output. That is the right shape for a caller who has a release window and
+   * no text. It is exactly wrong for the opposite caller — an external coding
+   * agent that has read the repository and the specification, knows the drift,
+   * and needs only a durable artifact. `content` makes the body an INPUT, so
+   * the mediation has nothing left to do and the row becomes `direct`.
+   *
+   * `internal` is `na`, and not for want of a rendering: a turn in a `brief`
+   * thread is anchored in ONE artifact and writes that artifact's text. Minting
+   * a second brief is not an act of the brief's author.
+   *
+   * `mcp` is `direct` with no tool behind it yet — a declaration ahead of its
+   * rendering, deliberately. The M39 parity assertion covers the external
+   * reader's rows; this one sits with `file_patch`, outside that set.
+   */
+  CATALOG.register({
+    name: 'create_brief',
+    summary:
+      'Mint a brief — with a ready-made body (`content`, stored verbatim), or empty for a release window. Never runs an agent turn. Answers `{ briefPath, hash }`.',
+    scope: 'project',
+    mediation: 'direct',
+    opClass: 'brief',
+    inputSchema: {
+      fromReleaseName: z
+        .string()
+        .nullable()
+        .optional()
+        .describe('Start of the window. `null` = open at the start. Omitted = the latest release.'),
+      toReleaseName: z
+        .string()
+        .nullable()
+        .optional()
+        .describe(
+          'End of the window. `null`/omitted = open to the current state. Non-null must differ from `fromReleaseName`.',
+        ),
+      content: z
+        .string()
+        .optional()
+        .describe(
+          'The full brief body, stored verbatim under the generated frontmatter. Omitted leaves a heading-only file. Empty after trim is VALIDATION, and no file is written.',
+        ),
+      roots: z
+        .string()
+        .array()
+        .optional()
+        .describe(
+          "Releasable root ids to scope the brief to. Not allowed when the window's `to` end is open.",
+        ),
+      suffix: z.string().optional().describe('Appended to the generated file slug; settles a collision.'),
+    },
+    errorCodes: ['VALIDATION', 'BRIEF_SAME_RELEASE', 'NOT_FOUND'],
+    sideEffects: ['file', 'db', 'ui-notify'],
+    /**
+     * `literal`: the caller hands over finished text, exactly as `file_patch`
+     * does. There is no prior body for a differential mode to match against —
+     * the operation is what brings the artifact into being.
+     */
+    contentInput: 'literal',
+    // Every call mints a NEW brief and opens its initial thread; `suffix` is how
+    // a caller settles the slug collision that follows.
+    idempotent: false,
+    channels: {
+      internal: na(
+        "a brief-scoped turn is anchored in one artifact and writes its body; minting another brief is not the brief author's act",
+      ),
+      cli: direct(),
+      mcp: direct(),
+      rest: direct(),
+    },
+  });
+
+  /**
    * 0.2.13 (tier C) — `list_briefs` was missing from the catalog.
    *
    * It is reachable in three channels and has been for releases: `c4s

@@ -170,6 +170,46 @@ describe('BriefService.createBrief — the window is the provenance', () => {
     expect(matter(raw).content.trim()).toBe('# Analysis\n\nbody text');
   });
 
+  it('keeps a body that opens with `---` — frontmatter delimiters are body text', async () => {
+    const svc = makeService();
+    // The bodies an agent actually writes: a horizontal rule under a heading, and
+    // a body that carries frontmatter of its own. Handed to gray-matter as a bare
+    // string these are PARSED, not stored — the body is absorbed into the brief's
+    // frontmatter and the file lands empty, on exit 0.
+    for (const body of [
+      '---\n\n# Drift\n\nreal content\n',
+      '---\ntitle: Drift\n---\n\n# Body\n',
+      // Invalid YAML in that leading block used to escape as a raw YAMLException
+      // — not a DomainError — so the route answered 500 rather than storing it.
+      '---\n\n## Section\n\n- a: [unclosed\n',
+    ]) {
+      const { briefPath } = await svc.createBrief({ content: body });
+      const raw = await fs.readFile(path.join(cwd, 'briefs', briefPath), 'utf-8');
+      expect(matter(raw).content).toBe(body);
+      expect(matter(raw).data.type).toBe('brief');
+    }
+  });
+
+  it('returns a hash of the bytes it wrote, which `getBrief` agrees with', async () => {
+    const svc = makeService();
+    const { briefPath, hash } = await svc.createBrief({ content: '# Ready-made\n\nwritten by the caller\n' });
+    const raw = await fs.readFile(path.join(cwd, 'briefs', briefPath), 'utf-8');
+    // The value is the one `update_brief` takes as `expectedHash`, so it has to
+    // be the hash of the WHOLE file — frontmatter included — not of the body.
+    expect(hash).toBe(hashContent(raw));
+    await expect(svc.getBrief(briefPath)).resolves.toMatchObject({ hash });
+  });
+
+  it('refuses a blank `content` and leaves no file behind', async () => {
+    const svc = makeService();
+    for (const blank of ['', '   ', '\n\t ']) {
+      await expect(svc.createBrief({ content: blank })).rejects.toMatchObject({ code: 'VALIDATION' });
+    }
+    // The refusal happens before `allocatePath`, so not even a half-written
+    // artifact reaches the disk.
+    await expect(fs.readdir(path.join(cwd, 'briefs'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   it('starts with only the heading when `content` is omitted', async () => {
     const { briefPath } = await makeService().createBrief({});
     const raw = await fs.readFile(path.join(cwd, 'briefs', briefPath), 'utf-8');

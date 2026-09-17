@@ -111,6 +111,40 @@ describe('briefsRouter — POST /api/briefs', () => {
     expect(res.body.data.threads[0].title).toBe('Brief: r1 → (unreleased)');
   });
 
+  /**
+   * 0.2.94 — the second way a brief is born: the caller already wrote it. The
+   * body is stored verbatim, the initial thread is opened all the same (it is
+   * the `brief-detail` shell's anchor), and no turn runs.
+   */
+  it('stores a supplied `content` verbatim and still mints the initial thread', async () => {
+    const content = '# Drift on X\n\n## What the spec says\n\n`a | b` — verbatim.\n';
+    const res = await request(app).post('/api/briefs').send({ content });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.body).toBe(content);
+    expect(res.body.data.content).toContain(content);
+    expect(res.body.data.frontmatter).toMatchObject({ from_release: 'r1', to_release: null });
+    expect(res.body.data.threads).toHaveLength(1);
+    // The thread is an anchor, not a request to write: nothing was said in it.
+    expect(res.body.data.threads[0].id).toEqual(expect.any(String));
+  });
+
+  it('rejects a blank `content` with VALIDATION and writes no brief', async () => {
+    const before = await fs.readdir(path.join(cwd, 'briefs'));
+    const res = await request(app).post('/api/briefs').send({ content: '   \n' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+    await expect(fs.readdir(path.join(cwd, 'briefs'))).resolves.toEqual(before);
+  });
+
+  it('rejects a non-string `content` with VALIDATION', async () => {
+    const res = await request(app).post('/api/briefs').send({ content: 42 });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+  });
+
   it('rejects a window with neither end with VALIDATION', async () => {
     const res = await request(app)
       .post('/api/briefs')

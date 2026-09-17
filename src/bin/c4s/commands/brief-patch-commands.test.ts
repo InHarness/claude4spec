@@ -21,6 +21,7 @@ import { __resetDelegateTargets } from '../delegate.js';
 import { runListBriefs } from './list-briefs.js';
 import { runReadBrief } from './read-brief.js';
 import { runFilePatch } from './file-patch.js';
+import { runCreateBrief } from './create-brief.js';
 
 const CONFIG = {
   name: 'test-project',
@@ -189,6 +190,70 @@ describe('[ac:ac-rodzina-brief-patch-list-briefs-read] the brief/patch family de
        * `code` passed the whole time.
        */
       expect(err).toBeInstanceOf(CliError);
+    });
+  });
+
+  describe('create-brief', () => {
+    const bodyPath = () => path.join(projectDir, 'drift.md');
+    const writeBody = (text: string) => {
+      fs.writeFileSync(bodyPath(), text, 'utf8');
+      return bodyPath();
+    };
+
+    it('posts the file`s bytes as `content` and prints briefPath + hash', async () => {
+      reply = { data: { path: '0.2.93-to-next.md', hash: 'abc123' } };
+      const body = '# Drift on X\n\nThe spec says Y, the code does Z.\n';
+      await runCreateBrief(args('create-brief', '--body-file', writeBody(body)));
+
+      expect(seen).toHaveLength(1);
+      expect(seen[0]!.method).toBe('POST');
+      expect(seen[0]!.url).toMatch(/\/briefs$/);
+      expect(JSON.parse(seen[0]!.body)).toEqual({ content: body });
+      expect(printed()).toEqual({ briefPath: '0.2.93-to-next.md', hash: 'abc123' });
+    });
+
+    it('omits `fromReleaseName` entirely without --from, and sends it with', async () => {
+      reply = { data: { path: 'b.md', hash: 'h' } };
+      await runCreateBrief(args('create-brief', '--body-file', writeBody('x')));
+      expect(Object.keys(JSON.parse(seen[0]!.body))).toEqual(['content']);
+
+      await runCreateBrief(
+        args('create-brief', '--body-file', writeBody('x'), '--from', '0.2.90', '--suffix', 'drift'),
+      );
+      expect(JSON.parse(seen[1]!.body)).toMatchObject({ fromReleaseName: '0.2.90', suffix: 'drift' });
+    });
+
+    it('refuses --to and --roots as INVALID_ARGUMENT, naming the legal flags, before any request', async () => {
+      const file = writeBody('x');
+      for (const argv of [
+        ['create-brief', '--body-file', file, '--to', '0.2.94'],
+        ['create-brief', '--body-file', file, '--roots', 'spec'],
+      ]) {
+        await expect(runCreateBrief(args(...argv))).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+      }
+      await expect(
+        runCreateBrief(args('create-brief', '--body-file', file, '--to', '0.2.94')),
+      ).rejects.toThrow(/--body-file/);
+      expect(seen).toEqual([]);
+    });
+
+    it('refuses a missing or unreadable --body-file locally, quoting the resolved path', async () => {
+      await expect(runCreateBrief(args('create-brief'))).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+      });
+      const missing = path.join(projectDir, 'nope.md');
+      await expect(
+        runCreateBrief(args('create-brief', '--body-file', missing)),
+      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT', message: expect.stringContaining(missing) });
+      expect(seen).toEqual([]);
+    });
+
+    it('propagates VALIDATION from the server — the one thing it means is an empty file', async () => {
+      status = 400;
+      reply = { error: { code: 'VALIDATION', message: 'content must be non-empty when provided' } };
+      await expect(
+        runCreateBrief(args('create-brief', '--body-file', writeBody('   '))),
+      ).rejects.toMatchObject({ code: 'VALIDATION' });
     });
   });
 

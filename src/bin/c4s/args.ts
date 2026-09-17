@@ -146,13 +146,21 @@ export function paginationFrom(args: ParsedArgs): { limit?: number; offset?: num
  * than drop it — a refusal costs one retry, a silent no-op costs trust in every
  * answer the command ever gave.
  */
-export function refuseFlags(args: ParsedArgs, flags: readonly string[], why: string): void {
+export function refuseFlags(
+  args: ParsedArgs,
+  flags: readonly string[],
+  why: string,
+  hint = 'run `c4s --help` for which commands paginate',
+): void {
   const offending = flags.filter((flag) => args.flags.has(flag));
   if (offending.length === 0) return;
   throw new CliError(
     'INVALID_ARGUMENT',
     `${offending.map((f) => `--${f}`).join(', ')} ${offending.length > 1 ? 'are' : 'is'} not accepted here — ${why}`,
-    'run `c4s --help` for which commands paginate',
+    // The default reads as navigation only for the paging/view refusals that
+    // were this helper's first callers; a refusal about something else has to
+    // bring its own, or it points the reader at an unrelated part of `--help`.
+    hint,
   );
 }
 

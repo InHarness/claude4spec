@@ -3,7 +3,7 @@ import { SERVER_REQUIRED_BLOCK } from './server-required.js';
 
 export const REFACTOR_FRONTMATTER = `---
 name: c4s-refactor
-description: Detect drift between the claude4spec specification and the code for a given topic, then route the fix — to the spec (a read-only plan via \`c4s ask\`) or to the code (a brief against the current state via \`c4s agent --ct brief\`). Use when reconciling spec with implementation ("check spec vs code for X", "reconcile topic Y"). Optional argument — the topic/scope (module, entity, slug, tag).
+description: Detect drift between the claude4spec specification and the code for a given topic, then route the fix — to the spec (a read-only plan via \`c4s ask\`) or to the code (a brief against the current state via \`c4s create-brief\`). Use when reconciling spec with implementation ("check spec vs code for X", "reconcile topic Y"). Optional argument — the topic/scope (module, entity, slug, tag).
 ---
 `;
 
@@ -22,7 +22,7 @@ and hands off:
 1. drift that needs a **specification** change → open a read-only planning turn
    (\`c4s ask\`),
 2. drift that needs a **code** change → describe it in a **brief against the
-   current state** (\`c4s agent --ct brief\`).
+   current state** (\`c4s create-brief\`).
 
 Execution is downstream: a human continues the spec plan thread, and the
 \`c4s-brief-implementer\` skill implements the brief.
@@ -106,37 +106,56 @@ not execute." ${identity}
 **Record the returned \`threadId\`.** This skill does **not** apply the plan — a human
 continues the thread (\`c4s ask "..." --thread <threadId>\`, or in the UI).
 
-### 6. Path 2 — code-fix → a brief against the current state (\`c4s agent --ct brief\`)
+### 6. Path 2 — code → brief (\`c4s create-brief\`)
 
 Route a code fix into a **brief against the current state** that the
-\`c4s-brief-implementer\` skill can implement later.
+\`c4s-brief-implementer\` skill implements later. You write the body yourself;
+no agent turn is involved at any point.
 
-**Use create-mode, not attach-mode.** \`c4s-refactor\` is a standalone CLI caller —
-there's no parent thread in a foreign repo to attach to — so a fresh top-level
-thread via create-mode is the right shape. One command mints a new brief
-(\`to_release: null\`) and runs a turn that fills its body from your message:
+**Step 1 — write the body to a file.** The implementer starts in a fresh
+terminal with none of your findings, so the body must be **self-contained**.
+Four parts, in this order:
+
+1. **What the specification says** — the quote, plus the slugs of the acceptance
+   criteria and entities that carry the intent.
+2. **What the code does** — files with line numbers, and the behaviour that
+   diverges.
+3. **What the implementer must change** — the concrete edit, file by file.
+4. **How to verify it** — the tests or commands that must pass.
+
+**Step 2 — save the brief.** One call, no turn:
 
 \`\`\`sh
-c4s agent "Code drift on <topic>: the spec says Y but the code does X. <what \\
-the implementer must change and why>" --ct brief ${identity}
+c4s create-brief --body-file /tmp/drift-<topic>.md ${identity}
 \`\`\`
 
-Passing no release window is what makes this a brief **against the current
-state**: the window's \`to\` end stays open, so there is no second release to diff
-against.
+It prints \`briefPath\` (and the brief's \`hash\`). Passing no release window is
+what makes this a brief **against the current state**: the window's \`to\` end
+stays open, so there is no second release to diff against.
 
-The command prints the created brief's path — record it for handing off to
-\`c4s-brief-implementer\`. **Never pass \`--brief <path>\`** (attach-mode) here —
-attach-mode expects an already-minted brief; for a path that doesn't exist yet
-the turn's \`get_brief\` call fails with \`NOT_FOUND\` inside the turn (the CLI
-still exits 0, but no brief gets authored).
+Hard rules for this path:
+
+- **\`--body-file\`, never an inline body.** Multi-line markdown full of
+  backticks does not survive a shell.
+- **Path 2 calls \`c4s agent\` in no mode** — not create, not attach. A turn in a
+  \`brief\` thread operates on \`release_diff\` alone: it sees neither the current
+  specification nor the code, so it may legitimately refuse to write anything,
+  and the caller is handed exit 0 and a brief containing only a heading. Feeding
+  it the context you already hold does not improve the result, it only adds a
+  point of failure. \`c4s file-patch\` is the precedent for the shape: it, too,
+  takes the caller's intent rather than a turn's output.
+- **\`VALIDATION\` from \`c4s create-brief\` is usually the body file:** it was
+  empty, or whitespace only. It also fires when the project has **no releases at
+  all** — a window needs an end, and there is none to resolve — which no rewrite
+  of the body will fix; cut a release first.
 
 ### 7. Report + STOP
 
 Print and **finish** (no execution):
 
 - the topic and the drift classification (spec-fix / code-fix / both / none),
-- the created \`threadId\` (Path 1) and/or \`briefPath\` (Path 2),
+- the created \`threadId\` (Path 1) and/or the \`briefPath\` returned by
+  \`c4s create-brief\` (Path 2),
 - next step: a human continues the spec plan thread;
   \`c4s-brief-implementer\` implements the brief.
 
@@ -151,9 +170,11 @@ Reading the spec and analyzing the code are not an exception to it: \`resolve\`,
   through a symlink, can even break resolution.
 - **\`c4s ask\` is read-only** — it yields a plan only and never mutates the spec;
   execution is a separate, human-driven step.
-- **Path 2 uses create-mode, not attach-mode.** Mint the brief via
-  \`c4s agent --ct brief\` with no window flags. Don't pass \`--brief <path>\` —
-  that's attach-mode, which expects a pre-existing brief.
+- **Path 2 mints the brief itself; it starts no turn.** \`c4s create-brief\`
+  writes the body you hand it and nothing else. The older route, which minted
+  the file and then asked a brief-scoped turn to fill it, is not an alternative
+  here: such a turn sees only \`release_diff\`, so it can legitimately decline and
+  leave you a heading.
 
 ## Notes
 
