@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { PagesLinkIndexerService, rewritePageCitations } from './pages-link-indexer.js';
+import { PagesLinkIndexerService, parseLinks, rewritePageCitations } from './pages-link-indexer.js';
 import { PagesService } from './pages.js';
 import { PROJECTION_IDS, ProjectionStatusRegistry } from './projection-status.js';
 import { FileWatchRuntime, type WatchScope } from '../fs/watcher.js';
@@ -35,6 +35,33 @@ describe('rewritePageCitations — the three spellings of one edge', () => {
     // page nobody moved.
     const src = '@a.markdown and @ab.md and prefix-a.md';
     expect(rewritePageCitations(src, 'a.md', 'b.md')).toBe(src);
+  });
+});
+
+describe('the #anchor suffix is the canonical anchor id', () => {
+  /**
+   * 0.2.89 — anchors are minted from `[a-z0-9]`, 8 long, and hand-written ones
+   * run 6–12. The suffix used to be 8 hex digits, so `kkz1e7d6` was not an anchor
+   * to the link parser and a cited section dropped out of the edge.
+   */
+  it('captures a minted (non-hex) anchor in all three spellings', () => {
+    const { candidates } = parseLinks('@a.md#kkz1e7d6 and `b.md#m21chatcols` and [x](c.md#q3v8n1zt)');
+    expect(candidates.map((c) => [c.syntax, c.targetPath, c.anchor])).toEqual([
+      ['link', 'c.md', 'q3v8n1zt'],
+      ['backticks', 'b.md', 'm21chatcols'],
+      ['at', 'a.md', 'kkz1e7d6'],
+    ]);
+  });
+
+  it('does not take a longer word as a truncated anchor', () => {
+    const { candidates } = parseLinks('@a.md#thisistoolongforananchor');
+    expect(candidates[0]!.anchor).toBeUndefined();
+  });
+
+  it('preserves a minted anchor across a rename', () => {
+    expect(rewritePageCitations('@a.md#kkz1e7d6 `a.md#m21chatcols` [y](a.md#q3v8n1zt)', 'a.md', 'b.md')).toBe(
+      '@b.md#kkz1e7d6 `b.md#m21chatcols` [y](b.md#q3v8n1zt)',
+    );
   });
 });
 

@@ -101,6 +101,7 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
         {
           qc,
           currentPath: path,
+          rootId,
           onSlashInvoke: (editor, command) =>
             void invokeSlash(editor, command, { qc, currentPath: path }),
           getAnnotations: () => useChatStore.getState().annotations,
@@ -108,7 +109,7 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
         {},
         rootProps,
       ),
-    [qc, path, schemaVersion, rootProps],
+    [qc, rootId, path, schemaVersion, rootProps],
   );
   const carry = useEditorCarry(extensions);
 

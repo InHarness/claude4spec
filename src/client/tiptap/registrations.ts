@@ -1,4 +1,4 @@
-import { registerEditorExtension, registerMentionSource } from './registry.js';
+import { registerEditorExtension, registerMentionSource, type RegistryContext } from './registry.js';
 import {
   InlineMentionNode,
   SingleElementNode,
@@ -16,7 +16,7 @@ import { MentionExtension } from './extensions/MentionExtension.js';
 import { SectionRefNode } from './extensions/SectionRefNode/index.js';
 import { HeadingActions } from './extensions/HeadingActions/index.js';
 import { registerExtensionReferenceType } from '../../shared/reference-extensions.js';
-import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
+import { ANCHOR_ID_SOURCE, ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import { pageLinksApi } from '../lib/api.js';
@@ -202,14 +202,14 @@ registerEditorExtension({
   extension: PageRefNode,
   priority: 700,
   availableIn: ['page', 'plan', 'chat-input'],
-  markdownIt: { kind: 'inline', pattern: /(?<![\w])@[\w][\w/.-]*?(?:#[a-f0-9]{8})?/ },
+  markdownIt: { kind: 'inline', pattern: new RegExp(`(?<![\\w])@[\\w][\\w/.-]*?(?:#${ANCHOR_ID_SOURCE})?`) },
 });
 
 registerEditorExtension({
   name: 'heading_actions',
   priority: 800,
   availableIn: ['page', 'plan'],
-  extension: (ctx) => HeadingActions.configure({ pagePath: ctx.currentPath }),
+  extension: (ctx) => HeadingActions.configure({ linkPath: headingLinkPath(ctx) }),
 });
 
 registerEditorExtension({
@@ -290,3 +290,16 @@ registerMentionSource<{ path: string; title: string; matchScore: number }>({
       .run();
   },
 });
+
+/**
+ * 0.2.89 — the in-app route of the document a heading lives in, which the
+ * "copy link" action turns into a deep link. A plan's `currentPath` is already
+ * its route (`/plans/<path>`); a page is addressed by `(rootId, path)`, so its
+ * route is `/space/<rootId>/<path>`. The legacy `/pages/<path>` form only ever
+ * resolves the built-in root.
+ */
+function headingLinkPath(ctx: RegistryContext): string | null {
+  if (!ctx.currentPath) return null;
+  if (ctx.contextId === 'plan') return ctx.currentPath;
+  return ctx.rootId ? `/space/${ctx.rootId}/${ctx.currentPath}` : `/pages/${ctx.currentPath}`;
+}

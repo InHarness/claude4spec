@@ -143,9 +143,11 @@ import type { WorkspaceRecord } from './types.js';
 
 // M06 registers <section_ref/> as the 6th XML reference type via the M19
 // extension reference types slot. Registration is PROCESS-level (tag shape is
-// static); the per-project anchor validation lives in reference-tools, which
-// owns a per-context SectionsService — a validate closure here would leak one
-// project's sections into every other context (M31).
+// static), so it carries NO `validate`: an anchor is valid only against one
+// project's section index, and a closure here would leak one project's sections
+// into every other context (M31). The per-project check lives at the call sites
+// that own that index — `check_consistency`'s unknown-anchor rule
+// (discovery/ops/consistency.ts) and the section hydrator.
 registerExtensionReferenceType({
   tag: 'section_ref',
   attrOrder: ['anchor'],
@@ -1490,9 +1492,8 @@ async function buildInner(
   // (an agent or user editing `plansDir` directly). `PlanService.update` runs the
   // same `injectAnchors` synchronously, because `insert_after_section` must see
   // the anchors with no debounce window in between.
-  const planAnchorInjection: WatchSubscriber = {
+  const artifactAnchorInjection = (mount: { pages: PagesService }): WatchSubscriber => ({
     onChange: async (_scope, source, relPath) => {
-      const mount = artifactMounts.get('plan')!;
       let page;
       try {
         page = await mount.pages.read(relPath);
@@ -1505,7 +1506,7 @@ async function buildInner(
       await mount.pages.write(relPath, { frontmatter: page.frontmatter, body: injected });
     },
     onUnlink: () => {},
-  };
+  });
 
   for (const rt of rootRuntimes) {
     const source = rt.source;
@@ -1594,9 +1595,11 @@ async function buildInner(
     // Plans are the one artifact kind with `anchorInjection: true` — the same
     // implementation `PlanService.update` runs synchronously, registered here for
     // writes that bypass the service entirely (an agent or user editing the file
-    // on disk).
-    if (m.entry.kind === 'plan') {
-      w.subscribe(source, planAnchorInjection, {
+    // on disk). 0.2.89: gated on the registry's own decision, not on the kind —
+    // M06 subscribes to what M36 mounts and anchors what M36 says to anchor.
+    // Those files are anchored, never indexed (`sectionIndexed: false`).
+    if (m.entry.anchorInjection) {
+      w.subscribe(source, artifactAnchorInjection(m), {
         id: 'm06-plan-anchor-injection',
         phase: 'write-back',
         filter: MARKDOWN_FILTER,

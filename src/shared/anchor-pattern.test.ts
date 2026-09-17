@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ANCHOR_PATTERN_SOURCE } from './anchor-pattern.js';
+import { ANCHOR_LINE_RE, ANCHOR_PATTERN_SOURCE } from './anchor-pattern.js';
 
 function matchAnchor(input: string): RegExpExecArray | null {
   return new RegExp(ANCHOR_PATTERN_SOURCE).exec(input);
@@ -32,5 +32,24 @@ describe('ANCHOR_PATTERN_SOURCE', () => {
   it('rejects uppercase letters and hyphens in the slug', () => {
     expect(matchAnchor('<!-- anchor: ABC123 -->')).toBeNull();
     expect(matchAnchor('<!-- anchor: abc-def -->')).toBeNull();
+  });
+});
+
+describe('ANCHOR_LINE_RE', () => {
+  it('matches a line that is only the anchor comment, surrounding whitespace allowed', () => {
+    expect(ANCHOR_LINE_RE.exec('<!-- anchor: x7k2m9p4 -->')![1]).toBe('x7k2m9p4');
+    expect(ANCHOR_LINE_RE.test('  <!-- anchor: x7k2m9p4 -->\t')).toBe(true);
+  });
+
+  it('rejects a line that carries anything besides the comment', () => {
+    expect(ANCHOR_LINE_RE.test('see <!-- anchor: x7k2m9p4 -->')).toBe(false);
+    expect(ANCHOR_LINE_RE.test('<!-- anchor: x7k2m9p4 --> ## Heading')).toBe(false);
+  });
+
+  it('agrees with the literal spec regex on the same inputs', () => {
+    const spec = /^\s*<!--\s*anchor:\s*[a-z0-9]{6,12}\s*-->\s*$/;
+    for (const line of ['<!-- anchor: abc123 -->', ' <!--anchor:abcdef123456--> ', '<!-- anchor: ABC123 -->', 'x <!-- anchor: abc123 -->', '<!-- anchor: abc12 -->']) {
+      expect(ANCHOR_LINE_RE.test(line)).toBe(spec.test(line));
+    }
   });
 });

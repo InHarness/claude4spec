@@ -1,8 +1,7 @@
 import { diffLines } from 'diff';
-import { ANCHOR_PATTERN_SOURCE } from '../../../shared/anchor-pattern.js';
+import { ANCHOR_LINE_RE } from '../../../shared/anchor-pattern.js';
 import type { LineDiffLite } from '../../../shared/entities.js';
 
-const ANCHOR_LINE_RE = new RegExp(`^\\s*${ANCHOR_PATTERN_SOURCE}\\s*$`);
 const CODE_FENCE_RE = /^\s*```/m;
 
 export interface ComputeLineDiffOptions {

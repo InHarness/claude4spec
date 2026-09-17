@@ -1,8 +1,9 @@
 import { toast } from '../../../ui/events.js';
+import { PROJECT_ID } from '../../../lib/api-core.js';
 
 interface WidgetArgs {
   anchor: string | null;
-  pagePath: string;
+  linkPath: string;
 }
 
 const SVG_ATTRS =
@@ -21,7 +22,7 @@ const HASH_SVG = `<svg ${SVG_ATTRS}>` +
   '<line x1="16" x2="14" y1="3" y2="21"/>' +
   '</svg>';
 
-export function createHeadingActionsWidget({ anchor, pagePath }: WidgetArgs): HTMLElement {
+export function createHeadingActionsWidget({ anchor, linkPath }: WidgetArgs): HTMLElement {
   const wrap = document.createElement('span');
   wrap.className = 'heading-actions';
   wrap.setAttribute('contenteditable', 'false');
@@ -39,7 +40,7 @@ export function createHeadingActionsWidget({ anchor, pagePath }: WidgetArgs): HT
     linkBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const url = `${window.location.origin}/pages/${pagePath}#anchor-${anchor}`;
+      const url = sectionDeepLink(window.location.origin, PROJECT_ID, linkPath, anchor);
       void navigator.clipboard
         .writeText(url)
         .then(() => toast.success('Link copied'))
@@ -60,6 +61,16 @@ export function createHeadingActionsWidget({ anchor, pagePath }: WidgetArgs): HT
 
   wrap.append(linkBtn, refBtn);
   return wrap;
+}
+
+/**
+ * 0.2.89 — the SPA is served under `/p/<project-id>/`; a link without that
+ * basepath lands on the server's `/` redirect, not on the section.
+ */
+export function sectionDeepLink(origin: string, projectId: string, linkPath: string, anchor: string): string {
+  const base = projectId ? `/p/${projectId}` : '';
+  const route = linkPath.startsWith('/') ? linkPath : `/${linkPath}`;
+  return `${origin}${base}${route}#anchor-${anchor}`;
 }
 
 function syncHashAndScroll(anchor: string): void {

@@ -28,6 +28,11 @@ export {
 export interface RegistryContext {
   qc: QueryClient;
   currentPath: string | null;
+  /**
+   * 0.2.89: the root `currentPath` is relative to, in the `page` context. A page
+   * is addressed by the pair, so anything that builds a link to it needs both.
+   */
+  rootId?: string | null;
   onSlashInvoke: (editor: Editor, command: SlashCommand) => void;
   getAnnotations: () => Annotation[];
   /** Context in which the extension is being instantiated. Set by EditorFactory. */

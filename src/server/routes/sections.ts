@@ -55,9 +55,10 @@ export function sectionsRouter(
 
   router.get('/', (req, res, next) => {
     try {
+      const rootId = typeof req.query.rootId === 'string' ? req.query.rootId : undefined;
       const pagePath = typeof req.query.pagePath === 'string' ? req.query.pagePath : undefined;
       const search = typeof req.query.search === 'string' ? req.query.search : undefined;
-      const list = sections.list({ pagePath, search });
+      const list = sections.list({ rootId, pagePath, search });
       res.json({ sections: list });
     } catch (err) {
       next(err);

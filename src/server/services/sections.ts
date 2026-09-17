@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import type { SectionIndexEntry } from '../../shared/entities.js';
 import { parseXmlTagsExcludingCode, serializeXmlTag } from '../../shared/xml-tags.js';
+import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
 import type { PagesService } from './pages.js';
 import type { SelfWriteMarker } from '../fs/sources.js';
 
@@ -48,7 +49,7 @@ const SECTION_COLUMNS = `id, anchor, rootId, page_path, heading_slug, heading_le
  * blank line behind, so a preview of a parent section would read
  * `…below it.\n\n\n## Alpha` — the anchor's ghost, still spending width.
  */
-const ANCHOR_COMMENT_RE = /^[ \t]*<!--\s*anchor:\s*[A-Za-z0-9_-]+\s*-->[ \t]*\r?\n?/gm;
+const ANCHOR_COMMENT_RE = new RegExp(`^[ \\t]*${ANCHOR_PATTERN_SOURCE}[ \\t]*\\r?\\n?`, 'gm');
 
 /**
  * The preview itself: strip the anchor comments, then trim, then cut.
@@ -81,6 +82,12 @@ interface SectionRow {
 }
 
 export interface SectionsListQuery {
+  /**
+   * 0.2.89 — the root `pagePath` is relative to. Storage is keyed by the pair,
+   * because the same relative path exists in many roots; a `pagePath` filter
+   * without it returns every root's page of that name, merged.
+   */
+  rootId?: string;
   pagePath?: string;
   search?: string;
   limit?: number;
@@ -124,16 +131,13 @@ export class SectionsService {
     return Boolean(row);
   }
 
-  listByPage(pagePath: string): SectionIndexEntry[] {
-    const rows = this.db
-      .prepare(`SELECT ${SECTION_COLUMNS} FROM section_index WHERE page_path = ? ORDER BY line_start`)
-      .all(pagePath) as SectionRow[];
-    return rows.map((r) => this.hydrate(r));
-  }
-
   list(query: SectionsListQuery = {}): SectionIndexEntry[] {
     const where: string[] = [];
     const params: unknown[] = [];
+    if (query.rootId) {
+      where.push('rootId = ?');
+      params.push(query.rootId);
+    }
     if (query.pagePath) {
       where.push('page_path = ?');
       params.push(query.pagePath);
@@ -170,7 +174,14 @@ export class SectionsService {
    * EVERY section-indexed root (0.1.96). Atomic per-file with rollback on error.
    * Emits file:changed via watcher suppress on each write. `changed` entries are
    * `${rootId}:${relPath}` so a path present in two roots stays disambiguated.
-   * Page links `@path.md#anchor` (M14) live elsewhere — handled by M14's link rewriter.
+   *
+   * 0.2.89 — both forms of a citation move together: the `#oldAnchor` suffix of a
+   * page link (`@a.md#…`, `` `a.md#…` ``, `](a.md#…)`) as well as the tag. M14's
+   * rewriter only follows a page MOVE and keeps the suffix as it was, so nothing
+   * else would repoint it. Each touched file is its own M42 write — its own chain
+   * on its own path, with the event suppressed.
+   *
+   * No caller yet: the spec keeps anchors immutable and names no trigger.
    */
   async propagateAnchorChange(
     oldAnchor: string,
@@ -244,6 +255,24 @@ export class SectionsService {
 }
 
 function rewriteSectionRefAnchor(body: string, oldAnchor: string, newAnchor: string): string {
+  return rewritePageLinkAnchor(rewriteSectionRefTags(body, oldAnchor, newAnchor), oldAnchor, newAnchor);
+}
+
+/**
+ * The `#anchor` suffix of the three page-link spellings, outside fenced code.
+ * Anchors are globally unique, so the suffix alone identifies the section — the
+ * path in front of it needs no resolving.
+ */
+export function rewritePageLinkAnchor(body: string, oldAnchor: string, newAnchor: string): string {
+  const esc = oldAnchor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`((?<![\\w])@[\\w][\\w/.-]*|\`[^\`\\n#]+|\\]\\([^)\\s#]+)#${esc}(?![a-z0-9])`, 'g');
+  return body
+    .split(/(^```[\s\S]*?^```)/m)
+    .map((part, i) => (i % 2 === 1 ? part : part.replace(re, `$1#${newAnchor}`)))
+    .join('');
+}
+
+function rewriteSectionRefTags(body: string, oldAnchor: string, newAnchor: string): string {
   const tags = parseXmlTagsExcludingCode(body);
   if (tags.length === 0) return body;
   let out = '';

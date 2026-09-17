@@ -37,7 +37,7 @@ import { customAlphabet } from 'nanoid';
 import type { Plan, PlanChangedBy, PlanFrontmatter, PlanListItem } from '../../shared/entities.js';
 import { PLAN_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
 import { PLAN_ROOT_MARKER } from '../../shared/types.js';
-import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
+import { ANCHOR_LINE_RE, ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
 import { slugify } from './slug.js';
 import type { PagesService } from './pages.js';
 import type { RecordStore } from '../fs/record-store.js';
@@ -67,7 +67,6 @@ import { bodyPositionResolver } from './section-text.js';
 // Generator stays strict 8 (per M06 spec `15u7sazr` — auto-inject contract).
 const nanoid8 = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8);
 
-const ANCHOR_RE = new RegExp(ANCHOR_PATTERN_SOURCE);
 const PLAN_HEADING_RE = /^(#{2,4})\s+(.+?)\s*$/;
 
 export interface PlanServiceDeps {
@@ -1026,15 +1025,23 @@ export function injectAnchors(content: string): string {
   for (const m of content.matchAll(scan)) taken.add(m[1]!);
 
   const out: string[] = [];
+  let inFence = false;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
-    const m = line.match(PLAN_HEADING_RE);
+    // A `## x` inside a fenced block is code, not a heading — anchoring it would
+    // edit the code sample.
+    if (/^\s*```/.test(line)) inFence = !inFence;
+    const m = inFence ? null : line.match(PLAN_HEADING_RE);
     if (!m) {
       out.push(line);
       continue;
     }
-    const prev = out.length > 0 ? out[out.length - 1]! : '';
-    if (ANCHOR_RE.test(prev)) {
+    // 0.2.89 — look past blank lines, as the page indexer does: an anchor with a
+    // blank line before its heading still owns it, and a second one would be a
+    // duplicate, not a repair.
+    let k = out.length - 1;
+    while (k >= 0 && out[k]!.trim() === '') k--;
+    if (k >= 0 && ANCHOR_LINE_RE.test(out[k]!)) {
       out.push(line);
       continue;
     }

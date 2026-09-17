@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { headingStart, parseHeadings } from './section-indexer.js';
-import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
+import { ANCHOR_LINE_RE, ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
 import type { MatchPosition, PositionResolver } from './text-edits.js';
 
 /**
@@ -316,7 +316,7 @@ export function applySectionEdit(
       for (let j = headingIdx - 1; j >= 0; j--) {
         const above = (lines[j] ?? '').trim();
         if (above === '') continue;
-        if (/^<!--\s*anchor:/.test(above)) anchorIdx = j;
+        if (ANCHOR_LINE_RE.test(above)) anchorIdx = j;
         break;
       }
       lines.splice(anchorIdx, range.lineEnd - anchorIdx);

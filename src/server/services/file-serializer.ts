@@ -24,14 +24,13 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import matter from 'gray-matter';
 import { diffLines } from 'diff';
-import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
+import { ANCHOR_LINE_RE, ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
 import { parseXmlTagsExcludingCode } from '../../shared/xml-tags.js';
 import type { PagesService } from './pages.js';
 
 export const FILE_SERIALIZER_VERSION = '1.1.0';
 
 const ANCHOR_RE = new RegExp(ANCHOR_PATTERN_SOURCE, 'g');
-const ANCHOR_LINE_RE = new RegExp(`^\\s*${ANCHOR_PATTERN_SOURCE}\\s*$`);
 const ANCHOR_INLINE_RE = new RegExp(ANCHOR_PATTERN_SOURCE);
 const CODE_FENCE_RE = /^\s*```/m;
 const HEADING_RE = /^(#{1,6})\s+(.+?)\s*$/;
