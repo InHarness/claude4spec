@@ -1186,10 +1186,54 @@ export function registerCoreOperations(): void {
     contentInput: 'n/a',
     idempotent: false,
     channels: {
-      internal: via('runTransagent', 'the tool of the M05 `transagent-tools` server — the spec names the operation `run_turn`, the code names its rendering `runTransagent`'),
+      /**
+       * 0.2.87 (M46): the built-in agent reaches a turn run ONLY by spawning a child
+       * thread. It never commissions a top-level turn from inside its own turn.
+       */
+      internal: via('spawn_child_turn', 'the built-in agent reaches a turn run only by founding a child thread; it never commissions a top-level turn from inside its own turn'),
       mcp: via('runTransagent', 'same server, mounted for context_type ∈ {chat, patch} and stripped inside a child turn (recursion depth 1)'),
       cli: na('no CLI surface — a child turn is spawned from within a turn'),
       rest: na('no REST surface — the parent turn is the only caller'),
+    },
+  });
+
+  /**
+   * 0.2.87 (M46) — the child-thread spawn behind `run_turn`'s internal channel.
+   *
+   * Agent-mediated: it costs a turn of the built-in agent (the child's). Internal only —
+   * the dispatcher (`TransagentDispatcher`) is the one caller; no CLI, MCP or REST door.
+   *
+   * Idempotency is CONDITIONAL: a call with `threadId` continues the same child and
+   * founds nothing, a call without one always founds a new child — `idempotent: false`
+   * is the honest boolean. Single-target: one child per call, one call per parent turn
+   * (the call blocks). The rules the spec lists for this row — echo-free (only
+   * `summary` returns), error-code-once (a child failure surfaces once, as the parent's
+   * `tool_result.isError`), explicit-addressing (a continuation names its `threadId`,
+   * never "the last child") — have no catalog field; they are upheld by the dispatcher.
+   */
+  CATALOG.register({
+    name: 'spawn_child_turn',
+    summary:
+      'Found (or continue, by threadId) a hidden child thread of this specification and run one turn in it: sets parent_thread_id, spawned_by_tool_use_id and plan_mode, binds the per-contextType artifact, and returns only { threadId, summary }.',
+    scope: 'project',
+    mediation: 'agent-mediated',
+    opClass: 'turn',
+    inputSchema: {
+      contextType: z.enum(['brief', 'chat', 'patch']),
+      message: z.string(),
+      payload: z.record(z.string(), z.unknown()).optional(),
+      planMode: z.boolean().optional(),
+      threadId: z.string().optional(),
+    },
+    errorCodes: ['AGENT_ERROR', 'TIMEOUT', 'ABORTED', 'INVALID_ARGS', 'NOT_FOUND'],
+    sideEffects: ['file', 'db', 'ui-notify'],
+    contentInput: 'n/a',
+    idempotent: false,
+    channels: {
+      internal: direct(),
+      cli: na('internal operation — reached only through run_turn from inside a turn'),
+      mcp: na('internal operation — the MCP door is run_turn (runTransagent)'),
+      rest: na('internal operation — no REST surface'),
     },
   });
 

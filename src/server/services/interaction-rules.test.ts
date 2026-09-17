@@ -61,17 +61,14 @@ describe('INTERACTION_RULES', () => {
   });
 
   /**
-   * The posture must not assert built-in AVAILABILITY either, in either direction.
-   * `agent.disableDirectFilesystemAccess` defaults to `true` and
-   * `resolveAgentToolGroups` denies file-read / file-write / shell for every context
-   * type — brief included — so "the built-ins are available" is false under the shipped
-   * default AND contradicts `<builtin>`, which the same prompt derives from that flag a
-   * few blocks earlier. The rules point at that line instead of racing it.
+   * 0.2.87 (M44): brief strips every built-in regardless of
+   * `agent.disableDirectFilesystemAccess` (`PROFILES.brief.builtinTools = 'none'`), so
+   * the rules may state the absence outright — it can no longer contradict `<builtin>`.
    */
-  it('brief: defers to <builtin> on tool availability instead of asserting it', () => {
+  it('brief: states that no built-ins are held, pointing at <builtin>', () => {
     const rules = INTERACTION_RULES.brief;
     expect(rules).toContain('<builtin>');
-    expect(rules).not.toContain('not cut off');
+    expect(rules).toContain('holds no built-in tools');
     expect(rules).toContain('write-denied at the sandbox level');
   });
 

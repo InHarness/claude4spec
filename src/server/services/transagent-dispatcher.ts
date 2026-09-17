@@ -22,6 +22,12 @@
 import { nanoid } from 'nanoid';
 import type { ChatThread } from '../../shared/entities.js';
 import type {
+  UserInputHandler,
+  UserInputRequest,
+  UserInputResponse,
+} from '@inharness-ai/agent-adapters';
+import type {
+  ActiveAdapter,
   AgentTurnDeps,
   AgentTurnInput,
   AgentTurnResult,
@@ -84,6 +90,13 @@ export interface TransagentDispatcherOpts {
   takeToolUseId: () => Promise<string>;
   /** Bound `(input) => runAgentTurn(deps, input)` — injected to avoid an import cycle. */
   runTurn: (input: AgentTurnInput) => Promise<AgentTurnResult>;
+  /**
+   * 0.2.87 (M46): the parent turn has a human on the other end (it was started with
+   * an `onUserInput` handler). Only then does the child get one — elicitation crosses
+   * the thread boundary into the PARENT's panel. A headless parent (`/ask`) passes
+   * `false`, and its child keeps no handler, exactly like the parent.
+   */
+  interactive?: boolean;
 }
 
 export class TransagentDispatcher {
@@ -91,6 +104,38 @@ export class TransagentDispatcher {
     private deps: AgentTurnDeps,
     private opts: TransagentDispatcherOpts,
   ) {}
+
+  /**
+   * 0.2.87 (M46): elicitation across the thread boundary. A question raised by the
+   * child renders in the PARENT's panel — it is emitted on the parent's stream (so
+   * the POST client and every live-joiner see it, replay included), persisted as a
+   * `user_input_request` row of the parent thread, and parked in `pendingInputs`
+   * under its own `requestId`. `POST /api/chat/user-input` answers it by that id,
+   * unchanged. The pending entry is bound to the PARENT's request id, so a
+   * conscious abort of the parent (`cancelPendingForRequest`) rejects it too.
+   */
+  private relayUserInputToParent(
+    parentThreadId: string,
+    parentAdapter: ActiveAdapter,
+  ): UserInputHandler {
+    return (request: UserInputRequest): Promise<UserInputResponse> => {
+      parentAdapter.emit({ type: 'user_input_request', request });
+      this.deps.chatService.addMessage(
+        parentThreadId,
+        'user_input_request',
+        JSON.stringify(request),
+        null,
+        request.requestId,
+      );
+      return new Promise<UserInputResponse>((resolve, reject) => {
+        this.deps.pendingInputs.set(request.requestId, {
+          resolve,
+          reject,
+          requestIdsForRequest: parentAdapter.requestId,
+        });
+      });
+    };
+  }
 
   async run(input: TransagentRunInput): Promise<TransagentRunResult> {
     const { parentThreadId, contextType, message } = input;
@@ -154,6 +199,9 @@ export class TransagentDispatcher {
         requestId: nanoid(12),
         consoleObserver: null,
         onEvent: () => {},
+        ...(this.opts.interactive && parentAdapter
+          ? { onUserInput: this.relayUserInputToParent(parentThreadId, parentAdapter) }
+          : {}),
       });
 
       // 4. Completion — return only the summary to the parent LLM's context.
@@ -162,6 +210,8 @@ export class TransagentDispatcher {
         childThreadId: child.id,
         toolUseId,
         status: 'completed',
+        // 0.2.87 (M46): the completion marker carries the same summary the parent LLM gets.
+        summary: result.answer,
         timestamp: new Date().toISOString(),
       });
       return { threadId: child.id, summary: result.answer };

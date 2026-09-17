@@ -38,6 +38,7 @@ import {
   buildSystemPrompt,
   subagentsFor,
   CONTEXT_TYPE_REGISTRY,
+  assertKnownContextType,
   type PeerProject,
 } from '../services/chat-context.js';
 import { readConfig } from '../config.js';
@@ -434,6 +435,8 @@ export async function runAgentTurn(
   const turnStartMessageId = deps.chatService.latestMessageId(thread.id);
   // M05 m05ctxreg: the context-type registry is the single source of truth for this
   // thread's five dispatch dimensions (skill / MCP set / chrome / subagent / posture).
+  // 0.2.87: backstop for call-sites that bypass the routes (transagent continuation).
+  assertKnownContextType(thread);
   const ctx = CONTEXT_TYPE_REGISTRY[thread.contextType];
   // Builtin posture (dim 5): `force-plan` pins plan-mode EVERY turn regardless of the
   // thread's stored plan_mode flag. "Read-only" is the wrong word for what that buys:
@@ -872,7 +875,7 @@ export async function runAgentTurn(
      * well: the library unions the preset with what we pass, and passing both is
      * how plan mode keeps working on a project that left the flag off.
      */
-    const disallowedToolGroups = resolveAgentToolGroups({ cwd: deps.cwd, planMode });
+    const disallowedToolGroups = resolveAgentToolGroups({ cwd: deps.cwd, planMode, builtinTools: ctx.builtinTools });
     const shellDenied = disallowedToolGroups.includes('shell');
     /**
      * The PROJECT-CONSTANT half, isolated: `file-read` is the one group only
@@ -899,6 +902,7 @@ export async function runAgentTurn(
           architectureConfig: input.architectureConfig,
           takeToolUseId: takeTransagentToolUse,
           runTurn: (childInput) => runAgentTurn(deps, childInput),
+          interactive: input.onUserInput != null,
         })
       : null;
     /**
@@ -1412,7 +1416,7 @@ export async function runAgentTurn(
      * the model may reach for, not to work already handed to the OS.
      */
     const backgroundTasksDisallowed =
-      thread.contextType === 'ask' || thread.parentThreadId != null || shellDenied;
+      ctx.backgroundTasks === 'disabled' || thread.parentThreadId != null || shellDenied;
 
     const architectureConfigForExecute = {
       ...input.architectureConfig,
@@ -1484,6 +1488,7 @@ export async function runAgentTurn(
         deps.pluginHost,
         !directFilesystemDenied,
         (slug) => deps.skillRegistry.has(slug),
+        new Set(mcpInventory.map((entry) => entry.name)),
       ),
       architectureConfig: architectureConfigForExecute,
       planMode,
@@ -1574,7 +1579,15 @@ export async function runAgentTurn(
             text: event.text,
             timestamp: new Date(event.timestamp).toISOString(),
           });
-        } else if (event.type === 'result' && (event.backgroundTasks?.length ?? 0) > 0) {
+        } else if (
+          event.type === 'result' &&
+          (event.backgroundTasks?.length ?? 0) > 0 &&
+          // 0.2.87 (M46): in a bubble `result` is an UNCONDITIONAL end of turn,
+          // whatever its context type. The child always runs with
+          // `claude_disallowBackgroundBash`, so this is the backstop for a library
+          // that reports tasks anyway — a child never enters a hold.
+          !isChildBanka
+        ) {
           // M05 HELD RESULT — NOT end-of-run. The engine holds the session open
           // while background work (a `run_in_background` shell, a Monitor, a
           // workflow) is in flight, wakes the model when it settles, and emits a

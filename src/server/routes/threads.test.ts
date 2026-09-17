@@ -439,3 +439,91 @@ describe('GET /threads — detail-only projection of task collections (0.2.52)',
     expect(listSubagentTasks).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * 0.2.87 (M44): `chat_thread.context_type` has no CHECK, so an unknown literal can sit in
+ * the database. Reads stay resilient (the raw value is hydrated, never mapped to `chat`),
+ * but a turn is an application error and never reaches `runAgentTurn`.
+ */
+describe('unknown context_type is an application error (0.2.87)', () => {
+  let db: Database.Database;
+  let chat: ChatService;
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-threads-ctx-'));
+    db = new Database(':memory:');
+    runMigrations(db);
+    chat = new ChatService(db);
+    runAgentTurnMock.mockClear();
+  });
+  afterEach(() => {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const app = (overrides: Record<string, unknown> = {}) => {
+    const deps = {
+      chatService: chat,
+      agentCredentialService: { getDecrypted: () => null },
+      activeAdapters: new Map(),
+      cwd: dir,
+      roots: [],
+      ...overrides,
+    } as unknown as AgentTurnDeps;
+    return express()
+      .use(express.json())
+      .use('/threads', threadsRouter(deps))
+      .use((err: { code?: string; message: string }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+        res.status(500).json({ error: { code: err.code ?? 'INTERNAL', message: err.message } });
+      });
+  };
+
+  it('hydrates the raw value instead of silently falling back to chat', () => {
+    const t = chat.createThread('t');
+    db.prepare(`UPDATE chat_thread SET context_type = 'bogus' WHERE id = ?`).run(t.id);
+
+    expect(chat.getThreadMeta(t.id)?.contextType).toBe('bogus');
+  });
+
+  it('POST /:id/ask refuses the turn without calling runAgentTurn', async () => {
+    const t = chat.createThread('t');
+    db.prepare(`UPDATE chat_thread SET context_type = 'bogus' WHERE id = ?`).run(t.id);
+
+    const res = await request(app()).post(`/threads/${t.id}/ask`).send({ message: 'hi' });
+
+    expect(res.status).toBe(500);
+    expect(res.body.error.message).toContain("unknown context_type 'bogus'");
+    expect(runAgentTurnMock).not.toHaveBeenCalled();
+  });
+
+  it('a keyring that cannot decrypt the stored key answers 503 AGENT_UNAVAILABLE', async () => {
+    const { AgentTurnError } = await import('../../shared/agent-turn.js');
+    const t = chat.createThread('t');
+
+    const res = await request(
+      app({
+        agentCredentialService: {
+          getDecrypted: () => {
+            throw new AgentTurnError('AGENT_UNAVAILABLE', 'Stored Anthropic API key cannot be decrypted');
+          },
+        },
+      }),
+    )
+      .post(`/threads/${t.id}/ask`)
+      .send({ message: 'hi' });
+
+    expect(res.status).toBe(503);
+    expect(res.body.error.code).toBe('AGENT_UNAVAILABLE');
+    expect(runAgentTurnMock).not.toHaveBeenCalled();
+  });
+
+  it('GET /:id returns childThreads resolved from the column pair', async () => {
+    const parent = chat.createThread('parent');
+    const child = chat.createThread('child', { parentThreadId: parent.id, spawnedByToolUseId: 'tu_1' });
+
+    const res = await request(app()).get(`/threads/${parent.id}`);
+
+    expect(res.body.data.childThreads).toEqual([{ id: child.id, spawnedByToolUseId: 'tu_1', contextType: 'chat' }]);
+  });
+});

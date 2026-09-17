@@ -12,10 +12,10 @@ import type {
   ChatThreadMeta,
   QueuedMessage,
   TodoItem,
+  TransagentChildRef,
   UsageStats,
 } from '../../shared/entities.js';
 import { DomainError } from './tags.js';
-import { CONTEXT_TYPE_REGISTRY } from './chat-context.js';
 
 interface ChatThreadRow {
   id: string;
@@ -176,6 +176,15 @@ export class ChatService {
     const spawnedByToolUseId = opts.spawnedByToolUseId ?? null;
     const planMode = opts.planMode ?? false;
     const planPath = opts.planPath ?? null;
+    // 0.2.87 (M46) column invariant: a child row has BOTH parent_thread_id and
+    // spawned_by_tool_use_id, or neither — a tool-use id without a parent is a
+    // render link to nowhere, and a parent without one cannot be reconstructed on F5.
+    if ((parentThreadId === null) !== (spawnedByToolUseId === null)) {
+      throw new DomainError(
+        'VALIDATION',
+        'parent_thread_id and spawned_by_tool_use_id must be set together or both be null',
+      );
+    }
     // Invariant L2: context_type='brief' ⇒ brief_path IS NOT NULL.
     if (contextType === 'brief' && !briefPath) {
       throw new DomainError('VALIDATION', "context_type='brief' requires brief_path");
@@ -372,6 +381,28 @@ export class ChatService {
       )
       .get(parentThreadId, spawnedByToolUseId) as ChatThreadRow | undefined;
     return row ? this.hydrateThread(row) : null;
+  }
+
+  /**
+   * 0.2.87 (M46): every child banka of a thread, for the detail projection's
+   * `childThreads`. Both columns are set together or not at all (see
+   * `createThread`), so `spawned_by_tool_use_id IS NOT NULL` is implied by the
+   * parent match and filtered only as a type guard.
+   */
+  listChildThreads(parentThreadId: string): TransagentChildRef[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, spawned_by_tool_use_id, context_type
+           FROM chat_thread
+          WHERE parent_thread_id = ? AND spawned_by_tool_use_id IS NOT NULL
+          ORDER BY created_at ASC`,
+      )
+      .all(parentThreadId) as Array<{ id: string; spawned_by_tool_use_id: string; context_type: string }>;
+    return rows.map((r) => ({
+      id: r.id,
+      spawnedByToolUseId: r.spawned_by_tool_use_id,
+      contextType: hydrateContextType(r.context_type),
+    }));
   }
 
   listThreads(limit = 20, offset = 0): ChatThreadMeta[] {
@@ -976,13 +1007,16 @@ export class ChatService {
   }
 }
 
-/** Map the raw `context_type` column to the typed discriminator. The allowed values are
- *  derived from the context-type registry keys (single source of truth, M05 m05ctxreg) —
- *  adding a context_type row there extends validation here automatically. Unknown → 'chat'. */
+/** Map the raw `context_type` column to the typed discriminator.
+ *
+ *  0.2.87 (M44): an unknown value is passed through UNCHANGED rather than mapped to
+ *  `'chat'`. The column has no CHECK, so validation is the application's job — and
+ *  a silent fall-back would have run a corrupted row with the widest toolset. Reads
+ *  (lists, detail) stay resilient; every turn entry point calls
+ *  `assertKnownContextType` and refuses. The cast is the one place the type is
+ *  wider than declared. */
 function hydrateContextType(raw: string): ChatContextType {
-  return Object.prototype.hasOwnProperty.call(CONTEXT_TYPE_REGISTRY, raw)
-    ? (raw as ChatContextType)
-    : 'chat';
+  return raw as ChatContextType;
 }
 
 function parseTodoItems(raw: string | null): TodoItem[] | null {

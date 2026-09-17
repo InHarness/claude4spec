@@ -308,3 +308,126 @@ describe('TransagentDispatcher — chat payload.planPath (M46)', () => {
     expect(planPathOf(threadId)).toBeNull();
   });
 });
+
+/**
+ * 0.2.87 (M46): the parent-stream contract of a bubble — `transagent_completed`
+ * carries the summary, and a question raised INSIDE the child renders in the
+ * PARENT's panel and is answered by `requestId` through the parent's registry.
+ */
+describe('TransagentDispatcher — parent stream contract (0.2.87)', () => {
+  let db: Database.Database;
+  let chat: ChatService;
+  let emitted: Array<Record<string, unknown>>;
+  let pendingInputs: Map<string, { resolve: (r: unknown) => void; reject: (e: unknown) => void; requestIdsForRequest: string }>;
+  let childInputs: AgentTurnInput[];
+
+  beforeEach(() => {
+    db = new Database(':memory:');
+    runMigrations(db);
+    chat = new ChatService(db);
+    emitted = [];
+    pendingInputs = new Map();
+    childInputs = [];
+  });
+
+  afterEach(() => db.close());
+
+  const makeDispatcher = (
+    parentThreadId: string,
+    opts: { interactive: boolean; childTurn?: (input: AgentTurnInput) => Promise<unknown> },
+  ): TransagentDispatcher => {
+    const activeAdapters = new Map([
+      [
+        parentThreadId,
+        { requestId: 'parent-req', emit: (e: Record<string, unknown>) => emitted.push(e) },
+      ],
+    ]);
+    const deps = { chatService: chat, activeAdapters, pendingInputs } as unknown as AgentTurnDeps;
+    return new TransagentDispatcher(deps, {
+      model: 'claude-opus-5' as never,
+      architectureConfig: {},
+      takeToolUseId: async () => 'tu_parent',
+      interactive: opts.interactive,
+      runTurn: async (input: AgentTurnInput) => {
+        childInputs.push(input);
+        if (opts.childTurn) await opts.childTurn(input);
+        return { answer: 'child summary' } as never;
+      },
+    });
+  };
+
+  it('transagent_completed carries the summary returned to the parent', async () => {
+    const parent = chat.createThread('parent');
+    await makeDispatcher(parent.id, { interactive: true }).run({
+      parentThreadId: parent.id,
+      contextType: 'chat',
+      message: 'go',
+    });
+
+    const completed = emitted.find((e) => e.type === 'transagent_completed');
+    expect(completed).toMatchObject({ toolUseId: 'tu_parent', status: 'completed', summary: 'child summary' });
+  });
+
+  it('relays a child user_input_request to the parent stream, persists it on the parent, and resolves by requestId', async () => {
+    const parent = chat.createThread('parent');
+    let answer: unknown;
+    const dispatcher = makeDispatcher(parent.id, {
+      interactive: true,
+      childTurn: async (input) => {
+        const pending = input.onUserInput!({ requestId: 'q1', questions: [] } as never);
+        // The parent's POST /api/chat/user-input does exactly this.
+        const entry = pendingInputs.get('q1')!;
+        expect(entry.requestIdsForRequest).toBe('parent-req');
+        entry.resolve({ action: 'accept', answers: {} });
+        answer = await pending;
+      },
+    });
+
+    await dispatcher.run({ parentThreadId: parent.id, contextType: 'chat', message: 'go' });
+
+    expect(emitted.some((e) => e.type === 'user_input_request')).toBe(true);
+    const parentRows = chat.getMessages(parent.id).map((m) => m.role);
+    expect(parentRows).toContain('user_input_request');
+    expect(answer).toEqual({ action: 'accept', answers: {} });
+  });
+
+  it('a headless parent gives the child no user-input handler', async () => {
+    const parent = chat.createThread('parent');
+    await makeDispatcher(parent.id, { interactive: false }).run({
+      parentThreadId: parent.id,
+      contextType: 'chat',
+      message: 'go',
+    });
+
+    expect(childInputs[0]?.onUserInput).toBeUndefined();
+  });
+
+  it('listChildThreads resolves children from parent_thread_id + spawned_by_tool_use_id', async () => {
+    const parent = chat.createThread('parent');
+    const { threadId } = await makeDispatcher(parent.id, { interactive: false }).run({
+      parentThreadId: parent.id,
+      contextType: 'chat',
+      message: 'go',
+    });
+
+    expect(chat.listChildThreads(parent.id)).toEqual([
+      { id: threadId, spawnedByToolUseId: 'tu_parent', contextType: 'chat' },
+    ]);
+  });
+});
+
+describe('ChatService — child column invariant (0.2.87)', () => {
+  it('rejects a row with only one of parent_thread_id / spawned_by_tool_use_id', () => {
+    const db = new Database(':memory:');
+    runMigrations(db);
+    const chat = new ChatService(db);
+    const parent = chat.createThread('parent');
+
+    expect(() => chat.createThread('orphan', { spawnedByToolUseId: 'tu_x' })).toThrow(DomainError);
+    expect(() => chat.createThread('unlinked', { parentThreadId: parent.id })).toThrow(DomainError);
+    expect(chat.createThread('child', { parentThreadId: parent.id, spawnedByToolUseId: 'tu_y' }).parentThreadId).toBe(
+      parent.id,
+    );
+    db.close();
+  });
+});

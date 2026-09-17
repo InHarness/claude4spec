@@ -24,6 +24,7 @@ import { registerCoreOperations } from '../operations/core-operations.js';
  */
 registerCoreOperations();
 import { INTERACTION_RULES } from './interaction-rules.js';
+import { DomainError } from './tags.js';
 import {
   DEFAULT_SUBAGENT_TURNS,
   resolvePluginSubagents,
@@ -65,8 +66,8 @@ export type { McpServerSet } from '../operations/profiles.js';
  * reach through `PluginSkillContribution.contextTypes`. The row is no longer where a
  * skill gets attached; `<available_skills>` is entirely the plugin fan-out's product.
  *
- * Nothing about the DATA layer changed with it: `chat_thread.context_type`, its CHECK,
- * its default and its invariants are untouched, and there is no migration. This is a
+ * Nothing about the DATA layer changed with it: `chat_thread.context_type` (no CHECK —
+ * dropped by migration 042; validation lives in this map), its default and its invariants are untouched, and there is no migration. This is a
  * registry-and-prompt-builder change only.
  */
 export interface ContextTypeEntry {
@@ -80,6 +81,11 @@ export interface ContextTypeEntry {
   /** Dim 4 — builtin posture. `'force-plan'` pins `planMode=true` regardless of the thread's
    *  `plan_mode` flag (read-only peer); `'follow-thread'` tracks the flag. */
   builtinPosture: 'follow-thread' | 'force-plan';
+  /** Dim 4b (0.2.87) — `'none'` strips every built-in (file-read / file-write / shell)
+   *  regardless of `agent.disableDirectFilesystemAccess`; `'project-setting'` follows it. */
+  builtinTools: 'project-setting' | 'none';
+  /** Dim 6 (0.2.87) — background-task admissibility, declared explicitly per value. */
+  backgroundTasks: 'allowed' | 'disabled';
   /** Dim 5 (0.2.19) — the body of `<interaction_context type="…">`: the domain rules of
    *  this interaction type. The TEXT is owned by the module that owns the genre (M21
    *  brief / M23 patch / M11 ask) and lives in `interaction-rules.ts`; M05 only renders
@@ -100,6 +106,8 @@ export const CONTEXT_TYPE_REGISTRY: Record<ChatContextType, ContextTypeEntry> = 
     uiChrome: 'overlay',
     subagent: 'spec-explore',
     builtinPosture: PROFILES.chat.builtinPosture,
+    builtinTools: PROFILES.chat.builtinTools,
+    backgroundTasks: PROFILES.chat.backgroundTasks,
     interactionRules: INTERACTION_RULES.chat,
   },
   brief: {
@@ -107,6 +115,8 @@ export const CONTEXT_TYPE_REGISTRY: Record<ChatContextType, ContextTypeEntry> = 
     uiChrome: 'brief-detail',
     subagent: 'diff-explore',
     builtinPosture: PROFILES.brief.builtinPosture,
+    builtinTools: PROFILES.brief.builtinTools,
+    backgroundTasks: PROFILES.brief.backgroundTasks,
     interactionRules: INTERACTION_RULES.brief,
   },
   patch: {
@@ -114,6 +124,8 @@ export const CONTEXT_TYPE_REGISTRY: Record<ChatContextType, ContextTypeEntry> = 
     uiChrome: 'overlay',
     subagent: 'spec-explore',
     builtinPosture: PROFILES.patch.builtinPosture,
+    builtinTools: PROFILES.patch.builtinTools,
+    backgroundTasks: PROFILES.patch.backgroundTasks,
     interactionRules: INTERACTION_RULES.patch,
   },
   ask: {
@@ -129,9 +141,30 @@ export const CONTEXT_TYPE_REGISTRY: Record<ChatContextType, ContextTypeEntry> = 
     uiChrome: 'overlay',
     subagent: 'spec-explore',
     builtinPosture: PROFILES.ask.builtinPosture,
+    builtinTools: PROFILES.ask.builtinTools,
+    backgroundTasks: PROFILES.ask.backgroundTasks,
     interactionRules: INTERACTION_RULES.ask,
   },
 };
+
+/**
+ * 0.2.87 (M44): `chat_thread.context_type` has no CHECK, so the database accepts any
+ * literal — validation lives HERE, and an unknown value is an application error, never
+ * a silent fall-back to `chat` (which would hand a corrupted row the widest toolset).
+ * Hydration passes the raw value through; every turn entry point asserts it first.
+ */
+export function isKnownContextType(raw: string): raw is ChatContextType {
+  return Object.prototype.hasOwnProperty.call(CONTEXT_TYPE_REGISTRY, raw);
+}
+
+export function assertKnownContextType(thread: { id: string; contextType: string }): void {
+  if (!isKnownContextType(thread.contextType)) {
+    throw new DomainError(
+      'INTERNAL',
+      `thread ${thread.id} has unknown context_type '${thread.contextType}'; expected one of ${Object.keys(CONTEXT_TYPE_REGISTRY).join(', ')}`,
+    );
+  }
+}
 
 /**
  * 0.1.58: a workspace peer the agent may consult via `c4s-tools.ask`.
@@ -1045,6 +1078,9 @@ export function subagentsFor(
   pluginHost: ProjectPluginHost,
   builtinsEnabled = false,
   hasSkillSlug: (slug: string) => boolean = () => true,
+  /** 0.2.87 (M45): names of the MCP servers mounted for this turn — plugin contributions
+   *  are intersected with them. Omitted = no intersection. */
+  mountedMcpServers?: ReadonlySet<string>,
 ): SubagentDefinition[] {
   /**
    * 0.2.53 mounted NO subagent at all while the built-ins were denied, and the reason was
@@ -1086,6 +1122,9 @@ export function subagentsFor(
     contributions: pluginHost.listSubagents?.() ?? [],
     hasSkillSlug,
     taken: new Set([builtin.name]),
+    ...(mountedMcpServers
+      ? { surface: { mcpServers: mountedMcpServers, builtins: new Set(CLAUDE_CODE_ALL_BUILTINS) } }
+      : {}),
   });
   return [builtin, ...contributed];
 }

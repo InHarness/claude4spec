@@ -81,6 +81,22 @@ export interface ProfileDefinition {
   readonly requiresExplicitBriefTarget: boolean;
   /** `'force-plan'` pins plan mode on regardless of the thread flag (read-only peer). */
   readonly builtinPosture: 'follow-thread' | 'force-plan';
+  /**
+   * 0.2.87 (M44): which built-in tools the turn may hold at all, independent of
+   * plan mode. `'project-setting'` follows `agent.disableDirectFilesystemAccess`;
+   * `'none'` denies `file-read` / `file-write` / `shell` whatever that flag says.
+   * `brief` is `'none'`: its content arrives through `get_brief`, so there is no
+   * path-traversal surface to hand it — `Read` included.
+   */
+  readonly builtinTools: 'project-setting' | 'none';
+  /**
+   * 0.2.87 (M44): background-task policy, declared per value rather than inferred
+   * from another column. `ask` is `'disabled'` — its consumer is headless and holds
+   * the request for the whole turn, so a hold would block it for minutes with no
+   * visible signal. Per-THREAD reasons (a transagent child, a denied shell) are
+   * applied on top by the turn builder; they cannot re-enable what this denies.
+   */
+  readonly backgroundTasks: 'allowed' | 'disabled';
 }
 
 const ALL_CLASSES: readonly OperationClass[] = ['read', 'write', 'brief', 'plan', 'turn', 'peer'];
@@ -97,18 +113,24 @@ export const PROFILES: Record<ChatContextType, ProfileDefinition> = {
     pluginServers: 'all',
     requiresExplicitBriefTarget: false,
     builtinPosture: 'follow-thread',
+    builtinTools: 'project-setting',
+    backgroundTasks: 'allowed',
   },
   brief: {
     operationClasses: new Set<OperationClass>(['read', 'brief']),
     pluginServers: 'release-only',
     requiresExplicitBriefTarget: true,
     builtinPosture: 'follow-thread',
+    builtinTools: 'none',
+    backgroundTasks: 'allowed',
   },
   patch: {
     operationClasses: new Set(CHAT_CLASSES),
     pluginServers: 'all',
     requiresExplicitBriefTarget: false,
     builtinPosture: 'follow-thread',
+    builtinTools: 'project-setting',
+    backgroundTasks: 'allowed',
   },
   ask: {
     // A consulted peer reads and may leave a plan. It cannot mutate the spec, and
@@ -118,6 +140,8 @@ export const PROFILES: Record<ChatContextType, ProfileDefinition> = {
     pluginServers: 'all',
     requiresExplicitBriefTarget: false,
     builtinPosture: 'force-plan',
+    builtinTools: 'project-setting',
+    backgroundTasks: 'disabled',
   },
 };
 

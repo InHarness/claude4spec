@@ -408,3 +408,42 @@ describe('warn-once', () => {
     }
   });
 });
+
+/**
+ * 0.2.87 (M45) — sanitizer step (1): a contribution is intersected with what the run
+ * actually has. A tool from an unmounted server, or a built-in name the runtime does not
+ * know, is dropped with a warning and the entry still registers — never a run error.
+ */
+describe('resolvePluginSubagents — intersection with the run surface (0.2.87)', () => {
+  const surface = {
+    mcpServers: new Set(['reference-tools', 'skill-tools']),
+    builtins: new Set(['Read', 'Grep', 'Glob']),
+  };
+
+  it('drops tools of servers not mounted in this run, keeping the rest', () => {
+    const { out, messages } = resolve(
+      [
+        contrib({
+          tools: ['mcp__reference-tools__get_page', 'mcp__release-tools__release_diff', 'Read'],
+        }),
+      ],
+      { surface },
+    );
+
+    expect(out).toHaveLength(1);
+    expect(out[0]!.tools).toEqual(['mcp__reference-tools__get_page', 'Read']);
+    expect(messages.some((m) => m.includes('release-tools') && m.includes('not mounted'))).toBe(true);
+  });
+
+  it('drops an unknown built-in name with a warning instead of forwarding it', () => {
+    const { out, messages } = resolve([contrib({ tools: ['Raed', 'mcp__reference-tools__get_page'] })], { surface });
+
+    expect(out[0]!.tools).toEqual(['mcp__reference-tools__get_page']);
+    expect(messages.some((m) => m.includes('unknown tool "Raed"'))).toBe(true);
+  });
+
+  it('without a surface the intersection is not applied (legacy callers)', () => {
+    const { out } = resolve([contrib({ tools: ['mcp__release-tools__release_diff'] })]);
+    expect(out[0]!.tools).toEqual(['mcp__release-tools__release_diff']);
+  });
+});

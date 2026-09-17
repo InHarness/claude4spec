@@ -12,6 +12,7 @@ import {
   type AgentTurnDeps,
 } from './agent-turn.js';
 import { checkResumeConfigLock } from './resume-lock.js';
+import { assertKnownContextType } from '../services/chat-context.js';
 import { ASK_TURN_TIMEOUT_MS } from '../../shared/agent-turn.js';
 import { DEFAULT_MODEL } from '../../core/agent/run-agent.js';
 import type { ChatThreadDetail } from '../../shared/entities.js';
@@ -82,6 +83,8 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
         backgroundTasks: result.backgroundTasks,
         // M05: pending queue (position ASC) — restores chips after F5/restart.
         queuedMessages: chat.listQueued(req.params.id),
+        // 0.2.87 (M46): F5 reconstruction of transagent panels from the column pair.
+        childThreads: chat.listChildThreads(req.params.id),
       };
       res.json({ data });
     } catch (err) {
@@ -120,6 +123,8 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
       if (!thread) {
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'thread not found' } });
       }
+      // 0.2.87 (M44): unknown `context_type` is an application error, never a `chat` fall-back.
+      assertKnownContextType(thread);
 
       /**
        * Opcjonalny `model` z body. Kontrakt endpointa to pass-through: wolacz

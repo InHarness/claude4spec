@@ -347,7 +347,13 @@ describe('the profile gate', () => {
     expect(row.opClass).toBe('turn');
     expect(row.idempotent).toBe(false);
     expect(row.channels.mcp).toMatchObject({ kind: 'via', operation: 'runTransagent' });
-    expect(row.channels.internal).toMatchObject({ kind: 'via', operation: 'runTransagent' });
+    // 0.2.87 (M46): internally a turn run is reached only by spawning a child thread.
+    expect(row.channels.internal).toMatchObject({ kind: 'via', operation: 'spawn_child_turn' });
+    const spawn = CATALOG.require('spawn_child_turn');
+    expect(spawn.mediation).toBe('agent-mediated');
+    expect(spawn.channels.internal.kind).toBe('direct');
+    expect([spawn.channels.cli.kind, spawn.channels.mcp.kind, spawn.channels.rest.kind]).toEqual(['na', 'na', 'na']);
+    expect(spawn.sideEffects).toEqual(['file', 'db', 'ui-notify']);
     // No CLI and no REST door: a child turn is spawned from inside a turn.
     expect(row.channels.cli.kind).toBe('na');
     expect(row.channels.rest.kind).toBe('na');

@@ -435,6 +435,54 @@ describe('runAgentTurn — disallowedToolGroups posture', () => {
   });
 
   /**
+   * 0.2.87 (M44): a brief thread holds no built-ins whatever the project flag says —
+   * its content arrives through `get_brief`, so there is no path-traversal surface.
+   */
+  it('brief thread denies file-read, file-write and shell even with direct FS access allowed', async () => {
+    settle();
+    hoisted.agent = { disableDirectFilesystemAccess: false };
+    const { deps } = makeDeps();
+    const input = makeInput();
+    (input.thread as unknown as { contextType: string; briefPath: string }).contextType = 'brief';
+    (input.thread as unknown as { contextType: string; briefPath: string }).briefPath = 'b.md';
+
+    await runAgentTurn(deps, input);
+
+    expect([...(hoisted.lastExecute?.disallowedToolGroups as string[])].sort()).toEqual([
+      'file-read',
+      'file-write',
+      'shell',
+    ]);
+    // Plan mode still follows the thread flag — the built-in axis is separate.
+    expect(hoisted.lastExecute?.planMode).toBe(false);
+  });
+
+  /**
+   * 0.2.87 (M44): background-task policy comes from the registry row, not an
+   * inline `contextType === 'ask'`. With FS access allowed the shell is not denied,
+   * so only the declared policy decides.
+   */
+  for (const [contextType, disallowed] of [
+    ['chat', false],
+    ['patch', false],
+    ['ask', true],
+  ] as const) {
+    it(`background tasks for ${contextType}: ${disallowed ? 'disabled' : 'allowed'} by the registry row`, async () => {
+      settle();
+      hoisted.agent = { disableDirectFilesystemAccess: false };
+      const { deps } = makeDeps();
+      const input = makeInput();
+      (input.thread as unknown as { contextType: string; patchPath: string }).contextType = contextType;
+      (input.thread as unknown as { contextType: string; patchPath: string }).patchPath = 'p.md';
+
+      await runAgentTurn(deps, input);
+
+      const arch = hoisted.lastExecute?.architectureConfig as Record<string, unknown>;
+      expect(arch.claude_disallowBackgroundBash === true).toBe(disallowed);
+    });
+  }
+
+  /**
    * The snapshot records the FIELD, never the computed union — the resume guard
    * depends on being able to tell the two axes apart.
    */
