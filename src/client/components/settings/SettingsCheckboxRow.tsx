@@ -11,7 +11,7 @@ interface SettingsCheckboxRowProps {
 
 /**
  * Shared checkbox-list-item row for Settings sections (EntitiesSection,
- * ExternalSkillsSection, ...). Factors out the label/checkbox/wrapper
+ * ExternalIntegrationsSection, ...). Factors out the label/checkbox/wrapper
  * structure that was previously copy-pasted per section; typography of the
  * title/subtitle is left to the caller via `children` since it varies
  * per-section.

@@ -102,7 +102,7 @@ check('sha256 is lowercase hex64', /^[0-9a-f]{64}$/.test(result.sha256));
 
 // No DB / no post-release artifacts
 console.log('absence invariants');
-for (const forbidden of ['db.sqlite', 'db.sqlite-wal', 'db.sqlite-shm', 'briefs', 'patches', 'skills', 'mcp.json', '.git']) {
+for (const forbidden of ['db.sqlite', 'db.sqlite-wal', 'db.sqlite-shm', 'briefs', 'patches', 'skills', '.git']) {
   check(`bundle has no ${forbidden}`, !fs.existsSync(path.join(dir, forbidden)));
 }
 const topLevel = fs.readdirSync(dir).sort();

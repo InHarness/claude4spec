@@ -6,7 +6,7 @@ import { RemoteProjectSection } from './sections/RemoteProjectSection.js';
 import { GitSection } from './sections/GitSection.js';
 import { DirectoriesSection } from './sections/DirectoriesSection.js';
 import { EntitiesSection } from './sections/EntitiesSection.js';
-import { ExternalSkillsSection } from './sections/ExternalSkillsSection.js';
+import { ExternalIntegrationsSection } from './sections/ExternalIntegrationsSection.js';
 import { PluginPoolSection } from './sections/PluginPoolSection.js';
 import { PluginSettingsSection } from './sections/PluginSettingsSection.js';
 import { AgentSection } from './sections/AgentSection.js';
@@ -21,7 +21,8 @@ import { DangerZoneSection } from './sections/DangerZoneSection.js';
  *
  * Section ids match the anchors referenced from the rest of the app:
  *   user-section · project · appearance · remote-project · git · directories ·
- *   entities · external-skills · plugin-pool · agent · about · danger-zone.
+ *   entities · external-integrations · plugin-pool · agent · about · index-status ·
+ *   danger-zone.
  */
 export function SettingsPage() {
   useEffect(() => {
@@ -53,7 +54,7 @@ export function SettingsPage() {
           <GitSection />
           <DirectoriesSection />
           <EntitiesSection />
-          <ExternalSkillsSection />
+          <ExternalIntegrationsSection />
           <PluginPoolSection />
           <PluginSettingsSection />
           <AgentSection />

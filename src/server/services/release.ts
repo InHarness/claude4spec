@@ -999,7 +999,7 @@ export class ReleaseService {
         if (!dir || !isInside(dir, file.path)) continue;
         const relPath = nodePath.relative(dir, file.path).replaceAll(nodePath.sep, '/');
         // General backstop: any other non-page file under `.claude4spec/` (config.json,
-        // mcp.json, future additions) — same convention the page walker applies. `continue`
+        // future additions) — same convention the page walker applies. `continue`
         // (not `break`): this root's dir just happens to contain a dot-prefixed subtree that
         // ANOTHER, more specific root may legitimately own (e.g. a root at '.docs') — keep
         // trying remaining roots instead of abandoning attribution for this file entirely.

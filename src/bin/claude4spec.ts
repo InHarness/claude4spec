@@ -174,8 +174,8 @@ if (createProject) {
     mode: mode ?? peeked.carried.mode,
   });
 
-  // M31: full per-project activation (config, gitignore, welcome page, skills,
-  // mcp.json, registry registration, legacy-db relocation).
+  // M31: full per-project activation (config, gitignore, welcome page,
+  // registry registration, legacy-db relocation).
   const boot = bootstrapProject(registry, workspace, cwd, {
     name,
     pagesDir,

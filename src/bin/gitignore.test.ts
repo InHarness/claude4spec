@@ -14,12 +14,13 @@ describe('ensureGitignore — M33 phase 2 defaults', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('emits mcp.json + *.deprecated but NOT db.sqlite* or plugins/', () => {
+  it('emits *.deprecated but NOT mcp.json, db.sqlite* or plugins/', () => {
     ensureGitignore(dir);
     const content = fs.readFileSync(path.join(dir, '.gitignore'), 'utf8');
 
-    expect(content).toContain('.claude4spec/mcp.json');
     expect(content).toContain('*.deprecated');
+    // 0.2.93: the MCP config is served on demand — no file, nothing to ignore.
+    expect(content).not.toContain('mcp.json');
     // DB moved to the workspace slot — no longer ignored in the project.
     expect(content).not.toContain('db.sqlite');
     // Committed plugins must stay tracked — never auto-ignored.
@@ -60,7 +61,6 @@ describe('ensureGitignore — 0.1.118 git.enabled bidirectional toggle', () => {
     expect(content).not.toContain('.claude4spec/briefs');
     expect(content).not.toContain('.claude4spec/patches');
     // Static patterns are unaffected by the master switch.
-    expect(content).toContain('.claude4spec/mcp.json');
     expect(content).toContain('*.deprecated');
   });
 
@@ -103,14 +103,12 @@ describe('ensureGitignore — 0.1.118 git.enabled bidirectional toggle', () => {
     expect(content).not.toContain('.claude4spec/briefs');
   });
 
-  it('a broad user ignore of the whole .claude4spec/ dir is treated as already covering mcp.json/briefs/patches', () => {
+  it('a broad user ignore of the whole .claude4spec/ dir is treated as already covering briefs/patches', () => {
     fs.writeFileSync(path.join(dir, '.gitignore'), '.claude4spec/\n');
     ensureGitignore(dir, { gitEnabled: false });
     const content = read();
-    // mcp.json + default-location briefs/patches are covered by the broad
-    // ignore and skipped; *.deprecated is unrelated to .claude4spec/ and is
-    // still added.
-    expect(content).not.toContain('.claude4spec/mcp.json');
+    // Default-location briefs/patches are covered by the broad ignore and
+    // skipped; *.deprecated is unrelated to .claude4spec/ and is still added.
     expect(content).not.toContain('.claude4spec/briefs');
     expect(content).not.toContain('.claude4spec/patches');
     expect(content).toContain('*.deprecated');
@@ -183,7 +181,16 @@ describe('ensureGitignore — 0.1.118 git.enabled bidirectional toggle', () => {
     expect(() => ensureGitignore(dir, { gitEnabled: false })).not.toThrow();
     const content = read();
     expect(content).toContain('node_modules/');
-    expect(content).toContain('.claude4spec/mcp.json');
+    expect(content).toContain('*.deprecated');
     expect(content).toContain('# /claude4spec (auto-added)');
+  });
+
+  it('0.2.93: a managed block written by an older version drops its mcp.json line on the next sync', () => {
+    fs.writeFileSync(
+      path.join(dir, '.gitignore'),
+      'node_modules/\n\n# claude4spec (auto-added)\n.claude4spec/mcp.json\n*.deprecated\n# /claude4spec (auto-added)\n',
+    );
+    ensureGitignore(dir, { gitEnabled: true });
+    expect(read()).toBe('node_modules/\n\n# claude4spec (auto-added)\n*.deprecated\n# /claude4spec (auto-added)\n');
   });
 });

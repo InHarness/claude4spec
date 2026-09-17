@@ -347,7 +347,7 @@ describe('plugin tools cannot shadow host operations', () => {
  * beside it called a provenance stamp. `PlanService.update` used it to ADDRESS
  * the plan, so it resolved to nothing, took the create branch, wrote a plan file
  * and a version row, and then threw NOT_FOUND attaching it to a thread that does
- * not exist. Reachable from the `mcp.json` this release generates, i.e. from
+ * not exist. Reachable from the MCP config entry claude4spec generates, i.e. from
  * every editor an upgrading user opens — and each retry left another orphan.
  */
 describe('plan addressing on the threadless channel', () => {

@@ -230,10 +230,13 @@ describe('the external MCP surface has no second execution locus', () => {
     expect(bridge()).not.toMatch(/\bspawn\b|\bexecFile\b|child_process/);
   });
 
-  it('mcp.json declares an HTTP mount, not a command to run', () => {
-    const src = read('src/server/mcp/ensure-mcp-json.ts');
+  it('the generated MCP config leads with an HTTP mount; stdio only relays to it', () => {
+    // 0.2.93: rendered per request instead of written to `.claude4spec/mcp.json`.
+    const src = read('src/server/mcp/mcp-config.ts');
     expect(src).toContain("type: 'http'");
-    expect(src).not.toContain("command: 'npx'");
+    // The stdio variant launches the relay, never a server of its own.
+    expect(src).toContain("'c4s-mcp', '--url'");
+    expect(src).not.toMatch(/--project|--workspace/);
   });
 
   it('the composed surface is reached only through the facade builder', () => {
@@ -427,42 +430,20 @@ describe('the CLI holds no handle on the specification', () => {
     expect(fsScoped).toEqual(['install-skills']);
   });
 
-  it('item 8: every path that registers a project also writes its mcp.json', () => {
+  it('item 8 (superseded in 0.2.93): no path that registers a project writes mcp.json', () => {
     /**
-     * There are two, and 0.2.13 covered one.
-     *
-     * `bootstrapProject` used to write the file and stopped, because it could
-     * only ever write `workspace.defaultPort` — wrong for a server started on
-     * any other port. The replacement runs once after `listen`, over the
-     * project list as it stood then. That leaves `activateProject` —
-     * `POST /api/workspace/projects`, a project added through the workspace UI
-     * — writing nothing at all: the directory gets no `mcp.json`, so the editor
-     * shows no `c4s-spec-reader` server and the spec-reader skill has no MCP
-     * surface until someone restarts.
-     *
-     * Asserted at the source, because the alternative is standing up a server
-     * and a second project to observe one file appearing. The claim is narrow
-     * and structural: the activation closure calls the writer.
+     * 0.2.13 made every registration path write `.claude4spec/mcp.json`. 0.2.93
+     * removes the file: the config is rendered per request by
+     * `GET /api/projects/:id/_meta/mcp-config`, so activation writes no
+     * integration artifact and the canonical-port rule moves into that route.
      */
     const src = read('src/server/index.ts');
     const activate = /const activateProject = async[\s\S]*?\n  };/.exec(src)?.[0] ?? '';
     expect(activate, 'activateProject not found — the regex needs updating').toContain('bootstrapProject');
-    expect(activate, 'a project added at runtime gets no mcp.json').toContain('ensureMcpJson');
-
-    /**
-     * …and it writes the CANONICAL port, not the one this process bound.
-     *
-     * The first version of this call passed `portRef.current`, which is the very
-     * mistake `ensureMcpJsonForWorkspace` was rewritten to stop making: a one-off
-     * `--port 5050`, a second instance, or `listenOrExit` retrying past a busy
-     * port is not the address an editor should be sent to. A project added
-     * through the UI of such a process got a config pointing at a port that dies
-     * with it, while the canonical server keeps serving that project.
-     */
-    expect(activate, 'activateProject writes the bound port instead of the canonical one').not.toMatch(
-      /port:\s*portRef\.current\s*[,}]/,
-    );
-    expect(activate).toContain('defaultPort');
+    expect(src).not.toMatch(/ensureMcpJson/);
+    expect(fs.existsSync(path.join(REPO_ROOT, 'src/server/mcp/ensure-mcp-json.ts'))).toBe(false);
+    const route = read('src/server/routes/mcp-config.ts');
+    expect(route, 'the config route must use the canonical port').toContain('defaultPort');
   });
 
   it('item 22: the HELP text\'s exception list matches the actual non-delegating commands', () => {

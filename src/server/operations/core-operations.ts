@@ -1272,7 +1272,7 @@ export function registerCoreOperations(): void {
    * and makes a git commit; `release_update` renames the latest release and can
    * sweep the unreleased queue into it. Both were reachable from a consulted
    * peer and from a brief-authoring turn — and 0.2.13 put `?profile=ask` into
-   * the `mcp.json` claude4spec generates for every project, so that peer is now
+   * the MCP config entry claude4spec generates for every project, so that peer is now
    * every editor the user opens.
    *
    * `read`/`write` here is the whole payload of these rows. The three readers
