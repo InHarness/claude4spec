@@ -285,6 +285,21 @@ describe('context profiles', () => {
   });
 });
 
+describe('idempotence declarations', () => {
+  /**
+   * 0.2.86 — this row said `true` while the handler said otherwise, and the
+   * declaration is what a caller plans a retry against.
+   */
+  it('delete_entities is NOT idempotent — an absent slug fails its item', () => {
+    expect(CATALOG.require('delete_entities').idempotent).toBe(false);
+    expect(CATALOG.require('delete_entities').summary).toMatch(/brokenReferences/);
+    // Its neighbours are unaffected: an update of an existing row is a no-op
+    // when nothing changed, a create always conflicts on a duplicate slug.
+    expect(CATALOG.require('update_entities').idempotent).toBe(true);
+    expect(CATALOG.require('create_entities').idempotent).toBe(false);
+  });
+});
+
 describe('the profile gate', () => {
   it('[ac:ac-operacja-spoza-profilu-polaczenia-nie] withholds the entity write tools from `ask` — the peer that used to get them', () => {
     // The real entity-tools surface. Before 0.2.13 `ask` was handed all seven and

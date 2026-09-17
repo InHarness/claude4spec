@@ -459,12 +459,30 @@ export function registerCoreOperations(): void {
     ),
   );
 
+  /**
+   * 0.2.86 — two corrections to this row, both from reading the handler.
+   *
+   * `idempotent: false`: a repeat is NOT a no-op. An absent slug fails that
+   * item with `NOT_FOUND`, deliberately — `entity-tools.ts` states the reason
+   * (the generic door answers `{ deleted: false }`, and reporting that as
+   * `{ deleted: true }` would tell an agent it removed something that was never
+   * there). The declaration said `true` while the code said otherwise, and a
+   * caller trusting the declaration would retry a batch and read the retry's
+   * failures as real ones.
+   *
+   * And the summary names `brokenReferences`, because M43 `echo-free` makes it
+   * the substance of the answer rather than a detail: the address of the effect
+   * is the slug, and the part the caller could not have predicted is which
+   * pages now point at nothing. It is counted BEFORE the delete (afterwards
+   * there is nothing left to find), does not block the delete, and rewrites
+   * nothing — the soft FK is the author's to repair in prose.
+   */
   CATALOG.register(
     entityWrite(
       'delete_entities',
-      'Delete several entities of one type. Idempotent per element.',
+      'Delete several entities of one type. Per-item, non-transactional: an absent slug fails that item with ENTITY_NOT_FOUND and leaves the rest applied, so a repeat is not a no-op. Each deleted item answers with `brokenReferences` — the pages that referenced it, counted before the delete; references neither block the delete nor get rewritten.',
       { type: z.string(), slugs: z.array(z.string()).min(1) },
-      true,
+      false,
       ['ENTITY_NOT_FOUND'],
     ),
   );

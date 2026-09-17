@@ -62,6 +62,7 @@ import {
   type PlanSectionEdit,
 } from './plan-write.js';
 import { applyTextEdits, type TextEdit } from './text-edits.js';
+import { bodyPositionResolver } from './section-text.js';
 
 // Generator stays strict 8 (per M06 spec `15u7sazr` — auto-inject contract).
 const nanoid8 = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8);
@@ -913,8 +914,14 @@ function composePlanBody(prior: string, payload: PlanEditPayload): ComposedPlanB
        * patterns inside an `edits[]` entry are counted over that section's
        * subtree alone, so one pattern can be a legal single match in one variant
        * and a `MATCH_COUNT_MISMATCH` in the other.
+       *
+       * 0.2.86 — and the resolver is why that mismatch is actionable. Without
+       * one the engine falls back to line-only positions, so every hit came
+       * back `anchor: null` and the caller reading "3 matches" had no section to
+       * narrow to: `prior` is the plan BODY, so its own coordinates are the
+       * anchors', and the offset is 0.
        */
-      const applied = applyTextEdits(prior, payload.textEdits);
+      const applied = applyTextEdits(prior, payload.textEdits, bodyPositionResolver(prior));
       return {
         body: applied.text,
         scopeOf: new Map(),

@@ -15,13 +15,7 @@ import {
 import { PROJECTION_IDS, type ProjectionStatusRegistry } from './projection-status.js';
 import { DomainError } from './tags.js';
 import { parseHeadings } from './section-indexer.js';
-import {
-  applyTextEdits,
-  type MatchPosition,
-  type MatchRange,
-  type PositionResolver,
-  type TextEdit,
-} from './text-edits.js';
+import { applyTextEdits, type MatchRange, type PositionResolver, type TextEdit } from './text-edits.js';
 /**
  * 0.2.43 — the section walk moved to `section-text.ts` so `plan-write.ts` runs
  * the SAME one. Nothing about the page path changed with it; these are the
@@ -32,6 +26,7 @@ import {
   anchorValuesIn,
   anchorsInLineSpans,
   applySectionEdit,
+  bodyPositionResolver,
   liveRangeOf,
   ownEndOf,
   sectionDigests,
@@ -1224,19 +1219,21 @@ async function assertNoUndeclaredAnchorLoss(args: {
  * the frontmatter) honestly reports no anchor rather than borrowing the page's.
  */
 function pagePositionResolver(fullText: string): PositionResolver {
+  /**
+   * The page-specific half is the coordinate translation, and it is the only
+   * half: a page's `textEdits` run over the WHOLE file (frontmatter included,
+   * which is how a `find` can rewrite YAML), while its anchors live in body
+   * coordinates. `bodyPositionResolver` does the walk; the offset below is how
+   * many lines of frontmatter precede the body, so the line the caller reads
+   * back is the line it would count in the file.
+   *
+   * 0.2.86 — this used to carry its own copy of the section walk. `update_plan`
+   * needed the same answer and had none at all, so the walk moved to
+   * `section-text.ts` beside every other one.
+   */
   const bodyText = matter(fullText).content;
   const bodyFirstLine = fullText.slice(0, fullText.length - bodyText.length).split('\n').length - 1;
-  const ranges = sectionRanges(bodyText.split('\n'));
-  return (offset): MatchPosition => {
-    const fullLine = fullText.slice(0, offset).split('\n').length - 1;
-    const bodyLine = fullLine - bodyFirstLine;
-    const containing = ranges.filter((r) => bodyLine >= r.lineStart - 1 && bodyLine < r.lineEnd);
-    const innermost = containing.reduce<{ anchor: string; lineStart: number } | null>(
-      (best, r) => (best === null || r.lineStart > best.lineStart ? r : best),
-      null,
-    );
-    return { anchor: innermost?.anchor ?? null, line: fullLine + 1 };
-  };
+  return bodyPositionResolver(bodyText, bodyFirstLine);
 }
 
 /**
