@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3';
 import { DomainError } from './tags.js';
 import { encrypt, decrypt } from './agent-credential-crypto.js';
 import type { AgentCredentialResponse } from '../../shared/agent-credential.js';
+import { AgentTurnError } from '../../shared/agent-turn.js';
 
 interface AgentCredentialRow {
   id: number;
@@ -72,7 +73,19 @@ export class AgentCredentialService {
   getDecrypted(): { apiKey: string } | null {
     const row = this.read();
     if (!row) return null;
-    return { apiKey: decrypt(row.api_key_ciphertext) };
+    try {
+      return { apiKey: decrypt(row.api_key_ciphertext) };
+    } catch (err) {
+      // 0.2.87: a deleted or corrupted keyring with a stored ciphertext means the
+      // server cannot serve the turn with the credential the user configured — the
+      // turn fails `AGENT_UNAVAILABLE` (503), not a generic 500, and never silently
+      // falls back to the local login.
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new AgentTurnError(
+        'AGENT_UNAVAILABLE',
+        `Stored Anthropic API key cannot be decrypted (${detail}). Re-enter it in Settings → Agent, or clear it to use the local Claude Code login.`,
+      );
+    }
   }
 
   // --- internals ----------------------------------------------------------

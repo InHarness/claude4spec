@@ -1,6 +1,8 @@
 import { Router, type Response } from 'express';
 import { restError } from '../operations/envelope.js';
-import { httpStatusForCode } from '../operations/error-codes.js';
+import { httpStatusForCode, STATUS_FOR_TURN_ERROR } from '../operations/error-codes.js';
+import { AgentTurnError } from '../../shared/agent-turn.js';
+import { assertKnownContextType } from '../services/chat-context.js';
 import { nanoid } from 'nanoid';
 import {
   architectureCapabilities,
@@ -182,7 +184,18 @@ export function chatRouter(deps: AgentTurnDeps): Router {
       // so no toggle is needed. No row ⇒ no injection ⇒ local Claude Code login (unchanged).
       // Per-turn, no `process.env` mutation. `custom_env` is NOT in RESUME_CONFIG_LOCKED,
       // so it also applies on resumed turns.
-      const credential = await deps.agentCredentialService.getDecrypted();
+      let credential: { apiKey: string } | null;
+      try {
+        credential = await deps.agentCredentialService.getDecrypted();
+      } catch (err) {
+        // 0.2.87: keyring decrypt failure → 503 AGENT_UNAVAILABLE, answered before SSE opens.
+        if (err instanceof AgentTurnError) {
+          return res
+            .status(STATUS_FOR_TURN_ERROR[err.code] ?? 500)
+            .json({ error: { code: err.code, message: err.message } });
+        }
+        throw err;
+      }
       if (credential) {
         const existingEnv =
           clientArchitectureConfig.custom_env && typeof clientArchitectureConfig.custom_env === 'object'
@@ -203,6 +216,8 @@ export function chatRouter(deps: AgentTurnDeps): Router {
       }
 
       let thread = threadId ? deps.chatService.getThreadMeta(threadId) ?? deps.chatService.createThread() : deps.chatService.createThread();
+      // 0.2.87 (M44): an unknown discriminator is an application error, before anything runs.
+      assertKnownContextType(thread);
 
       if (planModeArg !== undefined && planModeArg !== thread.planMode) {
         thread = deps.chatService.updateThreadSettings(thread.id, { planMode: planModeArg });

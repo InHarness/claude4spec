@@ -622,6 +622,19 @@ export interface ChatThreadDetail extends ChatThread {
   /** Empty array when the thread never backgrounded a task. Sorted `created_at ASC`. */
   backgroundTasks: ChatBackgroundTask[];
   queuedMessages: QueuedMessage[];
+  /**
+   * 0.2.87 (M46): the transagent children ("bańki") this thread spawned, resolved from
+   * `parent_thread_id` + `spawned_by_tool_use_id` — the F5 reconstruction key. Carried
+   * here so a reload rebuilds every child panel, a failed child included, without
+   * parsing the `runTransagent` tool_result. Sorted `created_at ASC`.
+   */
+  childThreads: TransagentChildRef[];
+}
+
+export interface TransagentChildRef {
+  id: string;
+  spawnedByToolUseId: string;
+  contextType: ChatContextType;
 }
 
 export type ChatMessageStatus = 'streaming' | 'complete';

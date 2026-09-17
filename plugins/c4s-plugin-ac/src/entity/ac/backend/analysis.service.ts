@@ -1,4 +1,4 @@
-import { createAdapter, extractText } from '@inharness-ai/agent-adapters';
+import { createAdapter, extractText, probeToolGating, type UnifiedEvent } from '@inharness-ai/agent-adapters';
 import { DEFAULT_CONTENT_OPERATION } from '@c4s/plugin-runtime';
 import type { AcMountContext, HostRegistryView, ReadOps } from '../../../host-kit/host-types.js';
 import { AC_TYPE } from '../../../identity.js';
@@ -184,6 +184,20 @@ export class AcAnalysisService {
      * chat turn, and the turn is still strictly more restricted than before.
      */
     const scope = this.deps.agentScope({ planMode: true });
+    /**
+     * 0.2.87: the same synchronous pre-dispatch probe the chat turn runs. An audit whose
+     * deny-groups this architecture cannot enforce REFUSES TO START — it must never run
+     * with a posture silently weaker than the one it asked for.
+     */
+    const unenforceable = probeToolGating('claude-code', scope.disallowedToolGroups as never)
+      .filter((report) => !report.enforceable)
+      .map((report) => report.group);
+    if (unenforceable.length > 0) {
+      throw Object.assign(
+        new Error(`AC audit refused: tool groups not enforceable on claude-code: ${unenforceable.join(', ')}`),
+        { code: 'TOOL_POLICY_REFUSED' },
+      );
+    }
     const adapter = createAdapter('claude-code');
     const stream = adapter.execute({
       prompt,
@@ -209,7 +223,9 @@ export class AcAnalysisService {
       ...scope,
       disallowedToolGroups: scope.disallowedToolGroups as never,
     });
-    const text = await extractText(stream);
+    // 0.2.87: `extractText` ignores `error` events, so a tool-policy refusal (or any
+    // adapter failure) surfaced mid-stream used to parse as "no issues". Rethrow it.
+    const text = await extractText(throwOnStreamError(stream));
     const issues = parseIssuesJson(text);
 
     return {
@@ -388,4 +404,15 @@ export function parseIssuesJson(text: string): AcAnalysisIssue[] {
     out.push(issue);
   }
   return out;
+}
+
+/** Pass a stream through, turning its first `error` event into a thrown error. */
+async function* throwOnStreamError(stream: AsyncIterable<UnifiedEvent>): AsyncIterable<UnifiedEvent> {
+  for await (const event of stream) {
+    if (event.type === 'error') {
+      const err = (event as { error?: unknown }).error;
+      throw err instanceof Error ? err : new Error(`AC audit turn failed: ${String(err)}`);
+    }
+    yield event;
+  }
 }

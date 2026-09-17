@@ -62,6 +62,12 @@ describe('AgentCredentialService', () => {
     expect(svc.getDecrypted()).toEqual({ apiKey: 'sk-ant-second-key-wxyz' });
   });
 
+  it('a corrupted ciphertext fails AGENT_UNAVAILABLE, not a bare Error (0.2.87)', () => {
+    svc.set(VALID_KEY);
+    db.prepare(`UPDATE agent_credential SET api_key_ciphertext = 'garbage'`).run();
+    expect(() => svc.getDecrypted()).toThrow(expect.objectContaining({ code: 'AGENT_UNAVAILABLE' }));
+  });
+
   it('rejects empty and bad-prefix keys with VALIDATION', () => {
     expect(() => svc.set('')).toThrow(/required/i);
     expect(() => svc.set('not-a-key')).toThrow(/sk-ant-/);

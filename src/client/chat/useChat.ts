@@ -10,6 +10,7 @@ import type {
   ChatSubagentTask,
   ChatThread,
   ChatThreadDetail,
+  TransagentChildRef,
 } from '../../shared/entities.js';
 import { thinkingToConfig, type ChatModel, type ChatThinking } from '../state/chat.js';
 import { toast } from '../ui/events.js';
@@ -36,7 +37,7 @@ type WireEventExtended =
   // 0.1.69 Transagents: bracket markers for a hidden child banka turn. The panel
   // nested-live-joins GET /api/chat/stream/:childThreadId between these.
   | { type: 'transagent_started'; childThreadId: string; toolUseId: string; contextType: string }
-  | { type: 'transagent_completed'; childThreadId: string; toolUseId: string; status?: string }
+  | { type: 'transagent_completed'; childThreadId: string; toolUseId: string; status?: string; summary?: string }
   // M05: engine-backgrounded tasks (a `run_in_background` shell, a Monitor, a
   // workflow). agent-adapters 0.9.1 emits these instead of mislabelling the work
   // as `subagent_*`. agent-chat's reducer doesn't know them (unknown → identity),
@@ -78,6 +79,8 @@ export interface TransagentEntry {
   childThreadId: string;
   contextType: string;
   status: 'running' | 'completed' | 'error';
+  /** 0.2.87: the child's summary, from `transagent_completed` (absent on error / reload). */
+  summary?: string;
 }
 
 /**
@@ -241,10 +244,12 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
         return;
       }
       if (ext.type === 'transagent_completed') {
-        const { toolUseId } = ext;
+        const { toolUseId, summary } = ext;
         const status: TransagentEntry['status'] = ext.status === 'error' ? 'error' : 'completed';
         setTransagents((prev) =>
-          prev.map((t) => (t.toolUseId === toolUseId ? { ...t, status } : t)),
+          prev.map((t) =>
+            t.toolUseId === toolUseId ? { ...t, status, ...(summary !== undefined ? { summary } : {}) } : t,
+          ),
         );
         return;
       }
@@ -683,7 +688,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
         // runTransagent tool_use+tool_result rows. In-flight children are not
         // reconstructed here — the live join replays `transagent_started` which
         // re-adds them via onEvent.
-        setTransagents(reconstructTransagents(thread.messages));
+        setTransagents(reconstructTransagents(thread.messages, thread.childThreads ?? []));
         // M05 (F5 / cold reload): rebuild the background-task panel from persisted
         // rows. In-flight ('running') entries dedup against the live replay's
         // `background_task_started` (onEvent upserts by taskId).
@@ -817,35 +822,45 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
 const TRANSAGENT_TOOL_NAME = 'mcp__transagent-tools__runTransagent';
 
 /**
- * 0.1.69: rebuild COMPLETED transagent entries from persisted chat rows. Each
- * `runTransagent` tool_use is paired with its tool_result; the result content is
- * `{ threadId, summary }` (success) or `{ error }` (failure). Entries without a
- * tool_result are in-flight and left to the live `transagent_started` replay.
+ * 0.1.69: rebuild COMPLETED transagent entries from persisted chat rows.
+ *
+ * 0.2.87 (M46): the primary key is the column pair — each child row names the
+ * parent `tool_use(runTransagent)` that spawned it (`spawned_by_tool_use_id`), so a
+ * child is found even when its tool_result carries no `threadId` (a failed child).
+ * A CONTINUATION call (`runTransagent({ threadId })`) creates no row, so its panel is
+ * still resolved from the `threadId` in the tool_result as a fallback.
+ * Entries without a tool_result are in-flight and left to the live
+ * `transagent_started` replay.
  */
-function reconstructTransagents(rows: ChatMessageRow[]): TransagentEntry[] {
+function reconstructTransagents(rows: ChatMessageRow[], children: TransagentChildRef[]): TransagentEntry[] {
+  const childBySpawn = new Map(children.map((c) => [c.spawnedByToolUseId, c]));
   const out: TransagentEntry[] = [];
   for (const row of rows) {
     if (row.role !== 'tool_use' || row.toolName !== TRANSAGENT_TOOL_NAME || !row.toolId) continue;
     const result = rows.find((r) => r.role === 'tool_result' && r.toolId === row.toolId);
     if (!result) continue; // in-flight — handled by live replay
-    let childThreadId: string | null = null;
+    let childThreadId: string | null = childBySpawn.get(row.toolId)?.id ?? null;
     let isError = false;
     try {
       const parsed = JSON.parse(result.content) as { summary?: unknown; isError?: boolean };
       isError = parsed.isError === true;
-      // tool_result summary is the JSON string the MCP tool returned.
-      const inner = typeof parsed.summary === 'string' ? JSON.parse(parsed.summary) : parsed.summary;
-      if (inner && typeof inner === 'object' && typeof (inner as { threadId?: unknown }).threadId === 'string') {
-        childThreadId = (inner as { threadId: string }).threadId;
+      if (!childThreadId) {
+        // tool_result summary is the JSON string the MCP tool returned.
+        const inner = typeof parsed.summary === 'string' ? JSON.parse(parsed.summary) : parsed.summary;
+        if (inner && typeof inner === 'object' && typeof (inner as { threadId?: unknown }).threadId === 'string') {
+          childThreadId = (inner as { threadId: string }).threadId;
+        }
       }
     } catch {
-      childThreadId = null;
+      /* keep whatever the column pair resolved */
     }
     if (!childThreadId) continue;
-    let contextType = 'chat';
+    let contextType: string = childBySpawn.get(row.toolId)?.contextType ?? 'chat';
     try {
       const input = JSON.parse(row.content) as { input?: { contextType?: unknown } };
-      if (typeof input.input?.contextType === 'string') contextType = input.input.contextType;
+      if (!childBySpawn.has(row.toolId) && typeof input.input?.contextType === 'string') {
+        contextType = input.input.contextType;
+      }
     } catch {
       /* leave default */
     }

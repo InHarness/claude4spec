@@ -33,12 +33,18 @@ export interface ResolveAgentToolGroupsInput {
   cwd: string;
   /** The turn's effective plan-mode flag (thread flag, or forced by the context type). */
   planMode: boolean;
+  /**
+   * 0.2.87 (M44): the context type's built-in axis. `'none'` denies the full
+   * direct-filesystem set whatever the project flag says (brief). Omitted =
+   * `'project-setting'`, so call-sites without a thread (AC audit) are unchanged.
+   */
+  builtinTools?: 'project-setting' | 'none';
 }
 
 export function resolveAgentToolGroups(input: ResolveAgentToolGroupsInput): ToolGroup[] {
   const cfg = readConfig(input.cwd);
   const groups = new Set<ToolGroup>();
-  if (cfg.agent.disableDirectFilesystemAccess) {
+  if (cfg.agent.disableDirectFilesystemAccess || input.builtinTools === 'none') {
     for (const g of DIRECT_FILESYSTEM_DENY_GROUPS) groups.add(g);
   }
   if (input.planMode) {

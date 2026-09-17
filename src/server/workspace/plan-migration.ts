@@ -187,7 +187,7 @@ export async function backfillPlansToFilesystem(params: {
         CREATE INDEX idx_chat_thread_brief_path ON chat_thread(brief_path) WHERE brief_path IS NOT NULL;
         CREATE INDEX idx_chat_thread_patch_path ON chat_thread(patch_path) WHERE patch_path IS NOT NULL;
         CREATE INDEX idx_chat_thread_plan_path ON chat_thread(plan_path) WHERE plan_path IS NOT NULL;
-        CREATE INDEX idx_chat_thread_parent_thread_id ON chat_thread(parent_thread_id);
+        CREATE INDEX idx_chat_thread_parent_thread_id ON chat_thread(parent_thread_id) WHERE parent_thread_id IS NOT NULL;
 
         DROP TABLE IF EXISTS plan_version;
         DROP TABLE IF EXISTS plan;

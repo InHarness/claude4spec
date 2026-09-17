@@ -155,9 +155,21 @@ export function isMutatingMcpTool(tool: string): boolean {
  * starts without that tool; the alternative — failing the run — would let a plugin's typo
  * take down a turn it has no business affecting.
  */
+/**
+ * 0.2.87 (M45): what the RUN actually has — step (1) of the plugin sanitizer. A
+ * contributed tool is kept only if this turn can reach it: an `mcp__<server>__<tool>`
+ * whose server is mounted, or a built-in the runtime knows. Everything else is an
+ * unknown entry, dropped with a warning — never a run error.
+ */
+export interface SubagentRunSurface {
+  mcpServers: ReadonlySet<string>;
+  builtins: ReadonlySet<string>;
+}
+
 export function sanitizeSubagentDefinition(
   def: SubagentDefinition,
   warn: SubagentWarn = defaultWarn,
+  surface?: SubagentRunSurface,
 ): SubagentDefinition {
   if (!def.tools) return def;
   const kept: string[] = [];
@@ -168,6 +180,18 @@ export function sanitizeSubagentDefinition(
     if (typeof tool !== 'string' || tool.trim() === '') {
       warn(`[subagents] "${def.name}": dropping a non-string entry from its toolset`);
       continue;
+    }
+    if (surface) {
+      if (tool.startsWith('mcp__')) {
+        const server = tool.split('__')[1] ?? '';
+        if (!surface.mcpServers.has(server)) {
+          warn(`[subagents] "${def.name}": dropping "${tool}" — server "${server}" is not mounted in this run`);
+          continue;
+        }
+      } else if (!surface.builtins.has(tool)) {
+        warn(`[subagents] "${def.name}": dropping unknown tool "${tool}" from its toolset`);
+        continue;
+      }
     }
     if (NON_DELEGABLE_TOOLS.includes(tool)) {
       warn(`[subagents] "${def.name}": dropping non-delegable tool "${tool}" from its toolset`);
@@ -281,6 +305,8 @@ export interface ResolveSubagentsOptions {
   hasSkillSlug: (slug: string) => boolean;
   /** Names already claimed by host built-ins for this turn. */
   taken: ReadonlySet<string>;
+  /** 0.2.87: the run's reachable surface; omitted = no intersection (legacy callers/tests). */
+  surface?: SubagentRunSurface;
   warn?: SubagentWarn;
 }
 
@@ -294,7 +320,7 @@ export interface ResolveSubagentsOptions {
  * here, ahead of dispatch, and NO PATH IN THIS FUNCTION THROWS.
  */
 export function resolvePluginSubagents(opts: ResolveSubagentsOptions): SubagentDefinition[] {
-  const { contextType, contributions, hasSkillSlug, taken, warn = defaultWarn } = opts;
+  const { contextType, contributions, hasSkillSlug, taken, surface, warn = defaultWarn } = opts;
   const out: SubagentDefinition[] = [];
   const seen = new Set<string>();
 
@@ -385,6 +411,7 @@ export function resolvePluginSubagents(opts: ResolveSubagentsOptions): SubagentD
           maxTurns,
         },
         warn,
+        surface,
       ),
     );
   }

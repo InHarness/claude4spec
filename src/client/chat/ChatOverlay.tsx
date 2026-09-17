@@ -626,7 +626,9 @@ export function ChatOverlay() {
         {/* Input — hidden while a user_input_request is pending (answer via the card instead) */}
         {pendingUserInputs.length === 0 && !systemPromptViewOpen && (
         <div className="p-2.5 relative" style={{ borderTop: '1px solid var(--c-hair)' }}>
-          {activeThread?.planPath != null && (
+          {/* 0.2.87: the context-link bar never renders in an `ask` thread — that type has no
+              artifact, even when the peer left a plan behind (plan-tools are mounted there). */}
+          {activeThread?.planPath != null && activeThread.contextType !== 'ask' && (
             <ContextLinkBar
               icon={<ClipboardList size={11} style={{ color: 'var(--c-accent)', flexShrink: 0 }} />}
               label={activePlan?.frontmatter.title ? `Plan: ${activePlan.frontmatter.title}` : 'Plan'}

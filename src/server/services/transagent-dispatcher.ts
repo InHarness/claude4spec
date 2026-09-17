@@ -22,6 +22,12 @@
 import { nanoid } from 'nanoid';
 import type { ChatThread } from '../../shared/entities.js';
 import type {
+  UserInputHandler,
+  UserInputRequest,
+  UserInputResponse,
+} from '@inharness-ai/agent-adapters';
+import type {
+  ActiveAdapter,
   AgentTurnDeps,
   AgentTurnInput,
   AgentTurnResult,
@@ -84,6 +90,13 @@ export interface TransagentDispatcherOpts {
   takeToolUseId: () => Promise<string>;
   /** Bound `(input) => runAgentTurn(deps, input)` — injected to avoid an import cycle. */
   runTurn: (input: AgentTurnInput) => Promise<AgentTurnResult>;
+  /**
+   * 0.2.87 (M46): the parent turn has a human on the other end (it was started with
+   * an `onUserInput` handler). Only then does the child get one — elicitation crosses
+   * the thread boundary into the PARENT's panel. A headless parent (`/ask`) passes
+   * `false`, and its child keeps no handler, exactly like the parent.
+   */
+  interactive?: boolean;
 }
 
 export class TransagentDispatcher {
@@ -91,6 +104,45 @@ export class TransagentDispatcher {
     private deps: AgentTurnDeps,
     private opts: TransagentDispatcherOpts,
   ) {}
+
+  /**
+   * 0.2.87 (M46): elicitation across the thread boundary. A question raised by the
+   * child renders in the PARENT's panel — it is emitted on the parent's stream (so
+   * the POST client and every live-joiner see it, replay included), persisted as a
+   * `user_input_request` row of the parent thread, and parked in `pendingInputs`
+   * under its own `requestId`. `POST /api/chat/user-input` answers it by that id,
+   * unchanged. The pending entry is bound to the PARENT's request id, so a
+   * conscious abort of the parent (`cancelPendingForRequest`) rejects it too.
+   *
+   * Every relayed id is recorded in `relayed`: the child's own turn end sweeps only
+   * its OWN request id, so `run()` cancels whatever the child left unanswered —
+   * otherwise a child that times out / errors / is aborted alone would leave a live
+   * card in the parent whose answer goes nowhere until the parent turn ends.
+   */
+  private relayUserInputToParent(
+    parentThreadId: string,
+    parentAdapter: ActiveAdapter,
+    relayed: Set<string>,
+  ): UserInputHandler {
+    return (request: UserInputRequest): Promise<UserInputResponse> => {
+      relayed.add(request.requestId);
+      parentAdapter.emit({ type: 'user_input_request', request });
+      this.deps.chatService.addMessage(
+        parentThreadId,
+        'user_input_request',
+        JSON.stringify(request),
+        null,
+        request.requestId,
+      );
+      return new Promise<UserInputResponse>((resolve, reject) => {
+        this.deps.pendingInputs.set(request.requestId, {
+          resolve,
+          reject,
+          requestIdsForRequest: parentAdapter.requestId,
+        });
+      });
+    };
+  }
 
   async run(input: TransagentRunInput): Promise<TransagentRunResult> {
     const { parentThreadId, contextType, message } = input;
@@ -141,6 +193,7 @@ export class TransagentDispatcher {
       timestamp: new Date().toISOString(),
     });
 
+    const relayed = new Set<string>();
     try {
       // 3. Run the child turn. `onEvent` is a no-op — the child renders via its
       //    own stream entry (GET /api/chat/stream/:childThreadId), not the
@@ -154,6 +207,9 @@ export class TransagentDispatcher {
         requestId: nanoid(12),
         consoleObserver: null,
         onEvent: () => {},
+        ...(this.opts.interactive && parentAdapter
+          ? { onUserInput: this.relayUserInputToParent(parentThreadId, parentAdapter, relayed) }
+          : {}),
       });
 
       // 4. Completion — return only the summary to the parent LLM's context.
@@ -162,6 +218,8 @@ export class TransagentDispatcher {
         childThreadId: child.id,
         toolUseId,
         status: 'completed',
+        // 0.2.87 (M46): the completion marker carries the same summary the parent LLM gets.
+        summary: result.answer,
         timestamp: new Date().toISOString(),
       });
       return { threadId: child.id, summary: result.answer };
@@ -176,6 +234,30 @@ export class TransagentDispatcher {
         timestamp: new Date().toISOString(),
       });
       throw err;
+    } finally {
+      if (parentAdapter) this.cancelRelayedInputs(relayed, parentAdapter);
+    }
+  }
+
+  /**
+   * Rejects the child's still-unanswered relayed questions and marks them resolved in
+   * the parent's replay buffer, so neither a live-joiner nor F5 renders a dead card.
+   * Mirrors `cancelPendingForRequest` for ids rather than a request id (not imported:
+   * a value import of `agent-turn.ts` would close the cycle `runTurn` is injected to avoid).
+   */
+  private cancelRelayedInputs(relayed: Set<string>, parentAdapter: ActiveAdapter): void {
+    for (const inputId of relayed) {
+      const pending = this.deps.pendingInputs.get(inputId);
+      if (!pending) continue;
+      this.deps.pendingInputs.delete(inputId);
+      pending.reject(new Error('child turn ended'));
+      const events = parentAdapter.replay?.events ?? [];
+      for (let i = 0; i < events.length; i++) {
+        const current = events[i];
+        if (current?.type !== 'user_input_request') continue;
+        if ((current as { request?: { requestId?: string } }).request?.requestId !== inputId) continue;
+        events[i] = { ...current, resolved: true, response: null };
+      }
     }
   }
 
