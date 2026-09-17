@@ -54,6 +54,24 @@ describe('xml rules vs backticks in attribute values', () => {
     expect(chips(tokens)).toHaveLength(1);
   });
 
+  it('an escaped backtick before a backtick-caption tag does not shift the code spans', () => {
+    const tokens = inlineTokens(
+      makeMd(),
+      'Type \\` then `cfg` and <single_element type="ac" slug="x" caption="a ` b"/> end.',
+    );
+    expect(chips(tokens)).toHaveLength(1);
+    expect(codes(tokens).map((t) => t.content)).toEqual(['cfg']);
+  });
+
+  it('a backtick inside a link URL does not shift the code spans next to a backtick-caption tag', () => {
+    const tokens = inlineTokens(
+      makeMd(),
+      'See [link](http://a/`b) and `code` <single_element type="ac" slug="x" caption="a ` b"/> end.',
+    );
+    expect(chips(tokens)).toHaveLength(1);
+    expect(codes(tokens).map((t) => t.content)).toEqual(['code']);
+  });
+
   it('leaves paragraphs without backtick attribute values to the stock rule (escapes intact)', () => {
     const tokens = inlineTokens(makeMd(), 'Escaped \\` tick and `code` here.');
     expect(codes(tokens).map((t) => t.content)).toEqual(['code']);
