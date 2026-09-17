@@ -125,7 +125,7 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
     expect(res.body).not.toHaveProperty('items');
   });
 
-  it('re-attaches the audit stamp no L9 view emits', async () => {
+  it('re-attaches the audit stamp no M13 view emits', async () => {
     await request(t.app).post('/api/widgets').send({ title: 'Stamped' });
     const res = await request(t.app).get('/api/widgets/stamped');
     // `createdAt`/`updatedAt` are `systemManaged`, so `hydrate` lifts them out

@@ -97,7 +97,7 @@ export class PayloadUpgradeError extends Error {
 /** The manifest surface the chain needs. Structural, so a fixture is one object literal. */
 export interface UpgradableModule {
   type: string;
-  payloadVersion?: number;
+  payloadVersion: number;
   data?: { schema: Readonly<Record<string, FieldNode>> };
   payloadUpgrades?: Array<(payload: SnapshotData) => SnapshotData>;
 }
@@ -203,7 +203,7 @@ export function upgradePayload(
   data: SnapshotData,
   from: number,
 ): UpgradeResult {
-  const target = module.payloadVersion ?? 1;
+  const target = module.payloadVersion;
   if (from === target) return { data, upgraded: false, warnings: [] };
   if (from > target) {
     /**

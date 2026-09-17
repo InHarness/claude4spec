@@ -265,7 +265,7 @@ const REMOVED_SERIALIZER_SLOTS: ReadonlyArray<[string, string]> = [
 ];
 
 /**
- * The L9 half of registration, exported because it must run for EVERY module,
+ * The M13 half of registration, exported because it must run for EVERY module,
  * not only for one lowered from an `EntityContribution`.
  *
  * In-repo entities build a `BackendModule` by hand and never pass through
@@ -358,6 +358,42 @@ function assertNoSerializerSlot(type: string, module: Record<string, unknown>): 
   );
 }
 
+/**
+ * 0.2.90 — the closed key set of the type envelope.
+ *
+ * The payload-timeline slots (`payloadVersion`, `payloadUpgrades`) and the
+ * render slots (`frontend.*`) are different slots of THIS manifest; there is no
+ * second registry to spill into, so a key outside the set is a manifest error,
+ * not a no-op. Runs AFTER the removed-slot checks so a 1.x slot still gets its
+ * successor named instead of a bare "unknown key". Top level only: `backend.*`
+ * keeps tolerating the dropped 2.0.0 `crud` slot (see `synthesizeMount`).
+ */
+const ENVELOPE_KEYS: ReadonlySet<string> = new Set([
+  'type',
+  'data',
+  'slugPattern',
+  'slugConflict',
+  'payloadVersion',
+  'payloadUpgrades',
+  'label',
+  'labelPlural',
+  'displayOrder',
+  'pathPrefix',
+  'dependsOn',
+  'systemPrompt',
+  'backend',
+  'frontend',
+]);
+
+function assertNoUnknownKeys(type: string, record: Record<string, unknown>): void {
+  const unknown = Object.keys(record).filter((k) => !ENVELOPE_KEYS.has(k) && record[k] !== undefined);
+  if (unknown.length > 0) {
+    throw new PluginManifestError(
+      `entity "${type}" — unknown manifest key(s): ${unknown.map((k) => `\`${k}\``).join(', ')}`,
+    );
+  }
+}
+
 function assertContribution(c: EntityContribution): void {
   if (!c || typeof c !== 'object') {
     throw new PluginManifestError('entity contribution must be an object');
@@ -385,6 +421,7 @@ function assertContribution(c: EntityContribution): void {
     }
   }
   assertSerializationContribution(c.type, c as unknown as Record<string, unknown>, c.payloadVersion);
+  assertNoUnknownKeys(c.type, record);
   if (c.systemPrompt == null) {
     throw new PluginManifestError(`entity "${c.type}" — systemPrompt is required`);
   }

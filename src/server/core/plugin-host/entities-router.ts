@@ -30,10 +30,21 @@ function assertExists(host: ProjectPluginHost, type: EntityType, slug: string): 
 /**
  * Validate that the `type` URL parameter names a known plugin (or the special
  * `section` non-entity type used by versioning). Throws on unknown types.
+ *
+ * 0.2.90 — a type DEACTIVATED for this project is refused too, with the same
+ * `INVALID_TYPE` (404) the catalog routes use: deactivation takes the type off
+ * every consumer at once, and the version/tag/collection routes are consumers.
+ * A never-registered type keeps its historical `VALIDATION`.
  */
 function assertType(host: ProjectPluginHost, type: string): EntityType {
   if (type === 'section') return type;
-  if (host.getAvailable(type)) return type as EntityType;
+  if (host.isActive(type)) return type as EntityType;
+  if (host.getAvailable(type)) {
+    throw invalidType(
+      type,
+      host.listEntities().map((m) => m.type),
+    );
+  }
   throw new DomainError('VALIDATION', `unsupported entity type '${type}'`);
 }
 
@@ -499,7 +510,7 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
    * M13/M34: version-to-version diff for the plugin-facing `useVersionDiff`
    * hook. `entity_version.data` is already the M17 snapshot (captured via
    * `host.snapshot` at write time), so it's fed straight into `host.diff`
-   * unchanged — the same L9 `EntitySerializer.diff`/JSON-deep-diff-fallback
+   * unchanged — the same M47 `EntitySerializer.diff`/JSON-deep-diff-fallback
    * path `ReleaseService.getReleaseDiff` uses for release-to-release diffs.
    * Response is shaped by the same `toRawDeltaEntityChange` helper release
    * diffing uses, including the `_serializerVersionMismatch` flag when the

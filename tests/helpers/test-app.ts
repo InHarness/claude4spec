@@ -5,7 +5,7 @@ import path from 'node:path';
 import { createTestDb } from './test-db.js';
 import { applyProjection } from '../../src/server/db/projection.js';
 import { PluginRegistryImpl } from '../../src/server/core/plugin-host/registry.js';
-import { registerAllPlugins } from '../../src/server/serialization/registerAll.js';
+import { registerAllPlugins } from '../../src/server/core/plugin-host/register-builtins.js';
 import { loadBuiltinEnvelopes } from '../../src/server/core/plugin-host/loader.js';
 import { entitiesRouter } from '../../src/server/core/plugin-host/entities-router.js';
 import { metaRouter } from '../../src/server/routes/meta.js';
@@ -248,7 +248,7 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
    * `entitiesRouter` mounts and the generated CRUD routes below. Pages are
    * still absent — standing up a page source here would couple every API test
    * to the page fixtures — but SERIALIZATION is wired as of 0.2.9 item 31: the
-   * generated routes answer with L9 views, so a core without an engine makes
+   * generated routes answer with M13 views, so a core without an engine makes
    * every one of them a 500.
    */
   const serializationEngine = new SerializationEngine(host);

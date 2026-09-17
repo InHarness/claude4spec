@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import request from 'supertest';
 import express from 'express';
 import { PluginRegistryImpl } from '../../../src/server/core/plugin-host/registry.js';
-import { registerAllPlugins } from '../../../src/server/serialization/registerAll.js';
+import { registerAllPlugins } from '../../../src/server/core/plugin-host/register-builtins.js';
 import { pluginsRouter } from '../../../src/server/routes/plugins.js';
 import { HOST_API_VERSION } from '../../../src/shared/plugin-host/manifest.js';
 

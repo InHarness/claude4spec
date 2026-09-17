@@ -67,7 +67,7 @@ export class SerializerError extends Error {
   }
 }
 
-// ─── Serialization contribution (L9) ────────────────────────────────────────
+// ─── Serialization contribution (M47) ────────────────────────────────────────
 
 /**
  * What a type contributes to serialization in Host API 2.0.0 — and it is
@@ -94,16 +94,12 @@ export class SerializerError extends Error {
  */
 export interface SerializationContribution<T = unknown> {
   /**
-   * Optional echo of the manifest's `payloadVersion`.
-   *
-   * The MANIFEST slot is the authority and the only one anything reads
-   * (`engine.getPayloadVersion`, `catalog`, `release`, `VersionService`). This
-   * one exists because the brief declares the field on the contribution; it is
-   * optional because a required duplicate is a fact every author writes twice
-   * and eventually writes twice differently. When present, registration rejects
-   * it if it disagrees with the manifest.
+   * Version of the SHAPE of the entity file's payload. Required, with no
+   * default: without a number there is no way to tell later that a file comes
+   * from an older shape (0.2.90). The manifest slot of the same name is what
+   * registration checks; a type declaring neither is rejected.
    */
-  payloadVersion?: number;
+  payloadVersion: number;
   /**
    * Ordered chain of payload migrations, `payloadUpgrades[i]` taking payload
    * `i+1` to `i+2`.
@@ -137,4 +133,22 @@ export interface SerializationContribution<T = unknown> {
  */
 export interface SerializeResult {
   data: unknown;
+}
+
+/**
+ * 0.2.90 — what the payload timeline (M47) needs from the plugin host (M13),
+ * and nothing more: the record shape from the logical schema (with collection
+ * `identity` and field `contentBearing` declared on it) plus the type's timeline
+ * slots. The timeline depends on the host through this narrow view and never
+ * imports the host's own types, so the dependency runs M47 → M13 only.
+ */
+export interface TimelineHost {
+  getEntity(type: string): TimelineModule | null;
+}
+
+export interface TimelineModule {
+  type: string;
+  payloadVersion: number;
+  payloadUpgrades?: Array<(payload: SnapshotData) => SnapshotData>;
+  data?: { schema: Readonly<Record<string, import('../../shared/plugin-host/data-schema.js').FieldNode>> };
 }

@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import { runMigrations } from '../../src/server/db/migrate.js';
 import { applyProjection } from '../../src/server/db/projection.js';
 import { PluginRegistryImpl } from '../../src/server/core/plugin-host/registry.js';
-import { registerAllPlugins } from '../../src/server/serialization/registerAll.js';
+import { registerAllPlugins } from '../../src/server/core/plugin-host/register-builtins.js';
 
 /**
  * A complete project database: host schema + the projection of every core type.

@@ -170,6 +170,14 @@ export class TransagentDispatcher {
       }
       child = existing;
     } else {
+      // 0.2.90 — the conditional requirement is validated BEFORE branching, in
+      // the same step as an out-of-set value: a `patch` call without
+      // `payload.patchPath` is refused before any child thread exists, because a
+      // child with an empty patch_path would break
+      // `context_type='patch' ⇒ patch_path IS NOT NULL`.
+      if (contextType === 'patch' && !(typeof payload.patchPath === 'string' && payload.patchPath)) {
+        throw new DomainError('VALIDATION', "contextType='patch' requires payload.patchPath");
+      }
       // Generic step, before the per-context branching: the columns every
       // context type shares, taken straight from the top-level call fields.
       const generic: GenericThreadColumns = {

@@ -11,7 +11,7 @@
  * module owns the mapping and the internal shape never leaks outward.
  *
  * Distinct from `useVersionDiff`, which is a different layer: that one is the
- * SEMANTIC delta from the L9 serializer's `diff` slot; this one is a textual
+ * SEMANTIC delta from M47's generated delta; this one is a textual
  * line diff over the raw JSON snapshots. Neither replaces the other.
  */
 
