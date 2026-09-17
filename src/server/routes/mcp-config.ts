@@ -13,13 +13,15 @@ export interface McpConfigRouterDeps {
 /**
  * 0.2.93 (M12) — `GET /api/projects/:id/_meta/mcp-config`, M12's only HTTP route.
  *
- * Read-only, no side effects, no disk access. The port and the project id are
- * injected from the workspace registry (M31) on EVERY request, so a changed
- * default port shows up on the next read with no refresh step.
+ * Read-only and free of side effects; the only read is the workspace registry
+ * file, which `getWorkspace` re-reads per request so a changed default port
+ * shows up on the next read with no refresh step.
  *
  * The CANONICAL port — the workspace's `defaultPort` — not the one this process
  * happened to bind: a one-off `--port 5050` or a `listenOrExit` retry is not the
- * address an editor should be sent to.
+ * address an editor should be sent to. It also means the snippet can name a port
+ * OTHER than the one the reader is browsing on, which is why the card says whose
+ * port it is rather than claiming it is the current one.
  */
 export function mcpConfigRouter(deps: McpConfigRouterDeps): Router {
   const router = Router();

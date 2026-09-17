@@ -176,7 +176,7 @@ function McpConfigBlock() {
     <div data-testid="external-integrations-mcp">
       <BlockHeading
         title="MCP connection"
-        description="Add one of these entries to your MCP client's config. The server must be running; the port and project id are filled in for you."
+        description="Add one of these entries to your MCP client's config. Filled in with this project's id and the workspace's default port — a server started on a one-off port serves the same project at that port instead."
       />
       {isError ? (
         <p className="text-[12px]" style={{ color: 'var(--c-subtle)' }}>
