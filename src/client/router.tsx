@@ -53,14 +53,17 @@ type NavigateFn = ReturnType<typeof useNavigate>;
 // M33 phase 3: exported so a de-hardcoded entity route fragment (e.g. the
 // transitional `database-table/routes.tsx`) reuses the SAME host navigation
 // helpers instead of duplicating the type→URL resolution.
+// 0.2.90: resolved through `getEntity` only — a type deactivated in this project
+// has no mounted route to navigate to, and `getEntity` is the single point of
+// truth for deactivation on every consumer.
 export function navigateToEntity(navigate: NavigateFn, type: EntityType, slug: string): void {
-  const mod = clientPluginHost.getEntity(type) ?? clientPluginHost.getAvailable(type);
+  const mod = clientPluginHost.getEntity(type);
   if (!mod) return;
   navigate({ to: `${mod.pathPrefix}/$slug`, params: { slug } } as never);
 }
 
 function navigateToEntityList(navigate: NavigateFn, type: EntityType): void {
-  const mod = clientPluginHost.getEntity(type) ?? clientPluginHost.getAvailable(type);
+  const mod = clientPluginHost.getEntity(type);
   if (!mod) return;
   navigate({ to: mod.pathPrefix } as never);
 }

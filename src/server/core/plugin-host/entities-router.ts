@@ -30,10 +30,21 @@ function assertExists(host: ProjectPluginHost, type: EntityType, slug: string): 
 /**
  * Validate that the `type` URL parameter names a known plugin (or the special
  * `section` non-entity type used by versioning). Throws on unknown types.
+ *
+ * 0.2.90 — a type DEACTIVATED for this project is refused too, with the same
+ * `INVALID_TYPE` (404) the catalog routes use: deactivation takes the type off
+ * every consumer at once, and the version/tag/collection routes are consumers.
+ * A never-registered type keeps its historical `VALIDATION`.
  */
 function assertType(host: ProjectPluginHost, type: string): EntityType {
   if (type === 'section') return type;
-  if (host.getAvailable(type)) return type as EntityType;
+  if (host.isActive(type)) return type as EntityType;
+  if (host.getAvailable(type)) {
+    throw invalidType(
+      type,
+      host.listEntities().map((m) => m.type),
+    );
+  }
   throw new DomainError('VALIDATION', `unsupported entity type '${type}'`);
 }
 

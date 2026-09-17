@@ -31,9 +31,12 @@ describe('GET /:type/:slug/versions/:from/diff/:to', () => {
     getVersion: VersionService['getVersion'];
     diff: ProjectPluginHost['diff'];
     module?: unknown;
+    active?: boolean;
   }) {
     const host = {
       getAvailable: () => true,
+      isActive: () => opts.active ?? true,
+      listEntities: () => [],
       entityExists: () => true,
       diff: opts.diff,
       // 0.2.9: the route resolves the module to upgrade both captures to the
@@ -51,6 +54,15 @@ describe('GET /:type/:slug/versions/:from/diff/:to', () => {
     const router = entitiesRouter(host, tags, versions, store, reader, discovery);
     return express().use(express.json()).use('/api/entities', router);
   }
+
+  it('404s with INVALID_TYPE for a type deactivated in this project — no diff is computed', async () => {
+    const diff = vi.fn();
+    const server = app({ getVersion: (_t, _s, v) => detail(v, { a: v }), diff, active: false });
+    const res = await request(server).get('/api/entities/endpoint/my-slug/versions/1/diff/2');
+    expect(res.status).toBe(404);
+    expect(JSON.stringify(res.body)).toContain('INVALID_TYPE');
+    expect(diff).not.toHaveBeenCalled();
+  });
 
   it('404s when the "from" version does not exist', async () => {
     const server = app({

@@ -104,12 +104,10 @@ export class SerializationEngine {
    *
    * This is a BACKSTOP, not the gate. Every discovery caller passes
    * `requireActiveType` first, which resolves through `getEntity` — the
-   * active-checked lookup — and raises a proper `INVALID_TYPE`. Resolution here
-   * goes through `getAvailable`, which ignores the active whitelist, so a
-   * DEACTIVATED type does not reach this throw: it is refused earlier, and were
-   * it not, it would serialize normally. What is left for this line to catch is
-   * a type the host has never registered arriving by some path that skipped the
-   * guard — a bug, and it surfaces as one rather than as data.
+   * active-checked lookup — and raises a proper `INVALID_TYPE`. 0.2.90: this line
+   * resolves through `getEntity` as well, so a DEACTIVATED type that skipped the
+   * guard is refused here rather than serialized normally — `host.getEntity` is
+   * the one point of truth for deactivation.
    */
   serializeEntity(
     type: string,
@@ -118,7 +116,7 @@ export class SerializationEngine {
     /** Passed down so an unselected projected collection is never queried. */
     select?: readonly string[],
   ): SerializeResult {
-    const m = this.host.getAvailable(type);
+    const m = this.host.getEntity(type);
     if (!m) throw new SerializerError(type);
     return { data: genericEntity(entity, m.data?.schema, reader, select) };
   }
