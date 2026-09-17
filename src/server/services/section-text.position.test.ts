@@ -64,18 +64,30 @@ describe('bodyPositionResolver', () => {
     }
   });
 
-  it('shifts lines by `lineOffset` while resolving anchors in body coordinates', () => {
-    // What a page does: anchors live in the body, the line the caller counts is
-    // the line in the FILE, frontmatter included.
-    const resolver = bodyPositionResolver(BODY, 5);
+  /**
+   * The page case, and the one that catches a resolver counting lines off the
+   * BODY: a page's `textEdits` run over the whole file, so the offsets the
+   * engine hands back are file coordinates while the anchors are body ones. Get
+   * that backwards and every line is off by the height of the frontmatter —
+   * silently, because the anchor still looks plausible.
+   */
+  it('reports FILE lines while resolving anchors in body coordinates', () => {
+    const frontmatter = ['---', 'title: Gamma', 'tags: [x]', '---', ''].join('\n');
+    const fullText = frontmatter + BODY;
+    const bodyFirstLine = fullText.slice(0, fullText.length - BODY.length).split('\n').length - 1;
+    expect(bodyFirstLine).toBe(4);
+
     try {
-      applyTextEdits(BODY, [{ find: 'shared word', replaceWith: 'x' }], resolver);
+      applyTextEdits(fullText, [{ find: 'shared word', replaceWith: 'x' }], bodyPositionResolver(BODY, bodyFirstLine));
       expect.unreachable('two hits must refuse');
     } catch (err) {
       const e = err as MatchCountMismatchError;
+      // The same two hits as the first case (lines 4 and 9 of the body), each
+      // four lines further down the file — and still named by the section they
+      // are in, not by the one a body-based line count would have suggested.
       expect(e.details[0]!.positions).toEqual([
-        { anchor: 'aaaa0001', line: 9 },
-        { anchor: 'aaaa0002', line: 14 },
+        { anchor: 'aaaa0001', line: 8 },
+        { anchor: 'aaaa0002', line: 13 },
       ]);
     }
   });
