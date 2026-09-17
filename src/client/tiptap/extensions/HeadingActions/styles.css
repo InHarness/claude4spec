@@ -80,7 +80,8 @@
 .prose-spec h3.anchor-highlight,
 .prose-spec h4.anchor-highlight,
 .prose-spec h5.anchor-highlight,
-.prose-spec h6.anchor-highlight {
+.prose-spec h6.anchor-highlight,
+.prose-spec [data-todo-chip].anchor-highlight {
   animation: anchor-pulse 1000ms ease-out;
   border-radius: 4px;
 }

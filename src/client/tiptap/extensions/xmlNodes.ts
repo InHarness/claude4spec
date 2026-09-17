@@ -316,7 +316,22 @@ export const TodoNode = Node.create({
   addNodeView() {
     return ReactNodeViewRenderer(TodoView);
   },
-  addStorage: addMarkdownSerializer('todo', false),
+  addStorage() {
+    return {
+      markdown: {
+        // `comment` is the marker's only content, so an empty one is kept as
+        // `comment=""` — serializeXmlTag drops empty attrs, which would rewrite
+        // `<todo comment=""/>` to `<todo />` on a save without edits.
+        serialize(state: any, node: any) {
+          const comment = String(node.attrs.comment ?? '');
+          state.write(comment ? serializeXmlTag('todo', node.attrs) : '<todo comment=""/>');
+        },
+        parse: {
+          setup: setupXmlMarkdownRules,
+        },
+      },
+    };
+  },
 });
 
 export { setupXmlMarkdownRules };

@@ -2,10 +2,12 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { FileText, StickyNote } from 'lucide-react';
 import { useTodos } from '../hooks/useTodos.js';
+import { useRoots } from '../hooks/useConfig.js';
 import type { TodoHit } from '../../shared/types.js';
 
 export function TodosList() {
   const { data, isLoading } = useTodos();
+  const roots = useRoots();
   const [query, setQuery] = useState('');
 
   const filtered = useMemo(() => {
@@ -17,12 +19,14 @@ export function TodosList() {
     );
   }, [data, query]);
 
+  // Grouped per (root, file): the same relPath in two roots is two groups.
   const grouped = useMemo(() => {
     const map = new Map<string, TodoHit[]>();
     for (const t of filtered) {
-      const arr = map.get(t.pagePath);
+      const key = `${t.rootId}:${t.pagePath}`;
+      const arr = map.get(key);
       if (arr) arr.push(t);
-      else map.set(t.pagePath, [t]);
+      else map.set(key, [t]);
     }
     return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
   }, [filtered]);
@@ -94,8 +98,13 @@ export function TodosList() {
             No TODOs match “{query}”.
           </div>
         ) : (
-          grouped.map(([pagePath, hits]) => (
-            <TodoGroup key={pagePath} pagePath={pagePath} hits={hits} />
+          grouped.map(([key, hits]) => (
+            <TodoGroup
+              key={key}
+              rootLabel={roots.find((r) => r.id === hits[0]!.rootId)?.name ?? hits[0]!.rootId}
+              pagePath={hits[0]!.pagePath}
+              hits={hits}
+            />
           ))
         )}
       </div>
@@ -103,10 +112,17 @@ export function TodosList() {
   );
 }
 
-function TodoGroup({ pagePath, hits }: { pagePath: string; hits: TodoHit[] }) {
+function TodoGroup({ rootLabel, pagePath, hits }: { rootLabel: string; pagePath: string; hits: TodoHit[] }) {
   return (
-    <section className="mb-6">
+    <section className="mb-6" data-testid="todo-group">
       <div className="flex items-center gap-2 mb-2">
+        <span
+          className="text-[10px] uppercase tracking-wide rounded px-1.5 py-[1px]"
+          style={{ color: 'var(--c-subtle)', border: '1px solid var(--c-hair-strong)' }}
+          data-testid="todo-group-root"
+        >
+          {rootLabel}
+        </span>
         <FileText size={12} style={{ color: 'var(--c-muted)' }} />
         <h2 className="text-[12px] font-mono" style={{ color: 'var(--c-muted)' }}>
           {pagePath}
@@ -117,7 +133,7 @@ function TodoGroup({ pagePath, hits }: { pagePath: string; hits: TodoHit[] }) {
       </div>
       <div className="space-y-1.5">
         {hits.map((t) => (
-          <TodoRow key={`${t.pagePath}:${t.anchor}`} hit={t} />
+          <TodoRow key={`${t.rootId}:${t.pagePath}:${t.anchor}`} hit={t} />
         ))}
       </div>
     </section>
@@ -130,7 +146,7 @@ function TodoRow({ hit }: { hit: TodoHit }) {
     void navigate({
       to: '/space/$rootId/$',
       params: { rootId: hit.rootId, _splat: hit.pagePath },
-      hash: `anchor-${hit.anchor}`,
+      hash: hit.anchor,
     });
   };
   return (
