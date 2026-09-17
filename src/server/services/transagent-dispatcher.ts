@@ -113,12 +113,19 @@ export class TransagentDispatcher {
    * under its own `requestId`. `POST /api/chat/user-input` answers it by that id,
    * unchanged. The pending entry is bound to the PARENT's request id, so a
    * conscious abort of the parent (`cancelPendingForRequest`) rejects it too.
+   *
+   * Every relayed id is recorded in `relayed`: the child's own turn end sweeps only
+   * its OWN request id, so `run()` cancels whatever the child left unanswered —
+   * otherwise a child that times out / errors / is aborted alone would leave a live
+   * card in the parent whose answer goes nowhere until the parent turn ends.
    */
   private relayUserInputToParent(
     parentThreadId: string,
     parentAdapter: ActiveAdapter,
+    relayed: Set<string>,
   ): UserInputHandler {
     return (request: UserInputRequest): Promise<UserInputResponse> => {
+      relayed.add(request.requestId);
       parentAdapter.emit({ type: 'user_input_request', request });
       this.deps.chatService.addMessage(
         parentThreadId,
@@ -186,6 +193,7 @@ export class TransagentDispatcher {
       timestamp: new Date().toISOString(),
     });
 
+    const relayed = new Set<string>();
     try {
       // 3. Run the child turn. `onEvent` is a no-op — the child renders via its
       //    own stream entry (GET /api/chat/stream/:childThreadId), not the
@@ -200,7 +208,7 @@ export class TransagentDispatcher {
         consoleObserver: null,
         onEvent: () => {},
         ...(this.opts.interactive && parentAdapter
-          ? { onUserInput: this.relayUserInputToParent(parentThreadId, parentAdapter) }
+          ? { onUserInput: this.relayUserInputToParent(parentThreadId, parentAdapter, relayed) }
           : {}),
       });
 
@@ -226,6 +234,30 @@ export class TransagentDispatcher {
         timestamp: new Date().toISOString(),
       });
       throw err;
+    } finally {
+      if (parentAdapter) this.cancelRelayedInputs(relayed, parentAdapter);
+    }
+  }
+
+  /**
+   * Rejects the child's still-unanswered relayed questions and marks them resolved in
+   * the parent's replay buffer, so neither a live-joiner nor F5 renders a dead card.
+   * Mirrors `cancelPendingForRequest` for ids rather than a request id (not imported:
+   * a value import of `agent-turn.ts` would close the cycle `runTurn` is injected to avoid).
+   */
+  private cancelRelayedInputs(relayed: Set<string>, parentAdapter: ActiveAdapter): void {
+    for (const inputId of relayed) {
+      const pending = this.deps.pendingInputs.get(inputId);
+      if (!pending) continue;
+      this.deps.pendingInputs.delete(inputId);
+      pending.reject(new Error('child turn ended'));
+      const events = parentAdapter.replay?.events ?? [];
+      for (let i = 0; i < events.length; i++) {
+        const current = events[i];
+        if (current?.type !== 'user_input_request') continue;
+        if ((current as { request?: { requestId?: string } }).request?.requestId !== inputId) continue;
+        events[i] = { ...current, resolved: true, response: null };
+      }
     }
   }
 

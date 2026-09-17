@@ -391,6 +391,29 @@ describe('TransagentDispatcher — parent stream contract (0.2.87)', () => {
     expect(answer).toEqual({ action: 'accept', answers: {} });
   });
 
+  it('a child that ends with a question unanswered cancels it on the parent (no dead card)', async () => {
+    const parent = chat.createThread('parent');
+    let rejection: unknown;
+    const dispatcher = makeDispatcher(parent.id, {
+      interactive: true,
+      childTurn: async (input) => {
+        // Child raises a question, then ends (timeout / error / own abort) without an answer.
+        input.onUserInput!({ requestId: 'q-orphan', questions: [] } as never).catch((e) => {
+          rejection = e;
+        });
+        throw new Error('child timed out');
+      },
+    });
+
+    await expect(
+      dispatcher.run({ parentThreadId: parent.id, contextType: 'chat', message: 'go' }),
+    ).rejects.toThrow('child timed out');
+    await Promise.resolve();
+
+    expect(pendingInputs.has('q-orphan')).toBe(false);
+    expect(rejection).toBeInstanceOf(Error);
+  });
+
   it('a headless parent gives the child no user-input handler', async () => {
     const parent = chat.createThread('parent');
     await makeDispatcher(parent.id, { interactive: false }).run({
