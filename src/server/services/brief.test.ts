@@ -170,6 +170,26 @@ describe('BriefService.createBrief — the window is the provenance', () => {
     expect(matter(raw).content.trim()).toBe('# Analysis\n\nbody text');
   });
 
+  it('keeps a body that opens with `---` — frontmatter delimiters are body text', async () => {
+    const svc = makeService();
+    // The bodies an agent actually writes: a horizontal rule under a heading, and
+    // a body that carries frontmatter of its own. Handed to gray-matter as a bare
+    // string these are PARSED, not stored — the body is absorbed into the brief's
+    // frontmatter and the file lands empty, on exit 0.
+    for (const body of [
+      '---\n\n# Drift\n\nreal content\n',
+      '---\ntitle: Drift\n---\n\n# Body\n',
+      // Invalid YAML in that leading block used to escape as a raw YAMLException
+      // — not a DomainError — so the route answered 500 rather than storing it.
+      '---\n\n## Section\n\n- a: [unclosed\n',
+    ]) {
+      const { briefPath } = await svc.createBrief({ content: body });
+      const raw = await fs.readFile(path.join(cwd, 'briefs', briefPath), 'utf-8');
+      expect(matter(raw).content).toBe(body);
+      expect(matter(raw).data.type).toBe('brief');
+    }
+  });
+
   it('returns a hash of the bytes it wrote, which `getBrief` agrees with', async () => {
     const svc = makeService();
     const { briefPath, hash } = await svc.createBrief({ content: '# Ready-made\n\nwritten by the caller\n' });

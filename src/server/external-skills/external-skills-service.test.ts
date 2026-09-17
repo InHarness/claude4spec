@@ -60,7 +60,11 @@ describe('renderers', () => {
     // 0.1.108: Path 2 (code-fix) routes through native create-mode now — the old
     // `--ct chat` + `runTransagent` workaround is gone.
     // 0.2.64: no provenance flag — passing no window is what keeps `to` open.
-    expect(outputs['c4s-refactor']).toContain('--ct brief');
+    // 0.2.94: Path 2 mints the brief with a finished body and starts no turn, so
+    // `--ct brief` is gone from the skill entirely — asserting on its absence is
+    // what keeps the old flow from creeping back in as prose.
+    expect(outputs['c4s-refactor']).toContain('c4s create-brief --body-file');
+    expect(outputs['c4s-refactor']).not.toContain('--ct brief');
     expect(outputs['c4s-refactor']).not.toContain('--source');
     expect(outputs['c4s-refactor']).not.toContain('runTransagent');
     expect(outputs['c4s-refactor']).not.toMatch(/--ct chat/);

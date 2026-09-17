@@ -449,7 +449,16 @@ export class BriefService {
         : fromName === null
           ? `# Initial brief: ${toName}\n`
           : `# Brief: ${fromName} → ${toName}\n`);
-    const fullContent = matter.stringify(body, frontmatter as Record<string, unknown>);
+    // `{ content: body }`, never the bare string: handed a string, gray-matter
+    // PARSES it as a file first, so a body that opens with `---` — a horizontal
+    // rule, or an agent that wrote its own frontmatter — is swallowed into the
+    // frontmatter block (its characters arriving as numeric keys) and the brief
+    // is written empty, or the YAML throws and the route answers 500. The object
+    // form treats the body as opaque text, which is what "verbatim" means here.
+    const fullContent = matter.stringify(
+      { content: body } as unknown as string,
+      frontmatter as Record<string, unknown>,
+    );
     // 0.2.94: over the bytes actually handed to `writeBytes` — the same input
     // `getBrief` hashes when it reads them back, so a caller that has just
     // written a brief can arm its first `update_brief` with this value instead

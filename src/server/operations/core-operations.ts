@@ -955,7 +955,9 @@ export function registerCoreOperations(): void {
         .string()
         .array()
         .optional()
-        .describe('Releasable root ids to scope the brief to. Not allowed when the window`s `to` end is open.'),
+        .describe(
+          "Releasable root ids to scope the brief to. Not allowed when the window's `to` end is open.",
+        ),
       suffix: z.string().optional().describe('Appended to the generated file slug; settles a collision.'),
     },
     errorCodes: ['VALIDATION', 'BRIEF_SAME_RELEASE', 'NOT_FOUND'],
@@ -971,7 +973,7 @@ export function registerCoreOperations(): void {
     idempotent: false,
     channels: {
       internal: na(
-        'a brief-scoped turn is anchored in one artifact and writes its body; minting another brief is not the brief author`s act',
+        "a brief-scoped turn is anchored in one artifact and writes its body; minting another brief is not the brief author's act",
       ),
       cli: direct(),
       mcp: direct(),

@@ -1,6 +1,6 @@
 ---
 name: c4s-refactor
-description: Detect drift between the claude4spec specification and the code for a given topic, then route the fix — to the spec (a read-only plan via `c4s ask`) or to the code (a brief against the current state via `c4s agent --ct brief`). Use when reconciling spec with implementation ("check spec vs code for X", "reconcile topic Y"). Optional argument — the topic/scope (module, entity, slug, tag).
+description: Detect drift between the claude4spec specification and the code for a given topic, then route the fix — to the spec (a read-only plan via `c4s ask`) or to the code (a brief against the current state via `c4s create-brief`). Use when reconciling spec with implementation ("check spec vs code for X", "reconcile topic Y"). Optional argument — the topic/scope (module, entity, slug, tag).
 ---
 
 # c4s-refactor
@@ -13,7 +13,7 @@ and hands off:
 1. drift that needs a **specification** change → open a read-only planning turn
    (`c4s ask`),
 2. drift that needs a **code** change → describe it in a **brief against the
-   current state** (`c4s agent --ct brief`).
+   current state** (`c4s create-brief`).
 
 Execution is downstream: a human continues the spec plan thread, and the
 `c4s-brief-implementer` skill implements the brief.
@@ -156,8 +156,10 @@ Hard rules for this path:
   it the context you already hold does not improve the result, it only adds a
   point of failure. `c4s file-patch` is the precedent for the shape: it, too,
   takes the caller's intent rather than a turn's output.
-- **`VALIDATION` from `c4s create-brief` means exactly one thing:** the file you
-  passed was empty.
+- **`VALIDATION` from `c4s create-brief` is usually the body file:** it was
+  empty, or whitespace only. It also fires when the project has **no releases at
+  all** — a window needs an end, and there is none to resolve — which no rewrite
+  of the body will fix; cut a release first.
 
 ### 7. Report + STOP
 
@@ -186,9 +188,11 @@ Reading the spec and analyzing the code are not an exception to it: `resolve`, t
   through a symlink, can even break resolution.
 - **`c4s ask` is read-only** — it yields a plan only and never mutates the spec;
   execution is a separate, human-driven step.
-- **Path 2 uses create-mode, not attach-mode.** Mint the brief via
-  `c4s agent --ct brief` with no window flags. Don't pass `--brief <path>` —
-  that's attach-mode, which expects a pre-existing brief.
+- **Path 2 mints the brief itself; it starts no turn.** `c4s create-brief`
+  writes the body you hand it and nothing else. The older route, which minted
+  the file and then asked a brief-scoped turn to fill it, is not an alternative
+  here: such a turn sees only `release_diff`, so it can legitimately decline and
+  leave you a heading.
 - **Never file the same difference to both Path 1 and Path 2**, and never
   implement a fix directly in this skill's session — classify, route, stop.
 

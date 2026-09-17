@@ -40,6 +40,7 @@ export async function runCreateBrief(args: ParsedArgs): Promise<void> {
     args,
     ['to', 'roots'],
     "create-brief's window is open by definition: it always ends at the current state. Legal flags: --body-file <path>, --from <release>, --suffix <slug>, plus --project / --workspace / --server",
+    'to brief a window that ends at a named release, use the brief-authoring flow (`c4s agent --ct brief`) instead',
   );
 
   const bodyFile = optionalString(args, 'body-file');
