@@ -390,8 +390,10 @@ export class RawEntityReader {
   }
 
   /**
-   * Cheap row count for a type — used by the sidebar's `/entities/counts` and by
-   * the `<project>` block's per-type counts.
+   * Cheap row count for a type — the entity counter. Its consumers are the
+   * sidebar aggregate (`GET /entities/counts`) and the agent's unfiltered
+   * `list_entities({ mode: 'count' })`; since 0.2.92 the system prompt carries
+   * no counts at all.
    *
    * The filter is RESOLVED HERE from the type's own manifest, not passed in.
    * That is the whole point: this method takes no predicate argument, so a
@@ -426,9 +428,9 @@ export class RawEntityReader {
    * The type's declared filter → `WHERE` clause + bound parameters.
    *
    * A predicate this cannot resolve is IGNORED rather than thrown on, and the
-   * count comes back unfiltered. The callers are a sidebar badge and a
-   * system-prompt line: a slightly-too-large number is a cosmetic defect, while
-   * a throw blanks the whole sidebar and 500s every chat turn. Registration
+   * count comes back unfiltered. The callers are a sidebar badge and an agent
+   * count: a slightly-too-large number is a cosmetic defect, while a throw
+   * blanks the whole sidebar and fails the tool call. Registration
    * validation (`checkDefaultPredicate`) is where a bad predicate is rejected
    * loudly; by the time a count runs, the manifest has already been vetted.
    *

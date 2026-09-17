@@ -228,9 +228,6 @@ export interface SystemPromptInput {
   /** 0.1.96: which root the current page belongs to — the `root="…"` attr on `<current_page>`. */
   currentPageRootId?: string;
   currentPageBody: string | null;
-  /** Counts indexed by entity-plugin type. Example: `{ endpoint: 12, dto: 5 }`. */
-  entityCounts: Record<string, number>;
-  tagCount: number;
   annotations?: Annotation[];
   planMode?: boolean;
   currentPlan?: Plan | null;
@@ -432,7 +429,7 @@ function buildEntitiesBlock(pluginHost: ProjectPluginHost): string {
   const schemaPointer =
     '  Call describe_entity_type(type) for a type\'s fields, enums, required-ness and which reads ' +
     'carry which — before your first write of a type. The rows above state RULES, not shapes.\n' +
-    '  Call overview() to refresh the <project/> picture (roots, type counts, tag count) mid-turn — the prompt block is a snapshot from the start of the turn.';
+    '  Record counts are not in this prompt: call list_entities({ type, mode: "count" }) when you need one — it stays current after your own writes mid-turn.';
   return `<entities>\n${buildEntityRows(pluginHost)}\n${schemaPointer}\n</entities>`;
 }
 
@@ -1005,7 +1002,6 @@ function buildSpecExploreSubagent(pluginHost: ProjectPluginHost, builtinsEnabled
       'mcp__entity-tools__list_entities',
       'mcp__entity-tools__search_entities',
       'mcp__entity-tools__describe_entity_type',
-      'mcp__entity-tools__overview',
       ...entityReadMcpTools(pluginHost),
       // reference-tools is cross-cutting (not an entity), so its read tools are listed explicitly
       // — mirrors the hardcode in buildTooling().

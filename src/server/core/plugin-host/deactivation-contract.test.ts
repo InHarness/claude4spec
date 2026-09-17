@@ -52,8 +52,6 @@ describe('type deactivation — one point of truth (0.2.90)', () => {
       roots: [],
       currentPagePath: null,
       currentPageBody: null,
-      entityCounts: {},
-      tagCount: 0,
     } as never);
     expect(prompt).toContain('NARRATIVE-OF-keeper');
     expect(prompt).not.toContain('NARRATIVE-OF-widget');

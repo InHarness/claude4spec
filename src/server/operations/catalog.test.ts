@@ -125,9 +125,8 @@ describe('the seeded catalog', () => {
     }
   });
 
-  it('declares every M39 read operation with full four-channel parity, bar the one with a recorded reason', () => {
+  it('declares every M39 read operation with full four-channel parity, bar the two with a recorded reason', () => {
     const M39 = [
-      'overview',
       'describe_types',
       'list_pages',
       'get_sections',
@@ -141,7 +140,7 @@ describe('the seeded catalog', () => {
       'check_consistency',
       'resolve_identity',
     ];
-    expect(M39).toHaveLength(13);
+    expect(M39).toHaveLength(12);
     for (const name of M39) {
       const op = CATALOG.get(name);
       expect(op, name).toBeDefined();
@@ -153,6 +152,26 @@ describe('the seeded catalog', () => {
         expect(op!.channels[channel].kind, `${name}.${channel}`).toBe('direct');
       }
     }
+  });
+
+  /**
+   * 0.2.92 — `overview` has no `internal` rendering, and that is a decision: the
+   * prompt carries roots, active types and tooling statically, and record counts
+   * are `list_entities({ mode: 'count' })`. The two M39 `n/a` cells have
+   * disjoint reasons — one channel each.
+   */
+  it('`overview` declares its internal gap rather than claiming parity', () => {
+    const op = CATALOG.require('overview');
+    expect(op.channels.internal.kind).toBe('na');
+    expect((op.channels.internal as { reason: string }).reason).toContain("list_entities({ mode: 'count' })");
+    expect(op.channels.cli.kind).toBe('direct');
+    expect(op.channels.mcp.kind).toBe('direct');
+    expect(op.channels.rest.kind).toBe('direct');
+
+    const m39NaCells = ['overview', 'get_page_outline'].flatMap((name) =>
+      CHANNELS.filter((ch) => CATALOG.require(name).channels[ch].kind === 'na').map((ch) => `${name}.${ch}`),
+    );
+    expect(m39NaCells).toEqual(['overview.internal', 'get_page_outline.rest']);
   });
 
   /**

@@ -87,7 +87,6 @@ function fakeDeps(extraActive: BackendModule[] = []): {
     mountBackend: () => {},
     registerMcpServer: () => {},
     buildMcpServers: () => [],
-    computeEntityCounts: () => ({}),
     entityExists: () => false,
     registerEntityService: () => {},
     getEntityService: () => null,
@@ -674,14 +673,9 @@ describe('entity-tools: describe_entity_type', () => {
   });
 });
 
-describe('entity-tools: overview (0.2.86, M05 internal channel)', () => {
-  it('renders the M39 core overview so the agent can refresh the <project/> snapshot mid-turn', async () => {
+describe('entity-tools: no overview (0.2.92, M05 internal channel)', () => {
+  it('does not render the M39 overview operation — the catalog cell is n/a', () => {
     const { deps } = fakeDeps();
-    const snapshot = { roots: [{ id: 'pages', pageCount: 3 }], entityTypes: [], tagCount: 0, version: 'x' };
-    (deps.discovery as unknown as { overview: () => unknown }).overview = () => snapshot;
-    const result = await tool(deps, 'overview').handler({});
-    expect(result.isError).toBeFalsy();
-    const text = (result.content as Array<{ text: string }>)[0]!.text;
-    expect(JSON.parse(text)).toEqual(snapshot);
+    expect(buildEntityTools(deps).map((t) => t.name)).not.toContain('overview');
   });
 });

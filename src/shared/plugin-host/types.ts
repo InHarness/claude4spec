@@ -143,6 +143,9 @@ export interface EntityModuleManifest {
  * SystemPromptContribution — slot consumed by buildSystemPrompt (M05).
  * Server-only at runtime, but the shape is shared so plugins can declare it
  * uniformly. Plugins set this as part of their backend manifest.
+ *
+ * The slot's name is broader than every field's audience: `defaultPredicate`
+ * lives here but the prompt no longer reads it (0.2.92).
  */
 export interface SystemPromptContribution {
   /** Plural noun for role description, e.g. "Endpoints". */
@@ -157,10 +160,12 @@ export interface SystemPromptContribution {
    * host evaluates, over the type's own fields, with no SQL crossing the
    * manifest boundary.
    *
-   * The same predicate feeds the `<project>` block's count and the sidebar's, so
-   * the number the agent sees and the number the user sees cannot diverge.
-   * Absent or empty means count everything. The label still comes from
-   * `labelPlural`.
+   * Its count consumer is the entity counter — the sidebar aggregate
+   * (`GET /entities/counts`) and the agent's `list_entities({ mode: 'count' })`,
+   * both through `RawEntityReader.count`, so the number the agent sees and the
+   * number the user sees cannot diverge. The system prompt carries no counts
+   * (0.2.92). Absent or empty means count everything. The label is
+   * `labelPlural`, never a description of the filter (no "AC (active)").
    */
   defaultPredicate?: DefaultPredicate;
 

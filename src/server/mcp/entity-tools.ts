@@ -524,28 +524,14 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
     },
   );
 
-  // ─── overview ─────────────────────────────────────────────────────────────
+  // ─── overview — NOT rendered here ──────────────────────────────────────────
   /**
-   * 0.2.86 (M05) — the M39 `overview` operation in the `internal` channel.
-   *
-   * The `<project/>` block in the system prompt is a snapshot taken when the
-   * turn starts; an agent that created a type's first rows or a new page
-   * mid-turn had no way to refresh that picture. Same core method as the
-   * external `c4s-spec-reader` rendering, so the two channels cannot disagree.
-   * Externally the reader server is mounted first and owns the name.
+   * 0.2.92 (M05/M39) — the `internal` channel has no `overview`, by decision.
+   * Everything it carried is in the prompt statically (roots on `<project/>`,
+   * active types in `<entities>`, mounted servers in `<tooling>`), and the one
+   * thing that goes stale mid-turn — record counts — is `list_entities` with
+   * `mode: 'count'`. The catalog row says `n/a` for this cell.
    */
-  const overview = mcpTool(
-    'overview',
-    'What this specification contains right now: page roots with their properties (sectionIndexed / referenceValidated / pageCount), active entity types with row counts and payload versions, tag count, claude4spec version. The <project/> block in your prompt is a snapshot from the start of the turn — call this to refresh it mid-turn. Cheap: no schemas; call describe_entity_type for those.',
-    {},
-    async () => {
-      try {
-        return ok(await deps.discovery.overview());
-      } catch (err) {
-        return toolFailure(err);
-      }
-    },
-  );
 
   // ─── describe_entity_type ─────────────────────────────────────────────────
   const describeEntityType = mcpTool(
@@ -663,7 +649,6 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
     listEntities,
     searchEntities,
     describeEntityType,
-    overview,
   ];
 }
 

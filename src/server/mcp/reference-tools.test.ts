@@ -64,7 +64,6 @@ function fakeHost(): ProjectPluginHost {
     mountBackend: () => {},
     registerMcpServer: () => {},
     buildMcpServers: () => [],
-    computeEntityCounts: () => ({}),
     entityExists: () => false,
     registerEntityService: () => {},
     getEntityService: () => null,

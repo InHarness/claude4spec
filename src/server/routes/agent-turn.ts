@@ -773,12 +773,12 @@ export async function runAgentTurn(
     }
 
     // M05 m05ctxreg: the brief frame (uiChrome='brief-detail') is the only one with a
-    // narrow toolset + reduced prompt — it skips entity counters, plan tools, pages, and
+    // narrow toolset + reduced prompt — it skips plan tools, pages, and
     // the current-page block. Every brief-frame cheap-skip below reads this one flag.
     const isBriefFrame = ctx.uiChrome === 'brief-detail';
 
     // M21: dla brief context czytamy aktualny snapshot brief'u (frontmatter+body+hash)
-    // i wkladamy do system promptu. Skip kosztownych obliczen entityCounts.
+    // i wkladamy do system promptu.
     // Gated on the registry's brief-tools dimension (brief is the only briefTools row).
     let briefSnapshot: Brief | null = null;
     if (ctx.mcp.briefTools && thread.briefPath) {
@@ -958,8 +958,6 @@ export async function runAgentTurn(
       // 'pages' fallback) — rendered into the `<current_page root="…">` context.
       currentPageRootId: currentPageService.rootId,
       currentPageBody,
-      entityCounts: isBriefFrame ? {} : deps.pluginHost.computeEntityCounts(deps.db.handle),
-      tagCount: isBriefFrame ? 0 : deps.tagsService.list().length,
       annotations,
       planMode,
       currentPlan,
