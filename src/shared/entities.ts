@@ -925,6 +925,15 @@ export interface BriefCreateRequest {
   fromReleaseName?: string | null;
   /** End of the window. `null` / omitted = open to the current state. Non-null must differ from `fromReleaseName`. */
   toReleaseName?: string | null;
+  /**
+   * 0.2.94: the brief's full body, written VERBATIM — `createBrief` adds nothing
+   * but the frontmatter. Orthogonal to the window: a caller who has already read
+   * the code and the specification supplies the text here and no agent turn is
+   * run. Omitted ⇒ a file with the generated heading only, whose body a
+   * `context_type='brief'` turn fills in later. Empty after trim ⇒ `VALIDATION`,
+   * and the file is not created.
+   */
+  content?: string;
   /** Forwarded to the initial thread's first message — never to the frontmatter. */
   additionalPrompt?: string;
   suffix?: string;

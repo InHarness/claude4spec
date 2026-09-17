@@ -21,6 +21,7 @@ export function briefsRouter(briefs: BriefService, chat: ChatService): Router {
       const body = (req.body ?? {}) as {
         fromReleaseName?: string | null;
         toReleaseName?: string | null;
+        content?: string;
         additionalPrompt?: string;
         suffix?: string;
         roots?: string[];
@@ -42,6 +43,13 @@ export function briefsRouter(briefs: BriefService, chat: ChatService): Router {
           'VALIDATION',
           'fromReleaseName/toReleaseName must be a string or null',
         );
+      }
+      // 0.2.94: the body, when the caller already has one. Only its TYPE is
+      // checked here — the "non-empty after trim" refusal lives in
+      // `createBrief`, next to the write it has to happen before, so an
+      // in-process caller cannot bypass it (same split as `roots`).
+      if (body.content !== undefined && typeof body.content !== 'string') {
+        throw new DomainError('VALIDATION', 'content must be a string');
       }
       // Forwarded VERBATIM — `undefined` and `null` are different windows here
       // (`undefined` ⇒ the latest release, `null` ⇒ open at the start), so
@@ -74,6 +82,9 @@ export function briefsRouter(briefs: BriefService, chat: ChatService): Router {
       } = await briefs.createBrief({
         fromReleaseName: fromName,
         toReleaseName: toName,
+        // Verbatim, and `undefined` stays `undefined`: a missing body and an
+        // empty one are different requests, and only the first is legal.
+        content: body.content,
         suffix: typeof body.suffix === 'string' ? body.suffix : undefined,
         roots,
       });
@@ -84,6 +95,9 @@ export function briefsRouter(briefs: BriefService, chat: ChatService): Router {
           : resolvedFromName === null
             ? `Initial brief: ${resolvedToName}`
             : `Brief: ${resolvedFromName} → ${resolvedToName}`;
+      // 0.2.94: the initial thread is opened in BOTH variants, `content` or not
+      // — it is the anchor the `brief-detail` shell renders around, not a
+      // request to write anything. No turn is started here in either case.
       const { threadId: initialThreadId } = briefs.createThreadForBrief({
         path: briefPath,
         name: threadTitle,

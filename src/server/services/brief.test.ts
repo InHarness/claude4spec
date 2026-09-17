@@ -170,6 +170,26 @@ describe('BriefService.createBrief — the window is the provenance', () => {
     expect(matter(raw).content.trim()).toBe('# Analysis\n\nbody text');
   });
 
+  it('returns a hash of the bytes it wrote, which `getBrief` agrees with', async () => {
+    const svc = makeService();
+    const { briefPath, hash } = await svc.createBrief({ content: '# Ready-made\n\nwritten by the caller\n' });
+    const raw = await fs.readFile(path.join(cwd, 'briefs', briefPath), 'utf-8');
+    // The value is the one `update_brief` takes as `expectedHash`, so it has to
+    // be the hash of the WHOLE file — frontmatter included — not of the body.
+    expect(hash).toBe(hashContent(raw));
+    await expect(svc.getBrief(briefPath)).resolves.toMatchObject({ hash });
+  });
+
+  it('refuses a blank `content` and leaves no file behind', async () => {
+    const svc = makeService();
+    for (const blank of ['', '   ', '\n\t ']) {
+      await expect(svc.createBrief({ content: blank })).rejects.toMatchObject({ code: 'VALIDATION' });
+    }
+    // The refusal happens before `allocatePath`, so not even a half-written
+    // artifact reaches the disk.
+    await expect(fs.readdir(path.join(cwd, 'briefs'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   it('starts with only the heading when `content` is omitted', async () => {
     const { briefPath } = await makeService().createBrief({});
     const raw = await fs.readFile(path.join(cwd, 'briefs', briefPath), 'utf-8');

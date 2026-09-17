@@ -33,6 +33,7 @@ import { agentCommand } from './c4s/commands/agent.js';
 import { askCommand } from './c4s/commands/ask.js';
 import { pluginsCommand } from './c4s/commands/plugins.js';
 import { trustPluginsCommand } from './c4s/commands/trust-plugins.js';
+import { createBriefCommand } from './c4s/commands/create-brief.js';
 import { listBriefsCommand } from './c4s/commands/list-briefs.js';
 import { readBriefCommand } from './c4s/commands/read-brief.js';
 import { filePatchCommand } from './c4s/commands/file-patch.js';
@@ -77,6 +78,7 @@ const COMMANDS: CliCommandContribution[] = [
   askCommand,
   pluginsCommand,
   trustPluginsCommand,
+  createBriefCommand,
   listBriefsCommand,
   readBriefCommand,
   filePatchCommand,
@@ -201,6 +203,10 @@ Plugins (M33 — server-delegating: reports the SERVER host's loader, not a seco
                                     non-interactive Docker plugin smoke-testing (see DOCKER.md)
 
 Brief/patch (M11 — server-delegating, like every read above):
+  create-brief --body-file <f> [--from <release>] [--suffix <slug>]
+                                    mints a brief whose body you already wrote; no agent turn
+                                    runs. The window always ends at the current state, so --to
+                                    and --roots are refused. Prints briefPath + hash
   list-briefs [--limit N] [--offset M] [--status implemented|pending]
   read-brief <brief-path> [--range <from>:<to>]
                                     <brief-path> relative to briefsDir; --range is a 1-based inclusive line window

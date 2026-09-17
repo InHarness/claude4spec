@@ -73,9 +73,16 @@ export interface BriefCreateOpts {
   /** End of the window. `null` / omitted = window open to the current state. */
   toReleaseName?: string | null;
   /**
-   * 0.1.69: pre-synthesized brief body (a brief against the current state
-   * synthesizes it from the parent thread's `message`). Absent ⇒ the generated
-   * stub body is used.
+   * The brief's full body, written VERBATIM under the generated frontmatter.
+   *
+   * 0.1.69 introduced it for one in-process caller (a brief against the current
+   * state, synthesized from the parent thread's `message`). 0.2.94 makes it part
+   * of the public create contract: a caller who has already read the code and
+   * the specification writes the brief itself and no agent turn is run at all.
+   *
+   * It is ORTHOGONAL to the window — either end may still be open. Absent ⇒ the
+   * generated stub body, whose text a `context_type='brief'` turn fills in
+   * later. Empty after trim ⇒ `VALIDATION`, raised before the file is allocated.
    */
   content?: string;
   suffix?: string;
@@ -345,7 +352,12 @@ export class BriefService {
    */
   async createBrief(
     opts: BriefCreateOpts,
-  ): Promise<{ briefPath: string; fromReleaseName: string | null; toReleaseName: string | null }> {
+  ): Promise<{
+    briefPath: string;
+    hash: string;
+    fromReleaseName: string | null;
+    toReleaseName: string | null;
+  }> {
     // An OMITTED `from` means "the latest release"; an explicit `null` means
     // "open at the start". The two are different windows, so `undefined` and
     // `null` must stay distinguishable all the way from the wire to here.
@@ -377,6 +389,16 @@ export class BriefService {
       throw new DomainError(
         'VALIDATION',
         'toReleaseName must be non-empty (or null for a window open to the current state)',
+      );
+    }
+    // 0.2.94: a supplied body that is blank is a caller bug, not "no body" —
+    // the two are told apart by presence, so an empty string cannot silently
+    // fall back to the stub. Raised HERE, before `allocatePath` and before any
+    // write, so a failed call leaves no half-artifact behind on disk.
+    if (opts.content !== undefined && opts.content.trim() === '') {
+      throw new DomainError(
+        'VALIDATION',
+        'content must be non-empty when provided (omit it entirely for a heading-only brief)',
       );
     }
     // 0.1.104 D4, generalised in 0.2.64: `roots` is a dead field whenever the
@@ -428,6 +450,11 @@ export class BriefService {
           ? `# Initial brief: ${toName}\n`
           : `# Brief: ${fromName} → ${toName}\n`);
     const fullContent = matter.stringify(body, frontmatter as Record<string, unknown>);
+    // 0.2.94: over the bytes actually handed to `writeBytes` — the same input
+    // `getBrief` hashes when it reads them back, so a caller that has just
+    // written a brief can arm its first `update_brief` with this value instead
+    // of re-reading the file it just created.
+    const hash = hashContent(fullContent);
 
     await this.writeBytes(briefPath, fullContent);
     await this.deps.pageVersions.recordVersion(
@@ -442,7 +469,7 @@ export class BriefService {
     // the new brief should appear in `/briefs` list right after POST returns).
     await this.deps.frontmatterIndexer.indexPage(BRIEF_ROOT_MARKER, briefPath);
 
-    return { briefPath, fromReleaseName: fromName, toReleaseName: toName };
+    return { briefPath, hash, fromReleaseName: fromName, toReleaseName: toName };
   }
 
 
