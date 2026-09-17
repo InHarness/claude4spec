@@ -1028,7 +1028,7 @@ export function registerCoreOperations(): void {
       path: z.string().optional().describe('Brief path relative to briefsDir. Required on an external connection.'),
       version: z.number().int().positive(),
     },
-    errorCodes: ['VERSION_NOT_FOUND', 'VALIDATION'],
+    errorCodes: ['NOT_FOUND', 'VERSION_NOT_FOUND', 'VALIDATION'],
     sideEffects: ['none'],
     idempotent: true,
     channels: {
