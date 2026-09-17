@@ -1,6 +1,7 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer } from '@tiptap/react';
 import { serializeXmlTag, type XmlTagKind } from '../../../shared/xml-tags.js';
+import { maskTagAttributeValues } from '../../../shared/code-ranges.js';
 import { InlineMentionView } from './views/InlineMentionView.js';
 import { SingleElementView } from './views/SingleElementView.js';
 import { ElementListView } from './views/ElementListView.js';
@@ -93,6 +94,46 @@ function setupXmlMarkdownRules(md: any) {
     }
   );
 
+  // 0.2.92 — a backtick inside a tag's attribute value is not an inline-code
+  // delimiter. Ordering alone is not enough: `backticks` fires at an EARLIER
+  // lone backtick and pairs it with the one in `caption`, eating half the tag.
+  // So in front of `backticks` sits a guard that looks for the closing run on
+  // the text with attribute values masked — the same gate `code-ranges.ts` uses
+  // server-side. It scans forward from the run the parser actually reached (like
+  // the stock rule), so backticks consumed earlier by `escape` or a link URL
+  // never become openers. It steps in only when masking changes the paragraph.
+  md.inline.ruler.before('backticks', 'xml_backticks_guard', (state: any, silent: boolean) => {
+    if (state.src.charCodeAt(state.pos) !== 0x60 /* ` */) return false;
+    const masked = maskedSrc(state);
+    if (masked === null) return false;
+    const start = state.pos;
+    let runEnd = start;
+    while (masked.charCodeAt(runEnd) === 0x60) runEnd++;
+    const len = runEnd - start;
+    const closer = findClosingRun(masked, runEnd, len);
+    if (closer < 0) {
+      if (!silent) state.pending += state.src.slice(start, runEnd);
+      state.pos = runEnd;
+      return true;
+    }
+    if (!silent) {
+      const token = state.push('code_inline', 'code', 0);
+      token.markup = state.src.slice(start, runEnd);
+      let content = state.src.slice(runEnd, closer).replace(/\n/g, ' ');
+      if (content.length > 2 && content.startsWith(' ') && content.endsWith(' ') && /[^ ]/.test(content)) {
+        content = content.slice(1, -1);
+      }
+      token.content = content;
+    }
+    state.pos = closer + len;
+    return true;
+  });
+
+  // `xml_inline` stays in front of `html_inline`, AFTER `raw_jsx_inline`: moving
+  // it up to `backticks` would put it ahead of the raw-JSX context gate (see
+  // above) and render unmounted tags as chips. It loses nothing there — at a
+  // `<` the stock `backticks` rule never matches; the claim that matters (a
+  // tag's attribute value must not be consumed as code) is made by the guard.
   md.inline.ruler.before('html_inline', 'xml_inline', (state: any, silent: boolean) => {
     if (state.src.charCodeAt(state.pos) !== 0x3c /* < */) return false;
     const tail = state.src.slice(state.pos);
@@ -105,6 +146,25 @@ function setupXmlMarkdownRules(md: any) {
     state.pos += match[0].length;
     return true;
   });
+}
+
+/** The paragraph with tag attribute values masked; null when masking is a no-op. */
+function maskedSrc(state: any): string | null {
+  if (state.__c4sMaskedSrcFor === state.src) return state.__c4sMaskedSrc;
+  const src: string = state.src;
+  const masked = maskTagAttributeValues(src, [[0, src.length]]);
+  state.__c4sMaskedSrcFor = src;
+  state.__c4sMaskedSrc = masked === src ? null : masked;
+  return state.__c4sMaskedSrc;
+}
+
+/** Offset of the next backtick run of exactly `len` at or after `from`, or -1. */
+function findClosingRun(text: string, from: number, len: number): number {
+  const re = /`+/g;
+  re.lastIndex = from;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) if (m[0].length === len) return m.index;
+  return -1;
 }
 
 function addMarkdownSerializer(kind: XmlTagKind, isBlock: boolean) {

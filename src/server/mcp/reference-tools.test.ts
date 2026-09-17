@@ -64,7 +64,6 @@ function fakeHost(): ProjectPluginHost {
     mountBackend: () => {},
     registerMcpServer: () => {},
     buildMcpServers: () => [],
-    computeEntityCounts: () => ({}),
     entityExists: () => false,
     registerEntityService: () => {},
     getEntityService: () => null,
@@ -192,6 +191,45 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
     // A limit no bucket reaches is not a cut.
     const roomy = await checkConsistency(client, { limit: 50 });
     expect(roomy.truncated).toBe(false);
+  });
+
+  // 0.2.92 — the backtick in `caption` used to pair with a later prose backtick,
+  // and everything in between — this tagged_list included — was read as code.
+  it('[ac:m19-rule3-backtick-tagged-list] a tagged_list in a paragraph with backticks still marks its entities referenced', async () => {
+    db.prepare(`INSERT INTO diagram (slug, title, format, source) VALUES ('flow', 'flow', 'mermaid', 'graph TD; A-->B')`).run();
+    db.prepare(`INSERT INTO diagram (slug, title, format, source) VALUES ('keys', 'keys', 'mermaid', 'graph TD; A-->B')`).run();
+    db.prepare(`INSERT INTO tag (slug, name) VALUES ('auth', 'Auth')`).run();
+    db.prepare(`INSERT INTO entity_tag (entity_type, entity_slug, tag_slug) VALUES ('diagram', 'flow', 'auth')`).run();
+    // `flow` is surfaced ONLY by the tagged_list, which stands between the
+    // caption's lone backtick and the prose `auth` span.
+    await pagesService.write('page.md', {
+      body:
+        '# Page\n\nSee <single_element type="diagram" slug="keys" caption="press ` then enter"/> and ' +
+        '<tagged_list type="diagram" tags="auth"/> with the `auth` tag.\n',
+    });
+    const client = await connectClient(deps());
+
+    const result = await checkConsistency(client);
+
+    expect(result.unreferencedEntities).not.toContainEqual(
+      expect.objectContaining({ type: 'diagram', slug: 'flow' }),
+    );
+    expect(result.unreferencedEntities).not.toContainEqual(
+      expect.objectContaining({ type: 'diagram', slug: 'keys' }),
+    );
+  });
+
+  it('[ac:m19-caption-backtick-pair-resolved] check_consistency sees a tag whose caption carries a backtick pair', async () => {
+    await pagesService.write('page.md', {
+      body: '# Page\n\n<single_element type="diagram" slug="ghost" caption="run `make` first"/>\n',
+    });
+    const client = await connectClient(deps());
+
+    const result = await checkConsistency(client);
+
+    expect(result.brokenReferences).toContainEqual(
+      expect.objectContaining({ type: 'diagram', slug: 'ghost', category: 'broken-reference' }),
+    );
   });
 
   it('an unreferenced diagram entity is reported as unreferenced', async () => {

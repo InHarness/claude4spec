@@ -524,23 +524,40 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
     },
   );
 
-  // ─── overview ─────────────────────────────────────────────────────────────
+  // ─── overview — NOT rendered here ──────────────────────────────────────────
   /**
-   * 0.2.86 (M05) — the M39 `overview` operation in the `internal` channel.
-   *
-   * The `<project/>` block in the system prompt is a snapshot taken when the
-   * turn starts; an agent that created a type's first rows or a new page
-   * mid-turn had no way to refresh that picture. Same core method as the
-   * external `c4s-spec-reader` rendering, so the two channels cannot disagree.
-   * Externally the reader server is mounted first and owns the name.
+   * 0.2.92 (M05/M39) — the `internal` channel has no `overview`, by decision.
+   * Everything it carried is in the prompt statically (roots on `<project/>`,
+   * active types in `<entities>`, mounted servers in `<tooling>`), and the one
+   * thing that goes stale mid-turn — record counts — is `list_entities` with
+   * `mode: 'count'`. The catalog row says `n/a` for this cell.
    */
-  const overview = mcpTool(
-    'overview',
-    'What this specification contains right now: page roots with their properties (sectionIndexed / referenceValidated / pageCount), active entity types with row counts and payload versions, tag count, claude4spec version. The <project/> block in your prompt is a snapshot from the start of the turn — call this to refresh it mid-turn. Cheap: no schemas; call describe_entity_type for those.',
-    {},
-    async () => {
+
+  // ─── resolve_identity ─────────────────────────────────────────────────────
+  /**
+   * 0.2.92 (M13/M39) — the `internal` rendering of `resolve_identity`. The
+   * catalog declared `internal: direct` while no in-process tool rendered it,
+   * and `search_entities` below kept pointing the agent at a tool it did not
+   * have. A `direct` cell needs a pointable rendering; this is it. It lives
+   * here because its subject is the entity graph. Same core call as `c4s-reader`.
+   */
+  const resolveIdentity = mcpTool(
+    'resolve_identity',
+    'The one cross-type operation: given a fragment of a name or a slug, which entities could you have meant? It matches IDENTITY fields (slug, name, label) across types and returns ranked candidates — it will not find a phrase buried in a description. Use it when you do not know the type; once you know the type and slug, go to get_entities.',
+    {
+      query: z.string().describe('Name or slug fragment'),
+      types: z.array(z.string()).optional().describe('Restrict to these types; omit for all active types'),
+      limit: z.number().int().positive().optional().describe('Max candidates'),
+    },
+    async (args) => {
       try {
-        return ok(await deps.discovery.overview());
+        return ok(
+          deps.discovery.resolveIdentity({
+            query: String(args.query),
+            ...(args.types ? { types: (args.types as string[]).map(String) } : {}),
+            ...(typeof args.limit === 'number' ? { limit: args.limit } : {}),
+          }),
+        );
       } catch (err) {
         return toolFailure(err);
       }
@@ -663,7 +680,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
     listEntities,
     searchEntities,
     describeEntityType,
-    overview,
+    resolveIdentity,
   ];
 }
 

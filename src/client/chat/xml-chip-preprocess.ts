@@ -24,6 +24,7 @@ import {
   computeCodeRanges,
   findInlineCodeSpans,
   intersectsCode,
+  maskTagAttributeValues,
   scanFences,
 } from '../../shared/code-ranges.js';
 
@@ -109,7 +110,7 @@ function isChipOnly(inner: string): boolean {
 function unwrapChipOnlyInlineCode(text: string): string {
   if (!text.includes('`')) return text;
   const { gaps } = scanFences(text);
-  const spans = findInlineCodeSpans(text, gaps);
+  const spans = findInlineCodeSpans(maskTagAttributeValues(text, gaps), gaps);
   if (!spans.length) return text;
   let out = '';
   let cursor = 0;

@@ -7,7 +7,6 @@
  * entity in their vertical slice plugin.ts.
  */
 
-import type { Database } from 'better-sqlite3';
 import type { Router } from 'express';
 import type { ZodRawShape } from 'zod';
 import type { McpServerFactory, McpToolDeclaration } from '../../../shared/plugin-host/mcp.js';
@@ -695,19 +694,6 @@ export interface ProjectPluginHost {
    * NOT_FOUND with the names it does declare.
    */
   callTypeTool(type: string, tool: string, args: Record<string, unknown>): Promise<unknown | undefined>;
-
-  /**
-   * Entity counts for the active types, keyed by `module.type`, in
-   * `listEntities()` order. Used by the chat handler to populate
-   * `SystemPromptInput.entityCounts`.
-   *
-   * 0.2.4: counted by the host through `RawEntityReader.count(type)` and
-   * labelled with the manifest's `labelPlural`. It no longer executes
-   * `systemPrompt.countStat.sqlQuery` — that slot was the one place a module
-   * handed the host raw SQL to run. The acceptance criterion is that this
-   * aggregate and the sidebar's return the SAME number for the same type.
-   */
-  computeEntityCounts(db: Database): Record<string, number>;
 
   /**
    * M29: existence check by slug (the sole entity identity). Delegates to the

@@ -12,6 +12,8 @@ import { FIXTURE_DATA, FIXTURE_SLUG_PATTERN } from '../../../tests/helpers/fixtu
  * `data.schema` already says which fields hold a reference.
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import { createTestApp } from '../../../tests/helpers/test-app.js';
@@ -206,6 +208,31 @@ describe('ReferencesService fan-out', () => {
       const persisted = persist.mock.calls.map((c) => `${String(c[0])}:${String(c[1])}`);
       expect(persisted).toContain('endpoint:get-users');
       persist.mockRestore();
+    } finally {
+      app.cleanup();
+    }
+  });
+});
+
+describe('propagateSlugChange — backtick in caption (0.2.92)', () => {
+  it('[ac:m19-caption-backtick-slug-rename] rewrites the slug of a tag whose caption carries a backtick', async () => {
+    const app = await createTestApp();
+    try {
+      const pagePath = path.join(app.cwd, 'pages', 'guide.md');
+      fs.writeFileSync(
+        pagePath,
+        '# Guide\n\n' +
+          'Pair: <single_element type="dto" slug="user-dto" caption="call `GET /users`"/>\n\n' +
+          'Lone: <inline_mention type="dto" slug="user-dto"/> after <single_element type="dto" slug="user-dto" caption="the ` key"/> and a later `span`.\n',
+      );
+
+      await app.referencesService.propagateSlugChange('dto', 'user-dto', 'account-dto');
+
+      const body = fs.readFileSync(pagePath, 'utf8');
+      expect(body).not.toContain('slug="user-dto"');
+      expect(body.match(/slug="account-dto"/g)).toHaveLength(3);
+      expect(body).toContain('caption="call `GET /users`"');
+      expect(body).toContain('caption="the ` key"');
     } finally {
       app.cleanup();
     }
