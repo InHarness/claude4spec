@@ -104,8 +104,11 @@ export type { TextEdit } from './text-edits.js';
  * the caller introduced, so the bytes on disk are not the bytes sent — but
  * `update_sections` lives with exactly that fact without handing the page back,
  * and a whole-page echo on every save is the cost this rule exists to refuse.
- * The ack says WHETHER the file moved under the caller (`changedAnchors`); a
- * caller that needs the settled bytes reads them with `get_page`.
+ * A caller that needs the settled bytes reads them with `get_page`. Note that
+ * `changedAnchors` is NOT that signal: it diffs the page before the write
+ * against the page after it, never against the body sent, so a write whose
+ * anchors the write-back restored answers `[]` while disk differs from the
+ * caller's text.
  *
  * This binds every channel, not just the agent-facing ones. L3: "the output
  * shape is the operation's, the channel adapter does not widen it" — a REST

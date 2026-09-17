@@ -229,8 +229,7 @@ describe('the page write primitive', () => {
     // `path` is gone too: the caller named it in the request a moment ago.
     expect(res).not.toHaveProperty('path');
     expect(res).not.toHaveProperty('frontmatter');
-    // No `content` either: a caller that needs the settled bytes re-reads the
-    // page; `changedAnchors` tells it whether anything moved under it.
+    // No `content` either: a caller that needs the settled bytes re-reads the page.
     expect(res).not.toHaveProperty('content');
     const onDisk = await fs.readFile(path.join(pages.root, 'u.md'), 'utf-8');
     expect(onDisk).toContain('SECRET CONTENT');

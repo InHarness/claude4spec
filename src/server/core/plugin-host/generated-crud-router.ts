@@ -376,9 +376,10 @@ export function generatedCrudRouter(deps: GeneratedCrudDeps, module: BackendModu
        * `genericUpdate` normalizes and stamps server-owned fields, a rename
        * settles the slug (which `propagateRename` has just chased across every
        * referring page), and a partial PATCH answers with the whole entity the
-       * caller never held. That is the same justification `update_page.content`
-       * carries — bytes the caller could not have predicted — not a channel
-       * appending content for convenience.
+       * caller never held — bytes the caller could not have predicted, not a
+       * channel appending content for convenience. (`update_page` once used the
+       * same justification for echoing `content`; it no longer does, because
+       * its agent callers can re-read with `get_page` and hold no draft baseline.)
        *
        * It is also load-bearing, which is the part worth not discovering by
        * breaking it: `useEntityDraftEditor` adopts this body as the acknowledged

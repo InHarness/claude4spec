@@ -34,8 +34,9 @@ export interface PageContent {
  * see the echo-free rule in `server/services/page-write.ts`.
  *
  * No `content` (since 0.2.88): the write-back phase injects anchors, so the bytes on
- * disk are not the bytes sent, but a caller that needs them re-reads the page;
- * `changedAnchors` tells it whether anything moved.
+ * disk are not the bytes sent, and a caller that needs them re-reads the page.
+ * `changedAnchors` diffs disk-before against disk-after, so it cannot tell the
+ * caller whether its own text still matches.
  */
 export interface PageWriteAck {
   hash: string;
