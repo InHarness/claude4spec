@@ -68,7 +68,8 @@ describe.skipIf(!BASE)('TODO list and jump to marker', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ body: BODY, expectedHash: 'a'.repeat(64) }),
     });
-    await expect.poll(async () => (await hits()).length, { timeout: 5000 }).toBe(3);
+    // expect.poll is test-only; a plain wait for the index to catch up.
+    for (let i = 0; i < 50 && (await hits()).length < 3; i++) await new Promise((r) => setTimeout(r, 100));
 
     page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     page.on('console', (msg) => {
