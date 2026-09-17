@@ -21,7 +21,7 @@ function rootAt(dir: string, id = 'pages'): Root {
 }
 
 // buildSystemPrompt only calls host.listEntities() (no active plugins needed for
-// these gating assertions); entityCounts is supplied directly by the caller.
+// these gating assertions).
 const host = { listEntities: () => [] } as unknown as ProjectPluginHost;
 
 function build(overrides: Partial<SystemPromptInput>): string {
@@ -32,8 +32,6 @@ function build(overrides: Partial<SystemPromptInput>): string {
     roots: [rootAt('pages')],
     currentPagePath: null,
     currentPageBody: null,
-    entityCounts: {},
-    tagCount: 0,
     ...overrides,
   });
 }
@@ -83,8 +81,6 @@ describe('buildSystemPrompt — <project> carries no per-type counters (0.2.50)'
         { type: 'ac', labelPlural: 'Acceptance Criteria' },
         { type: 'ui-view', labelPlural: 'UI Views' },
       ]),
-      entityCounts: { ac: 12, 'ui-view': 3 },
-      tagCount: 7,
     });
     expect(out).not.toContain('ac="12"');
     expect(out).not.toContain('ui-view="3"');
@@ -120,7 +116,6 @@ describe('buildSystemPrompt — <project> carries no per-type counters (0.2.50)'
         { type: 'ac', labelPlural: 'Acceptance Criteria' },
         { type: 'design-system', labelPlural: 'Design Systems' },
       ]),
-      entityCounts: { ac: 1, 'design-system': 1 },
     });
     const projectTag = /<project\s([^>]*)\/>/.exec(out)?.[1] ?? '';
     expect(projectTag).not.toBe('');

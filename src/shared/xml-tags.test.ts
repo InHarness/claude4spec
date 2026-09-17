@@ -57,6 +57,26 @@ describe('parseXmlTagsExcludingCode', () => {
     const tags = parseXmlTagsExcludingCode(md);
     expect(tags.map((t) => t.attrs.slug)).toEqual(['outside', 'also-outside']);
   });
+
+  // 0.2.92 — a backtick inside an attribute VALUE is not an inline-code delimiter.
+  it('[ac:m19-caption-backtick-pair-resolved] keeps a tag whose caption carries a backtick pair', () => {
+    const md = 'Intro.\n\n<single_element type="ac" slug="kept" caption="use `foo` here"/>\n';
+    expect(parseXmlTagsExcludingCode(md).map((t) => t.attrs.slug)).toEqual(['kept']);
+  });
+
+  it('[ac:m19-caption-backtick-single-resolved] a lone caption backtick does not pair with a later one in the same region', () => {
+    const md =
+      '<single_element type="ac" slug="first" caption="the ` key"/>\n\n' +
+      'text <inline_mention type="dto" slug="between"/> text\n\n' +
+      'later prose with a `code` span\n';
+    expect(parseXmlTagsExcludingCode(md).map((t) => t.attrs.slug)).toEqual(['first', 'between']);
+  });
+
+  it('still drops a tag sitting inside a real inline code span next to a backtick caption', () => {
+    const md =
+      '<single_element type="ac" slug="live" caption="a ` b"/> and `<inline_mention type="dto" slug="example"/>`';
+    expect(parseXmlTagsExcludingCode(md).map((t) => t.attrs.slug)).toEqual(['live']);
+  });
 });
 
 describe('serializeXmlTag', () => {

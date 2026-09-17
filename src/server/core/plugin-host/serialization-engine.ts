@@ -47,11 +47,10 @@ export interface CatalogResult {
 /*
  * The prose the prompt renders for the generic CRUD server. It is hand-written
  * rather than derived from `buildEntityTools`, so it drifts the moment a tool is
- * added there — `overview` was, in 0.2.86, and the `<entities>` block went on
- * telling the agent to call a tool this line did not list.
+ * added there or removed — `overview` joined in 0.2.86 and left in 0.2.92.
  */
 const ENTITY_TOOLS_MCP_LINE =
-  'entity-tools: overview, create_entities, get_entities, update_entities, delete_entities, list_entities, search_entities, describe_entity_type';
+  'entity-tools: create_entities, get_entities, update_entities, delete_entities, list_entities, search_entities, describe_entity_type, resolve_identity';
 
 export interface DescribeResult {
   type: string;

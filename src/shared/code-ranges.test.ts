@@ -3,6 +3,7 @@ import {
   computeCodeRanges,
   findInlineCodeSpans,
   intersectsCode,
+  maskTagAttributeValues,
   scanFences,
 } from './code-ranges.js';
 
@@ -80,5 +81,26 @@ describe('computeCodeRanges + intersectsCode', () => {
     expect(intersectsCode(9, 15, ranges)).toBe(true);
     // Fully inside overlaps.
     expect(intersectsCode(6, 9, ranges)).toBe(true);
+  });
+});
+
+describe('maskTagAttributeValues', () => {
+  it('blanks backtick-carrying attribute values of tag candidates, preserving offsets', () => {
+    const text = 'a <single_element type="ac" slug="x" caption="use `foo`"/> b';
+    const masked = maskTagAttributeValues(text);
+    expect(masked).toHaveLength(text.length);
+    expect(masked).not.toContain('`');
+    expect(masked).toContain('slug="x"');
+  });
+
+  it('leaves candidates inside a fence and plain prose backticks alone', () => {
+    const text = '```\n<single_element type="ac" slug="x" caption="`"/>\n```\nsee `code`';
+    expect(maskTagAttributeValues(text)).toBe(text);
+  });
+
+  it('computeCodeRanges no longer opens a code span inside a caption', () => {
+    const text = '<single_element type="ac" slug="x" caption="`a`"/> then `real`';
+    const ranges = computeCodeRanges(text);
+    expect(ranges.map(([s, e]) => text.slice(s, e))).toEqual(['`real`']);
   });
 });

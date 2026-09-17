@@ -166,7 +166,6 @@ function makeDeps() {
   const deps = {
     pluginHost: {
       listEntities: () => [],
-      computeEntityCounts: () => ({}),
       buildMcpServers: () => [],
     },
     activeAdapters: new Map(),

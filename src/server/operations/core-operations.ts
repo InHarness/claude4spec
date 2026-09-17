@@ -10,16 +10,24 @@
  * `DiscoveryCore` method, and none of them re-derives its behaviour. Where that
  * is checkable it is checked — see `catalog.test.ts`.
  *
- * ## M39 read core — 15 operations, four-channel parity for fourteen
+ * ## M39 read core — 15 operations, four-channel parity for twelve of fourteen
  *
- * All 15 are `project` scope, `direct` mediation and `direct` internally. Three of
+ * All 15 are `project` scope and `direct` mediation. Three of
  * them (`check_consistency`, `search_entities`, `resolve_identity`) had no `rest`
  * rendering before 0.2.13; adding it is what made the parity claim true rather than
  * aspirational.
  *
- * 0.2.59 leaves exactly ONE `n/a` cell in the set: `get_page_outline` has no `rest`
+ * 0.2.59 left exactly ONE `n/a` cell in the set: `get_page_outline` has no `rest`
  * rendering, and that is a decision with a recorded reason (see its declaration),
- * not a gap awaiting a route.
+ * not a gap awaiting a route. 0.2.92 adds the second, with a disjoint reason:
+ * `overview` has no `internal` rendering (see its declaration).
+ *
+ * ## `direct` is an expectation, not an exemption (0.2.92)
+ *
+ * For `cli` and `rest` the default `direct` fills the cell. For `internal` and
+ * `mcp` it holds only with a pointable rendering — a tool that renders the
+ * operation in that channel; without one the row is INVALID and owes an `n/a`
+ * with a reason. `catalog.test.ts` checks it against the declared tool names.
  *
  * The `cli` cells say `direct` because M11 renders the whole catalog as CLI
  * commands. Parity there is OPERATIONAL, not nominal: five XML-tag reader
@@ -153,9 +161,18 @@ export function registerCoreOperations(): void {
 
   // ── M39 read core (15) ────────────────────────────────────────────────────
 
-  CATALOG.register(
-    coreRead('overview', 'Entry point to a specification: page roots with their properties, active entity types with counts and payload versions, tag count, claude4spec version.', {}),
-  );
+  CATALOG.register({
+    ...coreRead('overview', 'Entry point to a specification: page roots with their properties, active entity types with counts and payload versions, tag count, claude4spec version.', {}),
+    channels: {
+      ...fullParity(),
+      // 0.2.92 — a decision, not a backlog item: the built-in agent's prompt
+      // carries all of it statically, and the one part that goes stale mid-turn
+      // has its own operation.
+      internal: na(
+        'kanał wewnętrzny nie ma renderowania tej operacji i nie potrzebuje go: prompt niesie rooty, aktywne typy i tooling statycznie, a liczności rekordów odświeża list_entities({ mode: \'count\' })',
+      ),
+    },
+  });
 
   CATALOG.register(
     // The summary deliberately says "activation set" rather than naming the

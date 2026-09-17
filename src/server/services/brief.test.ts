@@ -121,7 +121,12 @@ describe('BriefService.updateContent — the suppress token and a failed write',
 describe('BriefService.createBrief — the window is the provenance', () => {
   let cwd: string;
 
-  function makeService(): BriefService {
+  function makeService(
+    releaseService: BriefServiceDeps['releaseService'] = {
+      getLatestReleaseName: () => 'r1',
+      getRelease: () => ({ name: 'r1' }),
+    } as unknown as BriefServiceDeps['releaseService'],
+  ): BriefService {
     return new BriefService({
       briefsPages: new PagesService(cwd, 'briefs', 'briefs'),
       briefsWatcher: {
@@ -133,10 +138,7 @@ describe('BriefService.createBrief — the window is the provenance', () => {
       briefsSerializer: {} as BriefServiceDeps['briefsSerializer'],
       pageVersions: { recordVersion: async () => {} } as unknown as BriefServiceDeps['pageVersions'],
       chatService: {} as BriefServiceDeps['chatService'],
-      releaseService: {
-        getLatestReleaseName: () => 'r1',
-        getRelease: () => ({ name: 'r1' }),
-      } as unknown as BriefServiceDeps['releaseService'],
+      releaseService,
       frontmatterIndexer: { indexPage: async () => {} } as unknown as BriefServiceDeps['frontmatterIndexer'],
       ws: { broadcast: () => {} } as unknown as BriefServiceDeps['ws'],
     });
@@ -190,6 +192,53 @@ describe('BriefService.createBrief — the window is the provenance', () => {
     await expect(
       makeService().createBrief({ fromReleaseName: 'r1', toReleaseName: 'r1' }),
     ).rejects.toThrow(/from_release must differ/);
+  });
+
+  /**
+   * 0.2.92 — BRIEF_SAME_RELEASE compares NAMES, as the identity they are
+   * (`spec_release.name` is UNIQUE NOT NULL): case-sensitive like that UNIQUE,
+   * after trim, and without resolving either end first.
+   */
+  describe('BRIEF_SAME_RELEASE compares names', () => {
+    const lookups: string[] = [];
+    const recordingReleases = (known: string[]) =>
+      ({
+        getLatestReleaseName: () => known[known.length - 1] ?? null,
+        getRelease: (name: string) => {
+          lookups.push(name);
+          if (!known.includes(name)) throw Object.assign(new Error(`release '${name}' not found`), { code: 'NOT_FOUND' });
+          return { name };
+        },
+      }) as unknown as BriefServiceDeps['releaseService'];
+
+    beforeEach(() => {
+      lookups.length = 0;
+    });
+
+    it('[ac:ac-createbrief-z-fromreleasename-i-torel] v0.3 / V0.3 differ only in case and pass the window validation', async () => {
+      await expect(
+        makeService(recordingReleases(['v0.3', 'V0.3'])).createBrief({ fromReleaseName: 'v0.3', toReleaseName: 'V0.3' }),
+      ).resolves.toMatchObject({ fromReleaseName: 'v0.3', toReleaseName: 'V0.3' });
+    });
+
+    it('equal names after trim are the same release', async () => {
+      await expect(
+        makeService(recordingReleases(['r1'])).createBrief({ fromReleaseName: ' r1', toReleaseName: 'r1 ' }),
+      ).rejects.toMatchObject({ code: 'BRIEF_SAME_RELEASE' });
+    });
+
+    it('refuses BEFORE any release lookup — a same-name window of a missing release is BRIEF_SAME_RELEASE, not NOT_FOUND', async () => {
+      await expect(
+        makeService(recordingReleases([])).createBrief({ fromReleaseName: 'ghost', toReleaseName: 'ghost' }),
+      ).rejects.toMatchObject({ code: 'BRIEF_SAME_RELEASE' });
+      expect(lookups).toEqual([]);
+    });
+
+    it('an explicit `to: null` skips the comparison — the open window is the current state, not a release', async () => {
+      await expect(
+        makeService(recordingReleases(['r1'])).createBrief({ fromReleaseName: 'r1', toReleaseName: null }),
+      ).resolves.toMatchObject({ fromReleaseName: 'r1', toReleaseName: null });
+    });
   });
 
   it('rejects `roots` while the `to` end is open — no second release to scope against', async () => {

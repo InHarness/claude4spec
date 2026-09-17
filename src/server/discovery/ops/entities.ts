@@ -45,6 +45,21 @@ export function listEntities(deps: DiscoveryDeps, input: ListEntitiesInput): Lis
   const tagFilter = input.tagFilter ?? 'and';
 
   /**
+   * 0.2.92 — an unfiltered count under the type's default predicate IS the
+   * sidebar badge, so it asks the very method `GET /entities/counts` asks
+   * (`RawEntityReader.count`). One call, one predicate: the agent and the UI
+   * cannot see different numbers for the same type.
+   */
+  if (
+    input.mode === 'count' &&
+    input.applyDefaultPredicate === true &&
+    input.tags === undefined &&
+    Object.keys(input.filters ?? {}).length === 0
+  ) {
+    return { mode: 'count', type: input.type, total: deps.reader.count(input.type) };
+  }
+
+  /**
    * An ABSENT `tags` is "no tag filter"; an EMPTY `tags` is "filter by nothing",
    * which matches nothing. Collapsing the two is how `<tagged_list tags=""/>`
    * would render the entire type instead of an empty list — `reader.findByTag`

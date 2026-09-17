@@ -291,6 +291,40 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
       });
     });
 
+    it('[ac:ac-createrelease-name-zapisuje-w-spec-re] createRelease stores the name after trim', () => {
+      const created = releases.createRelease({ name: '  v2.0  ', description: 'x' }, 'user');
+      expect(created.name).toBe('v2.0');
+      expect(db.prepare(`SELECT name FROM spec_release WHERE name = 'v2.0'`).get()).toEqual({ name: 'v2.0' });
+    });
+
+    it('a padded "current" is still reserved — the check runs on the trimmed name', () => {
+      expect(() => releases.createRelease({ name: ' current ', description: 'x' }, 'user')).toThrow(
+        expect.objectContaining({ code: 'RELEASE_NAME_RESERVED' }),
+      );
+    });
+
+    it('a padded duplicate is a NAME conflict; a case variant passes the name check and stops at the slug', () => {
+      releases.createRelease({ name: 'v0.3', description: 'x' }, 'user');
+      expect(() => releases.createRelease({ name: 'v0.3 ', description: 'y' }, 'user')).toThrow(
+        expect.objectContaining({ code: 'RELEASE_NAME_CONFLICT' }),
+      );
+      // Name equality is case-sensitive (no COLLATE NOCASE), so this is not a
+      // name conflict — but both names derive the slug `v0-3`, and the slug
+      // check refuses it. Two releases differing only in case are unreachable.
+      expect(() => releases.createRelease({ name: 'V0.3', description: 'z' }, 'user')).toThrow(
+        expect.objectContaining({ code: 'RELEASE_SLUG_CONFLICT' }),
+      );
+    });
+
+    it('updateRelease trims the new name the same way', async () => {
+      releases.createRelease({ name: 'v1', description: 'first' }, 'user');
+      const updated = await releases.updateRelease({ idOrName: 'v1', name: '  v1.1 ' });
+      expect(updated.name).toBe('v1.1');
+      await expect(releases.updateRelease({ idOrName: 'v1.1', name: ' current' })).rejects.toMatchObject({
+        code: 'RELEASE_NAME_RESERVED',
+      });
+    });
+
     it('still rejects an empty name before checking the reserved name (unchanged precedence)', () => {
       expect(() => releases.createRelease({ name: '', description: 'x' }, 'user')).toThrow(
         expect.objectContaining({ code: 'VALIDATION' }),

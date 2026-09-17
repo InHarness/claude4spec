@@ -89,7 +89,6 @@ function host(active: BackendModule[], available: BackendModule[] = active): Pro
     mountBackend: () => {},
     registerMcpServer: () => {},
     buildMcpServers: () => [],
-    computeEntityCounts: () => ({}),
     entityExists: () => false,
     registerEntityService: () => {},
     getEntityService: () => null,

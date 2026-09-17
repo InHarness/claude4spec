@@ -4,7 +4,6 @@
  * is scoped to ONE ProjectContext — N projects in one process never share it.
  */
 
-import type { Database } from 'better-sqlite3';
 import type { McpServerFactory, McpToolDeclaration } from '../../../shared/plugin-host/mcp.js';
 import type {
   BackendModule,
@@ -435,36 +434,5 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
 
   diff(type: string, a: SnapshotData, b: SnapshotData): EntityDiff {
     return diffEntity(this, type, a, b);
-  }
-
-  /**
-   * One reader per database handle. `count()` memoizes table existence, so
-   * rebuilding it every turn would re-probe `sqlite_master` for each type; and
-   * a project context owns exactly one handle, so the map holds one entry.
-   */
-  private readonly counters = new WeakMap<Database, RawEntityReader>();
-
-  private readerFor(db: Database): RawEntityReader {
-    let reader = this.counters.get(db);
-    if (!reader) {
-      reader = new RawEntityReader(db, this);
-      this.counters.set(db, reader);
-    }
-    return reader;
-  }
-
-  computeEntityCounts(db: Database): Record<string, number> {
-    // 2.0.0: the host counts, and a type that wants a subset declares
-    // `systemPrompt.defaultPredicate` — data the host evaluates, never SQL it
-    // executes. 0.2.4 closed the raw-SQL surface but had no replacement, so
-    // `ac` lost its `status='active'` filter along the way; this restores it
-    // through the ONE call both the sidebar and the `<project>` block make, so
-    // the agent and the user cannot see different numbers for the same type.
-    const reader = this.readerFor(db);
-    const counts: Record<string, number> = {};
-    for (const m of this.listEntities()) {
-      counts[m.type] = reader.count(m.type);
-    }
-    return counts;
   }
 }

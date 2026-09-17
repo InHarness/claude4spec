@@ -3,6 +3,8 @@ import type { SystemPromptContribution } from '@c4s/plugin-runtime';
 export const acSystemPrompt: SystemPromptContribution = {
   roleNoun: 'Acceptance criteria',
   /**
+   * Licznik encji (agregat sidebara) liczy wylacznie AC aktywne, etykieta z labelPlural.
+   *
    * The predicate 0.2.4 dropped, restored as data. `ac` is the only built-in
    * type that ever counted a subset: the agent saw `status='active'` while the
    * sidebar counted every row, and deprecating that SQL silently made the agent
