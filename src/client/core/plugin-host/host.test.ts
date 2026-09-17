@@ -155,3 +155,21 @@ describe('registerFrontendModule — load-time slot validation', () => {
     expect(clientPluginHost.getAvailable('m34-rejected')).toBeNull();
   });
 });
+
+// 0.2.90: deactivation removes the renderer — a chip for a type switched off in
+// this project renders broken as `inactive-plugin`, distinct from an unknown type.
+describe('categoriseBrokenChip — inactive plugin vs unknown type', () => {
+  it('reports inactive-plugin for a registered but deactivated type, and null once active again', async () => {
+    const { categoriseBrokenChip } = await import('./host.js');
+    clientPluginHost.registerFrontendModule(baseModule('m090-switched-off'));
+    clientPluginHost.applyActivation({ active: [], inactive: ['m090-switched-off'], unknown: [] });
+    try {
+      expect(clientPluginHost.getEntity('m090-switched-off')).toBeNull();
+      expect(categoriseBrokenChip('m090-switched-off')).toBe('inactive-plugin');
+      expect(categoriseBrokenChip('m090-never-registered')).toBe('unknown-type');
+    } finally {
+      clientPluginHost.applyActivation(null);
+    }
+    expect(categoriseBrokenChip('m090-switched-off')).toBeNull();
+  });
+});
