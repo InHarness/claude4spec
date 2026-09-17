@@ -5,7 +5,8 @@ import type { Node as PMNode } from '@tiptap/pm/model';
 import { createHeadingActionsWidget } from './widget.js';
 
 export interface HeadingActionsOptions {
-  pagePath: string | null;
+  /** The document's in-app route (basepath-relative); `null` renders no actions. */
+  linkPath: string | null;
 }
 
 const headingActionsKey = new PluginKey('headingActions');
@@ -14,7 +15,7 @@ export const HeadingActions = Extension.create<HeadingActionsOptions>({
   name: 'heading_actions',
 
   addOptions() {
-    return { pagePath: null };
+    return { linkPath: null };
   },
 
   addProseMirrorPlugins() {
@@ -23,9 +24,9 @@ export const HeadingActions = Extension.create<HeadingActionsOptions>({
       new Plugin({
         key: headingActionsKey,
         state: {
-          init: (_, state) => buildDecorations(state.doc, opts.pagePath),
+          init: (_, state) => buildDecorations(state.doc, opts.linkPath),
           apply: (tr, old) =>
-            tr.docChanged ? buildDecorations(tr.doc, opts.pagePath) : old,
+            tr.docChanged ? buildDecorations(tr.doc, opts.linkPath) : old,
         },
         props: {
           decorations(state) {
@@ -37,8 +38,8 @@ export const HeadingActions = Extension.create<HeadingActionsOptions>({
   },
 });
 
-function buildDecorations(doc: PMNode, pagePath: string | null): DecorationSet {
-  if (!pagePath) return DecorationSet.empty;
+function buildDecorations(doc: PMNode, linkPath: string | null): DecorationSet {
+  if (!linkPath) return DecorationSet.empty;
   const decs: Decoration[] = [];
   let lastAnchor: string | null = null;
   doc.descendants((node, pos) => {
@@ -52,7 +53,7 @@ function buildDecorations(doc: PMNode, pagePath: string | null): DecorationSet {
       decs.push(
         Decoration.widget(
           pos + 1,
-          () => createHeadingActionsWidget({ anchor, pagePath }),
+          () => createHeadingActionsWidget({ anchor, linkPath }),
           { side: -1, key: `ha-${anchor ?? 'pending'}-${pos}` },
         ),
       );

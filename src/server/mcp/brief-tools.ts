@@ -26,7 +26,7 @@ import { z } from 'zod';
 import { ConflictError, type BriefService } from '../services/brief.js';
 import { toolFailure, toolSuccess } from '../operations/envelope.js';
 import { DomainError } from '../services/tags.js';
-import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
+import { ANCHOR_LINE_RE } from '../../shared/anchor-pattern.js';
 import { applyTextEdits, type MatchPosition, type PositionResolver, type TextEdit } from '../services/text-edits.js';
 import { bodyPositionResolver } from '../services/section-text.js';
 
@@ -91,7 +91,6 @@ const BRIEF_RANGE_ARG = {
 };
 
 const AGENT_ACTIONS = z.enum(['replace', 'append', 'insert_after_section']);
-const ANCHOR_RE = new RegExp(ANCHOR_PATTERN_SOURCE);
 const HEADING_RE = /^(#{2,6})\s+(.+?)\s*$/;
 
 export function buildBriefToolsServer(
@@ -451,7 +450,7 @@ function insertAfterSection(prior: string, fragment: string, anchor?: string, he
     const text = m[2]!.trim();
     if (anchor) {
       const prev = i > 0 ? lines[i - 1]! : '';
-      const am = prev.match(ANCHOR_RE);
+      const am = prev.match(ANCHOR_LINE_RE);
       if (am && am[1] === anchor) {
         targetLine = i;
         targetLevel = level;

@@ -8,19 +8,23 @@ import type {
   PageLinksCounts,
   UnresolvedMention,
 } from '../../shared/page-links.js';
-import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
+import { ANCHOR_ID_SOURCE, ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
 import type { WatchSubscriber, WatchScope, WatchActor } from '../fs/watcher.js';
 import { requireRootId } from '../fs/sources.js';
 import { PROJECTION_IDS, type ProjectionStatusRegistry } from './projection-status.js';
 
-const AT_RE = /(?<![\w])@([a-zA-Z0-9_][a-zA-Z0-9_\-/.]*[a-zA-Z0-9_\-/])(?:#([a-f0-9]{8}))?/g;
+// 0.2.89 — the `#anchor` suffix is the canonical anchor id (`[a-z0-9]{6,12}`), the
+// alphabet anchors are minted from. Until now it was 8 hex digits, which almost no
+// minted anchor is, so a cited section silently dropped out of the link.
+const ANCHOR_SUFFIX = `#(${ANCHOR_ID_SOURCE})(?![a-z0-9])`;
+const AT_RE = new RegExp(`(?<![\\w])@([a-zA-Z0-9_][a-zA-Z0-9_\\-/.]*[a-zA-Z0-9_\\-/])(?:${ANCHOR_SUFFIX})?`, 'g');
 const LINK_RE = /\[([^\]\n]*)\]\(([^)\s]+)\)/g;
 const BACKTICK_RE = /`([^`\n]+)`/g;
 const FENCE_RE = /^```[\s\S]*?^```/gm;
 const ANCHOR_RE = new RegExp(ANCHOR_PATTERN_SOURCE, 'g');
 const HEADING_RE = /^#\s+(.+?)\s*$/m;
 const URL_SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
-const BACKTICK_PATH_RE = /^([a-zA-Z0-9_][a-zA-Z0-9_\-/.]*\.\w+)(?:#([a-f0-9]{8}))?$/;
+const BACKTICK_PATH_RE = new RegExp(`^([a-zA-Z0-9_][a-zA-Z0-9_\\-/.]*\\.\\w+)(?:#(${ANCHOR_ID_SOURCE}))?$`);
 
 interface ParseResult {
   meta: FileMeta;
@@ -621,14 +625,14 @@ function fuzzyScore(q: string, pathStr: string, title: string): number {
 export function rewritePageCitations(content: string, from: string, to: string): string {
   const esc = from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return content
-    // `@a.md` and `@a.md#1a2b3c4d`
-    .replace(new RegExp(`(?<![\\w])@${esc}(?=(#[a-f0-9]{8})?(?![\\w\\-/.]))`, 'g'), `@${to}`)
-    // `` `a.md` `` and `` `a.md#1a2b3c4d` ``
-    .replace(new RegExp('`' + esc + '(#[a-f0-9]{8})?`', 'g'), (_m, anchor: string | undefined) =>
+    // `@a.md` and `@a.md#kkz1e7d6`
+    .replace(new RegExp(`(?<![\\w])@${esc}(?=(#${ANCHOR_ID_SOURCE})?(?![\\w\\-/.]))`, 'g'), `@${to}`)
+    // `` `a.md` `` and `` `a.md#kkz1e7d6` ``
+    .replace(new RegExp('`' + esc + `(#${ANCHOR_ID_SOURCE})?` + '`', 'g'), (_m, anchor: string | undefined) =>
       '`' + to + (anchor ?? '') + '`',
     )
     // `](a.md)`
-    .replace(new RegExp(`\\]\\(${esc}(#[a-f0-9]{8})?\\)`, 'g'), (_m, anchor: string | undefined) =>
+    .replace(new RegExp(`\\]\\(${esc}(#${ANCHOR_ID_SOURCE})?\\)`, 'g'), (_m, anchor: string | undefined) =>
       `](${to}${anchor ?? ''})`,
     );
 }

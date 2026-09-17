@@ -2,14 +2,15 @@ import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer } from '@tiptap/react';
 import { PageRefView } from './views/PageRefView.js';
 import { resolveAgainstIndex } from '../lib/pathResolve.js';
+import { ANCHOR_ID_SOURCE } from '../../../shared/anchor-pattern.js';
 
 export type PageRefSyntax = 'at' | 'backticks' | 'link';
 
 // Path segment — letters, digits, underscore, dot, slash, hyphen. Starts with word char.
 const PATH_BODY = String.raw`[\w][\w/.-]*?`;
-const PATH_WITH_EXT_RE = new RegExp(`^(${PATH_BODY}\\.\\w+)(?:#([a-f0-9]{8}))?$`);
+const PATH_WITH_EXT_RE = new RegExp(`^(${PATH_BODY}\\.\\w+)(?:#(${ANCHOR_ID_SOURCE}))?$`);
 // Inline @-trigger: match after verifying lookbehind manually in rule. Terminates at whitespace, sentence/quote punctuation, or string end.
-const AT_PAYLOAD_RE = new RegExp(`^(${PATH_BODY})(?:#([a-f0-9]{8}))?(?=[\\s.,;:!?)\\]}"']|$)`);
+const AT_PAYLOAD_RE = new RegExp(`^(${PATH_BODY})(?:#(${ANCHOR_ID_SOURCE}))?(?=[\\s.,;:!?)\\]}"']|$)`);
 // Link href: optional ../ ./ prefix, then path with extension.
 const LINK_PATH_RE = new RegExp(`^(?:\\.{1,2}/)*${PATH_BODY}\\.\\w+$`);
 
@@ -116,7 +117,7 @@ export function setupPageRefRules(md: any): void {
         if (!href || /^[a-z]+:/i.test(href) || href.startsWith('#') || href.startsWith('/')) continue;
         const [pathPart, anchorPart] = href.split('#', 2);
         if (!pathPart || !LINK_PATH_RE.test(pathPart)) continue;
-        const anchor = anchorPart && /^[a-f0-9]{8}$/.test(anchorPart) ? anchorPart : undefined;
+        const anchor = anchorPart && new RegExp(`^${ANCHOR_ID_SOURCE}$`).test(anchorPart) ? anchorPart : undefined;
         if (!resolvesInIndex(index, pathPart, sourcePath)) continue;
         let j = i + 1;
         let label = '';

@@ -439,6 +439,34 @@ export class SectionIndexerService implements WatchSubscriber {
         await this.indexPage(rootId, rel);
       }
     }
+    this.pruneDanglingEntityLinks();
+  }
+
+  /**
+   * 0.2.89 — the entity side of `section_entity_link` has no FK: the domain of
+   * `entity_type` follows the project's active type registry, and a slug lives in
+   * whichever store that type owns. So the database cannot notice an entity going
+   * away, and an edge inserted while it existed would outlive it until its page is
+   * next re-indexed. This pass is the integrity the schema does not give — one
+   * existence check per distinct `(entity_type, entity_slug)`, not per edge.
+   * The anchor side needs none of it: `ON DELETE CASCADE` covers it.
+   */
+  pruneDanglingEntityLinks(): number {
+    const pairs = this.db
+      .prepare('SELECT DISTINCT entity_type, entity_slug FROM section_entity_link')
+      .all() as Array<{ entity_type: string; entity_slug: string }>;
+    const del = this.db.prepare(
+      'DELETE FROM section_entity_link WHERE entity_type = ? AND entity_slug = ?',
+    );
+    let removed = 0;
+    const tx = this.db.transaction(() => {
+      for (const { entity_type, entity_slug } of pairs) {
+        if (this.host.entityExists(entity_type, entity_slug)) continue;
+        removed += del.run(entity_type, entity_slug).changes;
+      }
+    });
+    tx();
+    return removed;
   }
 
   async indexPage(rootId: string, relPath: string): Promise<void> {
@@ -683,8 +711,19 @@ export class SectionIndexerService implements WatchSubscriber {
  */
 export function parseHeadings(lines: string[]): ParsedHeading[] {
   const out: ParsedHeading[] = [];
+  let inFence = false;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] ?? '';
+    /**
+     * 0.2.89 — a `# comment` inside a fenced block is code, not a heading. Seen
+     * as one, it would split the section around the sample and get an anchor
+     * comment injected into the code itself.
+     */
+    if (/^\s*```/.test(line)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
     const m = HEADING_RE.exec(line);
     if (!m) continue;
     const level = (m[1] ?? '').length;

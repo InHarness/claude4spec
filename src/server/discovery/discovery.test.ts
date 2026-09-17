@@ -607,13 +607,8 @@ describe('discovery core', () => {
         type: 'widget',
         slug: 'flow',
       });
-      // The anchor here is hex on purpose: the shared `@`-link parser only
-      // captures `#[a-f0-9]{8}`, while the section indexer mints anchors from
-      // the full `[a-z0-9]` alphabet — so most real anchors are dropped from an
-      // `@page.md#anchor` link today. That mismatch predates this module and
-      // belongs to the link indexer; it is filed as a patch rather than widened
-      // here, because loosening the regex also changes what the editor marks as
-      // a broken link.
+      // 0.2.89 — the shared `@`-link parser captures the canonical anchor id
+      // (`[a-z0-9]{6,12}`), so a hex anchor is just one valid spelling of it.
       expect(cut.edges!.pageLinks).toContainEqual({
         rootId: 'pages',
         path: 'other.md',

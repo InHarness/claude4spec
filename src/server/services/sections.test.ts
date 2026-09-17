@@ -17,13 +17,13 @@ describe('SectionsService — what a generic read of the index emits', () => {
   let db: Database.Database;
   let sections: SectionsService;
 
-  function insert(anchor: string, pagePath: string, heading: string, body: string, lineStart = 1): void {
+  function insert(anchor: string, pagePath: string, heading: string, body: string, lineStart = 1, rootId = 'pages'): void {
     db.prepare(
       `INSERT INTO section_index
          (rootId, anchor, page_path, parent_anchor, heading_slug, heading_level, heading_text,
           content_hash, body, line_start, line_end, paragraph_count)
-       VALUES ('pages', ?, ?, NULL, ?, 2, ?, 'hash', ?, ?, ?, 1)`,
-    ).run(anchor, pagePath, heading.toLowerCase(), heading, body, lineStart, lineStart + 4);
+       VALUES (?, ?, ?, NULL, ?, 2, ?, 'hash', ?, ?, ?, 1)`,
+    ).run(rootId, anchor, pagePath, heading.toLowerCase(), heading, body, lineStart, lineStart + 4);
   }
 
   beforeEach(() => {
@@ -57,7 +57,7 @@ describe('SectionsService — what a generic read of the index emits', () => {
     const long = 'y'.repeat(SECTION_CONTENT_SNIPPET_CHARS * 2);
     insert('aaaa1111', 'notes.md', 'Alpha', long);
 
-    for (const entry of [sections.list()[0], sections.listByPage('notes.md')[0], sections.getByAnchor('aaaa1111')]) {
+    for (const entry of [sections.list()[0], sections.list({ pagePath: 'notes.md' })[0], sections.getByAnchor('aaaa1111')]) {
       expect(entry!.contentSnippet).toHaveLength(SECTION_CONTENT_SNIPPET_CHARS);
       expect(Object.keys(entry!)).not.toContain('body');
     }
@@ -124,5 +124,27 @@ describe('SectionsService — what a generic read of the index emits', () => {
 
     expect(scoped.map((s) => s.anchor)).toEqual(['aaaa1111']);
     expect(scoped[0]!.contentSnippet).toBe('from notes');
+  });
+
+  it('keys a page by (rootId, pagePath): the same relative path in two roots stays apart', async () => {
+    insert('aaaa1111', 'modules/auth.md', 'Alpha', 'from pages', 1, 'pages');
+    insert('bbbb2222', 'modules/auth.md', 'Beta', 'from specs', 1, 'specs');
+
+    expect(sections.list({ rootId: 'specs', pagePath: 'modules/auth.md' }).map((s) => s.anchor)).toEqual(['bbbb2222']);
+    expect(sections.list({ rootId: 'pages', pagePath: 'modules/auth.md' }).map((s) => s.anchor)).toEqual(['aaaa1111']);
+  });
+
+  it('looks a section up by anchor alone and returns its root only for navigation', async () => {
+    insert('bbbb2222', 'modules/auth.md', 'Beta', 'from specs', 1, 'specs');
+
+    const entry = sections.getByAnchor('bbbb2222');
+    expect(entry!.rootId).toBe('specs');
+    expect(entry!.pagePath).toBe('modules/auth.md');
+  });
+
+  it('strips only canonical anchor lines from the snippet', async () => {
+    insert('aaaa1111', 'notes.md', 'Alpha', '<!-- anchor: kkz1e7d6 -->\n<!-- anchor: NOT_AN_ANCHOR -->\nbody');
+
+    expect(sections.list()[0]!.contentSnippet).toBe('<!-- anchor: NOT_AN_ANCHOR -->\nbody');
   });
 });
