@@ -1002,6 +1002,7 @@ function buildSpecExploreSubagent(pluginHost: ProjectPluginHost, builtinsEnabled
       'mcp__entity-tools__list_entities',
       'mcp__entity-tools__search_entities',
       'mcp__entity-tools__describe_entity_type',
+      'mcp__entity-tools__resolve_identity',
       ...entityReadMcpTools(pluginHost),
       // reference-tools is cross-cutting (not an entity), so its read tools are listed explicitly
       // — mirrors the hardcode in buildTooling().

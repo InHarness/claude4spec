@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   CATALOG,
@@ -152,6 +155,42 @@ describe('the seeded catalog', () => {
         expect(op!.channels[channel].kind, `${name}.${channel}`).toBe('direct');
       }
     }
+  });
+
+  /**
+   * 0.2.92 — `direct` is an expectation, not an exemption. For `internal` and
+   * `mcp` it holds only with a pointable rendering: a declared tool rendering the
+   * operation in that channel. A `direct` cell with none makes the row INVALID —
+   * so this is a failing assertion, never a TODO list.
+   *
+   * Parity is operational, not nominal: one rendering may carry another name
+   * (`describe_entity_type` renders `describe_types` internally), and the alias
+   * is written down here rather than inferred.
+   */
+  it('[ac:ac-wiersz-katalogu-operacji-o-wartosci-d] every internal/mcp `direct` cell of an M39 row has a declared rendering', () => {
+    const mcpDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../mcp');
+    const declared = (file: string): Set<string> =>
+      new Set(
+        Array.from(fs.readFileSync(path.join(mcpDir, file), 'utf-8').matchAll(/\b(?:mcpTool|op)\(\s*\n?\s*'([a-z_]+)'/g)).map(
+          (m) => m[1]!,
+        ),
+      );
+    const external = declared('c4s-reader.ts');
+    const inProcess = new Set([...declared('entity-tools.ts'), ...declared('reference-tools.ts')]);
+    const INTERNAL_ALIAS: Record<string, string> = { describe_types: 'describe_entity_type' };
+
+    const m39 = [...external];
+    expect(m39).toHaveLength(15);
+    const invalid: string[] = [];
+    for (const name of m39) {
+      const op = CATALOG.require(name);
+      if (op.channels.internal.kind === 'direct' && !inProcess.has(INTERNAL_ALIAS[name] ?? name)) {
+        invalid.push(`${name}.internal`);
+      }
+      if (op.channels.mcp.kind === 'direct' && !external.has(name)) invalid.push(`${name}.mcp`);
+      if (op.channels.internal.kind === 'na' && inProcess.has(name)) invalid.push(`${name}.internal says n/a but renders`);
+    }
+    expect(invalid).toEqual([]);
   });
 
   /**

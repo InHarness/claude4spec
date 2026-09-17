@@ -678,4 +678,16 @@ describe('entity-tools: no overview (0.2.92, M05 internal channel)', () => {
     const { deps } = fakeDeps();
     expect(buildEntityTools(deps).map((t) => t.name)).not.toContain('overview');
   });
+
+  it('renders resolve_identity through the core, the internal half of its `direct` cell', async () => {
+    const { deps } = fakeDeps();
+    const seen: unknown[] = [];
+    (deps.discovery as unknown as { resolveIdentity: (i: unknown) => unknown }).resolveIdentity = (input) => {
+      seen.push(input);
+      return { candidates: [] };
+    };
+    const result = await tool(deps, 'resolve_identity').handler({ query: 'user', types: ['dto'], limit: 3 });
+    expect(result.isError).toBeFalsy();
+    expect(seen).toEqual([{ query: 'user', types: ['dto'], limit: 3 }]);
+  });
 });

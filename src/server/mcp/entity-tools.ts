@@ -533,6 +533,37 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
    * `mode: 'count'`. The catalog row says `n/a` for this cell.
    */
 
+  // ─── resolve_identity ─────────────────────────────────────────────────────
+  /**
+   * 0.2.92 (M13/M39) — the `internal` rendering of `resolve_identity`. The
+   * catalog declared `internal: direct` while no in-process tool rendered it,
+   * and `search_entities` below kept pointing the agent at a tool it did not
+   * have. A `direct` cell needs a pointable rendering; this is it. It lives
+   * here because its subject is the entity graph. Same core call as `c4s-reader`.
+   */
+  const resolveIdentity = mcpTool(
+    'resolve_identity',
+    'The one cross-type operation: given a fragment of a name or a slug, which entities could you have meant? It matches IDENTITY fields (slug, name, label) across types and returns ranked candidates — it will not find a phrase buried in a description. Use it when you do not know the type; once you know the type and slug, go to get_entities.',
+    {
+      query: z.string().describe('Name or slug fragment'),
+      types: z.array(z.string()).optional().describe('Restrict to these types; omit for all active types'),
+      limit: z.number().int().positive().optional().describe('Max candidates'),
+    },
+    async (args) => {
+      try {
+        return ok(
+          deps.discovery.resolveIdentity({
+            query: String(args.query),
+            ...(args.types ? { types: (args.types as string[]).map(String) } : {}),
+            ...(typeof args.limit === 'number' ? { limit: args.limit } : {}),
+          }),
+        );
+      } catch (err) {
+        return toolFailure(err);
+      }
+    },
+  );
+
   // ─── describe_entity_type ─────────────────────────────────────────────────
   const describeEntityType = mcpTool(
     'describe_entity_type',
@@ -649,6 +680,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
     listEntities,
     searchEntities,
     describeEntityType,
+    resolveIdentity,
   ];
 }
 

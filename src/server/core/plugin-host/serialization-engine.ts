@@ -50,7 +50,7 @@ export interface CatalogResult {
  * added there or removed — `overview` joined in 0.2.86 and left in 0.2.92.
  */
 const ENTITY_TOOLS_MCP_LINE =
-  'entity-tools: create_entities, get_entities, update_entities, delete_entities, list_entities, search_entities, describe_entity_type';
+  'entity-tools: create_entities, get_entities, update_entities, delete_entities, list_entities, search_entities, describe_entity_type, resolve_identity';
 
 export interface DescribeResult {
   type: string;
