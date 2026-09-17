@@ -454,3 +454,87 @@ describe('ChatService — child column invariant (0.2.87)', () => {
     db.close();
   });
 });
+
+/**
+ * 0.2.90 M46: `payload.patchPath` is REQUIRED on the `patch` branch — and only
+ * there. The refusal comes before any child exists, in the same validation step
+ * as an out-of-set value, because a child with an empty patch_path would break
+ * `context_type='patch' ⇒ patch_path IS NOT NULL`.
+ */
+describe('TransagentDispatcher — patch payload.patchPath + brief payload (0.2.90)', () => {
+  let db: Database.Database;
+  let chat: ChatService;
+  let parentThreadId: string;
+  let createBriefCalls: unknown[];
+
+  const childCount = (): number =>
+    (db.prepare(`SELECT COUNT(*) AS n FROM chat_thread WHERE parent_thread_id IS NOT NULL`).get() as {
+      n: number;
+    }).n;
+
+  const run = (contextType: TransagentRunInput['contextType'], payload?: Record<string, unknown>) => {
+    const briefService = {
+      createBrief: async (opts: unknown) => {
+        createBriefCalls.push(opts);
+        return { briefPath: 'briefs/0-0-1-to-next.md' };
+      },
+      createThreadForBrief: (opts: {
+        path: string;
+        parentThreadId?: string | null;
+        spawnedByToolUseId?: string | null;
+      }) => ({
+        threadId: chat.createThread(`Brief edit: ${opts.path}`, {
+          contextType: 'brief',
+          briefPath: opts.path,
+          parentThreadId: opts.parentThreadId ?? null,
+          spawnedByToolUseId: opts.spawnedByToolUseId ?? null,
+        }).id,
+      }),
+    };
+    const deps = { chatService: chat, briefService, activeAdapters: new Map() } as unknown as AgentTurnDeps;
+    return new TransagentDispatcher(deps, {
+      model: 'claude-opus-5' as never,
+      architectureConfig: {},
+      takeToolUseId: async () => 'tu_1',
+      runTurn: async () => ({ answer: 'done' }) as never,
+    }).run({ parentThreadId, contextType, message: 'go', payload } as TransagentRunInput);
+  };
+
+  beforeEach(() => {
+    db = new Database(':memory:');
+    runMigrations(db);
+    chat = new ChatService(db);
+    createBriefCalls = [];
+    parentThreadId = chat.createThread('parent', { contextType: 'chat' }).id;
+  });
+
+  afterEach(() => db.close());
+
+  it.each([
+    ['no payload', undefined],
+    ['a payload without patchPath', { suffix: 'x' }],
+    ['an empty patchPath', { patchPath: '' }],
+    ['a non-string patchPath', { patchPath: 7 }],
+  ])(
+    "refuses contextType='patch' with %s as VALIDATION (INVALID_ARGS at the tool) — no child chat_thread is created",
+    async (_label, payload) => {
+      await expect(run('patch', payload)).rejects.toMatchObject({ code: 'VALIDATION' });
+      expect(childCount()).toBe(0);
+    },
+  );
+
+  it("creates the patch child bound to payload.patchPath when it is given", async () => {
+    const { threadId } = await run('patch', { patchPath: 'patches/p-1.md' });
+    const row = db.prepare(`SELECT context_type, patch_path, parent_thread_id FROM chat_thread WHERE id = ?`).get(
+      threadId,
+    ) as { context_type: string; patch_path: string; parent_thread_id: string };
+    expect(row).toEqual({ context_type: 'patch', patch_path: 'patches/p-1.md', parent_thread_id: parentThreadId });
+  });
+
+  it('passes payload.content and payload.suffix straight into createBrief, with to = null', async () => {
+    await run('brief', { content: '# Body\n\nanalysis', suffix: 'tail' });
+    expect(createBriefCalls).toEqual([
+      { fromReleaseName: undefined, toReleaseName: null, content: '# Body\n\nanalysis', suffix: 'tail' },
+    ]);
+  });
+});

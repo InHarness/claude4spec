@@ -94,16 +94,12 @@ export class SerializerError extends Error {
  */
 export interface SerializationContribution<T = unknown> {
   /**
-   * Optional echo of the manifest's `payloadVersion`.
-   *
-   * The MANIFEST slot is the authority and the only one anything reads
-   * (`engine.getPayloadVersion`, `catalog`, `release`, `VersionService`). This
-   * one exists because the brief declares the field on the contribution; it is
-   * optional because a required duplicate is a fact every author writes twice
-   * and eventually writes twice differently. When present, registration rejects
-   * it if it disagrees with the manifest.
+   * Version of the SHAPE of the entity file's payload. Required, with no
+   * default: without a number there is no way to tell later that a file comes
+   * from an older shape (0.2.90). The manifest slot of the same name is what
+   * registration checks; a type declaring neither is rejected.
    */
-  payloadVersion?: number;
+  payloadVersion: number;
   /**
    * Ordered chain of payload migrations, `payloadUpgrades[i]` taking payload
    * `i+1` to `i+2`.

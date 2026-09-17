@@ -276,8 +276,12 @@ export class VersionService {
    * row stamped `'1.1.0'` is, by its very shape, a capture from before 0.2.9,
    * which is exactly what a payload upgrade needs to know about it.
    */
-  private payloadVersionOf(type: string): string {
-    return String(this.snapshotDeps?.host.getEntity(type)?.payloadVersion ?? 1);
+  private payloadVersionOf(type: string): string | null {
+    // 0.2.90 — no invented `1`: a type the host cannot resolve has no payload
+    // version to record, and a guessed one would later trigger an upgrade chain
+    // on a capture that never was at that shape. NULL reads as "unknown".
+    const version = this.snapshotDeps?.host.getEntity(type)?.payloadVersion;
+    return version == null ? null : String(version);
   }
 
   /**

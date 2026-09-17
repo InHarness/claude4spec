@@ -77,6 +77,36 @@ describe('lowerEntityContribution', () => {
   ])('rejects the removed backend slot %s and names its successor', (_slot, extra, successor) => {
     expect(() => lowerEntityContribution(base({ backend: extra as never }))).toThrow(successor);
   });
+
+  /**
+   * 0.2.90 — the envelope is a closed key set. The timeline slots and the render
+   * slots live side by side in ONE manifest, with no separate serialization
+   * registry, so an unrecognised key has nowhere legitimate to go.
+   */
+  it('rejects a manifest declaring `diff` — the key is refused, not ignored', () => {
+    expect(() => lowerEntityContribution(base({ diff: () => ({}) } as never))).toThrow(PluginManifestError);
+  });
+
+  it('rejects an unknown top-level envelope key', () => {
+    expect(() => lowerEntityContribution(base({ renderer: () => null } as never))).toThrow(
+      /unknown manifest key\(s\): `renderer`/,
+    );
+  });
+
+  it('accepts the full known envelope — timeline slots next to render slots', () => {
+    expect(() =>
+      lowerEntityContribution(
+        base({
+          payloadVersion: 2,
+          payloadUpgrades: [(p: unknown) => p],
+          slugConflict: 'suffix',
+          dependsOn: [],
+          frontend: { renderChip: () => null },
+          backend: { service: () => ({}) },
+        }),
+      ),
+    ).not.toThrow();
+  });
 });
 
 /**
