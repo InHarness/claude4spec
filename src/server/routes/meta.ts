@@ -1,5 +1,6 @@
 /**
- * L4 — the `rest` rendering of four M39 core operations.
+ * L4 — the `rest` rendering of four M39 core operations: `overview`,
+ * `describe_types`, `resolve_identity` and `check_consistency`.
  *
  * 0.2.13 abandoned the premise that "endpoints serve the UI (React), not the
  * agent — the agent uses MCP". REST is now ONE surface with TWO consumers; where
@@ -7,10 +8,18 @@
  * not a second route family. (It was the `view` parameter until 0.2.22, and
  * this sentence outlived it by two releases — see the handler below.)
  *
- * Three of these four (`check_consistency`, `search_entities`, `resolve_identity`)
- * had no REST rendering at all before this release — `check_consistency` was
- * deliberately "MCP only". That is what made the M39 parity claim aspirational;
- * with these it is checkable.
+ * Two of these four (`check_consistency`, `resolve_identity`) had no REST
+ * rendering at all before 0.2.86 — `check_consistency` was deliberately "MCP
+ * only". That is what made the M39 parity claim aspirational; with these it is
+ * checkable.
+ *
+ * 0.2.86 — this header used to name `search_entities` as the third of those,
+ * and it was never served here: its route is `GET /api/entities/:type/search`
+ * in `plugin-host/entities-router.ts`, next to the per-type `?search=` filter
+ * it must not be confused with. The parity claim holds for the system and this
+ * file was the wrong place to read it off, which is precisely the drift a
+ * catalog is supposed to end — so the operation's channel row, not a comment
+ * here, is the thing to trust.
  *
  * Every handler here is thin ON PURPOSE. It parses query parameters, calls the
  * owning core function, and returns what it got. It contributes NO error

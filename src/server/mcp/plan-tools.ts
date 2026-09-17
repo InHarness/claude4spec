@@ -146,7 +146,7 @@ export function buildPlanToolsServer(
           .describe(
             'How many hits you expect. OMITTING IT MEANS EXACTLY 1 — not "any number". ' +
               'Pass "all" to substitute every occurrence without committing to a count. ' +
-              'Anything else → MATCH_COUNT_MISMATCH, which answers with the real count and each hit as line.',
+              'Anything else → MATCH_COUNT_MISMATCH, which answers with the real count and each hit as anchor + line.',
           ),
       }),
     )

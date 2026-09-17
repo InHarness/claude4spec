@@ -102,7 +102,12 @@ export interface BriefThreadForBriefOpts {
 export interface BriefUpdateContentOpts {
   path: string;
   content: string;
-  expectedHash?: string;
+  /**
+   * 0.2.86 — REQUIRED (M43 guard `wymagany`). A brief has three concurrent
+   * writers (the thread's turn, the UI, the terminal agent); last-write-wins
+   * loses someone's work without a trace, so no caller may opt out.
+   */
+  expectedHash: string;
   changedBy: BriefChangedBy;
   changeSummary?: string;
 }
@@ -455,9 +460,22 @@ export class BriefService {
     }
   }
 
+  /** 0.2.86 — `list_brief_versions`: the shared file_version log, newest first. */
+  listVersions(briefPath: string) {
+    return this.deps.pageVersions.listVersions(briefPath, BRIEF_ROOT_MARKER);
+  }
+
+  /** 0.2.86 — `get_brief_version`: one snapshot with content, or null. */
+  getVersion(briefPath: string, version: number) {
+    return this.deps.pageVersions.getVersion(briefPath, version, BRIEF_ROOT_MARKER);
+  }
+
   async updateContent(opts: BriefUpdateContentOpts): Promise<{ newHash: string }> {
     const current = await this.getBrief(opts.path);
-    if (typeof opts.expectedHash === 'string' && opts.expectedHash !== current.hash) {
+    if (typeof opts.expectedHash !== 'string' || opts.expectedHash === '') {
+      throw new DomainError('VALIDATION', 'expectedHash is required for brief content updates');
+    }
+    if (opts.expectedHash !== current.hash) {
       throw new ConflictError('BRIEF_CONFLICT', 'brief changed since last read', current.hash, current.content);
     }
     // Validate immutable frontmatter has not been altered in incoming content.

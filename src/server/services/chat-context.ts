@@ -398,7 +398,8 @@ You are a specification writing assistant for project "${projectName}". The user
 function buildEntitiesBlock(pluginHost: ProjectPluginHost): string {
   const schemaPointer =
     '  Call describe_entity_type(type) for a type\'s fields, enums, required-ness and which reads ' +
-    'carry which — before your first write of a type. The rows above state RULES, not shapes.';
+    'carry which — before your first write of a type. The rows above state RULES, not shapes.\n' +
+    '  Call overview() to refresh the <project/> picture (roots, type counts, tag count) mid-turn — the prompt block is a snapshot from the start of the turn.';
   return `<entities>\n${buildEntityRows(pluginHost)}\n${schemaPointer}\n</entities>`;
 }
 
@@ -673,10 +674,14 @@ Do NOT paste an annotation's \`text\` into \`textEdits.find\`. That text is the 
 const BRIEF_TOOLS_USAGE = `<brief_tools_usage>
 brief-tools is scoped automatically to this brief — there is no path parameter, and no way to reach another brief from this thread.
   - get_brief — the brief as { frontmatter, body, content, hash }.
-  - update_brief (action: replace | append | insert_after_section) — edits the body.
+  - update_brief — edits the body through EXACTLY ONE of two shapes:
+      * \`textEdits\` — literal { find, replaceWith, expectedMatches? } substitutions over the whole body (omitted expectedMatches = exactly 1; overlapping matches refused). Prefer it for punctual changes.
+      * \`action\` (replace | append | insert_after_section) + \`content\` — rewrites, appends, section inserts.
+      * the answer is { newHash, replacements? } — never your content back.
       * frontmatter is IMMUTABLE for you (type, from_release, to_release, roots, generated_at).
       * expectedHash is REQUIRED: pass the hash get_brief returned (stale → BRIEF_CONFLICT, missing → VALIDATION).
       * insert_after_section MISSES SILENTLY. A target it cannot find — an anchor that is not in the brief, a heading that matches nothing — is NOT an error: the fragment is appended at the END of the brief and the call reports success. Nothing warns you. So read the brief before addressing a section, and check afterwards that the text landed where you meant it to.
+  - list_brief_versions / get_brief_version — the brief's version history and one snapshot with content.
 </brief_tools_usage>`;
 
 /**
@@ -967,6 +972,7 @@ function buildSpecExploreSubagent(pluginHost: ProjectPluginHost, builtinsEnabled
       'mcp__entity-tools__list_entities',
       'mcp__entity-tools__search_entities',
       'mcp__entity-tools__describe_entity_type',
+      'mcp__entity-tools__overview',
       ...entityReadMcpTools(pluginHost),
       // reference-tools is cross-cutting (not an entity), so its read tools are listed explicitly
       // — mirrors the hardcode in buildTooling().

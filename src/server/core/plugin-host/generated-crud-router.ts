@@ -367,6 +367,27 @@ export function generatedCrudRouter(deps: GeneratedCrudDeps, module: BackendModu
       );
       await propagateRename(deps, type, previous, slug);
       broadcast(slug);
+      /**
+       * 0.2.86 — why `data` here is not the `echo-free` violation it looks like,
+       * and why the MCP twin still answers `{ slug }`.
+       *
+       * The rule bars returning "content the caller already knows". This body is
+       * a RE-READ after the write, and what comes back is not what was sent:
+       * `genericUpdate` normalizes and stamps server-owned fields, a rename
+       * settles the slug (which `propagateRename` has just chased across every
+       * referring page), and a partial PATCH answers with the whole entity the
+       * caller never held. That is the same justification `update_page.content`
+       * carries — bytes the caller could not have predicted — not a channel
+       * appending content for convenience.
+       *
+       * It is also load-bearing, which is the part worth not discovering by
+       * breaking it: `useEntityDraftEditor` adopts this body as the acknowledged
+       * BASELINE for dirty-tracking (`toDraft(updated)`), per field. Answering
+       * `{ slug }` here would not tighten the contract, it would make every
+       * detail panel in every plugin unable to tell a saved field from an
+       * unsaved one. The agent channel has no such baseline, which is why the
+       * asymmetry with `update_entities` is correct rather than an oversight.
+       */
       const out = { data: readOne(deps, type, slug) };
       res.json(warnings?.length ? { ...out, warnings } : out);
     } catch (err) {

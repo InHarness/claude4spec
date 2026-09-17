@@ -5,6 +5,7 @@ import matter from 'gray-matter';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BriefService, type BriefServiceDeps } from './brief.js';
 import { PagesService } from './pages.js';
+import { hashContent } from './artifact-content.js';
 import type { SelfWriteMarker } from '../fs/sources.js';
 
 /**
@@ -61,7 +62,7 @@ describe('BriefService.updateContent — the suppress token and a failed write',
   it('keeps the token when the write succeeds — the echo is genuinely ours to eat', async () => {
     const service = makeService();
 
-    await service.updateContent({ path: 'b.md', content: `${BODY}edited\n`, changedBy: 'user' });
+    await service.updateContent({ path: 'b.md', content: `${BODY}edited\n`, expectedHash: hashContent(BODY), changedBy: 'user' });
 
     expect(calls).toEqual([{ op: 'suppress', relPath: 'b.md' }]);
   });
@@ -76,7 +77,7 @@ describe('BriefService.updateContent — the suppress token and a failed write',
     );
 
     await expect(
-      service.updateContent({ path: 'b.md', content: `${BODY}edited\n`, changedBy: 'user' }),
+      service.updateContent({ path: 'b.md', content: `${BODY}edited\n`, expectedHash: hashContent(BODY), changedBy: 'user' }),
     ).rejects.toThrow('ENOSPC');
 
     expect(writeFile).toHaveBeenCalledOnce();
@@ -96,7 +97,7 @@ describe('BriefService.updateContent — the suppress token and a failed write',
     });
 
     await expect(
-      service.updateContent({ path: 'b.md', content: `${BODY}edited\n`, changedBy: 'user' }),
+      service.updateContent({ path: 'b.md', content: `${BODY}edited\n`, expectedHash: hashContent(BODY), changedBy: 'user' }),
     ).rejects.toThrow('version store unavailable');
 
     // No `unsuppress`: the write DID happen, so its echo must still be suppressed.

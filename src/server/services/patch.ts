@@ -267,6 +267,15 @@ export class PatchService {
     const violated: string[] = PATCH_IMMUTABLE_FRONTMATTER_KEYS.filter(
       (k) => JSON.stringify(incomingFm[k]) !== JSON.stringify(current.frontmatter[k]),
     );
+    /**
+     * 0.2.86 — `applied` is mutable, but through ONE door: `PATCH
+     * .../frontmatter`. A full-content save that flips it would be a second,
+     * undeclared writer of a user declaration. Compared as read (absent =
+     * false), so a save that merely preserves an absent key is not a flip.
+     */
+    if ((incomingFm.applied === true) !== (current.frontmatter.applied === true)) {
+      violated.push('applied');
+    }
     if (violated.length > 0) {
       throw new DomainError(
         'IMMUTABLE_FIELD',

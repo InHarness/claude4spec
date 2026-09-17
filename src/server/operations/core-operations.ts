@@ -101,10 +101,14 @@ const paging = {
  * Declaring a code it cannot raise is harmless; omitting it from the reads that
  * CAN raise it would not be.
  */
+/**
+ * 0.2.86 — `INDEX_NOT_MATERIALIZED` left this list. It is an internal-only code
+ * (nothing on a channel can raise it any more); an external caller whose server
+ * is down gets `SERVER_NOT_RUNNING` from the CLI instead.
+ */
 const READ_CODES = [
   'INVALID_TYPE',
   'INVALID_ARGUMENT',
-  'INDEX_NOT_MATERIALIZED',
   'INDEX_STALE',
 ] as const;
 
@@ -455,12 +459,30 @@ export function registerCoreOperations(): void {
     ),
   );
 
+  /**
+   * 0.2.86 — two corrections to this row, both from reading the handler.
+   *
+   * `idempotent: false`: a repeat is NOT a no-op. An absent slug fails that
+   * item with `NOT_FOUND`, deliberately — `entity-tools.ts` states the reason
+   * (the generic door answers `{ deleted: false }`, and reporting that as
+   * `{ deleted: true }` would tell an agent it removed something that was never
+   * there). The declaration said `true` while the code said otherwise, and a
+   * caller trusting the declaration would retry a batch and read the retry's
+   * failures as real ones.
+   *
+   * And the summary names `brokenReferences`, because M43 `echo-free` makes it
+   * the substance of the answer rather than a detail: the address of the effect
+   * is the slug, and the part the caller could not have predicted is which
+   * pages now point at nothing. It is counted BEFORE the delete (afterwards
+   * there is nothing left to find), does not block the delete, and rewrites
+   * nothing — the soft FK is the author's to repair in prose.
+   */
   CATALOG.register(
     entityWrite(
       'delete_entities',
-      'Delete several entities of one type. Idempotent per element.',
+      'Delete several entities of one type. Per-item, non-transactional: an absent slug fails that item with ENTITY_NOT_FOUND and leaves the rest applied, so a repeat is not a no-op. Each deleted item answers with `brokenReferences` — the pages that referenced it, counted before the delete; references neither block the delete nor get rewritten.',
       { type: z.string(), slugs: z.array(z.string()).min(1) },
-      true,
+      false,
       ['ENTITY_NOT_FOUND'],
     ),
   );
@@ -719,11 +741,24 @@ export function registerCoreOperations(): void {
     scope: 'project',
     mediation: 'direct',
     opClass: 'plan',
-    inputSchema: { path: z.string().optional().describe('Plan path relative to plansDir. Defaulted from the thread only in the `internal` channel.') },
-    errorCodes: ['NOT_FOUND'],
+    inputSchema: {
+      path: z.string().optional().describe('Plan path relative to plansDir. Defaulted from the thread only in the `internal` channel.'),
+      range: z
+        .object({ start: z.number().int().positive(), end: z.number().int().positive() })
+        .optional()
+        .describe(
+          '1-based inclusive line window. Unconditionally allowed — a plan never enters `section_index`. A `start` past the end of the file is INVALID_ARGUMENT stating the size.',
+        ),
+    },
+    errorCodes: ['NOT_FOUND', 'INVALID_ARGUMENT'],
     sideEffects: ['none'],
     idempotent: true,
-    channels: fullParity(),
+    channels: {
+      internal: direct(),
+      cli: na('no `c4s get-plan` command: a plan is addressed by the thread that drafts it, and M10 has no CLI section'),
+      mcp: direct(),
+      rest: direct(),
+    },
   });
 
   CATALOG.register({
@@ -909,7 +944,7 @@ export function registerCoreOperations(): void {
           '0.2.40 — 1-based inclusive line window. Unconditionally allowed: an artifact never enters `section_index`, so there is no `sectionIndexed` gate and no second way to resume a large read. A `start` past the end of the file is INVALID_ARGUMENT stating the size.',
         ),
     },
-    errorCodes: ['BRIEF_NOT_FOUND', 'VALIDATION', 'INVALID_ARGUMENT'],
+    errorCodes: ['NOT_FOUND', 'VALIDATION', 'INVALID_ARGUMENT'],
     sideEffects: ['none'],
     idempotent: true,
     channels: fullParity(),
@@ -917,30 +952,91 @@ export function registerCoreOperations(): void {
 
   CATALOG.register({
     name: 'update_brief',
-    summary: 'Write a brief body, guarded by `expectedHash`.',
+    summary:
+      'Write a brief body through EXACTLY ONE of two input shapes — `action` + `content` (replace / append / insert_after_section) or `textEdits` (literal substitutions counted over the whole body) — guarded by a REQUIRED `expectedHash`. Answers `{ newHash, replacements? }`.',
     scope: 'project',
     mediation: 'direct',
     opClass: 'brief',
     inputSchema: {
       path: z.string().optional(),
-      content: z.string(),
+      action: z.enum(['replace', 'append', 'insert_after_section']).optional(),
+      content: z.string().optional(),
+      anchor: z.string().optional(),
+      heading: z.string().optional(),
+      textEdits: textEdit.array().min(1).optional(),
       // Required, not optional: a guard the caller may omit is not a guard. The
       // catalog is what the channel listings read, so leaving it optional here
       // would re-advertise the contract the renderings no longer honour.
       expectedHash: z.string(),
+      changeSummary: z.string().optional(),
     },
-    errorCodes: ['BRIEF_NOT_FOUND', 'BRIEF_CONFLICT', 'VALIDATION'],
+    /**
+     * 0.2.86 — the codes the renderings actually raise. `BRIEF_NOT_FOUND` was
+     * declared and unreachable (the service throws `NOT_FOUND`; only the CLI
+     * renames it), and `IMMUTABLE_FIELD` / `MISSING_TARGET` / `AMBIGUOUS_HEADING`
+     * were raised and undeclared.
+     */
+    errorCodes: [
+      'NOT_FOUND',
+      'BRIEF_CONFLICT',
+      'VALIDATION',
+      'INVALID_ARGUMENT',
+      'IMMUTABLE_FIELD',
+      'MISSING_TARGET',
+      'AMBIGUOUS_HEADING',
+      'FIND_NOT_FOUND',
+      'MATCH_COUNT_MISMATCH',
+    ],
     sideEffects: ['file', 'db', 'ui-notify'],
     /**
-     * 0.2.37 — full content in `content`; no differential mode in this version.
-     * A brief is, alongside a plan, the obvious second consumer of the pattern —
-     * same action vocabulary, same read-modify-write shape — but adopting it is
-     * a change of its own, and this row now says so out loud instead of leaving
-     * the absence to be inferred.
+     * 0.2.86 — the differential mode the 0.2.37 row deferred: `textEdits`, same
+     * engine and field names as `update_page` / `update_sections` / `update_plan`.
      */
-    contentInput: 'literal',
+    contentInput: 'literal+diff',
     idempotent: false,
     channels: fullParity(),
+  });
+
+  CATALOG.register({
+    name: 'list_brief_versions',
+    summary: "A brief's version history (metadata only), oldest first.",
+    scope: 'project',
+    mediation: 'direct',
+    opClass: 'brief',
+    inputSchema: {
+      path: z.string().optional().describe('Brief path relative to briefsDir. Required on an external connection.'),
+      ...paging,
+    },
+    errorCodes: ['NOT_FOUND', 'VALIDATION'],
+    sideEffects: ['none'],
+    idempotent: true,
+    channels: {
+      internal: direct(),
+      cli: na('no `c4s` brief-history command: the terminal implementer reads the current brief, not its history'),
+      mcp: direct(),
+      rest: direct(),
+    },
+  });
+
+  CATALOG.register({
+    name: 'get_brief_version',
+    summary: 'One version snapshot of a brief, with its content.',
+    scope: 'project',
+    mediation: 'direct',
+    opClass: 'brief',
+    inputSchema: {
+      path: z.string().optional().describe('Brief path relative to briefsDir. Required on an external connection.'),
+      version: z.number().int().positive(),
+    },
+    errorCodes: ['VERSION_NOT_FOUND', 'VALIDATION'],
+    sideEffects: ['none'],
+    idempotent: true,
+    channels: {
+      internal: direct(),
+      cli: na('no `c4s` brief-history command: the terminal implementer reads the current brief, not its history'),
+      mcp: direct(),
+      rest: direct(),
+    },
   });
 
   CATALOG.register({
@@ -1146,6 +1242,7 @@ export function registerCoreOperations(): void {
     opClass: 'read' | 'write',
     inputSchema: Record<string, z.ZodTypeAny>,
     sideEffects: Array<'none' | 'file' | 'db' | 'ui-notify'>,
+    extraCodes: readonly string[] = [],
   ): void => {
     CATALOG.register({
       name,
@@ -1154,7 +1251,7 @@ export function registerCoreOperations(): void {
       mediation: 'direct',
       opClass,
       inputSchema,
-      errorCodes: ['VALIDATION', 'NOT_FOUND'],
+      errorCodes: ['VALIDATION', 'NOT_FOUND', ...extraCodes],
       sideEffects,
       /**
        * 0.2.37 — a release write names and freezes a snapshot; the content it
@@ -1178,7 +1275,35 @@ export function registerCoreOperations(): void {
 
   releaseOp('release_list', 'Releases newest-first, paginated. Answers `{ releases, total }` where `total` precedes limit/offset.', 'read', { ...paging }, ['none']);
   releaseOp('release_show', 'One release by numeric id or name, with its snapshot counts.', 'read', { idOrName: z.union([z.string(), z.number()]) }, ['none']);
-  releaseOp('release_diff', 'What changed between two releases — or, with `to: "current"`, between a release and the live not-yet-released state — per entity type and page root.', 'read', { from: z.union([z.string(), z.number()]), to: z.union([z.string(), z.number()]) }, ['none']);
+  /**
+   * 0.2.86 — the row names the parameters the renderings actually take and the
+   * M17 codes they raise. It used to declare `{ from, to }` and two generic
+   * codes, which taught a reader of the catalog a call no channel accepts.
+   * `roots` narrows the PAGES dimension only — asymmetric by design.
+   */
+  releaseOp(
+    'release_diff',
+    'What changed between two releases — or, with `toIdOrName: "current"`, between a release and the live not-yet-released state — per entity type and page root. An item cut by the response budget comes back `truncated: true` (an entity without `before`/`after`, a section with `content` cut as text) and the envelope carries `truncationHint`.',
+    'read',
+    {
+      fromIdOrName: z.union([z.string(), z.number(), z.null()]),
+      toIdOrName: z.union([z.string(), z.number()]),
+      include: z.array(z.enum(['pages', 'entities'])).optional(),
+      entityTypes: z.array(z.string()).optional(),
+      roots: z.array(z.string()).optional().describe('Narrows the pages dimension only; never entities.'),
+      summaryOnly: z.boolean().optional(),
+      limit: z.number().optional(),
+      offset: z.number().optional(),
+    },
+    ['none'],
+    [
+      'INVALID_INCLUDE_FILTER',
+      'INVALID_ENTITY_TYPES_FILTER',
+      'CONFLICTING_FILTERS',
+      'INVALID_PAGINATION',
+      'INVALID_DIFF_RANGE',
+    ],
+  );
   releaseOp(
     'release_create',
     'Create a named release: assigns every unreleased entity_version and file_version row to it in one transaction, then commits to git when git sync is on. Always manual.',

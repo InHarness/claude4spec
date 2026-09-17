@@ -18,7 +18,7 @@ import {
   type McpToolDefinition,
 } from '../plugin-runtime/index.js';
 import { z } from 'zod';
-import { toolError } from '../operations/envelope.js';
+import { toolError, toolFailure } from '../operations/envelope.js';
 import type Database from 'better-sqlite3';
 import type { EntityType } from '../../shared/entities.js';
 import { DomainError } from '../services/tags.js';
@@ -524,6 +524,29 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
     },
   );
 
+  // ─── overview ─────────────────────────────────────────────────────────────
+  /**
+   * 0.2.86 (M05) — the M39 `overview` operation in the `internal` channel.
+   *
+   * The `<project/>` block in the system prompt is a snapshot taken when the
+   * turn starts; an agent that created a type's first rows or a new page
+   * mid-turn had no way to refresh that picture. Same core method as the
+   * external `c4s-spec-reader` rendering, so the two channels cannot disagree.
+   * Externally the reader server is mounted first and owns the name.
+   */
+  const overview = mcpTool(
+    'overview',
+    'What this specification contains right now: page roots with their properties (sectionIndexed / referenceValidated / pageCount), active entity types with row counts and payload versions, tag count, claude4spec version. The <project/> block in your prompt is a snapshot from the start of the turn — call this to refresh it mid-turn. Cheap: no schemas; call describe_entity_type for those.',
+    {},
+    async () => {
+      try {
+        return ok(await deps.discovery.overview());
+      } catch (err) {
+        return toolFailure(err);
+      }
+    },
+  );
+
   // ─── describe_entity_type ─────────────────────────────────────────────────
   const describeEntityType = mcpTool(
     'describe_entity_type',
@@ -640,6 +663,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
     listEntities,
     searchEntities,
     describeEntityType,
+    overview,
   ];
 }
 

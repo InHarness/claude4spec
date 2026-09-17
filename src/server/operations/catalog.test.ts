@@ -65,11 +65,11 @@ describe('operation catalog — declaration rules', () => {
   it('the three operations that got a differential mode declare it, and the three that did not say so', () => {
     expect(CATALOG.require('update_page').contentInput).toBe('literal+diff');
     expect(CATALOG.require('update_sections').contentInput).toBe('literal+diff');
-    // 0.2.43: `update_plan` joined them. `update_brief` deliberately did NOT —
-    // the shape it was copied from moved on without it, and migrating briefs is
-    // a separate change with its own owner.
+    // 0.2.43: `update_plan` joined them; 0.2.86: `update_brief` too (M43
+    // `diff-mode-declared` — the brief was the named remaining consumer).
     expect(CATALOG.require('update_plan').contentInput).toBe('literal+diff');
-    for (const name of ['update_entities', 'update_brief', 'file_patch']) {
+    expect(CATALOG.require('update_brief').contentInput).toBe('literal+diff');
+    for (const name of ['update_entities', 'file_patch']) {
       expect(CATALOG.require(name).contentInput, name).toBe('literal');
     }
   });
@@ -192,8 +192,8 @@ describe('the seeded catalog', () => {
     // 0.2.77 — `INDEX_STALE` joins that shared set: `find_references` reads the
     // M14 link map, and its backref answer is exactly the kind a caller writes
     // against (rename-sync rewrites every page in it).
+    // 0.2.86 — `INDEX_NOT_MATERIALIZED` is internal-only and no longer declared.
     expect([...op!.errorCodes].sort()).toEqual([
-      'INDEX_NOT_MATERIALIZED',
       'INDEX_STALE',
       'INVALID_ARGUMENT',
       'INVALID_TYPE',
@@ -282,6 +282,21 @@ describe('context profiles', () => {
     for (const p of ['chat', 'ask', 'patch'] as const) {
       expect(PROFILES[p].requiresExplicitBriefTarget).toBe(false);
     }
+  });
+});
+
+describe('idempotence declarations', () => {
+  /**
+   * 0.2.86 — this row said `true` while the handler said otherwise, and the
+   * declaration is what a caller plans a retry against.
+   */
+  it('delete_entities is NOT idempotent — an absent slug fails its item', () => {
+    expect(CATALOG.require('delete_entities').idempotent).toBe(false);
+    expect(CATALOG.require('delete_entities').summary).toMatch(/brokenReferences/);
+    // Its neighbours are unaffected: an update of an existing row is a no-op
+    // when nothing changed, a create always conflicts on a duplicate slug.
+    expect(CATALOG.require('update_entities').idempotent).toBe(true);
+    expect(CATALOG.require('create_entities').idempotent).toBe(false);
   });
 });
 

@@ -53,6 +53,40 @@ export function subtreePositionResolver(anchor: string): PositionResolver {
   });
 }
 
+/**
+ * Positions for a `MATCH_COUNT_MISMATCH` raised over a WHOLE artifact body.
+ *
+ * The counterpart to {@link subtreePositionResolver}: there the anchor is known
+ * outright because the caller addressed one section, here it has to be found —
+ * the hit can land in any section, or between them (`anchor: null` for text
+ * above the first heading).
+ *
+ * `lineOffset` is how many lines precede `bodyText` in the text the ENGINE was
+ * handed, which is the coordinate `offset` speaks: a page runs its `textEdits`
+ * over the whole file, frontmatter included, while its anchors live in the body,
+ * so it reports the line a caller would count in the file and translates to find
+ * the section. A plan passes 0 because its body IS that text. Counting lines off
+ * `bodyText` instead would shift a page's answer by the height of its
+ * frontmatter.
+ *
+ * Innermost section wins: a hit inside a nested subsection names that
+ * subsection, not its parent, which is the anchor a caller would address to
+ * narrow the next attempt.
+ */
+export function bodyPositionResolver(bodyText: string, lineOffset = 0): PositionResolver {
+  const ranges = sectionRanges(bodyText.split('\n'));
+  return (offset, sourceText): MatchPosition => {
+    const sourceLine = sourceText.slice(0, offset).split('\n').length - 1;
+    const bodyLine = sourceLine - lineOffset;
+    const containing = ranges.filter((r) => bodyLine >= r.lineStart - 1 && bodyLine < r.lineEnd);
+    const innermost = containing.reduce<{ anchor: string; lineStart: number } | null>(
+      (best, r) => (best === null || r.lineStart > best.lineStart ? r : best),
+      null,
+    );
+    return { anchor: innermost?.anchor ?? null, line: sourceLine + 1 };
+  };
+}
+
 /** A half-open run of 0-based line indices touched by a substitution. */
 export interface LineSpan {
   from: number;

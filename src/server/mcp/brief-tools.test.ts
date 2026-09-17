@@ -230,3 +230,117 @@ describe('get_brief — the read window (0.2.40)', () => {
     expect(JSON.stringify(refused.content)).toContain('path');
   });
 });
+
+/**
+ * 0.2.86 — `update_brief` joins the differential mode (M43 §1.3), and the
+ * thread channel gains the brief's version history.
+ */
+describe('update_brief textEdits + brief version tools', () => {
+  const HASH = 'c'.repeat(64);
+  const BODY = '<!-- anchor: aaaaaaaa -->\n## One\n\nalpha beta\n\n<!-- anchor: bbbbbbbb -->\n## Two\n\nbeta gamma\n';
+  let written: string[];
+  let client: Client;
+
+  beforeEach(async () => {
+    written = [];
+    const briefService = {
+      getBrief: async (p: string) => {
+        if (p !== 'b.md') throw new DomainError('NOT_FOUND', `brief '${p}' not found`);
+        return {
+          path: 'b.md',
+          frontmatter: { type: 'brief' },
+          body: BODY,
+          content: `---\ntype: brief\n---\n${BODY}`,
+          hash: HASH,
+        };
+      },
+      updateContent: async (opts: { content: string }) => {
+        written.push(opts.content);
+        return { newHash: 'd'.repeat(64) };
+      },
+      listVersions: () => [
+        { version: 2, op: 'update' },
+        { version: 1, op: 'create' },
+      ],
+      getVersion: (_p: string, v: number) => (v === 1 ? { version: 1, content: 'old' } : null),
+    } as unknown as BriefService;
+
+    const { server } = buildBriefToolsServer({ briefService, target: 'explicit' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    client = new Client({ name: 'test-client', version: '0.0.0' });
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+  });
+
+  async function call(name: string, args: Record<string, unknown>) {
+    const res = await client.callTool({ name, arguments: args });
+    const text = (res.content as Array<{ type: string; text?: string }>)[0]?.text ?? '{}';
+    return { isError: res.isError === true, body: JSON.parse(text) as Record<string, any> };
+  }
+
+  it('exposes exactly the four brief tools', async () => {
+    const { tools } = await client.listTools();
+    expect(tools.map((t) => t.name).sort()).toEqual(
+      ['get_brief', 'get_brief_version', 'list_brief_versions', 'update_brief'],
+    );
+  });
+
+  it('applies literal substitutions and answers with the replacement count, not the content', async () => {
+    const res = await call('update_brief', {
+      path: 'b.md',
+      expectedHash: HASH,
+      textEdits: [{ find: 'beta', replaceWith: 'BETA', expectedMatches: 'all' }],
+    });
+    expect(res.isError).toBe(false);
+    expect(res.body).toEqual({ newHash: 'd'.repeat(64), replacements: 2 });
+    expect(written[0]).toContain('alpha BETA');
+    expect(written[0]).toContain('BETA gamma');
+    expect(written[0]).toMatch(/^---\ntype: brief\n---/);
+  });
+
+  it('refuses a count mismatch with anchor + line positions and writes nothing', async () => {
+    const res = await call('update_brief', {
+      path: 'b.md',
+      expectedHash: HASH,
+      textEdits: [{ find: 'beta', replaceWith: 'BETA' }],
+    });
+    expect(res.isError).toBe(true);
+    expect(res.body.code).toBe('MATCH_COUNT_MISMATCH');
+    const positions = JSON.stringify(res.body);
+    expect(positions).toContain('aaaaaaaa');
+    expect(positions).toContain('bbbbbbbb');
+    // Whole-file lines (3 frontmatter lines above the body) — the frame `get_brief.range` reads in.
+    expect(positions).toContain('"line":7');
+    expect(positions).toContain('"line":12');
+    expect(written).toEqual([]);
+  });
+
+  it('refuses both input shapes at once, and neither', async () => {
+    const both = await call('update_brief', {
+      path: 'b.md',
+      expectedHash: HASH,
+      action: 'append',
+      content: 'x',
+      textEdits: [{ find: 'alpha', replaceWith: 'A' }],
+    });
+    expect(both.body.code).toBe('INVALID_ARGUMENT');
+    const neither = await call('update_brief', { path: 'b.md', expectedHash: HASH });
+    expect(neither.body.code).toBe('INVALID_ARGUMENT');
+    expect(written).toEqual([]);
+  });
+
+  it('lists versions oldest first and reads one snapshot', async () => {
+    const list = await call('list_brief_versions', { path: 'b.md' });
+    expect(list.body.total).toBe(2);
+    expect(list.body.versions.map((v: { version: number }) => v.version)).toEqual([1, 2]);
+
+    const v1 = await call('get_brief_version', { path: 'b.md', version: 1 });
+    expect(v1.body.content).toBe('old');
+
+    const missing = await call('get_brief_version', { path: 'b.md', version: 9 });
+    expect(missing.body.code).toBe('VERSION_NOT_FOUND');
+
+    const unknown = await call('list_brief_versions', { path: 'nope.md' });
+    expect(unknown.body.code).toBe('NOT_FOUND');
+  });
+});

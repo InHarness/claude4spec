@@ -8,6 +8,7 @@ import { artifactRegistry, type ArtifactKind } from '../services/artifact-regist
 import type {
   ArtifactListItem,
   ArtifactResponse,
+  ArtifactWriteResponse,
   ArtifactThreadListItem,
 } from '../../shared/entities.js';
 import { DomainError } from '../services/tags.js';
@@ -40,8 +41,8 @@ import type { ArtifactRange } from '../services/artifact-read.js';
 interface ArtifactKindAdapter {
   list(query: Record<string, unknown>): ArtifactListItem[];
   get(path: string, range?: ArtifactRange): Promise<ArtifactResponse>;
-  updateContent(path: string, content: string, expectedHash: string): Promise<ArtifactResponse>;
-  updateFrontmatter(path: string, frontmatter: Record<string, unknown>): Promise<ArtifactResponse>;
+  updateContent(path: string, content: string, expectedHash: string): Promise<ArtifactWriteResponse>;
+  updateFrontmatter(path: string, frontmatter: Record<string, unknown>): Promise<ArtifactWriteResponse>;
   createThread(path: string, name?: string | null): Promise<{ threadId: string }>;
 }
 
@@ -103,13 +104,13 @@ function buildBriefAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
     async updateContent(path, content, expectedHash) {
       await briefs.updateContent({ path, content, expectedHash, changedBy: 'user' });
       const b = await briefs.getBrief(path);
-      return { path: b.path, frontmatter: b.frontmatter, body: b.body, content: b.content, hash: b.hash };
+      return { path: b.path, frontmatter: b.frontmatter, hash: b.hash };
     },
     async updateFrontmatter(path, frontmatter) {
       const implemented =
         typeof frontmatter.implemented === 'boolean' ? frontmatter.implemented : undefined;
       const b = await briefs.updateFrontmatter({ path, patch: { implemented }, changedBy: 'user' });
-      return { path: b.path, frontmatter: b.frontmatter, body: b.body, content: b.content, hash: b.hash };
+      return { path: b.path, frontmatter: b.frontmatter, hash: b.hash };
     },
     async createThread(path, name) {
       // Watek bez pliku briefu to sierota: `createThreadForBrief` wstawia wiersz
@@ -150,14 +151,14 @@ function buildPatchAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
     },
     async updateContent(path, content, expectedHash) {
       const p = await patches.updateContent({ path, content, expectedHash });
-      return { path: p.path, frontmatter: p.frontmatter, body: p.body, content: p.content, hash: p.hash };
+      return { path: p.path, frontmatter: p.frontmatter, hash: p.hash };
     },
     async updateFrontmatter(path, frontmatter) {
       if (typeof frontmatter.applied !== 'boolean') {
         throw new DomainError('VALIDATION', 'applied must be a boolean');
       }
       const p = await patches.updateFrontmatter({ path, applied: frontmatter.applied });
-      return { path: p.path, frontmatter: p.frontmatter, body: p.body, content: p.content, hash: p.hash };
+      return { path: p.path, frontmatter: p.frontmatter, hash: p.hash };
     },
     createThread(path, name) {
       return patches.createThreadForPatch(path, name ?? null);
@@ -194,7 +195,7 @@ function buildPlanAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
     async updateContent(path, content, expectedHash) {
       await plans.updateContent({ path, content, expectedHash, changedBy: 'user' });
       const p = await plans.getByPath(path);
-      return { path: p.path, frontmatter: p.frontmatter, body: p.body, content: p.content, hash: p.hash };
+      return { path: p.path, frontmatter: p.frontmatter, hash: p.hash };
     },
     async updateFrontmatter(path, frontmatter) {
       const title = typeof frontmatter.title === 'string' ? frontmatter.title : undefined;
@@ -217,7 +218,7 @@ function buildPlanAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
         changedBy: 'user',
         threadId: null,
       });
-      return { path: p.path, frontmatter: p.frontmatter, body: p.body, content: p.content, hash: p.hash };
+      return { path: p.path, frontmatter: p.frontmatter, hash: p.hash };
     },
     // Not the client's actual creation path (see file header) — delegates to
     // the same PlanService method the bespoke POST /api/plans/:slug/create-thread
