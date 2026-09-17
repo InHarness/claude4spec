@@ -1,6 +1,11 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer } from '@tiptap/react';
 import { serializeXmlTag, type XmlTagKind } from '../../../shared/xml-tags.js';
+import {
+  findInlineCodeSpans,
+  maskTagAttributeValues,
+  type InlineCodeSpan,
+} from '../../../shared/code-ranges.js';
 import { InlineMentionView } from './views/InlineMentionView.js';
 import { SingleElementView } from './views/SingleElementView.js';
 import { ElementListView } from './views/ElementListView.js';
@@ -93,6 +98,44 @@ function setupXmlMarkdownRules(md: any) {
     }
   );
 
+  // 0.2.92 — a backtick inside a tag's attribute value is not an inline-code
+  // delimiter. Ordering alone is not enough: `backticks` fires at an EARLIER
+  // lone backtick and pairs it with the one in `caption`, eating half the tag.
+  // So in front of `backticks` sits a guard that pairs runs over the text with
+  // attribute values masked — the same gate `code-ranges.ts` uses server-side.
+  // It steps in only when masking changes the paragraph; otherwise the stock
+  // rule (with its escape handling) runs unchanged.
+  md.inline.ruler.before('backticks', 'xml_backticks_guard', (state: any, silent: boolean) => {
+    if (state.src.charCodeAt(state.pos) !== 0x60 /* ` */) return false;
+    const spans = maskedInlineCodeSpans(state);
+    if (!spans) return false;
+    const start = state.pos;
+    let runEnd = start;
+    while (state.src.charCodeAt(runEnd) === 0x60) runEnd++;
+    const span = spans.find((s) => s.start === start);
+    if (!span) {
+      if (!silent) state.pending += state.src.slice(start, runEnd);
+      state.pos = runEnd;
+      return true;
+    }
+    if (!silent) {
+      const token = state.push('code_inline', 'code', 0);
+      token.markup = state.src.slice(start, runEnd);
+      let content = state.src.slice(span.innerStart, span.innerEnd).replace(/\n/g, ' ');
+      if (content.length > 2 && content.startsWith(' ') && content.endsWith(' ') && /[^ ]/.test(content)) {
+        content = content.slice(1, -1);
+      }
+      token.content = content;
+    }
+    state.pos = span.end;
+    return true;
+  });
+
+  // `xml_inline` stays in front of `html_inline`, AFTER `raw_jsx_inline`: moving
+  // it up to `backticks` would put it ahead of the raw-JSX context gate (see
+  // above) and render unmounted tags as chips. It loses nothing there — at a
+  // `<` the stock `backticks` rule never matches; the claim that matters (a
+  // tag's attribute value must not be consumed as code) is made by the guard.
   md.inline.ruler.before('html_inline', 'xml_inline', (state: any, silent: boolean) => {
     if (state.src.charCodeAt(state.pos) !== 0x3c /* < */) return false;
     const tail = state.src.slice(state.pos);
@@ -105,6 +148,17 @@ function setupXmlMarkdownRules(md: any) {
     state.pos += match[0].length;
     return true;
   });
+}
+
+/** Inline-code spans of the paragraph with tag attribute values masked; null when masking is a no-op. */
+function maskedInlineCodeSpans(state: any): InlineCodeSpan[] | null {
+  if (state.__c4sMaskedSpansSrc === state.src) return state.__c4sMaskedSpans;
+  const src: string = state.src;
+  const masked = maskTagAttributeValues(src, [[0, src.length]]);
+  const spans = masked === src ? null : findInlineCodeSpans(masked, [[0, src.length]]);
+  state.__c4sMaskedSpansSrc = src;
+  state.__c4sMaskedSpans = spans;
+  return spans;
 }
 
 function addMarkdownSerializer(kind: XmlTagKind, isBlock: boolean) {

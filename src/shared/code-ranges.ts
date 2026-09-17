@@ -14,6 +14,7 @@
  */
 
 import { findUnknownJsxRanges } from './jsx-passthrough.js';
+import { parseXmlTags } from './xml-tags.js';
 
 export type CodeRange = [start: number, end: number]; // half-open [start, end)
 
@@ -108,14 +109,50 @@ export function findInlineCodeSpans(text: string, gaps: CodeRange[]): InlineCode
   return spans;
 }
 
+const ATTR_VALUE_REGEX = /\w+="([^"]*)"/g;
+
+/**
+ * Masking gate shared by the server reference parser and the editor's
+ * markdown-it pipeline (0.2.92): a backtick inside an attribute VALUE of a tag
+ * candidate is not an inline-code delimiter. Returns `text` with every
+ * attribute value that contains a backtick, of every `parseXmlTags` candidate
+ * lying wholly inside one of `gaps`, blanked to spaces — same length, so offsets computed on the masked
+ * string are valid on the original. Candidates crossing a fence are left alone.
+ */
+export function maskTagAttributeValues(text: string, gaps?: CodeRange[]): string {
+  if (!text.includes('`')) return text;
+  const regions = gaps ?? scanFences(text).gaps;
+  let out = text;
+  let changed = false;
+  for (const tag of parseXmlTags(text)) {
+    if (!tag.raw.includes('`')) continue;
+    if (!regions.some(([gs, ge]) => tag.start >= gs && tag.end <= ge)) continue;
+    ATTR_VALUE_REGEX.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = ATTR_VALUE_REGEX.exec(tag.raw)) !== null) {
+      const value = m[1]!;
+      if (!value.includes('`')) continue;
+      const vStart = tag.start + m.index + m[0].length - 1 - value.length;
+      out = out.slice(0, vStart) + ' '.repeat(value.length) + out.slice(vStart + value.length);
+      changed = true;
+    }
+  }
+  return changed ? out : text;
+}
+
 /**
  * Char ranges markdown treats as code (fenced blocks + inline code spans), so
  * callers can leave tags inside them untouched.
+ *
+ * Order (0.2.92): (1) fences, (2) `parseXmlTags` candidates in the gaps,
+ * (3) backtick-pair scan over the text with the candidates' attribute values
+ * masked, (4) callers filter candidates against the resulting ranges.
  */
 export function computeCodeRanges(text: string): CodeRange[] {
   const { fenced, gaps } = scanFences(text);
   const ranges: CodeRange[] = [...fenced];
-  for (const span of findInlineCodeSpans(text, gaps)) ranges.push([span.start, span.end]);
+  const masked = maskTagAttributeValues(text, gaps);
+  for (const span of findInlineCodeSpans(masked, gaps)) ranges.push([span.start, span.end]);
   ranges.sort((a, b) => a[0] - b[0]);
   return ranges;
 }
