@@ -439,7 +439,12 @@ describe('buildSystemPrompt — <project_writing_skill> points at load_skill_fil
         planMode: true,
         writingStyleSkill: { slug: 'house-style', title: 'House Style' },
       });
-      expect(out).toContain('ensure load_skill_file(slug) has been called this turn');
+      // 0.2.93: the block defers to <project_writing_skill/> for the loading
+      // frequency instead of demanding a reload every turn — the system prompt is
+      // frozen after the first turn, so a per-turn directive outlives its own
+      // premise and re-reads an immutable skill for the rest of the thread.
+      expect(out).toContain('conform to the writing style referenced in <project_writing_skill/>');
+      expect(out).not.toContain('has been called this turn');
       // Every remaining `Skill(` is the empty-argument prohibition itself.
       expect(out).not.toMatch(/Skill\((?!\))/);
     }
