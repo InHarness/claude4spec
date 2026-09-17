@@ -91,6 +91,37 @@ describe('GET /api/entities/:type/search', () => {
     expect(list.body).toHaveProperty('data');
     await request(t.app).get('/api/entities/ac/search?q=x').expect(200);
   });
+
+  /**
+   * 0.2.95 — the second input and the third rung over the wire the CLI uses.
+   *
+   * This route is the only path `c4s search-entities` has to the core, so a
+   * parameter missing here is a parameter the CLI cannot reach at all, whatever
+   * its own flags accept.
+   */
+  it('[ac:ac-search-entities-regex-z-wzorcem-zawie] takes `regex` in place of `q`, and refuses the pair', async () => {
+    const res = await request(t.app).get('/api/entities/ac/search?regex=%5Ba-z%5D').expect(200);
+    expect(res.body).toHaveProperty('searchedFields');
+    expect(res.body.mode).toBe('map');
+    const both = await request(t.app).get('/api/entities/ac/search?q=x&regex=x').expect(400);
+    expect(both.body.error.code).toBe('INVALID_ARGUMENT');
+    // Neither given is the same refusal — `q` is no longer defaulted to `''`,
+    // which is what used to make every regex call look like two inputs.
+    const neither = await request(t.app).get('/api/entities/ac/search').expect(400);
+    expect(neither.body.error.code).toBe('INVALID_ARGUMENT');
+  });
+
+  it('[ac:ac-zadna-odpowiedz-search-entities-nie-n] carries `map` through, and no mode answers with a score', async () => {
+    for (const mode of ['count', 'map', 'hits']) {
+      const res = await request(t.app).get(`/api/entities/ac/search?q=a&mode=${mode}`).expect(200);
+      expect(res.body.mode).toBe(mode);
+      expect(JSON.stringify(res.body)).not.toContain('score');
+    }
+    // An unreadable value is still DROPPED rather than substituted: the core's
+    // default is the one place that decision is made.
+    const bogus = await request(t.app).get('/api/entities/ac/search?q=a&mode=pages').expect(200);
+    expect(bogus.body.mode).toBe('map');
+  });
 });
 
 /**

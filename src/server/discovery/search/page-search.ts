@@ -41,24 +41,33 @@ import type { Database } from 'better-sqlite3';
 import { invalidArgument } from '../errors.js';
 import type { PageSource } from '../page-source.js';
 import { DEFAULT_LIMITS, resolvePageRequest } from '../pagination.js';
-import { fitToBudget } from '../budget.js';
+import { fitToBudget, MAX_HUNK_CHARS } from '../budget.js';
+import { assertPatternWithinLimit, startSearchBudget } from './guards.js';
 import type { RootSet } from '../roots.js';
 import type { SearchPageHit, SearchPagesInput, SearchPagesResult } from '../types.js';
 
 /**
- * The character ceiling on ONE hunk, and therefore on one contiguous run of
- * context. Applied per block rather than per hit so a hit with three separate
- * matches shows all three, instead of spending its whole allowance on the first.
+ * How many lines into a page the scan gets before it consults the clock again.
+ *
+ * The budget's natural checkpoint here is the PAGE — the unit this operation
+ * opens, filters and rejects by, and the analogue of `search_entities`' "between
+ * entities". But a single page can be tens of thousands of lines, so a per-page
+ * check alone would let one pathological file overrun the whole budget; and a
+ * check per LINE means a clock read for every line of the corpus. This is the
+ * compromise, and it is deliberately coarse: the cost is one `Date.now()` per
+ * 256 lines, and the worst-case overrun is 256 lines of matching.
  */
-const MAX_HUNK_CHARS = 600;
+const BUDGET_CHECK_EVERY_LINES = 256;
 
 export async function searchPages(
   db: Database,
   pages: PageSource,
   roots: RootSet,
   input: SearchPagesInput,
+  budgetMs?: number,
 ): Promise<SearchPagesResult> {
   const matcher = buildMatcher(input);
+  const budget = startSearchBudget('search_pages', budgetMs);
   const pathFilter = buildPathFilter(input);
   const targets = input.rootId ? [roots.require(input.rootId, 'search_pages')] : [...roots.all];
   /**
@@ -91,6 +100,9 @@ export async function searchPages(
     if (anchorFilter && !anchors) continue; // an unindexed root has no sections to name
 
     for (const rel of await safeList(pages, root.id)) {
+      // Before the path filter, not after: a run that spends its whole budget
+      // REJECTING paths across a huge corpus has to be able to stop too.
+      budget.assertNotExhausted();
       // Valve 2: reject the page BEFORE opening it. The point of a path filter
       // is to not pay for the read, so it cannot live after `readBody`.
       if (!pathFilter(rel)) continue;
@@ -108,6 +120,7 @@ export async function searchPages(
       }
       const lines = content.split('\n');
       for (let i = 0; i < lines.length; i++) {
+        if (i > 0 && i % BUDGET_CHECK_EVERY_LINES === 0) budget.assertNotExhausted();
         const text = lines[i] ?? '';
         if (!matcher(text)) continue;
         const line = i + 1;
@@ -334,6 +347,10 @@ function buildMatcher(input: SearchPagesInput): (line: string) => boolean {
     );
   }
   if (input.regex) {
+    // LENGTH first, and before the probes below: running three backtracking
+    // probes over a 200 kB pattern is itself the cost the ceiling exists to
+    // refuse, and so is compiling it.
+    assertPatternWithinLimit(input.regex, 'search_pages');
     assertMatchableWithinOneLine(input.regex);
     let re: RegExp;
     try {
@@ -368,6 +385,12 @@ const LINE_CROSSING: ReadonlyArray<{ probe: RegExp; what: string }> = [
 
 /**
  * Refuse a pattern that cannot match anything, rather than returning nothing.
+ *
+ * THE ASYMMETRY WITH `search_entities`, which accepts exactly these patterns:
+ * there the unit of matching is the whole value of a field, and a field value
+ * crossing a line is ordinary, so `[\s\S]` is a legitimate request rather than
+ * an impossible one. Nothing below is shared with that operation — see the header
+ * of `./entity-search.ts`, which states the same boundary from its side.
  *
  * This operation matches LINE BY LINE, so a pattern spanning a line boundary is
  * not a narrow search — it is a search that cannot succeed. Answering it with

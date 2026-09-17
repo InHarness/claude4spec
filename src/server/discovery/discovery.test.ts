@@ -24,7 +24,7 @@ import {
   listEntitiesAll,
   MAX_ANCHORS_PER_CALL,
 } from './index.js';
-import { DEFAULT_BUDGET_CHARS } from './budget.js';
+import { DEFAULT_BUDGET_CHARS, MAX_HUNK_CHARS, MAX_PATTERN_CHARS } from './budget.js';
 import { RawEntityReader } from './raw-entity-reader.js';
 import { PROJECTION_IDS, ProjectionStatusRegistry } from '../services/projection-status.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
@@ -125,6 +125,8 @@ describe('discovery core', () => {
     roots: Root[],
     modules: BackendModule[] = [widgetModule()],
     projectionStatus?: ProjectionStatusRegistry,
+    /** 0.2.95 — the search time budget's test seam; see `DiscoveryDeps`. */
+    searchBudgetMs?: number,
   ): DiscoveryCore {
     const pluginHost = host(modules);
     const reader = new RawEntityReader(db, pluginHost);
@@ -137,6 +139,7 @@ describe('discovery core', () => {
       projectDir: cwd,
       packageVersion: 'test',
       ...(projectionStatus ? { projectionStatus } : {}),
+      ...(searchBudgetMs !== undefined ? { searchBudgetMs } : {}),
     });
   }
 
@@ -385,7 +388,9 @@ describe('discovery core', () => {
     it('a field outside the schema yields nothing, but searchedFields reveals the scope', () => {
       const c = core([pagesRoot()]);
       const result = c.searchEntities({ type: 'widget', query: 'mermaid', fields: ['nope.not_a_field'] });
-      if (result.mode !== 'hits') throw new Error('expected hit mode');
+      // 0.2.95 — `map` is the default rung now, and `searchedFields` is in the
+      // envelope of all three, so this assertion never needed the costly one.
+      if (result.mode !== 'map') throw new Error('expected map mode');
       expect(result.items).toEqual([]);
       // The distinction the field exists for: this is NOT "there is no such
       // entity", it is "you looked somewhere that holds nothing".
@@ -395,9 +400,360 @@ describe('discovery core', () => {
     it('with no fields argument, the host default covers the schema text paths', () => {
       const c = core([pagesRoot()]);
       const result = c.searchEntities({ type: 'widget', query: 'mermaid' });
-      if (result.mode !== 'hits') throw new Error('expected hit mode');
+      if (result.mode !== 'map') throw new Error('expected map mode');
       expect(result.searchedFields).toEqual(expect.arrayContaining(['format', 'source']));
       expect(result.items.map((i) => i.slug)).toEqual(['flow']);
+    });
+  });
+
+  /**
+   * 0.2.95 — `search_entities` reaches the shape `search_pages` already had.
+   *
+   * Every case below is a claim that only shows up as a bug in an agent's
+   * session: a default rung that quietly shipped field text into the context, a
+   * `score` two calls could not compare, a pattern refused for crossing a line
+   * in the one operation where crossing a line is the point, a scan that hung.
+   */
+  describe('search_entities — parity with search_pages (0.2.95)', () => {
+    /**
+     * A fixture with the four properties the contract needs to be provable:
+     * a field whose value crosses a LINE, a field whose COLUMN is renamed (so
+     * the hunk's `field` has to be mapped back to a `select` name), a
+     * `contentBearing` field (which does get a row column, so excluding it from
+     * the evidence is doing real work), and a long field for the hunk ceiling.
+     */
+    const GADGET_DATA: DataDeclaration = {
+      schema: {
+        title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
+        summary: { type: 'string', required: true, default: '' },
+        note: { type: 'string', column: 'gadget_note', default: '' },
+        body: { type: 'string', contentBearing: true, default: '' },
+      },
+    };
+
+    function gadgetModule(): BackendModule {
+      return {
+        type: 'gadget',
+        data: GADGET_DATA,
+        slugPattern: [{ op: 'slugify', field: 'title' }],
+        payloadVersion: 1,
+        label: 'Gadget',
+        labelPlural: 'Gadgets',
+        displayOrder: 20,
+        pathPrefix: '/gadgets',
+        systemPrompt: { roleNoun: 'Gadgets' },
+        backend: { crud: { createSchema: { title: z.string() } } } as BackendModule['backend'],
+      };
+    }
+
+    function gadgets(rows: Array<{ slug: string; title: string; summary?: string; note?: string; body?: string }>) {
+      applyProjection(db, [widgetModule(), gadgetModule()]);
+      for (const r of rows) {
+        db.prepare(
+          `INSERT INTO gadget (slug, title, summary, gadget_note, body) VALUES (?, ?, ?, ?, ?)`,
+        ).run(r.slug, r.title, r.summary ?? '', r.note ?? '', r.body ?? '');
+      }
+    }
+
+    const gadgetCore = (budgetMs?: number) =>
+      core([pagesRoot()], [widgetModule(), gadgetModule()], undefined, budgetMs);
+
+    it('[ac:ac-search-entities-w-trybie-map-nie-zwra] the default rung is `map`, and it carries no entity content', () => {
+      gadgets([{ slug: 'g1', title: 'Kaucja', summary: 'a deposit held until return' }]);
+      const result = gadgetCore().searchEntities({ type: 'gadget', query: 'deposit' });
+      if (result.mode !== 'map') throw new Error(`expected map, got ${result.mode}`);
+      expect(result.items).toEqual([{ slug: 'g1', title: 'Kaucja', matchCount: 1 }]);
+      // Not one character of the field that matched, and no evidence keys at all
+      // — the whole point of the rung is that it is affordable by default.
+      const serialized = JSON.stringify(result);
+      expect(serialized).not.toContain('deposit held');
+      expect(serialized).not.toContain('hunks');
+      expect(serialized).not.toContain('omittedChars');
+    });
+
+    it('[ac:ac-encja-z-dwoma-dopasowaniami-wzorca-wr] two matches in ONE field are one row with matchCount 2', () => {
+      gadgets([{ slug: 'g1', title: 'Plain', summary: 'kaucja and kaucja again' }]);
+      const result = gadgetCore().searchEntities({ type: 'gadget', query: 'kaucja' });
+      if (result.mode !== 'map') throw new Error('expected map');
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toMatchObject({ slug: 'g1', matchCount: 2 });
+      expect(result.total).toBe(1);
+    });
+
+    it('[ac:ac-encja-z-dwoma-dopasowaniami-wzorca-wr] two matches in TWO different fields are also one row with matchCount 2', () => {
+      // The same number from a different arrangement, which is the half of the
+      // criterion a per-field implementation would get wrong: the unit of a HIT
+      // is the entity, so neither shape may produce two rows sharing a slug.
+      gadgets([{ slug: 'g1', title: 'Kaucja', summary: 'about the kaucja' }]);
+      const result = gadgetCore().searchEntities({
+        type: 'gadget',
+        query: 'kaucja',
+        fields: ['title', 'summary'],
+      });
+      if (result.mode !== 'map') throw new Error('expected map');
+      expect(result.items).toEqual([{ slug: 'g1', title: 'Kaucja', matchCount: 2 }]);
+      expect(result.items.map((i) => i.slug)).toEqual([...new Set(result.items.map((i) => i.slug))]);
+    });
+
+    it('[ac:ac-zadna-odpowiedz-search-entities-nie-n] no response carries `score`, in any of the three modes', () => {
+      gadgets([{ slug: 'g1', title: 'Kaucja', summary: 'kaucja' }]);
+      const c = gadgetCore();
+      for (const mode of ['count', 'map', 'hits'] as const) {
+        const result = c.searchEntities({ type: 'gadget', query: 'kaucja', mode });
+        expect(JSON.stringify(result)).not.toContain('score');
+      }
+    });
+
+    it('[ac:ac-ranking-obu-operacji-wyszukiwania-sear] neither search operation returns a score', async () => {
+      gadgets([{ slug: 'g1', title: 'Kaucja', summary: 'kaucja' }]);
+      await writePage('pages', 'a.md', '# A\n\n## S\n\nkaucja here\n');
+      indexSection({ rootId: 'pages', anchor: 'a1', page: 'a.md', heading: 'S', start: 3, end: 5 });
+      const c = gadgetCore();
+      const entities = c.searchEntities({ type: 'gadget', query: 'kaucja', mode: 'hits' });
+      const pages = await c.searchPages({ query: 'kaucja', mode: 'hits' });
+      // `matchCount` is the only number describing the strength of a hit, on
+      // both sides — relevance needs a content index neither has.
+      expect(JSON.stringify(entities)).not.toContain('score');
+      expect(JSON.stringify(pages)).not.toContain('score');
+      if (entities.mode !== 'hits') throw new Error('expected hits');
+      expect(entities.items[0]).toHaveProperty('matchCount');
+    });
+
+    it('[ac:ac-ranking-search-entities-ma-determinist] `query` orders by relevance, `regex` by slug alone', () => {
+      gadgets([
+        { slug: 'zzz-exact', title: 'kaucja' },
+        { slug: 'aaa-late', title: 'a long preamble then kaucja' },
+        { slug: 'mmm-prefix', title: 'kaucja zwrotna' },
+      ]);
+      const c = gadgetCore();
+      const byQuery = c.searchEntities({ type: 'gadget', query: 'kaucja', fields: ['title'] });
+      if (byQuery.mode !== 'map') throw new Error('expected map');
+      // exact > prefix > substring position, and the slug is only the tie-break:
+      // `zzz-exact` wins despite sorting last alphabetically.
+      expect(byQuery.items.map((i) => i.slug)).toEqual(['zzz-exact', 'mmm-prefix', 'aaa-late']);
+
+      const byRegex = c.searchEntities({ type: 'gadget', regex: 'kaucja', fields: ['title'] });
+      if (byRegex.mode !== 'map') throw new Error('expected map');
+      // A pattern hit is binary — there is nothing to grade, so slug ascending
+      // is the whole relation.
+      expect(byRegex.items.map((i) => i.slug)).toEqual(['aaa-late', 'mmm-prefix', 'zzz-exact']);
+    });
+
+    it('[ac:ac-dwa-trafienia-searcha-o-identycznym-scor] paging over indistinguishable hits neither drops nor duplicates', () => {
+      // Every row matches identically, so the relevance relation cannot separate
+      // them and only the slug tie-break stands between `offset` and a page 2
+      // that re-serves page 1.
+      gadgets(['a', 'b', 'c', 'd', 'e'].map((k) => ({ slug: `g-${k}`, title: 'kaucja' })));
+      const c = gadgetCore();
+      const seen: string[] = [];
+      for (let offset = 0; offset < 5; offset += 2) {
+        const page = c.searchEntities({ type: 'gadget', query: 'kaucja', limit: 2, offset });
+        if (page.mode !== 'map') throw new Error('expected map');
+        expect(page.total).toBe(5);
+        seen.push(...page.items.map((i) => i.slug));
+      }
+      expect(seen).toEqual(['g-a', 'g-b', 'g-c', 'g-d', 'g-e']);
+      expect(new Set(seen).size).toBe(5);
+    });
+
+    it('[ac:ac-search-entities-regex-z-wzorcem-zawie] a line-crossing pattern MATCHES in entities and is refused in pages', async () => {
+      gadgets([{ slug: 'g1', title: 'Multi', summary: 'first line\nsecond line' }]);
+      await writePage('pages', 'a.md', '# A\n\nfirst line\nsecond line\n');
+      const c = gadgetCore();
+
+      // Entities: the unit is the whole field VALUE, so a value that really
+      // crosses a line is matched rather than declared unmatchable.
+      // Both line-crossing idioms, each written so it really CAN match the
+      // value: `[\s\S]*` spans the break, and `\n` sits where the break is.
+      for (const pattern of ['first[\\s\\S]*second', 'line\\nsecond']) {
+        const hit = c.searchEntities({ type: 'gadget', regex: pattern, fields: ['summary'] });
+        if (hit.mode !== 'map') throw new Error('expected map');
+        expect(hit.items.map((i) => i.slug)).toEqual(['g1']);
+      }
+
+      // Pages: the unit is the LINE, so the same pattern could only ever match
+      // nothing — and a silent zero is a worse answer than a refusal.
+      await expect(c.searchPages({ regex: 'first[\\s\\S]*second' })).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+      });
+      await expect(c.searchPages({ regex: '(?s)first.second' })).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+      });
+    });
+
+    it('[ac:ac-wzorzec-regex-dluzszy-niz-limit-dlugo] an over-long pattern is refused by BOTH operations, with the boundary in the message', async () => {
+      gadgets([{ slug: 'g1', title: 'Kaucja' }]);
+      const c = gadgetCore();
+      const tooLong = 'a'.repeat(MAX_PATTERN_CHARS + 1);
+      expect(() => c.searchEntities({ type: 'gadget', regex: tooLong })).toThrow(
+        new RegExp(String(MAX_PATTERN_CHARS)),
+      );
+      await expect(c.searchPages({ regex: tooLong })).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+      });
+      // Refused BEFORE execution: at the length above, the pattern is rejected
+      // whether or not anything could have matched it.
+      try {
+        c.searchEntities({ type: 'gadget', regex: tooLong });
+      } catch (err) {
+        expect((err as { code: string }).code).toBe('INVALID_ARGUMENT');
+        expect((err as Error).message).toContain(String(MAX_PATTERN_CHARS + 1));
+      }
+    });
+
+    it('[ac:ac-przebieg-wyszukiwania-ktory-wyczerpie] an exhausted budget answers SEARCH_BUDGET_EXCEEDED, and the same pattern completes when the run fits', () => {
+      gadgets([{ slug: 'g1', title: 'Kaucja' }, { slug: 'g2', title: 'Kaucja' }]);
+      const pattern = 'kaucja';
+
+      // A budget of zero is spent before the first entity, so the run refuses.
+      // Not INVALID_ARGUMENT — the pattern was valid — and not a hang: the
+      // check sits between entities, so the loop always reaches an answer.
+      let refused: { code?: string; message?: string } = {};
+      try {
+        gadgetCore(0).searchEntities({ type: 'gadget', regex: pattern });
+      } catch (err) {
+        refused = err as { code?: string; message?: string };
+      }
+      expect(refused.code).toBe('SEARCH_BUDGET_EXCEEDED');
+      expect(refused.code).not.toBe('INVALID_ARGUMENT');
+      expect(refused.message).toContain('--type');
+      expect(refused.message).toContain('--fields');
+
+      /*
+       * The same UNCHANGED pattern, over a run that fits. The narrowing is
+       * expressed as the budget rather than as `--type`/`--fields` on purpose:
+       * the budget is checked once per entity of the type, so a `fields`
+       * narrowing changes the work per entity and not the number of checks, and
+       * a scope-based version of this assertion would only pass by timing luck.
+       * `guards.test.ts` covers the valve NAMING with a clock it drives.
+       */
+      const fine = gadgetCore().searchEntities({ type: 'gadget', regex: pattern });
+      if (fine.mode !== 'map') throw new Error('expected map');
+      expect(fine.items.map((i) => i.slug)).toEqual(['g1', 'g2']);
+    });
+
+    it('[ac:ac-kazdy-hunk-zwrocony-przez-search-enti] a hunk`s field is a legal `select` value, even when the column was renamed', () => {
+      gadgets([{ slug: 'g1', title: 'Plain', note: 'the kaucja note' }]);
+      const c = gadgetCore();
+      const result = c.searchEntities({ type: 'gadget', query: 'kaucja', mode: 'hits' });
+      if (result.mode !== 'hits') throw new Error('expected hits');
+      const hunks = result.items[0]!.hunks ?? [];
+      expect(hunks).toHaveLength(1);
+      expect(hunks[0]).toMatchObject({ text: 'the kaucja note', matches: 1 });
+      // The search path's head is the COLUMN (`gadget_note`); the hunk must
+      // publish the PAYLOAD name, or the round trip below refuses.
+      const field = hunks[0]!.field;
+      expect(field).toBe('note');
+      const back = c.getEntities({ type: 'gadget', slugs: ['g1'], select: [field] });
+      expect(back.results[0]!.entity).toMatchObject({ note: 'the kaucja note' });
+    });
+
+    it('[ac:ac-zaden-hunk-search-entities-nie-pochod] no hunk comes from a contentBearing field, even when `fields` names it', () => {
+      // The value IS on the row (a contentBearing field gets a column), so the
+      // match is real and counted — the exclusion is about the EVIDENCE.
+      gadgets([{ slug: 'g1', title: 'Plain', body: 'the kaucja body text' }]);
+      const result = gadgetCore().searchEntities({
+        type: 'gadget',
+        query: 'kaucja',
+        fields: ['body'],
+        mode: 'hits',
+      });
+      if (result.mode !== 'hits') throw new Error('expected hits');
+      expect(result.items[0]).toMatchObject({ slug: 'g1', matchCount: 1 });
+      expect(result.items[0]!.hunks).toEqual([]);
+      // `hits` never issues content a plain `get_entities` would withhold.
+      expect(JSON.stringify(result)).not.toContain('kaucja body text');
+      // And the echo still says where it looked, rather than being repaired.
+      expect(result.searchedFields).toEqual(['body']);
+    });
+
+    it('[ac:ac-zapytanie-wielowyrazowe-w-search-entiti] a multi-word query matches only as a phrase, and an empty one matches nothing', () => {
+      gadgets([
+        { slug: 'g-phrase', title: 'kaucja zwrotna' },
+        { slug: 'g-split', title: 'zwrotna, a potem kaucja' },
+      ]);
+      const c = gadgetCore();
+      const phrase = c.searchEntities({ type: 'gadget', query: 'kaucja zwrotna', fields: ['title'] });
+      if (phrase.mode !== 'map') throw new Error('expected map');
+      // No tokenization, by decision: the row with both words in the other
+      // order is NOT a hit. Word-order flexibility is the caller's, in `regex`.
+      expect(phrase.items.map((i) => i.slug)).toEqual(['g-phrase']);
+
+      const loose = c.searchEntities({ type: 'gadget', regex: 'kaucja|zwrotna', fields: ['title'] });
+      if (loose.mode !== 'map') throw new Error('expected map');
+      expect(loose.items.map((i) => i.slug)).toEqual(['g-phrase', 'g-split']);
+
+      for (const query of ['', '   ']) {
+        const empty = c.searchEntities({ type: 'gadget', query, fields: ['title'] });
+        if (empty.mode !== 'map') throw new Error('expected map');
+        // Zero hits, never everything — and a well-formed envelope, not a refusal.
+        expect(empty.items).toEqual([]);
+        expect(empty.total).toBe(0);
+        expect(empty.searchedFields).toEqual(['title']);
+      }
+    });
+
+    it('exactly one of query/regex: both, or neither, is refused with the call that would have worked', () => {
+      gadgets([{ slug: 'g1', title: 'Kaucja' }]);
+      const c = gadgetCore();
+      expect(() => c.searchEntities({ type: 'gadget', query: 'a', regex: 'a' })).toThrow(/not both/);
+      expect(() => c.searchEntities({ type: 'gadget' })).toThrow(/requires query or regex/);
+      // `''` counts as PRESENT, so an empty phrase beside a pattern is still two
+      // inputs — otherwise the exclusion would depend on a value, not a choice.
+      expect(() => c.searchEntities({ type: 'gadget', query: '', regex: 'a' })).toThrow(/not both/);
+    });
+
+    it('`count` answers with both numbers: entities, and occurrences', () => {
+      gadgets([
+        { slug: 'g1', title: 'kaucja and kaucja' },
+        { slug: 'g2', title: 'kaucja' },
+      ]);
+      const result = gadgetCore().searchEntities({
+        type: 'gadget',
+        query: 'kaucja',
+        fields: ['title'],
+        mode: 'count',
+      });
+      if (result.mode !== 'count') throw new Error('expected count');
+      // `total` agrees with how the two rungs above paginate; `matches` is the
+      // different question, and the difference is the whole reason for both.
+      expect(result).toMatchObject({ total: 2, matches: 3 });
+      expect(result).not.toHaveProperty('items');
+    });
+
+    it('a window past the per-hunk ceiling is cut, and the cut is declared in omittedChars', () => {
+      gadgets([{ slug: 'g1', title: 'Plain', summary: `kaucja${'x'.repeat(2_000)}` }]);
+      const result = gadgetCore().searchEntities({
+        type: 'gadget',
+        query: 'kaucja',
+        fields: ['summary'],
+        mode: 'hits',
+      });
+      if (result.mode !== 'hits') throw new Error('expected hits');
+      const hit = result.items[0]!;
+      // The window is a RADIUS in characters around the match, so it is bounded
+      // by the ceiling rather than by the size of the field.
+      expect(hit.hunks![0]!.text.length).toBeLessThanOrEqual(MAX_HUNK_CHARS);
+      expect(hit.hunks![0]!.text.startsWith('kaucja')).toBe(true);
+      expect(hit.omittedChars).toBe(0);
+
+      /*
+       * And when the WINDOW exceeds the ceiling, the remainder is stated. It
+       * takes three matches to get there: one window is a 160-character radius,
+       * so only merging — three matches 300 apart, each window touching the
+       * next — builds a block past 600 without emitting a character twice.
+       */
+      db.prepare(`DELETE FROM gadget`).run();
+      const spread = ['kaucja', 'x'.repeat(300), 'kaucja', 'x'.repeat(300), 'kaucja'].join('');
+      gadgets([{ slug: 'g2', title: 'Plain', summary: spread }]);
+      const wide = gadgetCore().searchEntities({
+        type: 'gadget',
+        query: 'kaucja',
+        fields: ['summary'],
+        mode: 'hits',
+      });
+      if (wide.mode !== 'hits') throw new Error('expected hits');
+      expect(wide.items[0]!.omittedChars).toBeGreaterThan(0);
     });
   });
 

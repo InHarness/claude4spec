@@ -160,9 +160,14 @@ Discovery (through the server's operations — see "Server required" below):
   get-field-content --type <t> --slug <s> --field <f>
                                     the content of one content-bearing field — the only way to
                                     read one, since no generic read carries it
-  search-entities --type <t> --query <q> [--fields <f1,f2>] [--mode hits|count]
-                                    --type is required; hits are { slug, title, score } and the
-                                    output always declares searchedFields
+  search-entities --type <t> (--query <q> | --regex <r>) [--fields <f1,f2>]
+                  [--mode count|map|hits]
+                                    --type is required, and exactly one of --query/--regex; a hit is
+                                    an ENTITY, { slug, title, matchCount }, and --mode hits adds
+                                    hunks[] + omittedChars. There is no --context and no --select:
+                                    a fragment is evidence, not a projection. Unlike search-pages a
+                                    pattern may cross a line. The output always declares
+                                    searchedFields
   resolve-identity --query <q> [--types <t1,t2>] [--limit <n>]
                                     the only cross-type command: "what is this called?"
   check-consistency [--severity error|warning] [--rule <r>] [--limit <n>]
@@ -388,6 +393,14 @@ function codeToExit(code: string): number {
     // and the repair is to the machine's `~/.claude4spec/`, not to the command.
     case 'REGISTRY_READ_FAILED':
       return 22;
+    /**
+     * 0.2.95 M39 — the search ran out of time, and it gets its own status for
+     * the same reason it got its own code: a wrapper branching on exit 4 ("you
+     * typed it wrong") would retry with a different pattern, which is the one
+     * change that cannot help. The command was right; the scope was too wide.
+     */
+    case 'SEARCH_BUDGET_EXCEEDED':
+      return 23;
     case 'BRIEF_NOT_FOUND':
       return 12;
     case 'PATCH_WRITE_FAILED':

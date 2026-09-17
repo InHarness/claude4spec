@@ -296,11 +296,23 @@ export function generatedCrudRouter(deps: GeneratedCrudDeps, module: BackendModu
         const hits = deps.discovery.searchEntities({
           type,
           query: search,
+          /*
+           * 0.2.95 — `map`, stated rather than defaulted.
+           *
+           * A list page wants coordinates: it takes the slugs and hydrates the
+           * row projection itself, one line below. `map` is precisely that rung,
+           * and asking for `hits` would buy hunks of field text that
+           * `hydrateRows` throws away. It is also stated because this call USED
+           * to rely on the default being `hits` — which is what broke when the
+           * default became `map`, and naming the rung is what stops the next
+           * change of default from reaching the UI at all.
+           */
+          mode: 'map',
           limit,
           ...narrowing,
           ...(offset !== undefined ? { offset } : {}),
         });
-        if (hits.mode !== 'hits') throw new DomainError('INTERNAL', 'search returned a count');
+        if (hits.mode !== 'map') throw new DomainError('INTERNAL', 'search returned a count');
         res.json({ data: hydrateRows(deps, type, hits.items, rowSelect), total: hits.total });
         return;
       }

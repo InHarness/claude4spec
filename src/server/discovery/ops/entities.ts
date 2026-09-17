@@ -1,16 +1,20 @@
 /**
- * M39 — `list_entities`, `get_entities`, `search_entities`, `resolve_identity`.
+ * M39 — `list_entities`, `get_entities`, `resolve_identity`.
  *
  * `list_entities` is the load-bearing one: a complete, paginated traversal per
  * type is what AUTHORIZES search to be best-effort. An entity with no tags is
  * still reachable by enumeration — tags are an accelerator, not a closure.
  *
  * `get_entities` treats one slug as the degenerate case of a list, so there is
- * one operation instead of two with drifting semantics. `search_entities`
- * requires exactly one type: a cross-type full-text index federates rankings
- * badly and lets one call return hundreds of rows. `resolve_identity` is the
- * compensation — a FAÇADE over the per-type indexes, matching identity fields
- * only, which is a different thing from a cross-type index.
+ * one operation instead of two with drifting semantics. `resolve_identity` is
+ * the compensation for search requiring exactly one type — a FAÇADE over the
+ * per-type indexes, matching identity fields only, which is a different thing
+ * from a cross-type index.
+ *
+ * 0.2.95 moved `search_entities` out to `../search/entity-search.ts`, next to
+ * its page twin: it grew a matcher, two comparators, a hunk builder and a
+ * column-to-`select` mapper, none of which have anything to do with the three
+ * operations left here. `requireActiveType` and `titleOf` are exported for it.
  */
 
 import { applyItemBudget, MAX_SLUGS_PER_CALL } from '../budget.js';
@@ -34,7 +38,7 @@ import type {
   SearchEntitiesResult,
 } from '../types.js';
 
-function requireActiveType(deps: DiscoveryDeps, type: string) {
+export function requireActiveType(deps: DiscoveryDeps, type: string) {
   const module = deps.host.getEntity(type);
   if (!module) throw invalidType(type, deps.host.listEntities().map((m) => m.type));
   return module;
@@ -125,7 +129,7 @@ function rowFor(deps: DiscoveryDeps, type: string, slug: string): EntityRow {
  * a worse answer than a list of slugs — which is what this all looked like
  * before the reserved field existed.
  */
-function titleOf(deps: DiscoveryDeps, type: string, raw: RawEntity | null | undefined): string {
+export function titleOf(deps: DiscoveryDeps, type: string, raw: RawEntity | null | undefined): string {
   if (!raw) return '';
   const column = columnOf(RESERVED_TITLE_FIELD, deps.host.getEntity(type)?.data?.schema?.title ?? { type: 'string' });
   const value = raw.data[RESERVED_TITLE_FIELD] ?? raw.data[column];
@@ -262,77 +266,6 @@ const RETRY_HINT =
  */
 function metaOnly(item: GetEntitiesResult['results'][number]): GetEntitiesResult['results'][number] {
   return { ...item, entity: null, truncated: true };
-}
-
-export function searchEntities(deps: DiscoveryDeps, input: SearchEntitiesInput): SearchEntitiesResult {
-  const module = requireActiveType(deps, input.type);
-  const fields = resolveSearchFields(module, input.fields);
-  const searchedFields = fields.map((f) => f.path);
-
-  /**
-   * The same declarative filter `list_entities` applies, ANDed with the ranking.
-   *
-   * Tier E left search unfiltered because nothing could filter it generically;
-   * tier K's `slugsMatching` can, and leaving it out would have made a type's
-   * `defaultPredicate` hold for "list the ACs" but not for "search the ACs" —
-   * the AC list page combines a search box with its status/kind dropdowns, so
-   * the two questions must narrow the same way. Applied BEFORE scoring, so
-   * `total` counts matching hits rather than all hits.
-   */
-  const matching = deps.reader.slugsMatching(input.type, input.filters ?? {}, {
-    applyDefaultPredicate: input.applyDefaultPredicate ?? false,
-  });
-
-  /**
-   * The TAG filter, ANDed with the ranking for the same reason.
-   *
-   * Search and tag-filter are different core operations — one ranks, one
-   * enumerates — but "the ACs tagged `auth`, matching `checkout`" is one
-   * question a user asks by leaving a tag chip selected and then typing. Every
-   * entity list page sends `tags` and `search` in the SAME request, so a search
-   * path that ignored `tags` made the selected chip stop applying the moment
-   * you typed, while still rendering as selected. The retired per-type SQL
-   * ANDed them; what it got wrong was folding the ranking into that one WHERE,
-   * not the AND itself.
-   */
-  const tagged =
-    input.tags === undefined
-      ? null
-      : new Set(
-          input.tags.length === 0
-            ? []
-            : deps.reader
-                .findByTag({ type: input.type, tags: input.tags, filter: input.tagFilter ?? 'and' })
-                .map((e) => e.slug),
-        );
-
-  const scored: Array<{ slug: string; score: number; key: string }> = [];
-  for (const slug of deps.reader.listSlugs(input.type)) {
-    if (matching && !matching.has(slug)) continue;
-    if (tagged && !tagged.has(slug)) continue;
-    const raw = deps.reader.getEntity(input.type, slug);
-    if (!raw) continue;
-    const record = { ...raw.data, slug: raw.slug, tags: raw.tags };
-    let best = 0;
-    for (const field of fields) {
-      best = Math.max(best, relevance(input.query, valuesAtPath(record, field.path), field.weight ?? 1));
-    }
-    if (best > 0) scored.push({ slug, score: best, key: slug });
-  }
-  scored.sort(compareRanked);
-
-  if (input.mode === 'count') return { mode: 'count', total: scored.length, searchedFields };
-
-  const page = paginate(scored, input, DEFAULT_LIMITS.searchEntities);
-  return {
-    ...page,
-    // The frozen row plus its score — search is discovery, and discovery
-    // answers with keys. A caller who wants content follows up with
-    // `get_entities` and states a projection.
-    items: page.items.map((hit) => ({ ...rowFor(deps, input.type, hit.slug), score: hit.score })),
-    mode: 'hits',
-    searchedFields,
-  };
 }
 
 /**
