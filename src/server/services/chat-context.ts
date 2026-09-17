@@ -811,7 +811,7 @@ function buildPlanMode(inventory: readonly McpInventoryEntry[]): string {
   return `<claude4spec_plan_mode>
 Plan Mode is ACTIVE. Investigate and propose — do not modify.
 
-The plan you draft must conform to the writing style referenced in <project_writing_skill/>. Before drafting or updating the plan, ensure load_skill_file(slug) has been called this turn — its conventions constrain every line of the plan. If the user's request appears to violate them, surface the conflict in the plan rather than quietly working around it.
+The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
   - Denied: ${PLAN_MODE_TOOL_POLICY.deny.join(', ')}
