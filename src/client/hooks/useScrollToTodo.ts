@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { Editor } from '@tiptap/react';
 import { useRouterState } from '@tanstack/react-router';
 import { useTodos } from './useTodos.js';
@@ -18,6 +18,10 @@ const MAX_FRAMES = 30;
 export function useScrollToTodo(editor: Editor | null, ready: boolean, rootId: string, path: string) {
   const routerHash = useRouterState({ select: (s) => s.location.hash });
   const { data } = useTodos();
+  // `data` is a dependency only so a jump waits for the index to load. A refetch
+  // after an edit (`todos:changed`) must not scroll again while the hash stays —
+  // so each (root, page, hash) is handled once.
+  const handled = useRef<string | null>(null);
 
   useEffect(() => {
     if (!editor || !ready || !data) return;
@@ -28,12 +32,15 @@ export function useScrollToTodo(editor: Editor | null, ready: boolean, rootId: s
       const m = TODO_HASH_RE.exec(window.location.hash);
       if (!m || !data) return;
       const anchor = m[1];
+      const key = `${rootId}:${path}#${anchor}`;
+      if (handled.current === key) return;
       const hits = data.todos.filter((t) => t.rootId === rootId && t.pagePath === path);
       const ordinal = hits.findIndex((t) => t.anchor === anchor);
       if (ordinal < 0) {
         console.warn(`[todoscr] todo anchor not in index: ${anchor}`);
         return;
       }
+      handled.current = key;
       let frames = 0;
       const attempt = () => {
         const chip = dom.querySelectorAll<HTMLElement>('[data-todo-chip]')[ordinal];
