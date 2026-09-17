@@ -60,7 +60,9 @@ describe.skipIf(!BASE)('caption with backticks — chip, not code', () => {
         body:
           '# Caption backticks\n\n' +
           `<single_element type="code-snippet" slug="${SLUG}" caption="run \`make\` first"/>\n\n` +
-          `Press \` then <single_element type="code-snippet" slug="${SLUG}" caption="the \` key"/> and later \`code\`.\n`,
+          // A lone caption backtick, then a real code span later in the same
+          // paragraph: the old scanner paired the two and swallowed the tag.
+          `Press <single_element type="code-snippet" slug="${SLUG}" caption="the \` key"/> and later \`code\`.\n`,
       }),
     });
 
