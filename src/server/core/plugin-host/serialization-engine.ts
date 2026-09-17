@@ -1,7 +1,7 @@
 /**
- * SerializationEngine — host-driven dispatch for L9 entity serialization.
+ * SerializationEngine — host-driven dispatch for M13 entity serialization.
  *
- * Host-driven L9 dispatch (M13). There is nothing left to dispatch TO: the
+ * Host-driven read-record dispatch (M13). There is nothing left to dispatch TO: the
  * record is derived from each type's `data.schema`, so this reads the registry
  * rather than a slot on it. `BackendModule.serializer` — the last thing it did
  * look up — went in 0.2.24, along with the `section` registration that made

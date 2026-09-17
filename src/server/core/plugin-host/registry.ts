@@ -72,7 +72,7 @@ export class PluginRegistryImpl implements PluginRegistry {
     // descriptor naming a baseline table or another type's table must reject
     // the manifest, and a direct caller (a built-in's `onRegister`) has to hit
     // the identical bar as one routed through `registerPlugin`.
-    // 0.2.9 — the L9 contract check runs HERE, not only in `validateAndLower`,
+    // 0.2.9 — the M13 contract check runs HERE, not only in `validateAndLower`,
     // for the same reason `synthesizeMount` and `attachComposition` do: an
     // in-repo entity builds its `BackendModule` directly and would otherwise
     // never be checked. A stale 1.x view slot or a `payloadVersion` that

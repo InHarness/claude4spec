@@ -1,5 +1,5 @@
 /**
- * L9 dispatch, at the seam where a plugin's declaration meets the host's reader.
+ * M13 dispatch, at the seam where a plugin's declaration meets the host's reader.
  *
  * There used to be three lookup outcomes here — declared view → computed,
  * undeclared view → generic, unknown type → a marker for the core to map — and

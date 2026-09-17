@@ -463,7 +463,7 @@ export const versionsApi = {
       })
     );
   },
-  /** M13/M34: computed diff between two captured versions, via the L9 EntitySerializer.diff slot. */
+  /** M13/M34: computed diff between two captured versions, via the M47 EntitySerializer.diff slot. */
   async diff(type: EntityType, slug: string, from: number, to: number): Promise<RawDeltaEntityChange> {
     return handle<RawDeltaEntityChange>(
       await apiFetch(`/api/entities/${type}/${encodeURIComponent(slug)}/versions/${from}/diff/${to}`)

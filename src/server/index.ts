@@ -17,7 +17,7 @@ import { workspaceRouter } from './workspace/routes.js';
 import type { WorkspaceRecord } from './workspace/types.js';
 import { resolveSpaRoute } from './workspace/spa-route.js';
 import { PluginRegistryImpl } from './core/plugin-host/registry.js';
-import { registerAllPlugins } from './serialization/registerAll.js';
+import { registerAllPlugins } from './core/plugin-host/register-builtins.js';
 import {
   loadBuiltinEnvelopes,
   loadWorkspacePlugins,

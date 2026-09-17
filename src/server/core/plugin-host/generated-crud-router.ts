@@ -16,7 +16,7 @@
  * response-format section rather than on a declared DTO.
  *
  * THE LIST VIEW IS `element_list_item`. Same rule the M39 core applies to
- * `list_entities` ("the item shape per type is the L9 list view"), so one
+ * `list_entities` ("the item shape per type is the M13 list view"), so one
  * entity does not read differently depending on which transport asked.
  *
  * A single entity comes back as `single_element` by DEFAULT, and `?view=detail`
@@ -124,7 +124,7 @@ function queryFilters(module: BackendModule, q: Record<string, unknown>): Record
 }
 
 /**
- * The entity as a REST response: the L9 view, plus the audit stamp.
+ * The entity as a REST response: the M13 view, plus the audit stamp.
  *
  * `createdAt`/`updatedAt` are `systemManaged`, so `hydrate` lifts them out of
  * `data` into `RawEntity.system` and no view emits them — deliberately, since

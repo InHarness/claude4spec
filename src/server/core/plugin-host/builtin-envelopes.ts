@@ -3,7 +3,7 @@
  * M33 loader (brief item 10).
  *
  * Entity types now register at three tiers:
- *   (a) built-in direct   — `serialization/registerAll.ts` calls
+ *   (a) built-in direct   — `core/plugin-host/register-builtins.ts` calls
  *                           `registerEntityModule(...)` outright at process start.
  *   (b) built-in envelope — THIS module: a real plugin package living inside the
  *                           host repo under `plugins/<name>/`, discovered and

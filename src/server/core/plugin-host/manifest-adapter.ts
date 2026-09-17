@@ -265,7 +265,7 @@ const REMOVED_SERIALIZER_SLOTS: ReadonlyArray<[string, string]> = [
 ];
 
 /**
- * The L9 half of registration, exported because it must run for EVERY module,
+ * The M13 half of registration, exported because it must run for EVERY module,
  * not only for one lowered from an `EntityContribution`.
  *
  * In-repo entities build a `BackendModule` by hand and never pass through

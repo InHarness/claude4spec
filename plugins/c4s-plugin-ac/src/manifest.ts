@@ -22,7 +22,7 @@ import { acCommands } from './capabilities/commands.js';
  * simply NOT THERE: no sidebar tab, no `/acs` routes, no serializer, no
  * `ac-tools` MCP server, no `ac-audit`, and a `PLUGIN_HOST_API_MISMATCH` line in
  * the log as the only evidence, while the entity files sit on disk with nothing
- * able to read them. `registerAll.ts` records this happening once already, to
+ * able to read them. `core/plugin-host/register-builtins.ts` records this happening once already, to
  * `database-table`, and it went unnoticed for two releases.
  *
  * ## What `hostApiVersion` covers here

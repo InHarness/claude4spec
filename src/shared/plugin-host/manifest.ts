@@ -8,7 +8,7 @@
  *
  * This lives in `shared/` (not `server/`) because the external `c4s-reader`
  * and plugin authors need the contract without pulling in express /
- * better-sqlite3. Server-only payloads (the express Router, the L9 serializer)
+ * better-sqlite3. Server-only payloads (the express Router, the M47 payload chain)
  * are typed `unknown` here and narrowed server-side.
  */
 
@@ -168,12 +168,12 @@ export interface PluginEngines {
  * Authoring shape for one contributed entity type. A superset of the shared
  * {@link EntityModuleManifest} carrying the slots the host needs to lower it
  * into a server `BackendModule`. The express Router (`backend.routes`) and the
- * L9 serializer are typed `unknown` here so the shared bundle stays dep-free;
+ * M47 payload chain are typed `unknown` here so the shared bundle stays dep-free;
  * the registry narrows them at registration time.
  */
 export interface EntityContribution extends EntityModuleManifest {
   /**
-   * L9 — ordered payload migration chain (server
+   * M47 — ordered payload migration chain (server
    * `SerializationContribution['payloadUpgrades']`).
    *
    * 0.2.24 — this is declared DIRECTLY on the type. The `serializer` object that

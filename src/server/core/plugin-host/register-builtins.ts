@@ -1,5 +1,5 @@
-import type { PluginRegistry } from '../core/plugin-host/types.js';
-import { onRegister as registerDiagram } from '../entities/diagram/plugin.js';
+import type { PluginRegistry } from './types.js';
+import { onRegister as registerDiagram } from '../../entities/diagram/plugin.js';
 
 /**
  * M31: replaces the side-effect import chain that populated the `pluginHost`
