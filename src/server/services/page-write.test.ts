@@ -219,19 +219,20 @@ describe('the page write primitive', () => {
     expect(res.content).toContain('lots of text');
   });
 
-  it('update_page answers with the delta and the settled file, never a plain echo', async () => {
+  it('update_page answers with the delta only — never the page, not even the settled one', async () => {
     const res = await updatePage(
       target,
       { path: 'u.md', body: '# A\n\nSECRET CONTENT\n', frontmatter: { order: 1 }, expectedHash: NO_PRIOR_STATE },
       'user',
     );
-    expect(Object.keys(res).sort()).toEqual(['changedAnchors', 'content', 'hash', 'version']);
+    expect(Object.keys(res).sort()).toEqual(['changedAnchors', 'hash', 'version']);
     // `path` is gone too: the caller named it in the request a moment ago.
     expect(res).not.toHaveProperty('path');
-    // The frontmatter comes back only as part of the settled bytes, never as a
-    // parsed field of its own — the caller already has that half.
     expect(res).not.toHaveProperty('frontmatter');
-    expect(res.content).toContain('SECRET CONTENT');
+    // No `content` either: a caller that needs the settled bytes re-reads the page.
+    expect(res).not.toHaveProperty('content');
+    const onDisk = await fs.readFile(path.join(pages.root, 'u.md'), 'utf-8');
+    expect(onDisk).toContain('SECRET CONTENT');
   });
 
   it('a duplicated hand-authored anchor is counted once, the way the index counts it', async () => {

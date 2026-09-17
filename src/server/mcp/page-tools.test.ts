@@ -112,6 +112,8 @@ describe('page-tools', () => {
       });
       expect(res.isError).toBe(false);
       expect(res.body.replacements).toBe(1);
+      // The ack is metadata only: the page is re-read with get_page, never echoed.
+      expect(Object.keys(res.body).sort()).toEqual(['changedAnchors', 'hash', 'replacements', 'version']);
       expect((await pages.read('a.md')).body).toContain('ALPHA beta');
     });
 
@@ -146,6 +148,7 @@ describe('page-tools', () => {
       const res = await call('update_page', { rootId: 'pages', path: 'a.md', body: '# A2', expectedHash: hash });
       expect(res.isError).toBe(false);
       expect(res.body.replacements).toBeUndefined();
+      expect(Object.keys(res.body).sort()).toEqual(['changedAnchors', 'hash', 'version']);
     });
   });
 

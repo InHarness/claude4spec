@@ -78,7 +78,7 @@ describe.skipIf(!BASE)('page editor — content survives a save', () => {
     await browser?.close();
   });
 
-  it('a write answers with the delta and the settled file, and the settled file is not an echo', async () => {
+  it('a write answers with the delta only, and the settled file is read back separately', async () => {
     const current = (await (
       await fetch(`${BASE}/api/projects/${project.id}/pages/pages/${PAGE_PATH}`)
     ).json()) as { hash: string };
@@ -88,16 +88,18 @@ describe.skipIf(!BASE)('page editor — content survives a save', () => {
       body: JSON.stringify({ body: `# Editor save\n\n${MARKER}\n`, expectedHash: current.hash }),
     });
     const ack = (await res.json()) as Record<string, unknown>;
-    expect(Object.keys(ack).sort()).toEqual(['changedAnchors', 'content', 'hash', 'version']);
+    expect(Object.keys(ack).sort()).toEqual(['changedAnchors', 'hash', 'version']);
     /**
-     * 0.2.76 — `content` is the file AFTER the in-band `write-back` phase, so it
-     * does contain the marker. That is the narrowed echo-free rule, not a breach:
-     * these bytes carry the `<!-- anchor: … -->` the indexer minted for the new
-     * heading, which the caller could not have predicted and needs in order to
-     * write again without stripping it.
+     * The ack no longer echoes the page. The in-band `write-back` phase still
+     * mints an anchor for the new heading, so the bytes on disk are not the
+     * bytes sent — a caller that needs them reads the page again.
      */
-    expect(ack.content).toContain(MARKER);
-    expect(ack.content).toContain('anchor:');
+    const settled = (await (
+      await fetch(`${BASE}/api/projects/${project.id}/pages/pages/${PAGE_PATH}`)
+    ).json()) as { hash: string; body: string };
+    expect(settled.hash).toBe(ack.hash);
+    expect(settled.body).toContain(MARKER);
+    expect(settled.body).toContain('anchor:');
     // The parsed halves stay out: the caller already had those.
     expect(ack).not.toHaveProperty('frontmatter');
     expect(ack).not.toHaveProperty('body');
