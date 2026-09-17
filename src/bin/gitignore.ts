@@ -29,16 +29,11 @@ const MARKER_END = '# /claude4spec (auto-added)';
 // M33 phase 2: the derived SQLite moved to the workspace slot
 // (`~/.claude4spec/<ws>/<id>/db.sqlite`, M31), so `db.sqlite*` is no longer
 // emitted here. `.claude4spec/plugins/` is intentionally NOT ignored — committed
-// plugins must travel with the repo (like `entities/`). Note the `.claude4spec/`
-// and `.claude4spec` bare equivalents are kept on the remaining patterns: a repo
-// that already ignores the whole dir still reads as "covered", so we never append
-// a redundant line that would conflict with a user's broad ignore. Always present
+// plugins must travel with the repo (like `entities/`). 0.2.93: the
+// `.claude4spec/mcp.json` entry is gone with the file itself — the MCP config is
+// served on demand, so nothing is written there to ignore. Always present
 // regardless of the git master switch.
 const STATIC_PATTERNS: readonly PatternSpec[] = [
-  {
-    canonical: '.claude4spec/mcp.json',
-    equivalents: ['.claude4spec/mcp.json', '.claude4spec/', '.claude4spec'],
-  },
   {
     canonical: '*.deprecated',
     equivalents: ['*.deprecated', '*.deprecated/'],

@@ -44,6 +44,7 @@ import { briefsRouter } from '../routes/briefs.js';
 import { patchesRouter } from '../routes/patches.js';
 import { metaRouter } from '../routes/meta.js';
 import { indexStatusRouter } from '../routes/index-status.js';
+import { mcpConfigRouter } from '../routes/mcp-config.js';
 import { PROJECTION_IDS, ProjectionStatusRegistry, type ProjectionId } from '../services/projection-status.js';
 import { listProjects } from './list-projects.js';
 import { readPeerConfigSummary } from './peer-config.js';
@@ -1285,6 +1286,14 @@ async function buildInner(
    * fall through anyway, but relying on that is a trap for whoever adds one.
    */
   router.use('/_meta/index-status', indexStatusRouter(projectionStatus));
+  /**
+   * 0.2.93 (M12) — the MCP connection config, rendered per request. Same rule as
+   * index-status: a longer path, ahead of `metaRouter`. It shares the `_meta`
+   * prefix with M26's routes without sharing ownership, and it deliberately
+   * lives HERE rather than next to the live `/mcp` mount further down — a
+   * discovery route and a protocol mount must not be mistaken for each other.
+   */
+  router.use('/_meta/mcp-config', mcpConfigRouter({ registry, workspace, projectId }));
   router.use('/_meta', metaRouter(discovery, pluginHost));
   /**
    * 0.2.13 — `POST /api/patches`. A slice-specific route, deliberately outside

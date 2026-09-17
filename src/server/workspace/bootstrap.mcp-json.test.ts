@@ -4,27 +4,19 @@ import os from 'node:os';
 import path from 'node:path';
 import { WorkspaceRegistry } from './registry.js';
 import { bootstrapProject } from './bootstrap.js';
-import { mcpJsonPath } from '../mcp/ensure-mcp-json.js';
 
 /**
- * 0.2.13 — `mcp.json` is deliberately NOT written by `bootstrapProject`.
+ * 0.2.93 — activation writes no integration artifact for external agents.
  *
- * It briefly was, and both halves of that were wrong:
- *
- *   - the file names a URL, so it needs the port the server actually BOUND, and
- *     this function runs before `listen` (and `--port` overrides the workspace
- *     default, so `workspace.defaultPort` is a guess);
- *   - it must cover every project, and this function only runs for one being
- *     created or re-activated — so an existing project's pre-0.2.13 stdio entry
- *     would survive an upgrade that made it unstartable.
- *
- * `ensureMcpJsonForWorkspace`, called after `listen`, owns both. This file pins
- * the boundary so the write does not drift back here, where neither fact is
- * available.
+ * `.claude4spec/mcp.json` is gone: the MCP config is rendered per request by
+ * `GET /api/projects/:id/_meta/mcp-config`. This pins that the file does not
+ * drift back into the bootstrap, and that a stale one from an older version is
+ * left alone rather than rewritten.
  */
 describe('bootstrapProject does not write mcp.json', () => {
   let dir: string;
   let cwd: string;
+  const mcpJson = () => path.join(cwd, '.claude4spec', 'mcp.json');
 
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-boot-mcp-'));
@@ -39,22 +31,19 @@ describe('bootstrapProject does not write mcp.json', () => {
     return { result: bootstrapProject(registry, ws, cwd), ws };
   };
 
-  it('leaves no mcp.json behind — the port is not known yet', () => {
+  it('leaves no mcp.json behind', () => {
     const { result } = boot();
     // Bootstrap still does its own job.
     expect(result.project.id).toBeTruthy();
     expect(fs.existsSync(path.join(cwd, '.claude4spec'))).toBe(true);
-    // …but writing a URL here could only have guessed the port.
-    expect(fs.existsSync(mcpJsonPath(cwd))).toBe(false);
+    expect(fs.existsSync(mcpJson())).toBe(false);
   });
 
-  it('does not disturb a config that is already there', () => {
-    // The upgrade path replaces a stale entry at startup, not here. If bootstrap
-    // rewrote it with a guessed port it would undo that repair on re-activation.
+  it('does not touch an mcp.json left over from an older version', () => {
     fs.mkdirSync(path.join(cwd, '.claude4spec'), { recursive: true });
     const existing = '{"mcpServers":{"c4s-spec-reader":{"type":"http","url":"http://127.0.0.1:9999/x"}}}';
-    fs.writeFileSync(mcpJsonPath(cwd), existing);
+    fs.writeFileSync(mcpJson(), existing);
     boot();
-    expect(fs.readFileSync(mcpJsonPath(cwd), 'utf8')).toBe(existing);
+    expect(fs.readFileSync(mcpJson(), 'utf8')).toBe(existing);
   });
 });

@@ -173,7 +173,7 @@ function sourceServers(deps: ExternalSurfaceDeps): Array<{ name: string; server:
        * version row, and then threw NOT_FOUND attaching it to a thread that
        * does not exist. `update_plan` could never succeed on this channel, and
        * every retry left another orphan (`auth-rollout-2.md`, `-3.md`, …) in the
-       * user's spec repo. It was reachable from the generated `mcp.json`, i.e.
+       * user's spec repo. It was reachable from the generated MCP config entry, i.e.
        * from every editor an upgrading user opens.
        *
        * `target: 'explicit'` is the fix and matches what the catalog already

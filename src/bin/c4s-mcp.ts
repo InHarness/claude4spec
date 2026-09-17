@@ -18,9 +18,9 @@
  * database. Every question about scope is answered on the other end by the
  * connection's context profile.
  *
- * It exists ONLY for clients that cannot speak HTTP. The generated
- * `.claude4spec/mcp.json` no longer points here — it declares the HTTP mount
- * directly.
+ * It exists ONLY for clients that cannot speak HTTP. The server renders the
+ * ready-to-copy entry for it (and for the native HTTP entries) on demand — see
+ * Settings → External Integrations, or `GET /api/projects/<id>/_meta/mcp-config`.
  *
  * ## Two things it deliberately does not do
  *
@@ -78,18 +78,18 @@ Options:
   --help        Show this help
   --version     Print version
 
-Prefer a native HTTP entry if your client supports one — that is what
-.claude4spec/mcp.json generates, and this bridge is only for clients that do
-not. The server must already be running: this command never starts one.
+Prefer a native HTTP entry if your client supports one; this bridge is only for
+clients that do not. Ready-to-copy entries for both are in the app under
+Settings → External Integrations (or GET /api/projects/<id>/_meta/mcp-config).
+The server must already be running: this command never starts one.
 `;
 
 /**
  * Flags this command took before 0.2.13, kept only to be NAMED in the refusal.
  *
- * The upgrade rewrites `<project>/.claude4spec/mcp.json`, and that is the only
- * copy it can reach. Anyone who followed the old `--help` into their editor's own
- * config — `~/.claude/mcp.json`, a repo-root `.mcp.json`, a Cursor or VS Code
- * settings entry — still launches the bridge with `--project <abs> --workspace
+ * Anyone who followed the old `--help` into their editor's own config —
+ * `~/.claude/mcp.json`, a repo-root `.mcp.json`, a Cursor or VS Code settings
+ * entry — still launches the bridge with `--project <abs> --workspace
  * <name>` after upgrading. Dropping those silently produced a refusal that named
  * `--url` and nothing else: true, and useless, because it does not say the flags
  * were retired, what replaced them, or how to build the URL. The editor reports
@@ -141,8 +141,8 @@ async function main(): Promise<void> {
         `c4s-mcp: ${args.retired.join(' and ')} ${args.retired.length > 1 ? 'were' : 'was'} removed in 0.2.13 — this is a stdio MCP entry from an older version.\n\n` +
           'The MCP surface now lives in the server process, so the bridge takes the mount URL instead of a project to open:\n\n' +
           '  c4s-mcp --url http://127.0.0.1:<port>/api/projects/<projectId>/mcp?profile=ask\n\n' +
-          "Your project's current entry — URL included — is regenerated at every server start in\n" +
-          '<project>/.claude4spec/mcp.json; copy the `url` from there, or point your client at that file.\n' +
+          "Your project's current entry — URL included — is rendered on demand in the app under\n" +
+          'Settings → External Integrations (or GET /api/projects/<projectId>/_meta/mcp-config); copy it from there.\n' +
           'Better still, use a native HTTP entry if your client supports one; this bridge is only for clients that do not.\n',
       );
       process.exit(2);

@@ -53,9 +53,9 @@ export function ensureWelcomePage(cwd: string, pagesDir: string | undefined): vo
  * Sequence: mkdir cwd → config (create or load) → config v3 migration (carry
  * port/mode to the registry, first-wins) → .gitignore → entitiesDir →
  * registry registration (creates the DB slot) → legacy DB relocation.
- * (0.2.13: `.claude4spec/mcp.json` is no longer written here — it names a URL,
- * so it belongs after `listen`, where the bound port is known. See the note
- * below and `ensureMcpJsonForWorkspace`.) (0.1.56: welcome page no longer created here —
+ * (0.2.93: no integration artifact for external agents lands on disk at all —
+ * neither a skill nor an MCP config entry; the latter is served on demand by
+ * `GET /api/projects/:id/_meta/mcp-config`.) (0.1.56: welcome page no longer created here —
  * deferred to onboarding close. 0.1.104: external skills generation moved
  * off this bootstrap hook entirely — see `c4s install-skills` / M22's
  * `buildExternalSkillsBundle`, both on-demand.)
@@ -120,19 +120,6 @@ export function bootstrapProject(
   });
   const project = registry.registerProject(workspace, cwd);
   migrateLegacyDbIfNeeded(registry, workspace, cwd, project.id);
-
-  /**
-   * `mcp.json` is NOT written here.
-   *
-   * It was, briefly, and both halves of that were wrong. The file names a URL,
-   * so it needs the port the server actually bound — which this function cannot
-   * know, since it runs before `listen` and `--port` overrides the workspace
-   * default. And it needs to cover every project, not just one being created:
-   * an existing project never reaches this function on a plain start, so its
-   * pre-0.2.13 stdio entry would survive an upgrade that made it unstartable.
-   *
-   * `ensureMcpJsonForWorkspace` in `server/index.ts` does both, after `listen`.
-   */
 
   return {
     project,

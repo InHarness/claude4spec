@@ -435,8 +435,8 @@ describe('the profile gate', () => {
      * had written the row, which is precisely the condition the default assumes
      * is temporary.
      *
-     * 0.2.13 makes it urgent rather than theoretical: the `mcp.json` this
-     * release generates for every project asks for `?profile=ask`, so that
+     * 0.2.13 makes it urgent rather than theoretical: the MCP config entry
+     * claude4spec generates for every project asks for `?profile=ask`, so that
      * consulted peer is now every editor the user opens.
      */
     const releaseTools = [
@@ -462,7 +462,7 @@ describe('the profile gate', () => {
     /**
      * 0.2.13 item 28. `page-tools` is host-owned, so without these rows the
      * gate's permissive default would hand a consulted peer — and, through the
-     * generated `mcp.json`, every editor the user opens — the ability to
+     * generated MCP config entry, every editor the user opens — the ability to
      * overwrite any page in the specification it was asked a question about.
      *
      * The whole server, not a subset: unlike `release-tools`, every operation on

@@ -62,9 +62,8 @@ describe('c4s-mcp against an unreachable server', () => {
 
   it('NAMES the retired flags when it is launched as a pre-0.2.13 stdio entry', async () => {
     /**
-     * The upgrade rewrites `<project>/.claude4spec/mcp.json`, which is the only
-     * copy it can reach. A user who followed the old `--help` into their own
-     * editor config — `~/.claude/mcp.json`, a repo-root `.mcp.json`, a Cursor or
+     * A user who followed the old `--help` into their own editor config —
+     * `~/.claude/mcp.json`, a repo-root `.mcp.json`, a Cursor or
      * VS Code entry — keeps launching the bridge with the old flags after
      * upgrading, and the editor surfaces only "failed to start".
      *
@@ -79,7 +78,7 @@ describe('c4s-mcp against an unreachable server', () => {
     expect(res.stderr).toMatch(/removed in 0\.2\.13/);
     // Where the working address comes from, in both forms a user can act on.
     expect(res.stderr).toContain('--url');
-    expect(res.stderr).toContain('.claude4spec/mcp.json');
+    expect(res.stderr).toContain('/_meta/mcp-config');
   }, 30000);
 
   it('still says only "--url is required" when nothing at all was passed', async () => {
