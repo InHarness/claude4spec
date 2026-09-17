@@ -1,5 +1,5 @@
 /**
- * L9 byte-identity gate for `ui-view` and `design-system`.
+ * M47 byte-identity gate for `ui-view` and `design-system`.
  *
  * The 0.2.18 brief's acceptance criterion for moving these two types into the
  * `c4s-plugin-frontend-mockups` envelope is that serialization stays
@@ -185,7 +185,7 @@ function projections(app: Awaited<ReturnType<typeof buildFixture>>) {
   return out;
 }
 
-describe('L9 serialization goldens — ui-view + design-system', () => {
+describe('M47 serialization goldens — ui-view + design-system', () => {
   it('matches the committed goldens byte for byte', async () => {
     const app = await buildFixture();
     try {

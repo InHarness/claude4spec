@@ -344,8 +344,8 @@ export interface GetPageInput {
 }
 
 /**
- * 0.2.46 — the L9 record shape for `page`, the second `host foundational type`
- * after `section`. Foundational is the one L9 role whose module does NOT call
+ * 0.2.46 — the M13 record shape for `page`, the second `host foundational type`
+ * after `section`. Foundational is the one M13 role whose module does NOT call
  * `registerEntityModule`: the page has no logical schema, so it has no reserved
  * `title` and no `select` (a projection picks from schema fields, and there are
  * none). Its identity key is the pair `(rootId, path)` — the same `path` can

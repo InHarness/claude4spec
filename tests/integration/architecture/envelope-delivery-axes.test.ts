@@ -27,7 +27,7 @@ import path from 'node:path';
 import { SkillRegistry, SkillResolver, findSkillsRoots } from '../../../src/server/services/skill-registry.js';
 import { loadBuiltinEnvelopes } from '../../../src/server/core/plugin-host/loader.js';
 import { PluginRegistryImpl } from '../../../src/server/core/plugin-host/registry.js';
-import { registerAllPlugins } from '../../../src/server/serialization/registerAll.js';
+import { registerAllPlugins } from '../../../src/server/core/plugin-host/register-builtins.js';
 
 const ENVELOPE = 'c4s-plugin-frontend-mockups';
 const PAIR = ['design-system', 'ui-view'];

@@ -342,7 +342,7 @@ export interface EntityRenamedEvent {
 
 export interface BackendModule extends EntityModuleManifest {
   /**
-   * L9 — the payload's history, and nothing else.
+   * M47 — the payload's history, and nothing else.
    *
    * 0.2.24 removed the `serializer` container this slot used to sit in. It had
    * been shrinking for four releases — `snapshot`/`restore` went in 0.2.9,

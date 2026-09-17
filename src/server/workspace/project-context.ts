@@ -233,7 +233,7 @@ export interface ProjectContext {
   router: Router;
   db: Db;
   pluginHost: ProjectPluginHost;
-  /** L9 dispatch bound to this context's host. */
+  /** M13 dispatch bound to this context's host. */
   serialization: SerializationEngine;
   /** Per-project room emitter (all services broadcast through it). */
   ws: ProjectWsEmitter;

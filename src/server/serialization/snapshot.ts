@@ -13,9 +13,9 @@
  *     removed the `diff?` contribution and with it the second, deep-diff mode.
  */
 
-import type { PluginHost } from '../core/plugin-host/types.js';
 import type {
   EntityDiff,
+  TimelineHost,
   RestoreContext,
   RestoreResult,
   SnapshotData,
@@ -58,7 +58,7 @@ function stampOf(entity: unknown): SystemStamp | null {
  * declarative host is the same sentence as "there is nothing to snapshot".
  */
 export function snapshotEntity(
-  host: PluginHost,
+  host: TimelineHost,
   type: string,
   entity: unknown,
   reader: RawEntityReader
@@ -86,7 +86,7 @@ export function snapshotEntity(
  * and one layer down, where the distinction is actually known.
  */
 export function restoreEntity(
-  host: PluginHost,
+  host: TimelineHost,
   type: string,
   data: SnapshotData,
   ctx: RestoreContext
@@ -137,7 +137,7 @@ export function restoreEntity(
  * the snapshot.
  */
 export function diffEntity(
-  host: PluginHost,
+  host: TimelineHost,
   type: string,
   a: SnapshotData,
   b: SnapshotData

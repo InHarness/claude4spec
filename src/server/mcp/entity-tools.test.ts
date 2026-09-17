@@ -139,7 +139,7 @@ function fakeDeps(extraActive: BackendModule[] = []): {
     entityStore,
     versionService,
     discovery: {
-      // 0.2.9 (item 15): `describe_entity_type` reads L9 through the core, not
+      // 0.2.9 (item 15): `describe_entity_type` reads M13 through the core, not
       // through the serialization engine, so the stub answers it here.
       describeTypes: ({ types }: { types?: string[] }) => ({
         types: (types ?? ['widget']).map((type) => ({

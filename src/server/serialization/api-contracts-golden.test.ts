@@ -1,5 +1,5 @@
 /**
- * L9 byte-identity gate for `endpoint` and `dto`.
+ * M47 byte-identity gate for `endpoint` and `dto`.
  *
  * The brief's acceptance criterion for moving these two types into the
  * `c4s-plugin-api-contracts` envelope is that serialization stays BYTE-identical
@@ -142,7 +142,7 @@ function projections(app: Awaited<ReturnType<typeof buildFixture>>) {
   return out;
 }
 
-describe('L9 serialization goldens — endpoint + dto', () => {
+describe('M47 serialization goldens — endpoint + dto', () => {
   it('matches the committed goldens byte for byte', async () => {
     const app = await buildFixture();
     try {

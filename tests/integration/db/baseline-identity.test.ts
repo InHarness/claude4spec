@@ -31,7 +31,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { runMigrations } from '../../../src/server/db/migrate.js';
 import { PluginRegistryImpl } from '../../../src/server/core/plugin-host/registry.js';
-import { registerAllPlugins } from '../../../src/server/serialization/registerAll.js';
+import { registerAllPlugins } from '../../../src/server/core/plugin-host/register-builtins.js';
 import { applyProjection } from '../../../src/server/db/projection.js';
 import { loadBuiltinEnvelopes } from '../../../src/server/core/plugin-host/loader.js';
 

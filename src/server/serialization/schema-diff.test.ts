@@ -267,6 +267,28 @@ describe('the opaque class', () => {
     const changes = diffFromSchema(opaque, { body: 'a' }, { body: 'SECRET' });
     expect(JSON.stringify(changes)).not.toContain('SECRET');
   });
+
+  it('stays opaque inside a collection item — nested under item_modified, bytes only', () => {
+    const schema: Record<string, FieldNode> = {
+      examples: {
+        type: 'collection',
+        collection: { kind: 'value', identity: ['name'] },
+        item: { type: 'object', fields: { name: { type: 'string' }, value: { type: 'json' } } },
+      },
+    };
+    const a = { examples: [{ name: 'ok', value: { id: 1 } }] };
+    const b = { examples: [{ name: 'ok', value: { id: 'SECRET-2' } }] };
+    const changes = diffFromSchema(schema, a, b);
+    expect(changes).toEqual([
+      {
+        op: 'item_modified',
+        path: 'examples',
+        identity: { name: 'ok' },
+        changes: [{ op: 'field_changed_opaque', path: 'examples[].value', fromBytes: 8, toBytes: 17 }],
+      },
+    ]);
+    expect(JSON.stringify(changes)).not.toContain('SECRET');
+  });
 });
 
 describe('systemManaged fields', () => {

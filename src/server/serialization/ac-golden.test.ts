@@ -1,5 +1,5 @@
 /**
- * L9 byte-identity gate for `ac`.
+ * M47 byte-identity gate for `ac`.
  *
  * The acceptance criterion for moving `ac` into the `c4s-plugin-ac` envelope is
  * that serialization stays BYTE-identical — same snapshot shape, same record
@@ -156,7 +156,7 @@ function projections(app: Awaited<ReturnType<typeof buildFixture>>) {
   return out;
 }
 
-describe('L9 serialization goldens — ac', () => {
+describe('M47 serialization goldens — ac', () => {
   it('matches the committed goldens byte for byte', async () => {
     const app = await buildFixture();
     try {

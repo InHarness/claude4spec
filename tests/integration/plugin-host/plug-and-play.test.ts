@@ -228,6 +228,17 @@ describe('item 63 — a type that declares only its data is a first-class type',
     }
   });
 
+  it('gets an ELEMENTS entry — the sidebar counts include it with no host edit', async () => {
+    const t = await app();
+    try {
+      await request(t.app).post('/api/sprockets').send({ name: 'Counted' });
+      const counts = await request(t.app).get('/api/entities/counts').expect(200);
+      expect(counts.body.sprocket).toBe(1);
+    } finally {
+      t.cleanup();
+    }
+  });
+
   it('contributes NO MCP server of its own — declaring data does not mint one', async () => {
     const t = await app();
     try {

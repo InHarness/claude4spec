@@ -12,7 +12,7 @@
  * The envelope has its OWN pair, over `MountContext`'s bound read operations
  * and `ctx.host`. Two call sites, deliberately — that duplication IS the
  * versioned boundary, and it is thinner than it looks: both end in the same
- * `RawEntityReader` + L9 `serialize` underneath, so there is one reading
+ * `RawEntityReader` + M13 `serialize` underneath, so there is one reading
  * mechanism, reached through two doors that are allowed to diverge.
  *
  * ── `verifies[]` → the subset that does not resolve, and why ──

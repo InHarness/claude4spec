@@ -161,6 +161,19 @@ describe('BriefService.createBrief — the window is the provenance', () => {
     });
   });
 
+  it('writes payload `content` verbatim as the body, and appends `suffix` to the slug', async () => {
+    const { briefPath } = await makeService().createBrief({ content: '# Analysis\n\nbody text\n', suffix: 'tail' });
+    expect(briefPath).toMatch(/tail/);
+    const raw = await fs.readFile(path.join(cwd, 'briefs', briefPath), 'utf-8');
+    expect(matter(raw).content.trim()).toBe('# Analysis\n\nbody text');
+  });
+
+  it('starts with only the heading when `content` is omitted', async () => {
+    const { briefPath } = await makeService().createBrief({});
+    const raw = await fs.readFile(path.join(cwd, 'briefs', briefPath), 'utf-8');
+    expect(matter(raw).content.trim()).toBe('# Brief: r1 → (unreleased)');
+  });
+
   it('treats an explicit null `from` with a set `to` as a window open at the start', async () => {
     await expect(
       makeService().createBrief({ fromReleaseName: null, toReleaseName: 'r2' }),

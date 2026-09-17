@@ -276,7 +276,7 @@ describe('the CLI holds no handle on the specification', () => {
   it('[ac:ac-zero-logiki-formatowania-w-cli-subkome] the brief\'s own control grep returns nothing', () => {
     // Verbatim from item 22. It targets SERIALIZATION specifically because that
     // is the part that looks harmless to reintroduce: a command that formats one
-    // entity locally is one `registerSerializer` away from a second L9 registry
+    // entity locally is one `registerSerializer` away from a second M13 registry
     // that drifts from the server's by a package version.
     const forbidden = /config\.entities|registerSerializer|serializerRegistry|serialize\(host/;
     for (const { file, text } of cliSources()) {
@@ -395,7 +395,7 @@ describe('the CLI holds no handle on the specification', () => {
      * names `PluginLoadRecord` to describe what the route hands back, and a type
      * has no runtime existence — it cannot load anything.
      */
-    const forbidden = /plugin-host\/loader\.js|plugin-host\/registry\.js|plugin-host\/overlay-loader\.js|serialization\/registerAll\.js|cli-plugins\.js/;
+    const forbidden = /plugin-host\/loader\.js|plugin-host\/registry\.js|plugin-host\/overlay-loader\.js|plugin-host\/register-builtins\.js|cli-plugins\.js/;
     for (const { file, text } of cliSources()) {
       for (const line of text.split('\n')) {
         if (!forbidden.test(line)) continue;

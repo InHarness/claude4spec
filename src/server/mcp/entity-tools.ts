@@ -605,7 +605,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
            */
           const crudSupported = true;
           // 0.2.9 (item 15): through the discovery core, not the serialization
-          // engine — a transport reaching into L9 directly is what the item
+          // engine — a transport reaching into M13 directly is what the item
           // forbids, and the grep it names came back clean only because this
           // call had been spelled `registry`.
           const described = batched
