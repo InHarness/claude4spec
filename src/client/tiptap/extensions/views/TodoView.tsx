@@ -33,6 +33,7 @@ export function TodoView({ node, updateAttributes, deleteNode }: NodeViewProps) 
       ref={wrapperRef}
       as="span"
       className="inline-flex align-middle"
+      data-todo-chip=""
       contentEditable={false}
       onClick={handleClick}
       onDoubleClick={openEditPopover}

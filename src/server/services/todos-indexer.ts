@@ -78,7 +78,8 @@ export class TodosIndexerService implements WatchSubscriber {
         pagePath: relPath,
         line: t.line,
         col,
-        comment: t.attrs.comment ?? '',
+        // serializeXmlTag escapes `"` as `&quot;`; the list shows the author's text.
+        comment: (t.attrs.comment ?? '').replace(/&quot;/g, '"'),
         anchor,
       });
     }

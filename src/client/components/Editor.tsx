@@ -3,6 +3,7 @@ import { EditorContent, useEditor } from '@tiptap/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { usePage, useWritePage } from '../hooks/usePage.js';
 import { useScrollToAnchor } from '../hooks/useScrollToAnchor.js';
+import { useScrollToTodo } from '../hooks/useScrollToTodo.js';
 import '../tiptap/registrations.js';
 import { EditorFactory } from '../tiptap/EditorFactory.js';
 import { invokeSlash } from '../tiptap/slashInvoke.js';
@@ -232,6 +233,7 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
   }, [editor]);
 
   useScrollToAnchor(editor, !!data, path);
+  useScrollToTodo(editor, !!data, rootId, path);
 
   /**
    * 0.2.88 — a 409 `PAGE_CONFLICT` on autosave: somebody else wrote the page
