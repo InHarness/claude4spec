@@ -697,6 +697,8 @@ describe('PATCH /api/pages/:rootId/* — the differential rendering of update_pa
       expect(res.body).toMatchObject({ replacements: 1, version: expect.any(Number) });
       expect(res.body.hash).toEqual(expect.any(String));
       expect(res.body.changedAnchors).toBeInstanceOf(Array);
+      // No page echo on a write ack — the caller re-reads if it needs the bytes.
+      expect(res.body.content).toBeUndefined();
       expect(fs.readFileSync(path.join(dir, 'pages', 'a.md'), 'utf-8')).toContain('ALPHA beta');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });

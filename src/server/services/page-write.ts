@@ -94,13 +94,18 @@ export type { TextEdit } from './text-edits.js';
  * the hash of what landed, the version the capture recorded, and which anchors
  * moved under it.
  *
- * 0.2.76 narrows the rule rather than withdrawing it. `create_page` and
- * `update_page` now also answer with `content`, because the reaction chain runs
- * IN-BAND and its `write-back` phase injects anchors for headings the caller
- * introduced: the bytes that landed are genuinely not the bytes sent, and a hash
- * cannot say so. That is the rule's own test — "what the caller could not have
- * predicted" — met, not evaded. `update_sections` is left alone precisely
- * because it fails that test: its caller replaced one paragraph.
+ * 0.2.76 narrowed the rule for `create_page` alone, and it still holds there:
+ * a create has no prior state the caller could be holding, and on a create with
+ * no `content` the generated template is bytes it could not have predicted at
+ * all, so that answer carries the settled file.
+ *
+ * After 0.2.88 `update_page` no longer shares that exception. The reaction chain
+ * does run IN-BAND and its `write-back` phase does inject anchors for headings
+ * the caller introduced, so the bytes on disk are not the bytes sent — but
+ * `update_sections` lives with exactly that fact without handing the page back,
+ * and a whole-page echo on every save is the cost this rule exists to refuse.
+ * The ack says WHETHER the file moved under the caller (`changedAnchors`); a
+ * caller that needs the settled bytes reads them with `get_page`.
  *
  * This binds every channel, not just the agent-facing ones. L3: "the output
  * shape is the operation's, the channel adapter does not widen it" — a REST
@@ -283,9 +288,12 @@ export interface CreatePageResult {
   /** The version `capture` recorded, in-band, before this answer was built. */
   version: number;
   /**
-   * The file as it SETTLED — see {@link UpdatePageResult.content}. On a create
-   * with no `content` this is the generated template, which the caller could not
-   * have predicted at all.
+   * The file as it SETTLED, after the in-band `write-back` phase — anchors for
+   * the headings it introduced included. On a create with no `content` this is
+   * the generated template, which the caller could not have predicted at all.
+   *
+   * `update_page` deliberately does NOT carry this field (since 0.2.88): see the
+   * echo-free rule at the top of this file.
    */
   content: string;
   /** Every anchor the page now carries, in document order. */
@@ -296,23 +304,6 @@ export interface CreatePageResult {
 export interface UpdatePageResult {
   hash: string;
   version: number;
-  /**
-   * 0.2.76 — the file as it stands AFTER the `write-back` phase, frontmatter
-   * included.
-   *
-   * The narrow, deliberate exception to the echo-free rule above, and it is
-   * still an instance of that rule rather than a breach of it: what comes back
-   * is precisely what the caller could NOT have predicted. The chain runs
-   * in-band and injects anchors for headings the caller introduced, so the bytes
-   * on disk are not the bytes sent. A hash alone cannot communicate that — a
-   * client holding its pre-injection text would write it straight back and undo
-   * the write-back on every cycle.
-   *
-   * `update_sections` deliberately does NOT get this field: its caller edits a
-   * paragraph, and handing it the whole page back is the exact cost the rule
-   * exists to refuse.
-   */
-  content: string;
   /** Anchors added, removed, or whose section text changed. See {@link anchorDelta}. */
   changedAnchors: string[];
   /**
@@ -668,7 +659,6 @@ export async function updatePage(
   return {
     hash: written.hash,
     version: written.version,
-    content: written.content,
     changedAnchors: anchorDelta(before, written.digests),
   };
 }
@@ -744,7 +734,6 @@ async function updatePageByTextEdits(
   return {
     hash: written.hash,
     version: written.version,
-    content: written.content,
     changedAnchors: anchorDelta(before, written.digests),
     replacements: applied.replacements,
   };

@@ -32,18 +32,14 @@ export interface PageContent {
  * What `PUT /api/pages/:rootId/<path>` answers with: what the caller could not
  * have predicted, and nothing it already had. Deliberately NOT `PageContent` —
  * see the echo-free rule in `server/services/page-write.ts`.
+ *
+ * No `content` (since 0.2.88): the write-back phase injects anchors, so the bytes on
+ * disk are not the bytes sent, but a caller that needs them re-reads the page;
+ * `changedAnchors` tells it whether anything moved.
  */
 export interface PageWriteAck {
   hash: string;
   version: number;
-  /**
-   * 0.2.76 — the file as it SETTLED, after the in-band `write-back` phase.
-   *
-   * Still not `PageContent`, and still not an echo: the chain injects anchors
-   * for headings the caller introduced, so these are bytes the caller could not
-   * have predicted. See `UpdatePageResult.content`.
-   */
-  content: string;
   changedAnchors: string[];
 }
 
