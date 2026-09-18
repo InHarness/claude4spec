@@ -754,6 +754,20 @@ describe('discovery core', () => {
       });
       if (wide.mode !== 'hits') throw new Error('expected hits');
       expect(wide.items[0]!.omittedChars).toBeGreaterThan(0);
+
+      /*
+       * And the cut takes `matches` down with it. The three matches sit at 0,
+       * 306 and 612; the ceiling lands at 600, so the third one is not in the
+       * delivered text. Reporting 3 here would send a reader looking for an
+       * occurrence that is provably not in the string they were handed —
+       * `matches` counts what is INSIDE this hunk, not what the window covered
+       * before it was trimmed. The entity-level `matchCount` still says 3.
+       */
+      const cut = wide.items[0]!.hunks![0]!;
+      expect(cut.text.length).toBe(MAX_HUNK_CHARS);
+      expect(cut.matches).toBe(2);
+      expect(cut.text.split('kaucja').length - 1).toBe(cut.matches);
+      expect(wide.items[0]!.matchCount).toBe(3);
     });
   });
 

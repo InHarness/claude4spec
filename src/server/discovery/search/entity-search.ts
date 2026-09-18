@@ -174,16 +174,21 @@ export function searchEntities(
    * `resolve_identity` — which legitimately still PUBLISHES its score, being a
    * different operation with a different contract.
    */
-  hits.sort(matcher.kind === 'query' ? compareRanked : (a, b) => a.slug.localeCompare(b.slug));
-
   if (mode === 'count') {
     /*
+     * BEFORE the sort, not after: this rung publishes two sums and no order, so
+     * an O(n log n) pass whose result is discarded would make the cheapest rung
+     * of the ladder pay the middle rung's price — the one thing `count` exists
+     * not to do.
+     *
      * Both sums, because they answer different questions: `total` is how many
      * ENTITIES a full traversal would enumerate (so it agrees with how `map` and
      * `hits` paginate), `matches` is how many occurrences were found.
      */
     return { mode: 'count', total: hits.length, matches, searchedFields };
   }
+
+  hits.sort(matcher.kind === 'query' ? compareRanked : (a, b) => a.slug.localeCompare(b.slug));
 
   /*
    * Slice BEFORE rendering, which is why this does not call `paginate`.
@@ -288,6 +293,15 @@ function buildEntityMatcher(input: SearchEntitiesInput): EntityMatcher | null {
   }
   const phrase = (input.query ?? '').trim();
   if (!phrase) return null;
+  /*
+   * The phrase pays the ceiling too, and is measured BEFORE escaping — the
+   * caller is answerable for what it typed, not for what `escapeRegExp` doubles
+   * it into. Without this, the pattern refused at 1 000 characters as `regex`
+   * sails through spelled as `query` and compiles a source twice its length.
+   * (`search_pages` needs no such guard: its phrase path never compiles at all,
+   * it is a `String.includes` on a lowered line.)
+   */
+  assertPatternWithinLimit(phrase, 'search_entities');
   return matcherFor(compile(escapeRegExp(phrase), 'query'), 'query');
 }
 
@@ -370,11 +384,15 @@ function makeEvidenceBuilder(
    * place it can be: an explicitly requested `fields` is taken verbatim (so the
    * echo in `searchedFields` cannot lie), which means a caller CAN name `body`.
    * `textPathsOfSchema` already keeps such a field out of the host default, so
-   * the default path is guarded twice and the explicit path is guarded here. A
-   * match in such a field still counts toward `matchCount`; in practice it
-   * counts nothing at all, because the value does not live on the entity row
-   * and `valuesAtPath` finds it absent. Do not "fix" that asymmetry — it is the
-   * projection's boundary, not a bug in this function.
+   * the default path is guarded twice and the explicit path is guarded here.
+   *
+   * A match in such a field DOES still count toward `matchCount` — a
+   * `contentBearing` field has a row column like any other, so `valuesAtPath`
+   * finds it and counts it. The asymmetry is deliberate and is the whole point:
+   * `map` may tell you an entity matched twice in `body` (a strength signal,
+   * carrying no content), while `hits` declines to quote it. Do not "fix" it by
+   * dropping the count — that would make `fields: ['body']` answer zero and look
+   * like a field that was never searched.
    */
   const contentBearing = new Set(contentFieldsOf(schema).map((f) => f.field));
 
@@ -397,9 +415,23 @@ function makeEvidenceBuilder(
           }
           if (text.length > MAX_HUNK_CHARS) {
             omittedChars += text.length - MAX_HUNK_CHARS;
-            hunks.push({ field: name, text: text.slice(0, MAX_HUNK_CHARS), matches: window.matches });
+            /*
+             * `matches` counts what the caller CAN SEE in `text`, so the cut
+             * takes the count down with it. Reporting the merged window's four
+             * matches next to a `text` holding the first one contradicts the
+             * field's own definition ("matches inside this window") and would
+             * make a caller looking for the other three search a string that
+             * never contained them. A match straddling the cut is out: it is not
+             * readable in what was delivered.
+             */
+            const kept = window.start + MAX_HUNK_CHARS;
+            hunks.push({
+              field: name,
+              text: text.slice(0, MAX_HUNK_CHARS),
+              matches: window.spans.filter((s) => s.end <= kept).length,
+            });
           } else {
-            hunks.push({ field: name, text, matches: window.matches });
+            hunks.push({ field: name, text, matches: window.spans.length });
           }
         }
       }
@@ -421,17 +453,17 @@ function makeEvidenceBuilder(
 function windowsOf(
   spans: readonly Span[],
   length: number,
-): Array<{ start: number; end: number; matches: number }> {
-  const windows: Array<{ start: number; end: number; matches: number }> = [];
+): Array<{ start: number; end: number; spans: Span[] }> {
+  const windows: Array<{ start: number; end: number; spans: Span[] }> = [];
   for (const span of spans) {
     const start = Math.max(span.start - HUNK_WINDOW_CHARS, 0);
     const end = Math.min(span.end + HUNK_WINDOW_CHARS, length);
     const last = windows[windows.length - 1];
     if (last && start <= last.end + 1) {
       last.end = Math.max(last.end, end);
-      last.matches += 1;
+      last.spans.push(span);
     } else {
-      windows.push({ start, end, matches: 1 });
+      windows.push({ start, end, spans: [span] });
     }
   }
   return windows;

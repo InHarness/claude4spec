@@ -21,7 +21,6 @@ import { applyItemBudget, MAX_SLUGS_PER_CALL } from '../budget.js';
 import { invalidArgument, invalidType } from '../errors.js';
 import { DEFAULT_LIMITS, paginate } from '../pagination.js';
 import { compareRanked, relevance } from '../ranking.js';
-import { resolveSearchFields, valuesAtPath } from '../search/fields.js';
 import type { RawEntity } from '../raw-entity-reader.js';
 import { columnOf, RESERVED_TITLE_FIELD } from '../../../shared/plugin-host/data-schema.js';
 import { project, selectedFieldsOf, validateSelect } from '../project.js';
@@ -34,8 +33,6 @@ import type {
   ListEntitiesResult,
   ResolveIdentityInput,
   ResolveIdentityResult,
-  SearchEntitiesInput,
-  SearchEntitiesResult,
 } from '../types.js';
 
 export function requireActiveType(deps: DiscoveryDeps, type: string) {

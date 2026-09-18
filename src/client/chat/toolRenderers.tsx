@@ -377,11 +377,15 @@ const entityToolsRenderers: Record<string, ToolRenderer> = {
    */
   search_entities: {
     summary(i, r) {
-      const { query } = cx(i).input;
+      // 0.2.95 — either input, whichever the agent used. Reading only `query`
+      // rendered every `regex` call as `Found 3 matches for ""`, which reads as
+      // a search that ran on nothing.
+      const { query, regex } = cx(i).input;
       const { result } = cx2(i, r);
       const items = Array.isArray(result?.items) ? (result!.items as unknown[]) : [];
       const total = typeof result?.total === 'number' ? (result!.total as number) : items.length;
-      return `Found ${total} matches for "${String(query ?? '')}"`;
+      const pattern = typeof regex === 'string' && regex !== '' ? regex : query;
+      return `Found ${total} matches for "${String(pattern ?? '')}"`;
     },
     renderResult(r) {
       const { result } = cx2({}, r);

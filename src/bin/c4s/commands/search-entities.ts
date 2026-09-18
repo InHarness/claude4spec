@@ -43,14 +43,20 @@ export async function runSearchEntities(args: ParsedArgs): Promise<void> {
    * "you typed the flags wrong" code. The core refuses identically for every
    * other channel; this copy exists so the CLI can answer without a round trip.
    */
-  if (query && regex) {
+  /*
+   * PRESENCE, not truthiness. `--query ""` is a well-formed input the core
+   * answers with zero hits, so testing truthiness would both refuse it here and
+   * let `--query "" --regex x` past the "exactly one" rule the comment above
+   * claims to mirror.
+   */
+  if (query !== undefined && regex !== undefined) {
     throw new CliError(
       'INVALID_ARGUMENT',
       '--query and --regex are alternatives, not a refinement of one another',
       'pass one of them: --query "<phrase>" for a text search, --regex "<pattern>" for a pattern',
     );
   }
-  if (!query && !regex) {
+  if (query === undefined && regex === undefined) {
     throw new CliError('INVALID_ARGS', 'search-entities requires --query or --regex');
   }
   const fields = optionalStringList(args, 'fields');
