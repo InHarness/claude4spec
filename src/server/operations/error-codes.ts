@@ -46,6 +46,17 @@ export const STATUS_FOR_DISCOVERY_CODE: Record<DiscoveryErrorCode, number> = {
    * retry"), and the code says only WHAT to refresh — the page hash, or the index.
    */
   INDEX_STALE: 409,
+  /**
+   * 0.2.95 (M39) — a search run spent its time budget before finishing.
+   *
+   * 504 and not 400, although the refusal came from this server deliberately:
+   * the argument was VALID. A 4xx tells the caller its request was malformed and
+   * sends it to fix a pattern that was never the problem; the problem was the
+   * SCOPE, which `message` names the valves for. 504 is the family a client
+   * already reacts to correctly — retry, narrower or not at all — and it keeps
+   * the code's whole reason for existing legible through the HTTP rendering too.
+   */
+  SEARCH_BUDGET_EXCEEDED: 504,
 };
 
 /** Domain codes, mapped onto HTTP. Anything absent is a client error (400). */

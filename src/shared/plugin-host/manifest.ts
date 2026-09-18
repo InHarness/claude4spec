@@ -154,6 +154,16 @@ import type { EntityModuleManifest, SystemPromptContribution } from './types.js'
  * and there is no published external plugin that could break. Note what this is
  * NOT — the operations are BOUND, not CONTRIBUTED, so the envelope declares
  * nothing about them and the loader gains no new check.
+ *
+ * 0.2.95 — `searchEntities` NARROWS, which the rule one paragraph up says a
+ * versioned surface may not do: `SearchEntitiesResult` loses `score`, and the
+ * default `mode` moves from `hits` to `map`, so a caller that passed no mode and
+ * read a row's `score` gets neither. The baseline is deliberately left at
+ * `2.0.0` and the narrowing recorded here instead, for two reasons — no bundled
+ * envelope calls the operation (checked), and the release brief that mandates
+ * the change says nothing about the host surface, so choosing a major bump here
+ * would ripple through nine plugin manifests on this file's own initiative.
+ * Raised as a patch against the brief: the decision is the spec author's.
  */
 export const HOST_API_VERSION = '2.0.0';
 

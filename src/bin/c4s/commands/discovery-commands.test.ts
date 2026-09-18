@@ -178,6 +178,15 @@ describe('discovery commands on the CLI', () => {
       // release, so `--mode count` would have paid for a full listing.
       expect(called()).toBe('/entities/ac/search?q=x&fields=title%2Cbody&mode=count');
       expect(printed().searchedFields).toEqual(['title']);
+
+      seen = [];
+      stdout = '';
+      reply = { searchedFields: ['title'], items: [], total: 0, hasMore: false };
+      await runSearchEntities(args('search-entities', '--type', 'ac', '--regex', 'kaucj\\w*', '--mode', 'map'));
+      // 0.2.95 — the second input and the new rung reach the wire. `map` has to
+      // be carried rather than dropped: the route used to accept only
+      // `count`/`hits`, which made the core's own default unreachable here.
+      expect(called()).toBe('/entities/ac/search?regex=kaucj%5Cw*&mode=map');
     });
 
     it('the page and section operations address their own routes', async () => {
@@ -517,6 +526,41 @@ describe('discovery commands on the CLI', () => {
       await expect(runSearchEntities(args('search-entities', '--query', 'x'))).rejects.toMatchObject({
         code: 'INVALID_ARGS',
       });
+    });
+
+    it('[ac:ac-search-entities-regex-z-wzorcem-zawie] search-entities takes --query XOR --regex, exactly as search-pages does', async () => {
+      await expect(
+        runSearchEntities(args('search-entities', '--type', 'ac', '--query', 'x', '--regex', 'x.*')),
+      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+      await expect(runSearchEntities(args('search-entities', '--type', 'ac'))).rejects.toMatchObject({
+        code: 'INVALID_ARGS',
+      });
+      // Neither reaches the server: the two channels refuse the same pair, so a
+      // caller learns one vocabulary rather than two.
+      expect(seen).toEqual([]);
+    });
+
+    it('[ac:ac-search-entities-w-trybie-map-nie-zwra] search-entities accepts the three-rung ladder and refuses anything else', async () => {
+      await expect(
+        runSearchEntities(args('search-entities', '--type', 'ac', '--query', 'x', '--mode', 'pages')),
+      ).rejects.toMatchObject({ code: 'INVALID_ARGS' });
+      expect(seen).toEqual([]);
+    });
+
+    /**
+     * The two deliberate gaps against `search-pages`, refused rather than
+     * ignored — a flag that silently does nothing is the failure the block
+     * below this one exists for, and a fragment here is evidence, not a
+     * projection.
+     */
+    it('search-entities has no --context and no --select', async () => {
+      await expect(
+        runSearchEntities(args('search-entities', '--type', 'ac', '--query', 'x', '--context', '2')),
+      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+      await expect(
+        runSearchEntities(args('search-entities', '--type', 'ac', '--query', 'x', '--select', 'title')),
+      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+      expect(seen).toEqual([]);
     });
 
     /**

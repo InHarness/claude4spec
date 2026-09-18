@@ -288,7 +288,7 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
 
   const searchPages = op(
     'search_pages',
-    'Search the prose of the pages, by phrase (`query`) or by regex (`regex`) — the replacement for grepping the specification, and the one search the entity graph cannot stand in for, because it looks for exactly what fell OUT of the graph (a bare HTTP path, a DTO name mentioned in running text). THREE MODES, a ladder of cost: "count" returns only the totals; "map" (DEFAULT) returns identity rows `{ rootId, path, anchor, heading, headingPath, matchCount }` with no prose; "hits" adds `hunks[]` + `omittedChars`. There is no fourth rung and no "pages" mode — to read a section, take the `anchor` from a map row and call get_sections. A HIT IS A SECTION, a MATCH is a line: several matches in one section collapse into ONE hit carrying `matchCount`, and no two hits share an `anchor`. A hit carries an `anchor` IF AND ONLY IF `kind` is "section"; a `kind: "page"` hit has none, which happens on a root with no section index AND on an indexed root when the match falls outside every section (text above the first heading, or under a heading the indexer gave no anchor). Branch on `kind`, never on the root. Results enumerate in `(rootId, path, line_start)` order with a declared tie-break, so paging with `limit`/`offset` returns every hit exactly once. There is no `score` and no line number. THREE COST VALVES, coarse to sharp: `rootId`, then `pathInclude`/`pathExclude` (regexes over the page path, applied BEFORE the file is opened), then `anchors` (scan only these sections). A `regex` that could only match across a line boundary (`\\n`, `[\\s\\S]`, an inline flag group) is refused with INVALID_ARGUMENT rather than answered with zero hits — a silent false negative is worse than an error; within-line idioms are fine, `[^\\n]` included.',
+    'Search the prose of the pages, by phrase (`query`) or by regex (`regex`) — the replacement for grepping the specification, and the one search the entity graph cannot stand in for, because it looks for exactly what fell OUT of the graph (a bare HTTP path, a DTO name mentioned in running text). THREE MODES, a ladder of cost: "count" returns only the totals; "map" (DEFAULT) returns identity rows `{ rootId, path, anchor, heading, headingPath, matchCount }` with no prose; "hits" adds `hunks[]` + `omittedChars`. There is no fourth rung and no "pages" mode — to read a section, take the `anchor` from a map row and call get_sections. A HIT IS A SECTION, a MATCH is a line: several matches in one section collapse into ONE hit carrying `matchCount`, and no two hits share an `anchor`. A hit carries an `anchor` IF AND ONLY IF `kind` is "section"; a `kind: "page"` hit has none, which happens on a root with no section index AND on an indexed root when the match falls outside every section (text above the first heading, or under a heading the indexer gave no anchor). Branch on `kind`, never on the root. Results enumerate in `(rootId, path, line_start)` order with a declared tie-break, so paging with `limit`/`offset` returns every hit exactly once. There is no `score` and no line number. THREE COST VALVES, coarse to sharp: `rootId`, then `pathInclude`/`pathExclude` (regexes over the page path, applied BEFORE the file is opened), then `anchors` (scan only these sections). A `regex` that could only match across a line boundary (`\\n`, `[\\s\\S]`, an inline flag group) is refused with INVALID_ARGUMENT rather than answered with zero hits — a silent false negative is worse than an error; within-line idioms are fine, `[^\\n]` included. An over-long `regex` is refused with INVALID_ARGUMENT naming the ceiling, and a run that exhausts the core time budget answers SEARCH_BUDGET_EXCEEDED — not INVALID_ARGUMENT, because the pattern was valid; its message names the valves (`rootId`, `pathInclude`), and the same pattern then completes over the narrower scope.',
     {
       query: z.string().optional().describe('Phrase to look for; case-insensitive substring, matches inside words too. A UI-grade instrument — prefer `regex` for precision.'),
       regex: z.string().optional().describe('Regular expression; the DEFAULT instrument here, not a fallback. Matched per line, case-insensitively.'),
@@ -320,23 +320,33 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
 
   const searchEntities = op(
     'search_entities',
-    'Text search within exactly ONE entity type — `type` is required, because a cross-type ranking federates badly and lets a single call return hundreds of rows; use resolve_identity to search identities across types. The scope is layered: your `fields` beats the type\'s own declaration, which beats the host default over every text path of the type\'s schema, so every active type is searchable. The response always carries `searchedFields`: without it an empty result is indistinguishable from a field that was never in scope.',
+    'Search within exactly ONE entity type — `type` is required, because a cross-type ranking federates badly and lets a single call return hundreds of rows; use resolve_identity to search identities across types. TWO INPUTS, exactly one of them: `query` (case-insensitive substring; a multi-word value matches only as an exact PHRASE — no tokenization, so build flexibility into `regex`, e.g. "kaucj\\w*") or `regex` (a JavaScript pattern body). Both, or neither, is INVALID_ARGUMENT. THREE MODES, a ladder of cost: "count" returns only the totals (`total` entities, `matches` occurrences); "map" (DEFAULT) returns `{ slug, title, matchCount }` with not one character of entity content; "hits" adds `hunks[]` (`{ field, text, matches }`) and `omittedChars`. A HIT IS AN ENTITY, a MATCH is an occurrence: an entity matched twice is ONE row with `matchCount: 2`, never two rows sharing a slug, whether both matches fell in one field or in two. There is NO `score` in any mode — relevance needs a content index nobody has, so the ORDER carries the contract instead: with `query` exact > prefix > substring position > slug ascending, with `regex` slug ascending, both fully tie-broken so `limit`/`offset` return every hit exactly once. A hunk\'s `field` is a legal `select` value for get_entities — a fragment is an ADDRESS to go back through, not a sample — and never a `contentBearing` field, so "hits" issues nothing a plain get_entities would withhold; the window is character-based and fixed, so there is no `context` here. Unlike search_pages, a pattern crossing a line (`\\n`, `[\\s\\S]`) is LEGAL and matches values that really span lines, because the unit here is the whole field VALUE. The scope is your `fields` if given, else the host default over every text path of the type\'s schema, so every active type is searchable; the response always carries `searchedFields`, without which an empty result is indistinguishable from a field that was never in scope. An over-long `regex` is INVALID_ARGUMENT naming the ceiling; exhausting the core time budget answers SEARCH_BUDGET_EXCEEDED, whose message names the valves (`type`, `fields`).',
     {
       type: z.string().describe('Exactly one entity type'),
-      query: z.string().describe('Text to look for'),
+      query: z.string().optional().describe('Phrase to look for; exactly one of query/regex'),
+      regex: z
+        .string()
+        .optional()
+        .describe('JavaScript pattern body, matched against the full field value; may cross lines'),
       fields: z
         .array(z.string())
         .optional()
         .describe('Dotted paths to search, e.g. fields[].description; overrides the type and host scope'),
-      mode: z.enum(['hits', 'count']).optional().describe('Shape of the answer; default "hits"'),
+      mode: z
+        .enum(['count', 'map', 'hits'])
+        .optional()
+        .describe('Shape of the answer; default "map". Pass "hits" only when you need the fragments.'),
       ...pageShape,
     },
     (discovery, args) =>
       discovery.searchEntities({
         type: asTypeId(args.type),
-        query: String(args.query),
+        // Only when PRESENT — a `query: undefined` beside a `regex` would read
+        // as two inputs to the core's exclusive-choice check.
+        ...(args.query !== undefined ? { query: String(args.query) } : {}),
+        ...(args.regex !== undefined ? { regex: String(args.regex) } : {}),
         fields: args.fields as string[] | undefined,
-        mode: args.mode as 'hits' | 'count' | undefined,
+        mode: args.mode as 'count' | 'map' | 'hits' | undefined,
         limit: optionalNumber(args.limit),
         offset: optionalNumber(args.offset),
       }),

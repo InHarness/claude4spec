@@ -22,7 +22,8 @@ export type DiscoveryErrorCode =
   | 'AMBIGUOUS_ENTITY'
   | 'AMBIGUOUS_PAGE'
   | 'INDEX_NOT_MATERIALIZED'
-  | 'INDEX_STALE';
+  | 'INDEX_STALE'
+  | 'SEARCH_BUDGET_EXCEEDED';
 
 export class DiscoveryError extends Error {
   readonly name = 'DiscoveryError';
@@ -169,3 +170,51 @@ export function indexStale(
       'get_page still answers with content and a valid expectedHash while this projection refuses.',
   );
 }
+
+/**
+ * 0.2.95 (M39) — the scan ran out of TIME, and the two codes it is deliberately
+ * NOT are the whole point of it existing.
+ *
+ * Not `INVALID_ARGUMENT`: the argument was valid, and the very same pattern
+ * completes over a narrower scope. Answering with an argument error would send
+ * the caller to correct the one thing that was right, and it would learn the
+ * wrong lesson about its own pattern. Not a hang either — the loop checks
+ * between match units, so the operation always answers something.
+ *
+ * And not a partial result with `truncated: true`, which was the tempting third
+ * option: a caller reads a short list as "that is all there is", which is the
+ * silent false negative the rest of this catalogue exists to prevent.
+ *
+ * `message` carries the narrowing VALVES because narrowing the scope is the only
+ * action that changes the outcome; `hint` carries the call that would have
+ * worked, like every other refusal here.
+ */
+export function searchBudgetExceeded(
+  operation: 'search_pages' | 'search_entities',
+  budgetMs: number,
+): DiscoveryError {
+  const { valves, retry } = SEARCH_NARROWING[operation];
+  return new DiscoveryError(
+    'SEARCH_BUDGET_EXCEEDED',
+    `${operation} spent its ${budgetMs} ms scan budget and stopped between match units — ` +
+      `the pattern is valid, the SCOPE is too wide. Narrow it with ${valves}.`,
+    retry,
+  );
+}
+
+const SEARCH_NARROWING = {
+  search_pages: {
+    valves: '--root-id (one root at a time) / --path-include (a path prefix)',
+    retry:
+      // No literal root id here: the core has no default root and must not name
+      // one even as an example — `list_pages` is where a caller learns its ids.
+      'search_pages({ regex: "<the same pattern>", rootId: "<one of your roots>", pathInclude: "^modules/" }) — ' +
+      'or mode: "count" first, which sizes the answer without rendering it.',
+  },
+  search_entities: {
+    valves: '--type (one type at a time) / --fields (only the paths worth scanning)',
+    retry:
+      'search_entities({ type: "<one type>", fields: ["title"], regex: "<the same pattern>" }) — ' +
+      'or mode: "count" first, which sizes the answer without rendering it.',
+  },
+} as const;

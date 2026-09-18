@@ -176,18 +176,47 @@ function fakeDeps(extraActive: BackendModule[] = []): {
        * that answered `mode: "hits"` regardless would let a handler ignore the
        * parameter and still pass.
        */
-      searchEntities: vi.fn(({ type, query, mode }: { type: string; query: string; mode?: 'hits' | 'count' }) => {
-        const hits = rows().filter((w) => w.title.includes(query));
-        const searchedFields = [`${type}.title`];
-        if (mode === 'count') return { mode: 'count', total: hits.length, searchedFields };
-        return {
-          mode: 'hits',
-          items: hits.map((w) => ({ slug: w.slug, score: 1, data: w })),
-          total: hits.length,
-          hasMore: false,
-          searchedFields,
-        };
-      }),
+      searchEntities: vi.fn(
+        ({
+          type,
+          query,
+          regex,
+          mode,
+        }: {
+          type: string;
+          query?: string;
+          regex?: string;
+          mode?: 'count' | 'map' | 'hits';
+        }) => {
+          const needle = query ?? regex ?? '';
+          const hits = rows().filter((w) => w.title.includes(needle));
+          const searchedFields = [`${type}.title`];
+          // 0.2.95 — all THREE rungs, and no `score` on any of them, because the
+          // real core has none. A stub still shaped like the old contract would
+          // let a serializer keep emitting a field nothing produces.
+          if (mode === 'count') {
+            return { mode: 'count', total: hits.length, matches: hits.length, searchedFields };
+          }
+          const base = {
+            items: hits.map((w) => ({ slug: w.slug, title: w.title, matchCount: 1 })),
+            total: hits.length,
+            hasMore: false,
+            truncated: false,
+            searchedFields,
+          };
+          return mode === 'hits'
+            ? {
+                ...base,
+                mode: 'hits',
+                items: base.items.map((i) => ({
+                  ...i,
+                  hunks: [{ field: 'title', text: needle, matches: 1 }],
+                  omittedChars: 0,
+                })),
+              }
+            : { ...base, mode: 'map' };
+        },
+      ),
     } as unknown as EntityToolsDeps['discovery'],
     ws: { broadcast: vi.fn() },
     referencesService: {
@@ -432,7 +461,8 @@ describe('entity-tools: search_entities requires one type', () => {
     const result = await tool(deps, 'search_entities').handler({ type: 'widget', query: 'existing' });
     const payload = parse(result);
     expect(payload.results).toBeUndefined();
-    expect(payload).toMatchObject({ type: 'widget', mode: 'hits', total: 1, hasMore: false });
+    // 0.2.95 — `map` is what a caller that named no mode now gets.
+    expect(payload).toMatchObject({ type: 'widget', mode: 'map', total: 1, hasMore: false });
     expect(payload.searchedFields).toEqual(expect.arrayContaining([expect.any(String)]));
   });
 
@@ -471,15 +501,56 @@ describe('entity-tools: search_entities requires one type', () => {
     const { deps } = fakeDeps();
     const result = await tool(deps, 'search_entities').handler({ type: 'no-crud', query: 'x' });
     expect(result.isError).toBeUndefined();
-    expect(parse(result)).toMatchObject({ type: 'no-crud', mode: 'hits' });
+    expect(parse(result)).toMatchObject({ type: 'no-crud', mode: 'map' });
   });
 
   it('mode "count" answers with a total and the scope, and no rows', async () => {
     const { deps } = fakeDeps();
     const payload = parse(await tool(deps, 'search_entities').handler({ type: 'widget', query: 'e', mode: 'count' }));
-    expect(payload).toMatchObject({ mode: 'count', total: 1 });
+    // 0.2.95 — both numbers: `total` counts entities, `matches` occurrences.
+    expect(payload).toMatchObject({ mode: 'count', total: 1, matches: 1 });
     expect(payload.items).toBeUndefined();
     expect(payload.searchedFields).toBeDefined();
+  });
+
+  /**
+   * 0.2.95 — the three schema changes, asserted where an agent meets them.
+   *
+   * `query` becoming optional is the one that cannot be checked any other way:
+   * the SDK validates the shape before the handler runs, so a `query` still
+   * marked required would refuse every `regex` call without the handler — or
+   * this suite — ever seeing it.
+   */
+  it('[ac:ac-search-entities-regex-z-wzorcem-zawie] the schema takes regex beside query, neither of them required', () => {
+    const { deps } = fakeDeps();
+    const schema = tool(deps, 'search_entities').inputSchema as Record<
+      string,
+      { isOptional?: () => boolean }
+    >;
+    expect(schema.query!.isOptional?.()).toBe(true);
+    expect(schema.regex).toBeDefined();
+    expect(schema.regex!.isOptional?.()).toBe(true);
+  });
+
+  it('[ac:ac-search-entities-w-trybie-map-nie-zwra] forwards only the input it was given, so the core can refuse two', async () => {
+    const { deps } = fakeDeps();
+    await tool(deps, 'search_entities').handler({ type: 'widget', regex: 'e' });
+    const passed = (deps.discovery.searchEntities as unknown as { mock: { calls: unknown[][] } }).mock
+      .calls[0]![0] as Record<string, unknown>;
+    // NOT `query: undefined` — the core's exclusive choice counts PRESENCE, so a
+    // forwarded `undefined` would make every regex call look like two inputs.
+    expect('query' in passed).toBe(false);
+    expect(passed).toMatchObject({ regex: 'e', mode: 'map' });
+  });
+
+  it('[ac:ac-zadna-odpowiedz-search-entities-nie-n] no row carries `score`, in any of the three modes', async () => {
+    const { deps } = fakeDeps();
+    for (const mode of ['count', 'map', 'hits'] as const) {
+      const payload = parse(
+        await tool(deps, 'search_entities').handler({ type: 'widget', query: 'e', mode }),
+      );
+      expect(JSON.stringify(payload)).not.toContain('score');
+    }
   });
 });
 

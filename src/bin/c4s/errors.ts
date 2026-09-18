@@ -86,7 +86,14 @@ export type CliErrorCode =
   // `~/.claude4spec/workspaces.json` at all: invalid JSON, a shape that is not a
   // registry, a schema version from a newer binary, or EACCES. A MISSING file is
   // deliberately not this code — an absent registry is an empty one, exit 0.
-  | 'REGISTRY_READ_FAILED';
+  | 'REGISTRY_READ_FAILED'
+  // 0.2.95 M39 — MAPPED FROM THE DISCOVERY CORE: a search run that spent the
+  // core's time budget before finishing. A fourth CATEGORY beside identity, type
+  // and argument, and that is why it is not folded into any of them: nothing
+  // about the command was wrong, so `INVALID_ARGS`/`INVALID_ARGUMENT` would send
+  // a scripted caller to fix a pattern that was correct. The repair is the
+  // SCOPE, and the core's `message` names the flags that narrow it.
+  | 'SEARCH_BUDGET_EXCEEDED';
 
 export class CliError extends Error {
   constructor(public code: CliErrorCode, message: string, public hint?: string) {

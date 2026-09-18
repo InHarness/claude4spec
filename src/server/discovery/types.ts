@@ -51,6 +51,16 @@ export interface DiscoveryDeps {
    * not a hole in the rule.
    */
   projectionStatus?: ProjectionStatusRegistry;
+  /**
+   * 0.2.95 — overrides `SEARCH_TIME_BUDGET_MS` for ONE core instance.
+   *
+   * A seam for tests and for an embedder on pathologically slow storage, not a
+   * caller's dial: no transport carries it, and no search input exposes it. The
+   * valves a caller gets are the SCOPE (`--type`/`--fields`,
+   * `--root-id`/`--path-include`) — a caller able to raise its own budget would
+   * only move the hang further out. Absent ⇒ the core constant applies.
+   */
+  searchBudgetMs?: number;
 }
 
 // ── Meta ────────────────────────────────────────────────────────────────────
@@ -89,6 +99,8 @@ import type {
   DescribeTypesResult,
   SearchEntitiesInput,
   SearchEntitiesResult,
+  SearchEntityHit,
+  SearchEntityHunk,
   ResolveIdentityInput,
   ResolveIdentityResult,
   ListEntitiesInput,
@@ -106,6 +118,8 @@ export type {
   DescribeTypesResult,
   SearchEntitiesInput,
   SearchEntitiesResult,
+  SearchEntityHit,
+  SearchEntityHunk,
   ResolveIdentityInput,
   ResolveIdentityResult,
   ListEntitiesInput,

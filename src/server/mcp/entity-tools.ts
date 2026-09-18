@@ -455,23 +455,35 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
   // ─── search_entities ──────────────────────────────────────────────────────
   const searchEntities = mcpTool(
     'search_entities',
-    'Plain text search within exactly ONE entity type — `type` is required. A cross-type search federated its rankings badly and let one call return hundreds of rows; to find an entity across types by name or slug, use resolve_identity. EVERY active type is searchable: the scope is `fields` if you pass it, else every text path derived from the type\'s declared data schema — that derivation is the ONLY source of scope, with no per-type declaration or per-type ranking behind it, so the same type ranks identically on every surface. The response always carries `searchedFields` — the paths actually consulted, so an empty result is distinguishable from a field that was never in scope. `filters` narrows the ranking by the type\'s own declared scalar fields, exactly as in list_entities — and, exactly as there, a type with a declared default applies it unless you name that field (`ac` ranks only active ACs unless you ask for { status: ["active","deprecated"] }). Returns { type, items, total, hasMore, searchedFields } — or { total, searchedFields } with mode: "count".',
+    'Search within exactly ONE entity type — `type` is required. A cross-type search federated its rankings badly and let one call return hundreds of rows; to find an entity across types by name or slug, use resolve_identity. TWO INPUTS, exactly one of them: `query` is a case-insensitive substring (a multi-word value matches only as an exact PHRASE — there is no tokenization, so build word-order and inflection flexibility into `regex` instead, e.g. "kaucj\\w*"), `regex` is a JavaScript pattern body. Passing both, or neither, is INVALID_ARGUMENT. THREE MODES, a ladder of cost: "count" returns only the totals (`total` entities, `matches` occurrences); "map" (DEFAULT) returns `{ slug, title, matchCount }` and not one character of entity content; "hits" adds `hunks[]` (`{ field, text, matches }`) and `omittedChars`. A HIT IS AN ENTITY, a MATCH is an occurrence: an entity matched twice comes back as ONE row with `matchCount: 2`, never as two rows sharing a slug, whether the two matches fell in one field or in two. There is NO `score` in any mode — relevance cannot be computed without a content index, so the ORDER is the contract instead: with `query` exact > prefix > substring position > slug ascending, with `regex` slug ascending, both fully tie-broken so `limit`/`offset` return every hit exactly once. A hunk`s `field` is a legal `select` value for get_entities — the fragment is an ADDRESS you can go back through for the full value, not a sample — and no hunk ever comes from a `contentBearing` field, so "hits" never issues content a plain get_entities would withhold. The window is measured in CHARACTERS and is fixed: there is no `context` parameter here. Unlike search_pages, a pattern crossing a line (`\\n`, `[\\s\\S]`) is LEGAL and matches fields whose value really spans lines — this operation matches the full field VALUE, not a line. EVERY active type is searchable: the scope is `fields` if you pass it, else every text path derived from the type\'s declared data schema — that derivation is the ONLY source of scope, so the same type behaves identically on every surface. The response always carries `searchedFields` — the paths actually consulted, so an empty result is distinguishable from a field that was never in scope. `filters` narrows by the type\'s own declared scalar fields, exactly as in list_entities, default predicate included (`ac` searches only active ACs unless you ask for { status: ["active","deprecated"] }). An over-long `regex` is refused with INVALID_ARGUMENT naming the ceiling; a run that exhausts the core time budget answers SEARCH_BUDGET_EXCEEDED, whose message names the valves (`type`, `fields`) — the same pattern then completes over the narrower scope.',
     {
       type: z.string(),
-      query: z.string(),
+      /**
+       * 0.2.95 — no longer `required`, and the exclusion with `regex` is
+       * enforced in the CORE rather than in this shape.
+       *
+       * Zod could express "exactly one of two" with a refinement, and it is
+       * deliberately not used: the rule would then exist once per surface (here,
+       * `c4s-reader`, the REST route, the CLI) and each copy could drift in its
+       * message. The core refuses with the one `INVALID_ARGUMENT` whose hint
+       * names the call that would have worked, and every surface forwards it.
+       */
+      query: z.string().optional(),
+      regex: z.string().optional(),
       fields: z.array(z.string()).optional(),
-      mode: z.enum(['hits', 'count']).optional(),
+      mode: z.enum(['count', 'map', 'hits']).optional(),
       limit: z.number().optional(),
       offset: z.number().optional(),
       filters: z.record(z.string(), z.unknown()).optional(),
     },
     async (args) => {
       const type = String(args.type);
-      const query = String(args.query);
+      const query = args.query as string | undefined;
+      const regex = args.regex as string | undefined;
       const fields = args.fields as string[] | undefined;
       const limit = (args.limit as number | undefined) ?? 50;
       const offset = (args.offset as number | undefined) ?? 0;
-      const mode = (args.mode as 'hits' | 'count' | undefined) ?? 'hits';
+      const mode = (args.mode as 'count' | 'map' | 'hits' | undefined) ?? 'map';
       /**
        * 2.0.0 tier K — `filters` is ACCEPTED here, where tier E refused it.
        *
@@ -504,7 +516,10 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
        */
       const page = deps.discovery.searchEntities({
         type,
-        query,
+        // Forwarded only when PRESENT: passing `query: undefined` alongside a
+        // `regex` would read as two inputs to the core's exclusion check.
+        ...(query !== undefined ? { query } : {}),
+        ...(regex !== undefined ? { regex } : {}),
         fields,
         mode,
         limit,
@@ -512,10 +527,26 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
         applyDefaultPredicate: true,
         ...(filters ? { filters } : {}),
       });
-      if (page.mode === 'count') return ok({ type, mode: 'count', total: page.total, searchedFields: page.searchedFields });
+      if (page.mode === 'count') {
+        return ok({
+          type,
+          mode: 'count',
+          total: page.total,
+          // 0.2.95 — both numbers, because they answer different questions:
+          // `total` counts entities, `matches` counts occurrences.
+          matches: page.matches,
+          searchedFields: page.searchedFields,
+        });
+      }
+      /*
+       * One builder for `map` and `hits`, because the DIFFERENCE between them is
+       * built in the core: a `map` row simply has no `hunks`/`omittedChars` to
+       * carry. Re-deriving the distinction here would be a second place for the
+       * "map leaks no content" rule to be got wrong.
+       */
       return ok({
         type,
-        mode: 'hits',
+        mode: page.mode,
         items: page.items,
         total: page.total,
         hasMore: page.hasMore,

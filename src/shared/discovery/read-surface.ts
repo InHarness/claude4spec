@@ -80,9 +80,36 @@ export interface DescribeTypesResult {
 
 export interface SearchEntitiesInput {
   type: string;
-  query: string;
+  /**
+   * 0.2.95 — OPTIONAL, and one half of an exclusive choice: EXACTLY ONE of
+   * `query` / `regex`, with both or neither an `INVALID_ARGUMENT`.
+   *
+   * Unchanged semantics: a case-insensitive SUBSTRING after `trim` on both
+   * sides, a multi-word value matching only as an exact PHRASE, and an empty
+   * value yielding zero hits rather than everything. The absence of tokenization
+   * is a settled non-goal, not a backlog item — a caller who wants word order or
+   * inflection to flex builds it in `regex` (`kaucj\w*`).
+   */
+  query?: string;
+  /**
+   * 0.2.95 — a JavaScript regular expression body, matched case-insensitively
+   * against the FULL VALUE of each field in scope.
+   *
+   * Because the unit of matching is the whole value and not a line, `\n` and
+   * `[\s\S]` are LEGAL here and return hits on fields whose value really does
+   * cross a line. `search_pages` refuses exactly those patterns, because there
+   * the unit is the line and such a pattern could only ever match nothing. The
+   * asymmetry is the contract, not an oversight on either side.
+   */
+  regex?: string;
   fields?: string[];
-  mode?: 'hits' | 'count';
+  /**
+   * The cost ladder, default `map` since 0.2.95: `count` says how much, `map`
+   * says where, `hits` says what it says. The rung a caller lands on by NOT
+   * choosing is the one that answers "which entities" without paying to carry
+   * their prose.
+   */
+  mode?: 'count' | 'map' | 'hits';
   limit?: number;
   offset?: number;
   /** Same declarative field filter as `ListEntitiesInput.filters`, ANDed with the ranking. */
@@ -95,16 +122,56 @@ export interface SearchEntitiesInput {
 }
 
 /**
- * A hit: the discovery row plus its score. Frozen for the same reason
- * `EntityRow` is — search is discovery, and discovery answers with keys.
+ * One contiguous window of one field's value, carrying how many matches fell
+ * inside it. `hits` mode only.
  */
+export interface SearchEntityHunk {
+  /**
+   * The field the window came from — and a LEGAL `select` value for
+   * `get_entities`, which is what makes a hunk an ADDRESS rather than a sample:
+   * the caller can go back for the full value. Never a `contentBearing` field.
+   */
+  field: string;
+  text: string;
+  /** Matches inside this window, which is why merged windows do not lose count. */
+  matches: number;
+}
+
+/**
+ * A hit: the discovery row plus how strongly it matched. Frozen for the same
+ * reason `EntityRow` is — search is discovery, and discovery answers with keys.
+ *
+ * The unit of a HIT is the ENTITY. No two rows ever share a `slug`: an entity
+ * matched twice comes back once with `matchCount: 2`, whether both matches fell
+ * in one field or in two different ones.
+ *
+ * 0.2.95 removed `score`. Relevance cannot be computed without a content index,
+ * so the number was a ranking artefact the caller could neither interpret nor
+ * compare between calls; `matchCount` is a fact. What ranks the answer is the
+ * ORDER, which is a declared contract — see `searchEntities`.
+ */
+export interface SearchEntityHit extends EntityRow {
+  matchCount: number;
+  /** `hits` mode only, and never present in `count` or `map`. */
+  hunks?: SearchEntityHunk[];
+  /**
+   * `hits` mode only: characters of the SELECTED windows that were not
+   * delivered — a window cut to the per-hunk ceiling, or a window dropped past
+   * the per-hit cap. Deliberately not "the rest of the field", which would be a
+   * measure of the entity's size rather than of what this answer withheld.
+   */
+  omittedChars?: number;
+}
+
 export type SearchEntitiesResult =
-  | (Page<EntityRow & { score: number }> & {
+  | (Page<SearchEntityHit> & {
       mode: 'hits';
       /** Mandatory: without it an empty result is indistinguishable from an out-of-scope field. */
       searchedFields: string[];
     })
-  | { mode: 'count'; total: number; searchedFields: string[] };
+  | (Page<SearchEntityHit> & { mode: 'map'; searchedFields: string[] })
+  /** `total` counts ENTITIES, so it agrees with the two rungs above; `matches` counts occurrences. */
+  | { mode: 'count'; total: number; matches: number; searchedFields: string[] };
 
 export interface ResolveIdentityInput {
   query: string;

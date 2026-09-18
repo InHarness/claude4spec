@@ -171,7 +171,17 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
   router.get('/:type/search', (req, res, next) => {
     try {
       const type = assertActiveType(host, req.params.type);
-      const q = typeof req.query.q === 'string' ? req.query.q : '';
+      /**
+       * 0.2.95 — `q` is no longer defaulted to `''`.
+       *
+       * It used to be, and that default is exactly what the exclusive choice
+       * makes unrepresentable: with `q` always present, a `regex` call would
+       * arrive at the core as two inputs and be refused. Absent stays absent,
+       * and the core decides — the rule lives in one place for all four
+       * channels rather than once per wire.
+       */
+      const q = typeof req.query.q === 'string' ? req.query.q : undefined;
+      const regex = typeof req.query.regex === 'string' ? req.query.regex : undefined;
       const limit = positiveInt(req.query.limit);
       // `offset` is read with the non-negative parser: 0 is a legitimate offset
       // and a meaningless limit, and the exhaustive sweeps page from 0.
@@ -188,10 +198,26 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
        * exists to end.
        */
       const fields = commaList(req.query.fields);
-      const mode = req.query.mode === 'count' ? 'count' : req.query.mode === 'hits' ? 'hits' : undefined;
+      /**
+       * 0.2.95 — `map` joined the ladder, and it is the core's DEFAULT.
+       *
+       * Left out of this parser, `map` would have been unreachable over the one
+       * wire `c4s search-entities` uses, so the CLI could not have reached the
+       * new contract at all. An unreadable value is still dropped rather than
+       * substituted — the core's default is the single source of that decision.
+       */
+      const mode =
+        req.query.mode === 'count'
+          ? 'count'
+          : req.query.mode === 'map'
+            ? 'map'
+            : req.query.mode === 'hits'
+              ? 'hits'
+              : undefined;
       const result = discovery.searchEntities({
         type,
-        query: q,
+        ...(q !== undefined ? { query: q } : {}),
+        ...(regex !== undefined ? { regex } : {}),
         ...(fields ? { fields } : {}),
         ...(mode ? { mode } : {}),
         ...(limit !== undefined ? { limit } : {}),

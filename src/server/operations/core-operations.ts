@@ -268,17 +268,24 @@ export function registerCoreOperations(): void {
         context: z.number().int().nonnegative().optional(),
         ...paging,
       },
-      ['ROOT_NOT_FOUND', 'INVALID_ARGUMENT'],
+      ['ROOT_NOT_FOUND', 'INVALID_ARGUMENT', 'SEARCH_BUDGET_EXCEEDED'],
     ),
   );
 
   CATALOG.register(
-    coreRead('search_entities', 'Ranked search over one entity type. Hits are `{slug, title, score}`. Returns `searchedFields`, so an empty result is distinguishable from a field that was never searched. Content-bearing fields are outside the scanning scope.', {
-      type: z.string(),
-      query: z.string(),
-      fields: z.array(z.string()).optional(),
-      ...paging,
-    }),
+    coreRead(
+      'search_entities',
+      'Search over one entity type by phrase (`query`) or regex (`regex`) — exactly one of the two. A hit is an ENTITY carrying `matchCount`; matches are occurrences, so an entity matched twice is one row with `matchCount: 2`. Modes are a cost ladder: `count` (totals), `map` (`{slug, title, matchCount}`, the DEFAULT, no entity content at all), `hits` (adds `hunks[]` + `omittedChars`). No mode carries a `score`: order is the contract instead — relevance under `query`, slug ascending under `regex`, both fully tie-broken. A hunk`s `field` is a legal `select` value for `get_entities` and never a content-bearing field, which stay outside both the scan scope and the evidence. Unlike `search_pages`, a pattern may cross a line: matching runs against the whole field value. Returns `searchedFields`, so an empty result is distinguishable from a field that was never searched.',
+      {
+        type: z.string(),
+        query: z.string().optional(),
+        regex: z.string().optional(),
+        fields: z.array(z.string()).optional(),
+        mode: z.enum(['count', 'map', 'hits']).optional(),
+        ...paging,
+      },
+      ['SEARCH_BUDGET_EXCEEDED'],
+    ),
   );
 
   CATALOG.register(

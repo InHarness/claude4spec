@@ -41,6 +41,59 @@ export const MAX_ANCHORS_PER_CALL = 50;
  */
 export const MAX_SECTION_ITEMS_PER_RESPONSE = 50;
 
+/**
+ * 0.2.95 — the regex LENGTH ceiling, shared by both search operations.
+ *
+ * A cost valve of a different kind from the ones above: they bound the answer,
+ * this one bounds the QUESTION. Catastrophic backtracking grows exponentially in
+ * the pattern, and a megabyte of alternation is paid for at COMPILE time, where
+ * no time budget can interrupt it — so an over-long pattern is refused before it
+ * is compiled rather than stopped while it runs.
+ */
+export const MAX_PATTERN_CHARS = 1_000;
+
+/**
+ * 0.2.95 — wall clock for ONE search run, checked between match units.
+ *
+ * The companion to the ceiling above, for the patterns short enough to accept
+ * and slow enough to matter. "One match per line" is not itself a protection:
+ * backtracking within a single line is already unbounded.
+ */
+export const SEARCH_TIME_BUDGET_MS = 5_000;
+
+/**
+ * 0.2.95 — the RADIUS, in characters, of the window a hunk shows around one
+ * match on the entity side.
+ *
+ * A character count rather than a line count, and a core constant rather than a
+ * parameter, because a field value has no line structure to count: there is no
+ * `context` on `search_entities`. A caller who wants the whole value asks
+ * `get_entities({ select: [field] })` — the hunk's `field` is exactly that key.
+ */
+export const HUNK_WINDOW_CHARS = 160;
+
+/**
+ * The character ceiling on ONE hunk, and therefore on one contiguous run of
+ * context. Applied per block rather than per hit so a hit with three separate
+ * matches shows all three, instead of spending its whole allowance on the first.
+ *
+ * 0.2.95 moved this here from `search/page-search.ts`: both search operations
+ * now build hunks, and two ceilings that disagreed would make one arbitrary.
+ */
+export const MAX_HUNK_CHARS = 600;
+
+/**
+ * 0.2.95 — the ceiling on WINDOWS in one entity hit.
+ *
+ * `search_pages` needs no such cap: a section is small and its hunks are bounded
+ * by it. A field value is not — one array field can hold two hundred matches
+ * spread over forty kilobytes, and that hit, arriving first, is kept whole by
+ * `fitToBudget` whatever it costs, so a single row would become the entire
+ * response. Windows past this count are dropped into `omittedChars`, which is
+ * what keeps the drop visible instead of silent.
+ */
+export const MAX_HUNKS_PER_HIT = 5;
+
 export interface Budgeted<T> {
   items: T[];
   truncated: boolean;

@@ -18,7 +18,7 @@
 
 import { collectionOverview, collectionWindow } from './ops/collections.js';
 import { checkConsistency } from './ops/consistency.js';
-import { getEntities, listEntities, resolveIdentity, searchEntities } from './ops/entities.js';
+import { getEntities, listEntities, resolveIdentity } from './ops/entities.js';
 import { getFieldContent } from './ops/content.js';
 import { describeTypes, overview } from './ops/meta.js';
 import { getPage, listPages } from './ops/pages.js';
@@ -27,6 +27,7 @@ import { getPageOutline, getSections } from './ops/sections.js';
 import { listTags } from './ops/tags.js';
 import { PageSource } from './page-source.js';
 import { RootSet } from './roots.js';
+import { searchEntities } from './search/entity-search.js';
 import { searchPages } from './search/page-search.js';
 import { MAX_SLUGS_PER_CALL } from './budget.js';
 import { MAX_LIMIT, type Page } from './pagination.js';
@@ -171,7 +172,7 @@ export function createDiscoveryCore(deps: DiscoveryDeps): DiscoveryCore {
     getPageOutline: (input) => getPageOutline(deps.db, pages, roots, input),
     getSections: (input) => getSections(deps.db, pages, roots, deps.reader, input),
     getPage: (input) => getPage(pages, roots, input),
-    searchPages: (input) => searchPages(deps.db, pages, roots, input),
+    searchPages: (input) => searchPages(deps.db, pages, roots, input, deps.searchBudgetMs),
     searchEntities: (input) => searchEntities(deps, input),
     listEntities: (input) => listEntities(deps, input),
     getEntities: (input) => getEntities(deps, input),

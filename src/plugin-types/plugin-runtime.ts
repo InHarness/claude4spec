@@ -58,6 +58,8 @@ import type {
   ResolveIdentityResult,
   SearchEntitiesInput,
   SearchEntitiesResult,
+  SearchEntityHit,
+  SearchEntityHunk,
 } from '../shared/discovery/read-surface.js';
 
 export type {
@@ -76,6 +78,8 @@ export type {
   ResolveIdentityResult,
   SearchEntitiesInput,
   SearchEntitiesResult,
+  SearchEntityHit,
+  SearchEntityHunk,
 } from '../shared/discovery/read-surface.js';
 
 // ── L11/L1 contract — dep-free, re-exported from the canonical host modules ──
