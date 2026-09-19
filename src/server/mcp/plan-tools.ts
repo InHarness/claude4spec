@@ -27,9 +27,9 @@ export interface PlanToolsContext {
    * `'thread'` (default) is the internal channel: the plan is the one bound to
    * `threadId`, and the first update in a thread with no plan CREATES it.
    * `'explicit'` is a threadless channel (the external MCP mount): every call
-   * names its `path`, and creation is unavailable — §7 says a plan is born only
-   * from a thread, so a channel with no thread edits plans and does not mint
-   * them. Same shape as `brief-tools`' `target`.
+   * names its `path`, and `update_plan` never creates. A new plan comes from
+   * `create_plan` (0.2.98) on BOTH mounts — it founds its own carrier thread,
+   * so it needs no thread from the caller. Same shape as `brief-tools`' `target`.
    */
   target?: 'thread' | 'explicit';
   planService: PlanService;
@@ -151,6 +151,43 @@ export function buildPlanToolsServer(
       }),
     )
     .min(1);
+
+  /**
+   * 0.2.98 — the direct way a plan is born: file + first version + a top-level
+   * carrier thread, one call, no turn. No `threadId` and no `path` in the schema:
+   * it is the one plan tool that does not address an existing plan, so it is
+   * identical on the thread mount and the threadless one.
+   */
+  const createPlan = mcpTool(
+    'create_plan',
+    [
+      'Create a NEW plan from content you already hold, together with the thread that carries it. No turn is started.',
+      'Use it when you already know what the plan should say — you have read the code and hold the content, not a question. The plan gets its own new thread; it is not attached to this conversation.',
+      '`title` names the plan and fixes its path for good (slug = slugify(title), immutable). A title whose slug is taken fails PLAN_ALREADY_EXISTS — nothing is suffixed and nothing is written into the existing plan.',
+      '`content` is the full plan markdown, verbatim — it becomes the first version. Empty or whitespace-only fails INVALID_ARGUMENT and nothing is created.',
+      'This is not how you edit an existing plan: for that, address it with `update_plan` and the `path` returned here. The returned `hash` arms `expectedHash` on that first edit, so no read is needed in between.',
+      'Returns { path, hash, threads } — `threads` is exactly one id, the carrier thread. The content does not come back; you already have it.',
+    ].join('\n'),
+    {
+      title: z.string().describe('Plan title. Its slug becomes the plan path, immutable; a taken slug is refused, not suffixed.'),
+      content: z
+        .string()
+        .optional()
+        .describe('The complete plan markdown, verbatim — the first version. Empty or whitespace-only is refused.'),
+    },
+    async (args) => {
+      try {
+        const result = await planService.create({
+          title: typeof args.title === 'string' ? args.title : '',
+          ...(args.content !== undefined ? { content: String(args.content) } : {}),
+          changedBy: 'agent',
+        });
+        return ok({ path: result.planPath, hash: result.hash, threads: result.threads }, 'create_plan');
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
 
   const updatePlan = mcpTool(
     'update_plan',
@@ -382,6 +419,7 @@ export function buildPlanToolsServer(
   return createMcpServer({
     name: 'plan-tools',
     tools: [
+      createPlan,
       getPlan,
       updatePlan,
       listPlanVersions,

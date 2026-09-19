@@ -93,7 +93,11 @@ export type CliErrorCode =
   // about the command was wrong, so `INVALID_ARGS`/`INVALID_ARGUMENT` would send
   // a scripted caller to fix a pattern that was correct. The repair is the
   // SCOPE, and the core's `message` names the flags that narrow it.
-  | 'SEARCH_BUDGET_EXCEEDED';
+  | 'SEARCH_BUDGET_EXCEEDED'
+  // 0.2.98 M10 — `c4s create-plan`: slugify(title) names a plan that already
+  // exists. A refusal, not a suffixed variant; nothing is written. Arrives
+  // verbatim from the server's `create_plan`.
+  | 'PLAN_ALREADY_EXISTS';
 
 export class CliError extends Error {
   constructor(public code: CliErrorCode, message: string, public hint?: string) {
