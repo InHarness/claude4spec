@@ -542,7 +542,10 @@ export class PlanService {
     if (written) {
       try {
         const records = this.deps.plansRecords;
-        if (records) await records.remove(planPath, { actor: 'user', chain: false });
+        // `removeSync`, not `remove`: `remove` always runs the unlink chain, whose
+        // version capture would write a `delete` row for a plan that never was.
+        // The write ran no chain either, so there is nothing for one to undo.
+        if (records) records.removeSync(planPath);
         else {
           this.deps.plansWatcher.suppress(planPath);
           await fs.rm(this.absPath(planPath), { force: true });

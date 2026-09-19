@@ -1,5 +1,6 @@
 import os from 'node:os';
 import fs from 'node:fs/promises';
+import { unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
@@ -163,6 +164,38 @@ describe('PlanService.create (0.2.98 create_plan)', () => {
     await expect(h.service.create({ title: 'Doomed', content: 'x', changedBy: 'user' })).resolves.toMatchObject({
       planPath: 'doomed.md',
     });
+  });
+
+  it('rolls back through the record store without running the unlink chain (no `delete` row left behind)', async () => {
+    // Production wires `plansRecords`; its `remove` always runs the unlink chain,
+    // and the version-capture subscriber on it would record a `delete` tombstone.
+    const abs = (rel: string) => path.join(h.plansPages.root, rel);
+    const records = {
+      write: vi.fn(async (rel: string, rec: { raw: string }) => {
+        await fs.writeFile(abs(rel), rec.raw, 'utf-8');
+        return { content: rec.raw };
+      }),
+      remove: vi.fn(async () => {
+        throw new Error('the unlink chain must not run on rollback');
+      }),
+      removeSync: vi.fn((rel: string) => {
+        unlinkSync(abs(rel));
+        return true;
+      }),
+    };
+    (h.service as unknown as { deps: { plansRecords: unknown } }).deps.plansRecords = records;
+    const spy = vi
+      .spyOn(PagesFrontmatterIndexer.prototype, 'indexPage')
+      .mockRejectedValueOnce(new Error('index boom'));
+
+    await expect(h.service.create({ title: 'Doomed', content: 'x', changedBy: 'user' })).rejects.toThrow('index boom');
+    spy.mockRestore();
+
+    expect(records.remove).not.toHaveBeenCalled();
+    expect(records.removeSync).toHaveBeenCalledWith('doomed.md');
+    expect(await h.plansPages.listMarkdownFiles()).toEqual([]);
+    expect(h.pageVersions.listVersions('doomed.md', PLAN_ROOT_MARKER)).toEqual([]);
+    expect(threadRows(h.db)).toEqual([]);
   });
 
   it('update_plan by explicit path with no thread in scope still writes, and broadcasts threadId: null', async () => {
