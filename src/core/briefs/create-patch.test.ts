@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import matter from 'gray-matter';
-import { writePatchFs } from './file-patch.js';
+import { writePatchFs } from './create-patch.js';
 import { BriefFsError } from './types.js';
 
 describe('writePatchFs', () => {
@@ -26,7 +26,7 @@ describe('writePatchFs', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('writes a patch file with the expected frontmatter, filename slug, and body header', async () => {
+  it('[ac:ac-plik-patcha-frontmatter-type-patch-br] writes a patch file with the expected frontmatter, filename slug, and body header', async () => {
     const result = await writePatchFs({
       briefsDirAbs,
       patchesDirAbs,
@@ -90,7 +90,7 @@ describe('writePatchFs', () => {
     expect(fs.readFileSync(path.join(patchesDirAbs, resultB.path), 'utf8')).toContain('body B');
   });
 
-  it('creates patchesDir lazily when it does not exist yet', async () => {
+  it('[ac:ac-brak-katalogu-patchesdir-nie-jest-ble] creates patchesDir lazily when it does not exist yet', async () => {
     expect(fs.existsSync(patchesDirAbs)).toBe(false);
     await writePatchFs({
       briefsDirAbs,

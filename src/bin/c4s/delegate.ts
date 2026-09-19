@@ -128,7 +128,7 @@ export async function delegateGet(
   return getJson(`${apiBase}${path}${queryString(query)}`).catch(asCliError);
 }
 
-/** POST — `file-patch` and the agent flow's siblings. */
+/** POST — `create-patch` and the agent flow's siblings. */
 export async function delegatePost(args: ParsedArgs, path: string, body: unknown): Promise<unknown> {
   const { apiBase } = await resolveTarget(args).catch(asCliError);
   return postJson(`${apiBase}${path}`, body).catch(asCliError);

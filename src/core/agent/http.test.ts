@@ -32,12 +32,12 @@ describe('encodeArtifactPath', () => {
     /**
      * `.` resolves to the directory it is already in, so it escapes nothing —
      * and `path.join`, shell completion and hand-typed paths all produce that
-     * spelling. Refusing it made `c4s read-brief ./x.md` exit 4 claiming the
+     * spelling. Refusing it made `c4s get-brief ./x.md` exit 4 claiming the
      * path "escapes the artifact directory", which was both a refusal of
      * something safe and a false description of it.
      *
      * It also has to match the server: `assertSafeRelPath` normalizes first, so
-     * `file-patch --brief ./x.md` accepted the identical string this rejected.
+     * `create-patch --brief ./x.md` accepted the identical string this rejected.
      */
     expect(encodeArtifactPath('./x.md')).toBe('x.md');
     expect(encodeArtifactPath('./a/./b.md')).toBe('a/b.md');

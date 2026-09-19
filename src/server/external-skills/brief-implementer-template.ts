@@ -3,7 +3,7 @@ import { SERVER_REQUIRED_BLOCK } from './server-required.js';
 
 export const BRIEF_IMPLEMENTER_FRONTMATTER = `---
 name: c4s-brief-implementer
-description: Implement features described in claude4spec briefs. Briefs are self-contained markdown files (entity snapshots, section diffs, narrative) that live in the companion specification repository, reached from your code repo via the c4s CLI (c4s list-briefs / read-brief, with --project and --workspace baked in). After implementation, if you discover drift between the brief and reality (missing details, incorrect assumptions, edge cases not covered), file a patch via c4s file-patch as feedback for the specification author. Use when implementing a claude4spec brief in a code repository.
+description: Implement features described in claude4spec briefs. Briefs are self-contained markdown files (entity snapshots, section diffs, narrative) that live in the companion specification repository, reached from your code repo via the c4s CLI (c4s list-briefs / get-brief, with --project and --workspace baked in). After implementation, if you discover drift between the brief and reality (missing details, incorrect assumptions, edge cases not covered), file a patch via c4s create-patch as feedback for the specification author. Use when implementing a claude4spec brief in a code repository.
 ---
 `;
 
@@ -16,7 +16,7 @@ export function briefImplementerBody(ctx: ExternalSkillContext): string {
 
 This skill describes how to implement a release brief in **your code repository** (not the spec repo). A brief is a self-contained markdown file that captures everything you need to ship the change: entity snapshots, section diffs, narrative, acceptance criteria. Briefs live in the **spec** repository, a different repo from the one you are working in — you never touch it directly; the \`c4s\` CLI reaches everything for you.
 
-**Reaching the briefs.** This skill is **CLI-only**: it reaches the briefs and writes patches solely through the \`c4s\` CLI, with the spec project's identity baked into this skill (\`${identity}\`) — \`c4s list-briefs\` / \`c4s read-brief\` / \`c4s file-patch\` work from any directory, and each of them delegates to the server (see below). If \`c4s\` is not installed, **stop** and ask the user to install it — do not read or write the spec repo's files by hand.
+**Reaching the briefs.** This skill is **CLI-only**: it reaches the briefs and writes patches solely through the \`c4s\` CLI, with the spec project's identity baked into this skill (\`${identity}\`) — \`c4s list-briefs\` / \`c4s get-brief\` / \`c4s create-patch\` work from any directory, and each of them delegates to the server (see below). If \`c4s\` is not installed, **stop** and ask the user to install it — do not read or write the spec repo's files by hand. There is no fallback **even when a \`c4s\` command fails**: a failed command ends the work and asks the user to intervene; it is never a reason to go read the specification's files instead.
 
 ${SERVER_REQUIRED_BLOCK}
 
@@ -32,7 +32,7 @@ List the briefs through \`c4s\` (paginated — briefs accumulate over time, so f
 c4s list-briefs --status pending --limit 10 ${identity}
 \`\`\`
 
-\`--status pending\` hides briefs already marked \`implemented: true\`; drop it to see all. Use \`--offset\` to page. Output lists each brief's \`path\` (which you pass to \`read-brief\`) and whether it is already implemented.
+\`--status pending\` hides briefs already marked \`implemented: true\`; drop it to see all. Use \`--offset\` to page. Output lists each brief's \`path\` (which you pass to \`get-brief\`) and whether it is already implemented.
 
 **Which brief do I implement?** If the user named a brief, use it. If not — and \`list-briefs\` returns more than one pending brief — **ask the user which one**; do NOT guess. Picking the wrong brief wastes an implementation pass. Only proceed automatically when there is exactly one obvious candidate (a single pending brief, or the user pointed at one).
 
@@ -41,7 +41,7 @@ c4s list-briefs --status pending --limit 10 ${identity}
 Read the full brief by the \`path\` printed by \`list-briefs\`:
 
 \`\`\`sh
-c4s read-brief <brief-path> ${identity}
+c4s get-brief <brief-path> ${identity}
 \`\`\`
 
 The body contains everything you need — entity snapshots, section diffs, the narrative of what changes, and acceptance criteria. Read it and implement it; you do not need to understand how the brief was produced. **Do not read the main specification.**
@@ -72,15 +72,15 @@ Standard code flow in your target repository: read existing code, plan, edit, te
 
 ### 4. Feedback loop (patches)
 
-When you discover that the brief diverges from reality — a missing detail, an incorrect assumption, an edge case not covered, or anything else the spec-author should know — file a patch. Use \`c4s file-patch\`, which records the patch on the spec side for you:
+When you discover that the brief diverges from reality — a missing detail, an incorrect assumption, an edge case not covered, or anything else the spec-author should know — file a patch. Use \`c4s create-patch\`, which records the patch on the spec side for you:
 
 \`\`\`sh
-printf '%s\\n' "$PATCH_BODY" | c4s file-patch \\
+printf '%s\\n' "$PATCH_BODY" | c4s create-patch \\
   --brief <brief-path> --desc "<short-desc>" --kind drift \\
   ${identity}
 \`\`\`
 
-The body (from stdin, or \`--body-file <f>\`) goes below an auto-generated \`# Patch — <short-desc>\` heading. Structure the body as two sections: a \`## What I found\` section (the drift / missing detail / incorrect assumption) and a \`## Suggestion\` section (what the spec-author should consider in a follow-up brief or entity edits). \`c4s file-patch\` records all the metadata for you (which brief it relates to, the kind from \`--kind\`, defaulting to \`drift\`) — you only write the markdown body.
+The body (from stdin, or \`--body-file <f>\`) goes below an auto-generated \`# Patch — <short-desc>\` heading. Structure the body as two sections: a \`## What I found\` section (the drift / missing detail / incorrect assumption) and a \`## Suggestion\` section (what the spec-author should consider in a follow-up brief or entity edits). \`c4s create-patch\` records all the metadata for you (which brief it relates to, the kind from \`--kind\`, defaulting to \`drift\`) — you only write the markdown body.
 
 \`--kind\` values:
 
@@ -103,7 +103,7 @@ Like every other command in this skill, this one goes through the server — see
 
 ### 6. Hand-off
 
-The spec-author picks up your patches on the spec side and folds each deviation back into the specification. That lifecycle lives entirely in the spec repo; you only write the raw markdown patch body via \`c4s file-patch\`.
+The spec-author picks up your patches on the spec side and folds each deviation back into the specification. That lifecycle lives entirely in the spec repo; you only write the raw markdown patch body via \`c4s create-patch\`.
 
 ## Notes
 

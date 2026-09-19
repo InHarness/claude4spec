@@ -72,7 +72,7 @@ describe('operation catalog — declaration rules', () => {
     // `diff-mode-declared` — the brief was the named remaining consumer).
     expect(CATALOG.require('update_plan').contentInput).toBe('literal+diff');
     expect(CATALOG.require('update_brief').contentInput).toBe('literal+diff');
-    for (const name of ['update_entities', 'file_patch']) {
+    for (const name of ['update_entities', 'create_patch']) {
       expect(CATALOG.require(name).contentInput, name).toBe('literal');
     }
   });
@@ -272,8 +272,8 @@ describe('the seeded catalog', () => {
     expect(op.channels.rest.kind).toBe('na');
   });
 
-  it('`file_patch` is not idempotent — two filings of one drift are two files', () => {
-    expect(CATALOG.require('file_patch').idempotent).toBe(false);
+  it('`create_patch` is not idempotent — two filings of one drift are two files', () => {
+    expect(CATALOG.require('create_patch').idempotent).toBe(false);
   });
 
   it('`abort_turn` IS idempotent — aborting a thread with no live turn is a no-op', () => {
@@ -303,7 +303,7 @@ describe('context profiles', () => {
 
   it('[ac:ac-profil-brief-w-kanale-mcp-renderuje-s] `brief` admits brief artifacts and reads, not spec writes', () => {
     expect(profileAdmits('brief', CATALOG.require('get_brief'))).toBe(true);
-    expect(profileAdmits('brief', CATALOG.require('file_patch'))).toBe(true);
+    expect(profileAdmits('brief', CATALOG.require('create_patch'))).toBe(true);
     expect(profileAdmits('brief', CATALOG.require('list_entities'))).toBe(true);
     expect(profileAdmits('brief', CATALOG.require('create_entities'))).toBe(false);
   });

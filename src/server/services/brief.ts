@@ -197,7 +197,7 @@ export class BriefService {
       /**
        * The hint is the repair path, and it used to exist.
        *
-       * `assertBriefExists` — the filesystem reader `c4s read-brief` ran before
+       * `assertBriefExists` — the filesystem reader `c4s get-brief` ran before
        * item 23 — listed up to ten real brief filenames on every miss. Moving
        * the command onto this service dropped that: the caller got a bare
        * "brief 'x' not found", which is the least useful thing to say to

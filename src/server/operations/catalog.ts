@@ -44,7 +44,7 @@
  *
  * The verb vocabulary for NEW names is closed — see {@link CLOSED_VERBS}. It is
  * not enforced at registration: the catalog inherited names that predate the
- * rule (`overview`, `check_consistency`, `file_patch`, `abort_turn`), and
+ * rule (`overview`, `check_consistency`, `create_patch`, `abort_turn`), and
  * renaming a shipped tool is a breaking change for every external client that
  * has it in a config. `register()` therefore validates the SHAPE (snake_case,
  * unique) and leaves verb choice to review.

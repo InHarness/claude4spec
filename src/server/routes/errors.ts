@@ -70,7 +70,7 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
   }
   /**
    * 0.2.13 — `POST /api/patches` runs the same core writer the CLI used to run
-   * in its own process (`core/briefs/file-patch.ts`), so its refusals now have
+   * in its own process (`core/briefs/create-patch.ts`), so its refusals now have
    * to reach an HTTP client. Mapped here rather than translated at the route:
    * the route would have had to invent a second vocabulary for the same three
    * outcomes, which is exactly the drift this release exists to remove.

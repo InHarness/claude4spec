@@ -90,7 +90,7 @@ export interface AgentTurnDeps {
   planService: PlanService;
   briefService: BriefService;
   patchService: PatchService;
-  /** M23 `file_patch` over MCP. Optional so the hand-rolled test rigs keep compiling. */
+  /** M23 `create_patch` over MCP. Optional so the hand-rolled test rigs keep compiling. */
   patchWrite?: PatchWriteDeps;
   /** 0.1.69 Transagents: dispatcher resolves "latest release" for analysis briefs. */
   releaseService: ReleaseService;
@@ -1266,7 +1266,7 @@ export async function runAgentTurn(
           }, deps.projectId ?? null)
         : null;
       /**
-       * M23 `file_patch`. Same gate as the brief tools — it is a `brief`-class
+       * M23 `create_patch`. Same gate as the brief tools — it is a `brief`-class
        * operation — but NOT the same `thread.briefPath` condition: the brief a
        * patch is filed against is an argument, not the thread's own binding, so a
        * brief thread can report drift against any brief it names.
@@ -1349,7 +1349,7 @@ export async function runAgentTurn(
        *
        * Nothing is expected to DROP as a result: each inline tool's catalog
        * `opClass` matches the coarse flag that mounts it (`get_brief` /
-       * `update_brief` / `file_patch` are `brief`, plan tools are `plan`, `ask`
+       * `update_brief` / `create_patch` are `brief`, plan tools are `plan`, `ask`
        * is `peer`, `list_projects` is `read`), and `mcpServerSetForProfile`
        * derives those flags from the same class sets the gate reads. The point
        * is that the two can no longer drift apart in silence: widen a profile

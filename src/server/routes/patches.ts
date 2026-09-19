@@ -1,5 +1,5 @@
 /**
- * M23 — `POST /api/patches`, the `rest` rendering of the `file_patch` operation.
+ * M23 — `POST /api/patches`, the `rest` rendering of the `create_patch` operation.
  *
  * ## Why this is not part of the generic artifact family
  *
@@ -16,7 +16,7 @@
  *
  * ## Why it matters beyond REST
  *
- * This route is the hard prerequisite for `c4s file-patch` losing its `fs-scoped`
+ * This route is the hard prerequisite for `c4s create-patch` losing its `fs-scoped`
  * execution mode. Until it existed, the CLI wrote the patch file itself, which
  * meant the `c4s` process needed a writable filesystem handle to the
  * specification — the last thing keeping it from being a pure HTTP client.
@@ -30,7 +30,7 @@
 
 import { Router } from 'express';
 import type { PatchKind } from '../../core/briefs/types.js';
-import { filePatch, type PatchWriteDeps } from '../services/patch-write.js';
+import { createPatch, type PatchWriteDeps } from '../services/patch-write.js';
 import { errorHandler } from './errors.js';
 
 export type PatchesRouterDeps = PatchWriteDeps;
@@ -71,7 +71,7 @@ export function patchesRouter(deps: PatchesRouterDeps): Router {
        * The channel is the identity of last resort: a caller that does not say
        * who it is still leaves a truthful record of HOW it arrived.
        */
-      const result = await filePatch(deps, body, 'rest');
+      const result = await createPatch(deps, body, 'rest');
 
       /** 201 with the path relative to `patchesDir` — never the patch's own text. */
       res.status(201).json({ data: { path: result.path } });

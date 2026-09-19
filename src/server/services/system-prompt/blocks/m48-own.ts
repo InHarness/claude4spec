@@ -361,7 +361,7 @@ const PLAN_MODE_TOOL_POLICY = PLAN_MODE_TOOL_POLICY_OR_NULL;
  *
  * The list is generated rather than written. The old pattern
  * (`create_*`/`update_*`/`delete_*`/`link_*`/`unlink_*`) missed everything not
- * named that way: `file_patch`, `run_turn`, `abort_turn`, `release_create`,
+ * named that way: `create_patch`, `run_turn`, `abort_turn`, `release_create`,
  * `release_update`, and `ask`, which spends a whole turn in another project.
  * Deriving it from the mounted set and each tool's catalog `opClass` means it
  * cannot go stale or be partial. `plan`-class tools stay exempt by construction:

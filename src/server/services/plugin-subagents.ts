@@ -124,7 +124,7 @@ export function __resetSubagentWarnings(): void {
  *
  * The verb may sit in ANY `_`-separated position, not just the first. A prefix-only test
  * reads well and catches almost nothing this repo actually ships: `release_create`,
- * `release_update`, `tag_entity`, `untag_entity`, `mark_plan_applied`, `file_patch` and
+ * `release_update`, `tag_entity`, `untag_entity`, `mark_plan_applied`, `create_patch` and
  * `update_brief` all name the noun first or the verb second, and every one of them writes.
  * A subagent granted one of those would be told by `hostFrame()` that it cannot mutate
  * while holding a tool that does — the frame lying to the model being strictly worse than

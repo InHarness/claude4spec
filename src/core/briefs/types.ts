@@ -1,6 +1,8 @@
 /**
- * 0.1.103 M11 — filesystem-only brief/patch reads for `c4s list-briefs` /
- * `read-brief` / `file-patch`. Deliberately independent of `BriefService`/
+ * 0.1.103 M11 — filesystem brief/patch helpers. Originally the CLI's own
+ * readers/writers; since 0.2.13 the whole brief/patch family is
+ * server-delegating and these run only inside the SERVER process (`create_patch`
+ * via `services/patch-write.ts`). Deliberately independent of `BriefService`/
  * `PatchService` (server/services/brief.ts, patch.ts), which depend on a
  * heavy DI graph (PagesFrontmatterIndexer in-memory index, FileVersionService,
  * ChatService, ws emitter) the CLI's lightweight `resolveWorkspaceProject()`

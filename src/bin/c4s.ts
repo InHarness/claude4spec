@@ -35,8 +35,8 @@ import { pluginsCommand } from './c4s/commands/plugins.js';
 import { trustPluginsCommand } from './c4s/commands/trust-plugins.js';
 import { createBriefCommand } from './c4s/commands/create-brief.js';
 import { listBriefsCommand } from './c4s/commands/list-briefs.js';
-import { readBriefCommand } from './c4s/commands/read-brief.js';
-import { filePatchCommand } from './c4s/commands/file-patch.js';
+import { getBriefCommand } from './c4s/commands/get-brief.js';
+import { createPatchCommand } from './c4s/commands/create-patch.js';
 import { markBriefImplementedCommand } from './c4s/commands/mark-brief-implemented.js';
 import { installSkillsCommand } from './c4s/commands/install-skills.js';
 import { createPluginCommand } from './c4s/commands/create-plugin.js';
@@ -80,8 +80,8 @@ const COMMANDS: CliCommandContribution[] = [
   trustPluginsCommand,
   createBriefCommand,
   listBriefsCommand,
-  readBriefCommand,
-  filePatchCommand,
+  getBriefCommand,
+  createPatchCommand,
   markBriefImplementedCommand,
   installSkillsCommand,
   createPluginCommand,
@@ -213,9 +213,9 @@ Brief/patch (M11 — server-delegating, like every read above):
                                     runs. The window always ends at the current state, so --to
                                     and --roots are refused. Prints briefPath + hash
   list-briefs [--limit N] [--offset M] [--status implemented|pending]
-  read-brief <brief-path> [--range <from>:<to>]
+  get-brief <brief-path> [--range <from>:<to>]
                                     <brief-path> relative to briefsDir; --range is a 1-based inclusive line window
-  file-patch --brief <brief-path> --desc <s> [--kind drift|missing|incorrect|clarification]
+  create-patch --brief <brief-path> --desc <s> [--kind drift|missing|incorrect|clarification]
              [--body-file <f>]      body from --body-file or stdin; the SERVER writes the
                                     file under patchesDir and mints its slug
   mark-brief-implemented <brief-path> --project <slug> --workspace <name>
@@ -339,7 +339,7 @@ function codeToExit(code: string): number {
      * 0.2.13 — `VALIDATION` joins the same class, because the migration to
      * `server-delegating` started routing CLI argument refusals through it.
      *
-     * `c4s file-patch --brief ../foo.md` throws `BriefFsError('INVALID_ARGS')`
+     * `c4s create-patch --brief ../foo.md` throws `BriefFsError('INVALID_ARGS')`
      * in the core writer; `routes/errors.ts` deliberately renames that to
      * `VALIDATION` on the way out ("`INVALID_ARGS` is the core's name for what
      * REST calls `VALIDATION`"), and the CLI propagates the server's code

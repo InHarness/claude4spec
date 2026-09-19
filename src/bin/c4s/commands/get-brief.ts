@@ -7,7 +7,7 @@ import { optionalString } from '../args.js';
 import { SERVER_DELEGATING_CODES, type CliCommandContribution } from '../registry.js';
 
 /**
- *   c4s read-brief <brief-path> [--range <from>:<to>] [--format json|text]
+ *   c4s get-brief <brief-path> [--range <from>:<to>] [--format json|text]
  *
  * `<brief-path>` is relative to `briefsDir` — parity with the `--brief` argument
  * elsewhere.
@@ -19,13 +19,13 @@ import { SERVER_DELEGATING_CODES, type CliCommandContribution } from '../registr
  * `section_index`, so a line window is the only way to read a large one through,
  * and there is no root kind for it to be gated on.
  */
-export async function runReadBrief(args: ParsedArgs): Promise<void> {
+export async function runGetBrief(args: ParsedArgs): Promise<void> {
   const briefPath = args.positional[0];
   if (!briefPath) {
     throw new CliError(
       'INVALID_ARGS',
-      'read-brief requires a brief path',
-      'usage: c4s read-brief <brief-path>',
+      'get-brief requires a brief path',
+      'usage: c4s get-brief <brief-path>',
     );
   }
   /**
@@ -36,7 +36,7 @@ export async function runReadBrief(args: ParsedArgs): Promise<void> {
    * because the traversal never arrives at the server as a path:
    * `encodeURIComponent` leaves `..` untouched (it is not a reserved character),
    * and WHATWG URL resolution inside `fetch` collapses the dot segments before
-   * the request goes out. So `c4s read-brief ../../config` was rewritten into
+   * the request goes out. So `c4s get-brief ../../config` was rewritten into
    * `GET /api/projects/<id>/config` — a different, existing endpoint, which
    * answers 200 with the project config. The command then printed `{}` (none of
    * `frontmatter`/`body`/`content` are on that payload) and exited 0.
@@ -108,10 +108,10 @@ function parseRange(raw: string | undefined): { start: number; end: number } | u
   return { start: Number(m[1]), end: Number(m[2]) };
 }
 
-export const readBriefCommand: CliCommandContribution = {
-  name: 'read-brief',
+export const getBriefCommand: CliCommandContribution = {
+  name: 'get-brief',
   operation: 'get_brief',
   executionMode: 'server-delegating',
   errorCodes: [...SERVER_DELEGATING_CODES, 'INVALID_ARGS', 'INVALID_ARGUMENT', 'BRIEF_NOT_FOUND'],
-  handler: runReadBrief,
+  handler: runGetBrief,
 };
