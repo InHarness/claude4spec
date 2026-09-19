@@ -37,6 +37,12 @@ export interface PeerProject {
   registryName?: string;
   path: string;
   description?: string;
+  /**
+   * The registry name is also carried by a project NOT in this list — the
+   * current one, which is filtered out upstream. The block cannot count that
+   * collision itself, so the lister flags it and the peer keeps its `path`.
+   */
+  nameShared?: boolean;
 }
 
 /**

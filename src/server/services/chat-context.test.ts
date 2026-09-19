@@ -1758,11 +1758,10 @@ describe('buildSystemPrompt — the block table under frames it was not written 
   });
 
   /**
-   * A registry name is NOT a key — `findProjectByName` searches one project per
-   * workspace, so two peers sharing a name inside one workspace never reach
-   * `AMBIGUOUS_PROJECT`: the first wins silently and the second is unaddressable.
-   * `path` is tried before the name fallback and is exact, so the colliding
-   * peers keep it while everyone else stays short.
+   * A registry name is NOT a key — two projects sharing a name inside one
+   * workspace answer `AMBIGUOUS_PROJECT` (0.2.97). `path` is tried before the
+   * name fallback and is exact, so the colliding peers keep it while everyone
+   * else stays short.
    */
   it('keeps `path` on peers whose registry name is shared, and only on those', () => {
     const out = build({
@@ -1778,6 +1777,24 @@ describe('buildSystemPrompt — the block table under frames it was not written 
     expect(out).toContain('<peer id="spec" name="Other spec" path="/work/bar/spec"/>');
     expect(out).toContain('<peer id="billing" name="Billing API"/>');
     expect(out).toContain('only the path addresses it unambiguously');
+  });
+
+  /**
+   * The current project is filtered out of the list, so a peer sharing its name
+   * with IT looks unique to the block — yet `ask({ project: id })` is ambiguous.
+   * The lister flags it (`nameShared`) and the peer keeps its `path`.
+   */
+  it('keeps `path` on a peer whose registry name is shared with the current project', () => {
+    const out = build({
+      mcpInventory: inv(['c4s-tools', ['ask']]),
+      workspaceName: 'default',
+      workspaceProjects: [
+        { name: 'Other spec', registryName: 'spec', path: '/ws/b/spec', nameShared: true },
+        { name: 'Billing API', registryName: 'billing', path: '/ws/billing' },
+      ],
+    } as Partial<SystemPromptInput>);
+    expect(out).toContain('<peer id="spec" name="Other spec" path="/ws/b/spec"/>');
+    expect(out).toContain('<peer id="billing" name="Billing API"/>');
   });
 
   /**

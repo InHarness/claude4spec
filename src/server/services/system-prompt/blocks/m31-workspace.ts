@@ -40,7 +40,7 @@ function buildWorkspaceProjects(workspaceName: string, peers: PeerProject[]): st
     if (p.registryName) nameCounts.set(p.registryName, (nameCounts.get(p.registryName) ?? 0) + 1);
   }
   for (const p of peers) {
-    const unique = p.registryName !== undefined && nameCounts.get(p.registryName) === 1;
+    const unique = p.registryName !== undefined && nameCounts.get(p.registryName) === 1 && !p.nameShared;
     lines.push(
       `  ${selfClose(
         'peer',

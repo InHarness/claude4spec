@@ -1370,10 +1370,14 @@ async function buildInner(
   const listWorkspacePeers = (): PeerProject[] => {
     const ws = registry.getWorkspace(workspace.name);
     if (!ws) return [];
+    // A peer that shares its registry name with THIS project is ambiguous to
+    // the resolver (0.2.97), but the block only sees peers — so flag it here.
+    const ownNames = new Set(ws.projects.filter((p) => p.cwd === cwd).map((p) => p.name));
     return ws.projects
       .filter((p) => p.cwd !== cwd)
       .map((p) => {
         const peer: PeerProject = { path: p.cwd, registryName: p.name };
+        if (ownNames.has(p.name)) peer.nameShared = true;
         // The one sanctioned peer-config read; unreadable → no display name,
         // not an error. See `peer-config.ts` for why this bypass exists.
         const { name, description } = readPeerConfigSummary(p.cwd);
