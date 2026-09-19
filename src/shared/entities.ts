@@ -823,6 +823,25 @@ export interface ArtifactThreadListItem {
   isLast?: boolean;
 }
 
+
+/** 0.2.98 — `POST /api/plans` body (`create_plan`). No `threadId`: the carrier thread is founded by the call. */
+export interface PlanCreateRequest {
+  /** Derives the plan slug once; immutable afterwards. A taken slug is PLAN_ALREADY_EXISTS. */
+  title: string;
+  /** The first version's full markdown. Blank after trim is INVALID_ARGUMENT. */
+  content?: string;
+}
+
+/** 0.2.98 — `POST /api/plans` 201 response. */
+export interface PlanResponse {
+  /** Address of the new plan — what later operations take as `path`. */
+  planPath: string;
+  /** sha256 of the file written — `expectedHash` of the first edit. */
+  hash: string;
+  /** Threads referring to the plan; on creation exactly one, the carrier thread (top-level, no turn run). */
+  threads: string[];
+}
+
 /**
  * 0.1.138: `POST /api/plans/:slug/execute` and its DTOs (`ExecutePlanRequest`,
  * `ExecutePlanNewSessionResponse`, `ExecutePlanContinueResponse` — here

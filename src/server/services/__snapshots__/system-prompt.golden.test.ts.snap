@@ -51,7 +51,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -1454,7 +1454,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -1661,7 +1661,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -1910,7 +1910,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -2166,7 +2166,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -2417,7 +2417,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -2669,7 +2669,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -2913,7 +2913,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -3286,7 +3286,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -3525,7 +3525,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -3769,7 +3769,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -4023,7 +4023,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -4277,7 +4277,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -4523,7 +4523,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -4762,7 +4762,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -5017,7 +5017,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -5272,7 +5272,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -5485,7 +5485,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -5740,7 +5740,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -5995,7 +5995,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -6212,7 +6212,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -6425,7 +6425,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -6680,7 +6680,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
 </tooling>
@@ -6928,7 +6928,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -7183,7 +7183,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -7433,7 +7433,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -7672,7 +7672,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -7928,7 +7928,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -8184,7 +8184,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -8435,7 +8435,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -8680,7 +8680,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -8841,7 +8841,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -9241,7 +9241,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -9509,7 +9509,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
@@ -9778,7 +9778,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
-  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
+  <mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>

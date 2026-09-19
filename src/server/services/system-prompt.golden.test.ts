@@ -55,7 +55,7 @@ const FULL_INVENTORY = [
   { name: 'reference-tools', tools: ['create_tag', 'tag_entity', 'find_references', 'check_consistency'] },
   { name: 'page-tools', tools: ['get_page', 'create_page', 'update_page', 'delete_page', 'update_sections'] },
   { name: 'skill-tools', tools: ['load_skill_file'] },
-  { name: 'plan-tools', tools: ['get_plan', 'update_plan', 'list_plan_versions', 'get_plan_version', 'mark_plan_applied'] },
+  { name: 'plan-tools', tools: ['create_plan', 'get_plan', 'update_plan', 'list_plan_versions', 'get_plan_version', 'mark_plan_applied'] },
   { name: 'c4s-tools', tools: ['ask'] },
   { name: 'endpoint-tools', tools: ['link_dto', 'unlink_dto'], plugin: true },
   { name: 'legacy-tools' },

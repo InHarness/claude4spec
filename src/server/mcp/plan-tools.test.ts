@@ -100,6 +100,39 @@ describe('plan-tools — update_plan', () => {
     );
   });
 
+  it('0.2.98 — the thread mount lists exactly six tools, create_plan first-class among them', async () => {
+    const { tools } = await client.listTools();
+    expect(tools.map((t) => t.name).sort()).toEqual(
+      ['create_plan', 'get_plan', 'update_plan', 'list_plan_versions', 'get_plan_version', 'mark_plan_applied'].sort(),
+    );
+    const createProps = tools.find((t) => t.name === 'create_plan')!.inputSchema;
+    expect(Object.keys(createProps.properties!).sort()).toEqual(['content', 'title']);
+    expect(createProps.required).toEqual(['title']);
+  });
+
+  it('0.2.98 — create_plan founds a NEW carrier thread, answers { path, hash, threads } and never echoes content', async () => {
+    const content = '## Only\n\nsecret-marker body\n';
+    const res = await call('create_plan', { title: 'Direct plan', content });
+    expect(res.isError).toBe(false);
+    expect(res.body.path).toBe('direct-plan.md');
+    expect(typeof res.body.hash).toBe('string');
+    expect(res.body.threads).toHaveLength(1);
+    expect(res.body.threads[0]).not.toBe('t-1');
+    expect(JSON.stringify(res.body)).not.toContain('secret-marker');
+
+    // The calling thread stays planless — the plan belongs to the carrier.
+    const own = await call('get_plan', {});
+    expect(own.body.plan).toBeNull();
+
+    const again = await call('create_plan', { title: 'Direct plan', content: 'other' });
+    expect(again.isError).toBe(true);
+    expect(again.body.code).toBe('PLAN_ALREADY_EXISTS');
+
+    const blank = await call('create_plan', { title: 'Blank plan', content: '   ' });
+    expect(blank.isError).toBe(true);
+    expect(blank.body.code).toBe('INVALID_ARGUMENT');
+  });
+
   it('refuses a call that names two variants, and one that names none', async () => {
     const both = await call('update_plan', {
       title: 'x',

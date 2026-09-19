@@ -372,7 +372,11 @@ describe('plan addressing on the threadless channel', () => {
       planService: {} as never,
       pageVersions: {} as never,
     }).tools!.map((t) => t.name);
-    const addressAPlan = planTools.filter((n) => n !== 'list_plans');
+    // 0.2.98 — `create_plan` is excluded for the opposite reason to `list_plans`:
+    // it addresses no EXISTING plan, so it has no `path` to take (it returns one).
+    const addressAPlan = planTools.filter((n) => n !== 'list_plans' && n !== 'create_plan');
+    expect(planTools).toContain('create_plan');
+    expect(Object.keys(surface.byName.get('create_plan')!.inputSchema as Record<string, unknown>)).not.toContain('path');
     expect(addressAPlan.length).toBeGreaterThan(2);
 
     for (const name of addressAPlan) {

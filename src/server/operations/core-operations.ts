@@ -759,6 +759,37 @@ export function registerCoreOperations(): void {
   // Registered for the gate's sake; the classes match what the coarse server
   // dimensions already mount, so no profile's reach changes here.
 
+  /**
+   * 0.2.98 — `create_plan` moved from `agent-mediated` (via `update_plan` / via
+   * `run_turn`) to `direct` in every channel: one call founds the plan file,
+   * its first version and a top-level carrier thread, and starts no turn.
+   * Same deliberate exception to "from outside you pass intent, not shape" as
+   * `create_brief`. A taken slug is a refusal, not a suffixed variant.
+   */
+  CATALOG.register({
+    name: 'create_plan',
+    summary:
+      'Create a plan file together with its carrier thread (top-level, `context_type = chat`, `plan_path` set) from a `title` and the full `content`. Never runs a turn. A slug that is taken is PLAN_ALREADY_EXISTS; empty content is INVALID_ARGUMENT. Answers `{ planPath, hash, threads }`.',
+    scope: 'project',
+    mediation: 'direct',
+    opClass: 'plan',
+    inputSchema: {
+      title: z
+        .string()
+        .describe('Derives the plan slug once (slugify(title)); immutable afterwards. A taken slug is refused, not suffixed.'),
+      content: z
+        .string()
+        .optional()
+        .describe('The full plan markdown, verbatim — the first version. Empty after trim is INVALID_ARGUMENT, and nothing is created.'),
+    },
+    errorCodes: ['PLAN_ALREADY_EXISTS', 'INVALID_ARGUMENT'],
+    sideEffects: ['file', 'db'],
+    contentInput: 'literal',
+    // A second identical call hits the slug the first one took.
+    idempotent: false,
+    channels: fullParity(),
+  });
+
   CATALOG.register({
     name: 'get_plan',
     summary: 'Read a plan: content, frontmatter and version number.',

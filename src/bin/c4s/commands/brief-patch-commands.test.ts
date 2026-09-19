@@ -22,6 +22,7 @@ import { runListBriefs } from './list-briefs.js';
 import { runGetBrief } from './get-brief.js';
 import { runCreatePatch } from './create-patch.js';
 import { runCreateBrief } from './create-brief.js';
+import { runCreatePlan } from './create-plan.js';
 
 const CONFIG = {
   name: 'test-project',
@@ -254,6 +255,48 @@ describe('[ac:ac-rodzina-brief-patch-list-briefs-read] the brief/patch family de
       await expect(
         runCreateBrief(args('create-brief', '--body-file', writeBody('   '))),
       ).rejects.toMatchObject({ code: 'VALIDATION' });
+    });
+  });
+
+  describe('create-plan (0.2.98)', () => {
+    const bodyPath = () => path.join(projectDir, 'plan.md');
+    const writeBody = (text: string) => {
+      fs.writeFileSync(bodyPath(), text, 'utf8');
+      return bodyPath();
+    };
+
+    it('posts title + the file`s bytes to /plans and prints planPath + hash', async () => {
+      reply = { data: { planPath: 'auth-rollout.md', hash: 'h1', threads: ['t-9'] } };
+      const body = '## Step\n\n`backticks` and "quotes" survive\n';
+      await runCreatePlan(args('create-plan', '--title', 'Auth rollout', '--body-file', writeBody(body)));
+
+      expect(seen).toHaveLength(1);
+      expect(seen[0]!.method).toBe('POST');
+      expect(seen[0]!.url).toMatch(/\/plans$/);
+      expect(JSON.parse(seen[0]!.body)).toEqual({ title: 'Auth rollout', content: body });
+      expect(printed()).toEqual({ planPath: 'auth-rollout.md', hash: 'h1' });
+    });
+
+    it('requires both flags, and refuses an unreadable --body-file locally with the resolved path', async () => {
+      await expect(runCreatePlan(args('create-plan', '--body-file', writeBody('x')))).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+      });
+      await expect(runCreatePlan(args('create-plan', '--title', 't'))).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+      });
+      const missing = path.join(projectDir, 'nope.md');
+      await expect(
+        runCreatePlan(args('create-plan', '--title', 't', '--body-file', missing)),
+      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT', message: expect.stringContaining(missing) });
+      expect(seen).toEqual([]);
+    });
+
+    it('propagates PLAN_ALREADY_EXISTS from the server verbatim', async () => {
+      status = 409;
+      reply = { error: { code: 'PLAN_ALREADY_EXISTS', message: "plan 'x.md' already exists" } };
+      await expect(
+        runCreatePlan(args('create-plan', '--title', 'x', '--body-file', writeBody('y'))),
+      ).rejects.toMatchObject({ code: 'PLAN_ALREADY_EXISTS' });
     });
   });
 

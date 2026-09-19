@@ -152,6 +152,25 @@ export interface PlanUpdateInput {
   changedBy: PlanChangedBy;
 }
 
+/**
+ * 0.2.98 — `create_plan`: the plan born from OUTSIDE a conversation, together
+ * with the thread that carries it. No `threadId` in: there is none yet.
+ */
+export interface PlanCreateInput {
+  title: string;
+  /** Full markdown of the first version. Optional in the TYPE; blank is refused. */
+  content?: string;
+  changedBy: PlanChangedBy;
+}
+
+export interface PlanCreateResult {
+  planPath: string;
+  /** sha256 of the file just written — arms `expectedHash` on the first edit. */
+  hash: string;
+  /** Always exactly one on creation: the carrier thread. */
+  threads: string[];
+}
+
 export interface PlanUpdateResult {
   plan: Plan;
   version: number;
@@ -446,6 +465,98 @@ export class PlanService {
   }
 
   /**
+   * 0.2.98 — `create_plan`: plan file + its first `file_version` + a top-level
+   * carrier `chat_thread` (`context_type = 'chat'`, `plan_path` bound at insert),
+   * in one call and WITHOUT starting a turn — running one is the caller's
+   * composition.
+   *
+   * Differs from the first `update_plan` in a thread on purpose:
+   *   - `title` missing is `INVALID_ARGUMENT` (a schema field), not `MISSING_TITLE`;
+   *   - a taken slug is `PLAN_ALREADY_EXISTS` — a refusal, never a `-2` suffix
+   *     and never a write into someone else's file.
+   *
+   * All or nothing. The filesystem has no transaction, so the effects are undone
+   * by hand in reverse order: a refusal at any step leaves neither a file, nor a
+   * version row, nor a thread.
+   */
+  async create(input: PlanCreateInput): Promise<PlanCreateResult> {
+    const { changedBy } = input;
+    const title = typeof input.title === 'string' ? input.title.trim() : '';
+    if (!title) {
+      throw new DomainError('INVALID_ARGUMENT', 'title is required', 'pass `title` — it names the plan and fixes its path for good');
+    }
+    if (typeof input.content !== 'string' || input.content.trim().length === 0) {
+      throw new DomainError(
+        'INVALID_ARGUMENT',
+        'content must not be empty',
+        'pass the full markdown of the plan in `content` — it becomes the first version',
+      );
+    }
+    const content = input.content;
+    const base = slugify(title) || 'plan';
+
+    return this.withLock(`new-plan:${base}`, async () => {
+      const planPath = `${base}.md`;
+      this.absPath(planPath);
+      if (await this.deps.plansPages.exists(planPath)) {
+        throw new DomainError(
+          'PLAN_ALREADY_EXISTS',
+          `plan '${planPath}' already exists`,
+          'pick a different title, or edit the existing plan with update_plan and its `path`',
+        );
+      }
+      const { fullContent } = newPlanBytes(title, content, changedBy);
+
+      const thread = this.deps.chatService.createThread(title, { planPath });
+      let written = false;
+      let versionId: number | null = null;
+      try {
+        await this.writeBytes(planPath, fullContent);
+        written = true;
+        const row = await this.deps.pageVersions.recordVersion(
+          planPath,
+          'create',
+          toFileChangedBy(changedBy),
+          undefined,
+          this.deps.plansSerializer,
+          PLAN_ROOT_MARKER,
+        );
+        versionId = row?.id ?? null;
+        await this.deps.frontmatterIndexer.indexPage(PLAN_ROOT_MARKER, planPath);
+      } catch (err) {
+        await this.undoCreate(planPath, thread.id, written, versionId);
+        throw err;
+      }
+
+      const version = this.currentVersionFor(planPath);
+      this.deps.ws.broadcast({ kind: 'plan:updated', planPath, threadId: thread.id, version, changedBy });
+      return { planPath, hash: hashContent(fullContent), threads: [thread.id] };
+    });
+  }
+
+  /** Reverse of {@link create}'s effects; best-effort per step so one failure does not strand the rest. */
+  private async undoCreate(planPath: string, threadId: string, written: boolean, versionId: number | null): Promise<void> {
+    if (versionId !== null) {
+      try { this.deps.pageVersions.discardVersion(versionId); } catch { /* keep undoing */ }
+    }
+    if (written) {
+      try {
+        const records = this.deps.plansRecords;
+        // `removeSync`, not `remove`: `remove` always runs the unlink chain, whose
+        // version capture would write a `delete` row for a plan that never was.
+        // The write ran no chain either, so there is nothing for one to undo.
+        if (records) records.removeSync(planPath);
+        else {
+          this.deps.plansWatcher.suppress(planPath);
+          await fs.rm(this.absPath(planPath), { force: true });
+        }
+      } catch { /* keep undoing */ }
+      try { this.deps.frontmatterIndexer.handleUnlink(PLAN_ROOT_MARKER, planPath); } catch { /* keep undoing */ }
+    }
+    try { this.deps.chatService.deleteThread(threadId); } catch { /* keep undoing */ }
+  }
+
+  /**
    * The `update_plan` operation — 0.2.43's three input variants, one write.
    *
    * First call in a thread (`plan_path IS NULL`) requires `title`, creates the
@@ -483,8 +594,8 @@ export class PlanService {
     const payload = selectPlanVariant(input);
     /**
      * An explicitly addressed plan must EXIST — this path does not create one.
-     * Creation is thread-bound by design (§7: "a plan is born only from a
-     * thread"), so a channel with no thread can edit plans and not mint them.
+     * A channel with no thread that wants a NEW plan calls {@link create}
+     * (0.2.98 `create_plan`), which founds the carrier thread along with it.
      */
     if (addressed !== undefined) await this.requirePlan(addressed);
     const lockKey = addressed ?? this.deps.chatService.getThreadPlanPath(threadId) ?? `thread:${threadId}`;
@@ -527,18 +638,7 @@ export class PlanService {
         // never look at the same candidates and proceed unblocked.
         const { planPath, version, plan, finalContent } = await this.withLock(`new-plan:${base}`, async () => {
           const allocated = await this.allocatePath(base);
-          const injected = injectAnchors(composed.body);
-          const frontmatter: PlanFrontmatter = {
-            type: 'plan',
-            title: trimmedTitle,
-            created_at: new Date().toISOString(),
-            created_by: changedBy,
-            // 0.2.14: written EXPLICITLY at create time rather than left to the
-            // read-side default, so a plan file states its own flag from the
-            // first byte. Pre-0.2.14 files without the key still read `false`.
-            applied: false,
-          };
-          const fullContent = matter.stringify(injected, frontmatter as Record<string, unknown>);
+          const { injected, fullContent } = newPlanBytes(trimmedTitle, composed.body, changedBy);
           // `absPath` is still called for its path validation — the write itself
           // no longer needs the absolute path now the record store resolves it.
           this.absPath(allocated);
@@ -609,7 +709,14 @@ export class PlanService {
         changeSummary,
         changedBy,
       });
-      this.deps.ws.broadcast({ kind: 'plan:updated', planPath: existingPath, threadId, version, changedBy });
+      /**
+       * 0.2.98 — an explicitly addressed write from a caller with no thread in
+       * scope (the external mount passes a sentinel id) broadcasts `threadId:
+       * null`, not the sentinel: no client can resolve that id to a thread.
+       */
+      const eventThreadId =
+        addressed !== undefined && !this.deps.chatService.getThreadMeta(threadId) ? null : threadId;
+      this.deps.ws.broadcast({ kind: 'plan:updated', planPath: existingPath, threadId: eventThreadId, version, changedBy });
       return {
         plan,
         version,
@@ -893,6 +1000,26 @@ export class PlanService {
     }
     return candidate;
   }
+}
+
+/**
+ * The bytes of a NEW plan: anchors injected into `body`, and the creation
+ * frontmatter. Shared by both routes that birth a plan (first `update_plan` in
+ * a thread, and `create_plan`), so the two can never disagree on its shape.
+ */
+function newPlanBytes(title: string, body: string, changedBy: PlanChangedBy): { injected: string; fullContent: string } {
+  const injected = injectAnchors(body);
+  const frontmatter: PlanFrontmatter = {
+    type: 'plan',
+    title,
+    created_at: new Date().toISOString(),
+    created_by: changedBy,
+    // 0.2.14: written EXPLICITLY at create time rather than left to the
+    // read-side default, so a plan file states its own flag from the
+    // first byte. Pre-0.2.14 files without the key still read `false`.
+    applied: false,
+  };
+  return { injected, fullContent: matter.stringify(injected, frontmatter as Record<string, unknown>) };
 }
 
 /**
