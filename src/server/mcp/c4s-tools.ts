@@ -40,6 +40,7 @@ export function buildC4sToolsServer(callerWorkspace?: string): CapturedMcpServer
       'The peer is READ-ONLY, and by a gate rather than by persuasion: it runs under the `ask` context profile, which admits only read/plan operations, so the write tools of every mounted MCP server are filtered out of its `tools/list` and its file-write and shell built-ins are off.',
       'Use `project` OR `server` (URL override); if both, `server` wins.',
       '`project` accepts EITHER a local path to the peer project directory OR the project name as registered in the workspace (`~/.claude4spec/workspaces.json`) — the path is tried first, then the registry name. The registry name is NOT necessarily the display name in the peer\'s config.json: a peer shown as "C4S - App Spec" may be registered as `app-spec`, and only the latter resolves.',
+      'Peers available in this workspace are listed in <workspace_projects/>.',
       'Continue an existing peer thread by passing its `threadId`.',
       'Works in plan_mode — that flag gates built-ins only and does not apply to MCP at all, so this works where Bash-shelled `c4s ask` does not.',
       'Same contract as the `c4s ask` CLI shorthand: same discovery, same errors.',

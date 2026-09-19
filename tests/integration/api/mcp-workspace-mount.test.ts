@@ -50,7 +50,12 @@ describe('workspace-bound MCP mount', () => {
     } as unknown as WorkspaceRegistry;
     const workspace = {
       name: 'default',
-      projects: [{ id: 'proj-a', cwd: app.cwd, name: 'Project A' }],
+      projects: [
+        { id: 'proj-a', cwd: app.cwd, name: 'Project A' },
+        // Two projects sharing a registry name inside ONE workspace (0.2.97, M31).
+        { id: 'twin-1', cwd: app.cwd, name: 'twin' },
+        { id: 'twin-2', cwd: app.cwd, name: 'twin' },
+      ],
     } as unknown as WorkspaceRecord;
     const cache = {
       get: async () => (live ??= fakeCtx()),
@@ -122,6 +127,21 @@ describe('workspace-bound MCP mount', () => {
     // that had to translate it back to a registry id before connecting would
     // make the operation useless for its stated purpose.
     const client = await connect('?project=' + encodeURIComponent('Project A'));
+    expect((await client.listTools()).tools.map((t) => t.name)).toContain('overview');
+  });
+
+  /**
+   * 0.2.97 (M31) — a name is not unique inside a workspace. The mount used to
+   * connect a shared name to whichever project was registered first; it refuses
+   * now, and the caller addresses the one it means by `id`.
+   */
+  it('refuses a name two projects of this workspace share, and resolves each by id', async () => {
+    const res = await initialize('?project=twin');
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { error: { data: { code: string } } }).error.data.code).toBe(
+      'PROJECT_NOT_IN_WORKSPACE',
+    );
+    const client = await connect('?project=twin-2');
     expect((await client.listTools()).tools.map((t) => t.name)).toContain('overview');
   });
 

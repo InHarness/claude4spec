@@ -90,9 +90,16 @@ export interface WorkspaceMcpDeps {
  */
 function findProject(deps: WorkspaceMcpDeps, selector: string) {
   const fresh = deps.registry.getWorkspace(deps.workspace.name) ?? deps.workspace;
-  return (
-    fresh.projects.find((p) => p.id === selector) ?? fresh.projects.find((p) => p.name === selector) ?? null
-  );
+  const byId = fresh.projects.find((p) => p.id === selector);
+  if (byId) return byId;
+  /**
+   * 0.2.97 — a name is not unique inside a workspace. Two projects sharing it
+   * resolve to NEITHER rather than to whichever was registered first: serving
+   * the first would connect the caller to a project it did not choose, while a
+   * refusal sends it back to `list_projects`, whose `id` is unambiguous.
+   */
+  const byName = fresh.projects.filter((p) => p.name === selector);
+  return byName.length === 1 ? byName[0]! : null;
 }
 
 /** `/api/workspace/mcp` — mounted on the workspace router. */

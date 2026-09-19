@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildSystemPrompt,
+  compositionCarries,
   mainPromptBlockNames,
+  promptCompositionFor,
   subagentsFor,
   CONTEXT_TYPE_REGISTRY,
   type SystemPromptInput,
@@ -14,6 +16,9 @@ import type { PluginSubagentContribution } from '../../shared/plugin-host/manife
 import { acFixtureSystemPrompt as acSystemPrompt } from '../../../tests/helpers/ac-fixture.js';
 import { diagramSystemPrompt } from '../entities/diagram/system-prompt.js';
 import { DEFAULT_PAGES_ROOT_PROPS, type Root } from '../../shared/types.js';
+import { PROMPT_BLOCKS } from './system-prompt/registry.js';
+import { DEFAULT_COMPOSITION } from './system-prompt/compositions/default.js';
+import { BRIEF_COMPOSITION } from './system-prompt/compositions/brief.js';
 
 /** Minimal Root at `dir` for prompt tests. */
 function rootAt(dir: string, id = 'pages'): Root {
@@ -1753,11 +1758,10 @@ describe('buildSystemPrompt — the block table under frames it was not written 
   });
 
   /**
-   * A registry name is NOT a key — `findProjectByName` searches one project per
-   * workspace, so two peers sharing a name inside one workspace never reach
-   * `AMBIGUOUS_PROJECT`: the first wins silently and the second is unaddressable.
-   * `path` is tried before the name fallback and is exact, so the colliding
-   * peers keep it while everyone else stays short.
+   * A registry name is NOT a key — two projects sharing a name inside one
+   * workspace answer `AMBIGUOUS_PROJECT` (0.2.97). `path` is tried before the
+   * name fallback and is exact, so the colliding peers keep it while everyone
+   * else stays short.
    */
   it('keeps `path` on peers whose registry name is shared, and only on those', () => {
     const out = build({
@@ -1773,6 +1777,24 @@ describe('buildSystemPrompt — the block table under frames it was not written 
     expect(out).toContain('<peer id="spec" name="Other spec" path="/work/bar/spec"/>');
     expect(out).toContain('<peer id="billing" name="Billing API"/>');
     expect(out).toContain('only the path addresses it unambiguously');
+  });
+
+  /**
+   * The current project is filtered out of the list, so a peer sharing its name
+   * with IT looks unique to the block — yet `ask({ project: id })` is ambiguous.
+   * The lister flags it (`nameShared`) and the peer keeps its `path`.
+   */
+  it('keeps `path` on a peer whose registry name is shared with the current project', () => {
+    const out = build({
+      mcpInventory: inv(['c4s-tools', ['ask']]),
+      workspaceName: 'default',
+      workspaceProjects: [
+        { name: 'Other spec', registryName: 'spec', path: '/ws/b/spec', nameShared: true },
+        { name: 'Billing API', registryName: 'billing', path: '/ws/billing' },
+      ],
+    } as Partial<SystemPromptInput>);
+    expect(out).toContain('<peer id="spec" name="Other spec" path="/ws/b/spec"/>');
+    expect(out).toContain('<peer id="billing" name="Billing API"/>');
   });
 
   /**
@@ -1850,5 +1872,87 @@ describe('buildSystemPrompt — the block table under frames it was not written 
     const out = build({ mcpInventory: CHAT_INVENTORY });
     expect(out).toContain('other blocks in this prompt narrow it');
     expect(out).not.toContain('the blocks below narrow it');
+  });
+});
+
+/**
+ * 0.2.97 (brief 0-2-96-to-0-2-97, M44 × M48) — the context type declares its
+ * composition; the modules declare the blocks; the composer assembles them.
+ */
+describe('prompt composition is declared by the context type (0.2.97)', () => {
+  it('chat, patch and ask use the default composition; brief brings its own', () => {
+    expect(CONTEXT_TYPE_REGISTRY.chat.promptComposition).toBe('default');
+    expect(CONTEXT_TYPE_REGISTRY.patch.promptComposition).toBe('default');
+    expect(CONTEXT_TYPE_REGISTRY.ask.promptComposition).toBe('default');
+    expect(CONTEXT_TYPE_REGISTRY.brief.promptComposition).toEqual({ own: BRIEF_COMPOSITION });
+    expect(promptCompositionFor('brief')).toBe(BRIEF_COMPOSITION);
+    expect(promptCompositionFor('ask')).toBe(DEFAULT_COMPOSITION);
+  });
+
+  it('every position of every composition names a block some module declares', () => {
+    for (const composition of [DEFAULT_COMPOSITION, BRIEF_COMPOSITION]) {
+      for (const entry of composition) {
+        expect({ block: entry.block, declared: PROMPT_BLOCKS.has(entry.block) }).toEqual({
+          block: entry.block,
+          declared: true,
+        });
+      }
+    }
+  });
+
+  it('the brief composition is the ten positions of its own sequence', () => {
+    expect(BRIEF_COMPOSITION.map((e) => e.block)).toEqual([
+      'interaction_context',
+      'project',
+      'tooling',
+      'brief_tools_usage',
+      'conversational_language',
+      'available_skills',
+      'project_writing_skill',
+      'brief_scope',
+      'current_brief',
+      'annotations',
+    ]);
+  });
+
+  it('a turn skips the reads only a block its composition lacks would need', () => {
+    expect(compositionCarries('chat', 'current_page')).toBe(true);
+    expect(compositionCarries('chat', 'current_plan')).toBe(true);
+    expect(compositionCarries('brief', 'current_page')).toBe(false);
+    expect(compositionCarries('brief', 'current_plan')).toBe(false);
+  });
+});
+
+describe('brief §9 acceptance (0.2.97)', () => {
+  const endpointOnly = {
+    listEntities: () => [{ type: 'endpoint', systemPrompt: { roleNoun: 'Endpoints' } }],
+  } as unknown as ProjectPluginHost;
+
+  it('config.entities = ["endpoint"]: <entities> names only endpoint, <tooling> every mounted server', () => {
+    const inventory = [
+      ...CHAT_INVENTORY,
+      { name: 'endpoint-tools', tools: ['link_dto', 'unlink_dto'] },
+      { name: 'diagram-tools', tools: ['validate_diagram'] },
+    ];
+    const out = build({ host: endpointOnly, mcpInventory: inventory });
+    const entities = /<entities>([\s\S]*?)<\/entities>/.exec(out)?.[1] ?? '';
+    expect([...entities.matchAll(/<entity type="([^"]+)"/g)].map(([, t]) => t)).toEqual(['endpoint']);
+    expect(entities).toContain('<entity type="endpoint">Endpoints</entity>');
+    const tooling = /<tooling>([\s\S]*?)<\/tooling>/.exec(out)?.[1] ?? '';
+    for (const { name } of inventory) expect(tooling).toContain(`<mcp name="${name}"`);
+  });
+
+  it('states that plan mode does not gate MCP exactly once, inside <claude4spec_plan_mode>', () => {
+    const out = build({ planMode: true, mcpInventory: CHAT_INVENTORY });
+    const sentence = 'Plan mode does not gate them at all';
+    expect(out.split(sentence)).toHaveLength(2);
+    const block = /<claude4spec_plan_mode>[\s\S]*?<\/claude4spec_plan_mode>/.exec(out)?.[0] ?? '';
+    expect(block).toContain(sentence);
+  });
+
+  it.each(['chat', 'patch', 'ask', 'brief'] as const)('an empty annotation list emits no <annotations> (%s)', (contextType) => {
+    const out = build({ contextType, annotations: [] });
+    expect(out).not.toContain('<annotations>');
+    expect(out).not.toContain('<annotation_handling>');
   });
 });

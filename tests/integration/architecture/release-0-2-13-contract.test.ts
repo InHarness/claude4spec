@@ -734,7 +734,8 @@ describe('a page is written by an operation, not by a file tool', () => {
      * assertion guards the only thing that actually reaches the model today, and
      * it has to name all four operations for the sentence to be actionable.
      */
-    const ctx = read('src/server/services/chat-context.ts');
+    // 0.2.97: the block moved to the module that owns it (M05).
+    const ctx = read('src/server/services/system-prompt/blocks/m05-agent-scope.ts');
     for (const op of ['create_page', 'update_page', 'delete_page', 'update_sections']) {
       expect(ctx, `the path-scope block never names ${op}`).toContain(op);
     }
