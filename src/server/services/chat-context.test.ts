@@ -696,7 +696,7 @@ describe('subagentsFor (0.1.67)', () => {
    */
   it('[ac:ac-subagent-wniesiony-przez-koperte-stoi] a contributed explorer joins the built-in rather than replacing it', () => {
     const contributed: PluginSubagentContribution = {
-      name: 'layered-spec-explore',
+      name: 'layered-spec-scout',
       description: 'Read-only explorer of a specification organised as layered vertical slices.',
       promptBody: 'Orientation only; the host frame supplies the mechanics.',
       contextTypes: ['chat', 'patch', 'ask'],
@@ -706,7 +706,7 @@ describe('subagentsFor (0.1.67)', () => {
     for (const ct of ['chat', 'patch', 'ask'] as const) {
       const subs = subagentsFor(ct, hostWith([contributed]), true);
       // Built-in FIRST, and both present — the order is the host's, not the pool's.
-      expect(subs.map((s) => s.name), ct).toEqual(['spec-explore', 'layered-spec-explore']);
+      expect(subs.map((s) => s.name), ct).toEqual(['spec-explore', 'layered-spec-scout']);
       // Each keeps its own routing surface; the host rewrites neither.
       expect(subs[1]!.description).toBe(contributed.description);
       expect(subs[0]!.description).not.toBe(subs[1]!.description);

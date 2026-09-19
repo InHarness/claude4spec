@@ -1,6 +1,6 @@
 # Bootstrap workflow (greenfield spec)
 
-Use this when **no `<index>` file exists in the CWD** — the spec does not yet exist. If an index file is already present, use `workflows/daily.md` instead. Never run bootstrap on top of an existing spec; if the user wants a clean restart, ask them to move the existing spec aside first.
+Use this when **no `<index>` file exists in the CWD** — the spec does not yet exist. If an index file is already present, use `workflows/read.md` instead. Never run bootstrap on top of an existing spec; if the user wants a clean restart, ask them to move the existing spec aside first.
 
 Announce the phase at the start of each one ("**Phase 2: Layer proposal**") so the user can see progress. Do not skip phases. Do not write files before Phase 4.
 
@@ -42,7 +42,7 @@ Based on the brief, propose a concrete set of layers specific to this project. E
 - An agent platform where every feature exposes agent tools: `L1 DB`, `L2 Agent Toolset Conventions`, `L3 HTTP API`, `L4 UI`.
 - A static content generator: `L1 Sources`, `L2 Transform`, `L3 Output`.
 
-**Do not propose `L2 Domain`** (or `Business Logic`): a module's domain is its own substance, not a layer (SKILL.md §2). The prohibition has an address — that substance's home is the module file's own `## Domain` section, whose rules are carried at the end of this file — so nothing is left homeless by refusing the layer. A convention several modules genuinely share is a layer named after that convention — `L2 Error model`, `L2 Audit conventions` — never the catch-all.
+**Do not propose a layer for the domain** (nor for business logic), under any layer number: a module's domain is its own substance, not a layer (the module-or-layer rules at the end of this file). The prohibition has an address — that substance's home is the module file's own `## Domain` section, whose rules are carried at the end of this file — so nothing is left homeless by refusing the layer. A convention several modules genuinely share is a layer named after that convention — `L2 Error model`, `L2 Audit conventions` — never the catch-all.
 
 Present as a table:
 
@@ -65,7 +65,7 @@ From the entities + features, propose modules. For each, list which layers it to
 
 Guidance:
 - Each **entity type** from Phase 1 is a candidate module — sometimes one entity per module, sometimes several related entities (versioning, history, lookup tables) cluster into one domain slice. Decide per cluster, guided by user job rather than table count.
-- Non-entity features can also be modules (config, agent, sync) (SKILL.md §2).
+- Non-entity features can also be modules (config, agent, sync) (the module-or-layer rules at the end of this file).
 - Bootstrap/project-config is usually the first module (`M01`).
 - Modules can skip layers they don't touch (e.g. a pure-UI module might not touch L1).
 - Aim for 3–10 modules. If you're heading toward 15+, suggest merging related ones or deferring scope.
@@ -113,8 +113,12 @@ Announce completion and offer: *"Spec skeleton and contents are complete. Want m
 
 ---
 
+<!-- include: parts/module-vs-layer.md -->
+
 <!-- include: parts/placement.md -->
 
 <!-- include: parts/authoring.md -->
 
-<!-- include: parts/domain.md -->
+<!-- include: parts/domain-test.md -->
+
+<!-- include: parts/domain-form.md -->

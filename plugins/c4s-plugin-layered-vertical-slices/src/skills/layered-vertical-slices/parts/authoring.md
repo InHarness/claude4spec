@@ -6,7 +6,7 @@ Numbered from the same catalogue as the placement rules; a symptom marks what ca
 
 4. **Ask, don't assume.** When the user's answer is ambiguous, stop and ask one short clarification. Do not invent column names, endpoint paths, or business rules. **Special case — user-need rationale:** if the *why* behind a module or change is unclear, that is a hard stop. Name your gap and ask before authoring. Do not infer the user-need from technical context alone.
 
-5. **Bounded scope per file.** If a module file heads past ~250 lines, propose splitting one or more layer slices out into a per-module subdirectory: convert `modules/MXX-<slug>.md` into `modules/MXX-<slug>/`, with the module's own substance in `MXX-<slug>.md` and each extracted layer slice in `LY-<slug>.md` (filename matches the corresponding `layers/LY-<slug>.md`). *Symptom:* a module file past ~250 lines, or one layer slice past ~30 lines dominating it, still in a single file.
+5. **Bounded scope per file.** How long a module file runs depends on how many layers the module carries, so there is no line count to split at. The trigger is a judgement: when one layer slice has come to dominate the file, propose splitting slices out into a per-module subdirectory — convert `modules/MXX-<slug>.md` into `modules/MXX-<slug>/`, with the module's own substance in `MXX-<slug>.md` and each extracted layer slice in `LY-<slug>.md` (filename matches the corresponding `layers/LY-<slug>.md`).
 
 6. **No code, no tests, no build config.** You are writing specification. If the user asks for code, stay in-role: "This prompt is scoped to the spec — I can describe behavior; a separate implementation pass writes the code."
 

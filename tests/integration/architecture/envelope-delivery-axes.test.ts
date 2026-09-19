@@ -291,7 +291,8 @@ describe('the coupling-class envelope — a style that mandates its own type', (
   const PKG = 'c4s-plugin-layered-vertical-slices';
   const STYLE = 'layered-vertical-slices';
   const TYPE = 'module-dependency';
-  const SUBAGENT = 'layered-spec-explore';
+  const SUBAGENT = 'layered-spec-scout';
+  const READER = 'layered-slice-reader';
   const REVIEWER = 'spec-review';
 
   function skillRegistryWith(registry: PluginRegistryImpl, cwd: string): SkillRegistry {
@@ -390,13 +391,14 @@ describe('the coupling-class envelope — a style that mandates its own type', (
    * `promptBody` REPLACES the parent's prompt, so without the style neither knows
    * what a module or a layer is.
    */
-  it('[ac:ac-jedno-registry-unregisterplugin-c4s-p] one unregister takes the TYPE, the style AND both subagents', () => {
+  it('[ac:ac-jedno-registry-unregisterplugin-c4s-p] one unregister takes the TYPE, the style AND all three subagents', () => {
     const subagentNames = () =>
       registry.listPluginRecords().flatMap((r) => r.subagents).map((s) => s.name);
 
     expect(registry.listAvailable().map((m) => m.type)).toContain(TYPE);
     expect(registry.listSkills().map((s) => s.slug)).toContain(STYLE);
     expect(subagentNames()).toContain(SUBAGENT);
+    expect(subagentNames()).toContain(READER);
     expect(subagentNames()).toContain(REVIEWER);
 
     registry.unregisterPlugin(PKG);
@@ -404,6 +406,7 @@ describe('the coupling-class envelope — a style that mandates its own type', (
     expect(registry.listAvailable().map((m) => m.type)).not.toContain(TYPE);
     expect(registry.listSkills().map((s) => s.slug)).not.toContain(STYLE);
     expect(subagentNames()).not.toContain(SUBAGENT);
+    expect(subagentNames()).not.toContain(READER);
     expect(subagentNames()).not.toContain(REVIEWER);
     expect(registry.listPluginRecords().map((r) => r.name)).not.toContain(PKG);
 
@@ -597,9 +600,9 @@ describe('the reference style fulfils the M15 form clause', () => {
    */
   it('[ac:ac-load-skill-file-layered-vertical-slic-2] carries the no-code rule together with its scope', () => {
     // Since the reformat the rules travel with the workflows, not in the core;
-    // `daily.md` carries the whole catalogue at its end.
-    const daily = resolved.files['workflows/daily.md']?.content ?? '';
-    const rule = daily.slice(daily.indexOf('## Authoring rules'));
+    // `apply.md` carries the authoring rules at its end.
+    const apply = resolved.files['workflows/apply.md']?.content ?? '';
+    const rule = apply.slice(apply.indexOf('## Authoring rules'));
 
     expect(rule).toContain('**No code, no tests, no build config.**');
     // The scope names what the prohibition does NOT cover — the canonical shape of
@@ -618,16 +621,20 @@ describe('the reference style fulfils the M15 form clause', () => {
 
   /**
    * The clause binds the style WHEREVER it enumerates admissible forms — the
-   * template was the loudest place, not the only one. SKILL.md §2 is read on every
-   * use of the style (the template only when one is copied), and `bootstrap.md`
-   * authors the very layer files the template shapes; either one listing the fence
-   * ahead of the entity re-seeds the default the template edit removed.
+   * template was the loudest place, not the only one. `bootstrap.md` authors the
+   * very layer files the template shapes; listing the fence ahead of the entity
+   * there re-seeds the default the template edit removed. Since the read → plan
+   * → apply split the core is the grid and the route table and enumerates no
+   * forms at all; it must not start listing them in the wrong order.
    */
   it('orders the entity form ahead of the fence everywhere it enumerates forms', () => {
     const enumerations: Array<[string, string]> = [
-      ['SKILL.md §2', resolved.content],
       ['workflows/bootstrap.md', resolved.files['workflows/bootstrap.md']?.content ?? ''],
     ];
+    const core = resolved.content;
+    if (core.includes('a fenced schema')) {
+      enumerations.push(['SKILL.md', core]);
+    }
 
     for (const [where, body] of enumerations) {
       const entity = body.indexOf('an embed of project entities');

@@ -46,7 +46,7 @@ Always create it, even if you only fill one file. Each file answers "how does TH
 
 - `workflows/brief.md` — read by the agent in a brief thread. Cover: how to recognise which branch of work this is by the **shape of the window** (`to_release === null` → a brief against the current state, and the workflow does not call `release_diff` at all; both ends non-null → a brief from a release diff; `from_release === null` → a brief from the very beginning; an empty body vs a filled one), the step sequence for generating the narrative, how to partition a heavy `release_diff` across `diff-explore` subagents, and the narrative structure — including which RawDelta entries are spec-format convention and should be dropped.
 - `workflows/patch.md` — read by the agent in a patch thread. Cover: the sequence for implementing a filed deviation, the verification discipline, when to delegate to `spec-explore`, and how to report what was deliberately not implemented.
-- anything else (`bootstrap.md`, `daily.md`, …) — free-form, for work in `chat`.
+- anything else (`bootstrap.md`, `read.md`, `plan.md`, `apply.md`, …) — free-form, for work in `chat`.
 
 Every file in the package except `SKILL.md` reaches the agent, whatever you name the directory — so `templates/`, `examples/` or `reference/` are all picked up as well. Keep them text: a binary file is skipped with a warning.
 
