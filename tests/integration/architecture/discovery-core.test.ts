@@ -19,6 +19,20 @@ import { describe, expect, it } from 'vitest';
 
 const REPO_ROOT = path.join(import.meta.dirname, '../../..');
 const SRC = path.join(REPO_ROOT, 'src');
+
+/**
+ * 0.2.97 — the prompt's text left `chat-context.ts` for the blocks its modules
+ * declare (`services/system-prompt/**`). A source assertion about "the prompt"
+ * reads all of it, or it passes vacuously against a file the text is no longer in.
+ */
+function readPromptSources(src: string): string {
+  const dir = path.join(src, 'server/services/system-prompt');
+  const files = (fs.readdirSync(dir, { recursive: true }) as string[]).filter((f) => f.endsWith('.ts'));
+  return [path.join(src, 'server/services/chat-context.ts'), ...files.map((f) => path.join(dir, f))]
+    .map((f) => fs.readFileSync(f, 'utf-8'))
+    .join('\n');
+}
+
 const CORE = path.join(SRC, 'server/discovery');
 
 function sourceFiles(dir: string): string[] {
@@ -331,7 +345,7 @@ describe('M39 — Discovery Core', () => {
       // `find_references` takes a required `target` discriminator. Every mention
       // that shows a call must show that form — a prompt that teaches the old
       // positional one costs a failed tool call on the move it calls reflex.
-      const prompt = fs.readFileSync(path.join(SRC, 'server/services/chat-context.ts'), 'utf-8');
+      const prompt = readPromptSources(SRC);
       expect(
         Array.from(prompt.matchAll(/find_references\((?!\{)/g)).map((m) => m[0]),
         'chat-context still shows a positional find_references(...) call',
@@ -356,7 +370,7 @@ describe('M39 — Discovery Core', () => {
        * the brief frame's `get_release` / `get_release_diff` / `list_releases`
        * did, three names that were never tools at all.
        */
-      const promptSrc = fs.readFileSync(path.join(SRC, 'server/services/chat-context.ts'), 'utf-8');
+      const promptSrc = readPromptSources(SRC);
       const hardcoded = Array.from(promptSrc.matchAll(/<mcp name="[^"$]+">[^<$]+</g)).map((m) => m[0]);
       expect(hardcoded, 'a server tool list is hardcoded in the prompt again — derive it from the mount').toEqual([]);
 

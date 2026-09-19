@@ -402,7 +402,7 @@ export class SkillRegistry {
 /**
  * What `resolveForContext` hands a turn: the listing that becomes
  * `<available_skills>`, and the at-most-one writing style that becomes
- * `<project_skill>`.
+ * `<project_writing_skill>`.
  *
  * They are separate fields rather than one list with a flag because they answer
  * different questions — "what may I open" versus "what is BINDING here" — and the

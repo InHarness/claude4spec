@@ -36,6 +36,7 @@ import { BRIEF_ALLOWED_PLUGIN_MCP } from '../operations/profiles.js';
 import type { ListProjectsResult } from '../workspace/list-projects.js';
 import {
   buildSystemPrompt,
+  compositionCarries,
   subagentsFor,
   CONTEXT_TYPE_REGISTRY,
   assertKnownContextType,
@@ -772,10 +773,13 @@ export async function runAgentTurn(
       deps.chatService.updateTitle(thread.id, title || '(annotations only)');
     }
 
-    // M05 m05ctxreg: the brief frame (uiChrome='brief-detail') is the only one with a
-    // narrow toolset + reduced prompt — it skips plan tools, pages, and
-    // the current-page block. Every brief-frame cheap-skip below reads this one flag.
-    const isBriefFrame = ctx.uiChrome === 'brief-detail';
+    // 0.2.97 (M44 × M48): a read that feeds exactly one prompt block is skipped when the
+    // thread's declared composition has no position for that block — today the brief
+    // type's own composition, which carries neither the page nor the plan. Asked of the
+    // composition rather than of a chrome flag, so a new type with its own composition
+    // gets the right skips by declaring it.
+    const carriesCurrentPage = compositionCarries(thread.contextType, 'current_page');
+    const carriesCurrentPlan = compositionCarries(thread.contextType, 'current_plan');
 
     // M21: dla brief context czytamy aktualny snapshot brief'u (frontmatter+body+hash)
     // i wkladamy do system promptu.
@@ -807,7 +811,7 @@ export async function runAgentTurn(
     const currentPageService =
       deps.resolvePagesService?.(currentPageRootId ?? 'pages') ?? deps.pagesService;
     let currentPageBody: string | null = null;
-    if (!isBriefFrame && currentPage) {
+    if (carriesCurrentPage && currentPage) {
       try {
         const page = await currentPageService.read(currentPage);
         currentPageBody = page.body;
@@ -827,7 +831,7 @@ export async function runAgentTurn(
     // used above for patchSnapshot/currentPageBody instead of letting
     // getByThread's NOT_FOUND propagate uncaught.
     let currentPlan: Plan | null = null;
-    if (!isBriefFrame) {
+    if (carriesCurrentPlan) {
       try {
         currentPlan = await deps.planService.getByThread(thread.id);
       } catch (err) {
@@ -841,7 +845,7 @@ export async function runAgentTurn(
      * unconditional fan-out of plugin contextual skills, the active writing style).
      *
      * 0.2.36: it returns METADATA. `listing` becomes the `<available_skills>` block
-     * and `writingStyle` the single `<project_skill>` block — the two are separate
+     * and `writingStyle` the single `<project_writing_skill>` block — the two are separate
      * fields rather than one list to classify, so nothing here has to infer which
      * entry is binding from a `scope` marker. No skill CONTENT is loaded on this
      * path at all; the model fetches it through `skill-tools` if it wants it.
@@ -984,12 +988,9 @@ export async function runAgentTurn(
       // is always emitted because `artifactDenyDirs` is always non-empty — it carries the
       // absolute artifact deny-set for the unconditional ALWAYS-DISALLOWED line.
       //
-      // 0.2.50: and now in the BRIEF frame too, which is where this field was always
-      // going anyway. `resolvedPathScope` is computed unconditionally above and reaches
-      // `baseExecuteArgs` for every context type, so a brief thread has been running
-      // under this scope all along — it was only the prompt that omitted the block,
-      // while the brief's own interaction rules claimed no filesystem access at all.
-      // The agent was told the opposite of its situation in both directions at once.
+      // Passed for every context type, and rendered only where the thread's composition
+      // has a position for the block: the brief type's own composition deliberately does
+      // not (see `system-prompt/compositions/brief.ts` for why).
       agentPathScope: {
         allowedPaths: resolvedPathScope.userAllowedPaths,
         disallowedPaths: resolvedPathScope.userDisallowedPaths,
@@ -1000,7 +1001,7 @@ export async function runAgentTurn(
       },
       /**
        * 0.2.53: the NEGATION of the config flag — the field names what is taken
-       * away, the prompt names what the model has. Keyed on the `shell` group
+       * away, the prompt names what the model has. Keyed on the `file-read` group
        * rather than re-reading config, so the prompt can never describe a posture
        * different from the one `disallowedToolGroups` above actually applies.
        */
