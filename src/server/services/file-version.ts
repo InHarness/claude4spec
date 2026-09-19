@@ -188,6 +188,19 @@ export class FileVersionService {
     return row ? this.toDetail(row) : null;
   }
 
+  /**
+   * 0.2.98 — removes ONE row this process just captured, by id.
+   *
+   * Not an editing verb of the log: the only caller is a compound operation
+   * (`PlanService.create`) undoing its own half-finished effects after a later
+   * step failed, so the refusal leaves no trace. Keyed by id rather than by
+   * path, so a plan recreated under a path with older history loses only the
+   * row this attempt wrote.
+   */
+  discardVersion(id: number): void {
+    this.db.prepare(`DELETE FROM file_version WHERE id = ?`).run(id);
+  }
+
   /** True when this (rootId, path) has any captured version. Used by initial-sync hook. */
   hasAny(relPath: string, rootId?: string): boolean {
     const rootClause = rootId ? ' AND rootId = ?' : '';

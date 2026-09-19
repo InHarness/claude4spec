@@ -155,6 +155,8 @@ export const STATUS_FOR_CODE: Record<string, number> = {
    */
   PLAN_NOT_FOUND: 404,
   PLAN_INVALID_FRONTMATTER: 400,
+  /** 0.2.98 — `create_plan` refuses a taken slug rather than suffixing it. */
+  PLAN_ALREADY_EXISTS: 409,
   MISSING_TITLE: 400,
   THREAD_NOT_ATTACHED_TO_PLAN: 400,
   /**

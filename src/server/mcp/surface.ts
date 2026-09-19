@@ -178,8 +178,9 @@ function sourceServers(deps: ExternalSurfaceDeps): Array<{ name: string; server:
        *
        * `target: 'explicit'` is the fix and matches what the catalog already
        * says: a plan is addressed by `path`, and the thread binding is a default
-       * of the `internal` channel, not part of the operation. Creation stays
-       * thread-bound, so this mount edits plans and cannot mint them.
+       * of the `internal` channel, not part of the operation. `update_plan`
+       * here never creates; a new plan comes from `create_plan` (0.2.98), which
+       * founds its own carrier thread and so needs no thread from this mount.
        */
       server: buildPlanToolsServer({
         threadId: 'mcp-external',

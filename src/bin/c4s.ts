@@ -38,6 +38,7 @@ import { listBriefsCommand } from './c4s/commands/list-briefs.js';
 import { getBriefCommand } from './c4s/commands/get-brief.js';
 import { createPatchCommand } from './c4s/commands/create-patch.js';
 import { markBriefImplementedCommand } from './c4s/commands/mark-brief-implemented.js';
+import { createPlanCommand } from './c4s/commands/create-plan.js';
 import { installSkillsCommand } from './c4s/commands/install-skills.js';
 import { createPluginCommand } from './c4s/commands/create-plugin.js';
 import { listWorkspacesCommand } from './c4s/commands/list-workspaces.js';
@@ -83,6 +84,7 @@ const COMMANDS: CliCommandContribution[] = [
   getBriefCommand,
   createPatchCommand,
   markBriefImplementedCommand,
+  createPlanCommand,
   installSkillsCommand,
   createPluginCommand,
   listWorkspacesCommand,
@@ -221,6 +223,13 @@ Brief/patch (M11 — server-delegating, like every read above):
   mark-brief-implemented <brief-path> --project <slug> --workspace <name>
                                      wraps PATCH /api/artifacts/brief/:path/frontmatter
                                      ('implemented' is the only mutable frontmatter key)
+
+Plans (M10 — server-delegating; the one plan command, the rest are agent/UI operations):
+  create-plan --title <t> --body-file <f>
+                                    founds a plan (slug = slugify(title), immutable) with its
+                                    first version and a top-level carrier thread; no agent turn
+                                    runs. A taken slug is PLAN_ALREADY_EXISTS (exit 24), never
+                                    suffixed. Prints planPath + hash
 
 Skills (M22 — filesystem-only, no server; on-demand, no bootstrap side-effect):
   install-skills [--project <slug>] [--dir <path>] [--skills <s1,s2>]
@@ -419,6 +428,11 @@ function codeToExit(code: string): number {
       return 18;
     case 'SCAFFOLD_WRITE_FAILED':
       return 19;
+    // 0.2.98 M10 `create-plan` — the slug is taken. Its own status rather than
+    // exit 4: the arguments were well-formed; the repair is a different title
+    // (or editing the existing plan), not fixing a flag.
+    case 'PLAN_ALREADY_EXISTS':
+      return 24;
     // PROJECT_NOT_IN_WORKSPACE → 1 (ask-group, like other server-side ask errors)
     default:
       return 1;

@@ -101,6 +101,30 @@ describe('MCP over HTTP', () => {
       expect(JSON.stringify(refused.content)).toMatch(/not found|unknown|invalid/i);
     });
 
+    it('[0.2.98] mounts the COMPLETE plan-tools set in `ask`, so a peer can found a plan', async () => {
+      const client = await connect('?profile=ask');
+      const names = (await client.listTools()).tools.map((t) => t.name);
+      for (const plan of ['create_plan', 'get_plan', 'update_plan', 'list_plan_versions', 'get_plan_version', 'mark_plan_applied']) {
+        expect(names).toContain(plan);
+      }
+      const created = await client.callTool({
+        name: 'create_plan',
+        arguments: { title: 'Peer plan 0.2.98', content: '## Intent\n\nleft by a peer\n' },
+      });
+      expect(created.isError).toBeFalsy();
+      const body = JSON.parse((created.content as Array<{ text: string }>)[0]!.text);
+      expect(body).toMatchObject({ path: 'peer-plan-0-2-98.md', threads: [expect.any(String)] });
+    });
+
+    it('[0.2.98] a spec-mutating tool in `ask` is an UNKNOWN tool, not an authorization refusal', async () => {
+      const client = await connect('?profile=ask');
+      const refused = await client.callTool({ name: 'update_entities', arguments: {} });
+      expect(refused.isError).toBe(true);
+      const text = JSON.stringify(refused.content);
+      expect(text).toMatch(/not found|unknown/i);
+      expect(text).not.toMatch(/forbidden|not allowed|unauthori[sz]ed|permission/i);
+    });
+
     it('narrows `brief` to release-tools plus reads, per BRIEF_ALLOWED_PLUGIN_MCP', async () => {
       const client = await connect('?profile=brief');
       const names = (await client.listTools()).tools.map((t) => t.name);

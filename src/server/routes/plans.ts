@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import type { PlanService } from '../services/plan.js';
+import type { PlanCreateRequest, PlanResponse } from '../../shared/entities.js';
+import { DomainError } from '../services/tags.js';
 
 /**
  * 0.1.127 M10: plan CRUD/versioning/blame moved to the generic
@@ -33,6 +35,36 @@ import type { PlanService } from '../services/plan.js';
  */
 export function plansRouter(plan: PlanService): Router {
   const router = Router();
+
+  /**
+   * 0.2.98 — `create_plan` over REST. Slice-specific ON PURPOSE rather than a
+   * `POST /api/artifacts/plan`: that family reads and writes an artifact that
+   * already exists, and teaching it to found one would change it for every
+   * kind. No `threadId` in the body — the carrier thread is founded here too.
+   *
+   * Only the TYPES are checked in the route; the blank-title / blank-content
+   * refusals live in `PlanService.create`, next to the write they guard.
+   */
+  router.post('/', async (req, res, next) => {
+    try {
+      const body = (req.body ?? {}) as Partial<Record<keyof PlanCreateRequest, unknown>>;
+      if (typeof body.title !== 'string') {
+        throw new DomainError('INVALID_ARGUMENT', 'title is required and must be a string');
+      }
+      if (body.content !== undefined && typeof body.content !== 'string') {
+        throw new DomainError('INVALID_ARGUMENT', 'content must be a string');
+      }
+      const result = await plan.create({
+        title: body.title,
+        ...(body.content !== undefined ? { content: body.content as string } : {}),
+        changedBy: 'user',
+      });
+      const data: PlanResponse = result;
+      res.status(201).json({ data });
+    } catch (err) {
+      next(err);
+    }
+  });
 
   router.get('/by-thread/:threadId', async (req, res, next) => {
     try {
