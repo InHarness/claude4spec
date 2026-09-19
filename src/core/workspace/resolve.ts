@@ -67,7 +67,8 @@ export class WorkspaceResolveError extends Error {
  *   0 matches  → PROJECT_SLUG_NOT_FOUND (the injected identity no longer
  *     matches a project in this machine's registry — regenerate the skill)
  *   1 match    → auto-resolve
- *   N>1 matches without --workspace → AMBIGUOUS_PROJECT listing candidates
+ *   N>1 matches → AMBIGUOUS_PROJECT listing candidates — across workspaces,
+ *     or (0.2.97) inside one: a name is not unique even within a workspace
  */
 export function resolveWorkspaceProject(
   opts: { project?: string; workspace?: string } = {},
@@ -105,12 +106,17 @@ export function resolveWorkspaceProject(
         projectDir = matches[0]!.project.cwd;
         owners = [matches[0]!.workspace];
       } else if (matches.length > 1) {
+        // --workspace narrows only a cross-workspace collision; two projects of one
+        // workspace sharing the name are told apart by their path alone.
+        const oneWorkspace = matches.every((m) => m.workspace.name === matches[0]!.workspace.name);
         throw new WorkspaceResolveError(
           'AMBIGUOUS_PROJECT',
           `project name '${opts.project}' matches ${matches.length} projects: ${matches
             .map((m) => `'${m.workspace.name}' (${m.project.cwd})`)
             .join(', ')}`,
-          'pass --workspace <name> to pick one, or use --project <path> instead of a name',
+          oneWorkspace
+            ? `these projects share the name inside workspace '${matches[0]!.workspace.name}' — use --project <path> instead of a name`
+            : 'pass --workspace <name> to pick one, or use --project <path> instead of a name',
         );
       } else {
         throw new WorkspaceResolveError(

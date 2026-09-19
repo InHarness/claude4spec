@@ -67,8 +67,14 @@ describe('resolveWorkspaceProject — --project <name> fallback', () => {
   it('prefers a resolving path over a DIFFERENT project sharing that same name (precedence)', () => {
     const registry = new WorkspaceRegistry(dir);
     const ws = registry.selectOrCreate({ name: 'default' });
-    const realPath = path.join(dir, 'actual-project');
-    const decoyPath = path.join(dir, 'decoy-project');
+    // realpath: on macOS the tmp dir is reached through a symlink (/var →
+    // /private/var) and `process.cwd()` after `chdir` reports the resolved form.
+    // Registered under the unresolved one, the path attempt missed, and this test
+    // passed only because the name fallback used to take the FIRST same-named
+    // project — which is exactly the silent choice 0.2.97 removed.
+    const realDir = fs.realpathSync(dir);
+    const realPath = path.join(realDir, 'actual-project');
+    const decoyPath = path.join(realDir, 'decoy-project');
     registry.registerProject(ws, realPath); // name defaults to 'actual-project'
     registry.registerProject(ws, decoyPath);
     // Hand-edit the decoy's name to collide with the real project's — if name
@@ -82,7 +88,7 @@ describe('resolveWorkspaceProject — --project <name> fallback', () => {
     // `--project actual-project` as a RELATIVE path from `dir` resolves
     // exactly to `realPath` — this must win over the name-collision with decoy.
     const prevCwd = process.cwd();
-    process.chdir(dir);
+    process.chdir(realDir);
     try {
       const result = resolveWorkspaceProject({ project: 'actual-project' });
       expect(result.projectDir).toBe(realPath);
@@ -121,6 +127,44 @@ describe('resolveWorkspaceProject — --project <name> fallback', () => {
       expect((err as WorkspaceResolveError).code).toBe('AMBIGUOUS_PROJECT');
       expect((err as WorkspaceResolveError).hint).toContain('--workspace');
     }
+  });
+
+  /**
+   * 0.2.97 (M31) — a project name is not unique even INSIDE a workspace: two
+   * projects whose directories share a basename share the name. The search used
+   * to take the first match per workspace, so the second was unaddressable by
+   * name and the first answered for both, silently. `--workspace` cannot tell
+   * them apart, so the hint names the one thing that can.
+   */
+  it('throws AMBIGUOUS_PROJECT for two same-named projects inside ONE workspace', () => {
+    const registry = new WorkspaceRegistry(dir);
+    const ws = registry.selectOrCreate({ name: 'default' });
+    registry.registerProject(ws, path.join(dir, 'repo-a', 'spec'));
+    registry.registerProject(ws, path.join(dir, 'repo-b', 'spec'));
+
+    for (const opts of [{ project: 'spec' }, { project: 'spec', workspace: 'default' }]) {
+      try {
+        resolveWorkspaceProject(opts);
+        expect.unreachable('expected resolveWorkspaceProject to throw');
+      } catch (err) {
+        expect(err).toBeInstanceOf(WorkspaceResolveError);
+        expect((err as WorkspaceResolveError).code).toBe('AMBIGUOUS_PROJECT');
+        expect((err as WorkspaceResolveError).message).toContain(path.join(dir, 'repo-a', 'spec'));
+        expect((err as WorkspaceResolveError).message).toContain(path.join(dir, 'repo-b', 'spec'));
+        expect((err as WorkspaceResolveError).hint).toContain('--project <path>');
+        expect((err as WorkspaceResolveError).hint).not.toContain('--workspace');
+      }
+    }
+  });
+
+  it('still resolves either of two same-named projects by its path', () => {
+    const registry = new WorkspaceRegistry(dir);
+    const ws = registry.selectOrCreate({ name: 'default' });
+    const b = path.join(dir, 'repo-b', 'spec');
+    registry.registerProject(ws, path.join(dir, 'repo-a', 'spec'));
+    registry.registerProject(ws, b);
+
+    expect(resolveWorkspaceProject({ project: b, workspace: 'default' }).projectDir).toBe(b);
   });
 
   it('does not widen an explicit --workspace scope to find a name registered elsewhere', () => {

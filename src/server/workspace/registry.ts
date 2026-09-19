@@ -57,6 +57,11 @@ export function findProjectByCwd(projects: ProjectRecord[], cwd: string): Projec
  * fallback (`src/core/workspace/resolve.ts`) after path resolution finds
  * nothing — callers must handle 0/1/N matches themselves (0 → not found,
  * 1 → resolve, 2+ → ambiguous).
+ *
+ * 0.2.97 — N is reachable INSIDE one workspace too. The search used to take the
+ * first match per workspace, so two projects sharing a basename in the same
+ * workspace resolved to whichever was registered first and the other was
+ * unaddressable by name — silently, since the caller only ever saw one match.
  */
 export function findProjectByName(
   workspaces: WorkspaceRecord[],
@@ -64,8 +69,9 @@ export function findProjectByName(
 ): Array<{ workspace: WorkspaceRecord; project: ProjectRecord }> {
   const matches: Array<{ workspace: WorkspaceRecord; project: ProjectRecord }> = [];
   for (const workspace of workspaces) {
-    const project = workspace.projects.find((p) => p.name === name);
-    if (project) matches.push({ workspace, project });
+    for (const project of workspace.projects) {
+      if (project.name === name) matches.push({ workspace, project });
+    }
   }
   return matches;
 }
