@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { resolvePluginSubagents } from '../../../src/server/services/plugin-subagents.js';
-import { layeredSpecExplore as explorer } from '../src/subagents/layered-spec-explore.js';
+import { layeredSliceReader as reader } from '../src/subagents/layered-slice-reader.js';
+import { layeredSpecScout as scout } from '../src/subagents/layered-spec-scout.js';
 import { checksProjection } from '../src/skills/layered-vertical-slices.js';
 import { layeredSpecReview as sub } from '../src/subagents/layered-spec-review.js';
 
@@ -13,7 +14,8 @@ import { layeredSpecReview as sub } from '../src/subagents/layered-spec-review.j
 describe('c4s-plugin-layered-vertical-slices — the reviewer it contributes', () => {
   it('does not collide with a reserved built-in name, nor with its own sibling', () => {
     expect(['spec-explore', 'diff-explore']).not.toContain(sub.name);
-    expect(sub.name).not.toBe(explorer.name);
+    expect(sub.name).not.toBe(scout.name);
+    expect(sub.name).not.toBe(reader.name);
   });
 
   /**
@@ -26,7 +28,8 @@ describe('c4s-plugin-layered-vertical-slices — the reviewer it contributes', (
     expect(sub.description).toContain('JUST SAVED');
     // Each one says what it is NOT, in the other's terms.
     expect(sub.description).toContain('never when the question is where something lives');
-    expect(explorer.description).toContain('LOCATES and does not judge');
+    expect(scout.description).toMatch(/does NOT judge/);
+    expect(reader.description).toMatch(/does not judge a saved change/);
     // It rules itself out in a project not written this way, like its sibling.
     expect(sub.description).toContain('Do NOT use it if this specification is not organised');
   });
@@ -40,7 +43,8 @@ describe('c4s-plugin-layered-vertical-slices — the reviewer it contributes', (
    */
   it('fetches the rules instead of carrying them, and carries the checks only as the shared projection', () => {
     expect(sub.promptBody).toContain('load_skill_file');
-    expect(sub.promptBody).toContain('workflows/daily.md');
+    expect(sub.promptBody).toContain('workflows/plan.md');
+    expect(sub.promptBody).toContain('workflows/apply.md');
     expect(sub.promptBody).toContain('SKILL.md');
     expect(sub.promptBody).toContain(checksProjection);
     // The rules themselves — the vocabulary a copy of the catalogue would bring.
@@ -125,15 +129,15 @@ describe('c4s-plugin-layered-vertical-slices — the reviewer it contributes', (
     }
   });
 
-  /** Both contributions resolve side by side — the turn carries the pair, not a choice. */
-  it('stands in the same turn as the explorer, both surviving the resolver', () => {
+  /** All three resolve side by side — the turn carries the set, not a choice. */
+  it('stands in the same turn as the scout and the reader, all surviving the resolver', () => {
     const definitions = resolvePluginSubagents({
       contextType: 'chat',
-      contributions: [explorer, sub],
+      contributions: [scout, reader, sub],
       hasSkillSlug: (slug) => slug === 'layered-vertical-slices',
       taken: new Set(['spec-explore']),
       warn: () => {},
     });
-    expect(definitions.map((d) => d.name)).toEqual([explorer.name, sub.name]);
+    expect(definitions.map((d) => d.name)).toEqual([scout.name, reader.name, sub.name]);
   });
 });

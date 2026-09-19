@@ -35,10 +35,12 @@ from others, not a restatement of the list above.>
      the layer files: an answer to a field of some layer's `## Module slice schema` belongs in
      that layer's section, not here.
 
-     Content lives only under `###` headings YOU name (these two are placeholders, not a fixed
-     set); `####` does not occur, and at most one paragraph stands directly under this heading.
-     Budget: 3500 characters per subsection, 12000 for the section — past them, look for the
-     same shape in other modules' `Domain` sections and propose a layer instead.
+     Content lives only under headings YOU name (these two are placeholders, not a fixed set),
+     starting at `###` and nesting down to `######` as the content needs; at most one paragraph
+     stands directly under this heading. No fenced blocks, however short. Budget: 2500
+     characters for the text directly under any one heading, its subsections excluded — past
+     it, divide that text into subsections one level down. The section as a whole has no
+     budget; the same shape recurring in other modules' `Domain` sections means a layer.
 
      A module with no substance of its own DELETES this section: there is no `n/d` variant. -->
 

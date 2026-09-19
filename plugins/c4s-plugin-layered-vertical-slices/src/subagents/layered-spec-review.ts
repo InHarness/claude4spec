@@ -4,21 +4,22 @@ import { checksProjection } from '../skills/layered-vertical-slices.js';
 /**
  * The style's own reviewer — the second half of the authorial capability.
  *
- * The explorer LOCATES; this one JUDGES. That asymmetry is the whole reason it
- * exists: until now the author of a change was also its only reader, and a
+ * The scout LOCATES and the reader reports; this one JUDGES. That asymmetry is
+ * the whole reason it exists: until now the author of a change was also its only reader, and a
  * writing style whose rules nobody re-reads against the saved text is a style
  * only in the moment of writing.
  *
- * The pair is HETEROGENEOUS, which makes it a different routing problem from the
- * host's own `spec-explore`/`diff-explore`. Those two do the same job in two
- * contexts and are separated by `contextTypes`; these two do different jobs in
- * the SAME turn, so nothing separates them but their `description` fields. The
- * explorer's says where; this one's says whether. Overlap the two and the model
- * picks between them at random.
+ * The three are HETEROGENEOUS, which makes them a different routing problem
+ * from the host's own `spec-explore`/`diff-explore`. Those two do the same job
+ * in two contexts and are separated by `contextTypes`; these do different jobs
+ * in the SAME turn, so nothing separates them but their `description` fields.
+ * The scout's says where, the reader's says what; this one's says whether.
+ * Overlap them and the model picks between them at random.
  *
  * `promptBody` carries NO copy of the style rules. The rules live in the style
- * package — since the reformat in `workflows/daily.md`, which carries the whole
- * catalogue at its end — and the reviewer reads them through `load_skill_file`
+ * package — placement and the `Domain` test at the end of `workflows/plan.md`,
+ * authoring and the `Domain` form at the end of `workflows/apply.md` — and the
+ * reviewer reads them through `load_skill_file`
  * at the moment it judges. What the prompt does carry is the CHECK LIST, and it
  * is a projection, not a copy: `checksProjection` is extracted from the same
  * `parts/*` the workflow is composed from, when this envelope loads, so a
@@ -27,8 +28,8 @@ import { checksProjection } from '../skills/layered-vertical-slices.js';
  * longer writes in, which is worse than no reviewer.
  *
  * `contextTypes: ['chat']` is written out although it is the default. It is a
- * claim, not a formality: the only thing that calls this subagent is a closing
- * step in `workflows/daily.md`, and that workflow is the `chat` one. Covering
+ * claim, not a formality: the only thing that calls this subagent is step 4 of
+ * `workflows/apply.md`, and that workflow is the `chat` one. Covering
  * `patch` would take a twin step in `workflows/patch.md`, which this does not
  * add.
  *
@@ -40,12 +41,12 @@ import { checksProjection } from '../skills/layered-vertical-slices.js';
 export const layeredSpecReview: PluginSubagentContribution = {
   name: 'spec-review',
   description:
-    'Reviewer of a change JUST SAVED to a specification organised as LAYERED VERTICAL SLICES. It does not search for things — it judges written text: delegate to it after an edit to have the saved change confronted with the rules of the style itself (layer purity, module-slice schemas, addressing, retirement over deletion) and to get back the DEVIATIONS, each with the address it occurs at and what the rule requires instead. Use it when the question is whether a change conforms, never when the question is where something lives — an explorer answers that one. Do NOT use it if this specification is not organised as `MXX-slug` modules with `LY-slug` layers: it would be measuring the text against rules it does not follow.',
+    'Reviewer of a change JUST SAVED to a specification organised as LAYERED VERTICAL SLICES. It does not search for things — it judges written text: delegate to it after an edit to have the saved change confronted with the rules of the style itself (layer purity, module-slice schemas, addressing, retirement over deletion) and to get back the DEVIATIONS, each with the address it occurs at and what the rule requires instead. Use it when the question is whether a change conforms, never when the question is where something lives — the scout answers that one. Do NOT use it if this specification is not organised as `MXX-slug` modules with `LY-slug` layers: it would be measuring the text against rules it does not follow.',
   promptBody: `You are reviewing a change that has ALREADY been saved to a specification written in the LAYERED VERTICAL SLICES style. You judge; you do not fix, and you do not decide what happens next.
 
 ## Get the rules before you use them
 
-The rules are NOT copied into this prompt, on purpose: they live in the style package and they move. Open them at the start of every review with \`load_skill_file("layered-vertical-slices", "workflows/daily.md")\` — that workflow carries the placement rules, the authoring rules and the reading protocols at its end; \`SKILL.md\` holds the concepts and the layout, and \`templates/\` the shape of the genre at hand. A rule you recall rather than read is a rule you may be enforcing in a version the project has moved past.
+The rules are NOT copied into this prompt, on purpose: they live in the style package and they move. Open them at the start of every review with \`load_skill_file("layered-vertical-slices", "workflows/plan.md")\` — placement and the \`Domain\` test at its end — **and** \`load_skill_file("layered-vertical-slices", "workflows/apply.md")\` — authoring, \`Cel\` and the \`Domain\` form at its end; \`SKILL.md\` holds the vocabulary, and \`templates/\` the shape of the genre at hand. A rule you recall rather than read is a rule you may be enforcing in a version the project has moved past.
 
 What you look for, projected from that same source when this envelope loads so it cannot drift from it — the mechanically decidable symptoms, each named after the rule it belongs to:
 

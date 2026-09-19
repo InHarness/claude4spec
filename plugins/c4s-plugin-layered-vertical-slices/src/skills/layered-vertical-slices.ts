@@ -3,8 +3,10 @@ import type { WritingStyleContribution } from '@c4s/plugin-runtime';
 import skillMd from './layered-vertical-slices/SKILL.md?raw';
 import workflowBootstrap from './layered-vertical-slices/workflows/bootstrap.md?raw';
 import workflowBrief from './layered-vertical-slices/workflows/brief.md?raw';
-import workflowDaily from './layered-vertical-slices/workflows/daily.md?raw';
 import workflowPatch from './layered-vertical-slices/workflows/patch.md?raw';
+import workflowRead from './layered-vertical-slices/workflows/read.md?raw';
+import workflowPlan from './layered-vertical-slices/workflows/plan.md?raw';
+import workflowApply from './layered-vertical-slices/workflows/apply.md?raw';
 import templateIndex from './layered-vertical-slices/templates/index.md?raw';
 import templateLayer from './layered-vertical-slices/templates/layer.md?raw';
 import templateModule from './layered-vertical-slices/templates/module.md?raw';
@@ -12,7 +14,9 @@ import partPlacement from './layered-vertical-slices/parts/placement.md?raw';
 import partAuthoring from './layered-vertical-slices/parts/authoring.md?raw';
 import partReadingSweep from './layered-vertical-slices/parts/reading-sweep.md?raw';
 import partReadingDeps from './layered-vertical-slices/parts/reading-deps.md?raw';
-import partDomain from './layered-vertical-slices/parts/domain.md?raw';
+import partDomainTest from './layered-vertical-slices/parts/domain-test.md?raw';
+import partDomainForm from './layered-vertical-slices/parts/domain-form.md?raw';
+import partModuleVsLayer from './layered-vertical-slices/parts/module-vs-layer.md?raw';
 
 /**
  * Drop the leading YAML frontmatter block.
@@ -59,7 +63,9 @@ const PARTS: Readonly<Record<string, string>> = {
   'parts/authoring.md': partAuthoring,
   'parts/reading-sweep.md': partReadingSweep,
   'parts/reading-deps.md': partReadingDeps,
-  'parts/domain.md': partDomain,
+  'parts/domain-test.md': partDomainTest,
+  'parts/domain-form.md': partDomainForm,
+  'parts/module-vs-layer.md': partModuleVsLayer,
 };
 
 /**
@@ -79,9 +85,10 @@ function modulePathPattern(): string {
  * The check list: one source, two projections.
  *
  * Every rule that can be settled on the text alone carries a `*Symptom:*`
- * marker beside it in `parts/placement.md` and `parts/authoring.md`. This
- * reads those markers into a flat list — one line per symptom, prefixed by
- * the rule it belongs to — for the daily workflow's drift check and for the
+ * marker beside it in `parts/placement.md`, `parts/authoring.md` and
+ * `parts/domain-form.md`. This reads those markers into a flat list — one line
+ * per symptom, prefixed by the rule it belongs to — for the apply workflow's
+ * drift check and for the
  * `spec-review` subagent's prompt. Neither holds a second copy of a rule: a
  * symptom added or reworded in its part is in both projections at the next
  * load, and a rule without a marker is, correctly, absent from both.
@@ -119,8 +126,22 @@ export function extractChecks(...parts: string[]): string[] {
   return checks;
 }
 
-/** The check list as it is delivered — to `daily.md` step 5 and to `spec-review`. */
-export const checksProjection: string = extractChecks(partPlacement, partAuthoring, partDomain).join('\n');
+/** The check list as it is delivered — to `apply.md` step 3 and to `spec-review`. */
+export const checksProjection: string = extractChecks(partPlacement, partAuthoring, partDomainForm).join('\n');
+
+/**
+ * A part as a subagent prompt receives it — the same trimmed text `compose`
+ * splices into a workflow, so a protocol pasted into a `promptBody` and the one
+ * a workflow carries are one source, the way `checksProjection` already is for
+ * the reviewer. Not counted in `includeUsage`: that tally is about the shipped
+ * skill package, and a part delivered only to a prompt is still a part the
+ * package's own readers never see.
+ */
+export function composePart(name: string): string {
+  const text = PARTS[name];
+  if (text === undefined) throw new Error(`unknown part "${name}" in the layered-vertical-slices package`);
+  return text.trim();
+}
 
 /** Derived splices — text computed from a part rather than copied out of it. */
 const DERIVED: Readonly<Record<string, () => string>> = {
@@ -166,7 +187,7 @@ export const layeredVerticalSlicesStyle: WritingStyleContribution = {
   slug: 'layered-vertical-slices',
   title: 'Layered Vertical Slices',
   description:
-    'Conventions for layered, vertical-slice specifications — module/layer structure, file layout, and four workflows (bootstrap, daily, brief, patch) that carry the rules. TRIGGER when the active writing style is this slug — editing a spec page, drafting plans, creating modules or layers, answering structural questions.',
+    'Layered, vertical-slice specifications: modules crossed with layers, a read → plan → apply workflow for work on an existing spec, and bootstrap, brief and patch workflows that carry the rules of their own steps.',
   /**
    * 2 since the reformat: the quality rules and the reading protocols left
    * `content` for the workflows, which is a change of what a reader of the
@@ -185,8 +206,10 @@ export const layeredVerticalSlicesStyle: WritingStyleContribution = {
   files: {
     'workflows/bootstrap.md': compose(workflowBootstrap),
     'workflows/brief.md': compose(workflowBrief),
-    'workflows/daily.md': compose(workflowDaily),
     'workflows/patch.md': compose(workflowPatch),
+    'workflows/read.md': compose(workflowRead),
+    'workflows/plan.md': compose(workflowPlan),
+    'workflows/apply.md': compose(workflowApply),
     'templates/index.md': compose(templateIndex),
     'templates/layer.md': compose(templateLayer),
     'templates/module.md': compose(templateModule),

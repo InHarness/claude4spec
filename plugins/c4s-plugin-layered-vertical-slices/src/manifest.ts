@@ -1,8 +1,9 @@
 import type { PluginManifest } from '@c4s/plugin-runtime';
 import { moduleDependencyEntity } from './entity/module-dependency/index.js';
 import { layeredVerticalSlicesStyle } from './skills/layered-vertical-slices.js';
-import { layeredSpecExplore } from './subagents/layered-spec-explore.js';
+import { layeredSliceReader } from './subagents/layered-slice-reader.js';
 import { layeredSpecReview } from './subagents/layered-spec-review.js';
+import { layeredSpecScout } from './subagents/layered-spec-scout.js';
 
 /**
  * 0.2.70 — this envelope stops being a CAPABILITY and becomes a COUPLING.
@@ -29,9 +30,10 @@ import { layeredSpecReview } from './subagents/layered-spec-review.js';
  *
  *   - `entities[]`     — `module-dependency`, one directed edge per ordered pair;
  *   - `writingStyles[]`— `layered-vertical-slices`, which mandates that form;
- *   - `subagents[]`    — an explorer of the specification and a reviewer of the
- *                        saved change, neither of which knows what a module or a
- *                        layer is without the style.
+ *   - `subagents[]`    — a scout that says where a topic lives, a reader of one
+ *                        module on that topic, and a reviewer of the saved
+ *                        change; none of them knows what a module or a layer is
+ *                        without the style.
  *
  * What binds it to the Host API grows with that. It was the SHAPE of two
  * contributions and nothing else; it is now the shape of three, plus the UI Kit
@@ -53,7 +55,7 @@ import { layeredSpecReview } from './subagents/layered-spec-review.js';
  *
  * No `onUnregister`: the package is purely declarative and holds no resource of
  * its own. One `registry.unregisterPlugin(name)` takes EVERY contribution off —
- * the type, the style and both subagents — because all of them are pull-read off
+ * the type, the style and all three subagents — because all of them are pull-read off
  * the record.
  */
 export const manifest: PluginManifest = {
@@ -64,6 +66,6 @@ export const manifest: PluginManifest = {
   contributes: {
     entities: [moduleDependencyEntity],
     writingStyles: [layeredVerticalSlicesStyle],
-    subagents: [layeredSpecExplore, layeredSpecReview],
+    subagents: [layeredSpecScout, layeredSliceReader, layeredSpecReview],
   },
 };

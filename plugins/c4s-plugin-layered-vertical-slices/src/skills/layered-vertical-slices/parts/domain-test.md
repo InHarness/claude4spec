@@ -16,19 +16,3 @@ Whatever passes all three and is neither a purpose, nor an edge case, nor a crit
 
 The substance takes four shapes in practice — a description, not a closed list, and not headings to copy out: the **model** (concepts, identity, states); **invariants and decisions**, each with its reason, negative scope included; the **lifecycle** the module owns end to end, one line per step, a step owned by someone else being a sentence and a pointer; the **boundary** — what the module deliberately does not do.
 
-**Form.** Content lives exclusively under `###` headings whose names the module chooses — the headings are free, the kinds are not; `###` is the unit and `####` does not occur. At most one paragraph stands directly under the H2, saying what the subsections are. Embeds are **allowed** here, unlike in `Cel`: a subsection may embed an entity that carries a shape it reasons about — what it may not do is carry that shape itself, where the project models shapes elsewhere.
-
-### Rules decidable on the `Domain` section text alone
-
-Each item can be settled by reading the section, with no judgement about the subject matter, and each names the violation symptom — the thing you will actually observe when it is broken:
-
-1. **At most one `## Domain`, and it is the third H2.** *Symptom:* `## Domain (L2)`, a suffix in the heading, or the section standing anywhere but directly after `## Zależności`.
-2. **No `n/d` variant.** *Symptom:* a placeholder body under the heading, or `n/d` in the heading itself.
-3. **Content only under `###`.** *Symptom:* a `####` heading inside the section; more than one paragraph standing directly under the H2.
-4. **No layer identifier in a subsection heading.** *Symptom:* a `###` carrying an `L\d+` token.
-5. **Short fences.** *Symptom:* a fenced block longer than 10 lines.
-6. **Within the budgets.** *Symptom:* a subsection past 3500 characters, or the whole section past 12000.
-
-**Item 7 is settled against the layer table rather than against the text**, and it sits deliberately outside the six above: *does some layer's slice schema ask for this sentence?* Two readers holding the same layer table reach the same answer, but the reviewer has to read the layer files — no regex does it. The negative test that catches the usual failure: **a lifecycle step listing another module's verbs** — someone else's lifecycle written down a second time, failing question two however fluently it reads.
-
-**The budgets are a detector, not prose hygiene.** When the `Domain` sections of several modules carry content of the same kind in the same shape — each enumerating commands, each enumerating failure codes, each describing a file format — that is a convention shared by modules, which is a layer in the sense of the core concepts. Propose it as one, together with its `## Module slice schema`: the paragraphs leave every `Domain`, and the residual test starts answering differently. The budgets exist so that this moment is visible, not to shorten prose.

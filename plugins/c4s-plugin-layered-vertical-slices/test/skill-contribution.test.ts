@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { checksProjection, extractChecks, includeUsage, layeredVerticalSlicesStyle as style } from '../src/skills/layered-vertical-slices.js';
+import readSource from '../src/skills/layered-vertical-slices/workflows/read.md?raw';
+import planSource from '../src/skills/layered-vertical-slices/workflows/plan.md?raw';
+import applySource from '../src/skills/layered-vertical-slices/workflows/apply.md?raw';
 
 /**
  * The style travels as LITERALS compiled into this module — `?raw` imports that
@@ -8,8 +11,8 @@ import { checksProjection, extractChecks, includeUsage, layeredVerticalSlicesSty
  * import that resolved to nothing, a frontmatter block that survived into the
  * body, or a package key that drifted away from the address the prose uses.
  */
-/** Symptom markers across `parts/placement.md` + `parts/authoring.md` + `parts/domain.md`. */
-const CHECKS_PINNED = 23;
+/** Symptom markers across `parts/placement.md` + `parts/authoring.md` + `parts/domain-form.md`. */
+const CHECKS_PINNED = 22;
 
 describe('c4s-plugin-layered-vertical-slices — the writing style it contributes', () => {
   it('is the reference style, at the slug config.writingStyle names', () => {
@@ -25,18 +28,20 @@ describe('c4s-plugin-layered-vertical-slices — the writing style it contribute
     // the body would be rendered to the agent as if it were prose.
     expect(style.content.startsWith('---')).toBe(false);
     expect(style.content).not.toContain('language: en');
-    expect(style.content.startsWith('# Layered Specification Meta-Prompt')).toBe(true);
+    expect(style.content.startsWith('# Layered Vertical Slices')).toBe(true);
     expect(style.content.length).toBeGreaterThan(1000);
   });
 
   /**
    * The core is what every thread pays for on every turn until the first
-   * compaction; the rules travel with the workflows. A thousand words is the
-   * gate, not a target — the target is lower — and a core that grows past it
-   * has absorbed something a workflow should carry.
+   * compaction; the rules travel with the workflows. The core is the grid and
+   * the route table, nothing else — a sentence belongs in it only when every
+   * thread type needs it before choosing a route AND it is true only in this
+   * style. A core that grows past the gate has absorbed something a workflow
+   * should carry.
    */
-  it('keeps the always-on core under a thousand words', () => {
-    expect(style.content.split(/\s+/).length).toBeLessThanOrEqual(1000);
+  it('keeps the always-on core under 250 words', () => {
+    expect(style.content.split(/\s+/).length).toBeLessThanOrEqual(250);
   });
 
   it('carries the whole package, addressed by POSIX path', () => {
@@ -47,10 +52,12 @@ describe('c4s-plugin-layered-vertical-slices — the writing style it contribute
       'templates/index.md',
       'templates/layer.md',
       'templates/module.md',
+      'workflows/apply.md',
       'workflows/bootstrap.md',
       'workflows/brief.md',
-      'workflows/daily.md',
       'workflows/patch.md',
+      'workflows/plan.md',
+      'workflows/read.md',
     ]);
     for (const [file, content] of Object.entries(style.files ?? {})) {
       expect(content.length, file).toBeGreaterThan(100);
@@ -65,8 +72,8 @@ describe('c4s-plugin-layered-vertical-slices — the writing style it contribute
    * and a caller that has no name for it relays a review that never happened as a clean
    * one. What is asserted is the shape of the set, not any particular wording.
    */
-  it('daily.md names the empty return as one shape of a closed, disjoint set', () => {
-    const daily = style.files?.['workflows/daily.md'] ?? '';
+  it('apply.md names the empty return as one shape of a closed, disjoint set', () => {
+    const daily = style.files?.['workflows/apply.md'] ?? '';
     expect(daily).toMatch(/exactly one of five shapes/);
     expect(daily).toMatch(/set is closed/);
     expect(daily).toMatch(/mutually exclusive/);
@@ -101,16 +108,19 @@ describe('c4s-plugin-layered-vertical-slices — the writing style it contribute
    * out of both projections — fails here rather than in a review that never
    * looks for it.
    */
-  it('projects one check per symptom marker into daily step 5 and nowhere else twice', () => {
-    const daily = style.files?.['workflows/daily.md'] ?? '';
+  it('projects one check per symptom marker into apply step 3 and nowhere else twice', () => {
+    const daily = style.files?.['workflows/apply.md'] ?? '';
     const checks = checksProjection.split('\n');
     expect(checks.length).toBe(CHECKS_PINNED);
     for (const check of checks) {
       expect(check).toMatch(/^- \*\*(Rule \d+[a-z]? — |Cel \d+ — |Dom \d+ — ).+\.\*\* .+/);
     }
     expect(daily).toContain(checksProjection);
-    // Every marker in the delivered rules is projected — none is orphaned.
-    const markers = (daily.match(/\*Symptom:\*/g) ?? []).length;
+    // Every marker in the delivered rules is projected — none is orphaned. The
+    // rules split by phase: placement rides `plan.md`, the text-decidable rest
+    // `apply.md`, and together they carry each marker exactly once.
+    const plan = style.files?.['workflows/plan.md'] ?? '';
+    const markers = [plan, daily].reduce((n, doc) => n + (doc.match(/\*Symptom:\*/g) ?? []).length, 0);
     expect(markers).toBe(CHECKS_PINNED);
     // And the extractor attributes a symptom to the rule it sits under.
     expect(extractChecks('## X\n\n3. **Title.** Body. *Symptom:* thing.\n')).toEqual(['- **Rule 3 — Title.** thing.']);
@@ -122,17 +132,65 @@ describe('c4s-plugin-layered-vertical-slices — the writing style it contribute
   });
 
   it('delivers the reading protocols with the workflows that locate a change, and only the pattern to the brief', () => {
-    const daily = style.files?.['workflows/daily.md'] ?? '';
+    const read = style.files?.['workflows/read.md'] ?? '';
+    const plan = style.files?.['workflows/plan.md'] ?? '';
     const patch = style.files?.['workflows/patch.md'] ?? '';
     const brief = style.files?.['workflows/brief.md'] ?? '';
-    for (const doc of [daily, patch]) {
-      expect(doc).toContain('## Cross-cutting reading protocol 1');
-      expect(doc).toContain('## Cross-cutting reading protocol 2');
-    }
+    // A patch thread locates its change alone, with no scout of its own route:
+    // it carries both protocols.
+    expect(patch).toContain('## Cross-cutting reading protocol 1');
+    expect(patch).toContain('## Cross-cutting reading protocol 2');
+    // Plan asks where a change SHOULD live — the purpose sweep's question.
+    // The edges are the readers', delivered in their prompt, not here.
+    expect(plan).toContain('## Cross-cutting reading protocol 1');
+    expect(plan).not.toContain('## Cross-cutting reading protocol 2');
+    // Read dispatches and assembles; the protocols live in the subagents it
+    // dispatches to, so it carries neither.
+    expect(read).not.toContain('## Cross-cutting reading protocol');
+    expect(read).toContain('layered-spec-scout');
+    expect(read).toContain('layered-slice-reader');
     // The brief thread has no `search_pages`: it gets the one line it can use.
     expect(brief).not.toContain('## Cross-cutting reading protocol');
     expect(brief).toContain('[Mm]odules/');
     expect(style.content).not.toContain('## Cross-cutting reading protocol');
+    expect(style.files?.['workflows/apply.md']).not.toContain('## Cross-cutting reading protocol');
+  });
+
+  /**
+   * The tool documents what `planPath` and `planMode` do; the workflow has to
+   * say which one carries its decision. `payload` is an open record, so
+   * `planMode` written inside it validates and the child silently runs
+   * unrestricted — the one misplacement nothing downstream catches.
+   */
+  it('binds the delegation to the argument that carries it', () => {
+    const apply = style.files?.['workflows/apply.md'] ?? '';
+    const plan = style.files?.['workflows/plan.md'] ?? '';
+    expect(apply).toContain('`payload.planPath`');
+    expect(apply).toContain('`<current_plan>`');
+    expect(plan).toContain('top-level `planMode: true`, not a `payload` key');
+    expect(plan).toMatch(/give it no `planPath`/);
+    for (const doc of [apply, plan]) {
+      expect(doc).not.toMatch(/payload:\s*\{\s*planMode/);
+    }
+  });
+
+  /**
+   * A FILE LOADED AT MOST ONCE PER THREAD, A PART PASTED INTO AT MOST ONE OF THEM.
+   *
+   * A thread on an existing spec loads `read.md`, then `plan.md` and/or
+   * `apply.md`, and every `tool_result` stays in the transcript. A part spliced
+   * into two of the three would ride the same thread twice — the cost the split
+   * exists to avoid. Checked on the sources, where the markers still name parts.
+   */
+  it('splices no part into two of read, plan and apply', () => {
+    const sources = { 'read.md': readSource, 'plan.md': planSource, 'apply.md': applySource };
+    const seen = new Map<string, string>();
+    for (const [file, text] of Object.entries(sources)) {
+      for (const [, name] of text.matchAll(/<!--\s*include:\s*(\S+)\s*-->/g)) {
+        expect({ name, first: seen.get(name) ?? file, second: file }).toEqual({ name, first: file, second: file });
+        seen.set(name!, file);
+      }
+    }
   });
 
   /**
@@ -150,7 +208,7 @@ describe('c4s-plugin-layered-vertical-slices — the writing style it contribute
   it('ships no live embed of a type this envelope does not register', () => {
     // What counts is an embed a reader would COPY into a spec file. An HTML
     // comment is where the conditional variant is allowed to show the tag, and a
-    // code span or fence is prose quoting the syntax (SKILL.md §2 illustrates the
+    // code span or fence is prose quoting the syntax (a workflow illustrating the
     // slice-schema form with `<tagged_list type="endpoint" .../>`); neither ships
     // an embed. Everything left is live.
     //

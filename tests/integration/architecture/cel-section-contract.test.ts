@@ -84,7 +84,7 @@ describe('the layered-vertical-slices package keeps the content contract it prom
   });
 
   it('[ac:ac-load-skill-file-layered-vertical-slic-4] states the `Cel` composition rule with an explicit character budget', () => {
-    const section = h2(files['workflows/daily.md'] ?? '', "The module's `Cel` section");
+    const section = h2(files['workflows/apply.md'] ?? '', "The module's `Cel` section");
     expect(section).toMatch(/user job/i);
     expect(section).toMatch(/2[–-]4 sentences/i);
     // The budget is checked as a LITERAL NUMBER, not as the rule around it: a
@@ -94,7 +94,7 @@ describe('the layered-vertical-slices package keeps the content contract it prom
   });
 
   it('[ac:ac-load-skill-file-layered-vertical-slic-5] prohibits entity embeds, `section_ref` and module/layer identifiers in `Cel`', () => {
-    const section = h2(files['workflows/daily.md'] ?? '', "The module's `Cel` section");
+    const section = h2(files['workflows/apply.md'] ?? '', "The module's `Cel` section");
     expect(section).toMatch(/no entity embeds/i);
     expect(section).toContain('section_ref');
     expect(section).toMatch(/module or layer identifiers/i);
@@ -113,7 +113,7 @@ describe('the layered-vertical-slices package keeps the content contract it prom
     // `indexOf` miss returns -1, and `slice(-1)` would hand back the document's
     // last character — a catalogue of nothing that passes a length check and
     // counts `*Symptom:*` markers belonging to prose outside it.
-    const catalogue = h3(files['workflows/daily.md'] ?? '', 'Rules decidable on the section text alone');
+    const catalogue = h3(files['workflows/apply.md'] ?? '', 'Rules decidable on the section text alone');
     const items = [...catalogue.matchAll(/^\d+\. \*\*(.+?)\*\*/gm)];
     expect(items.length).toBeGreaterThanOrEqual(6);
     // Every item carries the thing you OBSERVE when it is broken — a rule with no
@@ -130,11 +130,12 @@ describe('the layered-vertical-slices package keeps the content contract it prom
   /**
    * The protocols left the always-on core: they are for an agent that writes
    * nothing yet, and the workflows that locate a change carry them at the end
-   * (`daily`, `patch`). Asserted on the composed `daily.md`, the document the
-   * agent actually reads them in.
+   * (`plan` the sweep, `patch` both; `read` dispatches to subagents that carry
+   * them instead). Asserted on the composed `plan.md`, the document the agent
+   * actually reads the sweep in.
    */
   it('[ac:ac-load-skill-file-layered-vertical-slic-7] makes the module main-file path filter a step of the protocol, not a variant', () => {
-    const protocol = h2(files['workflows/daily.md'] ?? '', 'Cross-cutting reading protocol 1');
+    const protocol = h2(files['workflows/plan.md'] ?? '', 'Cross-cutting reading protocol 1');
     expect(protocol).toContain('search_pages');
     expect(protocol).toMatch(/mode:\s*"map"/);
     expect(protocol).toContain('pathInclude');
@@ -146,7 +147,7 @@ describe('the layered-vertical-slices package keeps the content contract it prom
   });
 
   it('[ac:ac-protokol-odczytu-przekrojowego-w-skil] declares the path match case-insensitive, and spells it that way', () => {
-    const protocol = h2(files['workflows/daily.md'] ?? '', 'Cross-cutting reading protocol 1');
+    const protocol = h2(files['workflows/plan.md'] ?? '', 'Cross-cutting reading protocol 1');
     expect(protocol).toMatch(/case-insensitive/i);
     // The declaration alone would be a claim the pattern does not honour:
     // `pathInclude` compiles with no `i` flag and JS has no inline `(?i)`, so the
@@ -155,8 +156,8 @@ describe('the layered-vertical-slices package keeps the content contract it prom
     expect(protocol).toContain('[Mm]odules');
   });
 
-  it('[ac:ac-kazdy-z-plikow-workflows-daily-md-wor] carries the protocol into daily and patch, and only its pattern into the brief', () => {
-    for (const file of ['workflows/daily.md', 'workflows/brief.md', 'workflows/patch.md']) {
+  it('[ac:ac-kazdy-z-plikow-workflows-daily-md-wor] carries the protocol into read and patch, and only its pattern into the brief', () => {
+    for (const file of ['workflows/plan.md', 'workflows/brief.md', 'workflows/patch.md']) {
       const body = files[file] ?? '';
       expect({ file, present: body.length > 0 }).toEqual({ file, present: true });
       expect({ file, ref: /cross-cutting reading protocol/i.test(body) }).toEqual({
@@ -164,14 +165,15 @@ describe('the layered-vertical-slices package keeps the content contract it prom
         ref: true,
       });
     }
-    // The two workflows that locate a change carry the protocol text itself —
+    // The two workflows that place a change carry the sweep text itself —
     // spliced at composition, not referenced by section number into a core
-    // that no longer holds it.
-    for (const file of ['workflows/daily.md', 'workflows/patch.md']) {
+    // that no longer holds it. `patch` also carries the edge trace; in a `chat`
+    // thread that is the slice reader's, delivered in its own prompt.
+    for (const file of ['workflows/plan.md', 'workflows/patch.md']) {
       const body = files[file] ?? '';
       expect({ file, sweep: body.includes('step of this protocol, not a variant') }).toEqual({ file, sweep: true });
-      expect({ file, deps: /Step 3 is not optional/.test(body) }).toEqual({ file, deps: true });
     }
+    expect(files['workflows/patch.md']).toMatch(/Step 3 is not optional/);
     // The brief thread is the one that cannot RUN the protocol — `search_pages`
     // describes HEAD and a brief is grounded only in `release_diff`. It borrows
     // the path pattern as a classifier over the delta map, and says so, or the
