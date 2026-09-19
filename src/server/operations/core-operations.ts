@@ -387,6 +387,63 @@ export function registerCoreOperations(): void {
     },
   });
 
+  // ── M37 Internal Skills Registry ─────────────────────────────────────────
+
+  /**
+   * 0.2.99 — the instruction exception. The subject of these two is not
+   * specification content but the instruction governing how it is written (the
+   * active writing style and its methodology). They are in the catalog because
+   * without them the write operations are unusable CONVENTIONALLY from outside:
+   * a caller can invoke them, but not invoke them correctly. The test is one
+   * sentence — "can an outside caller use the catalog correctly without it?".
+   *
+   * Semantics in `services/skill-operations.ts`; every channel only wraps it.
+   */
+  CATALOG.register({
+    name: 'list_skills',
+    summary: 'Skills of the project registry as { slug, description } rows, plus the active writing style ({ slug, title } or null) reported beside them, never as a row. `contextType` narrows to the resolver set of that conversation type; omitted, it addresses the whole registry.',
+    scope: 'project',
+    mediation: 'direct',
+    opClass: 'read',
+    inputSchema: {
+      contextType: z
+        .string()
+        .optional()
+        .describe('One of chat, brief, patch, ask (owned by the context type registry). Omit for the whole registry.'),
+    },
+    errorCodes: ['INVALID_ARGUMENT'],
+    sideEffects: ['none'],
+    idempotent: true,
+    channels: {
+      // Mounting is per-server: a `list_skills` tool on the turn's `skill-tools`
+      // would appear in all four context types at once, and the turn already has
+      // the listing as the `<available_skills>` block before its first tool call.
+      internal: na('a turn gets the listing as the <available_skills> system-prompt block; MCP mounting is per-server, so a tool here would reach all four context types at once'),
+      cli: direct(),
+      mcp: direct(),
+      rest: direct(),
+    },
+  });
+
+  CATALOG.register({
+    name: 'load_skill_file',
+    summary: 'Open a skill of the project registry (SKILL.md body without frontmatter + manifest of the package files) or read one package subfile by (slug, file). Serves the whole registry, not a context-filtered subset; never a disk path.',
+    scope: 'project',
+    mediation: 'direct',
+    opClass: 'read',
+    inputSchema: {
+      slug: z.string().describe('Skill slug from the registry (as returned by list_skills).'),
+      file: z
+        .string()
+        .optional()
+        .describe('Package-relative POSIX path from the manifest. Defaults to "SKILL.md".'),
+    },
+    errorCodes: ['SKILL_NOT_FOUND', 'SKILL_FILE_NOT_FOUND', 'NOT_TEXT', 'INVALID_ARGUMENT'],
+    sideEffects: ['none'],
+    idempotent: true,
+    channels: fullParity(),
+  });
+
   // ── M23 Patches ───────────────────────────────────────────────────────────
 
   CATALOG.register({

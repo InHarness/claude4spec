@@ -1702,6 +1702,18 @@ describe('runAgentTurn — the profile gate covers the inline servers too', () =
     }
   });
 
+  it('[ac:ac-w-turze-wewnetrznej-list-skills-nie-j] [ac:ac-w-turze-wewnetrznej-load-skill-file-j] 0.2.99: the turn gets load_skill_file and never list_skills, in every context type', async () => {
+    // Mounting is per-server: a `list_skills` on the turn's skill-tools would reach
+    // all four types at once, and the turn already has `<available_skills>`.
+    for (const contextType of ['chat', 'brief', 'patch', 'ask']) {
+      expect(await mountedFor(contextType)).toContain('skill-tools');
+      const prompt = String(hoisted.lastExecute?.systemPrompt);
+      expect(prompt).toContain('<mcp name="skill-tools">load_skill_file</mcp>');
+      expect(prompt).not.toContain('list_skills');
+      expect(JSON.stringify(hoisted.lastExecute?.allowedTools ?? [])).not.toContain('list_skills');
+    }
+  });
+
   it('workspace-tools survives the gate for every profile — list_projects is read-class', async () => {
     for (const contextType of ['chat', 'ask', 'patch']) {
       expect(await mountedFor(contextType)).toContain('workspace-tools');

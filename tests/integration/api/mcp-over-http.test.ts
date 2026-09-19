@@ -125,6 +125,37 @@ describe('MCP over HTTP', () => {
       expect(text).not.toMatch(/forbidden|not allowed|unauthori[sz]ed|permission/i);
     });
 
+    it('[ac:ac-peer-polaczony-bez-zadeklarowanego-pr] [0.2.99] a peer with no declared profile sees both skill registry operations', async () => {
+      const client = await connect();
+      const tools = (await client.listTools()).tools;
+      for (const name of ['list_skills', 'load_skill_file']) {
+        const tool = tools.find((t) => t.name === name);
+        expect(tool, name).toBeDefined();
+        expect(tool!.annotations).toMatchObject({ readOnlyHint: true, idempotentHint: true });
+      }
+      const listed = await client.callTool({ name: 'list_skills', arguments: {} });
+      expect(listed.isError).toBeFalsy();
+      expect(JSON.parse((listed.content as Array<{ text: string }>)[0]!.text)).toEqual({ listing: [], writingStyle: null });
+
+      // Same taxonomy as every other channel: INVALID_ARGUMENT naming the legal values.
+      const bad = await client.callTool({ name: 'list_skills', arguments: { contextType: 'breif' } });
+      expect(bad.isError).toBe(true);
+      const badText = (bad.content as Array<{ text: string }>)[0]!.text;
+      expect(badText).toContain('INVALID_ARGUMENT');
+      expect(badText).toContain('chat, brief, patch, ask');
+
+      const missing = await client.callTool({ name: 'load_skill_file', arguments: { slug: 'nope' } });
+      expect(missing.isError).toBe(true);
+      expect((missing.content as Array<{ text: string }>)[0]!.text).toContain('SKILL_NOT_FOUND');
+    });
+
+    it('[ac:ac-polaczenie-w-profilu-brief-widzi-w-to] [0.2.99] a `brief` connection sees both skill registry operations', async () => {
+      const client = await connect('?profile=brief');
+      const names = (await client.listTools()).tools.map((t) => t.name);
+      expect(names).toContain('list_skills');
+      expect(names).toContain('load_skill_file');
+    });
+
     it('narrows `brief` to release-tools plus reads, per BRIEF_ALLOWED_PLUGIN_MCP', async () => {
       const client = await connect('?profile=brief');
       const names = (await client.listTools()).tools.map((t) => t.name);

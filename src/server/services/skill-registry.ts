@@ -489,6 +489,23 @@ export class SkillResolver {
    * stays openable by slug through `load_skill_file`, which reads the whole registry.
    */
   resolveForContext(contextType: ChatContextType): ContextSkills {
+    return this.resolveListing(contextType);
+  }
+
+  /**
+   * 0.2.99 — the same resolution with NO context type: the union of the contextual
+   * fan-out over all four types. This is what `list_skills` answers when the caller
+   * omits `contextType` — not a refusal and not a default value of the discriminator,
+   * but the consequence of access not being gated by context. Writing styles stay
+   * out of `listing` exactly as in `resolveForContext`: the active one is reported
+   * in `writingStyle`, the inactive ones are selection metadata of
+   * `GET /api/writing-styles`, not listing rows.
+   */
+  resolveAll(): ContextSkills {
+    return this.resolveListing(undefined);
+  }
+
+  private resolveListing(contextType: ChatContextType | undefined): ContextSkills {
     const style = this.resolveWritingStyle();
     const listing: SkillListingEntry[] = [];
     // The style is excluded from the fan-out. It has its own block; a duplicate
@@ -500,7 +517,13 @@ export class SkillResolver {
       this.registry.listPluginContributions().filter((s) => s.scope === 'contextual'),
     )) {
       if (meta.slug === styleSlug) continue;
-      if (meta.contextTypes !== undefined && !meta.contextTypes.includes(contextType)) continue;
+      if (
+        contextType !== undefined &&
+        meta.contextTypes !== undefined &&
+        !meta.contextTypes.includes(contextType)
+      ) {
+        continue;
+      }
       /**
        * The DESCRIPTION comes from the winning entry, not from the contribution.
        *

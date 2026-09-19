@@ -53,10 +53,19 @@ describe('skill-tools — load_skill_file', () => {
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
-  it('exposes exactly one operation', async () => {
+  it('exposes exactly one operation when built for a turn (no resolver)', async () => {
     await mount(SkillRegistry.load([]));
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name)).toEqual(['load_skill_file']);
+    expect(tools[0]!.annotations).toMatchObject({ readOnlyHint: true, idempotentHint: true });
+  });
+
+  it('0.2.99: adds list_skills only when handed a resolver (the external surface)', () => {
+    const registry = SkillRegistry.load([]);
+    const turn = buildSkillToolsServer(registry);
+    const external = buildSkillToolsServer(registry, 'p', { resolver: new SkillResolver(registry, tmp) });
+    expect(turn.tools.map((t) => t.name)).toEqual(['load_skill_file']);
+    expect(external.tools.map((t) => t.name)).toEqual(['load_skill_file', 'list_skills']);
   });
 
   describe('opening a skill (slug, no file)', () => {

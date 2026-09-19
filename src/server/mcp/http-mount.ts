@@ -233,10 +233,11 @@ function registerOne(session: Session, decl: McpToolDeclaration): RegisteredTool
   const name = decl.name;
   const description = decl.description;
   const inputSchema = decl.inputSchema as ZodRawShape;
+  const annotations = decl.annotations;
 
   return session.server.registerTool(
     name,
-    { description, inputSchema },
+    { description, inputSchema, ...(annotations ? { annotations } : {}) },
     // Dispatches through `session.current`, NOT through `decl` — `decl`'s handler
     // closes over the context that was live when this tool was first registered,
     // and that context may since have been disposed.

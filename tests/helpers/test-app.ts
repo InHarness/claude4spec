@@ -53,6 +53,8 @@ import { createReferenceToolsServer } from '../../src/server/mcp/reference-tools
 import { createEntityToolsServer } from '../../src/server/mcp/entity-tools.js';
 import type { ExternalSurfaceDeps } from '../../src/server/mcp/surface.js';
 import type { ChatContextType } from '../../src/shared/entities.js';
+import { SkillRegistry, SkillResolver } from '../../src/server/services/skill-registry.js';
+import { skillsRouter } from '../../src/server/routes/skills.js';
 
 /** One synthetic context scope for the whole harness — production uses `context:<projectId>`. */
 const TEST_SCOPE: WatchScope = 'context:test';
@@ -378,6 +380,13 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
     ws,
   });
   router.use('/plans', plansRouter(planService));
+  // M37 (0.2.99). Project root only — never the developer's `~/.claude/skills` —
+  // and no coalescing window, so a test that drops a skill sees it on the next call.
+  const skillRegistry = SkillRegistry.load([{ dir: path.join(cwd, '.claude', 'skills'), source: 'user' }], {
+    rescanTtlMs: 0,
+  });
+  const skillResolver = new SkillResolver(skillRegistry, cwd);
+  router.use('/skills', skillsRouter({ skillRegistry, skillResolver }));
   router.use('/artifacts', artifactsRouter({ brief: briefService, patch: patchService, plan: planService, pageVersions, chat: chatService }));
 
   /**
@@ -396,6 +405,8 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
     patchWrite: patchWriteDeps,
     listProjects: () => ({ projects: [] }),
     workspaceName: 'default',
+    skillRegistry,
+    skillResolver,
   });
   router.use('/mcp', projectMcpRouter('0.0.0-test', 'test-project', mcpSurfaceDeps));
   router.use(errorHandler);

@@ -32,6 +32,15 @@
  * specification content, but without it a project-scoped catalog is unreachable
  * from outside.
  *
+ * 0.2.99 adds the instruction exception: an operation whose subject is the
+ * instruction governing how this specification is written — the convention its
+ * content must obey, with the methodology of applying it — belongs to the catalog
+ * although the instruction is not specification content (`list_skills`,
+ * `load_skill_file`). Without it the write operations are unusable conventionally
+ * from outside. It does NOT admit materializing instructions on a consumer's disk
+ * (`install-skills`), changing what the catalog contains (`create-plugin`,
+ * `trust-plugins`), or enumerating workspaces (`list-workspaces`).
+ *
  * ## Naming (binding across all four channels)
  *
  * - canonical name: `verb_noun`, snake_case, plural for batches —
