@@ -92,6 +92,24 @@ describe('c4s skills registry commands (0.2.99)', () => {
       expect(JSON.parse(stdout)).toEqual(whole);
     });
 
+    it('sends an EMPTY --context-type to the server, which refuses it as a value', async () => {
+      // Folding `""` into "absent" would answer the whole registry — a superset a
+      // script reads as scoped. REST and MCP both refuse it, so the CLI must too.
+      status = 400;
+      reply = { error: { code: 'INVALID_ARGUMENT', message: "unknown contextType ''; expected one of chat, brief, patch, ask" } };
+      await expect(runListSkills(args('list-skills', '--context-type', ''))).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+      });
+      expect(seen[0]).toMatch(/\/skills\?contextType=$/);
+
+      // A VALUELESS flag is a different failure, and it stays local.
+      seen = [];
+      await expect(runListSkills(args('list-skills', '--context-type'))).rejects.toMatchObject({
+        code: 'INVALID_ARGS',
+      });
+      expect(seen).toEqual([]);
+    });
+
     it('passes --context-type through as ?contextType=, unvalidated — the server owns the enum', async () => {
       reply = { listing: [], writingStyle: null };
       await runListSkills(args('list-skills', '--context-type', 'brief'));
@@ -116,6 +134,27 @@ describe('c4s skills registry commands (0.2.99)', () => {
       stdout = '';
       await runLoadSkillFile(args('load-skill-file', 'house-style', '--file', 'workflows/brief.md', '--format', 'text'));
       expect(stdout).toBe('the methodology\n\n');
+    });
+
+    it('sends an EMPTY --file to the server rather than opening the package', async () => {
+      status = 400;
+      reply = { error: { code: 'INVALID_ARGUMENT', message: 'file "" is not addressable: it is empty' } };
+      await expect(runLoadSkillFile(args('load-skill-file', 'house-style', '--file', ''))).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+      });
+      expect(seen[0]).toMatch(/\/skills\/house-style\?file=$/);
+    });
+
+    it('--format text signals truncation on stderr, leaving stdout pipeable', async () => {
+      let stderr = '';
+      vi.spyOn(process.stderr, 'write').mockImplementation((chunk: unknown) => {
+        stderr += String(chunk);
+        return true;
+      });
+      reply = { slug: 'big', path: 'huge.md', content: 'cut', truncated: true, truncationHint: '"huge.md" of skill "big" is 200000 chars' };
+      await runLoadSkillFile(args('load-skill-file', 'big', '--file', 'huge.md', '--format', 'text'));
+      expect(stdout).toBe('cut\n');
+      expect(stderr).toContain('huge.md');
     });
 
     it('without --file opens the package', async () => {

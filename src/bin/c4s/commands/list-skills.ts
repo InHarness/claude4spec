@@ -1,5 +1,5 @@
 import type { ParsedArgs } from '../args.js';
-import { optionalString } from '../args.js';
+import { optionalRawString } from '../args.js';
 import { delegateGet } from '../delegate.js';
 import { writeOutput } from '../output.js';
 import { SERVER_DELEGATING_CODES, type CliCommandContribution } from '../registry.js';
@@ -19,7 +19,10 @@ import { SERVER_DELEGATING_CODES, type CliCommandContribution } from '../registr
  * enum and a second phrasing of the refusal.
  */
 export async function runListSkills(args: ParsedArgs): Promise<void> {
-  const contextType = optionalString(args, 'context-type');
+  // `optionalRawString`, not `optionalString`: `--context-type ""` is a VALUE, and
+  // an illegal one — it has to reach the core, which refuses it exactly as REST and
+  // MCP do. Folding it into "absent" would answer the whole registry instead.
+  const contextType = optionalRawString(args, 'context-type');
   const listing = await delegateGet(args, '/skills', contextType === undefined ? {} : { contextType });
   writeOutput(listing, args);
 }
@@ -28,6 +31,6 @@ export const listSkillsCommand: CliCommandContribution = {
   name: 'list-skills',
   operation: 'list_skills',
   executionMode: 'server-delegating',
-  errorCodes: [...SERVER_DELEGATING_CODES, 'INVALID_ARGUMENT'],
+  errorCodes: [...SERVER_DELEGATING_CODES, 'INVALID_ARGS', 'INVALID_ARGUMENT'],
   handler: runListSkills,
 };
