@@ -133,3 +133,18 @@ describe('buildC4sToolsServer — ask workspace inheritance', () => {
     expect(hoisted.calls).toHaveLength(0);
   });
 });
+
+describe('buildC4sToolsServer — ask description (0.2.97)', () => {
+  /**
+   * The `project` argument is only constructible from the peer list, and that
+   * list lives in the system prompt, not in any tool — so the tool names the
+   * block that carries it. (The block renders only where there are peers; with
+   * none, there is nobody to consult.)
+   */
+  it('points at <workspace_projects/> for the peers it can consult', async () => {
+    const client = await connectClient('ws-5555');
+    const { tools } = await client.listTools();
+    const ask = tools.find((t) => t.name === 'ask');
+    expect(ask?.description).toContain('Peers available in this workspace are listed in <workspace_projects/>.');
+  });
+});
