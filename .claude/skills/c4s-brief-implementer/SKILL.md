@@ -1,13 +1,13 @@
 ---
 name: c4s-brief-implementer
-description: Implement features described in claude4spec briefs. Briefs are self-contained markdown files (entity snapshots, section diffs, narrative) that live in the companion specification repository, reached from your code repo via the c4s CLI (c4s list-briefs / read-brief, with --project and --workspace baked in). After implementation, if you discover drift between the brief and reality (missing details, incorrect assumptions, edge cases not covered), file a patch via c4s file-patch as feedback for the specification author. Use when implementing a claude4spec brief in a code repository.
+description: Implement features described in claude4spec briefs. Briefs are self-contained markdown files (entity snapshots, section diffs, narrative) that live in the companion specification repository, reached from your code repo via the c4s CLI (c4s list-briefs / get-brief, with --project and --workspace baked in). After implementation, if you discover drift between the brief and reality (missing details, incorrect assumptions, edge cases not covered), file a patch via c4s create-patch as feedback for the specification author. Use when implementing a claude4spec brief in a code repository.
 ---
 
 # c4s-brief-implementer
 
 This skill describes how to implement a release brief in **your code repository** (not the spec repo). A brief is a self-contained markdown file that captures everything you need to ship the change: entity snapshots, section diffs, narrative, acceptance criteria. Briefs live in the **spec** repository, a different repo from the one you are working in — you never touch it directly; the `c4s` CLI reaches everything for you.
 
-**Reaching the briefs.** This skill is **CLI-only**: it reaches the briefs and writes patches solely through the `c4s` CLI, with the spec project's identity baked into this skill (`--project 'app-spec' --workspace 'default'`) — `c4s list-briefs` / `c4s read-brief` / `c4s file-patch` work from any directory, and each of them delegates to the server (see below). If `c4s` is not installed, **stop** and ask the user to install it — do not read or write the spec repo's files by hand.
+**Reaching the briefs.** This skill is **CLI-only**: it reaches the briefs and writes patches solely through the `c4s` CLI, with the spec project's identity baked into this skill (`--project 'app-spec' --workspace 'default'`) — `c4s list-briefs` / `c4s get-brief` / `c4s create-patch` work from any directory, and each of them delegates to the server (see below). If `c4s` is not installed, **stop** and ask the user to install it — do not read or write the spec repo's files by hand. There is no fallback **even when a `c4s` command fails**: a failed command ends the work and asks the user to intervene; it is never a reason to go read the specification's files instead.
 
 ## Server required — for every step
 
@@ -19,7 +19,7 @@ Two neighbouring codes mean something else, and starting a server will not fix e
 
 **The brief is self-contained.** You do not need to read the main specification or query the entity database — everything is in the brief body. If the brief references something you cannot find in its body, treat that as drift and file a patch (step 4 below).
 
-**Don't conflate the claude4spec server with the env-runner sandbox.** The **claude4spec server** is one always-on local process hosting every registered spec project, including `app-spec` (this brief) and `env-runner`; it is never created or destroyed as part of a brief's workflow. Every `c4s` command in this skill talks to it, `read-brief`/`list-briefs`/`file-patch` included (see "Server required" above). The **env-runner sandbox** is a different thing entirely: an ephemeral, per-brief Docker environment that `env-runner`'s operator agent stands up on order (step 5) and tears down on request (step 8) — its mechanics live in the shared **`c4s-env-runner` skill**, not in this file. The operator only manages that sandbox's lifecycle per your order text — it does not run tests and knows nothing about your branch, PR, or the brief's `implemented` status beyond what you put in the order. **You** exercise the change at the URL it hands back; marking the brief `implemented: true` (step 9) is a separate `app-spec` call that has nothing to do with env-runner.
+**Don't conflate the claude4spec server with the env-runner sandbox.** The **claude4spec server** is one always-on local process hosting every registered spec project, including `app-spec` (this brief) and `env-runner`; it is never created or destroyed as part of a brief's workflow. Every `c4s` command in this skill talks to it, `get-brief`/`list-briefs`/`create-patch` included (see "Server required" above). The **env-runner sandbox** is a different thing entirely: an ephemeral, per-brief Docker environment that `env-runner`'s operator agent stands up on order (step 5) and tears down on request (step 8) — its mechanics live in the shared **`c4s-env-runner` skill**, not in this file. The operator only manages that sandbox's lifecycle per your order text — it does not run tests and knows nothing about your branch, PR, or the brief's `implemented` status beyond what you put in the order. **You** exercise the change at the URL it hands back; marking the brief `implemented: true` (step 9) is a separate `app-spec` call that has nothing to do with env-runner.
 
 ## Workflow
 
@@ -31,7 +31,7 @@ List the briefs through `c4s` (paginated — briefs accumulate over time, so fil
 c4s list-briefs --status pending --limit 10 --project 'app-spec' --workspace 'default'
 ```
 
-`--status pending` hides briefs already marked `implemented: true`; drop it to see all. Use `--offset` to page. Output lists each brief's `path` (which you pass to `read-brief`) and whether it is already implemented.
+`--status pending` hides briefs already marked `implemented: true`; drop it to see all. Use `--offset` to page. Output lists each brief's `path` (which you pass to `get-brief`) and whether it is already implemented.
 
 **Which brief do I implement?** If the user named a brief, use it. If not — and `list-briefs` returns more than one pending brief — **ask the user which one**; do NOT guess. Picking the wrong brief wastes an implementation pass. Only proceed automatically when there is exactly one obvious candidate (a single pending brief, or the user pointed at one).
 
@@ -40,7 +40,7 @@ c4s list-briefs --status pending --limit 10 --project 'app-spec' --workspace 'de
 Read the full brief by the `path` printed by `list-briefs`:
 
 ```sh
-c4s read-brief <brief-path> --project 'app-spec' --workspace 'default'
+c4s get-brief <brief-path> --project 'app-spec' --workspace 'default'
 ```
 
 The body contains everything you need — entity snapshots, section diffs, the narrative of what changes, and acceptance criteria. Read it and implement it; you do not need to understand how the brief was produced. **Do not read the main specification.**
@@ -71,7 +71,7 @@ Continue the brief thread with `c4s agent "..." --thread <threadId> --project 'a
 
 Never implement a brief on top of your current checkout. Branch from a **fresh `main`** and work in a dedicated git worktree.
 
-The `path` printed by `list-briefs`/`read-brief` is not branch-safe as-is — it always carries the `.md` extension and may contain `/` subdirectory segments. Derive a slug first:
+The `path` printed by `list-briefs`/`get-brief` is not branch-safe as-is — it always carries the `.md` extension and may contain `/` subdirectory segments. Derive a slug first:
 
 ```bash
 brief_slug=$(echo "<brief-path>" | sed 's/\.md$//; s|/|-|g')
@@ -92,7 +92,7 @@ If you find the brief is already fully implemented, stop there: report it to the
 
 ### 4a. Stage `package.json` version from the brief's target release
 
-The brief frontmatter carries `to_release` — the **target release name**. Read it from the brief body (it is the YAML block at the very top of `c4s read-brief <brief-path> …`, alongside `from_release`, `type`, `implemented`). Use it to stage this repo's version:
+The brief frontmatter carries `to_release` — the **target release name**. Read it from the brief body (it is the YAML block at the very top of `c4s get-brief <brief-path> …`, alongside `from_release`, `type`, `implemented`). Use it to stage this repo's version:
 
 - **Valid semver** (e.g. `to_release: 0.1.128`) → write it into the `"version"` field of this repo's `package.json` and commit it on the `brief/<slug>` branch as part of the implementation. Do **not** run `npm version` (it creates a commit and a tag) — edit the `"version": "…"` line directly.
 - This is a **staging write only.** `release-process` remains the authority on the published version and may override this value at publish time — so a divergence between this staged version and the latest git tag is expected and gets resolved there, not here. Note that `to_release` is a free-form release *name*, not guaranteed to match npm/git-tag semver.
@@ -146,17 +146,17 @@ If a brief's behavior is worth keeping honest over time, don't leave it in the s
 
 ### 6. Feedback loop (patches)
 
-When you discover that the brief diverges from reality — a missing detail, an incorrect assumption, an edge case not covered, or anything else the spec-author should know — file a patch. Use `c4s file-patch`, which records the patch on the spec side for you:
+When you discover that the brief diverges from reality — a missing detail, an incorrect assumption, an edge case not covered, or anything else the spec-author should know — file a patch. Use `c4s create-patch`, which records the patch on the spec side for you:
 
 ```sh
-printf '%s\n' "$PATCH_BODY" | c4s file-patch \
+printf '%s\n' "$PATCH_BODY" | c4s create-patch \
   --brief <brief-path> --desc "<short-desc>" --kind drift \
   --project 'app-spec' --workspace 'default'
 ```
 
 **Never file a patch that says "already implemented".** If the brief's change turns out to be fully present in the code — nothing to add, the acceptance criteria already pass — that is **not** drift and **not** patch material. Say it plainly to the user instead ("brief `<path>` is already implemented in `<files>` — no code change needed") and ask whether to mark it implemented (step 9). The same goes for any patch body whose substance is "no changes were needed", "confirmed working as described", or "verified matches the spec": a patch is for something the spec-author must *act* on, not a status report.
 
-The body (from stdin, or `--body-file <f>`) goes below an auto-generated `# Patch — <short-desc>` heading. Structure the body as two sections: a `## What I found` section (the drift / missing detail / incorrect assumption) and a `## Suggestion` section (what the spec-author should consider in a follow-up brief or entity edits). `c4s file-patch` records all the metadata for you (which brief it relates to, the kind from `--kind`, defaulting to `drift`) — you only write the markdown body.
+The body (from stdin, or `--body-file <f>`) goes below an auto-generated `# Patch — <short-desc>` heading. Structure the body as two sections: a `## What I found` section (the drift / missing detail / incorrect assumption) and a `## Suggestion` section (what the spec-author should consider in a follow-up brief or entity edits). `c4s create-patch` records all the metadata for you (which brief it relates to, the kind from `--kind`, defaulting to `drift`) — you only write the markdown body.
 
 `--kind` values:
 
@@ -189,7 +189,7 @@ The branch was already pushed in step 5; push again only if step 6 or later adde
 git push -u origin "brief/$brief_slug"   # no-op if nothing changed since step 5
 gh pr create --draft --base main \
   --title "$brief_slug: <short title>" \
-  --body "Implements brief <brief-path> — see: c4s read-brief <brief-path> --project 'app-spec' --workspace 'default'
+  --body "Implements brief <brief-path> — see: c4s get-brief <brief-path> --project 'app-spec' --workspace 'default'
 
 <one-paragraph summary of what changed + how it was tested>"
 ```
@@ -234,7 +234,7 @@ Like every other command in this skill, this one goes through the claude4spec se
 
 ### 10. Hand-off
 
-The spec-author picks up your patches on the spec side and folds each deviation back into the specification. That lifecycle lives entirely in the spec repo; you only write the raw markdown patch body via `c4s file-patch`.
+The spec-author picks up your patches on the spec side and folds each deviation back into the specification. That lifecycle lives entirely in the spec repo; you only write the raw markdown patch body via `c4s create-patch`.
 
 ## Notes
 

@@ -123,7 +123,7 @@ export const artifactRegistry: Record<ArtifactKind, ArtifactRegistryEntry> = {
     changedEvent: 'patches:changed',
     readFamily: {
       list: 'GET /api/artifacts/patch (rest), filtered by frontmatter.applied',
-      getWithWindow: 'GET /api/artifacts/patch/<path> (rest) — the same range window; no MCP read tool (file_patch is write-only)',
+      getWithWindow: 'GET /api/artifacts/patch/<path> (rest) — the same range window; no MCP read tool (create_patch is write-only)',
       search: 'n/a — no search operation exists for patches in any channel; same gap as brief.',
       responseBudget: 'truncated: true per item + truncationHint pointing unconditionally at range',
     },

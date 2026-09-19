@@ -6,7 +6,7 @@
  *
  * Until 0.2.12 every one of these skills drew the same line for its reader:
  * some `c4s` commands need a running server, and some — `list-briefs`,
- * `read-brief`, `file-patch`, `resolve`, the `list-*` readers — do not, because
+ * `get-brief`, `create-patch`, `resolve`, the `list-*` readers — do not, because
  * they read the specification off disk themselves. Each skill phrased it
  * differently ("filesystem-scoped", "do not need a server", "unlike the
  * read-only commands above"), and each phrasing was load-bearing: it told the

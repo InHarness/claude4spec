@@ -7,7 +7,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createPatchToolsServer } from './patch-tools.js';
 
 /**
- * `file_patch` over MCP — the channel the catalog declared `direct()` and nobody
+ * `create_patch` over MCP — the channel the catalog declared `direct()` and nobody
  * had built.
  *
  * The tool is an adapter over `services/patch-write.ts`, which REST calls too,
@@ -44,13 +44,13 @@ describe('patch-tools', () => {
     return { isError: res.isError === true, body: JSON.parse(text) as Record<string, any> };
   }
 
-  it('renders file_patch, which the catalog claimed this channel already did', async () => {
+  it('renders create_patch, which the catalog claimed this channel already did', async () => {
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name)).toEqual(['file_patch']);
+    expect(tools.map((t) => t.name)).toEqual(['create_patch']);
   });
 
   it('answers with the path and nothing else — never the patch it was handed', async () => {
-    const res = await call('file_patch', {
+    const res = await call('create_patch', {
       brief: 'b.md',
       desc: 'echo in update_section',
       patchKind: 'drift',
@@ -69,13 +69,13 @@ describe('patch-tools', () => {
   });
 
   it('refuses a patch against a brief that is not there, rather than filing it into the void', async () => {
-    const res = await call('file_patch', { brief: 'ghost.md', desc: 'd', body: 'b' });
+    const res = await call('create_patch', { brief: 'ghost.md', desc: 'd', body: 'b' });
     expect(res.isError).toBe(true);
     expect(res.body.code).toBe('BRIEF_NOT_FOUND');
   });
 
   it('applies the same validation REST does, because both call the same function', async () => {
-    const res = await call('file_patch', { brief: 'b.md', desc: '   ', body: 'b' });
+    const res = await call('create_patch', { brief: 'b.md', desc: '   ', body: 'b' });
     expect(res.isError).toBe(true);
     expect(res.body.code).toBe('VALIDATION');
   });

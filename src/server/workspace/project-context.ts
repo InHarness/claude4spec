@@ -1303,7 +1303,7 @@ async function buildInner(
    * file; the caller never composes one.
    *
    * This is the hard prerequisite for taking `fs-scoped` away from
-   * `c4s file-patch` — until there was a route, the CLI had to write the file in
+   * `c4s create-patch` — until there was a route, the CLI had to write the file in
    * its own process, which is the last reason it needed a filesystem handle to
    * the specification.
    */
@@ -1406,7 +1406,7 @@ async function buildInner(
     planService,
     briefService,
     patchService,
-    // M23: `file_patch` over MCP resolves the same two directories the REST
+    // M23: `create_patch` over MCP resolves the same two directories the REST
     // route does — one operation, one pair of paths, both channels.
     patchWrite: patchWriteDeps,
     releaseService,

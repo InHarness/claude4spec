@@ -7,10 +7,12 @@ import { SERVER_DELEGATING_CODES, type CliCommandContribution } from '../registr
 
 /**
  * `c4s mark-brief-implemented` — the terminal implementer-agent's server-backed
- * way to flip a brief's `implemented` flag (0.1.106). Unlike its
- * filesystem-only siblings (`list-briefs`/`read-brief`/`file-patch`), this one
- * requires a running `npx @inharness-ai/claude4spec` server: it wraps
- * `PATCH /api/briefs/:path/frontmatter`, the only mutable frontmatter key.
+ * way to flip a brief's `implemented` flag (0.1.106). Like every command of the
+ * brief/patch family (`list-briefs`/`get-brief`/`create-patch`), it requires a
+ * running `npx @inharness-ai/claude4spec` server: it wraps the generic
+ * `PATCH /api/artifacts/brief/:path/frontmatter`, and the field restriction
+ * (`implemented` is the only mutable key) is the route's
+ * `frontmatterContract.mutable` guard, not this bin's.
  *
  *   c4s mark-brief-implemented <brief-path> --project <slug> --workspace <name>
  */

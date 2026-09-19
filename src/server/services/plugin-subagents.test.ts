@@ -96,7 +96,7 @@ describe('isMutatingMcpTool — blacklist on the TOOL segment', () => {
       'mcp__reference-tools__tag_entity',
       'mcp__reference-tools__untag_entity',
       'mcp__plan-tools__mark_plan_applied',
-      'mcp__patch-tools__file_patch',
+      'mcp__patch-tools__create_patch',
       'mcp__brief-tools__update_brief',
       'mcp__plugin-srv__set_cell',
     ]) {

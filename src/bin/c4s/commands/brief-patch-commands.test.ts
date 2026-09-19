@@ -2,8 +2,8 @@
  * The brief/patch family, after item 23 moved it off the filesystem.
  *
  * These three were the last commands that read and wrote the specification
- * directly: `list-briefs` walked `briefsDir` parsing frontmatter, `read-brief`
- * read a file, and `file-patch` had a dedicated write path into `patchesDir`
+ * directly: `list-briefs` walked `briefsDir` parsing frontmatter, `get-brief`
+ * read a file, and `create-patch` had a dedicated write path into `patchesDir`
  * that nothing else used. Their whole contract with a caller is the SHAPE they
  * print and the code they exit with, so that is what is asserted — against a
  * real HTTP server, so the URL is asserted too.
@@ -19,8 +19,8 @@ import { CliError } from '../errors.js';
 import { WorkspaceRegistry } from '../../../server/workspace/registry.js';
 import { __resetDelegateTargets } from '../delegate.js';
 import { runListBriefs } from './list-briefs.js';
-import { runReadBrief } from './read-brief.js';
-import { runFilePatch } from './file-patch.js';
+import { runGetBrief } from './get-brief.js';
+import { runCreatePatch } from './create-patch.js';
 import { runCreateBrief } from './create-brief.js';
 
 const CONFIG = {
@@ -141,43 +141,43 @@ describe('[ac:ac-rodzina-brief-patch-list-briefs-read] the brief/patch family de
     });
   });
 
-  describe('read-brief', () => {
-    it('prints frontmatter, body and content — the three fields it always answered with', async () => {
+  describe('get-brief', () => {
+    it('[ac:ac-c4s-read-brief-brief-path-zwraca] prints frontmatter, body and content — the three fields it always answered with', async () => {
       reply = { data: { path: 'x.md', frontmatter: { type: 'brief' }, body: 'B', content: 'C', hash: 'h' } };
-      await runReadBrief(args('read-brief', 'sub/x.md'));
+      await runGetBrief(args('get-brief', 'sub/x.md'));
       expect(seen[0]!.url).toMatch(/\/artifacts\/brief\/sub\/x\.md$/);
       // `hash` and `path` are dropped: a caller piping this into `jq '.body'`
       // must not have to change, and neither field was ever in the answer.
       expect(printed()).toEqual({ frontmatter: { type: 'brief' }, body: 'B', content: 'C' });
     });
 
-    it('turns the route\'s generic NOT_FOUND into BRIEF_NOT_FOUND', async () => {
+    it('[ac:ac-c4s-read-brief-brief-path-c4s-fil] turns the route\'s generic NOT_FOUND into BRIEF_NOT_FOUND', async () => {
       // The command's entire domain is one brief path, so a generic code would
       // lose which of the two things was missing — and exit 12 is what a script
       // branches on.
       status = 404;
       reply = { error: { code: 'NOT_FOUND', message: 'no such artifact' } };
-      await expect(runReadBrief(args('read-brief', 'nope.md'))).rejects.toMatchObject({
+      await expect(runGetBrief(args('get-brief', 'nope.md'))).rejects.toMatchObject({
         code: 'BRIEF_NOT_FOUND',
       });
     });
 
     it('requires the path', async () => {
-      await expect(runReadBrief(args('read-brief'))).rejects.toMatchObject({ code: 'INVALID_ARGS' });
+      await expect(runGetBrief(args('get-brief'))).rejects.toMatchObject({ code: 'INVALID_ARGS' });
       expect(seen).toEqual([]);
     });
 
-    it('refuses a traversal instead of addressing another endpoint with it', async () => {
+    it('[ac:ac-brief-path-escapujacy-briefsdir-sciez] refuses a traversal instead of addressing another endpoint with it', async () => {
       /**
        * The failure this pins is not a 404. `..` survives `encodeURIComponent`
-       * and `fetch` collapses it, so `read-brief ../../config` was SENT as
+       * and `fetch` collapses it, so `get-brief ../../config` was SENT as
        * `GET /api/projects/<id>/config` — an endpoint that answers 200 with the
        * project config. The command then printed `{}` (none of frontmatter/
        * body/content exist on that payload) and exited 0, where the filesystem
        * reader had refused outright. So the assertion that matters is that
        * NOTHING was requested.
        */
-      const err = await runReadBrief(args('read-brief', '../../config')).catch((e: unknown) => e);
+      const err = await runGetBrief(args('get-brief', '../../config')).catch((e: unknown) => e);
       expect(seen).toEqual([]);
       expect((err as { code?: string }).code).toBe('INVALID_ARGS');
       /**
@@ -257,19 +257,19 @@ describe('[ac:ac-rodzina-brief-patch-list-briefs-read] the brief/patch family de
     });
   });
 
-  describe('file-patch', () => {
+  describe('create-patch', () => {
     const withStdin = async (body: string, fn: () => Promise<void>): Promise<void> => {
       const file = path.join(projectDir, 'body.md');
       fs.writeFileSync(file, body, 'utf8');
       await fn();
     };
 
-    it('POSTs the patch and lets the SERVER write the file', async () => {
+    it('[ac:ac-c4s-file-patch-brief-brief-path-d] POSTs the patch and lets the SERVER write the file', async () => {
       status = 201;
       reply = { data: { path: 'a-md-thing.md' } };
       await withStdin('the body', () =>
-        runFilePatch(
-          args('file-patch', '--brief', 'a.md', '--desc', 'thing', '--body-file', path.join(projectDir, 'body.md')),
+        runCreatePatch(
+          args('create-patch', '--brief', 'a.md', '--desc', 'thing', '--body-file', path.join(projectDir, 'body.md')),
         ),
       );
       expect(seen[0]!.method).toBe('POST');
@@ -290,8 +290,8 @@ describe('[ac:ac-rodzina-brief-patch-list-briefs-read] the brief/patch family de
       status = 201;
       reply = { data: { path: 'p.md' } };
       await withStdin('b', () =>
-        runFilePatch(
-          args('file-patch', '--brief', 'a.md', '--desc', 'd', '--kind', 'missing', '--created-by', 'claude', '--body-file', path.join(projectDir, 'body.md')),
+        runCreatePatch(
+          args('create-patch', '--brief', 'a.md', '--desc', 'd', '--kind', 'missing', '--created-by', 'claude', '--body-file', path.join(projectDir, 'body.md')),
         ),
       );
       expect(JSON.parse(seen[0]!.body)).toMatchObject({ patchKind: 'missing', createdBy: 'claude' });
@@ -301,25 +301,52 @@ describe('[ac:ac-rodzina-brief-patch-list-briefs-read] the brief/patch family de
       const bodyFile = path.join(projectDir, 'body.md');
       fs.writeFileSync(bodyFile, 'x', 'utf8');
       for (const argv of [
-        ['file-patch', '--desc', 'd', '--body-file', bodyFile],
-        ['file-patch', '--brief', 'a.md', '--body-file', bodyFile],
-        ['file-patch', '--brief', 'a.md', '--desc', 'd', '--kind', 'nonsense', '--body-file', bodyFile],
+        ['create-patch', '--desc', 'd', '--body-file', bodyFile],
+        ['create-patch', '--brief', 'a.md', '--body-file', bodyFile],
+        ['create-patch', '--brief', 'a.md', '--desc', 'd', '--kind', 'nonsense', '--body-file', bodyFile],
       ]) {
-        await expect(runFilePatch(args(...argv))).rejects.toMatchObject({ code: 'INVALID_ARGS' });
+        await expect(runCreatePatch(args(...argv))).rejects.toMatchObject({ code: 'INVALID_ARGS' });
       }
       expect(seen).toEqual([]);
     });
 
-    it('propagates PATCH_WRITE_FAILED from the server rather than inventing a code', async () => {
+    it('[ac:ac-c4s-file-patch-bez-uprawnien-zapisu-w] propagates PATCH_WRITE_FAILED from the server rather than inventing a code', async () => {
       status = 500;
       reply = { error: { code: 'PATCH_WRITE_FAILED', message: 'EROFS' } };
       await withStdin('b', () =>
         expect(
-          runFilePatch(
-            args('file-patch', '--brief', 'a.md', '--desc', 'd', '--body-file', path.join(projectDir, 'body.md')),
+          runCreatePatch(
+            args('create-patch', '--brief', 'a.md', '--desc', 'd', '--body-file', path.join(projectDir, 'body.md')),
           ),
         ).rejects.toMatchObject({ code: 'PATCH_WRITE_FAILED' }),
       );
+    });
+
+    it('[ac:ac-brief-path-escapujacy-briefsdir-sciez] refuses a --brief escaping briefsDir locally, before any request', async () => {
+      const bodyFile = path.join(projectDir, 'body.md');
+      fs.writeFileSync(bodyFile, 'x', 'utf8');
+      for (const brief of ['../outside.md', '../../etc/passwd', '/etc/passwd', 'sub/../../x.md']) {
+        const err = await runCreatePatch(
+          args('create-patch', '--brief', brief, '--desc', 'd', '--body-file', bodyFile),
+        ).catch((e: unknown) => e);
+        // CliError, not just the code — only a CliError reaches codeToExit (exit 4).
+        expect(err, brief).toBeInstanceOf(CliError);
+        expect((err as { code?: string }).code, brief).toBe('INVALID_ARGS');
+      }
+      expect(seen).toEqual([]);
+    });
+
+    it('[ac:ac-c4s-read-brief-brief-path-c4s-fil] a missing brief is the server\'s BRIEF_NOT_FOUND, hint included', async () => {
+      status = 404;
+      reply = {
+        error: { code: 'BRIEF_NOT_FOUND', message: 'brief not found: ghost.md', hint: 'available briefs: a.md' },
+      };
+      const bodyFile = path.join(projectDir, 'body.md');
+      fs.writeFileSync(bodyFile, 'x', 'utf8');
+      await expect(
+        runCreatePatch(args('create-patch', '--brief', 'ghost.md', '--desc', 'd', '--body-file', bodyFile)),
+      ).rejects.toMatchObject({ code: 'BRIEF_NOT_FOUND', hint: 'available briefs: a.md' });
+      expect(seen).toHaveLength(1);
     });
   });
 });

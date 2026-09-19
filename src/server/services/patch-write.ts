@@ -1,5 +1,5 @@
 /**
- * M23 — `file_patch`, as ONE function, the way the catalog requires.
+ * M23 — `create_patch`, as ONE function, the way the catalog requires.
  *
  * The operation had two renderings and one of them did not exist: the catalog
  * declared `channels.mcp: direct()`, REST answered `POST /api/patches`, the CLI
@@ -15,7 +15,7 @@
  * refusal envelope, and nothing else.
  */
 
-import { writePatchFs } from '../../core/briefs/file-patch.js';
+import { writePatchFs } from '../../core/briefs/create-patch.js';
 import type { PatchKind } from '../../core/briefs/types.js';
 import { DomainError } from './tags.js';
 
@@ -27,7 +27,7 @@ export interface PatchWriteDeps {
   /**
    * 0.2.76 — the M42 write for `artifacts:patch`, when the caller has a mount.
    *
-   * This one runs the FULL chain, unlike the other artifact writes: `file_patch`
+   * This one runs the FULL chain, unlike the other artifact writes: `create_patch`
    * never authored its own `file_version` row or index entry — it always left
    * both to the watcher. Running the chain in-band keeps that arrangement and
    * simply stops it waiting for a debounce, so the patch is listable the moment
@@ -37,7 +37,7 @@ export interface PatchWriteDeps {
 }
 
 /** The operation's input, channel-independent. `brief` is relative to `briefsDir`. */
-export interface FilePatchInput {
+export interface CreatePatchInput {
   brief?: unknown;
   desc?: unknown;
   patchKind?: unknown;
@@ -49,7 +49,7 @@ export interface FilePatchInput {
  * The answer is `{ path }` and nothing else — the patch's own text is not echoed
  * back at the caller that just sent it.
  */
-export interface FilePatchResult {
+export interface CreatePatchResult {
   path: string;
 }
 
@@ -58,11 +58,11 @@ export interface FilePatchResult {
  * itself: `'rest'`, `'agent'`, and so on. A caller that stays anonymous still
  * leaves a truthful record of HOW it arrived.
  */
-export async function filePatch(
+export async function createPatch(
   deps: PatchWriteDeps,
-  input: FilePatchInput,
+  input: CreatePatchInput,
   fallbackActor: string,
-): Promise<FilePatchResult> {
+): Promise<CreatePatchResult> {
   if (typeof input.brief !== 'string' || input.brief.trim() === '') {
     throw new DomainError('VALIDATION', 'brief is required (path relative to briefsDir)');
   }

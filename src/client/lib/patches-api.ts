@@ -1,8 +1,9 @@
 /**
  * M23 patches REST client. M36: all endpoints now go through the generic
- * `/api/artifacts/patch/*` family (see `routes/artifacts.ts`) — patches have
- * no creation endpoint (they're authored via `c4s file-patch`). All endpoints
- * return `{ data: T }` — handle() unwraps the envelope.
+ * `/api/artifacts/patch/*` family (see `routes/artifacts.ts`). Creation is
+ * the slice-specific `POST /api/patches` (the `rest` rendering of
+ * `create_patch`, which `c4s create-patch` wraps), not part of this client.
+ * All endpoints return `{ data: T }` — handle() unwraps the envelope.
  *
  * Path encoding mirrors briefs: each patch path is a splat
  * (`/api/artifacts/patch/<path>`), encodeURIComponent per segment so `/`

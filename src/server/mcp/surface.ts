@@ -65,7 +65,7 @@ export interface ExternalSurfaceDeps {
   planService: PlanService;
   pageVersions: FileVersionService;
   briefService: BriefService;
-  /** M23 `file_patch` — where briefs are read from and patches are written to. */
+  /** M23 `create_patch` — where briefs are read from and patches are written to. */
   patchWrite: PatchWriteDeps;
   /** M31 `list_projects`. A thunk — the registry is re-read per call. */
   listProjects: () => ListProjectsResult;
@@ -203,7 +203,7 @@ function sourceServers(deps: ExternalSurfaceDeps): Array<{ name: string; server:
   }
 
   /**
-   * `file_patch` is `opClass: 'brief'`, so it rides the same gate as the brief
+   * `create_patch` is `opClass: 'brief'`, so it rides the same gate as the brief
    * tools and no other: filing drift against a brief is a brief operation.
    *
    * Host-owned rather than plugin-registered, and that distinction is the whole

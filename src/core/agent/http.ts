@@ -109,13 +109,13 @@ export function encodeArtifactPath(p: string): string {
    * Only the second one escapes. A `.` segment resolves to the directory it is
    * already in, so `./x.md` and `x.md` name the same file — and `path.join`,
    * shell completion and hand-typed paths all produce the first spelling
-   * routinely. Refusing it made `c4s read-brief ./0-2-12-to-0-2-13.md` exit 4
+   * routinely. Refusing it made `c4s get-brief ./0-2-12-to-0-2-13.md` exit 4
    * with "escapes the artifact directory", which is both a refusal of something
    * safe and a false description of it.
    *
    * It also split the channels. `assertSafeRelPath`, which guards the same
-   * paths server-side, runs `path.normalize` first — so `file-patch --brief
-   * ./x.md` (the path travels in a POST body) succeeded while `read-brief
+   * paths server-side, runs `path.normalize` first — so `create-patch --brief
+   * ./x.md` (the path travels in a POST body) succeeded while `get-brief
    * ./x.md` on the identical string failed. Two answers for one input is the
    * drift this release exists to remove; normalizing here makes both channels
    * agree, and agree with the filesystem.

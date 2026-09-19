@@ -142,7 +142,7 @@ Hard rules for this path:
   specification nor the code, so it may legitimately refuse to write anything,
   and the caller is handed exit 0 and a brief containing only a heading. Feeding
   it the context you already hold does not improve the result, it only adds a
-  point of failure. \`c4s file-patch\` is the precedent for the shape: it, too,
+  point of failure. \`c4s create-patch\` is the precedent for the shape: it, too,
   takes the caller's intent rather than a turn's output.
 - **\`VALIDATION\` from \`c4s create-brief\` is usually the body file:** it was
   empty, or whitespace only. It also fires when the project has **no releases at

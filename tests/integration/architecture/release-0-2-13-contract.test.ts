@@ -316,7 +316,7 @@ describe('the CLI holds no handle on the specification', () => {
     /**
      * `routes/errors.ts` deliberately renames the core's `INVALID_ARGS` to
      * `VALIDATION` on the way out, and the CLI propagates the server's code
-     * verbatim rather than translating it back. So when `file-patch` moved onto
+     * verbatim rather than translating it back. So when `create-patch` moved onto
      * `POST /api/patches`, the same refusal that exited 4 started exiting 1 —
      * the generic bucket that also holds `PROJECT_NOT_IN_WORKSPACE` and agent
      * failures, so a wrapper branching on `[ $? -eq 4 ]` reads a typo as an

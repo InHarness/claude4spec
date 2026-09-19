@@ -1,8 +1,9 @@
 import { AgentError, encodeArtifactPath, healthCheck, patchJson, resolveServer } from './http.js';
 
 /**
- * `c4s mark-brief-implemented` (0.1.106 M11) — server-delegating, unlike its
- * filesystem-only `list-briefs`/`read-brief`/`file-patch` siblings: it wraps
+ * `c4s mark-brief-implemented` (0.1.106 M11) — server-delegating, like the
+ * rest of the brief/patch family (`create-brief`/`list-briefs`/`get-brief`/
+ * `create-patch`, all server-delegating since 0.2.13): it wraps
  * `PATCH /api/artifacts/brief/:path/frontmatter` (M36 — was `/api/briefs/*`),
  * so it needs the identical resolve+health-check `c4s agent`/`c4s ask` use
  * (reused here, not reimplemented), then a single PATCH setting
@@ -19,7 +20,7 @@ export async function markBriefImplemented(params: {
   });
   await healthCheck(baseUrl, apiBase);
 
-  // Same guard as `read-brief`, and for the same reason: `..` survives
+  // Same guard as `get-brief`, and for the same reason: `..` survives
   // `encodeURIComponent` and is collapsed by URL resolution, so a traversal
   // here would PATCH some other endpoint's frontmatter rather than being
   // refused. Pre-dates 0.2.13; closed with the shared helper rather than left

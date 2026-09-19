@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { ParsedArgs } from '../args.js';
 import { optionalString } from '../args.js';
 import { delegatePost } from '../delegate.js';
+import { AgentError, encodeArtifactPath } from '../../../core/agent/http.js';
 import { CliError } from '../errors.js';
 import { writeOutput } from '../output.js';
 import type { PatchKind } from '../../../core/briefs/index.js';
@@ -13,8 +14,8 @@ const PATCH_KINDS: PatchKind[] = ['drift', 'missing', 'incorrect', 'clarificatio
 /**
  * The only mutating command in the brief/patch family.
  *
- *   printf '%s\n' "$BODY" | c4s file-patch --brief <brief-path> --desc <s> [--kind drift|missing|incorrect|clarification] [--created-by <name>]
- *   c4s file-patch --brief <brief-path> --desc <s> --body-file <f>
+ *   printf '%s\n' "$BODY" | c4s create-patch --brief <brief-path> --desc <s> [--kind drift|missing|incorrect|clarification] [--created-by <name>]
+ *   c4s create-patch --brief <brief-path> --desc <s> --body-file <f>
  *
  * 0.2.13 — `server-delegating`, over `POST /api/patches`. The file is written by
  * the SERVER: `mkdir -p` on `patchesDir` is lazy there, the slug is minted
@@ -26,10 +27,23 @@ const PATCH_KINDS: PatchKind[] = ['drift', 'missing', 'incorrect', 'clarificatio
  * caller's own input, not specification content, and reading it here is what the
  * shell pipeline in every skill depends on.
  */
-export async function runFilePatch(args: ParsedArgs): Promise<void> {
+export async function runCreatePatch(args: ParsedArgs): Promise<void> {
   const briefPath = optionalString(args, 'brief');
   if (!briefPath) {
     throw new CliError('INVALID_ARGS', '--brief <brief-path> is required');
+  }
+  /**
+   * 0.2.96 — the traversal guard runs HERE, before the server is called, the
+   * same one `get-brief` uses. `assertBriefExists` refuses `../` server-side
+   * too, but the spec puts the refusal on the CLI: an argument that escapes
+   * `briefsDir` is `INVALID_ARGS` locally, and never becomes a request.
+   * `BRIEF_NOT_FOUND` (with the server's hint) stays the server's answer.
+   */
+  try {
+    encodeArtifactPath(briefPath);
+  } catch (err) {
+    if (err instanceof AgentError) throw new CliError('INVALID_ARGS', err.message, err.hint);
+    throw err;
   }
   const desc = optionalString(args, 'desc');
   if (!desc) {
@@ -50,7 +64,7 @@ export async function runFilePatch(args: ParsedArgs): Promise<void> {
   } else if (process.stdin.isTTY) {
     throw new CliError(
       'INVALID_ARGS',
-      'file-patch requires a body: pass --body-file <f> or pipe the body via stdin',
+      'create-patch requires a body: pass --body-file <f> or pipe the body via stdin',
     );
   } else {
     body = fs.readFileSync(0, 'utf8');
@@ -68,10 +82,10 @@ export async function runFilePatch(args: ParsedArgs): Promise<void> {
   );
 }
 
-export const filePatchCommand: CliCommandContribution = {
-  name: 'file-patch',
-  operation: 'file_patch',
+export const createPatchCommand: CliCommandContribution = {
+  name: 'create-patch',
+  operation: 'create_patch',
   executionMode: 'server-delegating',
   errorCodes: [...SERVER_DELEGATING_CODES, 'INVALID_ARGS', 'BRIEF_NOT_FOUND', 'PATCH_WRITE_FAILED'],
-  handler: runFilePatch,
+  handler: runCreatePatch,
 };

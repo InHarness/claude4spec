@@ -390,7 +390,7 @@ export function registerCoreOperations(): void {
   // ── M23 Patches ───────────────────────────────────────────────────────────
 
   CATALOG.register({
-    name: 'file_patch',
+    name: 'create_patch',
     summary: 'File a patch against a brief: which brief, what class of deviation, what drifted. Takes the INTENT, not a finished file — the server writes it.',
     scope: 'project',
     mediation: 'direct',
@@ -930,7 +930,7 @@ export function registerCoreOperations(): void {
    *
    * `mcp` is `direct` with no tool behind it yet — a declaration ahead of its
    * rendering, deliberately. The M39 parity assertion covers the external
-   * reader's rows; this one sits with `file_patch`, outside that set.
+   * reader's rows; this one sits with `create_patch`, outside that set.
    */
   CATALOG.register({
     name: 'create_brief',
@@ -970,7 +970,7 @@ export function registerCoreOperations(): void {
     errorCodes: ['VALIDATION', 'BRIEF_SAME_RELEASE', 'NOT_FOUND'],
     sideEffects: ['file', 'db', 'ui-notify'],
     /**
-     * `literal`: the caller hands over finished text, exactly as `file_patch`
+     * `literal`: the caller hands over finished text, exactly as `create_patch`
      * does. There is no prior body for a differential mode to match against —
      * the operation is what brings the artifact into being.
      */

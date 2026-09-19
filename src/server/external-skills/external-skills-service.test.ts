@@ -71,6 +71,28 @@ describe('renderers', () => {
   });
 });
 
+describe('c4s-brief-implementer loop (0.2.96 verbs)', () => {
+  it('[ac:ac-body-c4s-brief-implementer-skill-md-op] discovers with list-briefs, reads with get-brief, files feedback with create-patch', () => {
+    const body = renderBriefImplementerSkill(FIXTURE_CTX);
+    const identity = `--project '${FIXTURE_CTX.slug}' --workspace '${FIXTURE_CTX.workspace}'`;
+    expect(body).toContain(`c4s list-briefs --status pending --limit 10 ${identity}`);
+    expect(body).toContain(`c4s get-brief <brief-path> ${identity}`);
+    expect(body).toMatch(/printf '%s\\n' "\$PATCH_BODY" \| c4s create-patch/);
+    expect(body).toContain('c4s mark-brief-implemented <brief-path>');
+    // the description names the new verbs too
+    const desc = body.match(/^description:.*$/m)?.[0] ?? '';
+    expect(desc).toContain('get-brief');
+    expect(desc).toContain('c4s create-patch');
+    // no escape hatch: a failed command stops, it does not fall back to spec files
+    expect(body).toContain('even when a `c4s` command fails');
+    // 0.2.96 renamed the verbs without an alias — the old spellings must not
+    // survive anywhere in any generated skill, or an agent calls a dead command.
+    for (const out of [body, renderRefactorSkill(FIXTURE_CTX), renderSpecReaderSkill(FIXTURE_CTX)]) {
+      expect(out).not.toMatch(/read-brief|file-patch/);
+    }
+  });
+});
+
 describe('buildExternalSkillContext', () => {
   const project: ProjectRecord = {
     cwd: '/abs/my-spec-project',
@@ -152,6 +174,13 @@ describe('writeFileSet', () => {
     fs.writeFileSync(target, '# hand-edited', 'utf8');
     writeFileSet(dir, buildExternalSkillsBundle(FIXTURE_CTX));
     expect(fs.readFileSync(target, 'utf8')).toBe(renderRefactorSkill(FIXTURE_CTX));
+  });
+
+  it('[ac:ac-claude4spec-patches-powstaje-wylaczn] never creates a patches directory — that is the server\'s, lazily', () => {
+    const bundle = buildExternalSkillsBundle(FIXTURE_CTX);
+    for (const [relPath] of bundle) expect(relPath).not.toMatch(/patches/);
+    writeFileSet(dir, bundle);
+    expect(fs.readdirSync(dir).sort()).toEqual([...SKILL_DIRS].sort());
   });
 
   it('leaves sibling non-SKILL.md files untouched', () => {

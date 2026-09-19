@@ -1,16 +1,16 @@
 import { z } from 'zod';
 import { createMcpServer, mcpTool, type CapturedMcpServer } from '../plugin-runtime/index.js';
 import { toolFailure, toolSuccess } from '../operations/envelope.js';
-import { filePatch, type PatchWriteDeps } from '../services/patch-write.js';
+import { createPatch, type PatchWriteDeps } from '../services/patch-write.js';
 
 /**
- * `patch-tools` — the `mcp` rendering of `file_patch`, which the catalog had
+ * `patch-tools` — the `mcp` rendering of `create_patch`, which the catalog had
  * declared and nobody had built.
  *
- * `core-operations.ts` has always listed `file_patch` with `channels.mcp:
+ * `core-operations.ts` has always listed `create_patch` with `channels.mcp:
  * direct()`, and `direct` is a claim that THIS channel renders the operation
  * itself. It rendered nothing: REST answered `POST /api/patches` and the CLI
- * delegated to that route, while `grep mcpTool('file_patch'` came back empty. A
+ * delegated to that route, while `grep mcpTool('create_patch'` came back empty. A
  * declared-but-unbuilt cell is worse than an honest `na(reason)`, because the
  * catalog is what every profile gate and channel listing reads — the operation
  * was advertised to agents that had no way to call it.
@@ -32,8 +32,8 @@ export function createPatchToolsServer(
     toolSuccess(data, { operation, channel: 'mcp', project: projectId });
   const fail = toolFailure;
 
-  const filePatchTool = mcpTool(
-    'file_patch',
+  const createPatchTool = mcpTool(
+    'create_patch',
     [
       'File a patch against a brief: which brief, what class of deviation, what drifted.',
       'Takes the INTENT, not a finished file — the server composes the frontmatter',
@@ -66,12 +66,12 @@ export function createPatchToolsServer(
     },
     async (args) => {
       try {
-        return ok(await filePatch(deps, args, 'agent'), 'file_patch');
+        return ok(await createPatch(deps, args, 'agent'), 'create_patch');
       } catch (err) {
         return fail(err);
       }
     },
   );
 
-  return createMcpServer({ name: 'patch-tools', tools: [filePatchTool] });
+  return createMcpServer({ name: 'patch-tools', tools: [createPatchTool] });
 }
