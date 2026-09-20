@@ -75,7 +75,7 @@ Ask the user to confirm, reorder, add, or remove. Iterate until confirmed.
 ## Phase 4 — Skeleton generation
 
 Now, and only now, write files. Create in this order:
-1. `<index>` (copy from `templates/index.md`) with the concepts, the confirmed layer table, the confirmed module table, and a *relations placeholder* section.
+1. `<index>` (copy from `templates/index.md`) with the concepts, the confirmed layer table and the confirmed module table.
 2. One empty `layers/LX-<slug>.md` per layer (copy from `templates/layer.md`). Fill in *only* the title and purpose line; leave other sections as section headers with a one-line TODO.
 3. One empty `modules/MXX-<slug>.md` per module (copy from `templates/module.md`). Keep the per-layer section headers only for layers the module actually touches; delete the rest.
 4. Do **not** create per-module subdirectories up front. They are introduced lazily in Phase 5 only when a specific module's file outgrows the budget — at that point `modules/MXX-<slug>.md` is converted into `modules/MXX-<slug>/` with the slice extracted to `LY-<slug>.md` inside.
@@ -106,7 +106,6 @@ After all modules are written, fill each `layers/LX-<slug>.md`. A layer file is 
 Apply the layer-purity test (rule 2) as you go: every line in a layer file must stay true if any single module is removed.
 
 After all layers are written, update `<index>`:
-- Fill in the *Key relations / dependencies* diagram (which modules depend on which, which modules register into which framework layers).
 - Add a final top-of-file paragraph summarizing the system.
 
 Announce completion and offer: *"Spec skeleton and contents are complete. Want me to (a) do a coverage review, (b) generate a one-page summary for onboarding, or (c) stop here?"*

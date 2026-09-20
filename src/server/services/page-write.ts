@@ -26,9 +26,11 @@ import {
   anchorValuesIn,
   anchorsInLineSpans,
   applySectionEdit,
+  assertHeadingText,
   bodyPositionResolver,
   liveRangeOf,
   ownEndOf,
+  renameHeading,
   sectionDigests,
   sectionRanges,
   sha256,
@@ -209,8 +211,21 @@ export interface UpdatePageInput {
  * FRAGMENTS its patterns match. That distinction is not cosmetic — it decides
  * which anchors an edit may be declared to drop and which ones trip
  * `ANCHOR_LOSS`, so it is carried all the way through `scopeOf` below.
+ *
+ * 0.2.100 adds a sixth, and it is a THIRD scope class rather than a variant of
+ * either:
+ *
+ *  - `rename`       — rewrite the heading LINE alone, level and anchor kept.
+ *                     Idempotent by heading text, and the only action that takes
+ *                     `heading` instead of `content` or `textEdits`.
+ *
+ * Its touched scope is one line that is neither the anchor comment (which sits
+ * above it) nor the body (which starts below it), so the set of anchors it can
+ * drop is EMPTY by construction: it never trips `ANCHOR_LOSS`, never enters the
+ * added/dropped accounting, and a `dropAnchors` entry declared "alongside" one
+ * is always out of scope.
  */
-export type SectionEditAction = 'replace' | 'append' | 'insert_after' | 'delete' | 'edit';
+export type SectionEditAction = 'replace' | 'append' | 'insert_after' | 'delete' | 'edit' | 'rename';
 
 export const SECTION_EDIT_ACTIONS: readonly SectionEditAction[] = [
   'replace',
@@ -218,6 +233,7 @@ export const SECTION_EDIT_ACTIONS: readonly SectionEditAction[] = [
   'insert_after',
   'delete',
   'edit',
+  'rename',
 ];
 
 export interface SectionEdit {
@@ -230,8 +246,9 @@ export interface SectionEdit {
    * not part of it.
    *
    * Required for `replace` / `append` / `insert_after`. Forbidden for `delete`,
-   * which addresses a section and carries nothing, and for `edit`, which
-   * describes its change in {@link SectionEdit.textEdits} instead.
+   * which addresses a section and carries nothing, for `edit`, which describes
+   * its change in {@link SectionEdit.textEdits} instead, and for `rename`, which
+   * describes it in {@link SectionEdit.heading}.
    */
   content?: string;
   /**
@@ -250,6 +267,16 @@ export interface SectionEdit {
    * for the page scope when it crosses sections or lies outside all of them.
    */
   textEdits?: TextEdit[];
+  /**
+   * 0.2.100 — `rename` only, and REQUIRED there: the new heading as PLAIN TEXT.
+   *
+   * One line, no leading `#`, no anchor comment, not empty once trimmed — each
+   * of those four is `INVALID_ARGUMENT` for the whole batch (see
+   * {@link assertHeadingText}). The LEVEL is not part of it: the operation keeps
+   * the one it finds on the line it replaces, so a `##` stays a `##` whatever
+   * arrives.
+   */
+  heading?: string;
 }
 
 export interface UpdateSectionsInput {
@@ -362,6 +389,19 @@ export interface SectionEditResult {
   addedAnchors: string[];
   /** `edit` only — how many substitutions this entry performed. */
   replacements?: number;
+  /**
+   * 0.2.100 — `rename` only: the heading text as it stood BEFORE this write.
+   *
+   * Absent — the key missing, not an empty value — on every other row, the same
+   * way `replacements` is, so a caller can test for the key rather than for a
+   * sentinel.
+   *
+   * Not an echo of the input, which is what earns it a place under the echo-free
+   * rule: the caller addressed the section by ANCHOR and never sent the old
+   * text, and between its last read and this write somebody else may have
+   * renamed the section. Without this field it cannot reconstruct its own diff.
+   */
+  previousHeading?: string;
 }
 
 /**
@@ -1353,6 +1393,13 @@ export async function updateSections(
      * did something, and a silent drop is how it finds out much later that it
      * did not.
      */
+    if (edit.action !== 'rename' && edit.heading !== undefined) {
+      throw new DomainError(
+        'INVALID_ARGUMENT',
+        `edit for '${edit.anchor}' carries heading, which only action 'rename' accepts`,
+        `action '${edit.action}' does not rewrite a heading line`,
+      );
+    }
     if (edit.action === 'edit') {
       if (edit.content !== undefined) {
         throw new DomainError(
@@ -1367,6 +1414,28 @@ export async function updateSections(
           'each entry is { find, replaceWith, expectedMatches? }',
         );
       }
+    } else if (edit.action === 'rename') {
+      /**
+       * 0.2.100 — `rename` carries its change in neither of the two content
+       * modes: not literally in `content`, not differentially in `textEdits`.
+       * Both are refused rather than ignored, for the reason the other branches
+       * refuse the field they do not take — a caller who sent one believes it
+       * did something.
+       */
+      if (edit.content !== undefined) {
+        throw new DomainError(
+          'INVALID_ARGUMENT',
+          `edit for '${edit.anchor}' takes heading, not content — action 'rename' rewrites the heading line, it does not touch the body`,
+        );
+      }
+      if (edit.textEdits !== undefined) {
+        throw new DomainError(
+          'INVALID_ARGUMENT',
+          `edit for '${edit.anchor}' carries textEdits, which only action 'edit' accepts`,
+          "action 'rename' describes its new heading in `heading`",
+        );
+      }
+      assertHeadingText(edit.heading, edit.anchor);
     } else {
       if (edit.textEdits !== undefined) {
         throw new DomainError(
@@ -1585,8 +1654,43 @@ export async function updateSections(
     }
   }
 
+  /**
+   * 0.2.100 — `rename` under an ancestor this same batch REWRITES, and the
+   * asymmetry is read straight off the definition of a section as a subtree.
+   *
+   * `replace` and `delete` on an ancestor overwrite or remove the descendant's
+   * heading LINE — precisely the one line a `rename` exists to change. Bottom-up
+   * application would run the deeper `rename` first and the ancestor would then
+   * throw it away, reporting success and a `previousHeading` for a rename that
+   * is not in the file. So the whole batch is refused.
+   *
+   * `append` and `insert_after` on an ancestor add lines and rewrite nothing, so
+   * a `rename` beneath them PASSES. This is not leniency: there is no line the
+   * two entries both write.
+   */
+  for (const { edit } of located) {
+    if (edit.action !== 'rename') continue;
+    const mine = rangeByAnchor.get(edit.anchor)!;
+    const clash = located.find(({ edit: other }) => {
+      if (other.anchor === edit.anchor) return false;
+      if (other.action !== 'replace' && other.action !== 'delete') return false;
+      const theirs = rangeByAnchor.get(other.anchor);
+      if (!theirs) return false;
+      return theirs.lineStart < mine.lineStart && theirs.lineEnd >= mine.lineEnd;
+    });
+    if (clash) {
+      throw new DomainError(
+        'INVALID_ARGUMENT',
+        `rename on '${edit.anchor}' lies inside the section '${clash.edit.anchor}' that another entry in this batch ${clash.edit.action}s`,
+        'a whole-section write over an ancestor already rewrites that heading line — split them into separate calls',
+      );
+    }
+  }
+
   const scopeOf = new Map<string, string[]>();
   const replacementsOf = new Map<string, number>();
+  /** Per `rename` entry, the heading text read off the file just before the splice. */
+  const previousHeadingOf = new Map<string, string>();
   /**
    * The anchor values each edit CARRIES IN and the ones it takes OUT, measured
    * as text at the moment of the splice, when both halves are still in hand.
@@ -1605,6 +1709,23 @@ export async function updateSections(
         `anchor '${edit.anchor}' was removed by an earlier edit in the same batch`,
         currentHash,
       );
+    }
+    if (edit.action === 'rename') {
+      /**
+       * Three empty sets, and they are the whole of this action's accounting.
+       *
+       * The touched span is ONE line: not the anchor comment above it, not the
+       * body below it. So there is nothing to drop (`ANCHOR_LOSS` can never fire
+       * here, however many referents the addressed anchor has), nothing brought
+       * in or taken out (`ANCHOR_DUPLICATE`'s netting never sees this entry),
+       * and an empty scope — which is what makes a `dropAnchors` entry declared
+       * "alongside" a `rename` a stranger, and therefore `INVALID_ARGUMENT`.
+       */
+      scopeOf.set(edit.anchor, []);
+      broughtInOf.set(edit.anchor, []);
+      takenOutOf.set(edit.anchor, []);
+      previousHeadingOf.set(edit.anchor, renameHeading(lines, range, (edit.heading ?? '').trim()));
+      continue;
     }
     if (edit.action === 'edit') {
       /**
@@ -1861,8 +1982,17 @@ export async function updateSections(
       affectedAnchors: affected.filter((a) => a !== edit.anchor),
       droppedAnchors: droppedOf.get(edit.anchor) ?? [],
       addedAnchors: addedOf.get(edit.anchor) ?? [],
-      // Only `edit` has a count; the other four rows stay the shape they were.
+      // Only `edit` has a count; the other five rows stay the shape they were.
       ...(edit.action === 'edit' ? { replacements: replacementsOf.get(edit.anchor) ?? 0 } : {}),
+      /**
+       * Conditionally spread for the same reason `replacements` is: on every
+       * other row the KEY has to be absent, not present-and-empty, and a
+       * `previousHeading: undefined` would serialize away in JSON but still be
+       * `'previousHeading' in row` to a caller holding the object.
+       */
+      ...(edit.action === 'rename'
+        ? { previousHeading: previousHeadingOf.get(edit.anchor) ?? '' }
+        : {}),
     })),
   };
 }

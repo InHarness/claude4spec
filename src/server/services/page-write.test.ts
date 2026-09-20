@@ -1914,6 +1914,338 @@ describe('update_sections — the anchor-loss guard', () => {
       expect((await pages.read('doc.md')).body).toContain('### Child one');
     });
   });
+
+  /**
+   * 0.2.100 — the `rename` action, hosted in the anchor-loss rig on purpose.
+   *
+   * Three of its four headline properties are claims ABOUT the guard this suite
+   * exists for — that a rename drops no anchor, trips no `ANCHOR_LOSS` however
+   * many referents the section has, and gives a `dropAnchors` declaration no
+   * subject — and none of them can be proved against a stub referent lookup: a
+   * fake that finds nothing would pass every one of them by finding nothing.
+   */
+  describe('the rename action', () => {
+    interface SectionRow {
+      anchor: string;
+      heading_text: string;
+      heading_level: number;
+      content_hash: string;
+    }
+
+    /** The indexed row as it stands NOW. Re-index first — this rig has no reaction chain. */
+    async function rowOf(anchor: string, relPath = 'doc.md'): Promise<SectionRow> {
+      await indexer!.indexPage('pages', relPath);
+      const row = db
+        .prepare('SELECT anchor, heading_text, heading_level, content_hash FROM section_index WHERE anchor = ?')
+        .get(anchor) as SectionRow | undefined;
+      if (!row) throw new Error(`no indexed section for anchor ${anchor}`);
+      return row;
+    }
+
+    const rename = (anchor: string, heading: string, dropAnchors?: string[]) =>
+      hashOfPage('doc.md').then((expectedHash) =>
+        updateSections(
+          deps(),
+          {
+            expectedHash,
+            edits: [{ anchor, action: 'rename', heading }],
+            ...(dropAnchors ? { dropAnchors } : {}),
+          },
+          'agent',
+        ),
+      );
+
+    it('[ac:ac-akcja-rename-zmienia-w-section-index] moves heading_text alone and keeps the anchor', async () => {
+      await index('doc.md', nested);
+      const parent = anchorOf('Parent');
+      const before = await rowOf(parent);
+
+      await rename(parent, 'Parent, renamed');
+
+      const after = await rowOf(parent);
+      expect(after.anchor).toBe(before.anchor);
+      expect(after.heading_text).toBe('Parent, renamed');
+      // The anchor comment sits a line ABOVE the heading and is outside the
+      // write entirely, so the file still carries the same identity line.
+      expect((await pages.read('doc.md')).body).toContain(`<!-- anchor: ${parent} -->`);
+    });
+
+    it('[ac:ac-akcja-rename-nie-zmienia-content-hash] leaves content_hash untouched', async () => {
+      await index('doc.md', nested);
+      const parent = anchorOf('Parent');
+      const before = await rowOf(parent);
+
+      await rename(parent, 'A completely different name');
+
+      // `content_hash` is computed over the BODY, which the heading line is not
+      // part of — so a rename is invisible to it by construction, not by luck.
+      expect((await rowOf(parent)).content_hash).toBe(before.content_hash);
+      expect((await pages.read('doc.md')).body).toContain('PARENT BODY');
+      expect((await pages.read('doc.md')).body).toContain('CHILD ONE BODY');
+    });
+
+    it('[ac:ac-akcja-rename-zachowuje-poziom-naglowk] keeps the level it finds, whatever arrives', async () => {
+      await index('doc.md', nested);
+      const childOne = anchorOf('Child one');
+      expect((await rowOf(childOne)).heading_level).toBe(3);
+
+      await rename(childOne, 'Still a grandchild');
+
+      expect((await rowOf(childOne)).heading_level).toBe(3);
+      // Whole LINES, not a substring: `### x` contains `## x`, so the naive
+      // check passes for a level that was in fact rewritten.
+      const headings = (await pages.read('doc.md')).body.split('\n');
+      expect(headings).toContain('### Still a grandchild');
+      expect(headings).not.toContain('## Still a grandchild');
+    });
+
+    it('[ac:ac-akcja-rename-nigdy-nie-wyzwala-anchor] never trips ANCHOR_LOSS, however many cite it', async () => {
+      await index('doc.md', nested);
+      const childOne = anchorOf('Child one');
+      await citeWithTag(childOne, 'cites.md');
+      await citeWithTag(childOne, 'cites-again.md');
+      // The referent sweep is real, so the premise is worth asserting: a
+      // `replace` on the parent WOULD be refused for exactly these citations.
+      expect(await findReferencesAll(core, { target: 'section', anchor: childOne })).toHaveLength(2);
+
+      const res = await rename(childOne, 'Renamed under two citations');
+
+      expect(res.results[0]!.droppedAnchors).toEqual([]);
+      expect(res.results[0]!.addedAnchors).toEqual([]);
+      expect((await pages.read('doc.md')).body).toContain('### Renamed under two citations');
+    });
+
+    it('[ac:ac-element-paczki-z-akcja-rename-i-podan] refuses a rename carrying content or textEdits', async () => {
+      await index('doc.md', nested);
+      const parent = anchorOf('Parent');
+      const expectedHash = await hashOfPage('doc.md');
+
+      const withContent = await updateSections(
+        deps(),
+        { expectedHash, edits: [{ anchor: parent, action: 'rename', heading: 'New', content: 'BODY\n' }] },
+        'agent',
+      ).catch((e: unknown) => e);
+      expect((withContent as DomainError).code).toBe('INVALID_ARGUMENT');
+
+      const withTextEdits = await updateSections(
+        deps(),
+        {
+          expectedHash,
+          edits: [
+            { anchor: parent, action: 'rename', heading: 'New', textEdits: [{ find: 'PARENT', replaceWith: 'P' }] },
+          ],
+        },
+        'agent',
+      ).catch((e: unknown) => e);
+      expect((withTextEdits as DomainError).code).toBe('INVALID_ARGUMENT');
+
+      // And the mirror: `heading` on an action that does not take one.
+      const strayHeading = await updateSections(
+        deps(),
+        { expectedHash, edits: [{ anchor: parent, action: 'replace', content: 'x\n', heading: 'New' }] },
+        'agent',
+      ).catch((e: unknown) => e);
+      expect((strayHeading as DomainError).code).toBe('INVALID_ARGUMENT');
+
+      // Transactional throughout: nothing reached the file.
+      expect((await pages.read('doc.md')).body).toContain('## Parent');
+    });
+
+    /**
+     * The four bad shapes of heading text, each refused BEFORE the write and
+     * each fatal to the whole batch. They share one table because they share one
+     * reason: every one of them describes a line the indexer would not read back
+     * as exactly one heading of this section.
+     *
+     * 400 rather than 409, and the second edit in each batch is what makes that
+     * observable — a `replace` that would have succeeded on its own is still
+     * sitting in the file untouched afterwards.
+     */
+    const badHeadings: Array<[string, string, string]> = [
+      ['ac-rename-z-tekstem-naglowka-zawierajacy', 'a newline', 'Two\nlines'],
+      ['ac-rename-z-tekstem-naglowka-zaczynajacy', 'a leading #', '## Already a heading'],
+      ['ac-rename-z-komentarzem-kotwicy-w-teksci', 'an anchor comment', 'Name <!-- anchor: abc12345 -->'],
+      ['ac-rename-z-tekstem-naglowka-pustym-po-o', 'nothing but whitespace', '   \t '],
+    ];
+    for (const [slug, what, heading] of badHeadings) {
+      it(`[ac:${slug}] refuses the WHOLE batch for a heading carrying ${what}`, async () => {
+        await index('doc.md', nested);
+        const err = await updateSections(
+          deps(),
+          {
+            expectedHash: await hashOfPage('doc.md'),
+            edits: [
+              { anchor: anchorOf('Parent'), action: 'rename', heading },
+              { anchor: anchorOf('Sibling'), action: 'replace', content: 'WOULD HAVE LANDED\n' },
+            ],
+          },
+          'agent',
+        ).catch((e: unknown) => e);
+
+        expect((err as DomainError).code).toBe('INVALID_ARGUMENT');
+        const body = (await pages.read('doc.md')).body;
+        expect(body).toContain('## Parent');
+        expect(body).not.toContain('WOULD HAVE LANDED');
+      });
+    }
+
+    it('[ac:ac-rename-na-kotwicy-ktorej-przodek-jest] refuses an ancestor replace or delete in the same batch', async () => {
+      await index('doc.md', nested);
+      const parent = anchorOf('Parent');
+      const childOne = anchorOf('Child one');
+
+      for (const ancestorAction of ['replace', 'delete'] as const) {
+        const err = await updateSections(
+          deps(),
+          {
+            expectedHash: await hashOfPage('doc.md'),
+            edits: [
+              { anchor: childOne, action: 'rename', heading: 'Doomed' },
+              {
+                anchor: parent,
+                action: ancestorAction,
+                ...(ancestorAction === 'replace' ? { content: 'JUST THE PARENT\n' } : {}),
+              },
+            ],
+            // `replace` on the parent drops both children's anchors, so the
+            // declaration is what keeps the refusal ABOUT the collision.
+            dropAnchors: [childOne, anchorOf('Child two')],
+          },
+          'agent',
+        ).catch((e: unknown) => e);
+
+        expect((err as DomainError).code).toBe('INVALID_ARGUMENT');
+        expect((err as DomainError).message).toContain('rename');
+        expect((await pages.read('doc.md')).body).toContain('### Child one');
+      }
+    });
+
+    it('[ac:ac-rename-w-jednej-paczce-z-append-albo] passes beside an append or insert_after on an ancestor', async () => {
+      await index('doc.md', nested);
+      const parent = anchorOf('Parent');
+      const childOne = anchorOf('Child one');
+
+      const res = await updateSections(
+        deps(),
+        {
+          expectedHash: await hashOfPage('doc.md'),
+          edits: [
+            { anchor: childOne, action: 'rename', heading: 'Renamed beside an append' },
+            { anchor: parent, action: 'append', content: 'APPENDED TO PARENT\n' },
+          ],
+        },
+        'agent',
+      );
+
+      expect(res.results).toHaveLength(2);
+      let body = (await pages.read('doc.md')).body;
+      expect(body).toContain('### Renamed beside an append');
+      expect(body).toContain('APPENDED TO PARENT');
+
+      // …and the same beside an `insert_after`, which splices past the subtree.
+      await updateSections(
+        deps(),
+        {
+          expectedHash: await hashOfPage('doc.md'),
+          edits: [
+            { anchor: childOne, action: 'rename', heading: 'Renamed beside an insert' },
+            { anchor: parent, action: 'insert_after', content: '## Inserted after the parent\n' },
+          ],
+        },
+        'agent',
+      );
+      body = (await pages.read('doc.md')).body;
+      expect(body).toContain('### Renamed beside an insert');
+      expect(body).toContain('## Inserted after the parent');
+    });
+
+    it('[ac:ac-powtorzone-rename-z-tym-samym-tekstem] repeats harmlessly with the same text', async () => {
+      await index('doc.md', nested);
+      const parent = anchorOf('Parent');
+
+      await rename(parent, 'Renamed once');
+      const afterFirst = (await pages.read('doc.md')).body;
+
+      // Nothing was matched literally, so there is nothing to fail to find on a
+      // replay — the difference from `edit`, which answers FIND_NOT_FOUND here.
+      await rename(parent, 'Renamed once');
+      expect((await pages.read('doc.md')).body).toBe(afterFirst);
+    });
+
+    it('[ac:ac-wiersz-results-akcji-rename-niesie-pr] answers with the heading from BEFORE the write', async () => {
+      await index('doc.md', nested);
+      const parent = anchorOf('Parent');
+
+      const res = await rename(parent, 'Renamed for the record');
+
+      expect(res.results[0]!.previousHeading).toBe('Parent');
+      // Not an echo of the input — the caller addressed the section by anchor
+      // and never sent the old text.
+      expect(res.results[0]!.previousHeading).not.toBe('Renamed for the record');
+
+      // A second rename reads the text the FIRST one left, not the original.
+      const again = await rename(parent, 'Renamed again');
+      expect(again.results[0]!.previousHeading).toBe('Renamed for the record');
+    });
+
+    it('[ac:ac-wiersz-results-akcji-innej-niz-rename] leaves the key absent on every other row', async () => {
+      await index('doc.md', nested);
+
+      const res = await updateSections(
+        deps(),
+        {
+          expectedHash: await hashOfPage('doc.md'),
+          edits: [
+            { anchor: anchorOf('Child one'), action: 'rename', heading: 'Renamed' },
+            { anchor: anchorOf('Sibling'), action: 'replace', content: 'NEW SIBLING BODY\n' },
+          ],
+        },
+        'agent',
+      );
+
+      const [renamed, replaced] = res.results;
+      expect(Object.keys(renamed!).sort()).toEqual([
+        'action',
+        'addedAnchors',
+        'affectedAnchors',
+        'anchor',
+        'droppedAnchors',
+        'previousHeading',
+      ]);
+      // Absent, not `null` and not `''`: a caller testing for the key has to get
+      // a straight answer, and `previousHeading: undefined` would serialize away
+      // in JSON while still being `in` the object in process.
+      expect('previousHeading' in replaced!).toBe(false);
+      expect(Object.keys(replaced!).sort()).toEqual([
+        'action',
+        'addedAnchors',
+        'affectedAnchors',
+        'anchor',
+        'droppedAnchors',
+      ]);
+    });
+
+    it('[ac:ac-dropanchors-z-anchorem-spoza-zakresow] gives a dropAnchors declaration no subject', async () => {
+      await index('doc.md', nested);
+      const childOne = anchorOf('Child one');
+      await citeWithTag(childOne);
+
+      /**
+       * The third scope class, stated as a refusal. A `rename` touches one
+       * heading line — not the anchor comment above it, not the body below —
+       * so its scope is EMPTY and every anchor named alongside it is a stranger,
+       * the addressed one included. Accepting it silently would let a caller
+       * believe it had declared a loss that this action cannot cause.
+       */
+      const err = await rename(childOne, 'Renamed with a pointless declaration', [childOne]).catch(
+        (e: unknown) => e,
+      );
+
+      expect((err as DomainError).code).toBe('INVALID_ARGUMENT');
+      expect((err as DomainError).message).toContain('dropAnchors');
+      expect((await pages.read('doc.md')).body).toContain('### Child one');
+    });
+  });
 });
 
 /**

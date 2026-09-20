@@ -200,6 +200,7 @@ export function createPageToolsServer(
       'DIFFERENTIAL SCOPE IS THE WHOLE FILE — frontmatter and the preamble above the first heading included. It is the only punctual write that reaches text no anchor addresses, or any text at all on a root with no section index.',
       'The batch is a SET, not a sequence: every `find` is matched against the file as it stands BEFORE the call, so substitutions never cascade and order never matters. Matches may not overlap or contain one another (INVALID_ARGUMENT).',
       'NOT IDEMPOTENT in differential mode. Repeating a successful call with a refreshed expectedHash answers FIND_NOT_FOUND, because the text you looked for is gone — treat it like `delete`, not like `replace`. Literal `body` mode stays idempotent.',
+      'Changing a heading\'s TEXT is no longer a reason to come here: `update_sections` carries a `rename` action that rewrites the heading line and keeps the anchor, whereas a `find` swallowing the anchor comment destroys it and needs `dropAnchors`.',
       'ANCHOR LOSS: if a `find` swallows an `<!-- anchor: … -->` comment that something cites, the write is refused with ANCHOR_LOSS (400) naming each anchor and who cites it. Name those anchors in `dropAnchors` to go ahead; every entry there must lie inside a fragment your patterns actually match (otherwise INVALID_ARGUMENT). The guard does not exist in `body` mode, and does not run on a root without a section index.',
       'Returns { hash, version, changedAnchors }, plus `replacements` in differential mode. The page is NOT returned. The write-back phase injects `<!-- anchor: … -->` comments for headings you introduced, so the bytes on disk are NOT the bytes you sent: if you need them — e.g. to write the whole page again without stripping those anchors — re-read it with `get_page`. Treat a literal write as having changed the text you hold whenever your body adds headings or omits existing anchor comments — re-read before the next whole-page write or a `find` that spans a heading line. `changedAnchors` lists sections that changed relative to the page BEFORE this write, not relative to what you sent: an empty list does NOT mean the file equals your body.',
     ].join('\n'),
@@ -320,7 +321,8 @@ export function createPageToolsServer(
     'update_sections',
     [
       'Edit one or more sections of ONE page, addressed by anchor. Read-modify-write of the whole page under the hood — a convenience over update_page, not a separate store.',
-      'Actions: `replace` (swap the body), `append` (add at the end of the body), `insert_after` (add after the section and its subsections), `delete` (remove heading, anchor and body), `edit` (substitute literal fragments inside the subtree). `content` is required for replace/append/insert_after and FORBIDDEN for delete and edit; `textEdits` is required for `edit` and forbidden for the other four — either way round it is INVALID_ARGUMENT.',
+      'Actions: `replace` (swap the body), `append` (add at the end of the body), `insert_after` (add after the section and its subsections), `delete` (remove heading, anchor and body), `edit` (substitute literal fragments inside the subtree), `rename` (rewrite the heading line). EXACTLY ONE field per action: `content` for replace/append/insert_after, `textEdits` for `edit`, `heading` for `rename`, and nothing at all for `delete`. Any other combination — a field the action does not take, or its own field missing — is INVALID_ARGUMENT for the WHOLE batch.',
+      '`rename` rewrites the heading LINE ALONE — level and anchor preserved, body untouched. Refused when the same batch addresses an ancestor with `replace` or `delete`. It is IDEMPOTENT by heading text: repeating it with the same text succeeds and leaves the page identical, because it matches nothing literally and so has nothing to fail to find. It never drops an anchor, so it can never trip ANCHOR_LOSS.',
       '`edit` matches LITERALLY, byte for byte, inside the addressed subtree only. One `edit` entry may carry many substitutions; do not repeat an anchor to get a second one — a repeated anchor in a batch is refused as ambiguous. Omitting `expectedMatches` means EXACTLY 1. Zero hits → FIND_NOT_FOUND (with a whitespace-normalization diagnosis); wrong count → MATCH_COUNT_MISMATCH (with each hit as anchor + line).',
       'SECTION SCOPE VS PAGE SCOPE: `update_page` with `textEdits` covers everything this covers, since a literal `find` can be made unique page-wide. The section scope buys two things — a shorter `find`, needing no disambiguating context, and a narrower space to hit by accident. Use the section when the target sits in one known section; use the page when it crosses sections or lies outside all of them.',
       '`edit` is NOT idempotent, and one `edit` costs the WHOLE BATCH its idempotence, because the batch is all-or-nothing. Replaying a successful one answers FIND_NOT_FOUND. An `edit` nested inside a section another entry replaces or deletes is refused (INVALID_ARGUMENT) — split them into separate calls.',
@@ -330,7 +332,7 @@ export function createPageToolsServer(
       'All anchors must be on the SAME page (else INVALID_ARGUMENT), and no anchor may appear twice (INVALID_ARGUMENT).',
       'TRANSACTIONAL — unlike every other batch here, there is no partial success: either all edits land or none do. They apply bottom-up regardless of the order you list them, so earlier edits never shift later ones.',
       '`expectedHash` is the PAGE hash and guards the whole batch — which is the point of batching: editing sections one call at a time makes your own hash stale after the first one.',
-      'Returns { path, hash, version, results: [{ anchor, action, affectedAnchors, droppedAnchors, addedAnchors }] }, results in the order you gave the edits; an `edit` row also carries `replacements`. `droppedAnchors` and `addedAnchors` are filled on SUCCESS too — together they are how you see what identities a write cost and what it brought in, so there is no dry-run mode to ask for. For `edit` `droppedAnchors` is measured over the fragments your patterns matched, not over the whole subtree.',
+      'Returns { path, hash, version, results: [{ anchor, action, affectedAnchors, droppedAnchors, addedAnchors }] }, results in the order you gave the edits; an `edit` row also carries `replacements`, and a `rename` row `previousHeading` — the heading text as it stood BEFORE the write, absent (the key missing, not empty) on every other row. It is not an echo: you addressed the section by anchor, so the old text is the one thing you could not have sent. `droppedAnchors` and `addedAnchors` are filled on SUCCESS too — together they are how you see what identities a write cost and what it brought in, so there is no dry-run mode to ask for. For `edit` `droppedAnchors` is measured over the fragments your patterns matched, not over the whole subtree.',
     ].join('\n'),
     {
       expectedHash: expectedHashParam,
@@ -338,7 +340,7 @@ export function createPageToolsServer(
         .array(
           z.object({
             anchor: z.string().describe('The section anchor, from get_sections / get_page_outline.'),
-            action: z.enum(['replace', 'append', 'insert_after', 'delete', 'edit']),
+            action: z.enum(['replace', 'append', 'insert_after', 'delete', 'edit', 'rename']),
             content: z
               .string()
               .optional()
@@ -347,12 +349,20 @@ export function createPageToolsServer(
                   'the range: get_sections hands back a section\'s OWN body (up to its first child heading), while ' +
                   'replace/delete act on the whole indexed SUBTREE — so replacing a parent with its edited own body ' +
                   'removes its children unless you paste them back or edit the children as their own anchors. ' +
-                  'Required for replace / append / insert_after; forbidden for delete and edit.',
+                  'Required for replace / append / insert_after; forbidden for delete, edit and rename.',
               ),
             textEdits: textEditsParam
               .optional()
               .describe(
                 'Action `edit` only, and required there — the literal substitutions to run inside this subtree.',
+              ),
+            heading: z
+              .string()
+              .optional()
+              .describe(
+                'Action `rename` only, and required there. `heading` is the new heading as PLAIN TEXT — one line, ' +
+                  'no leading `#` (the operation keeps the level it finds), no anchor comment, not empty once ' +
+                  'trimmed; any of those four is INVALID_ARGUMENT for the whole batch.',
               ),
           }),
         )
@@ -363,9 +373,11 @@ export function createPageToolsServer(
         .optional()
         .describe(
           'Anchors this batch is allowed to destroy. Required only for dropped anchors that are CITED elsewhere — ' +
-            'without them the batch is refused with ANCHOR_LOSS. Every entry must be an anchor inside a section the ' +
-            'edits address — or, for an `edit`, inside a fragment its patterns match (otherwise INVALID_ARGUMENT); ' +
-            'listing more than the batch actually drops is fine, so a repeated call can send the same list unchanged.',
+            'without them the batch is refused with ANCHOR_LOSS. Every entry must lie inside the scope the batch ' +
+            'actually TOUCHES: the addressed subtree for the four whole-section actions, the matched fragments for ' +
+            '`edit`, and NOTHING at all for `rename`, which rewrites one heading line and can therefore drop no ' +
+            'anchor; listing MORE than the batch actually drops is fine, so a repeated call can send the same list ' +
+            'unchanged.',
         ),
     },
     async (args) => {

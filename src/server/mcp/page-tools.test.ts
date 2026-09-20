@@ -306,6 +306,24 @@ describe('page-tools', () => {
     expect(await fs.readFile(path.join(pages.root, 'dup.md'), 'utf-8')).toBe('original');
   });
 
+  it('0.2.100 — update_sections declares the sixth action and a heading field, update_page declares neither', async () => {
+    const { tools } = await client.listTools();
+
+    const edits = (tools.find((t) => t.name === 'update_sections')!.inputSchema.properties!.edits as any)
+      .items.properties;
+    expect(edits.action.enum).toEqual(['replace', 'append', 'insert_after', 'delete', 'edit', 'rename']);
+    expect(edits.heading.type).toBe('string');
+
+    /**
+     * `update_page` gets a steering SENTENCE and no schema at all — a heading
+     * rewrite is now somebody else's operation, and giving this one a parameter
+     * for it would be the second home the release exists to remove.
+     */
+    const updatePage = tools.find((t) => t.name === 'update_page')!;
+    expect(Object.keys(updatePage.inputSchema.properties!)).not.toContain('heading');
+    expect(updatePage.description).toContain('`update_sections` carries a `rename` action');
+  });
+
   it('update_sections on an unindexed anchor is SECTION_NOT_FOUND, not a crash', async () => {
     const res = await call('update_sections', {
       expectedHash: 'a'.repeat(64),

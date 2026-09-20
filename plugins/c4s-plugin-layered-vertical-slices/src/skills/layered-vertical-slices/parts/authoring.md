@@ -2,7 +2,7 @@
 
 Numbered from the same catalogue as the placement rules; a symptom marks what can be checked on the text alone.
 
-1. **Index stays in sync with files.** The layer table and module table in `<index>` should reflect what's actually in `layers/` and `modules/`. When you add or rename, update the table in the same edit. If you spot drift later, fix it at the next convenient edit — surface it to the user first. *Symptom:* a row in the module table with no file, or a module file with no row; a layer some module touches missing from the layer table; an edge shown by a `## Zależności` embed that the index's relations diagram does not draw.
+1. **Index stays in sync with files.** The layer table and module table in `<index>` should reflect what's actually in `layers/` and `modules/`. When you add or rename, update the table in the same edit. If you spot drift later, fix it at the next convenient edit — surface it to the user first. *Symptom:* a row in the module table with no file, or a module file with no row; a layer some module touches missing from the layer table.
 
 4. **Ask, don't assume.** When the user's answer is ambiguous, stop and ask one short clarification. Do not invent column names, endpoint paths, or business rules. **Special case — user-need rationale:** if the *why* behind a module or change is unclear, that is a hard stop. Name your gap and ask before authoring. Do not infer the user-need from technical context alone.
 

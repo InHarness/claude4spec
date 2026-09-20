@@ -772,15 +772,16 @@ export function registerCoreOperations(): void {
   CATALOG.register(
     pageWrite(
       'update_sections',
-      'Edit one or more sections of ONE page, addressed by anchor. A convenience over update_page — read-modify-write of the whole page with the same primitive — not a separate store, and not a structural gap in the model. Five actions: `replace`/`append`/`insert_after` take `content`, `delete` takes neither, and `edit` (0.2.37) takes `textEdits` — literal substitutions inside the addressed subtree. TRANSACTIONAL: the single exception to the partial-success rule, because every edit rewrites the same file. Applied bottom-up whatever order they arrive in.',
+      'Edit one or more sections of ONE page, addressed by anchor. A convenience over update_page — read-modify-write of the whole page with the same primitive — not a separate store, and not a structural gap in the model. Six actions: `replace`/`append`/`insert_after` take `content`, `delete` takes neither, `edit` (0.2.37) takes `textEdits` — literal substitutions inside the addressed subtree — and `rename` (0.2.100) takes `heading`, rewriting the heading line alone with its level and its anchor kept. TRANSACTIONAL: the single exception to the partial-success rule, because every edit rewrites the same file. Applied bottom-up whatever order they arrive in.',
       {
         ...expectedHash,
         edits: z.array(
           z.object({
             anchor: z.string(),
-            action: z.enum(['replace', 'append', 'insert_after', 'delete', 'edit']),
+            action: z.enum(['replace', 'append', 'insert_after', 'delete', 'edit', 'rename']),
             content: z.string().optional(),
             textEdits: textEdit.array().min(1).optional(),
+            heading: z.string().optional(),
           }),
         ).min(1),
         dropAnchors: z.array(z.string()).optional(),
@@ -876,7 +877,7 @@ export function registerCoreOperations(): void {
   CATALOG.register({
     name: 'update_plan',
     summary:
-      "Edit a plan through EXACTLY ONE of three input variants: `content` (the whole plan, literally), `textEdits` (literal substitutions counted over the whole plan), or `edits` (a transactional section batch addressed by anchor, with the same five actions as update_sections). More than one variant, or none, is INVALID_ARGUMENT. The first update in a thread with no plan requires `title` and creates the file; the slug is slugify(title) and immutable thereafter.",
+      "Edit a plan through EXACTLY ONE of three input variants: `content` (the whole plan, literally), `textEdits` (literal substitutions counted over the whole plan), or `edits` (a transactional section batch addressed by anchor, with the same six actions as update_sections). More than one variant, or none, is INVALID_ARGUMENT. The first update in a thread with no plan requires `title` and creates the file; the slug is slugify(title) and immutable thereafter.",
     scope: 'project',
     mediation: 'direct',
     opClass: 'plan',
@@ -898,9 +899,10 @@ export function registerCoreOperations(): void {
         .array(
           z.object({
             anchor: z.string(),
-            action: z.enum(['replace', 'append', 'insert_after', 'delete', 'edit']),
+            action: z.enum(['replace', 'append', 'insert_after', 'delete', 'edit', 'rename']),
             content: z.string().optional(),
             textEdits: textEdit.array().min(1).optional(),
+            heading: z.string().optional(),
           }),
         )
         .min(1)

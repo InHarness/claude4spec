@@ -133,6 +133,68 @@ describe('plan-tools — update_plan', () => {
     expect(blank.body.code).toBe('INVALID_ARGUMENT');
   });
 
+  /**
+   * 0.2.100 — `rename` through the adapter. The splice itself belongs to
+   * `plan-write.test.ts`; what only this level can show is the schema the tool
+   * publishes and the shape of the row that comes back over the wire.
+   */
+  it('declares the sixth action and a heading field on edits[]', async () => {
+    const { tools } = await client.listTools();
+    const props = tools.find((t) => t.name === 'update_plan')!.inputSchema.properties!;
+    const entry = (props.edits as any).items.properties;
+    expect(entry.action.enum).toEqual(['replace', 'append', 'insert_after', 'delete', 'edit', 'rename']);
+    expect(entry.heading.type).toBe('string');
+  });
+
+  it('answers a rename row with previousHeading, and leaves the key off every other row', async () => {
+    const { anchors, hash } = await createPlan();
+    const res = await call('update_plan', {
+      expectedHash: hash,
+      edits: [
+        { anchor: anchors[0]!, action: 'rename', heading: 'Alpha, renamed' },
+        { anchor: anchors[1]!, action: 'append', content: 'more beta\n' },
+      ],
+      changeSummary: 'rename one, append to the other',
+    });
+
+    expect(res.isError).toBe(false);
+    expect(res.body.results[0]).toEqual({
+      anchor: anchors[0],
+      action: 'rename',
+      affectedAnchors: expect.any(Array),
+      droppedAnchors: [],
+      previousHeading: 'Alpha',
+    });
+    // Absent over the wire, not present-and-empty.
+    expect('previousHeading' in res.body.results[1]).toBe(false);
+
+    const read = await call('get_plan', {});
+    const body = read.body.plan.content as string;
+    expect(body).toContain('## Alpha, renamed');
+    // Level, anchor and body all survive the rename.
+    expect(body).toContain(`<!-- anchor: ${anchors[0]} -->`);
+    expect(body).toContain('alpha body');
+  });
+
+  it('[ac:ac-rename-w-paczce-update-plan-na-anchor] answers SECTION_NOT_FOUND for an anchor the plan does not carry', async () => {
+    const { hash } = await createPlan();
+    const before = ((await call('get_plan', {})).body.plan.content as string);
+
+    const res = await call('update_plan', {
+      expectedHash: hash,
+      edits: [{ anchor: 'zzzz9999', action: 'rename', heading: 'Nowhere' }],
+      changeSummary: 'rename a section that is not there',
+    });
+
+    expect(res.isError).toBe(true);
+    expect(res.body.code).toBe('SECTION_NOT_FOUND');
+    // NEVER an append at the end: a rename with an unresolved target has no
+    // second reading, and writing the heading somewhere else is a different act.
+    const after = ((await call('get_plan', {})).body.plan.content as string);
+    expect(after).toBe(before);
+    expect(after).not.toContain('Nowhere');
+  });
+
   it('refuses a call that names two variants, and one that names none', async () => {
     const both = await call('update_plan', {
       title: 'x',

@@ -200,6 +200,8 @@ interface ComposedPlanBody {
   scopeOf: Map<string, string[]>;
   /** Per addressed anchor of an `edit`, how many substitutions it made. */
   replacementsOf: Map<string, number>;
+  /** Per addressed anchor of a `rename`, the heading text from before the splice. */
+  previousHeadingOf: Map<string, string>;
   /** The top-level `textEdits` variant's total, which addresses no anchor. */
   replacements?: number;
 }
@@ -1033,7 +1035,7 @@ function newPlanBytes(title: string, body: string, changedBy: PlanChangedBy): { 
 function composePlanBody(prior: string, payload: PlanEditPayload): ComposedPlanBody {
   switch (payload.variant) {
     case 'content':
-      return { body: payload.content, scopeOf: new Map(), replacementsOf: new Map() };
+      return { body: payload.content, scopeOf: new Map(), replacementsOf: new Map(), previousHeadingOf: new Map() };
     case 'textEdits': {
       /**
        * Counted over the WHOLE plan — the scope trap worth remembering. The same
@@ -1052,12 +1054,18 @@ function composePlanBody(prior: string, payload: PlanEditPayload): ComposedPlanB
         body: applied.text,
         scopeOf: new Map(),
         replacementsOf: new Map(),
+        previousHeadingOf: new Map(),
         replacements: applied.replacements,
       };
     }
     case 'edits': {
       const outcome = applyPlanBatch(prior, payload.edits);
-      return { body: outcome.body, scopeOf: outcome.scopeOf, replacementsOf: outcome.replacementsOf };
+      return {
+        body: outcome.body,
+        scopeOf: outcome.scopeOf,
+        replacementsOf: outcome.replacementsOf,
+        previousHeadingOf: outcome.previousHeadingOf,
+      };
     }
   }
 }
@@ -1106,6 +1114,13 @@ function buildPlanResults(
     affectedAnchors: affected.filter((a) => a !== edit.anchor),
     droppedAnchors: (composed.scopeOf.get(edit.anchor) ?? []).filter((a) => !survivors.has(a)),
     ...(edit.action === 'edit' ? { replacements: composed.replacementsOf.get(edit.anchor) ?? 0 } : {}),
+    /**
+     * Spread conditionally so the KEY is absent on every other row — including
+     * the whole-plan rows above, which never reach this branch.
+     */
+    ...(edit.action === 'rename'
+      ? { previousHeading: composed.previousHeadingOf.get(edit.anchor) ?? '' }
+      : {}),
   }));
 }
 

@@ -3,7 +3,9 @@ import { parseHeadings } from './section-indexer.js';
 import {
   anchorsInLineSpans,
   applySectionEdit,
+  assertHeadingText,
   liveRangeOf,
+  renameHeading,
   sectionRanges,
   subtreePositionResolver,
 } from './section-text.js';
@@ -45,12 +47,19 @@ import { applyTextEdits, type TextEdit } from './text-edits.js';
  */
 
 /**
- * The five section actions, identical to `update_sections`'.
+ * The six section actions, identical to `update_sections`'.
  *
  * Note `insert_after`, not the plan's old `insert_after_section`: the name is
  * now the page's, because the behaviour is.
+ *
+ * 0.2.100 adds `rename`, and it means here exactly what it means there — the
+ * heading line alone, level and anchor kept. What differs is what plans do not
+ * have: no `dropAnchors`, no `ANCHOR_LOSS`, because a plan's anchors are
+ * plan-local and nothing outside the file can cite one. So `rename` enters the
+ * plan batch with no referential guard at all, and with no ancestor clause
+ * either — that one is `update_sections`' contract, not this one's.
  */
-export type PlanEditAction = 'replace' | 'append' | 'insert_after' | 'delete' | 'edit';
+export type PlanEditAction = 'replace' | 'append' | 'insert_after' | 'delete' | 'edit' | 'rename';
 
 export const PLAN_EDIT_ACTIONS: readonly PlanEditAction[] = [
   'replace',
@@ -58,6 +67,7 @@ export const PLAN_EDIT_ACTIONS: readonly PlanEditAction[] = [
   'insert_after',
   'delete',
   'edit',
+  'rename',
 ];
 
 export interface PlanSectionEdit {
@@ -69,10 +79,16 @@ export interface PlanSectionEdit {
    */
   anchor: string;
   action: PlanEditAction;
-  /** Required for `replace`/`append`/`insert_after`, forbidden for `delete` and `edit`. */
+  /** Required for `replace`/`append`/`insert_after`, forbidden for `delete`, `edit` and `rename`. */
   content?: string;
-  /** Required for `edit`, forbidden for the other four. */
+  /** Required for `edit`, forbidden for the other five. */
   textEdits?: TextEdit[];
+  /**
+   * 0.2.100 — required for `rename`, forbidden for the other five: the new
+   * heading as PLAIN TEXT, one line, no leading `#`, no anchor comment, not
+   * empty once trimmed. The level is kept from the line being replaced.
+   */
+  heading?: string;
 }
 
 /** One row of the response's `results[]` — the same shape `update_sections` answers with. */
@@ -94,6 +110,11 @@ export interface PlanEditResult {
   droppedAnchors: string[];
   /** Only where a literal match ran: `edit`, and the top-level `textEdits`. */
   replacements?: number;
+  /**
+   * 0.2.100 — `rename` only: the heading text as it stood before the write. The
+   * key is ABSENT on every other row, the whole-plan rows included.
+   */
+  previousHeading?: string;
 }
 
 /** The one variant a call carries, after {@link selectPlanVariant} has settled which. */
@@ -177,6 +198,13 @@ function validateBatch(edits: PlanSectionEdit[]): PlanSectionEdit[] {
      * something, and a silent drop is how it finds out much later that it did
      * not.
      */
+    if (edit.action !== 'rename' && edit.heading !== undefined) {
+      throw new DomainError(
+        'INVALID_ARGUMENT',
+        `edit for '${edit.anchor}' carries heading, which only action 'rename' accepts`,
+        `action '${edit.action}' does not rewrite a heading line`,
+      );
+    }
     if (edit.action === 'edit') {
       if (edit.content !== undefined) {
         throw new DomainError(
@@ -191,6 +219,21 @@ function validateBatch(edits: PlanSectionEdit[]): PlanSectionEdit[] {
           'each entry is { find, replaceWith, expectedMatches? }',
         );
       }
+    } else if (edit.action === 'rename') {
+      if (edit.content !== undefined) {
+        throw new DomainError(
+          'INVALID_ARGUMENT',
+          `edit for '${edit.anchor}' takes heading, not content — action 'rename' rewrites the heading line, it does not touch the body`,
+        );
+      }
+      if (edit.textEdits !== undefined) {
+        throw new DomainError(
+          'INVALID_ARGUMENT',
+          `edit for '${edit.anchor}' carries textEdits, which only action 'edit' accepts`,
+          "action 'rename' describes its new heading in `heading`",
+        );
+      }
+      assertHeadingText(edit.heading, edit.anchor);
     } else {
       if (edit.textEdits !== undefined) {
         throw new DomainError(
@@ -241,6 +284,8 @@ export interface PlanBatchOutcome {
   scopeOf: Map<string, string[]>;
   /** Per addressed anchor of an `edit`, how many substitutions it made. */
   replacementsOf: Map<string, number>;
+  /** Per addressed anchor of a `rename`, the heading text read off the file before the splice. */
+  previousHeadingOf: Map<string, string>;
 }
 
 /**
@@ -338,6 +383,7 @@ export function applyPlanBatch(body: string, edits: readonly PlanSectionEdit[]):
 
   const scopeOf = new Map<string, string[]>();
   const replacementsOf = new Map<string, number>();
+  const previousHeadingOf = new Map<string, string>();
 
   for (const edit of order) {
     /**
@@ -353,6 +399,18 @@ export function applyPlanBatch(body: string, edits: readonly PlanSectionEdit[]):
         `section '${edit.anchor}' was removed by another edit in the same batch`,
         'a batch may not both delete a section and address something inside it',
       );
+    }
+    if (edit.action === 'rename') {
+      /**
+       * One line, and it is neither the anchor comment above it nor the body
+       * below it — so the scope is empty. In a plan that costs nothing to guard
+       * (there is no `dropAnchors` to validate against it and no `ANCHOR_LOSS`
+       * to raise); it is recorded anyway so the result row's `droppedAnchors`
+       * comes back empty rather than undefined.
+       */
+      scopeOf.set(edit.anchor, []);
+      previousHeadingOf.set(edit.anchor, renameHeading(lines, range, (edit.heading ?? '').trim()));
+      continue;
     }
     if (edit.action === 'edit') {
       /**
@@ -386,5 +444,5 @@ export function applyPlanBatch(body: string, edits: readonly PlanSectionEdit[]):
     applySectionEdit(lines, edit, range);
   }
 
-  return { body: lines.join('\n'), scopeOf, replacementsOf };
+  return { body: lines.join('\n'), scopeOf, replacementsOf, previousHeadingOf };
 }

@@ -24,7 +24,7 @@ Placeholders only; the rules that shape it travel with the workflow you are runn
 
 <3–5 foundational truths the system is designed around — stated from the project's worldview, not as a tour of how this spec organizes them. Each concept names *what is true about the system as designed* (a principle, an invariant, a stance the project takes); it is not a description of how the concept is later realized across modules, layers, files, or anchors.
 
-Write so a reader can grasp the concept before opening any module or layer file. Do not cross-reference MXX / LY / filenames / anchors here — those belong in the modules table, layer table, and key-relations diagram below. If a concept can only be explained by pointing at where it lives in the spec, it isn't a key concept yet; it's spec mechanics — drop it or rephrase it as the underlying principle.>
+Write so a reader can grasp the concept before opening any module or layer file. Do not cross-reference MXX / LY / filenames / anchors here — those belong in the modules table and the layer table below. If a concept can only be explained by pointing at where it lives in the spec, it isn't a key concept yet; it's spec mechanics — drop it or rephrase it as the underlying principle.>
 
 ### <Concept 1>
 <1 paragraph: state the principle/invariant, then a concrete intuition for what it means in practice — without naming spec internals (no MXX, no LY, no file paths).>
@@ -60,16 +60,6 @@ Each module is a vertical slice through the layers. Modules skip layers they don
 | M01 | **<name>** | simple | L1, L2 | <1 line> | `modules/M01-<slug>.md` |
 | M02 | **<name>** | medium | L1, L2, L4, L5 | <1 line> | `modules/M02-<slug>.md` |
 | … | … | … | … | … | … |
-
-### Key relations
-
-<ASCII or prose diagram showing module → layer registrations, module ↔ module relations, and what-feeds-what. Example lines:
-
-M03 Endpoint     -- registers in --> L6 References  (rendering, tags)
-M03 Endpoint     <-- relation -->   M04 DTO         (request/response)
-M05 Agent        -- consumes --> M03, M04 MCP tools
-M01 Project      -- infrastructure --> all modules
->
 
 ## [Optional] <Layer-specific index>
 <Only if at least one module has been split into a per-module subdirectory. Cross-list extracted slices for one layer across modules — e.g. "DB schemas" listing every `modules/*/L1-<slug>.md`, "Agent tools" listing every `modules/*/L4-<slug>.md`.>
