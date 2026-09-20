@@ -45,6 +45,21 @@ export interface McpToolDeclaration {
    * differently. Narrowing it here would only invite a transport to reshape it.
    */
   readonly handler: (args: Record<string, unknown>, extra: unknown) => Promise<unknown>;
+  /**
+   * 0.2.99 — MCP tool annotations (`readOnlyHint`, `idempotentHint`, …), as passed
+   * to `mcpTool()`'s fifth argument. Structural and host-owned like the rest of this
+   * interface; carried so the external HTTP mount can advertise them in `tools/list`.
+   */
+  readonly annotations?: McpToolAnnotations;
+}
+
+/** The subset of the MCP `ToolAnnotations` hints the host sets. */
+export interface McpToolAnnotations {
+  readonly title?: string;
+  readonly readOnlyHint?: boolean;
+  readonly destructiveHint?: boolean;
+  readonly idempotentHint?: boolean;
+  readonly openWorldHint?: boolean;
 }
 
 export interface McpServerFactory {

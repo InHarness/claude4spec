@@ -39,6 +39,8 @@ import { getBriefCommand } from './c4s/commands/get-brief.js';
 import { createPatchCommand } from './c4s/commands/create-patch.js';
 import { markBriefImplementedCommand } from './c4s/commands/mark-brief-implemented.js';
 import { createPlanCommand } from './c4s/commands/create-plan.js';
+import { listSkillsCommand } from './c4s/commands/list-skills.js';
+import { loadSkillFileCommand } from './c4s/commands/load-skill-file.js';
 import { installSkillsCommand } from './c4s/commands/install-skills.js';
 import { createPluginCommand } from './c4s/commands/create-plugin.js';
 import { listWorkspacesCommand } from './c4s/commands/list-workspaces.js';
@@ -85,6 +87,8 @@ const COMMANDS: CliCommandContribution[] = [
   createPatchCommand,
   markBriefImplementedCommand,
   createPlanCommand,
+  listSkillsCommand,
+  loadSkillFileCommand,
   installSkillsCommand,
   createPluginCommand,
   listWorkspacesCommand,
@@ -230,6 +234,17 @@ Plans (M10 — server-delegating; the one plan command, the rest are agent/UI op
                                     first version and a top-level carrier thread; no agent turn
                                     runs. A taken slug is PLAN_ALREADY_EXISTS (exit 24), never
                                     suffixed. Prints planPath + hash
+
+Skills registry (M37 — server-delegating; the project's skills, served from memory, never a disk path):
+  list-skills [--context-type chat|brief|patch|ask]
+                                    { listing: [{ slug, description }], writingStyle } — the
+                                    whole registry, or the set that conversation type is offered.
+                                    writingStyle is the ACTIVE style, reported beside the listing
+                                    (never a row of it); a bad value is INVALID_ARGUMENT, exit 4
+  load-skill-file <slug> [--file <relPath>]
+                                    no --file: opens the skill (SKILL.md body + manifest of the
+                                    package files); --file: one package file. --format text prints
+                                    the content alone. Unknown slug/file → exit 25, binary → exit 26
 
 Skills (M22 — filesystem-only, no server; on-demand, no bootstrap side-effect):
   install-skills [--project <slug>] [--dir <path>] [--skills <s1,s2>]
@@ -433,6 +448,15 @@ function codeToExit(code: string): number {
     // (or editing the existing plan), not fixing a flag.
     case 'PLAN_ALREADY_EXISTS':
       return 24;
+    // 0.2.99 M37 `load-skill-file` — the address named nothing (unknown slug, or
+    // a file the package does not have): one status, since the repair is the same
+    // — re-read `c4s list-skills` / the manifest. NOT_TEXT is its own: the address
+    // was right, the channel just serves text only.
+    case 'SKILL_NOT_FOUND':
+    case 'SKILL_FILE_NOT_FOUND':
+      return 25;
+    case 'NOT_TEXT':
+      return 26;
     // PROJECT_NOT_IN_WORKSPACE → 1 (ask-group, like other server-side ask errors)
     default:
       return 1;

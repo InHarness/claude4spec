@@ -1290,10 +1290,12 @@ export async function runAgentTurn(
        * its body cannot be gated by any of them; `brief` above all, since that is the
        * frame whose FS built-ins are off and which therefore has no fallback at all.
        *
-       * It carries no L3 catalog row (its subject is a prompt asset, not
-       * specification content). `profile-gate` passes an undeclared tool on a
-       * host-owned server through for every profile, so "outside the catalog" and
-       * "reachable from all four profiles" are the same fact here rather than two.
+       * 0.2.99 — it now has an L3 catalog row (read-class, admitted under the
+       * instruction exception), and read-class is what every profile admits, so it
+       * still reaches all four. Built WITHOUT a resolver: `list_skills` is `n/a` in
+       * this channel — the turn gets the listing as `<available_skills>`, and
+       * mounting is per-server, so a listing tool here would reach every context
+       * type at once.
        */
       const skillTools = buildSkillToolsServer(deps.skillRegistry, deps.projectId ?? null);
 

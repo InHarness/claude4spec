@@ -50,6 +50,8 @@ import { buildBriefToolsServer } from './brief-tools.js';
 import { createPatchToolsServer } from './patch-tools.js';
 import { buildC4sToolsServer } from './c4s-tools.js';
 import { buildWorkspaceToolsServer } from './workspace-tools.js';
+import { buildSkillToolsServer } from './skill-tools.js';
+import type { SkillRegistry, SkillResolver } from '../services/skill-registry.js';
 import type { BriefService } from '../services/brief.js';
 import type { PlanService } from '../services/plan.js';
 import type { FileVersionService } from '../services/file-version.js';
@@ -71,6 +73,10 @@ export interface ExternalSurfaceDeps {
   listProjects: () => ListProjectsResult;
   /** The caller's workspace, so `ask` defaults to it. */
   workspaceName: string;
+  /** M37 `load_skill_file` — the live registry (precedence winner per slug). */
+  skillRegistry: SkillRegistry;
+  /** M37 `list_skills` — the per-context-type resolver. */
+  skillResolver: SkillResolver;
   /**
    * The resolved project, stamped onto the response-size telemetry record so
    * the process-level measurement ring is keyed rather than ambient.
@@ -122,6 +128,14 @@ export const EXTERNAL_MCP_ERROR_CODES: readonly string[] = [
    * has to be able to reach this channel too.
    */
   'INDEX_STALE',
+  /**
+   * 0.2.99 — the M37 skills registry's taxonomy, identical to the one the other
+   * three channels answer with (`services/skill-operations.ts`).
+   */
+  'INVALID_ARGUMENT',
+  'SKILL_NOT_FOUND',
+  'SKILL_FILE_NOT_FOUND',
+  'NOT_TEXT',
   'INTERNAL',
 ];
 
@@ -232,6 +246,19 @@ function sourceServers(deps: ExternalSurfaceDeps): Array<{ name: string; server:
    * a gate that has nothing to do with it.
    */
   servers.push({ name: 'workspace-tools', server: buildWorkspaceToolsServer(deps.listProjects) });
+
+  /**
+   * 0.2.99 — M37, unconditional for the same reason: both operations are
+   * read-class, so every profile admits them — `brief` above all, since the
+   * briefing methodology lives in a subfile of the active writing style. Unlike
+   * the turn's copy this one carries `list_skills`: an outside caller has no
+   * `<available_skills>` block. Reading crosses to this channel; INJECTION does
+   * not (listing block, UI chrome, built-in subagent stay internal).
+   */
+  servers.push({
+    name: 'skill-tools',
+    server: buildSkillToolsServer(deps.skillRegistry, deps.projectId, { resolver: deps.skillResolver }),
+  });
 
   // Plugin-contributed servers LAST — see the ordering note above.
   for (const entry of deps.pluginHost.buildMcpServers()) {

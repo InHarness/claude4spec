@@ -62,6 +62,7 @@ export function createMcpServer(options: CreateMcpServerOptions): CapturedMcpSer
       description: t.description,
       inputSchema: t.inputSchema,
       handler: t.handler,
+      ...(t.annotations ? { annotations: t.annotations } : {}),
     })),
   );
   return Object.assign(instance, { tools });

@@ -97,7 +97,14 @@ export type CliErrorCode =
   // 0.2.98 M10 — `c4s create-plan`: slugify(title) names a plan that already
   // exists. A refusal, not a suffixed variant; nothing is written. Arrives
   // verbatim from the server's `create_plan`.
-  | 'PLAN_ALREADY_EXISTS';
+  | 'PLAN_ALREADY_EXISTS'
+  // 0.2.99 M37 — `c4s load-skill-file`: the skills registry's taxonomy, verbatim
+  // from the server (identical in all four channels). No slug in the registry;
+  // no such file in the package; a binary package file (the manifest's
+  // `isText: false` announced it).
+  | 'SKILL_NOT_FOUND'
+  | 'SKILL_FILE_NOT_FOUND'
+  | 'NOT_TEXT';
 
 export class CliError extends Error {
   constructor(public code: CliErrorCode, message: string, public hint?: string) {

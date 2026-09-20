@@ -389,10 +389,10 @@ function planModeMutatingTools(inventory: readonly McpInventoryEntry[]): string[
        *
        * A HOST tool with no row is not listed. Over-listing is not caution here,
        * it is a false prohibition, and a model that finds one "forbidden" tool
-       * working learns what the rest of the prohibitions are worth. The one
-       * host-owned tool with no catalog row is `load_skill_file`, deliberately,
-       * and telling the agent not to call it in plan mode would contradict
-       * <project_writing_skill>, which instructs it to.
+       * working learns what the rest of the prohibitions are worth. (Until
+       * 0.2.99 `load_skill_file` was the host tool with no row; it now has a
+       * read-class row, so it stays exempt through the class — listing it would
+       * contradict <project_writing_skill>, which instructs the agent to call it.)
        *
        * A PLUGIN tool with no applicable row IS listed. The host has never seen
        * that surface, `chat` admits writes so the gate passed it through, and

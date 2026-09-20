@@ -37,6 +37,7 @@ import { SUPPORTED_LANGUAGES, isSupportedLanguage } from '../../shared/languages
 import { slugify } from '../../shared/slug.js';
 import { PlanService, injectAnchors } from '../services/plan.js';
 import { plansRouter } from '../routes/plans.js';
+import { skillsRouter } from '../routes/skills.js';
 import { backfillPlansToFilesystem } from './plan-migration.js';
 import { backfillEntityTimestamps } from './entity-timestamp-backfill.js';
 import { BriefService } from '../services/brief.js';
@@ -1455,6 +1456,8 @@ async function buildInner(
     patchWrite: patchWriteDeps,
     listProjects: agentDeps.listWorkspaceProjects,
     workspaceName: workspace.name,
+    skillRegistry,
+    skillResolver,
     projectId,
   });
   // `project-bound`: the project parameter's default comes from the URL this
@@ -1465,6 +1468,9 @@ async function buildInner(
   router.use('/todos', todosRouter(todosIndexer));
   router.use('/page-links', pageLinksRouter(pagesLinkIndexer));
   router.use('/plans', plansRouter(planService));
+  // M37 (0.2.99) — `list_skills` / `load_skill_file`, the same core functions the
+  // turn's and the external surface's `skill-tools` call.
+  router.use('/skills', skillsRouter({ skillRegistry, skillResolver }));
   router.use('/releases', releasesRouter(releaseService, ws, gitService));
   router.use('/release-pushes', releasePushesRouter(releasePushService));
   // 0.1.123: on a successful checkout, reuse the same invalidate path as a

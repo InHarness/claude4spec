@@ -1,6 +1,6 @@
 /**
- * `skill-tools` — the ONLY channel through which a skill's content reaches the
- * model. One operation, `load_skill_file`, read-only and idempotent.
+ * `skill-tools` — the MCP rendering of the M37 skills registry: `load_skill_file`
+ * and, on the external surface only, `list_skills`. Both read-only and idempotent.
  *
  * ## Why this server exists
  *
@@ -27,94 +27,54 @@
  * broken, and gets `INVALID_ARGUMENT` rather than a silent success that would
  * only work on the authoring machine.
  *
- * ## Outside the L3 operation catalog, deliberately
+ * ## In the L3 catalog since 0.2.99 — the "instruction exception"
  *
- * There is no `CATALOG.register` row for `load_skill_file`, and its absence is a
- * decision rather than an omission: the catalog's subject is SPECIFICATION
- * content, and this operation's subject is a prompt asset. `profile-gate.ts`
- * passes an undeclared tool on a HOST-OWNED server through for every profile,
- * which is exactly the reach this needs — the writing style attaches to all four
- * context types, so its read channel cannot be gated by any of them.
+ * Both operations have catalog rows (`core-operations.ts`), admitted under the
+ * instruction exception: their subject is the convention that specification
+ * content must obey, and without them the catalog's write operations cannot be
+ * used CORRECTLY from outside. The semantics live in `services/skill-operations.ts`
+ * — this adapter only builds the envelope, as do REST (`routes/skills.ts`) and
+ * `c4s` (`list-skills`, `load-skill-file`).
+ *
+ * ## `list_skills` is mounted only where it is asked for
+ *
+ * Mounting is per-server, not per-tool, so the server built for an agent turn
+ * (`routes/agent-turn.ts`, no `resolver`) carries `load_skill_file` alone: in a
+ * turn the listing arrives as the `<available_skills>` prompt block before the
+ * first tool call, and a `list_skills` tool there would appear in all four
+ * context types at once. The external surface (`mcp/surface.ts`) passes the
+ * resolver and gets both.
  *
  * ## Deliberately not built (all addable later, additively)
  *
- * `list_skills` (the prompt's `<available_skills>` block carries the listing, and
- * `SKILL_NOT_FOUND` carries slug suggestions), `search_skill_files`, a batch
- * `paths[]`, and ranged reads.
+ * `search_skill_files`, a batch `paths[]`, and ranged reads.
  */
 
 import { createMcpServer, mcpTool, z, type CapturedMcpServer } from '../plugin-runtime/index.js';
 import { toolFailure, toolSuccess } from '../operations/envelope.js';
-import { DomainError } from '../services/tags.js';
-import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
-import type { SkillRegistry } from '../services/skill-registry.js';
+import { DEFAULT_SKILL_FILE, listSkills, loadSkillFile } from '../services/skill-operations.js';
+import { KNOWN_CONTEXT_TYPES } from '../services/chat-context.js';
+import type { SkillRegistry, SkillResolver } from '../services/skill-registry.js';
 
-/** The default `file` — opening a skill and reading its body are one operation in two modes. */
-export const DEFAULT_SKILL_FILE = 'SKILL.md';
+export { DEFAULT_SKILL_FILE };
 
-/**
- * Slugs to name in a `SKILL_NOT_FOUND`, nearest first.
- *
- * Substring containment either way, then a shared-prefix fallback, then the whole
- * registry if neither matches — no edit-distance dependency, because the caller is
- * a model that mistypes by truncating or guessing a synonym far more often than by
- * transposing characters. The list is capped: a refusal is a repair instruction,
- * not a catalogue.
- */
-function nearestSlugs(slug: string, all: readonly string[], limit = 5): string[] {
-  const needle = slug.toLowerCase();
-  const scored = all
-    .map((candidate) => {
-      const c = candidate.toLowerCase();
-      if (c.includes(needle) || needle.includes(c)) return { candidate, rank: 0 };
-      let shared = 0;
-      while (shared < c.length && shared < needle.length && c[shared] === needle[shared]) shared += 1;
-      return { candidate, rank: shared >= 3 ? 1 : 2 };
-    })
-    .sort((a, b) => a.rank - b.rank || a.candidate.localeCompare(b.candidate));
-  const near = scored.filter((s) => s.rank < 2).map((s) => s.candidate);
-  return (near.length > 0 ? near : scored.map((s) => s.candidate)).slice(0, limit);
-}
+/** Both operations only read the registry; a repeated call answers the same. */
+const READ_ONLY = { readOnlyHint: true, idempotentHint: true } as const;
 
-/**
- * Reject anything that is not a POSIX-relative path inside the package.
- *
- * Runs BEFORE existence, and that order is contractual: a path that escapes the
- * package must answer `INVALID_ARGUMENT` (the shape is wrong, and will stay
- * wrong) rather than `SKILL_FILE_NOT_FOUND` (the shape is fine, this package just
- * has no such file). Conflating them would tell a caller probing `../../etc/passwd`
- * that the file merely is not there.
- *
- * Purely lexical, on purpose. The package is a map in memory, not a directory
- * being walked, so there is no symlink to follow and no `realpath` to consult —
- * the only escape available is one spelled out in the argument.
- */
-function normalizeFileArg(raw: string): string {
-  const bad = (why: string): never => {
-    throw new DomainError(
-      'INVALID_ARGUMENT',
-      `file "${raw}" is not addressable: ${why}`,
-      'pass a POSIX path relative to the skill package, e.g. "workflows/brief.md" — no leading "/", no "..", no drive letter',
-    );
-  };
-  const file = raw.trim();
-  if (file === '') bad('it is empty');
-  if (file.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(file)) bad('it is absolute');
-  if (file.includes('\\')) bad('it uses backslashes; package paths are POSIX');
-  const segments = file.split('/');
-  if (segments.some((s) => s === '..')) bad('it contains a ".." segment');
-  // Normalize away the noise a caller can legitimately produce (`./x`, `a//b`)
-  // without letting it normalize its way OUT — `..` is already refused above.
-  const cleaned = segments.filter((s) => s !== '' && s !== '.').join('/');
-  if (cleaned === '') bad('it resolves to the package directory itself, not a file');
-  return cleaned;
+export interface SkillToolsOptions {
+  /**
+   * Pass to also register `list_skills`. Only the EXTERNAL surface does: in an
+   * agent turn the listing is the `<available_skills>` prompt block.
+   */
+  resolver?: SkillResolver;
 }
 
 export function buildSkillToolsServer(
   registry: SkillRegistry,
   projectId: string | null = null,
+  opts: SkillToolsOptions = {},
 ): CapturedMcpServer {
-  const loadSkillFile = mcpTool(
+  const loadSkillFileTool = mcpTool(
     'load_skill_file',
     [
       'Load a skill from this project\'s skill registry — the ONLY way to read one.',
@@ -126,7 +86,7 @@ export function buildSkillToolsServer(
       'Works against the LIVE registry, so a skill added or edited after this thread started is readable immediately, even though the <available_skills> listing in your prompt was frozen on the first turn.',
     ].join('\n'),
     {
-      slug: z.string().describe('Skill slug, from the <available_skills> listing in your system prompt.'),
+      slug: z.string().describe('Skill slug, from the <available_skills> listing in your system prompt or from list_skills.'),
       file: z
         .string()
         .optional()
@@ -136,117 +96,61 @@ export function buildSkillToolsServer(
     },
     async (args) => {
       try {
-        const slug = String(args.slug ?? '');
-        /**
-         * The WHOLE registry, not `resolveForContext`'s subset.
-         *
-         * A skill outside this context type's attach list is still a skill this
-         * project has, and a style is free to point at one. Narrowing the reader
-         * to the listing would make the listing a permission boundary, which it is
-         * not — it is a suggestion of what is worth opening.
-         */
-        const known = registry.list();
-        if (!known.some((m) => m.slug === slug)) {
-          throw new DomainError(
-            'SKILL_NOT_FOUND',
-            `no skill "${slug}" in this project's registry`,
-            `closest slugs: ${nearestSlugs(slug, known.map((m) => m.slug)).join(', ') || '(the registry is empty)'}`,
-          );
-        }
-        // Resolution — and the disk read — happen HERE, in the server process.
-        // Precedence (project > global > plugin) is applied by the
-        // registry; the path it resolved does not enter the payload below.
-        const resolved = registry.resolve(slug);
-        const { metadata } = resolved;
-
-        if (args.file === undefined) {
-          return toolSuccess(
-            {
-              slug: metadata.slug,
-              title: metadata.title,
-              description: metadata.description,
-              scope: metadata.scope,
-              ...budgeted(resolved.content, slug, DEFAULT_SKILL_FILE),
-              // Metrics only — the manifest is what makes a subfile's cost visible
-              // before it is paid, and it is the only complete view of the package
-              // layout besides the `SKILL_FILE_NOT_FOUND` refusal.
-              files: Object.values(resolved.files)
-                .map(({ path, bytes, lines, isText }) => ({ path, bytes, lines, isText }))
-                .sort((a, b) => a.path.localeCompare(b.path)),
-            },
-            { operation: 'load_skill_file', channel: 'mcp', project: projectId },
-          );
-        }
-
-        const file = normalizeFileArg(String(args.file));
-        if (file === DEFAULT_SKILL_FILE) {
-          // `SKILL.md` is not in `files` (it is `content`), so name it explicitly
-          // rather than refusing the one path every caller can guess.
-          return toolSuccess(
-            { slug: metadata.slug, path: file, ...budgeted(resolved.content, slug, file) },
-            { operation: 'load_skill_file', channel: 'mcp', project: projectId },
-          );
-        }
-
-        // `hasOwn`, not truthiness: a plain object literal inherits
-        // `constructor`/`toString`/`valueOf`, so `files['constructor']` would
-        // otherwise hand back an inherited function and answer NOT_TEXT for a
-        // path the manifest never listed.
-        const entry = Object.hasOwn(resolved.files, file) ? resolved.files[file] : undefined;
-        if (!entry) {
-          const paths = Object.keys(resolved.files).sort();
-          throw new DomainError(
-            'SKILL_FILE_NOT_FOUND',
-            `skill "${slug}" has no file "${file}"`,
-            paths.length > 0
-              ? `available paths: ${paths.join(', ')}`
-              : `skill "${slug}" is a single SKILL.md with no package files`,
-          );
-        }
-        if (!entry.isText) {
-          throw new DomainError(
-            'NOT_TEXT',
-            `"${file}" is not a text file (${entry.bytes} bytes) — this channel serves text only`,
-            'the manifest from load_skill_file(slug) marks it `isText: false`; pick a text file from that list',
-          );
-        }
-
-        return toolSuccess(
-          { slug: metadata.slug, path: file, ...budgeted(entry.content, slug, file) },
-          { operation: 'load_skill_file', channel: 'mcp', project: projectId },
+        const data = loadSkillFile(
+          registry,
+          String(args.slug ?? ''),
+          args.file === undefined ? undefined : String(args.file),
         );
+        return toolSuccess(data, { operation: 'load_skill_file', channel: 'mcp', project: projectId });
       } catch (err) {
         return toolFailure(err);
       }
     },
+    READ_ONLY,
   );
 
-  return createMcpServer({ name: 'skill-tools', tools: [loadSkillFile] });
-}
+  const tools = [loadSkillFileTool];
 
-/**
- * The response budget, applied to whichever piece of text is being served.
- *
- * `DEFAULT_BUDGET_CHARS` is the same 120 000 every other agent-facing response is
- * held to, and is NOT configurable here — a per-skill override would let one
- * package decide how much of a turn's context it is entitled to.
- *
- * Truncation is never silent: `truncated` plus a hint that repeats the address,
- * because the address does not change. There is no ranged read to point at, so
- * the hint says what the caller can actually do — go to the file's own source, or
- * ask the skill's author to split it.
- */
-function budgeted(
-  content: string,
-  slug: string,
-  file: string,
-): { content: string; truncated?: true; truncationHint?: string } {
-  if (content.length <= DEFAULT_BUDGET_CHARS) return { content };
-  return {
-    content: content.slice(0, DEFAULT_BUDGET_CHARS),
-    truncated: true,
-    truncationHint:
-      `"${file}" of skill "${slug}" is ${content.length} chars; the first ${DEFAULT_BUDGET_CHARS} are above. ` +
-      'The address (slug, file) is unchanged — this operation has no ranged read, so treat the rest as unavailable through this channel and work from what you have.',
-  };
+  const resolver = opts.resolver;
+  if (resolver) {
+    tools.push(
+      mcpTool(
+        'list_skills',
+        [
+          'List the skills of this project\'s registry: `listing` of { slug, description } plus `writingStyle` — the active writing style ({ slug, title }) or null.',
+          'The writing style is NOT a listing row: it is the convention every piece of specification content here must obey. Open it with load_skill_file(writingStyle.slug) and follow it before writing.',
+          '`contextType` narrows the listing to what that kind of conversation is offered; omit it for the whole registry. Visibility here is not a permission — load_skill_file opens any slug.',
+          'Read-only and idempotent.',
+        ].join('\n'),
+        {
+          /**
+           * A string, not `z.enum`: the enum is spelled in the description, but a
+           * value outside it must reach `listSkills` and come back as
+           * `INVALID_ARGUMENT` with the legal values — the same code the other three
+           * channels answer. A zod enum would refuse it in the SDK's own error shape.
+           */
+          contextType: z
+            .string()
+            .optional()
+            .describe(
+              `Conversation type whose skill set to list — one of ${KNOWN_CONTEXT_TYPES.join(', ')}. Omit to list the whole registry.`,
+            ),
+        },
+        async (args) => {
+          try {
+            const data = listSkills(
+              resolver,
+              args.contextType === undefined ? undefined : String(args.contextType),
+            );
+            return toolSuccess(data, { operation: 'list_skills', channel: 'mcp', project: projectId });
+          } catch (err) {
+            return toolFailure(err);
+          }
+        },
+        READ_ONLY,
+      ),
+    );
+  }
+
+  return createMcpServer({ name: 'skill-tools', tools });
 }

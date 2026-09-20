@@ -186,6 +186,10 @@ export const STATUS_FOR_CODE: Record<string, number> = {
   RELEASE_PUSH_NOT_FOUND: 404,
   SESSION_EXPIRED: 502,
   PUSH_FAILED: 502,
+  // M37 Skills registry (0.2.99)
+  SKILL_NOT_FOUND: 404,
+  SKILL_FILE_NOT_FOUND: 404,
+  NOT_TEXT: 415,
 };
 
 /**

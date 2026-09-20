@@ -164,11 +164,23 @@ export function isKnownContextType(raw: string): raw is ChatContextType {
   return Object.prototype.hasOwnProperty.call(CONTEXT_TYPE_REGISTRY, raw);
 }
 
+/**
+ * 0.2.99 — the enumeration of legal `context_type` values, as data. This registry is
+ * its owner; a consumer that takes a context type as a PARAMETER (M37's `list_skills`)
+ * cites it from here instead of spelling out its own copy of the union.
+ */
+export const KNOWN_CONTEXT_TYPES = Object.keys(CONTEXT_TYPE_REGISTRY) as [ChatContextType, ...ChatContextType[]];
+
+/** `"expected one of chat, brief, patch, ask"` — the one wording of a refusal that must list the legal values. */
+export function formatLegalContextTypes(): string {
+  return `expected one of ${KNOWN_CONTEXT_TYPES.join(', ')}`;
+}
+
 export function assertKnownContextType(thread: { id: string; contextType: string }): void {
   if (!isKnownContextType(thread.contextType)) {
     throw new DomainError(
       'INTERNAL',
-      `thread ${thread.id} has unknown context_type '${thread.contextType}'; expected one of ${Object.keys(CONTEXT_TYPE_REGISTRY).join(', ')}`,
+      `thread ${thread.id} has unknown context_type '${thread.contextType}'; ${formatLegalContextTypes()}`,
     );
   }
 }

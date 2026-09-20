@@ -102,6 +102,28 @@ export function optionalString(args: ParsedArgs, flag: string): string | undefin
   return undefined;
 }
 
+/**
+ * 0.2.99 — `optionalString` for a flag whose EMPTY value the server must judge.
+ *
+ * `optionalString` folds `--flag ""` into "absent", which is right where absence
+ * and emptiness mean the same thing. It is wrong where they mean opposite things:
+ * `c4s list-skills --context-type ""` would silently list the WHOLE registry, and
+ * `--file ""` would open the whole package, while REST and MCP answer
+ * `INVALID_ARGUMENT` for the same input. One taxonomy on four channels means the
+ * empty value has to travel.
+ *
+ * A VALUELESS flag (`--context-type` as the last token) is a different failure and
+ * stays local: nothing was passed, so there is nothing for the server to judge.
+ */
+export function optionalRawString(args: ParsedArgs, flag: string): string | undefined {
+  const v = args.flags.get(flag);
+  if (v === undefined) return undefined;
+  if (typeof v !== 'string') {
+    throw new CliError('INVALID_ARGS', `--${flag} requires a value`);
+  }
+  return v;
+}
+
 /** Parses `--flag N` as an integer; throws INVALID_ARGS for a non-integer value. Absent flag → undefined. */
 export function optionalInt(args: ParsedArgs, flag: string): number | undefined {
   const v = args.flags.get(flag);

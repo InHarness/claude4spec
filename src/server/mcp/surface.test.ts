@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { SkillRegistry, SkillResolver } from '../services/skill-registry.js';
 import {
   __invalidateSurfaceCache,
   composeExternalSurface,
@@ -39,6 +40,8 @@ function stubDeps(overrides: Partial<ExternalSurfaceDeps> = {}): ExternalSurface
     patchWrite: { briefsDirAbs: '/tmp/nonexistent-briefs', patchesDirAbs: '/tmp/nonexistent-patches' },
     listProjects: () => ({ projects: [] }),
     workspaceName: 'default',
+    skillRegistry: SkillRegistry.load([]),
+    skillResolver: new SkillResolver(SkillRegistry.load([]), '/tmp/nonexistent-project'),
     projectId: 'proj-test',
     ...overrides,
   };
@@ -115,6 +118,17 @@ describe('composeExternalSurface', () => {
     // caller cannot learn what to address.
     for (const profile of ['chat', 'patch', 'ask', 'brief'] as const) {
       expect(composeExternalSurface(stubDeps({ profile })).toolNames).toContain('list_projects');
+    }
+  });
+
+  it('[0.2.99] mounts list_skills and load_skill_file for every profile', () => {
+    // Both are read-class, so the default (`chat`) connection AND `brief` — whose
+    // methodology lives in a subfile of the writing style — see both.
+    for (const profile of ['chat', 'patch', 'ask', 'brief'] as const) {
+      const surface = composeExternalSurface(stubDeps({ profile }));
+      expect(surface.toolNames).toContain('list_skills');
+      expect(surface.toolNames).toContain('load_skill_file');
+      expect(surface.byName.get('list_skills')?.annotations).toMatchObject({ readOnlyHint: true, idempotentHint: true });
     }
   });
 
