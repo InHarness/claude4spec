@@ -197,15 +197,16 @@ export function buildPlanToolsServer(
       '- `content`: the complete plan markdown. The create-or-replace primitive — this is what writes a plan that does not exist yet.',
       '- `textEdits`: literal find/replaceWith substitutions counted over the WHOLE plan.',
       '- `edits`: a section batch, one entry per section, addressed by `anchor` (from get_plan).',
-      'Batch actions: `replace` / `append` / `insert_after` take `content`; `delete` takes neither; `edit` takes `textEdits` — literal substitutions inside the addressed subtree ALONE, which is where its match counts differ from the top-level variant\'s.',
+      'Batch actions: `replace` (swaps the section body) / `append` (adds at the end of it) / `insert_after` (adds after the section and its subtree) take `content`; `delete` (removes heading, anchor and body) takes neither; `edit` (substitutes literal fragments) takes `textEdits` — inside the addressed subtree ALONE, which is where its match counts differ from the top-level variant\'s; and `rename` (rewrites the heading line alone) takes `heading`. Every action with the wrong complement of fields is INVALID_ARGUMENT for the whole batch; at `rename` the heading text must be ONE LINE, without a leading `#`, without an anchor comment and non-empty once trimmed — each of those four violations is INVALID_ARGUMENT for the whole batch too.',
+      '`rename` keeps the heading LEVEL and the section\'s anchor and does not touch the subtree: a `##` stays a `##` whatever text you send, and `replace` on a section carrying three subsections rewrites all four while `rename` rewrites one line. Plans carry no `dropAnchors` and no ANCHOR_LOSS — a plan\'s anchors are plan-local and nothing outside the file can cite one — so `rename` enters a plan batch with no referential guard at all.',
       'A SECTION IS ITS SUBTREE. `replace` on a `##` carrying three `###` rewrites all four; `delete` removes all four with their anchors. The `droppedAnchors` of each result row names what went, on success as well as on refusal.',
       'The batch is TRANSACTIONAL and its ORDER DOES NOT MATTER: entries are applied bottom-up whatever order you send, one rejected entry means nothing at all is written (no version, no event), and two orderings of the same batch produce identical text. A repeated anchor is INVALID_ARGUMENT — one `edit` entry carries a LIST of substitutions, so a second entry is never the way to ask for a second one. An `edit` inside a section this same batch replaces or deletes is INVALID_ARGUMENT too.',
-      'Sections are addressed by ANCHOR ONLY. `heading` is gone: an unknown anchor is SECTION_NOT_FOUND with no append-at-end fallback, and an anchor duplicated inside the plan is AMBIGUOUS_ANCHOR.',
+      'Sections are addressed by ANCHOR ONLY — the `heading` FIELD of a `rename` entry is its new TEXT, never an address. An unknown anchor is SECTION_NOT_FOUND with no append-at-end fallback, `rename` included, and an anchor duplicated inside the plan is AMBIGUOUS_ANCHOR.',
       'On the FIRST call in a thread (no plan attached yet), `title` is REQUIRED — it creates the plan file (slug = slugify(title), immutable — a later title change edits frontmatter only, it never renames the file). Omitting `title` fails MISSING_TITLE in every variant, before any anchor is resolved. On an empty plan only `content` can succeed: `edits` answers SECTION_NOT_FOUND and `textEdits` FIND_NOT_FOUND, and neither leaves a plan file behind.',
       '`expectedHash` is REQUIRED on every call EXCEPT that first, creating one: pass the `hash` from get_plan or from your previous update_plan. It is the hash of the WHOLE plan in all three variants, a batch touching one section included. Omitting it fails INVALID_ARGUMENT; a stale value fails PLAN_CONFLICT (409) carrying the current hash. A plan has several concurrent writers (this thread, the UI, an attach), so a write without the guard silently drops someone else\'s edit.',
       '`changeSummary` is ONE per call, however many edits the call carries — and so is the `file_version` entry.',
-      'Returns { path, version, hash, results } — the hash arms your next call. Each `results` row is { anchor, action, affectedAnchors, droppedAnchors, replacements? }, in the order you GAVE the edits, not the order they were applied; `replacements` appears only where a literal match ran. Whole-plan variants answer with one row whose `anchor` and `action` are null. The plan content does not come back; you already have it.',
-      'IDEMPOTENCE: `content` and a batch `replace` repeat harmlessly (same text, new version number). `delete` repeated answers SECTION_NOT_FOUND, `edit`/`textEdits` answer FIND_NOT_FOUND, and `append`/`insert_after` duplicate their content.',
+      'Returns { path, version, hash, results } — the hash arms your next call. Each `results` row is { anchor, action, affectedAnchors, droppedAnchors, replacements?, previousHeading? }, in the order you GAVE the edits, not the order they were applied; `replacements` appears only where a literal match ran, and `previousHeading` — the heading text from before the write — only on a `rename` row, the key being absent elsewhere rather than empty. Whole-plan variants answer with one row whose `anchor` and `action` are null. The plan content does not come back; you already have it.',
+      'IDEMPOTENCE: `content`, a batch `replace` and a batch `rename` repeat harmlessly (same text, new version number) — `rename` matches nothing literally, so a repeat has nothing to fail to find. `delete` repeated answers SECTION_NOT_FOUND, `edit`/`textEdits` answer FIND_NOT_FOUND, and `append`/`insert_after` duplicate their content.',
       'WHEN TO CALL IT. In plan_mode=true: always — persist the plan here rather than writing it out as prose in your reply, which is the one place it cannot be reviewed, versioned or applied from. Outside plan_mode: when the user explicitly asks for a deployment plan or an architectural proposal. An ordinary answer is not a plan.',
       'This tool cannot change `applied` — use `mark_plan_applied`.',
     ].join('\n'),
@@ -222,14 +223,22 @@ export function buildPlanToolsServer(
         .array(
           z.object({
             anchor: z.string().describe('From get_plan. The only way to address a section — `heading` no longer exists.'),
-            action: z.enum(['replace', 'append', 'insert_after', 'delete', 'edit']),
+            action: z.enum(['replace', 'append', 'insert_after', 'delete', 'edit', 'rename']),
             content: z
               .string()
               .optional()
-              .describe('Required for replace/append/insert_after. Forbidden for delete and edit.'),
+              .describe('Required for replace/append/insert_after. Forbidden for delete, edit and rename.'),
             textEdits: textEditsParam
               .optional()
-              .describe('Required for action `edit`, forbidden for the other four. Counted inside this section\'s subtree only.'),
+              .describe('Required for action `edit`, forbidden for the other five. Counted inside this section\'s subtree only.'),
+            heading: z
+              .string()
+              .optional()
+              .describe(
+                'Required for action `rename`, forbidden for the other five. The new heading as PLAIN TEXT — one ' +
+                  'line, no leading `#` (the operation keeps the level it finds), no anchor comment, not empty once ' +
+                  'trimmed; any of those four is INVALID_ARGUMENT for the whole batch.',
+              ),
           }),
         )
         .min(1)

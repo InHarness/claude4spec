@@ -31,7 +31,7 @@ Map the change onto the grid; the rules at the end of this file decide. Where so
 - **New module.** A new entity or feature. Propose the next free number, a slug, and the layers it touches — after the module-vs-layer test.
 - **Change to an existing module.** New column, operation, edge case, criterion, dependency. Ask the residual question **first — does any layer of this project ask for it?** A sentence answering a field of some layer's `## Module slice schema` belongs in that layer's section; only what no layer asks about is a candidate for the module's `## Domain`.
 - **Layer-level change.** A new convention, or a contract change that affects several modules. Apply the layer-purity test (rule 2) *before* placing anything in a layer: if the candidate paragraph stops being true once you imagine any single module gone, it is not a layer change.
-- **Cross-module relation.** A **dependency record** (rule 3a), one per direction — not a row in either file. `<index>`'s relations diagram may need updating.
+- **Cross-module relation.** A **dependency record** (rule 3a), one per direction — not a row in either file, and not a drawing in `<index>` either: the record IS where that edge lives.
 - **Not a spec change at all.** Implementation detail, UX micro-decision, code style. Say so plainly and stop.
 - **Not yet decided.** Real but unresolved → `<index>`'s `Open questions`, verbatim.
 

@@ -250,3 +250,96 @@ describe('applyPlanBatch — delete takes the anchor comment however it is space
     expect(anchorsOf(out.body)).toEqual(['bbbb0001']);
   });
 });
+
+/**
+ * 0.2.100 — `rename` in the plan batch, tested where it is pure.
+ *
+ * The plan half of this action is deliberately the smaller one: plans carry no
+ * `dropAnchors` and no `ANCHOR_LOSS`, because a plan's anchors are plan-local
+ * and nothing outside the file can cite one. So what is left to prove here is
+ * the splice itself and the refusals that precede it — the referential
+ * behaviour has no counterpart to test.
+ */
+describe('applyPlanBatch — the rename action', () => {
+  it('rewrites the heading LINE alone, keeping the level, the anchor and the subtree', () => {
+    const out = applyPlanBatch(PLAN, [{ anchor: 'aaaa0001', action: 'rename', heading: 'Alpha, renamed' }]);
+
+    expect(out.body).toContain('## Alpha, renamed');
+    // The level came off the line being replaced, not off the input.
+    expect(out.body.split('\n')).not.toContain('# Alpha, renamed');
+    // Identity, body and subtree all survive — this is the whole action.
+    expect(anchorsOf(out.body)).toEqual(['aaaa0001', 'aaaa0002', 'bbbb0001']);
+    expect(out.body).toContain('alpha body');
+    expect(out.body).toContain('### Alpha child');
+    expect(out.body).toContain('child body');
+  });
+
+  it('hands back the heading text from before the splice', () => {
+    const out = applyPlanBatch(PLAN, [{ anchor: 'aaaa0002', action: 'rename', heading: 'A child, renamed' }]);
+    expect(out.previousHeadingOf.get('aaaa0002')).toBe('Alpha child');
+    // Scope is empty, so the row's `droppedAnchors` comes back empty rather
+    // than undefined — there is no line in a rename that could carry an anchor.
+    expect(out.scopeOf.get('aaaa0002')).toEqual([]);
+  });
+
+  it('is idempotent by heading text — a replay changes nothing', () => {
+    const once = applyPlanBatch(PLAN, [{ anchor: 'aaaa0001', action: 'rename', heading: 'Renamed' }]);
+    const twice = applyPlanBatch(once.body, [{ anchor: 'aaaa0001', action: 'rename', heading: 'Renamed' }]);
+    expect(twice.body).toBe(once.body);
+    // …and the second call reports what the FIRST one left, not the original.
+    expect(twice.previousHeadingOf.get('aaaa0001')).toBe('Renamed');
+  });
+
+  it('refuses the four bad shapes of heading text, each for the whole batch', () => {
+    /**
+     * Through `selectPlanVariant`, which is where a real call enters: the text
+     * check belongs to the batch's SHAPE validation and therefore runs before a
+     * single anchor is resolved — the refusal never has to read the plan.
+     */
+    const bad = ['two\nlines', '## already a heading', 'name <!-- anchor: abc12345 -->', '   \t '];
+    for (const heading of bad) {
+      let code = '';
+      try {
+        selectPlanVariant({
+          edits: [
+            { anchor: 'aaaa0001', action: 'rename', heading },
+            // A second, perfectly good entry: the refusal is for the WHOLE batch.
+            { anchor: 'bbbb0001', action: 'replace', content: 'would have landed' },
+          ],
+        });
+      } catch (e) {
+        code = (e as { code: string }).code;
+      }
+      expect([code, heading]).toEqual(['INVALID_ARGUMENT', heading]);
+    }
+  });
+
+  it('refuses a rename carrying content or textEdits, and a heading on any other action', () => {
+    const codeOf = (edit: PlanSectionEdit): string => {
+      try {
+        selectPlanVariant({ edits: [edit] });
+        return 'no refusal';
+      } catch (e) {
+        return (e as { code: string }).code;
+      }
+    };
+
+    expect(codeOf({ anchor: 'aaaa0001', action: 'rename', heading: 'New', content: 'body' })).toBe(
+      'INVALID_ARGUMENT',
+    );
+    expect(
+      codeOf({
+        anchor: 'aaaa0001',
+        action: 'rename',
+        heading: 'New',
+        textEdits: [{ find: 'a', replaceWith: 'b' }],
+      }),
+    ).toBe('INVALID_ARGUMENT');
+    expect(codeOf({ anchor: 'aaaa0001', action: 'rename' })).toBe('INVALID_ARGUMENT');
+    expect(codeOf({ anchor: 'aaaa0001', action: 'replace', content: 'x', heading: 'New' })).toBe(
+      'INVALID_ARGUMENT',
+    );
+    // The control: the same entry without the stray field is accepted.
+    expect(codeOf({ anchor: 'aaaa0001', action: 'rename', heading: 'New' })).toBe('no refusal');
+  });
+});

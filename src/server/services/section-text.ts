@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { headingStart, parseHeadings } from './section-indexer.js';
+import { DomainError } from './tags.js';
 import { ANCHOR_LINE_RE, ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
 import type { MatchPosition, PositionResolver } from './text-edits.js';
 
@@ -35,8 +36,14 @@ export function sha256(text: string): string {
  * too — the splicer never looks at an anchor, only at what to put where.
  */
 export interface SectionSplice {
-  action: 'replace' | 'append' | 'insert_after' | 'delete' | 'edit';
+  action: 'replace' | 'append' | 'insert_after' | 'delete' | 'edit' | 'rename';
   content?: string;
+  /**
+   * 0.2.100 — `rename` only: the new heading as PLAIN TEXT. Carried here for the
+   * shape's sake; the splice itself runs through {@link renameHeading}, which
+   * has a previous heading to hand back and therefore cannot be a `void` case.
+   */
+  heading?: string;
 }
 
 /**
@@ -252,6 +259,99 @@ export function anchorDelta(before: Map<string, string>, after: Map<string, stri
 }
 
 /**
+ * 0.2.100 — the four shapes of heading text that are a bad argument, refused
+ * BEFORE the write, for the whole batch.
+ *
+ * One function, called by both operations, because the reason is the operation's
+ * and not the channel's: each of these describes a line the indexer would not
+ * read back as exactly one heading of this section. A newline makes two lines
+ * out of one; a leading `#` would be counted into the level the caller was told
+ * it does not supply; an anchor comment in the text mints a second identity on
+ * the heading line itself; and an empty text leaves a bare `##` that owns no
+ * name at all.
+ *
+ * `INVALID_ARGUMENT`, not a new code, and 400 rather than 409 for a reason worth
+ * stating: every one of these refusals is deterministic. Replaying the same text
+ * against a refreshed hash refuses identically, so there is nothing for the
+ * caller to re-read — the repair is in the request.
+ */
+export function assertHeadingText(heading: unknown, anchor: string): string {
+  if (typeof heading !== 'string') {
+    throw new DomainError(
+      'INVALID_ARGUMENT',
+      `edit for '${anchor}' requires heading for action 'rename'`,
+      'heading is the new heading as plain text — one line, no leading `#`',
+    );
+  }
+  if (heading.includes('\n')) {
+    throw new DomainError(
+      'INVALID_ARGUMENT',
+      `heading for '${anchor}' contains a newline — a heading is ONE line`,
+      'rename rewrites a single line; to add text below it, use a separate `replace` or `append`',
+    );
+  }
+  const trimmed = heading.trim();
+  if (trimmed.startsWith('#')) {
+    throw new DomainError(
+      'INVALID_ARGUMENT',
+      `heading for '${anchor}' starts with '#' — pass the TEXT, not the markdown line`,
+      'the level is kept from the heading being replaced, so it is never yours to send',
+    );
+  }
+  if (new RegExp(ANCHOR_PATTERN_SOURCE).test(heading)) {
+    throw new DomainError(
+      'INVALID_ARGUMENT',
+      `heading for '${anchor}' carries an anchor comment`,
+      'the anchor sits on its own line above the heading and rename never touches it',
+    );
+  }
+  if (trimmed === '') {
+    throw new DomainError(
+      'INVALID_ARGUMENT',
+      `heading for '${anchor}' is empty once trimmed`,
+      'a section without a heading text has no name; delete it instead',
+    );
+  }
+  return trimmed;
+}
+
+/**
+ * Rewrite the heading LINE of an anchored section, in place, and hand back the
+ * text it carried before.
+ *
+ * The level is read off the line being replaced rather than taken from the
+ * caller, so a `##` stays a `##` whatever arrives. The anchor comment sits ABOVE
+ * `range.lineStart - 1` and is outside this write entirely — which is the whole
+ * point of the action: the label changes, the address does not. The body below
+ * is untouched, so `content_hash` (computed over the body alone) does not move
+ * either, and the line COUNT is unchanged, so a bottom-up batch walking past
+ * this splice finds every other range exactly where it measured it.
+ *
+ * Returns rather than voids, which is why `applySectionEdit` cannot host it: the
+ * previous heading is the one thing in a `rename`'s answer the caller could not
+ * have worked out for itself, since it addressed the section by anchor and
+ * somebody else may have renamed it since the caller last read.
+ */
+export function renameHeading(
+  lines: string[],
+  range: { lineStart: number; lineEnd: number },
+  heading: string,
+): string {
+  const lineIndex = range.lineStart - 1;
+  const self = parseHeadings(lines).find((h) => h.lineIndex === lineIndex);
+  if (!self) {
+    /**
+     * Unreachable through either operation: the range came from `liveRangeOf`,
+     * which derives it from the same `parseHeadings` walk. Kept because a silent
+     * no-op here would report a rename that never happened.
+     */
+    throw new DomainError('INVALID_ARGUMENT', `no heading at line ${range.lineStart} to rename`);
+  }
+  lines[lineIndex] = `${'#'.repeat(self.level)} ${heading}`;
+  return self.text;
+}
+
+/**
  * Splice ONE edit into `lines`, in place.
  *
  * `range.lineStart` is the heading line 1-based, so `lineStart` as a 0-based
@@ -297,6 +397,13 @@ export function applySectionEdit(
        * needs the engine's match ranges for the anchor scope and its count for
        * the result row — neither of which survives a splicer that returns void.
        * The case is here so the switch stays exhaustive over the action union.
+       */
+      return;
+    case 'rename':
+      /**
+       * Unreachable for the same reason, one release later: both write paths
+       * call {@link renameHeading} themselves, because the previous heading text
+       * has to reach the result row and a `void` splicer cannot carry it.
        */
       return;
     case 'delete': {
