@@ -108,8 +108,15 @@ export function useRenameRoot() {
         newId: input.newId,
         expectedConfigHash: input.expectedConfigHash,
       }),
-    onSuccess: () => {
-      qc.invalidateQueries();
+    onSuccess: async (_result, input) => {
+      // Entries keyed by the OLD id are dropped, never refetched: that id now
+      // answers like any unknown root, so refetching them (the sidebar's page
+      // tree, still mounted until the new config re-renders it) would only
+      // produce 404s. Everything else — config first — refetches, and the
+      // screens re-key themselves onto the new id.
+      const underOldId = (q: { queryKey: readonly unknown[] }) => q.queryKey.includes(input.rootId);
+      await qc.invalidateQueries({ predicate: (q) => !underOldId(q) });
+      qc.removeQueries({ predicate: underOldId, type: 'inactive' });
     },
   });
 }

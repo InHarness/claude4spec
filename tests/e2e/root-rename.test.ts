@@ -99,7 +99,9 @@ describe.skipIf(!BASE)('settings — Directories: Change root ID (0.2.101)', () 
     const isRenameCall = (url: string | undefined): boolean =>
       !!url && /\/roots\/[^/]+\/rename$/.test(new URL(url).pathname);
     page.on('console', (msg) => {
-      if (msg.type() === 'error' && !isRenameCall(msg.location().url)) consoleErrors.push(msg.text());
+      if (msg.type() === 'error' && !isRenameCall(msg.location().url)) {
+        consoleErrors.push(`${msg.text()} @ ${msg.location().url ?? '?'}`);
+      }
     });
     page.on('response', (res) => {
       if (res.status() >= 400 && !isRenameCall(res.url())) {
@@ -162,6 +164,11 @@ describe.skipIf(!BASE)('settings — Directories: Change root ID (0.2.101)', () 
     expect(after.roots.map((r) => r.id)).not.toContain(fromId);
     // Identity and location are independent: the directory did not move.
     expect(after.roots.find((r) => r.id === toId)!.dir).toBe(fromId);
+
+    // The app moves itself off the retired segment once the rename lands. Wait
+    // for that before navigating: a client-side navigation arriving mid-goto
+    // aborts the goto.
+    await expect.poll(() => page.url(), { timeout: 10_000 }).toContain(`/space/${toId}`);
 
     // The page renders under the new segment — asserted on rendered content, not
     // the URL, since a blank SPA shell also returns 200.
