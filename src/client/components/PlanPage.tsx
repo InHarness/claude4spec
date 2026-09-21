@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Pencil } from 'lucide-react';
 import { ActionBar } from '../host-ui-kit/actions/ActionBar.js';
+import { ApiError } from '../lib/api-core.js';
 import { requestChatPrefill } from '../chat/chatPrefill.js';
 import { useChatStore } from '../state/chat.js';
 import {
@@ -77,38 +78,71 @@ export function PlanPage({ planPath }: Props) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
 
-  // Reset dirty when plan refetches to a newer version. `currentVersion`
-  // comes from a query (usePlanVersions) independent of the one supplying the
-  // editor's content (usePlan) — it resolves from a `0` placeholder to the
-  // real version asynchronously, which could otherwise fire this effect and
-  // wipe an in-progress edit the moment the user starts typing before that
-  // query settles. Skip the first observed value (query settling) and only
-  // clear on a genuine subsequent version change.
-  const lastSeenVersionRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (versionsData === undefined) return;
-    if (lastSeenVersionRef.current !== null && lastSeenVersionRef.current !== currentVersion) {
+  // 0.2.104 — the hash the user's edit is based on, captured the moment the
+  // editor turns dirty. Save sends THIS, not `plan.hash`: a `plan:updated`
+  // refetch mid-edit replaces `plan.hash` with the agent's newer hash, and
+  // sending that one would let a stale buffer silently overwrite the agent's
+  // write. With the base hash the server answers `409 PLAN_CONFLICT` instead,
+  // and the buffer survives until the user discards it.
+  const baseHashRef = useRef<string | null>(null);
+  // The newest hash this page knows the file to have: the server copy after
+  // every refetch, moved forward at once by the page's OWN writes (Save, title,
+  // applied) with the hash the server returned — so neither a keystroke right
+  // after a save (before the refetch lands) nor a rename mid-edit is mistaken
+  // for somebody else's write.
+  const knownHashRef = useRef<string | null>(null);
+  const serverHash = plan?.hash ?? null;
+  const lastServerHashRef = useRef<string | null>(null);
+  if (serverHash !== lastServerHashRef.current) {
+    lastServerHashRef.current = serverHash;
+    knownHashRef.current = serverHash;
+  }
+  /** A write of this page moved the file from `from` to `to`; the edit's base
+   *  follows only if it was based on `from` (nothing foreign in between). */
+  const adoptOwnWrite = useCallback((from: string | null, to: string) => {
+    if (knownHashRef.current === from) knownHashRef.current = to;
+    if (baseHashRef.current !== null && baseHashRef.current === from) baseHashRef.current = to;
+  }, []);
+  const handleEditorChange = useCallback((md: string, dirty: boolean) => {
+    if (!dirty) {
+      baseHashRef.current = null;
       setDirtyContent(null);
+      return;
     }
-    lastSeenVersionRef.current = currentVersion;
-  }, [currentVersion, versionsData]);
+    if (baseHashRef.current === null) baseHashRef.current = knownHashRef.current;
+    setDirtyContent(md);
+  }, []);
+  const handleDiscard = useCallback(() => {
+    baseHashRef.current = null;
+    setDirtyContent(null);
+    setError(null);
+  }, []);
 
   const handleSave = useCallback(async () => {
     if (!plan || dirtyContent === null) return;
     try {
-      await savePlan.mutateAsync({
+      const expectedHash = baseHashRef.current ?? knownHashRef.current ?? plan.hash;
+      const saved = await savePlan.mutateAsync({
         planPath: plan.path,
         // The editor holds the body only; `PUT .../content` replaces the whole
         // file. Carry the original frontmatter across or the save is rejected.
         content: withFrontmatterOf(plan.content, dirtyContent),
-        expectedHash: plan.hash,
+        expectedHash,
       });
+      adoptOwnWrite(expectedHash, saved.hash);
+      baseHashRef.current = null;
       setDirtyContent(null);
       setError(null);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setError(
+          'The plan changed since you started editing — discard your changes to load the latest version.',
+        );
+        return;
+      }
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [plan, dirtyContent, savePlan]);
+  }, [plan, dirtyContent, savePlan, adoptOwnWrite]);
 
   const runWithPrompt = useCallback(
     async (prompt: string) => {
@@ -159,13 +193,29 @@ export function PlanPage({ planPath }: Props) {
       return;
     }
     try {
-      await updateTitle.mutateAsync({ planPath: plan.path, title: next });
+      const from = knownHashRef.current;
+      const written = await updateTitle.mutateAsync({ planPath: plan.path, title: next });
+      adoptOwnWrite(from, written.hash);
       setEditingTitle(false);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [plan, titleDraft, displayTitle, updateTitle]);
+  }, [plan, titleDraft, displayTitle, updateTitle, adoptOwnWrite]);
+
+  const handleToggleApplied = useCallback(async () => {
+    if (!plan) return;
+    const from = knownHashRef.current;
+    try {
+      const written = await setApplied.mutateAsync({
+        planPath,
+        applied: plan.frontmatter.applied !== true,
+      });
+      adoptOwnWrite(from, written.hash);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [plan, planPath, setApplied, adoptOwnWrite]);
 
   const handleOpenThread = useCallback(
     (threadId: string) => {
@@ -258,7 +308,7 @@ export function PlanPage({ planPath }: Props) {
               it through `mark_plan_applied`; this toggle is the ONLY way back to
               `pending`, which is why it lives here and not in the tiptap. */}
           <button
-            onClick={() => void setApplied.mutateAsync({ planPath, applied: !applied })}
+            onClick={() => void handleToggleApplied()}
             disabled={setApplied.isPending}
             className="btn-ghost rounded px-0.5 py-0.5 inline-flex items-center"
             style={{ opacity: setApplied.isPending ? 0.5 : 1 }}
@@ -307,7 +357,7 @@ export function PlanPage({ planPath }: Props) {
             <>
               <PlanEditor
                 content={displayContent}
-                onChange={(md, dirty) => setDirtyContent(dirty ? md : null)}
+                onChange={handleEditorChange}
                 currentPage={`/plans/${plan.path}`}
               />
               {(isDirty || canExecute) && (
@@ -321,7 +371,7 @@ export function PlanPage({ planPath }: Props) {
                             label: 'Discard',
                             variant: 'ghost' as const,
                             disabled: savePlan.isPending,
-                            onClick: () => setDirtyContent(null),
+                            onClick: handleDiscard,
                           },
                           {
                             key: 'save',

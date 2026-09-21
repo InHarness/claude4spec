@@ -122,6 +122,20 @@ describe('PATCH /api/artifacts/plan/:path/frontmatter', () => {
     expect(after.body.data).toHaveLength(versionCountBefore);
   });
 
+  // 0.2.104 — the first frontmatter write on a plan without the key adds it,
+  // even when that write only renames the plan.
+  it('a title-only write on a plan with no `applied` key adds `applied: false`', async () => {
+    const relPath = await seedPlan(t, 'legacy-plan', 'Legacy plan', 'body'); // no key at all
+    const res = await request(t.app)
+      .patch(`/api/artifacts/plan/${relPath}/frontmatter`)
+      .send({ frontmatter: { title: 'Renamed legacy plan' } });
+    expect(res.status).toBe(200);
+    expect(res.body.data.path).toBe(relPath); // the address survives the rename
+    const raw = await t.plansPages.read(relPath);
+    expect(raw.frontmatter.applied).toBe(false);
+    expect(raw.frontmatter.title).toBe('Renamed legacy plan');
+  });
+
   it('400s IMMUTABLE_FIELD on a key outside {title, applied}', async () => {
     const relPath = await seedPlan(t, 'guarded-plan', 'Guarded plan', 'body');
     const res = await request(t.app)
@@ -129,6 +143,39 @@ describe('PATCH /api/artifacts/plan/:path/frontmatter', () => {
       .send({ frontmatter: { created_by: 'someone-else' } });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('IMMUTABLE_FIELD');
+  });
+});
+
+// 0.2.104 — the plan page's Save carries the hash its edit was based on; a
+// write that landed meanwhile (the agent's) must surface as a 409, not be
+// silently overwritten.
+describe('PUT /api/artifacts/plan/:path/content', () => {
+  let t: TestApp;
+
+  beforeEach(async () => {
+    t = await createTestApp();
+  });
+  afterEach(() => t.cleanup());
+
+  it('refuses a stale expectedHash with 409 PLAN_CONFLICT carrying the current hash', async () => {
+    const relPath = await seedPlan(t, 'shared-plan', 'Shared plan', 'first body');
+    const base = await request(t.app).get(`/api/artifacts/plan/${relPath}`);
+    const baseHash = base.body.data.hash as string;
+    // Keep the file's own frontmatter — its immutable keys may not change.
+    const raw = base.body.data.content as string;
+    const frontmatter = raw.slice(0, raw.indexOf('\n---', 3) + 5);
+
+    const agentWrite = await request(t.app)
+      .put(`/api/artifacts/plan/${relPath}/content`)
+      .send({ content: `${frontmatter}agent body\n`, expectedHash: baseHash });
+    expect(agentWrite.status).toBe(200);
+
+    const staleSave = await request(t.app)
+      .put(`/api/artifacts/plan/${relPath}/content`)
+      .send({ content: `${frontmatter}user body\n`, expectedHash: baseHash });
+    expect(staleSave.status).toBe(409);
+    expect(staleSave.body.error.code).toBe('PLAN_CONFLICT');
+    expect(staleSave.body.currentHash).toBe(agentWrite.body.data.hash);
   });
 });
 

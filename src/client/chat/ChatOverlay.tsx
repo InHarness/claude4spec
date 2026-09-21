@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from 'react';
-import { apiFetch } from '../lib/api-core.js';
+import { ApiError, apiFetch } from '../lib/api-core.js';
 import { useMatches, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { Send, Square, X, Plus, MessageSquare, ChevronDown, FileText, FileWarning, Cpu, Trash2, ClipboardList, Clock, Loader2 } from 'lucide-react';
@@ -170,7 +170,10 @@ export function ChatOverlay() {
   const activeTitle = activeThread?.contextType === 'brief' && activeThread.briefPath
     ? `Brief: ${activeThread.briefPath.replace(/\.md$/, '')}`
     : activeThread?.title ?? 'New conversation';
-  const { data: activePlan } = usePlan(activeThread?.planPath ?? null);
+  const { data: activePlan, error: activePlanError } = usePlan(activeThread?.planPath ?? null);
+  // 0.2.104 — a plan file moved or deleted outside the app leaves the thread's
+  // `plan_path` dangling; say so in the context bar instead of a bare "Plan".
+  const activePlanMissing = activePlanError instanceof ApiError && activePlanError.status === 404;
   const { data: activeBrief } = useBrief(
     activeThread?.contextType === 'brief' ? activeThread.briefPath : null,
   );
@@ -631,7 +634,13 @@ export function ChatOverlay() {
           {activeThread?.planPath != null && activeThread.contextType !== 'ask' && (
             <ContextLinkBar
               icon={<ClipboardList size={11} style={{ color: 'var(--c-accent)', flexShrink: 0 }} />}
-              label={activePlan?.frontmatter.title ? `Plan: ${activePlan.frontmatter.title}` : 'Plan'}
+              label={
+                activePlanMissing
+                  ? 'Plan not found (moved or deleted)'
+                  : activePlan?.frontmatter.title
+                    ? `Plan: ${activePlan.frontmatter.title}`
+                    : 'Plan'
+              }
               title={activePlan?.frontmatter.title ?? 'Open plan'}
               onClick={() =>
                 navigate({

@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiFetch } from '../lib/api-core.js';
+import { apiFetch, handle } from '../lib/api-core.js';
 import { encodeArtifactPath } from '../lib/artifact-path.js';
 import type { ArtifactWriteResponse, Plan, PlanFrontmatter } from '../../shared/entities.js';
 import {
@@ -48,16 +48,10 @@ export interface PlanListEntry {
   applied: boolean;
 }
 
+/** Throws `ApiError` (status + code) so callers can tell a 409 conflict or a
+ *  404 dangling plan from any other failure. */
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await apiFetch(url, init);
-  if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as
-      | { error?: { code?: string; message?: string } }
-      | null;
-    const msg = body?.error?.message ?? res.statusText;
-    throw new Error(msg);
-  }
-  return res.json() as Promise<T>;
+  return handle<T>(await apiFetch(url, init));
 }
 
 /** 0.1.127: plan listing moved to the generic M36 family (`GET /api/plans` is gone). */

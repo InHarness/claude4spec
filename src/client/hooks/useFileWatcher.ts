@@ -4,6 +4,7 @@ import type { WsEvent } from '../../shared/types.js';
 import { createInvalidationBatcher } from '../lib/wsBatcher.js';
 import { PROJECT_ID } from '../lib/api-core.js';
 import { useFileEventsStore } from '../state/fileEvents.js';
+import { artifactVersionsKey } from './useArtifactVersions.js';
 import { reloadFrontendPlugins } from '../runtime/boot-plugins.js';
 import { clientPluginHost } from '../core/plugin-host/host.js';
 
@@ -96,7 +97,7 @@ export function useFileWatcher() {
              * event actually names one.
              */
             batcher.queue(['plan', 'detail', data.planPath]);
-            batcher.queue(['plan', 'versions', data.planPath]);
+            batcher.queue(artifactVersionsKey('plan', data.planPath));
             if (data.threadId) batcher.queue(['plan', 'by-thread', data.threadId]);
             batcher.queue(['plans-list']);
             batcher.queue(['threads']);
@@ -145,7 +146,7 @@ export function useFileWatcher() {
             batcher.queue(['plans-list']);
             if (data.path) {
               batcher.queue(['plan', 'detail', data.path]);
-              batcher.queue(['plan', 'versions', data.path]);
+              batcher.queue(artifactVersionsKey('plan', data.path));
             }
           } else if (data.kind === 'project:disposed') {
             // M31: this project's ProjectContext was invalidated (config
