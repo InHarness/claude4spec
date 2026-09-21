@@ -102,8 +102,10 @@ export function Sidebar({
     },
     [collapsed, setCollapsed],
   );
-  // Sidebar search is scoped to the built-in `'pages'` root.
-  const { data: searchHits = [], isFetching: searchFetching } = usePagesSearch(query);
+  // Sidebar search is scoped to the BASE page root — 0.2.101: the entry carrying
+  // `builtin: true`, whatever its identifier.
+  const baseRootId = roots.find((r) => r.builtin)?.id ?? null;
+  const { data: searchHits = [], isFetching: searchFetching } = usePagesSearch(query, baseRootId);
   // Iterate active plugins in declared order; render only those with a sidebarTab.
   const entityTabs = clientPluginHost
     .listEntities()
@@ -194,8 +196,9 @@ export function Sidebar({
           {searching ? (
             <SearchResults
               hits={searchHits}
+              rootId={baseRootId}
               loading={searchFetching}
-              activePath={activeRootId === 'pages' ? activePagePath : null}
+              activePath={activeRootId === baseRootId ? activePagePath : null}
               onClose={() => setQuery('')}
             />
           ) : accordionRoots.length > 0 ? (
@@ -372,11 +375,14 @@ function NavLinkRow({
 
 function SearchResults({
   hits,
+  rootId,
   loading,
   activePath,
   onClose,
 }: {
   hits: PageSearchHit[];
+  /** The searched space — the base root. Null only while the config is loading. */
+  rootId: string | null;
   loading: boolean;
   activePath: string | null;
   onClose: () => void;
@@ -403,7 +409,7 @@ function SearchResults({
           <Link
             key={hit.path + hit.line}
             to="/space/$rootId/$"
-            params={{ rootId: 'pages', _splat: hit.path }}
+            params={{ rootId: rootId ?? '', _splat: hit.path }}
             onClick={onClose}
             className="block px-2 py-1 rounded text-[12px]"
             style={{

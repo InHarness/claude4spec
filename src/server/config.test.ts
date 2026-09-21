@@ -505,13 +505,53 @@ describe('config — roots[] / v4 migration (0.1.96)', () => {
     expect(() => parseRootsArray([builtinPagesRoot(), { ...search, id: 'searches', dir: 'searches' }])).not.toThrow();
   });
 
-  it('parseRootsArray requires the built-in pages root', () => {
+  /**
+   * 0.2.101 — rule 5 rewritten: the base root is the entry carrying
+   * `builtin: true`, and there must be exactly one. The identifier `'pages'`
+   * became nothing but the default a new project starts with.
+   */
+  it('parseRootsArray requires exactly one builtin root, whatever its id', () => {
     const userRoot = {
       id: 'skills', name: 'Skills', dir: 'skills', builtin: false,
       releasable: false, sectionIndexed: false, referenceValidated: false,
       linkTargets: [], sidebar: 'accordion', briefTarget: false,
     };
-    expect(() => parseRootsArray([userRoot])).toThrow(/built-in 'pages' root is required/);
+    expect(() => parseRootsArray([userRoot])).toThrow(/exactly one root must have builtin: true \(found 0\)/);
+    expect(() =>
+      parseRootsArray([builtinPagesRoot(), { ...builtinPagesRoot(), id: 'docs', dir: 'docs' }]),
+    ).toThrow(/exactly one root must have builtin: true \(found 2\)/);
+    // The BASE root renamed away from `pages`, with no entry of that name left,
+    // is a perfectly ordinary config — this is the whole point of 0.2.101.
+    expect(() =>
+      parseRootsArray([{ ...builtinPagesRoot(), id: 'docs' }, userRoot]),
+    ).not.toThrow();
+  });
+
+  it('parseRootsArray requires the builtin root to keep sidebar accordion', () => {
+    expect(() =>
+      parseRootsArray([{ ...builtinPagesRoot(), id: 'docs', sidebar: 'hidden' as const }]),
+    ).toThrow(/the builtin root 'docs' must have sidebar 'accordion'/);
+  });
+
+  it('parseRootsArray rejects a root id that is not a kebab-case slug', () => {
+    for (const bad of ['', 'Pages', 'my pages', 'a/b', '-lead', 'trail-', 'double--dash']) {
+      expect(() => parseRootsArray([{ ...builtinPagesRoot(), id: bad }])).toThrow(
+        bad === '' ? /expected non-empty string/ : /must be a kebab-case slug/,
+      );
+    }
+  });
+
+  /**
+   * Rule 7 — an identifier a rename retired stays taken forever. Supplied by the
+   * WRITE paths only; the boot read never passes it, so a project already on
+   * disk cannot become unloadable because of the sidecar registry.
+   */
+  it('parseRootsArray refuses a retired id when the caller supplies the retired set', () => {
+    const roots = [{ ...builtinPagesRoot(), id: 'docs', dir: 'docs' }];
+    expect(() => parseRootsArray(roots)).not.toThrow();
+    expect(() => parseRootsArray(roots, { retiredIds: new Set(['docs']) })).toThrow(
+      /root id 'docs' was retired by an earlier rename/,
+    );
   });
 
   it('parseRootsArray rejects a root dir escaping cwd', () => {

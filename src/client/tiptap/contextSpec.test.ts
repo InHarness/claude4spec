@@ -9,7 +9,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import './registrations.js';
 import {
-  ARTEFACT_ROOT_EDITOR_PROPS,
+  artefactRootEditorProps,
   FULL_ROOT_EDITOR_PROPS,
   MINIMAL_ROOT_EDITOR_PROPS,
   assertSaveMode,
@@ -99,9 +99,13 @@ describe('resolveContextSpec — the four contexts (M20 ctxregst)', () => {
     );
     expect(sectionsOnly.slashCommands).toEqual(['section', 'todo']);
 
-    const artefact = resolveContextSpec('page', ARTEFACT_ROOT_EDITOR_PROPS, reg);
+    const artefact = resolveContextSpec('page', artefactRootEditorProps('pages'), reg);
     expect(artefact.extensions).toEqual(minimal.extensions);
-    expect(ARTEFACT_ROOT_EDITOR_PROPS.linkTargets).toEqual(['pages']);
+    // 0.2.101: the artefact surfaces link into the BASE root, whatever it is
+    // called — the target follows the configured id, and is empty while the
+    // config is still loading rather than defaulting to a literal.
+    expect(artefactRootEditorProps('docs').linkTargets).toEqual(['docs']);
+    expect(artefactRootEditorProps(null).linkTargets).toEqual([]);
   });
 });
 
@@ -132,7 +136,7 @@ describe('registry ∩ spec — the whitelist is authoritative', () => {
   });
 
   it('a brief/patch (`page` + artefact props) mounts no section or reference nodes', () => {
-    const mounted = names(getEditorExtensionsForContext(ctx, 'page', ARTEFACT_ROOT_EDITOR_PROPS));
+    const mounted = names(getEditorExtensionsForContext(ctx, 'page', artefactRootEditorProps('pages')));
     for (const gone of ['anchor_marker', 'section_ref', 'heading_actions', 'inline_mention', 'single_element']) {
       expect(mounted).not.toContain(gone);
     }
@@ -142,7 +146,7 @@ describe('registry ∩ spec — the whitelist is authoritative', () => {
   it('mention sources follow spec.mentions, not the source hint', () => {
     expect(getRegisteredMentionSources('description')).toEqual([]);
     expect(getRegisteredMentionSources('plan').map((s) => s.id)).toEqual(['files']);
-    expect(getRegisteredMentionSources('page', ARTEFACT_ROOT_EDITOR_PROPS).map((s) => s.id)).toEqual(['files']);
+    expect(getRegisteredMentionSources('page', artefactRootEditorProps('pages')).map((s) => s.id)).toEqual(['files']);
   });
 
   // LAST in this block: it replaces the real `inline_mention` registration with a stub.

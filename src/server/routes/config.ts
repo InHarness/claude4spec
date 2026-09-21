@@ -1,6 +1,16 @@
 import { Router } from 'express';
 import path from 'node:path';
-import { readConfig, writeConfig, parseRootsArray, validateRootDirs, type NormalizedConfig } from '../config.js';
+import {
+  readConfig,
+  writeConfig,
+  parseRootsArray,
+  validateRootDirs,
+  builtinRoot,
+  configHash,
+  type NormalizedConfig,
+} from '../config.js';
+import { retiredRootIds } from '../root-renames.js';
+import { rootRenameRouter, type RootRenameDeps } from './config-rename.js';
 import type { Root } from '../../shared/types.js';
 import { SUPPORTED_LANGUAGES, isSupportedLanguage } from '../../shared/languages.js';
 import { C4S_VERSION } from '../services/release-bundle.js';
@@ -56,6 +66,12 @@ export interface ConfigRouterDeps {
    * not (parity with writingStyle/language).
    */
   pluginSettingsSections?: () => PluginSettingsSection[];
+  /**
+   * 0.2.101: fired after a committed root rename (see `config-rename.ts`).
+   * Invalidating the project context is what unmounts the space under its old
+   * identifier and rebuilds every index under the new one.
+   */
+  onRootRenamed?: RootRenameDeps['onRootRenamed'];
 }
 
 const CONTEXT_DEFINING_FIELDS = ['roots', 'briefsDir', 'patchesDir', 'plansDir', 'entitiesDir', 'releasesDir', 'entities'] as const;
@@ -178,6 +194,13 @@ function configResponse(c: NormalizedConfig, cwd: string, skillRegistry: SkillRe
     remoteProjectId: c.remoteProjectId ?? null,
     remoteApiUrl: c.remoteApiUrl ?? null,
     $schemaVersion: c.$schemaVersion,
+    /**
+     * 0.2.101: optimistic-concurrency token — sha256 of `config.json` as read.
+     * A client hands it back as `expectedConfigHash` when renaming a root, the
+     * same way a page write hands back `expectedHash`. Response-only: it is
+     * never accepted in a PATCH body.
+     */
+    configHash: configHash(cwd),
   };
 }
 
@@ -188,6 +211,16 @@ function configResponse(c: NormalizedConfig, cwd: string, skillRegistry: SkillRe
 export function configRouter(deps: ConfigRouterDeps): Router {
   const { cwd, skillRegistry } = deps;
   const router = Router();
+
+  // 0.2.101: `POST /config/roots/:rootId/rename` — the only way a root's `id`
+  // ever changes. Deliberately NOT a field of the PATCH below.
+  router.use(
+    '/config',
+    rootRenameRouter({
+      cwd,
+      ...(deps.onRootRenamed ? { onRootRenamed: deps.onRootRenamed } : {}),
+    }),
+  );
 
   router.get('/meta', (_req, res) => {
     res.json({ cwd, cwdName: path.basename(cwd), c4sVersion: C4S_VERSION });
@@ -357,7 +390,10 @@ export function configRouter(deps: ConfigRouterDeps): Router {
         let roots: Root[];
         if ('roots' in body) {
           try {
-            roots = parseRootsArray(body.roots);
+            // Rule 7: a full-array write is a delete+create, never a rename —
+            // so an identifier an earlier rename retired must not come back
+            // through this door either.
+            roots = parseRootsArray(body.roots, { retiredIds: retiredRootIds(cwd) });
           } catch (err) {
             return res.status(400).json({ error: { code: 'VALIDATION', message: (err as Error).message } });
           }
@@ -631,7 +667,7 @@ export function configRouter(deps: ConfigRouterDeps): Router {
       // post-write pagesDir (a pagesDir change in the same atomic body is already
       // persisted in `updated`).
       if (patch.onboardingCompleted === true) {
-        const pagesDir = updated.roots.find((r) => r.id === 'pages')?.dir ?? 'pages';
+        const pagesDir = builtinRoot(updated.roots).dir;
         deps.onOnboardingCompleted?.(pagesDir);
       }
       // M33 phase 3: a `plugins` write invalidates the context only when at

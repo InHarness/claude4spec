@@ -211,7 +211,8 @@ if (createProject) {
       console.log(`\x1b[32m  claude4spec\x1b[0m  ready at \x1b[36m${projectUrl}\x1b[0m`);
       console.log(`  workspace: ${workspace.name}`);
       console.log(`  cwd: ${cwd}`);
-      console.log(`  pages: ${pagesDir ?? boot.config.roots.find((r) => r.id === 'pages')?.dir ?? 'pages'}`);
+      const baseRoot = boot.config.roots.find((r) => r.builtin);
+      console.log(`  pages: ${pagesDir ?? baseRoot?.dir ?? '(none)'}${baseRoot ? ` (root id: ${baseRoot.id})` : ''}`);
       console.log(`  config: ${boot.configPath}${boot.configCreated ? ' (created)' : ''}`);
       console.log(`  writing style: ${handle.writingStyle ? `${handle.writingStyle.title} (${handle.writingStyle.slug})` : 'none'}`);
 

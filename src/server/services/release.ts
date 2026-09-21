@@ -34,6 +34,12 @@ import type { FileVersionService } from './file-version.js';
 import type { FileSerializer } from './file-serializer.js';
 import type { TagsService } from './tags.js';
 import type { PagesService } from './pages.js';
+import {
+  formerIdsOf,
+  resolveCurrentRootId,
+  rootIdChain,
+  type RootRenameTransition,
+} from '../root-renames.js';
 import type { SelfWriteMarker } from '../fs/sources.js';
 import { DomainError } from './tags.js';
 import { HostEntityWriter } from './entity-writer.js';
@@ -280,7 +286,10 @@ export class ReleaseService {
      * Only these roots' `file_version` rows enter releases/bundles/diffs; brief/
      * patch markers and non-releasable user roots fall out structurally.
      */
-    private releasableRootIds: string[] = ['pages'],
+    // 0.2.101: no `['pages']` default — the base root's identifier is the
+    // project author's to choose, so a default here would quietly release the
+    // wrong space (or none at all) in a project that renamed it.
+    private releasableRootIds: string[] = [],
     /**
      * 0.1.118: absolute dirs of the releasable roots, same order/index as
      * `releasableRootIds` — needed to map a git-diff path back to a rootId in
@@ -297,7 +306,39 @@ export class ReleaseService {
      * back to writing the bytes and authoring its own version row.
      */
     private recordsFor: (rootId: string) => RecordStore<MarkdownRecord> | null = () => null,
+    /**
+     * 0.2.101 — the project's root-rename transitions. LAST in the positional
+     * list, same reasoning as `recordsFor` above.
+     *
+     * Releases, diffs and bundles iterate a SPACE, not an identifier: a renamed
+     * root enters them with its current id AND every identifier it retired,
+     * because the `file_version` rows written before the rename still carry the
+     * old one. Comparing `file_version.rootId` to a single value is the
+     * forbidden pattern here — the predicate is chain membership.
+     */
+    private rootRenameTransitions: readonly RootRenameTransition[] = [],
   ) {}
+
+  /**
+   * The identifier a historical `file_version.rootId` answers under TODAY. Rows
+   * from before a rename canonicalise onto the live address; an id that was
+   * never retired is its own canonical form.
+   */
+  private canonicalRootId(rootId: string): string {
+    return resolveCurrentRootId(this.rootRenameTransitions, rootId) ?? rootId;
+  }
+
+  /** `[currentId, ...retiredIds]` for a space named by its current identifier. */
+  private rootChain(rootId: string): string[] {
+    return rootIdChain(this.rootRenameTransitions, rootId);
+  }
+
+  /** Every identifier, live and retired, of the given spaces. */
+  private expandRootChains(rootIds: readonly string[]): string[] {
+    const out = new Set<string>();
+    for (const id of rootIds) for (const link of this.rootChain(id)) out.add(link);
+    return [...out];
+  }
 
   /**
    * M29: restoring an entity to a past version mutates the index — its committed
@@ -1330,7 +1371,14 @@ export class ReleaseService {
     const pageChanges: RawDeltaPageChange[] = [];
     // Key by (rootId, path) so the same relative path in two roots keeps an
     // independent timeline and is never cross-diffed.
-    const pageKey = (p: FileVersionRow): string => `${p.rootId}\u0000${p.path}`;
+    //
+    // 0.2.101: by the CANONICAL root — the address the space answers under
+    // today. Across a rename the two sides of the diff carry different literal
+    // `rootId`s for one and the same page, and keying on the literal would
+    // report every page of a renamed space as deleted-and-recreated. Keyed this
+    // way, an unchanged page produces no entry at all and a changed one produces
+    // an `update`.
+    const pageKey = (p: FileVersionRow): string => `${this.canonicalRootId(p.rootId)}\u0000${p.path}`;
     const aPagesMap = new Map(fromPageRows.map((p) => [pageKey(p), p]));
     const bPagesMap = new Map(toPageRows.map((p) => [pageKey(p), p]));
     const allPageKeys = new Set([...aPagesMap.keys(), ...bPagesMap.keys()]);
@@ -1564,7 +1612,7 @@ export class ReleaseService {
         if (records) await records.remove(input.path, { actor: 'user' });
         else {
           await this.pagesService.remove(input.path);
-          await this.pageVersions.recordVersion(input.path, 'delete', 'user');
+          await this.pageVersions.recordVersion(input.path, 'delete', 'user', undefined, undefined, this.pagesService.rootId);
         }
         return { path: input.path, op: 'deleted' };
       }
@@ -1614,7 +1662,14 @@ export class ReleaseService {
       const abs = pathMod.join(this.pagesService.root, input.path);
       await fsP.mkdir(pathMod.dirname(abs), { recursive: true });
       await fsP.writeFile(abs, data.content, 'utf-8');
-      await this.pageVersions.recordVersion(input.path, op === 'created' ? 'create' : 'update', 'user');
+      await this.pageVersions.recordVersion(
+        input.path,
+        op === 'created' ? 'create' : 'update',
+        'user',
+        undefined,
+        undefined,
+        this.pagesService.rootId,
+      );
     }
     return { path: input.path, op };
   }
@@ -1755,18 +1810,29 @@ export class ReleaseService {
     // page rows don't carry it) so the bundle can lay pages out as <rootId>/<path>.md
     // across every releasable root.
     const pageRows: BundlePageInput[] = this.latestPageRowsAtOrBefore(release.id).map((p) => ({
-      rootId: p.rootId,
+      // 0.2.101: the archive prefix is the identifier the space carries AT BUILD
+      // TIME, even when the source row still names a retired one. One space,
+      // one prefix, matching `manifest.roots[].id` — a page is never written
+      // under both the old and the new prefix.
+      rootId: this.canonicalRootId(p.rootId),
       path: p.path,
       op: p.op as 'create' | 'update' | 'delete',
       content: (safeJsonParse(p.data) as FileSnapshotData).content,
     }));
+    const config = readConfig(this.cwd);
+    const rootFormerIds: Record<string, string[]> = {};
+    for (const root of config.roots) {
+      const former = formerIdsOf(this.rootRenameTransitions, root.id);
+      if (former.length > 0) rootFormerIds[root.id] = former;
+    }
     return buildBundleArchiveImpl(
       snapshot,
       release,
-      readConfig(this.cwd),
+      config,
       pageRows,
       this.bundleEntityRows(snapshot),
       this.bundleTagDefs(snapshot),
+      rootFormerIds,
     );
   }
 
@@ -1884,7 +1950,19 @@ export class ReleaseService {
           ? manifest.roots
           : [{ id: fallbackRoot.id, name: fallbackRoot.name, dir: fallbackRoot.dir }];
       for (const root of bundleRoots) {
-        const srcDir = nodePath.join(restoreDir, root.id);
+        /**
+         * 0.2.101: the archive's prefix can be a RETIRED identifier — a bundle
+         * built before a rename keeps the prefix it was written with, and is
+         * never rewritten (that is what keeps its SHA-256 stable). So the prefix
+         * is matched against the entry's current `id` OR any of its `formerIds`,
+         * and whichever one is found on disk, the pages are written under the
+         * CURRENT address. A prefix matching neither is still a malformed entry.
+         */
+        const candidates = [root.id, ...(root.formerIds ?? [])];
+        const matched = candidates.find((candidate) =>
+          nodeFs.existsSync(nodePath.join(restoreDir, candidate)),
+        );
+        const srcDir = nodePath.join(restoreDir, matched ?? root.id);
         // The pages root writes through the running service's dir (preserving its
         // suppress semantics); every other root writes to `<cwd>/<dir>`.
         const destRoot =
@@ -2089,15 +2167,18 @@ export class ReleaseService {
       entityCounts[r.entity_type] = r.n;
       entityTotal += r.n;
     }
-    const pagePlaceholders = this.releasableRootIds.map(() => '?').join(', ');
-    const pageRow = this.releasableRootIds.length === 0
+    // 0.2.101: over the whole identifier chain of every releasable space, so a
+    // release's page count does not shrink the moment a root is renamed.
+    const pageRootIds = this.expandRootChains(this.releasableRootIds);
+    const pagePlaceholders = pageRootIds.map(() => '?').join(', ');
+    const pageRow = pageRootIds.length === 0
       ? { n: 0 }
       : (this.db
           .prepare(
             `SELECT COUNT(*) AS n FROM file_version
               WHERE release_id = ? AND rootId IN (${pagePlaceholders})`,
           )
-          .get(releaseId, ...this.releasableRootIds) as { n: number });
+          .get(releaseId, ...pageRootIds) as { n: number });
     return {
       entities: entityCounts,
       pages: pageRow.n,
@@ -2164,21 +2245,39 @@ export class ReleaseService {
   private latestPageRowsAtOrBefore(releaseId: number | null, roots?: string[]): FileVersionRow[] {
     const rootIds = (roots ?? this.releasableRootIds).filter((r) => this.releasableRootIds.includes(r));
     if (rootIds.length === 0) return [];
-    const placeholders = rootIds.map(() => '?').join(', ');
-    return this.db
+    // 0.2.101: the scope is every identifier of every requested SPACE — its
+    // current one plus the ones it retired — or versions written before a rename
+    // would fall out of the release entirely.
+    const chainIds = this.expandRootChains(rootIds);
+    const placeholders = chainIds.map(() => '?').join(', ');
+    const rows = this.db
       .prepare(
         `SELECT pv1.* FROM file_version pv1
           WHERE pv1.rootId IN (${placeholders})
             AND (? IS NULL OR (pv1.release_id IS NOT NULL AND pv1.release_id <= ?))
-            AND pv1.version = (
-              SELECT MAX(pv2.version) FROM file_version pv2
-               WHERE pv2.rootId = pv1.rootId
-                 AND pv2.path = pv1.path
-                 AND (? IS NULL OR (pv2.release_id IS NOT NULL AND pv2.release_id <= ?))
-            )
-          ORDER BY pv1.rootId, pv1.path`,
+          ORDER BY pv1.rootId, pv1.path, pv1.version`,
       )
-      .all(...rootIds, releaseId, releaseId, releaseId, releaseId) as FileVersionRow[];
+      .all(...chainIds, releaseId, releaseId) as FileVersionRow[];
+
+    /**
+     * "Latest per page" is reduced HERE rather than in a correlated subquery.
+     * The old `pv2.rootId = pv1.rootId` predicate means "same identifier", and
+     * across a rename boundary one space wears two — it would hand back the last
+     * row under the retired id AND the last row under the live one, i.e. the same
+     * page twice, which in a bundle is a duplicate under two prefixes and in a
+     * diff is a phantom delete+create pair.
+     */
+    const latest = new Map<string, FileVersionRow>();
+    for (const row of rows) {
+      const key = `${this.canonicalRootId(row.rootId)}\u0000${row.path}`;
+      const held = latest.get(key);
+      if (!held || row.version > held.version) latest.set(key, row);
+    }
+    return [...latest.values()].sort(
+      (a, b) =>
+        this.canonicalRootId(a.rootId).localeCompare(this.canonicalRootId(b.rootId)) ||
+        a.path.localeCompare(b.path),
+    );
   }
 
 }

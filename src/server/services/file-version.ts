@@ -44,8 +44,50 @@ interface Row {
   change_summary: string | null;
 }
 
+/**
+ * Expands a root identifier into the full chain of identifiers the SPACE has
+ * answered under: `[currentId, ...formerIds]`. Injected rather than imported so
+ * the service stays a pure database facade and tests can pin a chain.
+ */
+export type RootIdChainResolver = (rootId: string) => readonly string[];
+
+const IDENTITY_CHAIN: RootIdChainResolver = (rootId) => [rootId];
+
 export class FileVersionService {
-  constructor(private db: Database.Database, private serializer: FileSerializer) {}
+  /**
+   * 0.2.101: every read filters by the identifier CHAIN, never by one value.
+   *
+   * A rename changes a space's address but re-stamps nothing: rows written
+   * before it keep the retired identifier, because overwriting them would erase
+   * the address a version was actually born under. Continuity therefore lives on
+   * the read side — `WHERE rootId IN (<chain>)` — and is what keeps a page's
+   * version numbering from restarting at the rename boundary. The unique index
+   * `(path, rootId, version)` still holds, since the retired and the live
+   * identifier differ.
+   */
+  constructor(
+    private db: Database.Database,
+    private serializer: FileSerializer,
+    private resolveChain: RootIdChainResolver = IDENTITY_CHAIN,
+  ) {}
+
+  /** The identifier chain of the space `rootId` names today. */
+  private chainOf(rootId: string): string[] {
+    const chain = this.resolveChain(rootId);
+    return chain.length > 0 ? [...chain] : [rootId];
+  }
+
+  /** Expands each releasable root to its chain, de-duplicated. */
+  private expandRoots(rootIds: readonly string[]): string[] {
+    const out = new Set<string>();
+    for (const id of rootIds) for (const link of this.chainOf(id)) out.add(link);
+    return [...out];
+  }
+
+  /** `' AND rootId IN (?, ?)'` for a chain, `''` when the caller named no root. */
+  private rootClause(chain: string[] | null): string {
+    return chain === null ? '' : ` AND rootId IN (${chain.map(() => '?').join(', ')})`;
+  }
 
   /**
    * Capture a new version of a file. For `op = 'delete'`, the caller must
@@ -57,16 +99,22 @@ export class FileVersionService {
    * `FileSerializer` is bound to a specific `PagesService` (= a root dir) at
    * construction time; the `file_version` table is keyed by `(rootId, path)`.
    *
-   * 0.1.96: `rootId` is a dynamic string — the built-in `'pages'` root, a user
-   * root slug, or the fixed `'brief'`/`'patch'` markers.
+   * 0.1.96: `rootId` is a dynamic string — a page-root identifier or one of the
+   * fixed `'brief'`/`'patch'` markers. 0.2.101: it is the identifier the space
+   * carried AT THE MOMENT OF THE WRITE, not necessarily its current one — a
+   * rename never re-stamps existing rows, so reads follow the identifier CHAIN.
    */
   async recordVersion(
     relPath: string,
     op: FileOp,
     changedBy: FileChangedBy,
-    fallbackContent?: string,
-    serializer?: FileSerializer,
-    rootId: string = 'pages',
+    // 0.2.101: `rootId` is REQUIRED — it used to default to `'pages'`, which in
+    // a project whose base root was renamed would file the version under a space
+    // that no longer exists. The two params before it stay positional and so
+    // must be passed explicitly (as `undefined` where they do not apply).
+    fallbackContent: string | undefined,
+    serializer: FileSerializer | undefined,
+    rootId: string,
     changeSummary?: string | null,
   ): Promise<FileVersionListItem | null> {
     const ser = serializer ?? this.serializer;
@@ -132,20 +180,22 @@ export class FileVersionService {
   listVersions(relPath: string, rootId?: string): FileVersionListItem[] {
     // 0.1.96: `path` alone is no longer unique across roots — filter by rootId
     // when the caller knows it (page/brief/patch routes always do).
-    const rootClause = rootId ? ' AND rootId = ?' : '';
+    // 0.2.101: by the whole chain, so a page's history reaches back across a
+    // rename instead of starting again at the boundary.
+    const chain = rootId ? this.chainOf(rootId) : null;
     const rows = this.db
       .prepare(
-        `SELECT * FROM file_version WHERE path = ?${rootClause} ORDER BY version DESC`
+        `SELECT * FROM file_version WHERE path = ?${this.rootClause(chain)} ORDER BY version DESC`
       )
-      .all(...(rootId ? [relPath, rootId] : [relPath])) as Row[];
+      .all(...(chain ? [relPath, ...chain] : [relPath])) as Row[];
     return rows.map((r) => this.toListItem(r));
   }
 
   getVersion(relPath: string, version: number, rootId?: string): FileVersionDetail | null {
-    const rootClause = rootId ? ' AND rootId = ?' : '';
+    const chain = rootId ? this.chainOf(rootId) : null;
     const row = this.db
-      .prepare(`SELECT * FROM file_version WHERE path = ? AND version = ?${rootClause}`)
-      .get(...(rootId ? [relPath, version, rootId] : [relPath, version])) as Row | undefined;
+      .prepare(`SELECT * FROM file_version WHERE path = ? AND version = ?${this.rootClause(chain)}`)
+      .get(...(chain ? [relPath, version, ...chain] : [relPath, version])) as Row | undefined;
     return row ? this.toDetail(row) : null;
   }
 
@@ -160,7 +210,10 @@ export class FileVersionService {
   ): FileVersionDetail | null {
     // 0.1.96: optional `rootId` filter — distinguishes per-root timelines for the
     // same path. Omitted ⇒ legacy behaviour (latest regardless of root).
-    const rootClause = rootId ? ' AND rootId = ?' : '';
+    // 0.2.101: expanded to the space's identifier chain.
+    const chain = rootId ? this.chainOf(rootId) : null;
+    const rootClause = this.rootClause(chain);
+    const roots = chain ?? [];
     let row: Row | undefined;
     if (releaseId === undefined) {
       row = this.db
@@ -168,14 +221,14 @@ export class FileVersionService {
           `SELECT * FROM file_version WHERE path = ?${rootClause}
             ORDER BY version DESC LIMIT 1`
         )
-        .get(...(rootId ? [relPath, rootId] : [relPath])) as Row | undefined;
+        .get(relPath, ...roots) as Row | undefined;
     } else if (releaseId === null) {
       row = this.db
         .prepare(
           `SELECT * FROM file_version WHERE path = ? AND release_id IS NULL${rootClause}
             ORDER BY version DESC LIMIT 1`
         )
-        .get(...(rootId ? [relPath, rootId] : [relPath])) as Row | undefined;
+        .get(relPath, ...roots) as Row | undefined;
     } else {
       row = this.db
         .prepare(
@@ -183,7 +236,7 @@ export class FileVersionService {
             WHERE path = ? AND release_id IS NOT NULL AND release_id <= ?${rootClause}
             ORDER BY version DESC LIMIT 1`
         )
-        .get(...(rootId ? [relPath, releaseId, rootId] : [relPath, releaseId])) as Row | undefined;
+        .get(relPath, releaseId, ...roots) as Row | undefined;
     }
     return row ? this.toDetail(row) : null;
   }
@@ -203,10 +256,10 @@ export class FileVersionService {
 
   /** True when this (rootId, path) has any captured version. Used by initial-sync hook. */
   hasAny(relPath: string, rootId?: string): boolean {
-    const rootClause = rootId ? ' AND rootId = ?' : '';
+    const chain = rootId ? this.chainOf(rootId) : null;
     const row = this.db
-      .prepare(`SELECT 1 FROM file_version WHERE path = ?${rootClause} LIMIT 1`)
-      .get(...(rootId ? [relPath, rootId] : [relPath])) as { 1: number } | undefined;
+      .prepare(`SELECT 1 FROM file_version WHERE path = ?${this.rootClause(chain)} LIMIT 1`)
+      .get(...(chain ? [relPath, ...chain] : [relPath])) as { 1: number } | undefined;
     return !!row;
   }
 
@@ -227,6 +280,10 @@ export class FileVersionService {
    */
   countUnreleased(releasableRootIds: string[]): number {
     if (releasableRootIds.length === 0) return 0;
+    // 0.2.101: each releasable root brings its retired identifiers along —
+    // otherwise versions written before a rename would silently fall out of the
+    // next release's scope.
+    releasableRootIds = this.expandRoots(releasableRootIds);
     const placeholders = releasableRootIds.map(() => '?').join(', ');
     const row = this.db
       .prepare(
@@ -244,6 +301,7 @@ export class FileVersionService {
    */
   assignToRelease(releaseId: number, releasableRootIds: string[]): number {
     if (releasableRootIds.length === 0) return 0;
+    releasableRootIds = this.expandRoots(releasableRootIds);
     const placeholders = releasableRootIds.map(() => '?').join(', ');
     const info = this.db
       .prepare(
@@ -257,11 +315,19 @@ export class FileVersionService {
   /**
    * 0.1.96: version numbers are sequential per `(rootId, path)` — the same
    * relative path in different roots has independent timelines.
+   *
+   * 0.2.101: counted over the whole identifier chain, so numbering does NOT
+   * restart when a space is renamed. The unique index `(path, rootId, version)`
+   * still holds: the new row carries the live identifier and the old ones the
+   * retired, so no pair repeats.
    */
   private nextVersionNumber(relPath: string, rootId: string): number {
+    const chain = this.chainOf(rootId);
     const row = this.db
-      .prepare(`SELECT MAX(version) AS v FROM file_version WHERE path = ? AND rootId = ?`)
-      .get(relPath, rootId) as { v: number | null };
+      .prepare(
+        `SELECT MAX(version) AS v FROM file_version WHERE path = ? AND rootId IN (${chain.map(() => '?').join(', ')})`,
+      )
+      .get(relPath, ...chain) as { v: number | null };
     return (row.v ?? 0) + 1;
   }
 

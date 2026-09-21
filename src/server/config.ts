@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { type Root, type RootSidebar, DEFAULT_PAGES_ROOT_PROPS, DEFAULT_USER_ROOT_PROPS } from '../shared/types.js';
@@ -309,7 +310,46 @@ export function configPath(cwd: string): string {
   return path.join(cwd, '.claude4spec', 'config.json');
 }
 
-/** The built-in `pages` root with full behaviour, dir defaulting to 'pages'. */
+/**
+ * The base page root with full behaviour, dir defaulting to 'pages'.
+ *
+ * 0.2.101: `'pages'` here is the DEFAULT identifier of a new project's base
+ * root — the value the v3→v4 migration and the bootstrap hand out — and nothing
+ * more. The ROLE lives in `builtin: true`; a project whose base root answers to
+ * `docs` and which carries no entry named `pages` at all is fully valid, so no
+ * consumer may recognise the base root by this literal.
+ */
+/**
+ * The base page root of a validated `roots[]`: the single entry carrying
+ * `builtin: true`. Every consumer that needs "the root the host ships" asks
+ * this, and never `roots.find(r => r.id === 'pages')` — the identifier carries
+ * no role since 0.2.101.
+ *
+ * `parseRootsArray` guarantees exactly one such entry, so this throws only for
+ * a caller that built a `Root[]` by hand and skipped validation.
+ */
+/**
+ * sha256 of `config.json` exactly as it sits on disk — the optimistic-concurrency
+ * token of `GET/PATCH /api/config` and the `expectedConfigHash` a rename must
+ * match. Same mechanism as `expectedHash` on a page write, and hashed over the
+ * same bytes a reader would read back, so a client that read the config and a
+ * server that is about to write it are comparing the same thing.
+ *
+ * A project with no `config.json` yet hashes the empty string — a stable value
+ * that no written file can collide with.
+ */
+export function configHash(cwd: string): string {
+  const file = configPath(cwd);
+  const bytes = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+  return crypto.createHash('sha256').update(bytes, 'utf-8').digest('hex');
+}
+
+export function builtinRoot(roots: readonly Root[]): Root {
+  const found = roots.find((r) => r.builtin);
+  if (!found) throw new Error('config.json: no root carries builtin: true');
+  return found;
+}
+
 export function builtinPagesRoot(dir: string = 'pages'): Root {
   return {
     id: 'pages',
@@ -661,17 +701,53 @@ const RESERVED_ROOT_IDS = new Set(['search']);
 const WARNED_RESERVED_IDS = new Set<string>();
 
 /**
- * Structural validation of a raw `roots[]` value: each element well-typed +
- * path-safe, ids unique, linkTargets reference existing roots, and the built-in
- * `pages` root present with sidebar 'accordion'. Throws on any violation. Shared
- * by `validate()` (boot/read) and the PATCH /api/config route (→ 400).
+ * The shape every root identifier must have: a kebab-case slug. Non-empty, no
+ * spaces, no slashes, no leading/trailing/doubled dashes — the identifier is an
+ * address inside `/space/:rootId/...`, an archive prefix and a watch-source
+ * suffix, so anything outside this shape breaks a consumer somewhere.
  */
-export function parseRootsArray(raw: unknown, opts: { reservedIds?: 'refuse' | 'warn' } = {}): Root[] {
+const ROOT_ID_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+export function isValidRootId(id: unknown): id is string {
+  return typeof id === 'string' && ROOT_ID_SLUG.test(id);
+}
+
+/**
+ * Structural validation of a raw `roots[]` value: each element well-typed +
+ * path-safe, ids VALID (kebab slug) and unique, linkTargets reference existing
+ * roots, and exactly one entry carrying `builtin: true` with sidebar
+ * 'accordion'. Throws on any violation. Shared by `validate()` (boot/read) and
+ * the PATCH /api/config route (→ 400).
+ *
+ * 0.2.101: the base root is recognised by its FLAG, never by `id === 'pages'`.
+ * A config whose base root is `id: 'docs'` and which contains no entry named
+ * `pages` is fully valid.
+ *
+ * `opts.retiredIds` carries rule 7 — the identifiers a rename has retired,
+ * which stay permanently taken. It is supplied by the WRITE paths only (the
+ * rename route and PATCH /api/config). The boot read deliberately omits it: a
+ * config already on disk must never become unloadable because of a sidecar
+ * file, and every way of introducing a retired id goes through a write anyway.
+ */
+export function parseRootsArray(
+  raw: unknown,
+  opts: { reservedIds?: 'refuse' | 'warn'; retiredIds?: ReadonlySet<string> } = {},
+): Root[] {
   if (!Array.isArray(raw)) throw typeError('roots', 'Root[]', raw);
   const roots = raw.map((r, i) => validateRoot(r, i));
   const seen = new Set<string>();
   for (const root of roots) {
+    if (!ROOT_ID_SLUG.test(root.id)) {
+      throw new Error(
+        `config.json: invalid root id '${root.id}' — must be a kebab-case slug (lowercase letters, digits and single dashes)`,
+      );
+    }
     if (seen.has(root.id)) throw new Error(`config.json: duplicate root id '${root.id}'`);
+    if (opts.retiredIds?.has(root.id)) {
+      throw new Error(
+        `config.json: root id '${root.id}' was retired by an earlier rename and cannot be reused — a retired identifier stays taken so page history under it keeps naming one space`,
+      );
+    }
     if (RESERVED_ROOT_IDS.has(root.id)) {
       const why = `root id '${root.id}' is reserved — it names a route under /api/pages/, so a root using it would be unreachable there`;
       if (opts.reservedIds !== 'warn') throw new Error(`config.json: ${why}`);
@@ -696,10 +772,20 @@ export function parseRootsArray(raw: unknown, opts: { reservedIds?: 'refuse' | '
       }
     }
   }
-  const pagesRoot = roots.find((x) => x.id === 'pages');
-  if (!pagesRoot) throw new Error(`config.json: built-in 'pages' root is required`);
-  if (pagesRoot.sidebar !== 'accordion') {
-    throw new Error(`config.json: built-in 'pages' root must have sidebar 'accordion'`);
+  // Rule 5 — the base root is present and unambiguous. Zero entries would leave
+  // the project with no space for the welcome page, module pages or `@`-links to
+  // land in; two would make "the base root" a question with two answers, and
+  // every consumer that asks it would get a different one depending on array
+  // order.
+  const builtins = roots.filter((x) => x.builtin);
+  if (builtins.length !== 1) {
+    throw new Error(
+      `config.json: exactly one root must have builtin: true (found ${builtins.length}) — the base root is recognised by that flag, not by its id`,
+    );
+  }
+  const baseRoot = builtins[0]!;
+  if (baseRoot.sidebar !== 'accordion') {
+    throw new Error(`config.json: the builtin root '${baseRoot.id}' must have sidebar 'accordion'`);
   }
   return roots;
 }
@@ -1008,7 +1094,7 @@ function validate(raw: unknown): Partial<Config> {
   return out;
 }
 
-function atomicWrite(filePath: string, data: string): void {
+export function atomicWrite(filePath: string, data: string): void {
   const tmp = filePath + '.tmp';
   fs.writeFileSync(tmp, data, 'utf8');
   fs.renameSync(tmp, filePath);
@@ -1033,12 +1119,17 @@ function legacyRootsFromRaw(raw: Record<string, unknown>): Root[] | undefined {
   return undefined;
 }
 
-/** Apply the CLI `--pages` override to the built-in `pages` root's dir (in place, returns a copy). */
+/**
+ * Apply the CLI `--pages` override to the BASE root's dir (returns a copy).
+ * 0.2.101: the target is the `builtin: true` entry whatever its identifier — the
+ * flag keeps its name `--pages` even when the base root is called `docs`, and a
+ * USER root that happens to be named `pages` is never touched by it.
+ */
 function applyPagesDirOverride<T extends Config>(config: T, pagesDir: string | undefined): T {
   if (pagesDir == null) return config;
   return {
     ...config,
-    roots: config.roots.map((r) => (r.id === 'pages' ? { ...r, dir: pagesDir } : r)),
+    roots: config.roots.map((r) => (r.builtin ? { ...r, dir: pagesDir } : r)),
   };
 }
 
