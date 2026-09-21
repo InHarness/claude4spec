@@ -108,15 +108,18 @@ export function useRenameRoot() {
         newId: input.newId,
         expectedConfigHash: input.expectedConfigHash,
       }),
-    onSuccess: async (_result, input) => {
-      // Entries keyed by the OLD id are dropped, never refetched: that id now
-      // answers like any unknown root, so refetching them (the sidebar's page
-      // tree, still mounted until the new config re-renders it) would only
-      // produce 404s. Everything else — config first — refetches, and the
-      // screens re-key themselves onto the new id.
+    onSuccess: (_result, input) => {
+      // Entries keyed by the OLD id are never refetched: that id now answers
+      // like any unknown root, so refetching them (the sidebar's page tree,
+      // still mounted until the new config re-renders it) would only produce
+      // 404s. They go inactive once the screens re-key onto the new id and are
+      // garbage-collected from there. Everything else refetches.
+      //
+      // Not awaited, on purpose: `mutateAsync` resolves only after onSuccess
+      // does, and waiting on every active query's refetch would hold the
+      // caller's post-rename navigation hostage to the slowest one.
       const underOldId = (q: { queryKey: readonly unknown[] }) => q.queryKey.includes(input.rootId);
-      await qc.invalidateQueries({ predicate: (q) => !underOldId(q) });
-      qc.removeQueries({ predicate: underOldId, type: 'inactive' });
+      void qc.invalidateQueries({ predicate: (q) => !underOldId(q) });
     },
   });
 }
