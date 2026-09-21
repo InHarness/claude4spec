@@ -23,7 +23,9 @@ export function composeSystemPrompt(
     availableSkills: input.availableSkills ?? [],
     mcpInventory: input.mcpInventory ?? [],
     workspaceProjects: input.workspaceProjects ?? [],
-    currentPageRootId: input.currentPageRootId ?? 'pages',
+    // 0.2.101: no literal fallback — with no page attached the base root of THIS
+    // project answers, and its identifier is the author's to choose.
+    currentPageRootId: input.currentPageRootId ?? input.roots.find((r) => r.builtin)?.id ?? '',
     planMode: input.planMode ?? false,
     currentPlan: input.currentPlan ?? null,
     writingStyleSkill: input.writingStyleSkill ?? null,

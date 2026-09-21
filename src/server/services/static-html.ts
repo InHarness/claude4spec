@@ -21,7 +21,7 @@ export class StaticPathTraversalError extends Error {
 export class StaticHtmlService {
   readonly root: string;
 
-  constructor(cwd: string, pagesDir: string = 'pages') {
+  constructor(cwd: string, pagesDir: string) {
     this.root = path.join(cwd, pagesDir);
   }
 

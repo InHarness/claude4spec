@@ -806,10 +806,12 @@ export async function runAgentTurn(
     }
 
     // Read the attached page from the root the user is viewing. `currentPageRootId`
-    // comes from the `/space/$rootId/$` route; fall back to the built-in `pages` root
-    // when absent (older clients) or unknown.
+    // comes from the `/space/$rootId/$` route. 0.2.101: when it is absent (older
+    // clients) or unknown, `deps.pagesService` — the BASE root's service, picked
+    // by the `builtin` flag in project-context — answers; there is no `'pages'`
+    // literal to fall back to, because no identifier carries that role anymore.
     const currentPageService =
-      deps.resolvePagesService?.(currentPageRootId ?? 'pages') ?? deps.pagesService;
+      (currentPageRootId ? deps.resolvePagesService?.(currentPageRootId) : undefined) ?? deps.pagesService;
     let currentPageBody: string | null = null;
     if (carriesCurrentPage && currentPage) {
       try {

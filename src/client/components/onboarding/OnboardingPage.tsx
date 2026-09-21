@@ -1,19 +1,20 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { useConfig, usePatchConfig } from '../../hooks/useConfig.js';
+import { useConfig, usePatchConfig, useRenameRoot } from '../../hooks/useConfig.js';
 import type { ConfigPatch } from '../../lib/api.js';
 import { useWritingStyles } from '../../hooks/useWritingStyles.js';
 import { confirmDestructive, toast } from '../../ui/events.js';
 import { NameField, validateName } from './NameField.js';
 import { WritingStyleList, type WritingStyleSelection } from './WritingStyleList.js';
 import { SpecLanguageField, ConversationalLanguageField } from './LanguageFields.js';
-import { DirectoriesSection, validatePagesDir } from './DirectoriesSection.js';
+import { DirectoriesSection, validatePagesDir, validateRootId } from './DirectoriesSection.js';
 
 export function OnboardingPage() {
   const navigate = useNavigate();
-  const { data: config } = useConfig();
+  const { data: config, refetch: refetchConfig } = useConfig();
   const { data: stylesData } = useWritingStyles();
   const patchConfig = usePatchConfig();
+  const renameRoot = useRenameRoot();
 
   const [name, setName] = useState('');
   const [nameError, setNameError] = useState<string | null>(null);
@@ -22,10 +23,17 @@ export function OnboardingPage() {
   // gate [Continue].
   const [language, setLanguage] = useState<string | null>(null);
   const [conversationalLanguage, setConversationalLanguage] = useState<string | null>(null);
-  // 0.1.96: onboarding edits only the built-in `pages` root's dir. Pre-filled from
-  // config.roots (also covers escape-hatch rerun pre-fill); the full roots[] editor
-  // lives in Settings. Empty default until hydrated.
+  // 0.1.96: onboarding edits the BASE root's dir. Pre-filled from config.roots
+  // (also covers escape-hatch rerun pre-fill); the full roots[] editor lives in
+  // Settings. Empty default until hydrated.
   const [pagesDir, setPagesDir] = useState('');
+  /**
+   * 0.2.101: the base root's IDENTIFIER — a second, independent field. Also
+   * pre-filled, so an escape-hatch rerun shows what the project actually uses
+   * rather than the default `pages`.
+   */
+  const [rootId, setRootId] = useState('');
+  const [rootIdError, setRootIdError] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -38,7 +46,12 @@ export function OnboardingPage() {
       }
       setLanguage(config.language);
       setConversationalLanguage(config.agent?.conversationalLanguage ?? null);
-      setPagesDir(config.roots.find((r) => r.id === 'pages')?.dir ?? 'pages');
+      // 0.2.101: found by the `builtin` flag — the base root may be called
+      // anything, and the literal `'pages'` would pre-fill from the wrong entry
+      // (or from none at all).
+      const baseRoot = config.roots.find((r) => r.builtin);
+      setPagesDir(baseRoot?.dir ?? '');
+      setRootId(baseRoot?.id ?? '');
       setHydrated(true);
     }
   }, [config, hydrated]);
@@ -53,6 +66,25 @@ export function OnboardingPage() {
     setNameError(validateName(name));
   }
 
+  /**
+   * [Continue] is TWO steps since 0.2.101, and their ORDER IS THE CONTRACT:
+   * rename first, re-read the config, then PATCH the rest built from what came
+   * back.
+   *
+   * Three consequences follow from that order, and each is deliberate:
+   *
+   * - A REFUSED RENAME ABORTS THE SUBMIT. `onboardingCompleted: true` is never
+   *   sent, the user stays on the form, and the message lands under the Root ID
+   *   field rather than in a generic toast. Since onboarding did not close, no
+   *   welcome `index.md` is written either — the condition is "onboarding closed
+   *   SUCCESSFULLY", not merely "onboarding was attempted".
+   * - A SECOND ATTEMPT READS STATE AFRESH. The refetched config carries a new
+   *   `configHash` and the current id, so pressing [Continue] again cannot bounce
+   *   off a stale token. A rename that actually succeeded but whose response was
+   *   lost comes back `alreadyApplied` and does not migrate anything twice.
+   * - THE DIRECTORY WRITE IS COMPOSED FROM THE REFRESHED CONFIG, so its
+   *   full-array `roots` cannot overwrite the identifier that was just changed.
+   */
   async function onContinue() {
     const err = validateName(name);
     if (err) {
@@ -61,7 +93,32 @@ export function OnboardingPage() {
     }
     if (writingStyle === undefined) return;
     if (validatePagesDir(pagesDir) !== null) return;
+    const idErr = validateRootId(rootId);
+    if (idErr) {
+      setRootIdError(idErr);
+      return;
+    }
+    if (!config) return;
     try {
+      let current = config;
+      const baseRoot = current.roots.find((r) => r.builtin);
+      if (baseRoot && rootId.trim() !== baseRoot.id) {
+        try {
+          await renameRoot.mutateAsync({
+            rootId: baseRoot.id,
+            newId: rootId.trim(),
+            expectedConfigHash: current.configHash,
+          });
+        } catch (e) {
+          setRootIdError((e as Error).message);
+          return;
+        }
+        const refetched = await refetchConfig();
+        if (!refetched.data) return;
+        current = refetched.data;
+      }
+
+      const baseAfter = current.roots.find((r) => r.builtin);
       const patchBody: ConfigPatch = {
         name: name.trim(),
         writingStyle,
@@ -70,13 +127,12 @@ export function OnboardingPage() {
         onboardingCompleted: true,
       };
       // 0.1.96: send `roots` only if the pages dir actually changed — a full-array
-      // replace that swaps the built-in `pages` root's dir (all other roots and
-      // props preserved). A changed dir rebuilds the context and the deferred
-      // welcome lands on the new path.
-      const currentPagesDir = config?.roots.find((r) => r.id === 'pages')?.dir ?? 'pages';
-      if (config && pagesDir.trim() !== currentPagesDir) {
-        patchBody.roots = config.roots.map((r) =>
-          r.id === 'pages' ? { ...r, dir: pagesDir.trim() } : r,
+      // replace that swaps the base root's dir (all other roots and props
+      // preserved). A changed dir rebuilds the context and the deferred welcome
+      // lands on the new path.
+      if (baseAfter && pagesDir.trim() !== baseAfter.dir) {
+        patchBody.roots = current.roots.map((r) =>
+          r.builtin ? { ...r, dir: pagesDir.trim() } : r,
         );
       }
       await patchConfig.mutateAsync(patchBody);
@@ -107,7 +163,12 @@ export function OnboardingPage() {
     writingStyle === undefined ||
     name.trim().length === 0 ||
     validatePagesDir(pagesDir) !== null ||
-    patchConfig.isPending;
+    // 0.2.101: the identifier gates [Continue] exactly as the directory does —
+    // it is submitted by the same button, just over a different route.
+    rootIdError !== null ||
+    validateRootId(rootId) !== null ||
+    patchConfig.isPending ||
+    renameRoot.isPending;
 
   return (
     <div
@@ -166,6 +227,15 @@ export function OnboardingPage() {
           pagesDir={pagesDir}
           error={hydrated ? validatePagesDir(pagesDir) : null}
           onChange={setPagesDir}
+          rootId={rootId}
+          rootIdError={hydrated ? (rootIdError ?? validateRootId(rootId)) : null}
+          onRootIdChange={(next) => {
+            setRootId(next);
+            // A server refusal (a taken id, a stale config hash) is about the
+            // value that was SUBMITTED — editing the field makes it stale, so it
+            // clears and the inline shape rule takes over again.
+            if (rootIdError) setRootIdError(null);
+          }}
         />
 
         <div className="flex items-center justify-end gap-3 mt-2">

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useConfig, usePatchConfig } from '../../../hooks/useConfig.js';
+import { useConfig, usePatchConfig, useRenameRoot } from '../../../hooks/useConfig.js';
+import { useNavigate } from '@tanstack/react-router';
 import { ApiError, type ConfigPatch } from '../../../lib/api.js';
 import { toast } from '../../../ui/events.js';
 import { type Root, DEFAULT_USER_ROOT_PROPS } from '../../../../shared/types.js';
@@ -226,6 +227,41 @@ function validateDraft(draft: DraftState): { errors: string[]; warnings: string[
 export function DirectoriesSection() {
   const { data: config } = useConfig();
   const patch = usePatchConfig();
+  const renameRoot = useRenameRoot();
+  const navigate = useNavigate();
+  /**
+   * 0.2.101 — "Change root ID" is a FIFTH category of field on this screen,
+   * beside hot-reload, executive (rebuild), action and read-only: an action that
+   * changes a page space's IDENTITY. It is not a `PATCH /api/config` field —
+   * a full `roots[]` write that swapped an id would be read as removing one
+   * space and adding another — so it goes through its own route, carries the
+   * config's state token, blocks this section's saves while it runs, and shows a
+   * collision at the target-id field rather than as a toast.
+   */
+  const [renamingRootId, setRenamingRootId] = useState<string | null>(null);
+  const [renameError, setRenameError] = useState<string | null>(null);
+
+  async function handleRenameRoot(rootId: string, newId: string): Promise<boolean> {
+    if (!config) return false;
+    setRenameError(null);
+    try {
+      const result = await renameRoot.mutateAsync({
+        rootId,
+        newId: newId.trim(),
+        expectedConfigHash: config.configHash,
+      });
+      // The open page's route segment carries the OLD identifier, which now
+      // answers like any unknown root. Move to the new address rather than leave
+      // the user on a URL that 404s.
+      navigate({ to: '/space/$rootId/$', params: { rootId: result.rootId, _splat: '' } });
+      toast.success(`Root ID changed to ${result.rootId}`);
+      setRenamingRootId(null);
+      return true;
+    } catch (err) {
+      setRenameError(err instanceof ApiError ? err.message : 'Rename failed');
+      return false;
+    }
+  }
   const [draft, setDraft] = useState<DraftState>(() => buildDraft(config));
   const [newRootName, setNewRootName] = useState('');
   const [newRootDir, setNewRootDir] = useState('');
@@ -325,6 +361,24 @@ export function DirectoriesSection() {
               root={root}
               onChange={(p) => updateRoot(root.id, p)}
               onRemove={root.builtin ? undefined : () => removeRoot(root.id)}
+              renaming={renamingRootId === root.id}
+              renameError={renamingRootId === root.id ? renameError : null}
+              renamePending={renameRoot.isPending}
+              // A root added in the draft does not exist on the server yet — a
+              // rename could only 404. And a successful rename refetches the
+              // config, which re-seeds the draft: any unsaved edit in this
+              // section would be silently dropped, so it has to land first.
+              canRename={config?.roots.some((r) => r.id === root.id) ?? false}
+              renameBlockedReason={dirty ? 'Save or discard the changes in this section first.' : null}
+              onStartRename={() => {
+                setRenameError(null);
+                setRenamingRootId(root.id);
+              }}
+              onCancelRename={() => {
+                setRenameError(null);
+                setRenamingRootId(null);
+              }}
+              onSubmitRename={(newId) => handleRenameRoot(root.id, newId)}
             />
           ))}
         </div>
@@ -417,9 +471,14 @@ export function DirectoriesSection() {
         ) : null}
 
         <div className="flex justify-end">
+          {/*
+            A rename in flight is a moment when this section's own `roots[]` is
+            about to be replaced under it — saving into that window would race
+            the identifier change, so the shared Save is held.
+          */}
           <button
             type="button"
-            disabled={!dirty || errors.length > 0 || patch.isPending}
+            disabled={!dirty || errors.length > 0 || patch.isPending || renameRoot.isPending}
             onClick={handleSave}
             className="rounded-md px-3 py-1.5 text-[12px] font-medium disabled:opacity-50"
             style={{ background: 'var(--c-accent)', color: '#fff' }}
@@ -443,11 +502,35 @@ function RootCard({
   root,
   onChange,
   onRemove,
+  renaming,
+  renameError,
+  renamePending,
+  canRename,
+  renameBlockedReason,
+  onStartRename,
+  onCancelRename,
+  onSubmitRename,
 }: {
   root: Root;
   onChange: (patch: Partial<Root>) => void;
   onRemove?: () => void;
+  /** True while this row's "Change root ID" editor is open. */
+  renaming: boolean;
+  /** The server's refusal, rendered AT the target-id field (never as a toast). */
+  renameError: string | null;
+  renamePending: boolean;
+  /** False for a root that exists only in the unsaved draft — nothing to rename yet. */
+  canRename: boolean;
+  /** Set while the section has unsaved edits, which a rename's refetch would discard. */
+  renameBlockedReason: string | null;
+  onStartRename: () => void;
+  onCancelRename: () => void;
+  onSubmitRename: (newId: string) => Promise<boolean>;
 }) {
+  const [draftId, setDraftId] = useState(root.id);
+  useEffect(() => {
+    if (renaming) setDraftId(root.id);
+  }, [renaming, root.id]);
   return (
     <div
       className="flex flex-col gap-3 rounded-md p-3"
@@ -470,25 +553,101 @@ function RootCard({
             </span>
           ) : null}
         </div>
-        {onRemove ? (
-          <button
-            type="button"
-            onClick={onRemove}
-            className="shrink-0 rounded px-2 py-1 text-[11.5px] font-medium"
-            style={{ color: '#b3261e' }}
-          >
-            Remove
-          </button>
-        ) : null}
+        <div className="flex items-center gap-1 shrink-0">
+          {!renaming && canRename ? (
+            <button
+              type="button"
+              onClick={onStartRename}
+              disabled={renameBlockedReason !== null}
+              title={renameBlockedReason ?? undefined}
+              className="rounded px-2 py-1 text-[11.5px] font-medium disabled:opacity-50"
+              style={{ color: 'var(--c-accent)' }}
+            >
+              Change root ID
+            </button>
+          ) : null}
+          {onRemove ? (
+            <button
+              type="button"
+              onClick={onRemove}
+              className="rounded px-2 py-1 text-[11.5px] font-medium"
+              style={{ color: '#b3261e' }}
+            >
+              Remove
+            </button>
+          ) : null}
+        </div>
       </div>
 
-      {!root.builtin ? (
-        <TextField
-          label="Name"
-          value={root.name}
-          onChange={(v) => onChange({ name: v })}
-        />
+      {renaming ? (
+        <div className="flex flex-col gap-1.5">
+          <span
+            className="text-[11.5px] font-medium uppercase tracking-wide"
+            style={{ color: 'var(--c-muted)' }}
+          >
+            New root ID
+          </span>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={draftId}
+              onChange={(e) => setDraftId(e.target.value)}
+              className="flex-1 rounded-md px-3 py-1.5 text-[13px] font-mono"
+              style={{
+                background: 'var(--c-card)',
+                border: `1px solid ${renameError ? '#b3261e' : 'var(--c-hair)'}`,
+                color: 'var(--c-ink)',
+              }}
+              placeholder="kebab-case slug"
+            />
+            <button
+              type="button"
+              disabled={
+                renamePending ||
+                renameBlockedReason !== null ||
+                draftId.trim() === '' ||
+                draftId.trim() === root.id
+              }
+              onClick={() => void onSubmitRename(draftId)}
+              className="rounded-md px-3 py-1.5 text-[12px] font-medium disabled:opacity-50"
+              style={{ background: 'var(--c-accent)', color: '#fff' }}
+            >
+              Change
+            </button>
+            <button
+              type="button"
+              onClick={onCancelRename}
+              className="rounded-md px-2 py-1.5 text-[12px]"
+              style={{ color: 'var(--c-muted)' }}
+            >
+              Cancel
+            </button>
+          </div>
+          <span className="text-[11.5px]" style={{ color: 'var(--c-muted)' }}>
+            Changes the address only — the directory, the pages and their version history stay.
+            The previous identifier stays permanently reserved. Saved on its own, not by
+            [Save] below.
+          </span>
+          {renameBlockedReason ? (
+            <span className="text-[11.5px]" style={{ color: 'var(--c-muted)' }}>
+              {renameBlockedReason}
+            </span>
+          ) : null}
+          {renameError ? (
+            <span className="text-[11.5px]" style={{ color: '#b3261e' }}>
+              {renameError}
+            </span>
+          ) : null}
+        </div>
       ) : null}
+
+      {/*
+        0.2.101: the LABEL of the base root is editable too — it is a display
+        name like any other root's, and it saves with the shared [Save] beside a
+        changed directory. The role that cannot be edited away lives in the
+        `builtin` flag, not in this field.
+      */}
+      <TextField label="Name" value={root.name} onChange={(v) => onChange({ name: v })} />
 
       <DirField label="Directory" value={root.dir} onChange={(v) => onChange({ dir: v })} />
     </div>

@@ -41,10 +41,13 @@ registerCoreOperations();
  */
 function buildRootsAttr(roots: Root[]): string {
   const parts: string[] = [];
-  const pagesRoot = roots.find((r) => r.id === 'pages');
-  if (pagesRoot) parts.push(`pages=${pagesRoot.dir}`);
+  // 0.2.101: the base root leads the list because it is the base root (the
+  // `builtin` flag), not because it is spelled `pages`. It is announced under
+  // its own identifier — that is the address the agent must actually pass.
+  const baseRoot = roots.find((r) => r.builtin);
+  if (baseRoot) parts.push(`${baseRoot.id}=${baseRoot.dir}`);
   for (const r of roots) {
-    if (r.id === 'pages') continue;
+    if (r.builtin) continue;
     parts.push(`${r.id}=${r.dir}`);
   }
   return parts.join(';');

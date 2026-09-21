@@ -602,14 +602,16 @@ export class SectionIndexerService implements WatchSubscriber {
 
       const anchorsInFile = ownedSections.map((s) => s.anchor);
       if (anchorsInFile.length) {
-        // Delete this page's links by (rootId, anchor-set). anchor alone is
-        // globally unique, so rootId is a belt-and-suspenders scope match.
+        // Delete this page's links by anchor ALONE. The anchor is globally
+        // unique and `owned` above proves this page holds it, so no rootId
+        // scope is needed — and one would be wrong: after a root rename
+        // (0.2.101) the section row moves to the new id, but its links were
+        // stored under the old one, and a rootId-scoped delete would leave
+        // them behind forever (the hydrator reads links by anchor).
         const placeholders = anchorsInFile.map(() => '?').join(',');
         this.db
-          .prepare(
-            `DELETE FROM section_entity_link WHERE rootId = ? AND anchor IN (${placeholders})`
-          )
-          .run(rootId, ...anchorsInFile);
+          .prepare(`DELETE FROM section_entity_link WHERE anchor IN (${placeholders})`)
+          .run(...anchorsInFile);
 
         const linkStmt = this.db.prepare(
           `INSERT OR IGNORE INTO section_entity_link (rootId, anchor, entity_type, entity_slug, relation)

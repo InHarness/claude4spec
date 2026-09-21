@@ -24,7 +24,7 @@ import { PageRefPopoverHost } from './tiptap/extensions/PageRefPopover.js';
 import { openPopover, toast } from './ui/events.js';
 import { usePersistedWidth, useTheme } from './state/tweaks.js';
 import { useChatStore } from './state/chat.js';
-import { useConfig } from './hooks/useConfig.js';
+import { useBaseRootId, useConfig } from './hooks/useConfig.js';
 import { countFiles } from '../shared/page-files.js';
 
 export function RootLayout() {
@@ -114,7 +114,10 @@ function MainShell({ projectName }: { projectName: string | null }) {
 
   useFileWatcher();
 
-  const { data: tree = [] } = usePages();
+  // 0.2.101: the header's page count and the "new page" action target the BASE
+  // root, found by its `builtin` flag rather than by the literal `'pages'`.
+  const baseRootId = useBaseRootId();
+  const { data: tree = [] } = usePages(baseRootId);
   // Sidebar ELEMENTS badges: one light aggregate instead of five full entity lists.
   const { data: entityCounts } = useEntityCounts();
   const { data: todoCounts } = useTodosCounts();
@@ -144,18 +147,19 @@ function MainShell({ projectName }: { projectName: string | null }) {
     );
     if (!result) return;
     try {
-      // The global "new page" action targets the built-in pages root.
+      // The global "new page" action targets the base page root.
+      if (!baseRootId) return;
       await createPage.mutateAsync({
-        rootId: 'pages',
+        rootId: baseRootId,
         path: result.path,
         content: `# ${deriveTitle(result.path)}\n\n`,
       });
-      navigate({ to: '/space/$rootId/$', params: { rootId: 'pages', _splat: result.path } });
+      navigate({ to: '/space/$rootId/$', params: { rootId: baseRootId, _splat: result.path } });
       toast.success(`Page ${result.path} created`);
     } catch (err) {
       toast.error((err as Error).message);
     }
-  }, [createPage, navigate]);
+  }, [createPage, navigate, baseRootId]);
 
   useEffect(() => {
     const onNewPage = () => {

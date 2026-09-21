@@ -409,7 +409,7 @@ You do not know its conventions yet, and this block does not summarise them.
 This brief is SCOPED to specific page roots: pages, adr. It does NOT cover the whole release.
 - PAGES: pass \`roots: ["pages","adr"]\` to EVERY release_diff call (the summary probe AND every heavy slice), and hand the same \`roots\` to each diff-explore subagent slice. Pages outside these roots MUST NOT enter the brief. Omitting \`roots\` defaults release_diff to ALL releasable roots and silently breaks this scope.
 - ENTITIES are root-agnostic (release_diff never filters them by root): include entity changes that are referenced in the scoped pages' prose or are thematically tied to this scope — a relevance judgement, not a structural filter.
-- This scope INCLUDES the built-in \`pages\` root (the carrier of the entity graph), so treat entities as whole-release: include ALL entity changes — omitting one would silently make the brief incomplete.
+- This scope INCLUDES the base page root \`pages\` (the carrier of the entity graph), so treat entities as whole-release: include ALL entity changes — omitting one would silently make the brief incomplete.
 </brief_scope>
 
 <current_brief path="0-1-0-to-0-2-0.md" from_release="0.1.0" to_release="(unreleased)" implemented="false" roots="pages, adr">
@@ -518,7 +518,7 @@ You do not know its conventions yet, and this block does not summarise them.
 This brief is SCOPED to specific page roots: pages, adr. It does NOT cover the whole release.
 - PAGES: pass \`roots: ["pages","adr"]\` to EVERY release_diff call (the summary probe AND every heavy slice), and hand the same \`roots\` to each diff-explore subagent slice. Pages outside these roots MUST NOT enter the brief. Omitting \`roots\` defaults release_diff to ALL releasable roots and silently breaks this scope.
 - ENTITIES are root-agnostic (release_diff never filters them by root): include entity changes that are referenced in the scoped pages' prose or are thematically tied to this scope — a relevance judgement, not a structural filter.
-- This scope INCLUDES the built-in \`pages\` root (the carrier of the entity graph), so treat entities as whole-release: include ALL entity changes — omitting one would silently make the brief incomplete.
+- This scope INCLUDES the base page root \`pages\` (the carrier of the entity graph), so treat entities as whole-release: include ALL entity changes — omitting one would silently make the brief incomplete.
 </brief_scope>
 
 <current_brief path="0-1-0-to-0-2-0.md" from_release="0.1.0" to_release="(unreleased)" implemented="false" roots="pages, adr">
@@ -627,7 +627,7 @@ You do not know its conventions yet, and this block does not summarise them.
 This brief is SCOPED to specific page roots: pages, adr. It does NOT cover the whole release.
 - PAGES: pass \`roots: ["pages","adr"]\` to EVERY release_diff call (the summary probe AND every heavy slice), and hand the same \`roots\` to each diff-explore subagent slice. Pages outside these roots MUST NOT enter the brief. Omitting \`roots\` defaults release_diff to ALL releasable roots and silently breaks this scope.
 - ENTITIES are root-agnostic (release_diff never filters them by root): include entity changes that are referenced in the scoped pages' prose or are thematically tied to this scope — a relevance judgement, not a structural filter.
-- This scope INCLUDES the built-in \`pages\` root (the carrier of the entity graph), so treat entities as whole-release: include ALL entity changes — omitting one would silently make the brief incomplete.
+- This scope INCLUDES the base page root \`pages\` (the carrier of the entity graph), so treat entities as whole-release: include ALL entity changes — omitting one would silently make the brief incomplete.
 </brief_scope>
 
 <current_brief path="0-1-0-to-0-2-0.md" from_release="0.1.0" to_release="(unreleased)" implemented="false" roots="pages, adr">
@@ -765,7 +765,7 @@ You do not know its conventions yet, and this block does not summarise them.
 This brief is SCOPED to specific page roots: pages, adr. It does NOT cover the whole release.
 - PAGES: pass \`roots: ["pages","adr"]\` to EVERY release_diff call (the summary probe AND every heavy slice), and hand the same \`roots\` to each diff-explore subagent slice. Pages outside these roots MUST NOT enter the brief. Omitting \`roots\` defaults release_diff to ALL releasable roots and silently breaks this scope.
 - ENTITIES are root-agnostic (release_diff never filters them by root): include entity changes that are referenced in the scoped pages' prose or are thematically tied to this scope — a relevance judgement, not a structural filter.
-- This scope INCLUDES the built-in \`pages\` root (the carrier of the entity graph), so treat entities as whole-release: include ALL entity changes — omitting one would silently make the brief incomplete.
+- This scope INCLUDES the base page root \`pages\` (the carrier of the entity graph), so treat entities as whole-release: include ALL entity changes — omitting one would silently make the brief incomplete.
 </brief_scope>
 
 <current_brief path="0-1-0-to-0-2-0.md" from_release="0.1.0" to_release="(unreleased)" implemented="false" roots="pages, adr">
@@ -959,7 +959,7 @@ You do not know its conventions yet, and this block does not summarise them.
 This brief is SCOPED to specific page roots: pages, adr. It does NOT cover the whole release.
 - PAGES: pass \`roots: ["pages","adr"]\` to EVERY release_diff call (the summary probe AND every heavy slice), and hand the same \`roots\` to each diff-explore subagent slice. Pages outside these roots MUST NOT enter the brief. Omitting \`roots\` defaults release_diff to ALL releasable roots and silently breaks this scope.
 - ENTITIES are root-agnostic (release_diff never filters them by root): include entity changes that are referenced in the scoped pages' prose or are thematically tied to this scope — a relevance judgement, not a structural filter.
-- This scope INCLUDES the built-in \`pages\` root (the carrier of the entity graph), so treat entities as whole-release: include ALL entity changes — omitting one would silently make the brief incomplete.
+- This scope INCLUDES the base page root \`pages\` (the carrier of the entity graph), so treat entities as whole-release: include ALL entity changes — omitting one would silently make the brief incomplete.
 </brief_scope>
 
 <current_brief path="0-1-0-to-0-2-0.md" from_release="0.1.0" to_release="(unreleased)" implemented="false" roots="pages, adr">
@@ -1058,7 +1058,7 @@ Always communicate with the user in Deutsch, regardless of the language they wri
 This brief is SCOPED to specific page roots: pages, adr. It does NOT cover the whole release.
 - PAGES: pass \`roots: ["pages","adr"]\` to EVERY release_diff call (the summary probe AND every heavy slice), and hand the same \`roots\` to each diff-explore subagent slice. Pages outside these roots MUST NOT enter the brief. Omitting \`roots\` defaults release_diff to ALL releasable roots and silently breaks this scope.
 - ENTITIES are root-agnostic (release_diff never filters them by root): include entity changes that are referenced in the scoped pages' prose or are thematically tied to this scope — a relevance judgement, not a structural filter.
-- This scope INCLUDES the built-in \`pages\` root (the carrier of the entity graph), so treat entities as whole-release: include ALL entity changes — omitting one would silently make the brief incomplete.
+- This scope INCLUDES the base page root \`pages\` (the carrier of the entity graph), so treat entities as whole-release: include ALL entity changes — omitting one would silently make the brief incomplete.
 </brief_scope>
 
 <current_brief path="0-1-0-to-0-2-0.md" from_release="0.1.0" to_release="(unreleased)" implemented="false" roots="pages, adr">
@@ -1269,7 +1269,7 @@ You do not know its conventions yet, and this block does not summarise them.
 This brief is SCOPED to specific page roots: adr. It does NOT cover the whole release.
 - PAGES: pass \`roots: ["adr"]\` to EVERY release_diff call (the summary probe AND every heavy slice), and hand the same \`roots\` to each diff-explore subagent slice. Pages outside these roots MUST NOT enter the brief. Omitting \`roots\` defaults release_diff to ALL releasable roots and silently breaks this scope.
 - ENTITIES are root-agnostic (release_diff never filters them by root): include entity changes that are referenced in the scoped pages' prose or are thematically tied to this scope — a relevance judgement, not a structural filter.
-- This scope does NOT include the built-in \`pages\` root, so do not sweep in unrelated entity changes; include only entities relevant to the scoped pages above.
+- This scope does NOT include the base page root \`pages\`, so do not sweep in unrelated entity changes; include only entities relevant to the scoped pages above.
 </brief_scope>
 
 <current_brief path="0-1-0-to-0-2-0.md" from_release="0.1.0" to_release="(unreleased)" implemented="false" roots="adr">

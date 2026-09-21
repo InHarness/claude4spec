@@ -67,3 +67,59 @@ export function usePatchConfig() {
     },
   });
 }
+
+/**
+ * 0.2.101 — the BASE page root: the single entry carrying `builtin: true`.
+ *
+ * `undefined` until the config query resolves (and on the project-less
+ * `/welcome` route). Every consumer that used to fall back to the literal
+ * `'pages'` asks this instead: that value is now just the default identifier a
+ * new project starts with, and a project may have renamed it away.
+ */
+export function useBaseRoot(): Root | undefined {
+  return useRoots().find((r) => r.builtin);
+}
+
+/** The base root's identifier, or `null` while the config is still loading. */
+export function useBaseRootId(): string | null {
+  return useBaseRoot()?.id ?? null;
+}
+
+/**
+ * 0.2.101 — `POST /api/config/roots/:rootId/rename`.
+ *
+ * On success every cached query is dropped, deliberately and bluntly: entries
+ * under the old `rootId` (`['page', oldId, path]`, `['pages', oldId]`, …) are
+ * ABANDONED, not rewritten. The space is rebuilt under its new key server-side,
+ * so refetching is the honest move — a client-side key migration would have to
+ * guess which cached bodies survived the rebuild.
+ *
+ * The same reasoning covers the persisted UI state keyed by root id
+ * (`c4s:sidebar:pages-open`, `c4s:m02:last-page`): the entry under the old id
+ * simply stops being read, and the space starts collapsed under the new one.
+ * Expansion state is a preference, so a rename invalidates it rather than
+ * migrating it.
+ */
+export function useRenameRoot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { rootId: string; newId: string; expectedConfigHash: string }) =>
+      configApi.renameRoot(input.rootId, {
+        newId: input.newId,
+        expectedConfigHash: input.expectedConfigHash,
+      }),
+    onSuccess: (_result, input) => {
+      // Entries keyed by the OLD id are never refetched: that id now answers
+      // like any unknown root, so refetching them (the sidebar's page tree,
+      // still mounted until the new config re-renders it) would only produce
+      // 404s. They go inactive once the screens re-key onto the new id and are
+      // garbage-collected from there. Everything else refetches.
+      //
+      // Not awaited, on purpose: `mutateAsync` resolves only after onSuccess
+      // does, and waiting on every active query's refetch would hold the
+      // caller's post-rename navigation hostage to the slowest one.
+      const underOldId = (q: { queryKey: readonly unknown[] }) => q.queryKey.includes(input.rootId);
+      void qc.invalidateQueries({ predicate: (q) => !underOldId(q) });
+    },
+  });
+}

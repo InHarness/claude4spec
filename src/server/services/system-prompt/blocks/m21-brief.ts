@@ -1,4 +1,5 @@
 import type { Brief } from '../../../../shared/entities.js';
+import type { Root } from '../../../../shared/types.js';
 import { attrs } from '../glue.js';
 import type { PromptBlock } from '../types.js';
 
@@ -32,7 +33,7 @@ function scopeRootsOf(brief: Brief): string[] {
   return Array.isArray(fm.roots) ? fm.roots.filter((r) => typeof r === 'string') : [];
 }
 
-function buildBriefScope(brief: Brief): string | null {
+function buildBriefScope(brief: Brief, roots: readonly Root[]): string | null {
   const scopeRoots = scopeRootsOf(brief);
   // 0.1.96 (L13, M21 §121-123): when the brief is scoped to specific page roots,
   // make that scope an explicit, actionable directive — the raw `roots:` frontmatter
@@ -41,15 +42,19 @@ function buildBriefScope(brief: Brief): string | null {
   if (scopeRoots.length === 0) return null;
   const list = scopeRoots.join(', ');
   const arr = JSON.stringify(scopeRoots);
-  const includesPages = scopeRoots.includes('pages');
+  // 0.2.101: "does the scope contain the BASE root" is a question about the
+  // `builtin` flag, not about the literal `pages` — a project whose base root
+  // was renamed to `docs` must still get the whole-release entity directive.
+  const baseRootId = roots.find((r) => r.builtin)?.id;
+  const includesPages = baseRootId !== undefined && scopeRoots.includes(baseRootId);
   return [
     `<brief_scope ${attrs({ roots: list })}>`,
     `This brief is SCOPED to specific page roots: ${list}. It does NOT cover the whole release.`,
     `- PAGES: pass \`roots: ${arr}\` to EVERY release_diff call (the summary probe AND every heavy slice), and hand the same \`roots\` to each diff-explore subagent slice. Pages outside these roots MUST NOT enter the brief. Omitting \`roots\` defaults release_diff to ALL releasable roots and silently breaks this scope.`,
     `- ENTITIES are root-agnostic (release_diff never filters them by root): include entity changes that are referenced in the scoped pages' prose or are thematically tied to this scope — a relevance judgement, not a structural filter.`,
     includesPages
-      ? `- This scope INCLUDES the built-in \`pages\` root (the carrier of the entity graph), so treat entities as whole-release: include ALL entity changes — omitting one would silently make the brief incomplete.`
-      : `- This scope does NOT include the built-in \`pages\` root, so do not sweep in unrelated entity changes; include only entities relevant to the scoped pages above.`,
+      ? `- This scope INCLUDES the base page root \`${baseRootId}\` (the carrier of the entity graph), so treat entities as whole-release: include ALL entity changes — omitting one would silently make the brief incomplete.`
+      : `- This scope does NOT include the base page root${baseRootId ? ` \`${baseRootId}\`` : ''}, so do not sweep in unrelated entity changes; include only entities relevant to the scoped pages above.`,
     `</brief_scope>`,
   ].join('\n');
 }
@@ -80,6 +85,6 @@ function buildCurrentBrief(brief: Brief): string {
 
 export const M21_PROMPT_BLOCKS: readonly PromptBlock[] = [
   { name: 'brief_tools_usage', render: () => BRIEF_TOOLS_USAGE },
-  { name: 'brief_scope', render: (c) => (c.brief ? buildBriefScope(c.brief) : null) },
+  { name: 'brief_scope', render: (c) => (c.brief ? buildBriefScope(c.brief, c.roots) : null) },
   { name: 'current_brief', render: (c) => (c.brief ? buildCurrentBrief(c.brief) : null) },
 ];

@@ -32,7 +32,7 @@ import { OnboardingPage } from './components/onboarding/OnboardingPage.js';
 import { WelcomePage } from './components/onboarding/WelcomePage.js';
 import { SettingsPage } from './components/settings/SettingsPage.js';
 import { usePages } from './hooks/usePages.js';
-import { useConfig, useRoots } from './hooks/useConfig.js';
+import { useBaseRootId, useConfig, useRoots } from './hooks/useConfig.js';
 import { EditorBridgeProvider } from './tiptap/EditorContext.js';
 import { usePageViewStore } from './state/pageView.js';
 import { useLastPage } from './hooks/useLastPage.js';
@@ -72,7 +72,7 @@ export function navigateToSection(
   navigate: NavigateFn,
   pagePath: string,
   anchor: string,
-  rootId = 'pages',
+  rootId: string,
 ): void {
   navigate({
     to: '/space/$rootId/$',
@@ -368,8 +368,11 @@ function IndexRoute() {
   const roots = useRoots();
   const { isLoading: rootsLoading } = useConfig();
   const [lastPage] = useLastPage();
-  const { data: pagesTree = [] } = usePages('pages');
-  const { data: lastPageTree = [], isLoading: lastPageTreeLoading } = usePages(lastPage?.rootId ?? 'pages');
+  // 0.2.101: the landing tree is the BASE root's, found by its flag — `'pages'`
+  // is only the default identifier of a project that never renamed it.
+  const baseRootId = roots.find((r) => r.builtin)?.id ?? null;
+  const { data: pagesTree = [] } = usePages(baseRootId);
+  const { data: lastPageTree = [], isLoading: lastPageTreeLoading } = usePages(lastPage?.rootId ?? baseRootId);
   // A remembered page still validating (roots/lastPageTree not loaded yet) must not be treated
   // as invalid just because these queries default to `[]`/`false` while in flight — that race
   // would send a live remembered page to the fallback chain and never come back (Navigate unmounts
@@ -392,10 +395,19 @@ function IndexRoute() {
   );
 }
 
-// 0.1.96 multiroot: legacy `/pages/$` → `/space/pages/$` (built-in root).
+/**
+ * 0.1.96 multiroot: legacy `/pages/$` → `/space/<base root>/$`.
+ *
+ * 0.2.101: the target is the root carrying `builtin: true`, so the legacy link
+ * keeps working in a project whose base root is called something else. While the
+ * config is still loading there is no answer yet — render nothing rather than
+ * redirect to a guess.
+ */
 function LegacyPageRedirect() {
   const { _splat } = useParams({ from: '/pages/$' });
-  return <Navigate to="/space/$rootId/$" params={{ rootId: 'pages', _splat: _splat ?? '' }} replace />;
+  const baseRootId = useBaseRootId();
+  if (!baseRootId) return null;
+  return <Navigate to="/space/$rootId/$" params={{ rootId: baseRootId, _splat: _splat ?? '' }} replace />;
 }
 
 function PageRoute() {
@@ -549,6 +561,10 @@ function SettingsRoute() {
 
 function PlanRoute() {
   const { planPath } = useParams({ from: '/plans/$planPath' });
+  // A plan's `<section_ref>` resolves into the BASE page root (0.2.101: by flag,
+  // not by the literal `pages`). Null while the config loads — the bridge below
+  // simply does not navigate until it is known.
+  const baseRootId = useBaseRootId();
   // Mirrors BriefDetailRoute's defensive decode (encodeArtifactPath encodes
   // per-segment; plan paths are flat/single-segment, so one decode suffices).
   const decoded = decodeURIComponent(planPath);
@@ -556,9 +572,11 @@ function PlanRoute() {
   const bridge = useMemo(
     () => ({
       openEntity: (type: EntityType, slug: string) => navigateToEntity(navigate, type, slug),
-      openSection: (pagePath: string, anchor: string) => navigateToSection(navigate, pagePath, anchor),
+      openSection: (pagePath: string, anchor: string) => {
+        if (baseRootId) navigateToSection(navigate, pagePath, anchor, baseRootId);
+      },
     }),
-    [navigate]
+    [navigate, baseRootId]
   );
   return (
     <main

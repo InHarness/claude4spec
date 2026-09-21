@@ -5,7 +5,8 @@ import { usePatch, useUpdatePatchContent } from '../hooks/usePatches.js';
 import '../tiptap/registrations.js';
 import { EditorFactory } from '../tiptap/EditorFactory.js';
 import { invokeSlash } from '../tiptap/slashInvoke.js';
-import { assertSaveMode, getContextSpec, ARTEFACT_ROOT_EDITOR_PROPS } from '../tiptap/registry.js';
+import { assertSaveMode, getContextSpec, artefactRootEditorProps } from '../tiptap/registry.js';
+import { useBaseRootId } from '../hooks/useConfig.js';
 import {
   useEditorCarry,
   useEditorCarryApply,
@@ -36,6 +37,10 @@ export function PatchEditor({ patchPath }: Props) {
   const [conflict, setConflict] = useState<boolean>(false);
 
   const schemaVersion = useEditorSchemaVersion();
+  // 0.2.101: `@path.md` here reaches the BASE page root, found by its flag —
+  // the identifier is no longer guaranteed to be `pages`.
+  const baseRootId = useBaseRootId();
+  const rootProps = useMemo(() => artefactRootEditorProps(baseRootId), [baseRootId]);
   const extensions = useMemo(
     () =>
       // A patch has no context of its own: `page` with the artefact property
@@ -50,11 +55,11 @@ export function PatchEditor({ patchPath }: Props) {
           getAnnotations: () => [],
         },
         {},
-        ARTEFACT_ROOT_EDITOR_PROPS,
+        rootProps,
       ),
-    [qc, patchPath, schemaVersion],
+    [qc, patchPath, schemaVersion, rootProps],
   );
-  const save = assertSaveMode(getContextSpec('page', ARTEFACT_ROOT_EDITOR_PROPS), 'debounce');
+  const save = assertSaveMode(getContextSpec('page', rootProps), 'debounce');
   const carry = useEditorCarry(extensions);
 
   const editor = useEditor(

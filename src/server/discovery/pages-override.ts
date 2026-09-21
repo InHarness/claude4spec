@@ -2,7 +2,6 @@ import path from 'node:path';
 import type { Root } from '../../shared/types.js';
 import { invalidArgument } from './errors.js';
 
-const BUILTIN_PAGES_ROOT_ID = 'pages';
 
 /**
  * The id an ad-hoc override root is given.
@@ -142,7 +141,10 @@ export function applyPagesOverride(
   const owning = roots.find((r) => path.resolve(projectAbs, r.dir) === overrideAbs);
   if (owning) return [owning];
 
-  const builtin = roots.find((r) => r.id === BUILTIN_PAGES_ROOT_ID) ?? roots[0];
+  // 0.2.101: the base root is the `builtin: true` entry, whatever its
+  // identifier — `--pages` keeps its flag name even for a base root called
+  // `docs`, and a USER root that happens to be named `pages` is never its target.
+  const builtin = roots.find((r) => r.builtin) ?? roots[0];
   if (!builtin) return [];
   // `rel` rather than `override`: one normalized spelling reaches `PagesService`,
   // so `./drafts` and `drafts` produce the same `pagePath` on every hit.

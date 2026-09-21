@@ -21,7 +21,7 @@ describe('PagesService — .mdx discovery (M02 e16qvg1n)', () => {
     await fs.writeFile(path.join(root, 'b.mdx'), '# B\n<Callout>hi</Callout>\n');
     await fs.writeFile(path.join(root, 'c.html'), '<p>c</p>\n');
     await fs.writeFile(path.join(root, 'notes.txt'), 'ignored\n');
-    pages = new PagesService(cwd);
+    pages = new PagesService(cwd, 'pages', 'pages');
   });
 
   afterEach(async () => {
