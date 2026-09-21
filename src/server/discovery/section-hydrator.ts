@@ -28,8 +28,6 @@ import type { SectionEdges } from './types.js';
 
 export interface HydratedSection extends RawSection {
   body: string;
-  /** 0-based exclusive end line of `body` — the own-body end, not the indexed `lineEnd`. */
-  bodyEnd: number;
   edges: SectionEdges;
 }
 
@@ -39,8 +37,7 @@ export interface HydratedSection extends RawSection {
  * Every read-side consumer of a section's own body goes through this: a
  * subtree expansion hands `get_sections` up to fifty sections of ONE file, and
  * `get_page_outline` measures every heading of a page. Parsing the headings
- * per section made each of those quadratic in the page's heading count, and
- * `line_end` on the item cost a second parse on top.
+ * per section made each of those quadratic in the page's heading count.
  *
  * 0.2.84 — a body ends at the FIRST HEADING OF A CHILD, not at the next heading
  * of the same or shallower level. The indexed `line_end` still runs to the
@@ -86,13 +83,12 @@ export class PageLines {
 }
 
 /**
- * Hydration over a page the caller already holds. `bodyEnd` is the end the
- * body was sliced to, so an item's `line_end` is the number the body was cut
- * at rather than a second computation of it.
+ * Hydration over a page the caller already holds. Since 0.2.102 the item
+ * carries no line coordinates, so only the body and its edges are derived here.
  */
 export function hydrateSectionFrom(db: Database, page: PageLines, section: RawSection): HydratedSection {
   const body = page.body(section);
-  return { ...section, body, bodyEnd: page.ownEnd(section), edges: parseEdges(db, section, body) };
+  return { ...section, body, edges: parseEdges(db, section, body) };
 }
 
 export function parseEdges(db: Database, section: RawSection, body: string): SectionEdges {

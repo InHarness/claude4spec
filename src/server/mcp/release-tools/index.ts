@@ -23,11 +23,12 @@
 
 import { createMcpServer, mcpTool, type CapturedMcpServer } from '../../plugin-runtime/index.js';
 import { z } from 'zod';
-import type { ReleaseService } from '../../services/release.js';
+import { splitPageKey, type ReleaseService } from '../../services/release.js';
 import type { GitService } from '../../services/git.js';
 import type { WsEmitter } from '../../ws/project-emitter.js';
 import { DomainError } from '../../services/tags.js';
 import { CURRENT_RELEASE_NAME } from '../../../shared/entities.js';
+import type { Root } from '../../../shared/types.js';
 import { DEFAULT_PAGE_LIMIT, projectReleaseDiff, projectSpecSnapshot } from './projection.js';
 import type {
   EntityTypeFilter,
@@ -40,6 +41,12 @@ export interface ReleaseToolsDeps {
   releaseService: ReleaseService;
   gitService: GitService;
   ws: WsEmitter;
+  /**
+   * 0.2.102: the project's page roots (all of them, not just the releasable
+   * ones) — `release_diff` needs both to tell an UNKNOWN root id from a
+   * NON-RELEASABLE one when it refuses a `roots`/`paths` filter.
+   */
+  roots: () => ReadonlyArray<Pick<Root, 'id' | 'releasable'>>;
 }
 
 const INCLUDE_VALUES = ['pages', 'entities'] as const;
@@ -61,8 +68,14 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
   const fail = (err: unknown) => {
     const code = err instanceof DomainError ? err.code : 'INTERNAL';
     const message = err instanceof Error ? err.message : String(err);
+    const hint = err instanceof DomainError ? err.hint : undefined;
     return {
-      content: [{ type: 'text' as const, text: JSON.stringify({ error: message, code }) }],
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify({ error: message, code, ...(hint ? { hint } : {}) }),
+        },
+      ],
       isError: true,
     };
   };
@@ -162,7 +175,7 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
 
   const releaseDiff = mcpTool(
     'release_diff',
-    "Compute a SELF-CONTAINED structured diff between two releases. Heavy mode (default): each entity carries full `before`/`after` snapshots (per plugin's serializer); each modified section carries full `before`/`after` raw markdown. `entities[]`/`pages[]` are paginated independently by `limit`/`offset` (default 5), and `total: { entities?, pages? }` reports the full count after `include`/`entityTypes` filters, before the window. Light mode (`summaryOnly: true`): returns a delta MAP — `total` + identifiers `{ type, slug, name, op }` per entity and `{ path, op }` per page (incl. `op:'delete'`), WITHOUT `before`/`after`/`content`; the map is FULL and ignores `limit`. It is the guaranteed floor of degradation: for a map too large to fit in one response it PAGES from `offset` (never dropping a row) and says so via `truncationHint`. RESPONSE BUDGET: an item that does not fit is NEVER silently omitted — it comes back with its identity and `truncated: true`, an entity losing `before`/`after` WHOLE and a section keeping `content` cut as TEXT, while the envelope's `truncationHint` says how to retry. Absence from `entities[]`/`pages[]` therefore means one thing only: that thing did not change. Do NOT assume `op:'update'` implies `before`/`after` — check `truncated` first. Intended use: probe with `summaryOnly: true` to learn what changed, then fan out the heavy slices (`entityTypes` and/or `limit`/`offset`) to subagents. Pass `from: null` for the initial brief (synthetic empty `from`; all entries become `op:'create'` with `before` omitted). `from === to` returns an empty diff. There is NO `line_diff`. Pass `toIdOrName: \"current\"` to diff a release against the live, not-yet-released state (HEAD): that `after` side is not frozen, so such a diff does not reproduce later. `current` is a reserved release name and never collides with a real one.",
+    "Compute a SELF-CONTAINED structured diff between two releases. Heavy mode (default): each entity carries full `before`/`after` snapshots (per plugin's serializer); each modified section carries full `before`/`after` raw markdown. `entities[]`/`pages[]` are paginated independently by `limit`/`offset` (default 5), and `total: { entities?, pages? }` reports the full count after `include`/`entityTypes` filters, before the window. Light mode (`summaryOnly: true`): returns a delta MAP — `total` + identifiers `{ type, slug, name, op }` per entity and `{ rootId, path, op }` per page (incl. `op:'delete'`), WITHOUT `before`/`after`/`content`; the map is FULL and ignores `limit`. It is the guaranteed floor of degradation: for a map too large to fit in one response it PAGES from `offset` (never dropping a row) and says so via `truncationHint`. RESPONSE BUDGET: an item that does not fit is NEVER silently omitted — it comes back with its identity and `truncated: true`, an entity losing `before`/`after` WHOLE and a section keeping `content` cut as TEXT, while the envelope's `truncationHint` says how to retry. Absence from `entities[]`/`pages[]` therefore means one thing only: that thing did not change. Do NOT assume `op:'update'` implies `before`/`after` — check `truncated` first. A page entry carries `rootId` next to `path` in BOTH modes: a page's identity is the pair (rootId, path), `path` being relative to its root. Intended use: probe with `summaryOnly: true` to learn what changed, then fan out the heavy slices to subagents — three slicing axes: `entityTypes`, the `limit`/`offset` window, and `paths` (single pages by FULL key `<rootId>/<path>`). `paths` + `summaryOnly: true` is an intended pattern, not an edge case: the delta map for just those pages. Pass `from: null` for the initial brief (synthetic empty `from`; all entries become `op:'create'` with `before` omitted). `from === to` returns an empty diff. There is NO `line_diff`. Pass `toIdOrName: \"current\"` to diff a release against the live, not-yet-released state (HEAD): that `after` side is not frozen, so such a diff does not reproduce later. `current` is a reserved release name and never collides with a real one.",
     {
       fromIdOrName: z
         .union([z.string(), z.number(), z.null()])
@@ -190,13 +203,19 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
         .boolean()
         .optional()
         .describe(
-          'Default false. true = light delta-map: only `total` + identifiers `{ type, slug, name, op }` / `{ path, op }` (incl. deletes), no before/after/content. Full lists — ignores `limit`. `offset` IS honoured, as the resume cursor for a map too big for one response (`truncationHint` names the next offset).',
+          'Default false. true = light delta-map: only `total` + identifiers `{ type, slug, name, op }` / `{ rootId, path, op }` (incl. deletes), no before/after/content. Full lists — ignores `limit`. `offset` IS honoured, as the resume cursor for a map too big for one response (`truncationHint` names the next offset).',
         ),
       roots: z
         .array(z.string())
         .optional()
         .describe(
-          'Narrow the PAGES dimension to these page root ids (file_version.rootId). Default: all releasable roots. Does not affect the entities dimension.',
+          'Narrow the PAGES dimension to these page root ids (file_version.rootId). Default: all releasable roots. Does not affect the entities dimension. Empty array, an unknown root id, or a non-releasable root → 400 INVALID_ROOTS_FILTER (never silently skipped; the refusal lists the releasable roots). Mutually exclusive with `paths`.',
+        ),
+      paths: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Narrow the PAGES dimension to single pages. Each element is a page's FULL key `<rootId>/<relPath>` and addresses exactly one page file — a directory prefix is not accepted. Mutually exclusive with `roots`, and rejected when `include` does not carry 'pages'. An empty array, an element without a root prefix, an unknown root id, or a non-releasable root is rejected. Does not affect the entities dimension. A well-formed key unchanged (or absent) on both sides is NOT an error — it yields no page entry and `total.pages: 0`. Errors: 400 INVALID_PATHS_FILTER, 400 CONFLICTING_FILTERS.",
         ),
       limit: z
         .number()
@@ -213,17 +232,20 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
     },
     async (args) => {
       try {
-        const include = (args.include as IncludeFilter[] | undefined) ?? DEFAULT_INCLUDE;
-        const entityTypes = args.entityTypes as EntityTypeFilter[] | undefined;
-        validateFilters(args.include as IncludeFilter[] | undefined, entityTypes);
         // Validate pagination BEFORE the summaryOnly branch — negative limit/offset
         // is a 400 even though `summaryOnly: true` later ignores the window.
+        // The filters come after it (0.2.102 order).
         const { limit, offset } = resolvePagination(args.limit, args.offset);
         const summaryOnly = args.summaryOnly === true;
 
+        const include = (args.include as IncludeFilter[] | undefined) ?? DEFAULT_INCLUDE;
+        const entityTypes = args.entityTypes as EntityTypeFilter[] | undefined;
+        const roots = args.roots as string[] | undefined;
+        const paths = args.paths as string[] | undefined;
+        validateDiffFilters(args.include as IncludeFilter[] | undefined, entityTypes, roots, paths, deps.roots());
+
         const fromIdOrName = args.fromIdOrName as number | string | null;
         const toIdOrName = args.toIdOrName as number | string;
-        const roots = args.roots as string[] | undefined;
 
         // The reserved literal is settled BEFORE anything resolves a name or an
         // id. The order is the whole guarantee: resolve first and a real release
@@ -245,8 +267,8 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
         // `RawDelta` as `getReleaseDiff`, so the envelope the caller reads does
         // not fork — only `to.id` (null) says which branch produced it.
         const raw = isCurrent
-          ? await deps.releaseService.getUnreleasedDiff(fromIdOrName, { roots })
-          : await deps.releaseService.getReleaseDiff(fromIdOrName, toIdOrName, { roots });
+          ? await deps.releaseService.getUnreleasedDiff(fromIdOrName, { roots, paths })
+          : await deps.releaseService.getReleaseDiff(fromIdOrName, toIdOrName, { roots, paths });
         const toSnap = isCurrent
           ? deps.releaseService.getCurrentSnapshot()
           : deps.releaseService.getReleaseSnapshot(toIdOrName);
@@ -338,5 +360,69 @@ function validateFilters(
         "entityTypes filter requires 'entities' in include",
       );
     }
+  }
+}
+
+/**
+ * 0.2.102: `release_diff`'s filter validation, in the documented order — empty
+ * `include`/`entityTypes`/`roots`/`paths` first, then the conflicts
+ * (`entityTypes` without 'entities', `paths` without 'pages', `paths` together
+ * with `roots`), then an unknown or non-releasable root. `roots` and `paths`
+ * REFUSE such a root instead of silently skipping it, and the refusal names the
+ * releasable roots. `release_show` keeps the narrower `validateFilters`.
+ */
+function validateDiffFilters(
+  include: IncludeFilter[] | undefined,
+  entityTypes: EntityTypeFilter[] | undefined,
+  roots: string[] | undefined,
+  paths: string[] | undefined,
+  allRoots: ReadonlyArray<Pick<Root, 'id' | 'releasable'>>,
+): void {
+  const releasable = allRoots.filter((r) => r.releasable).map((r) => r.id);
+  const available = `releasable roots: [${releasable.join(', ')}]`;
+  const refuse = (code: string, message: string): never => {
+    throw new DomainError(code, `${message} (${available})`, available);
+  };
+
+  if (include !== undefined && include.length === 0) {
+    throw new DomainError('INVALID_INCLUDE_FILTER', 'include must not be an empty array');
+  }
+  if (entityTypes !== undefined && entityTypes.length === 0) {
+    throw new DomainError('INVALID_ENTITY_TYPES_FILTER', 'entityTypes must not be an empty array');
+  }
+  if (roots !== undefined && roots.length === 0) refuse('INVALID_ROOTS_FILTER', 'roots must not be an empty array');
+  if (paths !== undefined && paths.length === 0) refuse('INVALID_PATHS_FILTER', 'paths must not be an empty array');
+
+  const effectiveInclude = include ?? DEFAULT_INCLUDE;
+  if (entityTypes !== undefined && !effectiveInclude.includes('entities')) {
+    throw new DomainError('CONFLICTING_FILTERS', "entityTypes filter requires 'entities' in include");
+  }
+  if (paths !== undefined && !effectiveInclude.includes('pages')) {
+    throw new DomainError('CONFLICTING_FILTERS', "paths filter requires 'pages' in include");
+  }
+  if (paths !== undefined && roots !== undefined) {
+    throw new DomainError('CONFLICTING_FILTERS', 'paths and roots are mutually exclusive — pass one of them');
+  }
+
+  const rootProblem = (id: string): string | null => {
+    const root = allRoots.find((r) => r.id === id);
+    if (!root) return `unknown root '${id}'`;
+    if (!root.releasable) return `root '${id}' is not releasable`;
+    return null;
+  };
+  for (const id of roots ?? []) {
+    const problem = rootProblem(id);
+    if (problem) refuse('INVALID_ROOTS_FILTER', `roots: ${problem}`);
+  }
+  for (const key of paths ?? []) {
+    const parsed = splitPageKey(key);
+    if (!parsed) {
+      refuse(
+        'INVALID_PATHS_FILTER',
+        `paths: '${key}' has no root prefix — expected a page's full key <rootId>/<relPath>`,
+      );
+    }
+    const problem = rootProblem(parsed!.rootId);
+    if (problem) refuse('INVALID_PATHS_FILTER', `paths: '${key}': ${problem}`);
   }
 }

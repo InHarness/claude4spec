@@ -177,6 +177,42 @@ interface EntityVersionRow {
   op: string | null;
 }
 
+/**
+ * 0.2.102: the two page filters of `getReleaseDiff`/`getUnreleasedDiff`. Both
+ * narrow the PAGES dimension only, before the source (git or SQLite) is chosen;
+ * entities are never affected. `roots` — whole releasable roots; `paths` — FULL
+ * page keys `<rootId>/<relPath>`, each addressing exactly one page file. The
+ * caller (`release_diff`) validates both and never passes them together; the
+ * engine only drops what is not releasable.
+ */
+export interface PageScopeOpts {
+  roots?: string[];
+  paths?: string[];
+}
+
+/**
+ * Split a full page key `<rootId>/<relPath>` at its first `/`. `null` when there
+ * is no root prefix (no `/`, or an empty half).
+ */
+export function splitPageKey(key: string): { rootId: string; relPath: string } | null {
+  const i = key.indexOf('/');
+  if (i <= 0 || i === key.length - 1) return null;
+  return { rootId: key.slice(0, i), relPath: key.slice(i + 1) };
+}
+
+/** `(rootId, path)` as one map key — the page identity in history. */
+function pageIdentityKey(rootId: string, path: string): string {
+  return `${rootId}\u0000${path}`;
+}
+
+/** A changed page file from a git-anchored diff, attributed to its root. */
+interface PageCandidate {
+  rootId: string;
+  relPath: string;
+  absPath: string;
+  status: 'A' | 'M' | 'D' | 'R';
+}
+
 interface FileVersionRow {
   id: number;
   path: string;
@@ -761,7 +797,7 @@ export class ReleaseService {
   private async tryGitAnchoredDiff(
     fromRow: ReleaseRow,
     toRow: ReleaseRow,
-    opts?: { roots?: string[] },
+    opts?: PageScopeOpts,
   ): Promise<RawDelta | null> {
     if (!this.gitService || !this.releaseStore) return null;
     const gitService = this.gitService;
@@ -785,7 +821,7 @@ export class ReleaseService {
 
     const scope = this.resolveGitDiffScope(config, opts);
     const gitDiff = await gitService.diffRefs(refA, refB, [
-      ...scope.scopedRootDirs,
+      ...scope.pagePathspecs,
       scope.entitiesAbs,
       scope.releasesAbs,
     ]);
@@ -833,7 +869,7 @@ export class ReleaseService {
    */
   private async tryGitAnchoredUnreleasedDiff(
     fromRow: ReleaseRow,
-    opts?: { roots?: string[] },
+    opts?: PageScopeOpts,
   ): Promise<RawDelta | null> {
     if (!this.gitService || !this.releaseStore) return null;
     const gitService = this.gitService;
@@ -851,7 +887,7 @@ export class ReleaseService {
     // over a thousand concurrent `git` processes on one `GET /diff/current`.
     const gitStatus = await gitService.detect();
     const gitDiff = await gitService.diffRefToWorkingTree(refA, [
-      ...scope.scopedRootDirs,
+      ...scope.pagePathspecs,
       scope.entitiesAbs,
       scope.releasesAbs,
     ]);
@@ -892,6 +928,14 @@ export class ReleaseService {
    * entities/releases/briefs/patches dirs plus the (optionally
    * `opts.roots`-narrowed) releasable root dirs, keyed by rootId.
    *
+   * 0.2.102: the page filter becomes a list of `pathspecs` for `diffRefs` —
+   * a root in `opts.roots` → its `dir`, an element of `opts.paths` →
+   * `<dir>/<relPath>`; no filter → every releasable root. `dir` comes from the
+   * CURRENT configuration, not the one of the `from` release — a root whose
+   * `dir` moved between releases falls out of scope here while the SQLite track
+   * (rootId pinned in the history row) keeps it. `pageKeys` narrows
+   * classification to exactly the requested pages.
+   *
    * 0.1.118: `diffRefs`/`diffRefToWorkingTree` resolve their output paths
    * from `git rev-parse --show-toplevel`, which is ALWAYS symlink-resolved —
    * on macOS `cwd` itself is typically reached through `/var/folders` →
@@ -904,7 +948,7 @@ export class ReleaseService {
    */
   private resolveGitDiffScope(
     config: ReturnType<typeof readConfig>,
-    opts?: { roots?: string[] },
+    opts?: PageScopeOpts,
   ): {
     entitiesAbs: string;
     releasesAbs: string;
@@ -913,7 +957,8 @@ export class ReleaseService {
     cwdAbs: string;
     rootIds: string[];
     rootDirsById: Map<string, string>;
-    scopedRootDirs: string[];
+    pagePathspecs: string[];
+    pageKeys: Set<string> | null;
   } {
     const realOrSelf = (p: string): string => {
       try {
@@ -931,14 +976,21 @@ export class ReleaseService {
     const cwdAbs = realOrSelf(this.cwd);
     const briefsAbs = realOrSelf(nodePath.resolve(this.cwd, config.briefsDir));
     const patchesAbs = realOrSelf(nodePath.resolve(this.cwd, config.patchesDir));
-    const rootIds = (opts?.roots ?? this.releasableRootIds).filter((r) =>
-      this.releasableRootIds.includes(r),
-    );
     const rootDirsById = new Map(
       this.releasableRootIds.map((id, i) => [id, realOrSelf(this.releasableRootDirs[i]!)]),
     );
-    const scopedRootDirs = rootIds.map((id) => rootDirsById.get(id)!).filter(Boolean);
-    return { entitiesAbs, releasesAbs, briefsAbs, patchesAbs, cwdAbs, rootIds, rootDirsById, scopedRootDirs };
+    const pageFilter = this.releasablePageKeys(opts?.paths);
+    if (pageFilter) {
+      const rootIds = [...new Set(pageFilter.map((k) => k.rootId))];
+      const pagePathspecs = pageFilter.map((k) => nodePath.join(rootDirsById.get(k.rootId)!, k.relPath));
+      const pageKeys = new Set(pageFilter.map((k) => pageIdentityKey(k.rootId, k.relPath)));
+      return { entitiesAbs, releasesAbs, briefsAbs, patchesAbs, cwdAbs, rootIds, rootDirsById, pagePathspecs, pageKeys };
+    }
+    const rootIds = (opts?.roots ?? this.releasableRootIds).filter((r) =>
+      this.releasableRootIds.includes(r),
+    );
+    const pagePathspecs = rootIds.map((id) => rootDirsById.get(id)!).filter(Boolean);
+    return { entitiesAbs, releasesAbs, briefsAbs, patchesAbs, cwdAbs, rootIds, rootDirsById, pagePathspecs, pageKeys: null };
   }
 
   /**
@@ -956,17 +1008,17 @@ export class ReleaseService {
     entities: RawDeltaEntityChange[];
     /** Absolute path per entity change, same index — needed to re-read content for stamp-only filtering. */
     entityPaths: string[];
-    pageCandidates: Array<{ relPath: string; absPath: string; status: 'A' | 'M' | 'D' | 'R' }>;
+    pageCandidates: PageCandidate[];
   } {
     const isInside = (parent: string, child: string): boolean => {
       const rel = nodePath.relative(parent, child);
       return rel !== '' && !rel.startsWith('..') && !nodePath.isAbsolute(rel);
     };
-    const { entitiesAbs, releasesAbs, briefsAbs, patchesAbs, cwdAbs, rootIds, rootDirsById } = scope;
+    const { entitiesAbs, releasesAbs, briefsAbs, patchesAbs, cwdAbs, rootIds, rootDirsById, pageKeys } = scope;
 
     const entities: RawDeltaEntityChange[] = [];
     const entityPaths: string[] = [];
-    const pageCandidates: Array<{ relPath: string; absPath: string; status: 'A' | 'M' | 'D' | 'R' }> = [];
+    const pageCandidates: PageCandidate[] = [];
 
     for (const file of gitDiff.files) {
       // Release-identity files are metadata, not spec content — never surfaced.
@@ -1004,7 +1056,10 @@ export class ReleaseService {
         // ANOTHER, more specific root may legitimately own (e.g. a root at '.docs') — keep
         // trying remaining roots instead of abandoning attribution for this file entirely.
         if (hasDotSegment(relPath)) continue;
-        pageCandidates.push({ relPath, absPath: file.path, status: file.status });
+        // `paths` filter: the file sits under a requested root but is not one of
+        // the requested pages (a pathspec is a prefix match for git) — drop it.
+        if (pageKeys && !pageKeys.has(pageIdentityKey(id, relPath))) break;
+        pageCandidates.push({ rootId: id, relPath, absPath: file.path, status: file.status });
         break;
       }
     }
@@ -1104,12 +1159,13 @@ export class ReleaseService {
    * the whole request.
    */
   private async diffPageCandidates(
-    pageCandidates: Array<{ relPath: string; absPath: string; status: 'A' | 'M' | 'D' | 'R' }>,
+    pageCandidates: PageCandidate[],
     readOld: (absPath: string) => Promise<string | null>,
     readNew: (absPath: string) => Promise<string | null>,
     logLabel: string,
   ): Promise<RawDeltaPageChange[]> {
     const degradedPageChange = (c: (typeof pageCandidates)[number], op: RawDeltaPageChange['op']): RawDeltaPageChange => ({
+      rootId: c.rootId,
       path: c.relPath,
       op,
       added_sections: [],
@@ -1144,7 +1200,7 @@ export class ReleaseService {
               ? this.pageSerializer.snapshotFromContent(c.relPath, newContent)
               : null;
             const diff = this.pageSerializer.diff(aData, bData, c.relPath);
-            return diff.op === 'noop' ? null : toRawDeltaPageChange(diff);
+            return diff.op === 'noop' ? null : toRawDeltaPageChange(c.rootId, diff);
           } catch (err) {
             console.error(
               `[release] ${logLabel}: failed to diff page '${c.relPath}' — degrading to file-level status only:`,
@@ -1176,7 +1232,7 @@ export class ReleaseService {
   async getReleaseDiff(
     fromIdOrName: number | string | null,
     toIdOrName: number | string,
-    opts?: { roots?: string[] },
+    opts?: PageScopeOpts,
   ): Promise<RawDelta> {
     const toRow = this.findReleaseRow(toIdOrName);
     if (!toRow) throw new DomainError('NOT_FOUND', `release '${toIdOrName}' not found`);
@@ -1192,7 +1248,7 @@ export class ReleaseService {
     // 0.1.96: pages are correlated by (rootId, path), narrowed by opts.roots
     // (default: all releasable roots) via latestPageRowsAtOrBefore, which carries
     // rootId. Entities are unaffected by the roots narrowing.
-    const toPageRows = this.latestPageRowsAtOrBefore(toRow.id, opts?.roots);
+    const toPageRows = this.latestPageRowsAtOrBefore(toRow.id, opts);
     const { fromSnap, fromMeta, fromPageRows } = this.resolveFromSide(fromIdOrName, toSnap, opts);
 
     return this.computeDelta(
@@ -1221,7 +1277,7 @@ export class ReleaseService {
    */
   async getUnreleasedDiff(
     fromIdOrName: number | string | null,
-    opts?: { roots?: string[] },
+    opts?: PageScopeOpts,
   ): Promise<RawDelta> {
     if (fromIdOrName !== null) {
       const fromRowForGit = this.findReleaseRow(fromIdOrName);
@@ -1231,7 +1287,7 @@ export class ReleaseService {
     }
 
     const toSnap = this.getCurrentSnapshot();
-    const toPageRows = this.latestPageRowsAtOrBefore(null, opts?.roots);
+    const toPageRows = this.latestPageRowsAtOrBefore(null, opts);
     const toMeta = { id: 0, name: CURRENT_RELEASE_NAME };
     const { fromSnap, fromMeta, fromPageRows } = this.resolveFromSide(fromIdOrName, toSnap, opts);
 
@@ -1249,7 +1305,7 @@ export class ReleaseService {
   private resolveFromSide(
     fromIdOrName: number | string | null,
     toSnap: SpecSnapshot,
-    opts?: { roots?: string[] },
+    opts?: PageScopeOpts,
   ): { fromSnap: SpecSnapshot; fromMeta: { id: number; name: string } | null; fromPageRows: FileVersionRow[] } {
     if (fromIdOrName === null) {
       return {
@@ -1268,7 +1324,7 @@ export class ReleaseService {
     return {
       fromSnap: this.getReleaseSnapshot(fromRow.id),
       fromMeta: { id: fromRow.id, name: fromRow.name },
-      fromPageRows: this.latestPageRowsAtOrBefore(fromRow.id, opts?.roots),
+      fromPageRows: this.latestPageRowsAtOrBefore(fromRow.id, opts),
     };
   }
 
@@ -1330,7 +1386,7 @@ export class ReleaseService {
     const pageChanges: RawDeltaPageChange[] = [];
     // Key by (rootId, path) so the same relative path in two roots keeps an
     // independent timeline and is never cross-diffed.
-    const pageKey = (p: FileVersionRow): string => `${p.rootId}\u0000${p.path}`;
+    const pageKey = (p: FileVersionRow): string => pageIdentityKey(p.rootId, p.path);
     const aPagesMap = new Map(fromPageRows.map((p) => [pageKey(p), p]));
     const bPagesMap = new Map(toPageRows.map((p) => [pageKey(p), p]));
     const allPageKeys = new Set([...aPagesMap.keys(), ...bPagesMap.keys()]);
@@ -1346,7 +1402,7 @@ export class ReleaseService {
         : null;
       const diff = this.pageSerializer.diff(aData, bData, path);
       if (diff.op === 'noop') continue;
-      pageChanges.push(toRawDeltaPageChange(diff));
+      pageChanges.push(toRawDeltaPageChange((a ?? b)!.rootId, diff));
     }
 
     return {
@@ -2154,18 +2210,21 @@ export class ReleaseService {
 
   /**
    * 0.1.96: latest file_version rows per `(rootId, path)` at-or-before a release,
-   * restricted to releasable roots (optionally narrowed further by `roots`). The
+   * restricted to releasable roots (optionally narrowed further by `roots` or `paths`). The
    * correlated subquery matches on both rootId and path so the same relative path
    * in different roots has an independent timeline. `releaseId === null` (0.1.122)
    * drops the upper bound — "latest per (rootId, path), right now", including
    * `release_id IS NULL` rows. Backs both `getReleaseSnapshot` (bounded) and
    * `getCurrentSnapshot` (unbounded).
    */
-  private latestPageRowsAtOrBefore(releaseId: number | null, roots?: string[]): FileVersionRow[] {
-    const rootIds = (roots ?? this.releasableRootIds).filter((r) => this.releasableRootIds.includes(r));
+  private latestPageRowsAtOrBefore(releaseId: number | null, scope?: PageScopeOpts): FileVersionRow[] {
+    const pageFilter = this.releasablePageKeys(scope?.paths);
+    const rootIds = pageFilter
+      ? [...new Set(pageFilter.map((k) => k.rootId))]
+      : (scope?.roots ?? this.releasableRootIds).filter((r) => this.releasableRootIds.includes(r));
     if (rootIds.length === 0) return [];
     const placeholders = rootIds.map(() => '?').join(', ');
-    return this.db
+    const rows = this.db
       .prepare(
         `SELECT pv1.* FROM file_version pv1
           WHERE pv1.rootId IN (${placeholders})
@@ -2179,6 +2238,27 @@ export class ReleaseService {
           ORDER BY pv1.rootId, pv1.path`,
       )
       .all(...rootIds, releaseId, releaseId, releaseId, releaseId) as FileVersionRow[];
+    // 0.2.102 `paths`: membership of the pair (rootId, path) in the filter —
+    // applied to the rows of the filter's roots, so both tracks yield the same
+    // page set for the same filter.
+    if (!pageFilter) return rows;
+    const wanted = new Set(pageFilter.map((k) => pageIdentityKey(k.rootId, k.relPath)));
+    return rows.filter((r) => wanted.has(pageIdentityKey(r.rootId, r.path)));
+  }
+
+  /**
+   * 0.2.102: `opts.paths` parsed into `(rootId, relPath)` pairs, keeping only
+   * well-formed keys of releasable roots (the tool has already refused anything
+   * else — this is the engine's own backstop, never a silent widening). `null`
+   * when no `paths` filter was given.
+   */
+  private releasablePageKeys(paths: string[] | undefined): Array<{ rootId: string; relPath: string }> | null {
+    if (paths === undefined) return null;
+    return paths
+      .map(splitPageKey)
+      .filter((k): k is { rootId: string; relPath: string } =>
+        k !== null && this.releasableRootIds.includes(k.rootId),
+      );
   }
 
 }
@@ -2191,9 +2271,13 @@ function safeJsonParse(raw: string): unknown {
   }
 }
 
-/** Shared by computeDelta and tryGitAnchoredDiff — the wire shape is a 1:1 copy of FileDiff's fields. */
-function toRawDeltaPageChange(diff: FileDiff): RawDeltaPageChange {
+/**
+ * Shared by computeDelta and tryGitAnchoredDiff — the wire shape is a 1:1 copy of
+ * FileDiff's fields plus the page's `rootId` (0.2.102), which FileDiff does not carry.
+ */
+function toRawDeltaPageChange(rootId: string, diff: FileDiff): RawDeltaPageChange {
   return {
+    rootId,
     path: diff.path,
     op: diff.op,
     added_sections: diff.added_sections,

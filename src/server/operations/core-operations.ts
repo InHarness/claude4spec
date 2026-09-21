@@ -256,7 +256,7 @@ export function registerCoreOperations(): void {
   CATALOG.register(
     coreRead(
       'search_pages',
-      'Search the prose of the pages by phrase (`query`) or regex (`regex`) — cross-root by default; `rootId` only NARROWS. A hit is a SECTION (a page, on a root with no section index), carrying `matchCount`; matches are lines. Modes are a cost ladder: `count` (totals), `map` (identity rows, the DEFAULT), `hits` (adds `hunks[]` + `omittedChars`). Enumeration order is `(rootId, path, line_start)` with a declared tie-break, so a full `limit`/`offset` traversal returns each hit exactly once.',
+      'Search the prose of the pages by phrase (`query`) or regex (`regex`) — cross-root by default; `rootId` only NARROWS. A hit is a SECTION (a page, on a root with no section index — then `rootId` + `path` with the match count, no anchor and no line number, readable through `get_page`), carrying `matchCount`; matches are lines. Modes are a cost ladder: `count` (totals), `map` (identity rows, the DEFAULT), `hits` (adds `hunks[]` + `omittedChars`). Enumeration order is `(rootId, path, line_start)` with a declared tie-break, so a full `limit`/`offset` traversal returns each hit exactly once.',
       {
         rootId: z.string().optional(),
         query: z.string().optional(),
@@ -1513,10 +1513,13 @@ export function registerCoreOperations(): void {
    * M17 codes they raise. It used to declare `{ from, to }` and two generic
    * codes, which taught a reader of the catalog a call no channel accepts.
    * `roots` narrows the PAGES dimension only — asymmetric by design.
+   * 0.2.102: `paths` (full page keys `<rootId>/<relPath>`) narrows it to single
+   * pages; both filters refuse unknown/non-releasable roots, and the page
+   * entries carry `rootId` next to `path`.
    */
   releaseOp(
     'release_diff',
-    'What changed between two releases — or, with `toIdOrName: "current"`, between a release and the live not-yet-released state — per entity type and page root. An item cut by the response budget comes back `truncated: true` (an entity without `before`/`after`, a section with `content` cut as text) and the envelope carries `truncationHint`.',
+    'What changed between two releases — or, with `toIdOrName: "current"`, between a release and the live not-yet-released state — per entity type and page root; a page entry carries `rootId` next to `path`. `paths` narrows the pages to single pages by full key `<rootId>/<relPath>`. An item cut by the response budget comes back `truncated: true` (an entity without `before`/`after`, a section with `content` cut as text) and the envelope carries `truncationHint`.',
     'read',
     {
       fromIdOrName: z.union([z.string(), z.number(), z.null()]),
@@ -1524,6 +1527,12 @@ export function registerCoreOperations(): void {
       include: z.array(z.enum(['pages', 'entities'])).optional(),
       entityTypes: z.array(z.string()).optional(),
       roots: z.array(z.string()).optional().describe('Narrows the pages dimension only; never entities.'),
+      paths: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Single pages by FULL key `<rootId>/<relPath>` — one page file per element, no directory prefix. Pages dimension only; mutually exclusive with `roots`; requires 'pages' in `include`.",
+        ),
       summaryOnly: z.boolean().optional(),
       limit: z.number().optional(),
       offset: z.number().optional(),
@@ -1535,6 +1544,8 @@ export function registerCoreOperations(): void {
       'CONFLICTING_FILTERS',
       'INVALID_PAGINATION',
       'INVALID_DIFF_RANGE',
+      'INVALID_PATHS_FILTER',
+      'INVALID_ROOTS_FILTER',
     ],
   );
   releaseOp(

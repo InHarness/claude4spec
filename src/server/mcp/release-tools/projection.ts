@@ -277,7 +277,7 @@ function toEntityLight(e: MCPEntityDelta): MCPEntityDeltaLight {
 
 /** Strip a heavy page delta to its light identifier form (`summaryOnly: true`). */
 function toPageLight(p: MCPPageDelta): MCPPageDeltaLight {
-  return { path: p.path, op: p.op };
+  return { rootId: p.rootId, path: p.path, op: p.op };
 }
 
 function projectEntities(
@@ -372,7 +372,7 @@ function projectPages(
       }
     }
 
-    const pageDelta: MCPPageDelta = { path: p.path, op, sections };
+    const pageDelta: MCPPageDelta = { rootId: p.rootId, path: p.path, op, sections };
 
     if (p.frontmatter_diff != null) {
       const frontmatter: { before?: Record<string, unknown>; after?: Record<string, unknown> } = {};

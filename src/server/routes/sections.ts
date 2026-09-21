@@ -58,7 +58,12 @@ export function sectionsRouter(
       const rootId = typeof req.query.rootId === 'string' ? req.query.rootId : undefined;
       const pagePath = typeof req.query.pagePath === 'string' ? req.query.pagePath : undefined;
       const search = typeof req.query.search === 'string' ? req.query.search : undefined;
-      const list = sections.list({ rootId, pagePath, search });
+      // 0.2.102 (M39 addressing rule): the list does not hand out line
+      // coordinates — the anchor is the address. The index keeps its
+      // `line_start`/`line_end` columns; the write side reads them, not callers.
+      const list = sections.list({ rootId, pagePath, search }).map(
+        ({ lineStart: _lineStart, lineEnd: _lineEnd, ...entry }) => entry,
+      );
       res.json({ sections: list });
     } catch (err) {
       next(err);

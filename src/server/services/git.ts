@@ -868,16 +868,21 @@ export class GitService {
     }
   }
 
-  /** Canonicalize `paths` to realpaths inside `root` — shared by `diffRefs`/`diffRefToWorkingTree`. */
-  private resolveDiffTargets(root: string, paths: string[]): string[] {
+  /**
+   * Canonicalize `pathspecs` to realpaths inside `root` — shared by `diffRefs`/
+   * `diffRefToWorkingTree`.
+   *
+   * 0.2.102: a pathspec that does not exist on disk is NOT dropped any more — a
+   * single-page pathspec (from `release_diff`'s `paths` filter) legitimately
+   * names a file deleted in the working tree or on one side of the diff. The
+   * nearest existing ancestor is realpath'd and the missing tail re-appended; git
+   * accepts a pathspec for a path absent from the working tree.
+   */
+  private resolveDiffTargets(root: string, pathspecs: string[]): string[] {
     const targets: string[] = [];
-    for (const p of paths) {
-      let real: string;
-      try {
-        real = fs.realpathSync(p);
-      } catch {
-        continue;
-      }
+    for (const p of pathspecs) {
+      const real = realpathOfNearestAncestor(p);
+      if (real === null) continue;
       const rel = path.relative(root, real);
       if (!rel.startsWith('..') && !path.isAbsolute(rel)) targets.push(real);
     }
@@ -924,21 +929,23 @@ export class GitService {
   /**
    * 0.1.118 read-only: file-level diff between two commits (or, more
    * generally, two git revision expressions — a bare SHA, `HEAD`, or a
-   * relative form like `<sha>~1`, all valid here), scoped to `paths`
-   * (releasable roots + entitiesDir + releasesDir, per the caller). Uses
+   * relative form like `<sha>~1`, all valid here), scoped to `pathspecs` —
+   * what goes to `git diff` after `--`, where a directory and a file are one
+   * category (releasable roots + entitiesDir + releasesDir, or single page
+   * files, per the caller). Uses
    * `--name-status` (not the brief's literal `git diff <a>..<b>`, which
    * alone does not produce a parseable `{path, status}` shape). Never throws
    * — `null` when git is disabled or no repo is detected; an empty
-   * `{files: []}` when none of `paths` resolve inside the repo.
+   * `{files: []}` when none of `pathspecs` resolve inside the repo.
    */
-  async diffRefs(shaA: string, shaB: string, paths: string[]): Promise<GitRefDiff | null> {
+  async diffRefs(shaA: string, shaB: string, pathspecs: string[]): Promise<GitRefDiff | null> {
     const config = readConfig(this.cwd);
     if (!config.git.enabled) return null;
     const status = await this.detect();
     if (!status.detected || !status.rootPath) return null;
     const root = status.rootPath;
 
-    const targets = this.resolveDiffTargets(root, paths);
+    const targets = this.resolveDiffTargets(root, pathspecs);
     if (targets.length === 0) return { files: [] };
 
     try {
@@ -960,9 +967,9 @@ export class GitService {
 
   /**
    * 0.1.124 read-only: file-level diff between a commit/revision and the
-   * CURRENT working tree (`git diff --name-status <sha> -- <paths>`, no
+   * CURRENT working tree (`git diff --name-status <sha> -- <pathspecs>`, no
    * second ref — includes both staged and unstaged changes to TRACKED
-   * paths), PLUS untracked new files under `paths` surfaced as `'A'`. Used
+   * paths), PLUS untracked new files under `pathspecs` surfaced as `'A'`. Used
    * by the reign-model `getUnreleasedDiff` git-anchored fast path
    * (`:to='current'`).
    *
@@ -977,14 +984,14 @@ export class GitService {
    * `git diff`'s tracked-only output). Same scoping/parsing/never-throws
    * contract as `diffRefs` otherwise.
    */
-  async diffRefToWorkingTree(sha: string, paths: string[]): Promise<GitRefDiff | null> {
+  async diffRefToWorkingTree(sha: string, pathspecs: string[]): Promise<GitRefDiff | null> {
     const config = readConfig(this.cwd);
     if (!config.git.enabled) return null;
     const status = await this.detect();
     if (!status.detected || !status.rootPath) return null;
     const root = status.rootPath;
 
-    const targets = this.resolveDiffTargets(root, paths);
+    const targets = this.resolveDiffTargets(root, pathspecs);
     if (targets.length === 0) return { files: [] };
 
     try {
@@ -1255,4 +1262,24 @@ function errMessage(err: unknown): string {
 /** Raw stderr from an `execFile` rejection, or `''` when the failure carries none. */
 function rawStderr(err: unknown): string {
   return (err as { stderr?: string })?.stderr?.trim() ?? '';
+}
+
+/**
+ * `realpath` of `p`, tolerating a missing tail: walks up to the nearest existing
+ * ancestor, realpaths it and re-appends the missing segments. `null` only when
+ * nothing up to the filesystem root resolves.
+ */
+function realpathOfNearestAncestor(p: string): string | null {
+  const tail: string[] = [];
+  let current = path.resolve(p);
+  for (;;) {
+    try {
+      return path.join(fs.realpathSync(current), ...tail);
+    } catch {
+      const parent = path.dirname(current);
+      if (parent === current) return null;
+      tail.unshift(path.basename(current));
+      current = parent;
+    }
+  }
 }

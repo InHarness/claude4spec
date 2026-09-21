@@ -118,12 +118,20 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
     data: unknown;
     releaseId: number | null;
     op?: string;
+    rootId?: string;
   }): void {
     db.prepare(
       `INSERT INTO file_version
         (path, version, data, serializer_version, op, release_id, changed_by, rootId)
-       VALUES (?, ?, ?, 'v1', ?, ?, 'user', 'pages')`,
-    ).run(opts.path, opts.version, JSON.stringify(opts.data), opts.op ?? 'create', opts.releaseId);
+       VALUES (?, ?, ?, 'v1', ?, ?, 'user', ?)`,
+    ).run(
+      opts.path,
+      opts.version,
+      JSON.stringify(opts.data),
+      opts.op ?? 'create',
+      opts.releaseId,
+      opts.rootId ?? 'pages',
+    );
   }
 
   describe('getCurrentSnapshot', () => {
@@ -213,12 +221,132 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
    * REAL one end to end, because the claim that both branches share one
    * projection is only worth something if a real `RawDelta` survives it.
    */
+  /**
+   * 0.2.102 — the `paths` filter on the SQLite track: membership of the pair
+   * (rootId, path) in the filter, and `rootId` on every page entry. Run through
+   * the real tool so the validation, the engine and the projection meet.
+   */
+  describe('release_diff `paths` — SQLite track', () => {
+    function twoRootService(): ReleaseService {
+      return new ReleaseService(
+        db,
+        fakeHost,
+        fakeVersions,
+        fakeFileVersions,
+        fakeFileSerializer,
+        fakeRawReader,
+        fakeTagsService,
+        fakePagesService,
+        () => null,
+        process.cwd(),
+        ['pages', 'plugins'],
+        [],
+      );
+    }
+
+    function diffTool(service: ReleaseService) {
+      const server = createReleaseToolsServer({
+        releaseService: service,
+        gitService: {} as GitService,
+        ws: { broadcast: () => {} } as unknown as WsEmitter,
+        roots: () => [
+          { id: 'pages', releasable: true },
+          { id: 'plugins', releasable: true },
+          { id: 'scratch', releasable: false },
+        ],
+      });
+      const tool = server.tools.find((t) => t.name === 'release_diff')!;
+      return async (args: Record<string, unknown>) => {
+        const res = (await tool.handler(args, {} as never)) as {
+          isError?: boolean;
+          content: Array<{ text: string }>;
+        };
+        return { isError: res.isError === true, body: JSON.parse(res.content[0]!.text) as any };
+      };
+    }
+
+    /** v1 → v2: `a.md` edited in both roots, `b.md` deleted, `same.md` untouched. */
+    function seed(): void {
+      const v1 = insertRelease('v1');
+      insertPageVersion({ path: 'a.md', version: 1, data: { content: 'a1' }, releaseId: v1 });
+      insertPageVersion({ path: 'a.md', version: 1, data: { content: 'pa1' }, releaseId: v1, rootId: 'plugins' });
+      insertPageVersion({ path: 'b.md', version: 1, data: { content: 'b1' }, releaseId: v1 });
+      insertPageVersion({ path: 'same.md', version: 1, data: { content: 's' }, releaseId: v1 });
+      const v2 = insertRelease('v2');
+      insertPageVersion({ path: 'a.md', version: 2, data: { content: 'a2' }, releaseId: v2, op: 'update' });
+      insertPageVersion({ path: 'a.md', version: 2, data: { content: 'pa2' }, releaseId: v2, op: 'update', rootId: 'plugins' });
+      insertPageVersion({ path: 'b.md', version: 2, data: null, releaseId: v2, op: 'delete' });
+    }
+
+    it('[ac:ac-release-diff-z-filtrem-paths-zawieraj] one full key returns exactly that one page', async () => {
+      seed();
+      const call = diffTool(twoRootService());
+      const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths: ['plugins/a.md'] });
+      expect(res.isError).toBe(false);
+      // `a.md` changed in BOTH roots; only the addressed root's page comes back.
+      expect(res.body.pages.map((p: any) => [p.rootId, p.path, p.op])).toEqual([['plugins', 'a.md', 'update']]);
+      expect(res.body.total.pages).toBe(1);
+    });
+
+    it('[ac:ac-release-diff-z-filtrem-paths-wskazuja] an unchanged page yields an empty pages[] and total.pages 0, not an error', async () => {
+      seed();
+      const call = diffTool(twoRootService());
+      const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths: ['pages/same.md'] });
+      expect(res.isError).toBe(false);
+      expect(res.body.pages).toEqual([]);
+      expect(res.body.total.pages).toBe(0);
+      // A well-formed key absent on both sides is the same answer.
+      const absent = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths: ['pages/never.md'] });
+      expect(absent.isError).toBe(false);
+      expect(absent.body.total.pages).toBe(0);
+    });
+
+    it('a page deleted between the releases is still addressable — op delete', async () => {
+      seed();
+      const call = diffTool(twoRootService());
+      const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths: ['pages/b.md'], summaryOnly: true });
+      expect(res.body.pages).toEqual([{ rootId: 'pages', path: 'b.md', op: 'delete' }]);
+    });
+
+    it('[ac:ac-kazdy-wpis-pages-w-zwrotce-release-di] every page entry carries rootId, heavy and summaryOnly alike', async () => {
+      seed();
+      const call = diffTool(twoRootService());
+      const light = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', summaryOnly: true });
+      const heavy = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', limit: 50 });
+      for (const res of [light, heavy]) {
+        const keys = (res.body.pages as any[]).map((p) => `${p.rootId}/${p.path}`).sort();
+        expect(keys).toEqual(['pages/a.md', 'pages/b.md', 'plugins/a.md']);
+      }
+    });
+
+    it('`paths` narrows pages only — the entities dimension is untouched', async () => {
+      seed();
+      const v1 = 1;
+      insertEntityVersion({ slug: 'e1', version: 1, data: { title: 'x' }, releaseId: v1 });
+      insertEntityVersion({ slug: 'e1', version: 2, data: { title: 'y' }, releaseId: 2, op: 'update' });
+      const call = diffTool(twoRootService());
+      const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths: ['pages/a.md'], summaryOnly: true });
+      expect(res.body.entities).toContainEqual(expect.objectContaining({ slug: 'e1', op: 'update' }));
+    });
+
+    it('refuses a non-releasable root in `roots` instead of silently skipping it, listing the releasable roots', async () => {
+      seed();
+      const call = diffTool(twoRootService());
+      const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', roots: ['scratch'] });
+      expect(res.isError).toBe(true);
+      expect(res.body.code).toBe('INVALID_ROOTS_FILTER');
+      expect(res.body.error).toContain('pages, plugins');
+      expect(res.body.hint).toContain('pages, plugins');
+    });
+  });
+
   describe('release_diff over MCP, against the live state', () => {
     function releaseDiffTool() {
       const server = createReleaseToolsServer({
         releaseService: releases,
         gitService: {} as GitService,
         ws: { broadcast: () => {} } as unknown as WsEmitter,
+        roots: () => [{ id: 'pages', releasable: true }],
       });
       const tool = server.tools.find((t) => t.name === 'release_diff')!;
       return async (args: Record<string, unknown>) => {
@@ -251,7 +379,7 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
       expect(entities).toContainEqual(expect.objectContaining({ slug: 'kept', op: 'update' }));
       // The deletion the current branch must not lose.
       expect(entities).toContainEqual(expect.objectContaining({ slug: 'gone', op: 'delete' }));
-      expect(res.body.pages).toContainEqual({ path: 'b.md', op: 'create' });
+      expect(res.body.pages).toContainEqual({ rootId: 'pages', path: 'b.md', op: 'create' });
     });
 
     it('a real release NAMED current does not shadow the literal', async () => {

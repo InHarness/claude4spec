@@ -1158,7 +1158,7 @@ async function buildInner(
     cwd,
   );
   pluginHost.registerMcpServer('release-tools', () =>
-    createReleaseToolsServer({ releaseService, gitService, ws }),
+    createReleaseToolsServer({ releaseService, gitService, ws, roots: () => effectiveRoots }),
   );
 
   // M27 Project Clone — bootstrap-time only. Runs after services exist (DB

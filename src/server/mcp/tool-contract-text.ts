@@ -42,13 +42,13 @@ export const GET_SECTIONS_RETURN =
   'The response is `{ results: [...], truncated?, message? }` with ONE ITEM PER SECTION — the requested ' +
   'anchors in the order asked for (duplicates silently collapsed), and with `includeSubtree: true` every ' +
   "section beneath each of them as its OWN item, spliced in directly behind it in document order. An item " +
-  'is `{ anchor, rootId, page_path, heading_text, heading_level, line_start, line_end, body, truncated?, ' +
-  'edges? }` or `{ anchor, error, code }` — nothing else; an expanded item is indistinguishable from a ' +
+  'is `{ anchor, rootId, page_path, heading_text, heading_level, body, truncated?, edges? }` or ' +
+  '`{ anchor, error, code }` — nothing else, and NO line numbers: the anchor is the full address and the ' +
+  'body is in this same response. An expanded item is indistinguishable from a ' +
   'requested one (read its place in the tree from `heading_level` and position), and a parent carries ' +
-  'ONLY ITS OWN BODY, ending before its first child heading, at either setting of the flag; `line_end` is the ' +
-  'end of that own body, NOT the index\'s subtree end that /api/sections and find_references report for the ' +
-  'same anchor (and that update_sections `replace`/`delete` operate on — a parent\'s body is not its whole ' +
-  'range). De-duplication ' +
+  'ONLY ITS OWN BODY, ending before its first child heading, at either setting of the flag (update_sections ' +
+  '`replace`/`delete` operate on the whole subtree range — a parent\'s body is not its whole range). ' +
+  'De-duplication ' +
   'is global: an anchor that is both requested and inside another requested anchor\'s subtree appears once, ' +
   'at its own input position — a parent and its child both in `anchors` give exactly one item each, and ' +
   'for `[child, parent]` the parent\'s subtree is not contiguous. Expansion is not a cheap subtree listing ' +
@@ -59,7 +59,7 @@ export const GET_SECTIONS_RETURN =
   'prefix in output order; error items count) with `truncated: true` and a ' +
   '`message` naming the ceiling — the rest are ABSENT, so do not retry with fewer anchors (you cannot see ' +
   'what is missing): list the subtree with get_page_outline and read the anchors you need; THEN the ' +
-  'response budget degrades what is left: past it, items keep their coordinates, GAIN `edges` and lose ' +
+  'response budget degrades what is left: past it, items keep their identity and heading, GAIN `edges` and lose ' +
   '`body`, marked `truncated: true` — never dropped in silence — and `message` says to pick the anchors ' +
   'you need out of those `edges` and retry as a smaller subset. The FIRST item never degrades that way: ' +
   'if its own body alone exceeds the budget it comes back shortened as text with `truncated: true` AND ' +
