@@ -20,6 +20,7 @@ import type { Annotation } from '../../shared/entities.js';
 import { DomainError } from '../services/tags.js';
 import { QUEUE_LIMIT } from '../services/chat.js';
 import {
+  abortChildTurns,
   cancelPendingForRequest,
   markUserInputResolvedInReplay,
   runAgentTurn,
@@ -68,22 +69,10 @@ export function chatRouter(deps: AgentTurnDeps): Router {
     return { ...(ev as object), resolved: true, response: null };
   };
 
-  // 0.1.69 Transagents: a CONSCIOUS abort cascades to children. After aborting a
-  // target thread, abort every active turn whose `parentThreadId` is that thread
-  // (a banka cannot outlive a deliberate Stop of its parent). The child raises
-  // AdapterAbortError → its streaming rows finalize. A plain disconnect (F5 /
-  // thread switch) does NOT call this — it goes through res.on('close'), leaving
-  // children running so the parent re-attaches via nested live-join.
-  const cascadeAbortChildren = (abortedThreadId: string): void => {
-    for (const [tid, entry] of activeAdapters.entries()) {
-      if (entry.parentThreadId === abortedThreadId) {
-        cancelPendingForRequest(pendingInputs, entry.requestId, activeAdapters);
-        entry.adapter.abort();
-        // Children can themselves have children — cascade transitively.
-        cascadeAbortChildren(tid);
-      }
-    }
-  };
+  // 0.1.69 Transagents: a CONSCIOUS abort cascades to children — the shared
+  // `abortChildTurns` (agent-turn.ts), also used by the idle watchdog.
+  const cascadeAbortChildren = (abortedThreadId: string): void =>
+    abortChildTurns(activeAdapters, pendingInputs, abortedThreadId);
 
   const consoleObserver: StreamObserver | null = deps.mode === 'dev'
     ? createConsoleObserver({

@@ -90,6 +90,74 @@ export interface TransagentEntry {
  * `background_task_*` events and, on cold reload, from the persisted
  * `chat_background_task` rows.
  */
+/**
+ * 0.2.107: how a turn that was HOLDING on background work ended. A quiet close
+ * (every task settled, `done`) leaves no ending at all; the other four are told
+ * apart by the terminal SSE `error` code — `AdapterAbortError` alone would not
+ * do it, since a user Stop and the idle watchdog raise the same class.
+ */
+export type HoldEndingKind = 'user-abort' | 'went-silent' | 'backstop-expired' | 'hold-expired' | 'failed';
+
+export interface HoldEnding {
+  kind: HoldEndingKind;
+  /** Background tasks still running when the turn ended — abandoned now. */
+  abandoned: number;
+}
+
+/** Terminal SSE `error` code → hold ending. */
+export function holdEndingKindFor(code: string | undefined): HoldEndingKind {
+  switch (code) {
+    case 'ABORTED':
+      return 'user-abort';
+    case 'IDLE_TIMEOUT':
+      return 'went-silent';
+    case 'TIMEOUT':
+      return 'backstop-expired';
+    case 'BACKGROUND_HOLD_EXPIRED':
+      return 'hold-expired';
+    default:
+      return 'failed';
+  }
+}
+
+/** One line for the hold indicator once the turn is over. */
+export function holdEndingLabel(ending: HoldEnding): string {
+  const tasks = `${ending.abandoned} background task${ending.abandoned === 1 ? '' : 's'}`;
+  switch (ending.kind) {
+    case 'user-abort':
+      return `stopped by you — ${tasks} abandoned`;
+    case 'went-silent':
+      return `turn went silent — the idle watchdog stopped it, ${tasks} abandoned`;
+    case 'backstop-expired':
+      return `turn backstop expired (idle watchdog failure) — ${tasks} abandoned`;
+    case 'hold-expired':
+      return `background hold cap expired — ${tasks} abandoned`;
+    case 'failed':
+      return `turn failed — ${tasks} abandoned`;
+  }
+}
+
+/**
+ * Toast for a terminal SSE `error`, or null for none. ABORTED stays silent (the
+ * user pressed Stop); the two clock endings get their own wording because the
+ * server message alone does not say which clock fired or what it means.
+ */
+export function terminalErrorToast(
+  code: string | undefined,
+  formatted: string,
+): { level: 'warning' | 'error'; message: string } | null {
+  switch (code) {
+    case 'ABORTED':
+      return null;
+    case 'IDLE_TIMEOUT':
+      return { level: 'warning', message: 'Agent went silent — the turn was stopped after 10 min without activity.' };
+    case 'TIMEOUT':
+      return { level: 'error', message: 'Turn backstop expired — the idle watchdog failed to stop a silent turn.' };
+    default:
+      return { level: 'error', message: formatted };
+  }
+}
+
 export interface BackgroundTaskEntry {
   taskId: string;
   taskType: string;
@@ -212,6 +280,23 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
   const [transagents, setTransagents] = useState<TransagentEntry[]>([]);
   // M05: engine-backgrounded tasks surfaced in this panel (keyed by taskId).
   const [backgroundTasks, setBackgroundTasks] = useState<BackgroundTaskEntry[]>([]);
+  const backgroundTasksRef = useRef<BackgroundTaskEntry[]>(backgroundTasks);
+  backgroundTasksRef.current = backgroundTasks;
+  // 0.2.107: how the last held turn ended (null = no hold, or a quiet close).
+  const [holdEnding, setHoldEnding] = useState<HoldEnding | null>(null);
+  /**
+   * A terminal `error` ends the hold. The server marks leftover tasks
+   * `abandoned` in the database only — no SSE follows — so the local entries are
+   * flipped here too, or the "waiting for N" spinner would outlive the turn.
+   */
+  const endHold = useCallback((code: string | undefined) => {
+    const running = backgroundTasksRef.current.filter((t) => t.status === 'running').length;
+    if (running === 0) return;
+    setHoldEnding({ kind: holdEndingKindFor(code), abandoned: running });
+    setBackgroundTasks((prev) =>
+      prev.map((t) => (t.status === 'running' ? { ...t, status: 'abandoned' } : t)),
+    );
+  }, []);
   // Active thread metadata sourced from GET /api/threads/:id (the same fetch that
   // loads messages below). The header/model-lock controls read it from here instead
   // of the paginated thread list, so they stay correct for threads beyond page 1.
@@ -421,8 +506,11 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
       // `state.error` — which nothing renders — so the turn dies silently.
       // The network-failure toast lives in `onError`; this is its SSE-event peer.
       // Skip ABORTED (user pressed Stop) to avoid noise on intentional cancels.
-      if (ext.type === 'error' && ext.code !== 'ABORTED') {
-        toast.error(formatStreamError(ext));
+      // 0.2.107: IDLE_TIMEOUT / TIMEOUT get their own wording (`terminalErrorToast`).
+      if (ext.type === 'error') {
+        const t = terminalErrorToast(ext.code, formatStreamError(ext));
+        if (t) toast[t.level](t.message);
+        endHold(ext.code);
       }
       /**
        * C21: `warning` reaches the transcript by being translated into a
@@ -455,7 +543,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
       }
       handleWireEvent(event);
     },
-    [handleWireEvent],
+    [handleWireEvent, endHold],
   );
   const onError = useCallback(
     (error: Error) => {
@@ -508,6 +596,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
 
       // Nowa tura przejmuje transport — `startStream` sam abortuje ewentualny join z F5.
       setIsResuming(false);
+      setHoldEnding(null);
 
       sendUserMessage(
         prompt.trim() ? prompt : `(${annotations.length} annotation${annotations.length === 1 ? '' : 's'} attached)`,
@@ -548,9 +637,10 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     abortStream();
     setIsResuming(false);
     handleWireEvent({ type: 'error', error: 'Request aborted', code: 'ABORTED' });
+    endHold('ABORTED');
     setPendingUserInputs([]);
     synthesizedUserInputsRef.current = new Set();
-  }, [abortStream, handleWireEvent]);
+  }, [abortStream, handleWireEvent, endHold]);
 
   // M05: enqueue a message typed during a live turn. Returns true on success so
   // the caller can clear the composer; on failure the message stays put.
@@ -634,6 +724,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     setLiveContextSize(null);
     setTransagents([]);
     setBackgroundTasks([]);
+    setHoldEnding(null);
     // Carrier blocks live in the transcript we are about to replace, so the
     // "already placed" memory has to go with it — otherwise re-entering a thread
     // would suppress every block it placed the first time.
@@ -813,6 +904,12 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
      * continuation turn.
      */
     heldBackgroundTaskCount: backgroundTasks.filter((t) => t.status === 'running').length,
+    /**
+     * 0.2.107: the hold indicator's terminal state — which of the four endings
+     * (user abort, idle watchdog, backstop, hold cap) closed a held turn. Null
+     * while holding, and after a quiet close.
+     */
+    holdEnding,
     // P2: active thread metadata (from GET /api/threads/:id), list-independent.
     activeThreadMeta,
   };

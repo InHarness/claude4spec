@@ -48,24 +48,58 @@ const hoisted = vi.hoisted(() => ({
   onExecute: null as ((opts: Record<string, unknown>) => void) | null,
   /** Runs before each event is yielded — lets a test change the world mid-stream. */
   beforeEvent: null as ((event: Record<string, unknown>, opts: Record<string, unknown>) => void) | null,
+  /**
+   * 0.2.107: after the scripted events, park the stream until `adapter.abort()`
+   * and then deliver `AdapterAbortError` the way the real adapter does — as a
+   * terminal `error` EVENT, not a throw. Models an agent that went silent.
+   */
+  hangUntilAbort: false,
 }));
 
 vi.mock('@inharness-ai/agent-adapters', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@inharness-ai/agent-adapters')>();
   return {
     ...actual,
-    createAdapter: () => ({
-      // eslint-disable-next-line require-yield
-      execute: async function* execute(opts: Record<string, unknown>) {
-        hoisted.lastExecute = opts;
-        hoisted.executes.push(opts);
-        hoisted.onExecute?.(opts);
-        for (const e of hoisted.events) {
-          hoisted.beforeEvent?.(e, opts);
-          yield e;
-        }
-      },
-    }),
+    createAdapter: () => {
+      let release: () => void = () => {};
+      const aborted = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return {
+        abort: () => release(),
+        // eslint-disable-next-line require-yield
+        execute: async function* execute(opts: Record<string, unknown>) {
+          hoisted.lastExecute = opts;
+          hoisted.executes.push(opts);
+          hoisted.onExecute?.(opts);
+          for (const e of hoisted.events) {
+            /**
+             * 0.2.107 pseudo-events, never yielded: `__sleep` is adapter silence
+             * (driven by the test's fake clock), `__ask` raises an elicitation
+             * through `onUserInput` and waits for it like the SDK does.
+             */
+            if (e.type === '__sleep') {
+              await Promise.race([
+                new Promise<void>((r) => setTimeout(r, e.ms as number)),
+                aborted,
+              ]);
+              continue;
+            }
+            if (e.type === '__ask') {
+              const ask = opts.onUserInput as (r: unknown) => Promise<unknown>;
+              await Promise.race([ask({ requestId: e.requestId, questions: [] }).catch(() => null), aborted]);
+              continue;
+            }
+            hoisted.beforeEvent?.(e, opts);
+            yield e;
+          }
+          if (hoisted.hangUntilAbort) {
+            await aborted;
+            yield { type: 'error', error: new actual.AdapterAbortError('claude-code'), phase: 'runtime' };
+          }
+        },
+      };
+    },
   };
 });
 
@@ -94,13 +128,21 @@ import {
 } from '@inharness-ai/agent-adapters';
 import { runAgentTurn, type AgentTurnDeps, type AgentTurnInput } from './agent-turn.js';
 import { CLAUDE_CODE_TASK_TRACKING_TOOLS } from '@inharness-ai/agent-adapters/claude-code';
-import { BACKGROUND_HOLD_CAP_MS, TURN_TIMEOUT_MS } from '../../shared/agent-turn.js';
+import {
+  AgentTurnError,
+  BACKGROUND_GRACE_MS,
+  BACKGROUND_HOLD_CAP_MS,
+  IDLE_TIMEOUT_MS,
+  TURN_TIMEOUT_MS,
+} from '../../shared/agent-turn.js';
 
 afterEach(() => {
   hoisted.agent = undefined;
   hoisted.executes = [];
   hoisted.onExecute = null;
   hoisted.beforeEvent = null;
+  hoisted.hangUntilAbort = false;
+  vi.useRealTimers();
 });
 
 interface Recorded {
@@ -969,8 +1011,20 @@ describe('runAgentTurn — server-side turn timeout (0-1-110-to-next)', () => {
    * between "the hold expired" and "the turn hung" — different bugs, different
    * fixes.
    */
-  it('[ac:ac-wartosc-timeoutms-przekazywana-do-ada] keeps the turn timeout strictly above the background hold cap', () => {
+  it('[ac:ac-wartosc-timeoutms-przekazywana-do-ada] keeps the idle clock strictly above hold cap + grace', () => {
+    // 0.2.107: otherwise the watchdog's abort pre-empts the typed hold-expired error.
+    expect(IDLE_TIMEOUT_MS).toBeGreaterThan(BACKGROUND_HOLD_CAP_MS + BACKGROUND_GRACE_MS);
     expect(TURN_TIMEOUT_MS).toBeGreaterThan(BACKGROUND_HOLD_CAP_MS);
+  });
+
+  it('[ac:ac-backstop-timeoutms-przekazywany-do-ad] keeps the timeoutMs backstop at least an order of magnitude above the idle clock', async () => {
+    hoisted.events = [{ type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+
+    await runAgentTurn(deps, makeInput());
+
+    expect(hoisted.lastExecute?.timeoutMs).toBe(86_400_000);
+    expect(hoisted.lastExecute?.timeoutMs as number).toBeGreaterThanOrEqual(10 * IDLE_TIMEOUT_MS);
   });
 
   /**
@@ -978,7 +1032,7 @@ describe('runAgentTurn — server-side turn timeout (0-1-110-to-next)', () => {
    * cap", which would let a wedged background task hold a session open with no
    * bound at all.
    */
-  it('[ac:ac-wartosc-timeoutms-przekazywana-do-ada] arms the hold cap with a finite positive number, never a disarm sentinel', async () => {
+  it('[ac:ac-cap-oczekiwania-na-zadania-w-tle-nigd] arms the hold cap with a finite positive number, never a disarm sentinel', async () => {
     hoisted.events = [{ type: 'result', sessionId: 's1' }];
     const { deps } = makeDeps();
 
@@ -1809,5 +1863,104 @@ describe('runAgentTurn — delivered terminal errors', () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe('runAgentTurn — idle watchdog (0.2.107)', () => {
+  /** Only timers are faked: the turn's own promise plumbing must keep running. */
+  const fakeClock = () => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+  function withQueue(deps: AgentTurnDeps, queued: string[]) {
+    (deps.chatService as unknown as { clearQueued: () => string[] }).clearQueued = () => queued.splice(0);
+  }
+
+  it('[ac:ac-tura-w-ktorej-adapter-milczy-dluzej-n] aborts a silent turn with IDLE_TIMEOUT, distinguishable from a user abort', async () => {
+    fakeClock();
+    hoisted.events = [{ type: 'text_delta', text: 'thinking about it…' }];
+    hoisted.hangUntilAbort = true;
+    const { deps } = makeDeps();
+    withQueue(deps, ['queued while silent']);
+    const events: Array<Record<string, unknown>> = [];
+    const input = { ...makeInput(), onEvent: (e: Record<string, unknown>) => events.push(e) };
+
+    const turn = runAgentTurn(deps, input).catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(IDLE_TIMEOUT_MS - 1);
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+    const entry = deps.activeAdapters.get('t1');
+    await vi.advanceTimersByTimeAsync(1);
+    const err = await turn;
+
+    expect(err).toBeInstanceOf(AgentTurnError);
+    expect((err as AgentTurnError).code).toBe('IDLE_TIMEOUT');
+    expect(entry?.abortReason).toBe('IDLE_TIMEOUT');
+    const terminal = events.filter((e) => e.type === 'error');
+    expect(terminal).toHaveLength(1);
+    expect(terminal[0]?.code).toBe('IDLE_TIMEOUT');
+    // No HTTP abort behind it: the watchdog clears the queue and broadcasts it itself.
+    expect(events).toContainEqual({ type: 'queue_cleared', texts: ['queued while silent'] });
+    expect(deps.activeAdapters.has('t1')).toBe(false);
+  });
+
+  it('[ac:ac-tura-w-ktorej-adapter-milczy-dluzej-n] a user Stop on the same adapter stays ABORTED', async () => {
+    hoisted.events = [];
+    hoisted.hangUntilAbort = true;
+    const { deps } = makeDeps();
+    const events: Array<Record<string, unknown>> = [];
+    const input = { ...makeInput(), onEvent: (e: Record<string, unknown>) => events.push(e) };
+
+    const turn = runAgentTurn(deps, input).catch((e: unknown) => e);
+    await vi.waitFor(() => expect(deps.activeAdapters.has('t1')).toBe(true));
+    deps.activeAdapters.get('t1')!.adapter.abort();
+    const err = await turn;
+
+    expect((err as AgentTurnError).code).toBe('ABORTED');
+    expect(events.find((e) => e.type === 'error')?.code).toBe('ABORTED');
+  });
+
+  it('[ac:ac-zdarzenie-adaptera-nalezace-do-zbioru] every sign of life re-arms the clock', async () => {
+    fakeClock();
+    const gap = IDLE_TIMEOUT_MS - 1_000;
+    hoisted.events = [
+      { type: '__sleep', ms: gap },
+      { type: 'text_delta', text: 'still here' },
+      { type: '__sleep', ms: gap },
+      { type: 'tool_use', toolName: 'Read', toolUseId: 'u1', input: {} },
+      { type: '__sleep', ms: gap },
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps } = makeDeps();
+
+    const turn = runAgentTurn(deps, makeInput());
+    await vi.advanceTimersByTimeAsync(3 * gap);
+    const result = await turn;
+
+    expect(result.threadId).toBe('t1');
+  });
+
+  it('[ac:ac-zegar-idle-jest-wstrzymany-na-czas-ot] pauses the clock while an elicitation is open, and resumes it after the answer', async () => {
+    fakeClock();
+    let answer: (v: unknown) => void = () => {};
+    hoisted.events = [{ type: '__ask', requestId: 'q1' }];
+    hoisted.hangUntilAbort = true;
+    const { deps } = makeDeps();
+    const input = {
+      ...makeInput(),
+      onUserInput: () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+    } as unknown as AgentTurnInput;
+
+    const turn = runAgentTurn(deps, input).catch((e: unknown) => e);
+    // A human takes three idle windows to decide — the turn must survive it.
+    await vi.advanceTimersByTimeAsync(3 * IDLE_TIMEOUT_MS);
+    expect(deps.activeAdapters.has('t1')).toBe(true);
+    expect(deps.activeAdapters.get('t1')?.abortReason).toBeUndefined();
+
+    answer({ action: 'accept', answers: {} });
+    // After the answer the clock runs again, from a full window.
+    await vi.advanceTimersByTimeAsync(IDLE_TIMEOUT_MS);
+    const err = await turn;
+    expect((err as AgentTurnError).code).toBe('IDLE_TIMEOUT');
   });
 });

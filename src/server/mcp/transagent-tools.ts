@@ -64,8 +64,10 @@ export function buildTransagentToolsServer(ctx: TransagentToolsContext): Capture
       'plan mode. It is ignored when continuing an existing child via `threadId` — a banka\'s posture',
       'is fixed when it is created.',
       'On failure the tool_result is `isError` with a flat `{ error, code }`. Codes:',
-      '  - ABORTED / TIMEOUT / AGENT_UNAVAILABLE / AGENT_ERROR — the CHILD turn ended that way.',
-      '    ABORTED means a human stopped it; AGENT_UNAVAILABLE means it never started (retryable).',
+      '  - ABORTED / IDLE_TIMEOUT / TIMEOUT / AGENT_UNAVAILABLE / AGENT_ERROR — the CHILD turn ended',
+      '    that way. ABORTED means a human stopped it; IDLE_TIMEOUT means the child went silent past',
+      '    its idle clock and its own watchdog stopped it — YOUR turn continues; AGENT_UNAVAILABLE',
+      '    means it never started (retryable).',
       '  - NOT_FOUND — `threadId` names no thread.',
       '  - INVALID_ARGS — the arguments do not describe a runnable child: contextType=\'patch\'',
       "    without payload.patchPath, a contextType='chat' payload.planPath that names no existing",
@@ -97,9 +99,10 @@ export function buildTransagentToolsServer(ctx: TransagentToolsContext): Capture
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
         };
       } catch (err) {
-        // Non-abort child failure collapses upward as the parent's tool_result
-        // isError { code, message }. The last good summary remains readable via
-        // runTransagent({ threadId }).
+        // Every child failure collapses upward as the parent's tool_result
+        // isError { code, message } — including a child stopped by its own idle
+        // watchdog (IDLE_TIMEOUT); the caller's turn carries on. The last good
+        // summary remains readable via runTransagent({ threadId }).
         const { code, hint } = transagentErrorCode(err);
         const message = err instanceof Error ? err.message : String(err);
         return toolError(code, message, hint);

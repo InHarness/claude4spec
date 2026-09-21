@@ -34,6 +34,7 @@ import type {
   Model,
 } from '../routes/agent-turn.js';
 import { DomainError } from './tags.js';
+import { TRANSAGENT_IDLE_MARGIN_MS } from '../../shared/agent-turn.js';
 
 export interface TransagentRunInput {
   parentThreadId: string;
@@ -126,6 +127,9 @@ export class TransagentDispatcher {
   ): UserInputHandler {
     return (request: UserInputRequest): Promise<UserInputResponse> => {
       relayed.add(request.requestId);
+      // 0.2.107: the child's own clock is paused by its turn; the PARENT's clock
+      // must stop too, or the parent would go idle while a human answers the child.
+      const resumeParentClock = parentAdapter.idleTimer?.pause() ?? (() => {});
       parentAdapter.emit({ type: 'user_input_request', request });
       this.deps.chatService.addMessage(
         parentThreadId,
@@ -140,7 +144,7 @@ export class TransagentDispatcher {
           reject,
           requestIdsForRequest: parentAdapter.requestId,
         });
-      });
+      }).finally(resumeParentClock);
     };
   }
 
@@ -202,11 +206,21 @@ export class TransagentDispatcher {
     });
 
     const relayed = new Set<string>();
+    // 0.2.107: the parent's idle clock runs one margin longer than the child's
+    // for as long as the bubble is open — the child's own watchdog must fire
+    // first, and this is the window to collapse its turn into `isError`.
+    const releaseParentMargin =
+      parentAdapter?.idleTimer?.extend(TRANSAGENT_IDLE_MARGIN_MS) ?? (() => {});
     try {
-      // 3. Run the child turn. `onEvent` is a no-op — the child renders via its
-      //    own stream entry (GET /api/chat/stream/:childThreadId), not the
-      //    parent transport. runAgentTurn registers activeAdapters[child.id]
-      //    (with parentThreadId from the row) so the parent can nested-join.
+      // 3. Run the child turn. The child renders via its own stream entry
+      //    (GET /api/chat/stream/:childThreadId), not the parent transport.
+      //    runAgentTurn registers activeAdapters[child.id] (with parentThreadId
+      //    from the row) so the parent can nested-join — and gives the child its
+      //    OWN idle watchdog (0.2.107).
+      //    `onEvent` feeds the child's events to the PARENT's watchdog and
+      //    nowhere else: not to the parent's model context (that gets only
+      //    `{ threadId, summary }`), not to the parent's SSE (the panel has its
+      //    own source). A parent busy in a long bubble is not a silent parent.
       const result = await this.opts.runTurn({
         thread: child,
         prompt: message,
@@ -214,7 +228,7 @@ export class TransagentDispatcher {
         architectureConfig: this.opts.architectureConfig,
         requestId: nanoid(12),
         consoleObserver: null,
-        onEvent: () => {},
+        onEvent: () => parentAdapter?.idleTimer?.kick(),
         ...(this.opts.interactive && parentAdapter
           ? { onUserInput: this.relayUserInputToParent(parentThreadId, parentAdapter, relayed) }
           : {}),
@@ -233,7 +247,11 @@ export class TransagentDispatcher {
       return { threadId: child.id, summary: result.answer };
     } catch (err) {
       // Child failure collapses upward as the parent's tool_result isError
-      // (handled by the MCP wrapper). Still bracket-close the panel.
+      // (handled by the MCP wrapper), and the parent's turn carries on. That
+      // includes a child stopped by its OWN idle watchdog (`IDLE_TIMEOUT`) —
+      // told apart from a parent-ordered abort by the child's registry
+      // `abortReason`, which `runAgentTurn` has already folded into the code.
+      // Still bracket-close the panel.
       parentAdapter?.emit({
         type: 'transagent_completed',
         childThreadId: child.id,
@@ -243,6 +261,7 @@ export class TransagentDispatcher {
       });
       throw err;
     } finally {
+      releaseParentMargin();
       if (parentAdapter) this.cancelRelayedInputs(relayed, parentAdapter);
     }
   }

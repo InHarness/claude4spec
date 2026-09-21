@@ -245,6 +245,11 @@ export const STATUS_FOR_TURN_ERROR: Record<AgentTurnErrorCode, number> = {
   TIMEOUT: 504,
   ABORTED: 499,
   /**
+   * 0.2.107: our idle watchdog stopped a silent turn. Same status as the other
+   * turn-clock failures — told apart by the code, not the status.
+   */
+  IDLE_TIMEOUT: 504,
+  /**
    * REFUSED TO START because a deny-group the posture asks for is not
    * enforceable on this architecture. 422, not 500: the request was well-formed
    * and the server is healthy, but the posture it asks for cannot be honoured

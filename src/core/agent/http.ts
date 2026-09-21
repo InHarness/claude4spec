@@ -48,6 +48,7 @@ export type AgentErrorCode =
   | 'AGENT_UNAVAILABLE'
   | 'AGENT_ERROR'
   | 'TIMEOUT'
+  | 'IDLE_TIMEOUT'
   | 'ABORTED'
   | 'INVALID_ARGS'
   // 0.1.104 create-mode (`POST /api/briefs`) error propagation.

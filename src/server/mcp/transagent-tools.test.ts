@@ -56,6 +56,19 @@ describe('runTransagent — error taxonomy', () => {
     expect(body.error).toBe('Aborted by user');
   });
 
+  /**
+   * 0.2.107: a bubble that went silent is stopped by ITS OWN watchdog and comes
+   * back as a tool error — the parent's turn is not ended by it.
+   */
+  it('[ac:ac-banka-milczaca-dluzej-niz-zegar-idle] surfaces a child stopped by its own idle watchdog as isError IDLE_TIMEOUT', async () => {
+    const { isError, body } = await callAndParse(
+      new AgentTurnError('IDLE_TIMEOUT', 'Agent went silent — the idle watchdog stopped the turn'),
+    );
+    expect(isError).toBe(true);
+    expect(body.code).toBe('IDLE_TIMEOUT');
+    expect(body.code).not.toBe('ABORTED');
+  });
+
   it('surfaces a child TIMEOUT as TIMEOUT', async () => {
     const { body } = await callAndParse(new AgentTurnError('TIMEOUT', 'Agent took too long to respond'));
     expect(body.code).toBe('TIMEOUT');

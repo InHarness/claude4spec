@@ -56,6 +56,7 @@ import type { BriefService } from '../services/brief.js';
 import type { PatchService, PatchDetail } from '../services/patch.js';
 import type { ReleaseService } from '../services/release.js';
 import { TransagentDispatcher } from '../services/transagent-dispatcher.js';
+import { IdleWatchdog } from './idle-watchdog.js';
 import { buildTransagentToolsServer, TRANSAGENT_TOOL_FULL_NAME } from '../mcp/transagent-tools.js';
 import type { FileVersionService } from '../services/file-version.js';
 import type { SkillResolver, SkillRegistry } from '../services/skill-registry.js';
@@ -189,6 +190,22 @@ export interface ActiveAdapter {
    * the emitter) — the same closure the turn uses for its own events.
    */
   emit: (event: TurnEvent) => void;
+  /**
+   * 0.2.107: this turn's idle watchdog — the hook a bubble dispatcher uses to
+   * feed its child's events into the PARENT's clock (and to pause it while a
+   * relayed question is open). Optional: hand-built entries have none.
+   */
+  idleTimer?: IdleWatchdog;
+  /**
+   * 0.2.107: WHO aborted this turn, recorded BEFORE `adapter.abort()` is called.
+   *
+   * `AdapterAbortError` carries no reason field and never will (the library's
+   * contract is closed; `abort()` takes empty parentheses), so a user Stop and
+   * an idle-watchdog abort look identical from the exception. The registry is
+   * the discriminator: `'IDLE_TIMEOUT'` ⇒ the watchdog, absent ⇒ a human (or a
+   * cascade from one).
+   */
+  abortReason?: 'IDLE_TIMEOUT';
 }
 
 // M31: rejestry przeniesione z module-scope do ProjectContext (agentDeps) —
@@ -312,6 +329,28 @@ export async function abortAllTurns(
   if (timer) clearTimeout(timer);
 }
 
+/**
+ * A CONSCIOUS abort cascades to children (0.1.69 Transagents): abort every
+ * active turn whose `parentThreadId` is the aborted thread — a bubble cannot
+ * outlive a deliberate stop of its parent — transitively, since children can
+ * have children. Shared by the Stop routes and (0.2.107) the idle watchdog. A
+ * plain client disconnect does NOT call this; children keep running so the
+ * parent can re-attach via nested live-join.
+ */
+export function abortChildTurns(
+  activeAdapters: Map<string, ActiveAdapter>,
+  pendingInputs: Map<string, PendingInput>,
+  abortedThreadId: string,
+): void {
+  for (const [tid, entry] of activeAdapters.entries()) {
+    if (entry.parentThreadId === abortedThreadId) {
+      cancelPendingForRequest(pendingInputs, entry.requestId, activeAdapters);
+      entry.adapter.abort();
+      abortChildTurns(activeAdapters, pendingInputs, tid);
+    }
+  }
+}
+
 export function cancelPendingForRequest(
   pendingInputs: Map<string, PendingInput>,
   requestId: string,
@@ -339,6 +378,7 @@ export function cancelPendingForRequest(
 import {
   AgentTurnError,
   BACKGROUND_HOLD_CAP_MS,
+  IDLE_TIMEOUT_MS,
   TURN_TIMEOUT_MS,
 } from '../../shared/agent-turn.js';
 export { AgentTurnError, type AgentTurnErrorCode } from '../../shared/agent-turn.js';
@@ -412,6 +452,13 @@ export interface AgentTurnResult {
    */
   messages: ChatMessage[];
 }
+
+/**
+ * 0.2.107: `AdapterTimeoutError` now means the 24 h BACKSTOP fired before our
+ * idle watchdog did — a watchdog failure, not a slow agent.
+ */
+const BACKSTOP_TIMEOUT_MESSAGE =
+  'Turn backstop timeout expired — the idle watchdog should have ended this turn first';
 
 /**
  * Uruchamia jedna ture agenta dla istniejacego watku: wstawia wiadomosc user,
@@ -490,6 +537,15 @@ export async function runAgentTurn(
     // dropped a SECURITY notice. A warning nobody sees is no warning.
     'warning',
   ]);
+  /**
+   * 0.2.107: what re-arms the idle watchdog. WIDER than the replay set —
+   * `adapter_ready` marks the start of an iteration yet is never buffered —
+   * and fed from a third source too: a bubble child's events, forwarded by the
+   * dispatcher straight into `idleTimer.kick()`. The replay buffer feeds the
+   * watchdog; it does not define it. The SSE keepalive is deliberately absent:
+   * it ticks whether or not the adapter is alive.
+   */
+  const SIGN_OF_LIFE_TYPES = new Set([...REPLAY_EVENT_TYPES, 'adapter_ready']);
   /**
    * Byte budget for ONE iteration's replay buffer (0.2.50).
    *
@@ -745,18 +801,81 @@ export async function runAgentTurn(
     markFinished = resolve;
   });
 
+  /**
+   * 0.2.107: the turn's registry entry, built up front so the watchdog below
+   * and the error mapping in the loop read the SAME object — `abortReason` is
+   * read off this reference, not re-fetched by thread id.
+   */
+  const entry: ActiveAdapter = {
+    requestId,
+    adapter,
+    emitter,
+    replay,
+    finished,
+    emit,
+    // 0.1.69 Transagents: lets the abort cascade find this turn's children (when
+    // this turn IS a child, parentThreadId is set from the row).
+    parentThreadId: thread.parentThreadId,
+  };
+
+  /**
+   * 0.2.107 idle watchdog. Every turn — top-level or bubble child — gets the same
+   * `IDLE_TIMEOUT_MS`; a parent is lengthened by the transagent margin only
+   * while it has a bubble open (the dispatcher does that, see `extend`).
+   *
+   * The expiry path is the Stop button's, minus the HTTP request: there is no
+   * `POST /api/chat/abort` behind it, so it clears the queue itself and has no
+   * response body to carry `clearedTexts` — the `queue_cleared` broadcast and
+   * the terminal SSE `error` are the only channels to the user. The reason is
+   * recorded FIRST: `abort()` surfaces as a reasonless `AdapterAbortError`.
+   */
+  const idleTimer = new IdleWatchdog(IDLE_TIMEOUT_MS, () => {
+    entry.abortReason = 'IDLE_TIMEOUT';
+    console.warn(
+      `[chat] thread ${thread.id}: no sign of life for ${idleTimer.timeoutMs}ms — aborting the turn (idle watchdog)`,
+    );
+    try {
+      cancelPendingForRequest(deps.pendingInputs, requestId, deps.activeAdapters);
+    } catch {
+      /* must not cost the turn its abort */
+    }
+    try {
+      const clearedTexts = deps.chatService.clearQueued(thread.id);
+      if (clearedTexts.length > 0) emit({ type: 'queue_cleared', texts: clearedTexts });
+    } catch (err) {
+      console.error('[chat] idle watchdog: queue clear failed', err);
+    }
+    try {
+      adapter.abort();
+    } catch {
+      /* already finished — nothing to stop */
+    }
+    abortChildTurns(deps.activeAdapters, deps.pendingInputs, thread.id);
+  });
+  entry.idleTimer = idleTimer;
+
+  /**
+   * Elicitation PAUSES the clock rather than re-arming it: a human deciding is
+   * not the agent going silent. `finally` covers every way a question ends —
+   * answered, cancelled, rejected by an abort.
+   */
+  const outerOnUserInput = input.onUserInput;
+  const onUserInput: UserInputHandler | undefined = outerOnUserInput
+    ? (request) => {
+        const resume = idleTimer.pause();
+        return outerOnUserInput(request).finally(resume);
+      }
+    : undefined;
+
+  /** Same abort class, two causes — the registry tells them apart. */
+  const abortError = (): AgentTurnError =>
+    entry.abortReason === 'IDLE_TIMEOUT'
+      ? new AgentTurnError('IDLE_TIMEOUT', 'Agent went silent — the idle watchdog stopped the turn')
+      : new AgentTurnError('ABORTED', 'Aborted by user');
+
   try {
-    deps.activeAdapters.set(thread.id, {
-      requestId,
-      adapter,
-      emitter,
-      replay,
-      finished,
-      emit,
-      // 0.1.69 Transagents: lets the abort cascade find this turn's children (when
-      // this turn IS a child, parentThreadId is set from the row).
-      parentThreadId: thread.parentThreadId,
-    });
+    deps.activeAdapters.set(thread.id, entry);
+    idleTimer.kick();
     emit({ type: 'connected', requestId, threadId: thread.id });
 
     deps.chatService.addMessage(
@@ -908,7 +1027,7 @@ export async function runAgentTurn(
           architectureConfig: input.architectureConfig,
           takeToolUseId: takeTransagentToolUse,
           runTurn: (childInput) => runAgentTurn(deps, childInput),
-          interactive: input.onUserInput != null,
+          interactive: onUserInput != null,
         })
       : null;
     /**
@@ -1530,15 +1649,14 @@ export async function runAgentTurn(
        * spelled out so a rename upstream cannot drift past us in silence.
        */
       autoApproveTools: CLAUDE_CODE_TASK_TRACKING_TOOLS,
-      onUserInput: input.onUserInput,
+      onUserInput,
       /**
-       * Always bounded now. `ask` passes its own tighter 15 min; an interactive
-       * chat turn falls back to `TURN_TIMEOUT_MS` (60 min), which must stay
-       * well ABOVE `BACKGROUND_HOLD_CAP_MS` so a hold that outlives its cap
-       * surfaces as the typed `AdapterBackgroundHoldExpiredError` rather than a
-       * bare timeout.
+       * `ask` passes its own tighter 15 min; an interactive chat turn falls back
+       * to the backstop below.
        */
-      timeoutMs: input.timeoutMs ?? TURN_TIMEOUT_MS,
+      timeoutMs: input.timeoutMs ?? TURN_TIMEOUT_MS, // 24 h. BACKSTOP kontraktowy, nie polityka długości tury —
+      // ciszę wykrywa watchdog idle (600 000 ms), który jest nasz.
+      // Inwariant: ZAWSZE >> idleTimeoutMs > claude_backgroundHoldCapMs + grace
       ...(streamingInput ? { streamingInput: true } : {}),
       // 0.1.90 hard layer: resolved, absolute scope handed to the native sandbox
       // every turn (hot-reload). 0.1.130: always present — disallowedPaths always carries
@@ -1574,6 +1692,9 @@ export async function runAgentTurn(
         ? observeStream(stream, [input.consoleObserver])
         : stream;
       for await (const event of observed) {
+        // 0.2.107: every sign of life re-arms the idle watchdog — here, at the
+        // top, so `adapter_ready` and a swallowed held `result` count too.
+        if (SIGN_OF_LIFE_TYPES.has(event.type)) idleTimer.kick();
         // Mid-turn `user_message` carries an epoch-ms `timestamp` (number); map to
         // ISO on the wire so it matches `turn_start.timestamp`.
         if (event.type === 'user_message') {
@@ -1898,9 +2019,9 @@ export async function runAgentTurn(
                 `background hold expired after ${err.capMs}ms with ${hold.size} task(s) still running`,
               );
             } else if (err instanceof AdapterTimeoutError) {
-              deliveredError = new AgentTurnError('TIMEOUT', 'Agent took too long to respond');
+              deliveredError = new AgentTurnError('TIMEOUT', BACKSTOP_TIMEOUT_MESSAGE);
             } else if (err instanceof AdapterAbortError) {
-              deliveredError = new AgentTurnError('ABORTED', 'Aborted by user');
+              deliveredError = abortError();
             } else if (err instanceof AdapterInitError) {
               deliveredError = new AgentTurnError(
                 'AGENT_UNAVAILABLE',
@@ -1984,9 +2105,9 @@ export async function runAgentTurn(
       // AGENT_ERROR.
       turnErr = err;
     } else if (err instanceof AdapterAbortError) {
-      turnErr = new AgentTurnError('ABORTED', 'Aborted by user');
+      turnErr = abortError();
     } else if (err instanceof AdapterTimeoutError) {
-      turnErr = new AgentTurnError('TIMEOUT', 'Agent took too long to respond');
+      turnErr = new AgentTurnError('TIMEOUT', BACKSTOP_TIMEOUT_MESSAGE);
     } else if (err instanceof AdapterInitError) {
       turnErr = new AgentTurnError(
         'AGENT_UNAVAILABLE',
@@ -2000,6 +2121,7 @@ export async function runAgentTurn(
     emit({ type: 'error', code: turnErr.code, error: turnErr.message });
     throw turnErr;
   } finally {
+    idleTimer.stop();
     try {
       flushMainBuf();
       for (const tid of Array.from(subagentBuffers.keys())) flushSubBuf(tid);
