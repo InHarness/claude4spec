@@ -155,6 +155,16 @@ describe('POST /config/roots/:rootId/rename (0.2.101)', () => {
       expect(res.status, `newId=${JSON.stringify(newId)}`).toBe(400);
       expect(res.body.code).toBe('VALIDATION');
     }
+    // A reserved id is refused here too — not only by PATCH (the commit's
+    // writeConfig would merely warn about it).
+    const reserved = await request(app())
+      .post('/config/roots/adr/rename')
+      .send({ newId: 'search', expectedConfigHash: hash });
+    expect(reserved.status).toBe(400);
+    expect(reserved.body).toMatchObject({ code: 'VALIDATION', newId: 'search' });
+    expect(reserved.body.error).toMatch(/reserved/);
+    expect(readConfig(dir).roots.map((r) => r.id)).toEqual(['pages', 'adr']);
+
     const noop = await request(app())
       .post('/config/roots/adr/rename')
       .send({ newId: 'adr', expectedConfigHash: hash });

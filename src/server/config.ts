@@ -700,6 +700,9 @@ const RESERVED_ROOT_IDS = new Set(['search']);
 /** Reserved ids already warned about, so the read path says it once per process. */
 const WARNED_RESERVED_IDS = new Set<string>();
 
+/** Non-slug ids already warned about — same once-per-process rule as above. */
+const WARNED_NON_SLUG_IDS = new Set<string>();
+
 /**
  * The shape every root identifier must have: a kebab-case slug. Non-empty, no
  * spaces, no slashes, no leading/trailing/doubled dashes — the identifier is an
@@ -710,6 +713,11 @@ const ROOT_ID_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export function isValidRootId(id: unknown): id is string {
   return typeof id === 'string' && ROOT_ID_SLUG.test(id);
+}
+
+/** True for an identifier that names a route under `/api/pages/` (see RESERVED_ROOT_IDS). */
+export function isReservedRootId(id: string): boolean {
+  return RESERVED_ROOT_IDS.has(id);
 }
 
 /**
@@ -731,16 +739,28 @@ export function isValidRootId(id: unknown): id is string {
  */
 export function parseRootsArray(
   raw: unknown,
-  opts: { reservedIds?: 'refuse' | 'warn'; retiredIds?: ReadonlySet<string> } = {},
+  opts: {
+    reservedIds?: 'refuse' | 'warn';
+    idShape?: 'refuse' | 'warn';
+    retiredIds?: ReadonlySet<string>;
+  } = {},
 ): Root[] {
   if (!Array.isArray(raw)) throw typeError('roots', 'Root[]', raw);
   const roots = raw.map((r, i) => validateRoot(r, i));
   const seen = new Set<string>();
   for (const root of roots) {
     if (!ROOT_ID_SLUG.test(root.id)) {
-      throw new Error(
-        `config.json: invalid root id '${root.id}' — must be a kebab-case slug (lowercase letters, digits and single dashes)`,
-      );
+      const why = `invalid root id '${root.id}' — must be a kebab-case slug (lowercase letters, digits and single dashes)`;
+      // Same rule as RESERVED_ROOT_IDS: the slug shape arrived in 0.2.101, and
+      // releases before it accepted any non-empty id. A config already on disk
+      // keeps loading (read path passes 'warn'); only a WRITE is refused.
+      if (opts.idShape !== 'warn') throw new Error(`config.json: ${why}`);
+      if (!WARNED_NON_SLUG_IDS.has(root.id)) {
+        WARNED_NON_SLUG_IDS.add(root.id);
+        console.warn(
+          `[config] ${why}. The project still loads; use "Change root ID" in Settings to move it to a valid identifier.`,
+        );
+      }
     }
     if (seen.has(root.id)) throw new Error(`config.json: duplicate root id '${root.id}'`);
     if (opts.retiredIds?.has(root.id)) {
@@ -859,7 +879,7 @@ function validate(raw: unknown): Partial<Config> {
   if ('roots' in r) {
     // Read path: an id written under an older release warns, it does not brick
     // the project. `PATCH /api/config` still refuses — see RESERVED_ROOT_IDS.
-    out.roots = parseRootsArray(r.roots, { reservedIds: 'warn' });
+    out.roots = parseRootsArray(r.roots, { reservedIds: 'warn', idShape: 'warn' });
   }
   if ('briefsDir' in r) {
     if (typeof r.briefsDir !== 'string') throw typeError('briefsDir', 'string', r.briefsDir);

@@ -364,6 +364,12 @@ export function DirectoriesSection() {
               renaming={renamingRootId === root.id}
               renameError={renamingRootId === root.id ? renameError : null}
               renamePending={renameRoot.isPending}
+              // A root added in the draft does not exist on the server yet — a
+              // rename could only 404. And a successful rename refetches the
+              // config, which re-seeds the draft: any unsaved edit in this
+              // section would be silently dropped, so it has to land first.
+              canRename={config?.roots.some((r) => r.id === root.id) ?? false}
+              renameBlockedReason={dirty ? 'Save or discard the changes in this section first.' : null}
               onStartRename={() => {
                 setRenameError(null);
                 setRenamingRootId(root.id);
@@ -499,6 +505,8 @@ function RootCard({
   renaming,
   renameError,
   renamePending,
+  canRename,
+  renameBlockedReason,
   onStartRename,
   onCancelRename,
   onSubmitRename,
@@ -511,6 +519,10 @@ function RootCard({
   /** The server's refusal, rendered AT the target-id field (never as a toast). */
   renameError: string | null;
   renamePending: boolean;
+  /** False for a root that exists only in the unsaved draft — nothing to rename yet. */
+  canRename: boolean;
+  /** Set while the section has unsaved edits, which a rename's refetch would discard. */
+  renameBlockedReason: string | null;
   onStartRename: () => void;
   onCancelRename: () => void;
   onSubmitRename: (newId: string) => Promise<boolean>;
@@ -542,11 +554,13 @@ function RootCard({
           ) : null}
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          {!renaming ? (
+          {!renaming && canRename ? (
             <button
               type="button"
               onClick={onStartRename}
-              className="rounded px-2 py-1 text-[11.5px] font-medium"
+              disabled={renameBlockedReason !== null}
+              title={renameBlockedReason ?? undefined}
+              className="rounded px-2 py-1 text-[11.5px] font-medium disabled:opacity-50"
               style={{ color: 'var(--c-accent)' }}
             >
               Change root ID
@@ -588,7 +602,12 @@ function RootCard({
             />
             <button
               type="button"
-              disabled={renamePending || draftId.trim() === '' || draftId.trim() === root.id}
+              disabled={
+                renamePending ||
+                renameBlockedReason !== null ||
+                draftId.trim() === '' ||
+                draftId.trim() === root.id
+              }
               onClick={() => void onSubmitRename(draftId)}
               className="rounded-md px-3 py-1.5 text-[12px] font-medium disabled:opacity-50"
               style={{ background: 'var(--c-accent)', color: '#fff' }}
@@ -609,6 +628,11 @@ function RootCard({
             The previous identifier stays permanently reserved. Saved on its own, not by
             [Save] below.
           </span>
+          {renameBlockedReason ? (
+            <span className="text-[11.5px]" style={{ color: 'var(--c-muted)' }}>
+              {renameBlockedReason}
+            </span>
+          ) : null}
           {renameError ? (
             <span className="text-[11.5px]" style={{ color: '#b3261e' }}>
               {renameError}

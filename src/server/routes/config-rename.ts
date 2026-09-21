@@ -3,6 +3,7 @@ import {
   readConfig,
   writeConfig,
   isValidRootId,
+  isReservedRootId,
   configHash,
   builtinRoot,
 } from '../config.js';
@@ -173,6 +174,15 @@ export function rootRenameRouter(deps: RootRenameDeps): Router {
           'VALIDATION',
           'newId must be a kebab-case slug — no spaces, slashes or empty value',
           { rootId, newId: typeof newId === 'string' ? newId : undefined },
+        );
+      }
+      // The commit's `writeConfig` only WARNS on a reserved id (its read-path
+      // leniency), so the route must refuse it itself — exactly as PATCH does.
+      if (isReservedRootId(newId)) {
+        return fail(
+          'VALIDATION',
+          `root id '${newId}' is reserved — it names a route under /api/pages/, so a root using it would be unreachable there`,
+          { rootId, newId },
         );
       }
       if (newId === rootId) {

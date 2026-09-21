@@ -271,7 +271,7 @@ export function recoverPendingRootRename(cwd: string): 'none' | 'completed' | 'r
         // Same shape as `migrateConfigToV4`: repair the raw object, validate the
         // REPAIRED roots, then write atomically. `writeConfig` is no use here —
         // it re-reads (and validates) the current, broken file before merging.
-        parseRootsArray(relinkedRoots, { reservedIds: 'warn' });
+        parseRootsArray(relinkedRoots, { reservedIds: 'warn', idShape: 'warn' });
         raw.roots = relinkedRoots;
         atomicWrite(configPath(cwd), JSON.stringify(raw, null, 2) + '\n');
       }
