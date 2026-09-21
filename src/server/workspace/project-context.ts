@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
-import { migrateConfigToV4, readConfig, resolveDirAbs, validateRootDirs } from '../config.js';
+import { builtinRoot, migrateConfigToV4, readConfig, resolveDirAbs, validateRootDirs } from '../config.js';
+import { recoverPendingRootRename, rootIdChain, readRootRenames } from '../root-renames.js';
 import type { Root } from '../../shared/types.js';
 import { resolveAgentTurnScope } from '../services/agent-execution-scope.js';
 import type { PageRootRuntime } from '../routes/pages.js';
@@ -343,12 +344,18 @@ async function buildInner(
   // switcher — never saw a migration: the same workspace could hold one repaired
   // project and two carrying the shape that no longer loads. Idempotent, and it
   // writes only when something actually changed.
+  // 0.2.101: finish or undo a rename interrupted between its two writes, before
+  // anything reads `roots[]` (see `root-renames.ts`). Idempotent and a no-op
+  // without a journal.
+  recoverPendingRootRename(cwd);
   migrateConfigToV4(cwd);
   const bootConfig = readConfig(cwd);
   // 0.1.96: page roots come from config.roots[]. The CLI --pages override
-  // applies to the built-in 'pages' root's dir only.
+  // applies to the BASE root's dir only — 0.2.101: the entry carrying
+  // `builtin: true`, whatever its identifier. A user root that happens to be
+  // called `pages` is not the flag's target.
   const effectiveRoots: Root[] = bootConfig.roots.map((r) =>
-    r.id === 'pages' && deps.pagesDirOverride ? { ...r, dir: deps.pagesDirOverride } : r,
+    r.builtin && deps.pagesDirOverride ? { ...r, dir: deps.pagesDirOverride } : r,
   );
   // M21: briefsDir, default '.claude4spec/briefs'. Must be relative, must not escape cwd.
   const briefsDir = bootConfig.briefsDir ?? '.claude4spec/briefs';
@@ -548,10 +555,13 @@ async function buildInner(
     });
   }
   const rootById = new Map(rootRuntimes.map((rt) => [rt.root.id, rt]));
-  // The built-in 'pages' runtime backs the many single-root consumers that still
-  // take one PagesService/FileSerializer (release restore, entity reference-tools,
-  // current-page fetch, etc.).
-  const pagesRuntime = rootById.get('pages')!;
+  // The BASE root's runtime backs the many single-root consumers that still take
+  // one PagesService/FileSerializer (release restore, entity reference-tools,
+  // current-page fetch, etc.). 0.2.101: selected by the `builtin` flag — the
+  // identifier is the author's to change, so `rootById.get('pages')` would be a
+  // crash waiting for the first project that renamed its base root.
+  const baseRoot = builtinRoot(effectiveRoots);
+  const pagesRuntime = rootById.get(baseRoot.id)!;
   const pages = pagesRuntime.pages;
   const pagesWriter = pagesRuntime.writer;
   const pageSerializer = pagesRuntime.serializer;
@@ -798,7 +808,15 @@ async function buildInner(
   // within each root (self-scope); cross-root @-scope is applied client-side.
   const pagesLinkIndexer = new PagesLinkIndexerService(allRootServices, ws, projectionStatus);
   // M17: page versioning — shared instance; per-root serializer + rootId passed per recordVersion.
-  const pageVersions = new FileVersionService(db.handle, pageSerializer);
+  /**
+   * 0.2.101 — the identifier chain of a page space, read from the rename
+   * registry once per context build. Every `file_version` read goes through it,
+   * so a renamed space's history stays one timeline. Artifact markers
+   * (`brief`/`patch`/`plan`) and never-renamed roots resolve to themselves.
+   */
+  const renameTransitions = readRootRenames(cwd).transitions;
+  const resolveRootIdChain = (rootId: string): string[] => rootIdChain(renameTransitions, rootId);
+  const pageVersions = new FileVersionService(db.handle, pageSerializer, resolveRootIdChain);
   // M36: in-memory frontmatter indexer over every page root + the artifact mounts.
   const frontmatterRoots = new Map<string, PagesService>(allRootServices);
   for (const m of artifactMounts.values()) frontmatterRoots.set(m.entry.rootId, m.pages);
@@ -1137,6 +1155,7 @@ async function buildInner(
     releasableRootIds,
     releasableRootDirs,
     (rootId) => rootById.get(rootId)?.pages.records ?? null,
+    renameTransitions,
   );
   // M29: release restore must persist restored entities' files.
   releaseService.setEntityStore(entityStore);
@@ -1247,6 +1266,16 @@ async function buildInner(
       // so the route cannot accept a dir the next boot would reject.
       effectiveRoots,
       onOnboardingCompleted: (effectivePagesDir) => ensureWelcomePage(cwd, effectivePagesDir),
+      /**
+       * 0.2.101: a committed root rename invalidates the context like any other
+       * registry mutation. The successor is built on the ALREADY-switched
+       * registry — it mounts `pages:<newId>` over the same directory, and its
+       * boot `indexAll()` lays down `section_index` / link-index rows under the
+       * new key. Nothing is rewritten in place: rows under the retired id are
+       * not an alias of the new ones, they simply stop describing a mounted
+       * space.
+       */
+      onRootRenamed: () => onContextConfigChanged(),
       // M33 phase 3: lets the PATCH handler classify a `plugins` write by each
       // field's `kind` — an `executive` field invalidates the context (rebuild),
       // a `hot-reload` field does not (parity with writingStyle/language).

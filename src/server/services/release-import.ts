@@ -37,6 +37,7 @@ import type { ReleaseService } from './release.js';
 import type { SkillRegistry } from './skill-registry.js';
 import { readBundleMeta, sha256File, type BundleConfig } from './release-bundle.js';
 import type { ReleaseImportResponse } from '../../shared/release-import.js';
+import { seedRootRenamesFromManifest } from '../root-renames.js';
 
 interface ReleaseImportRow {
   id: number;
@@ -169,6 +170,11 @@ export class ReleaseImportService {
           fallbackName: project.name,
         }),
       );
+      // 0.2.101: inherit the source project's retired root identifiers. The
+      // manifest is their ONLY carrier in a bundle — the sanitized config does
+      // not publish them — so this reads `manifest.roots[].formerIds` rather
+      // than anything in `bundleConfig`.
+      seedRootRenamesFromManifest(this.cwd, manifest.roots ?? []);
 
       // 9. Audit success.
       const id = this.insertRow({

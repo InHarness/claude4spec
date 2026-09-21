@@ -18,7 +18,7 @@ export {
   assertSaveMode,
   FULL_ROOT_EDITOR_PROPS,
   MINIMAL_ROOT_EDITOR_PROPS,
-  ARTEFACT_ROOT_EDITOR_PROPS,
+  artefactRootEditorProps,
   type EditorContextId,
   type EditorContextSpec,
   type EditorSavePolicy,

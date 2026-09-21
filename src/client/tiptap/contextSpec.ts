@@ -34,25 +34,37 @@ export interface RootEditorProps {
   linkTargets: string[];
 }
 
-/** Full-behaviour props — the built-in `pages` root editor. */
+/** Full-behaviour props — the base page root's editor. */
 export const FULL_ROOT_EDITOR_PROPS: RootEditorProps = {
   sectionIndexed: true,
   referenceValidated: true,
   linkTargets: [],
 };
 
-/** Minimal-behaviour props — a default user root. Briefs and patches add `linkTargets: ['pages']`. */
+/** Minimal-behaviour props — a default user root. Briefs and patches add the base root as a link target. */
 export const MINIMAL_ROOT_EDITOR_PROPS: RootEditorProps = {
   sectionIndexed: false,
   referenceValidated: false,
   linkTargets: [],
 };
 
-/** The synthetic property bag of the two artefact surfaces (brief, patch). */
-export const ARTEFACT_ROOT_EDITOR_PROPS: RootEditorProps = {
-  ...MINIMAL_ROOT_EDITOR_PROPS,
-  linkTargets: ['pages'],
-};
+/**
+ * The synthetic property bag of the two artefact surfaces (brief, patch).
+ *
+ * 0.2.101: a factory rather than a constant. `@path.md` inside a brief or a
+ * patch resolves into the BASE page root — the entry carrying `builtin: true` —
+ * and that root's identifier is the project author's to change, so the target
+ * cannot be the frozen literal `['pages']` it used to be. Callers pass the id
+ * they read from the config; while it is still loading, `null` yields no link
+ * target at all, which fails closed (no autocomplete) rather than pointing `@`
+ * at a space that may not exist.
+ */
+export function artefactRootEditorProps(baseRootId: string | null): RootEditorProps {
+  return {
+    ...MINIMAL_ROOT_EDITOR_PROPS,
+    linkTargets: baseRootId ? [baseRootId] : [],
+  };
+}
 
 export type EditorSavePolicy =
   | { mode: 'debounce'; debounceMs: number } // save after idle

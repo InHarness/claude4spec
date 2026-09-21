@@ -82,6 +82,21 @@ export interface BundleRoot {
   id: string;
   name: string;
   dir: string;
+  /**
+   * 0.2.101 — identifiers this space has ANSWERED UNDER BEFORE, oldest first,
+   * retired by `POST /api/config/roots/:rootId/rename`. `id` above is always the
+   * current one at build time and equals the archive's page prefix; these are
+   * only ever read.
+   *
+   * Optional and additive: absent means "never renamed", and an empty array
+   * means the same, so `bundleSchemaVersion` does NOT bump for it. The manifest
+   * is the ONLY carrier of transitions inside a bundle — the sanitized
+   * `config.json` never publishes them.
+   *
+   * Restore matches an archive prefix against `id` OR any of these, and writes
+   * the pages under `id`.
+   */
+  formerIds?: string[];
 }
 
 /** Sanitized `config.json` shape embedded in the bundle (white-list, see below). */
@@ -335,13 +350,27 @@ export async function buildBundleArchive(
    * which is not an error.
    */
   tagDefs: readonly BundleTagInput[] | null,
+  /**
+   * 0.2.101 — per root id, the identifiers it has retired (oldest first). Comes
+   * from the rename registry, which this pure module deliberately does not read
+   * itself. Missing entry ⇒ never renamed.
+   */
+  rootFormerIds: Readonly<Record<string, readonly string[]>> = {},
 ): Promise<BuildBundleResult> {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-bundle-'));
   try {
     // 0.1.96: only releasable roots are carried (manifest + layout dirs).
     const releasableRoots: BundleRoot[] = config.roots
       .filter((r) => r.releasable)
-      .map((r) => ({ id: r.id, name: r.name, dir: r.dir }));
+      .map((r) => {
+        const formerIds = rootFormerIds[r.id] ?? [];
+        return {
+          id: r.id,
+          name: r.name,
+          dir: r.dir,
+          ...(formerIds.length > 0 ? { formerIds: [...formerIds] } : {}),
+        };
+      });
 
     // 1. manifest.json
     const manifest: BundleManifest = {

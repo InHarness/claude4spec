@@ -154,7 +154,13 @@ function encodePath(p: string): string {
 
 export interface ConfigResponse {
   name: string;
-  /** 0.1.96 multiroot: replaces the single `pagesDir`. The mandatory `'pages'` root is always roots[0]. */
+  /**
+   * 0.1.96 multiroot: replaces the single `pagesDir`.
+   *
+   * 0.2.101: exactly one entry carries `builtin: true` and THAT is the base page
+   * root, whatever its `id` — a response with no entry named `pages` is correct,
+   * and nothing may look the base root up by that literal.
+   */
   roots: Root[];
   writingStyle: string | null;
   /** Non-fatal degraded-state signal: `writingStyle` was skipped this session because it no longer resolves. */
@@ -232,11 +238,22 @@ export interface ConfigResponse {
   plugins: Record<string, Record<string, unknown>>;
   /** M01: config schema version (0.1.96 bumped to 4 — pagesDir → roots[]). */
   $schemaVersion: number;
+  /**
+   * 0.2.101 — sha256 of `config.json` as read. Response-only (never sent in a
+   * PATCH body); hand it back as `expectedConfigHash` when renaming a root, the
+   * way a page write hands back `expectedHash`.
+   */
+  configHash: string;
 }
 
 export interface ConfigPatch {
   name?: string;
-  /** 0.1.96 multiroot: replaces `pagesDir`; a full roots array replaces the whole set server-side. */
+  /**
+   * A full roots array replaces the whole set server-side. 0.2.101: replacing
+   * the set is NOT a rename — a body without an existing `id` but with a new one
+   * deletes one space and creates another (its pages, history and `linkTargets`
+   * do not travel). Use `configApi.renameRoot` to change an identifier.
+   */
   roots?: Root[];
   briefsDir?: string;
   patchesDir?: string;
@@ -279,6 +296,23 @@ export interface ConfigPatch {
   remoteProjectId?: string | null;
 }
 
+export interface RenameRootRequest {
+  newId: string;
+  /** `configHash` from the last `GET /api/config` — optimistic concurrency. */
+  expectedConfigHash: string;
+}
+
+export interface RenameRootResponse {
+  rootId: string;
+  previousRootId: string;
+  dir: string;
+  name: string;
+  builtin: boolean;
+  relinkedRoots: string[];
+  alreadyApplied: boolean;
+  configHash: string;
+}
+
 export const configApi = {
   async get(): Promise<ConfigResponse> {
     return handle<ConfigResponse>(await apiFetch('/api/config'));
@@ -291,6 +325,29 @@ export const configApi = {
         body: JSON.stringify(input),
       }),
     );
+  },
+  /**
+   * 0.2.101 — change a page space's identifier. Deliberately NOT a field of
+   * `patch()` above: a full `roots[]` write with a different `id` is a delete
+   * plus a create, which drops the space's pages and history; this keeps them.
+   */
+  async renameRoot(rootId: string, input: RenameRootRequest): Promise<RenameRootResponse> {
+    const res = await apiFetch(`/api/config/roots/${encodeURIComponent(rootId)}/rename`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    if (!res.ok) {
+      // `RenameRootError` is FLAT — `{ error: <message>, code, rootId?, newId? }` —
+      // unlike the `{ error: { code, message } }` envelope `handle()` reads. Read
+      // it as specified, or every refusal would surface as a bare status text and
+      // "taken by another root" would be indistinguishable from "retired".
+      const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+      const message = typeof body?.error === 'string' ? body.error : res.statusText;
+      const code = typeof body?.code === 'string' ? body.code : 'HTTP_ERROR';
+      throw new ApiError(code, message, res.status, body ?? undefined, body ?? undefined);
+    }
+    return (await res.json()) as RenameRootResponse;
   },
 };
 

@@ -44,6 +44,9 @@ export function resolveLandingTarget(input: {
   const { lastPage, roots, pagesTree, lastPageTree } = input;
 
   if (lastPage) {
+    // 0.2.101: a remembered page under an identifier a rename retired fails this
+    // check exactly like one under a deleted root — the old id is not an alias of
+    // the new one, so the landing falls through to the base root below.
     const rootExists = roots.some((r) => r.id === lastPage.rootId);
     if (rootExists && pathExistsInTree(lastPageTree, lastPage.path)) {
       return lastPage;
@@ -51,7 +54,9 @@ export function resolveLandingTarget(input: {
   }
 
   // Per-directory behavior is gated on Root flags, never a hardcoded id (src/shared/types.ts).
-  const builtinRootId = roots.find((r) => r.builtin)?.id ?? 'pages';
+  // 0.2.101: no `'pages'` fallback — without a base root there is no landing.
+  const builtinRootId = roots.find((r) => r.builtin)?.id;
+  if (!builtinRootId) return null;
 
   const indexFile = findRootIndexFile(pagesTree);
   if (indexFile) return { rootId: builtinRootId, path: indexFile.path };

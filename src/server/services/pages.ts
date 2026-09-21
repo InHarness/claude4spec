@@ -21,10 +21,17 @@ export class PagesService {
    * plain write, which is exactly as atomic as it ever was.
    */
   records: RecordStore<MarkdownRecord> | null = null;
-  /** 0.1.96: which root this service serves ('pages' | user slug | 'brief' | 'patch'). */
+  /**
+   * 0.1.96: which root this service serves — a page-root identifier (0.2.101:
+   * any kebab slug the project author chose, including the base root's) or one
+   * of the fixed `'brief'`/`'patch'` artifact markers.
+   */
   readonly rootId: string;
 
-  constructor(cwd: string, pagesDir: string = 'pages', rootId: string = 'pages') {
+  // 0.2.101: no `'pages'` defaults — a service constructed without an explicit
+  // root would serve whatever directory that literal happens to name today,
+  // which in a project that renamed its base root is nothing at all.
+  constructor(cwd: string, pagesDir: string, rootId: string) {
     this.root = path.join(cwd, pagesDir);
     this.rootId = rootId;
   }

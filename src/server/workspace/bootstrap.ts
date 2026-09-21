@@ -4,6 +4,7 @@ import { loadOrCreateConfig, migrateConfigToV3, migrateConfigToV4, readConfig, t
 import { ensureGitignore } from '../../bin/gitignore.js';
 import { BOOTSTRAP_TEMPLATE } from '../../bin/bootstrap-template.js';
 import { migrateLegacyDbIfNeeded } from './db-migration.js';
+import { recoverPendingRootRename } from '../root-renames.js';
 import type { WorkspaceRegistry } from './registry.js';
 import type { ProjectRecord, WorkspaceRecord } from './types.js';
 
@@ -34,8 +35,11 @@ export interface BootstrapResult {
  * effective pagesDir. Idempotent: skips if `index.md` exists or pagesDir is
  * non-empty (don't clobber restored/cloned pages).
  */
-export function ensureWelcomePage(cwd: string, pagesDir: string | undefined): void {
-  const pagesPath = path.join(cwd, pagesDir ?? 'pages');
+export function ensureWelcomePage(cwd: string, pagesDir: string): void {
+  // 0.2.101: the caller passes the BASE root's effective dir (found by the
+  // `builtin` flag) — no `'pages'` fallback, which would plant the welcome page
+  // in a directory the project may not use at all.
+  const pagesPath = path.join(cwd, pagesDir);
   fs.mkdirSync(pagesPath, { recursive: true });
   const indexPath = path.join(pagesPath, 'index.md');
   if (fs.existsSync(indexPath)) return;
@@ -86,6 +90,11 @@ export function bootstrapProject(
   // 0.1.96 config v4: map the legacy `pagesDir` scalar to the built-in `pages`
   // root (config.roots[]); 0.2.8 also materializes absent root fields and
   // carries a legacy `git.syncCommitOnRelease`. Idempotent.
+  // 0.2.101: a root rename commits the config and the transition registry as two
+  // writes. If the process died between them, this replays the journal — finishing
+  // the rename or undoing it entirely — BEFORE anything reads `roots[]`, so the
+  // project never starts with half-relinked `linkTargets`.
+  recoverPendingRootRename(cwd);
   migrateConfigToV4(cwd);
   // M31 config v3: physically remove pre-v3 port/mode; harvested values seed
   // the workspace registry (first-wins — an existing defaultPort stays).

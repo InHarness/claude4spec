@@ -109,6 +109,40 @@ describe('section index integrity', () => {
     expect(links()).toEqual([]);
   });
 
+  /**
+   * 0.2.101 — a root rename rebuilds the index under the new id. The section row
+   * moves (ON CONFLICT(anchor)), and its links must move with it: rows left
+   * under the old id would keep reporting an edge the page no longer has.
+   */
+  it('re-indexing under a renamed root leaves no link behind under the old id', async () => {
+    existing.add('ac|kept');
+    existing.add('ac|removed');
+    await pages.write('doc.md', {
+      body: [
+        '<!-- anchor: aaaaaa11 -->',
+        '# Top',
+        '',
+        '<single_element type="ac" slug="kept"/>',
+        '<single_element type="ac" slug="removed"/>',
+        '',
+      ].join('\n'),
+    });
+    await indexer.indexPage('pages', 'doc.md');
+    expect(links()).toEqual(['ac|kept', 'ac|removed']);
+
+    // The successor context: same directory, mounted under the new id.
+    const renamed = new PagesService(cwd, 'pages', 'docs');
+    const successor = new SectionIndexerService(db, new Map([['docs', { pages: renamed }]]), { broadcast: () => {} } as never, host);
+    await renamed.write('doc.md', {
+      body: ['<!-- anchor: aaaaaa11 -->', '# Top', '', '<single_element type="ac" slug="kept"/>', ''].join('\n'),
+    });
+    await successor.indexPage('docs', 'doc.md');
+
+    expect(links()).toEqual(['ac|kept']);
+    const roots = db.prepare('SELECT DISTINCT rootId FROM section_entity_link').all() as Array<{ rootId: string }>;
+    expect(roots.map((r) => r.rootId)).toEqual(['docs']);
+  });
+
   it('does not treat a # line inside a fenced code block as a heading', () => {
     const headings = parseHeadings(
       ['<!-- anchor: aaaaaa11 -->', '# Top', '', '```sh', '# not a heading', '```', '', '## Real', ''].join('\n').split('\n'),

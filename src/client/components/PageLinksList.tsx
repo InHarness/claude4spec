@@ -10,6 +10,7 @@ import {
   X,
 } from 'lucide-react';
 import { usePageLinks } from '../hooks/usePageLinks.js';
+import { useBaseRootId } from '../hooks/useConfig.js';
 import { useCreatePage, useWritePage } from '../hooks/usePage.js';
 import { api } from '../lib/api.js';
 import { toast } from '../ui/events.js';
@@ -38,14 +39,22 @@ function persistLiteralIgnores(map: Record<string, string[]>) {
   }
 }
 
-/** 0.1.96: the page-links index keys entries by `${rootId}:${path}`. */
-function splitKey(key: string): { rootId: string; path: string } {
+/**
+ * 0.1.96: the page-links index keys entries by `${rootId}:${path}`.
+ *
+ * 0.2.101: a key without the separator is a malformed entry, not "the base
+ * root" — the server has keyed every entry by root since 0.1.96, and guessing
+ * `'pages'` here would attribute it to whichever space happens to answer to
+ * that name today. `fallbackRootId` is the base root, passed in by the caller.
+ */
+function splitKey(key: string, fallbackRootId: string): { rootId: string; path: string } {
   const i = key.indexOf(':');
-  return i < 0 ? { rootId: 'pages', path: key } : { rootId: key.slice(0, i), path: key.slice(i + 1) };
+  return i < 0 ? { rootId: fallbackRootId, path: key } : { rootId: key.slice(0, i), path: key.slice(i + 1) };
 }
 
 export function PageLinksList() {
   const { data, isLoading } = usePageLinks();
+  const baseRootId = useBaseRootId();
   const [tab, setTab] = useState<Tab>('broken');
   const [literalIgnores, setLiteralIgnores] =
     useState<Record<string, string[]>>(() => loadLiteralIgnores());
@@ -160,8 +169,9 @@ export function PageLinksList() {
           grouped.map((g) => (
             <SourceGroup
               key={g.sourcePath}
-              rootId={splitKey(g.sourcePath).rootId}
-              path={splitKey(g.sourcePath).path}
+              rootId={splitKey(g.sourcePath, baseRootId ?? '').rootId}
+              path={splitKey(g.sourcePath, baseRootId ?? '').path}
+              baseRootId={baseRootId}
               items={g.items}
               onIgnore={(rawToken) => ignoreItem(g.sourcePath, rawToken)}
             />
@@ -210,11 +220,14 @@ function TabButton({
 function SourceGroup({
   rootId,
   path,
+  baseRootId,
   items,
   onIgnore,
 }: {
   rootId: string;
   path: string;
+  /** The base root — its pages show a bare path, every other root is prefixed. */
+  baseRootId: string | null;
   items: UnresolvedMention[];
   onIgnore: (rawToken: string) => void;
 }) {
@@ -227,7 +240,7 @@ function SourceGroup({
       >
         <FileText size={12} style={{ color: 'var(--c-muted)' }} />
         <h2 className="text-[12px] font-mono" style={{ color: 'var(--c-muted)' }}>
-          {rootId === 'pages' ? path : `${rootId}/${path}`}
+          {rootId === baseRootId ? path : `${rootId}/${path}`}
         </h2>
         <span className="text-[11px]" style={{ color: 'var(--c-subtle)' }}>
           {items.length}
