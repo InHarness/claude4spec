@@ -905,6 +905,11 @@ export class PlanService {
       }
       if (opts.patch.applied !== undefined && opts.patch.applied !== (current.frontmatter.applied === true)) {
         next.applied = opts.patch.applied;
+      } else if (current.frontmatter.applied === undefined) {
+        // 0.2.104 — the first frontmatter write on a plan that predates the
+        // `applied` key adds it, whatever the patch touched (a title-only
+        // write, or `applied: false` which the read already treats as pending).
+        next.applied = opts.patch.applied ?? false;
       }
       const newContent = matter.stringify(current.body, next as Record<string, unknown>);
       await this.writeBytes(opts.path, newContent);

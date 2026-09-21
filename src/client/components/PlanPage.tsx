@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Pencil } from 'lucide-react';
 import { ActionBar } from '../host-ui-kit/actions/ActionBar.js';
+import { ApiError } from '../lib/api-core.js';
 import { requestChatPrefill } from '../chat/chatPrefill.js';
 import { useChatStore } from '../state/chat.js';
 import {
@@ -77,21 +78,30 @@ export function PlanPage({ planPath }: Props) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
 
-  // Reset dirty when plan refetches to a newer version. `currentVersion`
-  // comes from a query (usePlanVersions) independent of the one supplying the
-  // editor's content (usePlan) — it resolves from a `0` placeholder to the
-  // real version asynchronously, which could otherwise fire this effect and
-  // wipe an in-progress edit the moment the user starts typing before that
-  // query settles. Skip the first observed value (query settling) and only
-  // clear on a genuine subsequent version change.
-  const lastSeenVersionRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (versionsData === undefined) return;
-    if (lastSeenVersionRef.current !== null && lastSeenVersionRef.current !== currentVersion) {
-      setDirtyContent(null);
-    }
-    lastSeenVersionRef.current = currentVersion;
-  }, [currentVersion, versionsData]);
+  // 0.2.104 — the hash the user's edit is based on, captured the moment the
+  // editor turns dirty. Save sends THIS, not `plan.hash`: a `plan:updated`
+  // refetch mid-edit replaces `plan.hash` with the agent's newer hash, and
+  // sending that one would let a stale buffer silently overwrite the agent's
+  // write. With the base hash the server answers `409 PLAN_CONFLICT` instead,
+  // and the buffer survives until the user discards it.
+  const baseHashRef = useRef<string | null>(null);
+  const handleEditorChange = useCallback(
+    (md: string, dirty: boolean) => {
+      if (!dirty) {
+        baseHashRef.current = null;
+        setDirtyContent(null);
+        return;
+      }
+      if (baseHashRef.current === null) baseHashRef.current = plan?.hash ?? null;
+      setDirtyContent(md);
+    },
+    [plan?.hash],
+  );
+  const handleDiscard = useCallback(() => {
+    baseHashRef.current = null;
+    setDirtyContent(null);
+    setError(null);
+  }, []);
 
   const handleSave = useCallback(async () => {
     if (!plan || dirtyContent === null) return;
@@ -101,11 +111,18 @@ export function PlanPage({ planPath }: Props) {
         // The editor holds the body only; `PUT .../content` replaces the whole
         // file. Carry the original frontmatter across or the save is rejected.
         content: withFrontmatterOf(plan.content, dirtyContent),
-        expectedHash: plan.hash,
+        expectedHash: baseHashRef.current ?? plan.hash,
       });
+      baseHashRef.current = null;
       setDirtyContent(null);
       setError(null);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setError(
+          'The plan changed since you started editing — discard your changes to load the latest version.',
+        );
+        return;
+      }
       setError(err instanceof Error ? err.message : String(err));
     }
   }, [plan, dirtyContent, savePlan]);
@@ -307,7 +324,7 @@ export function PlanPage({ planPath }: Props) {
             <>
               <PlanEditor
                 content={displayContent}
-                onChange={(md, dirty) => setDirtyContent(dirty ? md : null)}
+                onChange={handleEditorChange}
                 currentPage={`/plans/${plan.path}`}
               />
               {(isDirty || canExecute) && (
@@ -321,7 +338,7 @@ export function PlanPage({ planPath }: Props) {
                             label: 'Discard',
                             variant: 'ghost' as const,
                             disabled: savePlan.isPending,
-                            onClick: () => setDirtyContent(null),
+                            onClick: handleDiscard,
                           },
                           {
                             key: 'save',

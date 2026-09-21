@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { ClipboardList, MessageSquarePlus, Search } from 'lucide-react';
+import { ClipboardList, History, MessageSquarePlus, Search } from 'lucide-react';
 import { useChatStore } from '../state/chat.js';
-import { useCreateThreadFromPlan, usePlans } from '../hooks/usePlan.js';
+import { useCreateThreadFromPlan, usePlanLastThread, usePlans } from '../hooks/usePlan.js';
 import { SegmentedControl } from './SegmentedControl.js';
 import { AppliedBadge } from './AppliedBadge.js';
 
@@ -141,6 +141,13 @@ export function PlansListPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
+                    <LastThreadButton
+                      planPath={p.path}
+                      onOpen={(threadId) => {
+                        setChatThreadId(threadId);
+                        setChatOpen(true);
+                      }}
+                    />
                     <button
                       onClick={() => handleCreateThread(p.path)}
                       disabled={createThread.isPending}
@@ -182,4 +189,42 @@ function formatRelative(iso: string): string {
   } catch {
     return iso;
   }
+}
+
+/**
+ * 0.2.104 — the third row action: back to the plan's most recently active
+ * thread. Same shortcut as the plan page's threads panel ("Open last thread"),
+ * resolved per row through `GET /api/plans/:slug/last-thread`.
+ */
+function LastThreadButton({
+  planPath,
+  onOpen,
+}: {
+  planPath: string;
+  onOpen: (threadId: string) => void;
+}) {
+  const { data: lastThreadId = null, isLoading } = usePlanLastThread(planPath);
+  return (
+    <button
+      onClick={() => lastThreadId && onOpen(lastThreadId)}
+      disabled={!lastThreadId || isLoading}
+      className="rounded-md flex items-center gap-1 px-2 py-1 text-[11.5px] btn-ghost"
+      style={{
+        color: 'var(--c-muted)',
+        border: '1px solid var(--c-hair-strong)',
+        opacity: lastThreadId ? 1 : 0.4,
+        cursor: lastThreadId ? undefined : 'not-allowed',
+      }}
+      title={
+        isLoading
+          ? 'Loading threads…'
+          : lastThreadId
+            ? 'Open the most recently active thread'
+            : 'No thread references this plan yet'
+      }
+    >
+      <History size={11} />
+      Last thread
+    </button>
+  );
 }
