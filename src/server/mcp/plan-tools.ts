@@ -86,7 +86,7 @@ export function buildPlanToolsServer(
     'get_plan',
     explicit
       ? 'Read a plan by path (latest content, version). Use list_plans to find one.'
-      : 'Get the current plan attached to this thread (latest content, version). Returns { plan: null } if the thread has no plan yet. Use to inspect plan state before updating.',
+      : "Get the current plan attached to this thread (latest content, version). Returns { plan: null } if the thread has no plan yet. Use to inspect plan state before updating. This is the ONLY way to the plan's content: the system prompt carries the plan's path and version, never its body.",
     { ...pathParam, ...rangeParam },
     async (args) => {
       try {
