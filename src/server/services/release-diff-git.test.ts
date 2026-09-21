@@ -561,6 +561,151 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
     expect(delta.pages.some((p) => p.path.startsWith('.docs/'))).toBe(false);
   });
 
+  /**
+   * 0.2.102 — the `paths` filter on the git track: each element becomes the
+   * pathspec `<root.dir>/<relPath>`, and the pages that come back carry their
+   * `rootId`. The SQLite track answers the same filter over the same history
+   * with the same page set — the invariant binding the two.
+   */
+  describe('`paths` filter — git track, and parity with the SQLite track', () => {
+    async function seedTwoRoots(): Promise<{
+      releaseService: ReleaseService;
+      sqlOnly: ReleaseService;
+      v1Id: number;
+      v2Id: number;
+    }> {
+      const pagesDir = path.join(dir, 'pages');
+      const pluginsDir = path.join(dir, 'plugins');
+      fs.mkdirSync(pagesDir, { recursive: true });
+      fs.mkdirSync(pluginsDir, { recursive: true });
+      const { releaseService, releaseStore } = buildReleaseServiceMultiRoot(
+        ['pages', 'plugins'],
+        [pagesDir, pluginsDir],
+      );
+      // No git service: the same history answered from `file_version` alone.
+      const sqlOnly = new ReleaseService(
+        db,
+        fakeHost,
+        fakeVersions,
+        fakeFileVersions,
+        fakeFileSerializer,
+        fakeRawReader,
+        fakeTagsService,
+        fakePagesService,
+        () => null,
+        dir,
+        ['pages', 'plugins'],
+        [pagesDir, pluginsDir],
+      );
+
+      const files: Record<string, [string, string | null]> = {
+        // key `<rootId>/<relPath>` → [v1 content, v2 content (null = deleted)]
+        'pages/a.md': ['# A\n\nold\n', '# A\n\nnew\n'],
+        'plugins/a.md': ['# PA\n\nold\n', '# PA\n\nnew\n'],
+        'pages/b.md': ['# B\n\ngoing\n', null],
+        'pages/same.md': ['# Same\n\nsteady\n', '# Same\n\nsteady\n'],
+      };
+      const abs = (key: string): string => path.join(dir, key);
+      const insertVersion = (key: string, version: number, content: string | null, releaseId: number): void => {
+        const [rootId, ...rest] = key.split('/');
+        const relPath = rest.join('/');
+        db.prepare(
+          `INSERT INTO file_version (path, version, data, serializer_version, op, release_id, changed_by, rootId)
+           VALUES (?, ?, ?, 'v1', ?, ?, 'user', ?)`,
+        ).run(
+          relPath,
+          version,
+          content === null ? 'null' : JSON.stringify(fakeFileSerializer.snapshotFromContent(relPath, content)),
+          content === null ? 'delete' : version === 1 ? 'create' : 'update',
+          releaseId,
+          rootId,
+        );
+      };
+      const cut = async (name: string, when: number): Promise<number> => {
+        const id = Number(
+          db
+            .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
+            .run(name, name, name, 'user').lastInsertRowid,
+        );
+        releaseStore.write(name, {
+          name,
+          slug: name,
+          description: name,
+          createdAt: new Date(when).toISOString(),
+          createdBy: 'user',
+          roots: ['pages', 'plugins'],
+        });
+        return id;
+      };
+
+      for (const [key, [v1]] of Object.entries(files)) fs.writeFileSync(abs(key), v1);
+      const v1Id = await cut('v1', 0);
+      for (const [key, [v1]] of Object.entries(files)) insertVersion(key, 1, v1, v1Id);
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'v1'], dir);
+
+      for (const [key, [, v2]] of Object.entries(files)) {
+        if (v2 === null) fs.rmSync(abs(key));
+        else fs.writeFileSync(abs(key), v2);
+      }
+      const v2Id = await cut('v2', 1);
+      for (const [key, [v1, v2]] of Object.entries(files)) {
+        if (v2 !== v1) insertVersion(key, 2, v2, v2Id);
+      }
+      await git(['add', '-A'], dir);
+      await git(['commit', '-m', 'v2'], dir);
+      return { releaseService, sqlOnly, v1Id, v2Id };
+    }
+
+    const ids = (pages: Array<{ rootId: string; path: string; op: string }>): string[] =>
+      pages.map((p) => `${p.rootId}/${p.path}:${p.op}`).sort();
+
+    it('[ac:ac-release-diff-z-filtrem-paths-zawieraj] one full key returns only that page, attributed to its root', async () => {
+      const { releaseService, v1Id, v2Id } = await seedTwoRoots();
+      const delta = await releaseService.getReleaseDiff(v1Id, v2Id, { paths: ['plugins/a.md'] });
+      expect(ids(delta.pages)).toEqual(['plugins/a.md:modified']);
+    });
+
+    it('addresses a page that no longer exists on disk — the pathspec is not dropped', async () => {
+      const { releaseService, v1Id, v2Id } = await seedTwoRoots();
+      const delta = await releaseService.getReleaseDiff(v1Id, v2Id, { paths: ['pages/b.md'] });
+      expect(ids(delta.pages)).toEqual(['pages/b.md:deleted']);
+    });
+
+    it('[ac:ac-release-diff-z-filtrem-paths-wskazuja] an unchanged page is absent, not an error', async () => {
+      const { releaseService, v1Id, v2Id } = await seedTwoRoots();
+      const delta = await releaseService.getReleaseDiff(v1Id, v2Id, { paths: ['pages/same.md'] });
+      expect(delta.pages).toEqual([]);
+    });
+
+    it('both tracks give the same page set for the same filter', async () => {
+      const { releaseService, sqlOnly, v1Id, v2Id } = await seedTwoRoots();
+      const filters = [
+        undefined,
+        { roots: ['plugins'] },
+        { paths: ['pages/a.md'] },
+        { paths: ['pages/b.md', 'plugins/a.md'] },
+        { paths: ['pages/same.md'] },
+      ];
+      for (const opts of filters) {
+        const viaGit = ids((await releaseService.getReleaseDiff(v1Id, v2Id, opts)).pages);
+        const viaSql = ids((await sqlOnly.getReleaseDiff(v1Id, v2Id, opts)).pages);
+        expect(viaGit, JSON.stringify(opts)).toEqual(viaSql);
+      }
+      // …and the git track really ran: with the version table emptied, the SQL
+      // fallback would answer nothing, yet the git-backed service still sees it all.
+      db.prepare('DELETE FROM file_version').run();
+      expect(ids((await releaseService.getReleaseDiff(v1Id, v2Id, { paths: ['pages/b.md'] })).pages)).toEqual([
+        'pages/b.md:deleted',
+      ]);
+      expect(ids((await releaseService.getReleaseDiff(v1Id, v2Id)).pages)).toEqual([
+        'pages/a.md:modified',
+        'pages/b.md:deleted',
+        'plugins/a.md:modified',
+      ]);
+    });
+  });
+
   // code-review fix (0-1-123-to-next): readConfig() only type-checks briefsDir/patchesDir as
   // strings — an empty string (e.g. a careless hand-edit of config.json) must not resolve
   // briefsAbs/patchesAbs to cwd itself, which would make isInside() match every file and

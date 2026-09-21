@@ -59,8 +59,10 @@ export interface MCPEntityDeltaLight {
   op: 'create' | 'update' | 'delete';
 }
 
-/** Light delta-map entry (`summaryOnly: true`) — path + op, no `sections`/`content`. */
+/** Light delta-map entry (`summaryOnly: true`) — `(rootId, path)` + op, no `sections`/`content`. */
 export interface MCPPageDeltaLight {
+  /** 0.2.102: the page's root — see `MCPPageDelta.rootId`. */
+  rootId: string;
   path: string;
   op: 'create' | 'update' | 'delete';
 }
@@ -89,6 +91,14 @@ export interface MCPEntityDelta {
 }
 
 export interface MCPPageDelta {
+  /**
+   * 0.2.102: the page's root — first half of the full key `<rootId>/<path>`. A
+   * page's identity in history is the pair (rootId, path); `path` alone can
+   * collide across roots. Present in both response modes, and the same pair is
+   * the shape of an element of the `paths` filter.
+   */
+  rootId: string;
+  /** Path relative to the page's root. */
   path: string;
   op: 'create' | 'update' | 'delete';
   sections: MCPSectionDelta[];

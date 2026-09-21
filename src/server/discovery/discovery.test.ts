@@ -1199,15 +1199,18 @@ describe('discovery core', () => {
       expect(first.truncated).toBe(true);
       expect(first.message).toBeTruthy();
       const cut = (r: typeof first): string[] =>
-        r.results.filter((i) => 'line_start' in i && i.body === undefined).map((i) => i.anchor);
+        r.results.filter((i) => 'heading_text' in i && i.body === undefined).map((i) => i.anchor);
       expect(cut(first)).toEqual(cut(second));
       expect(cut(first).length).toBeGreaterThan(0);
 
       // Degraded, not dropped: a caller can still see WHAT it did not get.
       // Dropping would be indistinguishable from "that anchor does not exist".
       expect(first.results).toHaveLength(3);
-      for (const item of first.results.filter((i) => 'line_start' in i && i.body === undefined)) {
-        expect(item).toMatchObject({ truncated: true, line_start: expect.any(Number) });
+      for (const item of first.results.filter((i) => 'heading_text' in i && i.body === undefined)) {
+        // Meta-only keeps identity, heading and edges — and no line coordinates.
+        expect(item).toMatchObject({ truncated: true, anchor: expect.any(String), heading_text: expect.any(String) });
+        expect(item).not.toHaveProperty('line_start');
+        expect(item).not.toHaveProperty('line_end');
         // The edges are what the item has INSTEAD of its body — the only view
         // left of what this section points at.
         expect((item as SectionResultItem).edges).toBeDefined();
@@ -1276,8 +1279,6 @@ describe('discovery core', () => {
         page_path: 'tree.md',
         heading_text: 'Child',
         heading_level: 3,
-        line_start: expect.any(Number),
-        line_end: expect.any(Number),
       });
       expect(Object.keys(child!).sort()).toEqual(Object.keys(parent!).sort());
       expect(result.truncated).toBeUndefined();
@@ -1287,15 +1288,15 @@ describe('discovery core', () => {
       const bare = await c.getSections({ anchors: ['aaaaaa11'] });
       expect(bare.results).toHaveLength(1);
       expect((bare.results[0] as SectionResultItem).body).toBe(parent!.body);
-      expect((bare.results[0] as SectionResultItem).line_end).toBe(parent!.line_end);
     });
 
     /**
-     * `line_end` on the item is the end of the OWN body. The index keeps the
-     * subtree range (the write side edits by it), so the two are allowed to
-     * differ — and for a parent they do.
+     * 0.2.102 (M39 addressing rule) — the anchor is a full address and the body
+     * is in the same response, so no item carries a line coordinate: not a
+     * requested one, not an expanded one. The index keeps its range columns —
+     * the write side edits by them — and they are untouched by this.
      */
-    it('an item\'s line_end is the end of its own body, not of the indexed subtree range', async () => {
+    it('[ac:ac-item-pochodzacy-z-rozwiniecia-poddrze] items carry no line_start/line_end, requested or expanded, while the index keeps its range', async () => {
       await writePage(
         'pages',
         'range.md',
@@ -1307,10 +1308,12 @@ describe('discovery core', () => {
 
       const [parent, child] = (await c.getSections({ anchors: ['aaaaaa11'], includeSubtree: true })).results as SectionResultItem[];
 
-      expect(parent!.line_end).toBeLessThan(indexed.line_end);
-      // The own range ends where the child's anchor block begins: no gap, no overlap.
-      expect(child!.line_start).toBeGreaterThan(parent!.line_end);
-      expect(child!.line_end).toBe(indexed.line_end);
+      for (const item of [parent!, child!]) {
+        expect(item).not.toHaveProperty('line_start');
+        expect(item).not.toHaveProperty('line_end');
+      }
+      expect(Object.keys(child!).sort()).toEqual(Object.keys(parent!).sort());
+      expect(indexed.line_end).toBeGreaterThan(0);
     });
 
     /**
