@@ -92,13 +92,17 @@ describe.skipIf(!BASE)('settings — Directories: Change root ID (0.2.101)', () 
     if (!created.ok) throw new Error(`failed to create a page: ${created.status} ${await created.text()}`);
 
     page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    // The one ≥400 this suite provokes on purpose is the refused rename in the
+    // collision case. The browser reports it twice — as a response AND as a
+    // "Failed to load resource" console error — so both listeners exempt exactly
+    // that endpoint, by URL, and nothing else.
+    const isRenameCall = (url: string | undefined): boolean =>
+      !!url && /\/roots\/[^/]+\/rename$/.test(new URL(url).pathname);
     page.on('console', (msg) => {
-      if (msg.type() === 'error') consoleErrors.push(msg.text());
+      if (msg.type() === 'error' && !isRenameCall(msg.location().url)) consoleErrors.push(msg.text());
     });
     page.on('response', (res) => {
-      // The one ≥400 this suite provokes on purpose is the refused rename below;
-      // everything else must be clean.
-      if (res.status() >= 400 && !/\/roots\/[^/]+\/rename$/.test(new URL(res.url()).pathname)) {
+      if (res.status() >= 400 && !isRenameCall(res.url())) {
         failedResponses.push(`${res.status()} ${res.url()}`);
       }
     });
