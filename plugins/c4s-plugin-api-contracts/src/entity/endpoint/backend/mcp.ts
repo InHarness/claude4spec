@@ -2,7 +2,6 @@
 // (`@c4s/plugin-runtime`), never the vendor `@inharness-ai/agent-adapters` directly.
 import { createMcpServer, mcpTool, type McpServerFactory } from '@c4s/plugin-runtime';
 import { z } from 'zod';
-import type { WsEmitterLike as WsEmitter } from '../../../host-kit/host-types.js';
 import { DomainError } from '../../../host-kit/errors.js';
 import type { EndpointDtoRelation } from '../../../types.js';
 import { linkDto, unlinkDto, type LinkDtoDeps } from './link-dto.js';
@@ -16,8 +15,8 @@ import { linkDto, unlinkDto, type LinkDtoDeps } from './link-dto.js';
  * tool and the route cannot disagree about what linking means.
  */
 export interface EndpointToolsDeps {
+  /** Carries its own announcements: the host's update verb for the endpoint, `dtoTouched` for the DTO. */
   links: LinkDtoDeps;
-  ws: WsEmitter;
 }
 
 export function createEndpointToolsServer(deps: EndpointToolsDeps): McpServerFactory {
@@ -52,7 +51,6 @@ export function createEndpointToolsServer(deps: EndpointToolsDeps): McpServerFac
           args.relation as EndpointDtoRelation,
           (args.statusCode as number | undefined) ?? null,
         );
-        deps.ws.broadcast({ kind: 'entity:changed', entityType: 'endpoint', slug: String(args.endpointSlug) });
         return ok({ linked: true });
       } catch (err) {
         return fail(err);
@@ -79,7 +77,6 @@ export function createEndpointToolsServer(deps: EndpointToolsDeps): McpServerFac
           args.relation as EndpointDtoRelation,
           (args.statusCode as number | undefined) ?? null,
         );
-        deps.ws.broadcast({ kind: 'entity:changed', entityType: 'endpoint', slug: String(args.endpointSlug) });
         return ok({ unlinked: true });
       } catch (err) {
         return fail(err);

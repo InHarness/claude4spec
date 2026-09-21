@@ -112,6 +112,15 @@ export interface RootRenameDeps {
  * but it must not overlap: two concurrent renames would race on the config's
  * read-modify-write and could produce a transition chain that no longer matches
  * what is in `roots[]`.
+ *
+ * 0.2.106 — how "mutating operations on the root are paused" and "a second
+ * concurrent rename is rejected" actually hold: the handler below never yields
+ * (no `await` between the journal and `onRootRenamed`), so within this process
+ * no other request — a page write, another rename — can run inside the window
+ * at all. By the time one can, the context is invalidated and a write addressed
+ * to the retired id answers `ROOT_NOT_FOUND`. This set is the backstop that keeps
+ * that true if the commit ever becomes asynchronous; it must stay held across
+ * any `await` introduced here.
  */
 const inProgress = new Set<string>();
 
@@ -232,6 +241,8 @@ export function rootRenameRouter(deps: RootRenameDeps): Router {
       clearRenameJournal(cwd);
 
       deps.onRootRenamed?.(rootId, newId);
+      // The durable log is `root-renames.json`; this line is the operator's.
+      console.log(`[config] root renamed '${rootId}' → '${newId}' (relinked: ${relinked.join(', ') || 'none'})`);
 
       const after = updated.roots.find((r) => r.id === newId) ?? builtinRoot(updated.roots);
       return void res.json({

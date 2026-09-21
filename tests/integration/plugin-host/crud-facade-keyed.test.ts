@@ -70,7 +70,7 @@ describe('ctx.crud — the keyed collection write door a plugin is handed', () =
     expect(result).toEqual({ slug: 'sheet' });
     expect(cells()).toEqual([{ r: 2, c: 3, value: 'hi' }]);
     expect(entityFile().cells).toEqual([{ r: 2, c: 3, value: 'hi' }]);
-    expect(t.broadcasts).toEqual([{ kind: 'entity:changed', entityType: 'grid', slug: 'sheet' }]);
+    expect(t.broadcasts).toEqual([{ kind: 'entity:changed', entityType: 'grid', slug: 'sheet', action: 'update' }]);
   });
 
   it('merges a second write instead of replacing the grid — the reason this verb exists', async () => {
@@ -123,7 +123,7 @@ describe('ctx.crud — the keyed collection write door a plugin is handed', () =
       { r: 1, c: 1, value: 'a' },
       { r: 4, c: 1, value: 'c' },
     ]);
-    expect(t.broadcasts).toEqual([{ kind: 'entity:changed', entityType: 'grid', slug: 'sheet' }]);
+    expect(t.broadcasts).toEqual([{ kind: 'entity:changed', entityType: 'grid', slug: 'sheet', action: 'update' }]);
   });
 
   it('a rejected write leaves no trace — no rows, no file rewrite, no broadcast', async () => {

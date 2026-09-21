@@ -490,7 +490,15 @@ export function pagesRouter(
       if (!rt) return;
       const relPath = (req.params as Record<string, string>)[0];
       if (!relPath) return res.status(400).json({ error: 'missing path' });
-      res.json(await deletePage(rt, { path: relPath }, 'user'));
+      // Optional (unlike PUT/PATCH): from the query, since a DELETE usually has
+      // no body — a body is honoured too, for clients that send one.
+      const expectedHash =
+        typeof req.query.expectedHash === 'string'
+          ? req.query.expectedHash
+          : typeof req.body?.expectedHash === 'string'
+            ? (req.body.expectedHash as string)
+            : undefined;
+      res.json(await deletePage(rt, { path: relPath, expectedHash }, 'user'));
     } catch (err) {
       next(err);
     }

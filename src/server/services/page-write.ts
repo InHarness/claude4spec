@@ -861,7 +861,7 @@ async function readIfPresent(
 
 export async function deletePage(
   target: PageWriteTarget,
-  input: { path: string },
+  input: { path: string; expectedHash?: string },
   actor: WriteActor,
 ): Promise<{ ok: true; deleted: boolean }> {
   const relPath = input.path;
@@ -881,6 +881,15 @@ export async function deletePage(
    * apart.
    */
   if (!(await target.pages.exists(relPath))) return { ok: true, deleted: false };
+  /**
+   * 0.2.106 — `expectedHash` is OPTIONAL here, unlike on a write: a delete
+   * carries no content that could silently overwrite someone else's edit. When
+   * a caller does pass one, it gets the same `PAGE_CONFLICT` a write would —
+   * "don't delete what I haven't seen" is a guard worth honouring on request.
+   */
+  if (typeof input.expectedHash === 'string' && input.expectedHash.length > 0) {
+    await assertUnchanged(target, relPath, input.expectedHash);
+  }
   /**
    * A delete runs the chain in-band like every other write of spec content, so
    * `capture` authors the tombstone — synthesizing content from the last version

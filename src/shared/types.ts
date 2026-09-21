@@ -82,9 +82,16 @@ export interface PageSearchHit {
   matchesPath: boolean;
 }
 
+/** What a CRUD write did to its subject — the `action` of `entity:changed` / `tag:changed`. */
+export type WsChangeAction = 'create' | 'update' | 'delete';
+
 export type WsEvent =
   | { kind: 'file:changed'; event: 'add' | 'change' | 'unlink'; path: string; rootId: string; origin: 'server' | 'external' }
-  | { kind: 'entity:changed'; entityType: string; slug: string }
+  /**
+   * 0.2.106 (M49) — `action` says what the write did to `slug`. A write that only
+   * touched a relation of the entity (a DTO link, a tag assignment) is `update`.
+   */
+  | { kind: 'entity:changed'; entityType: string; slug: string; action: WsChangeAction }
   /**
    * M40 0.2.76 — a `projection`-phase reaction failed twice on one path, so the
    * projection it owns is out of step with the file.
@@ -119,7 +126,8 @@ export type WsEvent =
   // when the entity file was unlinked. Boot indexAll() does NOT emit (runs
   // before listen()).
   | { kind: 'entity:indexed'; type: string; slug: string; op?: 'upsert' | 'delete' }
-  | { kind: 'tag:changed'; slug: string }
+  /** `slug: ''` with `action: 'update'` — the watcher re-read tags wholesale. */
+  | { kind: 'tag:changed'; slug: string; action: WsChangeAction }
   | { kind: 'section:indexed'; rootId: string; pagePath: string; anchors: string[] }
   | { kind: 'todos:changed'; rootId?: string; pagePath?: string }
   | { kind: 'pageLinks:changed'; rootId?: string; sourcePath?: string }

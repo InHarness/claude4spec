@@ -70,6 +70,7 @@ const STATUS_STYLE: Record<PluginPackageRecord['status'], { bg: string; fg: stri
   loaded: { bg: 'var(--c-accent-soft)', fg: 'var(--c-accent)' },
   skipped: { bg: 'rgba(168, 112, 51, 0.18)', fg: '#a87033' },
   failed: { bg: 'rgba(196, 90, 59, 0.18)', fg: 'var(--c-red, #c45a3b)' },
+  incompatible: { bg: 'rgba(168, 112, 51, 0.18)', fg: '#a87033' },
 };
 
 function PackageRow({ record }: { record: PluginPackageRecord }) {
@@ -102,6 +103,15 @@ function PackageRow({ record }: { record: PluginPackageRecord }) {
       {record.reason ? (
         <div className="mt-1 text-[11px]" style={{ color: 'var(--c-muted)' }}>
           {record.reason}
+        </div>
+      ) : null}
+      {record.migration ? (
+        // 0.2.106: the badge only points at the fix — `c4s plugins doctor` is
+        // the repair path and carries the step-by-step migration descriptors.
+        <div className="mt-1 text-[11px]" style={{ color: '#a87033' }}>
+          Requires migration to Host API {record.migration.targetHostApiVersion}
+          {record.migration.shimAvailable ? ' (compat shim available)' : ''} — run{' '}
+          <span className="font-mono">c4s plugins doctor</span>
         </div>
       ) : null}
     </div>

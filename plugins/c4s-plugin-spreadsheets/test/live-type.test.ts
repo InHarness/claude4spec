@@ -64,7 +64,7 @@ describe('spreadsheet — the shipped type', () => {
       { r: 1, c: 1, value: 'Region' },
       { r: 2, c: 1, value: 'North' },
     ]);
-    expect(t.broadcasts).toContainEqual({ kind: 'entity:changed', entityType: 'spreadsheet', slug: 'q1-revenue' });
+    expect(t.broadcasts).toContainEqual({ kind: 'entity:changed', entityType: 'spreadsheet', slug: 'q1-revenue', action: 'update' });
   });
 
   it('stores a sheet sparsely and snapshots it that way too', async () => {

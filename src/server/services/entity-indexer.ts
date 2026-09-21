@@ -361,7 +361,7 @@ export class EntityIndexerService implements WatchSubscriber {
   private indexFromWatch(relPath: string): void {
     if (this.store.isTagsFile(relPath)) {
       this.indexTagsFile();
-      this.ws.broadcast({ kind: 'tag:changed', slug: '' });
+      this.ws.broadcast({ kind: 'tag:changed', slug: '', action: 'update' });
       return;
     }
     const parsed = this.store.parseRelPath(relPath);

@@ -38,6 +38,13 @@ export interface LinkDtoDeps {
     readCollection(type: string, slug: string, field: string): unknown[];
   };
   update(slug: string, linkedDtos: DtoLink[]): Promise<void>;
+  /**
+   * 0.2.106 (M49) — the OTHER side of a link changed too. `update` already
+   * announces the endpoint (the host's update verb broadcasts it); the DTO whose
+   * "used by" list just grew or shrank is announced here. Optional so a caller
+   * with no socket (a unit test) need not stub one.
+   */
+  dtoTouched?(dtoSlug: string): void;
 }
 
 /**
@@ -108,6 +115,7 @@ export async function linkDto(
   const next: DtoLink = { dto: dtoSlug, relation, statusCode: normalizeStatus(statusCode) };
   if (links.some((l) => sameLink(l, next))) return;
   await deps.update(endpointSlug, [...links, next]);
+  deps.dtoTouched?.(dtoSlug);
 }
 
 /**
@@ -130,4 +138,5 @@ export async function unlinkDto(
   });
   if (kept.length === links.length) return;
   await deps.update(endpointSlug, kept);
+  deps.dtoTouched?.(dtoSlug);
 }

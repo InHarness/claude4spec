@@ -106,7 +106,7 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): CapturedMc
           color: args.color as string | undefined,
           description: args.description as string | undefined,
         });
-        deps.ws.broadcast({ kind: 'tag:changed', slug: tag.slug });
+        deps.ws.broadcast({ kind: 'tag:changed', slug: tag.slug, action: 'create' });
         return ok({ slug: tag.slug, name: tag.name });
       } catch (err) {
         return fail(err);
@@ -137,7 +137,7 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): CapturedMc
         if (tag.slug !== oldSlug) {
           await deps.referencesService.propagateTagSlugChange(oldSlug, tag.slug);
         }
-        deps.ws.broadcast({ kind: 'tag:changed', slug: tag.slug });
+        deps.ws.broadcast({ kind: 'tag:changed', slug: tag.slug, action: 'update' });
         return ok({ slug: tag.slug, updated: true });
       } catch (err) {
         return fail(err);
@@ -152,7 +152,7 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): CapturedMc
     async (args) => {
       try {
         const result = deps.tagsService.remove(String(args.slug));
-        deps.ws.broadcast({ kind: 'tag:changed', slug: String(args.slug) });
+        deps.ws.broadcast({ kind: 'tag:changed', slug: String(args.slug), action: 'delete' });
         return ok(result);
       } catch (err) {
         return fail(err);
@@ -205,7 +205,12 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): CapturedMc
         const union = [...new Set([...existing, ...newTags])];
         deps.tagsService.assignTags(type, slug, union);
         deps.entityStore.persist(type, slug);
-        deps.ws.broadcast({ kind: 'entity:changed', entityType: type, slug });
+        deps.ws.broadcast({ kind: 'entity:changed', entityType: type, slug, action: 'update' });
+        // M49: an assignment changes the tag's membership too — the tag views
+        // (counts, co-occurrence) listen on `tag:changed`, not on the entity.
+        for (const tag of union.filter((t) => !existing.includes(t))) {
+          deps.ws.broadcast({ kind: 'tag:changed', slug: tag, action: 'update' });
+        }
         return ok({ tagged: true, addedCount: union.length - existing.length });
       } catch (err) {
         return fail(err);
@@ -231,7 +236,10 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): CapturedMc
         const remaining = existing.filter((s) => !toRemove.has(s));
         deps.tagsService.assignTags(type, slug, remaining);
         deps.entityStore.persist(type, slug);
-        deps.ws.broadcast({ kind: 'entity:changed', entityType: type, slug });
+        deps.ws.broadcast({ kind: 'entity:changed', entityType: type, slug, action: 'update' });
+        for (const tag of existing.filter((t) => toRemove.has(t))) {
+          deps.ws.broadcast({ kind: 'tag:changed', slug: tag, action: 'update' });
+        }
         return ok({ untagged: true, removedCount: existing.length - remaining.length });
       } catch (err) {
         return fail(err);

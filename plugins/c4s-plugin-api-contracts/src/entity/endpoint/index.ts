@@ -51,7 +51,7 @@ export const endpointEntity: EntityContribution = {
   backend: {
     routes: { router: (_service: unknown, ctx: MountContext) => endpointsRouter(linkDeps(ctx, 'user')) },
     mcpServer: (_service: unknown, ctx: MountContext) =>
-      createEndpointToolsServer({ links: linkDeps(ctx, 'agent'), ws: ctx.ws }),
+      createEndpointToolsServer({ links: linkDeps(ctx, 'agent') }),
   },
 } as EntityContribution;
 
@@ -75,6 +75,9 @@ function linkDeps(ctx: MountContext, actor: 'user' | 'agent'): LinkDtoDeps {
     reader: ctx.reader,
     update: async (slug: string, linkedDtos: DtoLink[]) => {
       await ctx.crud.update(ENDPOINT_TYPE, slug, { linkedDtos }, actor);
+    },
+    dtoTouched: (dtoSlug: string) => {
+      ctx.ws.broadcast({ kind: 'entity:changed', entityType: 'dto', slug: dtoSlug, action: 'update' });
     },
   };
 }

@@ -97,6 +97,16 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
       },
     });
   }
+  /**
+   * 0.2.106 (M49) — a client error raised by middleware rather than a route:
+   * `express.json` answering a malformed or oversized body carries its own
+   * `status` (400/413/415). It is the caller's request that is wrong, so it maps
+   * onto the layer's `400 VALIDATION` — the closed status set has no 413/415.
+   */
+  const status = (err as { status?: unknown } | null)?.status;
+  if (typeof status === 'number' && status >= 400 && status < 500) {
+    return res.status(400).json({ error: { code: 'VALIDATION', message: (err as Error).message } });
+  }
   console.error(err);
   res.status(500).json({ error: { code: 'INTERNAL', message: (err as Error).message } });
 };

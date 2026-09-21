@@ -116,4 +116,31 @@ describe('endpoint ↔ dto links (generic collection writes)', () => {
     expect((await link({ relation: 'request' })).status).toBe(400);
     expect((await link({ dtoSlug: 'user-dto' })).status).toBe(400);
   });
+
+  it('0.2.106 (M49) — link and unlink announce BOTH sides: the endpoint and the dto', async () => {
+    const changed = () =>
+      t.broadcasts.filter(
+        (b): b is { kind: string; entityType: string; slug: string; action: string } =>
+          (b as { kind?: string }).kind === 'entity:changed',
+      );
+
+    t.broadcasts.length = 0;
+    await link({ dtoSlug: 'user-dto', relation: 'response', statusCode: 200 });
+    expect(changed()).toEqual([
+      { kind: 'entity:changed', entityType: 'endpoint', slug: 'get-users', action: 'update' },
+      { kind: 'entity:changed', entityType: 'dto', slug: 'user-dto', action: 'update' },
+    ]);
+
+    t.broadcasts.length = 0;
+    await request(t.app).delete('/api/endpoints/get-users/dtos/user-dto/response?statusCode=200');
+    expect(changed()).toEqual([
+      { kind: 'entity:changed', entityType: 'endpoint', slug: 'get-users', action: 'update' },
+      { kind: 'entity:changed', entityType: 'dto', slug: 'user-dto', action: 'update' },
+    ]);
+
+    // An idempotent no-op writes nothing, so it announces nothing.
+    t.broadcasts.length = 0;
+    await request(t.app).delete('/api/endpoints/get-users/dtos/user-dto/response?statusCode=200');
+    expect(changed()).toEqual([]);
+  });
 });
