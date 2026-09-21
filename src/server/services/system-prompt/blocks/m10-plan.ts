@@ -8,50 +8,24 @@ export const M10_PROMPT_BLOCKS: readonly PromptBlock[] = [
   {
     name: 'current_plan',
     render: (c) => {
-      if (!c.currentPlan || c.currentPlan.body.trim().length === 0) return null;
+      if (!c.currentPlan) return null;
       /**
-       * 0.2.50 — `hash` and `path` join `version`, and the omission they fix was
-       * expensive out of all proportion to its size.
+       * 0.2.105 — the block is the plan's ADDRESS and version, never its body
+       * and never its hash.
        *
-       * The block injects the plan's ENTIRE body — some 25 KB in a real thread.
-       * To change one line of it the agent calls `update_plan`, which REQUIRES
-       * `expectedHash` on every call after the one that creates the plan, and
-       * the only source of a hash was `get_plan`. So the agent called
-       * `get_plan`, received the same 25 KB a second time, and only then could
-       * write. The injection saved no call; it doubled one.
-       *
-       * `get_plan`'s own doc comment states the principle this block was
-       * breaking: "a read operation that cannot arm the write operation's guard
-       * leaves the caller no legal first move." `<current_plan>` was exactly
-       * such a read, and the hash was in the same object the whole time.
+       * Up to 0.2.104 it inlined the whole plan plus the file's hash, so a first
+       * `update_plan` could go out without a read — except on a plan the prompt
+       * budget had truncated, where the hash had to be withheld and a warning
+       * took its place. Both halves were a liability: the body duplicated bytes
+       * the agent fetched anyway, and a hash without its content is an
+       * invitation to write blind. `get_plan` is now the first and only way in,
+       * and `expectedHash` comes from it. Pinned is the whole condition — the
+       * content is no longer a criterion of anything, an empty plan included.
        */
-      /**
-       * ...but ONLY on a whole plan. `getByThread` reads through `getByPath`,
-       * which windows the file at half the response budget, and `hash` is the
-       * digest of the WHOLE file either way — so on a truncated read the hash
-       * arms `expectedHash` against bytes the block never showed. The guard then
-       * passes on a body composed from the visible part, and the plan loses its
-       * tail with a `file_version` row asserting the edit was the change.
-       * `readForWrite`'s doc comment describes exactly this, which is why that
-       * second read exists at all.
-       *
-       * A truncated block therefore withholds the hash instead of handing over
-       * a loaded one, and says why. That restores the extra `get_plan` call in
-       * the one case where the call is not redundant.
-       */
-      const truncated = c.currentPlan.truncated === true;
-      const block = `<current_plan ${attrs({
+      return `<current_plan ${attrs({
         path: c.currentPlan.path,
         version: c.currentPlan.currentVersion,
-        hash: truncated ? undefined : c.currentPlan.hash,
-        truncated: truncated ? 'true' : undefined,
-      })}>\n${c.currentPlan.body}\n</current_plan>`;
-      if (!truncated) return block;
-      return (
-        `${block}\n` +
-        `This plan was TRUNCATED to fit the prompt${c.currentPlan.truncationHint ? ` (${c.currentPlan.truncationHint})` : ''} — the body above is not the whole file, and no hash is given for it. ` +
-        `Do NOT compose an update from what you see here: read the plan with get_plan first and write against the hash it returns, or you will write the truncation back over the missing part.`
-      );
+      })}>\nThe plan's content is NOT in this prompt — read it with get_plan.\n</current_plan>`;
     },
   },
 ];

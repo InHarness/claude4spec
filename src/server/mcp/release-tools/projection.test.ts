@@ -85,8 +85,9 @@ describe('projectSpecSnapshot — pagination (0.1.70)', () => {
 
 // ── Fixture: a release_diff with 4 entities (create/update/delete/create) and ──
 // ── 2 pages (create/delete). from/to snapshots carry the before/after data.   ──
-function emptyPage(path: string, op: RawDeltaPageChange['op']): RawDeltaPageChange {
+function emptyPage(path: string, op: RawDeltaPageChange['op'], rootId = 'pages'): RawDeltaPageChange {
   return {
+    rootId,
     path,
     op,
     added_sections: [],
@@ -117,7 +118,7 @@ function diffFixture(): { raw: RawDelta; from: SpecSnapshot; to: SpecSnapshot } 
       { type: 'dto', slug: 'dto-c', op: 'deleted', changes: [] },
       { type: 'dto', slug: 'dto-d', op: 'created', changes: [] },
     ],
-    pages: [emptyPage('pages/new.md', 'created'), emptyPage('pages/gone.md', 'deleted')],
+    pages: [emptyPage('pages/new.md', 'created'), emptyPage('pages/gone.md', 'deleted', 'plugins')],
   };
   const to: SpecSnapshot = {
     release: release(2, 'v2'),
@@ -162,10 +163,26 @@ describe('projectReleaseDiff — summaryOnly + pagination (0.1.71)', () => {
       expect(Object.keys(e).sort()).toEqual(['name', 'op', 'slug', 'type']);
     }
     const pages = out.pages as unknown as Array<Record<string, unknown>>;
+    // 0.2.102: the light entry is `{ rootId, path, op }` — the page's identity is the pair.
     expect(pages).toEqual([
-      { path: 'pages/new.md', op: 'create' },
-      { path: 'pages/gone.md', op: 'delete' },
+      { rootId: 'pages', path: 'pages/new.md', op: 'create' },
+      { rootId: 'plugins', path: 'pages/gone.md', op: 'delete' },
     ]);
+  });
+
+  it('[ac:ac-kazdy-wpis-pages-w-zwrotce-release-di] a page entry carries rootId next to path in heavy mode as in summaryOnly', () => {
+    const { raw, from, to } = diffFixture();
+    const heavy = projectReleaseDiff(raw, from, to, DIFF_INCLUDE, { limit: 10 });
+    const light = projectReleaseDiff(raw, from, to, DIFF_INCLUDE, { summaryOnly: true });
+    for (const out of [heavy, light]) {
+      const ids = (out.pages as Array<{ rootId: string; path: string }>).map((p) => [p.rootId, p.path]);
+      expect(ids).toEqual([
+        ['pages', 'pages/new.md'],
+        ['plugins', 'pages/gone.md'],
+      ]);
+    }
+    // In the heavy entry, rootId comes first — before path.
+    expect(Object.keys((heavy.pages as object[])[0]!).slice(0, 2)).toEqual(['rootId', 'path']);
   });
 
   it('summaryOnly:true ignores limit (the probe-map stays complete)', () => {
@@ -390,8 +407,8 @@ describe('release budget — explicit degradation (0.2.40)', () => {
   it('[ac:ac-asymetria-ciecia-snapshot-encji-wypad] the cut follows the payload: an entity snapshot drops whole, a section body is cut as text', () => {
     const big = 'x'.repeat(DEFAULT_BUDGET_CHARS);
     const rawPages = [
-      { path: 'pages/a.md', op: 'created', added_sections: [{ anchor: 'aaaaaa11', heading: 'A', content: big }], removed_sections: [], modified_sections: [], moved_sections: [], frontmatter_diff: null, xml_refs_diff: null },
-      { path: 'pages/b.md', op: 'created', added_sections: [{ anchor: 'bbbbbb22', heading: 'B', content: big }], removed_sections: [], modified_sections: [], moved_sections: [], frontmatter_diff: null, xml_refs_diff: null },
+      { rootId: 'pages', path: 'pages/a.md', op: 'created', added_sections: [{ anchor: 'aaaaaa11', heading: 'A', content: big }], removed_sections: [], modified_sections: [], moved_sections: [], frontmatter_diff: null, xml_refs_diff: null },
+      { rootId: 'pages', path: 'pages/b.md', op: 'created', added_sections: [{ anchor: 'bbbbbb22', heading: 'B', content: big }], removed_sections: [], modified_sections: [], moved_sections: [], frontmatter_diff: null, xml_refs_diff: null },
     ];
     const raw = {
       from: { id: 8, name: 'v8' },
@@ -444,6 +461,7 @@ describe('release budget — explicit degradation (0.2.40)', () => {
     const raw = {
       ...fatRaw(count),
       pages: Array.from({ length: count }, (_, i) => ({
+        rootId: 'pages',
         path: `pages/very/long/path/to/page-${i}.md`,
         op: 'created',
         added_sections: [],

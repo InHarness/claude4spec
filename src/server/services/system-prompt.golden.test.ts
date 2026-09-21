@@ -200,10 +200,6 @@ const SCENARIOS: Record<string, SystemPromptInput> = {
 
   // ── plan mode / plan ─────────────────────────────────────────────────────
   'chat plan mode off, plan pinned': full('chat', { planMode: false }),
-  'chat plan truncated': full('chat', {
-    currentPlan: plan({ truncated: true, truncationHint: 'read with range 1:200' }),
-  }),
-  'chat plan truncated no hint': full('chat', { currentPlan: plan({ truncated: true }) }),
   'chat plan empty body': full('chat', { currentPlan: plan({ body: '   ' }) }),
 
   // ── current page variants ────────────────────────────────────────────────

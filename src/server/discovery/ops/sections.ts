@@ -488,7 +488,7 @@ class PageCache {
 }
 
 const RETRY_HINT =
-  'response budget reached — every item after the first oversized one came back without its `body` (coordinates kept, `edges` added, `truncated: true`). Pick the anchors you actually need out of those `edges` and retry as a smaller subset.';
+  'response budget reached — every item after the first oversized one came back without its `body` (identity and heading kept, `edges` added, `truncated: true`). Pick the anchors you actually need out of those `edges` and retry as a smaller subset.';
 
 /**
  * The ceiling's message, and what it must NOT say.
@@ -553,9 +553,10 @@ function fetchOne(
    * learn what the part that did not fit points at. The condition is the
    * `truncated` flag, never `body === undefined`.
    *
-   * `line_end` is the end of the OWN body, not the indexed range: the index
-   * keeps the subtree range because the write side lives off it, while this
-   * item's coordinates describe the text it carries.
+   * 0.2.102: no `line_start`/`line_end`. The anchor is a full address and the
+   * body comes back in this same response, so a line coordinate would carry
+   * nothing the anchor does not (M39 addressing rule). The index keeps its line
+   * columns — the write side and the body-boundary rule live off them.
    */
   return {
     item: {
@@ -564,8 +565,6 @@ function fetchOne(
       page_path: section.pagePath,
       heading_text: section.headingText,
       heading_level: section.headingLevel,
-      line_start: section.lineStart,
-      line_end: hydrated.bodyEnd,
       body: budgeted.text,
       ...(budgeted.truncated ? { truncated: true, edges } : {}),
     },

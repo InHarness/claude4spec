@@ -25,6 +25,7 @@ function release(id: number, name: string): SpecSnapshot['release'] {
 
 function emptyPage(path: string, op: RawDeltaPageChange['op']): RawDeltaPageChange {
   return {
+    rootId: 'pages',
     path,
     op,
     added_sections: [],
@@ -77,8 +78,16 @@ const RELEASE_DELTA: RawDelta = {
   pages: [],
 };
 
+/** `pages` and `plugins` releasable, `scratch` a working root that never enters a release. */
+const ROOTS = [
+  { id: 'pages', releasable: true },
+  { id: 'plugins', releasable: true },
+  { id: 'scratch', releasable: false },
+];
+
 interface Calls {
   getReleaseDiff: Array<[unknown, unknown]>;
+  releaseOpts: unknown[];
   getUnreleasedDiff: unknown[];
   unreleasedOpts: unknown[];
   getReleaseSnapshot: unknown[];
@@ -88,14 +97,16 @@ interface Calls {
 function harness() {
   const calls: Calls = {
     getReleaseDiff: [],
+    releaseOpts: [],
     getUnreleasedDiff: [],
     unreleasedOpts: [],
     getReleaseSnapshot: [],
     getCurrentSnapshot: 0,
   };
   const releaseService = {
-    getReleaseDiff: async (from: unknown, to: unknown) => {
+    getReleaseDiff: async (from: unknown, to: unknown, opts: unknown) => {
       calls.getReleaseDiff.push([from, to]);
+      calls.releaseOpts.push(opts);
       return RELEASE_DELTA;
     },
     getUnreleasedDiff: async (from: unknown, opts: unknown) => {
@@ -121,6 +132,7 @@ function harness() {
     releaseService,
     gitService: {} as GitService,
     ws: { broadcast: () => {} } as unknown as WsEmitter,
+    roots: () => ROOTS,
   });
   const tool = server.tools.find((t) => t.name === 'release_diff')!;
 
@@ -185,7 +197,7 @@ describe('release_diff — the "current" branch', () => {
     const res = await call({ fromIdOrName: 'v1', toIdOrName: 'current', summaryOnly: true });
     const entities = res.body.entities as Array<Record<string, unknown>>;
     expect(entities.find((e) => e.slug === 'dto-gone')).toMatchObject({ op: 'delete' });
-    expect(res.body.pages).toContainEqual({ path: 'pages/gone.md', op: 'delete' });
+    expect(res.body.pages).toContainEqual({ rootId: 'pages', path: 'pages/gone.md', op: 'delete' });
   });
 
   it('summaryOnly returns the FULL identity map on this branch too, ignoring limit', async () => {
@@ -205,7 +217,7 @@ describe('release_diff — the "current" branch', () => {
     const { calls, call } = harness();
     await call({ fromIdOrName: 'v1', toIdOrName: 'current', roots: ['pages'] });
     expect(calls.getUnreleasedDiff).toEqual(['v1']);
-    expect(calls.unreleasedOpts).toEqual([{ roots: ['pages'] }]);
+    expect(calls.unreleasedOpts).toEqual([{ roots: ['pages'], paths: undefined }]);
   });
 });
 
@@ -245,6 +257,7 @@ describe('release_diff — what the tool tells an agent about the branch', () =>
       releaseService: {} as ReleaseService,
       gitService: {} as GitService,
       ws: { broadcast: () => {} } as unknown as WsEmitter,
+      roots: () => ROOTS,
     });
     const tool = server.tools.find((t) => t.name === 'release_diff')!;
     expect(tool.description).toContain('toIdOrName: "current"');
@@ -259,6 +272,7 @@ describe('release_diff — what the tool tells an agent about the branch', () =>
       releaseService: {} as ReleaseService,
       gitService: {} as GitService,
       ws: { broadcast: () => {} } as unknown as WsEmitter,
+      roots: () => ROOTS,
     });
     expect(server.tools.map((t) => t.name)).toEqual([
       'release_create',
@@ -267,5 +281,106 @@ describe('release_diff — what the tool tells an agent about the branch', () =>
       'release_diff',
       'release_update',
     ]);
+  });
+});
+
+/**
+ * 0.2.102 — the page filters. What is asserted here is the refusal taxonomy and
+ * its order; the narrowing itself is the engine's (tested against a real
+ * service in `release-unreleased-diff.test.ts` and `release-diff-git.test.ts`).
+ */
+describe('release_diff — `paths` / `roots` validation', () => {
+  it('passes `paths` through to the release engine', async () => {
+    const { calls, call } = harness();
+    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths: ['plugins/modules/x.md'] });
+    expect(res.isError).toBe(false);
+    expect(calls.releaseOpts).toEqual([{ roots: undefined, paths: ['plugins/modules/x.md'] }]);
+  });
+
+  it('passes `paths` through to the unreleased engine too', async () => {
+    const { calls, call } = harness();
+    await call({ fromIdOrName: 'v1', toIdOrName: 'current', paths: ['pages/a.md'] });
+    expect(calls.unreleasedOpts).toEqual([{ roots: undefined, paths: ['pages/a.md'] }]);
+  });
+
+  it('[ac:ac-release-diff-wywolany-z-paths-i-roots] `paths` together with `roots` is CONFLICTING_FILTERS', async () => {
+    const { calls, call } = harness();
+    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths: ['pages/a.md'], roots: ['pages'] });
+    expect(res.isError).toBe(true);
+    expect(res.body.code).toBe('CONFLICTING_FILTERS');
+    expect(calls.getReleaseDiff).toEqual([]);
+  });
+
+  it("`paths` without 'pages' in include is CONFLICTING_FILTERS — the mirror of entityTypes without 'entities'", async () => {
+    const { call } = harness();
+    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', include: ['entities'], paths: ['pages/a.md'] });
+    expect(res.body.code).toBe('CONFLICTING_FILTERS');
+    expect(res.body.error).toContain("'pages'");
+  });
+
+  it('[ac:ac-release-diff-wywolany-z-roots-jest-od] `roots: []` is INVALID_ROOTS_FILTER', async () => {
+    const { calls, call } = harness();
+    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', roots: [] });
+    expect(res.isError).toBe(true);
+    expect(res.body.code).toBe('INVALID_ROOTS_FILTER');
+    expect(calls.getReleaseDiff).toEqual([]);
+  });
+
+  it.each([
+    ['an unknown root', ['nope']],
+    ['a non-releasable root', ['scratch']],
+  ])('`roots` with %s is INVALID_ROOTS_FILTER naming the releasable roots', async (_label, roots) => {
+    const { calls, call } = harness();
+    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', roots });
+    expect(res.body.code).toBe('INVALID_ROOTS_FILTER');
+    expect(res.body.error).toContain('releasable roots: [pages, plugins]');
+    expect(res.body.hint).toBe('releasable roots: [pages, plugins]');
+    expect(calls.getReleaseDiff).toEqual([]);
+  });
+
+  it('[ac:ac-release-diff-z-elementem-paths-pozbaw] an element without a root prefix is INVALID_PATHS_FILTER', async () => {
+    const { calls, call } = harness();
+    for (const bad of ['a.md', '/a.md', 'pages/']) {
+      const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths: [bad] });
+      expect(res.isError).toBe(true);
+      expect(res.body.code).toBe('INVALID_PATHS_FILTER');
+    }
+    expect(calls.getReleaseDiff).toEqual([]);
+  });
+
+  it.each([
+    ['an empty array', []],
+    ['an unknown root id', ['nope/a.md']],
+    ['a non-releasable root', ['scratch/a.md']],
+  ])('`paths` with %s is INVALID_PATHS_FILTER', async (_label, paths) => {
+    const { call } = harness();
+    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths });
+    expect(res.body.code).toBe('INVALID_PATHS_FILTER');
+    expect(res.body.error).toContain('releasable roots: [pages, plugins]');
+  });
+
+  it('checks pagination before the filters, and emptiness before conflicts', async () => {
+    const { call } = harness();
+    const paging = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', limit: -1, roots: [] });
+    expect(paging.body.code).toBe('INVALID_PAGINATION');
+    const empty = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths: [], roots: ['pages'] });
+    expect(empty.body.code).toBe('INVALID_PATHS_FILTER');
+    const conflict = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths: ['nope/a.md'], roots: ['nope'] });
+    expect(conflict.body.code).toBe('CONFLICTING_FILTERS');
+  });
+
+  it('documents `paths` on the parameter verbatim from the tool record', () => {
+    const server = createReleaseToolsServer({
+      releaseService: {} as ReleaseService,
+      gitService: {} as GitService,
+      ws: { broadcast: () => {} } as unknown as WsEmitter,
+      roots: () => ROOTS,
+    });
+    const tool = server.tools.find((t) => t.name === 'release_diff')!;
+    const paths = (tool.inputSchema as Record<string, { description?: string }>).paths;
+    expect(paths?.description).toContain(
+      "Each element is a page's FULL key `<rootId>/<relPath>` and addresses exactly one page file — a directory prefix is not accepted. Mutually exclusive with `roots`, and rejected when `include` does not carry 'pages'. An empty array, an element without a root prefix, an unknown root id, or a non-releasable root is rejected.",
+    );
+    expect(tool.description).toContain('{ rootId, path, op }');
   });
 });

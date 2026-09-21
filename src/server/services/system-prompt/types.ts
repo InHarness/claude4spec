@@ -77,6 +77,7 @@ export interface SystemPromptInput {
   currentPagePath: string | null;
   /** 0.1.96: which root the current page belongs to — the `root="…"` attr on `<current_page>`. */
   currentPageRootId?: string;
+  /** 0.2.105: read only to count `total_lines` — no line of it reaches the prompt. */
   currentPageBody: string | null;
   annotations?: Annotation[];
   planMode?: boolean;

@@ -59,6 +59,11 @@ function buildBriefScope(brief: Brief, roots: readonly Root[]): string | null {
   ].join('\n');
 }
 
+/**
+ * 0.2.105 — address and frontmatter only. The body and its `hash` left the block
+ * together: `get_brief` is the first and only reach for the content, and the
+ * `expectedHash` of the first `update_brief` comes from that read.
+ */
 function buildCurrentBrief(brief: Brief): string {
   const fm = brief.frontmatter;
   const scopeRoots = scopeRootsOf(brief);
@@ -71,10 +76,9 @@ function buildCurrentBrief(brief: Brief): string {
       // than off its absence. Mirrors `from_release`'s `(initial)`.
       to_release: fm.to_release ?? '(unreleased)',
       implemented: fm.implemented ? 'true' : 'false',
-      hash: brief.hash,
       ...(scopeRoots.length > 0 ? { roots: scopeRoots.join(', ') } : {}),
     })}>`,
-    brief.content,
+    `The brief's content is NOT in this prompt — read it with get_brief.`,
     `</current_brief>`,
   ].join('\n');
 }

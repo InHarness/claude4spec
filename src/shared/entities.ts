@@ -426,6 +426,13 @@ export interface XmlRefsDiffLite {
 }
 
 export interface RawDeltaPageChange {
+  /**
+   * 0.2.102: the page's root — first half of its full key `<rootId>/<path>`.
+   * A page's identity in history is the pair (rootId, path); `path` alone can
+   * collide across roots.
+   */
+  rootId: string;
+  /** Path relative to the page's root. */
   path: string;
   op: 'created' | 'deleted' | 'modified' | 'noop';
   added_sections: PageSectionLite[];

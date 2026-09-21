@@ -245,16 +245,18 @@ describe('GET /api/sections — the index listing', () => {
       const [entry] = res.body.sections;
       expect(entry.contentSnippet).toHaveLength(SECTION_CONTENT_SNIPPET_CHARS);
       expect(Object.keys(entry)).not.toContain('body');
-      // The coordinates and header metadata are untouched by the addition.
+      // Header metadata is untouched by the addition.
       expect(entry).toMatchObject({
         anchor: 'aaaa1111',
         pagePath: 'notes.md',
         headingText: 'Alpha',
         headingLevel: 2,
         contentHash: 'hash',
-        lineStart: 1,
-        lineEnd: 5,
       });
+      // 0.2.102 (M39 addressing rule): the listing no longer hands out line
+      // coordinates — the anchor is the address. The index columns stay.
+      expect(entry).not.toHaveProperty('lineStart');
+      expect(entry).not.toHaveProperty('lineEnd');
     } finally {
       db.close();
     }

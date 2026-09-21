@@ -288,10 +288,14 @@ export interface SectionEdges {
  * the cut is invisible — so it gets edges despite having a `body`.
  *
  * 0.2.84 — `body` and `edges` are the section's OWN: the text up to its first
- * child heading, and the tags parsed from exactly that text. `line_end` is the
- * end of that own body, not the indexed range (which runs over the subtree and
- * is what the write side edits by). A child's text and tags come back on the
- * child's own item.
+ * child heading, and the tags parsed from exactly that text. A child's text and
+ * tags come back on the child's own item.
+ *
+ * 0.2.102 — no line coordinates. The anchor is the full address and the body is
+ * in the same response; a line number stays only where it carries what an
+ * anchor cannot (a hit outside any section, or several hits in one section).
+ * A subtree-expansion item and a budget-degraded one share this shape; the
+ * degraded one keeps identity, heading and `edges`.
  */
 export interface SectionResultItem {
   anchor: string;
@@ -299,8 +303,6 @@ export interface SectionResultItem {
   page_path: string;
   heading_text: string;
   heading_level: number;
-  line_start: number;
-  line_end: number;
   /** AS AUTHORED — XML tags untouched, because a tag is an edge. */
   body?: string;
   truncated?: boolean;
