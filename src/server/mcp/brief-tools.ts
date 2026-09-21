@@ -149,6 +149,11 @@ export function buildBriefToolsServer(
       '`truncated: true` with a `truncationHint` naming the range to use.',
       'Brief lives on disk under `briefsDir`; you do NOT have filesystem access',
       '(no Read/Write/Edit) — this tool is the only way to read brief content.',
+      ...(explicit
+        ? []
+        : [
+            "This is the ONLY way to the brief's content: the system prompt carries the brief's path and frontmatter, never its body and never its hash.",
+          ]),
     ].join(' '),
     explicit ? { ...EXPLICIT_BRIEF_ARG, ...BRIEF_RANGE_ARG } : { ...BRIEF_RANGE_ARG },
     async (args) => {

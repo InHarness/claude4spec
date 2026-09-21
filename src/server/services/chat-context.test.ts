@@ -1542,85 +1542,61 @@ describe('buildSystemPrompt — layer order (0.2.50)', () => {
   });
 
   /**
-   * The one rule this block and the marker both answer to: they may name CORE
-   * OPERATIONS and nothing else. `agent.disableDirectFilesystemAccess` defaults to
-   * true, which strips `Read` from the catalogue outright — a prompt that sends the
-   * agent to the disk is sending it to a tool that is not there.
+   * 0.2.105 — the block is identity and size. The page's content does not ride the
+   * prompt at any length, so there is no preview, no truncation marker and no
+   * separate "empty page" case: every variant is a self-closing tag.
    */
-  it('never sends a truncated page to the filesystem, in the block or in the marker', () => {
-    const long = Array.from({ length: 120 }, (_, i) => `line ${i}`).join('\n');
-    const out = build({ ...FULL_TURN, currentPagePath: 'guide.md', currentPageBody: long });
+  it('[ac:ac-strona-o-czterdziestu-liniach-lub-kro] carries path, root and total_lines — and not one line of the page, short or long', () => {
+    const short = build({ ...FULL_TURN, currentPagePath: 'guide.md', currentPageBody: '# Guide\n\nunique-short-line' });
+    expect(short).toContain('<current_page path="guide.md" root="pages" total_lines="3"/>');
+    expect(short).not.toContain('unique-short-line');
 
-    const marker = out.slice(out.indexOf('<current_page '), out.indexOf('</current_page>'));
-    expect(marker).toContain('preview_lines="1-40"');
-    expect(marker).toContain('get_page_outline');
-    expect(marker).toContain('get_sections');
-    expect(marker).not.toMatch(/\bRead\b/);
-    // Scoped to the block itself: `<claude4spec_plan_mode>` names `Read` further
-    // down, and naming it as DENIED is the opposite of pointing the agent at it.
-    expect(out.slice(out.indexOf('<current_page_handling>'), out.indexOf('</current_page_handling>'))).not.toMatch(
-      /\bRead\b/,
-    );
+    const long = Array.from({ length: 120 }, (_, i) => `unique-long-line ${i}`).join('\n');
+    const out = build({ ...FULL_TURN, currentPagePath: 'guide.md', currentPageBody: long });
+    expect(out).toContain('<current_page path="guide.md" root="pages" total_lines="120"/>');
+    expect(out).not.toContain('unique-long-line');
+    expect(out).not.toContain('preview_lines=');
+    expect(out).not.toContain('truncated.');
+    expect(out).not.toContain('</current_page>');
+  });
+
+  it('[ac:ac-blok-current-page-przy-niedostepnej-t] self-closes in every variant, with unavailable INSTEAD of total_lines', () => {
+    const unavailable = build({ ...FULL_TURN, currentPagePath: 'guide.md', currentPageBody: null });
+    expect(unavailable).toContain('<current_page path="guide.md" root="pages" unavailable="true"/>');
+    expect(unavailable).not.toMatch(/<current_page [^>]*total_lines=/);
+
+    // An empty page is no longer a case of its own — only its line count differs.
+    const blank = build({ ...FULL_TURN, currentPagePath: 'guide.md', currentPageBody: '   ' });
+    expect(blank).toContain('<current_page path="guide.md" root="pages" total_lines="1"/>');
+    expect(blank).not.toContain('empty="true"');
+    const zero = build({ ...FULL_TURN, currentPagePath: 'guide.md', currentPageBody: '' });
+    expect(zero).toContain('<current_page path="guide.md" root="pages" total_lines="0"/>');
   });
 
   /**
-   * Both routes must leave the caller holding the write guard, or the preview is a
-   * dead end: the page you were shown only part of is the page you cannot arm an
-   * edit against.
+   * With no content and no marker in `<current_page>`, the handling block is the
+   * only place the route to the page's content is written down. It may name CORE
+   * OPERATIONS and nothing else: `agent.disableDirectFilesystemAccess` defaults to
+   * true, which strips `Read` from the catalogue outright.
    */
-  it('points a long page at the sectional route and names the hash the write needs', () => {
-    const long = Array.from({ length: 120 }, (_, i) => `line ${i}`).join('\n');
-    const out = build({ ...FULL_TURN, currentPagePath: 'guide.md', currentPageBody: long });
-
+  it('[ac:ac-blok-current-page-handling-i-marker-u] routes to the core read operations, never to the filesystem', () => {
+    const out = build({ ...FULL_TURN, currentPagePath: 'guide.md', currentPageBody: '# Guide' });
     const block = out.slice(out.indexOf('<current_page_handling>'), out.indexOf('</current_page_handling>'));
     expect(block).toContain('get_page_outline');
     expect(block).toContain('get_sections');
-    expect(block).toContain('expectedHash');
-    // `get_page` stays on offer for the case that genuinely wants the whole page.
     expect(block).toContain('get_page');
-  });
-
-  /**
-   * The sectional route is not universal, and a notice that proposes it on a root
-   * without a section index proposes an INVALID_ARGUMENT: `get_page_outline` goes
-   * through `RootSet.requireSectionIndexed`. The marker follows the same rule
-   * `get_page`'s own `truncationHint` follows — never name a call the operation it
-   * points at refuses.
-   */
-  it('routes a long page on a non-section-indexed root to get_page instead', () => {
-    const long = Array.from({ length: 120 }, (_, i) => `line ${i}`).join('\n');
-    const flat: Root = { ...rootAt('notes', 'notes'), sectionIndexed: false };
-    const out = build({
-      ...FULL_TURN,
-      roots: [flat],
-      currentPagePath: 'guide.md',
-      currentPageRootId: 'notes',
-      currentPageBody: long,
-    });
-
-    const marker = out.slice(out.indexOf('<current_page '), out.indexOf('</current_page>'));
-    expect(marker).toContain('preview_lines="1-40"');
-    expect(marker).toContain('get_page');
-    expect(marker).toContain('not section-indexed');
-    // The two calls that would answer INVALID_ARGUMENT on this root.
-    expect(marker).not.toMatch(/get_page_outline\(/);
-    expect(marker).not.toMatch(/get_sections\(/);
-    // Still no filesystem read — the standing rule holds on both branches.
-    expect(marker).not.toMatch(/\bRead\b/);
-  });
-
-  /** A short page is inlined whole — no marker, no preview attribute, nothing to route. */
-  it('leaves a page inside the preview budget unmarked', () => {
-    const out = build({ ...FULL_TURN, currentPagePath: 'guide.md', currentPageBody: '# Guide\n\nbody' });
-    expect(out).not.toContain('preview_lines=');
-    expect(out).not.toContain('truncated.');
-  });
-
-  it('self-closes an unavailable and an empty current page, unchanged by the marker rewrite', () => {
-    expect(build({ ...FULL_TURN, currentPagePath: 'guide.md', currentPageBody: null })).toContain(
-      'unavailable="true"',
-    );
-    expect(build({ ...FULL_TURN, currentPagePath: 'guide.md', currentPageBody: '   ' })).toContain('empty="true"');
+    expect(block).toContain('expectedHash');
+    expect(block).toContain('`total_lines`');
+    expect(block).toContain("The page's CONTENT is NOT in this prompt: not one line of it, however short the page is.");
+    expect(block).toContain('`total_lines` is there to tell you whether that is cheap.');
+    // The marker it used to defer to is gone, and so is the sentence deferring to it.
+    expect(block).not.toContain('truncation notice');
+    expect(block).not.toContain('preview_lines');
+    // Scoped to the block itself: `<claude4spec_plan_mode>` names `Read` further
+    // down, and naming it as DENIED is the opposite of pointing the agent at it.
+    // The TOOL, not the verb — the block opens its route with "Read it, and prefer…".
+    expect(block).not.toMatch(/`Read`|\bRead\s*\(|\bRead tool\b/);
+    expect(block).not.toMatch(/\bRead\b(?! it, and prefer)/);
   });
 
   it('emits no handling block for a state block that is absent', () => {
@@ -1724,37 +1700,52 @@ describe('buildSystemPrompt — the block table under frames it was not written 
   const ARTIFACT = ['/tmp/my-spec/.claude4spec/plans'];
 
   /**
-   * `getByThread` reads through `getByPath`, which windows the file at half the
-   * response budget — and `hash` is the digest of the WHOLE file either way. Hand
-   * the agent both and the `expectedHash` guard passes on a body composed from
-   * the visible part, so the plan loses its tail with a `file_version` row
-   * asserting the edit was the change. `readForWrite` exists for exactly this.
+   * 0.2.105 — the plan block is address and version. No body and no hash, so the
+   * first `update_plan` has nothing to arm `expectedHash` with but a `get_plan`.
+   * A truncated read no longer needs a case of its own: nothing is inlined to cut.
    */
-  it('withholds the hash from a TRUNCATED plan rather than arming a write with it', () => {
+  it('[ac:ac-agent-z-przypietym-planem-widzi-w-pro] carries only the plan\'s path and version — no body, no hash', () => {
     const plan = {
       path: 'p.md',
       currentVersion: 6,
       hash: 'abc123',
-      body: 'head of the plan',
+      body: 'unique-plan-body',
       truncated: true as const,
       truncationHint: 'pass range to read further',
     } as unknown as SystemPromptInput['currentPlan'];
     const out = build({ currentPlan: plan });
-    expect(out).toContain('truncated="true"');
+    expect(out).toContain(
+      '<current_plan path="p.md" version="6">\nThe plan\'s content is NOT in this prompt — read it with get_plan.\n</current_plan>',
+    );
+    expect(out).not.toContain('unique-plan-body');
     expect(out).not.toContain('hash="abc123"');
-    expect(out).toContain('read the plan with get_plan first');
+    expect(out).not.toContain('truncated=');
+    expect(out).not.toContain('TRUNCATED');
   });
 
-  it('hands over the hash when the plan came through whole', () => {
-    const plan = {
-      path: 'p.md',
-      currentVersion: 6,
-      hash: 'abc123',
-      body: 'the whole plan',
-    } as unknown as SystemPromptInput['currentPlan'];
-    const out = build({ currentPlan: plan });
-    expect(out).toContain('hash="abc123"');
-    expect(out).not.toContain('truncated=');
+  it('[ac:ac-snapshot-artefaktu-w-prompcie-niesie] carries the brief\'s address and frontmatter, neither its content nor its hash', () => {
+    const brief = {
+      path: '0-1-0-to-0-2-0.md',
+      frontmatter: { type: 'brief', from_release: '0.1.0', to_release: null, implemented: false, roots: ['adr'] },
+      body: 'unique-brief-body',
+      content: '---\ntype: brief\n---\nunique-brief-body',
+      hash: 'brief-hash-123',
+    } as unknown as SystemPromptInput['brief'];
+    const out = build({ contextType: 'brief', brief });
+    const block = out.slice(out.indexOf('<current_brief '), out.indexOf('</current_brief>') + '</current_brief>'.length);
+    expect(block).toBe(
+      '<current_brief path="0-1-0-to-0-2-0.md" from_release="0.1.0" to_release="(unreleased)" implemented="false" roots="adr">\n' +
+        "The brief's content is NOT in this prompt — read it with get_brief.\n" +
+        '</current_brief>',
+    );
+    expect(out).not.toContain('unique-brief-body');
+    expect(out).not.toContain('brief-hash-123');
+  });
+
+  it('emits the plan block whenever a plan is pinned, an empty one included', () => {
+    const plan = { path: 'p.md', currentVersion: 1, hash: 'h', body: '   ' } as unknown as SystemPromptInput['currentPlan'];
+    expect(build({ currentPlan: plan })).toContain('<current_plan path="p.md" version="1">');
+    expect(build({ currentPlan: null })).not.toContain('<current_plan');
   });
 
   /**
