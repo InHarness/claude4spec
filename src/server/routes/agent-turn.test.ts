@@ -1933,3 +1933,44 @@ describe('runAgentTurn — library idle clock (0.2.107)', () => {
     expect(clearQueued).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * agent-adapters 0.9.12: a subagent re-entered via SendMessage starts again
+ * under the SAME task id (`resumed: true`); the last completion ends it.
+ */
+describe('runAgentTurn — subagent re-entry (agent-adapters 0.9.12)', () => {
+  it('persists every cycle of a re-entered subagent and forwards the resumed start', async () => {
+    hoisted.events = [
+      { type: 'subagent_started', taskId: 'task1', description: 'explore', toolUseId: 'tu_task' },
+      { type: 'subagent_completed', taskId: 'task1', status: 'completed', summary: 'first' },
+      {
+        type: 'subagent_started',
+        taskId: 'task1',
+        description: 'follow-up',
+        toolUseId: 'tu_send',
+        resumed: true,
+      },
+      { type: 'subagent_completed', taskId: 'task1', status: 'completed', summary: 'second' },
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps } = makeDeps();
+    const starts: unknown[][] = [];
+    const completions: unknown[][] = [];
+    Object.assign(deps.chatService, {
+      startSubagentTask: (...args: unknown[]) => starts.push(args),
+      completeSubagentTask: (...args: unknown[]) => completions.push(args),
+    });
+    const events: Array<Record<string, unknown>> = [];
+
+    await runAgentTurn(deps, { ...makeInput(), onEvent: (e) => events.push(e as never) });
+
+    expect(starts).toEqual([
+      ['t1', 'task1', 'explore', 'tu_task'],
+      ['t1', 'task1', 'follow-up', 'tu_send'],
+    ]);
+    expect(completions.at(-1)).toEqual(['t1', 'task1', 'completed', 'second']);
+    const started = events.filter((e) => e.type === 'subagent_started');
+    expect(started).toHaveLength(2);
+    expect(started[1]).toMatchObject({ taskId: 'task1', resumed: true });
+  });
+});
