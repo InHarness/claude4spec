@@ -66,7 +66,7 @@ export function buildTransagentToolsServer(ctx: TransagentToolsContext): Capture
       'On failure the tool_result is `isError` with a flat `{ error, code }`. Codes:',
       '  - ABORTED / IDLE_TIMEOUT / TIMEOUT / AGENT_UNAVAILABLE / AGENT_ERROR — the CHILD turn ended',
       '    that way. ABORTED means a human stopped it; IDLE_TIMEOUT means the child went silent past',
-      '    its idle clock and its own watchdog stopped it — YOUR turn continues; AGENT_UNAVAILABLE',
+      '    its own idle clock and was stopped — YOUR turn continues; AGENT_UNAVAILABLE',
       '    means it never started (retryable).',
       '  - NOT_FOUND — `threadId` names no thread.',
       '  - INVALID_ARGS — the arguments do not describe a runnable child: contextType=\'patch\'',
@@ -101,7 +101,7 @@ export function buildTransagentToolsServer(ctx: TransagentToolsContext): Capture
       } catch (err) {
         // Every child failure collapses upward as the parent's tool_result
         // isError { code, message } — including a child stopped by its own idle
-        // watchdog (IDLE_TIMEOUT); the caller's turn carries on. The last good
+        // clock (IDLE_TIMEOUT); the caller's turn carries on. The last good
         // summary remains readable via runTransagent({ threadId }).
         const { code, hint } = transagentErrorCode(err);
         const message = err instanceof Error ? err.message : String(err);

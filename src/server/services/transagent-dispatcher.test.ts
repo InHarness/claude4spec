@@ -1,12 +1,11 @@
 import Database from 'better-sqlite3';
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { runMigrations } from '../db/migrate.js';
 import { ChatService } from './chat.js';
 import { TransagentDispatcher, type TransagentRunInput } from './transagent-dispatcher.js';
 import type { AgentTurnDeps, AgentTurnInput } from '../routes/agent-turn.js';
 import { DomainError } from './tags.js';
-import { IdleWatchdog } from '../routes/idle-watchdog.js';
-import { AgentTurnError, IDLE_TIMEOUT_MS, TRANSAGENT_IDLE_MARGIN_MS } from '../../shared/agent-turn.js';
+import { AgentTurnError } from '../../shared/agent-turn.js';
 
 /**
  * 0.2.30 M05: `runTransagent`'s `planMode` — the generic step of the dispatcher.
@@ -542,10 +541,11 @@ describe('TransagentDispatcher — patch payload.patchPath + brief payload (0.2.
 });
 
 /**
- * 0.2.107 (M46): the child has its OWN watchdog (inside its own runAgentTurn);
- * the dispatcher's job is to keep the PARENT's clock honest while the bubble
- * runs — fed by the child's events, one margin longer, paused on relayed
- * questions — and to let a child's idle abort come back as an error.
+ * 0.2.107 (M46): the child has its OWN idle clock — the library's, armed by its
+ * own runAgentTurn because the dispatcher passes no `timeoutMs` (only `ask`
+ * does, and `ask` runs without one). The parent needs nothing from the
+ * dispatcher: its `runTransagent` tool_use is outstanding work to the library.
+ * What is left here is that a child's idle stop comes back as an error.
  */
 describe('TransagentDispatcher — idle clocks (0.2.107)', () => {
   let db: Database.Database;
@@ -560,13 +560,10 @@ describe('TransagentDispatcher — idle clocks (0.2.107)', () => {
 
   const setup = (runTurn: (input: AgentTurnInput) => Promise<unknown>) => {
     const parent = chat.createThread('parent', { contextType: 'chat' });
-    const onExpire = vi.fn();
-    const idleTimer = new IdleWatchdog(IDLE_TIMEOUT_MS, onExpire);
     const parentEntry = {
       requestId: 'req_parent',
       emit: () => {},
       replay: { events: [] },
-      idleTimer,
     };
     const deps = {
       chatService: chat,
@@ -580,56 +577,29 @@ describe('TransagentDispatcher — idle clocks (0.2.107)', () => {
       runTurn: runTurn as never,
       interactive: true,
     });
-    return { parentThreadId: parent.id, idleTimer, dispatcher };
+    return { parentThreadId: parent.id, dispatcher };
   };
 
-  it('[ac:ac-zdarzenie-tury-dziecka-zeruje-zegar-i] feeds every child-turn event to the parent watchdog, which runs one margin longer while the bubble is open', async () => {
-    let windowDuringChild = 0;
-    const { parentThreadId, idleTimer, dispatcher } = setup(async (input) => {
-      windowDuringChild = idleTimer.windowMs;
-      input.onEvent({ type: 'text_delta', text: 'x' });
-      input.onEvent({ type: 'tool_use', toolName: 'Read' });
+  it('runs the child with no `timeoutMs`, so its own turn arms the interactive idle clock', async () => {
+    let childInput: AgentTurnInput | undefined;
+    const { parentThreadId, dispatcher } = setup(async (input) => {
+      childInput = input;
       return { answer: 'done' };
     });
-    const kick = vi.spyOn(idleTimer, 'kick');
 
     await dispatcher.run({ parentThreadId, contextType: 'chat', message: 'go' });
 
-    expect(kick.mock.calls.length).toBeGreaterThanOrEqual(2);
-    expect(windowDuringChild).toBe(IDLE_TIMEOUT_MS + TRANSAGENT_IDLE_MARGIN_MS);
-    expect(idleTimer.windowMs).toBe(IDLE_TIMEOUT_MS);
-    idleTimer.stop();
+    expect(childInput).toBeDefined();
+    expect(childInput!.timeoutMs).toBeUndefined();
   });
 
-  it('pauses the parent clock while a relayed child question is open', async () => {
-    let pausedWhileAsking = false;
-    const { parentThreadId, idleTimer, dispatcher } = setup(async (input) => {
-      const asked = input.onUserInput!({ requestId: 'q1', questions: [] } as never);
-      pausedWhileAsking = idleTimer.paused;
-      await Promise.resolve();
-      return asked.then(() => ({ answer: 'done' }));
-    });
-    const run = dispatcher.run({ parentThreadId, contextType: 'chat', message: 'go' });
-    await vi.waitFor(() => expect(pausedWhileAsking).toBe(true));
-    // The run's `finally` cancels the relayed question only after the child
-    // returns, so answer it the way POST /api/chat/user-input would.
-    await vi.waitFor(() => expect(idleTimer.paused).toBe(true));
-    const deps = (dispatcher as unknown as { deps: AgentTurnDeps }).deps;
-    deps.pendingInputs.get('q1')!.resolve({ action: 'accept' } as never);
-    await run;
-    expect(idleTimer.paused).toBe(false);
-    idleTimer.stop();
-  });
-
-  it('[ac:ac-banka-milczaca-dluzej-niz-zegar-idle] lets a child idle abort propagate as IDLE_TIMEOUT and releases the parent margin', async () => {
-    const { parentThreadId, idleTimer, dispatcher } = setup(async () => {
-      throw new AgentTurnError('IDLE_TIMEOUT', 'Agent went silent — the idle watchdog stopped the turn');
+  it('[ac:ac-banka-milczaca-dluzej-niz-zegar-idle] lets a child idle stop propagate as IDLE_TIMEOUT', async () => {
+    const { parentThreadId, dispatcher } = setup(async () => {
+      throw new AgentTurnError('IDLE_TIMEOUT', 'Agent went idle for 60 min with nothing in flight — the turn was stopped');
     });
 
     await expect(
       dispatcher.run({ parentThreadId, contextType: 'chat', message: 'go' }),
     ).rejects.toMatchObject({ code: 'IDLE_TIMEOUT' });
-    expect(idleTimer.windowMs).toBe(IDLE_TIMEOUT_MS);
-    idleTimer.stop();
   });
 });

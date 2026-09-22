@@ -94,7 +94,7 @@ export interface TransagentEntry {
  * 0.2.107: how a turn that was HOLDING on background work ended. A quiet close
  * (every task settled, `done`) leaves no ending at all; the other four are told
  * apart by the terminal SSE `error` code — `AdapterAbortError` alone would not
- * do it, since a user Stop and the idle watchdog raise the same class.
+ * do it by itself — the code is what every consumer keys on.
  */
 export type HoldEndingKind = 'user-abort' | 'went-silent' | 'backstop-expired' | 'hold-expired' | 'failed';
 
@@ -127,9 +127,9 @@ export function holdEndingLabel(ending: HoldEnding): string {
     case 'user-abort':
       return `stopped by you — ${tasks} abandoned`;
     case 'went-silent':
-      return `turn went silent — the idle watchdog stopped it, ${tasks} abandoned`;
+      return `turn went idle — the idle clock stopped it, ${tasks} abandoned`;
     case 'backstop-expired':
-      return `turn backstop expired (idle watchdog failure) — ${tasks} abandoned`;
+      return `turn backstop expired (idle clock failure) — ${tasks} abandoned`;
     case 'hold-expired':
       return `background hold cap expired — ${tasks} abandoned`;
     case 'failed':
@@ -140,8 +140,8 @@ export function holdEndingLabel(ending: HoldEnding): string {
 /**
  * Toast for a terminal SSE `error`, or null for none. ABORTED stays silent (the
  * user pressed Stop); an idle stop is a warning, not an error; the backstop gets
- * its own wording because the server message does not say it means a watchdog
- * failure.
+ * its own wording because the server message does not say it means an
+ * idle-clock failure.
  */
 export function terminalErrorToast(
   code: string | undefined,
@@ -151,11 +151,10 @@ export function terminalErrorToast(
     case 'ABORTED':
       return null;
     case 'IDLE_TIMEOUT':
-      // The server message names the clock that fired — plain silence, or a
-      // tool call that made no progress past the outstanding-work ceiling.
+      // The server message carries the idle budget that ran out.
       return { level: 'warning', message: formatted };
     case 'TIMEOUT':
-      return { level: 'error', message: 'Turn backstop expired — the idle watchdog failed to stop a silent turn.' };
+      return { level: 'error', message: 'Turn backstop expired — the idle clock failed to stop a silent turn.' };
     default:
       return { level: 'error', message: formatted };
   }
@@ -909,7 +908,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     heldBackgroundTaskCount: backgroundTasks.filter((t) => t.status === 'running').length,
     /**
      * 0.2.107: the hold indicator's terminal state — which of the four endings
-     * (user abort, idle watchdog, backstop, hold cap) closed a held turn. Null
+     * (user abort, idle clock, backstop, hold cap) closed a held turn. Null
      * while holding, and after a quiet close.
      */
     holdEnding,

@@ -245,7 +245,7 @@ export const STATUS_FOR_TURN_ERROR: Record<AgentTurnErrorCode, number> = {
   TIMEOUT: 504,
   ABORTED: 499,
   /**
-   * 0.2.107: our idle watchdog stopped a silent turn. Same status as the other
+   * 0.2.107: the library's idle clock ended a silent turn. Same status as the other
    * turn-clock failures — told apart by the code, not the status.
    */
   IDLE_TIMEOUT: 504,

@@ -16,61 +16,46 @@ export const ASK_TURN_TIMEOUT_MS = 15 * 60_000;
  *
  * It used to be the only clock on the turn (60 min), so an agent that went
  * silent in its first minute held the user for an hour and then died with an
- * error indistinguishable from a hard failure. Silence is now detected by OUR
- * idle watchdog (`IDLE_TIMEOUT_MS`), because the library exposes no way to
- * extend or re-arm this timer: no `resetTimeoutOnProgress`, no `onProgress`, no
- * `extendTimeout()`, no `signal`, no `idleTimeoutMs`. It runs from the start of
- * the iteration and covers the whole turn.
+ * error indistinguishable from a hard failure. Silence is now detected by the
+ * library's idle clock (`idleTimeoutMs`, agent-adapters >= 0.9.11), passed as
+ * `IDLE_TIMEOUT_MS` below. This backstop is armed once at run start and never
+ * re-armed; it covers the whole turn.
  *
- * It must still be passed — omitting it is left unspecified by the contract,
- * and the backstop is the policy. If it ever fires FIRST, that is a watchdog
- * failure, not a normal end of turn.
+ * It must still be passed — the library reads an omitted `timeoutMs` as "no
+ * wall-clock bound at all", and the backstop is the policy. If it ever fires
+ * FIRST, that is an idle-clock failure, not a normal end of turn.
  *
  * The invariants, asserted below at module load and in `agent-turn.test.ts`:
  *
  *     TURN_TIMEOUT_MS >= 10 * IDLE_TIMEOUT_MS
  *     IDLE_TIMEOUT_MS  > BACKGROUND_HOLD_CAP_MS + BACKGROUND_GRACE_MS
- *     OUTSTANDING_WORK_CAP_MS > IDLE_TIMEOUT_MS
- *     TURN_TIMEOUT_MS >= 10 * OUTSTANDING_WORK_CAP_MS
  */
 export const TURN_TIMEOUT_MS = 24 * 60 * 60_000;
 
 /**
- * Our idle watchdog (0.2.107): a turn that emits no SIGN OF LIFE for this long
- * is aborted with `IDLE_TIMEOUT`.
+ * `idleTimeoutMs` handed to `adapter.execute` for an interactive turn (0.2.107):
+ * the library ends a run that stays idle this long with `AdapterIdleTimeoutError`,
+ * which we map to `IDLE_TIMEOUT`.
  *
- * Counts ONLY while the turn's set of outstanding work is empty — see
- * `OUTSTANDING_WORK_CAP_MS` for the clock that runs otherwise.
+ * The library's clock is NOT a last-sign-of-life timer. It advances only while
+ * nothing is outstanding — an open `tool_use`, subagent, background task,
+ * unanswered `user_input_request`, and the time we hold an event all stop it —
+ * and it never resets: the budget is CUMULATIVE across the turn. Streaming text
+ * and generating tool input spend it. Hence 60 min rather than the 10 min a
+ * resettable watchdog would get: a long legitimate turn (dozens of pages
+ * written) must fit in it, while an agent that truly went silent still ends
+ * long before the 24 h backstop.
  *
- * Re-armed by every adapter event in the sign-of-life set (the replay types plus
- * `adapter_ready`, plus a bubble child's events), NEVER by the SSE keepalive —
- * that one ticks every 20 s whether or not the adapter is alive, and a watchdog
- * fed by it would never fire. Paused, not merely re-armed, while an elicitation
- * (`user_input_request`) waits for a human.
+ * A bubble child (M46) is, for its parent, an ordinary open `tool_use`, so the
+ * parent's clock is stopped for as long as the child runs; the child gets its
+ * own budget through `runAgentTurn`.
  *
  * MUST stay above `BACKGROUND_HOLD_CAP_MS + BACKGROUND_GRACE_MS` (315 000 ms):
- * otherwise the watchdog's abort pre-empts the typed
- * `AdapterBackgroundHoldExpiredError` and "abandoned background work" becomes
- * indistinguishable from "the turn went silent". 600 000 ms is ~2x of margin.
+ * otherwise idle expiry could pre-empt the typed
+ * `AdapterBackgroundHoldExpiredError` and "abandoned background work" would
+ * become indistinguishable from "the turn went silent".
  */
-export const IDLE_TIMEOUT_MS = 600_000;
-
-/**
- * The ceiling on OUTSTANDING work (post-0.2.107 review). A tool call is open
- * from its `tool_use` to its `tool_result`, and the stream is legitimately
- * silent for as long as the slowest open call runs — a foreground Bash may take
- * its full 600 000 ms, exactly the idle window, so an idle clock that kept
- * counting would always fire first.
- *
- * So the idle clock counts only with nothing outstanding; while something is,
- * this window applies instead, re-armed by the same signs of life (a subagent
- * or a bubble child working away keeps it alive). It bounds a WEDGED tool, not
- * a long one that shows progress — and ends it long before the 24 h backstop.
- *
- * MUST exceed the longest tool timeout the agent can request (Bash: 600 000 ms)
- * and `IDLE_TIMEOUT_MS`.
- */
-export const OUTSTANDING_WORK_CAP_MS = 30 * 60_000;
+export const IDLE_TIMEOUT_MS = 60 * 60_000;
 
 /**
  * `architectureConfig.claude_backgroundGraceMs` — the LIBRARY'S default, which
@@ -80,34 +65,26 @@ export const OUTSTANDING_WORK_CAP_MS = 30 * 60_000;
 export const BACKGROUND_GRACE_MS = 15_000;
 
 /**
- * How much longer a parent's idle clock runs than its bubble child's (M46).
- *
- * The child keeps the full `IDLE_TIMEOUT_MS` on its own watchdog; the PARENT's
- * clock is lengthened by this delta for as long as a bubble is open. The child
- * must fire FIRST, and this is the window the dispatcher has to collapse the
- * silent child turn into the parent's `isError` tool result — so the parent
- * collects its child's failure instead of dying with it. Not a fourth clock,
- * a delta on the existing one.
- *
- * Margins would accumulate with nesting (a grandparent waits two margins longer
- * than its grandchild); today the depth guard keeps it at one level.
- */
-export const TRANSAGENT_IDLE_MARGIN_MS = 30_000;
-
-/**
  * The turn-clock invariants, hard. Thrown at module load, so a constant
  * edit that breaks one refuses to boot rather than degrading silently.
+ *
+ * Every clock must be finite. For the hold cap that is the library's rule
+ * (`null`/`Infinity` disarm it). For `idleTimeoutMs` it is the opposite trap:
+ * `Infinity` does NOT disarm the library's idle clock — `setTimeout` clamps it,
+ * and the turn would die in ~1 ms. Omitting the field is the only way to have
+ * no idle clock.
  */
 export function assertTurnClockInvariants(clocks: {
   turnTimeoutMs: number;
   idleTimeoutMs: number;
-  outstandingCapMs: number;
   holdCapMs: number;
   graceMs: number;
 }): void {
-  const { turnTimeoutMs, idleTimeoutMs, outstandingCapMs, holdCapMs, graceMs } = clocks;
-  if (!Number.isFinite(holdCapMs) || holdCapMs <= 0) {
-    throw new Error(`turn clocks: background hold cap must be finite and positive, got ${holdCapMs}`);
+  const { turnTimeoutMs, idleTimeoutMs, holdCapMs, graceMs } = clocks;
+  for (const [name, ms] of Object.entries(clocks)) {
+    if (!Number.isFinite(ms) || ms <= 0) {
+      throw new Error(`turn clocks: ${name} must be finite and positive, got ${ms}`);
+    }
   }
   if (!(idleTimeoutMs > holdCapMs + graceMs)) {
     throw new Error(
@@ -117,16 +94,6 @@ export function assertTurnClockInvariants(clocks: {
   if (!(turnTimeoutMs >= 10 * idleTimeoutMs)) {
     throw new Error(
       `turn clocks: backstop timeoutMs (${turnTimeoutMs}ms) must be at least 10x the idle timeout (${idleTimeoutMs}ms)`,
-    );
-  }
-  if (!(outstandingCapMs > idleTimeoutMs)) {
-    throw new Error(
-      `turn clocks: outstanding-work cap (${outstandingCapMs}ms) must exceed the idle timeout (${idleTimeoutMs}ms)`,
-    );
-  }
-  if (!(turnTimeoutMs >= 10 * outstandingCapMs)) {
-    throw new Error(
-      `turn clocks: backstop timeoutMs (${turnTimeoutMs}ms) must be at least 10x the outstanding-work cap (${outstandingCapMs}ms)`,
     );
   }
 }
@@ -147,7 +114,6 @@ export const BACKGROUND_HOLD_CAP_MS = 5 * 60_000;
 assertTurnClockInvariants({
   turnTimeoutMs: TURN_TIMEOUT_MS,
   idleTimeoutMs: IDLE_TIMEOUT_MS,
-  outstandingCapMs: OUTSTANDING_WORK_CAP_MS,
   holdCapMs: BACKGROUND_HOLD_CAP_MS,
   graceMs: BACKGROUND_GRACE_MS,
 });
@@ -174,14 +140,14 @@ assertTurnClockInvariants({
 export type AgentTurnErrorCode =
   | 'ABORTED'
   /**
-   * 0.2.107: OUR idle watchdog aborted the turn — no sign of life for
-   * `IDLE_TIMEOUT_MS`. Same `AdapterAbortError` as a user Stop underneath; the
-   * discriminator is `ActiveAdapter.abortReason`, never the exception class.
+   * 0.2.107: the library's idle clock ended the turn — `IDLE_TIMEOUT_MS` of
+   * cumulative idle time with nothing outstanding (`AdapterIdleTimeoutError`).
+   * A class of its own, so `ABORTED` now always means a human Stop.
    */
   | 'IDLE_TIMEOUT'
   /**
    * The `timeoutMs` BACKSTOP expired (`AdapterTimeoutError`). Since 0.2.107 this
-   * is a symptom of a watchdog failure, not a normal end of turn.
+   * is a symptom of an idle-clock failure, not a normal end of turn.
    */
   | 'TIMEOUT'
   | 'AGENT_UNAVAILABLE'

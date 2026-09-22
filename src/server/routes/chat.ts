@@ -70,7 +70,7 @@ export function chatRouter(deps: AgentTurnDeps): Router {
   };
 
   // 0.1.69 Transagents: a CONSCIOUS abort cascades to children — the shared
-  // `abortChildTurns` (agent-turn.ts), also used by the idle watchdog.
+  // `abortChildTurns` (agent-turn.ts), also used when the idle clock ends a turn.
   const cascadeAbortChildren = (abortedThreadId: string): void =>
     abortChildTurns(activeAdapters, pendingInputs, abortedThreadId);
 

@@ -48,58 +48,24 @@ const hoisted = vi.hoisted(() => ({
   onExecute: null as ((opts: Record<string, unknown>) => void) | null,
   /** Runs before each event is yielded — lets a test change the world mid-stream. */
   beforeEvent: null as ((event: Record<string, unknown>, opts: Record<string, unknown>) => void) | null,
-  /**
-   * 0.2.107: after the scripted events, park the stream until `adapter.abort()`
-   * and then deliver `AdapterAbortError` the way the real adapter does — as a
-   * terminal `error` EVENT, not a throw. Models an agent that went silent.
-   */
-  hangUntilAbort: false,
 }));
 
 vi.mock('@inharness-ai/agent-adapters', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@inharness-ai/agent-adapters')>();
   return {
     ...actual,
-    createAdapter: () => {
-      let release: () => void = () => {};
-      const aborted = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      return {
-        abort: () => release(),
-        // eslint-disable-next-line require-yield
-        execute: async function* execute(opts: Record<string, unknown>) {
-          hoisted.lastExecute = opts;
-          hoisted.executes.push(opts);
-          hoisted.onExecute?.(opts);
-          for (const e of hoisted.events) {
-            /**
-             * 0.2.107 pseudo-events, never yielded: `__sleep` is adapter silence
-             * (driven by the test's fake clock), `__ask` raises an elicitation
-             * through `onUserInput` and waits for it like the SDK does.
-             */
-            if (e.type === '__sleep') {
-              await Promise.race([
-                new Promise<void>((r) => setTimeout(r, e.ms as number)),
-                aborted,
-              ]);
-              continue;
-            }
-            if (e.type === '__ask') {
-              const ask = opts.onUserInput as (r: unknown) => Promise<unknown>;
-              await Promise.race([ask({ requestId: e.requestId, questions: [] }).catch(() => null), aborted]);
-              continue;
-            }
-            hoisted.beforeEvent?.(e, opts);
-            yield e;
-          }
-          if (hoisted.hangUntilAbort) {
-            await aborted;
-            yield { type: 'error', error: new actual.AdapterAbortError('claude-code'), phase: 'runtime' };
-          }
-        },
-      };
-    },
+    createAdapter: () => ({
+      // eslint-disable-next-line require-yield
+      execute: async function* execute(opts: Record<string, unknown>) {
+        hoisted.lastExecute = opts;
+        hoisted.executes.push(opts);
+        hoisted.onExecute?.(opts);
+        for (const e of hoisted.events) {
+          hoisted.beforeEvent?.(e, opts);
+          yield e;
+        }
+      },
+    }),
   };
 });
 
@@ -124,16 +90,17 @@ vi.mock('../config.js', async (importOriginal) => {
 import {
   AdapterAbortError,
   AdapterBackgroundHoldExpiredError,
+  AdapterIdleTimeoutError,
   AdapterTimeoutError,
 } from '@inharness-ai/agent-adapters';
 import { runAgentTurn, type AgentTurnDeps, type AgentTurnInput } from './agent-turn.js';
 import { CLAUDE_CODE_TASK_TRACKING_TOOLS } from '@inharness-ai/agent-adapters/claude-code';
 import {
   AgentTurnError,
+  assertTurnClockInvariants,
   BACKGROUND_GRACE_MS,
   BACKGROUND_HOLD_CAP_MS,
   IDLE_TIMEOUT_MS,
-  OUTSTANDING_WORK_CAP_MS,
   TURN_TIMEOUT_MS,
 } from '../../shared/agent-turn.js';
 
@@ -142,8 +109,6 @@ afterEach(() => {
   hoisted.executes = [];
   hoisted.onExecute = null;
   hoisted.beforeEvent = null;
-  hoisted.hangUntilAbort = false;
-  vi.useRealTimers();
 });
 
 interface Recorded {
@@ -1013,7 +978,7 @@ describe('runAgentTurn — server-side turn timeout (0-1-110-to-next)', () => {
    * fixes.
    */
   it('[ac:ac-wartosc-timeoutms-przekazywana-do-ada] keeps the idle clock strictly above hold cap + grace', () => {
-    // 0.2.107: otherwise the watchdog's abort pre-empts the typed hold-expired error.
+    // 0.2.107: otherwise idle expiry could pre-empt the typed hold-expired error.
     expect(IDLE_TIMEOUT_MS).toBeGreaterThan(BACKGROUND_HOLD_CAP_MS + BACKGROUND_GRACE_MS);
     expect(TURN_TIMEOUT_MS).toBeGreaterThan(BACKGROUND_HOLD_CAP_MS);
   });
@@ -1026,14 +991,22 @@ describe('runAgentTurn — server-side turn timeout (0-1-110-to-next)', () => {
 
     expect(hoisted.lastExecute?.timeoutMs).toBe(86_400_000);
     expect(hoisted.lastExecute?.timeoutMs as number).toBeGreaterThanOrEqual(10 * IDLE_TIMEOUT_MS);
-    // The outstanding-work ceiling is a clock the watchdog runs too — the
-    // backstop stays an order of magnitude above it as well.
-    expect(hoisted.lastExecute?.timeoutMs as number).toBeGreaterThanOrEqual(10 * OUTSTANDING_WORK_CAP_MS);
   });
 
-  it('keeps the outstanding-work ceiling above the idle clock and the longest Bash timeout', () => {
-    expect(OUTSTANDING_WORK_CAP_MS).toBeGreaterThan(IDLE_TIMEOUT_MS);
-    expect(OUTSTANDING_WORK_CAP_MS).toBeGreaterThan(600_000);
+  /**
+   * `Infinity` does not disarm the library's idle clock — `setTimeout` clamps it
+   * and the turn would die at once. Omitting the field is the only "off".
+   */
+  it('refuses a non-finite idle budget at module load', () => {
+    const clocks = {
+      turnTimeoutMs: TURN_TIMEOUT_MS,
+      idleTimeoutMs: IDLE_TIMEOUT_MS,
+      holdCapMs: BACKGROUND_HOLD_CAP_MS,
+      graceMs: BACKGROUND_GRACE_MS,
+    };
+    expect(() => assertTurnClockInvariants(clocks)).not.toThrow();
+    expect(() => assertTurnClockInvariants({ ...clocks, idleTimeoutMs: Infinity })).toThrow(/idleTimeoutMs must be finite/);
+    expect(() => assertTurnClockInvariants({ ...clocks, turnTimeoutMs: 9 * IDLE_TIMEOUT_MS })).toThrow(/10x/);
   });
 
   /**
@@ -1812,6 +1785,11 @@ describe('runAgentTurn — delivered terminal errors', () => {
     },
     { name: 'AdapterAbortError', error: new AdapterAbortError('claude-code'), code: 'ABORTED' },
     {
+      name: 'AdapterIdleTimeoutError',
+      error: new AdapterIdleTimeoutError('claude-code', IDLE_TIMEOUT_MS),
+      code: 'IDLE_TIMEOUT',
+    },
+    {
       name: 'AdapterBackgroundHoldExpiredError',
       error: new AdapterBackgroundHoldExpiredError('claude-code', 1000),
       code: 'BACKGROUND_HOLD_EXPIRED',
@@ -1875,162 +1853,83 @@ describe('runAgentTurn — delivered terminal errors', () => {
   });
 });
 
-describe('runAgentTurn — idle watchdog (0.2.107)', () => {
-  /** Only timers are faked: the turn's own promise plumbing must keep running. */
-  const fakeClock = () => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-
+/**
+ * 0.2.107: silence is detected by the LIBRARY's idle clock (`idleTimeoutMs`,
+ * agent-adapters >= 0.9.11). What stays ours: passing the budget, mapping
+ * `AdapterIdleTimeoutError` to `IDLE_TIMEOUT`, and the Stop-like side effects
+ * of an idle end — the queue cleared and broadcast, the children stopped.
+ */
+describe('runAgentTurn — library idle clock (0.2.107)', () => {
   function withQueue(deps: AgentTurnDeps, queued: string[]) {
     (deps.chatService as unknown as { clearQueued: () => string[] }).clearQueued = () => queued.splice(0);
   }
 
-  it('[ac:ac-tura-w-ktorej-adapter-milczy-dluzej-n] aborts a silent turn with IDLE_TIMEOUT, distinguishable from a user abort', async () => {
-    fakeClock();
-    hoisted.events = [{ type: 'text_delta', text: 'thinking about it…' }];
-    hoisted.hangUntilAbort = true;
+  it('[ac:ac-tura-w-ktorej-adapter-milczy-dluzej-n] hands the adapter the interactive idle budget next to the backstop', async () => {
+    hoisted.events = [{ type: 'result', sessionId: 's1' }];
     const { deps } = makeDeps();
-    withQueue(deps, ['queued while silent']);
-    const events: Array<Record<string, unknown>> = [];
-    const input = { ...makeInput(), onEvent: (e: Record<string, unknown>) => events.push(e) };
 
-    const turn = runAgentTurn(deps, input).catch((e: unknown) => e);
-    await vi.advanceTimersByTimeAsync(IDLE_TIMEOUT_MS - 1);
-    expect(events.some((e) => e.type === 'error')).toBe(false);
-    const entry = deps.activeAdapters.get('t1');
-    await vi.advanceTimersByTimeAsync(1);
-    const err = await turn;
+    await runAgentTurn(deps, makeInput());
 
-    expect(err).toBeInstanceOf(AgentTurnError);
-    expect((err as AgentTurnError).code).toBe('IDLE_TIMEOUT');
-    expect(entry?.abortReason).toBe('IDLE_TIMEOUT');
-    const terminal = events.filter((e) => e.type === 'error');
-    expect(terminal).toHaveLength(1);
-    expect(terminal[0]?.code).toBe('IDLE_TIMEOUT');
-    // No HTTP abort behind it: the watchdog clears the queue and broadcasts it itself.
-    expect(events).toContainEqual({ type: 'queue_cleared', texts: ['queued while silent'] });
-    expect(deps.activeAdapters.has('t1')).toBe(false);
+    expect(hoisted.lastExecute?.idleTimeoutMs).toBe(IDLE_TIMEOUT_MS);
+    expect(hoisted.lastExecute?.idleTimeoutMs).toBe(3_600_000);
+    expect(hoisted.lastExecute?.timeoutMs).toBe(TURN_TIMEOUT_MS);
   });
 
-  it('[ac:ac-tura-w-ktorej-adapter-milczy-dluzej-n] a user Stop on the same adapter stays ABORTED', async () => {
-    hoisted.events = [];
-    hoisted.hangUntilAbort = true;
+  it('gives a turn with its own `timeoutMs` (`ask`) no idle clock', async () => {
+    hoisted.events = [{ type: 'result', sessionId: 's1' }];
     const { deps } = makeDeps();
+
+    await runAgentTurn(deps, { ...makeInput(), timeoutMs: 15 * 60_000 });
+
+    expect(hoisted.lastExecute?.timeoutMs).toBe(15 * 60_000);
+    expect(hoisted.lastExecute).not.toHaveProperty('idleTimeoutMs');
+  });
+
+  for (const how of ['delivered', 'thrown'] as const) {
+    it(`[ac:ac-tura-w-ktorej-adapter-milczy-dluzej-n] ends an idle turn with IDLE_TIMEOUT, clears the queue and stops the children (${how})`, async () => {
+      const idle = new AdapterIdleTimeoutError('claude-code', IDLE_TIMEOUT_MS);
+      hoisted.events = [{ type: 'text_delta', text: 'thinking about it…' }];
+      if (how === 'delivered') hoisted.events.push({ type: 'error', error: idle, phase: 'runtime' });
+      else hoisted.beforeEvent = () => {
+        throw idle;
+      };
+      const { deps } = makeDeps();
+      withQueue(deps, ['queued while idle']);
+      const childAbort = vi.fn();
+      deps.activeAdapters.set('child', {
+        requestId: 'r-child',
+        adapter: { abort: childAbort },
+        parentThreadId: 't1',
+      } as never);
+      const events: Array<Record<string, unknown>> = [];
+      const input = { ...makeInput(), onEvent: (e: Record<string, unknown>) => events.push(e) };
+
+      const err = await runAgentTurn(deps, input).catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(AgentTurnError);
+      expect((err as AgentTurnError).code).toBe('IDLE_TIMEOUT');
+      const terminal = events.filter((e) => e.type === 'error');
+      expect(terminal).toHaveLength(1);
+      expect(terminal[0]?.code).toBe('IDLE_TIMEOUT');
+      // No HTTP abort behind it: the turn clears the queue and broadcasts it itself.
+      expect(events).toContainEqual({ type: 'queue_cleared', texts: ['queued while idle'] });
+      expect(childAbort).toHaveBeenCalledTimes(1);
+    });
+  }
+
+  it('[ac:ac-tura-w-ktorej-adapter-milczy-dluzej-n] keeps AdapterAbortError a user Stop — ABORTED, queue untouched', async () => {
+    hoisted.events = [{ type: 'error', error: new AdapterAbortError('claude-code'), phase: 'runtime' }];
+    const { deps } = makeDeps();
+    const clearQueued = vi.fn(() => []);
+    (deps.chatService as unknown as { clearQueued: () => string[] }).clearQueued = clearQueued;
     const events: Array<Record<string, unknown>> = [];
     const input = { ...makeInput(), onEvent: (e: Record<string, unknown>) => events.push(e) };
 
-    const turn = runAgentTurn(deps, input).catch((e: unknown) => e);
-    await vi.waitFor(() => expect(deps.activeAdapters.has('t1')).toBe(true));
-    deps.activeAdapters.get('t1')!.adapter.abort();
-    const err = await turn;
+    const err = await runAgentTurn(deps, input).catch((e: unknown) => e);
 
     expect((err as AgentTurnError).code).toBe('ABORTED');
     expect(events.find((e) => e.type === 'error')?.code).toBe('ABORTED');
-  });
-
-  it('[ac:ac-zdarzenie-adaptera-nalezace-do-zbioru] every sign of life re-arms the clock', async () => {
-    fakeClock();
-    const gap = IDLE_TIMEOUT_MS - 1_000;
-    hoisted.events = [
-      { type: '__sleep', ms: gap },
-      { type: 'text_delta', text: 'still here' },
-      { type: '__sleep', ms: gap },
-      { type: 'tool_use', toolName: 'Read', toolUseId: 'u1', input: {} },
-      { type: '__sleep', ms: gap },
-      { type: 'result', sessionId: 's1' },
-    ];
-    const { deps } = makeDeps();
-
-    const turn = runAgentTurn(deps, makeInput());
-    await vi.advanceTimersByTimeAsync(3 * gap);
-    const result = await turn;
-
-    expect(result.threadId).toBe('t1');
-  });
-
-  it('[ac:ac-zegar-idle-jest-wstrzymany-na-czas-ot] pauses the clock while an elicitation is open, and resumes it after the answer', async () => {
-    fakeClock();
-    let answer: (v: unknown) => void = () => {};
-    hoisted.events = [{ type: '__ask', requestId: 'q1' }];
-    hoisted.hangUntilAbort = true;
-    const { deps } = makeDeps();
-    const input = {
-      ...makeInput(),
-      onUserInput: () =>
-        new Promise((resolve) => {
-          answer = resolve;
-        }),
-    } as unknown as AgentTurnInput;
-
-    const turn = runAgentTurn(deps, input).catch((e: unknown) => e);
-    // A human takes three idle windows to decide — the turn must survive it.
-    await vi.advanceTimersByTimeAsync(3 * IDLE_TIMEOUT_MS);
-    expect(deps.activeAdapters.has('t1')).toBe(true);
-    expect(deps.activeAdapters.get('t1')?.abortReason).toBeUndefined();
-
-    answer({ action: 'accept', answers: {} });
-    // After the answer the clock runs again, from a full window.
-    await vi.advanceTimersByTimeAsync(IDLE_TIMEOUT_MS);
-    const err = await turn;
-    expect((err as AgentTurnError).code).toBe('IDLE_TIMEOUT');
-  });
-
-  /**
-   * Post-review: the idle clock counts only with nothing outstanding. A
-   * foreground Bash may run its full 600 000 ms between `tool_use` and
-   * `tool_result` — that is the tool being slow, not the agent going silent.
-   */
-  it('lets a foreground tool call run past the idle window while it is outstanding', async () => {
-    fakeClock();
-    hoisted.events = [
-      { type: 'tool_use', toolName: 'Bash', toolUseId: 'b1', input: { timeout: 600_000 } },
-      { type: '__sleep', ms: IDLE_TIMEOUT_MS + 60_000 },
-      { type: 'tool_result', toolUseId: 'b1', summary: 'ok' },
-      { type: 'result', sessionId: 's1' },
-    ];
-    const { deps } = makeDeps();
-
-    const turn = runAgentTurn(deps, makeInput());
-    await vi.advanceTimersByTimeAsync(IDLE_TIMEOUT_MS + 60_000);
-    const result = await turn;
-
-    expect(result.threadId).toBe('t1');
-  });
-
-  it('stops a wedged tool call at the outstanding-work ceiling, naming it', async () => {
-    fakeClock();
-    hoisted.events = [{ type: 'tool_use', toolName: 'mcp__x__hang', toolUseId: 'w1', input: {} }];
-    hoisted.hangUntilAbort = true;
-    const { deps } = makeDeps();
-    const events: Array<Record<string, unknown>> = [];
-    const input = { ...makeInput(), onEvent: (e: Record<string, unknown>) => events.push(e) };
-
-    const turn = runAgentTurn(deps, input).catch((e: unknown) => e);
-    await vi.advanceTimersByTimeAsync(OUTSTANDING_WORK_CAP_MS - 1);
-    expect(events.some((e) => e.type === 'error')).toBe(false);
-    await vi.advanceTimersByTimeAsync(1);
-    const err = await turn;
-
-    expect((err as AgentTurnError).code).toBe('IDLE_TIMEOUT');
-    expect((err as AgentTurnError).message).toMatch(/tool call made no progress/);
-  });
-
-  it('puts the idle clock back once the tool call closes', async () => {
-    fakeClock();
-    hoisted.events = [
-      { type: 'tool_use', toolName: 'Bash', toolUseId: 'b1', input: {} },
-      { type: '__sleep', ms: IDLE_TIMEOUT_MS + 60_000 },
-      { type: 'tool_result', toolUseId: 'b1', summary: 'ok' },
-    ];
-    hoisted.hangUntilAbort = true;
-    const { deps } = makeDeps();
-
-    const turn = runAgentTurn(deps, makeInput()).catch((e: unknown) => e);
-    await vi.advanceTimersByTimeAsync(IDLE_TIMEOUT_MS + 60_000);
-    expect(deps.activeAdapters.has('t1')).toBe(true);
-    // Nothing outstanding any more — plain silence gets the idle window, not the ceiling.
-    await vi.advanceTimersByTimeAsync(IDLE_TIMEOUT_MS);
-    const err = await turn;
-
-    expect((err as AgentTurnError).code).toBe('IDLE_TIMEOUT');
-    expect((err as AgentTurnError).message).toMatch(/went silent/);
+    // The Stop route clears the queue itself; the turn must not do it twice.
+    expect(clearQueued).not.toHaveBeenCalled();
   });
 });
