@@ -90,6 +90,15 @@ export interface TransagentEntry {
  * `background_task_*` events and, on cold reload, from the persisted
  * `chat_background_task` rows.
  */
+export interface BackgroundTaskEntry {
+  taskId: string;
+  taskType: string;
+  description: string;
+  status: string;
+  outputFile: string | null;
+  summary: string | null;
+}
+
 /**
  * 0.2.107: how a turn that was HOLDING on background work ended. A quiet close
  * (every task settled, `done`) leaves no ending at all; the other four are told
@@ -158,15 +167,6 @@ export function terminalErrorToast(
     default:
       return { level: 'error', message: formatted };
   }
-}
-
-export interface BackgroundTaskEntry {
-  taskId: string;
-  taskType: string;
-  description: string;
-  status: string;
-  outputFile: string | null;
-  summary: string | null;
 }
 
 /**
@@ -299,6 +299,13 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
       prev.map((t) => (t.status === 'running' ? { ...t, status: 'abandoned' } : t)),
     );
   }, []);
+  // Any turn that starts streaming retires the previous ending — including one
+  // this tab did not `send` (joined from another tab, merged-queue dispatch).
+  // Clearing only in `send` let a stale "stopped by you" line reappear under a
+  // later turn that closed quietly.
+  useEffect(() => {
+    if (state.isStreaming) setHoldEnding(null);
+  }, [state.isStreaming]);
   // Active thread metadata sourced from GET /api/threads/:id (the same fetch that
   // loads messages below). The header/model-lock controls read it from here instead
   // of the paginated thread list, so they stay correct for threads beyond page 1.

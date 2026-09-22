@@ -25,10 +25,10 @@ export const ASK_TURN_TIMEOUT_MS = 15 * 60_000;
  * wall-clock bound at all", and the backstop is the policy. If it ever fires
  * FIRST, that is an idle-clock failure, not a normal end of turn.
  *
- * The invariants, asserted below at module load and in `agent-turn.test.ts`:
+ * The invariants, asserted at server module load (`routes/agent-turn.ts`) and in `agent-turn.test.ts`:
  *
  *     TURN_TIMEOUT_MS >= 10 * IDLE_TIMEOUT_MS
- *     IDLE_TIMEOUT_MS  > BACKGROUND_HOLD_CAP_MS + BACKGROUND_GRACE_MS
+ *     IDLE_TIMEOUT_MS  > BACKGROUND_HOLD_CAP_MS + BACKGROUND_WAKEUP_GRACE_MS (library)
  */
 export const TURN_TIMEOUT_MS = 24 * 60 * 60_000;
 
@@ -50,7 +50,7 @@ export const TURN_TIMEOUT_MS = 24 * 60 * 60_000;
  * parent's clock is stopped for as long as the child runs; the child gets its
  * own budget through `runAgentTurn`.
  *
- * MUST stay above `BACKGROUND_HOLD_CAP_MS + BACKGROUND_GRACE_MS` (315 000 ms):
+ * MUST stay above `BACKGROUND_HOLD_CAP_MS` + the library's background grace (315 000 ms):
  * otherwise idle expiry could pre-empt the typed
  * `AdapterBackgroundHoldExpiredError` and "abandoned background work" would
  * become indistinguishable from "the turn went silent".
@@ -58,15 +58,12 @@ export const TURN_TIMEOUT_MS = 24 * 60 * 60_000;
 export const IDLE_TIMEOUT_MS = 60 * 60_000;
 
 /**
- * `architectureConfig.claude_backgroundGraceMs` — the LIBRARY'S default, which
- * we do not override. Mirrored here only so the idle invariant can be checked
- * against the real sum; change it together with the library default.
- */
-export const BACKGROUND_GRACE_MS = 15_000;
-
-/**
- * The turn-clock invariants, hard. Thrown at module load, so a constant
- * edit that breaks one refuses to boot rather than degrading silently.
+ * The turn-clock invariants, hard. Checked at server module load
+ * (`routes/agent-turn.ts`), so a constant edit that breaks one refuses to boot
+ * rather than degrading silently. `graceMs` is the library's own
+ * `BACKGROUND_WAKEUP_GRACE_MS` (we do not override
+ * `claude_backgroundGraceMs`), read there rather than mirrored here — this file
+ * is shared with the client, which must not import the adapter runtime.
  *
  * Every clock must be finite. For the hold cap that is the library's rule
  * (`null`/`Infinity` disarm it). For `idleTimeoutMs` it is the opposite trap:
@@ -110,13 +107,6 @@ export function assertTurnClockInvariants(clocks: {
  * cap", which would let a wedged background task hold a session open forever.
  */
 export const BACKGROUND_HOLD_CAP_MS = 5 * 60_000;
-
-assertTurnClockInvariants({
-  turnTimeoutMs: TURN_TIMEOUT_MS,
-  idleTimeoutMs: IDLE_TIMEOUT_MS,
-  holdCapMs: BACKGROUND_HOLD_CAP_MS,
-  graceMs: BACKGROUND_GRACE_MS,
-});
 
 /**
  * SIDE-BAND EVENTS — `warning` and `flush` — carry no position on the stream:

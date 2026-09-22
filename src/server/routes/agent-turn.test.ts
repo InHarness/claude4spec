@@ -94,11 +94,13 @@ import {
   AdapterTimeoutError,
 } from '@inharness-ai/agent-adapters';
 import { runAgentTurn, type AgentTurnDeps, type AgentTurnInput } from './agent-turn.js';
-import { CLAUDE_CODE_TASK_TRACKING_TOOLS } from '@inharness-ai/agent-adapters/claude-code';
+import {
+  BACKGROUND_WAKEUP_GRACE_MS,
+  CLAUDE_CODE_TASK_TRACKING_TOOLS,
+} from '@inharness-ai/agent-adapters/claude-code';
 import {
   AgentTurnError,
   assertTurnClockInvariants,
-  BACKGROUND_GRACE_MS,
   BACKGROUND_HOLD_CAP_MS,
   IDLE_TIMEOUT_MS,
   TURN_TIMEOUT_MS,
@@ -979,7 +981,7 @@ describe('runAgentTurn — server-side turn timeout (0-1-110-to-next)', () => {
    */
   it('[ac:ac-wartosc-timeoutms-przekazywana-do-ada] keeps the idle clock strictly above hold cap + grace', () => {
     // 0.2.107: otherwise idle expiry could pre-empt the typed hold-expired error.
-    expect(IDLE_TIMEOUT_MS).toBeGreaterThan(BACKGROUND_HOLD_CAP_MS + BACKGROUND_GRACE_MS);
+    expect(IDLE_TIMEOUT_MS).toBeGreaterThan(BACKGROUND_HOLD_CAP_MS + BACKGROUND_WAKEUP_GRACE_MS);
     expect(TURN_TIMEOUT_MS).toBeGreaterThan(BACKGROUND_HOLD_CAP_MS);
   });
 
@@ -1002,7 +1004,7 @@ describe('runAgentTurn — server-side turn timeout (0-1-110-to-next)', () => {
       turnTimeoutMs: TURN_TIMEOUT_MS,
       idleTimeoutMs: IDLE_TIMEOUT_MS,
       holdCapMs: BACKGROUND_HOLD_CAP_MS,
-      graceMs: BACKGROUND_GRACE_MS,
+      graceMs: BACKGROUND_WAKEUP_GRACE_MS,
     };
     expect(() => assertTurnClockInvariants(clocks)).not.toThrow();
     expect(() => assertTurnClockInvariants({ ...clocks, idleTimeoutMs: Infinity })).toThrow(/idleTimeoutMs must be finite/);
@@ -1932,6 +1934,69 @@ describe('runAgentTurn — library idle clock (0.2.107)', () => {
     // The Stop route clears the queue itself; the turn must not do it twice.
     expect(clearQueued).not.toHaveBeenCalled();
   });
+});
+
+describe('runAgentTurn — timeouts and cascades (0.2.107 review)', () => {
+  for (const how of ['delivered', 'thrown'] as const) {
+    it(`a TIMEOUT stops the children too, and names the caller's cap for \`ask\` (${how})`, async () => {
+      const timeout = new AdapterTimeoutError('claude-code', 15 * 60_000);
+      hoisted.events = [{ type: 'text_delta', text: 'still going…' }];
+      if (how === 'delivered') hoisted.events.push({ type: 'error', error: timeout, phase: 'runtime' });
+      else hoisted.beforeEvent = () => {
+        throw timeout;
+      };
+      const { deps } = makeDeps();
+      const child = { requestId: 'r-child', adapter: { abort: vi.fn() }, parentThreadId: 't1' } as Record<string, unknown>;
+      deps.activeAdapters.set('child', child as never);
+
+      const err = await runAgentTurn(deps, { ...makeInput(), timeoutMs: 15 * 60_000 }).catch((e: unknown) => e);
+
+      expect((err as AgentTurnError).code).toBe('TIMEOUT');
+      expect((err as AgentTurnError).message).toBe('Agent took too long to respond (15 min cap)');
+      expect((child.adapter as { abort: ReturnType<typeof vi.fn> }).abort).toHaveBeenCalledTimes(1);
+      expect(child.cascadeReason).toBe('parent-timeout');
+    });
+  }
+
+  it('an idle end tags the children, grandchildren included, with the reason', async () => {
+    hoisted.events = [
+      { type: 'error', error: new AdapterIdleTimeoutError('claude-code', IDLE_TIMEOUT_MS), phase: 'runtime' },
+    ];
+    const { deps } = makeDeps();
+    const child = { requestId: 'r-c', adapter: { abort: vi.fn() }, parentThreadId: 't1' } as Record<string, unknown>;
+    const grandchild = { requestId: 'r-g', adapter: { abort: vi.fn() }, parentThreadId: 'child' } as Record<string, unknown>;
+    deps.activeAdapters.set('child', child as never);
+    deps.activeAdapters.set('grandchild', grandchild as never);
+
+    await runAgentTurn(deps, makeInput()).catch(() => undefined);
+
+    expect(child.cascadeReason).toBe('parent-idle');
+    expect(grandchild.cascadeReason).toBe('parent-idle');
+  });
+
+  for (const [reason, code] of [
+    ['parent-idle', 'IDLE_TIMEOUT'],
+    ['parent-timeout', 'TIMEOUT'],
+    [undefined, 'ABORTED'],
+  ] as const) {
+    it(`a child aborted by a cascade reports ${code}, not a Stop nobody pressed (${reason ?? 'human Stop'})`, async () => {
+      const { deps } = makeDeps();
+      hoisted.events = [{ type: 'text_delta', text: 'working…' }];
+      hoisted.beforeEvent = () => {
+        const entry = deps.activeAdapters.get('t1');
+        if (entry && reason) entry.cascadeReason = reason;
+        throw new AdapterAbortError('claude-code');
+      };
+      const events: Array<Record<string, unknown>> = [];
+
+      const err = await runAgentTurn(deps, { ...makeInput(), onEvent: (e) => events.push(e as never) }).catch(
+        (e: unknown) => e,
+      );
+
+      expect((err as AgentTurnError).code).toBe(code);
+      expect(events.find((e) => e.type === 'error')?.code).toBe(code);
+    });
+  }
 });
 
 /**

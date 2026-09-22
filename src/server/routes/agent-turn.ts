@@ -17,7 +17,10 @@ import {
   type UserInputResponse,
   type McpServerConfig,
 } from '@inharness-ai/agent-adapters';
-import { CLAUDE_CODE_TASK_TRACKING_TOOLS } from '@inharness-ai/agent-adapters/claude-code';
+import {
+  BACKGROUND_WAKEUP_GRACE_MS,
+  CLAUDE_CODE_TASK_TRACKING_TOOLS,
+} from '@inharness-ai/agent-adapters/claude-code';
 import { redactSecrets } from '../services/redact-secrets.js';
 import type { ChatService } from '../services/chat.js';
 import type { AgentCredentialService } from '../services/agent-credential.js';
@@ -184,6 +187,15 @@ export interface ActiveAdapter {
    */
   parentThreadId?: string | null;
   /**
+   * 0.2.107: why a cascade from the PARENT aborted this turn, when it was not a
+   * human Stop. Set by `abortChildTurns` just before `adapter.abort()`, read by
+   * this turn's own error mapping, so a child stopped because its parent went
+   * idle or timed out does not report `ABORTED 'Aborted by user'` — ABORTED is
+   * reserved for a person pressing Stop. Absent = a human Stop (direct or
+   * cascaded).
+   */
+  cascadeReason?: ChildCascadeReason;
+  /**
    * M05 queue: fan-out for events originating OUTSIDE the turn's stream loop
    * (queue mutations from `POST/DELETE /api/chat/queue/...`). Reaches the
    * original POST client (via the turn's `onEvent`) AND live-join clients (via
@@ -313,24 +325,31 @@ export async function abortAllTurns(
   if (timer) clearTimeout(timer);
 }
 
+/** 0.2.107: a parent turn that ended on its own clock, not by a human Stop. */
+export type ChildCascadeReason = 'parent-idle' | 'parent-timeout';
+
 /**
  * A CONSCIOUS abort cascades to children (0.1.69 Transagents): abort every
  * active turn whose `parentThreadId` is the aborted thread — a bubble cannot
  * outlive a deliberate stop of its parent — transitively, since children can
- * have children. Shared by the Stop routes and (0.2.107) an idle-timeout end of turn. A
- * plain client disconnect does NOT call this; children keep running so the
- * parent can re-attach via nested live-join.
+ * have children. Shared by the Stop routes and (0.2.107) a turn that ended on
+ * its idle clock or its timeout; those pass `reason`, so the children report
+ * why they stopped instead of a Stop nobody pressed. A plain client disconnect
+ * does NOT call this; children keep running so the parent can re-attach via
+ * nested live-join.
  */
 export function abortChildTurns(
   activeAdapters: Map<string, ActiveAdapter>,
   pendingInputs: Map<string, PendingInput>,
   abortedThreadId: string,
+  reason?: ChildCascadeReason,
 ): void {
   for (const [tid, entry] of activeAdapters.entries()) {
     if (entry.parentThreadId === abortedThreadId) {
+      if (reason) entry.cascadeReason = reason;
       cancelPendingForRequest(pendingInputs, entry.requestId, activeAdapters);
       entry.adapter.abort();
-      abortChildTurns(activeAdapters, pendingInputs, tid);
+      abortChildTurns(activeAdapters, pendingInputs, tid, reason);
     }
   }
 }
@@ -361,11 +380,21 @@ export function cancelPendingForRequest(
  */
 import {
   AgentTurnError,
+  assertTurnClockInvariants,
   BACKGROUND_HOLD_CAP_MS,
   IDLE_TIMEOUT_MS,
   TURN_TIMEOUT_MS,
 } from '../../shared/agent-turn.js';
 export { AgentTurnError, type AgentTurnErrorCode } from '../../shared/agent-turn.js';
+
+// 0.2.107: against the library's REAL grace, not a hand-kept copy — a raised
+// library default must fail the boot here, not pass a stale sum.
+assertTurnClockInvariants({
+  turnTimeoutMs: TURN_TIMEOUT_MS,
+  idleTimeoutMs: IDLE_TIMEOUT_MS,
+  holdCapMs: BACKGROUND_HOLD_CAP_MS,
+  graceMs: BACKGROUND_WAKEUP_GRACE_MS,
+});
 
 /** Every MCP tool the model sees is namespaced `mcp__<server>__<tool>`. */
 const MCP_TOOL_PREFIX = 'mcp__';
@@ -798,11 +827,42 @@ export async function runAgentTurn(
     } catch (queueErr) {
       console.error('[chat] idle timeout: queue clear failed', queueErr);
     }
-    abortChildTurns(deps.activeAdapters, deps.pendingInputs, thread.id);
+    abortChildTurns(deps.activeAdapters, deps.pendingInputs, thread.id, 'parent-idle');
     return new AgentTurnError(
       'IDLE_TIMEOUT',
       `Agent went idle for ${Math.round(err.idleTimeoutMs / 60_000)} min with nothing in flight — the turn was stopped`,
     );
+  };
+
+  /**
+   * `AdapterTimeoutError`: the caller's own cap (`input.timeoutMs`, e.g. `ask`)
+   * or, for everyone else, the 24 h backstop. Children go with the turn, like
+   * on the idle clock — a bubble cannot outlive its parent's turn.
+   */
+  const timeoutError = (): AgentTurnError => {
+    abortChildTurns(deps.activeAdapters, deps.pendingInputs, thread.id, 'parent-timeout');
+    return new AgentTurnError(
+      'TIMEOUT',
+      input.timeoutMs != null
+        ? `Agent took too long to respond (${Math.round(input.timeoutMs / 60_000)} min cap)`
+        : BACKSTOP_TIMEOUT_MESSAGE,
+    );
+  };
+
+  /**
+   * `AdapterAbortError`: a human Stop — unless the abort came down a cascade
+   * from a parent that ended on its own clock (`cascadeReason`), which keeps
+   * that parent's code.
+   */
+  const abortedError = (): AgentTurnError => {
+    switch (deps.activeAdapters.get(thread.id)?.cascadeReason) {
+      case 'parent-idle':
+        return new AgentTurnError('IDLE_TIMEOUT', 'Parent turn went idle — this turn was stopped with it');
+      case 'parent-timeout':
+        return new AgentTurnError('TIMEOUT', 'Parent turn timed out — this turn was stopped with it');
+      default:
+        return new AgentTurnError('ABORTED', 'Aborted by user');
+    }
   };
 
   try {
@@ -1966,9 +2026,9 @@ export async function runAgentTurn(
               // here is for readability, not for `instanceof` shadowing.
               deliveredError = idleTimeoutError(err);
             } else if (err instanceof AdapterTimeoutError) {
-              deliveredError = new AgentTurnError('TIMEOUT', BACKSTOP_TIMEOUT_MESSAGE);
+              deliveredError = timeoutError();
             } else if (err instanceof AdapterAbortError) {
-              deliveredError = new AgentTurnError('ABORTED', 'Aborted by user');
+              deliveredError = abortedError();
             } else if (err instanceof AdapterInitError) {
               deliveredError = new AgentTurnError(
                 'AGENT_UNAVAILABLE',
@@ -2054,11 +2114,12 @@ export async function runAgentTurn(
     } else if (err instanceof AdapterIdleTimeoutError) {
       turnErr = idleTimeoutError(err);
     } else if (err instanceof AdapterAbortError) {
-      // Since 0.2.107 only a human Stop (or a cascade from one) — idle expiry
-      // has its own class above.
-      turnErr = new AgentTurnError('ABORTED', 'Aborted by user');
+      // Since 0.2.107 a human Stop, or a cascade from a parent's idle/timeout
+      // end (`abortedError` tells them apart) — idle expiry of THIS turn has its
+      // own class above.
+      turnErr = abortedError();
     } else if (err instanceof AdapterTimeoutError) {
-      turnErr = new AgentTurnError('TIMEOUT', BACKSTOP_TIMEOUT_MESSAGE);
+      turnErr = timeoutError();
     } else if (err instanceof AdapterInitError) {
       turnErr = new AgentTurnError(
         'AGENT_UNAVAILABLE',
