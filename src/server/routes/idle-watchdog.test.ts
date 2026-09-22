@@ -72,6 +72,44 @@ describe('IdleWatchdog (0.2.107)', () => {
     expect(onExpire).toHaveBeenCalledTimes(1);
   });
 
+  it('counts the idle window only with nothing outstanding, and the ceiling otherwise', () => {
+    vi.useFakeTimers();
+    const onExpire = vi.fn();
+    const w = new IdleWatchdog(1_000, onExpire, 5_000);
+    w.open('t1');
+    w.open('t2');
+    expect(w.clock).toBe('outstanding');
+    expect(w.windowMs).toBe(5_000);
+    vi.advanceTimersByTime(4_000);
+    w.close('t1');
+    w.close('unknown'); // ignored
+    vi.advanceTimersByTime(4_000); // t2 still open — the ceiling applies
+    expect(onExpire).not.toHaveBeenCalled();
+    w.close('t2');
+    expect(w.clock).toBe('idle');
+    vi.advanceTimersByTime(999);
+    expect(onExpire).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onExpire).toHaveBeenCalledWith('idle');
+  });
+
+  it('reports the ceiling when outstanding work wedges, and closeAll drops it', () => {
+    vi.useFakeTimers();
+    const wedged = vi.fn();
+    const a = new IdleWatchdog(1_000, wedged, 5_000);
+    a.open('t1');
+    vi.advanceTimersByTime(5_000);
+    expect(wedged).toHaveBeenCalledWith('outstanding');
+
+    const cleared = vi.fn();
+    const b = new IdleWatchdog(1_000, cleared, 5_000);
+    b.open('t1');
+    b.closeAll();
+    expect(b.outstandingCount).toBe(0);
+    vi.advanceTimersByTime(1_000);
+    expect(cleared).toHaveBeenCalledWith('idle');
+  });
+
   it('never fires after stop()', () => {
     vi.useFakeTimers();
     const onExpire = vi.fn();

@@ -139,8 +139,9 @@ export function holdEndingLabel(ending: HoldEnding): string {
 
 /**
  * Toast for a terminal SSE `error`, or null for none. ABORTED stays silent (the
- * user pressed Stop); the two clock endings get their own wording because the
- * server message alone does not say which clock fired or what it means.
+ * user pressed Stop); an idle stop is a warning, not an error; the backstop gets
+ * its own wording because the server message does not say it means a watchdog
+ * failure.
  */
 export function terminalErrorToast(
   code: string | undefined,
@@ -150,7 +151,9 @@ export function terminalErrorToast(
     case 'ABORTED':
       return null;
     case 'IDLE_TIMEOUT':
-      return { level: 'warning', message: 'Agent went silent — the turn was stopped after 10 min without activity.' };
+      // The server message names the clock that fired — plain silence, or a
+      // tool call that made no progress past the outstanding-work ceiling.
+      return { level: 'warning', message: formatted };
     case 'TIMEOUT':
       return { level: 'error', message: 'Turn backstop expired — the idle watchdog failed to stop a silent turn.' };
     default:

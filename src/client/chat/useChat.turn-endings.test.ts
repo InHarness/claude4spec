@@ -25,7 +25,10 @@ describe('turn endings (0.2.107)', () => {
 
   it('keeps a user Stop silent and an idle stop a warning', () => {
     expect(terminalErrorToast('ABORTED', 'Aborted by user')).toBeNull();
-    expect(terminalErrorToast('IDLE_TIMEOUT', 'x')?.level).toBe('warning');
+    expect(terminalErrorToast('IDLE_TIMEOUT', 'A tool call made no progress for 30 min')).toEqual({
+      level: 'warning',
+      message: 'A tool call made no progress for 30 min',
+    });
     expect(terminalErrorToast('AGENT_ERROR', 'boom')).toEqual({ level: 'error', message: 'boom' });
   });
 });

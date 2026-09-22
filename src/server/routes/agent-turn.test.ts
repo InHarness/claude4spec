@@ -133,6 +133,7 @@ import {
   BACKGROUND_GRACE_MS,
   BACKGROUND_HOLD_CAP_MS,
   IDLE_TIMEOUT_MS,
+  OUTSTANDING_WORK_CAP_MS,
   TURN_TIMEOUT_MS,
 } from '../../shared/agent-turn.js';
 
@@ -1025,6 +1026,14 @@ describe('runAgentTurn — server-side turn timeout (0-1-110-to-next)', () => {
 
     expect(hoisted.lastExecute?.timeoutMs).toBe(86_400_000);
     expect(hoisted.lastExecute?.timeoutMs as number).toBeGreaterThanOrEqual(10 * IDLE_TIMEOUT_MS);
+    // The outstanding-work ceiling is a clock the watchdog runs too — the
+    // backstop stays an order of magnitude above it as well.
+    expect(hoisted.lastExecute?.timeoutMs as number).toBeGreaterThanOrEqual(10 * OUTSTANDING_WORK_CAP_MS);
+  });
+
+  it('keeps the outstanding-work ceiling above the idle clock and the longest Bash timeout', () => {
+    expect(OUTSTANDING_WORK_CAP_MS).toBeGreaterThan(IDLE_TIMEOUT_MS);
+    expect(OUTSTANDING_WORK_CAP_MS).toBeGreaterThan(600_000);
   });
 
   /**
@@ -1962,5 +1971,66 @@ describe('runAgentTurn — idle watchdog (0.2.107)', () => {
     await vi.advanceTimersByTimeAsync(IDLE_TIMEOUT_MS);
     const err = await turn;
     expect((err as AgentTurnError).code).toBe('IDLE_TIMEOUT');
+  });
+
+  /**
+   * Post-review: the idle clock counts only with nothing outstanding. A
+   * foreground Bash may run its full 600 000 ms between `tool_use` and
+   * `tool_result` — that is the tool being slow, not the agent going silent.
+   */
+  it('lets a foreground tool call run past the idle window while it is outstanding', async () => {
+    fakeClock();
+    hoisted.events = [
+      { type: 'tool_use', toolName: 'Bash', toolUseId: 'b1', input: { timeout: 600_000 } },
+      { type: '__sleep', ms: IDLE_TIMEOUT_MS + 60_000 },
+      { type: 'tool_result', toolUseId: 'b1', summary: 'ok' },
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps } = makeDeps();
+
+    const turn = runAgentTurn(deps, makeInput());
+    await vi.advanceTimersByTimeAsync(IDLE_TIMEOUT_MS + 60_000);
+    const result = await turn;
+
+    expect(result.threadId).toBe('t1');
+  });
+
+  it('stops a wedged tool call at the outstanding-work ceiling, naming it', async () => {
+    fakeClock();
+    hoisted.events = [{ type: 'tool_use', toolName: 'mcp__x__hang', toolUseId: 'w1', input: {} }];
+    hoisted.hangUntilAbort = true;
+    const { deps } = makeDeps();
+    const events: Array<Record<string, unknown>> = [];
+    const input = { ...makeInput(), onEvent: (e: Record<string, unknown>) => events.push(e) };
+
+    const turn = runAgentTurn(deps, input).catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(OUTSTANDING_WORK_CAP_MS - 1);
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const err = await turn;
+
+    expect((err as AgentTurnError).code).toBe('IDLE_TIMEOUT');
+    expect((err as AgentTurnError).message).toMatch(/tool call made no progress/);
+  });
+
+  it('puts the idle clock back once the tool call closes', async () => {
+    fakeClock();
+    hoisted.events = [
+      { type: 'tool_use', toolName: 'Bash', toolUseId: 'b1', input: {} },
+      { type: '__sleep', ms: IDLE_TIMEOUT_MS + 60_000 },
+      { type: 'tool_result', toolUseId: 'b1', summary: 'ok' },
+    ];
+    hoisted.hangUntilAbort = true;
+    const { deps } = makeDeps();
+
+    const turn = runAgentTurn(deps, makeInput()).catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(IDLE_TIMEOUT_MS + 60_000);
+    expect(deps.activeAdapters.has('t1')).toBe(true);
+    // Nothing outstanding any more — plain silence gets the idle window, not the ceiling.
+    await vi.advanceTimersByTimeAsync(IDLE_TIMEOUT_MS);
+    const err = await turn;
+
+    expect((err as AgentTurnError).code).toBe('IDLE_TIMEOUT');
+    expect((err as AgentTurnError).message).toMatch(/went silent/);
   });
 });

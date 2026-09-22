@@ -30,12 +30,17 @@ export const ASK_TURN_TIMEOUT_MS = 15 * 60_000;
  *
  *     TURN_TIMEOUT_MS >= 10 * IDLE_TIMEOUT_MS
  *     IDLE_TIMEOUT_MS  > BACKGROUND_HOLD_CAP_MS + BACKGROUND_GRACE_MS
+ *     OUTSTANDING_WORK_CAP_MS > IDLE_TIMEOUT_MS
+ *     TURN_TIMEOUT_MS >= 10 * OUTSTANDING_WORK_CAP_MS
  */
 export const TURN_TIMEOUT_MS = 24 * 60 * 60_000;
 
 /**
  * Our idle watchdog (0.2.107): a turn that emits no SIGN OF LIFE for this long
  * is aborted with `IDLE_TIMEOUT`.
+ *
+ * Counts ONLY while the turn's set of outstanding work is empty — see
+ * `OUTSTANDING_WORK_CAP_MS` for the clock that runs otherwise.
  *
  * Re-armed by every adapter event in the sign-of-life set (the replay types plus
  * `adapter_ready`, plus a bubble child's events), NEVER by the SSE keepalive —
@@ -49,6 +54,23 @@ export const TURN_TIMEOUT_MS = 24 * 60 * 60_000;
  * indistinguishable from "the turn went silent". 600 000 ms is ~2x of margin.
  */
 export const IDLE_TIMEOUT_MS = 600_000;
+
+/**
+ * The ceiling on OUTSTANDING work (post-0.2.107 review). A tool call is open
+ * from its `tool_use` to its `tool_result`, and the stream is legitimately
+ * silent for as long as the slowest open call runs — a foreground Bash may take
+ * its full 600 000 ms, exactly the idle window, so an idle clock that kept
+ * counting would always fire first.
+ *
+ * So the idle clock counts only with nothing outstanding; while something is,
+ * this window applies instead, re-armed by the same signs of life (a subagent
+ * or a bubble child working away keeps it alive). It bounds a WEDGED tool, not
+ * a long one that shows progress — and ends it long before the 24 h backstop.
+ *
+ * MUST exceed the longest tool timeout the agent can request (Bash: 600 000 ms)
+ * and `IDLE_TIMEOUT_MS`.
+ */
+export const OUTSTANDING_WORK_CAP_MS = 30 * 60_000;
 
 /**
  * `architectureConfig.claude_backgroundGraceMs` — the LIBRARY'S default, which
@@ -73,16 +95,17 @@ export const BACKGROUND_GRACE_MS = 15_000;
 export const TRANSAGENT_IDLE_MARGIN_MS = 30_000;
 
 /**
- * The three turn-clock invariants, hard. Thrown at module load, so a constant
+ * The turn-clock invariants, hard. Thrown at module load, so a constant
  * edit that breaks one refuses to boot rather than degrading silently.
  */
 export function assertTurnClockInvariants(clocks: {
   turnTimeoutMs: number;
   idleTimeoutMs: number;
+  outstandingCapMs: number;
   holdCapMs: number;
   graceMs: number;
 }): void {
-  const { turnTimeoutMs, idleTimeoutMs, holdCapMs, graceMs } = clocks;
+  const { turnTimeoutMs, idleTimeoutMs, outstandingCapMs, holdCapMs, graceMs } = clocks;
   if (!Number.isFinite(holdCapMs) || holdCapMs <= 0) {
     throw new Error(`turn clocks: background hold cap must be finite and positive, got ${holdCapMs}`);
   }
@@ -94,6 +117,16 @@ export function assertTurnClockInvariants(clocks: {
   if (!(turnTimeoutMs >= 10 * idleTimeoutMs)) {
     throw new Error(
       `turn clocks: backstop timeoutMs (${turnTimeoutMs}ms) must be at least 10x the idle timeout (${idleTimeoutMs}ms)`,
+    );
+  }
+  if (!(outstandingCapMs > idleTimeoutMs)) {
+    throw new Error(
+      `turn clocks: outstanding-work cap (${outstandingCapMs}ms) must exceed the idle timeout (${idleTimeoutMs}ms)`,
+    );
+  }
+  if (!(turnTimeoutMs >= 10 * outstandingCapMs)) {
+    throw new Error(
+      `turn clocks: backstop timeoutMs (${turnTimeoutMs}ms) must be at least 10x the outstanding-work cap (${outstandingCapMs}ms)`,
     );
   }
 }
@@ -114,6 +147,7 @@ export const BACKGROUND_HOLD_CAP_MS = 5 * 60_000;
 assertTurnClockInvariants({
   turnTimeoutMs: TURN_TIMEOUT_MS,
   idleTimeoutMs: IDLE_TIMEOUT_MS,
+  outstandingCapMs: OUTSTANDING_WORK_CAP_MS,
   holdCapMs: BACKGROUND_HOLD_CAP_MS,
   graceMs: BACKGROUND_GRACE_MS,
 });

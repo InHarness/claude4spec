@@ -56,7 +56,7 @@ import type { BriefService } from '../services/brief.js';
 import type { PatchService, PatchDetail } from '../services/patch.js';
 import type { ReleaseService } from '../services/release.js';
 import { TransagentDispatcher } from '../services/transagent-dispatcher.js';
-import { IdleWatchdog } from './idle-watchdog.js';
+import { IdleWatchdog, type IdleClock } from './idle-watchdog.js';
 import { buildTransagentToolsServer, TRANSAGENT_TOOL_FULL_NAME } from '../mcp/transagent-tools.js';
 import type { FileVersionService } from '../services/file-version.js';
 import type { SkillResolver, SkillRegistry } from '../services/skill-registry.js';
@@ -379,6 +379,7 @@ import {
   AgentTurnError,
   BACKGROUND_HOLD_CAP_MS,
   IDLE_TIMEOUT_MS,
+  OUTSTANDING_WORK_CAP_MS,
   TURN_TIMEOUT_MS,
 } from '../../shared/agent-turn.js';
 export { AgentTurnError, type AgentTurnErrorCode } from '../../shared/agent-turn.js';
@@ -823,16 +824,26 @@ export async function runAgentTurn(
    * `IDLE_TIMEOUT_MS`; a parent is lengthened by the transagent margin only
    * while it has a bubble open (the dispatcher does that, see `extend`).
    *
+   * The idle window counts only while nothing is outstanding. An open tool call
+   * swaps it for `OUTSTANDING_WORK_CAP_MS` until its `tool_result` — a slow
+   * tool is not a silent agent, but a wedged one still ends the turn. (A
+   * bubble's `runTransagent` call is itself outstanding work, so its parent
+   * sits on the ceiling while the child's own idle clock does the policing.)
+   *
    * The expiry path is the Stop button's, minus the HTTP request: there is no
    * `POST /api/chat/abort` behind it, so it clears the queue itself and has no
    * response body to carry `clearedTexts` — the `queue_cleared` broadcast and
    * the terminal SSE `error` are the only channels to the user. The reason is
    * recorded FIRST: `abort()` surfaces as a reasonless `AdapterAbortError`.
    */
-  const idleTimer = new IdleWatchdog(IDLE_TIMEOUT_MS, () => {
+  let expiredClock: IdleClock = 'idle';
+  const onIdleExpire = (clock: IdleClock): void => {
+    expiredClock = clock;
     entry.abortReason = 'IDLE_TIMEOUT';
     console.warn(
-      `[chat] thread ${thread.id}: no sign of life for ${idleTimer.timeoutMs}ms — aborting the turn (idle watchdog)`,
+      clock === 'outstanding'
+        ? `[chat] thread ${thread.id}: outstanding work made no progress for ${idleTimer.outstandingCapMs}ms — aborting the turn (idle watchdog)`
+        : `[chat] thread ${thread.id}: no sign of life for ${idleTimer.timeoutMs}ms — aborting the turn (idle watchdog)`,
     );
     try {
       cancelPendingForRequest(deps.pendingInputs, requestId, deps.activeAdapters);
@@ -851,7 +862,8 @@ export async function runAgentTurn(
       /* already finished — nothing to stop */
     }
     abortChildTurns(deps.activeAdapters, deps.pendingInputs, thread.id);
-  });
+  };
+  const idleTimer = new IdleWatchdog(IDLE_TIMEOUT_MS, onIdleExpire, OUTSTANDING_WORK_CAP_MS);
   entry.idleTimer = idleTimer;
 
   /**
@@ -870,7 +882,12 @@ export async function runAgentTurn(
   /** Same abort class, two causes — the registry tells them apart. */
   const abortError = (): AgentTurnError =>
     entry.abortReason === 'IDLE_TIMEOUT'
-      ? new AgentTurnError('IDLE_TIMEOUT', 'Agent went silent — the idle watchdog stopped the turn')
+      ? new AgentTurnError(
+          'IDLE_TIMEOUT',
+          expiredClock === 'outstanding'
+            ? `A tool call made no progress for ${OUTSTANDING_WORK_CAP_MS / 60_000} min — the idle watchdog stopped the turn`
+            : `Agent went silent for ${IDLE_TIMEOUT_MS / 60_000} min — the idle watchdog stopped the turn`,
+        )
       : new AgentTurnError('ABORTED', 'Aborted by user');
 
   try {
@@ -1694,6 +1711,13 @@ export async function runAgentTurn(
       for await (const event of observed) {
         // 0.2.107: every sign of life re-arms the idle watchdog — here, at the
         // top, so `adapter_ready` and a swallowed held `result` count too.
+        // Outstanding work first: an open tool call (main agent or subagent,
+        // keyed by its unique id) stops the idle clock until its result, and
+        // the turn's `result` closes whatever is left — a result that never
+        // came must not keep the idle clock off for good.
+        if (event.type === 'tool_use') idleTimer.open(event.toolUseId);
+        else if (event.type === 'tool_result') idleTimer.close(event.toolUseId);
+        else if (event.type === 'result') idleTimer.closeAll();
         if (SIGN_OF_LIFE_TYPES.has(event.type)) idleTimer.kick();
         // Mid-turn `user_message` carries an epoch-ms `timestamp` (number); map to
         // ISO on the wire so it matches `turn_start.timestamp`.
