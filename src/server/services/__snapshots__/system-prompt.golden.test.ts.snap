@@ -46,7 +46,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -198,8 +198,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
@@ -231,7 +231,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 </available_skills>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
 </tooling>
 
 <agent_filesystem_access enabled="false">
@@ -366,7 +366,7 @@ When this invariant conflicts with brevity, choose self-containment. A longer br
 <project name="My Spec" cwd="/tmp/my-spec"/>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="brief-tools">get_brief, update_brief</mcp>
   <mcp name="release-tools">release_list, release_diff</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
@@ -475,7 +475,7 @@ When this invariant conflicts with brevity, choose self-containment. A longer br
 <project name="My Spec" cwd="/tmp/my-spec"/>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Skill, Bash, BashOutput, KillBash, KillShell, Read, Grep, Glob, NotebookRead, Write, Edit, MultiEdit, NotebookEdit, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Skill, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL, Read, Grep, Glob, NotebookRead, Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="brief-tools">get_brief, update_brief</mcp>
   <mcp name="release-tools">release_list, release_diff</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
@@ -584,7 +584,7 @@ When this invariant conflicts with brevity, choose self-containment. A longer br
 <project name="My Spec" cwd="/tmp/my-spec"/>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="brief-tools">get_brief, update_brief</mcp>
   <mcp name="release-tools">release_list, release_diff</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
@@ -650,7 +650,7 @@ exports[`system prompt — golden (0.2.97) > brief lean 1`] = `
 <project name="My Spec" cwd="/tmp/my-spec"/>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
 </tooling>
 
 <brief_tools_usage>
@@ -722,7 +722,7 @@ When this invariant conflicts with brevity, choose self-containment. A longer br
 <project name="My Spec" cwd="/tmp/my-spec"/>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="brief-tools">get_brief, update_brief</mcp>
   <mcp name="release-tools">release_list, release_diff</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
@@ -822,7 +822,7 @@ When this invariant conflicts with brevity, choose self-containment. A longer br
 <project name="My Spec" cwd="/tmp/my-spec"/>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="brief-tools">get_brief, update_brief</mcp>
   <mcp name="release-tools">release_list, release_diff</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
@@ -920,7 +920,7 @@ When this invariant conflicts with brevity, choose self-containment. A longer br
 <project name="My Spec" cwd="/tmp/my-spec"/>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="brief-tools">get_brief, update_brief</mcp>
   <mcp name="release-tools">release_list, release_diff</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
@@ -1025,7 +1025,7 @@ When this invariant conflicts with brevity, choose self-containment. A longer br
 <project name="My Spec" cwd="/tmp/my-spec"/>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="brief-tools">get_brief, update_brief</mcp>
   <mcp name="release-tools">release_list, release_diff</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
@@ -1124,7 +1124,7 @@ When this invariant conflicts with brevity, choose self-containment. A longer br
 <project name="My Spec" cwd="/tmp/my-spec"/>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="brief-tools">get_brief, update_brief</mcp>
   <mcp name="release-tools">release_list, release_diff</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
@@ -1226,7 +1226,7 @@ When this invariant conflicts with brevity, choose self-containment. A longer br
 <project name="My Spec" cwd="/tmp/my-spec"/>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="brief-tools">get_brief, update_brief</mcp>
   <mcp name="release-tools">release_list, release_diff</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
@@ -1335,7 +1335,7 @@ When this invariant conflicts with brevity, choose self-containment. A longer br
 <project name="My Spec" cwd="/tmp/my-spec"/>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="brief-tools">get_brief, update_brief</mcp>
   <mcp name="release-tools">release_list, release_diff</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
@@ -1421,7 +1421,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -1583,8 +1583,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
@@ -1627,7 +1627,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Skill, Bash, BashOutput, KillBash, KillShell, Read, Grep, Glob, NotebookRead, Write, Edit, MultiEdit, NotebookEdit, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Skill, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL, Read, Grep, Glob, NotebookRead, Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -1789,8 +1789,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
@@ -1833,7 +1833,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -2002,8 +2002,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
@@ -2046,7 +2046,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -2210,8 +2210,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
@@ -2254,7 +2254,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -2420,8 +2420,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
@@ -2463,7 +2463,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -2620,8 +2620,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
@@ -2664,7 +2664,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -2832,8 +2832,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
@@ -2865,7 +2865,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 </available_skills>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
 </tooling>
 
 <agent_filesystem_access enabled="false">
@@ -2994,7 +2994,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -3147,8 +3147,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
@@ -3190,7 +3190,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -3347,8 +3347,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
@@ -3391,7 +3391,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -3559,8 +3559,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
@@ -3603,7 +3603,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="skill-tools">load_skill_file</mcp>
@@ -3769,8 +3769,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ask, create_entities, create_tag, delete_entities, link_dto, tag_entity, unlink_dto, update_entities
@@ -3813,7 +3813,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -3972,8 +3972,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
@@ -4016,7 +4016,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -4178,8 +4178,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
@@ -4212,7 +4212,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 </available_skills>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -4380,8 +4380,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
@@ -4424,7 +4424,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -4592,8 +4592,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
@@ -4636,7 +4636,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -4804,8 +4804,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
@@ -4848,7 +4848,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -5016,8 +5016,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
@@ -5060,7 +5060,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -5228,8 +5228,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
@@ -5272,7 +5272,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -5440,8 +5440,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
@@ -5484,7 +5484,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -5652,8 +5652,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
@@ -5696,7 +5696,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -5864,8 +5864,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
@@ -5908,7 +5908,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -6069,8 +6069,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
@@ -6113,7 +6113,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -6281,8 +6281,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
@@ -6325,7 +6325,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -6493,8 +6493,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
@@ -6537,7 +6537,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -6733,7 +6733,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -6897,8 +6897,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
@@ -6941,7 +6941,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -7109,8 +7109,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
@@ -7143,7 +7143,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 </available_skills>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -7304,7 +7304,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -7486,8 +7486,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
@@ -7519,7 +7519,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 </available_skills>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
 </tooling>
 
 <agent_filesystem_access enabled="false">
@@ -7661,7 +7661,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -7829,8 +7829,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
@@ -7886,7 +7886,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -8068,8 +8068,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
@@ -8112,7 +8112,7 @@ You do not know its conventions yet, and this block does not summarise them.
 </project_writing_skill>
 
 <tooling>
-  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, WebFetch, WebSearch</builtin>
+  <builtin note="what the adapter knows; other blocks in this prompt narrow it">TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger</builtin>
   <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities</mcp>
   <mcp name="reference-tools">create_tag, tag_entity, find_references, check_consistency</mcp>
   <mcp name="page-tools">get_page, create_page, update_page, delete_page, update_sections</mcp>
@@ -8294,8 +8294,8 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the writing style referenced in <project_writing_skill/> — its conventions constrain every line of the plan. If that skill has not been loaded in this thread yet, load it before drafting or updating the plan. If the user's request appears to violate its conventions, surface the conflict in the plan rather than quietly working around it.
 
 The built-in file and shell tools are GATED OFF for this turn — not discouraged, unavailable:
-  - Denied: Write, Edit, MultiEdit, NotebookEdit, Bash, BashOutput, KillBash, KillShell
-  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, Task, Agent, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch
+  - Denied: Write, Edit, MultiEdit, NotebookEdit, EnterWorktree, ExitWorktree, Bash, TaskOutput, BashOutput, AgentOutput, BashOutputTool, AgentOutputTool, TaskStop, KillBash, KillShell, Monitor, REPL
+  - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
   - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
