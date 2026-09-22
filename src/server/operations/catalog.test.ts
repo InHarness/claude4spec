@@ -412,6 +412,8 @@ describe('the profile gate', () => {
     expect(spawn.channels.internal.kind).toBe('direct');
     expect([spawn.channels.cli.kind, spawn.channels.mcp.kind, spawn.channels.rest.kind]).toEqual(['na', 'na', 'na']);
     expect(spawn.sideEffects).toEqual(['file', 'db', 'ui-notify']);
+    // 0.2.107: a child stopped by its own idle clock (or its parent's) ends IDLE_TIMEOUT.
+    expect(spawn.errorCodes).toEqual(expect.arrayContaining(['TIMEOUT', 'IDLE_TIMEOUT', 'ABORTED']));
     // No CLI and no REST door: a child turn is spawned from inside a turn.
     expect(row.channels.cli.kind).toBe('na');
     expect(row.channels.rest.kind).toBe('na');

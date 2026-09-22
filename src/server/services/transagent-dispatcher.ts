@@ -203,10 +203,16 @@ export class TransagentDispatcher {
 
     const relayed = new Set<string>();
     try {
-      // 3. Run the child turn. `onEvent` is a no-op — the child renders via its
-      //    own stream entry (GET /api/chat/stream/:childThreadId), not the
-      //    parent transport. runAgentTurn registers activeAdapters[child.id]
-      //    (with parentThreadId from the row) so the parent can nested-join.
+      // 3. Run the child turn. The child renders via its own stream entry
+      //    (GET /api/chat/stream/:childThreadId), not the parent transport.
+      //    runAgentTurn registers activeAdapters[child.id] (with parentThreadId
+      //    from the row) so the parent can nested-join — and gives the child its
+      //    OWN idle clock (0.2.107). The parent's clock needs nothing from here:
+      //    to the library the bubble is an open `runTransagent` tool_use, which
+      //    stops the parent's idle clock until its tool_result.
+      //    `onEvent` is a no-op — the child's events reach neither the parent's
+      //    model context (that gets only `{ threadId, summary }`) nor the
+      //    parent's SSE (the panel has its own source).
       const result = await this.opts.runTurn({
         thread: child,
         prompt: message,
@@ -233,7 +239,10 @@ export class TransagentDispatcher {
       return { threadId: child.id, summary: result.answer };
     } catch (err) {
       // Child failure collapses upward as the parent's tool_result isError
-      // (handled by the MCP wrapper). Still bracket-close the panel.
+      // (handled by the MCP wrapper), and the parent's turn carries on. That
+      // includes a child stopped by its OWN idle clock (`IDLE_TIMEOUT`), which
+      // `runAgentTurn` has already mapped from `AdapterIdleTimeoutError`.
+      // Still bracket-close the panel.
       parentAdapter?.emit({
         type: 'transagent_completed',
         childThreadId: child.id,

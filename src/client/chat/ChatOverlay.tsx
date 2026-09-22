@@ -7,7 +7,7 @@ import { batchToolBlocks } from '@inharness-ai/agent-chat';
 import { useChatStore, thinkingToConfig, configToThinking, isAdaptiveModel, isChatModel, type ChatModel, type ChatThinking } from '../state/chat.js';
 import { usePersistedState, projectKey } from '../state/persisted.js';
 import { ResizeHandle } from '../components/ResizeHandle.js';
-import { useChat } from './useChat.js';
+import { useChat, holdEndingLabel } from './useChat.js';
 import { useThreadListContext } from './ThreadListContext.js';
 import { BlockRenderer, QueuedMessageBubble } from './BlockRenderer.js';
 import { TransagentPanel } from './TransagentPanel.js';
@@ -132,6 +132,7 @@ export function ChatOverlay() {
     transagents,
     backgroundTasks,
     heldBackgroundTaskCount,
+    holdEnding,
     activeThreadMeta,
   } = useChat({
     threadId: chatThreadId,
@@ -587,6 +588,21 @@ export function ChatOverlay() {
                     </span>
                     waiting for {heldBackgroundTaskCount} background task
                     {heldBackgroundTaskCount === 1 ? '' : 's'}
+                  </div>
+                </div>
+              )}
+              {/* 0.2.107: the hold's terminal state. A quiet close shows nothing;
+                  the four failure endings (user abort, turn went silent, backstop,
+                  hold cap) each say which one it was. */}
+              {heldBackgroundTaskCount === 0 && holdEnding && (
+                <div className="msg-enter mb-3 flex">
+                  <div
+                    className="inline-flex items-center gap-1.5 py-1 text-[10.5px] font-mono"
+                    style={{ color: 'var(--c-muted)' }}
+                    aria-live="polite"
+                    data-hold-ending={holdEnding.kind}
+                  >
+                    {holdEndingLabel(holdEnding)}
                   </div>
                 </div>
               )}

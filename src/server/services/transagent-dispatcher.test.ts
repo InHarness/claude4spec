@@ -5,6 +5,7 @@ import { ChatService } from './chat.js';
 import { TransagentDispatcher, type TransagentRunInput } from './transagent-dispatcher.js';
 import type { AgentTurnDeps, AgentTurnInput } from '../routes/agent-turn.js';
 import { DomainError } from './tags.js';
+import { AgentTurnError } from '../../shared/agent-turn.js';
 
 /**
  * 0.2.30 M05: `runTransagent`'s `planMode` — the generic step of the dispatcher.
@@ -536,5 +537,69 @@ describe('TransagentDispatcher — patch payload.patchPath + brief payload (0.2.
     expect(createBriefCalls).toEqual([
       { fromReleaseName: undefined, toReleaseName: null, content: '# Body\n\nanalysis', suffix: 'tail' },
     ]);
+  });
+});
+
+/**
+ * 0.2.107 (M46): the child has its OWN idle clock — the library's, armed by its
+ * own runAgentTurn because the dispatcher passes no `timeoutMs` (only `ask`
+ * does, and `ask` runs without one). The parent needs nothing from the
+ * dispatcher: its `runTransagent` tool_use is outstanding work to the library.
+ * What is left here is that a child's idle stop comes back as an error.
+ */
+describe('TransagentDispatcher — idle clocks (0.2.107)', () => {
+  let db: Database.Database;
+  let chat: ChatService;
+
+  beforeEach(() => {
+    db = new Database(':memory:');
+    runMigrations(db);
+    chat = new ChatService(db);
+  });
+  afterEach(() => db.close());
+
+  const setup = (runTurn: (input: AgentTurnInput) => Promise<unknown>) => {
+    const parent = chat.createThread('parent', { contextType: 'chat' });
+    const parentEntry = {
+      requestId: 'req_parent',
+      emit: () => {},
+      replay: { events: [] },
+    };
+    const deps = {
+      chatService: chat,
+      activeAdapters: new Map([[parent.id, parentEntry]]),
+      pendingInputs: new Map(),
+    } as unknown as AgentTurnDeps;
+    const dispatcher = new TransagentDispatcher(deps, {
+      model: 'claude-opus-5' as never,
+      architectureConfig: {},
+      takeToolUseId: async () => 'tu_1',
+      runTurn: runTurn as never,
+      interactive: true,
+    });
+    return { parentThreadId: parent.id, dispatcher };
+  };
+
+  it('runs the child with no `timeoutMs`, so its own turn arms the interactive idle clock', async () => {
+    let childInput: AgentTurnInput | undefined;
+    const { parentThreadId, dispatcher } = setup(async (input) => {
+      childInput = input;
+      return { answer: 'done' };
+    });
+
+    await dispatcher.run({ parentThreadId, contextType: 'chat', message: 'go' });
+
+    expect(childInput).toBeDefined();
+    expect(childInput!.timeoutMs).toBeUndefined();
+  });
+
+  it('[ac:ac-banka-milczaca-dluzej-niz-zegar-idle] lets a child idle stop propagate as IDLE_TIMEOUT', async () => {
+    const { parentThreadId, dispatcher } = setup(async () => {
+      throw new AgentTurnError('IDLE_TIMEOUT', 'Agent went idle for 60 min with nothing in flight — the turn was stopped');
+    });
+
+    await expect(
+      dispatcher.run({ parentThreadId, contextType: 'chat', message: 'go' }),
+    ).rejects.toMatchObject({ code: 'IDLE_TIMEOUT' });
   });
 });

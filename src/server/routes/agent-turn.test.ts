@@ -90,11 +90,21 @@ vi.mock('../config.js', async (importOriginal) => {
 import {
   AdapterAbortError,
   AdapterBackgroundHoldExpiredError,
+  AdapterIdleTimeoutError,
   AdapterTimeoutError,
 } from '@inharness-ai/agent-adapters';
 import { runAgentTurn, type AgentTurnDeps, type AgentTurnInput } from './agent-turn.js';
-import { CLAUDE_CODE_TASK_TRACKING_TOOLS } from '@inharness-ai/agent-adapters/claude-code';
-import { BACKGROUND_HOLD_CAP_MS, TURN_TIMEOUT_MS } from '../../shared/agent-turn.js';
+import {
+  BACKGROUND_WAKEUP_GRACE_MS,
+  CLAUDE_CODE_TASK_TRACKING_TOOLS,
+} from '@inharness-ai/agent-adapters/claude-code';
+import {
+  AgentTurnError,
+  assertTurnClockInvariants,
+  BACKGROUND_HOLD_CAP_MS,
+  IDLE_TIMEOUT_MS,
+  TURN_TIMEOUT_MS,
+} from '../../shared/agent-turn.js';
 
 afterEach(() => {
   hoisted.agent = undefined;
@@ -969,8 +979,36 @@ describe('runAgentTurn — server-side turn timeout (0-1-110-to-next)', () => {
    * between "the hold expired" and "the turn hung" — different bugs, different
    * fixes.
    */
-  it('[ac:ac-wartosc-timeoutms-przekazywana-do-ada] keeps the turn timeout strictly above the background hold cap', () => {
+  it('[ac:ac-wartosc-timeoutms-przekazywana-do-ada] keeps the idle clock strictly above hold cap + grace', () => {
+    // 0.2.107: otherwise idle expiry could pre-empt the typed hold-expired error.
+    expect(IDLE_TIMEOUT_MS).toBeGreaterThan(BACKGROUND_HOLD_CAP_MS + BACKGROUND_WAKEUP_GRACE_MS);
     expect(TURN_TIMEOUT_MS).toBeGreaterThan(BACKGROUND_HOLD_CAP_MS);
+  });
+
+  it('[ac:ac-backstop-timeoutms-przekazywany-do-ad] keeps the timeoutMs backstop at least an order of magnitude above the idle clock', async () => {
+    hoisted.events = [{ type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+
+    await runAgentTurn(deps, makeInput());
+
+    expect(hoisted.lastExecute?.timeoutMs).toBe(86_400_000);
+    expect(hoisted.lastExecute?.timeoutMs as number).toBeGreaterThanOrEqual(10 * IDLE_TIMEOUT_MS);
+  });
+
+  /**
+   * `Infinity` does not disarm the library's idle clock — `setTimeout` clamps it
+   * and the turn would die at once. Omitting the field is the only "off".
+   */
+  it('refuses a non-finite idle budget at module load', () => {
+    const clocks = {
+      turnTimeoutMs: TURN_TIMEOUT_MS,
+      idleTimeoutMs: IDLE_TIMEOUT_MS,
+      holdCapMs: BACKGROUND_HOLD_CAP_MS,
+      graceMs: BACKGROUND_WAKEUP_GRACE_MS,
+    };
+    expect(() => assertTurnClockInvariants(clocks)).not.toThrow();
+    expect(() => assertTurnClockInvariants({ ...clocks, idleTimeoutMs: Infinity })).toThrow(/idleTimeoutMs must be finite/);
+    expect(() => assertTurnClockInvariants({ ...clocks, turnTimeoutMs: 9 * IDLE_TIMEOUT_MS })).toThrow(/10x/);
   });
 
   /**
@@ -978,7 +1016,7 @@ describe('runAgentTurn — server-side turn timeout (0-1-110-to-next)', () => {
    * cap", which would let a wedged background task hold a session open with no
    * bound at all.
    */
-  it('[ac:ac-wartosc-timeoutms-przekazywana-do-ada] arms the hold cap with a finite positive number, never a disarm sentinel', async () => {
+  it('[ac:ac-cap-oczekiwania-na-zadania-w-tle-nigd] arms the hold cap with a finite positive number, never a disarm sentinel', async () => {
     hoisted.events = [{ type: 'result', sessionId: 's1' }];
     const { deps } = makeDeps();
 
@@ -1749,6 +1787,11 @@ describe('runAgentTurn — delivered terminal errors', () => {
     },
     { name: 'AdapterAbortError', error: new AdapterAbortError('claude-code'), code: 'ABORTED' },
     {
+      name: 'AdapterIdleTimeoutError',
+      error: new AdapterIdleTimeoutError('claude-code', IDLE_TIMEOUT_MS),
+      code: 'IDLE_TIMEOUT',
+    },
+    {
       name: 'AdapterBackgroundHoldExpiredError',
       error: new AdapterBackgroundHoldExpiredError('claude-code', 1000),
       code: 'BACKGROUND_HOLD_EXPIRED',
@@ -1809,5 +1852,190 @@ describe('runAgentTurn — delivered terminal errors', () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+/**
+ * 0.2.107: silence is detected by the LIBRARY's idle clock (`idleTimeoutMs`,
+ * agent-adapters >= 0.9.11). What stays ours: passing the budget, mapping
+ * `AdapterIdleTimeoutError` to `IDLE_TIMEOUT`, and the Stop-like side effects
+ * of an idle end — the queue cleared and broadcast, the children stopped.
+ */
+describe('runAgentTurn — library idle clock (0.2.107)', () => {
+  function withQueue(deps: AgentTurnDeps, queued: string[]) {
+    (deps.chatService as unknown as { clearQueued: () => string[] }).clearQueued = () => queued.splice(0);
+  }
+
+  it('[ac:ac-tura-w-ktorej-adapter-milczy-dluzej-n] hands the adapter the interactive idle budget next to the backstop', async () => {
+    hoisted.events = [{ type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+
+    await runAgentTurn(deps, makeInput());
+
+    expect(hoisted.lastExecute?.idleTimeoutMs).toBe(IDLE_TIMEOUT_MS);
+    expect(hoisted.lastExecute?.idleTimeoutMs).toBe(3_600_000);
+    expect(hoisted.lastExecute?.timeoutMs).toBe(TURN_TIMEOUT_MS);
+  });
+
+  it('gives a turn with its own `timeoutMs` (`ask`) no idle clock', async () => {
+    hoisted.events = [{ type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+
+    await runAgentTurn(deps, { ...makeInput(), timeoutMs: 15 * 60_000 });
+
+    expect(hoisted.lastExecute?.timeoutMs).toBe(15 * 60_000);
+    expect(hoisted.lastExecute).not.toHaveProperty('idleTimeoutMs');
+  });
+
+  for (const how of ['delivered', 'thrown'] as const) {
+    it(`[ac:ac-tura-w-ktorej-adapter-milczy-dluzej-n] ends an idle turn with IDLE_TIMEOUT, clears the queue and stops the children (${how})`, async () => {
+      const idle = new AdapterIdleTimeoutError('claude-code', IDLE_TIMEOUT_MS);
+      hoisted.events = [{ type: 'text_delta', text: 'thinking about it…' }];
+      if (how === 'delivered') hoisted.events.push({ type: 'error', error: idle, phase: 'runtime' });
+      else hoisted.beforeEvent = () => {
+        throw idle;
+      };
+      const { deps } = makeDeps();
+      withQueue(deps, ['queued while idle']);
+      const childAbort = vi.fn();
+      deps.activeAdapters.set('child', {
+        requestId: 'r-child',
+        adapter: { abort: childAbort },
+        parentThreadId: 't1',
+      } as never);
+      const events: Array<Record<string, unknown>> = [];
+      const input = { ...makeInput(), onEvent: (e: Record<string, unknown>) => events.push(e) };
+
+      const err = await runAgentTurn(deps, input).catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(AgentTurnError);
+      expect((err as AgentTurnError).code).toBe('IDLE_TIMEOUT');
+      const terminal = events.filter((e) => e.type === 'error');
+      expect(terminal).toHaveLength(1);
+      expect(terminal[0]?.code).toBe('IDLE_TIMEOUT');
+      // No HTTP abort behind it: the turn clears the queue and broadcasts it itself.
+      expect(events).toContainEqual({ type: 'queue_cleared', texts: ['queued while idle'] });
+      expect(childAbort).toHaveBeenCalledTimes(1);
+    });
+  }
+
+  it('[ac:ac-tura-w-ktorej-adapter-milczy-dluzej-n] keeps AdapterAbortError a user Stop — ABORTED, queue untouched', async () => {
+    hoisted.events = [{ type: 'error', error: new AdapterAbortError('claude-code'), phase: 'runtime' }];
+    const { deps } = makeDeps();
+    const clearQueued = vi.fn(() => []);
+    (deps.chatService as unknown as { clearQueued: () => string[] }).clearQueued = clearQueued;
+    const events: Array<Record<string, unknown>> = [];
+    const input = { ...makeInput(), onEvent: (e: Record<string, unknown>) => events.push(e) };
+
+    const err = await runAgentTurn(deps, input).catch((e: unknown) => e);
+
+    expect((err as AgentTurnError).code).toBe('ABORTED');
+    expect(events.find((e) => e.type === 'error')?.code).toBe('ABORTED');
+    // The Stop route clears the queue itself; the turn must not do it twice.
+    expect(clearQueued).not.toHaveBeenCalled();
+  });
+});
+
+describe('runAgentTurn — timeouts and cascades (0.2.107 review)', () => {
+  for (const how of ['delivered', 'thrown'] as const) {
+    it(`a TIMEOUT stops the children too, and names the caller's cap for \`ask\` (${how})`, async () => {
+      const timeout = new AdapterTimeoutError('claude-code', 15 * 60_000);
+      hoisted.events = [{ type: 'text_delta', text: 'still going…' }];
+      if (how === 'delivered') hoisted.events.push({ type: 'error', error: timeout, phase: 'runtime' });
+      else hoisted.beforeEvent = () => {
+        throw timeout;
+      };
+      const { deps } = makeDeps();
+      const child = { requestId: 'r-child', adapter: { abort: vi.fn() }, parentThreadId: 't1' } as Record<string, unknown>;
+      deps.activeAdapters.set('child', child as never);
+
+      const err = await runAgentTurn(deps, { ...makeInput(), timeoutMs: 15 * 60_000 }).catch((e: unknown) => e);
+
+      expect((err as AgentTurnError).code).toBe('TIMEOUT');
+      expect((err as AgentTurnError).message).toBe('Agent took too long to respond (15 min cap)');
+      expect((child.adapter as { abort: ReturnType<typeof vi.fn> }).abort).toHaveBeenCalledTimes(1);
+      expect(child.cascadeReason).toBe('parent-timeout');
+    });
+  }
+
+  it('an idle end tags the children, grandchildren included, with the reason', async () => {
+    hoisted.events = [
+      { type: 'error', error: new AdapterIdleTimeoutError('claude-code', IDLE_TIMEOUT_MS), phase: 'runtime' },
+    ];
+    const { deps } = makeDeps();
+    const child = { requestId: 'r-c', adapter: { abort: vi.fn() }, parentThreadId: 't1' } as Record<string, unknown>;
+    const grandchild = { requestId: 'r-g', adapter: { abort: vi.fn() }, parentThreadId: 'child' } as Record<string, unknown>;
+    deps.activeAdapters.set('child', child as never);
+    deps.activeAdapters.set('grandchild', grandchild as never);
+
+    await runAgentTurn(deps, makeInput()).catch(() => undefined);
+
+    expect(child.cascadeReason).toBe('parent-idle');
+    expect(grandchild.cascadeReason).toBe('parent-idle');
+  });
+
+  for (const [reason, code] of [
+    ['parent-idle', 'IDLE_TIMEOUT'],
+    ['parent-timeout', 'TIMEOUT'],
+    [undefined, 'ABORTED'],
+  ] as const) {
+    it(`a child aborted by a cascade reports ${code}, not a Stop nobody pressed (${reason ?? 'human Stop'})`, async () => {
+      const { deps } = makeDeps();
+      hoisted.events = [{ type: 'text_delta', text: 'working…' }];
+      hoisted.beforeEvent = () => {
+        const entry = deps.activeAdapters.get('t1');
+        if (entry && reason) entry.cascadeReason = reason;
+        throw new AdapterAbortError('claude-code');
+      };
+      const events: Array<Record<string, unknown>> = [];
+
+      const err = await runAgentTurn(deps, { ...makeInput(), onEvent: (e) => events.push(e as never) }).catch(
+        (e: unknown) => e,
+      );
+
+      expect((err as AgentTurnError).code).toBe(code);
+      expect(events.find((e) => e.type === 'error')?.code).toBe(code);
+    });
+  }
+});
+
+/**
+ * agent-adapters 0.9.12: a subagent re-entered via SendMessage starts again
+ * under the SAME task id (`resumed: true`); the last completion ends it.
+ */
+describe('runAgentTurn — subagent re-entry (agent-adapters 0.9.12)', () => {
+  it('persists every cycle of a re-entered subagent and forwards the resumed start', async () => {
+    hoisted.events = [
+      { type: 'subagent_started', taskId: 'task1', description: 'explore', toolUseId: 'tu_task' },
+      { type: 'subagent_completed', taskId: 'task1', status: 'completed', summary: 'first' },
+      {
+        type: 'subagent_started',
+        taskId: 'task1',
+        description: 'follow-up',
+        toolUseId: 'tu_send',
+        resumed: true,
+      },
+      { type: 'subagent_completed', taskId: 'task1', status: 'completed', summary: 'second' },
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps } = makeDeps();
+    const starts: unknown[][] = [];
+    const completions: unknown[][] = [];
+    Object.assign(deps.chatService, {
+      startSubagentTask: (...args: unknown[]) => starts.push(args),
+      completeSubagentTask: (...args: unknown[]) => completions.push(args),
+    });
+    const events: Array<Record<string, unknown>> = [];
+
+    await runAgentTurn(deps, { ...makeInput(), onEvent: (e) => events.push(e as never) });
+
+    expect(starts).toEqual([
+      ['t1', 'task1', 'explore', 'tu_task'],
+      ['t1', 'task1', 'follow-up', 'tu_send'],
+    ]);
+    expect(completions.at(-1)).toEqual(['t1', 'task1', 'completed', 'second']);
+    const started = events.filter((e) => e.type === 'subagent_started');
+    expect(started).toHaveLength(2);
+    expect(started[1]).toMatchObject({ taskId: 'task1', resumed: true });
   });
 });

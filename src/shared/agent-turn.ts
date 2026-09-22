@@ -11,25 +11,103 @@
 export const ASK_TURN_TIMEOUT_MS = 15 * 60_000;
 
 /**
- * Bounds an INTERACTIVE `POST /api/chat` turn.
+ * The `timeoutMs` handed to `adapter.execute` for an INTERACTIVE `POST /api/chat`
+ * turn — a CONTRACT BACKSTOP, not a turn-length policy (0.2.107).
  *
- * This path used to pass no timeout at all, deliberately: a turn can pause for
- * many minutes on `onUserInput` while a human decides, and the adapter's timer
- * runs from turn-start regardless of that activity. 0.2.50 makes a bound
- * mandatory anyway, because the background-task hold cap needs something above
- * it to be meaningful.
+ * It used to be the only clock on the turn (60 min), so an agent that went
+ * silent in its first minute held the user for an hour and then died with an
+ * error indistinguishable from a hard failure. Silence is now detected by the
+ * library's idle clock (`idleTimeoutMs`, agent-adapters >= 0.9.11), passed as
+ * `IDLE_TIMEOUT_MS` below. This backstop is armed once at run start and never
+ * re-armed; it covers the whole turn.
  *
- * The invariant, asserted in `agent-turn.clocks.test.ts`:
+ * It must still be passed — the library reads an omitted `timeoutMs` as "no
+ * wall-clock bound at all", and the backstop is the policy. If it ever fires
+ * FIRST, that is an idle-clock failure, not a normal end of turn.
  *
- *     TURN_TIMEOUT_MS > BACKGROUND_HOLD_CAP_MS
+ * While work is OUTSTANDING the idle clock is stopped, and each kind of work is
+ * bounded by ITS OWN cap (agent-adapters M01: "outstanding work is not unbounded
+ * work") — deliberately no extra clock of ours on top (0.2.107 review, point 8):
  *
- * If the two ever cross, a hold that outlives its cap surfaces as a bare
- * `AdapterTimeoutError` instead of the typed `AdapterBackgroundHoldExpiredError`
- * — and we lose the ability to tell "the hold expired" from "the turn hung",
- * which are different bugs with different fixes. 60 min vs 5 min leaves 12x of
- * headroom.
+ *   - foreground Bash       → its own `timeout` (max 600 000 ms, Claude Code);
+ *   - background task       → `BACKGROUND_HOLD_CAP_MS` (library hold cap);
+ *   - `runTransagent` child → the child turn's own idle clock and backstop;
+ *   - subagent              → its `maxTurns` (`plugin-subagents.ts`);
+ *   - `user_input_request`  → none, on purpose: a human being slow is not a stall;
+ *   - MCP tool call         → Claude Code's per-server tool timeout (~28 h by
+ *                             default). agent-adapters has no way to set it yet
+ *                             — the one real gap, reported to the library; until
+ *                             then a wedged MCP tool is ended by this backstop.
+ *
+ * The invariants, asserted at server module load (`routes/agent-turn.ts`) and in `agent-turn.test.ts`:
+ *
+ *     TURN_TIMEOUT_MS >= 10 * IDLE_TIMEOUT_MS
+ *     IDLE_TIMEOUT_MS  > BACKGROUND_HOLD_CAP_MS + BACKGROUND_WAKEUP_GRACE_MS (library)
  */
-export const TURN_TIMEOUT_MS = 60 * 60_000;
+export const TURN_TIMEOUT_MS = 24 * 60 * 60_000;
+
+/**
+ * `idleTimeoutMs` handed to `adapter.execute` for an interactive turn (0.2.107):
+ * the library ends a run that stays idle this long with `AdapterIdleTimeoutError`,
+ * which we map to `IDLE_TIMEOUT`.
+ *
+ * The library's clock is NOT a last-sign-of-life timer. It advances only while
+ * nothing is outstanding — an open `tool_use`, subagent, background task,
+ * unanswered `user_input_request`, and the time we hold an event all stop it —
+ * and it never resets: the budget is CUMULATIVE across the turn. Streaming text
+ * and generating tool input spend it. Hence 60 min rather than the 10 min a
+ * resettable watchdog would get: a long legitimate turn (dozens of pages
+ * written) must fit in it, while an agent that truly went silent still ends
+ * long before the 24 h backstop.
+ *
+ * A bubble child (M46) is, for its parent, an ordinary open `tool_use`, so the
+ * parent's clock is stopped for as long as the child runs; the child gets its
+ * own budget through `runAgentTurn`.
+ *
+ * MUST stay above `BACKGROUND_HOLD_CAP_MS` + the library's background grace (315 000 ms):
+ * otherwise idle expiry could pre-empt the typed
+ * `AdapterBackgroundHoldExpiredError` and "abandoned background work" would
+ * become indistinguishable from "the turn went silent".
+ */
+export const IDLE_TIMEOUT_MS = 60 * 60_000;
+
+/**
+ * The turn-clock invariants, hard. Checked at server module load
+ * (`routes/agent-turn.ts`), so a constant edit that breaks one refuses to boot
+ * rather than degrading silently. `graceMs` is the library's own
+ * `BACKGROUND_WAKEUP_GRACE_MS` (we do not override
+ * `claude_backgroundGraceMs`), read there rather than mirrored here — this file
+ * is shared with the client, which must not import the adapter runtime.
+ *
+ * Every clock must be finite. For the hold cap that is the library's rule
+ * (`null`/`Infinity` disarm it). For `idleTimeoutMs` it is the opposite trap:
+ * `Infinity` does NOT disarm the library's idle clock — `setTimeout` clamps it,
+ * and the turn would die in ~1 ms. Omitting the field is the only way to have
+ * no idle clock.
+ */
+export function assertTurnClockInvariants(clocks: {
+  turnTimeoutMs: number;
+  idleTimeoutMs: number;
+  holdCapMs: number;
+  graceMs: number;
+}): void {
+  const { turnTimeoutMs, idleTimeoutMs, holdCapMs, graceMs } = clocks;
+  for (const [name, ms] of Object.entries(clocks)) {
+    if (!Number.isFinite(ms) || ms <= 0) {
+      throw new Error(`turn clocks: ${name} must be finite and positive, got ${ms}`);
+    }
+  }
+  if (!(idleTimeoutMs > holdCapMs + graceMs)) {
+    throw new Error(
+      `turn clocks: idle timeout (${idleTimeoutMs}ms) must exceed hold cap + grace (${holdCapMs + graceMs}ms)`,
+    );
+  }
+  if (!(turnTimeoutMs >= 10 * idleTimeoutMs)) {
+    throw new Error(
+      `turn clocks: backstop timeoutMs (${turnTimeoutMs}ms) must be at least 10x the idle timeout (${idleTimeoutMs}ms)`,
+    );
+  }
+}
 
 /**
  * `architectureConfig.claude_backgroundHoldCapMs` — how long the adapter keeps a
@@ -65,6 +143,16 @@ export const BACKGROUND_HOLD_CAP_MS = 5 * 60_000;
  */
 export type AgentTurnErrorCode =
   | 'ABORTED'
+  /**
+   * 0.2.107: the library's idle clock ended the turn — `IDLE_TIMEOUT_MS` of
+   * cumulative idle time with nothing outstanding (`AdapterIdleTimeoutError`).
+   * A class of its own, so `ABORTED` now always means a human Stop.
+   */
+  | 'IDLE_TIMEOUT'
+  /**
+   * The `timeoutMs` BACKSTOP expired (`AdapterTimeoutError`). Since 0.2.107 this
+   * is a symptom of an idle-clock failure, not a normal end of turn.
+   */
   | 'TIMEOUT'
   | 'AGENT_UNAVAILABLE'
   | 'AGENT_ERROR'

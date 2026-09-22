@@ -147,6 +147,39 @@ describe('sanitizeSubagentDefinition', () => {
     expect(sanitizeSubagentDefinition(def)).toBe(def);
   });
 
+  it('drops the whole delegation group, not just Agent/Task (agent-adapters 0.9.12)', () => {
+    const s = sink();
+    const out = sanitizeSubagentDefinition(
+      {
+        name: 'nester',
+        description: 'd',
+        prompt: 'p',
+        tools: ['Read', 'Workflow', 'SendMessage', 'ListAgents', 'RemoteTrigger', 'Agent'],
+      },
+      s.warn,
+    );
+    expect(out.tools).toEqual(['Read']);
+    for (const t of ['Agent', 'Task', 'SendMessage', 'ListAgents', 'ListPeers', 'Workflow', 'RemoteTrigger']) {
+      expect(NON_DELEGABLE_TOOLS).toContain(t);
+    }
+  });
+
+  it('keeps Agent/Task banned on a library without the delegation group', async () => {
+    vi.resetModules();
+    vi.doMock('@inharness-ai/agent-adapters/claude-code', async (orig) => ({
+      ...(await orig<typeof import('@inharness-ai/agent-adapters/claude-code')>()),
+      buildClaudeCodeToolPolicy: () => ({ deny: [undefined] }),
+    }));
+    try {
+      const mod = await import('./plugin-subagents.js');
+      expect(mod.NON_DELEGABLE_TOOLS).toEqual(expect.arrayContaining(['Agent', 'Task']));
+      expect(mod.NON_DELEGABLE_TOOLS.every((t) => typeof t === 'string')).toBe(true);
+    } finally {
+      vi.doUnmock('@inharness-ai/agent-adapters/claude-code');
+      vi.resetModules();
+    }
+  });
+
   it('drift guard: the hardcoded literal still matches the real tool name', () => {
     expect(NON_DELEGABLE_TOOLS).toContain(TRANSAGENT_TOOL_FULL_NAME);
   });

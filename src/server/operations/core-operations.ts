@@ -1414,7 +1414,7 @@ export function registerCoreOperations(): void {
       planMode: z.boolean().optional(),
       threadId: z.string().optional(),
     },
-    errorCodes: ['AGENT_ERROR', 'TIMEOUT', 'ABORTED', 'INVALID_ARGS', 'NOT_FOUND'],
+    errorCodes: ['AGENT_ERROR', 'TIMEOUT', 'IDLE_TIMEOUT', 'ABORTED', 'INVALID_ARGS', 'NOT_FOUND'],
     sideEffects: ['file', 'db', 'ui-notify'],
     contentInput: 'n/a',
     idempotent: false,
