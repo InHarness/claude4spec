@@ -13,6 +13,7 @@ import { errorHandler } from '../../routes/errors.js';
 import { commaList, nonNegativeInt, positiveInt } from '../../routes/query-params.js';
 import type { ProjectPluginHost } from './types.js';
 import type { DiscoveryCore } from '../../discovery/types.js';
+import type { WsEmitter } from '../../ws/project-emitter.js';
 import { payloadVersionOfCapture, samePayloadVersion } from '../../serialization/payload-version.js';
 import { upgradeCapture } from '../../serialization/payload-upgrade.js';
 import { toRawDeltaEntityChange } from '../../serialization/snapshot.js';
@@ -135,8 +136,31 @@ function decodeToolFailure(result: unknown): { code: string; message: string } {
  * Lives under core/plugin-host/ because the URL spans all plugins; per-plugin
  * routes (CRUD) stay inside their own vertical slice.
  */
-export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versions: VersionService, store: EntityStore, reader: RawEntityReader, discovery: DiscoveryCore): Router {
+export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versions: VersionService, store: EntityStore, reader: RawEntityReader, discovery: DiscoveryCore, ws?: WsEmitter): Router {
   const router = Router();
+
+  /**
+   * M49 — the tag doors announce on BOTH channels or on neither.
+   *
+   * `tag_entity` over MCP broadcasts `entity:changed` + `tag:changed`; these
+   * REST routes are the same operation reached from the UI, and until this
+   * release they announced nothing — so a second tab watching the project saw
+   * an agent's tagging live and a human's not at all.
+   *
+   * Optional because two of the three mounts are test harnesses that never open
+   * a socket; a missing emitter degrades to the pre-M49 silence rather than
+   * making the route fail.
+   */
+  const announceTags = (type: EntityType, slug: string, before: string[], after: string[]): void => {
+    if (!ws) return;
+    ws.broadcast({ kind: 'entity:changed', entityType: type, slug, action: 'update' });
+    // The symmetric difference, because `POST /tags` REPLACES the set rather
+    // than adding to it: a call that drops a tag moves that tag's membership
+    // just as much as one that adds it, and a listener keyed on the tag has to
+    // hear about both.
+    const moved = [...before.filter((t) => !after.includes(t)), ...after.filter((t) => !before.includes(t))];
+    for (const tagSlug of moved) ws.broadcast({ kind: 'tag:changed', slug: tagSlug, action: 'update' });
+  };
 
   // Aggregate per-type entity counts (cheap COUNT(*) per table). One round-trip
   // feeds the sidebar ELEMENTS badges, so a plain page view no longer pulls full
@@ -627,9 +651,11 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
       if (!Array.isArray(body.tags)) {
         return res.status(400).json({ error: { code: 'VALIDATION', message: 'tags[] required' } });
       }
+      const before = tags.getEntityTagSlugs(type, slug);
       const assigned = tags.assignTags(type, slug, body.tags);
       // M29: tag set changed → re-persist the entity file (its tags[]).
       store.persist(type, slug);
+      announceTags(type, slug, before, assigned);
       res.json({ tags: assigned });
     } catch (err) {
       next(err);
@@ -641,9 +667,11 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
       const type = assertType(host, req.params.type);
       const slug = req.params.slug;
       assertExists(host, type, slug);
+      const before = tags.getEntityTagSlugs(type, slug);
       const remaining = tags.removeEntityTag(type, slug, req.params.tagSlug);
       // M29: tag set changed → re-persist the entity file (its tags[]).
       store.persist(type, slug);
+      announceTags(type, slug, before, remaining);
       res.json({ tags: remaining });
     } catch (err) {
       next(err);

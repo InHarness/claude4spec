@@ -52,8 +52,34 @@ describe('errorHandler', () => {
     const status = vi.fn().mockReturnValue({ json });
     const res = { headersSent: false, status } as unknown as Response;
 
-    errorHandler(Object.assign(new Error('request entity too large'), { status: 413 }), {} as Request, res, vi.fn());
+    errorHandler(
+      Object.assign(new Error('request entity too large'), { status: 413, type: 'entity.too.large' }),
+      {} as Request,
+      res,
+      vi.fn(),
+    );
 
     expect(status).toHaveBeenCalledWith(400);
+  });
+
+  /**
+   * The branch above matches body-parser's `type`, not a bare 4xx `status`, and
+   * this is why. `RemoteRequestError` carries the REMOTE peer's status, so a
+   * rate-limited upstream would otherwise be rendered to the user as "your
+   * request is malformed" — and `remote-project.ts` maps the same error to
+   * `502 REMOTE_UNAVAILABLE`, which is the opposite reading.
+   */
+  it('does not treat a relayed upstream status as the caller\'s validation error', () => {
+    const json = vi.fn();
+    const status = vi.fn().mockReturnValue({ json });
+    const res = { headersSent: false, status } as unknown as Response;
+    const err = Object.assign(new Error('device/code failed (HTTP 429)'), { status: 429 });
+
+    errorHandler(err, {} as Request, res, vi.fn());
+
+    expect(status).toHaveBeenCalledWith(500);
+    expect(json).toHaveBeenCalledWith({
+      error: { code: 'INTERNAL', message: 'device/code failed (HTTP 429)' },
+    });
   });
 });

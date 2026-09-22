@@ -289,7 +289,7 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
       versionService,
     }),
   );
-  router.use('/entities', entitiesRouter(host, tagsService, versionService, entityStore, rawReader, discovery));
+  router.use('/entities', entitiesRouter(host, tagsService, versionService, entityStore, rawReader, discovery, ws));
   /**
    * 0.2.13 — the catalog's new `rest` renderings, mirroring `project-context.ts`.
    * `/_meta` carries only the four M39 operations here; the activation and

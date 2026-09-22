@@ -203,15 +203,21 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): CapturedMc
         if (!pluginHost.entityExists(type, slug)) throw new DomainError('NOT_FOUND', `${type} '${slug}' not found`);
         const existing = deps.tagsService.getEntityTagSlugs(type, slug);
         const union = [...new Set([...existing, ...newTags])];
-        deps.tagsService.assignTags(type, slug, union);
+        // `assignTags` takes NAMES and returns the SLUGS it materialized them
+        // to. Broadcasting the input instead would announce `Auth Layer` for a
+        // tag whose slug is `auth-layer` — a key no listener can match — and
+        // would re-announce an already-assigned tag on every call, because
+        // `existing` holds slugs and the comparison would be name-vs-slug.
+        const assigned = deps.tagsService.assignTags(type, slug, union);
         deps.entityStore.persist(type, slug);
         deps.ws.broadcast({ kind: 'entity:changed', entityType: type, slug, action: 'update' });
         // M49: an assignment changes the tag's membership too — the tag views
         // (counts, co-occurrence) listen on `tag:changed`, not on the entity.
-        for (const tag of union.filter((t) => !existing.includes(t))) {
+        const added = assigned.filter((s) => !existing.includes(s));
+        for (const tag of added) {
           deps.ws.broadcast({ kind: 'tag:changed', slug: tag, action: 'update' });
         }
-        return ok({ tagged: true, addedCount: union.length - existing.length });
+        return ok({ tagged: true, addedCount: added.length });
       } catch (err) {
         return fail(err);
       }

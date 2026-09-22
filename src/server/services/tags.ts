@@ -207,10 +207,20 @@ export class TagsService {
   assignTags(entityType: EntityType, entitySlug: string, tagNames: string[]): string[] {
     const names = [...new Set(tagNames.map((n) => n.trim()).filter(Boolean))];
     const tx = this.db.transaction(() => {
+      /**
+       * Deduped by SLUG, not by name.
+       *
+       * The input is names, and a tag is identified by its slug, so `Auth Layer`
+       * and `auth-layer` are two names for ONE tag. Deduping the names alone let
+       * both through and then inserted the same `(entity, tag)` row twice,
+       * failing on `entity_tag`'s uniqueness — which is what `tag_entity` did to
+       * itself the second time it was called with a name it had already
+       * assigned, despite advertising the call as idempotent.
+       */
       const tagSlugs: string[] = [];
       for (const name of names) {
         const tag = this.ensure(name);
-        tagSlugs.push(tag.slug);
+        if (!tagSlugs.includes(tag.slug)) tagSlugs.push(tag.slug);
       }
       this.db
         .prepare(`DELETE FROM entity_tag WHERE entity_type = ? AND entity_slug = ?`)
@@ -219,7 +229,10 @@ export class TagsService {
         `INSERT INTO entity_tag (entity_type, entity_slug, tag_slug) VALUES (?, ?, ?)`
       );
       for (const ts of tagSlugs) insert.run(entityType, entitySlug, ts);
-      return names.map((n) => tagSlug(n));
+      // The slugs `ensure` actually settled on — not a second slugification of
+      // the names, which could disagree with it and would carry the duplicates
+      // back out to the caller.
+      return tagSlugs;
     });
     return tx();
   }

@@ -1363,7 +1363,7 @@ async function buildInner(
   router.use('/static/:rootId', staticRouter(resolveStatic));
   router.use('/tags', tagsRouter(tagsService, referencesService, discovery));
   router.use('/references', referencesRouter(pluginHost, referencesService, discovery, discoveryForRoots));
-  router.use('/entities', entitiesRouter(pluginHost, tagsService, versionService, entityStore, rawReader, discovery));
+  router.use('/entities', entitiesRouter(pluginHost, tagsService, versionService, entityStore, rawReader, discovery, ws));
 
   /**
    * Host API 2.0.0 (item 31) — `/api/{type}s` for every type that declares its

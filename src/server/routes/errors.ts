@@ -47,6 +47,22 @@ function statusForDomainCode(code: string): number {
  * render it differently from the message has to be able to tell them apart.
  */
 
+/**
+ * The `type` values `body-parser` stamps on its own refusals — the whole set it
+ * documents, so a 413 (`entity.too.large`) and a 415 (`charset.unsupported`)
+ * land on the same `400 VALIDATION` as a malformed body rather than on a 500.
+ */
+const BODY_PARSER_TYPES = new Set([
+  'entity.parse.failed',
+  'entity.verify.failed',
+  'entity.too.large',
+  'request.aborted',
+  'request.size.invalid',
+  'parameters.too.many',
+  'charset.unsupported',
+  'encoding.unsupported',
+]);
+
 export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
   // A streaming response (e.g. the external-skills ZIP download) can error
   // after headers/bytes are already on the wire — setting a status/body at
@@ -102,9 +118,17 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
    * `express.json` answering a malformed or oversized body carries its own
    * `status` (400/413/415). It is the caller's request that is wrong, so it maps
    * onto the layer's `400 VALIDATION` — the closed status set has no 413/415.
+   *
+   * Matched by body-parser's `type`, NOT by `status` alone. Any error carrying a
+   * numeric 4xx would also catch `RemoteRequestError`, which stores the REMOTE
+   * peer's status: a rate-limited upstream (429) would then be rendered to the
+   * user as "your request is malformed", and `remote-project.ts` already maps
+   * that same error to `502 REMOTE_UNAVAILABLE`. A relay's status is not this
+   * caller's fault, and it must keep falling through to the 500 branch below,
+   * which is also the only one that logs.
    */
-  const status = (err as { status?: unknown } | null)?.status;
-  if (typeof status === 'number' && status >= 400 && status < 500) {
+  const parserType = (err as { type?: unknown } | null)?.type;
+  if (typeof parserType === 'string' && BODY_PARSER_TYPES.has(parserType)) {
     return res.status(400).json({ error: { code: 'VALIDATION', message: (err as Error).message } });
   }
   console.error(err);

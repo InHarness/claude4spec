@@ -60,6 +60,73 @@ describe('tag_entity / untag_entity broadcasts', () => {
     ]);
   });
 
+  /**
+   * `tags[]` on this tool are NAMES; `assignTags` materializes them into slugs
+   * and returns those. Announcing the input would emit a key no tag has, and
+   * would re-announce on every repeat call, since the "already assigned" set it
+   * is compared against holds slugs.
+   */
+  it('announces the tag SLUG for a name that had to be slugified, and stays quiet on a repeat', async () => {
+    t.broadcasts.length = 0;
+    const first = await client.callTool({
+      name: 'tag_entity',
+      arguments: { type: 'endpoint', slug: 'get-users', tags: ['Auth Layer'] },
+    });
+    expect(first.isError, JSON.stringify(first.content)).toBeFalsy();
+    expect(events()).toEqual([
+      { kind: 'entity:changed', entityType: 'endpoint', slug: 'get-users', action: 'update' },
+      { kind: 'tag:changed', slug: 'auth-layer', action: 'update' },
+    ]);
+
+    t.broadcasts.length = 0;
+    const again = await client.callTool({
+      name: 'tag_entity',
+      arguments: { type: 'endpoint', slug: 'get-users', tags: ['Auth Layer'] },
+    });
+    expect(again.isError, JSON.stringify(again.content)).toBeFalsy();
+    // The entity is still re-announced (the write ran); the tag is not, because
+    // its membership did not move.
+    expect(events()).toEqual([
+      { kind: 'entity:changed', entityType: 'endpoint', slug: 'get-users', action: 'update' },
+    ]);
+
+    await client.callTool({
+      name: 'untag_entity',
+      arguments: { type: 'endpoint', slug: 'get-users', tags: ['auth-layer'] },
+    });
+  });
+
+  /**
+   * The same operation reached from the UI. Until M49 these routes announced
+   * nothing, so a second tab saw an agent's tagging live and a human's not at
+   * all — the "both doors or neither" rule this release states for `link_dto`.
+   */
+  it('the REST tag doors announce on the same terms as the MCP ones', async () => {
+    // Its own entity: `POST /tags` REPLACES the tag set, so running it against
+    // the shared `get-users` would silently strip the tags the neighbouring
+    // cases assert on.
+    await request(t.app)
+      .post('/api/endpoints')
+      .send({ slug: 'rest-tagged', method: 'GET', path: '/rest-tagged', summary: 'REST tag door' });
+
+    t.broadcasts.length = 0;
+    await request(t.app)
+      .post('/api/entities/endpoint/rest-tagged/tags')
+      .send({ tags: ['rest-door'] })
+      .expect(200);
+    expect(events()).toEqual([
+      { kind: 'entity:changed', entityType: 'endpoint', slug: 'rest-tagged', action: 'update' },
+      { kind: 'tag:changed', slug: 'rest-door', action: 'update' },
+    ]);
+
+    t.broadcasts.length = 0;
+    await request(t.app).delete('/api/entities/endpoint/rest-tagged/tags/rest-door').expect(200);
+    expect(events()).toEqual([
+      { kind: 'entity:changed', entityType: 'endpoint', slug: 'rest-tagged', action: 'update' },
+      { kind: 'tag:changed', slug: 'rest-door', action: 'update' },
+    ]);
+  });
+
   it('untag_entity announces the entity and only the tags actually removed', async () => {
     t.broadcasts.length = 0;
     const res = await client.callTool({
