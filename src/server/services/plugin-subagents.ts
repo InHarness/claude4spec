@@ -18,6 +18,7 @@
  */
 
 import type { SubagentDefinition } from '@inharness-ai/agent-adapters';
+import { buildClaudeCodeToolPolicy } from '@inharness-ai/agent-adapters/claude-code';
 import type { ChatContextType } from '../../shared/entities.js';
 import type { PluginSubagentContribution } from '../../shared/plugin-host/manifest.js';
 
@@ -79,13 +80,18 @@ export const ALLOWED_SUBAGENT_EFFORTS: ReadonlySet<string> = new Set(['low', 'me
  *
  * `Skill` is banned because its job is already done by `mcp__skill-tools__load_skill_file`,
  * which both built-ins now carry — so the ban describes the state of things rather than an
- * intention. `Agent`/`Task` are banned because the library's deny-group propagation does
- * not reach the agentic family (the groups are four, all built-in-file/shell/web), so
- * without this line a contributed subagent could nest.
+ * intention.
+ *
+ * The agentic family is DERIVED from the library's `delegation` group (agent-adapters
+ * 0.9.12) rather than listed: spawning (`Agent`/`Task`), continuing (`SendMessage`),
+ * listing (`ListAgents`/`ListPeers`) and orchestrating (`Workflow`/`RemoteTrigger`). They
+ * are known built-ins since 0.9.12, so a hand-kept list of two would let a contributed
+ * subagent declare the other five and nest anyway. The group grows with the library.
  */
+const DELEGATION_TOOLS: readonly string[] = buildClaudeCodeToolPolicy(['delegation'])?.deny ?? [];
+
 export const NON_DELEGABLE_TOOLS: readonly string[] = [
-  'Agent',
-  'Task',
+  ...DELEGATION_TOOLS,
   'Skill',
   'mcp__transagent-tools__runTransagent',
 ];

@@ -65,7 +65,7 @@ describe('GET /api/chat/config — the claude-code catalog', () => {
     const res = await request(app()).get('/chat/config');
 
     expect(res.status).toBe(200);
-    // claude-code enforces all four groups (at `soft` strength), so the toggle
+    // claude-code enforces every tool group (at `soft` strength), so the toggle
     // is always offered here. The field must be a real boolean, not undefined —
     // the client defaults it to `true` when absent, which would silently mask a
     // route that stopped reporting it.

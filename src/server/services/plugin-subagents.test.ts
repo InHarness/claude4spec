@@ -147,6 +147,23 @@ describe('sanitizeSubagentDefinition', () => {
     expect(sanitizeSubagentDefinition(def)).toBe(def);
   });
 
+  it('drops the whole delegation group, not just Agent/Task (agent-adapters 0.9.12)', () => {
+    const s = sink();
+    const out = sanitizeSubagentDefinition(
+      {
+        name: 'nester',
+        description: 'd',
+        prompt: 'p',
+        tools: ['Read', 'Workflow', 'SendMessage', 'ListAgents', 'RemoteTrigger', 'Agent'],
+      },
+      s.warn,
+    );
+    expect(out.tools).toEqual(['Read']);
+    for (const t of ['Agent', 'Task', 'SendMessage', 'ListAgents', 'ListPeers', 'Workflow', 'RemoteTrigger']) {
+      expect(NON_DELEGABLE_TOOLS).toContain(t);
+    }
+  });
+
   it('drift guard: the hardcoded literal still matches the real tool name', () => {
     expect(NON_DELEGABLE_TOOLS).toContain(TRANSAGENT_TOOL_FULL_NAME);
   });

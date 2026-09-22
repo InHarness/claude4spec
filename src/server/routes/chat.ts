@@ -135,7 +135,7 @@ export function chatRouter(deps: AgentTurnDeps): Router {
        * Server-side for the same reason as `sessionResumeConstraints` above: the
        * package's main entry pulls the agent runtime and is not browser-safe.
        *
-       * On `claude-code` this is always true — all four groups are enforceable,
+       * On `claude-code` this is always true — every tool group is enforceable,
        * though only at `soft` strength (a model-behaviour gate, not a sandbox).
        */
       planModeEnforceable: probeToolGating('claude-code', PLAN_MODE_DENY_GROUPS).every(

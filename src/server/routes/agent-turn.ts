@@ -1498,7 +1498,8 @@ export async function runAgentTurn(
      *
      * Asked BEFORE `adapter.execute` so an unenforceable posture is a refusal to
      * start rather than a degradation discovered after the fact. On
-     * `claude-code` all four groups are enforceable (at `soft` strength — a
+     * `claude-code` every tool group, `delegation` included since agent-adapters
+     * 0.9.12, is enforceable (at `soft` strength — a
      * model-behaviour gate, not a sandbox), so this path is defensive here; it
      * is what makes the refusal contract real on any other architecture.
      */
