@@ -25,6 +25,20 @@ export const ASK_TURN_TIMEOUT_MS = 15 * 60_000;
  * wall-clock bound at all", and the backstop is the policy. If it ever fires
  * FIRST, that is an idle-clock failure, not a normal end of turn.
  *
+ * While work is OUTSTANDING the idle clock is stopped, and each kind of work is
+ * bounded by ITS OWN cap (agent-adapters M01: "outstanding work is not unbounded
+ * work") — deliberately no extra clock of ours on top (0.2.107 review, point 8):
+ *
+ *   - foreground Bash       → its own `timeout` (max 600 000 ms, Claude Code);
+ *   - background task       → `BACKGROUND_HOLD_CAP_MS` (library hold cap);
+ *   - `runTransagent` child → the child turn's own idle clock and backstop;
+ *   - subagent              → its `maxTurns` (`plugin-subagents.ts`);
+ *   - `user_input_request`  → none, on purpose: a human being slow is not a stall;
+ *   - MCP tool call         → Claude Code's per-server tool timeout (~28 h by
+ *                             default). agent-adapters has no way to set it yet
+ *                             — the one real gap, reported to the library; until
+ *                             then a wedged MCP tool is ended by this backstop.
+ *
  * The invariants, asserted at server module load (`routes/agent-turn.ts`) and in `agent-turn.test.ts`:
  *
  *     TURN_TIMEOUT_MS >= 10 * IDLE_TIMEOUT_MS
