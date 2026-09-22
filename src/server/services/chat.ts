@@ -486,20 +486,21 @@ export class ChatService {
   ): void {
     // agent-adapters 0.9.12: a subagent can be RE-ENTERED (SendMessage), so one
     // task id sees several started/completed pairs and the LAST completion ends
-    // it. A repeated start is therefore a resumption, modelled on
-    // `startBackgroundTask`: back to 'running', the previous cycle's summary
-    // gone — or the panel reads "completed" for the whole second cycle.
-    // `tool_use_id`: FIRST wins. The original `Task` card is the one the panel
-    // absorbs (BlockRenderer); the re-entry's card renders as a plain tool call.
+    // it. A repeated start is therefore a resumption: back to 'running', or the
+    // panel reads "completed" for the whole second cycle.
+    // Everything else from the first cycle survives it. `tool_use_id` and
+    // `description`: FIRST wins — the original `Task` card is the one the panel
+    // absorbs (BlockRenderer), and a re-entry's description is the SendMessage
+    // text, not what the task is. `summary` stays until a later completion
+    // brings a new one (`completeSubagentTask`), so a re-entry that ends
+    // without a report does not erase the first cycle's.
     this.db
       .prepare(
         `INSERT INTO chat_subagent_task (thread_id, task_id, tool_use_id, description, status)
          VALUES (?, ?, ?, ?, 'running')
          ON CONFLICT(thread_id, task_id) DO UPDATE SET
            tool_use_id = COALESCE(chat_subagent_task.tool_use_id, excluded.tool_use_id),
-           description = excluded.description,
            status      = 'running',
-           summary     = NULL,
            updated_at  = datetime('now')`
       )
       .run(threadId, taskId, toolUseId, description);
@@ -524,7 +525,7 @@ export class ChatService {
     this.db
       .prepare(
         `UPDATE chat_subagent_task
-            SET status = ?, summary = ?, updated_at = datetime('now')
+            SET status = ?, summary = COALESCE(?, summary), updated_at = datetime('now')
           WHERE thread_id = ? AND task_id = ?`
       )
       .run(status, summary, threadId, taskId);

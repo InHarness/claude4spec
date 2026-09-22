@@ -9,7 +9,8 @@ import { ChatService } from './chat.js';
  * A subagent resumed through SendMessage emits a second `subagent_started`
  * (`resumed: true`) for the same task id, and only its LAST
  * `subagent_completed` ends it. The row has to follow: a resumption reads as
- * live again, and the panel stays attached to the ORIGINAL `Task` card.
+ * live again, the panel stays attached to the ORIGINAL `Task` card, and the
+ * first cycle's description and report survive the re-entry.
  */
 describe('ChatService — chat_subagent_task re-entry', () => {
   let db: Database.Database;
@@ -41,7 +42,7 @@ describe('ChatService — chat_subagent_task re-entry', () => {
     });
   });
 
-  it('a second start re-arms a completed task: running again, the old summary gone', () => {
+  it('a second start re-arms a completed task: running again, the first description and report kept', () => {
     const t = chat.createThread('t');
     chat.startSubagentTask(t.id, 'task1', 'explore the spec', 'tu_task');
     chat.completeSubagentTask(t.id, 'task1', 'completed', 'first cycle done');
@@ -50,13 +51,23 @@ describe('ChatService — chat_subagent_task re-entry', () => {
     chat.startSubagentTask(t.id, 'task1', 'follow-up question', 'tu_sendmessage');
 
     expect(row(t.id, 'task1')).toMatchObject({
-      description: 'follow-up question',
+      description: 'explore the spec',
       status: 'running',
-      summary: null,
+      summary: 'first cycle done',
     });
 
     chat.completeSubagentTask(t.id, 'task1', 'completed', 'second cycle done');
     expect(row(t.id, 'task1')).toMatchObject({ status: 'completed', summary: 'second cycle done' });
+  });
+
+  it('a re-entry that ends without a report does not erase the first cycle\'s', () => {
+    const t = chat.createThread('t');
+    chat.startSubagentTask(t.id, 'task1', 'explore the spec', 'tu_task');
+    chat.completeSubagentTask(t.id, 'task1', 'completed', 'first cycle done');
+    chat.startSubagentTask(t.id, 'task1', 'follow-up question', 'tu_sendmessage');
+    chat.completeSubagentTask(t.id, 'task1', 'aborted', null);
+
+    expect(row(t.id, 'task1')).toMatchObject({ status: 'aborted', summary: 'first cycle done' });
   });
 
   it('keeps the FIRST tool_use_id, so the panel stays on the original Task card', () => {

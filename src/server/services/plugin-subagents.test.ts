@@ -164,6 +164,22 @@ describe('sanitizeSubagentDefinition', () => {
     }
   });
 
+  it('keeps Agent/Task banned on a library without the delegation group', async () => {
+    vi.resetModules();
+    vi.doMock('@inharness-ai/agent-adapters/claude-code', async (orig) => ({
+      ...(await orig<typeof import('@inharness-ai/agent-adapters/claude-code')>()),
+      buildClaudeCodeToolPolicy: () => ({ deny: [undefined] }),
+    }));
+    try {
+      const mod = await import('./plugin-subagents.js');
+      expect(mod.NON_DELEGABLE_TOOLS).toEqual(expect.arrayContaining(['Agent', 'Task']));
+      expect(mod.NON_DELEGABLE_TOOLS.every((t) => typeof t === 'string')).toBe(true);
+    } finally {
+      vi.doUnmock('@inharness-ai/agent-adapters/claude-code');
+      vi.resetModules();
+    }
+  });
+
   it('drift guard: the hardcoded literal still matches the real tool name', () => {
     expect(NON_DELEGABLE_TOOLS).toContain(TRANSAGENT_TOOL_FULL_NAME);
   });

@@ -88,7 +88,17 @@ export const ALLOWED_SUBAGENT_EFFORTS: ReadonlySet<string> = new Set(['low', 'me
  * are known built-ins since 0.9.12, so a hand-kept list of two would let a contributed
  * subagent declare the other five and nest anyway. The group grows with the library.
  */
-const DELEGATION_TOOLS: readonly string[] = buildClaudeCodeToolPolicy(['delegation'])?.deny ?? [];
+/* `Agent`/`Task` stay a literal floor: on a library without the group the derivation comes
+ * back empty (or `[undefined]` from its flatMap) and the ban would silently vanish. */
+const DELEGATION_TOOLS: readonly string[] = [
+  ...new Set([
+    'Agent',
+    'Task',
+    ...(buildClaudeCodeToolPolicy(['delegation'])?.deny ?? []).filter(
+      (tool): tool is string => typeof tool === 'string',
+    ),
+  ]),
+];
 
 export const NON_DELEGABLE_TOOLS: readonly string[] = [
   ...DELEGATION_TOOLS,
