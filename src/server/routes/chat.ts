@@ -191,7 +191,21 @@ export function chatRouter(deps: AgentTurnDeps): Router {
         return res.status(400).json({ error: { code: 'VALIDATION', message: 'prompt or annotations required' } });
       }
 
-      let thread = threadId ? deps.chatService.getThreadMeta(threadId) ?? deps.chatService.createThread() : deps.chatService.createThread();
+      // 0.2.108: the selectable list is enforced — a model outside it (asked for, or
+      // pinned by the turn-1 snapshot) is a 400 before dispatch, not a silent fallback.
+      // Checked BEFORE a thread is created, so a refused request leaves no empty thread.
+      const existingThread = threadId ? deps.chatService.getThreadMeta(threadId) : undefined;
+      const snapshotJson = existingThread
+        ? deps.chatService.getInitialArchitectureConfig(existingThread.id)
+        : null;
+      const notSelectable = checkSelectableModel({
+        model,
+        snapshotJson,
+        lastSessionId: existingThread?.lastSessionId ?? null,
+      });
+      if (notSelectable) return res.status(400).json(notSelectable);
+
+      let thread = existingThread ?? deps.chatService.createThread();
       // 0.2.87 (M44): an unknown discriminator is an application error, before anything runs.
       assertKnownContextType(thread);
 
@@ -203,16 +217,6 @@ export function chatRouter(deps: AgentTurnDeps): Router {
       // wznawiajacej. Backstop dla nie-UI konsumentow i wyscigu (zmiana modelu miedzy
       // fetchem a sendem). MUSI byc przed `setupSse` (po flush naglowkow SSE nie
       // ustawimy juz statusu 409). Wspolny helper z `POST /api/threads/:id/ask`.
-      // 0.2.108: the selectable list is enforced — a model outside it (asked for, or
-      // pinned by the turn-1 snapshot) is a 400 before dispatch, not a silent fallback.
-      const snapshotJson = deps.chatService.getInitialArchitectureConfig(thread.id);
-      const notSelectable = checkSelectableModel({
-        model,
-        snapshotJson,
-        lastSessionId: thread.lastSessionId,
-      });
-      if (notSelectable) return res.status(400).json(notSelectable);
-
       const resumeLock = checkResumeConfigLock({
         snapshotJson,
         lastSessionId: thread.lastSessionId,

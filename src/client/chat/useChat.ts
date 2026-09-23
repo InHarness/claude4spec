@@ -226,6 +226,16 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     'claude-code',
     model,
   );
+  // The thread-load effect reads the label and `restoreMessages` (whose identity follows
+  // `model`) through refs, NOT through its deps: the alias now changes on its own — ''
+  // → the served default when the config arrives, a stale alias → the default, a
+  // session-locked thread's alias restored — and a model change must never tear down and
+  // refetch the thread (disconnecting its live stream, or ping-ponging with the
+  // restore/fallback effects in `<ChatOverlay />` into an endless refetch).
+  const modelLabelRef = useRef(model);
+  modelLabelRef.current = model;
+  const restoreMessagesRef = useRef(restoreMessages);
+  restoreMessagesRef.current = restoreMessages;
 
   // Ref so `onEvent`'s identity stays stable (it feeds useEventStream's memo).
   const onQueueClearedRef = useRef(onQueueCleared);
@@ -847,7 +857,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
               synthesizedUserInputsRef.current.add(row.toolId);
             }
           }
-          restoreMessages(slicedMessages, thread.lastSessionId ?? undefined, 'claude-code', model, queuedMessages);
+          restoreMessagesRef.current(slicedMessages, thread.lastSessionId ?? undefined, 'claude-code', modelLabelRef.current, queuedMessages);
           setIsResuming(true);
           // Fire-and-forget: fetch+restore konczy sie szybko (zwalnia loadingThreadRef),
           // a join trwa do konca tury. Kontynuacja po resolve obsluguje wyscig — tura
@@ -856,11 +866,11 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
             if (currentThreadIdRef.current !== threadId) return;
             setIsResuming(false);
             if (!joined) {
-              restoreMessages(fullMessages, thread.lastSessionId ?? undefined, 'claude-code', model, queuedMessages);
+              restoreMessagesRef.current(fullMessages, thread.lastSessionId ?? undefined, 'claude-code', modelLabelRef.current, queuedMessages);
             }
           });
         } else {
-          restoreMessages(fullMessages, thread.lastSessionId ?? undefined, 'claude-code', model, queuedMessages);
+          restoreMessagesRef.current(fullMessages, thread.lastSessionId ?? undefined, 'claude-code', modelLabelRef.current, queuedMessages);
         }
       } catch {
         if (currentThreadIdRef.current === threadId) {
@@ -879,7 +889,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
       setIsResuming(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadId, serverUrl, restoreMessages, clear, model, onThreadMissing, joinStream, disconnectStream]);
+  }, [threadId, serverUrl, clear, onThreadMissing, joinStream, disconnectStream]);
 
   useEffect(() => {
     setPendingUserInputs([]);

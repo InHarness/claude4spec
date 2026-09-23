@@ -235,15 +235,19 @@ export function ChatOverlay() {
   // A persisted global choice the list no longer carries — an old alias, or the one a
   // locked thread left behind — falls back to the server's default; 'max' is clamped
   // when the selected model's served class is not adaptive.
+  // Not while the selected thread is still unresolved (list/meta loading): its lock state
+  // is unknown, and swapping a locked thread's alias for the default here would only be
+  // undone by the restore effect a moment later.
+  const threadResolved = chatThreadId == null || activeThread != null;
   useEffect(() => {
-    if (!claudeCodeConfig || sessionLocked) return;
+    if (!claudeCodeConfig || sessionLocked || !threadResolved) return;
     if (storeModel !== null && !claudeCodeConfig.models.some((m) => m.alias === storeModel)) {
       const fallback = claudeCodeConfig.models.find((m) => m.alias === claudeCodeConfig.default);
       setModel(claudeCodeConfig.default, fallback?.adaptive);
     } else if (modelInfo && !modelInfo.adaptive && thinking === 'max') {
       setThinking('high');
     }
-  }, [claudeCodeConfig, sessionLocked, storeModel, modelInfo, thinking, setModel, setThinking]);
+  }, [claudeCodeConfig, sessionLocked, threadResolved, storeModel, modelInfo, thinking, setModel, setThinking]);
 
   // Reset trybu podgladu i cache przy switchu watku — snapshot jest per-thread,
   // wiec po zmianie threadId stary cache jest niewazny i toggle musi sie zamknac.
