@@ -11,6 +11,7 @@ import type {
   ChatThread,
   ChatThreadMeta,
   QueuedMessage,
+  SubagentTaskStatus,
   TodoItem,
   TransagentChildRef,
   UsageStats,
@@ -528,7 +529,7 @@ export class ChatService {
             SET status = ?, summary = COALESCE(?, summary), updated_at = datetime('now')
           WHERE thread_id = ? AND task_id = ?`
       )
-      .run(status, summary, threadId, taskId);
+      .run(normalizeSubagentCompletionStatus(status), summary, threadId, taskId);
   }
 
   listSubagentTasks(threadId: string): ChatSubagentTask[] {
@@ -818,6 +819,36 @@ export class ChatService {
       .run();
   }
 
+  /**
+   * Close out subagent delegations left `running` when a turn ended (0.2.109).
+   *
+   * Same reasoning as {@link finalizeRunningBackgroundTasks}, and a SEPARATE
+   * query on purpose: a delegation cut by hold-cap expiry, abort, timeout or a
+   * restart never receives `subagent_completed`, so its row would render as a
+   * live delegation forever. Runs once the generator is exhausted, never on a
+   * `result`.
+   */
+  finalizeRunningSubagentTasks(threadId: string): void {
+    this.db
+      .prepare(
+        `UPDATE chat_subagent_task
+            SET status = 'abandoned', updated_at = datetime('now')
+          WHERE thread_id = ? AND status = 'running'`
+      )
+      .run(threadId);
+  }
+
+  /** Boot sweep for delegations — no row stays `running` across a restart. */
+  finalizeAllRunningSubagentTasks(): void {
+    this.db
+      .prepare(
+        `UPDATE chat_subagent_task
+            SET status = 'abandoned', updated_at = datetime('now')
+          WHERE status = 'running'`
+      )
+      .run();
+  }
+
   updateCurrentTodoItems(threadId: string, items: TodoItem[] | null): void {
     const payload = items && items.length > 0 ? JSON.stringify(items) : null;
     this.db
@@ -995,7 +1026,7 @@ export class ChatService {
       taskId: row.task_id,
       toolUseId: row.tool_use_id,
       description: row.description,
-      status: row.status,
+      status: hydrateSubagentStatus(row.status),
       summary: row.summary,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
@@ -1025,6 +1056,25 @@ export class ChatService {
  *  (lists, detail) stay resilient; every turn entry point calls
  *  `assertKnownContextType` and refuses. The cast is the one place the type is
  *  wider than declared. */
+/**
+ * 0.2.109: the app-side enum check for `chat_subagent_task.status`.
+ *
+ * `subagent_completed` hands over the library's raw status. Besides
+ * `completed`/`failed` it can say `aborted` or `stopped` (the library flushes
+ * open subagents when a run ends by abort, timeout or hold-cap expiry) — a
+ * delegation that did not finish, which is exactly what `abandoned` means here.
+ */
+export function normalizeSubagentCompletionStatus(raw: string): SubagentTaskStatus {
+  if (raw === 'completed') return 'completed';
+  if (raw === 'failed' || raw === 'error') return 'failed';
+  return 'abandoned';
+}
+
+/** Rows written before 0.2.109 carry raw library strings. */
+function hydrateSubagentStatus(raw: string): SubagentTaskStatus {
+  return raw === 'running' ? 'running' : normalizeSubagentCompletionStatus(raw);
+}
+
 function hydrateContextType(raw: string): ChatContextType {
   return raw as ChatContextType;
 }

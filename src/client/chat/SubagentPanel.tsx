@@ -16,17 +16,23 @@ interface Props {
   invocation?: unknown;
   /** The subagent's returned output (Task tool_result) — the real answer. */
   result?: { content: string; isError: boolean } | null;
+  /** 0.2.109: false once the owning turn closed (see `subagentDisplayStatus`). */
+  turnOpen?: boolean;
 }
 
-export function SubagentPanel({ block, agentName, prompt, invocation, result }: Props) {
+export function SubagentPanel({ block, agentName, prompt, invocation, result, turnOpen = true }: Props) {
   const [expanded, setExpanded] = useState(false);
-  const status = normalizeStatus(block.status);
+  const status = subagentDisplayStatus(block.status, turnOpen);
+  // `abandoned` is neutral, not a failure — like a background task, an
+  // interrupted delegation has no "failed" reading.
   const dotColor =
     status === 'running'
       ? 'var(--c-blue, #5b8bc7)'
       : status === 'failed'
         ? 'var(--c-red, #c45a3b)'
-        : 'var(--c-green, #4a9860)';
+        : status === 'abandoned'
+          ? 'var(--c-subtle, #8a8578)'
+          : 'var(--c-green, #4a9860)';
   // Number of tool calls the subagent made — a meaningful "how much work" badge.
   // (block.messages.length is always 1: the hydrator nests every block into one
   // container message.) Blocks are already batched, so count toolBatch items too.
@@ -95,10 +101,21 @@ export function SubagentPanel({ block, agentName, prompt, invocation, result }: 
           </span>
         )}
         {status === 'running' ? (
-          <span className="dot-pulse">
+          // The header's `running` IS the turn's busy indicator for a live
+          // delegation — no separate spinner, and it shows while collapsed too.
+          <span className="dot-pulse" title="running">
             <span></span>
             <span></span>
             <span></span>
+          </span>
+        ) : status === 'abandoned' ? (
+          <span
+            className="font-mono text-[10.5px] whitespace-nowrap"
+            style={{ color: 'var(--c-subtle)' }}
+            data-status="abandoned"
+            title="The turn ended before this delegation completed"
+          >
+            interrupted
           </span>
         ) : (
           <span
@@ -241,9 +258,22 @@ export function SubagentPanel({ block, agentName, prompt, invocation, result }: 
   );
 }
 
-function normalizeStatus(raw: string): 'running' | 'completed' | 'failed' {
+export type SubagentDisplayStatus = 'running' | 'completed' | 'failed' | 'abandoned';
+
+/**
+ * 0.2.109: what a delegation card shows. Two paths read the same fact — the
+ * turn closed without `subagent_completed`:
+ * - after a reload the finalizer's `abandoned` row comes back as-is;
+ * - in a live session nothing arrives on the stream for it, so a card still
+ *   `running` when its turn closed (`done` or a terminal `error`) flips here.
+ * `aborted` / `stopped` from the library mean the same thing.
+ */
+export function subagentDisplayStatus(raw: string, turnOpen: boolean): SubagentDisplayStatus {
   const s = raw.toLowerCase();
-  if (s === 'running' || s === 'in_progress' || s === 'in-progress') return 'running';
+  if (s === 'running' || s === 'in_progress' || s === 'in-progress') {
+    return turnOpen ? 'running' : 'abandoned';
+  }
   if (s === 'failed' || s === 'error') return 'failed';
+  if (s === 'abandoned' || s === 'aborted' || s === 'stopped') return 'abandoned';
   return 'completed';
 }

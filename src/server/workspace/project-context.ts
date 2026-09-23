@@ -643,6 +643,9 @@ async function buildInner(
   // with the previous server will never send `background_task_completed`, so
   // without this sweep its row would render as still-running forever.
   chatService.finalizeAllRunningBackgroundTasks();
+  // 0.2.109: and one more table over — a delegation cut by the restart never
+  // gets `subagent_completed`.
+  chatService.finalizeAllRunningSubagentTasks();
 
   // M33 phase 3: the project-local plugin overlay (axis B — pool composition).
   // The trust gate blocks the MOUNT, not just the subscription: without consent

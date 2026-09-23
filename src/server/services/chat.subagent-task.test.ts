@@ -67,7 +67,8 @@ describe('ChatService — chat_subagent_task re-entry', () => {
     chat.startSubagentTask(t.id, 'task1', 'follow-up question', 'tu_sendmessage');
     chat.completeSubagentTask(t.id, 'task1', 'aborted', null);
 
-    expect(row(t.id, 'task1')).toMatchObject({ status: 'aborted', summary: 'first cycle done' });
+    // 0.2.109: the library's `aborted` is stored as our `abandoned`.
+    expect(row(t.id, 'task1')).toMatchObject({ status: 'abandoned', summary: 'first cycle done' });
   });
 
   it('keeps the FIRST tool_use_id, so the panel stays on the original Task card', () => {
@@ -84,5 +85,104 @@ describe('ChatService — chat_subagent_task re-entry', () => {
     chat.startSubagentTask(t.id, 'task1', 'explore', 'tu_late');
 
     expect(row(t.id, 'task1')?.tool_use_id).toBe('tu_late');
+  });
+});
+
+/**
+ * 0.2.109: a delegation that never got `subagent_completed` (hold cap, abort,
+ * timeout, restart) is closed as `abandoned` — per thread when its turn ends,
+ * and across every thread at boot. Same shape as `chat_background_task`.
+ */
+describe('ChatService — abandoned delegations (0.2.109)', () => {
+  let db: Database.Database;
+  let chat: ChatService;
+
+  const statuses = () =>
+    db.prepare(`SELECT thread_id, task_id, status FROM chat_subagent_task ORDER BY task_id`).all() as Array<{
+      thread_id: string;
+      task_id: string;
+      status: string;
+    }>;
+
+  beforeEach(() => {
+    db = new Database(':memory:');
+    db.pragma('foreign_keys = ON');
+    runMigrations(db);
+    chat = new ChatService(db);
+  });
+
+  afterEach(() => db.close());
+
+  it('the turn finalizer closes only this thread\'s running delegations', () => {
+    const a = chat.createThread('a');
+    const b = chat.createThread('b');
+    chat.startSubagentTask(a.id, 's1', 'live', null);
+    chat.startSubagentTask(a.id, 's2', 'done', null);
+    chat.completeSubagentTask(a.id, 's2', 'completed', 'ok');
+    chat.startSubagentTask(b.id, 's3', 'other thread', null);
+    db.prepare(`UPDATE chat_subagent_task SET updated_at = '2000-01-01 00:00:00'`).run();
+
+    chat.finalizeRunningSubagentTasks(a.id);
+
+    expect(statuses()).toEqual([
+      { thread_id: a.id, task_id: 's1', status: 'abandoned' },
+      { thread_id: a.id, task_id: 's2', status: 'completed' },
+      { thread_id: b.id, task_id: 's3', status: 'running' },
+    ]);
+    const s1 = db.prepare(`SELECT updated_at FROM chat_subagent_task WHERE task_id = 's1'`).get() as {
+      updated_at: string;
+    };
+    expect(s1.updated_at).not.toBe('2000-01-01 00:00:00');
+  });
+
+  it('[ac:ac-po-restarcie-serwera-zaden-wiersz-cha] after a server restart no chat_subagent_task row stays running', () => {
+    const a = chat.createThread('a');
+    const b = chat.createThread('b');
+    chat.startSubagentTask(a.id, 's1', 'x', null);
+    chat.startSubagentTask(b.id, 's2', 'y', null);
+
+    chat.finalizeAllRunningSubagentTasks();
+
+    expect(statuses().map((r) => r.status)).toEqual(['abandoned', 'abandoned']);
+  });
+
+  it('never touches chat_background_task — a separate query', () => {
+    const a = chat.createThread('a');
+    chat.startBackgroundTask(a.id, 'bg1', 'shell', 'sleep');
+    chat.startSubagentTask(a.id, 's1', 'x', null);
+
+    chat.finalizeRunningSubagentTasks(a.id);
+
+    const bg = db.prepare(`SELECT status FROM chat_background_task`).get() as { status: string };
+    expect(bg.status).toBe('running');
+  });
+
+  it('validates the status enum: library completions map onto running|completed|failed|abandoned', () => {
+    const a = chat.createThread('a');
+    for (const [id, raw] of [
+      ['c', 'completed'],
+      ['f', 'failed'],
+      ['e', 'error'],
+      ['x', 'aborted'],
+      ['y', 'stopped'],
+    ] as const) {
+      chat.startSubagentTask(a.id, id, id, null);
+      chat.completeSubagentTask(a.id, id, raw, null);
+    }
+    expect(Object.fromEntries(chat.listSubagentTasks(a.id).map((t) => [t.taskId, t.status]))).toEqual({
+      c: 'completed',
+      f: 'failed',
+      e: 'failed',
+      x: 'abandoned',
+      y: 'abandoned',
+    });
+  });
+
+  it('hydrates a pre-0.2.109 raw status onto the enum', () => {
+    const a = chat.createThread('a');
+    chat.startSubagentTask(a.id, 's1', 'x', null);
+    db.prepare(`UPDATE chat_subagent_task SET status = 'aborted'`).run();
+
+    expect(chat.listSubagentTasks(a.id)[0]!.status).toBe('abandoned');
   });
 });

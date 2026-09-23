@@ -147,6 +147,56 @@ export function holdEndingLabel(ending: HoldEnding): string {
 }
 
 /**
+ * 0.2.109: the turn busy indicator. Shown only while the turn is PARKED — after
+ * a non-terminal `result` and before `done` — because before the first
+ * `result` the streaming answer is its own indicator.
+ *
+ * The two axes are read side by side, never merged into one number:
+ * - `background` — the "waiting for N background tasks" spinner, N counting
+ *   background tasks only;
+ * - a live delegation has no spinner of its own: the `running` header of its
+ *   <SubagentPanel /> is the indicator (collapsed or not). Both can be on
+ *   screen at once;
+ * - `neutral` — parked with neither: a "turn in progress" spinner, no count.
+ */
+export type TurnBusyIndicator = 'none' | 'background' | 'neutral';
+
+export function turnBusyIndicator(input: {
+  isParked: boolean;
+  heldBackgroundTaskCount: number;
+  liveDelegation: boolean;
+}): TurnBusyIndicator {
+  if (!input.isParked) return 'none';
+  if (input.heldBackgroundTaskCount > 0) return 'background';
+  if (input.liveDelegation) return 'none';
+  return 'neutral';
+}
+
+/** Terminal-error codes that do NOT end the stream (agent-chat 0.4.0). */
+const NON_TERMINAL_ERROR_CODES = new Set(['QUEUE_ERROR', 'USER_INPUT_ERROR']);
+
+/**
+ * 0.2.109: the next value of "is the turn parked", from one stream event.
+ * `result` parks it; `turn_start` (a continuation or a new iteration), `done`
+ * and a terminal `error` unpark it. A local derivation of the same stream as
+ * `isStreaming` — a joiner replaying `turn_start` + events lands in the same
+ * state as the tab that watched it live.
+ */
+export function nextParked(prev: boolean, event: { type: string; code?: string }): boolean {
+  switch (event.type) {
+    case 'result':
+      return true;
+    case 'turn_start':
+    case 'done':
+      return false;
+    case 'error':
+      return NON_TERMINAL_ERROR_CODES.has(event.code ?? '') ? prev : false;
+    default:
+      return prev;
+  }
+}
+
+/**
  * Toast for a terminal SSE `error`, or null for none. ABORTED stays silent (the
  * user pressed Stop); an idle stop is a warning, not an error; the backstop gets
  * its own wording because the server message does not say it means an
@@ -321,6 +371,8 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
   useEffect(() => {
     if (state.isStreaming) setHoldEnding(null);
   }, [state.isStreaming]);
+  // 0.2.109: between a non-terminal `result` and `done` (see `nextParked`).
+  const [isParked, setIsParked] = useState(false);
   // Active thread metadata sourced from GET /api/threads/:id (the same fetch that
   // loads messages below). The header/model-lock controls read it from here instead
   // of the paginated thread list, so they stay correct for threads beyond page 1.
@@ -328,6 +380,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
 
   const onEvent = useCallback(
     (event: WireEvent) => {
+      setIsParked((prev) => nextParked(prev, event as { type: string; code?: string }));
       const ext = event as WireEventExtended;
       /**
        * 0.2.50 — the joined turn's replay buffer blew its 4MB budget and
@@ -894,7 +947,16 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
   useEffect(() => {
     setPendingUserInputs([]);
     synthesizedUserInputsRef.current = new Set();
+    setIsParked(false);
   }, [threadId]);
+
+  const heldBackgroundTaskCount = backgroundTasks.filter((t) => t.status === 'running').length;
+  // A live delegation = a `running` subagent card in the turn still streaming.
+  const activeMessage = state.messages[state.messages.length - 1];
+  const liveDelegation = Boolean(
+    activeMessage?.isStreaming &&
+      activeMessage.blocks.some((b) => b.type === 'subagent' && b.status === 'running'),
+  );
 
   return {
     messages: state.messages,
@@ -923,12 +985,16 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
      * How many background tasks the turn is currently waiting on — the "hold".
      *
      * Derived from OUR OWN registry (started minus completed), never from
-     * adapter data: the held `result` that opens a hold is not forwarded, and
-     * `AdapterBackgroundHoldExpiredError` carries no task list. Drives the
-     * "waiting for N background tasks" spinner between a hold and the
-     * continuation turn.
+     * adapter data: `result.backgroundTasks` is stripped on the wire, and
+     * `AdapterBackgroundHoldExpiredError` carries no task list. Counts
+     * background tasks ONLY — never subagent delegations. Feeds the
+     * "waiting for N background tasks" spinner via `busyIndicator`.
      */
-    heldBackgroundTaskCount: backgroundTasks.filter((t) => t.status === 'running').length,
+    heldBackgroundTaskCount,
+    /** 0.2.109: the turn is parked — after a non-terminal `result`, before `done`. */
+    isParked,
+    /** 0.2.109: which busy indicator the parked turn shows (`turnBusyIndicator`). */
+    busyIndicator: turnBusyIndicator({ isParked, heldBackgroundTaskCount, liveDelegation }),
     /**
      * 0.2.107: the hold indicator's terminal state — which of the four endings
      * (user abort, idle clock, backstop, hold cap) closed a held turn. Null

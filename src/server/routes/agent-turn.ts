@@ -382,6 +382,7 @@ import {
   AgentTurnError,
   assertTurnClockInvariants,
   BACKGROUND_HOLD_CAP_MS,
+  backgroundHoldExpiredMessage,
   IDLE_TIMEOUT_MS,
   TURN_TIMEOUT_MS,
 } from '../../shared/agent-turn.js';
@@ -470,6 +471,26 @@ export interface AgentTurnResult {
  * 0.2.107: `AdapterTimeoutError` now means the 24 h BACKSTOP fired before the
  * idle clock did — an idle-clock failure, not a slow agent.
  */
+/**
+ * 0.2.109: an event produced by the MAIN model — the proof that a parked turn
+ * resumed. Subagent traffic does not count: a delegation's own text and tool
+ * calls stream while the main model is parked, which is the whole reason a
+ * parked turn is not over.
+ */
+export function isMainModelEvent(event: { type: string } & Record<string, unknown>): boolean {
+  switch (event.type) {
+    case 'text_delta':
+    case 'thinking':
+      return !event.isSubagent;
+    case 'tool_use':
+      return !event.isSubagent && !event.subagentTaskId;
+    case 'assistant_message':
+      return !(event.message as { subagentTaskId?: string } | undefined)?.subagentTaskId;
+    default:
+      return false;
+  }
+}
+
 const BACKSTOP_TIMEOUT_MESSAGE =
   'Turn backstop timeout expired — the idle clock should have ended this turn first';
 
@@ -707,6 +728,27 @@ export async function runAgentTurn(
    * `finalizeRunningBackgroundTasks`.
    */
   const hold = new Set<string>();
+
+  /**
+   * 0.2.109: the SECOND abandoned-work registry — subagent delegations STARTED
+   * minus COMPLETED, for this turn.
+   *
+   * A live delegation keeps the run open after `result` exactly like a
+   * background task, but it never appears in `result.backgroundTasks`. Counted
+   * from the turn's EVENTS, never from `chat_subagent_task` rows: when the cap
+   * expires those rows still say `running`, because the finalizer only closes
+   * them in `finally`. The two registries are never summed; this one feeds only
+   * the end-of-turn message, never the hold spinner's N.
+   */
+  const delegations = new Set<string>();
+
+  /**
+   * 0.2.109: between a `result` and the next main-model event — the turn is
+   * parked. Whether that `result` was terminal is only known once the
+   * generator is exhausted; if the model speaks again, it was not, and the
+   * continuation gets its `turn_start` (see the loop).
+   */
+  let parked = false;
 
   /**
    * The terminal error EVENT captured inside the loop (0.2.50).
@@ -1528,6 +1570,11 @@ export async function runAgentTurn(
      * flag a bubble's `result` could carry `backgroundTasks` and break that
      * decision as a side effect of a library upgrade.
      *
+     * 0.2.109: this blocks ONE of the two reasons a run stays open after
+     * `result`. A subagent delegation is the other, and nothing here blocks it —
+     * so even with the flag on, `result` is not an end of turn. `ask` and a
+     * bubble both wait for the generator to be exhausted like everyone else.
+     *
      * This is the third guard keyed on `parentThreadId`, alongside the
      * `transagent-tools` recursion strip and the bubble's exclusion from lists.
      */
@@ -1677,6 +1724,9 @@ export async function runAgentTurn(
     let currentSessionId: string | undefined = thread.lastSessionId ?? undefined;
 
     const consume = async (execPrompt: string): Promise<void> => {
+      // A new iteration opens with its own `turn_start` (merged dispatch), so it
+      // never starts parked.
+      parked = false;
       // Called HERE, per invocation — never hoisted into a variable this closure
       // captures across queries. That distinction is the entire fix. Held in a
       // local only so the binding check below can look at THIS query's set.
@@ -1698,6 +1748,23 @@ export async function runAgentTurn(
         ? observeStream(stream, [input.consoleObserver])
         : stream;
       for await (const event of observed) {
+        if (parked && isMainModelEvent(event)) {
+          // 0.2.109: the model woke up after a non-terminal `result` — a
+          // delegation or a background task settled and the adapter resumed.
+          // The adapter emits no marker for that, so the continuation's
+          // `turn_start` is ours. It REUSES this iteration's ids: the continuation
+          // belongs to the same user prompt and no user row is persisted for it,
+          // so new ids would give every client a phantom user bubble and cut a
+          // joiner's history at the wrong row. For the reducer an equal
+          // `assistantMessageId` is a no-op; for the client it is the "parked is
+          // over" signal. Buffered (not via `emit` — `turn_start` is not a replay
+          // type), so a joiner replays it after the `result` it follows.
+          parked = false;
+          const continuation: TurnEvent = { ...replay.turnStart, timestamp: new Date().toISOString() };
+          input.onEvent(continuation);
+          emitter.emit('event', continuation);
+          pushToReplay(continuation);
+        }
         // Mid-turn `user_message` carries an epoch-ms `timestamp` (number); map to
         // ISO on the wire so it matches `turn_start.timestamp`.
         if (event.type === 'user_message') {
@@ -1706,53 +1773,6 @@ export async function runAgentTurn(
             text: event.text,
             timestamp: new Date(event.timestamp).toISOString(),
           });
-        } else if (
-          event.type === 'result' &&
-          (event.backgroundTasks?.length ?? 0) > 0 &&
-          // 0.2.87 (M46): in a bubble `result` is an UNCONDITIONAL end of turn,
-          // whatever its context type. The child always runs with
-          // `claude_disallowBackgroundBash`, so this is the backstop for a library
-          // that reports tasks anyway — a child never enters a hold.
-          !isChildBanka
-        ) {
-          // M05 HELD RESULT — NOT end-of-run. The engine holds the session open
-          // while background work (a `run_in_background` shell, a Monitor, a
-          // workflow) is in flight, wakes the model when it settles, and emits a
-          // further `result` (empty `backgroundTasks`) before the generator is
-          // `done`. Do NOT emit or buffer this result: agent-chat's reducer sets
-          // `isStreaming: false` and SUMS usage on every `result`, so a held one
-          // would stop the turn UI early and double-count usage.
-          //
-          // 0.2.50: the brief's wire example DOES show this result on the
-          // stream. We deliberately keep swallowing it, and filed a
-          // `clarification` patch saying so — forwarding it is blocked on
-          // agent-chat's reducer learning that a `result` can be non-terminal.
-          // The client does not need it: the hold spinner counts
-          // `background_task_started` minus `_completed`, which it already sees.
-          //
-          // Persistence-wise this is a PARTIAL flush: close the text buffers so
-          // the rows land in stream order, remember the session, and record the
-          // hold — but do NOT call `attachTurnUsage`, because the turn's usage
-          // snapshot is not final until the continuation turn's `result`.
-          flushMainBuf();
-          for (const tid of Array.from(subagentBuffers.keys())) flushSubBuf(tid);
-          if (event.sessionId) {
-            currentSessionId = event.sessionId;
-            recordSession(event.sessionId);
-          }
-          if (event.usage) {
-            // `setLastUsage` is a "latest wins" SCRATCH write on the thread, not
-            // the closing snapshot — safe to repeat on every held result.
-            //
-            // Deliberately does NOT touch `lastTurnUsage`: that variable is what
-            // the terminal `result` stamps onto the turn's anchor row via
-            // `attachTurnUsage`, and it is owned by `assistant_message`.
-            // Overwriting it here would freeze the turn's final usage at the
-            // partial figure the hold happened to be holding.
-            deps.chatService.setLastUsage(thread.id, event.usage);
-          }
-          for (const task of event.backgroundTasks ?? []) hold.add(task.taskId);
-          continue;
         } else if (event.type !== 'adapter_ready' && event.type !== 'error') {
           emit(event as unknown as TurnEvent);
         }
@@ -1884,6 +1904,7 @@ export async function runAgentTurn(
           }
           case 'subagent_started':
             flushMainBuf();
+            delegations.add(event.taskId);
             deps.chatService.startSubagentTask(
               thread.id,
               event.taskId,
@@ -1896,6 +1917,7 @@ export async function runAgentTurn(
             break;
           case 'subagent_completed':
             flushSubBuf(event.taskId);
+            delegations.delete(event.taskId);
             deps.chatService.completeSubagentTask(
               thread.id,
               event.taskId,
@@ -1942,12 +1964,26 @@ export async function runAgentTurn(
             );
             break;
           case 'result': {
+            /**
+             * 0.2.109: EVERY `result` is handled here, and none ends anything.
+             * Terminality is read from the class and position of events, never
+             * from this payload: a `result` emitted during a live subagent
+             * delegation carries no `backgroundTasks` and is byte-for-byte a
+             * terminal one. The terminal `result` is simply the one after which
+             * the generator is exhausted. Forwarded to the client like any other
+             * — since agent-chat 0.4.0 a `result` closes a block, not the turn.
+             */
+            parked = true;
             flushMainBuf();
             for (const tid of Array.from(subagentBuffers.keys())) flushSubBuf(tid);
             if (event.sessionId) {
               currentSessionId = event.sessionId;
               recordSession(event.sessionId);
             }
+            // Feeds the background-task registry only — a delegation is never here.
+            for (const task of event.backgroundTasks ?? []) hold.add(task.taskId);
+            // Each segment stamps its OWN anchor row; a continuation that adds
+            // rows gets a new anchor, so segments are never stamped twice.
             const turnAnchor = lastMainAssistantRowId ?? lastToolResultRowId;
             if (lastTurnUsage) {
               deps.chatService.setLastUsage(thread.id, lastTurnUsage);
@@ -2017,9 +2053,12 @@ export async function runAgentTurn(
             } else if (err instanceof AdapterBackgroundHoldExpiredError) {
               // The abandoned count comes from OUR registry — the library's
               // error carries `capMs` and nothing else.
+              // 0.2.109: from BOTH registries of this turn, each named separately
+              // — the library's error carries `capMs` and nothing else, and a
+              // hold kept only by a delegation expires the same way.
               deliveredError = new AgentTurnError(
                 'BACKGROUND_HOLD_EXPIRED',
-                `background hold expired after ${err.capMs}ms with ${hold.size} task(s) still running`,
+                backgroundHoldExpiredMessage(err.capMs, hold.size, delegations.size),
               );
             } else if (err instanceof AdapterIdleTimeoutError) {
               // A SIBLING of AdapterTimeoutError, not a subclass — the order
@@ -2150,6 +2189,17 @@ export async function runAgentTurn(
       deps.chatService.finalizeRunningBackgroundTasks(thread.id);
     } catch (bgErr) {
       console.error('[chat] finalizeRunningBackgroundTasks failed', bgErr);
+    }
+    try {
+      // 0.2.109: same for delegations — a separate query, a separate registry.
+      if (delegations.size > 0) {
+        console.warn(
+          `[chat] turn ended with ${delegations.size} subagent delegation(s) still running: ${Array.from(delegations).join(', ')}`,
+        );
+      }
+      deps.chatService.finalizeRunningSubagentTasks(thread.id);
+    } catch (subErr) {
+      console.error('[chat] finalizeRunningSubagentTasks failed', subErr);
     }
     try {
       deps.chatService.finalizeStreamingRows(thread.id);

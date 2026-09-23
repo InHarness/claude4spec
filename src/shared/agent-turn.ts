@@ -164,12 +164,35 @@ export type AgentTurnErrorCode =
    */
   | 'TOOL_POLICY_REFUSED'
   /**
-   * `claude_backgroundHoldCapMs` elapsed while background work was still in
-   * flight. Carries `capMs`; the count of abandoned tasks comes from our own
-   * started-minus-completed registry, because the library's error carries no
-   * task list.
+   * `claude_backgroundHoldCapMs` elapsed while the run was parked — on
+   * background work, a subagent delegation, or both. Carries `capMs`; the
+   * counts come from our own two started-minus-completed registries, because
+   * the library's error carries no task list (`backgroundHoldExpiredMessage`).
    */
   | 'BACKGROUND_HOLD_EXPIRED';
+
+/**
+ * 0.2.109: the `BACKGROUND_HOLD_EXPIRED` message, built from the turn's TWO
+ * abandoned-work registries (background tasks, subagent delegations), each
+ * started-minus-completed. They are never summed — every non-empty one is
+ * named on its own. With both empty the message carries no count at all: the
+ * hold expired with no recognized cause, and inventing a "0 tasks" would state
+ * a cause that was not there. The content always comes from the registries,
+ * never from `capMs` alone.
+ */
+export function backgroundHoldExpiredMessage(
+  capMs: number,
+  backgroundTasks: number,
+  delegations: number,
+): string {
+  const parts: string[] = [];
+  if (backgroundTasks > 0) parts.push(`${backgroundTasks} background task(s)`);
+  if (delegations > 0) parts.push(`${delegations} subagent delegation(s)`);
+  if (parts.length === 0) {
+    return `background hold expired after ${capMs}ms with no recognized cause`;
+  }
+  return `background hold expired after ${capMs}ms with ${parts.join(' and ')} still running`;
+}
 
 /**
  * Typed blad tury — pozwala konsumentom (headless `ask`, `runTransagent`)

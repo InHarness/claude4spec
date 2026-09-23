@@ -60,7 +60,7 @@ Jeśli pod wskazanym tagiem nie ma ŻADNEGO AC, to nie jest błąd. Zwróć pust
 
 ## Trzy rzeczy JAWNIE poza remitem — nie raportuj ich
 
-- **Konwencja tagowania.** Relacja między tagiem \`mNN\` a \`mNN-edge\` — rozłączna czy podzbiorowa — jest wyborem autora, nie dryfem. Milcz na jej temat.
+- **Konwencja tagowania.** Relacja między tagiem \`mNN\` a \`mNN-edge\` — rozłączna czy podzbiorowa — jest wyborem autora, nie dryfem. Tak samo **kryterium niosące równolegle tagi kilku modułów**: to wybór autora, nie dryf. Milcz na ten temat.
 - **Wiszące wpisy \`verifies[]\`.** Nie sprawdzasz, czy encja wskazana w \`verifies[]\` istnieje; to zostaje po stronie reguły 9 modułu M19.
 - **Zgodność AC ↔ encja.** Czy kryterium pasuje do kształtu encji, którą weryfikuje, rozstrzyga \`mcp__ac-tools__analyze_ac_against_entities\`. Jesteś jego KONSUMENTEM, nie zamiennikiem: wołaj je, gdy werdykt tego wymaga, i cytuj jego wynik zamiast powtarzać jego pracę własnym czytaniem.
 
