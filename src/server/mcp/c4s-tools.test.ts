@@ -93,11 +93,11 @@ describe('buildC4sToolsServer — ask workspace inheritance', () => {
     const client = await connectClient('ws-5555');
     await client.callTool({
       name: 'ask',
-      arguments: { message: 'ping', model: 'opus-5', effort: 'high' },
+      arguments: { message: 'ping', model: 'opus-5.5', effort: 'high' },
     });
 
     expect(hoisted.calls).toHaveLength(1);
-    expect(hoisted.calls[0]).toMatchObject({ model: 'opus-5', effort: 'high' });
+    expect(hoisted.calls[0]).toMatchObject({ model: 'opus-5.5', effort: 'high' });
   });
 
   /**

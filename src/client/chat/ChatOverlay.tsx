@@ -4,7 +4,7 @@ import { useMatches, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { Send, Square, X, Plus, MessageSquare, ChevronDown, FileText, FileWarning, Cpu, Trash2, ClipboardList, Clock, Loader2 } from 'lucide-react';
 import { batchToolBlocks } from '@inharness-ai/agent-chat';
-import { useChatStore, thinkingToConfig, configToThinking, isAdaptiveModel, isChatModel, type ChatModel, type ChatThinking } from '../state/chat.js';
+import { useChatStore, thinkingToConfig, configToThinking, type ChatModel, type ChatThinking } from '../state/chat.js';
 import { usePersistedState, projectKey } from '../state/persisted.js';
 import { ResizeHandle } from '../components/ResizeHandle.js';
 import { useChat, holdEndingLabel } from './useChat.js';
@@ -24,7 +24,7 @@ import { useBrief } from '../hooks/useBriefs.js';
 import { usePatch } from '../hooks/usePatches.js';
 import { encodeBriefPath } from '../lib/briefs-api.js';
 import { encodePatchPath } from '../lib/patches-api.js';
-import { chatConfigApi, type SessionResumeConstraint } from '../lib/api.js';
+import { chatConfigApi, type ChatModelInfo, type SessionResumeConstraint } from '../lib/api.js';
 
 const NEW_THREAD_DRAFT_KEY = '__new__';
 
@@ -36,12 +36,26 @@ const NEW_THREAD_DRAFT_KEY = '__new__';
  */
 const PREFILL_HANDOFF_MS = 1000;
 
+/**
+ * Display label for an alias (`haiku-4.5` → "Haiku 4.5"). Cosmetic only — nothing about
+ * the model's class, context or order is read from the name (0.2.108: that all comes
+ * from `GET /api/chat/config`), so a new alias needs no table entry here.
+ */
+function modelDisplayLabel(alias: string): string {
+  const [family = alias, ...rest] = alias.split('-');
+  return [family.charAt(0).toUpperCase() + family.slice(1), ...rest].join(' ');
+}
+
+function formatContextWindow(tokens: number): string {
+  return tokens >= 1_000_000 ? `${tokens / 1_000_000}M` : `${Math.round(tokens / 1000)}k`;
+}
+
 export function ChatOverlay() {
   const chatOpen = useChatStore((s) => s.chatOpen);
   const chatWidth = useChatStore((s) => s.chatWidth);
   const chatThreadId = useChatStore((s) => s.chatThreadId);
   const annotations = useChatStore((s) => s.annotations);
-  const model = useChatStore((s) => s.model);
+  const storeModel = useChatStore((s) => s.model);
   const thinking = useChatStore((s) => s.thinking);
   const setChatOpen = useChatStore((s) => s.setChatOpen);
   const setChatWidth = useChatStore((s) => s.setChatWidth);
@@ -49,6 +63,20 @@ export function ChatOverlay() {
   const setModel = useChatStore((s) => s.setModel);
   const setThinking = useChatStore((s) => s.setThinking);
   const clearAnnotations = useChatStore((s) => s.clearAnnotations);
+
+  // M05 session-lock: which fields freeze once a thread has a session. Declared by the
+  // adapter package, served via GET /api/chat/config (not hardcoded in the UI).
+  // 0.2.108: the same payload carries the selectable models — list, order, default and
+  // per-model metadata — so the UI holds no model knowledge of its own.
+  const { data: chatConfig } = useQuery({ queryKey: ['chat-config'], queryFn: () => chatConfigApi.get() });
+  const claudeCodeConfig = chatConfig?.architectures['claude-code'];
+  const modelInfos = claudeCodeConfig?.models;
+  // The selected alias: the global choice, else the server's default. For a
+  // session-locked thread the restore effect below has put its turn-1 alias here.
+  const model = storeModel ?? claudeCodeConfig?.default ?? null;
+  const modelInfo = modelInfos?.find((m) => m.alias === model);
+  // `undefined` when the class is unknown (config loading, or an alias no longer served).
+  const adaptive = modelInfo?.adaptive;
 
   const navigate = useNavigate();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -139,6 +167,7 @@ export function ChatOverlay() {
     onThreadCreated,
     onThreadMissing,
     model,
+    adaptive,
     thinking,
     planMode,
     onQueueCleared: handleQueueCleared,
@@ -155,9 +184,6 @@ export function ChatOverlay() {
   const activeThread =
     threadList.threads.find((t) => t.id === chatThreadId) ??
     (activeThreadMeta?.id === chatThreadId ? activeThreadMeta : null);
-  // M05 session-lock: which fields freeze once a thread has a session. Declared by the
-  // adapter package, served via GET /api/chat/config (not hardcoded in the UI).
-  const { data: chatConfig } = useQuery({ queryKey: ['chat-config'], queryFn: () => chatConfigApi.get() });
   const resumeConstraints = chatConfig?.sessionResumeConstraints ?? [];
   /**
    * Default TRUE while the config is still loading: the toggle's normal state is
@@ -190,13 +216,34 @@ export function ChatOverlay() {
   // leftover from another thread. Mirrors the planMode restore above. Fresh threads (no
   // snapshot) are left alone, so they inherit the current global choice. setModel runs first
   // so its max→high clamp can't override the snapshot-derived thinking level.
+  //
+  // 0.2.108: the snapshot's alias is shown AS IS — not passed through the current list,
+  // or a thread on a retired alias would display somebody else's value. Such a thread
+  // cannot run (the server answers 400); the only way forward is a new conversation.
+  const sessionLocked = activeThread?.lastSessionId != null;
   useEffect(() => {
     const snap = activeThread?.initialArchitectureConfig;
     if (activeThread?.lastSessionId != null && snap) {
-      if (isChatModel(snap.model)) setModel(snap.model);
+      if (typeof snap.model === 'string') {
+        setModel(snap.model, modelInfos?.find((m) => m.alias === snap.model)?.adaptive);
+      }
       setThinking(configToThinking(snap.architectureConfig));
     }
-  }, [activeThread?.id, activeThread?.lastSessionId, activeThread?.initialArchitectureConfig, setModel, setThinking]);
+  }, [activeThread?.id, activeThread?.lastSessionId, activeThread?.initialArchitectureConfig, modelInfos, setModel, setThinking]);
+
+  // 0.2.108: a free (not session-locked) thread must run on something the server offers.
+  // A persisted global choice the list no longer carries — an old alias, or the one a
+  // locked thread left behind — falls back to the server's default; 'max' is clamped
+  // when the selected model's served class is not adaptive.
+  useEffect(() => {
+    if (!claudeCodeConfig || sessionLocked) return;
+    if (storeModel !== null && !claudeCodeConfig.models.some((m) => m.alias === storeModel)) {
+      const fallback = claudeCodeConfig.models.find((m) => m.alias === claudeCodeConfig.default);
+      setModel(claudeCodeConfig.default, fallback?.adaptive);
+    } else if (modelInfo && !modelInfo.adaptive && thinking === 'max') {
+      setThinking('high');
+    }
+  }, [claudeCodeConfig, sessionLocked, storeModel, modelInfo, thinking, setModel, setThinking]);
 
   // Reset trybu podgladu i cache przy switchu watku — snapshot jest per-thread,
   // wiec po zmianie threadId stary cache jest niewazny i toggle musi sie zamknac.
@@ -436,13 +483,7 @@ export function ChatOverlay() {
     [setChatWidth],
   );
 
-  const MODEL_LABELS: Record<ChatModel, string> = {
-    'fable-5.1': 'Fable 5.1',
-    'sonnet-5': 'Sonnet 5',
-    'opus-5': 'Opus 5',
-    'haiku-4.5': 'Haiku 4.5',
-  };
-  const modelLabel = MODEL_LABELS[model];
+  const modelLabel = model ? modelDisplayLabel(model) : '—';
 
   if (!chatOpen) return null;
 
@@ -476,9 +517,8 @@ export function ChatOverlay() {
           <UsageBadge
             usage={usage}
             contextSize={contextSize}
-            model={model}
-            architectureConfig={thinkingToConfig(thinking, model)}
-            contextWindows={chatConfig?.architectures['claude-code']?.contextWindows}
+            architectureConfig={thinkingToConfig(thinking, adaptive)}
+            contextWindow={modelInfo?.contextWindow}
           />
           <button
             onClick={() => void handleToggleSystemPrompt()}
@@ -566,7 +606,7 @@ export function ChatOverlay() {
               })()}
               {/* 0.1.69 Transagents: nested child panels (live-join or persisted). */}
               {transagents.map((t) => (
-                <TransagentPanel key={t.toolUseId} entry={t} model={model} />
+                <TransagentPanel key={t.toolUseId} entry={t} model={model ?? ''} />
               ))}
               {/* 0.2.50: background-task panels moved INTO the turn (a carrier
                   block placed by useChat, rendered by <BlockRenderer />), so they
@@ -852,6 +892,8 @@ export function ChatOverlay() {
           </div>
           {settingsOpen && (
             <ModelSettingsPopover
+              models={modelInfos ?? []}
+              defaultModel={claudeCodeConfig?.default ?? null}
               model={model}
               setModel={setModel}
               thinking={thinking}
@@ -859,7 +901,7 @@ export function ChatOverlay() {
               planMode={planMode}
               setPlanMode={togglePlanMode}
               currentPage={currentPage}
-              sessionLocked={activeThread?.lastSessionId != null}
+              sessionLocked={sessionLocked}
               resumeConstraints={resumeConstraints}
               planModeEnforceable={planModeEnforceable}
               onClose={() => setSettingsOpen(false)}
@@ -1017,8 +1059,11 @@ function ThreadDropdown({ threads, activeId, hasMore, loadingMore, onSelect, onC
 // --- Model settings popover ---
 
 interface ModelSettingsPopoverProps {
-  model: ChatModel;
-  setModel(m: ChatModel): void;
+  /** Selectable models from GET /api/chat/config, rendered in exactly this order. */
+  models: ChatModelInfo[];
+  defaultModel: string | null;
+  model: ChatModel | null;
+  setModel(m: ChatModel, adaptive?: boolean): void;
   thinking: ChatThinking;
   setThinking(t: ChatThinking): void;
   planMode: boolean;
@@ -1033,20 +1078,32 @@ interface ModelSettingsPopoverProps {
   onClose(): void;
 }
 
-function ModelSettingsPopover({ model, setModel, thinking, setThinking, planMode, setPlanMode, currentPage, sessionLocked, resumeConstraints, planModeEnforceable, onClose }: ModelSettingsPopoverProps) {
-  const models: Array<{ id: ChatModel; label: string; sub: string }> = [
-    { id: 'opus-5', label: 'Opus 5', sub: 'Deep reasoning · default · 1M ctx' },
-    { id: 'fable-5.1', label: 'Fable 5.1', sub: 'Next-gen · deep reasoning · 1M ctx' },
-    { id: 'sonnet-5', label: 'Sonnet 5', sub: 'Balanced · 1M ctx' },
-    { id: 'haiku-4.5', label: 'Haiku 4.5', sub: 'Fast · light · 200k ctx' },
-  ];
-  // 'Max' reasoning effort is adaptive-models only (everything but Haiku 4.5).
+function ModelSettingsPopover({ models, defaultModel, model, setModel, thinking, setThinking, planMode, setPlanMode, currentPage, sessionLocked, resumeConstraints, planModeEnforceable, onClose }: ModelSettingsPopoverProps) {
+  // Rendered exactly as served — no sorting, no filtering. A session-locked thread
+  // pinned to an alias the server no longer lists shows that alias too (locked), so
+  // the popover never displays a substitute for the thread's real model.
+  const rows: Array<{ id: ChatModel; adaptive?: boolean; label: string; sub: string }> =
+    models.map((m) => ({
+      id: m.alias,
+      adaptive: m.adaptive,
+      label: modelDisplayLabel(m.alias),
+      sub: [
+        m.adaptive ? 'Adaptive reasoning' : 'Fixed thinking budget',
+        ...(m.alias === defaultModel ? ['default'] : []),
+        `${formatContextWindow(m.contextWindow)} ctx`,
+      ].join(' · '),
+    }));
+  if (model && !models.some((m) => m.alias === model)) {
+    rows.push({ id: model, label: modelDisplayLabel(model), sub: 'No longer offered · start a new conversation' });
+  }
+  const selected = models.find((m) => m.alias === model);
+  // 'Max' reasoning effort is adaptive-models only — the class comes from the payload.
   const levels: Array<{ id: ChatThinking; label: string }> = [
     { id: 'off', label: 'Off' },
     { id: 'low', label: 'Low' },
     { id: 'medium', label: 'Medium' },
     { id: 'high', label: 'High' },
-    ...(isAdaptiveModel(model) ? [{ id: 'max' as ChatThinking, label: 'Max' }] : []),
+    ...(selected?.adaptive ? [{ id: 'max' as ChatThinking, label: 'Max' }] : []),
   ];
 
   // M05 session-lock: model + reasoning fields freeze once the thread has a session.
@@ -1111,13 +1168,14 @@ function ModelSettingsPopover({ model, setModel, thinking, setThinking, planMode
           Model
         </div>
         <div className="space-y-1 mb-3">
-          {models.map((m) => {
+          {rows.map((m) => {
             const active = model === m.id;
+            const retired = m.adaptive === undefined;
             return (
               <button
                 key={m.id}
-                onClick={() => { if (!modelLock) setModel(m.id); }}
-                disabled={Boolean(modelLock)}
+                onClick={() => { if (!modelLock && !retired) setModel(m.id, m.adaptive); }}
+                disabled={Boolean(modelLock) || retired}
                 title={modelLock?.reason}
                 className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-md disabled:cursor-not-allowed"
                 style={{
@@ -1152,7 +1210,7 @@ function ModelSettingsPopover({ model, setModel, thinking, setThinking, planMode
           style={{ color: 'var(--c-subtle)' }}
         >
           Thinking level
-          {isAdaptiveModel(model) && thinking !== 'off' && (
+          {selected?.adaptive && thinking !== 'off' && (
             <span className="ml-2 normal-case" style={{ color: 'var(--c-muted)' }}>
               (uses adaptive thinking; level sets reasoning effort)
             </span>

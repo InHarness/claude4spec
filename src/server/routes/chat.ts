@@ -7,7 +7,6 @@ import { nanoid } from 'nanoid';
 import {
   architectureCapabilities,
   createConsoleObserver,
-  getModelContextWindow,
   getSessionResumeConstraints,
   probeToolGating,
   PLAN_MODE_DENY_GROUPS,
@@ -24,12 +23,11 @@ import {
   cancelPendingForRequest,
   markUserInputResolvedInReplay,
   runAgentTurn,
-  ALLOWED_MODELS,
-  type Model,
   type ActiveAdapter,
   type AgentTurnDeps,
 } from './agent-turn.js';
 import { checkResumeConfigLock } from './resume-lock.js';
+import { checkSelectableModel, describeModels } from './models.js';
 import { DEFAULT_MODEL } from '../../core/agent/run-agent.js';
 
 export function chatRouter(deps: AgentTurnDeps): Router {
@@ -92,29 +90,19 @@ export function chatRouter(deps: AgentTurnDeps): Router {
     res.json({
       architectures: {
         'claude-code': {
-          models: [...ALLOWED_MODELS],
-          default: DEFAULT_MODEL,
           /**
-           * The context window per model, for `<UsageBadge />`'s denominator.
+           * 0.2.108 — the selectable list as a server contract, with the metadata the
+           * alias alone does not carry: `resolvedId` (from `resolveModel`), `adaptive`
+           * (membership of the RESOLVED id in `ADAPTIVE_THINKING_ONLY`) and
+           * `contextWindow` (the usage badge's denominator). Narrowed and ordered here,
+           * not in the picker, so every consumer sees one list; the client renders it
+           * as received and infers nothing from an alias name.
            *
-           * It used to be a hardcoded table in the badge itself, which was
-           * defensible while the whole catalog was 200k and Opus was the one
-           * exception. It is not defensible now: `fable-5.1` / `sonnet-5` /
-           * `opus-5` carry 1M and `haiku-4.5` carries 200k, so a stale copy
-           * would misreport occupancy by 5x on the default model.
-           *
-           * Served rather than imported, for the same reason as
-           * `sessionResumeConstraints` below: the package's main entry pulls
-           * `fs/promises` / `os` / `path`, so the client can only import TYPES
-           * from it. The value still comes from `getModelContextWindow` — this
-           * is where that call can happen.
+           * Served rather than imported by the client because the package's main
+           * entry pulls `fs/promises` / `os` / `path` — the client imports TYPES only.
            */
-          contextWindows: Object.fromEntries(
-            ALLOWED_MODELS.flatMap((m) => {
-              const w = getModelContextWindow('claude-code', m);
-              return typeof w === 'number' ? [[m, w] as const] : [];
-            }),
-          ),
+          models: describeModels(),
+          default: DEFAULT_MODEL,
         },
       },
       defaultArchitecture: 'claude-code',
@@ -148,10 +136,9 @@ export function chatRouter(deps: AgentTurnDeps): Router {
     try {
       const prompt = typeof req.body?.prompt === 'string' ? req.body.prompt : '';
       const threadId = typeof req.body?.threadId === 'string' ? req.body.threadId : undefined;
-      const modelArg = typeof req.body?.model === 'string' ? req.body.model : DEFAULT_MODEL;
-      const model: Model = (ALLOWED_MODELS as readonly string[]).includes(modelArg)
-        ? (modelArg as Model)
-        : DEFAULT_MODEL;
+      // No default of our own: `DEFAULT_MODEL` is the canonical one, imported from
+      // `core/agent`. Validated against the selectable list below, before dispatch.
+      const model = typeof req.body?.model === 'string' ? req.body.model : DEFAULT_MODEL;
       const currentPage = typeof req.body?.currentPage === 'string' ? req.body.currentPage : null;
       const currentPageRootId =
         typeof req.body?.currentPageRootId === 'string' ? req.body.currentPageRootId : null;
@@ -216,8 +203,18 @@ export function chatRouter(deps: AgentTurnDeps): Router {
       // wznawiajacej. Backstop dla nie-UI konsumentow i wyscigu (zmiana modelu miedzy
       // fetchem a sendem). MUSI byc przed `setupSse` (po flush naglowkow SSE nie
       // ustawimy juz statusu 409). Wspolny helper z `POST /api/threads/:id/ask`.
+      // 0.2.108: the selectable list is enforced — a model outside it (asked for, or
+      // pinned by the turn-1 snapshot) is a 400 before dispatch, not a silent fallback.
+      const snapshotJson = deps.chatService.getInitialArchitectureConfig(thread.id);
+      const notSelectable = checkSelectableModel({
+        model,
+        snapshotJson,
+        lastSessionId: thread.lastSessionId,
+      });
+      if (notSelectable) return res.status(400).json(notSelectable);
+
       const resumeLock = checkResumeConfigLock({
-        snapshotJson: deps.chatService.getInitialArchitectureConfig(thread.id),
+        snapshotJson,
         lastSessionId: thread.lastSessionId,
         model,
         architectureConfig,

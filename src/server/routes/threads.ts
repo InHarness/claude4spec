@@ -2,16 +2,14 @@ import { Router } from 'express';
 import { restError } from '../operations/envelope.js';
 import { httpStatusForCode, STATUS_FOR_TURN_ERROR } from '../operations/error-codes.js';
 import { nanoid } from 'nanoid';
-import { resolveModel, ADAPTIVE_THINKING_ONLY } from '@inharness-ai/agent-adapters';
 import { readConfig } from '../config.js';
 import {
   runAgentTurn,
   AgentTurnError,
-  ALLOWED_MODELS,
-  type Model,
   type AgentTurnDeps,
 } from './agent-turn.js';
 import { checkResumeConfigLock } from './resume-lock.js';
+import { checkSelectableModel, isAdaptiveAlias } from './models.js';
 import { assertKnownContextType } from '../services/chat-context.js';
 import { ASK_TURN_TIMEOUT_MS } from '../../shared/agent-turn.js';
 import { DEFAULT_MODEL } from '../../core/agent/run-agent.js';
@@ -145,10 +143,16 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
        * Merge `architectureConfig` jak w `POST /api/chat` — serwer wygrywa
        * wylacznie na `claude_usePreset`.
        */
-      const modelArg = typeof req.body?.model === 'string' ? req.body.model : DEFAULT_MODEL;
-      const model: Model = (ALLOWED_MODELS as readonly string[]).includes(modelArg)
-        ? (modelArg as Model)
-        : DEFAULT_MODEL;
+      const model = typeof req.body?.model === 'string' ? req.body.model : DEFAULT_MODEL;
+      // 0.2.108: the selectable list is enforced before anything else touches `model`
+      // — asked-for or pinned by the turn-1 snapshot, outside the list = 400.
+      const snapshotJson = chat.getInitialArchitectureConfig(thread.id);
+      const notSelectable = checkSelectableModel({
+        model,
+        snapshotJson,
+        lastSessionId: thread.lastSessionId,
+      });
+      if (notSelectable) return res.status(400).json(notSelectable);
       const clientArchitectureConfig =
         req.body?.architectureConfig && typeof req.body.architectureConfig === 'object'
           ? (req.body.architectureConfig as Record<string, unknown>)
@@ -171,8 +175,10 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
         // `Options.effort` unconditionally regardless of thinking mode, so keeping it here
         // for non-adaptive models is harmless and intentional, not a bug to "fix" later.
         architectureConfig.claude_effort = effortArg;
-        const resolvedModel = resolveModel('claude-code', model);
-        if (ADAPTIVE_THINKING_ONLY.has(resolvedModel)) {
+        // Class read programmatically — `resolveModel` first, then membership of the
+        // resolved id in `ADAPTIVE_THINKING_ONLY`. Adaptive-only: no fixed budget at
+        // any level (thinking cannot be switched off for such a model anyway).
+        if (isAdaptiveAlias(model)) {
           architectureConfig.claude_thinking = 'adaptive';
         } else {
           architectureConfig.claude_thinking = 'enabled';
@@ -196,7 +202,7 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
       // M05 session-lock: ten sam invariant co `POST /api/chat`. Defensywny backstop dla
       // nie-UI konsumentow (`c4s ask`, skrypty) — resume z innym modelem/reasoningiem = 409.
       const resumeLock = checkResumeConfigLock({
-        snapshotJson: chat.getInitialArchitectureConfig(thread.id),
+        snapshotJson,
         lastSessionId: thread.lastSessionId,
         model,
         architectureConfig,

@@ -88,10 +88,10 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
 
   const lastArchitectureConfig = () => runAgentTurnMock.mock.calls.at(-1)?.[1].architectureConfig;
 
-  it("adaptive model (opus-5) + effort -> claude_thinking: 'adaptive', no budget", async () => {
+  it("adaptive model (opus-5.5) + effort -> claude_thinking: 'adaptive', no budget", async () => {
     const res = await request(app())
       .post(`/threads/${thread.id}/ask`)
-      .send({ message: 'hi', model: 'opus-5', effort: 'high' });
+      .send({ message: 'hi', model: 'opus-5.5', effort: 'high' });
     expect(res.status).toBe(200);
     expect(lastArchitectureConfig()).toMatchObject({ claude_effort: 'high', claude_thinking: 'adaptive' });
     expect(lastArchitectureConfig()).not.toHaveProperty('claude_thinking_budget');
@@ -138,12 +138,12 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
   });
 
   /**
-   * The default is `opus-5`, which is ADAPTIVE — so this case flipped branches
+   * The default is `opus-5.5`, which is ADAPTIVE — so this case flipped branches
    * in 0.2.17. It used to assert the budget path, because the default was the
    * mid-tier non-adaptive model; `haiku-4.5` is the only non-adaptive alias
    * left, and nothing resolves to it implicitly.
    */
-  it('no explicit model (defaults to opus-5) + effort behaves like the adaptive case', async () => {
+  it('no explicit model (defaults to opus-5.5) + effort behaves like the adaptive case', async () => {
     const res = await request(app()).post(`/threads/${thread.id}/ask`).send({ message: 'hi', effort: 'low' });
     expect(res.status).toBe(200);
     expect(lastArchitectureConfig()).toMatchObject({
@@ -154,7 +154,7 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
   });
 
   it('no effort in body -> none of claude_effort/claude_thinking/claude_thinking_budget are set (adaptive model)', async () => {
-    const res = await request(app()).post(`/threads/${thread.id}/ask`).send({ message: 'hi', model: 'opus-5' });
+    const res = await request(app()).post(`/threads/${thread.id}/ask`).send({ message: 'hi', model: 'opus-5.5' });
     expect(res.status).toBe(200);
     const cfg = lastArchitectureConfig();
     expect(cfg).not.toHaveProperty('claude_effort');
@@ -212,6 +212,36 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
     });
   });
 
+  // 0.2.108: the selectable list is a server contract — outside it is a 400 before
+  // dispatch, never the old silent fallback to the default.
+  describe('selectable-model gate (0.2.108)', () => {
+    it('400s a model outside the selectable list, even one the library still knows', async () => {
+      const res = await request(app())
+        .post(`/threads/${thread.id}/ask`)
+        .send({ message: 'hi', model: 'opus-5' });
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('VALIDATION');
+      expect(runAgentTurnMock).not.toHaveBeenCalled();
+    });
+
+    it('400s (not 409s) a resumed thread whose turn-1 snapshot pinned a retired alias', async () => {
+      thread = makeThread({ lastSessionId: 'sess-1' });
+      initialArchitectureConfigSnapshot = JSON.stringify({ model: 'opus-5', architectureConfig: {} });
+      const res = await request(app())
+        .post(`/threads/${thread.id}/ask`)
+        .send({ message: 'hi', model: 'opus-5.5' });
+      expect(res.status).toBe(400);
+      expect(res.body.error.message).toContain('new conversation');
+      expect(runAgentTurnMock).not.toHaveBeenCalled();
+    });
+
+    it('runs a model-less request on the default', async () => {
+      const res = await request(app()).post(`/threads/${thread.id}/ask`).send({ message: 'hi' });
+      expect(res.status).toBe(200);
+      expect(runAgentTurnMock.mock.calls.at(-1)?.[1].model).toBe('opus-5.5');
+    });
+  });
+
   // 0.2.8 (C15): the FS path scope is resume-immutable too. Before this, changing
   // `agent.allowedPaths` in Settings and resuming a thread silently ran the turn under a
   // different scope than the session was created with — the guard had nothing to compare.
@@ -222,7 +252,7 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
       fs.writeFileSync(path.join(dir, '.claude4spec', 'config.json'), JSON.stringify(cfg));
     };
     const snapshotWith = (paths: { allowedPaths?: string[]; disallowedPaths?: string[] }) =>
-      JSON.stringify({ model: 'opus-5', architectureConfig: {}, ...paths });
+      JSON.stringify({ model: 'opus-5.5', architectureConfig: {}, ...paths });
 
     beforeEach(() => {
       thread = makeThread({ lastSessionId: 'sess-1' });
@@ -235,7 +265,7 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
       });
       const res = await request(app())
         .post(`/threads/${thread.id}/ask`)
-        .send({ message: 'hi', model: 'opus-5' });
+        .send({ message: 'hi', model: 'opus-5.5' });
       expect(res.status).toBe(409);
       expect(res.body.error.code).toBe('RESUME_CONFIG_LOCKED');
       // `violations[]` names the field, so the UI can lock the right control; `message`
@@ -259,7 +289,7 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
       });
       const res = await request(app())
         .post(`/threads/${thread.id}/ask`)
-        .send({ message: 'hi', model: 'opus-5' });
+        .send({ message: 'hi', model: 'opus-5.5' });
       expect(res.status).toBe(409);
       expect(res.body.error.violations.map((v: { path: string }) => v.path)).toContain(
         'disallowedPaths',
@@ -279,7 +309,7 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
       });
       const res = await request(app())
         .post(`/threads/${thread.id}/ask`)
-        .send({ message: 'hi', model: 'opus-5' });
+        .send({ message: 'hi', model: 'opus-5.5' });
       expect(res.status).toBe(200);
       expect(runAgentTurnMock).toHaveBeenCalledTimes(1);
     });
@@ -287,12 +317,12 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
     it('no 409 for a pre-0.2.8 snapshot that has no path fields (back-compat)', async () => {
       writeConfig({ agent: { allowedPaths: ['anything'] } });
       initialArchitectureConfigSnapshot = JSON.stringify({
-        model: 'opus-5',
+        model: 'opus-5.5',
         architectureConfig: {},
       });
       const res = await request(app())
         .post(`/threads/${thread.id}/ask`)
-        .send({ message: 'hi', model: 'opus-5' });
+        .send({ message: 'hi', model: 'opus-5.5' });
       expect(res.status).toBe(200);
     });
 
@@ -302,7 +332,7 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
       initialArchitectureConfigSnapshot = null;
       const res = await request(app())
         .post(`/threads/${thread.id}/ask`)
-        .send({ message: 'hi', model: 'opus-5' });
+        .send({ message: 'hi', model: 'opus-5.5' });
       expect(res.status).toBe(200);
       expect(runAgentTurnMock).toHaveBeenCalledTimes(1);
     });

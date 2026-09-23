@@ -2,6 +2,7 @@ import { createMcpServer, mcpTool, type CapturedMcpServer } from '../plugin-runt
 import { z } from 'zod';
 import { toolError } from '../operations/envelope.js';
 import { runAgent, AgentError } from '../../core/agent/run-agent.js';
+import { DEFAULT_MODEL } from '../../core/agent/models.js';
 
 /**
  * `c4s-tools` — cross-cutting in-process MCP server expozujacy peer-consult
@@ -75,8 +76,9 @@ export function buildC4sToolsServer(callerWorkspace?: string): CapturedMcpServer
         .string()
         .optional()
         .describe(
-          'Peer turn model — claude-code: fable-5.1 / sonnet-5 / opus-5 / haiku-4.5. ' +
-            "Default: opus-5. Resume-immutable. Unknown values reach the peer and fail as AGENT_ERROR there.",
+          `Peer turn model alias. Default: ${DEFAULT_MODEL}. The selectable list is the peer's own, ` +
+            'published by its GET /api/chat/config. Resume-immutable. Passed through unvalidated here; ' +
+            'a value the peer does not offer fails on the peer side.',
         ),
       effort: z
         .enum(['low', 'medium', 'high'])

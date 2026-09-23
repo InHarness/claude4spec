@@ -1,18 +1,16 @@
 import { optionalString, type ParsedArgs } from './args.js';
-import { CliError } from './errors.js';
-import { ALLOWED_MODELS, type Model } from '../../server/routes/models.js';
 
 /**
- * Shared `--model` parsing for `c4s agent`/`c4s ask` — mirrors the existing
- * `--effort` pattern: an early, friendlier CLI-level check before `runAgent`
- * would otherwise forward an invalid value straight to the server (which
- * silently falls back to its own default instead of failing fast).
+ * Shared `--model` parsing for `c4s agent`/`c4s ask`.
+ *
+ * 0.2.108: pass-through, no local list. The selectable models are the PEER's
+ * contract — each project publishes its own through `GET /api/chat/config` — and
+ * the peer refuses anything outside it with `400` before the turn is dispatched.
+ * The local check used to exist because the server silently fell back to its own
+ * default; that fallback is gone, and a copy of the list here would only be a
+ * second, staler answer to a question the peer already answers. Absent flag →
+ * `undefined`, so `runAgent` applies `DEFAULT_MODEL`.
  */
-export function parseModelFlag(args: ParsedArgs): Model | undefined {
-  const raw = optionalString(args, 'model');
-  if (raw === undefined) return undefined;
-  if (!(ALLOWED_MODELS as readonly string[]).includes(raw)) {
-    throw new CliError('INVALID_ARGS', `--model must be one of: ${ALLOWED_MODELS.join('|')}`);
-  }
-  return raw as Model;
+export function parseModelFlag(args: ParsedArgs): string | undefined {
+  return optionalString(args, 'model');
 }

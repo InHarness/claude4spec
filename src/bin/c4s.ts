@@ -6,6 +6,7 @@ import { readPackageVersion } from './c4s/package-version.js';
 import { parseArgs } from './c4s/args.js';
 import { CliError, cliErrorFromDiscovery } from './c4s/errors.js';
 import { writeError } from './c4s/output.js';
+import { DEFAULT_MODEL } from '../core/agent/models.js';
 import type { CliCommandContribution } from './c4s/registry.js';
 import { inlineMentionCommand } from './c4s/commands/inline-mention.js';
 import { singleElementCommand } from './c4s/commands/single-element.js';
@@ -138,7 +139,8 @@ Agent:
     --server <url>                                    override server discovery (remote / one-off --port)
                                                       accepted by every server-delegating command, not just these
     --effort <low|medium|high>                        reasoning level for the turn (default medium)
-    --model <fable-5.1|sonnet-5|opus-5|haiku-4.5>       model for the turn (default opus-5)
+    --model <id>                                      model for the turn (default ${DEFAULT_MODEL});
+                                                      selectable list: the peer's GET /api/chat/config
 
 Discovery (through the server's operations — see "Server required" below):
   catalog                          counts + version + description + roleNoun + mcpToolsLine per type (smoke test)

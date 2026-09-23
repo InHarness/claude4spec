@@ -20,37 +20,34 @@ if (typeof window !== 'undefined') {
   }
 }
 
-export type ChatModel = 'fable-5.1' | 'sonnet-5' | 'opus-5' | 'haiku-4.5';
+/**
+ * A model alias as served by `GET /api/chat/config`. Deliberately a plain string: the
+ * selectable list, its order, the default and each model's class are the SERVER's
+ * contract (0.2.108) — the client renders what it receives and infers nothing from an
+ * alias name.
+ */
+export type ChatModel = string;
 export type ChatThinking = 'off' | 'low' | 'medium' | 'high' | 'max';
 
-// Models that use adaptive thinking + a reasoning-effort knob (claude_effort),
-// and therefore support the 'max' effort level. Mirrors agent-adapters
-// ADAPTIVE_THINKING_ONLY for the claude-code aliases we expose.
-// `haiku-4.5` is the only non-adaptive model left in the catalog, so the set is
-// "everything but Haiku" — spelled out rather than negated, because the next
-// model added is likelier to be adaptive than not and a negation would silently
-// class it wrong.
-export const ADAPTIVE_MODELS: ReadonlySet<ChatModel> = new Set(['fable-5.1', 'sonnet-5', 'opus-5']);
-export const isAdaptiveModel = (m: ChatModel): boolean => ADAPTIVE_MODELS.has(m);
-
-// Map UI thinking level → adapter architectureConfig.
-// Adaptive models (Fable 5, Sonnet 5, Opus 5) support 'adaptive' thinking only, plus a
-// reasoning-effort knob (claude_effort: low/medium/high/max) — the UI level drives
-// that effort. Other models use a fixed thinking budget; 'max' is adaptive-only so
-// it clamps to 'high'.
+// Map UI thinking level → adapter architectureConfig. There is one UI control
+// ("thinking"); which adapter field it drives is decided by the model's CLASS, read
+// from the `adaptive` field of the config payload (never from the alias name):
+// - adaptive-only → `claude_thinking: 'adaptive'` + `claude_effort` (low…max), and no
+//   fixed thinking budget at any level;
+// - otherwise → a fixed `claude_thinking_budget`; 'max' is adaptive-only, so it clamps
+//   to 'high'.
+// `adaptive === undefined` means the class is not known yet (config still loading, or
+// an alias the server no longer lists): send no reasoning fields rather than guess a
+// class — a budget on an adaptive-only model is exactly the mistake this avoids.
 export function thinkingToConfig(
   level: ChatThinking,
-  model: ChatModel,
+  adaptive: boolean | undefined,
 ): Record<string, unknown> | undefined {
-  if (level === 'off') return undefined;
-  if (isAdaptiveModel(model)) return { claude_thinking: 'adaptive', claude_effort: level };
+  if (level === 'off' || adaptive === undefined) return undefined;
+  if (adaptive) return { claude_thinking: 'adaptive', claude_effort: level };
   const budget = { low: 2048, medium: 8192, high: 24000, max: 24000 }[level];
   return { claude_thinking: 'enabled', claude_thinking_budget: budget };
 }
-
-const CHAT_MODELS: readonly ChatModel[] = ['fable-5.1', 'sonnet-5', 'opus-5', 'haiku-4.5'];
-export const isChatModel = (m: unknown): m is ChatModel =>
-  typeof m === 'string' && (CHAT_MODELS as readonly string[]).includes(m);
 
 // M05 0.1.61: inverse of thinkingToConfig — derive the UI thinking level from a stored
 // turn-1 architectureConfig snapshot, so a session-locked thread displays its own value.
@@ -75,7 +72,8 @@ interface ChatState {
   chatWidth: number;
   chatThreadId: string | null;
   annotations: Annotation[];
-  model: ChatModel;
+  /** Global model choice; `null` = the server's default (from `GET /api/chat/config`). */
+  model: ChatModel | null;
   thinking: ChatThinking;
   // One-shot seed dla inputu chatu: ustawiany tuz przed przelaczeniem watku
   // (np. „Run new thread" na patchu), konsumowany przez draft-restore effect
@@ -86,7 +84,8 @@ interface ChatState {
   setChatWidth(px: number): void;
   setChatThreadId(id: string | null): void;
   setSeedPrompt(p: string | null): void;
-  setModel(m: ChatModel): void;
+  /** `adaptive` = the class of `m` from the config payload; `false` clamps 'max' → 'high'. */
+  setModel(m: ChatModel, adaptive?: boolean): void;
   setThinking(t: ChatThinking): void;
   addAnnotation(a: Annotation): void;
   updateAnnotation(id: string, comment: string): void;
@@ -101,7 +100,7 @@ export const useChatStore = create<ChatState>()(
       chatWidth: 420,
       chatThreadId: null,
       annotations: [],
-      model: 'opus-5',
+      model: null,
       thinking: 'medium',
       seedPrompt: null,
       setChatOpen: (open) => set({ chatOpen: open }),
@@ -109,11 +108,11 @@ export const useChatStore = create<ChatState>()(
       setChatWidth: (px) => set({ chatWidth: Math.max(320, Math.min(900, px)) }),
       setChatThreadId: (id) => set({ chatThreadId: id }),
       setSeedPrompt: (p) => set({ seedPrompt: p }),
-      setModel: (m) =>
+      setModel: (m, adaptive) =>
         set((s) => ({
           model: m,
           // 'max' effort is adaptive-models only — clamp it when leaving that class.
-          thinking: !isAdaptiveModel(m) && s.thinking === 'max' ? 'high' : s.thinking,
+          thinking: adaptive === false && s.thinking === 'max' ? 'high' : s.thinking,
         })),
       setThinking: (t) => set({ thinking: t }),
       addAnnotation: (a) => set((s) => ({ annotations: [...s.annotations, a], chatOpen: true })),
@@ -127,24 +126,15 @@ export const useChatStore = create<ChatState>()(
     }),
     {
       name: projectKey('c4s:m05:chat-store'),
-      version: 3,
-      // v2: the retired Opus 4.x point-release remap (superseded by v3 below).
-      // v3: the whole pre-5 catalog left `ALLOWED_MODELS` in 0.2.17, so any
-      // alias persisted before then is one the server no longer accepts and
-      // every turn would fall into the route's invalid-alias coercion. Any
-      // unrecognised value is rewritten to the new default rather than to a
-      // nearest neighbour, because the reasoning CLASSES moved too — the old
-      // mid tier was non-adaptive and its successor is not — so a
-      // nearest-neighbour remap would silently change what the effort slider
-      // means. The default is the only mapping that is honest about it.
-      migrate: (persisted, version) => {
+      version: 4,
+      // v2/v3: retired alias remaps. v4 (0.2.108): the client no longer holds a list
+      // of models at all, so there is nothing to remap AGAINST here. A persisted alias
+      // is kept as-is; `<ChatOverlay />` swaps an alias the server no longer lists for
+      // the server's default once the config arrives, and clamps 'max' by the served
+      // `adaptive` class — both decided by the payload, not by a table in the store.
+      migrate: (persisted) => {
         const s = (persisted ?? {}) as Partial<ChatState>;
-        if (version < 3 && !isChatModel(s.model)) {
-          s.model = 'opus-5';
-        }
-        if (s.thinking === 'max' && !isAdaptiveModel(s.model as ChatModel)) {
-          s.thinking = 'high';
-        }
+        if (typeof s.model !== 'string') s.model = null;
         return s as ChatState;
       },
       partialize: (s) => ({

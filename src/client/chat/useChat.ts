@@ -191,7 +191,10 @@ export interface UseChatOptions {
   threadId: string | null;
   onThreadCreated?: (threadId: string) => void;
   onThreadMissing?: () => void;
-  model: ChatModel;
+  /** Selected alias; `null` until the config is known → the server applies its default. */
+  model: ChatModel | null;
+  /** Class of `model` from `GET /api/chat/config`; `undefined` = not known (see `thinkingToConfig`). */
+  adaptive: boolean | undefined;
   thinking: ChatThinking;
   planMode: boolean;
   /**
@@ -216,7 +219,9 @@ export const CHAT_ENDPOINTS = {
   queueClear: (tid: string) => `${API_BASE}/chat/queue/${encodeURIComponent(tid)}`,
 };
 
-export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMissing, model, thinking, planMode, onQueueCleared }: UseChatOptions) {
+export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMissing, model: selectedModel, adaptive, thinking, planMode, onQueueCleared }: UseChatOptions) {
+  // The reducer only uses the alias as a label; '' until the config is known.
+  const model = selectedModel ?? '';
   const { state, sendUserMessage, handleWireEvent, restoreMessages, clear } = useMessageReducer(
     'claude-code',
     model,
@@ -613,13 +618,14 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
       setUserPlanModes((prev) => [...prev, planMode]);
       setUserAnnotations((prev) => [...prev, annotations]);
 
-      const architectureConfig = thinkingToConfig(thinking, model);
+      const architectureConfig = thinkingToConfig(thinking, adaptive);
 
       const body = {
         prompt,
         threadId: currentThreadIdRef.current ?? undefined,
         architecture: 'claude-code',
-        model,
+        // No alias yet (config still loading) → omit it; the server applies DEFAULT_MODEL.
+        ...(selectedModel ? { model: selectedModel } : {}),
         planMode,
         ...(architectureConfig ? { architectureConfig } : {}),
         ...(annotations.length ? { annotations } : {}),
@@ -635,7 +641,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
 
       await startStream(body);
     },
-    [state.isStreaming, sendUserMessage, startStream, model, thinking, planMode],
+    [state.isStreaming, sendUserMessage, startStream, selectedModel, adaptive, thinking, planMode],
   );
 
   // Stop działa dla obu trybów: `abortStream` (z @inharness-ai/agent-chat) POST-uje

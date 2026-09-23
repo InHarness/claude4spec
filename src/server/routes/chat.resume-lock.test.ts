@@ -5,6 +5,7 @@ import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
 import { chatRouter } from './chat.js';
+import { DEFAULT_MODEL } from '../../core/agent/models.js';
 import type { AgentTurnDeps } from './agent-turn.js';
 import type { ChatThreadMeta } from '../../shared/entities.js';
 
@@ -101,12 +102,12 @@ describe('POST /api/chat — RESUME_CONFIG_LOCKED wiring (M05 item 33)', () => {
   it('409s with the static message and a dynamic violations[] when the FS scope changed', async () => {
     writeConfig({ agent: { allowedPaths: ['new'] } });
     snapshot = JSON.stringify({
-      model: 'opus-5',
+      model: 'opus-5.5',
       architectureConfig: {},
       allowedPaths: [path.join(dir, 'old')],
     });
 
-    const res = await post({ model: 'opus-5' });
+    const res = await post({ model: 'opus-5.5' });
 
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe('RESUME_CONFIG_LOCKED');
@@ -135,9 +136,9 @@ describe('POST /api/chat — RESUME_CONFIG_LOCKED wiring (M05 item 33)', () => {
    */
   it('does NOT lock plan mode on a resumed thread — the toggle stays live', async () => {
     thread = makeThread({ lastSessionId: 'sess-1', planMode: false });
-    snapshot = JSON.stringify({ model: 'opus-5', architectureConfig: {} });
+    snapshot = JSON.stringify({ model: 'opus-5.5', architectureConfig: {} });
 
-    const res = await post({ model: 'opus-5', planMode: true });
+    const res = await post({ model: 'opus-5.5', planMode: true });
 
     expect(res.status).not.toBe(409);
     expect(runAgentTurnMock).toHaveBeenCalled();
@@ -155,12 +156,12 @@ describe('POST /api/chat — RESUME_CONFIG_LOCKED wiring (M05 item 33)', () => {
   it('[ac:ac-wznowienie-watku-zalozonego-przy-inne] 409s when disableDirectFilesystemAccess changed since turn 1', async () => {
     writeConfig({ agent: { disableDirectFilesystemAccess: false } });
     snapshot = JSON.stringify({
-      model: 'opus-5',
+      model: 'opus-5.5',
       architectureConfig: {},
       disableDirectFilesystemAccess: true,
     });
 
-    const res = await post({ model: 'opus-5' });
+    const res = await post({ model: 'opus-5.5' });
 
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe('RESUME_CONFIG_LOCKED');
@@ -173,13 +174,13 @@ describe('POST /api/chat — RESUME_CONFIG_LOCKED wiring (M05 item 33)', () => {
   it('[ac:ac-flip-plan-mode-w-srodku-watku-nie-pow] does NOT 409 on a plan-mode flip while the flag is unchanged', async () => {
     writeConfig({ agent: { disableDirectFilesystemAccess: true } });
     snapshot = JSON.stringify({
-      model: 'opus-5',
+      model: 'opus-5.5',
       architectureConfig: {},
       disableDirectFilesystemAccess: true,
     });
     thread = makeThread({ lastSessionId: 'sess-1', planMode: false });
 
-    const res = await post({ model: 'opus-5', planMode: true });
+    const res = await post({ model: 'opus-5.5', planMode: true });
 
     expect(res.status).not.toBe(409);
     expect(runAgentTurnMock).toHaveBeenCalled();
@@ -193,9 +194,9 @@ describe('POST /api/chat — RESUME_CONFIG_LOCKED wiring (M05 item 33)', () => {
    */
   it('does not lock a pre-0.2.53 snapshot that has no flag recorded', async () => {
     writeConfig({ agent: { disableDirectFilesystemAccess: false } });
-    snapshot = JSON.stringify({ model: 'opus-5', architectureConfig: {} });
+    snapshot = JSON.stringify({ model: 'opus-5.5', architectureConfig: {} });
 
-    const res = await post({ model: 'opus-5' });
+    const res = await post({ model: 'opus-5.5' });
 
     expect(res.status).not.toBe(409);
     expect(runAgentTurnMock).toHaveBeenCalled();
@@ -204,9 +205,9 @@ describe('POST /api/chat — RESUME_CONFIG_LOCKED wiring (M05 item 33)', () => {
   /** The snapshot must not carry the field in the first place. */
   it('keeps planMode and disallowedToolGroups out of the turn-1 config snapshot', async () => {
     thread = makeThread({ lastSessionId: 'sess-1' });
-    snapshot = JSON.stringify({ model: 'opus-5', architectureConfig: {} });
+    snapshot = JSON.stringify({ model: 'opus-5.5', architectureConfig: {} });
 
-    await post({ model: 'opus-5', planMode: true });
+    await post({ model: 'opus-5.5', planMode: true });
 
     const [, input] = runAgentTurnMock.mock.calls.at(-1) as [
       unknown,
@@ -219,9 +220,8 @@ describe('POST /api/chat — RESUME_CONFIG_LOCKED wiring (M05 item 33)', () => {
   it('409s on a model change', async () => {
     snapshot = JSON.stringify({ model: 'haiku-4.5', architectureConfig: {} });
 
-    // Must be a member of ALLOWED_MODELS — the route silently coerces anything else
-    // back to the default, which would make this assert nothing.
-    const res = await post({ model: 'opus-5' });
+    // Must be selectable — anything else is a 400 before the resume guard runs.
+    const res = await post({ model: 'opus-5.5' });
 
     expect(res.status).toBe(409);
     expect(res.body.error.message).toBe(STATIC_MESSAGE);
@@ -232,12 +232,12 @@ describe('POST /api/chat — RESUME_CONFIG_LOCKED wiring (M05 item 33)', () => {
   it('lets a turn through when nothing locked has changed', async () => {
     writeConfig({ agent: { allowedPaths: ['same'] } });
     snapshot = JSON.stringify({
-      model: 'opus-5',
+      model: 'opus-5.5',
       architectureConfig: {},
       allowedPaths: [path.join(dir, 'same')],
     });
 
-    const res = await post({ model: 'opus-5' });
+    const res = await post({ model: 'opus-5.5' });
 
     expect(res.status).not.toBe(409);
     expect(runAgentTurnMock).toHaveBeenCalled();
@@ -248,8 +248,48 @@ describe('POST /api/chat — RESUME_CONFIG_LOCKED wiring (M05 item 33)', () => {
     writeConfig({ agent: { allowedPaths: ['whatever'] } });
     snapshot = JSON.stringify({ model: 'haiku-4.5', architectureConfig: {} });
 
-    const res = await post({ model: 'opus-5' });
+    const res = await post({ model: 'opus-5.5' });
 
     expect(res.status).not.toBe(409);
+  });
+
+  describe('0.2.108 — the selectable list is enforced before dispatch', () => {
+    it('400s a model outside the selectable list, even one the library still knows', async () => {
+      const res = await post({ model: 'opus-5' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('VALIDATION');
+      expect(res.body.error.message).toContain("'opus-5'");
+      expect(runAgentTurnMock).not.toHaveBeenCalled();
+    });
+
+    it('400s (not 409s) a resumed thread whose turn-1 snapshot pinned a retired alias', async () => {
+      snapshot = JSON.stringify({ model: 'opus-5', architectureConfig: {} });
+
+      const res = await post({ model: 'opus-5.5' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.message).toContain('new conversation');
+      expect(runAgentTurnMock).not.toHaveBeenCalled();
+    });
+
+    it('does not refuse a retired snapshot alias on a thread with no session', async () => {
+      thread = makeThread({ lastSessionId: null });
+      snapshot = JSON.stringify({ model: 'opus-5', architectureConfig: {} });
+
+      const res = await post({ model: 'opus-5.5' });
+
+      expect(res.status).not.toBe(400);
+      expect(runAgentTurnMock).toHaveBeenCalled();
+    });
+
+    it('runs a model-less request on the default', async () => {
+      thread = makeThread({ lastSessionId: null });
+
+      await post({});
+
+      const [, input] = runAgentTurnMock.mock.calls.at(-1) as [unknown, { model: string }];
+      expect(input.model).toBe(DEFAULT_MODEL);
+    });
   });
 });
