@@ -191,7 +191,10 @@ export interface UseChatOptions {
   threadId: string | null;
   onThreadCreated?: (threadId: string) => void;
   onThreadMissing?: () => void;
-  model: ChatModel;
+  /** Selected alias; `null` until the config is known → the server applies its default. */
+  model: ChatModel | null;
+  /** Class of `model` from `GET /api/chat/config`; `undefined` = not known (see `thinkingToConfig`). */
+  adaptive: boolean | undefined;
   thinking: ChatThinking;
   planMode: boolean;
   /**
@@ -216,11 +219,23 @@ export const CHAT_ENDPOINTS = {
   queueClear: (tid: string) => `${API_BASE}/chat/queue/${encodeURIComponent(tid)}`,
 };
 
-export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMissing, model, thinking, planMode, onQueueCleared }: UseChatOptions) {
+export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMissing, model: selectedModel, adaptive, thinking, planMode, onQueueCleared }: UseChatOptions) {
+  // The reducer only uses the alias as a label; '' until the config is known.
+  const model = selectedModel ?? '';
   const { state, sendUserMessage, handleWireEvent, restoreMessages, clear } = useMessageReducer(
     'claude-code',
     model,
   );
+  // The thread-load effect reads the label and `restoreMessages` (whose identity follows
+  // `model`) through refs, NOT through its deps: the alias now changes on its own — ''
+  // → the served default when the config arrives, a stale alias → the default, a
+  // session-locked thread's alias restored — and a model change must never tear down and
+  // refetch the thread (disconnecting its live stream, or ping-ponging with the
+  // restore/fallback effects in `<ChatOverlay />` into an endless refetch).
+  const modelLabelRef = useRef(model);
+  modelLabelRef.current = model;
+  const restoreMessagesRef = useRef(restoreMessages);
+  restoreMessagesRef.current = restoreMessages;
 
   // Ref so `onEvent`'s identity stays stable (it feeds useEventStream's memo).
   const onQueueClearedRef = useRef(onQueueCleared);
@@ -613,13 +628,14 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
       setUserPlanModes((prev) => [...prev, planMode]);
       setUserAnnotations((prev) => [...prev, annotations]);
 
-      const architectureConfig = thinkingToConfig(thinking, model);
+      const architectureConfig = thinkingToConfig(thinking, adaptive);
 
       const body = {
         prompt,
         threadId: currentThreadIdRef.current ?? undefined,
         architecture: 'claude-code',
-        model,
+        // No alias yet (config still loading) → omit it; the server applies DEFAULT_MODEL.
+        ...(selectedModel ? { model: selectedModel } : {}),
         planMode,
         ...(architectureConfig ? { architectureConfig } : {}),
         ...(annotations.length ? { annotations } : {}),
@@ -635,7 +651,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
 
       await startStream(body);
     },
-    [state.isStreaming, sendUserMessage, startStream, model, thinking, planMode],
+    [state.isStreaming, sendUserMessage, startStream, selectedModel, adaptive, thinking, planMode],
   );
 
   // Stop działa dla obu trybów: `abortStream` (z @inharness-ai/agent-chat) POST-uje
@@ -841,7 +857,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
               synthesizedUserInputsRef.current.add(row.toolId);
             }
           }
-          restoreMessages(slicedMessages, thread.lastSessionId ?? undefined, 'claude-code', model, queuedMessages);
+          restoreMessagesRef.current(slicedMessages, thread.lastSessionId ?? undefined, 'claude-code', modelLabelRef.current, queuedMessages);
           setIsResuming(true);
           // Fire-and-forget: fetch+restore konczy sie szybko (zwalnia loadingThreadRef),
           // a join trwa do konca tury. Kontynuacja po resolve obsluguje wyscig — tura
@@ -850,11 +866,11 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
             if (currentThreadIdRef.current !== threadId) return;
             setIsResuming(false);
             if (!joined) {
-              restoreMessages(fullMessages, thread.lastSessionId ?? undefined, 'claude-code', model, queuedMessages);
+              restoreMessagesRef.current(fullMessages, thread.lastSessionId ?? undefined, 'claude-code', modelLabelRef.current, queuedMessages);
             }
           });
         } else {
-          restoreMessages(fullMessages, thread.lastSessionId ?? undefined, 'claude-code', model, queuedMessages);
+          restoreMessagesRef.current(fullMessages, thread.lastSessionId ?? undefined, 'claude-code', modelLabelRef.current, queuedMessages);
         }
       } catch {
         if (currentThreadIdRef.current === threadId) {
@@ -873,7 +889,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
       setIsResuming(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadId, serverUrl, restoreMessages, clear, model, onThreadMissing, joinStream, disconnectStream]);
+  }, [threadId, serverUrl, clear, onThreadMissing, joinStream, disconnectStream]);
 
   useEffect(() => {
     setPendingUserInputs([]);

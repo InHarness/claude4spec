@@ -599,14 +599,28 @@ export interface SessionResumeConstraint {
   reason: string;
 }
 
+/**
+ * 0.2.108 — one selectable model, as served by `GET /api/chat/config`. The list's
+ * ORDER is part of the contract (strongest first); the picker renders it as received.
+ */
+export interface ChatModelInfo {
+  /** The alias the user picks; goes back as `model` in the turn request. */
+  alias: string;
+  /** From `resolveModel` — the key the model's class is read by. */
+  resolvedId: string;
+  /** Adaptive-only → reasoning via `claude_effort`, never a fixed thinking budget. */
+  adaptive: boolean;
+  /** Context window in tokens — the usage badge's denominator. */
+  contextWindow: number;
+}
+
 export interface ChatConfigResponse {
   architectures: Record<
     string,
     {
-      models: string[];
+      models: ChatModelInfo[];
+      /** An alias from `models`. */
       default: string;
-      /** Context window per model alias — the badge's denominator, from the adapter package. */
-      contextWindows?: Record<string, number>;
     }
   >;
   defaultArchitecture: string;

@@ -123,10 +123,10 @@ describe.skipIf(!BASE)('background-task detail projection', () => {
               chatOpen: true,
               chatWidth: 560,
               chatThreadId: tid,
-              model: 'opus-5',
+              model: 'opus-5.5',
               thinking: 'medium',
             },
-            version: 3,
+            version: 4,
           }),
         );
       },

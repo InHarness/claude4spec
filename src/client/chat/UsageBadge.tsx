@@ -1,18 +1,15 @@
 import { useState } from 'react';
 import type { UsageStats } from '@inharness-ai/agent-chat';
-import type { ChatModel } from '../state/chat.js';
 
 /**
  * Fallback okna kontekstu — używany wyłącznie, dopóki `GET /api/chat/config`
- * się nie wczyta (albo gdy nie zna aliasu).
+ * się nie wczyta.
  *
- * Do 0.2.16 stała tu pełna, ręcznie utrzymywana tabela per model. Katalog
- * przestał być jednorodny (`fable-5.1` / `sonnet-5` / `opus-5` → 1M,
- * `haiku-4.5` → 200k), więc kopia rozjeżdżałaby się z prawdą o 5x na modelu
- * domyślnym. Prawdę zna `getModelContextWindow('claude-code', model)` z
- * @inharness-ai/agent-adapters — ale main entry paczki ciągnie `fs/promises`
- * / `os` / `path`, więc klient importuje z niej wyłącznie TYPY. Wartości
- * przychodzą przez `architectures['claude-code'].contextWindows`.
+ * 0.2.108: badge nie ma własnej wiedzy o oknach — ani tabeli per alias, ani
+ * wywołania `getModelContextWindow` (main entry @inharness-ai/agent-adapters
+ * ciągnie `fs/promises` / `os` / `path`, klient importuje z niej wyłącznie TYPY).
+ * Okno przychodzi jako `contextWindow` pozycji wybranego modelu w odpowiedzi
+ * konfiguracji.
  *
  * Override per-thread przez `architectureConfig.context_window_override`
  * (konwencja z agent-adapters/src/options.ts — UI-only, adaptery ignorują).
@@ -22,23 +19,21 @@ const FALLBACK_CONTEXT_WINDOW = 200_000;
 interface Props {
   usage: UsageStats | null;
   contextSize: number | null;
-  model: ChatModel;
   architectureConfig?: Record<string, unknown>;
-  /** Per-alias okna kontekstu z `GET /api/chat/config`; brak = fallback. */
-  contextWindows?: Record<string, number>;
+  /** `contextWindow` wybranego modelu z `GET /api/chat/config`; brak = fallback. */
+  contextWindow?: number;
 }
 
 export function UsageBadge({
   usage,
   contextSize,
-  model,
   architectureConfig,
-  contextWindows,
+  contextWindow: servedContextWindow,
 }: Props) {
   const [showTooltip, setShowTooltip] = useState(false);
   const overrideRaw = architectureConfig?.context_window_override;
   const override = typeof overrideRaw === 'number' && overrideRaw > 0 ? overrideRaw : undefined;
-  const contextWindow = override ?? contextWindows?.[model] ?? FALLBACK_CONTEXT_WINDOW;
+  const contextWindow = override ?? servedContextWindow ?? FALLBACK_CONTEXT_WINDOW;
 
   // Badge liczymy z usage OSTATNIEJ wiadomości = realne zajęcie okna kontekstu.
   // Prop `contextSize` (event `result`) to kumulatyw per-query() — suma inputTokens

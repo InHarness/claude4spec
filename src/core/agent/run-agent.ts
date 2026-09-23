@@ -8,6 +8,7 @@ import {
   postJson,
   resolveServer,
 } from './http.js';
+import { DEFAULT_MODEL } from './models.js';
 
 /**
  * 0.2.13 — address resolution, the health-check and the JSON verbs moved to
@@ -50,14 +51,11 @@ export type AgentContextType = 'chat' | 'brief' | 'patch' | 'ask';
 /**
  * Default model resolved here so every transport shares one source of truth.
  *
- * Exported rather than kept local, and that is the whole point of the constant:
- * the HTTP handlers behind `/api/chat` and `/api/threads/:id/ask` each used to
- * carry their OWN literal fallback (a retired mid-tier alias), which is how the repo ended
- * up answering a model-less call differently depending on which door it came
- * through. One literal, imported by the routes — the grep-proof property the
- * spec asks for, without a handler quietly inventing a second default.
+ * Defined in `./models.ts` next to the selectable list and re-exported, because the
+ * HTTP handlers behind `/api/chat` and `/api/threads/:id/ask` import it from here: one
+ * literal, imported by the routes — no handler quietly inventing a second default.
  */
-export const DEFAULT_MODEL = 'opus-5';
+export { DEFAULT_MODEL };
 
 /** Default reasoning level resolved here — single source of truth, jak `DEFAULT_MODEL`. */
 const DEFAULT_EFFORT = 'medium';
@@ -98,8 +96,8 @@ export interface AgentParams {
   roots?: string[];
   suffix?: string;
   /**
-   * Model tury; claude-code: `fable-5.1` / `sonnet-5` / `opus-5` / `haiku-4.5`.
-   * Domyslnie `'opus-5'` (rozwiazywany tutaj).
+   * Model tury — alias z listy wystawianej przez `GET /api/chat/config` peera
+   * (kazdy projekt publikuje wlasna). Domyslnie `DEFAULT_MODEL` (rozwiazywany tutaj).
    */
   model?: string;
   /** Poziom reasoning tury; domyslnie `'medium'` (rozwiazywany tutaj). */
