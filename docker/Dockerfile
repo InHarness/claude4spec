@@ -44,10 +44,17 @@ COPY package.json ./
 # 10.9.8 — what node:22-bookworm-slim ships — also dies resolving the peer set
 # of a plain REGISTRY tree (`idealTree:node_modules/vitest`), which took out
 # every `registry`-mode environment as well, and looked like a bad library pin
-# because it surfaced on the install that follows the rewrite. Pinned, not
-# `npm@latest`, for the reason deps-local states: a build that resolves a
-# different npm on each run can start failing without a commit.
-RUN npm i -g npm@12 \
+# because it surfaced on the install that follows the rewrite.
+#
+# npm@11, the same version deps-local pins, and NOT a later one. npm 12 blocks
+# a dependency's `install` script unless it is listed under `allowScripts`, so
+# `better-sqlite3` installs without ever compiling its native addon. Nothing
+# fails: the block is a `npm warn`, the build exits 0, and the image dies on
+# first boot with "Could not locate the bindings file" from `context-cache`.
+# A green build and a dead container is the worst failure shape available, and
+# every future native dependency would reproduce it, so the version that runs
+# install scripts is the one to hold.
+RUN npm i -g npm@11 \
     && sed -i \
     -e "s#\"@inharness-ai/agent-adapters\": \"[^\"]*\"#\"@inharness-ai/agent-adapters\": \"${AGENT_ADAPTERS_VERSION}\"#" \
     -e "s#\"@inharness-ai/agent-chat\": \"[^\"]*\"#\"@inharness-ai/agent-chat\": \"${AGENT_CHAT_VERSION}\"#" \
