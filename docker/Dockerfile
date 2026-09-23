@@ -12,8 +12,8 @@
 
 ARG NODE_VERSION=22
 ARG DEPS_MODE=registry
-ARG AGENT_ADAPTERS_VERSION=^0.9.1
-ARG AGENT_CHAT_VERSION=^0.3.1
+ARG AGENT_ADAPTERS_VERSION=^0.9.13
+ARG AGENT_CHAT_VERSION=^0.3.4
 
 FROM node:${NODE_VERSION}-bookworm-slim AS base
 WORKDIR /app
@@ -38,7 +38,24 @@ COPY package.json ./
 # env-runner's `registry` mode passes to pin a library version — is ignored in
 # favour of whatever range happens to be committed. Keying on the name covers
 # both forms.
-RUN sed -i \
+#
+# npm is upgraded before the install here too. The `edgesOut` crash below was
+# read as a `file:`-only failure when deps-local first hit it; it is not. npm
+# 10.9.8 — what node:22-bookworm-slim ships — also dies resolving the peer set
+# of a plain REGISTRY tree (`idealTree:node_modules/vitest`), which took out
+# every `registry`-mode environment as well, and looked like a bad library pin
+# because it surfaced on the install that follows the rewrite.
+#
+# npm@11, the same version deps-local pins, and NOT a later one. npm 12 blocks
+# a dependency's `install` script unless it is listed under `allowScripts`, so
+# `better-sqlite3` installs without ever compiling its native addon. Nothing
+# fails: the block is a `npm warn`, the build exits 0, and the image dies on
+# first boot with "Could not locate the bindings file" from `context-cache`.
+# A green build and a dead container is the worst failure shape available, and
+# every future native dependency would reproduce it, so the version that runs
+# install scripts is the one to hold.
+RUN npm i -g npm@11 \
+    && sed -i \
     -e "s#\"@inharness-ai/agent-adapters\": \"[^\"]*\"#\"@inharness-ai/agent-adapters\": \"${AGENT_ADAPTERS_VERSION}\"#" \
     -e "s#\"@inharness-ai/agent-chat\": \"[^\"]*\"#\"@inharness-ai/agent-chat\": \"${AGENT_CHAT_VERSION}\"#" \
     package.json \
@@ -63,14 +80,17 @@ COPY package.json ./
 # look broken: an app commit needing an unpublished export failed to compile in
 # `local` mode, the one mode that was supposed to supply it.
 #
-# npm is upgraded before the install, and only in this stage. npm 10.9.x — what
-# node:22-bookworm-slim ships — cannot resolve a `file:` dependency at all: it
-# dies with `Cannot read properties of null (reading 'edgesOut')` before
-# installing anything. deps-registry never meets a `file:` dep, so the bug is
-# invisible in the default mode and takes out ONLY this one, which is to say
-# every env-runner environment built in `local` mode, on every branch. Pinned
-# rather than `npm@latest`: a build that resolves a different npm on each run is
-# a build that can start failing without a commit.
+# npm is upgraded before the install. npm 10.9.x — what node:22-bookworm-slim
+# ships — cannot resolve a `file:` dependency at all: it dies with `Cannot read
+# properties of null (reading 'edgesOut')` before installing anything.
+#
+# This stage used to say the bug was invisible in `registry` mode because
+# deps-registry never meets a `file:` dep. That was wrong, and the correction is
+# worth keeping: the same crash later took out `registry` mode too, on the peer
+# set of an ordinary tree (`idealTree:node_modules/vitest`), where it read as a
+# bad library pin rather than as an npm bug. Both stages upgrade now; see
+# deps-registry. Pinned rather than `npm@latest`: a build that resolves a
+# different npm on each run is a build that can start failing without a commit.
 #
 # The lockfile is dropped rather than passed, exactly as deps-registry drops it:
 # it pins whichever of the two forms was current when it was written, and npm

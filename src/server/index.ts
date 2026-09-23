@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import { WsGateway } from './ws/gateway.js';
 import { FileWatchRuntime } from './fs/watcher.js';
 import { PLUGINS_BASE_SOURCE } from './fs/sources.js';
-import { WorkspaceRegistry } from './workspace/registry.js';
+import { WorkspaceRegistry, DEFAULT_WORKSPACE_PORT } from './workspace/registry.js';
 import { migrateLegacyDbIfNeeded } from './workspace/db-migration.js';
 import { bootstrapProject } from './workspace/bootstrap.js';
 import { buildProjectContext } from './workspace/project-context.js';
@@ -25,6 +25,7 @@ import {
 } from './core/plugin-host/loader.js';
 import { resolvePluginPackages } from './workspace/registry.js';
 import { pluginsRouter } from './routes/plugins.js';
+import { errorHandler } from './routes/errors.js';
 import { buildImportMap } from './core/plugin-host/runtime-shims.js';
 import { discoverBuiltinEnvelopes, servableEnvelopes } from './core/plugin-host/builtin-envelopes.js';
 
@@ -70,7 +71,10 @@ export interface ServerHandle {
   shutdown: () => Promise<void>;
 }
 
-const DEFAULT_PORT = 3000;
+// M49: the process's default listening port — the same 4500 the workspace
+// registry seeds (`DEFAULT_WORKSPACE_PORT`), so a caller that omits `port`
+// lands where `c4s` looks for the server.
+const DEFAULT_PORT = DEFAULT_WORKSPACE_PORT;
 
 // M01: deterministyczny port. Przy zajetym porcie serwer NIE wskakuje juz na
 // `port+1` — failuje z czytelnym bledem i niezerowym exit code. Powod: stały
@@ -443,6 +447,11 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     }),
   );
   app.use('/api/projects/:id', projectDispatchMiddleware(registry, workspace, cache));
+  // M49: the envelope is the layer's, not the module's. Anything a route under
+  // `/api` passes to `next(err)` without an error handler of its own — the
+  // workspace and plugin routers, a body that failed to parse — leaves as
+  // `{ error: { code, message } }` instead of Express's HTML error page.
+  app.use('/api', errorHandler);
 
   // Eager warm of the CLI-started project: clone executes before listen and a
   // broken initial config still fails the boot fast (parity with pre-M31). A

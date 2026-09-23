@@ -32,4 +32,54 @@ describe('errorHandler', () => {
     expect(status).toHaveBeenCalledWith(400);
     expect(json).toHaveBeenCalledWith({ error: { code: 'VALIDATION', message: 'bad input' } });
   });
+
+  it('0.2.106 (M49): a middleware client error (malformed JSON body) leaves as 400 VALIDATION, not 500', () => {
+    const next = vi.fn();
+    const json = vi.fn();
+    const status = vi.fn().mockReturnValue({ json });
+    const res = { headersSent: false, status } as unknown as Response;
+    // The shape `express.json` passes to `next(err)` on a body it cannot parse.
+    const err = Object.assign(new SyntaxError('Unexpected token } in JSON'), { status: 400, type: 'entity.parse.failed' });
+
+    errorHandler(err, {} as Request, res, next);
+
+    expect(status).toHaveBeenCalledWith(400);
+    expect(json).toHaveBeenCalledWith({ error: { code: 'VALIDATION', message: 'Unexpected token } in JSON' } });
+  });
+
+  it('0.2.106 (M49): an oversized body (413) folds into the closed status set as 400', () => {
+    const json = vi.fn();
+    const status = vi.fn().mockReturnValue({ json });
+    const res = { headersSent: false, status } as unknown as Response;
+
+    errorHandler(
+      Object.assign(new Error('request entity too large'), { status: 413, type: 'entity.too.large' }),
+      {} as Request,
+      res,
+      vi.fn(),
+    );
+
+    expect(status).toHaveBeenCalledWith(400);
+  });
+
+  /**
+   * The branch above matches body-parser's `type`, not a bare 4xx `status`, and
+   * this is why. `RemoteRequestError` carries the REMOTE peer's status, so a
+   * rate-limited upstream would otherwise be rendered to the user as "your
+   * request is malformed" — and `remote-project.ts` maps the same error to
+   * `502 REMOTE_UNAVAILABLE`, which is the opposite reading.
+   */
+  it('does not treat a relayed upstream status as the caller\'s validation error', () => {
+    const json = vi.fn();
+    const status = vi.fn().mockReturnValue({ json });
+    const res = { headersSent: false, status } as unknown as Response;
+    const err = Object.assign(new Error('device/code failed (HTTP 429)'), { status: 429 });
+
+    errorHandler(err, {} as Request, res, vi.fn());
+
+    expect(status).toHaveBeenCalledWith(500);
+    expect(json).toHaveBeenCalledWith({
+      error: { code: 'INTERNAL', message: 'device/code failed (HTTP 429)' },
+    });
+  });
 });

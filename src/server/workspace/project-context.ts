@@ -884,28 +884,28 @@ async function buildInner(
   const crudFacade: CrudFacade = {
     create: async (type, input, actor) => {
       const result = genericCreate(crudDeps, type, input, actor);
-      ws.broadcast({ kind: 'entity:changed', entityType: type, slug: result.slug });
+      ws.broadcast({ kind: 'entity:changed', entityType: type, slug: result.slug, action: 'create' });
       return result;
     },
     update: async (type, slug, input, actor) => {
       const result = genericUpdate(crudDeps, type, slug, input, actor);
       await propagateRename(crudDeps, type, slug, result.slug);
-      ws.broadcast({ kind: 'entity:changed', entityType: type, slug: result.slug });
+      ws.broadcast({ kind: 'entity:changed', entityType: type, slug: result.slug, action: 'update' });
       return result;
     },
     delete: async (type, slug, actor) => {
       const result = genericDelete(crudDeps, type, slug, actor);
-      ws.broadcast({ kind: 'entity:changed', entityType: type, slug });
+      ws.broadcast({ kind: 'entity:changed', entityType: type, slug, action: 'delete' });
       return result;
     },
     writeCollectionWindow: async (type, slug, field, entries, actor) => {
       const result = genericWriteCollectionWindow(crudDeps, type, slug, field, entries, actor);
-      ws.broadcast({ kind: 'entity:changed', entityType: type, slug });
+      ws.broadcast({ kind: 'entity:changed', entityType: type, slug, action: 'update' });
       return result;
     },
     mutateCollectionAxis: async (type, slug, field, axisKey, op, at, actor) => {
       const result = genericMutateCollectionAxis(crudDeps, type, slug, field, axisKey, op, at, actor);
-      ws.broadcast({ kind: 'entity:changed', entityType: type, slug });
+      ws.broadcast({ kind: 'entity:changed', entityType: type, slug, action: 'update' });
       return result;
     },
   };
@@ -1363,7 +1363,7 @@ async function buildInner(
   router.use('/static/:rootId', staticRouter(resolveStatic));
   router.use('/tags', tagsRouter(tagsService, referencesService, discovery));
   router.use('/references', referencesRouter(pluginHost, referencesService, discovery, discoveryForRoots));
-  router.use('/entities', entitiesRouter(pluginHost, tagsService, versionService, entityStore, rawReader, discovery));
+  router.use('/entities', entitiesRouter(pluginHost, tagsService, versionService, entityStore, rawReader, discovery, ws));
 
   /**
    * Host API 2.0.0 (item 31) — `/api/{type}s` for every type that declares its

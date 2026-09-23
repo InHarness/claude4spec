@@ -175,28 +175,28 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
   const crudFacade: CrudFacade = {
     create: async (type, input, actor) => {
       const result = genericCreate(crudDeps, type, input, actor);
-      ws.broadcast({ kind: 'entity:changed', entityType: type, slug: result.slug });
+      ws.broadcast({ kind: 'entity:changed', entityType: type, slug: result.slug, action: 'create' });
       return result;
     },
     update: async (type, slug, input, actor) => {
       const result = genericUpdate(crudDeps, type, slug, input, actor);
       await propagateRename(crudDeps, type, slug, result.slug);
-      ws.broadcast({ kind: 'entity:changed', entityType: type, slug: result.slug });
+      ws.broadcast({ kind: 'entity:changed', entityType: type, slug: result.slug, action: 'update' });
       return result;
     },
     delete: async (type, slug, actor) => {
       const result = genericDelete(crudDeps, type, slug, actor);
-      ws.broadcast({ kind: 'entity:changed', entityType: type, slug });
+      ws.broadcast({ kind: 'entity:changed', entityType: type, slug, action: 'delete' });
       return result;
     },
     writeCollectionWindow: async (type, slug, field, entries, actor) => {
       const result = genericWriteCollectionWindow(crudDeps, type, slug, field, entries, actor);
-      ws.broadcast({ kind: 'entity:changed', entityType: type, slug });
+      ws.broadcast({ kind: 'entity:changed', entityType: type, slug, action: 'update' });
       return result;
     },
     mutateCollectionAxis: async (type, slug, field, axisKey, op, at, actor) => {
       const result = genericMutateCollectionAxis(crudDeps, type, slug, field, axisKey, op, at, actor);
-      ws.broadcast({ kind: 'entity:changed', entityType: type, slug });
+      ws.broadcast({ kind: 'entity:changed', entityType: type, slug, action: 'update' });
       return result;
     },
   };
@@ -289,7 +289,7 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
       versionService,
     }),
   );
-  router.use('/entities', entitiesRouter(host, tagsService, versionService, entityStore, rawReader, discovery));
+  router.use('/entities', entitiesRouter(host, tagsService, versionService, entityStore, rawReader, discovery, ws));
   /**
    * 0.2.13 — the catalog's new `rest` renderings, mirroring `project-context.ts`.
    * `/_meta` carries only the four M39 operations here; the activation and

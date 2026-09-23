@@ -115,23 +115,34 @@ export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
     }
   });
 
-  router.post('/workspace/projects', async (req, res) => {
+  // 0.2.106 (M49): `AddProjectResponse` is `{ projectId }` — the UI navigates to
+  // `/p/<projectId>/`. The target must already be a readable+writable directory:
+  // a missing or unreachable path is the user's typo, answered inline in the
+  // modal as `400 VALIDATION`, never created on their behalf and never a 500.
+  // (The CLI start path still `mkdir`s its `--cwd` — that lives in the bootstrap.)
+  router.post('/workspace/projects', async (req, res, next) => {
     const cwd = req.body?.cwd;
     if (typeof cwd !== 'string' || cwd.trim() === '' || !path.isAbsolute(cwd)) {
       return res.status(400).json({
         error: { code: 'VALIDATION', message: 'cwd must be an absolute path' },
       });
     }
+    const target = path.resolve(cwd);
+    const unusable = unusableDirectoryReason(target);
+    if (unusable) {
+      return res.status(400).json({ error: { code: 'VALIDATION', message: unusable } });
+    }
     try {
-      const project = await deps.activateProject(path.resolve(cwd));
-      res.status(201).json({ project: { ...project, live: cache.isLive(project.id) } });
+      const project = await deps.activateProject(target);
+      res.status(201).json({ projectId: project.id });
     } catch (err) {
-      res.status(500).json({
-        error: {
-          code: 'PROJECT_BOOTSTRAP_FAILED',
-          message: err instanceof Error ? err.message : String(err),
-        },
-      });
+      const code = (err as NodeJS.ErrnoException | null)?.code;
+      if (code && FS_VALIDATION_CODES.has(code)) {
+        return res.status(400).json({
+          error: { code: 'VALIDATION', message: err instanceof Error ? err.message : String(err) },
+        });
+      }
+      next(err);
     }
   });
 
@@ -140,43 +151,49 @@ export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
   // (?purgeData=true) additionally rm -rf's the slot dir AFTER the context is
   // disposed — the entity index AND runtime are gone, but nothing in `cwd`
   // (config.json/pages/entities) is ever touched.
-  router.delete('/workspace/projects/:id', async (req, res) => {
-    const id = req.params.id;
-    const purge = req.query.purgeData === 'true';
-    const project = registry.getProject(workspace, id);
-    if (!project) {
-      return res.status(404).json({
-        error: { code: 'PROJECT_NOT_IN_WORKSPACE', message: `project '${id}' not in workspace '${workspace.name}'` },
-      });
+  router.delete('/workspace/projects/:id', async (req, res, next) => {
+    try {
+      const id = req.params.id;
+      const purge = req.query.purgeData === 'true';
+      const project = registry.getProject(workspace, id);
+      if (!project) {
+        return res.status(404).json({
+          error: { code: 'PROJECT_NOT_IN_WORKSPACE', message: `project '${id}' not in workspace '${workspace.name}'` },
+        });
+      }
+      // Purge is an explicit destructive human action — a silent defer would be
+      // misleading, so a busy project is rejected. Detach can defer safely (the
+      // context parks in `retired` and disposes once idle).
+      if (purge && cache.getLive(id)?.hasInFlightTurn()) {
+        return res.status(409).json({
+          error: { code: 'PROJECT_BUSY', message: 'project has an in-flight agent turn' },
+        });
+      }
+      registry.removeProject(workspace, id);
+      if (purge) {
+        // Await dispose (releases this context's db reference) before removing
+        // the slot dir. `retire` no longer guarantees the handle is CLOSED — a
+        // retired predecessor may still hold a reference to the same slot — so
+        // the map entry is dropped explicitly: without it, re-registering this
+        // cwd would reuse a handle onto the deleted file. See `forgetDbSlot`.
+        await cache.retire(id);
+        forgetDbSlot(workspace, id);
+        fs.rmSync(registry.slotDir(workspace, id), { recursive: true, force: true });
+      } else {
+        // Context retires/disposes; the DB slot stays on disk (re-register = same index).
+        cache.invalidate(id);
+      }
+      const fresh = registry.getWorkspace(workspace.name) ?? workspace;
+      // Most-recently-opened of the remainder → first → null (empty workspace).
+      const redirectProjectId =
+        [...fresh.projects].sort((a, b) => (b.lastOpened ?? '').localeCompare(a.lastOpened ?? ''))[0]?.id ??
+        null;
+      res.json({ projects: serializeProjects(fresh), redirectProjectId });
+    } catch (err) {
+      // Express 4 does not catch a rejected async handler — without this a failed
+      // dispose or `rmSync` was an unhandled rejection and a hung request.
+      next(err);
     }
-    // Purge is an explicit destructive human action — a silent defer would be
-    // misleading, so a busy project is rejected. Detach can defer safely (the
-    // context parks in `retired` and disposes once idle).
-    if (purge && cache.getLive(id)?.hasInFlightTurn()) {
-      return res.status(409).json({
-        error: { code: 'PROJECT_BUSY', message: 'project has an in-flight agent turn' },
-      });
-    }
-    registry.removeProject(workspace, id);
-    if (purge) {
-      // Await dispose (releases this context's db reference) before removing
-      // the slot dir. `retire` no longer guarantees the handle is CLOSED — a
-      // retired predecessor may still hold a reference to the same slot — so
-      // the map entry is dropped explicitly: without it, re-registering this
-      // cwd would reuse a handle onto the deleted file. See `forgetDbSlot`.
-      await cache.retire(id);
-      forgetDbSlot(workspace, id);
-      fs.rmSync(registry.slotDir(workspace, id), { recursive: true, force: true });
-    } else {
-      // Context retires/disposes; the DB slot stays on disk (re-register = same index).
-      cache.invalidate(id);
-    }
-    const fresh = registry.getWorkspace(workspace.name) ?? workspace;
-    // Most-recently-opened of the remainder → first → null (empty workspace).
-    const redirectProjectId =
-      [...fresh.projects].sort((a, b) => (b.lastOpened ?? '').localeCompare(a.lastOpened ?? ''))[0]?.id ??
-      null;
-    res.json({ projects: serializeProjects(fresh), redirectProjectId });
   });
 
   // Reveal a project directory in the OS file manager (Finder/Explorer/xdg).
@@ -221,4 +238,24 @@ export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
   });
 
   return router;
+}
+
+/** Filesystem refusals that are the caller's path, not the server's fault. */
+const FS_VALIDATION_CODES = new Set(['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM', 'EROFS']);
+
+/** Why `dir` cannot become a project, or `null` when it can. */
+function unusableDirectoryReason(dir: string): string | null {
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(dir);
+  } catch {
+    return `directory does not exist: ${dir}`;
+  }
+  if (!stat.isDirectory()) return `not a directory: ${dir}`;
+  try {
+    fs.accessSync(dir, fs.constants.R_OK | fs.constants.W_OK);
+  } catch {
+    return `no read/write permission for directory: ${dir}`;
+  }
+  return null;
 }

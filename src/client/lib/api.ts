@@ -9,6 +9,7 @@ import type {
   TodoHit,
 } from '../../shared/types.js';
 import type { PluginActivationState } from '../../shared/plugin-host/types.js';
+import type { PluginMigrationInfo } from '../../shared/plugin-host/host-api.js';
 import type { FrontendManifestResponse } from '../../shared/plugin-host/frontend-manifest.js';
 import type {
   PluginCommandContribution,
@@ -531,9 +532,12 @@ export const versionsApi = {
 /** One package row in the per-project `/_meta/plugins` diagnostics (M33 phase 2). */
 export interface PluginPackageRecord {
   package: string;
-  status: 'loaded' | 'skipped' | 'failed';
+  /** 0.2.106: `incompatible` = a MAJOR `hostApiVersion` mismatch that has a migration path. */
+  status: 'loaded' | 'skipped' | 'failed' | 'incompatible';
   code?: string;
   reason?: string;
+  /** Present only with `status: 'incompatible'`. */
+  migration?: PluginMigrationInfo;
   manifestName?: string;
   manifestVersion?: string;
   contributedTypes?: string[];

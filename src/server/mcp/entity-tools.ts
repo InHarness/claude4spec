@@ -39,6 +39,7 @@ import {
 import type { TagsService } from '../services/tags.js';
 import type { EntityStore } from '../services/entity-store.js';
 import type { VersionService } from '../services/versions.js';
+import type { WsChangeAction } from '../../shared/types.js';
 
 export interface EntityToolsDeps {
   host: ProjectPluginHost;
@@ -206,8 +207,8 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
     return { items: page.items.map((i) => ({ slug: i.slug, title: i.title })), total: page.total };
   };
 
-  const broadcastChanged = (type: string, slug: string): void => {
-    deps.ws.broadcast({ kind: 'entity:changed', entityType: type, slug });
+  const broadcastChanged = (type: string, slug: string, action: WsChangeAction): void => {
+    deps.ws.broadcast({ kind: 'entity:changed', entityType: type, slug, action });
   };
 
   // ─── create_entities ──────────────────────────────────────────────────────
@@ -234,7 +235,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
         }
         try {
           const created = genericCreate(genericDeps(), type, parsed.data, 'agent');
-          broadcastChanged(type, created.slug);
+          broadcastChanged(type, created.slug, 'create');
           results.push(created.warnings?.length ? created : { slug: created.slug });
         } catch (err) {
           results.push(itemError(err));
@@ -342,7 +343,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
           if (updated.slug !== u.slug) {
             await deps.referencesService.propagateSlugChange(type as EntityType, u.slug, updated.slug);
           }
-          broadcastChanged(type, updated.slug);
+          broadcastChanged(type, updated.slug, 'update');
           results.push(updated.warnings?.length ? updated : { slug: updated.slug });
         } catch (err) {
           results.push(itemError(err));
@@ -382,7 +383,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
            */
           const removed = genericDelete(genericDeps(), type, slug, 'agent');
           if (!removed.deleted) throw new DomainError('NOT_FOUND', `${type} '${slug}' not found`);
-          broadcastChanged(type, slug);
+          broadcastChanged(type, slug, 'delete');
           results.push({
             deleted: true,
             brokenReferences: Array.from(counts, ([pagePath, count]) => ({ pagePath, count })),

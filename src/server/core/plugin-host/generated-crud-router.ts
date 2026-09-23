@@ -49,6 +49,7 @@ import {
 } from '../../../shared/plugin-host/data-schema.js';
 import type { DiscoveryCore } from '../../discovery/types.js';
 import type { WsEmitter } from '../../ws/project-emitter.js';
+import type { WsChangeAction } from '../../../shared/types.js';
 import type { BackendModule } from './types.js';
 
 export interface GeneratedCrudDeps extends GenericCrudDeps {
@@ -234,8 +235,8 @@ export function generatedCrudRouter(deps: GeneratedCrudDeps, module: BackendModu
   const rowSelect = listSelect(module);
   const updateSchema = z.object(buildUpdateShape(module.data!, module.slugPattern));
 
-  const broadcast = (slug: string): void => {
-    deps.ws.broadcast({ kind: 'entity:changed', entityType: type, slug });
+  const broadcast = (slug: string, action: WsChangeAction): void => {
+    deps.ws.broadcast({ kind: 'entity:changed', entityType: type, slug, action });
   };
 
   /**
@@ -342,7 +343,7 @@ export function generatedCrudRouter(deps: GeneratedCrudDeps, module: BackendModu
        * a user or an agent can actually reach.
        */
       const { slug, warnings } = genericCreate(deps, type, input, 'user');
-      broadcast(slug);
+      broadcast(slug, 'create');
       const body = { data: readOne(deps, type, slug) };
       res.status(201).json(warnings?.length ? { ...body, warnings } : body);
     } catch (err) {
@@ -378,7 +379,7 @@ export function generatedCrudRouter(deps: GeneratedCrudDeps, module: BackendModu
         'user',
       );
       await propagateRename(deps, type, previous, slug);
-      broadcast(slug);
+      broadcast(slug, 'update');
       /**
        * 0.2.86 — why `data` here is not the `echo-free` violation it looks like,
        * and why the MCP twin still answers `{ slug }`.
@@ -421,7 +422,7 @@ export function generatedCrudRouter(deps: GeneratedCrudDeps, module: BackendModu
       for (const h of hits) counts.set(h.pagePath, (counts.get(h.pagePath) ?? 0) + 1);
       const result = genericDelete(deps, type, slug, 'user');
       if (!result.deleted) throw new DomainError('NOT_FOUND', `${type} '${slug}' not found`);
-      broadcast(slug);
+      broadcast(slug, 'delete');
       res.json({
         deleted: true,
         brokenReferences: Array.from(counts, ([pagePath, count]) => ({ pagePath, count })),

@@ -395,6 +395,25 @@ describe('the page write primitive', () => {
     // write behind it leaves the watcher expecting an event that never arrives.
     expect(target.writer.calls).toEqual([]);
   });
+
+  it('0.2.106 — `expectedHash` is optional on delete, and honoured when passed', async () => {
+    await createPage(target, { path: 'guarded.md', content: 'v1' }, 'user');
+
+    // A stale hash refuses with the write's own conflict, and the page stays.
+    await expect(
+      deletePage(target, { path: 'guarded.md', expectedHash: 'not-the-hash' }, 'user'),
+    ).rejects.toMatchObject({ code: 'PAGE_CONFLICT' });
+    expect(await pages.exists('guarded.md')).toBe(true);
+
+    // The current hash — or none at all — deletes.
+    const current = await pages.read('guarded.md');
+    expect(await deletePage(target, { path: 'guarded.md', expectedHash: current.hash }, 'user')).toEqual({
+      ok: true,
+      deleted: true,
+    });
+    await createPage(target, { path: 'unguarded.md', content: 'v1' }, 'user');
+    expect(await deletePage(target, { path: 'unguarded.md' }, 'user')).toEqual({ ok: true, deleted: true });
+  });
 });
 
 describe('update_sections over a real section index', () => {

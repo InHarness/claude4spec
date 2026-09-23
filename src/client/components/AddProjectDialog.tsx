@@ -32,16 +32,16 @@ export function AddProjectDialog({ onClose }: Props) {
         body: JSON.stringify({ cwd: trimmed }),
       });
       const body = (await res.json().catch(() => null)) as
-        | { project?: { id: string; name: string }; error?: { message?: string } }
+        | { projectId?: string; error?: { message?: string } }
         | null;
-      if (!res.ok || !body?.project) {
+      if (!res.ok || !body?.projectId) {
         setError(body?.error?.message ?? `HTTP ${res.status}`);
         setPending(false);
         return;
       }
-      toast.success(`Project "${body.project.name}" added to workspace`);
+      toast.success('Project added to workspace');
       // Full reload into the new project — module-load constants must re-init.
-      window.location.href = `/p/${body.project.id}/`;
+      window.location.href = `/p/${body.projectId}/`;
     } catch {
       setError('Request failed — is the server still running?');
       setPending(false);
