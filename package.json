@@ -1,6 +1,6 @@
 {
   "name": "@inharness-ai/claude4spec",
-  "version": "0.2.108",
+  "version": "0.2.109",
   "description": "Plan the whole system before your agent writes a line of code. Local-first planning layer with structured entities and typed relations.",
   "license": "MIT",
   "author": "Mike Tomala <mike@inharness.ai>",
@@ -83,7 +83,7 @@
     "@anthropic-ai/claude-agent-sdk": "^0.3.263",
     "@google/gemini-cli-core": "^0.38.2",
     "@inharness-ai/agent-adapters": "^0.9.13",
-    "@inharness-ai/agent-chat": "^0.3.4",
+    "@inharness-ai/agent-chat": "^0.4.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@monaco-editor/react": "^4.7.0",
     "@openai/codex-sdk": "^0.120.0",

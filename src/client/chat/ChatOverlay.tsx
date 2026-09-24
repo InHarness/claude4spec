@@ -161,6 +161,9 @@ export function ChatOverlay() {
     backgroundTasks,
     heldBackgroundTaskCount,
     holdEnding,
+    isParked,
+    busyIndicator,
+    openTurnMessageIds,
     activeThreadMeta,
   } = useChat({
     threadId: chatThreadId,
@@ -364,7 +367,9 @@ export function ChatOverlay() {
     [messages],
   );
 
-  const showStreamingBubble = isBusy;
+  // 0.2.109: while the turn is parked nothing streams, so the "streaming" badge
+  // gives way to the parked turn's own indicator (`busyIndicator`).
+  const showStreamingBubble = isBusy && !isParked;
 
   const handleListScroll = useCallback(() => {
     const el = listRef.current;
@@ -602,6 +607,7 @@ export function ChatOverlay() {
                           annotations={msgAnnotations}
                           planMode={msgPlanMode}
                           backgroundTasks={backgroundTasks}
+                          turnOpen={openTurnMessageIds.has(msg.id)}
                         />
                       ))}
                     </div>
@@ -615,23 +621,31 @@ export function ChatOverlay() {
               {/* 0.2.50: background-task panels moved INTO the turn (a carrier
                   block placed by useChat, rendered by <BlockRenderer />), so they
                   sit where the task actually started instead of in a flat list
-                  after the whole conversation. What remains here is the HOLD
-                  indicator: the window between a held `result` and the
-                  continuation turn, during which nothing else is streaming. */}
-              {heldBackgroundTaskCount > 0 && (
+                  after the whole conversation. What remains here is the parked
+                  turn's busy indicator (0.2.109): between a non-terminal `result`
+                  and `done`. A live delegation gets no spinner here — its
+                  <SubagentPanel /> header is the indicator. */}
+              {busyIndicator !== 'none' && (
                 <div className="msg-enter mb-3 flex">
                   <div
                     className="inline-flex items-center gap-1.5 py-1 text-[10.5px] font-mono"
                     style={{ color: 'var(--c-muted)' }}
                     aria-live="polite"
+                    data-busy-indicator={busyIndicator}
                   >
                     <span className="dot-pulse">
                       <span></span>
                       <span></span>
                       <span></span>
                     </span>
-                    waiting for {heldBackgroundTaskCount} background task
-                    {heldBackgroundTaskCount === 1 ? '' : 's'}
+                    {busyIndicator === 'background' ? (
+                      <>
+                        waiting for {heldBackgroundTaskCount} background task
+                        {heldBackgroundTaskCount === 1 ? '' : 's'}
+                      </>
+                    ) : (
+                      'turn in progress'
+                    )}
                   </div>
                 </div>
               )}

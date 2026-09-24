@@ -29,6 +29,13 @@ interface Props {
    * looked up at render time rather than frozen into the block.
    */
   backgroundTasks?: BackgroundTaskEntry[];
+  /**
+   * 0.2.109: whether the turn this block belongs to is still open (its message
+   * is still streaming). A delegation whose turn closed without
+   * `subagent_completed` renders as interrupted — the finalizer marks the row
+   * `abandoned` in the DB, but writes nothing to the stream. Defaults to open.
+   */
+  turnOpen?: boolean;
 }
 
 export function BlockRenderer({
@@ -38,6 +45,7 @@ export function BlockRenderer({
   annotations,
   planMode,
   backgroundTasks,
+  turnOpen = true,
 }: Props) {
   switch (block.type) {
     case 'text':
@@ -101,6 +109,7 @@ export function BlockRenderer({
       return (
         <SubagentPanel
           block={block}
+          turnOpen={turnOpen}
           agentName={input?.subagent_type}
           prompt={input?.prompt}
           invocation={input ?? undefined}

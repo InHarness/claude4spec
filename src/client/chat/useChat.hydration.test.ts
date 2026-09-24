@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { rowsToChatMessages, BACKGROUND_TASK_TOOL_NAME } from './useChat.js';
-import type { ChatBackgroundTask, ChatMessage } from '../../shared/entities.js';
+import type { ChatBackgroundTask, ChatMessage, ChatSubagentTask } from '../../shared/entities.js';
 
 /**
  * BACKGROUND TASKS AFTER A COLD RELOAD (0.2.50).
@@ -109,5 +109,34 @@ describe('rowsToChatMessages — background-task carriers', () => {
         ),
       ),
     ).toHaveLength(2);
+  });
+});
+
+describe('rowsToChatMessages — abandoned delegation (0.2.109)', () => {
+  it('[ac:ac-po-przeladowaniu-watku-delegacja-prze] after a reload a delegation cut before subagent_completed comes back abandoned, not running', () => {
+    const msgs = rowsToChatMessages(
+      [
+        row({ id: 1, role: 'user', content: JSON.stringify({ text: 'go' }) }),
+        row({ id: 2, subagentTaskId: 'sub_1', content: JSON.stringify({ text: 'looking…' }) }),
+      ],
+      [
+        {
+          threadId: 't1',
+          taskId: 'sub_1',
+          toolUseId: null,
+          description: 'Explore M05',
+          status: 'abandoned',
+          summary: null,
+          createdAt: '2026-08-26T10:00:01.000Z',
+          updatedAt: '2026-08-26T10:05:01.000Z',
+        } satisfies ChatSubagentTask,
+      ],
+      [],
+    );
+
+    const sub = msgs.flatMap((m) => m.blocks).find((b) => b.type === 'subagent') as
+      | { status: string }
+      | undefined;
+    expect(sub?.status).toBe('abandoned');
   });
 });

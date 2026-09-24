@@ -661,12 +661,21 @@ export interface ChatMessage {
   createdAt: string;
 }
 
+/**
+ * 0.2.109: `chat_subagent_task.status`, validated in the application (no CHECK).
+ * `running` and `abandoned` are ours: `running` on `subagent_started`,
+ * `abandoned` from the turn finalizer (a delegation that never got
+ * `subagent_completed`). `completed` / `failed` come from `subagent_completed`.
+ */
+export const SUBAGENT_TASK_STATUSES = ['running', 'completed', 'failed', 'abandoned'] as const;
+export type SubagentTaskStatus = (typeof SUBAGENT_TASK_STATUSES)[number];
+
 export interface ChatSubagentTask {
   threadId: string;
   taskId: string;
   toolUseId: string | null;
   description: string;
-  status: string;
+  status: SubagentTaskStatus;
   summary: string | null;
   createdAt: string;
   updatedAt: string;

@@ -166,6 +166,7 @@ function makeDeps() {
     updateBackgroundTaskProgress: () => {},
     completeBackgroundTask: () => {},
     finalizeRunningBackgroundTasks: () => {},
+    finalizeRunningSubagentTasks: () => {},
     updateCurrentTodoItems: () => {},
     finalizeStreamingRows: () => {},
     // M05 queue: the after-turn merged-dispatch loop drains the queue; an empty
@@ -1031,7 +1032,7 @@ describe('runAgentTurn — server-side turn timeout (0-1-110-to-next)', () => {
 });
 
 describe('runAgentTurn — M17 background tasks (0-1-141-to-next-2)', () => {
-  it('persists background_task_* events and never emits/finalizes a held result', async () => {
+  it('persists background_task_* events and forwards the non-terminal result without ending the turn', async () => {
     hoisted.events = [
       { type: 'text_delta', text: 'Backgrounding a sleep. ' },
       { type: 'background_task_started', taskId: 'bg1', taskType: 'shell', description: 'sleep 5' },
@@ -1077,11 +1078,21 @@ describe('runAgentTurn — M17 background tasks (0-1-141-to-next-2)', () => {
     expect(started).toHaveBeenCalledWith('t1', 'bg1', 'shell', 'sleep 5');
     expect(completed).toHaveBeenCalledWith('t1', 'bg1', 'shell', 'success', null, 'slept');
 
-    // Only the genuine final result reaches the client — the held one is suppressed,
-    // so agent-chat's reducer never finalizes isStreaming / sums usage on it.
-    const emittedResults = emitted.filter((e) => e.type === 'result');
-    expect(emittedResults).toHaveLength(1);
-    expect(emittedResults[0].sessionId).toBe('s-final');
+    // 0.2.109: BOTH results reach the client — terminality is not read from the
+    // payload, and since agent-chat 0.4.0 a `result` closes a block, not the turn.
+    // The continuation opens with a `turn_start`, and the stream ends once, on
+    // generator exhaustion.
+    const types = emitted.map((e) => e.type);
+    expect(emitted.filter((e) => e.type === 'result').map((e) => e.sessionId)).toEqual([
+      's-held',
+      's-final',
+    ]);
+    const heldIdx = types.indexOf('result');
+    const contIdx = types.indexOf('turn_start');
+    expect(contIdx).toBeGreaterThan(types.indexOf('background_task_completed'));
+    expect(contIdx).toBeGreaterThan(heldIdx);
+    expect(types.filter((t) => t === 'done')).toEqual(['done']);
+    expect(types[types.length - 1]).toBe('done');
 
     // The background_task_* events themselves DO reach the client (rendered as a panel).
     expect(emitted.filter((e) => e.type === 'background_task_started')).toHaveLength(1);
@@ -1093,15 +1104,15 @@ describe('runAgentTurn — M17 background tasks (0-1-141-to-next-2)', () => {
   });
 
   /**
-   * 0.2.50 — a held `result` must NOT close the turn's usage snapshot.
+   * 0.2.109 — every `result` stamps usage onto its OWN segment's anchor row.
    *
-   * `attachTurnUsage` is the closing write: it stamps usage onto the turn's
-   * anchor row. Calling it on a held result would publish a partial figure as
-   * final, and the continuation turn's own `result` would then either
-   * double-count or be ignored. `setLastUsage` is a separate "latest wins"
-   * scratch write and is allowed to run on every result.
+   * Whether a `result` is terminal is unknowable at the time it arrives, so no
+   * `result` can be treated as "the closing one". Each segment (before the
+   * park, the continuation) stamps the row it produced, so neither overwrites
+   * the other — which is what agent-chat 0.4.0 shows live: a message's usage
+   * is the sum over every `result` it received.
    */
-  it('defers attachTurnUsage until the terminal result, not the held one', async () => {
+  it('stamps each segment\'s usage onto its own anchor row', async () => {
     hoisted.events = [
       { type: 'text_delta', text: 'working ' },
       // Usage reaches the turn through `assistant_message`, which is what
@@ -1133,10 +1144,11 @@ describe('runAgentTurn — M17 background tasks (0-1-141-to-next-2)', () => {
 
     await runAgentTurn(deps, makeInput());
 
-    // Exactly once — for the terminal result, never for the held one.
-    expect(attach).toHaveBeenCalledTimes(1);
-    const [, , usage] = attach.mock.calls[0] as [string, number, { outputTokens: number }];
-    expect(usage.outputTokens).toBe(8);
+    expect(attach).toHaveBeenCalledTimes(2);
+    const calls = attach.mock.calls as Array<[string, number, { outputTokens: number }]>;
+    expect(calls.map(([, , u]) => u.outputTokens)).toEqual([5, 8]);
+    // Two different anchors — the continuation did not overwrite the first segment.
+    expect(calls[0][1]).not.toBe(calls[1][1]);
   });
 
   /**
@@ -1160,6 +1172,238 @@ describe('runAgentTurn — M17 background tasks (0-1-141-to-next-2)', () => {
     await runAgentTurn(deps, makeInput());
 
     expect(finalize).toHaveBeenCalledWith('t1');
+  });
+});
+
+/**
+ * 0.2.109 — end of turn is read from the class and position of events, never
+ * from the `result` payload. A live subagent delegation keeps the run open
+ * after a `result` that carries no `backgroundTasks` at all.
+ */
+describe('runAgentTurn — 0.2.109 delegation holds the turn open', () => {
+  const DELEGATION: Array<Record<string, unknown>> = [
+    { type: 'text_delta', text: 'Delegating. ' },
+    { type: 'subagent_started', taskId: 'sub_1', description: 'Explore M05', toolUseId: 'tool_q' },
+    // Byte-for-byte a terminal result — no backgroundTasks — but NOT the end.
+    { type: 'result', sessionId: 's-parked', usage: { inputTokens: 5, outputTokens: 2 }, contextSize: 192 },
+    { type: 'subagent_completed', taskId: 'sub_1', status: 'completed' },
+    { type: 'text_delta', text: 'The subagent reported back.' },
+    { type: 'result', sessionId: 's-final', usage: { inputTokens: 9, outputTokens: 4 }, contextSize: 210 },
+  ];
+
+  it('[ac:ac-event-result-bez-backgroundtasks-wyem] a result without backgroundTasks during a live delegation does not close the SSE stream', async () => {
+    hoisted.events = DELEGATION;
+    const { deps } = makeDeps();
+    const emitted: Array<Record<string, unknown>> = [];
+    const input = makeInput();
+    input.onEvent = (e) => emitted.push(e as Record<string, unknown>);
+
+    const result = await runAgentTurn(deps, input);
+
+    const types = emitted.map((e) => e.type);
+    // The wire of the brief: subagent_started, result, subagent_completed,
+    // turn_start (continuation, same stream), …, result, done.
+    expect(types.filter((t) => ['subagent_started', 'result', 'subagent_completed', 'turn_start', 'done'].includes(t as string))).toEqual([
+      'subagent_started',
+      'result',
+      'subagent_completed',
+      'turn_start',
+      'result',
+      'done',
+    ]);
+    expect(result.answer).toBe('The subagent reported back.');
+  });
+
+  it('[ac:ac-subagent-nigdy-nie-pojawia-sie-w-resu] the subagent never appears in result.backgroundTasks, and has its own lifecycle events', async () => {
+    hoisted.events = DELEGATION;
+    const { deps } = makeDeps();
+    const emitted: Array<Record<string, unknown>> = [];
+    const input = makeInput();
+    input.onEvent = (e) => emitted.push(e as Record<string, unknown>);
+
+    await runAgentTurn(deps, input);
+
+    for (const r of emitted.filter((e) => e.type === 'result')) {
+      expect((r.backgroundTasks as unknown[] | undefined) ?? []).toEqual([]);
+    }
+    expect(emitted.some((e) => String(e.type).startsWith('background_task_'))).toBe(false);
+    expect(emitted.filter((e) => e.type === 'subagent_completed')).toHaveLength(1);
+  });
+
+  it('the continuation turn_start reuses the iteration ids and lands in the replay after the result', async () => {
+    hoisted.events = DELEGATION;
+    const { deps } = makeDeps();
+    let replaySnapshot: Array<{ type: string }> = [];
+    let replayTurnStart: Record<string, unknown> | null = null;
+    hoisted.beforeEvent = (event) => {
+      if (event.type === 'text_delta' && event.text === 'The subagent reported back.') {
+        // Right before the continuation's first delta is consumed.
+        const active = (deps.activeAdapters as Map<string, { replay: { events: Array<{ type: string }>; turnStart: Record<string, unknown> } }>).get('t1')!;
+        replaySnapshot = [...active.replay.events];
+        replayTurnStart = active.replay.turnStart;
+      }
+    };
+    const emitted: Array<Record<string, unknown>> = [];
+    const input = makeInput();
+    input.onEvent = (e) => emitted.push(e as Record<string, unknown>);
+
+    await runAgentTurn(deps, input);
+
+    const cont = emitted.find((e) => e.type === 'turn_start')!;
+    expect(cont.assistantMessageId).toBe(replayTurnStart!.assistantMessageId);
+    expect(cont.userMessageId).toBe(replayTurnStart!.userMessageId);
+    // The replay still carries the parked segment (result, subagent_completed)
+    // for a joiner — the continuation belongs to the same user prompt.
+    expect(replaySnapshot.map((e) => e.type)).toEqual(
+      expect.arrayContaining(['subagent_started', 'result', 'subagent_completed']),
+    );
+  });
+
+  it('withholds the continuation turn_start once a mid-turn user_message was pushed in the iteration', async () => {
+    // agent-chat opened a fresh assistant message for the push under an id the
+    // server never learns; a turn_start with the iteration's original id would
+    // read there as "a turn already on disk" and tear the live stream down.
+    hoisted.events = [
+      { type: 'text_delta', text: 'Delegating. ' },
+      { type: 'subagent_started', taskId: 'sub_1', description: 'Explore M05', toolUseId: 'tool_q' },
+      { type: 'result', sessionId: 's-parked', usage: { inputTokens: 5, outputTokens: 2 }, contextSize: 192 },
+      { type: 'user_message', text: 'pushed while parked', timestamp: Date.now() },
+      { type: 'subagent_completed', taskId: 'sub_1', status: 'completed' },
+      { type: 'text_delta', text: 'The subagent reported back.' },
+      { type: 'result', sessionId: 's-final', usage: { inputTokens: 9, outputTokens: 4 }, contextSize: 210 },
+    ];
+    const { deps } = makeDeps();
+    const emitted: Array<Record<string, unknown>> = [];
+    const input = makeInput();
+    input.onEvent = (e) => emitted.push(e as Record<string, unknown>);
+
+    await runAgentTurn(deps, input);
+
+    expect(emitted.filter((e) => e.type === 'turn_start')).toHaveLength(0);
+    expect(emitted.at(-1)?.type).toBe('done');
+  });
+
+  it('[ac:ac-watek-ktorego-tura-po-result-czeka-wy] a thread whose turn waits only on a delegation after result stays live (activeAdapters → isLive)', async () => {
+    hoisted.events = DELEGATION;
+    const { deps } = makeDeps();
+    const liveAfterResult: boolean[] = [];
+    let sawParkedResult = false;
+    hoisted.beforeEvent = (event) => {
+      if (sawParkedResult) liveAfterResult.push(deps.activeAdapters.has('t1'));
+      if (event.type === 'result' && event.sessionId === 's-parked') sawParkedResult = true;
+    };
+
+    await runAgentTurn(deps, makeInput());
+
+    expect(liveAfterResult.length).toBeGreaterThan(0);
+    expect(liveAfterResult.every(Boolean)).toBe(true);
+    expect(deps.activeAdapters.has('t1')).toBe(false);
+  });
+
+  it('[ac:ac-w-watku-dziecku-zywa-delegacja-do-sub] in a child thread (runTransagent) a live delegation keeps the turn open after result', async () => {
+    hoisted.events = DELEGATION;
+    const { deps } = makeDeps();
+    const input = makeInput();
+    (input.thread as { parentThreadId: string | null }).parentThreadId = 'parent-1';
+
+    const result = await runAgentTurn(deps, input);
+
+    // The bubble's summary is the text after the delegation — i.e. taken once
+    // the generator is exhausted, not at the first `result`.
+    expect(result.answer).toBe('The subagent reported back.');
+    const cfg = hoisted.lastExecute?.architectureConfig as Record<string, unknown>;
+    expect(cfg.claude_disallowBackgroundBash).toBe(true);
+  });
+
+  it('[ac:ac-zadanie-ask-pozostaje-otwarte-dopoki] an ask turn stays open while its delegation lives', async () => {
+    hoisted.events = DELEGATION;
+    const { deps } = makeDeps();
+    let settled = false;
+    const settledAtEvent: boolean[] = [];
+    hoisted.beforeEvent = () => settledAtEvent.push(settled);
+    const input = { ...makeInput(), timeoutMs: 15 * 60_000 };
+    (input.thread as { contextType: string }).contextType = 'ask';
+
+    const result = await runAgentTurn(deps, input).then((r) => {
+      settled = true;
+      return r;
+    });
+
+    expect(settledAtEvent.every((s) => s === false)).toBe(true);
+    expect(result.answer).toBe('The subagent reported back.');
+  });
+
+  it('closes still-running delegations as abandoned once the generator is exhausted', async () => {
+    hoisted.events = [
+      { type: 'subagent_started', taskId: 'sub_1', description: 'x' },
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps } = makeDeps();
+    const cs = deps.chatService as unknown as { finalizeRunningSubagentTasks: (...a: unknown[]) => void };
+    const finalize = vi.spyOn(cs, 'finalizeRunningSubagentTasks');
+
+    await runAgentTurn(deps, makeInput());
+
+    expect(finalize).toHaveBeenCalledWith('t1');
+  });
+
+  describe('hold expiry', () => {
+    const expired = (events: Array<Record<string, unknown>>) => [
+      ...events,
+      { type: 'error', error: new AdapterBackgroundHoldExpiredError('claude-code', 300_000), phase: 'runtime' },
+    ];
+
+    it('[ac:ac-delegacja-trwajaca-dluzej-niz-cap-hol] a delegation that outlives the cap ends the turn with BACKGROUND_HOLD_EXPIRED, with no background task in the turn', async () => {
+      hoisted.events = expired([
+        { type: 'subagent_started', taskId: 'sub_1', description: 'slow' },
+        { type: 'result', sessionId: 's1' },
+      ]);
+      const { deps } = makeDeps();
+
+      await expect(runAgentTurn(deps, makeInput())).rejects.toMatchObject({
+        code: 'BACKGROUND_HOLD_EXPIRED',
+      });
+    });
+
+    it('[ac:ac-komunikat-wygasniecia-holdu-podaje-li] the message counts abandoned delegations from subagent_started minus subagent_completed', async () => {
+      hoisted.events = expired([
+        { type: 'subagent_started', taskId: 'sub_1', description: 'a' },
+        { type: 'subagent_started', taskId: 'sub_2', description: 'b' },
+        { type: 'subagent_started', taskId: 'sub_3', description: 'c' },
+        { type: 'subagent_completed', taskId: 'sub_2', status: 'completed' },
+        { type: 'result', sessionId: 's1' },
+      ]);
+      const { deps } = makeDeps();
+
+      const err = await runAgentTurn(deps, makeInput()).catch((e: Error) => e);
+
+      expect((err as Error).message).toContain('2 subagent delegation(s)');
+      expect((err as Error).message).not.toContain('background task');
+    });
+
+    it('names each non-empty registry separately, never a sum', async () => {
+      hoisted.events = expired([
+        { type: 'background_task_started', taskId: 'bg1', taskType: 'shell', description: 'sleep' },
+        { type: 'subagent_started', taskId: 'sub_1', description: 'a' },
+        { type: 'result', sessionId: 's1', backgroundTasks: [{ taskId: 'bg1', taskType: 'shell' }] },
+      ]);
+      const { deps } = makeDeps();
+
+      const err = await runAgentTurn(deps, makeInput()).catch((e: Error) => e);
+
+      expect((err as Error).message).toContain('1 background task(s) and 1 subagent delegation(s)');
+    });
+
+    it('[ac:ac-komunikat-wygasniecia-holdu-przy-obu] with both registries empty the message carries no count', async () => {
+      hoisted.events = expired([{ type: 'result', sessionId: 's1' }]);
+      const { deps } = makeDeps();
+
+      const err = await runAgentTurn(deps, makeInput()).catch((e: Error) => e);
+
+      expect((err as Error).message).toBe('background hold expired after 300000ms with no recognized cause');
+      // The only number is the cap itself — no task or delegation count.
+      expect((err as Error).message.replace('300000ms', '')).not.toMatch(/\d/);
+    });
   });
 });
 
