@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { AlertTriangle, ChevronDown, ChevronRight, Cpu, HelpCircle, ClipboardList, Clock, X } from 'lucide-react';
 import type { UIContentBlock } from '@inharness-ai/agent-chat';
 import type { UserInputRequest, UserInputResponse } from '@inharness-ai/agent-adapters';
@@ -7,11 +7,15 @@ import { ToolCard, type ToolItem } from './ToolCard.js';
 import { UserTextMarkdown } from './UserTextMarkdown.js';
 import {
   BACKGROUND_TASK_TOOL_NAME,
+  TRANSAGENT_TOOL_NAME,
   USER_INPUT_TOOL_NAME,
   WARNING_TOOL_NAME,
   type BackgroundTaskEntry,
+  type TransagentEntry,
 } from './useChat.js';
+import type { ChatModel } from '../state/chat.js';
 import { BackgroundTaskPanel } from './BackgroundTaskPanel.js';
+import { TransagentPanel } from './TransagentPanel.js';
 import { ChatMarkdown } from './ChatMarkdown.js';
 
 export type BlockSide = 'user' | 'assistant';
@@ -36,6 +40,14 @@ interface Props {
    * `abandoned` in the DB, but writes nothing to the stream. Defaults to open.
    */
   turnOpen?: boolean;
+  /**
+   * Live transagent registry. A `runTransagent` call with an entry renders as its
+   * bubble panel IN PLACE of the tool card — the parent's `tool_use` row is the
+   * durable anchor (M46), keyed by `toolUseId` both live and after F5.
+   */
+  transagents?: TransagentEntry[];
+  /** Chat model, needed by the transagent panel's own message reducer. */
+  model?: ChatModel;
 }
 
 export function BlockRenderer({
@@ -46,7 +58,34 @@ export function BlockRenderer({
   planMode,
   backgroundTasks,
   turnOpen = true,
+  transagents,
+  model,
 }: Props) {
+  /**
+   * Transagent panels, keyed by toolUseId, in ONE tree shape for both a lone
+   * `toolUse` and a `toolBatch`. Sequential calls with no text between them get
+   * re-batched when the second one lands; a different shape would remount the
+   * first panel — re-joining its child stream and resetting its toggles.
+   */
+  const transagentGroup = (
+    panels: Array<{ toolUseId: string; input: unknown; entry: TransagentEntry; result: PairedResult | null }>,
+    rest: ReactNode,
+  ) => (
+    <>
+      {panels.map((p) => (
+        <TransagentPanel
+          key={p.toolUseId}
+          entry={p.entry}
+          model={model ?? ''}
+          invocation={p.input}
+          result={p.result}
+          turnOpen={turnOpen}
+        />
+      ))}
+      {rest}
+    </>
+  );
+
   switch (block.type) {
     case 'text':
       return side === 'user' ? (
@@ -62,8 +101,7 @@ export function BlockRenderer({
       if (siblings.some((b) => b.type === 'subagent' && b.toolUseId === block.toolUseId)) {
         return null;
       }
-      const paired = siblings.find((b) => b.type === 'toolResult' && b.toolUseId === block.toolUseId);
-      const result = paired && paired.type === 'toolResult' ? paired : null;
+      const result = siblingResult(siblings, block.toolUseId);
       if (block.toolName === WARNING_TOOL_NAME) {
         return <WarningBlock message={warningMessage(block.input)} />;
       }
@@ -73,6 +111,15 @@ export function BlockRenderer({
         // No entry yet means the carrier outran its own state update; render
         // nothing this pass rather than an empty shell.
         return entry ? <BackgroundTaskPanel entry={entry} /> : null;
+      }
+      if (block.toolName === TRANSAGENT_TOOL_NAME) {
+        const entry = transagents?.find((t) => t.toolUseId === block.toolUseId);
+        // No entry means no child thread was ever spawned (INVALID_ARGS) or the
+        // call outran `transagent_started` — fall through to the plain card so
+        // a rejected call stays visible.
+        // Same tree shape as the batch branch below, so the panel survives the
+        // batcher folding this call into a toolBatch once a second one arrives.
+        if (entry) return transagentGroup([{ toolUseId: block.toolUseId, input: block.input, entry, result }], null);
       }
       if (block.toolName === USER_INPUT_TOOL_NAME) {
         return (
@@ -86,7 +133,7 @@ export function BlockRenderer({
         toolUseId: block.toolUseId,
         toolName: block.toolName,
         input: block.input,
-        result: result ? { content: result.content, isError: result.isError } : null,
+        result,
       };
       return <ToolCard items={[item]} />;
     }
@@ -103,9 +150,7 @@ export function BlockRenderer({
       const input = (task && task.type === 'toolUse' ? task.input : null) as
         | { subagent_type?: string; prompt?: string }
         | null;
-      const res = siblings.find((b) => b.type === 'toolResult' && b.toolUseId === block.toolUseId);
-      const result =
-        res && res.type === 'toolResult' ? { content: res.content, isError: res.isError } : null;
+      const result = siblingResult(siblings, block.toolUseId);
       return (
         <SubagentPanel
           block={block}
@@ -140,6 +185,9 @@ export function BlockRenderer({
                 annotations={annotations}
                 planMode={planMode}
                 backgroundTasks={backgroundTasks}
+                turnOpen={turnOpen}
+                transagents={transagents}
+                model={model}
               />
             )}
           </>
@@ -167,9 +215,43 @@ export function BlockRenderer({
                 annotations={annotations}
                 planMode={planMode}
                 backgroundTasks={backgroundTasks}
+                turnOpen={turnOpen}
+                transagents={transagents}
+                model={model}
               />
             )}
           </>
+        );
+      }
+      // A transagent call is absorbed into its bubble panel, the way a Task call
+      // is absorbed into <SubagentPanel /> — it must never sit inside a tool
+      // card. Only calls with an entry are pulled out; the rest (a rejected call
+      // with no child) stay in the batch and go BACK through this switch.
+      const entryOf = (i: { toolName: string; toolUseId: string }) =>
+        i.toolName === TRANSAGENT_TOOL_NAME ? transagents?.find((t) => t.toolUseId === i.toolUseId) : undefined;
+      if (block.items.some((i) => entryOf(i))) {
+        const panelled = block.items.flatMap((item) => {
+          const entry = entryOf(item);
+          return entry
+            ? [{ toolUseId: item.toolUseId, input: item.input, entry, result: batchItemResult(item, siblings) }]
+            : [];
+        });
+        const rest = block.items.filter((i) => !entryOf(i));
+        return transagentGroup(
+          panelled,
+          rest.length > 0 ? (
+            <BlockRenderer
+              block={{ ...block, items: rest }}
+              siblings={siblings}
+              side={side}
+              annotations={annotations}
+              planMode={planMode}
+              backgroundTasks={backgroundTasks}
+              turnOpen={turnOpen}
+              transagents={transagents}
+              model={model}
+            />
+          ) : null,
         );
       }
       if (block.items.every((i) => i.toolName === USER_INPUT_TOOL_NAME)) {
@@ -179,7 +261,7 @@ export function BlockRenderer({
               <PersistedUserInputCard
                 key={item.toolUseId}
                 request={item.input as UserInputRequest}
-                responseContent={item.result?.content ?? null}
+                responseContent={batchItemResult(item, siblings)?.content ?? null}
               />
             ))}
           </>
@@ -189,13 +271,37 @@ export function BlockRenderer({
         toolUseId: i.toolUseId,
         toolName: i.toolName,
         input: i.input,
-        result: i.result ? { content: i.result.content, isError: i.result.isError } : null,
+        result: batchItemResult(i, siblings),
       }));
       return <ToolCard items={items} />;
     }
     default:
       return null;
   }
+}
+
+// --- Tool-result pairing ---
+
+type PairedResult = { content: string; isError: boolean };
+
+/** The `toolResult` sibling answering `toolUseId`, if the message holds one. */
+function siblingResult(siblings: UIContentBlock[], toolUseId: string): PairedResult | null {
+  const res = siblings.find((b) => b.type === 'toolResult' && b.toolUseId === toolUseId);
+  return res && res.type === 'toolResult' ? { content: res.content, isError: res.isError } : null;
+}
+
+/**
+ * A batch item's result. The batcher pairs a result only when it directly follows
+ * its call, so parallel calls (use, use, result, result) leave it as a sibling —
+ * look there too, or every item of a parallel batch reads as still running.
+ */
+function batchItemResult(
+  item: { toolUseId: string; result?: PairedResult | null },
+  siblings: UIContentBlock[],
+): PairedResult | null {
+  return item.result
+    ? { content: item.result.content, isError: item.result.isError }
+    : siblingResult(siblings, item.toolUseId);
 }
 
 // --- Runtime warning (C21) ---

@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useEventStream, useMessageReducer, batchToolBlocks } from '@inharness-ai/agent-chat';
-import { ChevronDown, ChevronRight, Cpu } from 'lucide-react';
+import { Braces, ChevronDown, ChevronRight, Cpu } from 'lucide-react';
 import { apiFetch } from '../lib/api-core.js';
 import type { ChatMessage as ChatMessageRow, ChatSubagentTask } from '../../shared/entities.js';
 import type { ChatModel } from '../state/chat.js';
 import { BlockRenderer } from './BlockRenderer.js';
+import { ChatMarkdown } from './ChatMarkdown.js';
+import { ToolJsonModal } from './ToolJsonModal.js';
+import { parseToolResult } from './toolRenderers.js';
 import { CHAT_ENDPOINTS, rowsToChatMessages, type TransagentEntry } from './useChat.js';
 
 /**
@@ -14,16 +17,33 @@ import { CHAT_ENDPOINTS, rowsToChatMessages, type TransagentEntry } from './useC
  * machinery). If the child is no longer live (completed / F5 after finish), it
  * falls back to the child's persisted history. Returns ONLY a summary to the
  * parent LLM — this panel is purely for the human to watch the child work.
+ *
+ * Rendered by <BlockRenderer /> IN PLACE of the parent's `tool_use(runTransagent)`
+ * card (the call is absorbed, like a Task call into <SubagentPanel />), and in
+ * SubagentPanel's shell — same data source split, one visual family (M46).
  */
 export function TransagentPanel({
   entry,
   model,
+  invocation,
+  result,
+  turnOpen = true,
 }: {
   entry: TransagentEntry;
   model: ChatModel;
+  /** The `runTransagent` call input (`contextType`, `message`, `payload`, …). */
+  invocation?: unknown;
+  /** The call's tool_result — the summary handed back to the parent LLM. */
+  result?: { content: string; isError: boolean } | null;
+  /** Whether the parent turn is still open — see `transagentDisplayStatus`. */
+  turnOpen?: boolean;
 }) {
-  const { childThreadId, contextType, status } = entry;
-  const [collapsed, setCollapsed] = useState(false);
+  const { toolUseId, childThreadId, contextType } = entry;
+  const status = transagentDisplayStatus(entry.status, turnOpen, result);
+  // Open while the child works so the human watches it live; the user folds it.
+  const [expanded, setExpanded] = useState(status === 'running');
+  const [messageOpen, setMessageOpen] = useState(false);
+  const [jsonOpen, setJsonOpen] = useState(false);
   const { state, handleWireEvent, restoreMessages, clear } = useMessageReducer('claude-code', model);
 
   const onEvent = useCallback((event: Parameters<typeof handleWireEvent>[0]) => {
@@ -80,52 +100,138 @@ export function TransagentPanel({
   );
 
   const running = status === 'running';
+  const dotColor =
+    status === 'failed' ? 'var(--c-red, #c45a3b)' : 'var(--c-green, #4a9860)';
+  const input = (invocation ?? null) as { message?: unknown; payload?: unknown } | null;
+  const message = typeof input?.message === 'string' ? input.message : undefined;
+  const payload = input?.payload && typeof input.payload === 'object' ? input.payload : undefined;
+  // Same unwrapping as SubagentPanel: the adapter JSON-wraps tool_result content;
+  // `entry.summary` (from `transagent_completed`) covers a result not yet paired.
+  // runTransagent answers with a `{ threadId, summary }` envelope — show the summary.
+  const parsed = result ? parseToolResult(result.content) : entry.summary ?? null;
+  const envelopeSummary = (parsed as { summary?: unknown } | null)?.summary;
+  const rawAnswer =
+    parsed && typeof parsed === 'object' && typeof envelopeSummary === 'string' ? envelopeSummary : parsed;
+  const answerText =
+    typeof rawAnswer === 'string'
+      ? rawAnswer
+      : rawAnswer != null
+        ? JSON.stringify(rawAnswer, null, 2)
+        : null;
+  const answerIsText = typeof rawAnswer === 'string';
 
   return (
     <div
       className="mb-3 rounded-lg overflow-hidden"
-      style={{ border: '1px solid var(--c-accent)', background: 'var(--c-accent-soft)' }}
+      style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair-strong)' }}
+      data-transagent-panel={toolUseId}
     >
       <button
         type="button"
-        onClick={() => setCollapsed((c) => !c)}
-        className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-mono"
-        style={{ color: 'var(--c-accent)' }}
-        title={collapsed ? 'Expand transagent' : 'Collapse transagent'}
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-left"
+        style={{ background: 'var(--c-panel)' }}
+        title={expanded ? 'Collapse transagent' : 'Expand transagent'}
       >
-        {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-        <Cpu size={12} />
-        <span className="uppercase tracking-wider">transagent · {contextType}</span>
+        {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+        <Cpu size={12} style={{ color: 'var(--c-accent)' }} />
+        <span
+          className="font-mono text-[11px] uppercase tracking-wider whitespace-nowrap"
+          style={{ color: 'var(--c-subtle)' }}
+        >
+          transagent · {contextType}
+        </span>
+        {message && (
+          <span
+            className="truncate text-[12px]"
+            style={{ color: 'var(--c-ink)', fontWeight: 500, minWidth: 0 }}
+            title={message}
+          >
+            {message}
+          </span>
+        )}
         <span className="flex-1" />
         {running ? (
-          <span className="inline-flex items-center gap-1">
-            <span className="dot-pulse">
-              <span></span>
-              <span></span>
-              <span></span>
-            </span>
-            <span className="uppercase tracking-wider">running</span>
+          <span className="dot-pulse" title="running">
+            <span></span>
+            <span></span>
+            <span></span>
+          </span>
+        ) : status === 'abandoned' ? (
+          <span
+            className="font-mono text-[10.5px] whitespace-nowrap"
+            style={{ color: 'var(--c-subtle)' }}
+            data-status="abandoned"
+            title="The turn ended before this transagent completed"
+          >
+            interrupted
           </span>
         ) : (
           <span
-            className="uppercase tracking-wider px-1.5 py-0.5 rounded"
-            style={
-              status === 'error'
-                ? { background: 'var(--c-red-soft)', color: 'var(--c-red)' }
-                : { background: 'var(--c-green-soft)', color: 'var(--c-green)' }
-            }
-          >
-            {status}
-          </span>
+            className="rounded-full"
+            style={{ width: 7, height: 7, background: dotColor }}
+            title={status}
+            data-status={status}
+          />
         )}
-      </button>
-      {!collapsed && (
-        <div
-          className="px-2.5 py-2"
-          style={{ background: 'var(--c-bg)', borderTop: '1px solid var(--c-hair)' }}
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={(e) => {
+            e.stopPropagation();
+            setJsonOpen(true);
+          }}
+          aria-label="Show raw JSON"
+          title="Show raw JSON"
+          className="tool-json-btn inline-flex items-center justify-center rounded"
+          style={{ width: 22, height: 22, color: 'var(--c-subtle)' }}
         >
+          <Braces size={12} />
+        </span>
+      </button>
+
+      {!expanded && answerText && (
+        <div className="px-3 py-2 text-[12.5px] line-clamp-3" style={{ color: 'var(--c-muted)' }}>
+          {answerText}
+        </div>
+      )}
+
+      {expanded && (
+        <div className="px-3 py-2.5">
+          {(message || payload) && (
+            <div className="mb-2">
+              <button
+                type="button"
+                onClick={() => setMessageOpen((v) => !v)}
+                className="flex items-center gap-1.5 text-[10.5px] uppercase tracking-wider font-mono"
+                style={{ color: 'var(--c-subtle)' }}
+              >
+                {messageOpen ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+                Message
+              </button>
+              {messageOpen && (
+                <pre
+                  className="font-mono text-[11.5px] scroll-thin mt-1"
+                  style={{
+                    background: 'var(--c-panel)',
+                    color: 'var(--c-ink)',
+                    padding: '6px 8px',
+                    borderRadius: 4,
+                    margin: 0,
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    maxHeight: 220,
+                    overflow: 'auto',
+                  }}
+                >
+                  {message}
+                  {payload ? `${message ? '\n\n' : ''}payload: ${JSON.stringify(payload, null, 2)}` : ''}
+                </pre>
+              )}
+            </div>
+          )}
           {displayMessages.length === 0 && (
-            <div className="text-[11px] py-2" style={{ color: 'var(--c-subtle)' }}>
+            <div className="text-[11.5px] italic" style={{ color: 'var(--c-subtle)' }}>
               {running ? 'Child agent is working…' : 'No activity recorded.'}
             </div>
           )}
@@ -136,8 +242,71 @@ export function TransagentPanel({
               ))}
             </div>
           ))}
+          {answerText && (
+            <div className="mt-2">
+              <div
+                className="text-[10.5px] uppercase tracking-wider font-mono mb-1"
+                style={{ color: 'var(--c-subtle)' }}
+              >
+                Summary
+              </div>
+              <div
+                className="rounded-md px-2.5 py-2 text-[12.5px] scroll-thin"
+                style={{
+                  background: 'var(--c-panel)',
+                  border: '1px solid var(--c-hair)',
+                  color: 'var(--c-ink)',
+                  maxHeight: 360,
+                  overflowY: 'auto',
+                }}
+              >
+                {answerIsText ? (
+                  <ChatMarkdown text={answerText} />
+                ) : (
+                  <pre
+                    className="font-mono text-[11.5px]"
+                    style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+                  >
+                    {answerText}
+                  </pre>
+                )}
+              </div>
+            </div>
+          )}
         </div>
+      )}
+      {jsonOpen && (
+        <ToolJsonModal
+          title={`transagent · ${contextType}`}
+          items={[
+            {
+              toolName: 'runTransagent',
+              input: invocation ?? { contextType },
+              result: parsed,
+              isError: result?.isError ?? status === 'failed',
+            },
+          ]}
+          onClose={() => setJsonOpen(false)}
+        />
       )}
     </div>
   );
+}
+
+export type TransagentDisplayStatus = 'running' | 'completed' | 'failed' | 'abandoned';
+
+/**
+ * What the panel shows. The paired tool_result is final — it wins over an entry
+ * that missed its `transagent_completed`. With neither, a child still `running`
+ * once the parent turn closed (abort, dead stream) reads as interrupted, the
+ * same rule `subagentDisplayStatus` applies to a Task delegation.
+ */
+export function transagentDisplayStatus(
+  raw: TransagentEntry['status'],
+  turnOpen: boolean,
+  result?: { isError: boolean } | null,
+): TransagentDisplayStatus {
+  if (result) return result.isError ? 'failed' : 'completed';
+  if (raw === 'running') return turnOpen ? 'running' : 'abandoned';
+  return raw === 'error' ? 'failed' : 'completed';
 }
