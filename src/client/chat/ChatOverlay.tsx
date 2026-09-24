@@ -163,6 +163,7 @@ export function ChatOverlay() {
     holdEnding,
     isParked,
     busyIndicator,
+    openTurnMessageIds,
     activeThreadMeta,
   } = useChat({
     threadId: chatThreadId,
@@ -606,7 +607,7 @@ export function ChatOverlay() {
                           annotations={msgAnnotations}
                           planMode={msgPlanMode}
                           backgroundTasks={backgroundTasks}
-                          turnOpen={Boolean(msg.isStreaming)}
+                          turnOpen={openTurnMessageIds.has(msg.id)}
                         />
                       ))}
                     </div>

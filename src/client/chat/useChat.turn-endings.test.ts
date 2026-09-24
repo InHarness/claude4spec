@@ -74,6 +74,14 @@ describe('turn busy indicator (0.2.109)', () => {
     expect(park([{ type: 'result' }, { type: 'error', code: 'QUEUE_ERROR' }])).toBe(true);
     expect(park([{ type: 'result' }, { type: 'subagent_completed' }])).toBe(true);
   });
+
+  it('a mid-turn push or the main model speaking again unparks; subagent traffic does not', () => {
+    const ev = (e: Record<string, unknown>) => e as { type: string };
+    expect(park([{ type: 'result' }, { type: 'user_message' }])).toBe(false);
+    expect(park([{ type: 'result' }, ev({ type: 'text_delta', isSubagent: false })])).toBe(false);
+    expect(park([{ type: 'result' }, ev({ type: 'text_delta', isSubagent: true })])).toBe(true);
+    expect(park([{ type: 'result' }, ev({ type: 'tool_use', isSubagent: false, subagentTaskId: 'sub_1' })])).toBe(true);
+  });
 });
 
 describe('delegation card status (0.2.109)', () => {

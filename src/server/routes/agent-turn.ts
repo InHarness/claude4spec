@@ -384,9 +384,10 @@ import {
   BACKGROUND_HOLD_CAP_MS,
   backgroundHoldExpiredMessage,
   IDLE_TIMEOUT_MS,
+  isMainModelEvent,
   TURN_TIMEOUT_MS,
 } from '../../shared/agent-turn.js';
-export { AgentTurnError, type AgentTurnErrorCode } from '../../shared/agent-turn.js';
+export { AgentTurnError, type AgentTurnErrorCode, isMainModelEvent } from '../../shared/agent-turn.js';
 
 // 0.2.107: against the library's REAL grace, not a hand-kept copy — a raised
 // library default must fail the boot here, not pass a stale sum.
@@ -471,26 +472,6 @@ export interface AgentTurnResult {
  * 0.2.107: `AdapterTimeoutError` now means the 24 h BACKSTOP fired before the
  * idle clock did — an idle-clock failure, not a slow agent.
  */
-/**
- * 0.2.109: an event produced by the MAIN model — the proof that a parked turn
- * resumed. Subagent traffic does not count: a delegation's own text and tool
- * calls stream while the main model is parked, which is the whole reason a
- * parked turn is not over.
- */
-export function isMainModelEvent(event: { type: string } & Record<string, unknown>): boolean {
-  switch (event.type) {
-    case 'text_delta':
-    case 'thinking':
-      return !event.isSubagent;
-    case 'tool_use':
-      return !event.isSubagent && !event.subagentTaskId;
-    case 'assistant_message':
-      return !(event.message as { subagentTaskId?: string } | undefined)?.subagentTaskId;
-    default:
-      return false;
-  }
-}
-
 const BACKSTOP_TIMEOUT_MESSAGE =
   'Turn backstop timeout expired — the idle clock should have ended this turn first';
 
@@ -749,6 +730,17 @@ export async function runAgentTurn(
    * continuation gets its `turn_start` (see the loop).
    */
   let parked = false;
+
+  /**
+   * 0.2.109: a mid-turn `user_message` was forwarded in THIS iteration. The
+   * client reducer answers it by opening a fresh assistant message under an id
+   * the server never learns, so a continuation `turn_start` carrying the
+   * iteration's original `assistantMessageId` would no longer be a no-op there:
+   * agent-chat reads "a turn the thread already holds" and TEARS the live
+   * stream down. Once a push landed, the continuation is not sent — the client
+   * unparks on the main-model event itself (`nextParked`).
+   */
+  let pushedThisIteration = false;
 
   /**
    * The terminal error EVENT captured inside the loop (0.2.50).
@@ -1727,6 +1719,7 @@ export async function runAgentTurn(
       // A new iteration opens with its own `turn_start` (merged dispatch), so it
       // never starts parked.
       parked = false;
+      pushedThisIteration = false;
       // Called HERE, per invocation — never hoisted into a variable this closure
       // captures across queries. That distinction is the entire fix. Held in a
       // local only so the binding check below can look at THIS query's set.
@@ -1760,14 +1753,17 @@ export async function runAgentTurn(
           // over" signal. Buffered (not via `emit` — `turn_start` is not a replay
           // type), so a joiner replays it after the `result` it follows.
           parked = false;
-          const continuation: TurnEvent = { ...replay.turnStart, timestamp: new Date().toISOString() };
-          input.onEvent(continuation);
-          emitter.emit('event', continuation);
-          pushToReplay(continuation);
+          if (!pushedThisIteration) {
+            const continuation: TurnEvent = { ...replay.turnStart, timestamp: new Date().toISOString() };
+            input.onEvent(continuation);
+            emitter.emit('event', continuation);
+            pushToReplay(continuation);
+          }
         }
         // Mid-turn `user_message` carries an epoch-ms `timestamp` (number); map to
         // ISO on the wire so it matches `turn_start.timestamp`.
         if (event.type === 'user_message') {
+          pushedThisIteration = true;
           emit({
             type: 'user_message',
             text: event.text,

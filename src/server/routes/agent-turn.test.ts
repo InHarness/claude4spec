@@ -1259,6 +1259,30 @@ describe('runAgentTurn — 0.2.109 delegation holds the turn open', () => {
     );
   });
 
+  it('withholds the continuation turn_start once a mid-turn user_message was pushed in the iteration', async () => {
+    // agent-chat opened a fresh assistant message for the push under an id the
+    // server never learns; a turn_start with the iteration's original id would
+    // read there as "a turn already on disk" and tear the live stream down.
+    hoisted.events = [
+      { type: 'text_delta', text: 'Delegating. ' },
+      { type: 'subagent_started', taskId: 'sub_1', description: 'Explore M05', toolUseId: 'tool_q' },
+      { type: 'result', sessionId: 's-parked', usage: { inputTokens: 5, outputTokens: 2 }, contextSize: 192 },
+      { type: 'user_message', text: 'pushed while parked', timestamp: Date.now() },
+      { type: 'subagent_completed', taskId: 'sub_1', status: 'completed' },
+      { type: 'text_delta', text: 'The subagent reported back.' },
+      { type: 'result', sessionId: 's-final', usage: { inputTokens: 9, outputTokens: 4 }, contextSize: 210 },
+    ];
+    const { deps } = makeDeps();
+    const emitted: Array<Record<string, unknown>> = [];
+    const input = makeInput();
+    input.onEvent = (e) => emitted.push(e as Record<string, unknown>);
+
+    await runAgentTurn(deps, input);
+
+    expect(emitted.filter((e) => e.type === 'turn_start')).toHaveLength(0);
+    expect(emitted.at(-1)?.type).toBe('done');
+  });
+
   it('[ac:ac-watek-ktorego-tura-po-result-czeka-wy] a thread whose turn waits only on a delegation after result stays live (activeAdapters → isLive)', async () => {
     hoisted.events = DELEGATION;
     const { deps } = makeDeps();

@@ -195,6 +195,27 @@ export function backgroundHoldExpiredMessage(
 }
 
 /**
+ * 0.2.109: an event produced by the MAIN model — the proof that a parked turn
+ * resumed. Subagent traffic does not count: a delegation's own text and tool
+ * calls stream while the main model is parked, which is the whole reason a
+ * parked turn is not over. Shared so the server (continuation `turn_start`)
+ * and the client (`nextParked`) read "resumed" from the same rule.
+ */
+export function isMainModelEvent(event: { type: string } & Record<string, unknown>): boolean {
+  switch (event.type) {
+    case 'text_delta':
+    case 'thinking':
+      return !event.isSubagent;
+    case 'tool_use':
+      return !event.isSubagent && !event.subagentTaskId;
+    case 'assistant_message':
+      return !(event.message as { subagentTaskId?: string } | undefined)?.subagentTaskId;
+    default:
+      return false;
+  }
+}
+
+/**
  * Typed blad tury — pozwala konsumentom (headless `ask`, `runTransagent`)
  * zmapowac powod zakonczenia na status HTTP / kod narzedzia. Te same kody co
  * SSE `event: error`.
