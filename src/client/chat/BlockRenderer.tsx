@@ -7,11 +7,15 @@ import { ToolCard, type ToolItem } from './ToolCard.js';
 import { UserTextMarkdown } from './UserTextMarkdown.js';
 import {
   BACKGROUND_TASK_TOOL_NAME,
+  TRANSAGENT_TOOL_NAME,
   USER_INPUT_TOOL_NAME,
   WARNING_TOOL_NAME,
   type BackgroundTaskEntry,
+  type TransagentEntry,
 } from './useChat.js';
+import type { ChatModel } from '../state/chat.js';
 import { BackgroundTaskPanel } from './BackgroundTaskPanel.js';
+import { TransagentPanel } from './TransagentPanel.js';
 import { ChatMarkdown } from './ChatMarkdown.js';
 
 export type BlockSide = 'user' | 'assistant';
@@ -36,6 +40,14 @@ interface Props {
    * `abandoned` in the DB, but writes nothing to the stream. Defaults to open.
    */
   turnOpen?: boolean;
+  /**
+   * Live transagent registry. A `runTransagent` call with an entry renders as its
+   * bubble panel IN PLACE of the tool card — the parent's `tool_use` row is the
+   * durable anchor (M46), keyed by `toolUseId` both live and after F5.
+   */
+  transagents?: TransagentEntry[];
+  /** Chat model, needed by the transagent panel's own message reducer. */
+  model?: ChatModel;
 }
 
 export function BlockRenderer({
@@ -46,6 +58,8 @@ export function BlockRenderer({
   planMode,
   backgroundTasks,
   turnOpen = true,
+  transagents,
+  model,
 }: Props) {
   switch (block.type) {
     case 'text':
@@ -73,6 +87,22 @@ export function BlockRenderer({
         // No entry yet means the carrier outran its own state update; render
         // nothing this pass rather than an empty shell.
         return entry ? <BackgroundTaskPanel entry={entry} /> : null;
+      }
+      if (block.toolName === TRANSAGENT_TOOL_NAME) {
+        const entry = transagents?.find((t) => t.toolUseId === block.toolUseId);
+        // No entry means no child thread was ever spawned (INVALID_ARGS) or the
+        // call outran `transagent_started` — fall through to the plain card so
+        // a rejected call stays visible.
+        if (entry) {
+          return (
+            <TransagentPanel
+              entry={entry}
+              model={model ?? ''}
+              invocation={block.input}
+              result={result ? { content: result.content, isError: result.isError } : null}
+            />
+          );
+        }
       }
       if (block.toolName === USER_INPUT_TOOL_NAME) {
         return (
@@ -140,6 +170,9 @@ export function BlockRenderer({
                 annotations={annotations}
                 planMode={planMode}
                 backgroundTasks={backgroundTasks}
+                turnOpen={turnOpen}
+                transagents={transagents}
+                model={model}
               />
             )}
           </>
@@ -167,6 +200,45 @@ export function BlockRenderer({
                 annotations={annotations}
                 planMode={planMode}
                 backgroundTasks={backgroundTasks}
+                turnOpen={turnOpen}
+                transagents={transagents}
+                model={model}
+              />
+            )}
+          </>
+        );
+      }
+      // A transagent call is absorbed into its bubble panel, the way a Task call
+      // is absorbed into <SubagentPanel /> — it must never sit inside a tool
+      // card. Only calls with an entry are pulled out; the rest (a rejected call
+      // with no child) stay in the batch and go BACK through this switch.
+      const isPanelled = (i: { toolName: string; toolUseId: string }) =>
+        i.toolName === TRANSAGENT_TOOL_NAME && !!transagents?.some((t) => t.toolUseId === i.toolUseId);
+      if (block.items.some(isPanelled)) {
+        const panelled = block.items.filter(isPanelled);
+        const rest = block.items.filter((i) => !isPanelled(i));
+        return (
+          <>
+            {panelled.map((item) => (
+              <TransagentPanel
+                key={item.toolUseId}
+                entry={transagents!.find((t) => t.toolUseId === item.toolUseId)!}
+                model={model ?? ''}
+                invocation={item.input}
+                result={item.result ? { content: item.result.content, isError: item.result.isError } : null}
+              />
+            ))}
+            {rest.length > 0 && (
+              <BlockRenderer
+                block={{ ...block, items: rest }}
+                siblings={siblings}
+                side={side}
+                annotations={annotations}
+                planMode={planMode}
+                backgroundTasks={backgroundTasks}
+                turnOpen={turnOpen}
+                transagents={transagents}
+                model={model}
               />
             )}
           </>

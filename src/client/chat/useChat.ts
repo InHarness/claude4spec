@@ -1039,7 +1039,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
 }
 
 /** 0.1.69: name of the runTransagent tool as persisted in tool_use rows. */
-const TRANSAGENT_TOOL_NAME = 'mcp__transagent-tools__runTransagent';
+export const TRANSAGENT_TOOL_NAME = 'mcp__transagent-tools__runTransagent';
 
 /**
  * 0.1.69: rebuild COMPLETED transagent entries from persisted chat rows.

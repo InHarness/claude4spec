@@ -10,7 +10,6 @@ import { ResizeHandle } from '../components/ResizeHandle.js';
 import { useChat, holdEndingLabel } from './useChat.js';
 import { useThreadListContext } from './ThreadListContext.js';
 import { BlockRenderer, QueuedMessageBubble } from './BlockRenderer.js';
-import { TransagentPanel } from './TransagentPanel.js';
 import { AnnotationPanel } from './AnnotationPanel.js';
 import { CurrentTodoList } from './CurrentTodoList.js';
 import { UsageBadge } from './UsageBadge.js';
@@ -608,16 +607,14 @@ export function ChatOverlay() {
                           planMode={msgPlanMode}
                           backgroundTasks={backgroundTasks}
                           turnOpen={openTurnMessageIds.has(msg.id)}
+                          transagents={transagents}
+                          model={model ?? ''}
                         />
                       ))}
                     </div>
                   );
                 });
               })()}
-              {/* 0.1.69 Transagents: nested child panels (live-join or persisted). */}
-              {transagents.map((t) => (
-                <TransagentPanel key={t.toolUseId} entry={t} model={model ?? ''} />
-              ))}
               {/* 0.2.50: background-task panels moved INTO the turn (a carrier
                   block placed by useChat, rendered by <BlockRenderer />), so they
                   sit where the task actually started instead of in a flat list
