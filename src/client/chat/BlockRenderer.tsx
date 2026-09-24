@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { AlertTriangle, ChevronDown, ChevronRight, Cpu, HelpCircle, ClipboardList, Clock, X } from 'lucide-react';
 import type { UIContentBlock } from '@inharness-ai/agent-chat';
 import type { UserInputRequest, UserInputResponse } from '@inharness-ai/agent-adapters';
@@ -61,6 +61,31 @@ export function BlockRenderer({
   transagents,
   model,
 }: Props) {
+  /**
+   * Transagent panels, keyed by toolUseId, in ONE tree shape for both a lone
+   * `toolUse` and a `toolBatch`. Sequential calls with no text between them get
+   * re-batched when the second one lands; a different shape would remount the
+   * first panel — re-joining its child stream and resetting its toggles.
+   */
+  const transagentGroup = (
+    panels: Array<{ toolUseId: string; input: unknown; entry: TransagentEntry; result: PairedResult | null }>,
+    rest: ReactNode,
+  ) => (
+    <>
+      {panels.map((p) => (
+        <TransagentPanel
+          key={p.toolUseId}
+          entry={p.entry}
+          model={model ?? ''}
+          invocation={p.input}
+          result={p.result}
+          turnOpen={turnOpen}
+        />
+      ))}
+      {rest}
+    </>
+  );
+
   switch (block.type) {
     case 'text':
       return side === 'user' ? (
@@ -92,16 +117,9 @@ export function BlockRenderer({
         // No entry means no child thread was ever spawned (INVALID_ARGS) or the
         // call outran `transagent_started` — fall through to the plain card so
         // a rejected call stays visible.
-        if (entry) {
-          return (
-            <TransagentPanel
-              entry={entry}
-              model={model ?? ''}
-              invocation={block.input}
-              result={result}
-            />
-          );
-        }
+        // Same tree shape as the batch branch below, so the panel survives the
+        // batcher folding this call into a toolBatch once a second one arrives.
+        if (entry) return transagentGroup([{ toolUseId: block.toolUseId, input: block.input, entry, result }], null);
       }
       if (block.toolName === USER_INPUT_TOOL_NAME) {
         return (
@@ -214,34 +232,26 @@ export function BlockRenderer({
       if (block.items.some((i) => entryOf(i))) {
         const panelled = block.items.flatMap((item) => {
           const entry = entryOf(item);
-          return entry ? [{ item, entry }] : [];
+          return entry
+            ? [{ toolUseId: item.toolUseId, input: item.input, entry, result: batchItemResult(item, siblings) }]
+            : [];
         });
         const rest = block.items.filter((i) => !entryOf(i));
-        return (
-          <>
-            {panelled.map(({ item, entry }) => (
-              <TransagentPanel
-                key={item.toolUseId}
-                entry={entry}
-                model={model ?? ''}
-                invocation={item.input}
-                result={batchItemResult(item, siblings)}
-              />
-            ))}
-            {rest.length > 0 && (
-              <BlockRenderer
-                block={{ ...block, items: rest }}
-                siblings={siblings}
-                side={side}
-                annotations={annotations}
-                planMode={planMode}
-                backgroundTasks={backgroundTasks}
-                turnOpen={turnOpen}
-                transagents={transagents}
-                model={model}
-              />
-            )}
-          </>
+        return transagentGroup(
+          panelled,
+          rest.length > 0 ? (
+            <BlockRenderer
+              block={{ ...block, items: rest }}
+              siblings={siblings}
+              side={side}
+              annotations={annotations}
+              planMode={planMode}
+              backgroundTasks={backgroundTasks}
+              turnOpen={turnOpen}
+              transagents={transagents}
+              model={model}
+            />
+          ) : null,
         );
       }
       if (block.items.every((i) => i.toolName === USER_INPUT_TOOL_NAME)) {

@@ -27,6 +27,7 @@ export function TransagentPanel({
   model,
   invocation,
   result,
+  turnOpen = true,
 }: {
   entry: TransagentEntry;
   model: ChatModel;
@@ -34,8 +35,11 @@ export function TransagentPanel({
   invocation?: unknown;
   /** The call's tool_result — the summary handed back to the parent LLM. */
   result?: { content: string; isError: boolean } | null;
+  /** Whether the parent turn is still open — see `transagentDisplayStatus`. */
+  turnOpen?: boolean;
 }) {
-  const { toolUseId, childThreadId, contextType, status } = entry;
+  const { toolUseId, childThreadId, contextType } = entry;
+  const status = transagentDisplayStatus(entry.status, turnOpen, result);
   // Open while the child works so the human watches it live; the user folds it.
   const [expanded, setExpanded] = useState(status === 'running');
   const [messageOpen, setMessageOpen] = useState(false);
@@ -97,7 +101,7 @@ export function TransagentPanel({
 
   const running = status === 'running';
   const dotColor =
-    status === 'error' ? 'var(--c-red, #c45a3b)' : 'var(--c-green, #4a9860)';
+    status === 'failed' ? 'var(--c-red, #c45a3b)' : 'var(--c-green, #4a9860)';
   const input = (invocation ?? null) as { message?: unknown; payload?: unknown } | null;
   const message = typeof input?.message === 'string' ? input.message : undefined;
   const payload = input?.payload && typeof input.payload === 'object' ? input.payload : undefined;
@@ -152,6 +156,15 @@ export function TransagentPanel({
             <span></span>
             <span></span>
             <span></span>
+          </span>
+        ) : status === 'abandoned' ? (
+          <span
+            className="font-mono text-[10.5px] whitespace-nowrap"
+            style={{ color: 'var(--c-subtle)' }}
+            data-status="abandoned"
+            title="The turn ended before this transagent completed"
+          >
+            interrupted
           </span>
         ) : (
           <span
@@ -270,7 +283,7 @@ export function TransagentPanel({
               toolName: 'runTransagent',
               input: invocation ?? { contextType },
               result: parsed,
-              isError: result?.isError ?? status === 'error',
+              isError: result?.isError ?? status === 'failed',
             },
           ]}
           onClose={() => setJsonOpen(false)}
@@ -278,4 +291,22 @@ export function TransagentPanel({
       )}
     </div>
   );
+}
+
+export type TransagentDisplayStatus = 'running' | 'completed' | 'failed' | 'abandoned';
+
+/**
+ * What the panel shows. The paired tool_result is final — it wins over an entry
+ * that missed its `transagent_completed`. With neither, a child still `running`
+ * once the parent turn closed (abort, dead stream) reads as interrupted, the
+ * same rule `subagentDisplayStatus` applies to a Task delegation.
+ */
+export function transagentDisplayStatus(
+  raw: TransagentEntry['status'],
+  turnOpen: boolean,
+  result?: { isError: boolean } | null,
+): TransagentDisplayStatus {
+  if (result) return result.isError ? 'failed' : 'completed';
+  if (raw === 'running') return turnOpen ? 'running' : 'abandoned';
+  return raw === 'error' ? 'failed' : 'completed';
 }

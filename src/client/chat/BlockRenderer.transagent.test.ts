@@ -177,3 +177,31 @@ describe('TransagentPanel — result pairing and summary', () => {
     expect(paired).not.toBe(unpaired);
   });
 });
+
+describe('transagentDisplayStatus — interrupted when the parent turn closed', () => {
+  it('maps entry status, turn state and the paired result', async () => {
+    const { transagentDisplayStatus: s } = await import('./TransagentPanel.js');
+    expect(s('running', true)).toBe('running');
+    expect(s('running', false)).toBe('abandoned');
+    expect(s('running', false, { isError: false })).toBe('completed');
+    expect(s('running', true, { isError: true })).toBe('failed');
+    expect(s('error', true)).toBe('failed');
+    expect(s('completed', false)).toBe('completed');
+  });
+
+  it('renders "interrupted" instead of the pulse for a running child in a closed turn', () => {
+    const block = toolUse('tu-1');
+    const html = renderToStaticMarkup(
+      createElement(BlockRenderer, {
+        block,
+        siblings: [block],
+        side: 'assistant',
+        transagents: [{ ...entry('tu-1'), status: 'running', summary: undefined }],
+        model: 'opus',
+        turnOpen: false,
+      }),
+    );
+    expect(html).toContain('data-status="abandoned"');
+    expect(html).not.toContain('dot-pulse');
+  });
+});
