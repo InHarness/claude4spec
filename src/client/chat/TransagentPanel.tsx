@@ -103,7 +103,11 @@ export function TransagentPanel({
   const payload = input?.payload && typeof input.payload === 'object' ? input.payload : undefined;
   // Same unwrapping as SubagentPanel: the adapter JSON-wraps tool_result content;
   // `entry.summary` (from `transagent_completed`) covers a result not yet paired.
-  const rawAnswer = result ? parseToolResult(result.content) : entry.summary ?? null;
+  // runTransagent answers with a `{ threadId, summary }` envelope — show the summary.
+  const parsed = result ? parseToolResult(result.content) : entry.summary ?? null;
+  const envelopeSummary = (parsed as { summary?: unknown } | null)?.summary;
+  const rawAnswer =
+    parsed && typeof parsed === 'object' && typeof envelopeSummary === 'string' ? envelopeSummary : parsed;
   const answerText =
     typeof rawAnswer === 'string'
       ? rawAnswer

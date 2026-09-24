@@ -102,3 +102,46 @@ describe('BlockRenderer — transagent panel anchored at its runTransagent call'
     expect(html).toContain(render(onlyOther, [entry('tu-1')]));
   });
 });
+
+describe('TransagentPanel — result pairing and summary', () => {
+  const resultBlock = (toolUseId: string, summary: string) =>
+    ({
+      type: 'toolResult',
+      toolUseId,
+      content: JSON.stringify([{ type: 'text', text: JSON.stringify({ threadId: `child-${toolUseId}`, summary }) }]),
+      isError: false,
+    }) as unknown as UIContentBlock;
+
+  it('shows the summary out of the { threadId, summary } envelope, not the raw JSON', () => {
+    const use = toolUse('tu-1');
+    const res = resultBlock('tu-1', 'Brief drafted.');
+    const html = renderToStaticMarkup(
+      createElement(BlockRenderer, {
+        block: use,
+        siblings: [use, res],
+        side: 'assistant',
+        transagents: [{ ...entry('tu-1'), summary: undefined }],
+        model: 'opus',
+      }),
+    );
+    expect(html).toContain('Brief drafted.');
+    expect(html).not.toContain('threadId');
+  });
+
+  it('finds a parallel call’s result among the siblings when the batcher left it unpaired', () => {
+    // use, use, result, result — the batcher only pairs a DIRECTLY following result.
+    const batch = { type: 'toolBatch', items: [batchItem('tu-1'), batchItem('tu-2')] } as unknown as UIContentBlock;
+    const siblings = [batch, resultBlock('tu-1', 'First done.'), resultBlock('tu-2', 'Second done.')];
+    const html = renderToStaticMarkup(
+      createElement(BlockRenderer, {
+        block: batch,
+        siblings,
+        side: 'assistant',
+        transagents: [{ ...entry('tu-1'), summary: undefined }, { ...entry('tu-2'), summary: undefined }],
+        model: 'opus',
+      }),
+    );
+    expect(html).toContain('First done.');
+    expect(html).toContain('Second done.');
+  });
+});

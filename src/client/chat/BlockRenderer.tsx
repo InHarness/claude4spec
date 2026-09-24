@@ -219,15 +219,21 @@ export function BlockRenderer({
         const rest = block.items.filter((i) => !isPanelled(i));
         return (
           <>
-            {panelled.map((item) => (
-              <TransagentPanel
-                key={item.toolUseId}
-                entry={transagents!.find((t) => t.toolUseId === item.toolUseId)!}
-                model={model ?? ''}
-                invocation={item.input}
-                result={item.result ? { content: item.result.content, isError: item.result.isError } : null}
-              />
-            ))}
+            {panelled.map((item) => {
+              // The batcher pairs a result only when it directly follows its call;
+              // parallel calls (use, use, result, result) leave it as a sibling.
+              const sib = siblings.find((b) => b.type === 'toolResult' && b.toolUseId === item.toolUseId);
+              const res = item.result ?? (sib && sib.type === 'toolResult' ? sib : null);
+              return (
+                <TransagentPanel
+                  key={item.toolUseId}
+                  entry={transagents!.find((t) => t.toolUseId === item.toolUseId)!}
+                  model={model ?? ''}
+                  invocation={item.input}
+                  result={res ? { content: res.content, isError: res.isError } : null}
+                />
+              );
+            })}
             {rest.length > 0 && (
               <BlockRenderer
                 block={{ ...block, items: rest }}
