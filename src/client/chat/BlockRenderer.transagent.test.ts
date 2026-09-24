@@ -144,4 +144,36 @@ describe('TransagentPanel — result pairing and summary', () => {
     expect(html).toContain('First done.');
     expect(html).toContain('Second done.');
   });
+
+  it('pairs a rejected parallel call’s sibling result into its tool card too', () => {
+    // tu-2 was rejected (no entry, INVALID_ARGS) — its card must show the error,
+    // not read as still running because the batcher left the result unpaired.
+    const batch = { type: 'toolBatch', items: [batchItem('tu-1'), batchItem('tu-2')] } as unknown as UIContentBlock;
+    const rejected = {
+      type: 'toolResult',
+      toolUseId: 'tu-2',
+      content: 'INVALID_ARGS: contextType',
+      isError: true,
+    } as unknown as UIContentBlock;
+    const unpaired = renderToStaticMarkup(
+      createElement(BlockRenderer, {
+        block: batch,
+        siblings: [batch, resultBlock('tu-1', 'First done.')],
+        side: 'assistant',
+        transagents: [entry('tu-1')],
+        model: 'opus',
+      }),
+    );
+    const paired = renderToStaticMarkup(
+      createElement(BlockRenderer, {
+        block: batch,
+        siblings: [batch, resultBlock('tu-1', 'First done.'), rejected],
+        side: 'assistant',
+        transagents: [entry('tu-1')],
+        model: 'opus',
+      }),
+    );
+    expect(panels(paired)).toBe(1);
+    expect(paired).not.toBe(unpaired);
+  });
 });

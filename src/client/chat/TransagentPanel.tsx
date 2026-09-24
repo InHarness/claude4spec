@@ -269,7 +269,7 @@ export function TransagentPanel({
             {
               toolName: 'runTransagent',
               input: invocation ?? { contextType },
-              result: result ? parseToolResult(result.content) : entry.summary ?? null,
+              result: parsed,
               isError: result?.isError ?? status === 'error',
             },
           ]}

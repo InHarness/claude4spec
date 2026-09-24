@@ -76,8 +76,7 @@ export function BlockRenderer({
       if (siblings.some((b) => b.type === 'subagent' && b.toolUseId === block.toolUseId)) {
         return null;
       }
-      const paired = siblings.find((b) => b.type === 'toolResult' && b.toolUseId === block.toolUseId);
-      const result = paired && paired.type === 'toolResult' ? paired : null;
+      const result = siblingResult(siblings, block.toolUseId);
       if (block.toolName === WARNING_TOOL_NAME) {
         return <WarningBlock message={warningMessage(block.input)} />;
       }
@@ -99,7 +98,7 @@ export function BlockRenderer({
               entry={entry}
               model={model ?? ''}
               invocation={block.input}
-              result={result ? { content: result.content, isError: result.isError } : null}
+              result={result}
             />
           );
         }
@@ -116,7 +115,7 @@ export function BlockRenderer({
         toolUseId: block.toolUseId,
         toolName: block.toolName,
         input: block.input,
-        result: result ? { content: result.content, isError: result.isError } : null,
+        result,
       };
       return <ToolCard items={[item]} />;
     }
@@ -133,9 +132,7 @@ export function BlockRenderer({
       const input = (task && task.type === 'toolUse' ? task.input : null) as
         | { subagent_type?: string; prompt?: string }
         | null;
-      const res = siblings.find((b) => b.type === 'toolResult' && b.toolUseId === block.toolUseId);
-      const result =
-        res && res.type === 'toolResult' ? { content: res.content, isError: res.isError } : null;
+      const result = siblingResult(siblings, block.toolUseId);
       return (
         <SubagentPanel
           block={block}
@@ -212,28 +209,25 @@ export function BlockRenderer({
       // is absorbed into <SubagentPanel /> — it must never sit inside a tool
       // card. Only calls with an entry are pulled out; the rest (a rejected call
       // with no child) stay in the batch and go BACK through this switch.
-      const isPanelled = (i: { toolName: string; toolUseId: string }) =>
-        i.toolName === TRANSAGENT_TOOL_NAME && !!transagents?.some((t) => t.toolUseId === i.toolUseId);
-      if (block.items.some(isPanelled)) {
-        const panelled = block.items.filter(isPanelled);
-        const rest = block.items.filter((i) => !isPanelled(i));
+      const entryOf = (i: { toolName: string; toolUseId: string }) =>
+        i.toolName === TRANSAGENT_TOOL_NAME ? transagents?.find((t) => t.toolUseId === i.toolUseId) : undefined;
+      if (block.items.some((i) => entryOf(i))) {
+        const panelled = block.items.flatMap((item) => {
+          const entry = entryOf(item);
+          return entry ? [{ item, entry }] : [];
+        });
+        const rest = block.items.filter((i) => !entryOf(i));
         return (
           <>
-            {panelled.map((item) => {
-              // The batcher pairs a result only when it directly follows its call;
-              // parallel calls (use, use, result, result) leave it as a sibling.
-              const sib = siblings.find((b) => b.type === 'toolResult' && b.toolUseId === item.toolUseId);
-              const res = item.result ?? (sib && sib.type === 'toolResult' ? sib : null);
-              return (
-                <TransagentPanel
-                  key={item.toolUseId}
-                  entry={transagents!.find((t) => t.toolUseId === item.toolUseId)!}
-                  model={model ?? ''}
-                  invocation={item.input}
-                  result={res ? { content: res.content, isError: res.isError } : null}
-                />
-              );
-            })}
+            {panelled.map(({ item, entry }) => (
+              <TransagentPanel
+                key={item.toolUseId}
+                entry={entry}
+                model={model ?? ''}
+                invocation={item.input}
+                result={batchItemResult(item, siblings)}
+              />
+            ))}
             {rest.length > 0 && (
               <BlockRenderer
                 block={{ ...block, items: rest }}
@@ -257,7 +251,7 @@ export function BlockRenderer({
               <PersistedUserInputCard
                 key={item.toolUseId}
                 request={item.input as UserInputRequest}
-                responseContent={item.result?.content ?? null}
+                responseContent={batchItemResult(item, siblings)?.content ?? null}
               />
             ))}
           </>
@@ -267,13 +261,37 @@ export function BlockRenderer({
         toolUseId: i.toolUseId,
         toolName: i.toolName,
         input: i.input,
-        result: i.result ? { content: i.result.content, isError: i.result.isError } : null,
+        result: batchItemResult(i, siblings),
       }));
       return <ToolCard items={items} />;
     }
     default:
       return null;
   }
+}
+
+// --- Tool-result pairing ---
+
+type PairedResult = { content: string; isError: boolean };
+
+/** The `toolResult` sibling answering `toolUseId`, if the message holds one. */
+function siblingResult(siblings: UIContentBlock[], toolUseId: string): PairedResult | null {
+  const res = siblings.find((b) => b.type === 'toolResult' && b.toolUseId === toolUseId);
+  return res && res.type === 'toolResult' ? { content: res.content, isError: res.isError } : null;
+}
+
+/**
+ * A batch item's result. The batcher pairs a result only when it directly follows
+ * its call, so parallel calls (use, use, result, result) leave it as a sibling —
+ * look there too, or every item of a parallel batch reads as still running.
+ */
+function batchItemResult(
+  item: { toolUseId: string; result?: PairedResult | null },
+  siblings: UIContentBlock[],
+): PairedResult | null {
+  return item.result
+    ? { content: item.result.content, isError: item.result.isError }
+    : siblingResult(siblings, item.toolUseId);
 }
 
 // --- Runtime warning (C21) ---
