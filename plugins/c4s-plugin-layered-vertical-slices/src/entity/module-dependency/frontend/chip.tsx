@@ -4,7 +4,7 @@
  * `onOpen` IS THE WHOLE STORY, and this component contains none of it. The host
  * builds the handler in `openEntity.ts`: for a hidden module (no `routes`, no
  * `detailPanel`) it dispatches the entity-overlay event, which
- * `EntityOverlayHost` turns into this type's `renderOverlay`. `bridge.openEntity`
+ * `ModalHost` (the `<type>-expand` window) turns into this type's `renderOverlay`. `editorBridge.openEntity`
  * is NEVER involved, because there is no route to send it to — and the host
  * enforces that from the other side too, rejecting a `renderOverlay` on any type
  * that does have a detail route.

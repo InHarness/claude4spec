@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { getEntityDef } from './registry.js';
 
 /**
@@ -16,6 +17,7 @@ export function ChipResolver({
   type,
   slug,
   onOpen,
+  onMissing,
 }: {
   type: string;
   slug: string;
@@ -25,9 +27,15 @@ export function ChipResolver({
    * rendered where no overlay host is mounted.
    */
   onOpen?: () => void;
+  /** 0.2.110 M19 — told whether the entity turned out to be missing. */
+  onMissing?: (missing: boolean) => void;
 }) {
   const def = getEntityDef(type)!;
   const { data, isLoading } = def.useGetBySlug(slug);
+  const missing = !isLoading && data == null;
+  useEffect(() => {
+    onMissing?.(missing);
+  }, [missing, onMissing]);
   if (isLoading && data === undefined) {
     return (
       <span

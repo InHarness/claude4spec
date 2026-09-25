@@ -5,7 +5,7 @@
  * that is HIDDEN (no `routes`, no `detailPanel`) and yet declares `renderRow`,
  * so a row is drawn for a type with nowhere to navigate — a combination that had
  * never occurred before, and one that `TaggedListView` got wrong by calling
- * `bridge.openEntity` directly instead of going through this helper. The result
+ * `editorBridge.openEntity` directly instead of going through this helper. The result
  * was a click that navigated to a route nothing registers.
  *
  * The failure is invisible in a type signature and silent at runtime, so it is

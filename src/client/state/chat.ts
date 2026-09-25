@@ -1,3 +1,4 @@
+import { requestChatPrefill } from '../chat/chatPrefill.js';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Annotation } from '../../shared/entities.js';
@@ -83,6 +84,11 @@ interface ChatState {
   toggleChat(): void;
   setChatWidth(px: number): void;
   setChatThreadId(id: string | null): void;
+  /**
+   * 0.2.110 M05/M50 — open the overlay on a fresh thread seeded with `prompt`
+   * (auto-submitted when `autoSubmit`). See `chat/startSeededThread.ts`.
+   */
+  startSeededThread(prompt: string, opts?: { autoSubmit?: boolean }): void;
   setSeedPrompt(p: string | null): void;
   /** `adaptive` = the class of `m` from the config payload; `false` clamps 'max' → 'high'. */
   setModel(m: ChatModel, adaptive?: boolean): void;
@@ -117,6 +123,10 @@ export const useChatStore = create<ChatState>()(
           ),
         }),
       setChatThreadId: (id) => set({ chatThreadId: id }),
+      startSeededThread: (prompt, opts = {}) => {
+        set({ chatThreadId: null, chatOpen: true });
+        requestChatPrefill({ prompt, autoSend: opts.autoSubmit ?? false });
+      },
       setSeedPrompt: (p) => set({ seedPrompt: p }),
       setModel: (m, adaptive) =>
         set((s) => ({

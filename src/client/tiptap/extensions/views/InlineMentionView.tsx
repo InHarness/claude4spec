@@ -7,6 +7,8 @@ import { openEntityHandler } from '../../../entities/openEntity.js';
 import { useEditorBridge } from '../../EditorContext.js';
 import { useEditChipOnAltClick } from './useEditChipOnAltClick.js';
 import { InlineBrokenChip } from './BrokenChip.js';
+import { useCallback, useState } from 'react';
+import { useReportBrokenRef } from '../../../state/brokenRefs.js';
 
 export function InlineMentionView(props: NodeViewProps) {
   const { node } = props;
@@ -23,6 +25,11 @@ export function InlineMentionView(props: NodeViewProps) {
   const altCapture = (e: React.MouseEvent) => {
     if (e.altKey) void onAltClick(e);
   };
+  // M19: an unknown/inactive type or a missing entity counts toward the page's
+  // "N broken references found" bar.
+  const [missing, setMissing] = useState(false);
+  const onMissing = useCallback((m: boolean) => setMissing(m), []);
+  useReportBrokenRef(props.editor, { unresolvedType: !def, missingEntity: !!def && missing }, props.deleteNode);
 
   if (!def) {
     const category = categoriseBrokenChip(type) ?? 'unknown-type';
@@ -42,7 +49,7 @@ export function InlineMentionView(props: NodeViewProps) {
       contentEditable={false}
       onClickCapture={altCapture}
     >
-      <ChipResolver type={type} slug={slug} onOpen={open} />
+      <ChipResolver type={type} slug={slug} onOpen={open} onMissing={onMissing} />
     </NodeViewWrapper>
   );
 }

@@ -449,7 +449,7 @@ function PageRoute() {
     if (!path) return;
     setLastPage({ rootId, path });
   }, [rootId, path, setLastPage]);
-  const bridge = useMemo(
+  const editorBridge = useMemo(
     () => ({
       openEntity: (type: EntityType, slug: string) => navigateToEntity(navigate, type, slug),
       // Same-root section jumps stay in the current root.
@@ -470,7 +470,7 @@ function PageRoute() {
   return (
     <RoutePane>
       <EditorToolbar rootId={rootId} path={path} />
-      <EditorBridgeProvider bridge={bridge}>
+      <EditorBridgeProvider bridge={editorBridge}>
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {pageView === 'history' ? (
             <PageVersionHistory rootId={rootId} path={path} onBack={() => setPageView('editor')} />
@@ -479,8 +479,8 @@ function PageRoute() {
               key={`${rootId}/${path}`}
               rootId={rootId}
               path={path}
-              onOpenEntity={bridge.openEntity}
-              onOpenSection={bridge.openSection}
+              onOpenEntity={editorBridge.openEntity}
+              onOpenSection={editorBridge.openSection}
             />
           )}
         </div>

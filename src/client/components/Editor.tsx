@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { EditorContent, useEditor } from '@tiptap/react';
+import { EditorContent, useEditor, type Editor as TiptapEditor } from '@tiptap/react';
+import { useBrokenRefs } from '../state/brokenRefs.js';
 import { useQueryClient } from '@tanstack/react-query';
 import { usePage, useWritePage } from '../hooks/usePage.js';
 import { useScrollToAnchor } from '../hooks/useScrollToAnchor.js';
@@ -422,6 +423,7 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
                 Loading…
               </div>
             ) : null}
+            <BrokenRefsBar editor={editor} />
             <EditorContent editor={editor} />
           </div>
           <div aria-hidden style={{ flex: '1 1 0' }} />
@@ -429,5 +431,37 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
       </div>
       <AnnotationBubble editor={editor} currentPage={path} />
     </EditorBridgeProvider>
+  );
+}
+
+/**
+ * 0.2.110 M19 — shown while the page holds at least one broken reference (an
+ * unknown or inactive type, or an entity that does not exist).
+ */
+function BrokenRefsBar({ editor }: { editor: TiptapEditor | null }) {
+  const { count, removeAll } = useBrokenRefs(editor);
+  if (count === 0) return null;
+  return (
+    <div
+      data-testid="broken-refs-bar"
+      className="mb-4 flex items-center gap-3 rounded-md px-3 py-2 text-[12.5px]"
+      style={{
+        background: 'var(--c-red-soft, rgba(196,90,59,0.10))',
+        border: '1px solid var(--c-red, #c45a3b)',
+        color: 'var(--c-red, #c45a3b)',
+      }}
+    >
+      <span className="flex-1">
+        {count} broken {count === 1 ? 'reference' : 'references'} found
+      </span>
+      <button
+        type="button"
+        onClick={removeAll}
+        className="rounded px-2 py-0.5 text-[12px] font-medium"
+        style={{ border: '1px solid var(--c-red, #c45a3b)' }}
+      >
+        Remove all broken references
+      </button>
+    </div>
   );
 }
