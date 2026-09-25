@@ -91,20 +91,26 @@ describe.skipIf(!BASE)('settings — Agent: Claude Code preset off by default (0
   });
 
   it('ticking the box persists an explicit true, and unticking restores false', async () => {
-    await presetCheckbox().check();
+    // A controlled checkbox: it flips when the config query refreshes, not on
+    // the click itself — so click and poll rather than check()/uncheck().
+    await presetCheckbox().click();
     await expect
       .poll(async () => {
         const res = await fetch(`${BASE}/api/projects/${project.id}/config`);
         return ((await res.json()) as { agent: { claudeUsePreset: boolean } }).agent.claudeUsePreset;
       })
       .toBe(true);
-    await presetCheckbox().uncheck();
+    // The control is disabled while its PATCH is in flight — wait it out.
+    await expect.poll(() => presetCheckbox().isEnabled()).toBe(true);
+    await expect.poll(() => presetCheckbox().isChecked()).toBe(true);
+    await presetCheckbox().click();
     await expect
       .poll(async () => {
         const res = await fetch(`${BASE}/api/projects/${project.id}/config`);
         return ((await res.json()) as { agent: { claudeUsePreset: boolean } }).agent.claudeUsePreset;
       })
       .toBe(false);
+    await expect.poll(() => presetCheckbox().isChecked()).toBe(false);
   });
 
   it('logs no console errors and no failed responses', () => {
