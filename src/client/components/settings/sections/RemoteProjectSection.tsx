@@ -29,7 +29,7 @@ export function RemoteProjectSection() {
   const patch = usePatchConfig();
 
   async function handleDisconnect() {
-    const ok = await confirmDestructive({
+    const ok = await confirmDestructive('project-disconnect', {
       title: 'Disconnect from remote project?',
       body: 'The local config will be cleared. Your next push will create a new remote project.',
       confirmLabel: 'Disconnect',

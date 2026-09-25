@@ -7,63 +7,10 @@ import {
   PopoverShell,
   SelectInput,
   TextInput,
+  type PopoverFormProps,
 } from '../../ui/Popover.js';
 import { usePageAutocomplete } from '../../hooks/usePageLinks.js';
 import type { PageRefSyntax } from './PageRefNode.js';
-
-const PAGE_REF_POPOVER_EVENT = 'c4s:page-ref-popover-open';
-
-export interface PageRefPopoverProps {
-  syntax: PageRefSyntax;
-  path: string;
-  anchor?: string;
-  label?: string;
-  onSave: (attrs: { syntax: PageRefSyntax; path: string; anchor: string; label: string }) => void;
-  onRemove: () => void;
-}
-
-interface PageRefPopoverRequest {
-  x: number;
-  y: number;
-  props: PageRefPopoverProps;
-  resolve: (ok: boolean) => void;
-}
-
-export function openPageRefPopover(
-  position: { x: number; y: number },
-  props: PageRefPopoverProps,
-): Promise<boolean> {
-  return new Promise((resolve) => {
-    const detail: PageRefPopoverRequest = { x: position.x, y: position.y, props, resolve };
-    window.dispatchEvent(new CustomEvent<PageRefPopoverRequest>(PAGE_REF_POPOVER_EVENT, { detail }));
-  });
-}
-
-export function PageRefPopoverHost() {
-  const [request, setRequest] = useState<PageRefPopoverRequest | null>(null);
-
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent<PageRefPopoverRequest>).detail;
-      setRequest((prev) => {
-        if (prev) prev.resolve(false);
-        return detail;
-      });
-    };
-    window.addEventListener(PAGE_REF_POPOVER_EVENT, handler as EventListener);
-    return () => window.removeEventListener(PAGE_REF_POPOVER_EVENT, handler as EventListener);
-  }, []);
-
-  if (!request) return null;
-
-  const close = (ok: boolean) => {
-    const r = request;
-    setRequest(null);
-    r.resolve(ok);
-  };
-
-  return <PageRefPopoverForm request={request} onClose={close} />;
-}
 
 const SYNTAX_OPTIONS: { value: PageRefSyntax; label: string }[] = [
   { value: 'at', label: '@path.md' },
@@ -71,13 +18,13 @@ const SYNTAX_OPTIONS: { value: PageRefSyntax; label: string }[] = [
   { value: 'link', label: '[label](path.md)' },
 ];
 
-function PageRefPopoverForm({
-  request,
-  onClose,
-}: {
-  request: PageRefPopoverRequest;
-  onClose: (ok: boolean) => void;
-}) {
+/**
+ * 0.2.110 M14 — the `page-ref` popover (`openPopover('page-ref', …)`): edit a
+ * page-reference chip's path, anchor, syntax and label. Replaces the chip's own
+ * `c4s:page-ref-popover-open` event and host. Save answers the new attributes;
+ * Remove calls `onRemove` and answers `null`, like Cancel.
+ */
+export function PageRefPopoverForm({ request, onClose }: PopoverFormProps<'page-ref'>) {
   const { props } = request;
   const [path, setPath] = useState(props.path);
   const [anchor, setAnchor] = useState(props.anchor ?? '');
@@ -104,18 +51,17 @@ function PageRefPopoverForm({
       setError('Path is required');
       return;
     }
-    props.onSave({
+    onClose({
       syntax,
       path: p,
       anchor: anchor.trim(),
       label: syntax === 'link' ? label.trim() : '',
     });
-    onClose(true);
   };
 
   const remove = () => {
     props.onRemove();
-    onClose(true);
+    onClose(null);
   };
 
   return (
@@ -123,7 +69,7 @@ function PageRefPopoverForm({
       x={request.x}
       y={request.y}
       width={320}
-      onCancel={() => onClose(false)}
+      onCancel={() => onClose(null)}
       title="Edit page reference"
       icon={<FileText size={12} style={{ color: 'var(--c-accent)' }} />}
     >
@@ -223,7 +169,7 @@ function PageRefPopoverForm({
 
       <InlineError message={error} />
       <PopoverFooter
-        onCancel={() => onClose(false)}
+        onCancel={() => onClose(null)}
         onSubmit={submit}
         submitLabel="Save"
         onRemove={remove}

@@ -50,7 +50,7 @@ export function DangerZoneSection() {
   }
 
   async function handleDetach(): Promise<void> {
-    const ok = await confirmDestructive({
+    const ok = await confirmDestructive('project-detach', {
       title: 'Detach project',
       body:
         `Detach “${projectName}” from this workspace?\n\n` +
@@ -63,7 +63,7 @@ export function DangerZoneSection() {
   }
 
   async function handlePurge(): Promise<void> {
-    const ok = await confirmDestructive({
+    const ok = await confirmDestructive('project-purge', {
       title: 'Delete project & c4s data',
       body:
         `This permanently deletes “${projectName}”’s c4s data — the entity index, ` +

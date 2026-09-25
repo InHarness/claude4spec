@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { clientPluginHost } from '../core/plugin-host/host.js';
 import { Dialog } from '../host-ui-kit/overlay/Dialog.js';
 import { ApiError, metaApi } from '../lib/api.js';
-import { toast } from '../ui/events.js';
+import { openModal, toast } from '../ui/events.js';
+import type { ModalFormProps } from '../ui/ModalHost.js';
 
 /**
  * M33 phase 2 — blocking trust prompt for project-committed plugins.
@@ -20,16 +21,36 @@ import { toast } from '../ui/events.js';
  * buttons are the only ways out, so an accidental click beside the panel cannot
  * start running foreign code. An unresolved gate simply comes back on the next
  * context build.
+ *
+ * 0.2.110 M50: the window is the `project-plugins-trust` modal, opened through
+ * `openModal(…, { dismissible: false })`. `TrustPluginsGate` decides WHEN (the
+ * query below); `TrustPluginsModal` is the window itself.
  */
-export function TrustPluginsModal() {
-  const qc = useQueryClient();
+export function TrustPluginsGate() {
   const { data } = useQuery({ queryKey: ['plugins-meta'], queryFn: () => metaApi.plugins() });
-  const [busy, setBusy] = useState(false);
-
   // Only block when local plugins exist AND no decision has been recorded yet.
-  if (!data || !data.localPluginsPresent || data.trust !== undefined) return null;
+  const needed = !!data && data.localPluginsPresent && data.trust === undefined;
+  const open = useRef(false);
 
-  const overlayPackages = data.packages.filter((p) => p.layer === 'overlay');
+  useEffect(() => {
+    if (!needed || !data || open.current) return;
+    open.current = true;
+    void openModal(
+      'project-plugins-trust',
+      { packages: data.packages.filter((p) => p.layer === 'overlay') },
+      { dismissible: false },
+    ).finally(() => {
+      open.current = false;
+    });
+  }, [needed, data]);
+
+  return null;
+}
+
+export function TrustPluginsModal({ request, onClose }: ModalFormProps<'project-plugins-trust'>) {
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  const overlayPackages = request.props.packages;
 
   async function decide(trust: boolean) {
     setBusy(true);
@@ -45,6 +66,7 @@ export function TrustPluginsModal() {
       }
       await qc.invalidateQueries();
       toast.success(trust ? 'Project plugins trusted' : 'Project plugins refused');
+      onClose(true);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Failed to save trust decision');
     } finally {
@@ -57,7 +79,7 @@ export function TrustPluginsModal() {
       open
       dismissible={false}
       // Unreachable with `dismissible={false}` — the gate is resolved by
-      // `decide()`, which flips the query state and unmounts this component.
+      // `decide()`, which answers the window.
       onClose={() => {}}
       width={460}
       // Above every other overlay, as the hand-rolled scrim it replaced was:

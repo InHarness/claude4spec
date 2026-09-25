@@ -100,7 +100,7 @@ describe('openEntityHandler — where a click goes', () => {
 
   /**
    * THE REGRESSION. A hidden type has no route, so the click must raise the
-   * overlay event and must NOT reach the bridge — a bridge call here navigates
+   * expand window and must NOT reach the bridge — a bridge call here navigates
    * to `/hidden-listable-fixtures/thing`, which nothing registers.
    *
    * `renderRow` is present on the fixture on purpose: listability and hidden-ness
@@ -115,10 +115,11 @@ describe('openEntityHandler — where a click goes', () => {
 
     expect(bridge.openEntity).not.toHaveBeenCalled();
     expect(dispatched).toHaveLength(1);
-    expect(dispatched[0]!.type).toBe(UI_EVENTS.ENTITY_OVERLAY);
+    // 0.2.110 M50: the overlay is the `<type>-expand` modal kind.
+    expect(dispatched[0]!.type).toBe(UI_EVENTS.MODAL);
     expect(dispatched[0]!.detail).toMatchObject({
-      type: 'hidden-listable-fixture',
-      slug: 'thing',
+      kind: 'hidden-listable-fixture-expand',
+      props: { slug: 'thing' },
     });
   });
 

@@ -16,18 +16,16 @@ export function useEditChipOnAltClick(props: NodeViewProps, options: AltClickOpt
       const anchor = event.currentTarget as HTMLElement;
       const rect = anchor.getBoundingClientRect();
       const nodeType = props.node.type.name as ChipNodeType;
-      const result = await openPopover(
-        'edit-chip',
-        { x: rect.left, y: rect.bottom + 4 },
-        {
-          nodeType,
-          attrs: { ...props.node.attrs },
-          onRemove: () => {
-            if (onRemove) void onRemove();
-            else props.deleteNode();
-          },
+      const result = await openPopover('edit-chip', {
+        x: rect.left,
+        y: rect.bottom + 4,
+        nodeType,
+        attrs: { ...props.node.attrs },
+        onRemove: () => {
+          if (onRemove) void onRemove();
+          else props.deleteNode();
         },
-      );
+      });
       if (result) {
         props.updateAttributes(result);
       }

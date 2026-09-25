@@ -160,7 +160,7 @@ export function DesignSystemDetail({ slug, onDeleted, onRenamed, onOpenEntity }:
     const body = refCount
       ? `Delete design system "${ds.title}"? ${refCount} page${refCount === 1 ? '' : 's'} reference it and will become broken. UI views pointing at it will show a broken chip.`
       : `Delete design system "${ds.title}"? UI views pointing at it will show a broken chip. This cannot be undone.`;
-    const ok = await confirmDestructive({ title: 'Delete design system?', body, confirmLabel: 'Delete' });
+    const ok = await confirmDestructive('design-system-delete', { title: 'Delete design system?', body, confirmLabel: 'Delete' });
     if (!ok) return;
     try {
       await remove.mutateAsync(ds.slug);

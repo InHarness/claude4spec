@@ -107,7 +107,7 @@ export function AcDetail({
 
   async function handleDelete() {
     if (!ac) return;
-    const ok = await confirmDestructive({
+    const ok = await confirmDestructive('ac-delete', {
       title: 'Delete AC?',
       body: `Delete this acceptance criterion? Prefer marking it as deprecated to keep history.`,
       confirmLabel: 'Delete',

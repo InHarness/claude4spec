@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
-import { Dialog } from '../host-ui-kit/overlay/Dialog.js';
-import { startSeededThread } from '../chat/startSeededThread.js';
-import { UI_EVENTS, type GitErrorModalRequest } from './events.js';
-import { useConfig } from '../hooks/useConfig.js';
+import { useState } from 'react';
+import { Dialog } from '../../host-ui-kit/overlay/Dialog.js';
+import { startSeededThread } from '../../chat/startSeededThread.js';
+import { useConfig } from '../../hooks/useConfig.js';
+import type { GitErrorRecovery } from '../../../shared/git.js';
+import type { ModalFormProps } from '../ModalHost.js';
 
-const OPERATION_LABEL: Record<GitErrorModalRequest['recovery']['operation'], string> = {
+const OPERATION_LABEL: Record<GitErrorRecovery['operation'], string> = {
   'commit-on-release': 'Committing the release',
   pull: 'Committing pulled changes',
   push: 'Pushing to the remote',
@@ -14,7 +15,7 @@ const OPERATION_LABEL: Record<GitErrorModalRequest['recovery']['operation'], str
  * 0.1.125: narrows WHY a commit-target/switch operation failed — orthogonal
  * to `OPERATION_LABEL` (WHAT was running). Absent for ordinary git failures.
  */
-const KIND_HINT: Record<NonNullable<GitErrorModalRequest['recovery']['kind']>, string> = {
+const KIND_HINT: Record<NonNullable<GitErrorRecovery['kind']>, string> = {
   'branch-missing': 'The configured target branch no longer exists.',
   'base-missing': 'The configured base branch no longer exists (or the repository has no commits).',
   'switch-dirty': 'The commit succeeded, but uncommitted changes blocked switching to the target branch.',
@@ -28,39 +29,26 @@ const KIND_HINT: Record<NonNullable<GitErrorModalRequest['recovery']['kind']>, s
  * fire-and-forget toast, framed as post-hoc ("the business action already
  * succeeded — only git sync hit a problem"), with a "Fix it with Agent"
  * action that seeds a chat thread with a backend-composed recovery prompt.
- * Event-bus singleton (`showGitErrorModal`), same pattern as `ModalHost`/
- * `confirmDestructive` — mounted once in `App.tsx`.
+ * 0.2.110: the `git-sync-recover` modal kind (`showGitErrorModal` →
+ * `openModal('git-sync-recover', { recovery })`), rendered by `<ModalHost/>`.
  */
-export function GitErrorRecoveryModal() {
+export function GitSyncRecover({ request, onClose }: ModalFormProps<'git-sync-recover'>) {
   const { data: config } = useConfig();
   // Absent field = the flag is on, matching the server default.
   const blockedByPosture = config?.agent?.disableDirectFilesystemAccess ?? true;
-  const [request, setRequest] = useState<GitErrorModalRequest | null>(null);
   const [expanded, setExpanded] = useState(false);
-
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const ce = e as CustomEvent<GitErrorModalRequest>;
-      setExpanded(false);
-      setRequest(ce.detail);
-    };
-    window.addEventListener(UI_EVENTS.GIT_ERROR, handler as EventListener);
-    return () => window.removeEventListener(UI_EVENTS.GIT_ERROR, handler as EventListener);
-  }, []);
-
-  if (!request) return null;
-  const { recovery } = request;
+  const { recovery } = request.props;
 
   return (
     <Dialog
       open
-      onClose={() => setRequest(null)}
+      onClose={() => onClose(null)}
       title="Done — but git sync hit a problem"
       size="md"
       footer={
         <>
           <button
-            onClick={() => setRequest(null)}
+            onClick={() => onClose(null)}
             style={{ fontSize: 12, padding: '6px 12px', borderRadius: 4, color: 'var(--c-muted)' }}
           >
             Dismiss
@@ -80,7 +68,7 @@ export function GitErrorRecoveryModal() {
             <button
               onClick={() => {
                 startSeededThread(recovery.intentPrompt, { autoSubmit: true });
-                setRequest(null);
+                onClose(null);
               }}
               style={{
                 fontSize: 12,

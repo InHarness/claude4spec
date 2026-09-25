@@ -22,7 +22,7 @@ import { OutlineFloater } from './OutlineFloater.js';
 import { useOutlineStore } from '../state/outline.js';
 import { useChatStore } from '../state/chat.js';
 import { useFileEventsStore } from '../state/fileEvents.js';
-import { confirmDestructive, toast } from '../ui/events.js';
+import { confirmDestructive, openModal, toast } from '../ui/events.js';
 import { bodyOf } from '../lib/artifact-frontmatter.js';
 import { usePagesIndex } from '../hooks/usePagesIndex.js';
 import type { EntityType } from '../../shared/entities.js';
@@ -38,6 +38,19 @@ interface Props {
 
 function rootPropsKey(p: RootEditorProps): string {
   return `${p.sectionIndexed}|${p.referenceValidated}|${p.linkTargets.join(',')}`;
+}
+
+/**
+ * 0.2.110 M02 — `page-overwrite`: the destructive step behind "Keep my changes"
+ * in both `page-resolve` and `page-reload`. On confirm the file is overwritten
+ * with the editor's content at once.
+ */
+function confirmOverwrite(): Promise<boolean> {
+  return confirmDestructive('page-overwrite', {
+    title: 'Overwrite the file?',
+    body: 'The version on disk will be replaced with your edits. The other changes are lost.',
+    confirmLabel: 'Overwrite',
+  });
 }
 
 export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
@@ -238,7 +251,7 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
 
   /**
    * 0.2.88 — a 409 `PAGE_CONFLICT` on autosave: somebody else wrote the page
-   * since this client last read or saved it. Pages get the two-branch dialog
+   * since this client last read or saved it. Pages get the two-branch window
    * (artifacts get a Reload-only banner): "Reload" adopts the server's copy —
    * hash and content come with the 409, so no re-read — and "Keep my changes"
    * overwrites it, behind the destructive confirmation, with a FORCED write
@@ -247,10 +260,10 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
    * merge. Read through a ref so the mutation callback created at debounce time
    * sees the current editor and path.
    *
-   * Polarity: "Reload" is the confirm button (red — it discards the unsaved
-   * edits, the one thing nobody can get back), "Keep my changes" the cancel
-   * one. Escape, the scrim and ✕ all resolve as cancel, so a dismissed dialog
-   * keeps the user's text — same as the external-change dialog below.
+   * 0.2.110 M50: the window is the `page-resolve` modal, and "Keep my changes"
+   * goes through the `page-overwrite` confirm before the forced write. Escape,
+   * the scrim and ✕ resolve `null`: the user's text stays in the editor, unsaved
+   * — same as the `page-reload` window below.
    */
   const onConflictRef = useRef<(forPath: string, c: { currentHash: string; currentContent: string }) => void>(
     () => {},
@@ -269,15 +282,16 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
       saveTimer.current = null;
       pendingSaveRef.current = null;
     }
-    void confirmDestructive({
-      title: 'Page changed on the server',
-      body: 'This page was saved by someone else since you opened it. Reload to take the server version and discard your edits, or keep your changes and overwrite it?',
-      confirmLabel: 'Reload',
-      cancelLabel: 'Keep my changes',
-      danger: true,
-    }).then((reload) => {
+    void openModal('page-resolve', {
+      rootId,
+      path: forPath,
+      currentHash: conflict.currentHash,
+      currentContent: conflict.currentContent,
+    }).then(async (choice) => {
       if (editor.isDestroyed || forPath !== currentPathRef.current) return;
-      if (!reload) {
+      if (choice === 'keep') {
+        if (!(await confirmOverwrite())) return;
+        if (editor.isDestroyed || forPath !== currentPathRef.current) return;
         const md = editor.storage.markdown.getMarkdown() as string;
         lastSavedBodyRef.current = md;
         isDirtyRef.current = false;
@@ -295,6 +309,9 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
         );
         return;
       }
+      // Dismissed: the edits stay in the editor, unsaved; the next autosave
+      // meets the same 409 and asks again.
+      if (choice !== 'reload') return;
       // Reload: the 409 already carries the server's copy — seed the cache from
       // it (hash included, so the next save is guarded by the right value) and
       // let the hydrate effect below re-seed the document. `currentContent` is
@@ -325,35 +342,30 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
       saveTimer.current = null;
       pendingSaveRef.current = null;
     }
-    void confirmDestructive({
-      title: 'File changed externally',
-      body: 'This file was modified outside the editor. Reload and discard your unsaved changes, or keep them?',
-      confirmLabel: 'Reload',
-      cancelLabel: 'Keep my changes',
-      danger: false,
-    }).then((confirmed) => {
+    void openModal('page-reload', { rootId, path }).then(async (choice) => {
       if (cancelled) return;
       clearExternalChange();
-      if (confirmed) {
+      if (choice === 'reload') {
         lastSavedBodyRef.current = null;
         isDirtyRef.current = false;
         qc.invalidateQueries({ queryKey: ['page', rootId, path] });
-      } else {
-        const md = editor.storage.markdown.getMarkdown() as string;
-        lastSavedBodyRef.current = md;
-        isDirtyRef.current = false;
-        // The user already confirmed the overwrite. The cached hash is stale by
-        // definition here, so the write 409s — take the server's hash from the
-        // conflict and force it through, without a second dialog.
-        write.mutate({
-          rootId,
-          path,
-          body: md,
-          frontmatter: data?.frontmatter,
-          onConflict: (c) =>
-            write.mutate({ rootId, path, body: md, frontmatter: data?.frontmatter, expectedHash: c.currentHash }),
-        });
+        return;
       }
+      if (choice !== 'keep' || !(await confirmOverwrite()) || cancelled) return;
+      const md = editor.storage.markdown.getMarkdown() as string;
+      lastSavedBodyRef.current = md;
+      isDirtyRef.current = false;
+      // The user already confirmed the overwrite. The cached hash is stale by
+      // definition here, so the write 409s — take the server's hash from the
+      // conflict and force it through, without a second dialog.
+      write.mutate({
+        rootId,
+        path,
+        body: md,
+        frontmatter: data?.frontmatter,
+        onConflict: (c) =>
+          write.mutate({ rootId, path, body: md, frontmatter: data?.frontmatter, expectedHash: c.currentHash }),
+      });
     });
     return () => {
       cancelled = true;

@@ -3,8 +3,8 @@ import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
 import { useNavigate } from '@tanstack/react-router';
 import { usePageLinks } from '../../../hooks/usePageLinks.js';
 import { PageRefChip, type PageRefChipState } from '../../../components/PageRefChip.js';
-import { openPageRefPopover } from '../PageRefPopover.js';
-import { resolveAgainstIndex } from '../../lib/pathResolve.js';
+import { openPopover } from '../../../ui/events.js';
+import { candidatePagePath, resolveAgainstIndex } from '../../lib/pathResolve.js';
 import { useBaseRootId, useRoots } from '../../../hooks/useConfig.js';
 import { pageTarget } from '../../../lib/pageTarget.js';
 import type { PageRefSyntax } from '../PageRefNode.js';
@@ -72,40 +72,38 @@ export function PageRefView(props: NodeViewProps) {
 
   const title = meta?.title ?? basenameTitle(path);
 
+  const openEdit = (at: { x: number; y: number }) =>
+    void openPopover('page-ref', {
+      ...at,
+      syntax,
+      path,
+      anchor,
+      label,
+      onRemove: () => props.deleteNode(),
+    }).then((attrs) => {
+      if (attrs) props.updateAttributes(attrs);
+    });
+
   const handleClick = (e: MouseEvent<HTMLSpanElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const at = { x: rect.left, y: rect.bottom + 4 };
     if (e.altKey) {
       e.preventDefault();
       e.stopPropagation();
-      const anchorEl = e.currentTarget;
-      const rect = anchorEl.getBoundingClientRect();
-      void openPageRefPopover(
-        { x: rect.left, y: rect.bottom + 4 },
-        {
-          syntax,
-          path,
-          anchor,
-          label,
-          onRemove: () => props.deleteNode(),
-          onSave: (attrs) => props.updateAttributes(attrs),
-        },
-      );
+      openEdit(at);
       return;
     }
     if (chipState === 'broken') {
-      // No navigation target — open popover for fix.
-      const anchorEl = e.currentTarget;
-      const rect = anchorEl.getBoundingClientRect();
-      void openPageRefPopover(
-        { x: rect.left, y: rect.bottom + 4 },
-        {
-          syntax,
-          path,
-          anchor,
-          label,
-          onRemove: () => props.deleteNode(),
-          onSave: (attrs) => props.updateAttributes(attrs),
-        },
-      );
+      // No navigation target — "Create file?" / "Fix path".
+      const rootId = sourceRootId ?? baseRootId;
+      if (!rootId) return;
+      void openPopover('page-ref-broken', {
+        ...at,
+        rootId,
+        candidatePath: candidatePagePath(path, sourcePath),
+      }).then((result) => {
+        if (result?.action === 'fix') openEdit(at);
+      });
       return;
     }
     if (!resolvedPath) return;

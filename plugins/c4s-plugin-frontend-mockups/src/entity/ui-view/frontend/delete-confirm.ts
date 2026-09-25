@@ -69,7 +69,7 @@ async function countReferences(slug: string): Promise<number> {
  */
 export async function confirmAndDeleteUiView(slug: string, title: string): Promise<boolean> {
   const refCount = await countReferences(slug);
-  const ok = await confirmDestructive({
+  const ok = await confirmDestructive('ui-view-delete', {
     title: 'Delete UI view?',
     body: deleteUiViewBody(title, refCount),
     confirmLabel: 'Delete',

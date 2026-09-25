@@ -15,7 +15,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { getRenderer, parseToolResult, prettyToolName } from './toolRenderers.js';
-import { ToolJsonModal } from './ToolJsonModal.js';
+import { openModal } from '../ui/events.js';
 import { localToolCategory, type LocalToolCategory } from './toolCategoryLocal.js';
 
 export interface ToolItem {
@@ -31,7 +31,6 @@ interface Props {
 
 export function ToolCard({ items }: Props) {
   const [expanded, setExpanded] = useState(false);
-  const [jsonOpen, setJsonOpen] = useState(false);
 
   if (items.length === 0) return null;
   const first = items[0]!;
@@ -100,7 +99,15 @@ export function ToolCard({ items }: Props) {
           <button
             onClick={(e) => {
               e.stopPropagation();
-              setJsonOpen(true);
+              void openModal('tool-json-view', {
+                title: isBatch ? `${displayName} × ${items.length}` : first.toolName,
+                items: items.map((i) => ({
+                  toolName: i.toolName,
+                  input: i.input,
+                  result: i.result ? parseToolResult(i.result.content) : null,
+                  isError: i.result?.isError ?? false,
+                })),
+              });
             }}
             aria-label="Show raw JSON"
             title="Show raw JSON"
@@ -128,18 +135,6 @@ export function ToolCard({ items }: Props) {
           </div>
         )}
       </div>
-      {jsonOpen && (
-        <ToolJsonModal
-          title={isBatch ? `${displayName} × ${items.length}` : first.toolName}
-          items={items.map((i) => ({
-            toolName: i.toolName,
-            input: i.input,
-            result: i.result ? parseToolResult(i.result.content) : null,
-            isError: i.result?.isError ?? false,
-          }))}
-          onClose={() => setJsonOpen(false)}
-        />
-      )}
     </>
   );
 }

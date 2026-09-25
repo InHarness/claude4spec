@@ -12,15 +12,11 @@ import { useCreatePage } from './hooks/usePage.js';
 import { useEntityCounts } from './hooks/useEntityCounts.js';
 import { useTodosCounts } from './hooks/useTodos.js';
 import { usePageLinksCounts } from './hooks/usePageLinks.js';
-import { TodoPopover } from './components/TodoPopover.js';
 import { PopoverHost } from './ui/Popover.js';
-import { ModalHost } from './ui/ConfirmModal.js';
-import { EntityOverlayHost } from './ui/EntityOverlayHost.js';
-import { GitErrorRecoveryModal } from './ui/GitErrorRecoveryModal.js';
+import { ModalHost } from './ui/ModalHost.js';
 import { IndexStaleBanner } from './components/IndexStaleBanner.js';
 import { ToastHost } from './ui/ToastHost.js';
-import { TrustPluginsModal } from './components/TrustPluginsModal.js';
-import { PageRefPopoverHost } from './tiptap/extensions/PageRefPopover.js';
+import { TrustPluginsGate } from './components/TrustPluginsModal.js';
 import { openPopover, toast } from './ui/events.js';
 import { usePersistedWidth, useTheme } from './state/tweaks.js';
 import { useChatStore } from './state/chat.js';
@@ -59,9 +55,7 @@ export function RootLayout() {
         style={{ background: 'var(--c-bg)', color: 'var(--c-ink)' }}
       >
         <Outlet />
-        <ModalHost />
-        <EntityOverlayHost />
-        <ToastHost />
+        <WindowHosts />
       </div>
     );
   }
@@ -71,14 +65,39 @@ export function RootLayout() {
   // failure still surfaces as PROJECT_BUILD_FAILED — show it instead of
   // silently falling through to MainShell with `config` undefined.
   if (isError) {
-    return <ProjectLoadError error={error} onRetry={() => void refetch()} />;
+    return (
+      <>
+        <ProjectLoadError error={error} onRetry={() => void refetch()} />
+        <WindowHosts />
+      </>
+    );
   }
 
   // A pending full-screen redirect renders nothing: the navigation above lands
   // on the next commit, and the regular shell must not paint in between.
   if (redirectTo) return null;
 
-  return <MainShell projectName={config?.name ?? null} />;
+  return (
+    <>
+      <MainShell projectName={config?.name ?? null} />
+      <WindowHosts />
+    </>
+  );
+}
+
+/**
+ * 0.2.110 M50 — the three window hosts, mounted ONCE per shell at the app root.
+ * Every window in the app is a named `kind` opened through one of the facades
+ * (`openPopover` / `openModal` / `confirmDestructive` / `toast`).
+ */
+function WindowHosts() {
+  return (
+    <>
+      <PopoverHost />
+      <ModalHost />
+      <ToastHost />
+    </>
+  );
 }
 
 function ProjectLoadError({ error, onRetry }: { error: unknown; onRetry: () => void }) {
@@ -143,11 +162,7 @@ function MainShell({ projectName }: { projectName: string | null }) {
 
   const handleNewPage = useCallback(async () => {
     const rect = rootRef.current?.getBoundingClientRect();
-    const result = await openPopover(
-      'new-page',
-      { x: (rect?.left ?? 0) + 40, y: (rect?.top ?? 0) + 80 },
-      {},
-    );
+    const result = await openPopover('new-page', { x: (rect?.left ?? 0) + 40, y: (rect?.top ?? 0) + 80 });
     if (!result) return;
     try {
       // The global "new page" action targets the base page root.
@@ -220,14 +235,7 @@ function MainShell({ projectName }: { projectName: string | null }) {
 
       <ChatEdgeAffordance />
       <ChatOverlay />
-      <TodoPopover />
-      <PopoverHost />
-      <PageRefPopoverHost />
-      <TrustPluginsModal />
-      <ModalHost />
-      <EntityOverlayHost />
-      <GitErrorRecoveryModal />
-      <ToastHost />
+      <TrustPluginsGate />
     </div>
     </div>
     </ThreadListProvider>

@@ -1042,7 +1042,7 @@ function ThreadDropdown({ threads, activeId, hasMore, loadingMore, onSelect, onC
               <button
                 onClick={async (e) => {
                   e.stopPropagation();
-                  const ok = await confirmDestructive({
+                  const ok = await confirmDestructive('thread-delete', {
                     title: 'Delete conversation?',
                     body: `Delete "${t.title ?? t.id}"? Message history cannot be recovered.`,
                     confirmLabel: 'Delete',

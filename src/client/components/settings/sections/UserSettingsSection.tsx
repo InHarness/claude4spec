@@ -16,7 +16,7 @@ export function UserSettingsSection() {
   const qc = useQueryClient();
 
   async function handleLogout() {
-    const ok = await confirmDestructive({
+    const ok = await confirmDestructive('logout', {
       title: 'Log out of remote account?',
       body: 'You will need to log in again to push releases or load remote project info.',
       confirmLabel: 'Log out',

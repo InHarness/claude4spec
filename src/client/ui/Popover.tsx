@@ -49,7 +49,7 @@ export function PopoverHost() {
     const handler = (e: Event) => {
       const ce = e as CustomEvent<PopoverRequest>;
       setRequest((prev) => {
-        if (prev) prev.resolve(null);
+        if (prev) prev.onCancel();
         return ce.detail;
       });
     };
@@ -61,14 +61,15 @@ export function PopoverHost() {
 
   const Renderer = POPOVER_RENDERERS[request.kind];
   if (!Renderer) {
-    request.resolve(null);
+    request.onCancel();
     return null;
   }
 
   const handleClose = (result: unknown) => {
     const r = request;
     setRequest(null);
-    r.resolve(result as never);
+    if (result === null || result === undefined) r.onCancel();
+    else r.onSubmit(result as never);
   };
 
   const Component = Renderer as (props: PopoverFormProps<PopoverKind>) => ReactNode;

@@ -16,7 +16,7 @@ import { ReleaseSelect } from './release/ReleaseSelect.js';
 import { ReleasePushesList } from './release/ReleasePushesList.js';
 import { UnreleasedBanner } from './release/UnreleasedBanner.js';
 import { CreateBriefDialog } from './CreateBriefDialog.js';
-import { showGitErrorModal } from '../ui/events.js';
+import { confirmDestructive, showGitErrorModal, toast } from '../ui/events.js';
 // Side-effect import: registers the M25 "Push to remote" action in the registry.
 import './release/push-to-remote-action.js';
 
@@ -28,8 +28,23 @@ export function ReleaseDetail({ idOrName }: Props) {
   const { data: release, isLoading } = useRelease(idOrName);
   const { data: allReleases = [] } = useReleaseList();
   const restoreSpec = useRestoreSpec();
+
+  // 0.2.110 M17: the `release-restore` window through the shell's facade.
+  async function restoreWholeSpec() {
+    const ok = await confirmDestructive('release-restore', {
+      title: `Restore entire spec to "${release?.name ?? ''}"?`,
+      body: 'This generates normal mutations through the write API; the resulting changes will appear as a new round of unreleased entity/page versions. Append-only — undoable by another restore.',
+      confirmLabel: 'Restore spec',
+      danger: false,
+    });
+    if (!ok || !release) return;
+    try {
+      await restoreSpec.mutateAsync(release.name);
+    } catch (err) {
+      toast.error((err as Error).message);
+    }
+  }
   const updateRelease = useUpdateRelease();
-  const [confirmRestore, setConfirmRestore] = useState(false);
   const [compareTo, setCompareTo] = useState<string | null>(null);
   // M21 m21ui: Generate brief modal — `to` jest biezacym release, user wybiera `from`.
   const [generateBriefOpen, setGenerateBriefOpen] = useState(false);
@@ -306,8 +321,8 @@ export function ReleaseDetail({ idOrName }: Props) {
               </button>
               <button
                 onClick={() => {
-                  setConfirmRestore(true);
                   setMenuOpen(false);
+                  void restoreWholeSpec();
                 }}
                 className="flex items-center gap-2 w-full text-left px-3 py-1.5 text-[12.5px]"
                 style={{ color: 'var(--c-muted)' }}
@@ -393,23 +408,6 @@ export function ReleaseDetail({ idOrName }: Props) {
         </button>
       </footer>
 
-      {confirmRestore && (
-        <ConfirmRestoreDialog
-          title={`Restore entire spec to "${release.name}"?`}
-          description="This generates normal mutations through the write API; the resulting changes will appear as a new round of unreleased entity/page versions. Append-only — undoable by another restore."
-          confirmLabel="Restore spec"
-          loading={restoreSpec.isPending}
-          onConfirm={async () => {
-            try {
-              await restoreSpec.mutateAsync(release.name);
-              setConfirmRestore(false);
-            } catch (err) {
-              alert((err as Error).message);
-            }
-          }}
-          onCancel={() => setConfirmRestore(false)}
-        />
-      )}
       {generateBriefOpen && (
         <CreateBriefDialog
           toReleaseName={release.name}
@@ -440,77 +438,5 @@ function PushedBadge({ releaseId }: { releaseId: number }) {
     >
       {n === 1 ? 'Pushed' : `Pushed ${n}×`}
     </span>
-  );
-}
-
-function ConfirmRestoreDialog({
-  title,
-  description,
-  confirmLabel,
-  loading,
-  onConfirm,
-  onCancel,
-}: {
-  title: string;
-  description: string;
-  confirmLabel: string;
-  loading: boolean;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.4)' }}
-      onClick={onCancel}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="rounded-lg flex flex-col"
-        style={{
-          width: 480,
-          background: 'var(--c-bg)',
-          border: '1px solid var(--c-hair-strong)',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
-        }}
-      >
-        <div className="px-5 py-3" style={{ borderBottom: '1px solid var(--c-hair)' }}>
-          <div className="text-[14px] font-semibold" style={{ color: 'var(--c-ink)' }}>
-            {title}
-          </div>
-        </div>
-        <div className="px-5 py-4 text-[12.5px]" style={{ color: 'var(--c-muted)' }}>
-          {description}
-        </div>
-        <div
-          className="flex items-center justify-end gap-2 px-5 py-3"
-          style={{ borderTop: '1px solid var(--c-hair)' }}
-        >
-          <button
-            onClick={onCancel}
-            className="rounded-md px-3 py-1 text-[12.5px]"
-            style={{
-              background: 'var(--c-card)',
-              color: 'var(--c-muted)',
-              border: '1px solid var(--c-hair)',
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={loading}
-            className="rounded-md px-3 py-1 text-[12.5px]"
-            style={{
-              background: 'var(--c-accent)',
-              color: '#fff',
-              opacity: loading ? 0.6 : 1,
-            }}
-          >
-            {loading ? 'Restoring…' : confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }

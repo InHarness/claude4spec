@@ -3,7 +3,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useConfig, usePatchConfig, useRenameRoot } from '../../hooks/useConfig.js';
 import type { ConfigPatch } from '../../lib/api.js';
 import { useWritingStyles } from '../../hooks/useWritingStyles.js';
-import { confirmDestructive, toast } from '../../ui/events.js';
+import { openModal, toast } from '../../ui/events.js';
 import { NameField, validateName } from './NameField.js';
 import { WritingStyleList, type WritingStyleSelection } from './WritingStyleList.js';
 import { SpecLanguageField, ConversationalLanguageField } from './LanguageFields.js';
@@ -144,11 +144,7 @@ export function OnboardingPage() {
   }
 
   async function onSkip() {
-    const ok = await confirmDestructive({
-      title: 'Skip onboarding?',
-      body: 'To re-run onboarding later, set onboardingCompleted: false in .claude4spec/config.json, then re-activate this project in the switcher (or restart the server). Editing the file alone won’t trigger it — claude4spec doesn’t watch .claude4spec/.',
-      confirmLabel: 'Skip anyway',
-    });
+    const ok = await openModal('onboarding-skip', {});
     if (!ok) return;
     try {
       await patchConfig.mutateAsync({ onboardingCompleted: true });

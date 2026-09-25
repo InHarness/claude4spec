@@ -4,7 +4,8 @@ import { chromium, type Browser, type Page, type Request } from 'playwright';
 /**
  * E2E (0.2.88, brief 0-2-87-to-0-2-88): a 409 `PAGE_CONFLICT` on a page's
  * autosave opens the two-branch dialog — "Reload" adopts the server's copy,
- * "Keep my changes" overwrites it with a forced write guarded by the server's
+ * "Keep my changes" (behind the `page-overwrite` confirm, 0.2.110) overwrites it
+ * with a forced write guarded by the server's
  * current hash. Artifacts (brief, patch) keep their Reload-only banner; this
  * file covers pages.
  *
@@ -152,6 +153,8 @@ describe.skipIf(!BASE)('page autosave conflict (409 PAGE_CONFLICT)', () => {
     await expect.poll(() => page.getByText('Page changed on the server').count(), { timeout: 5_000 }).toBe(1);
     const before = puts.length;
     await page.getByRole('button', { name: 'Keep my changes' }).click();
+    // 0.2.110 M02: "Keep my changes" goes through the `page-overwrite` confirm.
+    await page.getByRole('button', { name: 'Overwrite' }).click();
 
     // A forced write, right after the confirmation — not a later autosave cycle.
     await expect.poll(() => puts.filter((p) => p.status < 400).length, { timeout: 5_000 }).toBeGreaterThan(0);
