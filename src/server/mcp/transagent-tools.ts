@@ -55,32 +55,59 @@ export function buildTransagentToolsServer(ctx: TransagentToolsContext): Capture
       '    attached to, so it continues that plan instead of starting one. Omit it and the child',
       '    is unattached and creates its own plan on its first `update_plan`. A planPath naming no',
       '    existing plan is INVALID_ARGS and NO child is created.',
-      'Continue an existing child by passing its `threadId` (omit `contextType` semantics then).',
-      '    `payload` is IGNORED on that path — every binding (planPath, patchPath, the brief window)',
-      '    is fixed when the child is created and cannot be changed by continuing it.',
+      'Resumable: pass `threadId` to resume the session of an existing banka. Every call, spawn or',
+      'continuation, creates a new child thread of the current thread and returns its id. A',
+      "continuation inherits the referenced banka's binding and resumes its session, leaving the",
+      'referenced thread untouched. To keep working with a banka, pass the `threadId` returned most',
+      'recently.',
+      '    `payload` and `planMode` are IGNORED on that path — the binding (planPath, patchPath, the',
+      '    brief window), plan mode and locked session config come from the referenced banka.',
       'At most one child runs per turn (this tool_use blocks until the child finishes).',
-      '`planMode: true` opens the child in plan mode (read-only builtins) — a top-level field, NOT a',
-      'payload key. It is NOT inherited: omit it and the child runs unrestricted even if YOU are in',
-      'plan mode. It is ignored when continuing an existing child via `threadId` — a banka\'s posture',
-      'is fixed when it is created.',
+      '`planMode: true` opens a freshly spawned child in plan mode (read-only builtins) — a top-level',
+      'field, NOT a payload key. It is NOT inherited: omit it and the child runs unrestricted even if',
+      'YOU are in plan mode.',
       'On failure the tool_result is `isError` with a flat `{ error, code }`. Codes:',
       '  - ABORTED / IDLE_TIMEOUT / TIMEOUT / AGENT_UNAVAILABLE / AGENT_ERROR — the CHILD turn ended',
       '    that way. ABORTED means a human stopped it; IDLE_TIMEOUT means the child went silent past',
       '    its own idle clock and was stopped — YOUR turn continues; AGENT_UNAVAILABLE',
       '    means it never started (retryable).',
-      '  - NOT_FOUND — `threadId` names no thread.',
+      "  - NOT_FOUND — `threadId` names no thread, or the banka's brief / patch file no longer exists.",
       '  - INVALID_ARGS — the arguments do not describe a runnable child: contextType=\'patch\'',
-      "    without payload.patchPath, a contextType='chat' payload.planPath that names no existing",
-      "    plan (or is not a string), or a `threadId` that is someone else's child, not yours.",
+      "    without payload.patchPath (when spawning), a contextType='chat' payload.planPath that names",
+      '    no existing plan (or is not a string), a `threadId` of a top-level thread (not a banka), or',
+      "    a contextType that differs from the banka's.",
+      '  - STREAM_IN_PROGRESS — a turn is already resuming that banka\'s session; the call is not',
+      '    queued. Retry once it has finished.',
+      '  - RESUME_CONFIG_LOCKED — the model, reasoning or filesystem scope differs from the banka\'s',
+      '    session; spawn a fresh banka (omit `threadId`) to work with the current config.',
       '  - INTERNAL — this server faulted; not a child-turn outcome, and not retryable as-is.',
-      'A failed child keeps its last good summary: read it back with runTransagent({ threadId }).',
+      'A failed child stays resumable: continue its session with runTransagent({ threadId }) using',
+      'the `threadId` you passed (or were last returned) — a failure returns no new id.',
     ].join('\n'),
     {
-      contextType: z.enum(['brief', 'chat', 'patch']),
+      contextType: z
+        .enum(['brief', 'chat', 'patch'])
+        .describe("For a continuation it must equal the referenced banka's context type."),
       message: z.string(),
-      payload: z.record(z.string(), z.unknown()).optional(),
-      planMode: z.boolean().optional().default(false),
-      threadId: z.string().optional(),
+      payload: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe(
+          "Per-contextType binding; patchPath is required for contextType='patch' when spawning. Ignored on continuation, where the binding comes from the referenced banka.",
+        ),
+      planMode: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe(
+          'Ignored on continuation, where the new child takes plan mode from the referenced banka, and never inherited from the parent thread.',
+        ),
+      threadId: z
+        .string()
+        .optional()
+        .describe(
+          "Id of an existing banka whose session to resume. The call creates a new child thread of the current thread, which inherits the banka's binding: context type, artifact path, plan mode and locked session config. The referenced thread is not modified. Omit to spawn a fresh banka.",
+        ),
     },
     async (input) => {
       try {
@@ -101,8 +128,9 @@ export function buildTransagentToolsServer(ctx: TransagentToolsContext): Capture
       } catch (err) {
         // Every child failure collapses upward as the parent's tool_result
         // isError { code, message } — including a child stopped by its own idle
-        // clock (IDLE_TIMEOUT); the caller's turn carries on. The last good
-        // summary remains readable via runTransagent({ threadId }).
+        // clock (IDLE_TIMEOUT); the caller's turn carries on. The collapse
+        // returns no id of the row the failed turn founded — the session is
+        // picked up again by continuing the `threadId` the caller passed.
         const { code, hint } = transagentErrorCode(err);
         const message = err instanceof Error ? err.message : String(err);
         return toolError(code, message, hint);

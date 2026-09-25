@@ -1354,18 +1354,28 @@ export function registerCoreOperations(): void {
     mediation: 'direct',
     opClass: 'turn',
     inputSchema: {
-      contextType: z.enum(['brief', 'chat', 'patch']),
+      contextType: z
+        .enum(['brief', 'chat', 'patch'])
+        .describe("For a continuation it must equal the referenced banka's context type."),
       message: z.string(),
-      payload: z.record(z.string(), z.unknown()).optional(),
+      payload: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe('Ignored on continuation, where the binding comes from the referenced banka.'),
       planMode: z
         .boolean()
         .optional()
         .describe(
-          'Open the child in plan mode (read-only builtins). Top-level, not a payload key — payload is per-contextType, plan_mode is a generic chat_thread column. Not inherited from the parent thread; ignored when continuing via threadId.',
+          'Open the child in plan mode (read-only builtins). Top-level, not a payload key — payload is per-contextType, plan_mode is a generic chat_thread column. Ignored on continuation, where the new child takes plan mode from the referenced banka, and never inherited from the parent thread.',
         ),
-      threadId: z.string().optional().describe('Continue an existing child rather than spawning one.'),
+      threadId: z
+        .string()
+        .optional()
+        .describe(
+          "Id of an existing banka whose session to resume. The call creates a new child thread of the current thread, which inherits the banka's binding: context type, artifact path, plan mode and locked session config. The referenced thread is not modified. Omit to spawn a fresh banka.",
+        ),
     },
-    errorCodes: ['AGENT_ERROR', 'STREAM_IN_PROGRESS'],
+    errorCodes: ['AGENT_ERROR', 'STREAM_IN_PROGRESS', 'RESUME_CONFIG_LOCKED'],
     sideEffects: ['file', 'db', 'ui-notify'],
     /**
      * A turn writes files, but its caller hands over an instruction, not
@@ -1392,9 +1402,12 @@ export function registerCoreOperations(): void {
    * Agent-mediated: it costs a turn of the built-in agent (the child's). Internal only —
    * the dispatcher (`TransagentDispatcher`) is the one caller; no CLI, MCP or REST door.
    *
-   * Idempotency is CONDITIONAL: a call with `threadId` continues the same child and
-   * founds nothing, a call without one always founds a new child — `idempotent: false`
-   * is the honest boolean. Single-target: one child per call, one call per parent turn
+   * 0.2.111: NOT idempotent — every call founds a new child thread of the caller and
+   * runs a turn in it, a continuation included. A call with `threadId` addresses the
+   * banka whose session and binding the new row takes over (the referenced row is not
+   * modified); without it the binding comes from `contextType`, with artifact addresses
+   * defaulted from the parent thread. No guard token: session exclusivity is enforced
+   * by the dispatcher's refusals (`STREAM_IN_PROGRESS`, `RESUME_CONFIG_LOCKED`). Single-target: one child per call, one call per parent turn
    * (the call blocks). The rules the spec lists for this row — echo-free (only
    * `summary` returns), error-code-once (a child failure surfaces once, as the parent's
    * `tool_result.isError`), explicit-addressing (a continuation names its `threadId`,
@@ -1403,7 +1416,7 @@ export function registerCoreOperations(): void {
   CATALOG.register({
     name: 'spawn_child_turn',
     summary:
-      'Found (or continue, by threadId) a hidden child thread of this specification and run one turn in it: sets parent_thread_id, spawned_by_tool_use_id and plan_mode, binds the per-contextType artifact, and returns only { threadId, summary }.',
+      'Found a new hidden child thread of this specification on every call and run one turn in it: sets parent_thread_id and spawned_by_tool_use_id; a spawn binds the per-contextType artifact and plan_mode, a continuation (threadId) copies the referenced banka\'s binding, plan_mode, config snapshot and session and resumes it. Returns only { threadId } of the new row and a summary.',
     scope: 'project',
     mediation: 'agent-mediated',
     opClass: 'turn',
@@ -1414,7 +1427,16 @@ export function registerCoreOperations(): void {
       planMode: z.boolean().optional(),
       threadId: z.string().optional(),
     },
-    errorCodes: ['AGENT_ERROR', 'TIMEOUT', 'IDLE_TIMEOUT', 'ABORTED', 'INVALID_ARGS', 'NOT_FOUND'],
+    errorCodes: [
+      'AGENT_ERROR',
+      'TIMEOUT',
+      'IDLE_TIMEOUT',
+      'ABORTED',
+      'INVALID_ARGS',
+      'NOT_FOUND',
+      'STREAM_IN_PROGRESS',
+      'RESUME_CONFIG_LOCKED',
+    ],
     sideEffects: ['file', 'db', 'ui-notify'],
     contentInput: 'n/a',
     idempotent: false,

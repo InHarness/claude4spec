@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import Database from 'better-sqlite3';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { runMigrations } from '../db/migrate.js';
@@ -155,19 +158,6 @@ describe('TransagentDispatcher — planMode (0.2.30)', () => {
         plan_mode: 1,
       });
     }
-  });
-
-  it('[ac:ac-kontynuacja-banki-przez-runtransagent] ignores planMode when continuing an existing banka — posture is set once, at creation', async () => {
-    const parentThreadId = seedParent(false);
-    const { threadId } = await run({ parentThreadId });
-    expect(planModeOf(threadId)).toBe(0);
-
-    // Continuation skips prepare-per-context, hence the generic step too: no
-    // UPDATE chat_thread SET plan_mode may run on this path.
-    await run({ parentThreadId, threadId, planMode: true });
-
-    expect(planModeOf(threadId)).toBe(0);
-    expect(turnThreads[1]?.planMode).toBe(false);
   });
 
   it("[ac:ac-banka-context-type-patch-spawnowana-z] keeps a patch banka spawned from a plan-mode parent unrestricted, so it can still edit the spec", async () => {
@@ -601,5 +591,338 @@ describe('TransagentDispatcher — idle clocks (0.2.107)', () => {
     await expect(
       dispatcher.run({ parentThreadId, contextType: 'chat', message: 'go' }),
     ).rejects.toMatchObject({ code: 'IDLE_TIMEOUT' });
+  });
+});
+
+/**
+ * 0.2.111 (M46): EVERY `runTransagent` call founds a new `chat_thread` row as a
+ * child of the caller — a continuation too. The continuation row copies the
+ * referenced banka's binding, plan mode, config snapshot and session, its turn
+ * resumes that session, and the referenced row is never touched. Five checks run
+ * before the INSERT, and a refusal founds no row.
+ *
+ * Asserted on the real migrated schema: the columns ARE the contract (the panel,
+ * the abort cascade and the resume guard all read them from there).
+ */
+describe('TransagentDispatcher — continuation founds a new row (0.2.111)', () => {
+  let db: Database.Database;
+  let chat: ChatService;
+  let cwd: string;
+  let turnInputs: AgentTurnInput[];
+  let emitted: Array<Record<string, unknown>>;
+  let activeAdapters: Map<string, Record<string, unknown>>;
+  let missingArtifacts: Set<string>;
+
+  const SNAPSHOT = { model: 'claude-opus-5', architectureConfig: {} };
+
+  beforeEach(() => {
+    db = new Database(':memory:');
+    runMigrations(db);
+    chat = new ChatService(db);
+    cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-transagent-'));
+    turnInputs = [];
+    emitted = [];
+    activeAdapters = new Map();
+    missingArtifacts = new Set();
+  });
+
+  afterEach(() => {
+    db.close();
+    fs.rmSync(cwd, { recursive: true, force: true });
+  });
+
+  const rowOf = (id: string): Record<string, unknown> =>
+    db.prepare(`SELECT * FROM chat_thread WHERE id = ?`).get(id) as Record<string, unknown>;
+  const threadCount = (): number =>
+    (db.prepare(`SELECT COUNT(*) AS n FROM chat_thread`).get() as { n: number }).n;
+
+  /** A top-level thread with a live parent adapter (so the bracketing events are captured). */
+  const seedCaller = (): string => {
+    const id = chat.createThread('caller', { contextType: 'chat' }).id;
+    activeAdapters.set(id, { requestId: `req-${id}`, emit: (e: Record<string, unknown>) => emitted.push(e) });
+    return id;
+  };
+
+  /** A banka that already ran a turn: session + config snapshot + system prompt recorded. */
+  const seedBanka = (
+    parentThreadId: string,
+    opts: {
+      contextType?: 'brief' | 'chat' | 'patch';
+      planMode?: boolean;
+      sessionId?: string;
+      snapshot?: Record<string, unknown>;
+      toolUseId?: string;
+    } = {},
+  ): string => {
+    const contextType = opts.contextType ?? 'chat';
+    const banka = chat.createThread('banka', {
+      contextType,
+      ...(contextType === 'brief' ? { briefPath: 'briefs/0-0-1-to-next.md' } : {}),
+      ...(contextType === 'patch' ? { patchPath: 'patches/p.md' } : {}),
+      ...(contextType === 'chat' ? { planPath: 'plans/p.md' } : {}),
+      parentThreadId,
+      spawnedByToolUseId: opts.toolUseId ?? 'tu_spawn',
+      planMode: opts.planMode ?? false,
+    });
+    chat.setLastSessionId(banka.id, opts.sessionId ?? 'sess-1');
+    chat.setInitialArchitectureConfig(banka.id, (opts.snapshot ?? SNAPSHOT) as never);
+    chat.setInitialSystemPrompt(banka.id, 'the prompt the session was created with');
+    return banka.id;
+  };
+
+  const makeDispatcher = (opts: { model?: string; toolUseId?: string } = {}): TransagentDispatcher => {
+    const artifact = (kind: string) => async (p: string) => {
+      if (missingArtifacts.has(p)) throw new DomainError('NOT_FOUND', `${kind} '${p}' not found`);
+      return {};
+    };
+    const deps = {
+      chatService: chat,
+      briefService: { getBrief: artifact('brief') },
+      patchService: { getPatch: artifact('patch') },
+      activeAdapters,
+      pendingInputs: new Map(),
+      cwd,
+      roots: [],
+    } as unknown as AgentTurnDeps;
+    return new TransagentDispatcher(deps, {
+      model: (opts.model ?? 'claude-opus-5') as never,
+      architectureConfig: {},
+      takeToolUseId: async () => opts.toolUseId ?? 'tu_cont',
+      runTurn: async (input: AgentTurnInput) => {
+        turnInputs.push(input);
+        return { answer: 'continued' } as never;
+      },
+    });
+  };
+
+  const cont = (
+    parentThreadId: string,
+    threadId: string,
+    extra: Partial<TransagentRunInput> = {},
+    dispatcherOpts: { model?: string; toolUseId?: string } = {},
+  ) =>
+    makeDispatcher(dispatcherOpts).run({
+      parentThreadId,
+      contextType: 'chat',
+      message: 'keep going',
+      threadId,
+      ...extra,
+    });
+
+  it('[ac:ac-wywolanie-runtransagent-z-threadid-za] founds a new chat_thread row', async () => {
+    const caller = seedCaller();
+    const banka = seedBanka(caller);
+    const before = threadCount();
+
+    const { threadId } = await cont(caller, banka);
+
+    expect(threadCount()).toBe(before + 1);
+    expect(threadId).not.toBe(banka);
+    expect(turnInputs[0]?.thread.id).toBe(threadId);
+  });
+
+  it('[ac:ac-threadid-zwrocony-przez-kontynuacje-j] returns the id of the new row, never the input id', async () => {
+    const caller = seedCaller();
+    const banka = seedBanka(caller);
+    const result = await cont(caller, banka);
+    expect(result).toEqual({ threadId: turnInputs[0]?.thread.id, summary: 'continued' });
+    expect(result.threadId).not.toBe(banka);
+  });
+
+  it('[ac:ac-parent-thread-id-wiersza-kontynuacji] parents the new row on the CALLER, not on the banka\'s original parent', async () => {
+    const origin = seedCaller();
+    const banka = seedBanka(origin);
+    const caller = seedCaller();
+
+    const { threadId } = await cont(caller, banka);
+
+    expect(rowOf(threadId).parent_thread_id).toBe(caller);
+    expect(rowOf(banka).parent_thread_id).toBe(origin);
+  });
+
+  it('[ac:ac-spawned-by-tool-use-id-wiersza-kontyn] stamps the new row with THIS call\'s tool_use id', async () => {
+    const caller = seedCaller();
+    const banka = seedBanka(caller, { toolUseId: 'tu_first' });
+    const { threadId } = await cont(caller, banka, {}, { toolUseId: 'tu_second' });
+    expect(rowOf(threadId).spawned_by_tool_use_id).toBe('tu_second');
+  });
+
+  it('[ac:ac-wiersz-kontynuacji-ma-context-type-ws] [ac:ac-wiersz-kontynuacji-ma-sciezke-artefak] copies context_type and the artifact path, ignoring payload', async () => {
+    const caller = seedCaller();
+    const chatBanka = seedBanka(caller);
+    const patchBanka = seedBanka(caller, { contextType: 'patch', sessionId: 'sess-p' });
+    const briefBanka = seedBanka(caller, { contextType: 'brief', sessionId: 'sess-b' });
+
+    const c = await cont(caller, chatBanka, { payload: { planPath: 'plans/other.md' } });
+    const p = await cont(caller, patchBanka, { contextType: 'patch', payload: { patchPath: 'patches/other.md' } });
+    const b = await cont(caller, briefBanka, { contextType: 'brief', payload: { fromReleaseName: 'x' } });
+
+    expect(rowOf(c.threadId)).toMatchObject({ context_type: 'chat', plan_path: 'plans/p.md' });
+    expect(rowOf(p.threadId)).toMatchObject({ context_type: 'patch', patch_path: 'patches/p.md' });
+    expect(rowOf(b.threadId)).toMatchObject({ context_type: 'brief', brief_path: 'briefs/0-0-1-to-next.md' });
+  });
+
+  it('[ac:ac-kontynuacja-banki-przez-runtransagent] takes plan_mode from the banka regardless of the call\'s planMode', async () => {
+    const caller = seedCaller();
+    const planBanka = seedBanka(caller, { planMode: true, sessionId: 'sess-plan' });
+    const freeBanka = seedBanka(caller, { planMode: false, sessionId: 'sess-free' });
+
+    const a = await cont(caller, planBanka, { planMode: false });
+    const b = await cont(caller, freeBanka, { planMode: true });
+
+    expect(rowOf(a.threadId).plan_mode).toBe(1);
+    expect(rowOf(b.threadId).plan_mode).toBe(0);
+    expect(turnInputs.map((i) => i.thread.planMode)).toEqual([true, false]);
+  });
+
+  it('[ac:ac-wiersz-kontynuacji-ma-initial-archite] [ac:ac-wiersz-kontynuacji-ma-przy-zalozeniu] copies the config snapshot and last_session_id, so the turn resumes that session', async () => {
+    const caller = seedCaller();
+    const banka = seedBanka(caller, { sessionId: 'sess-42' });
+
+    const { threadId } = await cont(caller, banka);
+
+    const row = rowOf(threadId);
+    expect(row.initial_architecture_config_json).toBe(rowOf(banka).initial_architecture_config_json);
+    expect(row.last_session_id).toBe('sess-42');
+    // The turn runner resumes from `thread.lastSessionId` (no fork).
+    expect(turnInputs[0]?.thread.lastSessionId).toBe('sess-42');
+  });
+
+  it('[ac:ac-po-turze-kontynuacji-initial-system-p] founds the row without initial_system_prompt', async () => {
+    const caller = seedCaller();
+    const banka = seedBanka(caller);
+    const { threadId } = await cont(caller, banka);
+    expect(rowOf(threadId).initial_system_prompt).toBeNull();
+  });
+
+  it('[ac:ac-kontynuacja-nie-modyfikuje-wiersza-ws] leaves the referenced banka row untouched', async () => {
+    const caller = seedCaller();
+    const banka = seedBanka(caller);
+    const before = rowOf(banka);
+
+    await cont(caller, banka, { planMode: true, payload: { planPath: 'plans/other.md' } });
+
+    expect(rowOf(banka)).toEqual(before);
+  });
+
+  it('[ac:ac-banke-zrodzona-w-innym-watku-top-leve] continues a banka born in another top-level thread', async () => {
+    const otherTopLevel = seedCaller();
+    const banka = seedBanka(otherTopLevel);
+    const caller = seedCaller();
+
+    const { threadId } = await cont(caller, banka);
+
+    expect(chat.listChildThreads(caller).map((c) => c.id)).toEqual([threadId]);
+    expect(chat.listChildThreads(otherTopLevel).map((c) => c.id)).toEqual([banka]);
+  });
+
+  it('brackets the turn with childThreadId = the NEW row', async () => {
+    const caller = seedCaller();
+    const banka = seedBanka(caller);
+    const { threadId } = await cont(caller, banka);
+    const brackets = emitted.filter((e) => String(e.type).startsWith('transagent_'));
+    expect(brackets.map((e) => [e.type, e.childThreadId, e.toolUseId])).toEqual([
+      ['transagent_started', threadId, 'tu_cont'],
+      ['transagent_completed', threadId, 'tu_cont'],
+    ]);
+  });
+
+  describe('refusals — each lands before the INSERT', () => {
+    const expectRefusal = async (
+      call: () => Promise<unknown>,
+      code: string,
+    ): Promise<void> => {
+      const before = threadCount();
+      await expect(call()).rejects.toMatchObject({ code });
+      expect(threadCount()).toBe(before);
+      expect(turnInputs).toHaveLength(0);
+    };
+
+    it('NOT_FOUND for an unknown threadId', async () => {
+      const caller = seedCaller();
+      await expectRefusal(() => cont(caller, 'nope'), 'NOT_FOUND');
+    });
+
+    it('[ac:ac-threadid-watku-top-level-konczy-sie-o] INVALID_ARGS (VALIDATION) for a top-level thread', async () => {
+      const caller = seedCaller();
+      const topLevel = seedCaller();
+      chat.setLastSessionId(topLevel, 'sess-user');
+      await expectRefusal(() => cont(caller, topLevel), 'VALIDATION');
+    });
+
+    it('[ac:ac-contexttype-niezgodny-z-typem-konteks] INVALID_ARGS (VALIDATION) when contextType differs from the banka\'s', async () => {
+      const caller = seedCaller();
+      const banka = seedBanka(caller, { contextType: 'patch' });
+      await expectRefusal(() => cont(caller, banka, { contextType: 'chat' }), 'VALIDATION');
+    });
+
+    it('[ac:ac-kontynuacja-banki-ktorej-brief-albo-p] NOT_FOUND when the banka\'s brief or patch file is gone', async () => {
+      const caller = seedCaller();
+      const briefBanka = seedBanka(caller, { contextType: 'brief' });
+      const patchBanka = seedBanka(caller, { contextType: 'patch', sessionId: 'sess-p' });
+      missingArtifacts.add('briefs/0-0-1-to-next.md');
+      missingArtifacts.add('patches/p.md');
+      await expectRefusal(() => cont(caller, briefBanka, { contextType: 'brief' }), 'NOT_FOUND');
+      await expectRefusal(() => cont(caller, patchBanka, { contextType: 'patch' }), 'NOT_FOUND');
+    });
+
+    it('lets a dangling plan_path through — a plan degrades gracefully', async () => {
+      const caller = seedCaller();
+      const banka = seedBanka(caller);
+      missingArtifacts.add('plans/p.md');
+      await expect(cont(caller, banka)).resolves.toMatchObject({ summary: 'continued' });
+    });
+
+    it('[ac:ac-kontynuacja-sesji-wznawianej-przez-wi] STREAM_IN_PROGRESS while the banka row itself is live', async () => {
+      const caller = seedCaller();
+      const banka = seedBanka(caller);
+      activeAdapters.set(banka, { requestId: 'r-banka', sessionId: 'sess-1' });
+      await expectRefusal(() => cont(caller, banka), 'STREAM_IN_PROGRESS');
+    });
+
+    it('[ac:ac-kontynuacja-sesji-wznawianej-przez-wi] STREAM_IN_PROGRESS while ANOTHER row is resuming the same session', async () => {
+      const caller = seedCaller();
+      const banka = seedBanka(caller, { sessionId: 'sess-shared' });
+      activeAdapters.set('some-continuation-row', { requestId: 'r-x', sessionId: 'sess-shared' });
+      await expectRefusal(() => cont(caller, banka), 'STREAM_IN_PROGRESS');
+    });
+
+    it('[ac:ac-kontynuacja-ze-zmienionym-polem-immut] RESUME_CONFIG_LOCKED when the turn config differs from the banka\'s snapshot (third guard entry point)', async () => {
+      const caller = seedCaller();
+      const banka = seedBanka(caller, { snapshot: { model: 'claude-sonnet-5', architectureConfig: {} } });
+      const before = threadCount();
+
+      const err = await cont(caller, banka).catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(DomainError);
+      expect(err).toMatchObject({ code: 'RESUME_CONFIG_LOCKED' });
+      expect((err as DomainError).message).toContain('model');
+      expect((err as DomainError).hint).toMatch(/omit `threadId`/);
+      expect(threadCount()).toBe(before);
+    });
+
+    it('[ac:ac-odmowa-kontynuacji-nie-zaklada-wiersz] refuses in the documented order: contextType before artifact before stream before config', async () => {
+      const caller = seedCaller();
+      const banka = seedBanka(caller, {
+        contextType: 'patch',
+        snapshot: { model: 'claude-sonnet-5', architectureConfig: {} },
+      });
+      missingArtifacts.add('patches/p.md');
+      activeAdapters.set(banka, { requestId: 'r-banka', sessionId: 'sess-1' });
+      const before = threadCount();
+
+      await expect(cont(caller, banka, { contextType: 'chat' })).rejects.toMatchObject({ code: 'VALIDATION' });
+      await expect(cont(caller, banka, { contextType: 'patch' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+      missingArtifacts.clear();
+      await expect(cont(caller, banka, { contextType: 'patch' })).rejects.toMatchObject({
+        code: 'STREAM_IN_PROGRESS',
+      });
+      activeAdapters.delete(banka);
+      await expect(cont(caller, banka, { contextType: 'patch' })).rejects.toMatchObject({
+        code: 'RESUME_CONFIG_LOCKED',
+      });
+
+      expect(threadCount()).toBe(before);
+    });
   });
 });

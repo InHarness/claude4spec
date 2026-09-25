@@ -5,6 +5,28 @@ import {
 } from '../services/agent-execution-scope.js';
 import { readConfig } from '../config.js';
 import type { Root } from '../../shared/types.js';
+import type { ActiveAdapter } from './agent-turn.js';
+
+/**
+ * 0.2.111 (M46): is a turn in flight on this thread, or on ANY row resuming the same
+ * CLI session? Since a banka continuation founds a new row that copies the banka's
+ * `last_session_id`, two rows may point at one session — and an unforked parallel
+ * resume interleaves its transcript. So the one-stream guard is per SESSION, not per
+ * row, at every turn-starting entry point: `POST /api/chat`, `POST /api/threads/:id/ask`
+ * and the banka continuation in `TransagentDispatcher`.
+ */
+export function isSessionInFlight(
+  activeAdapters: ReadonlyMap<string, Pick<ActiveAdapter, 'sessionId'>>,
+  threadId: string,
+  sessionId: string | null | undefined,
+): boolean {
+  if (activeAdapters.has(threadId)) return true;
+  if (!sessionId) return false;
+  for (const entry of activeAdapters.values()) {
+    if (entry.sessionId === sessionId) return true;
+  }
+  return false;
+}
 
 /** The 409 body shape both turn-starting routes return. `violations` is the UI contract. */
 export interface ResumeConfigLockError {
@@ -27,7 +49,11 @@ export interface ResumeLockInput {
 }
 
 /**
- * M05 session-lock, shared by `POST /api/chat` and `POST /api/threads/:id/ask`: on a
+ * M05 session-lock, shared by THREE entry points — `POST /api/chat`,
+ * `POST /api/threads/:id/ask` (both map a violation to HTTP 409) and, since 0.2.111,
+ * the banka continuation in `TransagentDispatcher` (`runTransagent({ threadId })`),
+ * which compares against the referenced banka's snapshot BEFORE founding the new row
+ * and maps a violation to a tool refusal `RESUME_CONFIG_LOCKED` instead. On a
  * resuming turn the model, the reasoning fields AND (0.2.8, C15) the FS path scope are
  * immutable. claude-code binds the last turn's thinking blocks to the config that produced
  * them, and the library declares `allowedPaths`/`disallowedPaths` frozen for a session's

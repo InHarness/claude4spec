@@ -366,6 +366,39 @@ export class ChatService {
   }
 
   /**
+   * 0.2.111 (M46): the row a banka CONTINUATION runs on. Every `runTransagent`
+   * call founds its own child row, a continuation included — this one inherits
+   * the referenced banka's binding and session instead of preparing a new one:
+   * `context_type`, the artifact path (`brief_path`/`patch_path`/`plan_path`),
+   * `plan_mode`, `initial_architecture_config_json` and `last_session_id` are
+   * copied; `parent_thread_id`/`spawned_by_tool_use_id` are the CALLER's.
+   * `initial_system_prompt` is not copied and stays NULL — the resuming turn
+   * never writes it (the CLI ignores a system prompt on resume).
+   *
+   * One `INSERT … SELECT`, so the snapshot is copied byte-for-byte (the resume
+   * guard compares against exactly what the session was created with) and the
+   * source row is only read, never updated. The caller validates the source first.
+   */
+  createContinuationThread(
+    sourceThreadId: string,
+    opts: { parentThreadId: string; spawnedByToolUseId: string },
+  ): ChatThread {
+    const id = nanoid(12);
+    const info = this.db
+      .prepare(
+        `INSERT INTO chat_thread (id, title, context_type, brief_path, patch_path, plan_path, plan_mode,
+                                  initial_architecture_config_json, last_session_id,
+                                  parent_thread_id, spawned_by_tool_use_id)
+         SELECT ?, title, context_type, brief_path, patch_path, plan_path, plan_mode,
+                initial_architecture_config_json, last_session_id, ?, ?
+           FROM chat_thread WHERE id = ?`,
+      )
+      .run(id, opts.parentThreadId, opts.spawnedByToolUseId, sourceThreadId);
+    if (info.changes === 0) throw new DomainError('NOT_FOUND', `thread '${sourceThreadId}' not found`);
+    return this.getThreadRow(id);
+  }
+
+  /**
    * 0.1.69 Transagents (F5 reconstruction): resolve a child banka from the
    * parent's stored `tool_use(runTransagent)` row via (parent_thread_id,
    * spawned_by_tool_use_id). Returns the most recent match, or null.
