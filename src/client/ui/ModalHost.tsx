@@ -90,11 +90,13 @@ function ModalLayer({
     queueMicrotask(() => onClose(null));
     return null;
   }
-  const props = request.props as { slug: string; caption?: string };
+  // Every prop the opener sent reaches the type's overlay — a card that already
+  // holds the record passes it along (`entity`), so the overlay need not refetch.
+  const { caption, ...rest } = request.props as { slug: string; caption?: string };
   return (
     <Overlay
-      slug={props.slug}
-      {...(props.caption ? { caption: props.caption } : {})}
+      {...(rest as { slug: string })}
+      {...(caption ? { caption } : {})}
       onClose={() => onClose(null)}
     />
   );

@@ -284,7 +284,11 @@ export type ModalMap = {
     result: true;
   };
   /** `<type>-expand` for hidden entity types (diagram, spreadsheet, code-snippet…). */
-  [expand: `${string}-expand`]: { props: { slug: string; caption?: string }; result: void };
+  [expand: `${string}-expand`]: {
+    /** Extra props (e.g. an `entity` the opener already holds) pass through to the overlay. */
+    props: { slug: string; caption?: string; [extra: string]: unknown };
+    result: void;
+  };
 };
 
 export type ModalKind = keyof ModalMap & string;

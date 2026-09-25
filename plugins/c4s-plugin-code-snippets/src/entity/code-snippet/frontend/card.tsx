@@ -162,7 +162,7 @@ export function CodeSnippetCard({ slug, entity, caption, onOpen }: EntityCardPro
             // directly (0.2.110 M50): the host resolves it to this type's
             // `renderOverlay`, so there is no second, locally portalled copy.
             if (onOpen) onOpen();
-            else void openModal('code-snippet-expand', { slug, ...(caption ? { caption } : {}) });
+            else void openModal('code-snippet-expand', { slug, entity: record, ...(caption ? { caption } : {}) });
           }}
           aria-label="Open fullscreen"
           className="shrink-0 rounded p-1"
