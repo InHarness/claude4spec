@@ -113,7 +113,7 @@ describe.skipIf(!BASE)('TODO list and jump to marker', () => {
       const group = page.locator('[data-testid="todo-group"]', { hasText: PAGE_PATH });
       await group.locator('button', { hasText: comment }).first().click();
 
-      await page.waitForURL(/\/space\/pages\/e2e-todos-jump\.md#todo-\d+/);
+      await page.waitForURL(/\/space\/pages\/e2e-todos-jump\.md#anchor-todo-\d+/);
       const expected = (await hits())[ordinal]!;
       expect(new URL(page.url()).hash).toBe(`#${expected.anchor}`);
 

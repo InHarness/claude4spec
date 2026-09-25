@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ApiError, apiFetch, stripBase } from './lib/api-core.js';
-import { Outlet, useLocation, useNavigate } from '@tanstack/react-router';
+import { ApiError, apiFetch } from './lib/api-core.js';
+import { Outlet, useMatches, useNavigate, useRouter } from '@tanstack/react-router';
 import { ChatEdgeAffordance } from './components/ChatEdgeAffordance.js';
 import { ChatOverlay } from './chat/ChatOverlay.js';
 import { ThreadListProvider } from './chat/ThreadListContext.js';
@@ -29,22 +29,21 @@ import { countFiles } from '../shared/page-files.js';
 
 export function RootLayout() {
   const navigate = useNavigate();
-  const location = useLocation();
+  const router = useRouter();
   const { data: config, isError, error, refetch } = useConfig();
-  const currentPath = stripBase(location.pathname);
-  const isOnboardingPath = currentPath === '/onboarding';
-  // Decision #11: `/welcome` runs project-less — no config fetch, no project
-  // shell. Rendered in the same minimal container as onboarding.
-  const isWelcomePath = currentPath === '/welcome';
+  // M50: "full-screen" is a flag the owning module puts on its route
+  // (`staticData.fullscreen`), not a path list the shell knows.
+  const isFullscreen = useMatches({ select: (ms) => ms.some((m) => m.staticData?.fullscreen) });
+  // M50 pre-mount redirect: the first full-screen route whose owner's
+  // `redirectIf` holds for this config. Evaluated during render, before the
+  // regular shell mounts, so the editor never flashes ahead of e.g. onboarding.
+  const redirectTo = config && !isFullscreen
+    ? Object.values(router.routesById).find((r) => r.options.staticData?.redirectIf?.(config))?.fullPath
+    : undefined;
 
-  // M16 mount-time guard: jezeli config swiezy (onboardingCompleted=false),
-  // przekierowujemy na /onboarding zanim user zobaczy edytor.
   useEffect(() => {
-    if (!config) return;
-    if (!config.onboarding.completed && !isOnboardingPath) {
-      navigate({ to: '/onboarding', replace: true });
-    }
-  }, [config, isOnboardingPath, navigate]);
+    if (redirectTo) navigate({ to: redirectTo as never, replace: true });
+  }, [redirectTo, navigate]);
 
   useEffect(() => {
     document.title = config?.name ? `${config.name} | claude4spec` : 'claude4spec';
@@ -53,7 +52,7 @@ export function RootLayout() {
   // Minimalny shell dla onboardingu i welcome (bez sidebara, chatu, watchera).
   // MainShell nie mountuje sie, wiec useFileWatcher / pages-tree query nie
   // ruszaja — istotne dla `/welcome`, ktore dziala bez aktywnego projektu.
-  if (isOnboardingPath || isWelcomePath) {
+  if (isFullscreen) {
     return (
       <div
         className="h-full w-full"
@@ -74,6 +73,10 @@ export function RootLayout() {
   if (isError) {
     return <ProjectLoadError error={error} onRetry={() => void refetch()} />;
   }
+
+  // A pending full-screen redirect renders nothing: the navigation above lands
+  // on the next commit, and the regular shell must not paint in between.
+  if (redirectTo) return null;
 
   return <MainShell projectName={config?.name ?? null} />;
 }

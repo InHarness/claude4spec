@@ -54,7 +54,11 @@ export function externalSkillsRouter(deps: ExternalSkillsRouterDeps): Router {
   const router = Router();
 
   router.get('/', (_req, res) => {
-    const body: ExternalSkillsListResponse = { skills: externalSkillsMetadata() };
+    const project = deps.registry.getProject(deps.workspace, deps.projectId);
+    const body: ExternalSkillsListResponse = {
+      skills: externalSkillsMetadata(),
+      projectSlug: project ? buildExternalSkillContext(project, deps.workspace.name).slug : null,
+    };
     res.json(body);
   });
 

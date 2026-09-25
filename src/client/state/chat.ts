@@ -93,6 +93,8 @@ interface ChatState {
   clearAnnotations(): void;
 }
 
+export const CHAT_MIN_WIDTH = 300;
+
 export const useChatStore = create<ChatState>()(
   persist(
     (set) => ({
@@ -105,7 +107,15 @@ export const useChatStore = create<ChatState>()(
       seedPrompt: null,
       setChatOpen: (open) => set({ chatOpen: open }),
       toggleChat: () => set((s) => ({ chatOpen: !s.chatOpen })),
-      setChatWidth: (px) => set({ chatWidth: Math.max(320, Math.min(900, px)) }),
+      // M50: 300px … 50% of the window. The render also caps at `50vw`, so a
+      // stored width stays valid when the window shrinks later.
+      setChatWidth: (px) =>
+        set({
+          chatWidth: Math.max(
+            CHAT_MIN_WIDTH,
+            Math.min(typeof window === 'undefined' ? px : window.innerWidth * 0.5, px),
+          ),
+        }),
       setChatThreadId: (id) => set({ chatThreadId: id }),
       setSeedPrompt: (p) => set({ seedPrompt: p }),
       setModel: (m, adaptive) =>

@@ -205,6 +205,7 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
     const storage = editor.storage as Record<string, unknown>;
     storage.pagesIndex = pagesIndex;
     storage.pageRefSourcePath = path;
+    storage.pageRefRootId = rootId;
     // Re-parse the body once so code_inline and link post-processors can promote
     // resolved paths into PageRefNode chips — but ONLY on the index's first
     // arrival (undefined → defined), i.e. a cold load where the doc rendered

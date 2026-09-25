@@ -5,6 +5,8 @@ import { usePageLinks } from '../../../hooks/usePageLinks.js';
 import { PageRefChip, type PageRefChipState } from '../../../components/PageRefChip.js';
 import { openPageRefPopover } from '../PageRefPopover.js';
 import { resolveAgainstIndex } from '../../lib/pathResolve.js';
+import { useBaseRootId, useRoots } from '../../../hooks/useConfig.js';
+import { pageTarget } from '../../../lib/pageTarget.js';
 import type { PageRefSyntax } from '../PageRefNode.js';
 import type { FileMeta } from '../../../../shared/page-links.js';
 
@@ -49,6 +51,15 @@ export function PageRefView(props: NodeViewProps) {
   const sourcePath = (props.editor.storage as Record<string, unknown>).pageRefSourcePath as
     | string
     | undefined;
+  // M50: the chip navigates to `/space/<targetRootId>/…`. The server resolves a
+  // mention inside its source's own root, so the target root is the root of the
+  // document the chip lives in; outside a page (a plan) that is the base root.
+  const sourceRootId = (props.editor.storage as Record<string, unknown>).pageRefRootId as
+    | string
+    | undefined;
+  const baseRootId = useBaseRootId();
+  const roots = useRoots();
+  const rootIds = useMemo(() => roots.map((r) => r.id), [roots]);
   const resolvedPath = normalizePath(path, byPath, sourcePath);
   const meta = resolvedPath ? byPath[resolvedPath] : undefined;
 
@@ -98,9 +109,12 @@ export function PageRefView(props: NodeViewProps) {
       return;
     }
     if (!resolvedPath) return;
+    const fallbackRootId = sourceRootId ?? baseRootId;
+    if (!fallbackRootId) return;
+    const target = pageTarget(resolvedPath, rootIds, fallbackRootId);
     void navigate({
-      to: '/pages/$',
-      params: { _splat: resolvedPath },
+      to: '/space/$rootId/$',
+      params: { rootId: target.rootId, _splat: target.path },
       hash: anchor ? `anchor-${anchor}` : undefined,
     });
   };

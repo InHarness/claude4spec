@@ -70,6 +70,8 @@ Continue the brief thread with \`c4s agent "..." --thread <threadId> ${identity}
 
 Standard code flow in your target repository: read existing code, plan, edit, test. Stay focused on what the brief specifies.
 
+**Literal UI strings ship in English**, even when the brief quotes them in another language (labels, empty states, toasts, error messages). Translate them as you implement, and file a patch (step 4, \`--kind clarification\`) listing each string you translated, so the spec-author can fix the source.
+
 ### 4. Feedback loop (patches)
 
 When you discover that the brief diverges from reality — a missing detail, an incorrect assumption, an edge case not covered, or anything else the spec-author should know — file a patch. Use \`c4s create-patch\`, which records the patch on the spec side for you:

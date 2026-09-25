@@ -3,11 +3,15 @@ import type { Editor } from '@tiptap/react';
 import { useRouterState } from '@tanstack/react-router';
 import { useTodos } from './useTodos.js';
 
-const TODO_HASH_RE = /^#(todo-\d+(?:-\d+)?)$/;
+// 0.2.110: the TODO list links `#anchor-<TodoHit.anchor>` (M08/M50), i.e.
+// `#anchor-todo-<line>[-<col>]`. The bare pre-0.2.110 `#todo-…` still resolves,
+// so old links keep working. The section scroller's `#anchor-<id>` pattern has
+// no `-` in the id, so the two never both match.
+const TODO_HASH_RE = /^#(?:anchor-)?(todo-\d+(?:-\d+)?)$/;
 const MAX_FRAMES = 30;
 
 /**
- * Scroll a page editor to the TODO marker referenced by a `#todo-<line>[-<col>]` hash
+ * Scroll a page editor to the TODO marker referenced by a `#anchor-todo-<line>[-<col>]` hash
  * (the `anchor` of a `TodoHit`) and pulse it.
  *
  * The anchor is derived from the server's line/col, which the editor DOM does not

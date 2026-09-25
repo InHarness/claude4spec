@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { API_BASE } from '../lib/api-core.js';
 import { ChevronRight, Maximize2, Minimize2 } from 'lucide-react';
-import { useHtmlViewerStore } from '../state/htmlViewer.js';
+import { htmlRevisionKey, useHtmlViewerStore } from '../state/htmlViewer.js';
 
 interface Props {
   rootId: string;
@@ -16,6 +16,8 @@ interface Props {
  * `allow-same-origin`, so the page gets an opaque origin: in-page JS runs and relative assets
  * load, but it has no cookies/localStorage, no same-origin fetch, and no access to `window.parent`.
  *
+ * The frame reloads when the open file changes on disk (`file:changed` → `htmlViewer.notifyChanged`).
+ *
  * No HTML editing/rename/delete in v1. Expand/collapse is an in-app overlay (not the native
  * Fullscreen API) backed by local UI state outside the URL.
  */
@@ -24,6 +26,8 @@ export function HtmlViewer({ rootId, path }: Props) {
   const expanded = useHtmlViewerStore((s) => s.expanded);
   const toggleExpanded = useHtmlViewerStore((s) => s.toggleExpanded);
   const setExpanded = useHtmlViewerStore((s) => s.setExpanded);
+  // Bumped by `file:changed` for this file — re-keying the iframe reloads it.
+  const revision = useHtmlViewerStore((s) => s.revisions[htmlRevisionKey(rootId, path)] ?? 0);
 
   // Collapse when switching to a different file so we never strand the overlay.
   useEffect(() => {
@@ -35,7 +39,7 @@ export function HtmlViewer({ rootId, path }: Props) {
 
   const frame = (
     <iframe
-      key={path}
+      key={`${rootId}:${path}:${revision}`}
       title={path}
       src={src}
       sandbox="allow-scripts"
