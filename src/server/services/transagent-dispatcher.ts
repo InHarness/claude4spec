@@ -36,7 +36,7 @@ import type {
   Model,
 } from '../routes/agent-turn.js';
 import { DomainError } from './tags.js';
-import { checkResumeConfigLock } from '../routes/resume-lock.js';
+import { checkResumeConfigLock, isSessionInFlight } from '../routes/resume-lock.js';
 
 export interface TransagentRunInput {
   parentThreadId: string;
@@ -336,7 +336,7 @@ export class TransagentDispatcher {
       );
     }
 
-    if (this.isSessionInFlight(banka)) {
+    if (isSessionInFlight(this.deps.activeAdapters, banka.id, banka.lastSessionId)) {
       throw new DomainError(
         'STREAM_IN_PROGRESS',
         `banka '${threadId}' has a turn in flight on its session — wait for it to finish; the call is not queued`,
@@ -355,7 +355,9 @@ export class TransagentDispatcher {
       const fields = lock.error.violations.map((v) => v.path).join(', ');
       throw new DomainError(
         'RESUME_CONFIG_LOCKED',
-        `${lock.error.message} Changed: ${fields}.`,
+        // Not `lock.error.message`: that text tells a human to "start a new
+        // conversation"; the agent's remedy is the hint below.
+        `Model, reasoning and filesystem scope are locked for banka '${threadId}''s session. Changed: ${fields}.`,
         'Spawn a fresh banka (omit `threadId`) to run this work with the current config.',
       );
     }
@@ -363,6 +365,12 @@ export class TransagentDispatcher {
     return banka;
   }
 
+  /**
+   * Refuses only a MISSING file. Any other read failure (a malformed frontmatter, an
+   * I/O error) passes: the file exists, and `runAgentTurn` tolerates the same read
+   * failure (it warns and runs without the snapshot) — an existence check must not
+   * turn it into an undocumented refusal code.
+   */
   private async assertArtifactExists(
     kind: 'brief' | 'patch',
     path: string,
@@ -375,22 +383,7 @@ export class TransagentDispatcher {
       if (missing) {
         throw new DomainError('NOT_FOUND', `the banka's ${kind} '${path}' no longer exists`);
       }
-      throw err;
     }
-  }
-
-  /**
-   * Is any row in flight resuming this banka's session? The banka's own row, or
-   * any other row (an earlier continuation) registered with the same session id.
-   */
-  private isSessionInFlight(banka: ChatThread): boolean {
-    if (this.deps.activeAdapters.has(banka.id)) return true;
-    const sessionId = banka.lastSessionId;
-    if (!sessionId) return false;
-    for (const entry of this.deps.activeAdapters.values()) {
-      if (entry.sessionId === sessionId) return true;
-    }
-    return false;
   }
 
   /**

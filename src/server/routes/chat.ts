@@ -26,7 +26,7 @@ import {
   type ActiveAdapter,
   type AgentTurnDeps,
 } from './agent-turn.js';
-import { checkResumeConfigLock } from './resume-lock.js';
+import { checkResumeConfigLock, isSessionInFlight } from './resume-lock.js';
 import { checkSelectableModel, describeModels } from './models.js';
 import { DEFAULT_MODEL } from '../../core/agent/run-agent.js';
 
@@ -229,7 +229,8 @@ export function chatRouter(deps: AgentTurnDeps): Router {
 
       // One-stream-per-thread guard. Klient powinien dolaczyc przez GET /api/chat/stream/:threadId
       // albo abortowac poprzedni stream przez POST /api/chat/abort.
-      if (activeAdapters.has(thread.id)) {
+      // 0.2.111: per SESSION — a banka continuation row may be resuming this row's session.
+      if (isSessionInFlight(activeAdapters, thread.id, thread.lastSessionId)) {
         // 0.2.15: status and shape from the shared table, not a literal here.
         // `STREAM_IN_PROGRESS` is the turn family's concurrency guard — stateful
         // where page/plan writes are hash-based — and a second turn on a live

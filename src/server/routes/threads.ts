@@ -8,7 +8,7 @@ import {
   AgentTurnError,
   type AgentTurnDeps,
 } from './agent-turn.js';
-import { checkResumeConfigLock } from './resume-lock.js';
+import { checkResumeConfigLock, isSessionInFlight } from './resume-lock.js';
 import { checkSelectableModel, isAdaptiveAlias } from './models.js';
 import { assertKnownContextType } from '../services/chat-context.js';
 import { ASK_TURN_TIMEOUT_MS } from '../../shared/agent-turn.js';
@@ -212,7 +212,8 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
       if (resumeLock) return res.status(409).json(resumeLock);
 
       // Gating one-stream-per-thread — wspoldzielony rejestr z `POST /api/chat`.
-      if (activeAdapters.has(thread.id)) {
+      // 0.2.111: per SESSION — a banka continuation row may be resuming this row's session.
+      if (isSessionInFlight(activeAdapters, thread.id, thread.lastSessionId)) {
         // 0.2.15: status and shape from the shared table, not a literal here.
         // `STREAM_IN_PROGRESS` is the turn family's concurrency guard — stateful
         // where page/plan writes are hash-based — and a second turn on a live

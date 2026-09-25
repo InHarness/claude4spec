@@ -5,6 +5,28 @@ import {
 } from '../services/agent-execution-scope.js';
 import { readConfig } from '../config.js';
 import type { Root } from '../../shared/types.js';
+import type { ActiveAdapter } from './agent-turn.js';
+
+/**
+ * 0.2.111 (M46): is a turn in flight on this thread, or on ANY row resuming the same
+ * CLI session? Since a banka continuation founds a new row that copies the banka's
+ * `last_session_id`, two rows may point at one session — and an unforked parallel
+ * resume interleaves its transcript. So the one-stream guard is per SESSION, not per
+ * row, at every turn-starting entry point: `POST /api/chat`, `POST /api/threads/:id/ask`
+ * and the banka continuation in `TransagentDispatcher`.
+ */
+export function isSessionInFlight(
+  activeAdapters: ReadonlyMap<string, Pick<ActiveAdapter, 'sessionId'>>,
+  threadId: string,
+  sessionId: string | null | undefined,
+): boolean {
+  if (activeAdapters.has(threadId)) return true;
+  if (!sessionId) return false;
+  for (const entry of activeAdapters.values()) {
+    if (entry.sessionId === sessionId) return true;
+  }
+  return false;
+}
 
 /** The 409 body shape both turn-starting routes return. `violations` is the UI contract. */
 export interface ResumeConfigLockError {
