@@ -81,7 +81,11 @@ function PathScopeStrengthBadge({ strength }: { strength: 'hard' | 'soft' | 'non
 export function AgentSection() {
   const { data: config } = useConfig();
   const patch = usePatchConfig();
-  const usePreset = config?.agent?.claudeUsePreset ?? true;
+  /**
+   * 0.2.112: absent field means OFF — the `?? false` mirrors the server default,
+   * which changed from `true`. Breaking on purpose, hence the note under the toggle.
+   */
+  const usePreset = config?.agent?.claudeUsePreset ?? false;
   /**
    * 0.2.53: absent field means ON. The `?? true` mirrors the server default
    * exactly, so a project whose config.json predates the field renders the
@@ -144,7 +148,17 @@ export function AgentSection() {
               Append the Claude Code preset to the system prompt
             </span>
             <span className="block text-[11.5px] mt-0.5" style={{ color: 'var(--c-subtle)' }}>
-              Default. Turn off only when the writing-style skill provides its own complete preset.
+              Append the Claude Code preset to the agent's system prompt. Off by default — the agent receives only the
+              project's prompt.
+            </span>
+            <span
+              className="block text-[11px] mt-1"
+              style={{ color: 'var(--c-subtle)' }}
+              data-testid="claude-preset-regression-note"
+            >
+              Changed in 0.2.112: the Claude Code preset is now off by default — also in existing projects that never set
+              this option, and in conversations already under way, from their next turn. Check this box to restore the
+              previous behaviour.
             </span>
           </span>
         </label>

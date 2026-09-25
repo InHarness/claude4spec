@@ -189,7 +189,8 @@ export interface AgentConfig {
   // gitignored `agent_credential` table (M05), encrypted at-rest — never in this
   // team-shared / committed `config.json`. No `anthropicApiKey` field, no `$schemaVersion` bump.
   //
-  // Brak pola = effective true. 0.2.8: default stosuje `normalizeConfig` przy
+  // Brak pola = effective false (0.2.112; wczesniej true — zmiana lamiaca, bez
+  // migracji: preset wlacza wylacznie jawne `true`). 0.2.8: default stosuje `normalizeConfig` przy
   // wczytaniu (konsumenci czytaja `config.agent.claudeUsePreset` wprost).
   // Additive — bez bumpu `$schemaVersion`.
   claudeUsePreset?: boolean;
@@ -377,9 +378,10 @@ export function defaults(cwd: string): NormalizedConfig {
     ...bootstrapDefaults(cwd),
     // 0.1.58: no elevator pitch.
     description: null,
-    // M26/0.1.51/0.1.90: agent flags. `claudeUsePreset` true = prior behaviour.
+    // M26/0.1.51/0.1.90: agent flags. 0.2.112: `claudeUsePreset` default false —
+    // the agent gets only the project's prompt; the Claude Code preset is opt-in.
     agent: {
-      claudeUsePreset: true,
+      claudeUsePreset: false,
       conversationalLanguage: null,
       allowedPaths: [],
       disallowedPaths: [],

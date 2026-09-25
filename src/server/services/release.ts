@@ -25,7 +25,7 @@ import type {
   SpecSnapshotPageRow,
   UpdateReleaseResponse,
 } from '../../shared/entities.js';
-import { CURRENT_RELEASE_NAME } from '../../shared/entities.js';
+import { CURRENT_RELEASE_NAME, MAX_RELEASE_DESCRIPTION_LENGTH } from '../../shared/entities.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
 import { topoSortModules } from '../core/plugin-host/entity-order.js';
 import type { RawEntityReader, RawEntityType } from '../discovery/raw-entity-reader.js';
@@ -152,6 +152,25 @@ interface ReleaseRow {
   description: string;
   created_by: string;
   created_at: string;
+}
+
+/**
+ * 0.2.112 — write-side guard for an already-trimmed description. The description
+ * is a short statement of intent: the release list, the git commit message and
+ * the bundle manifest all copy it verbatim. Counted in Unicode code points (not
+ * UTF-16 units). Reads, the cache rebuild from `releasesDir` and bundle restore
+ * deliberately do NOT call this — a longer description saved before the limit
+ * stays readable, untruncated.
+ */
+function assertReleaseDescription(description: string): void {
+  if (!description) throw new DomainError('RELEASE_DESCRIPTION_REQUIRED', 'release description is required');
+  const length = [...description].length;
+  if (length > MAX_RELEASE_DESCRIPTION_LENGTH) {
+    throw new DomainError(
+      'RELEASE_DESCRIPTION_TOO_LONG',
+      `release description is ${length} characters — at most ${MAX_RELEASE_DESCRIPTION_LENGTH} allowed`,
+    );
+  }
 }
 
 /**
@@ -461,7 +480,8 @@ export class ReleaseService {
 
   /**
    * Manual release creation (decyzja 9: zero auto-trigger). Validates
-   * non-empty + UNIQUE name and non-empty description; in a single
+   * non-empty + UNIQUE name and non-empty description of at most
+   * {@link MAX_RELEASE_DESCRIPTION_LENGTH} code points; in a single
    * transaction inserts spec_release and assigns all unreleased
    * entity_version + file_version rows.
    */
@@ -473,7 +493,7 @@ export class ReleaseService {
     const description = (input.description ?? '').trim();
     if (!name) throw new DomainError('VALIDATION', 'release name is required');
     if (isReservedReleaseName(name)) throw new DomainError('RELEASE_NAME_RESERVED', `release name '${name}' is reserved`);
-    if (!description) throw new DomainError('RELEASE_DESCRIPTION_REQUIRED', 'release description is required');
+    assertReleaseDescription(description);
 
     const slug = slugify(name);
 
@@ -618,9 +638,7 @@ export class ReleaseService {
           }
         }
       }
-      if (nextDescription !== undefined && !nextDescription) {
-        throw new DomainError('RELEASE_DESCRIPTION_REQUIRED', 'release description is required');
-      }
+      if (nextDescription !== undefined) assertReleaseDescription(nextDescription);
 
       if (nextName !== undefined || nextDescription !== undefined) {
         this.db

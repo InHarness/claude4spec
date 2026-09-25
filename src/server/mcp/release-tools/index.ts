@@ -85,7 +85,11 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
     'Create a named release (snapshot of current spec state). Assigns release_id to all unreleased entity_version + file_version rows in one transaction. Always manual — there are no auto-triggers (M17 decyzja 9). Both name (UNIQUE) and description (non-empty) are required.',
     {
       name: z.string().describe('Release name, must be unique. e.g. "v1.0.0", "pre-launch"'),
-      description: z.string().describe('Non-empty intent of the release — surfaced to M18 brief-builder'),
+      description: z
+        .string()
+        .describe(
+          'Non-empty statement of the intent of this release, at most 500 characters. It is the raw material a later change brief is written from, so make it say what the release is about.',
+        ),
     },
     async (args) => {
       try {
@@ -294,7 +298,10 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
     {
       idOrName: z.union([z.string(), z.number()]).describe('Numeric id or release name'),
       name: z.string().optional().describe('New name (must be unique). Omit to leave unchanged.'),
-      description: z.string().optional().describe('New description (non-empty). Omit to leave unchanged.'),
+      description: z
+        .string()
+        .optional()
+        .describe('New non-empty description of the release intent, at most 500 characters. Omit to leave unchanged.'),
       assignUnreleased: z
         .boolean()
         .optional()

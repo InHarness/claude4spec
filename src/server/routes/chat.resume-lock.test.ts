@@ -253,6 +253,45 @@ describe('POST /api/chat — RESUME_CONFIG_LOCKED wiring (M05 item 33)', () => {
     expect(res.status).not.toBe(409);
   });
 
+  /**
+   * 0.2.112 — `claude_usePreset` is server-driven and read per request: absent
+   * `agent.claudeUsePreset` now means `false`, and the server wins over the body.
+   */
+  describe('0.2.112 — claude_usePreset default false, server wins', () => {
+    const dispatched = () => {
+      const [, input] = runAgentTurnMock.mock.calls.at(-1) as [
+        unknown,
+        { architectureConfig?: Record<string, unknown> },
+      ];
+      return input.architectureConfig ?? {};
+    };
+
+    beforeEach(() => {
+      thread = makeThread({ lastSessionId: null });
+    });
+
+    it('no agent.claudeUsePreset in config.json ⇒ claude_usePreset: false, even if the body asks for true', async () => {
+      writeConfig({ agent: { conversationalLanguage: 'Polish' } });
+      await post({ model: 'opus-5.5', architectureConfig: { claude_usePreset: true, claude_effort: 'high' } });
+      expect(dispatched()).toMatchObject({ claude_usePreset: false, claude_effort: 'high' });
+    });
+
+    it('explicit true ⇒ claude_usePreset: true', async () => {
+      writeConfig({ agent: { claudeUsePreset: true } });
+      await post({ model: 'opus-5.5', architectureConfig: { claude_usePreset: false } });
+      expect(dispatched().claude_usePreset).toBe(true);
+    });
+
+    it('re-reads the config per request (hot-reload, no restart)', async () => {
+      writeConfig({ agent: { claudeUsePreset: true } });
+      await post({ model: 'opus-5.5' });
+      expect(dispatched().claude_usePreset).toBe(true);
+      writeConfig({});
+      await post({ model: 'opus-5.5' });
+      expect(dispatched().claude_usePreset).toBe(false);
+    });
+  });
+
   describe('0.2.108 — the selectable list is enforced before dispatch', () => {
     it('400s a model outside the selectable list, even one the library still knows', async () => {
       const res = await post({ model: 'opus-5' });
