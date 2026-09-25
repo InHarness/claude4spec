@@ -25,7 +25,11 @@ import type {
   SpecSnapshotPageRow,
   UpdateReleaseResponse,
 } from '../../shared/entities.js';
-import { CURRENT_RELEASE_NAME, MAX_RELEASE_DESCRIPTION_LENGTH } from '../../shared/entities.js';
+import {
+  CURRENT_RELEASE_NAME,
+  MAX_RELEASE_DESCRIPTION_LENGTH,
+  releaseDescriptionLength,
+} from '../../shared/entities.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
 import { topoSortModules } from '../core/plugin-host/entity-order.js';
 import type { RawEntityReader, RawEntityType } from '../discovery/raw-entity-reader.js';
@@ -164,7 +168,7 @@ interface ReleaseRow {
  */
 function assertReleaseDescription(description: string): void {
   if (!description) throw new DomainError('RELEASE_DESCRIPTION_REQUIRED', 'release description is required');
-  const length = [...description].length;
+  const length = releaseDescriptionLength(description);
   if (length > MAX_RELEASE_DESCRIPTION_LENGTH) {
     throw new DomainError(
       'RELEASE_DESCRIPTION_TOO_LONG',

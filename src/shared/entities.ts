@@ -462,6 +462,15 @@ export const CURRENT_RELEASE_NAME = 'current';
  */
 export const MAX_RELEASE_DESCRIPTION_LENGTH = 500;
 
+/**
+ * The one measure {@link MAX_RELEASE_DESCRIPTION_LENGTH} is checked against —
+ * Unicode code points (not UTF-16 units) of the TRIMMED description. Shared by the
+ * server guard and the client counter so the two can never count differently.
+ */
+export function releaseDescriptionLength(description: string): number {
+  return [...description.trim()].length;
+}
+
 export interface RawDelta {
   /** `null` = synthetic empty state (initial brief, comparing against "nothing"). */
   from: { id: number; name: string } | null;

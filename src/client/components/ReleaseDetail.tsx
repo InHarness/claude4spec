@@ -17,6 +17,7 @@ import { ReleasePushesList } from './release/ReleasePushesList.js';
 import { UnreleasedBanner } from './release/UnreleasedBanner.js';
 import { CreateBriefDialog } from './CreateBriefDialog.js';
 import { showGitErrorModal } from '../ui/events.js';
+import { MAX_RELEASE_DESCRIPTION_LENGTH, releaseDescriptionLength } from '../../shared/entities.js';
 // Side-effect import: registers the M25 "Push to remote" action in the registry.
 import './release/push-to-remote-action.js';
 
@@ -97,6 +98,14 @@ export function ReleaseDetail({ idOrName }: Props) {
     const next = descriptionDraft.trim();
     if (!next || next === release.description) {
       setDescriptionDraft(release.description);
+      return;
+    }
+    // 0.2.112: same write-side limit as the create dialog. Refused locally and the
+    // draft is KEPT, so the user shortens their edit instead of retyping it.
+    if (releaseDescriptionLength(next) > MAX_RELEASE_DESCRIPTION_LENGTH) {
+      alert(
+        `Description must be at most ${MAX_RELEASE_DESCRIPTION_LENGTH} characters (now ${releaseDescriptionLength(next)}) — keep it a short statement of intent`,
+      );
       return;
     }
     try {

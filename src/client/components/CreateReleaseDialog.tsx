@@ -3,7 +3,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useCreateRelease } from '../hooks/useReleases.js';
 import { ApiError } from '../lib/api-core.js';
 import { showGitErrorModal } from '../ui/events.js';
-import { MAX_RELEASE_DESCRIPTION_LENGTH } from '../../shared/entities.js';
+import { MAX_RELEASE_DESCRIPTION_LENGTH, releaseDescriptionLength } from '../../shared/entities.js';
 
 interface Props {
   onClose: () => void;
@@ -14,7 +14,7 @@ export function CreateReleaseDialog({ onClose }: Props) {
   const [description, setDescription] = useState('');
   const [error, setError] = useState<string | null>(null);
   // Code points after trim — the server's own measure (0.2.112).
-  const descriptionLength = [...description.trim()].length;
+  const descriptionLength = releaseDescriptionLength(description);
   const tooLongMessage = `Description must be at most ${MAX_RELEASE_DESCRIPTION_LENGTH} characters — keep it a short statement of intent`;
   const navigate = useNavigate();
   const create = useCreateRelease();

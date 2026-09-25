@@ -27,7 +27,7 @@ import { splitPageKey, type ReleaseService } from '../../services/release.js';
 import type { GitService } from '../../services/git.js';
 import type { WsEmitter } from '../../ws/project-emitter.js';
 import { DomainError } from '../../services/tags.js';
-import { CURRENT_RELEASE_NAME } from '../../../shared/entities.js';
+import { CURRENT_RELEASE_NAME, MAX_RELEASE_DESCRIPTION_LENGTH } from '../../../shared/entities.js';
 import type { Root } from '../../../shared/types.js';
 import { DEFAULT_PAGE_LIMIT, projectReleaseDiff, projectSpecSnapshot } from './projection.js';
 import type {
@@ -88,7 +88,7 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
       description: z
         .string()
         .describe(
-          'Non-empty statement of the intent of this release, at most 500 characters. It is the raw material a later change brief is written from, so make it say what the release is about.',
+          `Non-empty statement of the intent of this release, at most ${MAX_RELEASE_DESCRIPTION_LENGTH} characters. It is the raw material a later change brief is written from, so make it say what the release is about.`,
         ),
     },
     async (args) => {
@@ -294,14 +294,16 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
 
   const releaseUpdate = mcpTool(
     'release_update',
-    'Update the LATEST release only — older releases are frozen. Mutates name/description in-place and optionally pulls all unreleased entity_version + file_version rows (release_id IS NULL) into this release. 409 RELEASE_FROZEN if id != MAX(id). 409 RELEASE_NAME_CONFLICT on rename collision.',
+    `Update the LATEST release only — older releases are frozen. Mutates name/description in-place and optionally pulls all unreleased entity_version + file_version rows (release_id IS NULL) into this release. 409 RELEASE_FROZEN if id != MAX(id). 409 RELEASE_NAME_CONFLICT on rename collision. 400 RELEASE_DESCRIPTION_TOO_LONG / RELEASE_DESCRIPTION_REQUIRED when a given description is over ${MAX_RELEASE_DESCRIPTION_LENGTH} characters or empty.`,
     {
       idOrName: z.union([z.string(), z.number()]).describe('Numeric id or release name'),
       name: z.string().optional().describe('New name (must be unique). Omit to leave unchanged.'),
       description: z
         .string()
         .optional()
-        .describe('New non-empty description of the release intent, at most 500 characters. Omit to leave unchanged.'),
+        .describe(
+          `New non-empty description of the release intent, at most ${MAX_RELEASE_DESCRIPTION_LENGTH} characters. Omit to leave unchanged.`,
+        ),
       assignUnreleased: z
         .boolean()
         .optional()
