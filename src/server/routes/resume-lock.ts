@@ -27,7 +27,11 @@ export interface ResumeLockInput {
 }
 
 /**
- * M05 session-lock, shared by `POST /api/chat` and `POST /api/threads/:id/ask`: on a
+ * M05 session-lock, shared by THREE entry points — `POST /api/chat`,
+ * `POST /api/threads/:id/ask` (both map a violation to HTTP 409) and, since 0.2.111,
+ * the banka continuation in `TransagentDispatcher` (`runTransagent({ threadId })`),
+ * which compares against the referenced banka's snapshot BEFORE founding the new row
+ * and maps a violation to a tool refusal `RESUME_CONFIG_LOCKED` instead. On a
  * resuming turn the model, the reasoning fields AND (0.2.8, C15) the FS path scope are
  * immutable. claude-code binds the last turn's thinking blocks to the config that produced
  * them, and the library declares `allowedPaths`/`disallowedPaths` frozen for a session's

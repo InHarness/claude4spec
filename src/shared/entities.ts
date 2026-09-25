@@ -597,7 +597,9 @@ export interface ChatThread {
    */
   parentThreadId: string | null;
   /** 0.1.69 Transagents: the parent's tool_use id that spawned this child (F5
-   *  reconstruction key together with parent_thread_id). NULL for top-level. */
+   *  reconstruction key together with parent_thread_id). NULL for top-level.
+   *  0.2.111: 1:1 with a `runTransagent` call, a continuation included — the
+   *  dispatcher founds exactly one row per call (no unique index enforces it). */
   spawnedByToolUseId: string | null;
   createdAt: string;
   updatedAt: string;

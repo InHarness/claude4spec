@@ -3,10 +3,12 @@
  *
  * A chat/patch thread delegates a unit of work to a hidden CHILD thread of the
  * same spec via the `runTransagent` MCP tool. The dispatcher:
- *   1. resolves or creates the child thread — a generic step first (its
- *      `parent_thread_id` = the current thread, `spawned_by_tool_use_id` = this
- *      tool_use's id, `plan_mode` = the call's `planMode`), then the binding
- *      per `contextType`,
+ *   1. founds a NEW child thread on every call — `parent_thread_id` = the current
+ *      thread, `spawned_by_tool_use_id` = this tool_use's id. A spawn takes
+ *      `plan_mode` from the call and its binding per `contextType`; a
+ *      continuation (0.2.111) is validated, then copies the referenced banka's
+ *      binding, plan mode, config snapshot and `last_session_id`, and its turn
+ *      resumes that session (unforked) while the referenced row stays untouched,
  *   2. emits `transagent_started` into the PARENT's stream so the parent panel
  *      can nested-live-join the child,
  *   3. runs a full child turn through the shared `runAgentTurn`,
@@ -34,6 +36,7 @@ import type {
   Model,
 } from '../routes/agent-turn.js';
 import { DomainError } from './tags.js';
+import { checkResumeConfigLock } from '../routes/resume-lock.js';
 
 export interface TransagentRunInput {
   parentThreadId: string;
@@ -54,7 +57,11 @@ export interface TransagentRunInput {
    * reason it exists. A caller who wants inheritance passes the flag itself.
    */
   planMode?: boolean;
-  /** Continue an existing child banka instead of creating one. */
+  /**
+   * 0.2.111: resume the SESSION of an existing banka. The call still founds a new
+   * child row of the caller, which inherits the banka's binding; the referenced
+   * row is untouched.
+   */
   threadId?: string;
 }
 
@@ -152,23 +159,22 @@ export class TransagentDispatcher {
     // child's spawned_by_tool_use_id and echoed on the bracketing events.
     const toolUseId = await this.opts.takeToolUseId();
 
-    // 1. Resolve/create the child thread.
-    //    Continuation SKIPS prepare-per-context entirely — including the generic
-    //    step below — so `input.planMode` is deliberately ignored here: an
-    //    existing banka keeps the posture it was created with. Nothing on this
-    //    branch may `UPDATE chat_thread SET plan_mode`.
-    //    `input.payload` is ignored for the same reason and with the same reach:
-    //    every binding (plan_path, patch_path, the brief window) is decided at
-    //    creation, so a continuation cannot re-point an existing banka at another
-    //    plan. The tool description states it — this is the code that means it.
+    // 1. Found the child thread. 0.2.111 (M46): EVERY call founds a new row as a
+    //    child of the calling thread — a continuation too — so each tool_use owns
+    //    exactly one row (its panel shows exactly the work it ordered, and the
+    //    caller's abort / delete always cascades to it).
     let child: ChatThread;
     if (input.threadId) {
-      const existing = this.deps.chatService.getThreadMeta(input.threadId);
-      if (!existing) throw new DomainError('NOT_FOUND', `child thread '${input.threadId}' not found`);
-      if (existing.parentThreadId !== parentThreadId) {
-        throw new DomainError('VALIDATION', `thread '${input.threadId}' is not a child of this thread`);
-      }
-      child = existing;
+      //    Continuation: validated first — every refusal lands BEFORE the INSERT,
+      //    so a refused call leaves no row behind. Then the new row takes the
+      //    referenced banka's binding, plan mode, config snapshot and session;
+      //    `input.payload` and `input.planMode` are ignored, and the referenced
+      //    row is only read, never updated.
+      const banka = await this.validateContinuation(input.threadId, contextType);
+      child = this.deps.chatService.createContinuationThread(banka.id, {
+        parentThreadId,
+        spawnedByToolUseId: toolUseId,
+      });
     } else {
       // 0.2.90 — the conditional requirement is validated BEFORE branching, in
       // the same step as an out-of-set value: a `patch` call without
@@ -180,6 +186,7 @@ export class TransagentDispatcher {
       }
       // Generic step, before the per-context branching: the columns every
       // context type shares, taken straight from the top-level call fields.
+      // `plan_mode` comes from the call ONLY here, on a spawn.
       const generic: GenericThreadColumns = {
         parentThreadId,
         spawnedByToolUseId: toolUseId,
@@ -276,6 +283,114 @@ export class TransagentDispatcher {
         events[i] = { ...current, resolved: true, response: null };
       }
     }
+  }
+
+  /**
+   * 0.2.111 (M46): the checks a continuation must pass before its row is founded,
+   * IN THIS ORDER — the first mismatch refuses the call and no `chat_thread` row
+   * is created:
+   *   1. `threadId` exists (`NOT_FOUND`) and names a child row, not a top-level
+   *      thread (`VALIDATION` → `INVALID_ARGS`): a top-level thread carries no
+   *      banka binding, and taking over its session as a hidden child would pull
+   *      the user's conversation out of every list. Whose child it is does NOT
+   *      matter — a banka born in another top-level thread of this spec can be
+   *      continued; the new row gets the caller as its parent regardless.
+   *   2. `contextType` equals the banka's (`VALIDATION`) — a continuation cannot
+   *      switch the binding.
+   *   3. the banka's brief / patch file still exists (`NOT_FOUND`). A dangling
+   *      `plan_path` passes: a plan degrades gracefully.
+   *   4. no row in flight is resuming this banka's session (`STREAM_IN_PROGRESS`),
+   *      read from the live-adapter registry. Not queued: a queue would eat the
+   *      parent's idle-clock margin.
+   *   5. the turn's config matches the banka's snapshot (`RESUME_CONFIG_LOCKED`) —
+   *      the third entry point of the shared resume guard.
+   */
+  private async validateContinuation(
+    threadId: string,
+    contextType: 'brief' | 'chat' | 'patch',
+  ): Promise<ChatThread> {
+    const banka = this.deps.chatService.getThreadMeta(threadId);
+    if (!banka) throw new DomainError('NOT_FOUND', `banka thread '${threadId}' not found`);
+    if (!banka.parentThreadId) {
+      throw new DomainError(
+        'VALIDATION',
+        `thread '${threadId}' is a top-level thread, not a banka — only a child thread can be continued`,
+      );
+    }
+
+    if (banka.contextType !== contextType) {
+      throw new DomainError(
+        'VALIDATION',
+        `contextType '${contextType}' does not match banka '${threadId}' (context type '${banka.contextType}') — a continuation cannot switch the binding`,
+      );
+    }
+
+    if (banka.contextType === 'brief' && banka.briefPath) {
+      await this.assertArtifactExists('brief', banka.briefPath, () =>
+        this.deps.briefService.getBrief(banka.briefPath as string),
+      );
+    }
+    if (banka.contextType === 'patch' && banka.patchPath) {
+      await this.assertArtifactExists('patch', banka.patchPath, () =>
+        this.deps.patchService.getPatch(banka.patchPath as string),
+      );
+    }
+
+    if (this.isSessionInFlight(banka)) {
+      throw new DomainError(
+        'STREAM_IN_PROGRESS',
+        `banka '${threadId}' has a turn in flight on its session — wait for it to finish; the call is not queued`,
+      );
+    }
+
+    const lock = checkResumeConfigLock({
+      snapshotJson: this.deps.chatService.getInitialArchitectureConfig(banka.id),
+      lastSessionId: banka.lastSessionId ?? null,
+      model: this.opts.model,
+      architectureConfig: this.opts.architectureConfig,
+      cwd: this.deps.cwd,
+      roots: this.deps.roots,
+    });
+    if (lock) {
+      const fields = lock.error.violations.map((v) => v.path).join(', ');
+      throw new DomainError(
+        'RESUME_CONFIG_LOCKED',
+        `${lock.error.message} Changed: ${fields}.`,
+        'Spawn a fresh banka (omit `threadId`) to run this work with the current config.',
+      );
+    }
+
+    return banka;
+  }
+
+  private async assertArtifactExists(
+    kind: 'brief' | 'patch',
+    path: string,
+    read: () => Promise<unknown>,
+  ): Promise<void> {
+    try {
+      await read();
+    } catch (err) {
+      const missing = err instanceof DomainError ? err.code === 'NOT_FOUND' : isFileNotFound(err);
+      if (missing) {
+        throw new DomainError('NOT_FOUND', `the banka's ${kind} '${path}' no longer exists`);
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Is any row in flight resuming this banka's session? The banka's own row, or
+   * any other row (an earlier continuation) registered with the same session id.
+   */
+  private isSessionInFlight(banka: ChatThread): boolean {
+    if (this.deps.activeAdapters.has(banka.id)) return true;
+    const sessionId = banka.lastSessionId;
+    if (!sessionId) return false;
+    for (const entry of this.deps.activeAdapters.values()) {
+      if (entry.sessionId === sessionId) return true;
+    }
+    return false;
   }
 
   /**
@@ -385,4 +500,8 @@ export class TransagentDispatcher {
     }
     return raw;
   }
+}
+
+function isFileNotFound(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === 'ENOENT';
 }

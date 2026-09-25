@@ -93,7 +93,7 @@ import {
   AdapterIdleTimeoutError,
   AdapterTimeoutError,
 } from '@inharness-ai/agent-adapters';
-import { runAgentTurn, type AgentTurnDeps, type AgentTurnInput } from './agent-turn.js';
+import { abortChildTurns, runAgentTurn, type ActiveAdapter, type AgentTurnDeps, type AgentTurnInput } from './agent-turn.js';
 import {
   BACKGROUND_WAKEUP_GRACE_MS,
   CLAUDE_CODE_TASK_TRACKING_TOOLS,
@@ -2281,5 +2281,90 @@ describe('runAgentTurn — subagent re-entry (agent-adapters 0.9.12)', () => {
     const started = events.filter((e) => e.type === 'subagent_started');
     expect(started).toHaveLength(2);
     expect(started[1]).toMatchObject({ taskId: 'task1', resumed: true });
+  });
+});
+
+/**
+ * 0.2.111 (M46): a banka continuation founds a NEW row whose first turn resumes the
+ * referenced banka's session. What the turn runner owes that row: no system-prompt
+ * snapshot (the CLI ignores a system prompt on resume, so the column would claim
+ * something the agent never saw), a registry entry naming the session it resumes
+ * (the dispatcher refuses a second resume of it with STREAM_IN_PROGRESS), and the
+ * caller as the cascade parent.
+ */
+describe('runAgentTurn — resuming turns (0.2.111)', () => {
+  it('[ac:ac-po-turze-kontynuacji-initial-system-p] does not write initial_system_prompt on a turn that resumes a session', async () => {
+    hoisted.events = [
+      { type: 'text_delta', text: 'resumed' },
+      { type: 'result', sessionId: 's-prev' },
+    ];
+    const { deps } = makeDeps();
+    const cs = deps.chatService as unknown as { setInitialSystemPrompt: (...a: unknown[]) => void };
+    const write = vi.spyOn(cs, 'setInitialSystemPrompt');
+    const input = makeInput();
+    (input.thread as unknown as { lastSessionId: string }).lastSessionId = 's-prev';
+
+    await runAgentTurn(deps, input);
+
+    expect(write).not.toHaveBeenCalled();
+    expect(hoisted.lastExecute?.resumeSessionId).toBe('s-prev');
+  });
+
+  it('[ac:ac-wyrenderowany-system-prompt-pierwszej] still writes it on a turn that opens a session', async () => {
+    hoisted.events = [
+      { type: 'text_delta', text: 'fresh' },
+      { type: 'result', sessionId: 's-new' },
+    ];
+    const { deps } = makeDeps();
+    const cs = deps.chatService as unknown as { setInitialSystemPrompt: (...a: unknown[]) => void };
+    const write = vi.spyOn(cs, 'setInitialSystemPrompt');
+
+    await runAgentTurn(deps, makeInput());
+
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(write.mock.calls[0]?.[0]).toBe('t1');
+  });
+
+  it('registers the session a turn runs in the live-adapter registry, refreshed when the adapter reports it', async () => {
+    hoisted.events = [
+      { type: 'text_delta', text: 'x' },
+      { type: 'result', sessionId: 's-reported' },
+      // Anything after the `result` observes the refreshed entry.
+      { type: 'text_delta', text: 'y' },
+    ];
+    const { deps } = makeDeps();
+    const seen: Array<string | null | undefined> = [];
+    const input = makeInput();
+    (input.thread as unknown as { lastSessionId: string }).lastSessionId = 's-prev';
+    input.onEvent = (e) => {
+      const entry = deps.activeAdapters.get('t1');
+      if (entry && (e as { type: string }).type !== 'done') seen.push(entry.sessionId);
+    };
+
+    await runAgentTurn(deps, input);
+
+    expect(seen[0]).toBe('s-prev');
+    expect(seen.at(-1)).toBe('s-reported');
+  });
+});
+
+describe('abortChildTurns — continuation rows (0.2.111)', () => {
+  it("cascades to the caller's continuation row but not to earlier rows of the same session", () => {
+    const aborted: string[] = [];
+    const entry = (id: string, parentThreadId: string): ActiveAdapter =>
+      ({
+        requestId: `r-${id}`,
+        parentThreadId,
+        sessionId: 'sess-shared',
+        adapter: { abort: () => aborted.push(id) },
+      }) as unknown as ActiveAdapter;
+    const activeAdapters = new Map<string, ActiveAdapter>([
+      ['earlier-row', entry('earlier-row', 'other-top-level')],
+      ['continuation-row', entry('continuation-row', 'caller')],
+    ]);
+
+    abortChildTurns(activeAdapters, new Map(), 'caller');
+
+    expect(aborted).toEqual(['continuation-row']);
   });
 });
