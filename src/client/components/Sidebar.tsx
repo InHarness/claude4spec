@@ -33,6 +33,7 @@ import { usePersistedState, projectKey } from '../state/persisted.js';
 import { UserSection } from './UserSection.js';
 import { GitStatusBadge } from './GitStatusBadge.js';
 import { clientPluginHost } from '../core/plugin-host/host.js';
+import { useRegistryVersion } from '../core/plugin-host/useRegistryVersion.js';
 import { Popover } from '../host-ui-kit/overlay-feedback/Popover.js';
 
 interface SidebarProps {
@@ -106,6 +107,11 @@ export function Sidebar({
   const baseRootId = roots.find((r) => r.builtin)?.id ?? null;
   const { data: searchHits = [], isFetching: searchFetching } = usePagesSearch(query, baseRootId);
   // Iterate active plugins in declared order; render only those with a sidebarTab.
+  // Subscribed to the registry: plugin frontends register after the first paint
+  // (non-blocking boot), and nothing else guarantees this component re-renders
+  // then — until 0.2.110 an incidental root re-render on every router change hid
+  // that the tabs never asked for one.
+  useRegistryVersion();
   const entityTabs = clientPluginHost
     .listEntities()
     .filter((m) => m.sidebarTab !== undefined)

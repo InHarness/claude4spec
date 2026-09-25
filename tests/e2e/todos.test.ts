@@ -115,7 +115,8 @@ describe.skipIf(!BASE)('TODO list and jump to marker', () => {
 
       await page.waitForURL(/\/space\/pages\/e2e-todos-jump\.md#anchor-todo-\d+/);
       const expected = (await hits())[ordinal]!;
-      expect(new URL(page.url()).hash).toBe(`#${expected.anchor}`);
+      // 0.2.110 M08/M50: the list links `#anchor-<TodoHit.anchor>`.
+      expect(new URL(page.url()).hash).toBe(`#anchor-${expected.anchor}`);
 
       const chip = page.locator('.ProseMirror [data-todo-chip]').nth(ordinal);
       await expect.poll(() => chip.count(), { timeout: 10000 }).toBe(1);

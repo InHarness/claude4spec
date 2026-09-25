@@ -14,6 +14,7 @@ import { useTodosCounts } from './hooks/useTodos.js';
 import { usePageLinksCounts } from './hooks/usePageLinks.js';
 import { PopoverHost } from './ui/Popover.js';
 import { ModalHost } from './ui/ModalHost.js';
+import { useRegistryVersion } from './core/plugin-host/useRegistryVersion.js';
 import { IndexStaleBanner } from './components/IndexStaleBanner.js';
 import { ToastHost } from './ui/ToastHost.js';
 import { TrustPluginsGate } from './components/TrustPluginsModal.js';
@@ -126,6 +127,10 @@ function ProjectLoadError({ error, onRetry }: { error: unknown; onRetry: () => v
 }
 
 function MainShell({ projectName }: { projectName: string | null }) {
+  // The shell (sidebar, chat overlay) reads the plugin registry at render time.
+  // Re-render when a plugin frontend registers — the boot is non-blocking and
+  // settles after the first paint. Registry changes are rare; this is cheap.
+  useRegistryVersion();
   // M26 §7 — mount the theme hook here for its side-effects (subscribes to
   // OS-level `prefers-color-scheme` changes, toggles the `.dark` class on
   // <html>). The selectable UI lives in /settings → Appearance.
