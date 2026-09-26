@@ -530,12 +530,17 @@ export async function runAgentTurn(
   // `turn_start` jest syntetyzowany serwerowo wyłącznie dla wznawiających klientów
   // (`joinStream` → reducer re-aktywuje wiadomość asystenta). NIE jest wysyłany do
   // oryginalnego klienta POST — ten ma już aktywną wiadomość z `sendUserMessage`.
+  // 0.2.114: `turnStartedAt` — start of the turn (or of the last merged
+  // dispatch). It scopes both the replay buffer and the client's turn clock;
+  // RAM only (lives on `replay.turnStart`), no DB column.
+  const turnStartIso = new Date().toISOString();
   const turnStart: TurnEvent = {
     type: 'turn_start',
     userMessageId: nanoid(12),
     assistantMessageId: nanoid(12),
     prompt,
-    timestamp: new Date().toISOString(),
+    timestamp: turnStartIso,
+    turnStartedAt: turnStartIso,
   };
   const replay: TurnReplay = { turnStart, events: [], bytes: 0 };
 
@@ -1805,6 +1810,8 @@ export async function runAgentTurn(
           // type), so a joiner replays it after the `result` it follows.
           parked = false;
           if (!pushedThisIteration) {
+            // 0.2.114: the spread also INHERITS `turnStartedAt` — a continuation
+            // resets neither the replay buffer nor the turn clock.
             const continuation: TurnEvent = { ...replay.turnStart, timestamp: new Date().toISOString() };
             input.onEvent(continuation);
             emitter.emit('event', continuation);
@@ -2166,12 +2173,16 @@ export async function runAgentTurn(
         null,
         planMode,
       );
+      // A merged dispatch is the only reset: new ids, and `turnStartedAt`
+      // restarts the turn clock together with the replay buffer below.
+      const mergedIso = new Date().toISOString();
       const mergedTurnStart: TurnEvent = {
         type: 'turn_start',
         userMessageId: nanoid(12),
         assistantMessageId: nanoid(12),
         prompt: merged,
-        timestamp: new Date().toISOString(),
+        timestamp: mergedIso,
+        turnStartedAt: mergedIso,
       };
       replay.turnStart = mergedTurnStart;
       replay.events = [];
