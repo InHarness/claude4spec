@@ -16,7 +16,8 @@ const CONTEXT_DEFINING_FIELDS = [
   'patchesDir',
   'plansDir',
   'entitiesDir',
-  // Must mirror CONTEXT_DEFINING_FIELDS in src/server/routes/config.ts. Missing
+  // Must mirror the server's `context-rebuild` fields (0.2.113: the field
+  // registry's `contextRebuildKeys()`, `src/server/settings/registry.ts`). Missing
   // here, a `releasesDir`-only write rebuilt the context server-side while the
   // client kept serving every cached query against the old one.
   'releasesDir',
@@ -56,7 +57,7 @@ export function usePatchConfig() {
       }
       // M33 phase 3: a `plugins` write always refreshes the config cache (above,
       // via setQueryData). An `executive` field additionally rebuilds the
-      // context server-side (`pluginsPatchIsExecutive` in routes/config.ts); the
+      // context server-side (its `executive` kind ⇒ `context-rebuild`); the
       // result surfaces on the next request, so a blanket invalidate keeps the
       // client coherent. Only the server can tell executive from `hot-reload`,
       // so every `plugins` write invalidates — over-invalidating a hot-reload

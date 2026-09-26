@@ -1,3 +1,4 @@
+import path from 'node:path';
 import type { NormalizedConfig } from '../config.js';
 import { STATIC_FIELD_REGISTRY } from '../settings/registry.js';
 import { fieldPath, getPath } from '../settings/field-registry.js';
@@ -93,11 +94,13 @@ export function parseSessionConfigSnapshot(raw: string | null): SessionConfigSna
 
 /**
  * A list field is a SET here — reordering the same entries in Settings is not a
- * change. A trailing slash on a directory is not one either.
+ * change. Nor is a spelling of the same directory (`./x`, `x/`, `x/./`): the
+ * pre-0.2.113 comparison ran on resolved paths, so it never locked on one either.
  */
+const canonicalPath = (p: string): string => path.normalize(p).replace(/[\\/]+$/, '');
 function canonical(value: unknown): string {
-  if (Array.isArray(value)) return JSON.stringify([...new Set(value.map(String))].sort());
-  if (typeof value === 'string') return JSON.stringify(value.replace(/[\\/]+$/, ''));
+  if (Array.isArray(value)) return JSON.stringify([...new Set(value.map((v) => canonicalPath(String(v))))].sort());
+  if (typeof value === 'string') return JSON.stringify(canonicalPath(value));
   return JSON.stringify(value ?? null);
 }
 

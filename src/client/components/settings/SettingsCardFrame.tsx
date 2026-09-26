@@ -98,8 +98,11 @@ export function SettingsCardFrame({ card, config }: { card: AssembledCard; confi
   const fileBacked = card.elements.some((e) => elementKeys(e).length > 0);
 
   // Live (UI:) validation of the generated elements, over what is on screen now.
+  // Only an EDITED key can hold [Save]: an untouched one is not sent, and a config
+  // already broken elsewhere must stay repairable here exactly as it is on the
+  // server — every cross-field check is symmetric, so the edited side reports too.
   const generatedErrors = visibleElements.flatMap((e) => {
-    if (!e.validate || !e.configKey) return [];
+    if (!e.validate || !e.configKey || !draft.isDirty(e.configKey)) return [];
     const r = e.validate(draft.get(e.configKey), ctx);
     return r?.error ? [r.error] : [];
   });
@@ -118,7 +121,12 @@ export function SettingsCardFrame({ card, config }: { card: AssembledCard; confi
       const changedIds = new Set(changed.map((e) => keyId(e.key)));
       for (const el of card.elements) {
         if (el.afterSave && elementKeys(el).some((k) => changedIds.has(keyId(k)))) {
-          await el.afterSave({ router, queryClient });
+          // The save already happened — a failing follow-up must not report it as failed.
+          try {
+            await el.afterSave({ router, queryClient });
+          } catch (err) {
+            console.warn(`[settings] afterSave of "${el.id}" failed`, err);
+          }
         }
       }
       const messages = effectMessagesFor(card.elements, changed.map((e) => e.key));

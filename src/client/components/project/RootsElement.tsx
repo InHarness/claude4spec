@@ -68,8 +68,13 @@ export function RootsElement({ config, draft }: ElementContext & { decl: Setting
   const [addError, setAddError] = useState<{ name?: string; dir?: string }>({});
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
 
-  // Live validation: one error per row's dir, reported to the card so it blocks [Save].
-  const firstDirError = roots.map((r) => dirError(r, roots, draft)).find((e) => e !== null) ?? null;
+  // Live validation: one error per row's dir, reported to the card so it blocks [Save]
+  // — only once the roots are edited: an untouched `roots[]` is not sent, and a
+  // collision it already carries must not hold a save of another field.
+  const rootsEdited = draft.isDirty(ROOTS);
+  const firstDirError = rootsEdited
+    ? (roots.map((r) => dirError(r, roots, draft)).find((e) => e !== null) ?? null)
+    : null;
   useEffect(() => {
     draft.setLiveError(ROOTS, firstDirError);
   }, [firstDirError, draft]);
@@ -144,7 +149,7 @@ export function RootsElement({ config, draft }: ElementContext & { decl: Setting
     }
   }
 
-  const rootsDirty = draft.isDirty(ROOTS);
+  const rootsDirty = rootsEdited;
 
   return (
     <div className="flex flex-col gap-3">

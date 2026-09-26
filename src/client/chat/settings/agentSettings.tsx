@@ -111,6 +111,9 @@ export const AGENT_SETTINGS: SettingsContribution = {
       label: 'Allowed paths',
       placeholder: '/absolute/path/to/extra/dir\n…one per line',
       help: 'Directories the agent may use besides the project directory and the page roots. Absolute paths, one per line.',
+      // Resume-locked on the server: a saved change ends resumption of every existing
+      // conversation, and the toast has to say so.
+      effectMessage: EFFECT.resumeBreak,
       // Hidden while the built-ins are blocked — hidden, not cleared: the values
       // stay in the file and come back when the box is unticked.
       visible: (ctx) => !blockDirectFs(ctx),
@@ -134,6 +137,9 @@ export const AGENT_SETTINGS: SettingsContribution = {
       label: 'Disallowed paths',
       placeholder: '/absolute/path/to/exclude\n…one per line',
       help: 'Excluded from the agent’s file scope; exclusion wins over inclusion. Absolute paths, one per line.',
+      // Resume-locked on the server: a saved change ends resumption of every existing
+      // conversation, and the toast has to say so.
+      effectMessage: EFFECT.resumeBreak,
     },
     {
       id: 'anthropic-api-key',

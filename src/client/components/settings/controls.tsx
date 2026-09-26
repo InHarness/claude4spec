@@ -146,8 +146,14 @@ function Control({
                   const next = new Set(selected);
                   if (e.target.checked) next.add(o.value);
                   else next.delete(o.value);
-                  // Keep the options' order, not the click order.
-                  set((options ?? []).map((x) => x.value).filter((v) => next.has(v)));
+                  // Keep the options' order, not the click order. A saved value no option
+                  // offers (an entity type whose plugin is not installed yet) has no
+                  // checkbox to untick, so it rides along untouched instead of vanishing.
+                  const offered = (options ?? []).map((x) => x.value);
+                  set([
+                    ...offered.filter((v) => next.has(v)),
+                    ...[...selected].filter((v) => !offered.includes(v)),
+                  ]);
                 }}
                 className="h-4 w-4"
               />

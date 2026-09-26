@@ -49,14 +49,29 @@ export function SettingsPage() {
   const cards: AssembledCard[] = useMemo(() => {
     // A plugin card whose anchor a core card already holds cannot be registered;
     // it is left out rather than taking the page down with it.
+    // The same goes for two plugins whose names kebab to one anchor, and for an
+    // element a manifest declares twice: plugin input must never throw here.
+    const accepted = new Set<string>();
     const pluginCards = (pluginContribution.cards ?? []).filter((c) => {
-      if (!STATIC_ANCHORS.has(c.anchor)) return true;
-      console.warn(`[settings] plugin card "#${c.anchor}" collides with a core card and is not shown`);
+      if (!STATIC_ANCHORS.has(c.anchor) && !accepted.has(c.anchor)) {
+        accepted.add(c.anchor);
+        return true;
+      }
+      console.warn(`[settings] plugin card "#${c.anchor}" collides with another card and is not shown`);
       return false;
+    });
+    const seenElements = new Set<string>();
+    // Only onto a plugin card that was accepted — never onto a core card that
+    // happens to hold the same anchor.
+    const pluginElements = (pluginContribution.elements ?? []).filter((e) => {
+      const id = `${e.card}\u0000${e.id}`;
+      if (!accepted.has(e.card) || seenElements.has(id)) return false;
+      seenElements.add(id);
+      return true;
     });
     return assembleSettings([
       ...STATIC_SETTINGS_CONTRIBUTIONS,
-      { cards: pluginCards, elements: pluginContribution.elements ?? [] },
+      { cards: pluginCards, elements: pluginElements },
     ]);
   }, [pluginContribution]);
 

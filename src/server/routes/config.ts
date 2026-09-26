@@ -259,14 +259,16 @@ export function configRouter(deps: ConfigRouterDeps): Router {
        * still a type error, pinned to the container.
        */
       const writable = registry.list().filter((d) => d.apiWritable);
-      const containers = new Set<string>();
+      // Kept as SEGMENTS, not a dotted string: a plugin's package name may itself
+      // contain a dot, and re-splitting `plugins.@x/y.z` would miss the container.
+      const containers = new Map<string, readonly string[]>();
       for (const d of writable) {
         const segs = fieldPath(d);
-        for (let i = 1; i < segs.length; i++) containers.add(segs.slice(0, i).join('.'));
+        for (let i = 1; i < segs.length; i++) containers.set(segs.slice(0, i).join('.'), segs.slice(0, i));
       }
-      for (const c of containers) {
-        if (!hasPath(body, c)) continue;
-        const v = getPath(body, c);
+      for (const [c, segs] of containers) {
+        if (!hasPath(body, segs)) continue;
+        const v = getPath(body, segs);
         if (v === null || typeof v !== 'object' || Array.isArray(v)) return reject(c, `${c} must be an object`);
       }
       const present = writable.filter((d) => hasPath(body, fieldPath(d)));

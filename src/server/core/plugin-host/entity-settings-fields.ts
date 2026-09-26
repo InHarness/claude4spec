@@ -48,8 +48,20 @@ const CONTROL_TYPE: Record<PluginSettingField['control'], FieldDeclaration['type
  * namespace is dropped — but its values stay in the file.
  */
 export function pluginSettingsFields(sections: PluginSettingsSection[]): FieldDeclaration[] {
-  return sections.flatMap((section) =>
-    section.fields.map(
+  return sections.flatMap((section) => {
+    // A manifest is third-party input: a key it declares twice would be a registration
+    // error thrown on EVERY `PATCH /config`, core fields included. The first
+    // declaration wins; the duplicate is reported and left out.
+    const seen = new Set<string>();
+    const fields = section.fields.filter((field) => {
+      if (!seen.has(field.key)) {
+        seen.add(field.key);
+        return true;
+      }
+      console.warn(`[settings] plugin "${section.name}" declares setting "${field.key}" twice — the duplicate is ignored`);
+      return false;
+    });
+    return fields.map(
       (field): FieldDeclaration => ({
         key: `plugins.${section.name}.${field.key}`,
         path: ['plugins', section.name, field.key],
@@ -60,6 +72,6 @@ export function pluginSettingsFields(sections: PluginSettingsSection[]): FieldDe
         resumeLock: false,
         apiWritable: true,
       }),
-    ),
-  );
+    );
+  });
 }

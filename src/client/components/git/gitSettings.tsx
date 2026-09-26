@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useGitStatus } from '../../hooks/useGitStatus.js';
 import { useGitBranches } from '../../hooks/useGitBranches.js';
 import { renderCommitTargetTemplate, localDateYYYYMMDD } from '../../../shared/git.js';
-import { EFFECT, type ElementContext, type SettingsContribution } from '../settings/registry.js';
+import { EFFECT, readKey, type ElementContext, type SettingsContribution } from '../settings/registry.js';
 
 const K = {
   enabled: ['git', 'enabled'],
@@ -46,7 +46,7 @@ export const GIT_SETTINGS: SettingsContribution = {
   ],
 };
 
-function GitIntegrationElement({ draft }: ElementContext) {
+function GitIntegrationElement({ config, draft }: ElementContext) {
   const enabled = Boolean(draft.get(K.enabled));
   const syncPushOnPush = Boolean(draft.get(K.syncPushOnPush));
   const mode = (draft.get(K.mode) as 'current' | 'named' | 'new' | undefined) ?? 'current';
@@ -75,7 +75,15 @@ function GitIntegrationElement({ draft }: ElementContext) {
       <Toggle
         checked={enabled}
         disabled={disabled}
-        onChange={(next) => draft.set(K.enabled, next)}
+        onChange={(next) => {
+          draft.set(K.enabled, next);
+          // Switching git off hides the commit-target controls. An unfinished target
+          // left behind would hold [Save] with no visible reason (and the server
+          // would refuse it anyway), so it falls back to what config holds.
+          if (!next && (branchMissing || templateMissing)) {
+            for (const k of [K.mode, K.branch, K.template]) draft.set(k, readKey(config, k));
+          }
+        }}
         title="Enable Git integration"
         hint="When enabled, creating a release or pulling unreleased changes automatically git commits the pages, entities, releases and config."
       />

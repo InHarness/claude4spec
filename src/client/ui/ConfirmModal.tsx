@@ -30,14 +30,16 @@ export function ModalHost() {
     return () => window.removeEventListener(UI_EVENTS.CONFIRM, handler as EventListener);
   }, []);
 
+  const [pending, setPending] = useState(false);
+
   function cancel() {
-    if (!request) return;
+    // While `onConfirm` runs the action is already under way (a DELETE in flight):
+    // closing the dialog as "cancelled" would not stop it, only hide its outcome.
+    if (!request || pending) return;
     const r = request;
     setRequest(null);
     r.resolve(false);
   }
-
-  const [pending, setPending] = useState(false);
 
   async function confirm() {
     if (!request || !matches || pending) return;
@@ -81,6 +83,7 @@ export function ModalHost() {
           <button
             type="button"
             onClick={cancel}
+            disabled={pending}
             style={{ fontSize: 12, padding: '6px 12px', borderRadius: 4, color: 'var(--c-muted)' }}
           >
             {cancelLabel}
