@@ -98,7 +98,8 @@ describe.skipIf(!BASE)('settings — Agent: block direct file access (0.2.53)', 
   const blockRow = () => section().locator('label', { hasText: 'Block direct file access' }).first();
   const blockCheckbox = () => blockRow().locator('input[type="checkbox"]').first();
   const allowedPathsField = () =>
-    section().locator('label', { hasText: 'Allowed paths' }).locator('textarea').first();
+    // Anchored: "Disallowed paths" (always shown since 0.2.113) contains the phrase too.
+    section().locator('label', { hasText: /^Allowed paths/ }).locator('textarea').first();
 
   it('[ac:ac-checkbox-zablokuj-bezposredni-dostep] renders the checkbox checked by default', async () => {
     await expect.poll(() => blockCheckbox().count(), { timeout: 15_000 }).toBeGreaterThan(0);
