@@ -132,6 +132,10 @@ describe.skipIf(!BASE)('settings — Agent: block direct file access (0.2.53)', 
 
   it('reveals the path-scope fields again when unchecked, with the values intact', async () => {
     await blockCheckbox().uncheck();
+    // 0.2.113: the field appears with the DRAFT — before anything is saved…
+    await expect.poll(() => allowedPathsField().count(), { timeout: 10_000 }).toBeGreaterThan(0);
+    // …and the flag reaches the file only through the card's [Save].
+    await section().getByTestId('settings-save-agent').click();
     await expect
       .poll(async () => agentBranch(await readConfig(project.id)).disableDirectFilesystemAccess, {
         timeout: 10_000,

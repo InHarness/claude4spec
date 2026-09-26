@@ -37,9 +37,21 @@ export function ModalHost() {
     r.resolve(false);
   }
 
-  function confirm() {
-    if (!request || !matches) return;
+  const [pending, setPending] = useState(false);
+
+  async function confirm() {
+    if (!request || !matches || pending) return;
     const r = request;
+    if (r.onConfirm) {
+      setPending(true);
+      let done = false;
+      try {
+        done = await r.onConfirm();
+      } finally {
+        setPending(false);
+      }
+      if (!done) return;
+    }
     setRequest(null);
     r.resolve(true);
   }
@@ -75,8 +87,8 @@ export function ModalHost() {
           </button>
           <button
             type="button"
-            onClick={confirm}
-            disabled={!matches}
+            onClick={() => void confirm()}
+            disabled={!matches || pending}
             autoFocus={!requireText}
             style={{
               fontSize: 12,
@@ -98,6 +110,7 @@ export function ModalHost() {
       }
     >
       <div
+        data-modal-kind={request.kind}
         style={{
           fontSize: 13.5,
           color: 'var(--c-muted)',
@@ -114,7 +127,7 @@ export function ModalHost() {
           autoFocus
           onChange={(e) => setTyped(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && matches) confirm();
+            if (e.key === 'Enter' && matches) void confirm();
           }}
           placeholder={requireText}
           spellCheck={false}

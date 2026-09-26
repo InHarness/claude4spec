@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { configApi, type ConfigPatch } from '../lib/api.js';
 import { PROJECT_ID } from '../lib/api-core.js';
 import type { Root } from '../../shared/types.js';
+import { recordRootRename } from '../state/rootRenames.js';
 
 /**
  * M31: fields that rebuild the project context server-side (the PATCH handler
@@ -108,7 +109,9 @@ export function useRenameRoot() {
         newId: input.newId,
         expectedConfigHash: input.expectedConfigHash,
       }),
-    onSuccess: (_result, input) => {
+    onSuccess: (result, input) => {
+      // 0.2.113: an editor open on the old address follows to the new one.
+      if (result.rootId !== input.rootId) recordRootRename(input.rootId, result.rootId);
       // Entries keyed by the OLD id are never refetched: that id now answers
       // like any unknown root, so refetching them (the sidebar's page tree,
       // still mounted until the new config re-renders it) would only produce

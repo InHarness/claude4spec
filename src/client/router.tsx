@@ -42,6 +42,7 @@ import { clientPluginHost } from './core/plugin-host/host.js';
 import { PROJECT_ID } from './lib/api-core.js';
 import { frontendPluginsBooted, pluginBootPending } from './runtime/boot-plugins.js';
 import { LoadingState } from './host-ui-kit/actions/LoadingState.js';
+import { useRenamedRoot } from './state/rootRenames.js';
 
 /**
  * Resolve a TanStack Router navigate target for an entity type/slug pair via
@@ -413,6 +414,15 @@ function LegacyPageRedirect() {
 function PageRoute() {
   const { rootId, _splat } = useParams({ from: '/space/$rootId/$' });
   const path = _splat ?? '';
+  // 0.2.113: a page whose space was renamed follows it to the new address.
+  const renamedTo = useRenamedRoot(rootId);
+  if (renamedTo) {
+    return <Navigate to="/space/$rootId/$" params={{ rootId: renamedTo, _splat: path }} replace />;
+  }
+  return <PageRouteBody rootId={rootId} path={path} />;
+}
+
+function PageRouteBody({ rootId, path }: { rootId: string; path: string }) {
   const navigate = useNavigate();
   const pageView = usePageViewStore((s) => s.pageView);
   const setPageView = usePageViewStore((s) => s.setPageView);

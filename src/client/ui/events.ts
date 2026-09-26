@@ -53,6 +53,18 @@ export interface ConfirmInput {
    * confirm button disabled until the user types this string exactly.
    */
   requireText?: string;
+  /**
+   * 0.2.113: the dialog's stable identifier (`account-logout`,
+   * `remote-project-disconnect`, …) — rendered as `data-modal-kind`, so a test
+   * or a spec can name the dialog without matching on its prose.
+   */
+  kind?: string;
+  /**
+   * 0.2.113: runs on [Confirm] while the dialog stays open. Resolving `false`
+   * keeps it open (the action was refused — e.g. `409 PROJECT_BUSY`, reported by
+   * the callback itself); `true` closes it and resolves the prompt with `true`.
+   */
+  onConfirm?: () => Promise<boolean>;
 }
 
 export interface ConfirmRequest extends ConfirmInput {

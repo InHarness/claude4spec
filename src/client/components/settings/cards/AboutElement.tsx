@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { apiFetch } from '../../../lib/api-core.js';
 import { useConfig } from '../../../hooks/useConfig.js';
-import { SettingsCard } from '../SettingsCard.js';
 
 interface MetaResponse {
   cwd: string;
@@ -10,10 +9,11 @@ interface MetaResponse {
 }
 
 /**
- * M26 §1 — About section. Surfaces the config schema version + claude4spec
- * runtime version. Read-only.
+ * M26 §1 — About. Surfaces the config schema version + claude4spec runtime
+ * version. Read-only. 0.2.113: the version comes from `GET /api/config`'s `appVersion`; `/api/meta`
+ * still supplies the project root (and the version, for a server without it).
  */
-export function AboutSection() {
+export function AboutElement() {
   const { data: config } = useConfig();
   const [meta, setMeta] = useState<MetaResponse | null>(null);
 
@@ -27,17 +27,13 @@ export function AboutSection() {
   }, []);
 
   return (
-    <SettingsCard
-      id="about"
-      title="About"
-      description="Build metadata for support and troubleshooting."
-    >
+    <>
       <div className="flex flex-col gap-2 text-[12.5px]">
-        <Row label="claude4spec version" value={meta?.c4sVersion ?? '—'} />
+        <Row label="claude4spec version" value={config?.appVersion ?? meta?.c4sVersion ?? '—'} />
         <Row label="Config schema" value={config ? `v${config.$schemaVersion}` : '—'} />
         <Row label="Project root" value={meta?.cwd ?? '—'} />
       </div>
-    </SettingsCard>
+    </>
   );
 }
 

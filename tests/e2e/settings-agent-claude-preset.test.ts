@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { chromium, type Browser, type Page } from 'playwright';
 
 /**
- * E2E: Settings → Agent, the Claude Code preset toggle (0.2.112).
+ * E2E: Settings → Agent, the Claude Code preset toggle (0.2.112; per-card save since 0.2.113).
  *
  * Runs against a LIVE app (`C4S_E2E_BASE_URL`, normally an env-runner
  * environment); skips without it.
@@ -63,8 +63,9 @@ describe.skipIf(!BASE)('settings — Agent: Claude Code preset off by default (0
   });
 
   const section = () => page.locator('#agent');
-  const presetRow = () =>
-    section().locator('label', { hasText: 'Append the Claude Code preset to the system prompt' }).first();
+  const presetRow = () => section().locator('label', { hasText: 'Use Claude Code preset' }).first();
+  // 0.2.113: save is per card — a toggle edits the draft, [Save] sends it.
+  const saveButton = () => section().getByTestId('settings-save-agent');
   const presetCheckbox = () => presetRow().locator('input[type="checkbox"]').first();
 
   it('GET config reports claudeUsePreset false on a project that never set it', async () => {
@@ -90,10 +91,16 @@ describe.skipIf(!BASE)('settings — Agent: Claude Code preset off by default (0
     expect(text).toMatch(/next turn/);
   });
 
-  it('ticking the box persists an explicit true, and unticking restores false', async () => {
-    // A controlled checkbox: it flips when the config query refreshes, not on
-    // the click itself — so click and poll rather than check()/uncheck().
+  it('ticking the box and saving persists an explicit true, and unticking restores false', async () => {
     await presetCheckbox().click();
+    // Nothing is sent until the card is saved.
+    const unsaved = await fetch(`${BASE}/api/projects/${project.id}/config`);
+    expect(((await unsaved.json()) as { agent: { claudeUsePreset: boolean } }).agent.claudeUsePreset).toBe(false);
+    await saveButton().click();
+    // The toast says WHEN it acts, never which class it is.
+    await expect
+      .poll(() => page.getByText('Applies from the next agent turn, also in ongoing conversations.').count())
+      .toBeGreaterThan(0);
     await expect
       .poll(async () => {
         const res = await fetch(`${BASE}/api/projects/${project.id}/config`);
@@ -104,6 +111,7 @@ describe.skipIf(!BASE)('settings — Agent: Claude Code preset off by default (0
     await expect.poll(() => presetCheckbox().isEnabled()).toBe(true);
     await expect.poll(() => presetCheckbox().isChecked()).toBe(true);
     await presetCheckbox().click();
+    await saveButton().click();
     await expect
       .poll(async () => {
         const res = await fetch(`${BASE}/api/projects/${project.id}/config`);

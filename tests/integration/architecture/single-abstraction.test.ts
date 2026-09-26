@@ -98,9 +98,10 @@ describe('Single Abstraction Rule', () => {
     expect(
       hits(/config\.entities\b/, (f) => isProduction(f) && !f.includes('core/plugin-host/')),
     ).toEqual([
-      // The settings screen whose whole job is EDITING the activation set. It
-      // reads the field as data, which is the opposite of dispatching on it.
-      expect.stringContaining('EntitiesSection.tsx'),
+      // (0.2.113: the Entities settings card — whose whole job is EDITING the
+      // activation set — is declared by the plugin host itself now, under
+      // `core/plugin-host/`, and drops off this list.)
+      //
       // A user-facing sentence that happens to name the field.
       expect.stringContaining('BrokenChip.tsx'),
       // Pass-through, not dispatch: the project config is copied verbatim into

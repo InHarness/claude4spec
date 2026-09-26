@@ -1,37 +1,68 @@
 import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   useRemoteProject,
   useUpdateRemoteProject,
-} from '../../../hooks/useRemoteProject.js';
-import { usePatchConfig } from '../../../hooks/useConfig.js';
-import { ApiError } from '../../../lib/api.js';
-import { confirmDestructive, toast } from '../../../ui/events.js';
-import { SettingsCard } from '../SettingsCard.js';
-import type { UpdateRemoteProjectRequest } from '../../../../shared/remote-project.js';
+} from '../../hooks/useRemoteProject.js';
+import { usePatchConfig } from '../../hooks/useConfig.js';
+import { ApiError } from '../../lib/api.js';
+import { confirmDestructive, toast } from '../../ui/events.js';
+import type { RemoteProjectInfo, UpdateRemoteProjectRequest } from '../../../shared/remote-project.js';
+import type { SettingsContribution } from '../settings/registry.js';
 
 const NAME_MAX = 120;
 const DESC_MAX = 1000;
 
 /**
- * M26 §4 — Remote project section (0.1.32 brief).
+ * 0.2.113 — the release-push module's card (§4.2). Keyed on `isOwner` and
+ * `fetched`:
+ *   A  !linked                                  → empty state, no Disconnect.
+ *   B  linked + fetched + isOwner               → edit form + owner details.
+ *   C  linked + fetched + !isOwner              → read-only, with a notice.
+ *   C' linked + !fetched + reason:'not_found'   → "Cannot fetch" banner + Disconnect,
+ *      no retry. An anonymous reader of a DRAFT lands here too — the same banner
+ *      a deleted project or a bad identifier gets.
  *
- * Three scenarios + a 404 edge case, keyed on `isOwner` and `fetched`:
- *   A  !linked                                  → empty state.
- *   B  linked + fetched + isOwner               → full edit form + owner details.
- *   C  linked + fetched + !isOwner              → read-only public subset + notice.
- *   C' linked + !fetched + reason:'not_found'   → "cannot fetch" banner + Disconnect.
- *
- * The 0.1.31 `reason:'not_connected'` branch was removed — anonymous readers
- * now see scenario C (or C') instead of a login nudge.
+ * Logging the remote account out mid-edit refetches without a bearer: a
+ * published project drops to C, a draft to C', and the unsaved name and
+ * description go with the unmounted form.
  */
-export function RemoteProjectSection() {
+export const RELEASE_PUSH_SETTINGS: SettingsContribution = {
+  cards: [
+    {
+      anchor: 'remote-project',
+      title: 'Remote project',
+      description: 'The remote project this specification publishes to.',
+      group: 'Project',
+      weight: 20,
+      owner: 'release-push',
+    },
+  ],
+  elements: [
+    {
+      id: 'remote-project',
+      card: 'remote-project',
+      weight: 10,
+      kind: 'custom',
+      owner: 'release-push',
+      component: RemoteProjectElement,
+    },
+  ],
+};
+
+function RemoteProjectElement() {
   const { data, isLoading, isError, refetch } = useRemoteProject();
   const patch = usePatchConfig();
+  const qc = useQueryClient();
 
   async function handleDisconnect() {
+    const name = data?.project?.name ?? data?.projectId ?? '';
     const ok = await confirmDestructive({
-      title: 'Disconnect from remote project?',
-      body: 'The local config will be cleared. Your next push will create a new remote project.',
+      kind: 'remote-project-disconnect',
+      title: 'Disconnect remote project',
+      body: data?.isOwner
+        ? `Disconnect remote project ${name}? The next push will create a new remote project with the current config.name.`
+        : `Disconnect remote project ${name}? This clears remoteProjectId in the local config.json. The next push will create a new remote project.`,
       confirmLabel: 'Disconnect',
       cancelLabel: 'Cancel',
       danger: true,
@@ -39,6 +70,17 @@ export function RemoteProjectSection() {
     if (!ok) return;
     try {
       await patch.mutateAsync({ remoteProjectId: null });
+      // Straight to "no project" — the refetch below confirms it.
+      qc.setQueryData<RemoteProjectInfo>(['remote-project'], {
+        linked: false,
+        projectId: null,
+        fetched: false,
+        isOwner: false,
+      });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['config'] }),
+        qc.invalidateQueries({ queryKey: ['remote-project'] }),
+      ]);
       toast.success('Disconnected from remote project');
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Disconnect failed');
@@ -46,11 +88,7 @@ export function RemoteProjectSection() {
   }
 
   return (
-    <SettingsCard
-      id="remote-project"
-      title="Remote project"
-      description="Information about the project this workspace publishes to."
-    >
+    <div>
       {isLoading ? (
         <EmptyText>Loading…</EmptyText>
       ) : isError ? (
@@ -66,14 +104,15 @@ export function RemoteProjectSection() {
           </button>
         </div>
       ) : !data?.linked ? (
-        <EmptyText>No remote project linked yet. Pushing a release will create one.</EmptyText>
+        <EmptyText>No remote project connected. The first release push will create a new remote project.</EmptyText>
       ) : !data.fetched && data.reason === 'not_found' ? (
         <div>
           <div
             className="mb-3 rounded-md px-3 py-2 text-[12px]"
             style={{ background: 'rgba(168, 112, 51, 0.18)', color: '#a87033' }}
           >
-            Cannot fetch project info (draft, deleted, or no access).
+            Cannot fetch project info for {data.projectId} — it may be a draft, deleted, or you don't have
+            access.
           </div>
           <ProjectIdRow projectId={data.projectId} />
           <div className="mt-3 flex justify-end">
@@ -101,7 +140,7 @@ export function RemoteProjectSection() {
           disconnectPending={patch.isPending}
         />
       ) : null}
-    </SettingsCard>
+    </div>
   );
 }
 
@@ -131,6 +170,7 @@ function OwnerEditor({
   disconnectPending,
 }: OwnerEditorProps) {
   const update = useUpdateRemoteProject();
+  const qc = useQueryClient();
   const [draftName, setDraftName] = useState(name);
   const [draftDescription, setDraftDescription] = useState(description ?? '');
   const [fieldError, setFieldError] = useState<{ name?: string; description?: string }>({});
@@ -162,6 +202,8 @@ function OwnerEditor({
       await update.mutateAsync(body);
       toast.success('Remote project updated');
     } catch (err) {
+      // A value the live checks let through but the server refused: its message,
+      // under the field it concerns.
       if (err instanceof ApiError && err.code === 'INVALID_BODY') {
         const field = err.details?.field as 'name' | 'description' | undefined;
         if (field) {
@@ -172,7 +214,9 @@ function OwnerEditor({
         return;
       }
       if (err instanceof ApiError && err.code === 'NOT_OWNER') {
-        toast.error('You are no longer the owner of this remote project.');
+        // The card switches to read-only on the refetch.
+        toast.error('You are not the owner of this project');
+        void qc.invalidateQueries({ queryKey: ['remote-project'] });
         return;
       }
       toast.error(err instanceof Error ? err.message : 'Update failed');

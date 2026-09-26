@@ -239,6 +239,13 @@ export interface ConfigResponse {
   plugins: Record<string, Record<string, unknown>>;
   /** M01: config schema version (0.1.96 bumped to 4 — pagesDir → roots[]). */
   $schemaVersion: number;
+  /** 0.2.113: the running app's version (About card). */
+  appVersion?: string;
+  /**
+   * 0.2.113: PATCH only — validation warnings that did not block the save (an
+   * artifact dir overlapping a page root, an unknown entity slug).
+   */
+  warnings?: string[];
   /**
    * 0.2.101 — sha256 of `config.json` as read. Response-only (never sent in a
    * PATCH body); hand it back as `expectedConfigHash` when renaming a root, the
@@ -246,6 +253,9 @@ export interface ConfigResponse {
    */
   configHash: string;
 }
+
+/** 0.2.113: the spec's name for the `GET /api/config` shape. */
+export type AppConfigResponse = ConfigResponse;
 
 export interface ConfigPatch {
   name?: string;
