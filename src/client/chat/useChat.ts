@@ -1044,50 +1044,36 @@ export const TRANSAGENT_TOOL_NAME = 'mcp__transagent-tools__runTransagent';
 /**
  * 0.1.69: rebuild COMPLETED transagent entries from persisted chat rows.
  *
- * 0.2.87 (M46): the primary key is the column pair — each child row names the
- * parent `tool_use(runTransagent)` that spawned it (`spawned_by_tool_use_id`), so a
- * child is found even when its tool_result carries no `threadId` (a failed child).
- * A CONTINUATION call (`runTransagent({ threadId })`) creates no row, so its panel is
- * still resolved from the `threadId` in the tool_result as a fallback.
+ * 0.2.111 (M46): the column pair is the ONLY key — every `runTransagent` call,
+ * a continuation included, founds its own child row naming the parent
+ * `tool_use(runTransagent)` that spawned it (`spawned_by_tool_use_id`), so a panel
+ * resolves to exactly the work its call ordered and never to another call's row.
+ * The old fallback (the `threadId` parsed from the tool_result) is gone: it is what
+ * glued every turn of a continued banka into each panel. A call with no row of its
+ * own (a pre-0.2.111 continuation) renders as a plain tool card.
  * Entries without a tool_result are in-flight and left to the live
  * `transagent_started` replay.
  */
-function reconstructTransagents(rows: ChatMessageRow[], children: TransagentChildRef[]): TransagentEntry[] {
+export function reconstructTransagents(rows: ChatMessageRow[], children: TransagentChildRef[]): TransagentEntry[] {
   const childBySpawn = new Map(children.map((c) => [c.spawnedByToolUseId, c]));
   const out: TransagentEntry[] = [];
   for (const row of rows) {
     if (row.role !== 'tool_use' || row.toolName !== TRANSAGENT_TOOL_NAME || !row.toolId) continue;
+    const child = childBySpawn.get(row.toolId);
+    if (!child) continue;
     const result = rows.find((r) => r.role === 'tool_result' && r.toolId === row.toolId);
     if (!result) continue; // in-flight — handled by live replay
-    let childThreadId: string | null = childBySpawn.get(row.toolId)?.id ?? null;
     let isError = false;
     try {
-      const parsed = JSON.parse(result.content) as { summary?: unknown; isError?: boolean };
+      const parsed = JSON.parse(result.content) as { isError?: boolean };
       isError = parsed.isError === true;
-      if (!childThreadId) {
-        // tool_result summary is the JSON string the MCP tool returned.
-        const inner = typeof parsed.summary === 'string' ? JSON.parse(parsed.summary) : parsed.summary;
-        if (inner && typeof inner === 'object' && typeof (inner as { threadId?: unknown }).threadId === 'string') {
-          childThreadId = (inner as { threadId: string }).threadId;
-        }
-      }
     } catch {
-      /* keep whatever the column pair resolved */
-    }
-    if (!childThreadId) continue;
-    let contextType: string = childBySpawn.get(row.toolId)?.contextType ?? 'chat';
-    try {
-      const input = JSON.parse(row.content) as { input?: { contextType?: unknown } };
-      if (!childBySpawn.has(row.toolId) && typeof input.input?.contextType === 'string') {
-        contextType = input.input.contextType;
-      }
-    } catch {
-      /* leave default */
+      /* not JSON — treat as completed */
     }
     out.push({
       toolUseId: row.toolId,
-      childThreadId,
-      contextType,
+      childThreadId: child.id,
+      contextType: child.contextType,
       status: isError ? 'error' : 'completed',
     });
   }

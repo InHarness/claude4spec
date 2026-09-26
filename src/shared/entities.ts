@@ -456,6 +456,21 @@ export interface RawDeltaPageChange {
  */
 export const CURRENT_RELEASE_NAME = 'current';
 
+/**
+ * 0.2.112: upper bound on a release description, in Unicode code points after
+ * trim. Enforced on write only (`createRelease` / `updateRelease`), never on read.
+ */
+export const MAX_RELEASE_DESCRIPTION_LENGTH = 500;
+
+/**
+ * The one measure {@link MAX_RELEASE_DESCRIPTION_LENGTH} is checked against —
+ * Unicode code points (not UTF-16 units) of the TRIMMED description. Shared by the
+ * server guard and the client counter so the two can never count differently.
+ */
+export function releaseDescriptionLength(description: string): number {
+  return [...description.trim()].length;
+}
+
 export interface RawDelta {
   /** `null` = synthetic empty state (initial brief, comparing against "nothing"). */
   from: { id: number; name: string } | null;
@@ -597,7 +612,9 @@ export interface ChatThread {
    */
   parentThreadId: string | null;
   /** 0.1.69 Transagents: the parent's tool_use id that spawned this child (F5
-   *  reconstruction key together with parent_thread_id). NULL for top-level. */
+   *  reconstruction key together with parent_thread_id). NULL for top-level.
+   *  0.2.111: 1:1 with a `runTransagent` call, a continuation included — the
+   *  dispatcher founds exactly one row per call (no unique index enforces it). */
   spawnedByToolUseId: string | null;
   createdAt: string;
   updatedAt: string;

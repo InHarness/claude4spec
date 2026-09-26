@@ -414,6 +414,10 @@ describe('the profile gate', () => {
     expect(spawn.sideEffects).toEqual(['file', 'db', 'ui-notify']);
     // 0.2.107: a child stopped by its own idle clock (or its parent's) ends IDLE_TIMEOUT.
     expect(spawn.errorCodes).toEqual(expect.arrayContaining(['TIMEOUT', 'IDLE_TIMEOUT', 'ABORTED']));
+    // 0.2.111: a continuation founds a new row too — never idempotent — and is refused
+    // (before any row exists) while its session is in flight or its config changed.
+    expect(spawn.idempotent).toBe(false);
+    expect(spawn.errorCodes).toEqual(expect.arrayContaining(['STREAM_IN_PROGRESS', 'RESUME_CONFIG_LOCKED']));
     // No CLI and no REST door: a child turn is spawned from inside a turn.
     expect(row.channels.cli.kind).toBe('na');
     expect(row.channels.rest.kind).toBe('na');

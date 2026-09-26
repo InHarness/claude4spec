@@ -196,6 +196,16 @@ export interface ActiveAdapter {
    */
   cascadeReason?: ChildCascadeReason;
   /**
+   * 0.2.111 (M46): the CLI session this turn is running — the row's
+   * `last_session_id` at registration (the session a resuming turn continues),
+   * refreshed by `recordSession` when the adapter reports its id. The banka
+   * dispatcher reads it to refuse a continuation (`STREAM_IN_PROGRESS`) while
+   * ANY row in flight is resuming the same session: two rows may point at one
+   * session, and an unforked parallel resume would interleave its transcript.
+   * In-memory by design — no database column tracks liveness.
+   */
+  sessionId?: string | null;
+  /**
    * M05 queue: fan-out for events originating OUTSIDE the turn's stream loop
    * (queue mutations from `POST/DELETE /api/chat/queue/...`). Reaches the
    * original POST client (via the turn's `onEvent`) AND live-join clients (via
@@ -910,6 +920,7 @@ export async function runAgentTurn(
       // 0.1.69 Transagents: lets the abort cascade find this turn's children (when
       // this turn IS a child, parentThreadId is set from the row).
       parentThreadId: thread.parentThreadId,
+      sessionId: thread.lastSessionId,
     });
     emit({ type: 'connected', requestId, threadId: thread.id });
 
@@ -1169,7 +1180,10 @@ export async function runAgentTurn(
 
     // claude-code CLI po resumeSessionId ignoruje kolejne systemPrompty —
     // wiążący dla audytu jest tylko pierwszy. UPDATE idempotentny (no-op na 2.+ turze).
-    deps.chatService.setInitialSystemPrompt(thread.id, systemPrompt);
+    // 0.2.111 (M46): zapis tylko na turze, ktora NIE wznawia sesji. Wiersz kontynuacji
+    // banki startuje z przepisanym `last_session_id` i pustym promptem — zapis tutaj
+    // twierdzilby cos, czego agent nie widzial; prompt sesji zostaje na wierszu, ktory ja zalozyl.
+    if (!thread.lastSessionId) deps.chatService.setInitialSystemPrompt(thread.id, systemPrompt);
 
     // M05 session-lock: snapshot { model, architectureConfig } pierwszej tury — punkt
     // odniesienia dla guarda RESUME_CONFIG_LOCKED w routes. Idempotentny (no-op na 2.+ turze).
@@ -1193,6 +1207,8 @@ export async function runAgentTurn(
     const { custom_env: _customEnv, ...snapshotArchitectureConfig } = input.architectureConfig;
     const recordSession = (sessionId: string): void => {
       deps.chatService.setLastSessionId(thread.id, sessionId);
+      const live = deps.activeAdapters.get(thread.id);
+      if (live && live.requestId === requestId) live.sessionId = sessionId;
       deps.chatService.setInitialArchitectureConfig(thread.id, {
         model: input.model,
         architectureConfig: snapshotArchitectureConfig,

@@ -219,11 +219,13 @@ describe('config — agent path scope (0.1.90)', () => {
     );
   });
 
+  // 0.2.112: the brief's criterion uses a value DIFFERENT from the default — a
+  // preserved default proves nothing — so these seed an explicit `true`.
   it('deep-merges agent: writing allowedPaths alone preserves claudeUsePreset', () => {
-    write({ claudeUsePreset: false });
+    write({ claudeUsePreset: true });
     const merged = writeConfig(dir, { agent: { allowedPaths: ['/extra'] } });
     expect(merged.agent).toEqual({
-      claudeUsePreset: false,
+      claudeUsePreset: true,
       allowedPaths: ['/extra'],
       // 0.2.8: writeConfig returns the NORMALIZED view, so untouched fields
       // carry their defaults; the file itself keeps only the two written keys.
@@ -232,6 +234,50 @@ describe('config — agent path scope (0.1.90)', () => {
       // 0.2.53: absent from the file, so the normalizer supplies the default.
       disableDirectFilesystemAccess: true,
     });
+  });
+});
+
+// 0.2.112: `agent.claudeUsePreset` default flipped to `false`, with no
+// `$schemaVersion` bump and no migration — every project without the field,
+// including ones created before this version, now runs without the preset.
+describe('config — agent.claudeUsePreset default (0.2.112)', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-cfg-preset-'));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const writeRaw = (cfg: Record<string, unknown>) => {
+    const file = configPath(dir);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ $schemaVersion: 4, name: 'X', ...cfg }));
+  };
+
+  it('no `agent` object ⇒ false', () => {
+    writeRaw({});
+    expect(readConfig(dir).agent.claudeUsePreset).toBe(false);
+  });
+
+  it('`agent` without `claudeUsePreset` ⇒ false', () => {
+    writeRaw({ agent: { conversationalLanguage: 'Polski' } });
+    expect(readConfig(dir).agent.claudeUsePreset).toBe(false);
+  });
+
+  it('explicit true stays true, and the file is not migrated', () => {
+    writeRaw({ agent: { claudeUsePreset: true } });
+    expect(readConfig(dir).agent.claudeUsePreset).toBe(true);
+    const onDisk = JSON.parse(fs.readFileSync(configPath(dir), 'utf8')) as Record<string, unknown>;
+    expect(onDisk.$schemaVersion).toBe(4);
+  });
+
+  it('onboarding [Continue] (agent: { conversationalLanguage }) keeps an explicit non-default true', () => {
+    writeRaw({ agent: { claudeUsePreset: true } });
+    const merged = writeConfig(dir, { agent: { conversationalLanguage: 'Polski' } });
+    expect(merged.agent.claudeUsePreset).toBe(true);
+    expect(readConfig(dir).agent.claudeUsePreset).toBe(true);
   });
 });
 
@@ -609,7 +655,8 @@ describe('config — central default normalizer (C23, 0.2.8)', () => {
     write({});
     const cfg = readConfig(dir);
     expect(cfg.agent).toEqual({
-      claudeUsePreset: true,
+      // 0.2.112: absent = OFF (was `true`) — no migration, no schema bump.
+      claudeUsePreset: false,
       conversationalLanguage: null,
       allowedPaths: [],
       disallowedPaths: [],
@@ -690,7 +737,7 @@ describe('config — central default normalizer (C23, 0.2.8)', () => {
       expect(created).toBe(true);
       // Normalized in memory…
       expect(config.git.enabled).toBe(false);
-      expect(config.agent.claudeUsePreset).toBe(true);
+      expect(config.agent.claudeUsePreset).toBe(false);
       // …absent on disk.
       const onDisk = JSON.parse(fs.readFileSync(configPath(fresh), 'utf8')) as Record<string, unknown>;
       expect(onDisk.git).toBeUndefined();

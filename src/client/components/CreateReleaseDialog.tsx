@@ -3,6 +3,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useCreateRelease } from '../hooks/useReleases.js';
 import { ApiError } from '../lib/api-core.js';
 import { showGitErrorModal } from '../ui/events.js';
+import { MAX_RELEASE_DESCRIPTION_LENGTH, releaseDescriptionLength } from '../../shared/entities.js';
 
 interface Props {
   onClose: () => void;
@@ -12,6 +13,9 @@ export function CreateReleaseDialog({ onClose }: Props) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // Code points after trim — the server's own measure (0.2.112).
+  const descriptionLength = releaseDescriptionLength(description);
+  const tooLongMessage = `Description must be at most ${MAX_RELEASE_DESCRIPTION_LENGTH} characters — keep it a short statement of intent`;
   const navigate = useNavigate();
   const create = useCreateRelease();
 
@@ -24,6 +28,10 @@ export function CreateReleaseDialog({ onClose }: Props) {
     }
     if (!description.trim()) {
       setError('Description is required');
+      return;
+    }
+    if (descriptionLength > MAX_RELEASE_DESCRIPTION_LENGTH) {
+      setError(tooLongMessage);
       return;
     }
     try {
@@ -51,6 +59,10 @@ export function CreateReleaseDialog({ onClose }: Props) {
         }
         if (err.code === 'RELEASE_DESCRIPTION_REQUIRED') {
           setError('Description is required');
+          return;
+        }
+        if (err.code === 'RELEASE_DESCRIPTION_TOO_LONG') {
+          setError(tooLongMessage);
           return;
         }
         setError(err.message);
@@ -130,6 +142,13 @@ export function CreateReleaseDialog({ onClose }: Props) {
                 color: 'var(--c-ink)',
               }}
             />
+            <span
+              className="block text-right text-[11px] font-mono mt-0.5"
+              style={{ color: descriptionLength > MAX_RELEASE_DESCRIPTION_LENGTH ? '#dc2626' : 'var(--c-subtle)' }}
+              data-testid="release-description-counter"
+            >
+              {descriptionLength} / {MAX_RELEASE_DESCRIPTION_LENGTH}
+            </span>
           </label>
 
           {error && (

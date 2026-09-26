@@ -102,6 +102,21 @@ describe('runTransagent — error taxonomy', () => {
     expect(body.code).toBe('INVALID_ARGS');
   });
 
+  /**
+   * 0.2.111: the two continuation refusals reach the parent under their own codes —
+   * one says "wait for the running turn", the other "spawn a fresh banka".
+   */
+  it('passes STREAM_IN_PROGRESS and RESUME_CONFIG_LOCKED through with their hint', async () => {
+    const busy = await callAndParse(new DomainError('STREAM_IN_PROGRESS', 'banka busy'));
+    expect(busy.isError).toBe(true);
+    expect(busy.body.code).toBe('STREAM_IN_PROGRESS');
+    const locked = await callAndParse(
+      new DomainError('RESUME_CONFIG_LOCKED', 'config changed', 'Spawn a fresh banka (omit `threadId`)'),
+    );
+    expect(locked.body.code).toBe('RESUME_CONFIG_LOCKED');
+    expect(locked.body.hint).toMatch(/fresh banka/);
+  });
+
   /** A hint is the half of the error that says which call would have worked. */
   it('forwards a DomainError hint, which the handler used to drop', async () => {
     const { body } = await callAndParse(
@@ -173,5 +188,30 @@ describe('runTransagent — documented chat payload', () => {
     const text = description();
     expect(text).toMatch(/update_plan/);
     expect(text).toMatch(/existing plan is INVALID_ARGS/);
+  });
+});
+
+/**
+ * 0.2.111 (M46): the contract a parent agent reads — every call founds a new child,
+ * a continuation resumes the referenced banka's session, and the id to keep working
+ * with is the one returned most recently.
+ */
+describe('runTransagent — continuation contract (0.2.111)', () => {
+  const tool = () => {
+    const dispatcher = { run: async () => ({ threadId: 'c', summary: '' }) } as unknown as TransagentDispatcher;
+    const server = buildTransagentToolsServer({ parentThreadId: 'parent_1', dispatcher });
+    const t = server.tools.find((x) => x.name === 'runTransagent');
+    if (!t) throw new Error('runTransagent not registered');
+    return t;
+  };
+
+  it('describes resume semantics and the two new refusals', () => {
+    const text = tool().description ?? '';
+    expect(text).toContain('Resumable: pass `threadId` to resume the session of an existing banka.');
+    expect(text).toContain('Every call, spawn or');
+    expect(text).toMatch(/pass the `threadId` returned most\s+recently/);
+    expect(text).toContain('STREAM_IN_PROGRESS');
+    expect(text).toContain('RESUME_CONFIG_LOCKED');
+    expect(text).not.toMatch(/someone else's child/);
   });
 });
