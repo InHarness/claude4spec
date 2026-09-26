@@ -3,7 +3,6 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { SlashCommand } from './extensions/SlashMenu.js';
 import { diagramsApi } from '../entities/diagram/api.js';
 import type { DiagramFormat } from '../../shared/entities.js';
-import { dispatchTodoPopover } from '../components/TodoPopover.js';
 import { openPopover, toast } from '../ui/events.js';
 
 export interface SlashInvokeDeps {
@@ -76,7 +75,7 @@ export async function invokeSlash(
       await runTaggedMixed(editor);
       return;
     case 'todo':
-      runTodo(editor);
+      await runTodo(editor);
       return;
     case 'diagram':
       await runDiagram(editor, deps);
@@ -100,7 +99,7 @@ async function popoverFromEditor<T>(editor: Editor, open: () => Promise<T>): Pro
 }
 
 async function runSection(editor: Editor): Promise<void> {
-  const result = await popoverFromEditor(editor, () => openPopover('section', coordsAt(editor), {}));
+  const result = await popoverFromEditor(editor, () => openPopover('section', { ...coordsAt(editor) }));
   if (!result) return;
   if ('__action' in result) return;
   editor
@@ -137,7 +136,7 @@ function coordsAt(editor: Editor): { x: number; y: number } {
 
 async function runDiagram(editor: Editor, deps: SlashInvokeDeps): Promise<void> {
   const coords = coordsAt(editor);
-  const result = await popoverFromEditor(editor, () => openPopover('diagram', coords, { mode: 'create' }));
+  const result = await popoverFromEditor(editor, () => openPopover('diagram', { ...coords, mode: 'create' }));
   if (!result) return;
   if ('__action' in result) return;
   try {
@@ -178,24 +177,18 @@ async function runDiagram(editor: Editor, deps: SlashInvokeDeps): Promise<void> 
   }
 }
 
-function runTodo(editor: Editor): void {
-  const { x, y } = coordsAt(editor);
-  dispatchTodoPopover({
-    x,
-    y,
-    mode: 'create',
-    onSubmit: (comment) => {
-      editor
-        .chain()
-        .focus()
-        .insertContent({ type: 'todo', attrs: { comment } })
-        .run();
-    },
-  });
+async function runTodo(editor: Editor): Promise<void> {
+  const result = await popoverFromEditor(editor, () => openPopover('todo-create', { ...coordsAt(editor) }));
+  if (!result) return;
+  editor
+    .chain()
+    .focus()
+    .insertContent({ type: 'todo', attrs: { comment: result.comment } })
+    .run();
 }
 
 async function runMention(editor: Editor): Promise<void> {
-  const result = await popoverFromEditor(editor, () => openPopover('mention', coordsAt(editor), {}));
+  const result = await popoverFromEditor(editor, () => openPopover('mention', { ...coordsAt(editor) }));
   if (!result) return;
   editor
     .chain()
@@ -205,7 +198,7 @@ async function runMention(editor: Editor): Promise<void> {
 }
 
 async function runElement(editor: Editor): Promise<void> {
-  const result = await popoverFromEditor(editor, () => openPopover('element', coordsAt(editor), {}));
+  const result = await popoverFromEditor(editor, () => openPopover('element', { ...coordsAt(editor) }));
   if (!result) return;
   editor
     .chain()
@@ -215,7 +208,7 @@ async function runElement(editor: Editor): Promise<void> {
 }
 
 async function runList(editor: Editor): Promise<void> {
-  const result = await popoverFromEditor(editor, () => openPopover('list', coordsAt(editor), {}));
+  const result = await popoverFromEditor(editor, () => openPopover('list', { ...coordsAt(editor) }));
   if (!result) return;
   editor
     .chain()
@@ -228,7 +221,7 @@ async function runList(editor: Editor): Promise<void> {
 }
 
 async function runTagged(editor: Editor): Promise<void> {
-  const result = await popoverFromEditor(editor, () => openPopover('tagged', coordsAt(editor), {}));
+  const result = await popoverFromEditor(editor, () => openPopover('tagged', { ...coordsAt(editor) }));
   if (!result) return;
   editor
     .chain()
@@ -245,7 +238,7 @@ async function runTagged(editor: Editor): Promise<void> {
 }
 
 async function runTaggedMixed(editor: Editor): Promise<void> {
-  const result = await popoverFromEditor(editor, () => openPopover('tagged-mixed', coordsAt(editor), {}));
+  const result = await popoverFromEditor(editor, () => openPopover('tagged-mixed', { ...coordsAt(editor) }));
   if (!result) return;
   editor
     .chain()

@@ -57,8 +57,7 @@ function RemoteProjectElement() {
 
   async function handleDisconnect() {
     const name = data?.project?.name ?? data?.projectId ?? '';
-    const ok = await confirmDestructive({
-      kind: 'remote-project-disconnect',
+    const ok = await confirmDestructive('remote-project-disconnect', {
       title: 'Disconnect remote project',
       body: data?.isOwner
         ? `Disconnect remote project ${name}? The next push will create a new remote project with the current config.name.`
@@ -111,8 +110,8 @@ function RemoteProjectElement() {
             className="mb-3 rounded-md px-3 py-2 text-[12px]"
             style={{ background: 'rgba(168, 112, 51, 0.18)', color: '#a87033' }}
           >
-            Cannot fetch project info for {data.projectId} — it may be a draft, deleted, or you don't have
-            access.
+            Cannot fetch project info for <code className="font-mono">{data.projectId}</code> — it may be a
+            draft, deleted, or you don&apos;t have access.
           </div>
           <ProjectIdRow projectId={data.projectId} />
           <div className="mt-3 flex justify-end">

@@ -17,8 +17,8 @@ interface Flow {
 }
 
 /**
- * M24 sidebar "User" slot. Three states: logged-out / device flow in progress
- * (inline, no modal) / logged-in. Reserves a constant ~56px height so the
+ * M24 sidebar "User" slot. Four states: logged-out / device flow in progress
+ * (inline, no modal) / logged-in / logged-in with `accountStatus = 'deactivated'`. Reserves a constant ~56px height so the
  * layout does not jump between logged-out and logged-in.
  */
 export function UserSection() {
@@ -75,13 +75,13 @@ export function UserSection() {
           finish(`Connected as ${res.account?.accountEmail ?? 'account'}`, 'success', res.account);
           break;
         case 'expired':
-          finish('Code expired — try again', 'error');
+          finish('Code expired. Start again.', 'error');
           break;
         case 'denied':
-          finish('Authorization denied', 'error');
+          finish('Authorization denied.', 'error');
           break;
         case 'invalid':
-          finish(res.message ?? 'Login invalid — try again', 'error');
+          finish('Something went wrong. Try again.', 'error');
           break;
       }
     };

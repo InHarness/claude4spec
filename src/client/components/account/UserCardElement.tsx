@@ -44,8 +44,7 @@ function UserCardElement() {
 
   async function handleLogout() {
     const email = data?.accountEmail ?? 'the remote account';
-    const ok = await confirmDestructive({
-      kind: 'account-logout',
+    const ok = await confirmDestructive('account-logout', {
       title: 'Log out',
       body: `Log out of ${email}? The session token will be removed locally.`,
       confirmLabel: 'Log out',

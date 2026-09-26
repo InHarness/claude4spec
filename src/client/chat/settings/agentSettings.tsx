@@ -251,8 +251,7 @@ function ApiKeyElement() {
   }
 
   async function handleRemove() {
-    const ok = await confirmDestructive({
-      kind: 'agent-credential-remove',
+    const ok = await confirmDestructive('agent-credential-remove', {
       title: 'Remove Anthropic API key?',
       body: 'The stored key will be deleted and the agent will fall back to your local Claude Code login.',
       confirmLabel: 'Remove',

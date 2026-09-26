@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { FolderPlus, Folder } from 'lucide-react';
-import { AddProjectDialog } from '../AddProjectDialog.js';
+import { openModal } from '../../ui/events.js';
 import { Skeleton } from '../../ui/Skeleton.js';
 
 interface WorkspaceProject {
@@ -26,7 +26,6 @@ interface WorkspaceResponse {
  */
 export function WelcomePage() {
   const [workspace, setWorkspace] = useState<WorkspaceResponse | null>(null);
-  const [showAddProject, setShowAddProject] = useState(false);
 
   useEffect(() => {
     fetch('/api/workspace')
@@ -124,7 +123,7 @@ export function WelcomePage() {
         <div className="mt-6">
           <button
             type="button"
-            onClick={() => setShowAddProject(true)}
+            onClick={() => void openModal('project-create', {})}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-[13px] font-medium"
             style={{ background: 'var(--c-accent)', color: '#fff' }}
           >
@@ -133,7 +132,6 @@ export function WelcomePage() {
         </div>
       </div>
 
-      {showAddProject ? <AddProjectDialog onClose={() => setShowAddProject(false)} /> : null}
     </div>
   );
 }

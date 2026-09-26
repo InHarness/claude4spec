@@ -79,18 +79,22 @@ export function toEntity(navigate: Navigate, type: string, slug: string): void {
 }
 
 /**
- * Navigate to a page anchor — the other half of the editor bridge. `pages` is
- * the host's default root for sections.
+ * Navigate to a page anchor — the other half of the editor bridge. With a
+ * `rootId` it goes straight to `/space/<rootId>/…`. Without one it goes through
+ * the host's legacy `/pages/…` route, which redirects (history-replacing, hash
+ * kept) to the root flagged `builtin` — a plugin does not know the project's
+ * root ids, and guessing `'pages'` breaks a project whose base root is renamed.
  */
 export function toSection(
   navigate: Navigate,
   pagePath: string,
   anchor: string,
-  rootId = 'pages',
+  rootId?: string,
 ): void {
   (navigate as unknown as (opts: Record<string, unknown>) => void)({
-    to: '/space/$rootId/$',
-    params: { rootId, _splat: pagePath },
+    ...(rootId
+      ? { to: '/space/$rootId/$', params: { rootId, _splat: pagePath } }
+      : { to: '/pages/$', params: { _splat: pagePath } }),
     hash: `anchor-${anchor}`,
   });
 }

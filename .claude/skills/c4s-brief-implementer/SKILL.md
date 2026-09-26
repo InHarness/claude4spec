@@ -88,6 +88,8 @@ cd ".worktrees/$brief_slug"
 
 Standard code flow in your target repository: read existing code, plan, edit, test. Stay focused on what the brief specifies. Commit your work on the `brief/<slug>` branch.
 
+**Literal UI strings ship in English**, even when the brief quotes them in another language (labels, empty states, toasts, error messages). Translate them as you implement, and file a patch (step 6, `--kind clarification`) listing each string you translated, so the spec-author can fix the source.
+
 If you find the brief is already fully implemented, stop there: report it to the user and do not manufacture a change (or a patch) to have something to hand off.
 
 ### 4a. Stage `package.json` version from the brief's target release

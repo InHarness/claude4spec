@@ -116,7 +116,7 @@ export function ExamplesPanel({ examples, fields, onChange }: Props) {
   async function removeExample(i: number) {
     const ex = examples[i];
     if (!ex) return;
-    const ok = await confirmDestructive({
+    const ok = await confirmDestructive('dto-example-delete', {
       title: 'Delete example?',
       body: `Delete example '${ex.name}'?`,
       confirmLabel: 'Delete',

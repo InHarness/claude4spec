@@ -3,17 +3,40 @@ import { Dialog } from '../host-ui-kit/overlay/Dialog.js';
 import { UI_EVENTS, type ConfirmRequest } from './events.js';
 
 /**
+ * A `c4s:confirm-open` payload as it may arrive. 0.2.110 answers through
+ * `onConfirm` / `onCancel` and names a `kind`; a plugin built against the
+ * pre-0.2.110 protocol still sends a bare `resolve(boolean)` and no `kind`.
+ * The event names and payload shapes are the plugin contract, so the host keeps
+ * accepting the old shape rather than silently leaving such a confirm unanswered.
+ */
+type IncomingConfirm = Omit<ConfirmRequest, 'onConfirm' | 'onCancel' | 'kind' | 'danger'> &
+  Partial<Pick<ConfirmRequest, 'onConfirm' | 'onCancel' | 'kind' | 'danger'>> & {
+    resolve?: (confirmed: boolean) => void;
+  };
+
+const settledConfirms = new WeakSet<IncomingConfirm>();
+
+/** Answer a confirm exactly once (a React updater may run twice). */
+function settleOnce(r: IncomingConfirm, confirmed: boolean): void {
+  if (settledConfirms.has(r)) return;
+  settledConfirms.add(r);
+  if (confirmed) r.onConfirm?.();
+  else r.onCancel?.();
+  r.resolve?.(confirmed);
+}
+
+/**
  * The host's destructive-confirm FACADE (M34/L12 one-implementation rule): it
  * renders the catalog's `Dialog` in its destructive-confirm shape and maps a
- * `confirmDestructive()` event payload onto its props. Scrim, panel chrome,
- * focus trap, focus restore and Escape all come from `Dialog` — nothing here
- * reimplements them. What stays is the invocation surface: an event-bus
- * singleton resolving a promise, rather than props-in `open` state.
+ * `confirmDestructive(kind, …)` event payload onto its props. Scrim, panel
+ * chrome, focus trap, focus restore and Escape all come from `Dialog` — nothing
+ * here reimplements them. What stays is the invocation surface: an event-bus
+ * singleton settling a promise, rather than props-in `open` state.
  *
- * `confirmDestructive()` itself is unchanged by the move.
+ * 0.2.110: a layer of `<ModalHost/>`, not a host of its own.
  */
-export function ModalHost() {
-  const [request, setRequest] = useState<ConfirmRequest | null>(null);
+export function ConfirmLayer() {
+  const [request, setRequest] = useState<IncomingConfirm | null>(null);
   const [typed, setTyped] = useState('');
 
   // Type-to-confirm: the confirm button stays disabled until the input matches.
@@ -22,9 +45,14 @@ export function ModalHost() {
 
   useEffect(() => {
     const handler = (e: Event) => {
-      const ce = e as CustomEvent<ConfirmRequest>;
+      const ce = e as CustomEvent<IncomingConfirm>;
       setTyped('');
-      setRequest(ce.detail);
+      // A newer confirm replaces the open one, which answers "cancel" rather
+      // than leaving its caller's promise pending forever.
+      setRequest((prev) => {
+        if (prev && prev !== ce.detail) settleOnce(prev, false);
+        return ce.detail;
+      });
     };
     window.addEventListener(UI_EVENTS.CONFIRM, handler as EventListener);
     return () => window.removeEventListener(UI_EVENTS.CONFIRM, handler as EventListener);
@@ -33,29 +61,29 @@ export function ModalHost() {
   const [pending, setPending] = useState(false);
 
   function cancel() {
-    // While `onConfirm` runs the action is already under way (a DELETE in flight):
+    // While `action` runs the action is already under way (a DELETE in flight):
     // closing the dialog as "cancelled" would not stop it, only hide its outcome.
     if (!request || pending) return;
     const r = request;
     setRequest(null);
-    r.resolve(false);
+    settleOnce(r, false);
   }
 
   async function confirm() {
     if (!request || !matches || pending) return;
     const r = request;
-    if (r.onConfirm) {
+    if (r.action) {
       setPending(true);
       let done = false;
       try {
-        done = await r.onConfirm();
+        done = await r.action();
       } finally {
         setPending(false);
       }
       if (!done) return;
     }
     setRequest(null);
-    r.resolve(true);
+    settleOnce(r, true);
   }
 
   if (!request) return null;

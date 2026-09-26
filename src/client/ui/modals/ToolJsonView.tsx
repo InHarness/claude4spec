@@ -2,20 +2,19 @@ import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
-export interface ToolJsonItem {
-  toolName: string;
-  input: unknown;
-  result: unknown;
-  isError: boolean;
-}
+import type { ModalFormProps } from '../ModalHost.js';
 
-interface Props {
-  title: string;
-  items: ToolJsonItem[];
-  onClose: () => void;
-}
+export type { ToolJsonItem } from '../events.js';
 
-export function ToolJsonModal({ title, items, onClose }: Props) {
+/**
+ * 0.2.110 M05 — the `tool-json-view` window (`openModal('tool-json-view', …)`),
+ * replacing the per-card `ToolJsonModal` component. Request/Response `<pre>`
+ * panels, no copy action. Keeps its own 1100px panel (wider than `Dialog`'s
+ * size tiers — a declared exception of the one-implementation rule).
+ */
+export function ToolJsonView({ request, onClose: close }: ModalFormProps<'tool-json-view'>) {
+  const { title, items } = request.props;
+  const onClose = () => close(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -25,7 +24,7 @@ export function ToolJsonModal({ title, items, onClose }: Props) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isBatch = items.length > 1;
 
@@ -128,7 +127,7 @@ function ItemBlock({
   item,
   indexLabel,
 }: {
-  item: ToolJsonItem;
+  item: import('../events.js').ToolJsonItem;
   indexLabel: string | null;
 }) {
   const hasResult = item.result !== null && item.result !== undefined;

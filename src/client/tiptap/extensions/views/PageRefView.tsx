@@ -3,8 +3,10 @@ import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
 import { useNavigate } from '@tanstack/react-router';
 import { usePageLinks } from '../../../hooks/usePageLinks.js';
 import { PageRefChip, type PageRefChipState } from '../../../components/PageRefChip.js';
-import { openPageRefPopover } from '../PageRefPopover.js';
-import { resolveAgainstIndex } from '../../lib/pathResolve.js';
+import { openPopover } from '../../../ui/events.js';
+import { candidatePagePath, resolveAgainstIndex } from '../../lib/pathResolve.js';
+import { useBaseRootId, useRoots } from '../../../hooks/useConfig.js';
+import { pageTarget } from '../../../lib/pageTarget.js';
 import type { PageRefSyntax } from '../PageRefNode.js';
 import type { FileMeta } from '../../../../shared/page-links.js';
 
@@ -49,6 +51,17 @@ export function PageRefView(props: NodeViewProps) {
   const sourcePath = (props.editor.storage as Record<string, unknown>).pageRefSourcePath as
     | string
     | undefined;
+  // M50: the chip navigates to `/space/<targetRootId>/…`. The server resolves a
+  // mention inside its source's own root, so the target root is the root of the
+  // document the chip lives in; outside a page (a plan) that is the base root.
+  // Read at click time: the page editor fills `pageRefRootId` from an effect,
+  // which may run after this chip's first render.
+  const baseRootId = useBaseRootId();
+  const chipRootId = (): string | null =>
+    ((props.editor.storage as Record<string, unknown>).pageRefRootId as string | undefined) ??
+    baseRootId;
+  const roots = useRoots();
+  const rootIds = useMemo(() => roots.map((r) => r.id), [roots]);
   const resolvedPath = normalizePath(path, byPath, sourcePath);
   const meta = resolvedPath ? byPath[resolvedPath] : undefined;
 
@@ -61,46 +74,47 @@ export function PageRefView(props: NodeViewProps) {
 
   const title = meta?.title ?? basenameTitle(path);
 
+  const openEdit = (at: { x: number; y: number }) =>
+    void openPopover('page-ref', {
+      ...at,
+      syntax,
+      path,
+      anchor,
+      label,
+      onRemove: () => props.deleteNode(),
+    }).then((attrs) => {
+      if (attrs) props.updateAttributes(attrs);
+    });
+
   const handleClick = (e: MouseEvent<HTMLSpanElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const at = { x: rect.left, y: rect.bottom + 4 };
     if (e.altKey) {
       e.preventDefault();
       e.stopPropagation();
-      const anchorEl = e.currentTarget;
-      const rect = anchorEl.getBoundingClientRect();
-      void openPageRefPopover(
-        { x: rect.left, y: rect.bottom + 4 },
-        {
-          syntax,
-          path,
-          anchor,
-          label,
-          onRemove: () => props.deleteNode(),
-          onSave: (attrs) => props.updateAttributes(attrs),
-        },
-      );
+      openEdit(at);
       return;
     }
     if (chipState === 'broken') {
-      // No navigation target — open popover for fix.
-      const anchorEl = e.currentTarget;
-      const rect = anchorEl.getBoundingClientRect();
-      void openPageRefPopover(
-        { x: rect.left, y: rect.bottom + 4 },
-        {
-          syntax,
-          path,
-          anchor,
-          label,
-          onRemove: () => props.deleteNode(),
-          onSave: (attrs) => props.updateAttributes(attrs),
-        },
-      );
+      // No navigation target — "Create file?" / "Fix path".
+      const rootId = chipRootId();
+      if (!rootId) return;
+      void openPopover('page-ref-broken', {
+        ...at,
+        rootId,
+        candidatePath: candidatePagePath(path, sourcePath),
+      }).then((result) => {
+        if (result?.action === 'fix') openEdit(at);
+      });
       return;
     }
     if (!resolvedPath) return;
+    const fallbackRootId = chipRootId();
+    if (!fallbackRootId) return;
+    const target = pageTarget(resolvedPath, rootIds, fallbackRootId);
     void navigate({
-      to: '/pages/$',
-      params: { _splat: resolvedPath },
+      to: '/space/$rootId/$',
+      params: { rootId: target.rootId, _splat: target.path },
       hash: anchor ? `anchor-${anchor}` : undefined,
     });
   };

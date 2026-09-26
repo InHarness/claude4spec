@@ -4,6 +4,8 @@ import { buildMarkdownIt } from '../tiptap/markdown/buildMarkdownIt.js';
 import { PageRefChip } from '../components/PageRefChip.js';
 import { SectionRefChipWithData } from '../components/SectionRefChipWithData.js';
 import { usePageLinks } from '../hooks/usePageLinks.js';
+import { useBaseRootId, useRoots } from '../hooks/useConfig.js';
+import { pageTarget } from '../lib/pageTarget.js';
 import type { FileMeta, PageLinkSyntax } from '../../shared/page-links.js';
 
 interface Props {
@@ -15,6 +17,9 @@ type NavigateFn = ReturnType<typeof useNavigate>;
 interface RenderCtx {
   navigate: NavigateFn;
   pagesIndex: Map<string, FileMeta> | undefined;
+  /** A chat message has no document root — a bare path resolves in the base root. */
+  baseRootId: string | null;
+  rootIds: string[];
 }
 
 interface PageRefAttrs {
@@ -32,6 +37,9 @@ interface PageRefAttrs {
 export function UserTextMarkdown({ text }: Props) {
   const { data } = usePageLinks();
   const navigate = useNavigate();
+  const baseRootId = useBaseRootId();
+  const roots = useRoots();
+  const rootIds = useMemo(() => roots.map((r) => r.id), [roots]);
 
   const pagesIndex = useMemo<Map<string, FileMeta> | undefined>(() => {
     if (!data) return undefined;
@@ -50,7 +58,7 @@ export function UserTextMarkdown({ text }: Props) {
     return md.parse(text, {});
   }, [text, pagesIndex]);
 
-  return <>{renderBlocks(tokens, { navigate, pagesIndex })}</>;
+  return <>{renderBlocks(tokens, { navigate, pagesIndex, baseRootId, rootIds })}</>;
 }
 
 function renderBlocks(tokens: any[], ctx: RenderCtx): React.ReactNode[] {
@@ -200,17 +208,20 @@ function renderChip(attrs: PageRefAttrs, ctx: RenderCtx, key: string): React.Rea
   const resolved = resolvePath(attrs.path, ctx.pagesIndex);
   const meta = resolved ? ctx.pagesIndex?.get(resolved) : undefined;
   const state = resolved ? 'normal' : 'broken';
-  const onClick = resolved
-    ? (e: React.MouseEvent<HTMLSpanElement>) => {
-        e.preventDefault();
-        e.stopPropagation();
-        void ctx.navigate({
-          to: '/pages/$',
-          params: { _splat: resolved },
-          hash: attrs.anchor ? `anchor-${attrs.anchor}` : undefined,
-        });
-      }
-    : undefined;
+  const baseRootId = ctx.baseRootId;
+  const onClick =
+    resolved && baseRootId
+      ? (e: React.MouseEvent<HTMLSpanElement>) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const target = pageTarget(resolved, ctx.rootIds, baseRootId);
+          void ctx.navigate({
+            to: '/space/$rootId/$',
+            params: { rootId: target.rootId, _splat: target.path },
+            hash: attrs.anchor ? `anchor-${attrs.anchor}` : undefined,
+          });
+        }
+      : undefined;
   return (
     <PageRefChip
       key={key}

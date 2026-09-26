@@ -74,7 +74,7 @@ function DiagramChip({ slug, entity, onOpen }: EntityChipProps<Diagram>) {
  * and therefore no `renderRow` either.
  *
  * That is not a demotion, it is the shape being stated. Diagram never had a
- * sidebar tab or a `/diagrams/$slug` route — `bridge.openEntity('diagram', …)`
+ * sidebar tab or a `/diagrams/$slug` route — `editorBridge.openEntity('diagram', …)`
  * pointed at a route that does not exist, so the row and the detail panel were
  * unreachable surfaces satisfying a slot check. The chip opens the fullscreen
  * overlay instead of navigating.

@@ -79,6 +79,7 @@ export function migrateLegacyRawKey(
   oldKey: string,
   newKey: PersistedKey,
   parse: (raw: string) => unknown,
+  opts: { keepLegacy?: boolean } = {},
 ): void {
   if (typeof window === 'undefined') return;
   try {
@@ -89,7 +90,7 @@ export function migrateLegacyRawKey(
     if (data === undefined) return;
     const env: Envelope<unknown> = { v: 1, data };
     window.localStorage.setItem(newKey, JSON.stringify(env));
-    window.localStorage.removeItem(oldKey);
+    if (!opts.keepLegacy) window.localStorage.removeItem(oldKey);
   } catch {
     /* ignore */
   }

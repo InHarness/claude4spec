@@ -79,7 +79,7 @@ export function DtoDetail({
 
   async function handleDelete() {
     if (!dto) return;
-    const ok = await confirmDestructive({
+    const ok = await confirmDestructive('dto-delete', {
       title: 'Delete DTO?',
       body: `Delete DTO ${dto.title}? All references to this DTO will become broken.`,
       confirmLabel: 'Delete',

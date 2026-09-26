@@ -104,7 +104,7 @@ export function TaggedListView(props: NodeViewProps) {
                   entity={entity as any}
                   /*
                    * Through `openEntityHandler`, NOT straight to
-                   * `bridge.openEntity` — this is the fourth call site that
+                   * `editorBridge.openEntity` — this is the fourth call site that
                    * helper's docblock warns about, and it was the one that had
                    * it wrong.
                    *

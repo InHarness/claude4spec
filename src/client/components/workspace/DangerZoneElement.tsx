@@ -84,9 +84,8 @@ function DangerZoneElement() {
   }
 
   async function handleDetach(): Promise<void> {
-    await confirmDestructive({
-      kind: 'project-detach',
-      onConfirm: () => remove(false),
+    await confirmDestructive('project-detach', {
+      action: () => remove(false),
       title: 'Detach project',
       body:
         `Detach “${projectName}” from this workspace?\n\n` +
@@ -98,9 +97,8 @@ function DangerZoneElement() {
   }
 
   async function handlePurge(): Promise<void> {
-    await confirmDestructive({
-      kind: 'project-purge',
-      onConfirm: () => remove(true),
+    await confirmDestructive('project-purge', {
+      action: () => remove(true),
       title: 'Delete project & c4s data',
       body:
         `This permanently deletes “${projectName}”’s c4s data — the entity index, ` +

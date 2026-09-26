@@ -91,12 +91,12 @@ describe.skipIf(!BASE)('sidebar OTHERS flyout', () => {
     const z = await panel.evaluate((el) => getComputedStyle(el).zIndex);
     expect(z).toBe('1100');
 
-    // `Links` is the LAST menu item and the one genuinely buried in the action
-    // bar's band. `Briefs` is not a substitute: measured at 1440x900 its rect
-    // only clips the bar by ~7px at the bottom, so its CENTRE — the point
-    // Playwright clicks — stays clear of the bar and would pass even on the
-    // broken build.
-    const item = panel.getByRole('link', { name: 'Links' });
+    // The LAST menu item is the one genuinely buried in the action bar's band
+    // (the one above it only clips the bar by a few px, so its CENTRE — the
+    // point Playwright clicks — stays clear and would pass even on the broken
+    // build). Since 0.2.110 (M50) the order is … Tags → Links → Briefs, so the
+    // last item is `Briefs`.
+    const item = panel.getByRole('link', { name: 'Briefs' });
     const itemBox = await item.boundingBox();
     const barBox = await page.evaluate(() => {
       for (const el of document.querySelectorAll('div')) {
@@ -112,18 +112,18 @@ describe.skipIf(!BASE)('sidebar OTHERS flyout', () => {
     // Assert the test's own premise. If a layout change ever lifts the menu
     // clear of the bar, the click below stops proving anything — and a test
     // that silently goes vacuous is worse than one that fails.
-    expect(itemBox, 'Links item must be laid out').not.toBeNull();
+    expect(itemBox, 'Briefs item must be laid out').not.toBeNull();
     expect(barBox, 'the AC list page must render an ActionBar').not.toBeNull();
     const centre = itemBox!.y + itemBox!.height / 2;
     expect(
       centre,
-      "Links' centre must fall inside the ActionBar band, or this test is vacuous",
+      "Briefs' centre must fall inside the ActionBar band, or this test is vacuous",
     ).toBeGreaterThan(barBox!.y);
 
     // The real proof: on the broken build the bar paints over this point and
     // Playwright fails the click as intercepted.
     await item.click();
-    await expect.poll(() => new URL(page.url()).pathname).toContain('/links');
+    await expect.poll(() => new URL(page.url()).pathname).toContain('/briefs');
 
     expect(consoleErrors).toEqual([]);
     expect(badResponses).toEqual([]);

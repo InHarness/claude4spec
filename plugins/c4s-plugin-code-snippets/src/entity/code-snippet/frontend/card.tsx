@@ -1,10 +1,9 @@
 import React from 'react';
-import { createPortal } from 'react-dom';
 import { Check, Copy, Maximize2 } from 'lucide-react';
 import type { EntityCardProps } from '@c4s/plugin-runtime';
 import { DEFAULT_LANGUAGE } from '../../../identity.js';
 import { fetchCodeSnippet, useEntityChanged, type CodeSnippet } from './hooks.js';
-import { CodeSnippetFullscreen } from './fullscreen.js';
+import { openModal } from '../../../frontend-kit/host-events.js';
 import { CodeSnippetView } from './view.js';
 import { openEditPopover } from './popover.js';
 
@@ -25,7 +24,6 @@ export function CodeSnippetCard({ slug, entity, caption, onOpen }: EntityCardPro
   const [record, setRecord] = React.useState<CodeSnippet | null>(injected ?? null);
   const [loading, setLoading] = React.useState(!injected);
   const [copied, setCopied] = React.useState(false);
-  const [overlay, setOverlay] = React.useState(false);
 
   const reload = React.useCallback(() => {
     let live = true;
@@ -159,11 +157,12 @@ export function CodeSnippetCard({ slug, entity, caption, onOpen }: EntityCardPro
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            // Prefer the host's handler when it gave us one, so the overlay goes
-            // through `EntityOverlayHost` exactly as a chip click does. The local
-            // state is the fallback for a surface that passes no `onOpen`.
+            // Prefer the host's handler when it gave us one — a chip click takes
+            // the same path. Without one, open the `code-snippet-expand` window
+            // directly (0.2.110 M50): the host resolves it to this type's
+            // `renderOverlay`, so there is no second, locally portalled copy.
             if (onOpen) onOpen();
-            else setOverlay(true);
+            else void openModal('code-snippet-expand', { slug, entity: record, ...(caption ? { caption } : {}) });
           }}
           aria-label="Open fullscreen"
           className="shrink-0 rounded p-1"
@@ -184,23 +183,6 @@ export function CodeSnippetCard({ slug, entity, caption, onOpen }: EntityCardPro
         </figcaption>
       ) : null}
 
-      {/*
-        Portalled to `document.body`, NOT rendered in place. The `<figure>` owns
-        the alt-click and double-click edit gestures, and a `position: fixed`
-        child is still a DOM child: double-clicking to select a word in the
-        read-only overlay bubbled back out and opened the edit form underneath it.
-      */}
-      {overlay
-        ? createPortal(
-            <CodeSnippetFullscreen
-              slug={slug}
-              entity={record}
-              {...(caption ? { caption } : {})}
-              onClose={() => setOverlay(false)}
-            />,
-            document.body,
-          )
-        : null}
     </figure>
   );
 }

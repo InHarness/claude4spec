@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronsUpDown, Check, Plus } from 'lucide-react';
 import { PROJECT_ID } from '../lib/api-core.js';
-import { AddProjectDialog } from './AddProjectDialog.js';
+
 import { Skeleton } from '../ui/Skeleton.js';
-import { toast } from '../ui/events.js';
+import { openModal, toast } from '../ui/events.js';
 
 interface WorkspaceProject {
   id: string;
@@ -34,7 +34,6 @@ export function ProjectSwitcher({
   loading?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [showAddProject, setShowAddProject] = useState(false);
   const [workspace, setWorkspace] = useState<WorkspaceResponse | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -190,7 +189,7 @@ export function ProjectSwitcher({
             type="button"
             onClick={() => {
               setOpen(false);
-              setShowAddProject(true);
+              void openModal('project-create', {});
             }}
             className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12.5px]"
             style={{ color: 'var(--c-muted)' }}
@@ -201,7 +200,6 @@ export function ProjectSwitcher({
         </div>
       ) : null}
 
-      {showAddProject ? <AddProjectDialog onClose={() => setShowAddProject(false)} /> : null}
     </div>
   );
 }

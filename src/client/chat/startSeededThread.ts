@@ -1,5 +1,4 @@
 import { useChatStore } from '../state/chat.js';
-import { requestChatPrefill } from './chatPrefill.js';
 
 export interface StartSeededThreadOptions {
   /** When true, the seed prompt is auto-submitted to the agent immediately. */
@@ -27,8 +26,7 @@ export interface StartSeededThreadOptions {
  * `plan_path` and usually auto-sends.
  */
 export function startSeededThread(prompt: string, opts: StartSeededThreadOptions = {}): void {
-  const store = useChatStore.getState();
-  store.setChatThreadId(null);
-  store.setChatOpen(true);
-  requestChatPrefill({ prompt, autoSend: opts.autoSubmit ?? false });
+  // 0.2.110: the orchestration is the `chat` store's action; this stays the
+  // import point for callers outside React.
+  useChatStore.getState().startSeededThread(prompt, opts);
 }

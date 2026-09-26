@@ -31,4 +31,10 @@ export interface ExternalSkillSummary {
 
 export interface ExternalSkillsListResponse {
   skills: ExternalSkillSummary[];
+  /**
+   * 0.2.110 — the `--project <slug>` the generated skills are baked with
+   * (`project.name`), for the settings card's "Same from the terminal" hint.
+   * `null` when the project is not registered yet.
+   */
+  projectSlug: string | null;
 }

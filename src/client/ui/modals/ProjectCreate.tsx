@@ -1,11 +1,8 @@
 import { useState } from 'react';
 import { FolderPlus, Plus, X } from 'lucide-react';
-import { toast } from '../ui/events.js';
-import { DirectoryBrowser } from '../host-ui-kit/overlay/DirectoryPickerModal.js';
-
-interface Props {
-  onClose: () => void;
-}
+import { toast } from '../events.js';
+import { DirectoryBrowser } from '../../host-ui-kit/overlay/DirectoryPickerModal.js';
+import type { ModalFormProps } from '../ModalHost.js';
 
 /**
  * M31 + decision #11: register a project into the current workspace. A
@@ -14,8 +11,12 @@ interface Props {
  * path is also editable by hand. On success the app does a full reload into
  * `/p/<id>/` because PROJECT_ID / API_BASE / router basepath are module-load
  * constants. Both endpoints are workspace-scope (raw fetch, no project prefix).
+ *
+ * 0.2.110 M31: the `project-create` modal kind (`openModal('project-create', {})`),
+ * opened from the project switcher and the Welcome screen.
  */
-export function AddProjectDialog({ onClose }: Props) {
+export function ProjectCreate({ onClose: close }: ModalFormProps<'project-create'>) {
+  const onClose = () => close(null);
   const [cwd, setCwd] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);

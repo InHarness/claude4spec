@@ -6,7 +6,7 @@ import {
 import { useConfig } from '../../hooks/useConfig.js';
 import { useRemoteAccount } from '../../hooks/useRemoteAccount.js';
 import { usePushRelease } from '../../hooks/useReleasePushes.js';
-import { confirmDestructive, showGitErrorModal, toast } from '../../ui/events.js';
+import { openModal, showGitErrorModal, toast } from '../../ui/events.js';
 
 /**
  * M25 "Push to remote" — a release action rendered as an item in the release
@@ -36,11 +36,9 @@ function PushToRemoteMenuItem({ release, onClose }: ReleaseActionContext) {
     onClose?.();
     const firstPush = (config?.remoteProjectId ?? null) === null;
     if (firstPush) {
-      const ok = await confirmDestructive({
-        title: `Create remote project '${config?.name ?? ''}'`,
-        body: 'This is your first push. A new project will be created on the remote server with this name. Subsequent pushes will go to the same project.',
-        confirmLabel: 'Create and push',
-        danger: false,
+      const ok = await openModal('release-push', {
+        releaseId: release.id,
+        projectName: config?.name ?? '',
       });
       if (!ok) return;
     }

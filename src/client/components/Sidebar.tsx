@@ -32,8 +32,8 @@ import { useRoots } from '../hooks/useConfig.js';
 import { usePersistedState, projectKey } from '../state/persisted.js';
 import { UserSection } from './UserSection.js';
 import { GitStatusBadge } from './GitStatusBadge.js';
-import { IndexStatusBadge } from './IndexStatusBadge.js';
 import { clientPluginHost } from '../core/plugin-host/host.js';
+import { useRegistryVersion } from '../core/plugin-host/useRegistryVersion.js';
 import { Popover } from '../host-ui-kit/overlay-feedback/Popover.js';
 
 interface SidebarProps {
@@ -107,6 +107,11 @@ export function Sidebar({
   const baseRootId = roots.find((r) => r.builtin)?.id ?? null;
   const { data: searchHits = [], isFetching: searchFetching } = usePagesSearch(query, baseRootId);
   // Iterate active plugins in declared order; render only those with a sidebarTab.
+  // Subscribed to the registry: plugin frontends register after the first paint
+  // (non-blocking boot), and nothing else guarantees this component re-renders
+  // then — until 0.2.110 an incidental root re-render on every router change hid
+  // that the tabs never asked for one.
+  useRegistryVersion();
   const entityTabs = clientPluginHost
     .listEntities()
     .filter((m) => m.sidebarTab !== undefined)
@@ -145,8 +150,6 @@ export function Sidebar({
 
       <UserSection />
       <GitStatusBadge />
-      {/* 0.2.77 — the same conventional status slot as the git badge. */}
-      <IndexStatusBadge />
 
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         <SectionHeader
@@ -787,7 +790,7 @@ function PageRow({
   );
 }
 
-const OTHERS_PATHS = ['/plans', '/releases', '/todos', '/tags', '/briefs', '/links'];
+const OTHERS_PATHS = ['/plans', '/releases', '/todos', '/tags', '/links', '/briefs'];
 
 function OthersTrigger({
   todoCount,
@@ -818,7 +821,7 @@ function OthersTrigger({
             fontWeight: inOthers ? 600 : 500,
             border: `1px solid ${inOthers || open ? 'var(--c-hair-strong)' : 'transparent'}`,
           }}
-          title="Others (Plans, Releases, TODOs, Tags, Briefs, Links)"
+          title="Others (Plans, Releases, TODOs, Tags, Links, Briefs)"
         >
           <MoreHorizontal size={13} />
           <span className="flex-1 truncate">OTHERS</span>
@@ -856,7 +859,6 @@ function OthersTrigger({
           onNavigate={closeMenu}
         />
         <FlyoutLink to="/tags" icon={Tag} label="Tags" onNavigate={closeMenu} />
-        <FlyoutLink to="/briefs" icon={FileText} label="Briefs" onNavigate={closeMenu} />
         <FlyoutLink
           to="/links"
           icon={Link2}
@@ -865,6 +867,7 @@ function OthersTrigger({
           brokenCount={brokenLinkCount}
           onNavigate={closeMenu}
         />
+        <FlyoutLink to="/briefs" icon={FileText} label="Briefs" onNavigate={closeMenu} />
       </Popover>
     </>
   );

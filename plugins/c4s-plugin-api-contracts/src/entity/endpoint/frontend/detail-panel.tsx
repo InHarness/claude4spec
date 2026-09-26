@@ -93,7 +93,7 @@ export function EndpointDetail({
 
   async function handleDelete() {
     if (!endpoint) return;
-    const ok = await confirmDestructive({
+    const ok = await confirmDestructive('endpoint-delete', {
       title: 'Delete endpoint?',
       body: `Delete ${endpoint.title}? All references to this endpoint will become broken.`,
       confirmLabel: 'Delete',

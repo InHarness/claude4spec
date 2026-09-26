@@ -3,7 +3,7 @@ import { ChevronDown, ChevronRight, Workflow, Braces } from 'lucide-react';
 import type { UIContentBlock, ChatMessageType } from '@inharness-ai/agent-chat';
 import { BlockRenderer } from './BlockRenderer.js';
 import { ChatMarkdown } from './ChatMarkdown.js';
-import { ToolJsonModal } from './ToolJsonModal.js';
+import { openModal } from '../ui/events.js';
 import { parseToolResult } from './toolRenderers.js';
 
 interface Props {
@@ -47,7 +47,6 @@ export function SubagentPanel({ block, agentName, prompt, invocation, result, tu
   );
   const hasNested = (block.messages ?? []).some((m) => m.blocks.length > 0);
   const [promptOpen, setPromptOpen] = useState(false);
-  const [jsonOpen, setJsonOpen] = useState(false);
   // The real answer is the Task tool_result; `block.summary` is only the SDK's
   // task-notification blurb (kept as a fallback for older threads with no result).
   // The adapter JSON-wraps array tool_result content (`[{type:'text',text}]`);
@@ -129,7 +128,17 @@ export function SubagentPanel({ block, agentName, prompt, invocation, result, tu
           tabIndex={0}
           onClick={(e) => {
             e.stopPropagation();
-            setJsonOpen(true);
+            void openModal('tool-json-view', {
+              title: agentName ?? 'subagent',
+              items: [
+                {
+                  toolName: agentName ?? 'Agent',
+                  input: invocation ?? { description: taskDescription, prompt },
+                  result: result ? parseToolResult(result.content) : null,
+                  isError: result?.isError ?? false,
+                },
+              ],
+            });
           }}
           aria-label="Show raw JSON"
           title="Show raw JSON"
@@ -239,20 +248,6 @@ export function SubagentPanel({ block, agentName, prompt, invocation, result, tu
             </div>
           )}
         </div>
-      )}
-      {jsonOpen && (
-        <ToolJsonModal
-          title={agentName ?? 'subagent'}
-          items={[
-            {
-              toolName: agentName ?? 'Agent',
-              input: invocation ?? { description: taskDescription, prompt },
-              result: result ? parseToolResult(result.content) : null,
-              isError: result?.isError ?? false,
-            },
-          ]}
-          onClose={() => setJsonOpen(false)}
-        />
       )}
     </div>
   );

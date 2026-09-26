@@ -14,6 +14,7 @@ interface ExternalSkillSummary {
 
 interface ExternalSkillsListResponse {
   skills: ExternalSkillSummary[];
+  projectSlug: string | null;
 }
 
 /**
@@ -117,7 +118,7 @@ function SkillsBlock() {
     <div data-testid="external-integrations-skills">
       <BlockHeading
         title="Skills"
-        description="Skills for AI coding agents working in a separate code repo (spec-reader, brief-implementer, refactor). For the CLI equivalent, see `c4s install-skills`."
+        description="Skills for AI coding agents working in a separate code repo (spec-reader, brief-implementer, refactor)."
       />
       <div className="flex flex-col gap-2">
         {!data ? (
@@ -148,9 +149,18 @@ function SkillsBlock() {
             className="rounded-md px-3 py-1.5 text-[12px] font-medium disabled:opacity-50"
             style={{ background: 'var(--c-accent)', color: '#fff' }}
           >
-            {downloading ? 'Preparing ZIP…' : 'Download ZIP'}
+            {downloading
+              ? 'Preparing ZIP…'
+              : data && selected.size < data.skills.length
+                ? 'Download selected'
+                : 'Download ZIP'}
           </button>
         </div>
+        <p className="text-[11.5px] text-right" style={{ color: 'var(--c-subtle)' }} data-testid="skills-cli-hint">
+          Same from the terminal:{' '}
+          <code className="font-mono">c4s install-skills --project {data?.projectSlug ?? '<slug>'}</code>{' '}
+          (writes directly to <code className="font-mono">.claude/skills</code>).
+        </p>
       </div>
     </div>
   );

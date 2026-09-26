@@ -9,7 +9,7 @@ import type { CodeSnippet } from './hooks.js';
  * `onOpen` IS THE WHOLE STORY, and this component deliberately contains none of
  * it. The host builds the handler in `openEntity.ts`: for a hidden module (no
  * `routes`, no `detailPanel`) it dispatches the entity-overlay event, which
- * `EntityOverlayHost` turns into this type's `renderOverlay`. `bridge.openEntity`
+ * `ModalHost` (the `<type>-expand` window) turns into this type's `renderOverlay`. `editorBridge.openEntity`
  * is never involved, because there is no route to send it to.
  *
  * The broken state falls out of the same rule rather than being coded here: a

@@ -97,7 +97,7 @@ export interface FrontendModule extends EntityModuleManifest {
    *
    * 0.2.16 — required exactly when the type is hidden (no `routes`, no
    * `detailPanel`), and forbidden otherwise: a type WITH a detail route sends
-   * its clicks to `bridge.openEntity`, and an overlay slot beside that route
+   * its clicks to `editorBridge.openEntity`, and an overlay slot beside that route
    * would be a second, contradictory answer to "where does a click go".
    *
    * The overlay is the entity's own — the host owns the click mechanism
