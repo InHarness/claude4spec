@@ -2,11 +2,7 @@ import { useState } from 'react';
 import { FilePlus } from 'lucide-react';
 import { InlineError, PopoverShell, type PopoverFormProps } from '../Popover.js';
 import { useCreatePage } from '../../hooks/usePage.js';
-
-function titleOf(filePath: string): string {
-  const base = filePath.split('/').pop() ?? 'untitled';
-  return base.replace(/\.mdx?$/, '').replaceAll('-', ' ');
-}
+import { canCreatePage, deriveTitle } from '../../lib/newPage.js';
 
 /**
  * 0.2.110 M14 — the popover of a BROKEN `@path` chip, two branches:
@@ -18,13 +14,15 @@ function titleOf(filePath: string): string {
 export function PageRefBrokenForm({ request, onClose }: PopoverFormProps<'page-ref-broken'>) {
   const { rootId, candidatePath } = request.props;
   const createPage = useCreatePage();
+  // Same rule as the links list: only a `.md` path can be created as a page.
+  const creatable = !!candidatePath && canCreatePage(candidatePath);
   const [error, setError] = useState<string | null>(null);
 
   async function create() {
-    if (!candidatePath) return;
+    if (!creatable) return;
     setError(null);
     try {
-      await createPage.mutateAsync({ rootId, path: candidatePath, content: `# ${titleOf(candidatePath)}\n\n` });
+      await createPage.mutateAsync({ rootId, path: candidatePath, content: `# ${deriveTitle(candidatePath)}\n\n` });
       onClose({ action: 'created', path: candidatePath });
     } catch (err) {
       setError((err as Error).message);
@@ -46,7 +44,7 @@ export function PageRefBrokenForm({ request, onClose }: PopoverFormProps<'page-r
             <code className="font-mono" style={{ color: 'var(--c-ink)' }}>
               {candidatePath}
             </code>{' '}
-            does not exist.
+            {creatable ? 'does not exist.' : 'does not exist and is not a page (.md) path.'}
           </>
         ) : (
           'This path points outside the page root.'
@@ -65,7 +63,7 @@ export function PageRefBrokenForm({ request, onClose }: PopoverFormProps<'page-r
         <button
           type="button"
           autoFocus
-          disabled={!candidatePath || createPage.isPending}
+          disabled={!creatable || createPage.isPending}
           onClick={() => void create()}
           className="rounded-md px-3 py-1 text-[12px] font-medium disabled:opacity-50"
           style={{ background: 'var(--c-accent)', color: '#fff' }}

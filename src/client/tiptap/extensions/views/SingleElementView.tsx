@@ -7,7 +7,7 @@ import { useEditorBridge } from '../../EditorContext.js';
 import { useEditChipOnAltClick } from './useEditChipOnAltClick.js';
 import { BlockBrokenChip } from './BrokenChip.js';
 import { useCallback, useEffect, useState } from 'react';
-import { useReportBrokenRef } from '../../../state/brokenRefs.js';
+import { isMissingEntity, useReportBrokenRef } from '../../../state/brokenRefs.js';
 
 export function SingleElementView(props: NodeViewProps) {
   const { node } = props;
@@ -69,8 +69,9 @@ function CardResolver({
   onMissing: (missing: boolean) => void;
 }) {
   const def = getEntityDef(type)!;
-  const { data, isLoading } = def.useGetBySlug(slug);
-  const missing = !isLoading && data == null;
+  const result = def.useGetBySlug(slug);
+  const { data, isLoading } = result;
+  const missing = isMissingEntity(result);
   useEffect(() => {
     onMissing(missing);
   }, [missing, onMissing]);

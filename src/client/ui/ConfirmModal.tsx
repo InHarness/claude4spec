@@ -14,7 +14,12 @@ type IncomingConfirm = Omit<ConfirmRequest, 'onConfirm' | 'onCancel' | 'kind' | 
     resolve?: (confirmed: boolean) => void;
   };
 
-function settle(r: IncomingConfirm, confirmed: boolean): void {
+const settledConfirms = new WeakSet<IncomingConfirm>();
+
+/** Answer a confirm exactly once (a React updater may run twice). */
+function settleOnce(r: IncomingConfirm, confirmed: boolean): void {
+  if (settledConfirms.has(r)) return;
+  settledConfirms.add(r);
   if (confirmed) r.onConfirm?.();
   else r.onCancel?.();
   r.resolve?.(confirmed);
@@ -42,7 +47,12 @@ export function ConfirmLayer() {
     const handler = (e: Event) => {
       const ce = e as CustomEvent<IncomingConfirm>;
       setTyped('');
-      setRequest(ce.detail);
+      // A newer confirm replaces the open one, which answers "cancel" rather
+      // than leaving its caller's promise pending forever.
+      setRequest((prev) => {
+        if (prev && prev !== ce.detail) settleOnce(prev, false);
+        return ce.detail;
+      });
     };
     window.addEventListener(UI_EVENTS.CONFIRM, handler as EventListener);
     return () => window.removeEventListener(UI_EVENTS.CONFIRM, handler as EventListener);
@@ -52,14 +62,14 @@ export function ConfirmLayer() {
     if (!request) return;
     const r = request;
     setRequest(null);
-    settle(r, false);
+    settleOnce(r, false);
   }
 
   function confirm() {
     if (!request || !matches) return;
     const r = request;
     setRequest(null);
-    settle(r, true);
+    settleOnce(r, true);
   }
 
   if (!request) return null;

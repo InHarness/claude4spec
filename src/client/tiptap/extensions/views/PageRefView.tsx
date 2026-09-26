@@ -54,10 +54,12 @@ export function PageRefView(props: NodeViewProps) {
   // M50: the chip navigates to `/space/<targetRootId>/…`. The server resolves a
   // mention inside its source's own root, so the target root is the root of the
   // document the chip lives in; outside a page (a plan) that is the base root.
-  const sourceRootId = (props.editor.storage as Record<string, unknown>).pageRefRootId as
-    | string
-    | undefined;
+  // Read at click time: the page editor fills `pageRefRootId` from an effect,
+  // which may run after this chip's first render.
   const baseRootId = useBaseRootId();
+  const chipRootId = (): string | null =>
+    ((props.editor.storage as Record<string, unknown>).pageRefRootId as string | undefined) ??
+    baseRootId;
   const roots = useRoots();
   const rootIds = useMemo(() => roots.map((r) => r.id), [roots]);
   const resolvedPath = normalizePath(path, byPath, sourcePath);
@@ -95,7 +97,7 @@ export function PageRefView(props: NodeViewProps) {
     }
     if (chipState === 'broken') {
       // No navigation target — "Create file?" / "Fix path".
-      const rootId = sourceRootId ?? baseRootId;
+      const rootId = chipRootId();
       if (!rootId) return;
       void openPopover('page-ref-broken', {
         ...at,
@@ -107,7 +109,7 @@ export function PageRefView(props: NodeViewProps) {
       return;
     }
     if (!resolvedPath) return;
-    const fallbackRootId = sourceRootId ?? baseRootId;
+    const fallbackRootId = chipRootId();
     if (!fallbackRootId) return;
     const target = pageTarget(resolvedPath, rootIds, fallbackRootId);
     void navigate({

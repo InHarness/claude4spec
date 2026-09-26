@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { getEntityDef } from './registry.js';
+import { isMissingEntity } from '../state/brokenRefs.js';
 
 /**
  * Self-fetching chip resolver — the single place the host resolves an entity
@@ -31,8 +32,9 @@ export function ChipResolver({
   onMissing?: (missing: boolean) => void;
 }) {
   const def = getEntityDef(type)!;
-  const { data, isLoading } = def.useGetBySlug(slug);
-  const missing = !isLoading && data == null;
+  const result = def.useGetBySlug(slug);
+  const { data, isLoading } = result;
+  const missing = isMissingEntity(result);
   useEffect(() => {
     onMissing?.(missing);
   }, [missing, onMissing]);

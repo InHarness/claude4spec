@@ -29,6 +29,19 @@ export const useBrokenRefsStore = create<BrokenRefsState>((set) => ({
     }),
 }));
 
+/**
+ * Whether a `useGetBySlug` result says the entity does not exist: the hook
+ * answered `null`, or the fetch failed with a 404. Any other failure (a 500, a
+ * dropped connection) is NOT a missing entity — counting it would let "Remove
+ * all broken references" delete valid references on a transient API error.
+ */
+export function isMissingEntity(result: { data: unknown; isLoading: boolean; error?: unknown }): boolean {
+  if (result.isLoading) return false;
+  if (result.data === null) return true;
+  const status = (result.error as { status?: unknown } | null | undefined)?.status;
+  return result.data === undefined && status === 404;
+}
+
 const keys = new WeakMap<object, string>();
 let next = 0;
 

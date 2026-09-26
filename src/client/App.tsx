@@ -23,6 +23,7 @@ import { usePersistedWidth, useTheme } from './state/tweaks.js';
 import { useChatStore } from './state/chat.js';
 import { useBaseRootId, useConfig } from './hooks/useConfig.js';
 import { countFiles } from '../shared/page-files.js';
+import { deriveTitle } from './lib/newPage.js';
 
 export function RootLayout() {
   const navigate = useNavigate();
@@ -46,6 +47,39 @@ export function RootLayout() {
     document.title = config?.name ? `${config.name} | claude4spec` : 'claude4spec';
   }, [config?.name]);
 
+  // The window hosts sit beside whichever shell renders, at a fixed position
+  // in the tree: switching shells (onboarding → main, a config refetch error)
+  // must not unmount them, or an open window vanishes with its promise unsettled.
+  return (
+    <>
+      <ShellBody
+        isFullscreen={isFullscreen}
+        isError={isError}
+        error={error}
+        onRetry={() => void refetch()}
+        redirectPending={!!redirectTo}
+        projectName={config?.name ?? null}
+      />
+      <WindowHosts />
+    </>
+  );
+}
+
+function ShellBody({
+  isFullscreen,
+  isError,
+  error,
+  onRetry,
+  redirectPending,
+  projectName,
+}: {
+  isFullscreen: boolean;
+  isError: boolean;
+  error: unknown;
+  onRetry: () => void;
+  redirectPending: boolean;
+  projectName: string | null;
+}) {
   // Minimalny shell dla onboardingu i welcome (bez sidebara, chatu, watchera).
   // MainShell nie mountuje sie, wiec useFileWatcher / pages-tree query nie
   // ruszaja — istotne dla `/welcome`, ktore dziala bez aktywnego projektu.
@@ -56,7 +90,6 @@ export function RootLayout() {
         style={{ background: 'var(--c-bg)', color: 'var(--c-ink)' }}
       >
         <Outlet />
-        <WindowHosts />
       </div>
     );
   }
@@ -65,25 +98,13 @@ export function RootLayout() {
   // config.json slug) is now soft-failed server-side, but any other build
   // failure still surfaces as PROJECT_BUILD_FAILED — show it instead of
   // silently falling through to MainShell with `config` undefined.
-  if (isError) {
-    return (
-      <>
-        <ProjectLoadError error={error} onRetry={() => void refetch()} />
-        <WindowHosts />
-      </>
-    );
-  }
+  if (isError) return <ProjectLoadError error={error} onRetry={onRetry} />;
 
   // A pending full-screen redirect renders nothing: the navigation above lands
   // on the next commit, and the regular shell must not paint in between.
-  if (redirectTo) return null;
+  if (redirectPending) return null;
 
-  return (
-    <>
-      <MainShell projectName={config?.name ?? null} />
-      <WindowHosts />
-    </>
-  );
+  return <MainShell projectName={projectName} />;
 }
 
 /**
@@ -247,11 +268,6 @@ function MainShell({ projectName }: { projectName: string | null }) {
   );
 }
 
-
-function deriveTitle(filePath: string): string {
-  const base = filePath.split('/').pop() ?? 'untitled';
-  return base.replace(/\.md$/, '').replaceAll('-', ' ');
-}
 
 function useCwdLabel(): { cwd: string; loading: boolean } {
   const [cwd, setCwd] = useState('workspace');

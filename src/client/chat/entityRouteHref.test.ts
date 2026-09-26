@@ -5,11 +5,15 @@ const PREFIXES = ['/endpoints', '/acs'];
 
 describe('entityRouteHref', () => {
   it('recognises a project-relative entity route', () => {
-    expect(entityRouteHref('/endpoints/get-users', PREFIXES, 'http://h')).toBe('/endpoints/get-users');
+    expect(entityRouteHref('/endpoints/get-users', PREFIXES, 'http://h')).toEqual({ to: '/endpoints/get-users' });
   });
 
   it('keeps query and hash, accepts a same-origin absolute URL', () => {
-    expect(entityRouteHref('http://h/acs?tag=m05#x', PREFIXES, 'http://h')).toBe('/acs?tag=m05#x');
+    expect(entityRouteHref('http://h/acs?tag=m05#x', PREFIXES, 'http://h')).toEqual({
+      to: '/acs',
+      search: { tag: 'm05' },
+      hash: 'x',
+    });
   });
 
   it('ignores other paths, prefix look-alikes and foreign origins', () => {

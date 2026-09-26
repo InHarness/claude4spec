@@ -85,7 +85,13 @@ function ChipOrLink({
     const route = entityRouteHref(href, prefixes);
     if (route) {
       return (
-        <Link to={route as never} className={rest.className} title={rest.title}>
+        <Link
+          to={route.to as never}
+          search={route.search as never}
+          hash={route.hash}
+          className={rest.className}
+          title={rest.title}
+        >
           {children}
         </Link>
       );
