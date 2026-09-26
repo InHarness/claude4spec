@@ -44,6 +44,20 @@ describe('PATCH /config — name accepts full Unicode, rejects control chars (0.
     return express().use(express.json()).use(router);
   };
 
+  it('0.2.112: GET /config reports agent.claudeUsePreset false when the field is absent', async () => {
+    const res = await request(app()).get('/config');
+    expect(res.status).toBe(200);
+    expect(res.body.agent.claudeUsePreset).toBe(false);
+  });
+
+  it('0.2.112: onboarding [Continue] PATCH { agent: { conversationalLanguage } } keeps an explicit true', async () => {
+    await request(app()).patch('/config').send({ agent: { claudeUsePreset: true } });
+    const res = await request(app()).patch('/config').send({ agent: { conversationalLanguage: 'Polski' } });
+    expect(res.status).toBe(200);
+    expect(res.body.agent.claudeUsePreset).toBe(true);
+    expect(res.body.agent.conversationalLanguage).toBe('Polski');
+  });
+
   it('accepts a Unicode name (diacritics, CJK, emoji) and persists it', async () => {
     const name = 'Zażółć 项目 🚀';
     const res = await request(app()).patch('/config').send({ name });

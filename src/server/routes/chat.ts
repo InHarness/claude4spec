@@ -144,7 +144,7 @@ export function chatRouter(deps: AgentTurnDeps): Router {
         typeof req.body?.currentPageRootId === 'string' ? req.body.currentPageRootId : null;
       const annotations = Array.isArray(req.body?.annotations) ? (req.body.annotations as Annotation[]) : [];
       // M05 / M01 `c0nf1g4a`: `claude_usePreset` jest server-driven (per-query read
-      // `.claude4spec/config.json` → `agent.claudeUsePreset`, brak pola = `true`).
+      // `.claude4spec/config.json` → `agent.claudeUsePreset`, brak pola = `false` od 0.2.112).
       // Pozostale pola `architectureConfig` (np. `claude_thinking`, `claude_effort`)
       // dalej przychodza z UI request body — merge, serwer wygrywa na `claude_usePreset`.
       const clientArchitectureConfig =
