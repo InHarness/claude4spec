@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { metaApi, type PluginPackageRecord } from '../../../lib/api.js';
-import { SettingsCard } from '../SettingsCard.js';
+import { metaApi, type PluginPackageRecord } from '../../lib/api.js';
 
 /**
  * M26 §6 — Entities section, axis B (pool composition). READ-ONLY in v1: the
@@ -13,15 +12,11 @@ import { SettingsCard } from '../SettingsCard.js';
  * project-local plugin becomes available after a ProjectContext rebuild behind
  * the `trustProjectPlugins` gate. Neither is editable here.
  */
-export function PluginPoolSection() {
+export function PluginPoolElement() {
   const { data, isLoading } = useQuery({ queryKey: ['plugins-meta'], queryFn: () => metaApi.plugins() });
 
   return (
-    <SettingsCard
-      id="plugin-pool"
-      title="Plugin pool"
-      description="What entity types and plugins are available to this project (base ∪ overlay). Read-only — composition isn't edited from the UI in this version."
-    >
+    <>
       {isLoading || !data ? (
         <p className="text-[12px]" style={{ color: 'var(--c-subtle)' }}>
           Loading plugin diagnostics…
@@ -62,7 +57,7 @@ export function PluginPoolSection() {
           </p>
         </div>
       )}
-    </SettingsCard>
+    </>
   );
 }
 

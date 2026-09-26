@@ -441,8 +441,8 @@ export class SkillResolver {
    * `load_skill_file`, so loading it here would be a per-turn disk read nobody
    * consumes.
    */
-  resolveWritingStyle(): SkillMetadata | null {
-    const slug = readConfig(this.cwd).writingStyle;
+  resolveWritingStyle(slugOverride?: string | null): SkillMetadata | null {
+    const slug = slugOverride !== undefined ? slugOverride : readConfig(this.cwd).writingStyle;
     if (slug === null) return null;
     if (!this.registry.has(slug)) {
       console.warn(`[skill] config.writingStyle="${slug}" not in registry, skipping`);
@@ -488,8 +488,8 @@ export class SkillResolver {
    * The filter here narrows DISCOVERY, not ACCESS: a skill this turn does not list
    * stays openable by slug through `load_skill_file`, which reads the whole registry.
    */
-  resolveForContext(contextType: ChatContextType): ContextSkills {
-    return this.resolveListing(contextType);
+  resolveForContext(contextType: ChatContextType, opts: { writingStyle?: string | null } = {}): ContextSkills {
+    return this.resolveListing(contextType, opts.writingStyle);
   }
 
   /**
@@ -505,8 +505,13 @@ export class SkillResolver {
     return this.resolveListing(undefined);
   }
 
-  private resolveListing(contextType: ChatContextType | undefined): ContextSkills {
-    const style = this.resolveWritingStyle();
+  /**
+   * 0.2.113: `writingStyle` pins the style a THREAD settled on its first turn — a
+   * resumed thread keeps its `<project_writing_skill/>` block whatever the config
+   * says now. `undefined` = the current config (a new thread, or `list_skills`).
+   */
+  private resolveListing(contextType: ChatContextType | undefined, writingStyle?: string | null): ContextSkills {
+    const style = this.resolveWritingStyle(writingStyle);
     const listing: SkillListingEntry[] = [];
     // The style is excluded from the fan-out. It has its own block; a duplicate
     // listing row would advertise the one skill that is not optional as though it

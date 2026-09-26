@@ -4,6 +4,7 @@ import {
   resolveAgentExecutionScope,
 } from '../services/agent-execution-scope.js';
 import { readConfig } from '../config.js';
+import { findLockedConfigViolations, parseSessionConfigSnapshot } from '../services/session-config.js';
 import type { Root } from '../../shared/types.js';
 import type { ActiveAdapter } from './agent-turn.js';
 
@@ -70,8 +71,27 @@ export interface ResumeLockInput {
  */
 export function checkResumeConfigLock(input: ResumeLockInput): ResumeConfigLockError | null {
   if (input.lastSessionId == null || !input.snapshotJson) return null;
-  const scope = resolveAgentExecutionScope({ cwd: input.cwd, roots: input.roots });
   const snapshot = JSON.parse(input.snapshotJson) as Record<string, unknown>;
+  const session = parseSessionConfigSnapshot(input.snapshotJson);
+  const cfg = readConfig(input.cwd);
+
+  /**
+   * 0.2.113: a snapshot that records `lockedConfig` is compared on the DECLARED
+   * fields (see `session-config.ts`), and the resumed turn runs on the snapshot's own
+   * resolved scope — so the library is handed that same scope and cannot see a
+   * difference. The resolved-list comparison below survives only for snapshots
+   * written before 0.2.113, which carry no declarations to compare.
+   */
+  if (session?.lockedConfig) {
+    const violations = findResumeViolations('claude-code', snapshot, {
+      model: input.model,
+      architectureConfig: input.architectureConfig,
+    });
+    violations.push(...findLockedConfigViolations(session.lockedConfig, cfg));
+    return violations.length === 0 ? null : lockedError(violations);
+  }
+
+  const scope = resolveAgentExecutionScope({ cwd: input.cwd, roots: input.roots });
   const violations = findResumeViolations('claude-code', snapshot, {
     model: input.model,
     architectureConfig: input.architectureConfig,
@@ -93,20 +113,14 @@ export function checkResumeConfigLock(input: ResumeLockInput): ResumeConfigLockE
    *
    * A snapshot written before this field existed has no value for it, and
    * nothing is locked in that case — the same "absent ⇒ not comparable" rule the
-   * library applies to every other constraint.
-   *
-   * That rule is NOT free here, and the cost is worth naming because it looks
-   * like an oversight: absence is arguably a known value (every pre-0.2.53
-   * thread ran WITH the built-ins), so treating it as `false` would be defensible
-   * and would 409 exactly the threads this release changes under. It is rejected
-   * on the trade-off, not on the logic — reading absence as `false` makes EVERY
-   * conversation that predates the upgrade unresumable in one step, whereas the
-   * shrink it avoids is fail-closed (tools vanish, none appear) and is announced
-   * to the model on every resumed turn by `<agent_filesystem_access>`. A
-   * capability the model is told it lost beats a fleet-wide 409.
+   * library applies to every other constraint. (Absence arguably means `false` —
+   * every pre-0.2.53 thread ran WITH the built-ins — but reading it that way would
+   * make every conversation predating the upgrade unresumable in one step, whereas
+   * the shrink it avoids is fail-closed and announced to the model on every resumed
+   * turn by `<agent_filesystem_access>`.)
    */
   const snapshotFlag = snapshot.disableDirectFilesystemAccess;
-  const currentFlag = readConfig(input.cwd).agent.disableDirectFilesystemAccess;
+  const currentFlag = cfg.agent.disableDirectFilesystemAccess;
   if (typeof snapshotFlag === 'boolean' && snapshotFlag !== currentFlag) {
     violations.push({
       path: 'agent.disableDirectFilesystemAccess',
@@ -115,7 +129,10 @@ export function checkResumeConfigLock(input: ResumeLockInput): ResumeConfigLockE
     });
   }
 
-  if (violations.length === 0) return null;
+  return violations.length === 0 ? null : lockedError(violations);
+}
+
+function lockedError(violations: { path: string; reason: string }[]): ResumeConfigLockError {
   return {
     error: {
       code: 'RESUME_CONFIG_LOCKED',

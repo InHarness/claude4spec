@@ -50,7 +50,13 @@ import { readConfig } from '../config.js';
 import {
   normalizeResumePathScope,
   resolveAgentExecutionScope,
+  withSessionScope,
 } from '../services/agent-execution-scope.js';
+import {
+  captureLockedConfig,
+  captureThreadPromptConfig,
+  parseSessionConfigSnapshot,
+} from '../services/session-config.js';
 import {
   resolveAgentToolGroups,
   unenforceableToolGroups,
@@ -1017,13 +1023,25 @@ export async function runAgentTurn(
      * entry is binding from a `scope` marker. No skill CONTENT is loaded on this
      * path at all; the model fetches it through `skill-tools` if it wants it.
      */
-    const { listing: availableSkills, writingStyle: writingStyleSkill } =
-      deps.skillResolver.resolveForContext(thread.contextType);
-
-    // 0.1.51: language directives travel the same path as writingStyle — read from
-    // config per-turn here, NOT via architectureConfig. Effective only from the first
-    // turn of a new thread (the prompt is persisted once by setInitialSystemPrompt).
+    // 0.1.51: language directives travel the same path as writingStyle — NOT via
+    // architectureConfig.
     const cfg = readConfig(deps.cwd);
+    /**
+     * 0.2.113: the session's config snapshot, on a RESUMED turn only. The `new-thread`
+     * prompt inputs (name, languages, writing style) and the path scope are settled on
+     * the turn that opened the session, and a resumed turn reuses them rather than
+     * re-reading config: a changed writing style reaches the first turn of a NEW
+     * thread, never the next turn of a running one. Before 0.2.113 this leaned on the
+     * CLI ignoring a system prompt on resume; now nothing is left for it to ignore.
+     * A snapshot from before 0.2.113 has no such half and the turn reads config.
+     */
+    const session = thread.lastSessionId
+      ? parseSessionConfigSnapshot(deps.chatService.getInitialArchitectureConfig(thread.id))
+      : null;
+    const promptConfig = session?.promptConfig ?? captureThreadPromptConfig(cfg);
+    const { listing: availableSkills, writingStyle: writingStyleSkill } =
+      deps.skillResolver.resolveForContext(thread.contextType, { writingStyle: promptConfig.writingStyle });
+
     // 0.1.90 (M05): agent FS path scope, read per-turn (hot-reload, same as
     // conversationalLanguage). The resolver folds in the implicit base (each root
     // dir-if-outside-cwd) and normalizes everything to absolute, so the agent never
@@ -1036,7 +1054,15 @@ export async function runAgentTurn(
     // 0.2.8 (A19): composed by the shared builder, so the AC-analysis turn gets the
     // identical deny-set from the identical code (it re-reads config itself — the extra
     // disk read is the price of a single source of truth).
-    const resolvedPathScope = resolveAgentExecutionScope({ cwd: deps.cwd, roots: deps.roots });
+    //
+    // 0.2.113: computed ONCE per session. A resumed turn runs on the scope its session
+    // opened with (`withSessionScope`), so neither a config edit nor a change of
+    // `roots[]` moves it mid-session — a change of a locked field is refused on resume
+    // instead (`checkResumeConfigLock`), and a change of `roots[]` waits for a new thread.
+    const resolvedPathScope = withSessionScope(
+      resolveAgentExecutionScope({ cwd: deps.cwd, roots: deps.roots }),
+      session,
+    );
     /**
      * 0.2.53: the OTHER axis of the turn's posture, from the same kind of shared
      * builder and for the same reason — the AC-analysis turn composes it with the
@@ -1116,7 +1142,7 @@ export async function runAgentTurn(
 
     const systemPrompt = buildSystemPrompt({
       host: deps.pluginHost,
-      projectName: cfg.name,
+      projectName: promptConfig.name,
       cwd: deps.cwd,
       roots: deps.roots,
       // 0.2.50: `briefsDir`/`patchesDir` no longer travel here. They were rendered into
@@ -1148,8 +1174,8 @@ export async function runAgentTurn(
       // M05 m05ctxreg dim 6 (0.2.19): domain rules of this interaction type, owned by
       // the genre's module and rendered verbatim as <interaction_context type="…">.
       interactionRules: ctx.interactionRules,
-      specLanguage: cfg.language ?? undefined,
-      conversationalLanguage: cfg.agent?.conversationalLanguage ?? undefined,
+      specLanguage: promptConfig.language ?? undefined,
+      conversationalLanguage: promptConfig.conversationalLanguage ?? undefined,
       // 0.1.90 soft layer: config-level lists drive the <agent_path_scope> block's
       // ALLOWED/DISALLOWED lines (rendered from the raw config lists). 0.1.130: the block
       // is always emitted because `artifactDenyDirs` is always non-empty — it carries the
@@ -1223,7 +1249,16 @@ export async function runAgentTurn(
          * same groups. The flag is the thing that is locked for a thread's
          * lifetime; plan mode is a per-turn switch and must stay one.
          */
-        disableDirectFilesystemAccess: readConfig(deps.cwd).agent.disableDirectFilesystemAccess,
+        disableDirectFilesystemAccess: cfg.agent.disableDirectFilesystemAccess,
+        /**
+         * 0.2.113: the config half of the snapshot — the DECLARED values of every
+         * resume-locked field (what a resume is compared on), the `new-thread` prompt
+         * inputs a resumed turn reuses, and the page-root write block, so the whole
+         * resolved scope can be replayed verbatim (see `session-config.ts`).
+         */
+        lockedConfig: captureLockedConfig(cfg),
+        promptConfig,
+        pageRootDirs: resolvedPathScope.pageRootDirs,
       });
     };
 

@@ -169,7 +169,7 @@ export type GitCommitTargetMode = 'current' | 'named' | 'new';
  * 0.1.125: substitute `{release_slug}`/`{release_name}`/`{date}` into a
  * `commitTarget.template`. Pure, isomorphic — shared between the server
  * (`git.ts`'s real `'new'`-mode branch naming, and the PATCH /api/config
- * route's preview-render check) and the client (`GitSection.tsx`'s live
+ * route's preview-render check) and the client (`components/git/gitSettings.tsx`'s live
  * template preview), so the two never drift out of sync. Only dependency is
  * `slugify`, also shared.
  *

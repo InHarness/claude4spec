@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from '@tanstack/react-router';
+import { Link } from '@tanstack/react-router';
 import { ExternalLink, Loader2 } from 'lucide-react';
 import { ApiError, remoteAccountApi } from '../lib/api.js';
 import { toast } from '../ui/events.js';
@@ -24,7 +24,6 @@ interface Flow {
 export function UserSection() {
   const { data } = useRemoteAccount();
   const qc = useQueryClient();
-  const navigate = useNavigate();
   const [flow, setFlow] = useState<Flow | null>(null);
   const [starting, setStarting] = useState(false);
 
@@ -42,7 +41,9 @@ export function UserSection() {
     const finish = (msg: string, kind: 'success' | 'error', account?: DeviceLoginPollResponse['account']) => {
       if (kind === 'success') {
         if (account) qc.setQueryData(['remote-account'], account);
-        else void qc.invalidateQueries({ queryKey: ['remote-account'] });
+        // 0.2.113: the broad prefix — the Settings User card reads the same query
+        // and flips to its connected state on this refetch.
+        void qc.invalidateQueries({ queryKey: ['remote-account'] });
         toast.success(msg);
       } else {
         toast.error(msg);
@@ -92,7 +93,18 @@ export function UserSection() {
     };
   }, [flow, qc]);
 
+  /**
+   * 0.2.113: the Settings User card's [Log in] starts THIS flow — the code, the
+   * polling and the cancel live here, in the slot, and nowhere else.
+   */
+  useEffect(() => {
+    const start = () => void handleLogin();
+    window.addEventListener(REMOTE_LOGIN_START_EVENT, start);
+    return () => window.removeEventListener(REMOTE_LOGIN_START_EVENT, start);
+  });
+
   async function handleLogin() {
+    if (flow || starting) return;
     setStarting(true);
     try {
       const r = await remoteAccountApi.startLogin();
@@ -163,10 +175,11 @@ export function UserSection() {
     const deactivated = data.accountStatus === 'deactivated';
     return (
       <div className={shell} style={shellStyle}>
-        <button
-          onClick={() => navigate({ to: '/settings', hash: 'user-section' })}
+        <Link
+          to="/settings"
+          hash="user-section"
           className="w-full flex items-center gap-2 text-left"
-          title={deactivated ? 'Account deactivated — publishing blocked' : email}
+          title={deactivated ? DEACTIVATED_TOOLTIP : email}
         >
           <span
             className="relative inline-flex shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
@@ -196,7 +209,7 @@ export function UserSection() {
               </span>
             )}
           </span>
-        </button>
+        </Link>
       </div>
     );
   }
@@ -216,8 +229,14 @@ export function UserSection() {
   );
 }
 
+/** 0.2.113: the Settings User card dispatches this to start the slot's device flow. */
+export const REMOTE_LOGIN_START_EVENT = 'c4s:remote-login-start';
+
+/** Shared with the Settings User card's amber badge. */
+export const DEACTIVATED_TOOLTIP = 'Account deactivated — publishing blocked';
+
 /** 1–2 chars before `@`, uppercase; `?` fallback. */
-function initialsFor(email: string): string {
+export function initialsFor(email: string): string {
   const local = email.split('@')[0] ?? '';
   const cleaned = local.replace(/[^a-zA-Z0-9]/g, '');
   if (!cleaned) return '?';

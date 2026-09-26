@@ -155,7 +155,7 @@ describe('mountFrontend collects the hoisted entity routes', () => {
    * deactivated `ac` has no `/acs` route at all — where before the hoist the route
    * was unconditional and only the sidebar tab came and went.
    *
-   * That is why `EntitiesSection` re-runs `mountFrontend` after `applyActivation`:
+   * That is why the Entities settings card (`core/plugin-host/pluginSettings.ts`) re-runs `mountFrontend` after `applyActivation`:
    * without it a re-enabled type gets its tab back (the sidebar re-renders) while
    * this tree still reflects the activation of the last mount, and the tab lands
    * on the not-found screen until a reload.

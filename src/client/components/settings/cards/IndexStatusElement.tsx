@@ -1,6 +1,5 @@
 import { ActionButton } from '../../../host-ui-kit/index.js';
 import { useIndexStatus, useRebuildIndex } from '../../../hooks/useIndexStatus.js';
-import { SettingsCard } from '../SettingsCard.js';
 import type { ProjectionStatusRow } from '../../../../shared/projection-status.js';
 
 /**
@@ -17,17 +16,13 @@ import type { ProjectionStatusRow } from '../../../../shared/projection-status.j
  * Read-only apart from the one button. It edits neither the composition of a
  * projection nor `config.json`.
  */
-export function IndexStatusSection() {
+export function IndexStatusElement() {
   const { data, isLoading } = useIndexStatus();
   const rebuild = useRebuildIndex();
   const rows = data?.projections ?? [];
 
   return (
-    <SettingsCard
-      id="index-status"
-      title="Index status"
-      description="The state of every projection in this project — fresh, stale or not built — with the time it was last recomputed."
-    >
+    <>
       <div className="flex flex-col gap-1.5">
         {isLoading && rows.length === 0 ? (
           <div className="text-[12.5px]" style={{ color: 'var(--c-ink-soft)' }}>
@@ -54,7 +49,7 @@ export function IndexStatusSection() {
           Rebuilding is safe at any time — it can be run on a projection that is already fresh.
         </span>
       </div>
-    </SettingsCard>
+    </>
   );
 }
 

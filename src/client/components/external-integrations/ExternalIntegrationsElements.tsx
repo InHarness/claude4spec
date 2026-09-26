@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiFetch } from '../../../lib/api-core.js';
-import { toast } from '../../../ui/events.js';
-import { SettingsCard } from '../SettingsCard.js';
-import { SettingsCheckboxRow } from '../SettingsCheckboxRow.js';
-import type { McpConfigResponse } from '../../../../shared/mcp-config.js';
+import { apiFetch } from '../../lib/api-core.js';
+import { toast } from '../../ui/events.js';
+import { SettingsCheckboxRow } from '../settings/SettingsCheckboxRow.js';
+import type { McpConfigResponse } from '../../../shared/mcp-config.js';
+import type { SettingsContribution } from '../settings/registry.js';
 
 interface ExternalSkillSummary {
   slug: string;
@@ -18,29 +18,42 @@ interface ExternalSkillsListResponse {
 }
 
 /**
- * M26 §7 — "External Integrations" (0.2.93; was "External Skills", anchor
- * `#external-skills`). One card shell, two read-only export blocks:
- *
- *   - skills (M22) — unchanged since 0.1.104;
- *   - MCP connection config (M12) — rendered by the server per request.
- *
- * The shell owns the invariant: no Save button, and nothing in either block
- * mutates config.json. Sharing the card does not share ownership.
+ * 0.2.113 — the External Integrations card, declared by the two modules that
+ * export something to agents working OUTSIDE this app: external skills (M22) and
+ * the MCP connection config (M12). It has no [Save], and nothing on it mutates
+ * `config.json`. Sharing the card does not share ownership.
  */
-export function ExternalIntegrationsSection() {
-  return (
-    <SettingsCard
-      id="external-integrations"
-      title="External Integrations"
-      description="Connect AI coding agents working outside this app to the specification. Read-only export — nothing here changes the project config."
-    >
-      <div className="flex flex-col gap-5">
-        <SkillsBlock />
-        <McpConfigBlock />
-      </div>
-    </SettingsCard>
-  );
-}
+export const EXTERNAL_INTEGRATIONS_SETTINGS: SettingsContribution = {
+  cards: [
+    {
+      anchor: 'external-integrations',
+      title: 'External Integrations',
+      description:
+        'Connect AI coding agents working outside this app to the specification. Read-only export — nothing here changes the project config.',
+      group: 'Integrations',
+      weight: 10,
+      owner: 'external-mcp',
+    },
+  ],
+  elements: [
+    {
+      id: 'agent-skills',
+      card: 'external-integrations',
+      weight: 10,
+      kind: 'custom',
+      owner: 'external-skills',
+      component: SkillsBlock,
+    },
+    {
+      id: 'mcp-connection',
+      card: 'external-integrations',
+      weight: 20,
+      kind: 'custom',
+      owner: 'external-mcp',
+      component: McpConfigBlock,
+    },
+  ],
+};
 
 function BlockHeading({ title, description }: { title: string; description: string }) {
   return (

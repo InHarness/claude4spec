@@ -45,7 +45,7 @@ import { BriefService } from '../services/brief.js';
 import { briefsRouter } from '../routes/briefs.js';
 import { patchesRouter } from '../routes/patches.js';
 import { metaRouter } from '../routes/meta.js';
-import { indexStatusRouter } from '../routes/index-status.js';
+import { rootRenameRouter } from '../routes/config-rename.js';
 import { mcpConfigRouter } from '../routes/mcp-config.js';
 import { PROJECTION_IDS, ProjectionStatusRegistry, type ProjectionId } from '../services/projection-status.js';
 import { listProjects } from './list-projects.js';
@@ -1258,6 +1258,20 @@ async function buildInner(
     ws,
   });
 
+  /**
+   * 0.2.101 + 0.2.113: `POST /config/roots/:rootId/rename` — the only way a root's
+   * `id` ever changes, and the one route under `/config` the PROJECT module owns.
+   * Ahead of the settings router, so `/config/roots/*` never reaches it.
+   *
+   * A committed rename invalidates the context like any other registry mutation.
+   * The successor is built on the ALREADY-switched registry — it mounts
+   * `pages:<newId>` over the same directory, and its boot `indexAll()` lays down
+   * `section_index` / link-index rows under the new key. Nothing is rewritten in
+   * place: rows under the retired id are not an alias of the new ones, they
+   * simply stop describing a mounted space.
+   */
+  router.use('/config', rootRenameRouter({ cwd, onRootRenamed: () => onContextConfigChanged() }));
+
   // Per-context config/meta/writing-styles (carved out of startServer inline
   // handlers — single response builder in routes/config.ts).
   router.use(
@@ -1270,19 +1284,15 @@ async function buildInner(
       effectiveRoots,
       onOnboardingCompleted: (effectivePagesDir) => ensureWelcomePage(cwd, effectivePagesDir),
       /**
-       * 0.2.101: a committed root rename invalidates the context like any other
-       * registry mutation. The successor is built on the ALREADY-switched
-       * registry — it mounts `pages:<newId>` over the same directory, and its
-       * boot `indexAll()` lays down `section_index` / link-index rows under the
-       * new key. Nothing is rewritten in place: rows under the retired id are
-       * not an alias of the new ones, they simply stop describing a mounted
-       * space.
+       * 0.2.77 (M26) + 0.2.113: `/_meta/index-status` is the settings module's, and
+       * rides with its router — mounted here, at a LONGER path than `metaRouter`
+       * further down and before it, so the two never contend for the path.
        */
-      onRootRenamed: () => onContextConfigChanged(),
-      // M33 phase 3: lets the PATCH handler classify a `plugins` write by each
-      // field's `kind` — an `executive` field invalidates the context (rebuild),
-      // a `hot-reload` field does not (parity with writingStyle/language).
+      projectionStatus,
+      // 0.2.113: the plugin declarants of the field registry — each field becomes a
+      // typed `plugins.<name>.<key>` leaf; `executive` ones rebuild the context.
       pluginSettingsSections: () => pluginHost.listSettings(),
+      knownEntityTypes: () => pluginHost.listAvailable().map((m) => m.type),
     }),
   );
 
@@ -1318,7 +1328,6 @@ async function buildInner(
    * mounts in registration order; `metaRouter` declares no such route and would
    * fall through anyway, but relying on that is a trap for whoever adds one.
    */
-  router.use('/_meta/index-status', indexStatusRouter(projectionStatus));
   /**
    * 0.2.93 (M12) — the MCP connection config, rendered per request. Same rule as
    * index-status: a longer path, ahead of `metaRouter`. It shares the `_meta`

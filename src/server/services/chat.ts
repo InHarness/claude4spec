@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3';
+import type { ThreadPromptConfig } from './session-config.js';
 import { nanoid } from 'nanoid';
 import type {
   ArtifactThreadListItem,
@@ -745,6 +746,10 @@ export class ChatService {
       allowedPaths?: string[];
       disallowedPaths?: string[];
       disableDirectFilesystemAccess?: boolean;
+      /** 0.2.113 — see `services/session-config.ts`. */
+      lockedConfig?: Record<string, unknown>;
+      promptConfig?: ThreadPromptConfig;
+      pageRootDirs?: string[];
     },
   ): void {
     this.db

@@ -58,16 +58,30 @@ export function ConfirmLayer() {
     return () => window.removeEventListener(UI_EVENTS.CONFIRM, handler as EventListener);
   }, []);
 
+  const [pending, setPending] = useState(false);
+
   function cancel() {
-    if (!request) return;
+    // While `action` runs the action is already under way (a DELETE in flight):
+    // closing the dialog as "cancelled" would not stop it, only hide its outcome.
+    if (!request || pending) return;
     const r = request;
     setRequest(null);
     settleOnce(r, false);
   }
 
-  function confirm() {
-    if (!request || !matches) return;
+  async function confirm() {
+    if (!request || !matches || pending) return;
     const r = request;
+    if (r.action) {
+      setPending(true);
+      let done = false;
+      try {
+        done = await r.action();
+      } finally {
+        setPending(false);
+      }
+      if (!done) return;
+    }
     setRequest(null);
     settleOnce(r, true);
   }
@@ -97,14 +111,15 @@ export function ConfirmLayer() {
           <button
             type="button"
             onClick={cancel}
+            disabled={pending}
             style={{ fontSize: 12, padding: '6px 12px', borderRadius: 4, color: 'var(--c-muted)' }}
           >
             {cancelLabel}
           </button>
           <button
             type="button"
-            onClick={confirm}
-            disabled={!matches}
+            onClick={() => void confirm()}
+            disabled={!matches || pending}
             autoFocus={!requireText}
             style={{
               fontSize: 12,
@@ -126,6 +141,7 @@ export function ConfirmLayer() {
       }
     >
       <div
+        data-modal-kind={request.kind}
         style={{
           fontSize: 13.5,
           color: 'var(--c-muted)',
@@ -142,7 +158,7 @@ export function ConfirmLayer() {
           autoFocus
           onChange={(e) => setTyped(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && matches) confirm();
+            if (e.key === 'Enter' && matches) void confirm();
           }}
           placeholder={requireText}
           spellCheck={false}

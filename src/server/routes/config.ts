@@ -3,16 +3,23 @@ import path from 'node:path';
 import {
   readConfig,
   writeConfig,
-  parseRootsArray,
-  validateRootDirs,
   builtinRoot,
   configHash,
+  type Config,
   type NormalizedConfig,
 } from '../config.js';
-import { retiredRootIds } from '../root-renames.js';
-import { rootRenameRouter, type RootRenameDeps } from './config-rename.js';
+import { buildFieldRegistry } from '../settings/registry.js';
+import {
+  checkFieldType,
+  fieldPath,
+  getPath,
+  hasPath,
+  setPath,
+  type FieldValidationContext,
+} from '../settings/field-registry.js';
+import { indexStatusRouter } from './index-status.js';
+import type { ProjectionStatusRegistry } from '../services/projection-status.js';
 import type { Root } from '../../shared/types.js';
-import { SUPPORTED_LANGUAGES, isSupportedLanguage } from '../../shared/languages.js';
 import { C4S_VERSION } from '../services/release-bundle.js';
 import type { SkillRegistry } from '../services/skill-registry.js';
 import type { PluginSettingsSection } from '../../shared/plugin-host/manifest.js';
@@ -26,8 +33,6 @@ import {
 } from '@inharness-ai/agent-adapters';
 import { DIRECT_FILESYSTEM_DENY_GROUPS } from '../services/agent-tool-posture.js';
 import { ensureGitignore } from '../../bin/gitignore.js';
-import { isValidGitRefName } from '../services/git.js';
-import { renderCommitTargetTemplate, localDateYYYYMMDD } from '../../shared/git.js';
 
 export interface ConfigRouterDeps {
   cwd: string;
@@ -45,11 +50,10 @@ export interface ConfigRouterDeps {
    * M31: PATCH touching a context-defining field invalidates the project
    * context — the next request rebuilds it. No restart, no banner.
    *
-   * The list itself is `CONTEXT_DEFINING_FIELDS` below, and is the authority:
-   * roots/briefsDir/patchesDir/plansDir/entitiesDir/releasesDir/entities. It is
-   * mirrored client-side in `src/client/hooks/useConfig.ts`, which invalidates
-   * its query cache on the same set. (`pagesDir` was named here until config v4
-   * replaced the scalar with `roots[]`.)
+   * 0.2.113: the set is no longer a list here — it is every field whose declarant
+   * gave it the `context-rebuild` effect class (see `settings/registry.ts`),
+   * plugin `executive` fields included. (`pagesDir` was named here until config
+   * v4 replaced the scalar with `roots[]`.)
    */
   onContextConfigChanged?: () => void;
   /**
@@ -60,21 +64,21 @@ export interface ConfigRouterDeps {
    */
   onOnboardingCompleted?: (effectivePagesDir: string) => void;
   /**
-   * M33 phase 3: current plugin Settings sections (host.listSettings()). Used to
-   * classify a `plugins` PATCH per field `kind` — if any written field is
-   * `executive`, the context is invalidated (rebuild); `hot-reload` fields are
-   * not (parity with writingStyle/language).
+   * M33 phase 3: current plugin Settings sections (host.listSettings()). 0.2.113:
+   * each field becomes a declared `plugins.<name>.<key>` leaf of the registry —
+   * type-checked, and `executive` ⇒ `context-rebuild`. A plugin that declares
+   * nothing (inactive, uninstalled) gets its PATCH dropped; its values stay.
    */
   pluginSettingsSections?: () => PluginSettingsSection[];
+  /** 0.2.113: entity types the host knows — feeds the `entities` unknown-slug warning. */
+  knownEntityTypes?: () => string[];
   /**
-   * 0.2.101: fired after a committed root rename (see `config-rename.ts`).
-   * Invalidating the project context is what unmounts the space under its old
-   * identifier and rebuilds every index under the new one.
+   * 0.2.113: the projection registry behind `/_meta/index-status` — the settings
+   * module mounts that route together with `/config`. Absent ⇒ not mounted.
    */
-  onRootRenamed?: RootRenameDeps['onRootRenamed'];
+  projectionStatus?: ProjectionStatusRegistry;
 }
 
-const CONTEXT_DEFINING_FIELDS = ['roots', 'briefsDir', 'patchesDir', 'plansDir', 'entitiesDir', 'releasesDir', 'entities'] as const;
 
 /**
  * Single source of the GET/PATCH /config response shape (was duplicated
@@ -194,6 +198,8 @@ function configResponse(c: NormalizedConfig, cwd: string, skillRegistry: SkillRe
     remoteProjectId: c.remoteProjectId ?? null,
     remoteApiUrl: c.remoteApiUrl ?? null,
     $schemaVersion: c.$schemaVersion,
+    /** 0.2.113: the running app's version, for the About card beside `$schemaVersion`. */
+    appVersion: C4S_VERSION,
     /**
      * 0.2.101: optimistic-concurrency token — sha256 of `config.json` as read.
      * A client hands it back as `expectedConfigHash` when renaming a root, the
@@ -207,20 +213,21 @@ function configResponse(c: NormalizedConfig, cwd: string, skillRegistry: SkillRe
 /**
  * Per-context config/meta/writing-styles routes (carved out of startServer,
  * M31). Mounted relative — the project router lives under /api/projects/:id.
+ *
+ * 0.2.113: this is the settings module's router — `/config` (GET/PATCH) and
+ * `/_meta/index-status`. The configuration is a project singleton, so the paths
+ * are not collections.
  */
 export function configRouter(deps: ConfigRouterDeps): Router {
   const { cwd, skillRegistry } = deps;
   const router = Router();
 
-  // 0.2.101: `POST /config/roots/:rootId/rename` — the only way a root's `id`
-  // ever changes. Deliberately NOT a field of the PATCH below.
-  router.use(
-    '/config',
-    rootRenameRouter({
-      cwd,
-      ...(deps.onRootRenamed ? { onRootRenamed: deps.onRootRenamed } : {}),
-    }),
-  );
+  // 0.2.113: the settings module's own diagnostics route, mounted beside
+  // `/config`. (The root rename under `/config/roots` belongs to the project
+  // module and is mounted by it — see `project-context.ts`.)
+  if (deps.projectionStatus) {
+    router.use('/_meta/index-status', indexStatusRouter(deps.projectionStatus));
+  }
 
   router.get('/meta', (_req, res) => {
     res.json({ cwd, cwdName: path.basename(cwd), c4sVersion: C4S_VERSION });
@@ -236,417 +243,82 @@ export function configRouter(deps: ConfigRouterDeps): Router {
   router.patch('/config', async (req, res, next) => {
     try {
       const body = (req.body ?? {}) as Record<string, unknown>;
-      // All fields hot-reload now (M31 killed "Restart required") and share one
-      // atomic disk write. `writeConfig` re-runs the full validation in
-      // `config.ts`; this handler only enforces semantic checks the validator
-      // cannot do (writingStyle selectability, name regex, path safety).
-      const patch: Partial<{
-        name: string;
-        roots: Root[];
-        briefsDir: string;
-        patchesDir: string;
-        plansDir: string;
-        entitiesDir: string;
-        releasesDir: string;
-        writingStyle: string | null;
-        language: string | null;
-        description: string | null;
-        onboardingCompleted: boolean;
-        entities: string[];
-        agent: {
-          claudeUsePreset?: boolean;
-          conversationalLanguage?: string | null;
-          // Declared here since 0.2.53 — the handler has assigned them since 0.1.90,
-          // through a separately typed `next` object, so TS never flagged the gap.
-          allowedPaths?: string[];
-          disallowedPaths?: string[];
-          disableDirectFilesystemAccess?: boolean;
-        };
-        git: {
-          enabled?: boolean;
-          syncPushOnPush?: boolean;
-          commitTarget?: { mode?: 'current' | 'named' | 'new'; branch?: string | null; template?: string | null; base?: string | null };
-          switchAfterRelease?: boolean;
-        };
-        plugins: Record<string, Record<string, unknown>>;
-        remoteProjectId: string | null;
-      }> = {};
-
-      // M31 (config v3): port/mode are workspace settings now — explicit 400
-      // so an outdated client gets a readable reason instead of a silent drop.
-      if ('port' in body || 'mode' in body) {
-        return res.status(400).json({
-          error: { code: 'VALIDATION', message: 'port/mode moved to workspace settings' },
-        });
-      }
-
-      if ('name' in body) {
-        if (typeof body.name !== 'string') {
-          return res.status(400).json({ error: { code: 'VALIDATION', message: 'name must be a string' } });
-        }
-        const trimmed = body.name.trim();
-        // 0.1.91 — name is display-only (folder identity is sha1(cwd), not the name),
-        // so full Unicode is allowed; reject only C0/DEL/C1 control chars + newline/tab.
-        if (trimmed.length < 1 || trimmed.length > 80 || /[\u0000-\u001F\u007F-\u009F]/.test(trimmed)) {
-          return res.status(400).json({ error: { code: 'VALIDATION', message: 'name: 1-80 chars, no line breaks or control characters' } });
-        }
-        patch.name = trimmed;
-      }
-
-      // Dir fields share the same path-safety contract as boot: must be
-      // relative, must not escape cwd.
-      const validateDir = (field: string, value: unknown): string | { error: string } => {
-        if (typeof value !== 'string' || value.trim() === '') {
-          return { error: `${field} must be a non-empty string` };
-        }
-        if (path.isAbsolute(value)) {
-          return { error: `${field} must be relative to cwd` };
-        }
-        const abs = path.resolve(cwd, value);
-        const rel = path.relative(cwd, abs);
-        if (rel.startsWith('..') || path.isAbsolute(rel)) {
-          return { error: `${field} must not escape project root` };
-        }
-        return value;
-      };
-
-      for (const field of ['briefsDir', 'patchesDir', 'plansDir', 'entitiesDir', 'releasesDir'] as const) {
-        if (field in body) {
-          const result = validateDir(field, body[field]);
-          if (typeof result === 'object') {
-            return res.status(400).json({ error: { code: 'VALIDATION', message: result.error } });
-          }
-          patch[field] = result;
-        }
-      }
-
-      // The effective post-write artifact dirs (patched value, else current) —
-      // the basis for both cross-field checks below.
       const currentConfig = readConfig(cwd);
-      const effectiveDirs = {
-        entitiesDir: patch.entitiesDir ?? currentConfig.entitiesDir,
-        releasesDir: patch.releasesDir ?? currentConfig.releasesDir,
-        briefsDir: patch.briefsDir ?? currentConfig.briefsDir,
-        patchesDir: patch.patchesDir ?? currentConfig.patchesDir,
-        plansDir: patch.plansDir ?? currentConfig.plansDir,
+      const registry = buildFieldRegistry({
+        pluginSections: deps.pluginSettingsSections?.() ?? [],
+        ...(deps.knownEntityTypes ? { knownEntityTypes: deps.knownEntityTypes } : {}),
+      });
+      const reject = (key: string, message: string) =>
+        res.status(400).json({ error: { code: 'VALIDATION', message, details: { field: key } } });
+
+      /**
+       * 0.2.113: the whitelist IS the registry — the handler reads only the keys a
+       * declarant marked `apiWritable`, and drops everything else without an error
+       * (`port`/`mode` included: their dedicated 400 is gone, they are just unknown
+       * keys now). A container the body carries in the wrong shape (`agent: 42`) is
+       * still a type error, pinned to the container.
+       */
+      const writable = registry.list().filter((d) => d.apiWritable);
+      // Kept as SEGMENTS, not a dotted string: a plugin's package name may itself
+      // contain a dot, and re-splitting `plugins.@x/y.z` would miss the container.
+      const containers = new Map<string, readonly string[]>();
+      for (const d of writable) {
+        const segs = fieldPath(d);
+        for (let i = 1; i < segs.length; i++) containers.set(segs.slice(0, i).join('.'), segs.slice(0, i));
+      }
+      for (const [c, segs] of containers) {
+        if (!hasPath(body, segs)) continue;
+        const v = getPath(body, segs);
+        if (v === null || typeof v !== 'object' || Array.isArray(v)) return reject(c, `${c} must be an object`);
+      }
+      const present = writable.filter((d) => hasPath(body, fieldPath(d)));
+      const touched = new Set(present.map((d) => d.key));
+      const vctx: FieldValidationContext = {
+        cwd,
+        current: currentConfig,
+        skillRegistry,
+        effectiveRoots: deps.effectiveRoots ?? currentConfig.roots,
+        touched,
       };
 
-      // 0.2.8 (C17): briefs/patches/plans must differ — checked on ANY PATCH that
-      // touches one of them, not just one that also carries `roots`. The Settings
-      // screen sends a diff-only payload, so `{ plansDir: <briefsDir> }` arrives
-      // with no `roots` and used to slip past this guard entirely, leaving the
-      // project silently double-indexing every file under two markers (boot only
-      // WARNS about a collision — see project-context.ts).
-      //
-      // Scoped to requests that touch the three dirs on purpose: a project whose
-      // config.json ALREADY collides is a reachable state (boot let it through,
-      // and so did this route before 0.2.8). Enforcing on every PATCH would make
-      // such a project unfixable — every unrelated write, including the
-      // `{ onboardingCompleted: true }` that closes the wizard, would 400.
-      const touchesArtifactDirs = (['briefsDir', 'patchesDir', 'plansDir'] as const).some(
-        (f) => f in body,
-      );
-      if (touchesArtifactDirs) {
-        // Compare RESOLVED paths, as boot does — './x', 'x/' and 'x' are the same
-        // directory, and a guard that only string-compares waves them through.
-        const artifactDirPairs: Array<[string, string, string, string]> = [
-          ['briefsDir', effectiveDirs.briefsDir, 'patchesDir', effectiveDirs.patchesDir],
-          ['briefsDir', effectiveDirs.briefsDir, 'plansDir', effectiveDirs.plansDir],
-          ['patchesDir', effectiveDirs.patchesDir, 'plansDir', effectiveDirs.plansDir],
-        ];
-        for (const [aName, aDir, bName, bDir] of artifactDirPairs) {
-          if (path.resolve(cwd, aDir) === path.resolve(cwd, bDir)) {
-            return res
-              .status(400)
-              .json({ error: { code: 'VALIDATION', message: `${aName} and ${bName} must differ` } });
-          }
-        }
+      // Stage 1 — the wire type of every present key.
+      for (const d of present) {
+        const typeError = checkFieldType(d.key, d.type, getPath(body, fieldPath(d)));
+        if (typeError) return reject(d.key, typeError);
       }
 
-      // 0.1.96: full-array replace of roots[]. Structural validation (types,
-      // path-safety, unique ids, dangling linkTargets, built-in pages present)
-      // via parseRootsArray; cross-field overlap via validateRootDirs against the
-      // effective (merged) briefs/patches/entities dirs. Any hard violation → 400.
-      // D4 fires on any PATCH that touches `roots[]` OR any storage dir — not just one
-      // carrying `roots`. The Settings payload is diff-only, so moving `entitiesDir` onto
-      // an existing root's dir used to arrive with no `roots` and skip the check entirely,
-      // leaving the collision to be discovered by the next boot (or by data loss).
-      // Still scoped to requests that touch these fields, for the same reason the C17 guard
-      // above is: an already-colliding config must stay repairable, so an unrelated PATCH
-      // (`{ onboardingCompleted: true }`) must not 400 on damage it did not cause.
-      // Fields that actually participate in the hard sweep. briefs/patches/plans are
-      // deliberately NOT here: they only ever produce rule-3a WARNINGS, so letting them
-      // gate the hard check meant a `{ plansDir }`-only save could 400 with a message
-      // naming `entitiesDir` and a root — fields the request never carried — and lose the
-      // edit. The C17 guard above stays scoped to its own three fields for the same reason.
-      const touchesHardTargets =
-        'roots' in body ||
-        (['entitiesDir', 'releasesDir'] as const).some((f) => f in body);
-      const touchesAnyDir =
-        touchesHardTargets ||
-        (['briefsDir', 'patchesDir', 'plansDir'] as const).some((f) => f in body);
-
-      if (touchesAnyDir) {
-        let roots: Root[];
-        if ('roots' in body) {
-          try {
-            // Rule 7: a full-array write is a delete+create, never a rename —
-            // so an identifier an earlier rename retired must not come back
-            // through this door either.
-            roots = parseRootsArray(body.roots, { retiredIds: retiredRootIds(cwd) });
-          } catch (err) {
-            return res.status(400).json({ error: { code: 'VALIDATION', message: (err as Error).message } });
-          }
-          patch.roots = roots;
-        } else {
-          // No roots in the payload — validate against the roots the running context
-          // actually uses (`--pages` override applied), falling back to the file.
-          roots = deps.effectiveRoots ?? currentConfig.roots;
+      // Stage 2 — each field's own rule. A rule may normalize what it accepts.
+      const values = new Map<string, unknown>();
+      const warnings: string[] = [];
+      for (const d of present) {
+        let value = getPath(body, fieldPath(d));
+        if (d.validate) {
+          const r = await d.validate(value, vctx);
+          if (!r.ok) return reject(d.key, r.error);
+          if ('value' in r) value = r.value;
+          if (r.warning) warnings.push(r.warning);
         }
-        const { errors, warnings, newPairConflicts } = validateRootDirs(roots, effectiveDirs);
-        // Only reject when the request could actually have caused (or can repair) the
-        // violation. An already-colliding config must stay repairable field by field.
-        if (touchesHardTargets) {
-          const hard = [...errors, ...newPairConflicts];
-          if (hard.length > 0) {
-            return res.status(400).json({ error: { code: 'VALIDATION', message: hard[0] } });
-          }
-        }
-        // Rule 3a is a warning, not a rejection — surface it on the same channel boot uses
-        // so an overlap that only degrades tidiness is still visible to whoever caused it.
-        for (const w of warnings) console.warn(`[config] ${w}`);
+        values.set(d.key, value);
       }
 
-      if ('writingStyle' in body) {
-        if (body.writingStyle !== null && typeof body.writingStyle !== 'string') {
-          return res.status(400).json({ error: { code: 'VALIDATION', message: 'writingStyle must be string | null' } });
-        }
-        if (typeof body.writingStyle === 'string' && !skillRegistry.isSelectable(body.writingStyle)) {
-          return res.status(400).json({ error: { code: 'VALIDATION', message: `writingStyle "${body.writingStyle}" ${skillRegistry.unselectableReason(body.writingStyle)}` } });
-        }
-        patch.writingStyle = body.writingStyle;
+      // Stage 3 — rules across fields, evaluated on the EFFECTIVE post-write config and
+      // only when the request touches one of the rule's fields.
+      const effective = (key: string): unknown =>
+        values.has(key) ? values.get(key) : getPath(currentConfig, registry.get(key) ? fieldPath(registry.get(key)!) : key);
+      for (const rule of registry.crossFieldRules()) {
+        if (!rule.touches.some((k) => touched.has(k))) continue;
+        const r = await rule.check(effective, vctx);
+        if (!r.ok) return reject(r.key, r.error);
+        warnings.push(...(r.warnings ?? []));
       }
+      // A warning never blocks the save — it is surfaced on the channel boot uses and
+      // handed back to whoever caused it.
+      for (const w of warnings) console.warn(`[config] ${w}`);
 
-      if ('language' in body) {
-        if (body.language !== null && !isSupportedLanguage(body.language)) {
-          return res.status(400).json({ error: { code: 'VALIDATION', message: `language "${String(body.language)}" not supported. Available: ${SUPPORTED_LANGUAGES.join(', ')}` } });
-        }
-        patch.language = body.language;
-      }
+      const patch: Record<string, unknown> = {};
+      for (const d of present) setPath(patch, fieldPath(d), values.get(d.key));
 
-      // 0.1.58: local "elevator pitch" (0–200). `null` or an empty/whitespace
-      // string clears it; >200 → 400 inline. Distinct from the remote
-      // project.description (different endpoint, no sync).
-      if ('description' in body) {
-        if (body.description !== null && typeof body.description !== 'string') {
-          return res.status(400).json({ error: { code: 'VALIDATION', message: 'description must be string | null' } });
-        }
-        if (typeof body.description === 'string' && body.description.length > 200) {
-          return res.status(400).json({ error: { code: 'VALIDATION', message: 'description must be at most 200 characters' } });
-        }
-        const trimmed = typeof body.description === 'string' ? body.description.trim() : null;
-        patch.description = trimmed ? body.description : null;
-      }
-
-      if ('onboardingCompleted' in body) {
-        if (typeof body.onboardingCompleted !== 'boolean') {
-          return res.status(400).json({ error: { code: 'VALIDATION', message: 'onboardingCompleted must be boolean' } });
-        }
-        patch.onboardingCompleted = body.onboardingCompleted;
-      }
-
-      if ('entities' in body) {
-        if (!Array.isArray(body.entities) || !body.entities.every((e) => typeof e === 'string')) {
-          return res.status(400).json({ error: { code: 'VALIDATION', message: 'entities must be string[]' } });
-        }
-        patch.entities = body.entities as string[];
-      }
-
-      if ('agent' in body) {
-        const a = body.agent;
-        if (a === null || typeof a !== 'object' || Array.isArray(a)) {
-          return res.status(400).json({ error: { code: 'VALIDATION', message: 'agent must be an object' } });
-        }
-        const ar = a as Record<string, unknown>;
-        const next: {
-          claudeUsePreset?: boolean;
-          conversationalLanguage?: string | null;
-          allowedPaths?: string[];
-          disallowedPaths?: string[];
-          disableDirectFilesystemAccess?: boolean;
-        } = {};
-        if ('claudeUsePreset' in ar) {
-          if (typeof ar.claudeUsePreset !== 'boolean') {
-            return res.status(400).json({ error: { code: 'VALIDATION', message: 'agent.claudeUsePreset must be boolean' } });
-          }
-          next.claudeUsePreset = ar.claudeUsePreset;
-        }
-        if ('disableDirectFilesystemAccess' in ar) {
-          if (typeof ar.disableDirectFilesystemAccess !== 'boolean') {
-            return res.status(400).json({ error: { code: 'VALIDATION', message: 'agent.disableDirectFilesystemAccess must be boolean' } });
-          }
-          next.disableDirectFilesystemAccess = ar.disableDirectFilesystemAccess;
-        }
-        if ('conversationalLanguage' in ar) {
-          if (ar.conversationalLanguage !== null && !isSupportedLanguage(ar.conversationalLanguage)) {
-            return res.status(400).json({ error: { code: 'VALIDATION', message: `agent.conversationalLanguage "${String(ar.conversationalLanguage)}" not supported. Available: ${SUPPORTED_LANGUAGES.join(', ')}` } });
-          }
-          next.conversationalLanguage = ar.conversationalLanguage;
-        }
-        // 0.1.90: agent FS path scope — each must be string[] (membership/normalization
-        // happens later in the M05 resolver; here we only enforce the wire type).
-        for (const field of ['allowedPaths', 'disallowedPaths'] as const) {
-          if (field in ar) {
-            if (!Array.isArray(ar[field]) || !(ar[field] as unknown[]).every((e) => typeof e === 'string')) {
-              return res.status(400).json({ error: { code: 'VALIDATION', message: `agent.${field} must be string[]` } });
-            }
-            next[field] = ar[field] as string[];
-          }
-        }
-        // Only present subfields are forwarded; writeConfig deep-merges `agent`
-        // so the untouched field (e.g. claudeUsePreset) is preserved.
-        patch.agent = next;
-      }
-
-      // M28: hot-reload git-sync toggles. Only present subfields are forwarded;
-      // writeConfig deep-merges `git` so the untouched toggle is preserved.
-      if ('git' in body) {
-        const g = body.git;
-        if (g === null || typeof g !== 'object' || Array.isArray(g)) {
-          return res.status(400).json({ error: { code: 'VALIDATION', message: 'git must be an object' } });
-        }
-        const gr = g as Record<string, unknown>;
-        const next: {
-          enabled?: boolean;
-          syncPushOnPush?: boolean;
-          commitTarget?: { mode?: 'current' | 'named' | 'new'; branch?: string | null; template?: string | null; base?: string | null };
-          switchAfterRelease?: boolean;
-        } = {};
-        if ('enabled' in gr) {
-          if (typeof gr.enabled !== 'boolean') {
-            return res.status(400).json({ error: { code: 'VALIDATION', message: 'git.enabled must be boolean' } });
-          }
-          next.enabled = gr.enabled;
-        }
-        if ('syncPushOnPush' in gr) {
-          if (typeof gr.syncPushOnPush !== 'boolean') {
-            return res.status(400).json({ error: { code: 'VALIDATION', message: 'git.syncPushOnPush must be boolean' } });
-          }
-          next.syncPushOnPush = gr.syncPushOnPush;
-        }
-        // 0.1.125: commit-target — semantic checks beyond shape (non-empty
-        // branch/template for the active mode, ref-safe rendered template
-        // name) live here, not in config.ts's validate() (see that file's
-        // comment — validate() is also reused by readConfig() on every boot,
-        // which must tolerate an inactive mode's field being unset).
-        if ('commitTarget' in gr) {
-          const ct = gr.commitTarget;
-          if (ct === null || typeof ct !== 'object' || Array.isArray(ct)) {
-            return res.status(400).json({ error: { code: 'VALIDATION', message: 'git.commitTarget must be an object' } });
-          }
-          const ctr = ct as Record<string, unknown>;
-          const nextCt: { mode?: 'current' | 'named' | 'new'; branch?: string | null; template?: string | null; base?: string | null } = {};
-          if ('mode' in ctr) {
-            if (ctr.mode !== 'current' && ctr.mode !== 'named' && ctr.mode !== 'new') {
-              return res.status(400).json({
-                error: { code: 'VALIDATION', message: "git.commitTarget.mode must be 'current' | 'named' | 'new'" },
-              });
-            }
-            nextCt.mode = ctr.mode;
-          }
-          for (const field of ['branch', 'template', 'base'] as const) {
-            if (field in ctr) {
-              const v = ctr[field];
-              if (v !== null && typeof v !== 'string') {
-                return res
-                  .status(400)
-                  .json({ error: { code: 'VALIDATION', message: `git.commitTarget.${field} must be string | null` } });
-              }
-              nextCt[field] = v;
-            }
-          }
-          // 0.1.125 (code review): validate against the EFFECTIVE post-merge
-          // commitTarget, not just this request's `nextCt` — writeConfig
-          // deep-merges `commitTarget` one level deep, so a request that
-          // patches `branch` alone (mode omitted) would otherwise sail past
-          // an `nextCt.mode === 'named'` check that never fires, silently
-          // persisting `{mode:'named', branch:null}` and falling back to
-          // legacy 'current'-mode semantics at commit time with no error
-          // anywhere. Same precedent as the `roots` validation above
-          // (effective entitiesDir/releasesDir/etc.).
-          const currentCommitTarget = readConfig(cwd).git.commitTarget;
-          const effectiveCt = { ...currentCommitTarget, ...nextCt };
-          if (effectiveCt.mode === 'named' && !effectiveCt.branch) {
-            return res
-              .status(400)
-              .json({ error: { code: 'VALIDATION', message: "git.commitTarget.branch is required when mode is 'named'" } });
-          }
-          if (effectiveCt.mode === 'new') {
-            if (!effectiveCt.template) {
-              return res
-                .status(400)
-                .json({ error: { code: 'VALIDATION', message: "git.commitTarget.template is required when mode is 'new'" } });
-            }
-            // Ref-safe dummy release name for the preview render — a space
-            // (as in e.g. "Preview Release") is itself an invalid git ref
-            // character, which would make ANY template using the documented
-            // `{release_name}` placeholder fail this check unconditionally,
-            // regardless of what real release names look like.
-            const preview = renderCommitTargetTemplate(effectiveCt.template, {
-              releaseName: 'preview-release',
-              date: localDateYYYYMMDD(new Date()),
-            });
-            if (!(await isValidGitRefName(preview))) {
-              return res.status(400).json({
-                error: {
-                  code: 'VALIDATION',
-                  message: `git.commitTarget.template renders to an invalid branch name: "${preview}"`,
-                },
-              });
-            }
-          }
-          next.commitTarget = nextCt;
-        }
-        if ('switchAfterRelease' in gr) {
-          if (typeof gr.switchAfterRelease !== 'boolean') {
-            return res
-              .status(400)
-              .json({ error: { code: 'VALIDATION', message: 'git.switchAfterRelease must be boolean' } });
-          }
-          next.switchAfterRelease = gr.switchAfterRelease;
-        }
-        patch.git = next;
-      }
-
-      // M33 phase 3: plugin settings namespace. Validate shape only (object of
-      // per-plugin objects); writeConfig deep-merges each `plugins[<name>]` so a
-      // single-field write preserves the plugin's other fields and other
-      // namespaces. Field semantics live in each plugin's settings descriptor.
-      if ('plugins' in body) {
-        const p = body.plugins;
-        if (p === null || typeof p !== 'object' || Array.isArray(p)) {
-          return res.status(400).json({ error: { code: 'VALIDATION', message: 'plugins must be an object' } });
-        }
-        const next: Record<string, Record<string, unknown>> = {};
-        for (const [name, sub] of Object.entries(p as Record<string, unknown>)) {
-          if (sub === null || typeof sub !== 'object' || Array.isArray(sub)) {
-            return res.status(400).json({ error: { code: 'VALIDATION', message: `plugins.${name} must be an object` } });
-          }
-          next[name] = sub as Record<string, unknown>;
-        }
-        patch.plugins = next;
-      }
-
-      // M25: allow manual clear/override of remoteProjectId (e.g. UI "clear" after
-      // a stale UUID). null ⇒ next push is a first push again.
-      if ('remoteProjectId' in body) {
-        if (body.remoteProjectId !== null && typeof body.remoteProjectId !== 'string') {
-          return res.status(400).json({ error: { code: 'VALIDATION', message: 'remoteProjectId must be string | null' } });
-        }
-        patch.remoteProjectId = body.remoteProjectId;
-      }
-
-      const updated = writeConfig(cwd, patch);
+      const updated = writeConfig(cwd, patch as Partial<Config>);
       // 0.1.118: re-sync .gitignore whenever a field it depends on changes —
       // best-effort (never fail the PATCH over a gitignore write hiccup).
       if ('git' in patch || 'briefsDir' in patch || 'patchesDir' in patch || 'plansDir' in patch || 'releasesDir' in patch) {
@@ -664,34 +336,20 @@ export function configRouter(deps: ConfigRouterDeps): Router {
       }
       // 0.1.56: create the deferred welcome page BEFORE invalidating the context,
       // so the lazy rebuild's indexAll() picks it up. Runs on the effective
-      // post-write pagesDir (a pagesDir change in the same atomic body is already
+      // post-write pages root (a roots change in the same atomic body is already
       // persisted in `updated`).
       if (patch.onboardingCompleted === true) {
         const pagesDir = builtinRoot(updated.roots).dir;
         deps.onOnboardingCompleted?.(pagesDir);
       }
-      // M33 phase 3: a `plugins` write invalidates the context only when at
-      // least one written field is `executive`; `hot-reload`-only writes take
-      // effect on the next turn/thread without a rebuild.
-      const pluginsPatchIsExecutive = (): boolean => {
-        if (!patch.plugins || !deps.pluginSettingsSections) return false;
-        const sections = deps.pluginSettingsSections();
-        for (const [name, fields] of Object.entries(patch.plugins)) {
-          const section = sections.find((s) => s.name === name);
-          if (!section) continue;
-          for (const key of Object.keys(fields)) {
-            if (section.fields.find((f) => f.key === key)?.kind === 'executive') return true;
-          }
-        }
-        return false;
-      };
-      if (
-        deps.onContextConfigChanged &&
-        (CONTEXT_DEFINING_FIELDS.some((f) => f in patch) || pluginsPatchIsExecutive())
-      ) {
-        deps.onContextConfigChanged();
-      }
-      res.json(configResponse(updated, cwd, skillRegistry));
+      // M31 + 0.2.113: a save of any `context-rebuild` field — core or a plugin's
+      // `executive` one — invalidates the context; the next request rebuilds it.
+      const rebuild = present.some((d) => d.effect === 'context-rebuild');
+      if (rebuild) deps.onContextConfigChanged?.();
+      res.json({
+        ...configResponse(updated, cwd, skillRegistry),
+        ...(warnings.length > 0 ? { warnings } : {}),
+      });
     } catch (err) {
       next(err);
     }

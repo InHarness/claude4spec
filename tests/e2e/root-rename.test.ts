@@ -165,10 +165,14 @@ describe.skipIf(!BASE)('settings — Directories: Change root ID (0.2.101)', () 
     // Identity and location are independent: the directory did not move.
     expect(after.roots.find((r) => r.id === toId)!.dir).toBe(fromId);
 
-    // The app moves itself off the retired segment once the rename lands. Wait
-    // for that before navigating: a client-side navigation arriving mid-goto
-    // aborts the goto.
-    await expect.poll(() => page.url(), { timeout: 10_000 }).toContain(`/space/${toId}`);
+    // 0.2.113: Settings is not an editor page — the rename leaves it where it is,
+    // with the list reloaded under the new identifier.
+    await expect.poll(() => card(toId).count(), { timeout: 10_000 }).toBeGreaterThan(0);
+    expect(page.url()).toContain('/settings');
+
+    // A page open under the retired address follows its space to the new one.
+    await page.goto(`${BASE}/p/${project.id}/space/${fromId}/hello.md`, { waitUntil: 'networkidle' });
+    await expect.poll(() => page.url(), { timeout: 10_000 }).toContain(`/space/${toId}/hello.md`);
 
     // The page renders under the new segment — asserted on rendered content, not
     // the URL, since a blank SPA shell also returns 200.

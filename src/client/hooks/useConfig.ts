@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { configApi, type ConfigPatch } from '../lib/api.js';
 import { PROJECT_ID } from '../lib/api-core.js';
 import type { Root } from '../../shared/types.js';
+import { recordRootRename } from '../state/rootRenames.js';
 
 /**
  * M31: fields that rebuild the project context server-side (the PATCH handler
@@ -15,7 +16,8 @@ const CONTEXT_DEFINING_FIELDS = [
   'patchesDir',
   'plansDir',
   'entitiesDir',
-  // Must mirror CONTEXT_DEFINING_FIELDS in src/server/routes/config.ts. Missing
+  // Must mirror the server's `context-rebuild` fields (0.2.113: the field
+  // registry's `contextRebuildKeys()`, `src/server/settings/registry.ts`). Missing
   // here, a `releasesDir`-only write rebuilt the context server-side while the
   // client kept serving every cached query against the old one.
   'releasesDir',
@@ -55,7 +57,7 @@ export function usePatchConfig() {
       }
       // M33 phase 3: a `plugins` write always refreshes the config cache (above,
       // via setQueryData). An `executive` field additionally rebuilds the
-      // context server-side (`pluginsPatchIsExecutive` in routes/config.ts); the
+      // context server-side (its `executive` kind ⇒ `context-rebuild`); the
       // result surfaces on the next request, so a blanket invalidate keeps the
       // client coherent. Only the server can tell executive from `hot-reload`,
       // so every `plugins` write invalidates — over-invalidating a hot-reload
@@ -108,7 +110,9 @@ export function useRenameRoot() {
         newId: input.newId,
         expectedConfigHash: input.expectedConfigHash,
       }),
-    onSuccess: (_result, input) => {
+    onSuccess: (result, input) => {
+      // 0.2.113: an editor open on the old address follows to the new one.
+      if (result.rootId !== input.rootId) recordRootRename(input.rootId, result.rootId);
       // Entries keyed by the OLD id are never refetched: that id now answers
       // like any unknown root, so refetching them (the sidebar's page tree,
       // still mounted until the new config re-renders it) would only produce

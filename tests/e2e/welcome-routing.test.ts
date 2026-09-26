@@ -120,7 +120,7 @@ describe.skipIf(!BASE)('workspace root & welcome routing', () => {
     page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     await page.goto(`${BASE}/p/${project.id}/settings`, { waitUntil: 'networkidle' });
 
-    await page.getByRole('button', { name: 'Delete project & c4s data', exact: true }).click();
+    await page.getByRole('button', { name: 'Delete project and c4s data', exact: true }).click();
 
     // The modal's type-to-confirm input is keyed by the project name placeholder.
     // `exact` matters: the default substring match also hits Settings inputs

@@ -1,6 +1,7 @@
-import { PROJECT_ID } from '../../../lib/api-core.js';
-import { useConfig } from '../../../hooks/useConfig.js';
-import { confirmDestructive, toast } from '../../../ui/events.js';
+import { PROJECT_ID } from '../../lib/api-core.js';
+import { useConfig } from '../../hooks/useConfig.js';
+import { confirmDestructive, toast } from '../../ui/events.js';
+import type { SettingsContribution } from '../settings/registry.js';
 
 interface DeleteResponse {
   redirectProjectId: string | null;
@@ -21,11 +22,41 @@ interface DeleteResponse {
  * project was removed — the server resolves `/` to `/welcome`) re-initializes
  * the module-load constants.
  */
-export function DangerZoneSection() {
+/**
+ * 0.2.113 — the workspace module's card. Both actions call
+ * `DELETE /api/workspace/projects/:id` and differ in `purgeData`; a
+ * `409 PROJECT_BUSY` leaves the dialog open with an error toast.
+ */
+export const WORKSPACE_SETTINGS: SettingsContribution = {
+  cards: [
+    {
+      anchor: 'danger-zone',
+      title: 'Danger zone',
+      description: 'Remove this project from the workspace. Neither action deletes anything in the project directory.',
+      group: 'System',
+      weight: 90,
+      owner: 'workspace',
+      tone: 'danger',
+    },
+  ],
+  elements: [
+    {
+      id: 'remove-project',
+      card: 'danger-zone',
+      weight: 10,
+      kind: 'custom',
+      owner: 'workspace',
+      component: DangerZoneElement,
+    },
+  ],
+};
+
+function DangerZoneElement() {
   const { data: config } = useConfig();
   const projectName = config?.name ?? '';
 
-  async function remove(purge: boolean): Promise<void> {
+  /** `true` = removed (navigating away); `false` = refused, the dialog stays open. */
+  async function remove(purge: boolean): Promise<boolean> {
     try {
       const res = await fetch(
         `/api/workspace/projects/${PROJECT_ID}?purgeData=${purge}`,
@@ -33,24 +64,28 @@ export function DangerZoneSection() {
       );
       if (res.status === 409) {
         toast.error('Project busy — finish the in-flight turn first');
-        return;
+        return false;
       }
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as
           | { error?: { message?: string } }
           | null;
         toast.error(body?.error?.message ?? 'Failed to remove project');
-        return;
+        return false;
       }
       const { redirectProjectId } = (await res.json()) as DeleteResponse;
+      // A full load: every workspace and project list is fetched afresh there.
       window.location.href = redirectProjectId ? `/p/${redirectProjectId}/` : '/';
+      return true;
     } catch {
       toast.error('Failed to remove project');
+      return false;
     }
   }
 
   async function handleDetach(): Promise<void> {
-    const ok = await confirmDestructive('project-detach', {
+    await confirmDestructive('project-detach', {
+      action: () => remove(false),
       title: 'Detach project',
       body:
         `Detach “${projectName}” from this workspace?\n\n` +
@@ -59,11 +94,11 @@ export function DangerZoneSection() {
       confirmLabel: 'Detach',
       danger: false,
     });
-    if (ok) await remove(false);
   }
 
   async function handlePurge(): Promise<void> {
-    const ok = await confirmDestructive('project-purge', {
+    await confirmDestructive('project-purge', {
+      action: () => remove(true),
       title: 'Delete project & c4s data',
       body:
         `This permanently deletes “${projectName}”’s c4s data — the entity index, ` +
@@ -74,30 +109,10 @@ export function DangerZoneSection() {
       confirmLabel: 'Delete data',
       danger: true,
     });
-    if (ok) await remove(true);
   }
 
   return (
-    <section
-      id="danger-zone"
-      style={{
-        background: 'var(--c-card)',
-        border: '1px solid var(--c-red, #c45a3b)',
-        borderRadius: 8,
-        padding: '20px 22px',
-        scrollMarginTop: 16,
-      }}
-    >
-      <header className="mb-4">
-        <h2 className="text-[15px] font-semibold" style={{ color: 'var(--c-red, #c45a3b)' }}>
-          Danger zone
-        </h2>
-        <p className="text-[12px] mt-1" style={{ color: 'var(--c-subtle)' }}>
-          Remove this project from the workspace. Neither action deletes anything in the
-          project directory.
-        </p>
-      </header>
-
+    <div>
       <div className="flex flex-col gap-4">
         <Row
           title="Detach project"
@@ -117,7 +132,7 @@ export function DangerZoneSection() {
         <div style={{ borderTop: '1px solid var(--c-hair)' }} />
 
         <Row
-          title="Delete project & c4s data"
+          title="Delete project and c4s data"
           desc="Permanently delete the entity index, chats, plans, releases, and sessions. Irreversible. Files in the project directory are untouched."
         >
           <button
@@ -127,11 +142,11 @@ export function DangerZoneSection() {
             className="rounded-md px-3 py-1.5 text-[12px] font-medium disabled:opacity-50"
             style={{ background: 'var(--c-red, #c45a3b)', color: '#fff' }}
           >
-            Delete project & c4s data
+            Delete project and c4s data
           </button>
         </Row>
       </div>
-    </section>
+    </div>
   );
 }
 

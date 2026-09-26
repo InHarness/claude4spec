@@ -112,3 +112,88 @@ describe('checkResumeConfigLock', () => {
     ).toBeNull();
   });
 });
+
+/**
+ * 0.2.113: a snapshot that records `lockedConfig` is compared on the DECLARED
+ * resume-locked fields — not on the resolved path lists, which also move when
+ * `roots[]` does.
+ */
+describe('checkResumeConfigLock — declared locked fields (0.2.113)', () => {
+  let cwd: string;
+  const writeConfig = (cfg: Record<string, unknown>) => {
+    fs.mkdirSync(path.join(cwd, '.claude4spec'), { recursive: true });
+    fs.writeFileSync(path.join(cwd, '.claude4spec', 'config.json'), JSON.stringify({ $schemaVersion: 4, ...cfg }));
+  };
+  const locked = {
+    'agent.allowedPaths': [],
+    'agent.disallowedPaths': [],
+    'agent.disableDirectFilesystemAccess': true,
+    plansDir: '.claude4spec/plans',
+    briefsDir: '.claude4spec/briefs',
+    patchesDir: '.claude4spec/patches',
+    entitiesDir: '.claude4spec/entities',
+    releasesDir: '.claude4spec/releases',
+  };
+  const check = (lockedConfig: Record<string, unknown> = locked) =>
+    checkResumeConfigLock({
+      snapshotJson: JSON.stringify({
+        model: 'opus-5',
+        architectureConfig: {},
+        allowedPaths: ['/whatever-was-resolved'],
+        disallowedPaths: [],
+        lockedConfig,
+      }),
+      lastSessionId: 'sess-1',
+      model: 'opus-5',
+      architectureConfig: {},
+      cwd,
+      roots: [],
+    });
+
+  beforeEach(() => {
+    cwd = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-resume-lock-declared-')));
+  });
+  afterEach(() => {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it('passes when nothing locked has changed, whatever the resolved lists were', () => {
+    writeConfig({});
+    expect(check()).toBeNull();
+  });
+
+  it('refuses a resume after agent.allowedPaths changed', () => {
+    writeConfig({ agent: { allowedPaths: ['/new'] } });
+    expect(check()?.error.violations.map((v) => v.path)).toEqual(['agent.allowedPaths']);
+    expect(check()?.error.code).toBe('RESUME_CONFIG_LOCKED');
+  });
+
+  it('refuses a resume after an artifact directory moved', () => {
+    writeConfig({ plansDir: 'plans-elsewhere' });
+    expect(check()?.error.violations.map((v) => v.path)).toEqual(['plansDir']);
+  });
+
+  it('does not refuse a reorder of the same paths, nor a trailing slash', () => {
+    writeConfig({ agent: { allowedPaths: ['/b', '/a'] }, plansDir: '.claude4spec/plans/' });
+    expect(check({ ...locked, 'agent.allowedPaths': ['/a', '/b'] })).toBeNull();
+  });
+
+  it('does not refuse a resume after the writing style changed — the thread keeps its own', () => {
+    writeConfig({ writingStyle: 'some-other-style' });
+    expect(check()).toBeNull();
+  });
+
+  it('does not refuse a resume after roots[] changed — roots are not a locked field', () => {
+    writeConfig({});
+    // A root outside cwd widens the resolved scope; before 0.2.113 that alone was a 409.
+    const res = checkResumeConfigLock({
+      snapshotJson: JSON.stringify({ model: 'opus-5', architectureConfig: {}, allowedPaths: [], lockedConfig: locked }),
+      lastSessionId: 'sess-1',
+      model: 'opus-5',
+      architectureConfig: {},
+      cwd,
+      roots: [{ id: 'far', name: 'Far', dir: '../far-away' } as never],
+    });
+    expect(res).toBeNull();
+  });
+});
