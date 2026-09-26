@@ -34,6 +34,11 @@ interface Props {
    */
   backgroundTasks?: BackgroundTaskEntry[];
   /**
+   * 0.2.114: subagent work-clock starts by taskId (receipt of `subagent_started`,
+   * or the `chat_subagent_task.created_at` fallback). Absent → no clock.
+   */
+  subagentStartedAt?: ReadonlyMap<string, number>;
+  /**
    * 0.2.109: whether the turn this block belongs to is still open (its message
    * is still streaming). A delegation whose turn closed without
    * `subagent_completed` renders as interrupted — the finalizer marks the row
@@ -57,6 +62,7 @@ export function BlockRenderer({
   annotations,
   planMode,
   backgroundTasks,
+  subagentStartedAt,
   turnOpen = true,
   transagents,
   model,
@@ -155,6 +161,7 @@ export function BlockRenderer({
         <SubagentPanel
           block={block}
           turnOpen={turnOpen}
+          startedAt={subagentStartedAt?.get(block.taskId) ?? null}
           agentName={input?.subagent_type}
           prompt={input?.prompt}
           invocation={input ?? undefined}
@@ -185,6 +192,7 @@ export function BlockRenderer({
                 annotations={annotations}
                 planMode={planMode}
                 backgroundTasks={backgroundTasks}
+                subagentStartedAt={subagentStartedAt}
                 turnOpen={turnOpen}
                 transagents={transagents}
                 model={model}
@@ -215,6 +223,7 @@ export function BlockRenderer({
                 annotations={annotations}
                 planMode={planMode}
                 backgroundTasks={backgroundTasks}
+                subagentStartedAt={subagentStartedAt}
                 turnOpen={turnOpen}
                 transagents={transagents}
                 model={model}
@@ -247,6 +256,7 @@ export function BlockRenderer({
               annotations={annotations}
               planMode={planMode}
               backgroundTasks={backgroundTasks}
+              subagentStartedAt={subagentStartedAt}
               turnOpen={turnOpen}
               transagents={transagents}
               model={model}

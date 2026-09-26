@@ -5,6 +5,7 @@ import { BlockRenderer } from './BlockRenderer.js';
 import { ChatMarkdown } from './ChatMarkdown.js';
 import { openModal } from '../ui/events.js';
 import { parseToolResult } from './toolRenderers.js';
+import { ElapsedClock } from './ElapsedClock.js';
 
 interface Props {
   block: Extract<UIContentBlock, { type: 'subagent' }>;
@@ -18,9 +19,15 @@ interface Props {
   result?: { content: string; isError: boolean } | null;
   /** 0.2.109: false once the owning turn closed (see `subagentDisplayStatus`). */
   turnOpen?: boolean;
+  /**
+   * 0.2.114: epoch ms the header's work clock counts from — receipt of
+   * `subagent_started`, or the `chat_subagent_task.created_at` fallback. Shown
+   * only while `running`, collapsed or not. Null → no clock.
+   */
+  startedAt?: number | null;
 }
 
-export function SubagentPanel({ block, agentName, prompt, invocation, result, turnOpen = true }: Props) {
+export function SubagentPanel({ block, agentName, prompt, invocation, result, turnOpen = true, startedAt = null }: Props) {
   const [expanded, setExpanded] = useState(false);
   const status = subagentDisplayStatus(block.status, turnOpen);
   // `abandoned` is neutral, not a failure — like a background task, an
@@ -98,6 +105,9 @@ export function SubagentPanel({ block, agentName, prompt, invocation, result, tu
           >
             {stepCount}
           </span>
+        )}
+        {status === 'running' && startedAt != null && (
+          <ElapsedClock startMs={startedAt} className="font-mono text-[10.5px]" />
         )}
         {status === 'running' ? (
           // The header's `running` IS the turn's busy indicator for a live

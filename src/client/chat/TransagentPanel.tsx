@@ -8,7 +8,8 @@ import { BlockRenderer } from './BlockRenderer.js';
 import { ChatMarkdown } from './ChatMarkdown.js';
 import { openModal } from '../ui/events.js';
 import { parseToolResult } from './toolRenderers.js';
-import { CHAT_ENDPOINTS, rowsToChatMessages, type TransagentEntry } from './useChat.js';
+import { CHAT_ENDPOINTS, nextTurnStartedAt, rowsToChatMessages, type TransagentEntry } from './useChat.js';
+import { ElapsedClock } from './ElapsedClock.js';
 
 /**
  * 0.1.69 Transagents: nested child panel. On `transagent_started` the parent
@@ -45,7 +46,14 @@ export function TransagentPanel({
   const [messageOpen, setMessageOpen] = useState(false);
   const { state, handleWireEvent, restoreMessages, clear } = useMessageReducer('claude-code', model);
 
+  /**
+   * 0.2.114: the child's turn clock — `turnStartedAt` of the child's
+   * `replay.turnStart`, carried by the replayed `turn_start` of this same nested
+   * live-join (no new endpoint, no polling). The child's `done` clears it.
+   */
+  const [childTurnStartedAt, setChildTurnStartedAt] = useState<number | null>(null);
   const onEvent = useCallback((event: Parameters<typeof handleWireEvent>[0]) => {
+    setChildTurnStartedAt((prev) => nextTurnStartedAt(prev, event));
     handleWireEvent(event);
   }, [handleWireEvent]);
   const noop = useCallback(() => {}, []);
@@ -61,6 +69,7 @@ export function TransagentPanel({
   useEffect(() => {
     let cancelled = false;
     clear();
+    setChildTurnStartedAt(null);
     (async () => {
       // Try the live nested join first; a completed/absent child returns false.
       const joined = await joinStream(childThreadId).catch(() => false);
@@ -150,6 +159,9 @@ export function TransagentPanel({
           </span>
         )}
         <span className="flex-1" />
+        {running && childTurnStartedAt != null && (
+          <ElapsedClock startMs={childTurnStartedAt} className="font-mono text-[10.5px]" />
+        )}
         {running ? (
           <span className="dot-pulse" title="running">
             <span></span>

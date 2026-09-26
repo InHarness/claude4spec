@@ -2435,3 +2435,164 @@ describe('runAgentTurn — session config is settled on the first turn (0.2.113)
     expect(hoisted.lastExecute?.allowedPaths).toContain('/current');
   });
 });
+
+/**
+ * 0.2.114: `turn_start.turnStartedAt` — start of the turn or of the last merged
+ * dispatch. One marker scopes both the replay buffer and the client's turn
+ * clock: a merged dispatch resets both, a continuation (background task or
+ * delegation) and a mid-turn push reset neither.
+ */
+describe('runAgentTurn — 0.2.114 turnStartedAt on turn_start', () => {
+  type ReplayView = { replay: { events: Array<Record<string, unknown>>; turnStart: Record<string, unknown> } };
+  const activeOf = (deps: AgentTurnDeps) => (deps.activeAdapters as Map<string, ReplayView>).get('t1')!;
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Drains exactly one queued batch, so the turn runs a merged dispatch. */
+  function queueOneFollowUp(deps: AgentTurnDeps): void {
+    let drained = false;
+    (deps.chatService as unknown as { popAllQueued: () => Array<{ prompt: string }> }).popAllQueued = () => {
+      if (drained) return [];
+      drained = true;
+      return [{ prompt: 'queued follow-up' }];
+    };
+  }
+
+  it('the turn start carries turnStartedAt equal to its timestamp, held on replay.turnStart', async () => {
+    hoisted.events = [{ type: 'text_delta', text: 'hi' }, { type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    let turnStart: Record<string, unknown> | null = null;
+    hoisted.beforeEvent = () => {
+      turnStart ??= { ...activeOf(deps).replay.turnStart };
+    };
+    const emitted: Array<Record<string, unknown>> = [];
+    const input = makeInput();
+    input.onEvent = (e) => emitted.push(e as Record<string, unknown>);
+
+    await runAgentTurn(deps, input);
+
+    expect(typeof turnStart!.turnStartedAt).toBe('string');
+    expect(new Date(turnStart!.turnStartedAt as string).toISOString()).toBe(turnStart!.turnStartedAt);
+    expect(turnStart!.turnStartedAt).toBe(turnStart!.timestamp);
+    // Not sent live to the POST sender — joiners get it through the replay only.
+    expect(emitted.some((e) => e.type === 'turn_start')).toBe(false);
+  });
+
+  it.each([
+    [
+      'a background task',
+      [
+        { type: 'text_delta', text: 'Backgrounding. ' },
+        { type: 'background_task_started', taskId: 'bg1', taskType: 'shell', description: 'sleep 5' },
+        { type: 'result', sessionId: 's-held', backgroundTasks: [{ taskId: 'bg1', taskType: 'shell' }] },
+        { type: 'background_task_completed', taskId: 'bg1', taskType: 'shell', status: 'success' },
+        { type: 'text_delta', text: 'Continuation.' },
+        { type: 'result', sessionId: 's-final' },
+      ],
+    ],
+    [
+      'a delegation',
+      [
+        { type: 'text_delta', text: 'Delegating. ' },
+        { type: 'subagent_started', taskId: 'sub_1', description: 'Explore', toolUseId: 'tool_q' },
+        { type: 'result', sessionId: 's-parked' },
+        { type: 'subagent_completed', taskId: 'sub_1', status: 'completed' },
+        { type: 'text_delta', text: 'Continuation.' },
+        { type: 'result', sessionId: 's-final' },
+      ],
+    ],
+  ])('[ac:ac-kontynuacja-po-zadaniu-w-tle-lub-dele] a continuation after %s inherits turnStartedAt and resets nothing', async (_label, events) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-25T10:12:03.000Z'));
+    hoisted.events = events;
+    const { deps } = makeDeps();
+    let before: Record<string, unknown> | null = null;
+    let replayAtEnd: Array<Record<string, unknown>> = [];
+    let turnStartAtEnd: Record<string, unknown> | null = null;
+    hoisted.beforeEvent = (event) => {
+      before ??= { ...activeOf(deps).replay.turnStart };
+      if (event.type === 'result') vi.setSystemTime(new Date('2026-09-25T10:14:52.000Z'));
+      if (event.type === 'result' && event.sessionId === 's-final') {
+        replayAtEnd = [...activeOf(deps).replay.events];
+        turnStartAtEnd = { ...activeOf(deps).replay.turnStart };
+      }
+    };
+    const emitted: Array<Record<string, unknown>> = [];
+    const input = makeInput();
+    input.onEvent = (e) => emitted.push(e as Record<string, unknown>);
+
+    await runAgentTurn(deps, input);
+
+    const cont = emitted.find((e) => e.type === 'turn_start')!;
+    expect(cont.userMessageId).toBe(before!.userMessageId);
+    expect(cont.assistantMessageId).toBe(before!.assistantMessageId);
+    expect(cont.turnStartedAt).toBe('2026-09-25T10:12:03.000Z');
+    expect(cont.timestamp).toBe('2026-09-25T10:14:52.000Z');
+    // replay.turnStart untouched; the buffer holds BOTH segments, the
+    // continuation's turn_start appended after the parked result.
+    expect(turnStartAtEnd).toEqual(before);
+    const types = replayAtEnd.map((e) => e.type);
+    expect(types.indexOf('turn_start')).toBeGreaterThan(types.indexOf('result'));
+    expect(replayAtEnd.find((e) => e.type === 'text_delta')?.text).toMatch(/^(Backgrounding|Delegating)/);
+    expect(replayAtEnd.filter((e) => e.type === 'text_delta').at(-1)?.text).toBe('Continuation.');
+  });
+
+  it('[ac:ac-wiadomosc-wepchnieta-w-trakcie-pracy] a mid-turn push mints no turn_start and leaves replay.turnStart as is', async () => {
+    hoisted.events = [
+      { type: 'text_delta', text: 'Working. ' },
+      { type: 'user_message', text: 'pushed mid-turn', timestamp: Date.now() },
+      { type: 'text_delta', text: 'Still working.' },
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps } = makeDeps();
+    const seen: Array<Record<string, unknown>> = [];
+    hoisted.beforeEvent = () => {
+      seen.push(activeOf(deps).replay.turnStart);
+    };
+    const emitted: Array<Record<string, unknown>> = [];
+    const input = makeInput();
+    input.onEvent = (e) => emitted.push(e as Record<string, unknown>);
+
+    await runAgentTurn(deps, input);
+
+    expect(emitted.filter((e) => e.type === 'turn_start')).toHaveLength(0);
+    expect(new Set(seen).size).toBe(1);
+  });
+
+  it('[ac:ac-merged-dispatch-zeruje-zegar-tury] a merged dispatch mints new ids and a new turnStartedAt, and resets the replay buffer', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-25T10:00:00.000Z'));
+    hoisted.events = [{ type: 'text_delta', text: 'first' }, { type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    queueOneFollowUp(deps);
+    let first: Record<string, unknown> | null = null;
+    let second: Record<string, unknown> | null = null;
+    let eventsAtSecond: Array<Record<string, unknown>> = [];
+    hoisted.beforeEvent = (event) => {
+      const active = activeOf(deps);
+      if (hoisted.executes.length === 1) {
+        first ??= active.replay.turnStart;
+        if (event.type === 'result') vi.setSystemTime(new Date('2026-09-25T10:05:00.000Z'));
+      } else if (!second) {
+        second = active.replay.turnStart;
+        eventsAtSecond = [...active.replay.events];
+      }
+    };
+    const emitted: Array<Record<string, unknown>> = [];
+    const input = makeInput();
+    input.onEvent = (e) => emitted.push(e as Record<string, unknown>);
+
+    await runAgentTurn(deps, input);
+
+    expect(first!.turnStartedAt).toBe('2026-09-25T10:00:00.000Z');
+    expect(second!.turnStartedAt).toBe('2026-09-25T10:05:00.000Z');
+    expect(second!.timestamp).toBe(second!.turnStartedAt);
+    expect(second!.assistantMessageId).not.toBe(first!.assistantMessageId);
+    expect(second!.userMessageId).not.toBe(first!.userMessageId);
+    // Sent live, and the buffer restarted with it.
+    expect(emitted.find((e) => e.type === 'turn_start')).toEqual(second);
+    expect(eventsAtSecond).toEqual([]);
+  });
+});

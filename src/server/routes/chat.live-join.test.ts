@@ -9,8 +9,8 @@ import type { ActiveAdapter, AgentTurnDeps, PendingInput } from './agent-turn.js
  * M05 0.2.47 — the live-join contract of `GET /api/chat/stream/:threadId`.
  *
  * Auto-resume stopped being a guess about `chat_message.status` and became a
- * two-sided structural contract: the server keeps the CURRENT ITERATION of the
- * turn in an in-RAM buffer and replays it 1:1 on join (or 404s when the turn is
+ * two-sided structural contract: the server keeps the turn (since 0.2.114: the
+ * whole turn, or its part since the last merged dispatch) in an in-RAM buffer and replays it 1:1 on join (or 404s when the turn is
  * dead), while the client cuts RESTORE above the running turn and lets the
  * replay redraw it. Neither half is type-checkable, and a regression on either
  * side is silent — hence these tests.
@@ -216,6 +216,48 @@ describe('GET /api/chat/stream/:threadId — live-join replay', () => {
     });
     const deltas = frames.filter((f) => f.event === 'text_delta').map((f) => f.data.text);
     expect(deltas).toEqual(['iteration two']);
+  });
+
+  it('[ac:ac-joiner-dolaczajacy-w-drugiej-iteracji] a joiner in the second iteration of a turn sees the first one, and the continuation turn_start carries the same ids and inherited turnStartedAt', async () => {
+    // 0.2.114: a continuation (background task / delegation) resets nothing —
+    // no `user` row is persisted for it, so RESTORE cuts above the whole turn and
+    // the first iteration can only come from the buffer.
+    const turnStart = {
+      type: 'turn_start',
+      userMessageId: 'Vx3kQ9mP2aLd',
+      assistantMessageId: 'r7TnB0wYe4Hs',
+      prompt: 'Run the build and report',
+      timestamp: '2026-09-25T10:12:03.000Z',
+      turnStartedAt: '2026-09-25T10:12:03.000Z',
+    };
+    activeAdapters.set(
+      THREAD_ID,
+      makeActive(
+        [
+          { type: 'text_delta', text: 'iteration one' },
+          { type: 'background_task_started', taskId: 'bg1', taskType: 'shell', description: 'npm run build' },
+          { type: 'result', sessionId: 's-held' },
+          { type: 'background_task_completed', taskId: 'bg1', taskType: 'shell', status: 'success' },
+          { ...turnStart, timestamp: '2026-09-25T10:14:52.000Z' },
+          { type: 'text_delta', text: 'iteration two' },
+        ],
+        turnStart,
+      ),
+    );
+
+    const frames = await join();
+
+    const starts = frames.filter((f) => f.event === 'turn_start').map((f) => f.data);
+    expect(starts).toHaveLength(2);
+    expect(starts[0]).toMatchObject({ turnStartedAt: '2026-09-25T10:12:03.000Z', timestamp: '2026-09-25T10:12:03.000Z' });
+    expect(starts[1]).toMatchObject({
+      userMessageId: 'Vx3kQ9mP2aLd',
+      assistantMessageId: 'r7TnB0wYe4Hs',
+      timestamp: '2026-09-25T10:14:52.000Z',
+      turnStartedAt: '2026-09-25T10:12:03.000Z',
+    });
+    const deltas = frames.filter((f) => f.event === 'text_delta').map((f) => f.data.text);
+    expect(deltas).toEqual(['iteration one', 'iteration two']);
   });
 
   it('[ac:ac-tura-czysto-tekstowa-wznawia-sie-po-f] a pure-text turn replays in full, with no tool event anywhere', async () => {

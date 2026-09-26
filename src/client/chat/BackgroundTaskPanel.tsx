@@ -1,5 +1,6 @@
 import { Terminal, Activity, Workflow, Cog, FileText } from 'lucide-react';
 import type { BackgroundTaskEntry } from './useChat.js';
+import { ElapsedClock } from './ElapsedClock.js';
 
 /**
  * M05: an engine-backgrounded task (a `run_in_background` shell, a Monitor loop,
@@ -55,6 +56,14 @@ export function BackgroundTaskPanel({ entry }: { entry: BackgroundTaskEntry }) {
               <span></span>
             </span>
             running
+            {/* 0.2.114: the work clock — only while running; a settled task
+                shows no duration. */}
+            {entry.startedAt != null && (
+              <>
+                <span aria-hidden="true">·</span>
+                <ElapsedClock startMs={entry.startedAt} className="normal-case" />
+              </>
+            )}
           </span>
         ) : (
           // Neutral chrome, always. No branch on the value — see the note above.
