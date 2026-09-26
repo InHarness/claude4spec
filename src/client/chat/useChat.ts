@@ -218,15 +218,17 @@ export function nextParked(prev: boolean, event: { type: string; code?: string }
  */
 export function nextTurnStartedAt(
   prev: number | null,
-  event: { type: string; code?: string; turnStartedAt?: unknown },
+  // `turnStartedAt` is outside the library's closed `turn_start` type; the full
+  // JSON still reaches us, and the reducer ignores the field.
+  e: { type: string; code?: unknown; turnStartedAt?: unknown },
 ): number | null {
-  switch (event.type) {
+  switch (e.type) {
     case 'turn_start':
-      return typeof event.turnStartedAt === 'string' ? (parseServerTime(event.turnStartedAt) ?? prev) : prev;
+      return typeof e.turnStartedAt === 'string' ? (parseServerTime(e.turnStartedAt) ?? prev) : prev;
     case 'done':
       return null;
     case 'error':
-      return NON_TERMINAL_ERROR_CODES.has(event.code ?? '') ? prev : null;
+      return typeof e.code === 'string' && NON_TERMINAL_ERROR_CODES.has(e.code) ? prev : null;
     default:
       return prev;
   }
@@ -490,9 +492,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
   const onEvent = useCallback(
     (event: WireEvent) => {
       setIsParked((prev) => nextParked(prev, event as { type: string; code?: string }));
-      // `turnStartedAt` is outside the library's closed `turn_start` type; the
-      // full JSON still reaches us, and the reducer ignores the field.
-      setTurnStartedAt((prev) => nextTurnStartedAt(prev, event as { type: string; code?: string; turnStartedAt?: unknown }));
+      setTurnStartedAt((prev) => nextTurnStartedAt(prev, event));
       if (event.type === 'turn_start') setOpenTurnAssistantId(event.assistantMessageId);
       if (event.type === 'subagent_started') {
         const { taskId } = event;

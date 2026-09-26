@@ -53,7 +53,7 @@ export function TransagentPanel({
    */
   const [childTurnStartedAt, setChildTurnStartedAt] = useState<number | null>(null);
   const onEvent = useCallback((event: Parameters<typeof handleWireEvent>[0]) => {
-    setChildTurnStartedAt((prev) => nextTurnStartedAt(prev, event as { type: string; code?: string; turnStartedAt?: unknown }));
+    setChildTurnStartedAt((prev) => nextTurnStartedAt(prev, event));
     handleWireEvent(event);
   }, [handleWireEvent]);
   const noop = useCallback(() => {}, []);
