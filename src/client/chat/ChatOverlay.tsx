@@ -23,6 +23,7 @@ import { useBrief } from '../hooks/useBriefs.js';
 import { usePatch } from '../hooks/usePatches.js';
 import { encodeBriefPath } from '../lib/briefs-api.js';
 import { encodePatchPath } from '../lib/patches-api.js';
+import { StreamingBubble, streamingBubbleVisible } from './StreamingBubble.js';
 import { chatConfigApi, type ChatModelInfo, type SessionResumeConstraint } from '../lib/api.js';
 
 const NEW_THREAD_DRAFT_KEY = '__new__';
@@ -161,6 +162,8 @@ export function ChatOverlay() {
     heldBackgroundTaskCount,
     holdEnding,
     isParked,
+    turnStartedAt,
+    subagentStartedAt,
     busyIndicator,
     openTurnMessageIds,
     activeThreadMeta,
@@ -368,7 +371,7 @@ export function ChatOverlay() {
 
   // 0.2.109: while the turn is parked nothing streams, so the "streaming" badge
   // gives way to the parked turn's own indicator (`busyIndicator`).
-  const showStreamingBubble = isBusy && !isParked;
+  const showStreamingBubble = streamingBubbleVisible({ isStreaming, isResuming, isParked });
 
   const handleListScroll = useCallback(() => {
     const el = listRef.current;
@@ -606,6 +609,7 @@ export function ChatOverlay() {
                           annotations={msgAnnotations}
                           planMode={msgPlanMode}
                           backgroundTasks={backgroundTasks}
+                          subagentStartedAt={subagentStartedAt}
                           turnOpen={openTurnMessageIds.has(msg.id)}
                           transagents={transagents}
                           model={model ?? ''}
@@ -661,23 +665,7 @@ export function ChatOverlay() {
                   </div>
                 </div>
               )}
-              {showStreamingBubble && (
-                <div className="msg-enter mb-3 flex">
-                  <div
-                    className="inline-flex items-center gap-1.5 py-1 text-[10.5px] font-mono"
-                    style={{ color: 'var(--c-muted)' }}
-                    aria-live="polite"
-                    aria-label="Agent is streaming"
-                  >
-                    <span className="dot-pulse">
-                      <span></span>
-                      <span></span>
-                      <span></span>
-                    </span>
-                    <span className="uppercase tracking-wider">streaming</span>
-                  </div>
-                </div>
-              )}
+              {showStreamingBubble && <StreamingBubble turnStartedAt={turnStartedAt} />}
               {/* Pending user_input_request cards — inline in the scrollable stream */}
               {pendingUserInputs.map((req) => (
                 <UserInputRequestCard key={req.requestId} request={req} onSubmit={submitUserInput} />

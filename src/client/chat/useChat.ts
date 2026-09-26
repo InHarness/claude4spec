@@ -13,6 +13,7 @@ import type {
   TransagentChildRef,
 } from '../../shared/entities.js';
 import { isMainModelEvent } from '../../shared/agent-turn.js';
+import { parseServerTime } from './elapsed.js';
 import { thinkingToConfig, type ChatModel, type ChatThinking } from '../state/chat.js';
 import { toast } from '../ui/events.js';
 
@@ -98,6 +99,13 @@ export interface BackgroundTaskEntry {
   status: string;
   outputFile: string | null;
   summary: string | null;
+  /**
+   * 0.2.114: epoch ms the work clock counts from — when this client received
+   * `background_task_started`, or else the row's `created_at` (cold load).
+   * First value wins: a reused `task_id` and a replayed `_started` after F5 keep
+   * the earlier start. Null = unknown, no clock.
+   */
+  startedAt: number | null;
 }
 
 /**
@@ -202,6 +210,61 @@ export function nextParked(prev: boolean, event: { type: string; code?: string }
 }
 
 /**
+ * 0.2.114: the next start of the turn clock (epoch ms), from one stream event.
+ * EVERY `turn_start` carries `turnStartedAt` — the start of the turn or of the
+ * last merged dispatch — so no need to tell a merged dispatch (which resets it)
+ * from a continuation (which inherits it): the server already did. A mid-turn
+ * `user_message` never touches it. `done` and a terminal `error` clear it.
+ */
+export function nextTurnStartedAt(
+  prev: number | null,
+  event: { type: string; code?: string; turnStartedAt?: unknown },
+): number | null {
+  switch (event.type) {
+    case 'turn_start':
+      return typeof event.turnStartedAt === 'string' ? (parseServerTime(event.turnStartedAt) ?? prev) : prev;
+    case 'done':
+      return null;
+    case 'error':
+      return NON_TERMINAL_ERROR_CODES.has(event.code ?? '') ? prev : null;
+    default:
+      return prev;
+  }
+}
+
+/**
+ * M05 (F5 / cold reload): a persisted `chat_background_task` row as a panel
+ * entry. 0.2.114: the work clock starts at the row's `created_at` (raw SQLite,
+ * UTC) — the client did not see this task's `background_task_started`.
+ */
+export function backgroundTaskEntryFromRow(t: ChatBackgroundTask): BackgroundTaskEntry {
+  return {
+    taskId: t.taskId,
+    taskType: t.taskType,
+    description: t.description,
+    status: t.status,
+    outputFile: t.outputFile,
+    summary: t.summary,
+    startedAt: parseServerTime(t.createdAt),
+  };
+}
+
+/**
+ * 0.2.114: the subagent clock's fallback starts, from the persisted
+ * `chat_subagent_task` rows (raw SQLite `created_at`, UTC). A `task_id` reused
+ * by a `SendMessage` resume keeps its FIRST `created_at` — the row's identity,
+ * not the clock's, so the clock counts from the first entry.
+ */
+export function startMapFromRows(rows: ReadonlyArray<{ taskId: string; createdAt: string }>): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const r of rows) {
+    const ms = parseServerTime(r.createdAt);
+    if (ms != null && !out.has(r.taskId)) out.set(r.taskId, ms);
+  }
+  return out;
+}
+
+/**
  * Toast for a terminal SSE `error`, or null for none. ABORTED stays silent (the
  * user pressed Stop); an idle stop is a warning, not an error; the backstop gets
  * its own wording because the server message does not say it means an
@@ -239,6 +302,28 @@ function upsertBackgroundTask(
   return prev.some((t) => t.taskId === taskId)
     ? prev.map((t) => (t.taskId === taskId ? make(t) : t))
     : [...prev, make(null)];
+}
+
+/**
+ * `background_task_started` → the entry turns `running`. 0.2.114: its work clock
+ * starts at `now` (receipt) only when the entry has no start yet — FIRST WINS,
+ * so a `_started` replayed after F5 keeps the cold load's `created_at`, and a
+ * reused `task_id` keeps counting from its first entry.
+ */
+export function applyBackgroundTaskStarted(
+  prev: BackgroundTaskEntry[],
+  ev: { taskId: string; taskType: string; description: string },
+  now: number,
+): BackgroundTaskEntry[] {
+  return upsertBackgroundTask(prev, ev.taskId, (e) => ({
+    taskId: ev.taskId,
+    taskType: ev.taskType,
+    description: ev.description,
+    status: 'running',
+    outputFile: e?.outputFile ?? null,
+    summary: e?.summary ?? null,
+    startedAt: e?.startedAt ?? now,
+  }));
 }
 
 export interface UseChatOptions {
@@ -379,6 +464,18 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
   // 0.2.109: between a non-terminal `result` and `done` (see `nextParked`).
   const [isParked, setIsParked] = useState(false);
   /**
+   * 0.2.114: start of the turn clock (epoch ms; see `nextTurnStartedAt`). The
+   * sending tab never gets the turn's first `turn_start`, so it counts from its
+   * own send until one arrives; a joiner has none (no clock) until the replayed
+   * `turn_start` lands.
+   */
+  const [turnStartedAt, setTurnStartedAt] = useState<number | null>(null);
+  /**
+   * 0.2.114: subagent work-clock starts by taskId — receipt of `subagent_started`,
+   * or else the `chat_subagent_task.created_at` of a cold load. First wins.
+   */
+  const [subagentStartedAt, setSubagentStartedAt] = useState<ReadonlyMap<string, number>>(() => new Map());
+  /**
    * 0.2.109: the assistant message the open iteration's `turn_start` opened. A
    * mid-turn `user_message` finalizes that message and opens another, so
    * `msg.isStreaming` alone would call a delegation still running in the
@@ -393,7 +490,14 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
   const onEvent = useCallback(
     (event: WireEvent) => {
       setIsParked((prev) => nextParked(prev, event as { type: string; code?: string }));
+      // `turnStartedAt` is outside the library's closed `turn_start` type; the
+      // full JSON still reaches us, and the reducer ignores the field.
+      setTurnStartedAt((prev) => nextTurnStartedAt(prev, event as { type: string; code?: string; turnStartedAt?: unknown }));
       if (event.type === 'turn_start') setOpenTurnAssistantId(event.assistantMessageId);
+      if (event.type === 'subagent_started') {
+        const { taskId } = event;
+        setSubagentStartedAt((prev) => (prev.has(taskId) ? prev : new Map(prev).set(taskId, Date.now())));
+      }
       const ext = event as WireEventExtended;
       /**
        * 0.2.50 — the joined turn's replay buffer blew its 4MB budget and
@@ -462,18 +566,9 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
       };
 
       if (ext.type === 'background_task_started') {
-        const { taskId, taskType, description } = ext;
-        setBackgroundTasks((prev) =>
-          upsertBackgroundTask(prev, taskId, (e) => ({
-            taskId,
-            taskType,
-            description,
-            status: 'running',
-            outputFile: e?.outputFile ?? null,
-            summary: e?.summary ?? null,
-          })),
-        );
-        placeBackgroundTaskCarrier(taskId);
+        const now = Date.now();
+        setBackgroundTasks((prev) => applyBackgroundTaskStarted(prev, ext, now));
+        placeBackgroundTaskCarrier(ext.taskId);
         return;
       }
       if (ext.type === 'background_task_progress') {
@@ -486,6 +581,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
             status: status ?? e?.status ?? 'running',
             outputFile: outputFile ?? e?.outputFile ?? null,
             summary: e?.summary ?? null,
+            startedAt: e?.startedAt ?? null,
           })),
         );
         placeBackgroundTaskCarrier(taskId);
@@ -501,6 +597,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
             status,
             outputFile: outputFile ?? e?.outputFile ?? null,
             summary: summary ?? e?.summary ?? null,
+            startedAt: e?.startedAt ?? null,
           })),
         );
         placeBackgroundTaskCarrier(taskId);
@@ -639,6 +736,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     (error: Error) => {
       handleWireEvent({ type: 'error', error: error.message, code: 'NETWORK_ERROR' });
       setIsParked(false);
+      setTurnStartedAt(null);
       toast.error(`Chat stream disconnected: ${error.message}`);
     },
     [handleWireEvent],
@@ -688,6 +786,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
       // Nowa tura przejmuje transport — `startStream` sam abortuje ewentualny join z F5.
       setIsResuming(false);
       setHoldEnding(null);
+      setTurnStartedAt(Date.now());
 
       sendUserMessage(
         prompt.trim() ? prompt : `(${annotations.length} annotation${annotations.length === 1 ? '' : 's'} attached)`,
@@ -732,6 +831,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     // Dispatched straight to the reducer, not through `onEvent` — and the aborted
     // SSE delivers no `done` — so `nextParked` never sees this terminal error.
     setIsParked(false);
+    setTurnStartedAt(null);
     endHold('ABORTED');
     setPendingUserInputs([]);
     synthesizedUserInputsRef.current = new Set();
@@ -819,6 +919,8 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     setLiveContextSize(null);
     setTransagents([]);
     setBackgroundTasks([]);
+    setSubagentStartedAt(new Map());
+    setTurnStartedAt(null);
     setHoldEnding(null);
     // Carrier blocks live in the transcript we are about to replace, so the
     // "already placed" memory has to go with it — otherwise re-entering a thread
@@ -883,16 +985,10 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
         // for a task still running across the reload would place a SECOND
         // carrier and render its panel twice.
         seenBackgroundTaskIdsRef.current = new Set(bgTasks.map((t) => t.taskId));
-        setBackgroundTasks(
-          bgTasks.map((t) => ({
-            taskId: t.taskId,
-            taskType: t.taskType,
-            description: t.description,
-            status: t.status,
-            outputFile: t.outputFile,
-            summary: t.summary,
-          })),
-        );
+        // 0.2.114: the subagent clock's fallback start — before `joinStream`, so a
+        // `subagent_started` replayed after F5 does not restart it at reload time.
+        setSubagentStartedAt(startMapFromRows(subagentTasks));
+        setBackgroundTasks(bgTasks.map(backgroundTaskEntryFromRow));
 
         // Zywa tura serwerowa, ktorej ta karta nie streamuje → wznow przez joinStream.
         // Przywracamy historie SPRZED biezacej tury (przed ostatnim user-message); turn_start
@@ -1023,6 +1119,10 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     heldBackgroundTaskCount,
     /** 0.2.109: the turn is parked — after a non-terminal `result`, before `done`. */
     isParked,
+    /** 0.2.114: start of the turn clock shown by the streaming bubble (null = no clock). */
+    turnStartedAt,
+    /** 0.2.114: subagent work-clock starts by taskId (<SubagentPanel /> header). */
+    subagentStartedAt,
     /** 0.2.109: ids of the messages that belong to the still-open turn (`turnOpen`). */
     openTurnMessageIds,
     /** 0.2.109: which busy indicator the parked turn shows (`turnBusyIndicator`). */

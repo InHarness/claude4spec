@@ -9,8 +9,8 @@ import type { ActiveAdapter, AgentTurnDeps, PendingInput } from './agent-turn.js
  * M05 0.2.47 — the live-join contract of `GET /api/chat/stream/:threadId`.
  *
  * Auto-resume stopped being a guess about `chat_message.status` and became a
- * two-sided structural contract: the server keeps the CURRENT ITERATION of the
- * turn in an in-RAM buffer and replays it 1:1 on join (or 404s when the turn is
+ * two-sided structural contract: the server keeps the turn (since 0.2.114: the
+ * whole turn, or its part since the last merged dispatch) in an in-RAM buffer and replays it 1:1 on join (or 404s when the turn is
  * dead), while the client cuts RESTORE above the running turn and lets the
  * replay redraw it. Neither half is type-checkable, and a regression on either
  * side is silent — hence these tests.
