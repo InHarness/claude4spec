@@ -3,6 +3,7 @@ import { resolveAgentPathScope } from './agent-path-scope.js';
 import { resolveAgentToolGroups } from './agent-tool-posture.js';
 import type { ToolGroup } from '@inharness-ai/agent-adapters';
 import type { Root } from '../../shared/types.js';
+import type { SessionConfigSnapshot } from './session-config.js';
 
 /**
  * 0.2.8 (A19): the ONE place that composes an agent turn's filesystem scope from
@@ -14,8 +15,10 @@ import type { Root } from '../../shared/types.js';
  * an envelope re-deriving the scope for itself.
  *
  * Config is read **per call** (`readConfig` is a pure disk read, no cache), so editing
- * `.claude4spec/config.json` takes effect on the next turn without a process restart.
- * Do NOT hoist this call to service construction time.
+ * `.claude4spec/config.json` takes effect on the next NEW thread without a process
+ * restart. Do NOT hoist this call to service construction time. 0.2.113: a resumed
+ * turn does not take the fresh result — `withSessionScope` pins it to the scope the
+ * session opened with.
  *
  * The path arithmetic itself stays in `resolveAgentPathScope` (roots folding, artifact
  * deny-set, absolute normalization); this module adds only the config read and the
@@ -118,6 +121,38 @@ export function resolveAgentExecutionScope(
         denyRead: scope.disallowedPaths,
         denyWrite: [...scope.disallowedPaths, ...scope.pageRootDirs],
         allowWrite: scope.allowedPaths,
+      },
+    },
+  };
+}
+
+/**
+ * 0.2.113: the scope is fixed for a SESSION's lifetime. On a resumed turn whose
+ * snapshot records the resolved scope under the 0.2.113 contract (`lockedConfig`
+ * present), that recorded scope replaces the freshly resolved one — lists and the
+ * sandbox shape alike. The prompt-layer fields (`userAllowedPaths` & co.) stay as
+ * resolved: they feed a system prompt a resumed session does not re-read.
+ *
+ * Without such a snapshot (a new thread, or one founded before 0.2.113) the fresh
+ * scope is returned unchanged.
+ */
+export function withSessionScope(
+  scope: AgentExecutionScope,
+  session: SessionConfigSnapshot | null,
+): AgentExecutionScope {
+  if (!session?.lockedConfig || !session.allowedPaths || !session.disallowedPaths) return scope;
+  const pageRootDirs = session.pageRootDirs ?? scope.pageRootDirs;
+  return {
+    ...scope,
+    allowedPaths: session.allowedPaths,
+    disallowedPaths: session.disallowedPaths,
+    pageRootDirs,
+    claudeSandbox: {
+      enabled: true,
+      filesystem: {
+        denyRead: session.disallowedPaths,
+        denyWrite: [...session.disallowedPaths, ...pageRootDirs],
+        allowWrite: session.allowedPaths,
       },
     },
   };

@@ -6,6 +6,7 @@ import express from 'express';
 import request from 'supertest';
 import { builtinPagesRoot, configPath, readConfig, type Config } from '../config.js';
 import { configRouter } from './config.js';
+import { rootRenameRouter } from './config-rename.js';
 import { readRootRenames, rootRenamesPath } from '../root-renames.js';
 import type { SkillRegistry } from '../services/skill-registry.js';
 import type { Root } from '../../shared/types.js';
@@ -64,13 +65,9 @@ describe('POST /config/roots/:rootId/rename (0.2.101)', () => {
   const app = () =>
     express()
       .use(express.json())
-      .use(
-        configRouter({
-          cwd: dir,
-          skillRegistry: {} as unknown as SkillRegistry,
-          onRootRenamed: (from, to) => renamed.push([from, to]),
-        }),
-      );
+      // 0.2.113: the project module mounts the rename, the settings module `/config`.
+      .use('/config', rootRenameRouter({ cwd: dir, onRootRenamed: (from, to) => renamed.push([from, to]) }))
+      .use(configRouter({ cwd: dir, skillRegistry: {} as unknown as SkillRegistry }));
 
   const currentHash = async (): Promise<string> =>
     (await request(app()).get('/config')).body.configHash as string;

@@ -666,6 +666,45 @@ export function validateRootDirs(
 }
 
 /**
+ * 0.2.113: briefs/patches/plans against the three non-root WRITE targets
+ * (entitiesDir, releasesDir, `.claude4spec/plugins`). Overlapping a page root is
+ * only untidy (rule 3a — frontmatter `type: brief|patch` tells the files apart), but
+ * sharing a directory with the entity store, the release identity files or the
+ * plugin overlay is destructive, so it is an error.
+ *
+ * Kept out of `validateRootDirs` on purpose: boot never compared these pairs, so a
+ * project can already violate one, and promoting them into boot's hard errors would
+ * make it unopenable. `PATCH /api/config` refuses a pair only when the request
+ * touches one of its two sides — the same repairability rule as `newPairConflicts`.
+ */
+export function artifactDirConflicts(opts: {
+  entitiesDir: string;
+  releasesDir: string;
+  briefsDir: string;
+  patchesDir: string;
+  plansDir: string;
+}): Array<{ a: string; b: string; message: string }> {
+  const artifactDirs = [
+    { id: 'briefsDir', dir: opts.briefsDir },
+    { id: 'patchesDir', dir: opts.patchesDir },
+    { id: 'plansDir', dir: opts.plansDir },
+  ];
+  const writeTargets = [
+    { id: 'entitiesDir', dir: opts.entitiesDir },
+    { id: 'releasesDir', dir: opts.releasesDir },
+    ...RESERVED_WRITE_TARGETS.map((d) => ({ id: d, dir: d })),
+  ];
+  const out: Array<{ a: string; b: string; message: string }> = [];
+  for (const a of artifactDirs) {
+    for (const b of writeTargets) {
+      if (!targetsOverlap({ dir: a.dir, isRoot: false }, { dir: b.dir, isRoot: false })) continue;
+      out.push({ a: a.id, b: b.id, message: `config.json: '${a.id}' overlaps write-target '${b.id}'` });
+    }
+  }
+  return out;
+}
+
+/**
  * Root ids that would be shadowed by a route sharing their prefix.
  *
  * 0.2.13 mounts the cross-root `search_pages` rendering at `GET /api/pages/search`,

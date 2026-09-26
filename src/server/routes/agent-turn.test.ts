@@ -123,6 +123,7 @@ function makeDeps() {
   const messages: Recorded[] = [];
   // 0.2.8 (C15): the turn-1 resume snapshot, captured instead of persisted.
   const snapshots: Array<Record<string, unknown>> = [];
+  const storedSnapshot: { json?: string } = {};
   const rows: Array<{
     id: number;
     role: string;
@@ -152,6 +153,9 @@ function makeDeps() {
     setInitialArchitectureConfig: (_id: string, snapshot: Record<string, unknown>) => {
       snapshots.push(snapshot);
     },
+    // 0.2.113: a resumed turn reads its session's snapshot back. `storedSnapshot`
+    // seeds the one "already in the database"; none means a thread without one.
+    getInitialArchitectureConfig: () => (storedSnapshot.json ?? null),
     setLastUsage: () => {},
     setLastSessionId: () => {},
     attachTurnUsage: () => {},
@@ -215,7 +219,7 @@ function makeDeps() {
     db: { handle: {} },
   } as unknown as AgentTurnDeps;
 
-  return { deps, messages, snapshots };
+  return { deps, messages, snapshots, storedSnapshot };
 }
 
 function makeInput(): AgentTurnInput {
@@ -2366,5 +2370,68 @@ describe('abortChildTurns — continuation rows (0.2.111)', () => {
     abortChildTurns(activeAdapters, new Map(), 'caller');
 
     expect(aborted).toEqual(['continuation-row']);
+  });
+});
+
+/**
+ * 0.2.113: the resume-config snapshot's config half. The scope and the `new-thread`
+ * prompt inputs are settled by the turn that opens a session; a resumed turn reuses
+ * them, whatever config says by then.
+ */
+describe('runAgentTurn — session config is settled on the first turn (0.2.113)', () => {
+  it('records the declared locked fields, the prompt inputs and the page-root block on turn 1', async () => {
+    hoisted.events = [{ type: 'result', sessionId: 's-new' }];
+    hoisted.agent = { allowedPaths: ['/extra'] };
+    const { deps, snapshots } = makeDeps();
+    await runAgentTurn(deps, makeInput());
+    const snap = snapshots.at(-1)!;
+    expect(snap.lockedConfig).toMatchObject({
+      'agent.allowedPaths': ['/extra'],
+      'agent.disallowedPaths': [],
+      plansDir: '.claude4spec/plans',
+    });
+    expect(snap.promptConfig).toHaveProperty('writingStyle');
+    expect(snap.pageRootDirs).toEqual(PAGE_ROOTS_ABS);
+  });
+
+  it('a resumed turn runs on the session scope, not on the current config', async () => {
+    hoisted.events = [{ type: 'result', sessionId: 's-prev' }];
+    // Config moved on since the session opened — a new thread would get this.
+    hoisted.agent = { allowedPaths: ['/moved-on'] };
+    const { deps, storedSnapshot } = makeDeps();
+    storedSnapshot.json = JSON.stringify({
+      model: 'claude-opus-5',
+      architectureConfig: {},
+      allowedPaths: ['/frozen'],
+      disallowedPaths: ['/deny'],
+      pageRootDirs: ['/pages-then'],
+      lockedConfig: { 'agent.allowedPaths': ['/frozen'] },
+      promptConfig: { name: 'Then', language: null, conversationalLanguage: null, writingStyle: 'style-then' },
+    });
+    const input = makeInput();
+    (input.thread as unknown as { lastSessionId: string }).lastSessionId = 's-prev';
+    const resolveForContext = vi.fn(() => ({ listing: [], writingStyle: null }));
+    (deps as unknown as { skillResolver: unknown }).skillResolver = { resolveForContext };
+
+    await runAgentTurn(deps, input);
+
+    expect(hoisted.lastExecute?.allowedPaths).toEqual(['/frozen']);
+    expect(hoisted.lastExecute?.disallowedPaths).toEqual(['/deny']);
+    const sandbox = (hoisted.lastExecute?.architectureConfig as { claude_sandbox: { filesystem: Record<string, string[]> } })
+      .claude_sandbox.filesystem;
+    expect(sandbox.denyWrite).toEqual(['/deny', '/pages-then']);
+    // The writing style the thread started with, not the one config holds now.
+    expect(resolveForContext).toHaveBeenCalledWith('chat', { writingStyle: 'style-then' });
+  });
+
+  it('a snapshot from before 0.2.113 (no lockedConfig) keeps the per-turn scope', async () => {
+    hoisted.events = [{ type: 'result', sessionId: 's-prev' }];
+    hoisted.agent = { allowedPaths: ['/current'] };
+    const { deps, storedSnapshot } = makeDeps();
+    storedSnapshot.json = JSON.stringify({ model: 'm', architectureConfig: {}, allowedPaths: ['/old'], disallowedPaths: [] });
+    const input = makeInput();
+    (input.thread as unknown as { lastSessionId: string }).lastSessionId = 's-prev';
+    await runAgentTurn(deps, input);
+    expect(hoisted.lastExecute?.allowedPaths).toContain('/current');
   });
 });
