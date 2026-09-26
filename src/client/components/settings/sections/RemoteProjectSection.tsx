@@ -29,7 +29,7 @@ export function RemoteProjectSection() {
   const patch = usePatchConfig();
 
   async function handleDisconnect() {
-    const ok = await confirmDestructive({
+    const ok = await confirmDestructive('project-disconnect', {
       title: 'Disconnect from remote project?',
       body: 'The local config will be cleared. Your next push will create a new remote project.',
       confirmLabel: 'Disconnect',
@@ -66,14 +66,15 @@ export function RemoteProjectSection() {
           </button>
         </div>
       ) : !data?.linked ? (
-        <EmptyText>No remote project linked yet. Pushing a release will create one.</EmptyText>
+        <EmptyText>No remote project connected. The first release push will create a new remote project.</EmptyText>
       ) : !data.fetched && data.reason === 'not_found' ? (
         <div>
           <div
             className="mb-3 rounded-md px-3 py-2 text-[12px]"
             style={{ background: 'rgba(168, 112, 51, 0.18)', color: '#a87033' }}
           >
-            Cannot fetch project info (draft, deleted, or no access).
+            Cannot fetch project info for <code className="font-mono">{data.projectId}</code> — it may be a
+            draft, deleted, or you don&apos;t have access.
           </div>
           <ProjectIdRow projectId={data.projectId} />
           <div className="mt-3 flex justify-end">

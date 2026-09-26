@@ -8,6 +8,7 @@ import {
   useNavigate,
   useRouter,
   Navigate,
+  useRouterState,
   type AnyRoute,
 } from '@tanstack/react-router';
 import type { QueryClient } from '@tanstack/react-query';
@@ -40,6 +41,7 @@ import { resolveLandingTarget } from './lib/landing.js';
 import type { EntityType } from '../shared/entities.js';
 import { clientPluginHost } from './core/plugin-host/host.js';
 import { PROJECT_ID } from './lib/api-core.js';
+import type { ConfigResponse } from './lib/api.js';
 import { frontendPluginsBooted, pluginBootPending } from './runtime/boot-plugins.js';
 import { LoadingState } from './host-ui-kit/actions/LoadingState.js';
 
@@ -167,6 +169,8 @@ const onboardingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/onboarding',
   component: OnboardingPage,
+  // M16: a fresh project (onboarding not completed) lands here from any route.
+  staticData: { fullscreen: true, redirectIf: (config) => !config.onboarding.completed },
 });
 
 // Decision #11: project-less route (basepath '/' when no PROJECT_ID is injected).
@@ -174,6 +178,7 @@ const welcomeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/welcome',
   component: WelcomePage,
+  staticData: { fullscreen: true },
 });
 
 const settingsRoute = createRoute({
@@ -350,6 +355,16 @@ declare module '@tanstack/react-router' {
   interface Register {
     router: AppRouter;
   }
+  /**
+   * 0.2.110 M50 — full-screen routes. A route owner flags its route
+   * `fullscreen`: the shell then renders no sidebar and no chat overlay. It may
+   * also declare `redirectIf`, which the shell checks on mount, BEFORE it renders
+   * the regular shell, so the regular view never flashes first.
+   */
+  interface StaticDataRouteOption {
+    fullscreen?: boolean;
+    redirectIf?: (config: ConfigResponse) => boolean;
+  }
 }
 
 // M33 phase 3: exported for the transitional `database-table/routes.tsx` fragment.
@@ -405,9 +420,19 @@ function IndexRoute() {
  */
 function LegacyPageRedirect() {
   const { _splat } = useParams({ from: '/pages/$' });
+  // 0.2.110: the section anchor survives the redirect — a plugin's
+  // `openSection` has no root id and lands here with `#anchor-…`.
+  const hash = useRouterState({ select: (s) => s.location.hash });
   const baseRootId = useBaseRootId();
   if (!baseRootId) return null;
-  return <Navigate to="/space/$rootId/$" params={{ rootId: baseRootId, _splat: _splat ?? '' }} replace />;
+  return (
+    <Navigate
+      to="/space/$rootId/$"
+      params={{ rootId: baseRootId, _splat: _splat ?? '' }}
+      hash={hash || undefined}
+      replace
+    />
+  );
 }
 
 function PageRoute() {
@@ -424,7 +449,7 @@ function PageRoute() {
     if (!path) return;
     setLastPage({ rootId, path });
   }, [rootId, path, setLastPage]);
-  const bridge = useMemo(
+  const editorBridge = useMemo(
     () => ({
       openEntity: (type: EntityType, slug: string) => navigateToEntity(navigate, type, slug),
       // Same-root section jumps stay in the current root.
@@ -445,7 +470,7 @@ function PageRoute() {
   return (
     <RoutePane>
       <EditorToolbar rootId={rootId} path={path} />
-      <EditorBridgeProvider bridge={bridge}>
+      <EditorBridgeProvider bridge={editorBridge}>
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {pageView === 'history' ? (
             <PageVersionHistory rootId={rootId} path={path} onBack={() => setPageView('editor')} />
@@ -454,8 +479,8 @@ function PageRoute() {
               key={`${rootId}/${path}`}
               rootId={rootId}
               path={path}
-              onOpenEntity={bridge.openEntity}
-              onOpenSection={bridge.openSection}
+              onOpenEntity={editorBridge.openEntity}
+              onOpenSection={editorBridge.openSection}
             />
           )}
         </div>

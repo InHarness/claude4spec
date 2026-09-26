@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ApiError, apiFetch, stripBase } from './lib/api-core.js';
-import { Outlet, useLocation, useNavigate } from '@tanstack/react-router';
+import { ApiError, apiFetch } from './lib/api-core.js';
+import { Outlet, useMatches, useNavigate, useRouter } from '@tanstack/react-router';
 import { ChatEdgeAffordance } from './components/ChatEdgeAffordance.js';
 import { ChatOverlay } from './chat/ChatOverlay.js';
 import { ThreadListProvider } from './chat/ThreadListContext.js';
@@ -12,57 +12,84 @@ import { useCreatePage } from './hooks/usePage.js';
 import { useEntityCounts } from './hooks/useEntityCounts.js';
 import { useTodosCounts } from './hooks/useTodos.js';
 import { usePageLinksCounts } from './hooks/usePageLinks.js';
-import { TodoPopover } from './components/TodoPopover.js';
 import { PopoverHost } from './ui/Popover.js';
-import { ModalHost } from './ui/ConfirmModal.js';
-import { EntityOverlayHost } from './ui/EntityOverlayHost.js';
-import { GitErrorRecoveryModal } from './ui/GitErrorRecoveryModal.js';
+import { ModalHost } from './ui/ModalHost.js';
+import { useRegistryVersion } from './core/plugin-host/useRegistryVersion.js';
 import { IndexStaleBanner } from './components/IndexStaleBanner.js';
 import { ToastHost } from './ui/ToastHost.js';
-import { TrustPluginsModal } from './components/TrustPluginsModal.js';
-import { PageRefPopoverHost } from './tiptap/extensions/PageRefPopover.js';
+import { TrustPluginsGate } from './components/TrustPluginsModal.js';
 import { openPopover, toast } from './ui/events.js';
 import { usePersistedWidth, useTheme } from './state/tweaks.js';
 import { useChatStore } from './state/chat.js';
 import { useBaseRootId, useConfig } from './hooks/useConfig.js';
 import { countFiles } from '../shared/page-files.js';
+import { deriveTitle } from './lib/newPage.js';
 
 export function RootLayout() {
   const navigate = useNavigate();
-  const location = useLocation();
+  const router = useRouter();
   const { data: config, isError, error, refetch } = useConfig();
-  const currentPath = stripBase(location.pathname);
-  const isOnboardingPath = currentPath === '/onboarding';
-  // Decision #11: `/welcome` runs project-less — no config fetch, no project
-  // shell. Rendered in the same minimal container as onboarding.
-  const isWelcomePath = currentPath === '/welcome';
+  // M50: "full-screen" is a flag the owning module puts on its route
+  // (`staticData.fullscreen`), not a path list the shell knows.
+  const isFullscreen = useMatches({ select: (ms) => ms.some((m) => m.staticData?.fullscreen) });
+  // M50 pre-mount redirect: the first full-screen route whose owner's
+  // `redirectIf` holds for this config. Evaluated during render, before the
+  // regular shell mounts, so the editor never flashes ahead of e.g. onboarding.
+  const redirectTo = config && !isFullscreen
+    ? Object.values(router.routesById).find((r) => r.options.staticData?.redirectIf?.(config))?.fullPath
+    : undefined;
 
-  // M16 mount-time guard: jezeli config swiezy (onboardingCompleted=false),
-  // przekierowujemy na /onboarding zanim user zobaczy edytor.
   useEffect(() => {
-    if (!config) return;
-    if (!config.onboarding.completed && !isOnboardingPath) {
-      navigate({ to: '/onboarding', replace: true });
-    }
-  }, [config, isOnboardingPath, navigate]);
+    if (redirectTo) navigate({ to: redirectTo as never, replace: true });
+  }, [redirectTo, navigate]);
 
   useEffect(() => {
     document.title = config?.name ? `${config.name} | claude4spec` : 'claude4spec';
   }, [config?.name]);
 
+  // The window hosts sit beside whichever shell renders, at a fixed position
+  // in the tree: switching shells (onboarding → main, a config refetch error)
+  // must not unmount them, or an open window vanishes with its promise unsettled.
+  return (
+    <>
+      <ShellBody
+        isFullscreen={isFullscreen}
+        isError={isError}
+        error={error}
+        onRetry={() => void refetch()}
+        redirectPending={!!redirectTo}
+        projectName={config?.name ?? null}
+      />
+      <WindowHosts />
+    </>
+  );
+}
+
+function ShellBody({
+  isFullscreen,
+  isError,
+  error,
+  onRetry,
+  redirectPending,
+  projectName,
+}: {
+  isFullscreen: boolean;
+  isError: boolean;
+  error: unknown;
+  onRetry: () => void;
+  redirectPending: boolean;
+  projectName: string | null;
+}) {
   // Minimalny shell dla onboardingu i welcome (bez sidebara, chatu, watchera).
   // MainShell nie mountuje sie, wiec useFileWatcher / pages-tree query nie
   // ruszaja — istotne dla `/welcome`, ktore dziala bez aktywnego projektu.
-  if (isOnboardingPath || isWelcomePath) {
+  if (isFullscreen) {
     return (
       <div
         className="h-full w-full"
         style={{ background: 'var(--c-bg)', color: 'var(--c-ink)' }}
       >
         <Outlet />
-        <ModalHost />
-        <EntityOverlayHost />
-        <ToastHost />
       </div>
     );
   }
@@ -71,11 +98,28 @@ export function RootLayout() {
   // config.json slug) is now soft-failed server-side, but any other build
   // failure still surfaces as PROJECT_BUILD_FAILED — show it instead of
   // silently falling through to MainShell with `config` undefined.
-  if (isError) {
-    return <ProjectLoadError error={error} onRetry={() => void refetch()} />;
-  }
+  if (isError) return <ProjectLoadError error={error} onRetry={onRetry} />;
 
-  return <MainShell projectName={config?.name ?? null} />;
+  // A pending full-screen redirect renders nothing: the navigation above lands
+  // on the next commit, and the regular shell must not paint in between.
+  if (redirectPending) return null;
+
+  return <MainShell projectName={projectName} />;
+}
+
+/**
+ * 0.2.110 M50 — the three window hosts, mounted ONCE per shell at the app root.
+ * Every window in the app is a named `kind` opened through one of the facades
+ * (`openPopover` / `openModal` / `confirmDestructive` / `toast`).
+ */
+function WindowHosts() {
+  return (
+    <>
+      <PopoverHost />
+      <ModalHost />
+      <ToastHost />
+    </>
+  );
 }
 
 function ProjectLoadError({ error, onRetry }: { error: unknown; onRetry: () => void }) {
@@ -104,6 +148,10 @@ function ProjectLoadError({ error, onRetry }: { error: unknown; onRetry: () => v
 }
 
 function MainShell({ projectName }: { projectName: string | null }) {
+  // The shell (sidebar, chat overlay) reads the plugin registry at render time.
+  // Re-render when a plugin frontend registers — the boot is non-blocking and
+  // settles after the first paint. Registry changes are rare; this is cheap.
+  useRegistryVersion();
   // M26 §7 — mount the theme hook here for its side-effects (subscribes to
   // OS-level `prefers-color-scheme` changes, toggles the `.dark` class on
   // <html>). The selectable UI lives in /settings → Appearance.
@@ -140,11 +188,7 @@ function MainShell({ projectName }: { projectName: string | null }) {
 
   const handleNewPage = useCallback(async () => {
     const rect = rootRef.current?.getBoundingClientRect();
-    const result = await openPopover(
-      'new-page',
-      { x: (rect?.left ?? 0) + 40, y: (rect?.top ?? 0) + 80 },
-      {},
-    );
+    const result = await openPopover('new-page', { x: (rect?.left ?? 0) + 40, y: (rect?.top ?? 0) + 80 });
     if (!result) return;
     try {
       // The global "new page" action targets the base page root.
@@ -217,25 +261,13 @@ function MainShell({ projectName }: { projectName: string | null }) {
 
       <ChatEdgeAffordance />
       <ChatOverlay />
-      <TodoPopover />
-      <PopoverHost />
-      <PageRefPopoverHost />
-      <TrustPluginsModal />
-      <ModalHost />
-      <EntityOverlayHost />
-      <GitErrorRecoveryModal />
-      <ToastHost />
+      <TrustPluginsGate />
     </div>
     </div>
     </ThreadListProvider>
   );
 }
 
-
-function deriveTitle(filePath: string): string {
-  const base = filePath.split('/').pop() ?? 'untitled';
-  return base.replace(/\.md$/, '').replaceAll('-', ' ');
-}
 
 function useCwdLabel(): { cwd: string; loading: boolean } {
   const [cwd, setCwd] = useState('workspace');

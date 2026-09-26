@@ -6,7 +6,7 @@ import type { ChatMessage as ChatMessageRow, ChatSubagentTask } from '../../shar
 import type { ChatModel } from '../state/chat.js';
 import { BlockRenderer } from './BlockRenderer.js';
 import { ChatMarkdown } from './ChatMarkdown.js';
-import { ToolJsonModal } from './ToolJsonModal.js';
+import { openModal } from '../ui/events.js';
 import { parseToolResult } from './toolRenderers.js';
 import { CHAT_ENDPOINTS, rowsToChatMessages, type TransagentEntry } from './useChat.js';
 
@@ -43,7 +43,6 @@ export function TransagentPanel({
   // Open while the child works so the human watches it live; the user folds it.
   const [expanded, setExpanded] = useState(status === 'running');
   const [messageOpen, setMessageOpen] = useState(false);
-  const [jsonOpen, setJsonOpen] = useState(false);
   const { state, handleWireEvent, restoreMessages, clear } = useMessageReducer('claude-code', model);
 
   const onEvent = useCallback((event: Parameters<typeof handleWireEvent>[0]) => {
@@ -179,7 +178,17 @@ export function TransagentPanel({
           tabIndex={0}
           onClick={(e) => {
             e.stopPropagation();
-            setJsonOpen(true);
+            void openModal('tool-json-view', {
+              title: `transagent · ${contextType}`,
+              items: [
+                {
+                  toolName: 'runTransagent',
+                  input: invocation ?? { contextType },
+                  result: parsed,
+                  isError: result?.isError ?? status === 'failed',
+                },
+              ],
+            });
           }}
           aria-label="Show raw JSON"
           title="Show raw JSON"
@@ -274,20 +283,6 @@ export function TransagentPanel({
             </div>
           )}
         </div>
-      )}
-      {jsonOpen && (
-        <ToolJsonModal
-          title={`transagent · ${contextType}`}
-          items={[
-            {
-              toolName: 'runTransagent',
-              input: invocation ?? { contextType },
-              result: parsed,
-              isError: result?.isError ?? status === 'failed',
-            },
-          ]}
-          onClose={() => setJsonOpen(false)}
-        />
       )}
     </div>
   );

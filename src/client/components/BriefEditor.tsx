@@ -167,7 +167,7 @@ export function BriefEditor({ briefPath }: Props) {
       clearTimeout(saveTimer.current);
       saveTimer.current = null;
     }
-    void confirmDestructive({
+    void confirmDestructive('brief-reload', {
       title: 'Brief changed externally',
       body: 'This brief was modified outside the editor (by an agent or on disk). Reload and discard your unsaved changes, or keep them?',
       confirmLabel: 'Reload',

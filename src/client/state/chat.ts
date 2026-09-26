@@ -1,3 +1,4 @@
+import { requestChatPrefill } from '../chat/chatPrefill.js';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Annotation } from '../../shared/entities.js';
@@ -83,6 +84,11 @@ interface ChatState {
   toggleChat(): void;
   setChatWidth(px: number): void;
   setChatThreadId(id: string | null): void;
+  /**
+   * 0.2.110 M05/M50 — open the overlay on a fresh thread seeded with `prompt`
+   * (auto-submitted when `autoSubmit`). See `chat/startSeededThread.ts`.
+   */
+  startSeededThread(prompt: string, opts?: { autoSubmit?: boolean }): void;
   setSeedPrompt(p: string | null): void;
   /** `adaptive` = the class of `m` from the config payload; `false` clamps 'max' → 'high'. */
   setModel(m: ChatModel, adaptive?: boolean): void;
@@ -92,6 +98,8 @@ interface ChatState {
   removeAnnotation(id: string): void;
   clearAnnotations(): void;
 }
+
+export const CHAT_MIN_WIDTH = 300;
 
 export const useChatStore = create<ChatState>()(
   persist(
@@ -105,8 +113,20 @@ export const useChatStore = create<ChatState>()(
       seedPrompt: null,
       setChatOpen: (open) => set({ chatOpen: open }),
       toggleChat: () => set((s) => ({ chatOpen: !s.chatOpen })),
-      setChatWidth: (px) => set({ chatWidth: Math.max(320, Math.min(900, px)) }),
+      // M50: 300px … 50% of the window. The render also caps at `50vw`, so a
+      // stored width stays valid when the window shrinks later.
+      setChatWidth: (px) =>
+        set({
+          chatWidth: Math.max(
+            CHAT_MIN_WIDTH,
+            Math.min(typeof window === 'undefined' ? px : window.innerWidth * 0.5, px),
+          ),
+        }),
       setChatThreadId: (id) => set({ chatThreadId: id }),
+      startSeededThread: (prompt, opts = {}) => {
+        set({ chatThreadId: null, chatOpen: true });
+        requestChatPrefill({ prompt, autoSend: opts.autoSubmit ?? false });
+      },
       setSeedPrompt: (p) => set({ seedPrompt: p }),
       setModel: (m, adaptive) =>
         set((s) => ({

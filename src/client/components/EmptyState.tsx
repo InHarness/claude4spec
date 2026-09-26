@@ -20,8 +20,8 @@ export function EmptyState({ onOpenFirst, firstPageLabel, onNewPage }: Props) {
           Welcome to claude4spec
         </h2>
         <p className="text-[14px] mb-6" style={{ color: 'var(--c-muted)' }}>
-          Markdown jest źródłem prawdy dla treści, SQLite dla encji, tagi XML są mostem. Zacznij od
-          utworzenia strony albo otwórz istniejącą z sidebara.
+          Markdown is the source of truth for content, SQLite for entities, and XML tags are the
+          bridge. Start by creating a page, or open an existing one from the sidebar.
         </p>
         <div className="flex items-center justify-center gap-2">
           {onOpenFirst && firstPageLabel && (
@@ -42,7 +42,7 @@ export function EmptyState({ onOpenFirst, firstPageLabel, onNewPage }: Props) {
               color: 'var(--c-ink)',
             }}
           >
-            <Plus size={12} /> New page
+            <Plus size={12} /> Create your first page
           </button>
         </div>
       </div>

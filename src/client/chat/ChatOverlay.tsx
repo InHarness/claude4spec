@@ -4,7 +4,7 @@ import { useMatches, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { Send, Square, X, Plus, MessageSquare, ChevronDown, FileText, FileWarning, Cpu, Trash2, ClipboardList, Clock, Loader2 } from 'lucide-react';
 import { batchToolBlocks } from '@inharness-ai/agent-chat';
-import { useChatStore, thinkingToConfig, configToThinking, type ChatModel, type ChatThinking } from '../state/chat.js';
+import { CHAT_MIN_WIDTH, useChatStore, thinkingToConfig, configToThinking, type ChatModel, type ChatThinking } from '../state/chat.js';
 import { usePersistedState, projectKey } from '../state/persisted.js';
 import { ResizeHandle } from '../components/ResizeHandle.js';
 import { useChat, holdEndingLabel } from './useChat.js';
@@ -499,7 +499,7 @@ export function ChatOverlay() {
     <div
       ref={rootRef}
       className="h-full flex"
-      style={{ width: chatWidth, flexShrink: 0 }}
+      style={{ width: chatWidth, minWidth: CHAT_MIN_WIDTH, maxWidth: '50vw', flexShrink: 0 }}
     >
       <ResizeHandle onDrag={onResizeDrag} />
       <aside
@@ -1042,7 +1042,7 @@ function ThreadDropdown({ threads, activeId, hasMore, loadingMore, onSelect, onC
               <button
                 onClick={async (e) => {
                   e.stopPropagation();
-                  const ok = await confirmDestructive({
+                  const ok = await confirmDestructive('thread-delete', {
                     title: 'Delete conversation?',
                     body: `Delete "${t.title ?? t.id}"? Message history cannot be recovered.`,
                     confirmLabel: 'Delete',

@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ToastViewport, TOAST_DURATION_MS } from '../host-ui-kit/overlay-feedback/ToastViewport.js';
-import { UI_EVENTS, type ToastKind, type ToastRequest } from './events.js';
+import { UI_EVENTS, type ToastVariant, type ToastRequest } from './events.js';
 
 interface ActiveToast extends ToastRequest {
+  /** The catalog viewport's prop name for the variant. */
+  kind: ToastVariant;
   id: number;
   expiresAt: number;
   remaining: number;
   paused: boolean;
 }
 
-const DEFAULT_DURATION: Record<ToastKind, number> = TOAST_DURATION_MS;
+const DEFAULT_DURATION: Record<ToastVariant, number> = TOAST_DURATION_MS;
 
 /**
  * The host's toast FACADE (M34/L12 one-implementation rule): `ToastHost` IS the
@@ -18,7 +20,8 @@ const DEFAULT_DURATION: Record<ToastKind, number> = TOAST_DURATION_MS;
  * `c4s:toast` event bus, the queue, and the expiry timers (including the
  * per-call `durationMs` override that `toast.*` accepts).
  *
- * `toast.success/error/warning/info` are unchanged by the move.
+ * `toast.success/error/warning/info` are unchanged; 0.2.110 renamed the payload's
+ * `kind` to `variant` (`c4s:toast { variant, message, action? }`).
  */
 export function ToastHost() {
   const [toasts, setToasts] = useState<ActiveToast[]>([]);
@@ -26,12 +29,24 @@ export function ToastHost() {
 
   useEffect(() => {
     const handler = (e: Event) => {
-      const ce = e as CustomEvent<ToastRequest>;
-      const duration = ce.detail.durationMs ?? DEFAULT_DURATION[ce.detail.kind];
+      // 0.2.110: the payload names the severity `variant`. A plugin built
+      // against the pre-0.2.110 protocol still sends `kind` — accepted, so its
+      // toasts keep rendering instead of falling through to no duration.
+      const detail = (e as CustomEvent<ToastRequest & { kind?: ToastVariant }>).detail;
+      const variant = detail.variant ?? detail.kind ?? 'info';
+      const duration = detail.durationMs ?? DEFAULT_DURATION[variant];
       const id = idRef.current++;
       setToasts((prev) => [
         ...prev,
-        { ...ce.detail, id, expiresAt: Date.now() + duration, remaining: duration, paused: false },
+        {
+          ...detail,
+          variant,
+          kind: variant,
+          id,
+          expiresAt: Date.now() + duration,
+          remaining: duration,
+          paused: false,
+        },
       ]);
     };
     window.addEventListener(UI_EVENTS.TOAST, handler as EventListener);

@@ -1,7 +1,7 @@
 import { useRef } from 'react';
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
 import { StickyNote } from 'lucide-react';
-import { dispatchTodoPopover } from '../../../components/TodoPopover.js';
+import { openPopover } from '../../../ui/events.js';
 
 export function TodoView({ node, updateAttributes, deleteNode }: NodeViewProps) {
   const comment = String(node.attrs.comment ?? '');
@@ -13,13 +13,13 @@ export function TodoView({ node, updateAttributes, deleteNode }: NodeViewProps) 
     e.stopPropagation();
     const rect = wrapperRef.current?.getBoundingClientRect();
     if (!rect) return;
-    dispatchTodoPopover({
+    void openPopover('todo-edit', {
       x: rect.left,
       y: rect.bottom + 4,
-      mode: 'edit',
       initialComment: comment,
-      onSubmit: (newComment) => updateAttributes({ comment: newComment }),
       onRemove: () => deleteNode(),
+    }).then((result) => {
+      if (result) updateAttributes({ comment: result.comment });
     });
   }
 

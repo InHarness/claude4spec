@@ -14,7 +14,7 @@ interface OpenTarget {
  * hidden type has no such route — it declares neither `routes` nor
  * `detailPanel` — so it opens its own read-only fullscreen overlay instead.
  * That is the ONLY sanctioned exception to "a click calls
- * `bridge.openEntity`", and 0.2.16 moved the test for it from a declared flag
+ * `editorBridge.openEntity`", and 0.2.16 moved the test for it from a declared flag
  * to the slots themselves, so the exception cannot be claimed by a type that
  * has somewhere to navigate. One helper rather than a branch at each of the
  * three call sites (`SingleElementView`, `InlineMentionView`, the chat chip
@@ -27,7 +27,7 @@ interface OpenTarget {
 export function openEntityHandler(
   type: string,
   slug: string,
-  bridge: OpenTarget | null | undefined,
+  editorBridge: OpenTarget | null | undefined,
   caption?: string,
 ): (() => void) | undefined {
   // The MODULE, not the legacy `EntityDef` projection of it: hidden-ness is read
@@ -39,6 +39,6 @@ export function openEntityHandler(
   if (isHiddenModule(module)) {
     return () => openEntityOverlay({ type, slug, ...(caption ? { caption } : {}) });
   }
-  if (!bridge) return undefined;
-  return () => bridge.openEntity(type as EntityType, slug);
+  if (!editorBridge) return undefined;
+  return () => editorBridge.openEntity(type as EntityType, slug);
 }

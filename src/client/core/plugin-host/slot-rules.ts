@@ -80,7 +80,7 @@ export function checkSlotShapes(m: FrontendModule): string | null {
   /**
    * The click-ownership exception, enforced from both sides. A hidden chip has
    * no detail route to open, so the entity owes an overlay; a chip that DOES
-   * have a detail route must go through `bridge.openEntity` and nowhere else,
+   * have a detail route must go through `editorBridge.openEntity` and nowhere else,
    * so an overlay beside it is the contract violation the brief asks the host
    * to catch — a second answer to where a click goes.
    */
@@ -89,7 +89,7 @@ export function checkSlotShapes(m: FrontendModule): string | null {
     return "is a hidden entity (no 'routes', no 'detailPanel') and must supply 'renderOverlay' — its chip has no detail route to open";
   }
   if (!hidden && m.renderOverlay !== undefined) {
-    return "declares 'renderOverlay' while having a detail route — a chip with a detail route opens it via bridge.openEntity; the overlay exception belongs to hidden entities only";
+    return "declares 'renderOverlay' while having a detail route — a chip with a detail route opens it via editorBridge.openEntity; the overlay exception belongs to hidden entities only";
   }
 
   for (const ext of m.editorExtensions ?? []) {

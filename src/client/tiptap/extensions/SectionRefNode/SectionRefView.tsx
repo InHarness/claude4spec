@@ -22,14 +22,12 @@ export function SectionRefView(props: NodeViewProps) {
       e.preventDefault();
       e.stopPropagation();
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      void openPopover(
-        'section',
-        { x: rect.left, y: rect.bottom + 4 },
-        {
-          initialAnchor: anchor,
-          onRemove: () => props.deleteNode(),
-        },
-      ).then((result) => {
+      void openPopover('section', {
+        x: rect.left,
+        y: rect.bottom + 4,
+        initialAnchor: anchor,
+        onRemove: () => props.deleteNode(),
+      }).then((result) => {
         if (!result) return;
         if ('__action' in result) return;
         props.updateAttributes({ anchor: result.anchor });

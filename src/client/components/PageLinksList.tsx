@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import {
   Check,
@@ -14,30 +14,26 @@ import { useBaseRootId } from '../hooks/useConfig.js';
 import { useCreatePage, useWritePage } from '../hooks/usePage.js';
 import { api } from '../lib/api.js';
 import { toast } from '../ui/events.js';
+import { migrateLegacyRawKey, projectKey, usePersistedState } from '../state/persisted.js';
+import { canCreatePage, deriveTitle } from '../lib/newPage.js';
 import type { UnresolvedMention } from '../../shared/page-links.js';
 
 type Tab = 'broken' | 'unresolved';
 
-const LITERAL_KEY = 'c4s.links.literal';
-
-function loadLiteralIgnores(): Record<string, string[]> {
-  try {
-    const raw = window.localStorage.getItem(LITERAL_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return typeof parsed === 'object' && parsed !== null ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function persistLiteralIgnores(map: Record<string, string[]>) {
-  try {
-    window.localStorage.setItem(LITERAL_KEY, JSON.stringify(map));
-  } catch {
-    /* localStorage full or unavailable — silent */
-  }
-}
+// M14: project-scoped, enveloped `{ v, data }` (M50 localStorage rules). The
+// pre-0.2.110 raw, unscoped `c4s.links.literal` is promoted once on load.
+// The legacy key was workspace-wide, so it stays in place: every project
+// copies it on its own first load instead of the first one taking it all.
+const LITERAL_KEY = projectKey('c4s:page-links:literal-mentions');
+migrateLegacyRawKey(
+  'c4s.links.literal',
+  LITERAL_KEY,
+  (raw) => {
+    const parsed = JSON.parse(raw) as unknown;
+    return typeof parsed === 'object' && parsed !== null ? parsed : undefined;
+  },
+  { keepLegacy: true },
+);
 
 /**
  * 0.1.96: the page-links index keys entries by `${rootId}:${path}`.
@@ -56,19 +52,16 @@ export function PageLinksList() {
   const { data, isLoading } = usePageLinks();
   const baseRootId = useBaseRootId();
   const [tab, setTab] = useState<Tab>('broken');
-  const [literalIgnores, setLiteralIgnores] =
-    useState<Record<string, string[]>>(() => loadLiteralIgnores());
-
-  useEffect(() => {
-    persistLiteralIgnores(literalIgnores);
-  }, [literalIgnores]);
+  const [literalIgnores, setLiteralIgnores] = usePersistedState<Record<string, string[]>>(
+    LITERAL_KEY,
+    {},
+    1,
+  );
 
   const ignoreItem = (sourcePath: string, rawToken: string) => {
-    setLiteralIgnores((prev) => {
-      const arr = prev[sourcePath] ?? [];
-      if (arr.includes(rawToken)) return prev;
-      return { ...prev, [sourcePath]: [...arr, rawToken] };
-    });
+    const arr = literalIgnores[sourcePath] ?? [];
+    if (arr.includes(rawToken)) return;
+    setLiteralIgnores({ ...literalIgnores, [sourcePath]: [...arr, rawToken] });
   };
 
   const grouped = useMemo(() => {
@@ -279,7 +272,7 @@ function UnresolvedRow({
   const [draft, setDraft] = useState(item.candidatePath);
   const [busy, setBusy] = useState(false);
 
-  const canCreate = item.candidatePath.toLowerCase().endsWith('.md');
+  const canCreate = canCreatePage(item.candidatePath);
   const labelKind = item.syntax === 'link' ? 'broken link' : 'unresolved';
 
   const goToSource = () => {
@@ -479,9 +472,4 @@ function UnresolvedRow({
       )}
     </div>
   );
-}
-
-function deriveTitle(filePath: string): string {
-  const base = filePath.split('/').pop() ?? 'untitled';
-  return base.replace(/\.md$/, '').replaceAll('-', ' ');
 }

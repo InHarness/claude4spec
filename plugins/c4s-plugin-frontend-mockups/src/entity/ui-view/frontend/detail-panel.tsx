@@ -156,7 +156,7 @@ export function UiViewDetail({
      * The count still comes from the panel's own `refs`, which it already holds
      * and displays; only the phrasing is shared.
      */
-    const ok = await confirmDestructive({
+    const ok = await confirmDestructive('ui-view-delete', {
       title: 'Delete UI view?',
       body: deleteUiViewBody(view.title, refs.length),
       confirmLabel: 'Delete',

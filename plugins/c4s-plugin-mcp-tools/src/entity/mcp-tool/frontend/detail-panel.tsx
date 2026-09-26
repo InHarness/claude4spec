@@ -430,7 +430,7 @@ export const McpToolDetail: FC<EntityDetailProps> = ({ slug, onDeleted, onRename
 
   async function handleDelete() {
     if (!tool) return;
-    const ok = await confirmDestructive({
+    const ok = await confirmDestructive('mcp-tool-delete', {
       title: 'Delete this tool?',
       body: `Delete ${tool.slug}? The description of the tool goes with it; the tool itself, wherever it is mounted, is untouched.`,
       confirmLabel: 'Delete',

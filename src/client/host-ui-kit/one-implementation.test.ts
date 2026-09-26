@@ -59,7 +59,7 @@ const PENDING = 'Pending migration to Dialog — see analysis brief 0-1-144-to-n
  * so the reason expired and the gate is now a facade like the rest.
  */
 const DECLARED_EXCEPTIONS: Record<string, string> = {
-  'chat/ToolJsonModal.tsx':
+  'ui/modals/ToolJsonView.tsx':
     'Raw-JSON viewer at 1100px — wider than any of Dialog\'s size tiers.',
   'components/DiagramFullscreen.tsx':
     'Host-local per the diagram slice: a fullscreen pan+zoom canvas, not a sized Dialog panel.',
@@ -71,11 +71,10 @@ const DECLARED_EXCEPTIONS: Record<string, string> = {
   // imperative facades.
   'components/CreateBriefDialog.tsx': PENDING,
   'components/CreateReleaseDialog.tsx': PENDING,
-  'components/AddProjectDialog.tsx': PENDING,
+  'ui/modals/ProjectCreate.tsx': PENDING,
   'components/briefs/BriefScopeModal.tsx': PENDING,
-  // Additionally a twin of `confirmDestructive()` itself, with a `loading`
-  // state the imperative contract has no slot for.
-  'components/ReleaseDetail.tsx': PENDING,
+  // 0.2.110: `components/ReleaseDetail.tsx` left this list — its restore
+  // confirm is the `release-restore` kind through `confirmDestructive`.
 };
 
 function walk(dir: string, out: string[] = []): string[] {
@@ -111,7 +110,7 @@ describe('M34/L12 — one implementation rule', () => {
       'ui/ToastHost.tsx': /host-ui-kit\/overlay-feedback\/ToastViewport\.js/,
       // Not imperative facades, but the same rule: the window shell is the
       // catalog's, the content stays with the owning slice (M28 / M33).
-      'ui/GitErrorRecoveryModal.tsx': /host-ui-kit\/overlay\/Dialog\.js/,
+      'ui/modals/GitSyncRecover.tsx': /host-ui-kit\/overlay\/Dialog\.js/,
       'components/TrustPluginsModal.tsx': /host-ui-kit\/overlay\/Dialog\.js/,
     };
     for (const [file, importPattern] of Object.entries(facades)) {
@@ -121,14 +120,19 @@ describe('M34/L12 — one implementation rule', () => {
   });
 
   it('[ac:ac-kontrakty-imperatywnych-fasad-openpopove] the imperative contracts keep their signatures', () => {
-    // The facades changed what renders, never how they are called. If any of
-    // these drifted, every consumer (SectionRefView, TodoView, PageRefPopover,
-    // the edit-chip popovers, slashInvoke) would have to change with them —
-    // which the brief names as the signal that a facade was built wrong.
+    // The facades changed what renders, never how they are called — and since
+    // 0.2.110 (M50) the four signatures are pinned as the shell declares them:
+    // `openPopover(kind, { x, y, ...props })`, `openModal(kind, props)`,
+    // `confirmDestructive(kind, { title, body, confirmLabel })`, `toast.*`.
     const events = readFileSync(join(CLIENT_DIR, 'ui/events.ts'), 'utf8');
-    expect(events).toMatch(/export function openPopover<K extends PopoverKind>\(/);
-    expect(events).toMatch(/export function confirmDestructive\(/);
+    expect(events).toMatch(
+      /export function openPopover<K extends PopoverKind>\(\s*kind: K,\s*input: PopoverPosition & PopoverProps<K>,/,
+    );
+    expect(events).toMatch(/export function openModal<K extends ModalKind>\(\s*kind: K,\s*props: ModalProps<K>,/);
+    expect(events).toMatch(/export function confirmDestructive\(kind: ConfirmKind, input: ConfirmInput\)/);
     expect(events).toMatch(/export const toast = \{/);
+    // `c4s:toast` names the severity `variant`; a toast has no `kind`.
+    expect(events).toMatch(/const detail: ToastRequest = \{ variant, message, \.\.\.options \}/);
   });
 
   it('[ac:ac-panel-detalu-endpointu-renderuje-badge-m] endpoint detail composes its method badge and Linked DTOs from the catalog', () => {
@@ -157,6 +161,9 @@ describe('M34/L12 — one implementation rule', () => {
     // were deleted, which is exactly the regression that matters.
     const src = readFileSync(join(CLIENT_DIR, 'components/TrustPluginsModal.tsx'), 'utf8');
     expect(src).toMatch(/dismissible=\{false\}/);
+    // 0.2.110 M33/M50: opened as the `project-plugins-trust` modal kind with
+    // `dismissible: false`, which `ModalHost` never replaces with a newcomer.
+    expect(src).toMatch(/'project-plugins-trust',[\s\S]*?\{ dismissible: false \}/);
     // A gate another overlay can paint over cannot be answered.
     expect(src).toMatch(/zIndex=\{1300\}/);
 

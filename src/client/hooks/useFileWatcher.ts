@@ -4,6 +4,7 @@ import type { WsEvent } from '../../shared/types.js';
 import { createInvalidationBatcher } from '../lib/wsBatcher.js';
 import { PROJECT_ID } from '../lib/api-core.js';
 import { useFileEventsStore } from '../state/fileEvents.js';
+import { useHtmlViewerStore } from '../state/htmlViewer.js';
 import { artifactVersionsKey } from './useArtifactVersions.js';
 import { reloadFrontendPlugins } from '../runtime/boot-plugins.js';
 import { clientPluginHost } from '../core/plugin-host/host.js';
@@ -55,7 +56,11 @@ export function useFileWatcher() {
           if (data.kind === 'file:changed') {
             // 0.1.96 multiroot: page trees + documents are keyed by rootId.
             batcher.queue(['pages', data.rootId]);
-            if (data.origin === 'external') {
+            if (data.path.toLowerCase().endsWith('.html')) {
+              // M30: `.html` is a read-only preview — no editor, no reload
+              // dialog; the open iframe just reloads.
+              useHtmlViewerStore.getState().notifyChanged(data.rootId, data.path);
+            } else if (data.origin === 'external') {
               useFileEventsStore.getState().notifyExternalChange(data.rootId, data.path);
             } else {
               batcher.queue(['page', data.rootId, data.path]);

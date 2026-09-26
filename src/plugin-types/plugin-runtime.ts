@@ -611,7 +611,7 @@ export interface FrontendModule extends EntityModuleManifest {
    * there is no detail route to navigate to.
    *
    * Required exactly when the type is hidden, and rejected otherwise: a type
-   * with a detail route must send its clicks to `bridge.openEntity`, and an
+   * with a detail route must send its clicks to `editorBridge.openEntity`, and an
    * overlay beside that route would be a second answer to where a click goes.
    */
   renderOverlay?: ComponentType<{ slug: string; caption?: string; onClose: () => void }>;

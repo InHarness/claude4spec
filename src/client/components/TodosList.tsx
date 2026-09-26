@@ -146,7 +146,7 @@ function TodoRow({ hit }: { hit: TodoHit }) {
     void navigate({
       to: '/space/$rootId/$',
       params: { rootId: hit.rootId, _splat: hit.pagePath },
-      hash: hit.anchor,
+      hash: `anchor-${hit.anchor}`,
     });
   };
   return (

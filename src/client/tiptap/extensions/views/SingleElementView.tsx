@@ -6,6 +6,8 @@ import { useRegistryVersion } from '../../../core/plugin-host/useRegistryVersion
 import { useEditorBridge } from '../../EditorContext.js';
 import { useEditChipOnAltClick } from './useEditChipOnAltClick.js';
 import { BlockBrokenChip } from './BrokenChip.js';
+import { useCallback, useEffect, useState } from 'react';
+import { isMissingEntity, useReportBrokenRef } from '../../../state/brokenRefs.js';
 
 export function SingleElementView(props: NodeViewProps) {
   const { node } = props;
@@ -23,6 +25,10 @@ export function SingleElementView(props: NodeViewProps) {
   const altCapture = (e: React.MouseEvent) => {
     if (e.altKey) void onAltClick(e);
   };
+  // M19: counts toward the page's "N broken references found" bar.
+  const [missing, setMissing] = useState(false);
+  const onMissing = useCallback((m: boolean) => setMissing(m), []);
+  useReportBrokenRef(props.editor, { unresolvedType: !def, missingEntity: !!def && missing }, props.deleteNode);
 
   if (!def) {
     const category = categoriseBrokenChip(type) ?? 'unknown-type';
@@ -41,6 +47,7 @@ export function SingleElementView(props: NodeViewProps) {
         caption={caption}
         onOpen={open}
         onCaptionChange={(next) => props.updateAttributes({ caption: next })}
+        onMissing={onMissing}
       />
     </NodeViewWrapper>
   );
@@ -52,15 +59,22 @@ function CardResolver({
   caption,
   onOpen,
   onCaptionChange,
+  onMissing,
 }: {
   type: string;
   slug: string;
   caption?: string;
   onOpen?: () => void;
   onCaptionChange: (caption: string | null) => void;
+  onMissing: (missing: boolean) => void;
 }) {
   const def = getEntityDef(type)!;
-  const { data, isLoading } = def.useGetBySlug(slug);
+  const result = def.useGetBySlug(slug);
+  const { data, isLoading } = result;
+  const missing = isMissingEntity(result);
+  useEffect(() => {
+    onMissing(missing);
+  }, [missing, onMissing]);
   if (isLoading && data === undefined) {
     return (
       <div

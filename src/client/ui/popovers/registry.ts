@@ -9,6 +9,9 @@ import { TaggedForm, TaggedMixedForm } from './TaggedForm.js';
 import { EditChipForm } from './EditChipForm.js';
 import { DiagramForm } from './DiagramForm.js';
 import { SectionPickerForm } from './SectionPickerForm.js';
+import { TodoForm } from './TodoForm.js';
+import { PageRefBrokenForm } from './PageRefBrokenForm.js';
+import { PageRefPopoverForm } from '../../tiptap/extensions/PageRefPopover.js';
 
 type RendererMap = {
   [K in PopoverKind]: ComponentType<PopoverFormProps<K>>;
@@ -25,6 +28,10 @@ export const POPOVER_RENDERERS: RendererMap = {
   'edit-chip': EditChipForm,
   diagram: DiagramForm,
   section: SectionPickerForm,
+  'todo-create': TodoForm,
+  'todo-edit': TodoForm,
+  'page-ref': PageRefPopoverForm,
+  'page-ref-broken': PageRefBrokenForm,
 };
 
 export type { ReactNode };
