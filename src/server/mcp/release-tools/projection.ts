@@ -341,7 +341,7 @@ function projectPages(
         : {
             kind: 'section',
             ...(s.anchor !== null ? { anchor: s.anchor } : {}),
-            headingPath: tree.pathOf(s),
+            headingPath: s.headingPath ?? tree.pathOf(s),
             ...(s.heading !== null ? { heading: s.heading } : {}),
           };
 
@@ -373,7 +373,7 @@ function projectPages(
         sections.push({
           kind: 'section',
           anchor: s.anchor,
-          headingPath: key ? toTree.pathOf({ kind: 'section', anchor: s.anchor, heading: key.heading, level: null, parent: null }) : [],
+          headingPath: key ? toTree.pathOf({ kind: 'section', anchor: s.anchor, heading: key.heading, level: null, parent: null, headingPath: [] }) : [],
           heading: key?.heading ?? '',
           moved: true,
         });

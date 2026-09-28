@@ -394,6 +394,14 @@ export interface SectionKey {
   heading: string | null;
   level: number | null;
   parent: string | null;
+  /**
+   * Headings of the ancestors, outermost first, on the same side as `parent`.
+   * `[]` at the top level and for the preamble. Beyond the brief's `SectionKey`:
+   * `parent` names only the direct parent, which need not be in the diff, so a
+   * reader rendering a subsection row (Release Detail) could not name its
+   * ancestors without it.
+   */
+  headingPath: string[];
 }
 
 /** An added/removed entry: `content` is the OWN body only (subsections are their own entries). */

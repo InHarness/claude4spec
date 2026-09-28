@@ -34,6 +34,7 @@ import { ANCHOR_LINE_RE } from '../../shared/anchor-pattern.js';
 import { parseXmlTagsExcludingCode } from '../../shared/xml-tags.js';
 import {
   fileKindOf,
+  headingPathOf,
   liveAnchorValues,
   parseSections,
   PREAMBLE_KEY,
@@ -175,7 +176,7 @@ function splitSide(content: string, kind: SectionFileKind): DiffSide {
   const side: DiffSide = { preamble: null, anchored: new Map(), unanchored: [], order: [] };
   if (parsed.preamble) {
     side.preamble = {
-      key: { kind: 'preamble', anchor: PREAMBLE_KEY, heading: null, level: null, parent: null },
+      key: { kind: 'preamble', anchor: PREAMBLE_KEY, heading: null, level: null, parent: null, headingPath: [] },
       content: sliceLines(lines, parsed.preamble.range),
       position: -1,
     };
@@ -184,7 +185,14 @@ function splitSide(content: string, kind: SectionFileKind): DiffSide {
     const parent = sec.parent === null ? null : parsed.sections[sec.parent]!.anchor;
     const owns = sec.anchor !== null && !side.anchored.has(sec.anchor);
     const entry: DiffEntry = {
-      key: { kind: 'section', anchor: owns ? sec.anchor : null, heading: sec.heading, level: sec.level, parent },
+      key: {
+        kind: 'section',
+        anchor: owns ? sec.anchor : null,
+        heading: sec.heading,
+        level: sec.level,
+        parent,
+        headingPath: headingPathOf(parsed, sec),
+      },
       content: sliceLines(lines, { start: sec.headingLine + 1, end: sec.ownEndLine }),
       position: sec.position,
     };
