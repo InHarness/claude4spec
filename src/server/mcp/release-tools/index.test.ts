@@ -3,7 +3,7 @@ import { createReleaseToolsServer } from './index.js';
 import type { ReleaseService } from '../../services/release.js';
 import type { GitService } from '../../services/git.js';
 import type { WsEmitter } from '../../ws/project-emitter.js';
-import type { RawDelta, RawDeltaPageChange, SpecSnapshot } from '../../../shared/entities.js';
+import type { RawDelta, FileDiff, SpecSnapshot } from '../../../shared/entities.js';
 
 /**
  * `release_diff`'s SECOND ENGINE — `toIdOrName: "current"`.
@@ -23,7 +23,7 @@ function release(id: number, name: string): SpecSnapshot['release'] {
   return { id, name, description: '', createdBy: 'agent', createdAt: '2026-09-01T00:00:00.000Z' };
 }
 
-function emptyPage(path: string, op: RawDeltaPageChange['op']): RawDeltaPageChange {
+function emptyPage(path: string, op: FileDiff['op']): FileDiff {
   return {
     rootId: 'pages',
     path,

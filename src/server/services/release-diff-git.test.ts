@@ -129,7 +129,7 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
     fs.mkdirSync(pagesDir, { recursive: true });
     const { releaseService, releaseStore } = buildReleaseService(pagesDir);
 
-    fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v1');
+    fs.writeFileSync(path.join(pagesDir, 'a.md'), 'A v1');
     const info1 = db
       .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
       .run('v1', 'v1', 'First', 'user');
@@ -145,8 +145,8 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
     await git(['add', '.'], dir);
     await git(['commit', '-m', 'v1'], dir);
 
-    fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v2');
-    fs.writeFileSync(path.join(pagesDir, 'b.md'), '# B v1');
+    fs.writeFileSync(path.join(pagesDir, 'a.md'), 'A v2');
+    fs.writeFileSync(path.join(pagesDir, 'b.md'), 'B v1');
     const info2 = db
       .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
       .run('v2', 'v2', 'Second', 'user');
@@ -173,13 +173,13 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
     // runs the real section/line-diff algorithm — no more hardcoded empties.
     expect(aChange?.modified_sections.length).toBe(1);
     const lines = aChange?.modified_sections[0]?.line_diff.lines ?? [];
-    expect(lines.some((l) => l.op === 'removed' && l.content === '# A v1')).toBe(true);
-    expect(lines.some((l) => l.op === 'added' && l.content === '# A v2')).toBe(true);
+    expect(lines.some((l) => l.op === 'removed' && l.content === 'A v1')).toBe(true);
+    expect(lines.some((l) => l.op === 'added' && l.content === 'A v2')).toBe(true);
 
     const bChange = byPath.get('b.md');
     expect(bChange?.op).toBe('created');
     expect(bChange?.added_sections.length).toBe(1);
-    expect(bChange?.added_sections[0]?.content).toBe('# B v1');
+    expect(bChange?.added_sections[0]?.content).toBe('B v1');
 
     expect(delta.entities).toEqual([]);
   });
@@ -189,7 +189,7 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
     fs.mkdirSync(pagesDir, { recursive: true });
     const { releaseService, releaseStore } = buildReleaseService(pagesDir);
 
-    fs.writeFileSync(path.join(pagesDir, 'old-name.md'), '# Content');
+    fs.writeFileSync(path.join(pagesDir, 'old-name.md'), 'Content');
     const info1 = db
       .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
       .run('v1', 'v1', 'First', 'user');
@@ -225,9 +225,9 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
 
     const byPath = new Map(delta.pages.map((p) => [p.path, p]));
     expect(byPath.get('old-name.md')?.op).toBe('deleted');
-    expect(byPath.get('old-name.md')?.removed_sections[0]?.content).toBe('# Content');
+    expect(byPath.get('old-name.md')?.removed_sections[0]?.content).toBe('Content');
     expect(byPath.get('new-name.md')?.op).toBe('created');
-    expect(byPath.get('new-name.md')?.added_sections[0]?.content).toBe('# Content');
+    expect(byPath.get('new-name.md')?.added_sections[0]?.content).toBe('Content');
   });
 
   it('degrades a page with malformed historical frontmatter to file-level status instead of crashing the whole diff', async () => {
@@ -235,7 +235,7 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
     fs.mkdirSync(pagesDir, { recursive: true });
     const { releaseService, releaseStore } = buildReleaseService(pagesDir);
 
-    fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v1');
+    fs.writeFileSync(path.join(pagesDir, 'a.md'), 'A v1');
     const info1 = db
       .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
       .run('v1', 'v1', 'First', 'user');
@@ -283,7 +283,7 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
     fs.mkdirSync(pagesDir, { recursive: true });
     const { releaseService, releaseStore, gitService } = buildReleaseService(pagesDir);
 
-    fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v1');
+    fs.writeFileSync(path.join(pagesDir, 'a.md'), 'A v1');
     const info1 = db
       .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
       .run('v1', 'v1', 'First', 'user');
@@ -300,7 +300,7 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
     await git(['commit', '-m', 'v1'], dir);
     const shaA = (await git(['rev-parse', 'HEAD'], dir)).trim();
 
-    fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v2');
+    fs.writeFileSync(path.join(pagesDir, 'a.md'), 'A v2');
     const info2 = db
       .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
       .run('v2', 'v2', 'Second', 'user');
@@ -367,7 +367,7 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
     );
     const { releaseService, releaseStore } = buildReleaseService(pagesDir);
 
-    fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v1');
+    fs.writeFileSync(path.join(pagesDir, 'a.md'), 'A v1');
     const info1 = db
       .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
       .run('v1', 'v1', 'First', 'user');
@@ -415,7 +415,7 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
     const { releaseService, releaseStore } = buildReleaseService(pagesDir);
 
     // Both release-identity files AND a real content change land in one commit.
-    fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v1');
+    fs.writeFileSync(path.join(pagesDir, 'a.md'), 'A v1');
     releaseStore.write('v1', {
       name: 'v1',
       slug: 'v1',
@@ -723,7 +723,7 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
     );
     const { releaseService, releaseStore } = buildReleaseService(pagesDir);
 
-    fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v1');
+    fs.writeFileSync(path.join(pagesDir, 'a.md'), 'A v1');
     const info1 = db
       .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
       .run('v1', 'v1', 'First', 'user');
@@ -739,7 +739,7 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
     await git(['add', '.'], dir);
     await git(['commit', '-m', 'v1'], dir);
 
-    fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v2');
+    fs.writeFileSync(path.join(pagesDir, 'a.md'), 'A v2');
     const info2 = db
       .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
       .run('v2', 'v2', 'Second', 'user');
@@ -770,7 +770,7 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
       fs.mkdirSync(pagesDir, { recursive: true });
       const { releaseService, releaseStore } = buildReleaseService(pagesDir);
 
-      fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v1');
+      fs.writeFileSync(path.join(pagesDir, 'a.md'), 'A v1');
       const info1 = db
         .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
         .run('v1', 'v1', 'First', 'user');
@@ -786,7 +786,7 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
       await git(['add', '.'], dir);
       await git(['commit', '-m', 'v1'], dir);
 
-      fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v2');
+      fs.writeFileSync(path.join(pagesDir, 'a.md'), 'A v2');
       const info2 = db
         .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
         .run('v2', 'v2', 'Second', 'user');
@@ -804,11 +804,11 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
 
       // Implicit pull: a plain terminal commit, no release created for it —
       // this lands BETWEEN v2's marker and v3's marker.
-      fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v2.5 (implicit)');
+      fs.writeFileSync(path.join(pagesDir, 'a.md'), 'A v2.5 (implicit)');
       await git(['add', '.'], dir);
       await git(['commit', '-m', 'implicit terminal commit, no release'], dir);
 
-      fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v3');
+      fs.writeFileSync(path.join(pagesDir, 'a.md'), 'A v3');
       const info3 = db
         .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
         .run('v3', 'v3', 'Third', 'user');
@@ -829,8 +829,8 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
       const lines = aChange?.modified_sections[0]?.line_diff.lines ?? [];
       // The diff runs all the way to the implicit commit's content, NOT v2's
       // own commit content — proving snapshot(v2) resolved to M_v3~1.
-      expect(lines.some((l) => l.op === 'added' && l.content === '# A v2.5 (implicit)')).toBe(true);
-      expect(lines.some((l) => l.op === 'added' && l.content === '# A v2')).toBe(false);
+      expect(lines.some((l) => l.op === 'added' && l.content === 'A v2.5 (implicit)')).toBe(true);
+      expect(lines.some((l) => l.op === 'added' && l.content === 'A v2')).toBe(false);
     });
 
     it('the LATEST release\'s reign extends to HEAD, including uncommitted-at-release-time but since-committed changes', async () => {
@@ -838,7 +838,7 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
       fs.mkdirSync(pagesDir, { recursive: true });
       const { releaseService, releaseStore } = buildReleaseService(pagesDir);
 
-      fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v1');
+      fs.writeFileSync(path.join(pagesDir, 'a.md'), 'A v1');
       const info1 = db
         .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
         .run('v1', 'v1', 'First', 'user');
@@ -854,7 +854,7 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
       await git(['add', '.'], dir);
       await git(['commit', '-m', 'v1'], dir);
 
-      fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v2');
+      fs.writeFileSync(path.join(pagesDir, 'a.md'), 'A v2');
       const info2 = db
         .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
         .run('v2', 'v2', 'Second', 'user');
@@ -872,14 +872,14 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
 
       // v2 IS the latest release — one more implicit commit after it, still
       // counts as part of v2's reign since there is no v3 yet.
-      fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A latest (post-v2 implicit commit)');
+      fs.writeFileSync(path.join(pagesDir, 'a.md'), 'A latest (post-v2 implicit commit)');
       await git(['add', '.'], dir);
       await git(['commit', '-m', 'implicit terminal commit after latest release'], dir);
 
       const delta = await releaseService.getReleaseDiff(v1Id, v2Id);
       const aChange = delta.pages.find((p) => p.path === 'a.md');
       const lines = aChange?.modified_sections[0]?.line_diff.lines ?? [];
-      expect(lines.some((l) => l.op === 'added' && l.content === '# A latest (post-v2 implicit commit)')).toBe(true);
+      expect(lines.some((l) => l.op === 'added' && l.content === 'A latest (post-v2 implicit commit)')).toBe(true);
     });
 
     it('getUnreleasedDiff git-anchored fast path: `:to=current` picks up UNCOMMITTED working-tree changes since the reign boundary, including a brand-new untracked page', async () => {
@@ -887,7 +887,7 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
       fs.mkdirSync(pagesDir, { recursive: true });
       const { releaseService, releaseStore } = buildReleaseService(pagesDir);
 
-      fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v1');
+      fs.writeFileSync(path.join(pagesDir, 'a.md'), 'A v1');
       const info1 = db
         .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
         .run('v1', 'v1', 'First', 'user');

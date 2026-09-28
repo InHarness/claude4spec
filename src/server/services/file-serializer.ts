@@ -16,129 +16,218 @@
  *
  * Snapshot shape — `FileSnapshotData` per `db-m17-snapshots.md` (`dbm17shp01`).
  * Diff variant C (M17 decyzja 10): section-level operations + mandatory
- * `line_diff` inside each `section_modified` + `frontmatter_diff` /
+ * `line_diff` inside each entry of `modified_sections` + `frontmatter_diff` /
  * `xml_refs_diff` side-channels.
+ *
+ * 2.0.0 — both sides of a diff go through the SHARED SECTION PARSER (M06), so
+ * the diff never splits content itself and its boundaries are the index's:
+ * entries are keyed by anchor plus the reserved `~preamble`, and every entry
+ * compares a section's OWN body — a change inside a subsection is the
+ * subsection's entry alone, never its parent's.
  */
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import matter from 'gray-matter';
 import { diffLines } from 'diff';
-import { ANCHOR_LINE_RE, ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
+import { ANCHOR_LINE_RE } from '../../shared/anchor-pattern.js';
 import { parseXmlTagsExcludingCode } from '../../shared/xml-tags.js';
+import {
+  fileKindOf,
+  liveAnchorValues,
+  parseSections,
+  PREAMBLE_KEY,
+  sliceLines,
+  type SectionFileKind,
+} from '../../shared/section-parser.js';
 import type { PagesService } from './pages.js';
+import type {
+  FileDiff,
+  FileDiffModifiedSection,
+  FileDiffSection,
+  FrontmatterDiffLite,
+  LineDiffLineLite,
+  LineDiffLite,
+  PageXmlRefLite,
+  SectionKey,
+  XmlRefsDiffLite,
+} from '../../shared/entities.js';
+type FileSection = FileDiffSection;
+type ModifiedSection = FileDiffModifiedSection;
+type LineDiff = LineDiffLite;
+type LineDiffLine = LineDiffLineLite;
+type FrontmatterDiff = FrontmatterDiffLite;
+type XmlRefsDiff = XmlRefsDiffLite;
 
 export const FILE_SERIALIZER_VERSION = '1.1.0';
 
-const ANCHOR_RE = new RegExp(ANCHOR_PATTERN_SOURCE, 'g');
-const ANCHOR_INLINE_RE = new RegExp(ANCHOR_PATTERN_SOURCE);
-const CODE_FENCE_RE = /^\s*```/m;
-const HEADING_RE = /^(#{1,6})\s+(.+?)\s*$/;
 
-export interface FileXmlRef {
-  tagType: string;
-  attributes: Record<string, string>;
-  position: number;
-}
+export type FileXmlRef = PageXmlRefLite;
 
 export interface FileSnapshotData {
   path: string;
   content: string;
   frontmatter: Record<string, unknown>;
+  /**
+   * 2.0.0 — computed by the section parser at capture (anchor lines inside
+   * code blocks excluded), and INFORMATIONAL ONLY: the diff always re-parses
+   * `content` and never reads this. Old `file_version` rows, captured before the
+   * parser, can carry anchors from inside code blocks; ignoring the field is
+   * what keeps them from producing phantom sections.
+   */
   anchors: string[];
   xml_refs: FileXmlRef[];
 }
 
-export interface FileSection {
-  anchor: string;
-  heading: string;
-  level: number;
-  content: string;
-  position: number;
-}
-
-export interface FrontmatterDiff {
-  added: Record<string, unknown>;
-  removed: Record<string, unknown>;
-  changed: Array<{ key: string; from: unknown; to: unknown }>;
-}
-
-export interface XmlRefsDiff {
-  added: FileXmlRef[];
-  removed: FileXmlRef[];
-}
-
-/** Per-line diff inside a modified section (M17 decyzja 10 wariant C). */
-export interface LineDiffLine {
-  op: 'keep' | 'added' | 'removed';
-  content: string;
-}
-
-export interface LineDiff {
-  lines: LineDiffLine[];
-}
-
-export interface ModifiedSection {
-  anchor: string;
-  heading: string;
-  level: number;
-  /** Mandatory in variant C — line-level diff of section body. */
-  line_diff: LineDiff;
-}
-
-export interface FileDiff {
-  path: string;
-  op: 'created' | 'deleted' | 'modified' | 'noop';
-  added_sections: FileSection[];
-  removed_sections: FileSection[];
-  modified_sections: ModifiedSection[];
-  moved_sections: Array<{ anchor: string; from_position: number; to_position: number }>;
-  frontmatter_diff: FrontmatterDiff | null;
-  xml_refs_diff: XmlRefsDiff | null;
-}
+/** The diff contract lives in `src/shared/entities.ts` — the client renders it as is. */
+export type {
+  FileDiff,
+  SectionKey,
+  FileDiffSection as FileSection,
+  FileDiffModifiedSection as ModifiedSection,
+  LineDiffLite as LineDiff,
+  LineDiffLineLite as LineDiffLine,
+  FrontmatterDiffLite as FrontmatterDiff,
+  XmlRefsDiffLite as XmlRefsDiff,
+};
 
 /**
  * Compute line-level diff between two strings using Myers algorithm
  * (via `diff` npm). Returns a flat list of keep/added/removed lines
  * preserving order. Trailing newlines are normalized so identical
  * content with/without final \n compares equal.
+ *
+ * Noise filter (2.0.0): an added/removed line that is blank, or an orphan
+ * anchor line OUTSIDE a code block, is noise and dropped. Inside a code block
+ * (from the shared excluded-range scanner) nothing is noise — whitespace and
+ * an anchor-shaped line are the example's content, so adding or removing one
+ * there IS a change. Until 2.0.0 the filter switched off entirely as soon as
+ * either side held a fence anywhere.
  */
-export function computeLineDiff(a: string, b: string): LineDiff {
-  const lines: LineDiffLine[] = [];
-  const parts = diffLines(a, b);
-  for (const part of parts) {
+export function computeLineDiff(a: string, b: string, kind: SectionFileKind = 'md'): LineDiff {
+  const aCode = codeLines(a, kind);
+  const bCode = codeLines(b, kind);
+  const lines: Array<LineDiffLine & { inCode: boolean }> = [];
+  let ai = 0;
+  let bi = 0;
+  for (const part of diffLines(a, b)) {
     const op: LineDiffLine['op'] = part.added ? 'added' : part.removed ? 'removed' : 'keep';
     const partLines = part.value.split('\n');
     // diffLines emits trailing empty string for blocks that end in \n; drop it.
     if (partLines.length > 0 && partLines[partLines.length - 1] === '') partLines.pop();
     for (const content of partLines) {
-      lines.push({ op, content });
+      const inCode = op === 'added' ? bCode.has(bi) : aCode.has(ai);
+      lines.push({ op, content, inCode });
+      if (op !== 'added') ai++;
+      if (op !== 'removed') bi++;
     }
   }
-  // Inside fenced code blocks (```), whitespace and HTML comments can be
-  // semantically meaningful (YAML, Python, indent-DSL, markdown-in-markdown).
-  // Skip noise filtering entirely when either side contains a code fence.
-  if (CODE_FENCE_RE.test(a) || CODE_FENCE_RE.test(b)) {
-    return { lines };
-  }
-  const filtered = lines.filter((l) => {
-    if (l.op === 'keep') return true;
-    if (l.content.trim() === '') return false;
-    if (ANCHOR_LINE_RE.test(l.content)) return false;
-    return true;
-  });
-  return { lines: filtered };
+  return {
+    lines: lines
+      .filter((l) => {
+        if (l.op === 'keep' || l.inCode) return true;
+        if (l.content.trim() === '') return false;
+        if (ANCHOR_LINE_RE.test(l.content)) return false;
+        return true;
+      })
+      .map(({ op, content }) => ({ op, content })),
+  };
 }
 
-/** Extract anchors in document order. */
-export function extractAnchorsInOrder(content: string): string[] {
-  const out: string[] = [];
-  ANCHOR_RE.lastIndex = 0;
-  let m: RegExpExecArray | null;
-  while ((m = ANCHOR_RE.exec(content)) !== null) {
-    if (m[1]) out.push(m[1]);
+/** 0-based indexes of the lines of `text` that lie inside a fenced code block. */
+function codeLines(text: string, kind: SectionFileKind): Set<number> {
+  const out = new Set<number>();
+  if (!text.includes('```') && !text.includes('~~~')) return out;
+  for (const r of parseSections(text, kind, { frontmatter: false }).excludedRanges) {
+    if (r.kind !== 'fence') continue;
+    for (let l = r.range.start; l <= r.range.end; l++) out.add(l - 1);
   }
   return out;
+}
+
+/** Live anchors (outside code) in document order — informational, see `FileSnapshotData.anchors`. */
+export function extractAnchorsInOrder(content: string, kind: SectionFileKind = 'md'): string[] {
+  return liveAnchorValues(content, kind);
+}
+
+/** One side of a diff, split by the shared section parser. */
+interface DiffEntry {
+  key: SectionKey;
+  /** The OWN body (for the preamble: its whole range). */
+  content: string;
+  /** Position among the sections of its side (document order). */
+  position: number;
+}
+
+interface DiffSide {
+  preamble: DiffEntry | null;
+  /** First occurrence of each anchor — the indexer's collision rule. */
+  anchored: Map<string, DiffEntry>;
+  /** Headings without an anchor (and duplicate-anchor losers): no identity. */
+  unanchored: DiffEntry[];
+  /** Anchored entries in document order. */
+  order: string[];
+}
+
+function splitSide(content: string, kind: SectionFileKind): DiffSide {
+  const parsed = parseSections(content, kind);
+  const lines = content.split('\n');
+  const side: DiffSide = { preamble: null, anchored: new Map(), unanchored: [], order: [] };
+  if (parsed.preamble) {
+    side.preamble = {
+      key: { kind: 'preamble', anchor: PREAMBLE_KEY, heading: null, level: null, parent: null },
+      content: sliceLines(lines, parsed.preamble.range),
+      position: -1,
+    };
+  }
+  for (const sec of parsed.sections) {
+    const parent = sec.parent === null ? null : parsed.sections[sec.parent]!.anchor;
+    const owns = sec.anchor !== null && !side.anchored.has(sec.anchor);
+    const entry: DiffEntry = {
+      key: { kind: 'section', anchor: owns ? sec.anchor : null, heading: sec.heading, level: sec.level, parent },
+      content: sliceLines(lines, { start: sec.headingLine + 1, end: sec.ownEndLine }),
+      position: sec.position,
+    };
+    if (owns) {
+      side.anchored.set(sec.anchor!, entry);
+      side.order.push(sec.anchor!);
+    } else {
+      side.unanchored.push(entry);
+    }
+  }
+  return side;
+}
+
+function allEntries(side: DiffSide): DiffEntry[] {
+  const out: DiffEntry[] = side.preamble ? [side.preamble] : [];
+  const secs = [...side.anchored.values(), ...side.unanchored].sort((x, y) => x.position - y.position);
+  return [...out, ...secs];
+}
+
+const asSection = (e: DiffEntry): FileSection => ({ ...e.key, content: e.content });
+
+/** Longest common subsequence of two anchor orders — what did NOT move. */
+function lcs(a: readonly string[], b: readonly string[]): Set<string> {
+  const n = a.length;
+  const m = b.length;
+  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i]![j] = a[i] === b[j] ? dp[i + 1]![j + 1]! + 1 : Math.max(dp[i + 1]![j]!, dp[i]![j + 1]!);
+    }
+  }
+  const keep = new Set<string>();
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) {
+      keep.add(a[i]!);
+      i++;
+      j++;
+    } else if (dp[i + 1]![j]! >= dp[i]![j + 1]!) i++;
+    else j++;
+  }
+  return keep;
 }
 
 export class FileSerializer {
@@ -159,7 +248,7 @@ export class FileSerializer {
   /** Build snapshot from already-read content (used for delete tombstones). */
   snapshotFromContent(relPath: string, content: string): FileSnapshotData {
     const parsed = matter(content);
-    const anchors = extractAnchorsInOrder(content);
+    const anchors = extractAnchorsInOrder(content, fileKindOf(relPath));
     const xml_refs = parseXmlTagsExcludingCode(content).map((t) => ({
       tagType: t.kind,
       attributes: t.attrs,
@@ -175,13 +264,27 @@ export class FileSerializer {
   }
 
   /**
-   * Section-level diff (variant C in M17 decyzja 10). Sections keyed by
-   * 8-char anchor (`<!-- anchor: ... -->`). Reorder without content change
-   * → moved_section. Heading edited → counted as modified (heading is part
-   * of section content in our parser). Each `modified` section carries a
-   * mandatory `line_diff` computed via Myers diff over section bodies.
+   * Section-level diff (variant C in M17 decyzja 10), on the shared section
+   * parser (2.0.0):
+   *  - entries are keyed by anchor, plus `~preamble` for text above the first
+   *    heading (a page without headings diffs as its preamble);
+   *  - each entry compares the section's OWN body: a change inside a subsection
+   *    is that subsection's entry only, never its parent's;
+   *  - `modified_sections` — own body changed after the noise filter, or the
+   *    heading (text or level) changed;
+   *  - a heading WITHOUT an anchor has no identity: it never pairs across sides,
+   *    so a changed one is a `removed` + `added` pair, never `modified`/`moved`;
+   *  - `moved_sections` — anchored sections outside the LCS of the two orders;
+   *    the preamble never moves.
+   * `FileSnapshotData.anchors` is never read: `content` is re-parsed.
    */
-  diff(a: FileSnapshotData | null, b: FileSnapshotData | null, relPath: string): FileDiff {
+  diff(
+    a: FileSnapshotData | null,
+    b: FileSnapshotData | null,
+    relPath: string,
+    rootId: string = this.pages.rootId,
+  ): FileDiff {
+    const kind = fileKindOf(relPath);
     const empty: Pick<FileDiff, 'added_sections' | 'removed_sections' | 'modified_sections' | 'moved_sections'> = {
       added_sections: [],
       removed_sections: [],
@@ -189,73 +292,85 @@ export class FileSerializer {
       moved_sections: [],
     };
     if (a == null && b == null) {
-      return { path: relPath, op: 'noop', ...empty, frontmatter_diff: null, xml_refs_diff: null };
+      return { rootId, path: relPath, op: 'noop', ...empty, frontmatter_diff: null, xml_refs_diff: null };
     }
     if (a == null) {
-      const sections = parseSections(b!.content);
       return {
+        rootId,
         path: relPath,
         op: 'created',
-        added_sections: sections,
-        removed_sections: [],
-        modified_sections: [],
-        moved_sections: [],
+        ...empty,
+        added_sections: allEntries(splitSide(b!.content, kind)).map(asSection),
         frontmatter_diff: frontmatterDiff({}, b!.frontmatter),
         xml_refs_diff: { added: b!.xml_refs, removed: [] },
       };
     }
     if (b == null) {
-      const sections = parseSections(a.content);
       return {
+        rootId,
         path: relPath,
         op: 'deleted',
-        added_sections: [],
-        removed_sections: sections,
-        modified_sections: [],
-        moved_sections: [],
+        ...empty,
+        removed_sections: allEntries(splitSide(a.content, kind)).map(asSection),
         frontmatter_diff: frontmatterDiff(a.frontmatter, {}),
         xml_refs_diff: { added: [], removed: a.xml_refs },
       };
     }
 
-    const aSec = parseSections(a.content);
-    const bSec = parseSections(b.content);
-    const aMap = new Map(aSec.map((s) => [s.anchor, s]));
-    const bMap = new Map(bSec.map((s) => [s.anchor, s]));
-
+    const aSide = splitSide(a.content, kind);
+    const bSide = splitSide(b.content, kind);
     const added: FileSection[] = [];
     const removed: FileSection[] = [];
     const modified: ModifiedSection[] = [];
-    const moved: Array<{ anchor: string; from_position: number; to_position: number }> = [];
+    const moved: FileDiff['moved_sections'] = [];
 
-    for (const [anchor, sec] of bMap) {
-      if (!aMap.has(anchor)) added.push(sec);
+    const compare = (x: DiffEntry, y: DiffEntry) => {
+      const lineDiff = computeLineDiff(x.content, y.content, kind);
+      const bodyChanged = lineDiff.lines.some((l) => l.op !== 'keep');
+      const headingChanged = x.key.heading !== y.key.heading || x.key.level !== y.key.level;
+      if (bodyChanged || headingChanged) modified.push({ ...y.key, line_diff: lineDiff });
+    };
+
+    // The preamble — a full element, outside move detection.
+    if (aSide.preamble && bSide.preamble) compare(aSide.preamble, bSide.preamble);
+    else if (bSide.preamble) added.push(asSection(bSide.preamble));
+    else if (aSide.preamble) removed.push(asSection(aSide.preamble));
+
+    for (const [anchor, y] of bSide.anchored) {
+      const x = aSide.anchored.get(anchor);
+      if (!x) added.push(asSection(y));
+      else compare(x, y);
     }
-    for (const [anchor, sec] of aMap) {
-      const other = bMap.get(anchor);
-      if (!other) {
-        removed.push(sec);
-        continue;
-      }
-      if (sec.content === other.content && sec.heading === other.heading) {
-        if (sec.position !== other.position) {
-          moved.push({ anchor, from_position: sec.position, to_position: other.position });
-        }
-        continue;
-      }
-      const lineDiff = computeLineDiff(sec.content, other.content);
-      const hasContentChange = lineDiff.lines.some((l) => l.op !== 'keep');
-      const headingChanged = sec.heading !== other.heading;
-      if (hasContentChange || headingChanged) {
-        modified.push({
-          anchor,
-          heading: other.heading,
-          level: other.level,
-          line_diff: lineDiff,
-        });
-      } else if (sec.position !== other.position) {
-        moved.push({ anchor, from_position: sec.position, to_position: other.position });
-      }
+    for (const [anchor, x] of aSide.anchored) {
+      if (!bSide.anchored.has(anchor)) removed.push(asSection(x));
+    }
+
+    /**
+     * Unanchored headings: no identity, so nothing pairs. An entry identical on
+     * both sides (same heading, level and own body — as a multiset) is simply
+     * unchanged and reported nowhere; anything else is removed on `a` and added
+     * on `b`, identified by its heading text.
+     */
+    const sig = (e: DiffEntry) => `${e.key.level}|${e.key.heading}|${e.content}`;
+    const unmatchedB = [...bSide.unanchored];
+    for (const x of aSide.unanchored) {
+      const k = unmatchedB.findIndex((y) => sig(y) === sig(x));
+      if (k >= 0) unmatchedB.splice(k, 1);
+      else removed.push(asSection(x));
+    }
+    for (const y of unmatchedB) added.push(asSection(y));
+
+    const common = (order: string[], other: DiffSide) => order.filter((an) => other.anchored.has(an));
+    const aOrder = common(aSide.order, bSide);
+    const bOrder = common(bSide.order, aSide);
+    const stayed = lcs(aOrder, bOrder);
+    for (const anchor of bOrder) {
+      if (stayed.has(anchor)) continue;
+      moved.push({
+        anchor,
+        from_position: aSide.anchored.get(anchor)!.position,
+        to_position: bSide.anchored.get(anchor)!.position,
+      });
     }
 
     const fmDiff = frontmatterDiff(a.frontmatter, b.frontmatter);
@@ -265,6 +380,7 @@ export class FileSerializer {
       added.length || removed.length || modified.length || moved.length || fmDiff || xmlDiff;
 
     return {
+      rootId,
       path: relPath,
       op: anyChange ? 'modified' : 'noop',
       added_sections: added,
@@ -275,103 +391,6 @@ export class FileSerializer {
       xml_refs_diff: xmlDiff,
     };
   }
-}
-
-/**
- * Split markdown content into sections keyed by 8-char anchor. A section spans
- * from a heading (with anchor comment) to the next heading of equal or higher
- * level. Content without an anchor is grouped under an implicit root section
- * keyed by `__root__`.
- */
-export function parseSections(content: string): FileSection[] {
-  const lines = content.split('\n');
-  const sections: FileSection[] = [];
-
-  let position = 0;
-  let currentAnchor: string | null = null;
-  let currentHeading = '';
-  let currentLevel = 0;
-  let currentLines: string[] = [];
-
-  const flush = () => {
-    if (currentAnchor) {
-      sections.push({
-        anchor: currentAnchor,
-        heading: currentHeading,
-        level: currentLevel,
-        content: currentLines.join('\n'),
-        position: position++,
-      });
-    } else if (currentLines.length > 0 && currentLines.some((l) => l.trim().length > 0)) {
-      sections.push({
-        anchor: '__root__',
-        heading: '',
-        level: 0,
-        content: currentLines.join('\n'),
-        position: position++,
-      });
-    }
-    currentAnchor = null;
-    currentHeading = '';
-    currentLevel = 0;
-    currentLines = [];
-  };
-
-  let pendingAnchor: string | null = null;
-  let pendingBlanks: string[] = [];
-
-  // Orphan a pending anchor + its buffered blank lines into the current section
-  // (i.e. anchor never met a heading — fall back to treating it as inline content).
-  const orphanPending = () => {
-    if (pendingAnchor !== null) {
-      currentLines.push(`<!-- anchor: ${pendingAnchor} -->`);
-      pendingAnchor = null;
-    }
-    if (pendingBlanks.length > 0) {
-      currentLines.push(...pendingBlanks);
-      pendingBlanks = [];
-    }
-  };
-
-  for (const line of lines) {
-    const anchorMatch = line.match(ANCHOR_INLINE_RE);
-    if (anchorMatch && anchorMatch[1]) {
-      // A second anchor before any heading appeared — orphan the previous one
-      // (matches historical behavior for the rare `anchor\nanchor\nheading` case)
-      // before adopting the new pending anchor.
-      orphanPending();
-      pendingAnchor = anchorMatch[1];
-      continue;
-    }
-    // Blank line between anchor and heading: buffer it, keep the anchor pending.
-    // Canonical indexer layout is `anchor\n\nheading`, so this is the common case.
-    if (pendingAnchor !== null && line.trim() === '') {
-      pendingBlanks.push(line);
-      continue;
-    }
-    const headingMatch = line.match(HEADING_RE);
-    if (headingMatch && pendingAnchor !== null) {
-      flush();
-      currentAnchor = pendingAnchor;
-      currentLevel = headingMatch[1]!.length;
-      currentHeading = headingMatch[2]!.trim();
-      // Buffered blanks (if any) become leading whitespace of the new section,
-      // so concatenating section contents reconstructs the on-disk body modulo
-      // the consumed anchor line itself.
-      currentLines = pendingBlanks.length > 0 ? [...pendingBlanks, line] : [line];
-      pendingAnchor = null;
-      pendingBlanks = [];
-      continue;
-    }
-    // Non-blank, non-heading, non-anchor line: anchor (if any) never found its
-    // heading — orphan it together with any buffered blanks, then push current line.
-    orphanPending();
-    currentLines.push(line);
-  }
-  // File ended with a dangling anchor (and maybe blanks) — orphan into trailing content.
-  orphanPending();
-  flush();
-  return sections;
 }
 
 function frontmatterDiff(
