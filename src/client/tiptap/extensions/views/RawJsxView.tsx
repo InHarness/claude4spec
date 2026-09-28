@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
 
 /**
@@ -20,9 +20,36 @@ export function RawJsxView({ node, updateAttributes }: NodeViewProps) {
     const el = taRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight}px`;
+    const contentHeight = el.scrollHeight;
+    // Not laid out yet (NodeView mounted off-document): a 0 measurement would
+    // pin `height: 0px` over `rows`. Leave `rows` in effect and wait for layout.
+    if (contentHeight === 0) {
+      el.style.height = '';
+      return;
+    }
+    // Border + horizontal scrollbar sit outside scrollHeight (border-box sizing).
+    el.style.height = `${contentHeight + el.offsetHeight - el.clientHeight}px`;
   }
-  useEffect(autosize, [value, isBlock]);
+  useLayoutEffect(autosize, [value, isBlock]);
+
+  // Re-measure once the textarea is attached and laid out: one frame after mount,
+  // and on its first non-zero size (ReactNodeViewRenderer attaches it later).
+  useEffect(() => {
+    const el = taRef.current;
+    if (!isBlock || !el) return;
+    const frame = requestAnimationFrame(autosize);
+    let observer: ResizeObserver | undefined;
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver((entries) => {
+        if (entries.some((e) => e.contentRect.width > 0 || e.contentRect.height > 0)) autosize();
+      });
+      observer.observe(el);
+    }
+    return () => {
+      cancelAnimationFrame(frame);
+      observer?.disconnect();
+    };
+  }, [isBlock]);
 
   function commit() {
     if (value !== raw) updateAttributes({ raw: value });
@@ -38,7 +65,6 @@ export function RawJsxView({ node, updateAttributes }: NodeViewProps) {
     padding: isBlock ? '8px 10px' : '0 4px',
     width: isBlock ? '100%' : undefined,
     resize: 'none',
-    overflow: 'hidden',
     whiteSpace: 'pre',
     boxSizing: 'border-box',
   };
@@ -53,7 +79,7 @@ export function RawJsxView({ node, updateAttributes }: NodeViewProps) {
           rows={Math.max(1, value.split('\n').length)}
           onChange={(e) => setValue(e.target.value)}
           onBlur={commit}
-          style={codeStyle}
+          style={{ ...codeStyle, overflowY: 'hidden', overflowX: 'auto' }}
           aria-label="Raw JSX block"
         />
       </NodeViewWrapper>
@@ -69,7 +95,7 @@ export function RawJsxView({ node, updateAttributes }: NodeViewProps) {
         size={Math.max(1, value.length)}
         onChange={(e) => setValue(e.target.value)}
         onBlur={commit}
-        style={{ ...codeStyle, whiteSpace: 'nowrap' }}
+        style={{ ...codeStyle, overflow: 'hidden', whiteSpace: 'nowrap' }}
         aria-label="Raw JSX"
       />
     </NodeViewWrapper>
