@@ -89,6 +89,12 @@ describe('parseSections — excluded ranges', () => {
     expect(r.diagnostics.unclosedCodeBlocks).toEqual([{ openLine: 6 }]);
   });
 
+  it('fences are recognised in CRLF text', () => {
+    const r = parseSections('## Real\r\n```bash\r\n# comment\r\n```\r\n', 'md');
+    expect(r.sections.map((s) => s.heading)).toEqual(['Real']);
+    expect(r.diagnostics.unclosedCodeBlocks).toEqual([]);
+  });
+
   it('unknown JSX is an excluded range in .mdx only', () => {
     const text = '<Callout>\n## Inside\n</Callout>\n## Out';
     expect(parseSections(text, 'mdx').sections.map((s) => s.heading)).toEqual(['Out']);

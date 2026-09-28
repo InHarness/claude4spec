@@ -733,15 +733,17 @@ function insertAfterSection(
     };
   }
   const lines = prior.split('\n');
-  const before = lines.slice(0, target.subtreeEndLine).join('\n');
-  const after = lines.slice(target.subtreeEndLine).join('\n');
-  const sep = before.endsWith('\n\n') ? '' : before.endsWith('\n') ? '\n' : '\n\n';
-  const afterSep = after.length > 0 ? '\n\n' : '';
-  const body = `${before}${sep}${fragment}${afterSep}${after}`.replace(/\n{3,}/g, '\n\n');
+  // Blank lines are normalized at the two seams only — never across the whole
+  // body, where a run of blank lines can be content (inside a code block).
+  const before = lines.slice(0, target.subtreeEndLine).join('\n').replace(/\n+$/, '');
+  const after = lines.slice(target.subtreeEndLine).join('\n').replace(/^\n+/, '');
+  const frag = fragment.replace(/^\n+/, '');
+  const body = after.length > 0 ? `${before}\n\n${frag.replace(/\n+$/, '')}\n\n${after}` : `${before}\n\n${frag}`;
   if (matches.length > 1) {
+    const what = anchor ? `anchor '${anchor}'` : `heading '${wanted}'`;
     return {
       body,
-      warning: `insert_after_section: heading '${wanted}' matches ${matches.length} sections — the fragment landed after the FIRST of them (line ${target.headingLine}); address it by anchor to be exact`,
+      warning: `insert_after_section: ${what} matches ${matches.length} sections — the fragment landed after the FIRST of them (line ${target.headingLine}); address it by anchor to be exact`,
     };
   }
   return { body };

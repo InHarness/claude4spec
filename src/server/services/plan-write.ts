@@ -4,7 +4,6 @@ import {
   applySectionEdit,
   assertAppendContent,
   assertHeadingText,
-  levelAt,
   liveRangeOf,
   parseBody,
   renameHeading,
@@ -347,8 +346,7 @@ export function applyPlanBatch(body: string, edits: readonly PlanSectionEdit[]):
    */
   for (const edit of edits) {
     if (edit.action !== 'append') continue;
-    const level = levelAt(lines, rangeByAnchor.get(edit.anchor)!.lineStart);
-    if (level !== null) assertAppendContent(edit.content ?? '', level, edit.anchor);
+    assertAppendContent(edit.content ?? '', rangeByAnchor.get(edit.anchor)!.level, edit.anchor);
   }
 
   /**

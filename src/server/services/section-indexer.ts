@@ -9,6 +9,7 @@ import {
 } from '../../shared/xml-tags.js';
 import {
   fileKindOf,
+  insertAnchorLines,
   ownBodyOf,
   parseSections,
   type ParsedSection,
@@ -191,7 +192,6 @@ export class SectionIndexerService implements WatchSubscriber {
    * this file already carries — the file may not be in the index yet.
    */
   private mintInto(body: string, kind: SectionFileKind): string | null {
-    const lines = body.split('\n');
     // 2.0.0 — headings come from the shared section parser, so a heading-shaped
     // line inside a code block, a multi-line HTML comment or (in `.mdx`) an
     // unknown JSX region gets no anchor. An anchor-shaped line inside a code
@@ -201,16 +201,12 @@ export class SectionIndexerService implements WatchSubscriber {
     const taken = new Set(sections.map((sec) => sec.anchor).filter((a): a is string => a !== null));
     const missing = sections.filter((sec) => sec.anchor === null);
     if (missing.length === 0) return null;
-    // Bottom-up, so earlier heading lines stay where the parse put them.
     const minted = missing.map(() => {
       const a = this.freshAnchor(taken);
       taken.add(a);
       return a;
     });
-    for (let k = missing.length - 1; k >= 0; k--) {
-      lines.splice(missing[k]!.headingLine - 1, 0, `<!-- anchor: ${minted[k]} -->`);
-    }
-    return lines.join('\n');
+    return insertAnchorLines(body, missing, minted);
   }
 
   /**

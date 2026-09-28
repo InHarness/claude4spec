@@ -3,7 +3,6 @@ import { DomainError } from './tags.js';
 import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
 import {
   anchorLineIndexOf,
-  HEADING_LINE_RE,
   liveAnchorValues,
   parseSections,
   type ParsedSection,
@@ -118,10 +117,14 @@ export interface LineSpan {
  * anchor nor earns the right to declare one droppable. An anchor is at risk from
  * exactly one thing — a `find` that swallows the comment carrying it.
  */
-export function anchorsInLineSpans(lines: string[], spans: readonly LineSpan[]): string[] {
+export function anchorsInLineSpans(
+  lines: string[],
+  spans: readonly LineSpan[],
+  kind: SectionFileKind = 'md',
+): string[] {
   const covered = (line: number) => spans.some((s) => line >= s.from && line <= s.to);
   const out: string[] = [];
-  for (const sec of parseBody(lines).sections) {
+  for (const sec of parseBody(lines, kind).sections) {
     if (!sec.anchor || out.includes(sec.anchor)) continue;
     if (covered(anchorLineIndexOf(lines, sec) ?? sec.headingLine - 1)) out.push(sec.anchor);
   }
@@ -191,7 +194,7 @@ export function liveRangeOf(
 export function sectionRanges(
   lines: string[],
   kind: SectionFileKind = 'md',
-): Array<{ anchor: string; lineStart: number; lineEnd: number }> {
+): Array<{ anchor: string; lineStart: number; lineEnd: number; level: number }> {
   /**
    * Hand-authored anchors are unpoliced, so the same value can appear twice on
    * one page. The indexer settles that — first occurrence owns the anchor, the
@@ -207,6 +210,7 @@ export function sectionRanges(
     anchor: sec.anchor!,
     lineStart: sec.headingLine,
     lineEnd: sec.subtreeEndLine,
+    level: sec.level,
   }));
 }
 
@@ -268,12 +272,6 @@ export function assertAppendContent(content: string, level: number, anchor: stri
     `append for '${anchor}' carries a level-${offending.level} heading ('${offending.heading}') — at or above the section's own level ${level}`,
     'append adds to the section\'s OWN body; deeper headings become its first children. To add a sibling use insert_after',
   );
-}
-
-/** The heading level of the section whose heading sits on `headingLine` (1-based). */
-export function levelAt(lines: string[], headingLine: number): number | null {
-  const m = HEADING_LINE_RE.exec(lines[headingLine - 1] ?? '');
-  return m ? m[1]!.length : null;
 }
 
 /**
@@ -400,6 +398,8 @@ export function applySectionEdit(
   lines: string[],
   edit: SectionSplice,
   range: { lineStart: number; lineEnd: number },
+  /** The page's file kind — the same parse the range came from (`.mdx` excludes unknown JSX). */
+  kind: SectionFileKind = 'md',
 ): void {
   const body = (edit.content ?? '').split('\n');
   switch (edit.action) {
@@ -417,7 +417,7 @@ export function applySectionEdit(
        * Same end rule as `sectionDigests`, which is the point: "this section's
        * own text" has to mean one thing across the file.
        */
-      lines.splice(ownEndOf(lines, range), 0, ...body);
+      lines.splice(ownEndOf(lines, range, parseBody(lines, kind)), 0, ...body);
       return;
     }
     case 'insert_after':
@@ -453,7 +453,7 @@ export function applySectionEdit(
        * (`anchorLineIndexOf`) — blank lines between the two are ordinary in a
        * hand-edited file. 2.0.0: the whole SUBTREE goes (`range.lineEnd`).
        */
-      const self = parseBody(lines).sections.find((sec) => sec.headingLine === range.lineStart);
+      const self = parseBody(lines, kind).sections.find((sec) => sec.headingLine === range.lineStart);
       const headingIdx = range.lineStart - 1;
       const anchorIdx = (self && anchorLineIndexOf(lines, self)) ?? headingIdx;
       lines.splice(anchorIdx, range.lineEnd - anchorIdx);

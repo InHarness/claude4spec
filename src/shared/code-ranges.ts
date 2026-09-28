@@ -82,6 +82,15 @@ function leadingSpaces(s: string): number {
 
 const FENCE_OPEN_RE = /^(`{3,}|~{3,})(.*)$/;
 
+/**
+ * A CRLF file splits on `\n` into lines ending in `\r`, and `$` (no `m` flag)
+ * does not match before a `\r` — without this every fence of such a file would
+ * go unrecognized. Classification only: offsets still come from the raw lines.
+ */
+function dropCR(line: string): string {
+  return line.endsWith('\r') ? line.slice(0, -1) : line;
+}
+
 interface FenceOpen {
   char: string;
   len: number;
@@ -99,7 +108,7 @@ interface FenceOpen {
  * indent is measured from that item's content column (`itemIndents`).
  */
 function matchFenceOpen(line: string, itemIndents: readonly number[]): FenceOpen | null {
-  const { quotes, body } = stripQuotes(line);
+  const { quotes, body } = stripQuotes(dropCR(line));
   let rest = body;
   let base = 0;
   // Same-line list markers (possibly nested: `- 1. ```).
@@ -130,7 +139,7 @@ type FenceStep = 'content' | 'close' | 'ends-before';
 
 /** Classify a line inside an open fence: still content, the closing fence, or a container end. */
 function fenceStep(line: string, open: FenceOpen): FenceStep {
-  const { quotes, body } = stripQuotes(line, open.quotes);
+  const { quotes, body } = stripQuotes(dropCR(line), open.quotes);
   if (quotes < open.quotes) {
     // Leaving the block quote ends the fence (no lazy continuation for code).
     return 'ends-before';

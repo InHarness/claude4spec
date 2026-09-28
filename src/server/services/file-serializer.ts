@@ -218,6 +218,8 @@ const asSection = (e: DiffEntry): FileSection => ({ ...e.key, content: e.content
 function lcs(a: readonly string[], b: readonly string[]): Set<string> {
   const n = a.length;
   const m = b.length;
+  // The common case — nothing moved — needs no O(n·m) table.
+  if (n === m && a.every((x, k) => x === b[k])) return new Set(a);
   const dp: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
   for (let i = n - 1; i >= 0; i--) {
     for (let j = m - 1; j >= 0; j--) {

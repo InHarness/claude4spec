@@ -504,6 +504,19 @@ describe('composeBriefBody — insert_after_section on the shared section parser
     expect(out.warning).toMatch(/matches 2 sections/);
   });
 
+  it('blank-line runs away from the insertion point are left untouched', () => {
+    const spaced = ['## A', '```', 'x', '', '', '', 'y', '```', '', '## B', 'b', ''].join('\n');
+    const out = composeBriefBody(spaced, 'insert_after_section', 'NEW', undefined, 'B');
+    expect(out.body).toContain('x\n\n\n\ny');
+  });
+
+  it('a duplicated anchor warns by anchor, not by heading', () => {
+    const dup = ['<!-- anchor: abcdefgh -->', '## A', 'a', '', '<!-- anchor: abcdefgh -->', '## B', 'b', ''].join('\n');
+    const out = composeBriefBody(dup, 'insert_after_section', 'NEW', 'abcdefgh');
+    expect(out.warning).toMatch(/anchor 'abcdefgh'/);
+    expect(out.warning).not.toMatch(/undefined/);
+  });
+
   it('an anchor left by the author addresses its heading', () => {
     const anchored = ['<!-- anchor: abcdefgh -->', '## A', 'a', '', '## B', 'b', ''].join('\n');
     const out = composeBriefBody(anchored, 'insert_after_section', 'NEW', 'abcdefgh');

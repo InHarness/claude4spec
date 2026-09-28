@@ -1,6 +1,6 @@
 import { customAlphabet } from 'nanoid';
 import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
-import { parseSections } from '../../shared/section-parser.js';
+import { insertAnchorLines, parseSections } from '../../shared/section-parser.js';
 import { artifactRegistry, type ArtifactKind } from './artifact-registry.js';
 import type { PagesService } from './pages.js';
 import type { WatchSubscriber } from '../fs/watcher.js';
@@ -57,13 +57,7 @@ export function injectArtifactAnchors(body: string): string {
   // injected value must never duplicate anything a reader could mistake for it.
   const taken = new Set<string>();
   for (const m of body.matchAll(new RegExp(ANCHOR_PATTERN_SOURCE, 'g'))) taken.add(m[1]!);
-  const lines = body.split('\n');
-  const minted = missing.map(() => mintFileAnchor(taken));
-  // Bottom-up, so the parser's heading lines stay valid for the ones above.
-  for (let k = missing.length - 1; k >= 0; k--) {
-    lines.splice(missing[k]!.headingLine - 1, 0, `<!-- anchor: ${minted[k]} -->`);
-  }
-  return lines.join('\n');
+  return insertAnchorLines(body, missing, missing.map(() => mintFileAnchor(taken)));
 }
 
 /** Whether a file write of this artifact kind gets anchors — the registry's declaration. */

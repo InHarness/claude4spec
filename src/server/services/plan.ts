@@ -63,9 +63,6 @@ import {
 import { applyTextEdits, type TextEdit } from './text-edits.js';
 import { bodyPositionResolver } from './section-text.js';
 
-// Generator stays strict 8 (per M06 spec `15u7sazr` — auto-inject contract).
-
-
 export interface PlanServiceDeps {
   plansPages: PagesService;
   plansWatcher: SelfWriteMarker;

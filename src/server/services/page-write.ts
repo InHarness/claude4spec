@@ -26,7 +26,6 @@ import {
   anchorValuesIn,
   anchorsInLineSpans,
   assertAppendContent,
-  levelAt,
   applySectionEdit,
   assertHeadingText,
   bodyPositionResolver,
@@ -470,8 +469,8 @@ async function commit(
     hash: sha256(written),
     content: written,
     version: currentVersionOf(target, relPath),
-    anchors: [...sectionRanges(body.split('\n'))].map((r) => r.anchor),
-    digests: sectionDigests(body),
+    anchors: [...sectionRanges(body.split('\n'), fileKindOf(relPath))].map((r) => r.anchor),
+    digests: sectionDigests(body, fileKindOf(relPath)),
   };
 }
 
@@ -688,7 +687,7 @@ export async function updatePage(
 
   // Read BEFORE writing: the delta is against what was on disk, and this doubles
   // as create-or-replace, so "no page yet" means every anchor is an addition.
-  const before = sectionDigests(await bodyOnDisk(target.pages, relPath));
+  const before = sectionDigests(await bodyOnDisk(target.pages, relPath), fileKindOf(relPath));
 
   if (hasEdits) {
     return await updatePageByTextEdits(target, relPath, input, actor, before, diffDeps);
@@ -1654,8 +1653,7 @@ export async function updateSections(
    */
   for (const { edit } of located) {
     if (edit.action !== 'append') continue;
-    const level = levelAt(lines, rangeByAnchor.get(edit.anchor)!.lineStart);
-    if (level !== null) assertAppendContent(edit.content ?? '', level, edit.anchor);
+    assertAppendContent(edit.content ?? '', rangeByAnchor.get(edit.anchor)!.level, edit.anchor);
   }
 
   for (const { edit } of located) {
@@ -1777,7 +1775,7 @@ export async function updateSections(
         from: range.lineStart + lineAt(r.start),
         to: range.lineStart + lineAt(r.end),
       }));
-      scopeOf.set(edit.anchor, anchorsInLineSpans(lines, spans));
+      scopeOf.set(edit.anchor, anchorsInLineSpans(lines, spans, kind));
       lines.splice(range.lineStart, range.lineEnd - range.lineStart, ...applied.text.split('\n'));
       continue;
     }
@@ -1817,7 +1815,7 @@ export async function updateSections(
             [edit.anchor, ...anchorValuesIn(lines.slice(range.lineStart, range.lineEnd).join('\n'))]
           : [],
     );
-    applySectionEdit(lines, edit, range);
+    applySectionEdit(lines, edit, range, kind);
   }
 
   /**
@@ -1998,7 +1996,7 @@ export async function updateSections(
     if (losses.length > 0) throw new AnchorLossError(losses);
   }
 
-  const before = sectionDigests(page.body);
+  const before = sectionDigests(page.body, kind);
   const written = await commit(
     target,
     first.pagePath,

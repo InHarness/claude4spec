@@ -128,6 +128,17 @@ function frontmatterEnd(lines: readonly string[]): number | null {
   return null;
 }
 
+/**
+ * The frontmatter lines BETWEEN the fences (the same block `parseSections`
+ * reports as `frontmatter`), without paying for a section parse. `[]` when
+ * the text has no frontmatter.
+ */
+export function frontmatterInnerLines(text: string): string[] {
+  const lines = text.split('\n');
+  const end = frontmatterEnd(lines);
+  return end === null ? [] : lines.slice(1, end);
+}
+
 export interface ParseOptions {
   /**
    * `false` — `text` is a body already stripped of its frontmatter (a page body
@@ -371,6 +382,24 @@ export function liveAnchorValues(text: string, fileKind: SectionFileKind = 'md')
     if (a !== null && !excluded(i)) out.push(a);
   });
   return out;
+}
+
+/**
+ * Put `<!-- anchor: anchors[k] -->` directly above the heading of `sections[k]`
+ * (sections from a parse of `body`, in document order). Bottom-up, so the
+ * parser's heading lines stay valid for the ones above — the one splice both
+ * injection paths (page indexer, artifact anchors) share.
+ */
+export function insertAnchorLines(
+  body: string,
+  sections: readonly ParsedSection[],
+  anchors: readonly string[],
+): string {
+  const lines = body.split('\n');
+  for (let k = sections.length - 1; k >= 0; k--) {
+    lines.splice(sections[k]!.headingLine - 1, 0, `<!-- anchor: ${anchors[k]} -->`);
+  }
+  return lines.join('\n');
 }
 
 /** Headings of the ancestors, outermost first. */

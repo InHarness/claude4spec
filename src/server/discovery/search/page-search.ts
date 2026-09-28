@@ -39,7 +39,7 @@
 
 import type { Database } from 'better-sqlite3';
 import matter from 'gray-matter';
-import { fileKindOf, parseSections } from '../../../shared/section-parser.js';
+import { frontmatterInnerLines } from '../../../shared/section-parser.js';
 import { invalidArgument } from '../errors.js';
 import type { PageSource } from '../page-source.js';
 import { DEFAULT_LIMITS, resolvePageRequest } from '../pagination.js';
@@ -125,8 +125,7 @@ export async function searchPages(
         // parser. Not gray-matter's `.matter`: its string cache drops that field
         // on a repeated input.
         content = matter(raw).content;
-        const fm = parseSections(raw, fileKindOf(rel)).frontmatter;
-        frontmatterLines = fm ? fm.raw.split('\n').slice(1, -1) : [];
+        frontmatterLines = frontmatterInnerLines(raw);
       } catch {
         continue;
       }
