@@ -1,3 +1,4 @@
+import { scanFences } from '../../shared/code-ranges.js';
 import path from 'node:path';
 import type { PagesService } from './pages.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
@@ -20,7 +21,6 @@ const ANCHOR_SUFFIX = `#(${ANCHOR_ID_SOURCE})(?![a-z0-9])`;
 const AT_RE = new RegExp(`(?<![\\w])@([a-zA-Z0-9_][a-zA-Z0-9_\\-/.]*[a-zA-Z0-9_\\-/])(?:${ANCHOR_SUFFIX})?`, 'g');
 const LINK_RE = /\[([^\]\n]*)\]\(([^)\s]+)\)/g;
 const BACKTICK_RE = /`([^`\n]+)`/g;
-const FENCE_RE = /^```[\s\S]*?^```/gm;
 const ANCHOR_RE = new RegExp(ANCHOR_PATTERN_SOURCE, 'g');
 const HEADING_RE = /^#\s+(.+?)\s*$/m;
 const URL_SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
@@ -519,7 +519,13 @@ function splitAnchor(target: string): { hashIdx: number; pathPart: string; ancho
 }
 
 function maskFences(body: string): string {
-  return body.replace(FENCE_RE, (block) => block.replace(/[^\n]/g, ' '));
+  // 2.0.0 — the shared excluded-range scanner (CommonMark fences: ``` and ~~~,
+  // run length, list/quote containers, unclosed → end of document).
+  let out = body;
+  for (const [start, end] of scanFences(body).fenced) {
+    out = out.slice(0, start) + body.slice(start, end).replace(/[^\n]/g, ' ') + out.slice(end);
+  }
+  return out;
 }
 
 function computeLineOffsets(body: string): number[] {

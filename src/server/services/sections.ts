@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import type { SectionIndexEntry } from '../../shared/entities.js';
 import { parseXmlTagsExcludingCode, serializeXmlTag } from '../../shared/xml-tags.js';
+import { scanFences } from '../../shared/code-ranges.js';
 import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
 import { slugifyHeading } from '../../shared/section-parser.js';
 import type { PagesService } from './pages.js';
@@ -266,10 +267,14 @@ function rewriteSectionRefAnchor(body: string, oldAnchor: string, newAnchor: str
 export function rewritePageLinkAnchor(body: string, oldAnchor: string, newAnchor: string): string {
   const esc = oldAnchor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const re = new RegExp(`((?<![\\w])@[\\w][\\w/.-]*|\`[^\`\\n#]+|\\]\\([^)\\s#]+)#${esc}(?![a-z0-9])`, 'g');
-  return body
-    .split(/(^```[\s\S]*?^```)/m)
-    .map((part, i) => (i % 2 === 1 ? part : part.replace(re, `$1#${newAnchor}`)))
-    .join('');
+  // 2.0.0 — fences from the shared excluded-range scanner; only the gaps are rewritten.
+  let out = '';
+  let cursor = 0;
+  for (const [start, end] of scanFences(body).fenced) {
+    out += body.slice(cursor, start).replace(re, `$1#${newAnchor}`) + body.slice(start, end);
+    cursor = end;
+  }
+  return out + body.slice(cursor).replace(re, `$1#${newAnchor}`);
 }
 
 function rewriteSectionRefTags(body: string, oldAnchor: string, newAnchor: string): string {
