@@ -18,10 +18,19 @@ export const LOOPBACK_BIND_HOST = '127.0.0.1';
 export const LOOPBACK_HOSTNAMES: readonly string[] = ['localhost', '127.0.0.1', '::1', '[::1]'];
 const WILDCARD_HOSTS = new Set(['0.0.0.0', '::', '[::]', '']);
 
+/**
+ * Loopback name or address. `127.x.y.z` must be a full dotted quad — a HOSTNAME
+ * like `127.attacker.example` is not loopback (the Host guard relies on this).
+ */
 export function isLoopbackHost(host: string | undefined): boolean {
   if (host === undefined || host === '') return true;
   const h = host.toLowerCase();
-  return LOOPBACK_HOSTNAMES.includes(h) || /^127\./.test(h);
+  return LOOPBACK_HOSTNAMES.includes(h) || /^127\.\d+\.\d+\.\d+$/.test(h);
+}
+
+/** `0.0.0.0` / `::` / empty — "all interfaces", not an address a client can use. */
+export function isWildcardHost(host: string | undefined): boolean {
+  return host === undefined || WILDCARD_HOSTS.has(host);
 }
 
 /** Address `listen()` binds to. */
@@ -35,7 +44,7 @@ export function effectivePublicUrl(ws: WorkspaceNetwork): string {
 
 export function localServerUrl(ws: WorkspaceNetwork): string {
   const bind = ws.bindHost;
-  if (!bind || WILDCARD_HOSTS.has(bind) || isLoopbackHost(bind)) return `http://localhost:${ws.defaultPort}`;
+  if (!bind || isWildcardHost(bind) || isLoopbackHost(bind)) return `http://localhost:${ws.defaultPort}`;
   const host = bind.includes(':') && !bind.startsWith('[') ? `[${bind}]` : bind;
   return `http://${host}:${ws.defaultPort}`;
 }

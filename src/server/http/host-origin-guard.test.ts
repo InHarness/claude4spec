@@ -30,6 +30,32 @@ describe('isAllowedHost — allowlist = publicUrl host + loopback names', () => 
   });
 });
 
+describe('isAllowedHost / isAllowedOrigin — review hardening', () => {
+  it('admits a CONCRETE bindHost (the address localServerUrl hands out), never a wildcard one', () => {
+    const lan = { defaultPort: 4500, bindHost: '192.168.1.5' };
+    expect(isAllowedHost('192.168.1.5:4500', lan)).toBe(true);
+    expect(isAllowedOrigin('http://192.168.1.5:4500', lan)).toBe(true);
+    const v6 = { defaultPort: 4500, bindHost: 'fd00::5' };
+    expect(isAllowedHost('[fd00::5]:4500', v6)).toBe(true);
+    const wild = { defaultPort: 4500, bindHost: '0.0.0.0' };
+    expect(isAllowedHost('0.0.0.0:4500', wild)).toBe(false);
+    expect(isAllowedHost('192.168.1.5', wild)).toBe(false);
+  });
+
+  it('a 127.* HOSTNAME is not loopback (DNS rebinding)', () => {
+    expect(isAllowedHost('127.attacker.example', LOCAL)).toBe(false);
+    expect(isAllowedOrigin('http://127.attacker.example', LOCAL)).toBe(false);
+  });
+
+  it('a malformed stored publicUrl admits nothing extra and never throws', () => {
+    const broken = { defaultPort: 4500, publicUrl: 'not a url' };
+    expect(isAllowedHost('localhost:4500', broken)).toBe(true);
+    expect(isAllowedHost('not', broken)).toBe(false);
+    expect(isAllowedOrigin('http://localhost:4500', broken)).toBe(true);
+    expect(isAllowedOrigin('https://evil.example', broken)).toBe(false);
+  });
+});
+
 describe('isAllowedOrigin — publicUrl origin + loopback origins', () => {
   it('no Origin (CLI, curl, MCP client) is not a cross-site browser request', () => {
     expect(isAllowedOrigin(undefined, PUBLIC)).toBe(true);
@@ -157,6 +183,17 @@ describe('WS upgrade — the same barriers, and a refused upgrade joins no room'
   it('refuses an upgrade from a foreign Origin (403)', async () => {
     const port = await start();
     const res = await upgrade(port, { Host: 'c4s.firma.dev', Origin: 'https://evil.example' });
+    expect(res).toEqual({ status: 403, hello: false });
+  });
+
+  it('a guard that throws (unreadable registry) rejects the upgrade instead of crashing', async () => {
+    server = createServer();
+    gateway = new WsGateway(server, () => true, () => {
+      throw new Error('registry unreadable');
+    });
+    await new Promise<void>((r) => server!.listen(0, '127.0.0.1', () => r()));
+    const port = (server.address() as { port: number }).port;
+    const res = await upgrade(port, { Host: 'localhost' });
     expect(res).toEqual({ status: 403, hello: false });
   });
 

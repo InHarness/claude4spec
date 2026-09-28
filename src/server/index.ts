@@ -110,6 +110,16 @@ async function listenOrExit(server: HttpServer, port: number, host: string): Pro
       );
       process.exit(1);
     }
+    // 2.1.0: `--host` persists in the registry, so an address this machine
+    // cannot bind (a typo, a DHCP address that moved) fails EVERY later start
+    // too — say how to get back to loopback instead of dumping a stack.
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'EADDRNOTAVAIL' || code === 'ENOTFOUND' || code === 'EAI_AGAIN') {
+      console.error(
+        `cannot listen on ${host}:${port} (${code}) — the workspace's listen address is stored in ~/.claude4spec/workspaces.json; pass --host=<addr> to change it, or --host= to return to loopback`,
+      );
+      process.exit(1);
+    }
     throw err;
   }
 }

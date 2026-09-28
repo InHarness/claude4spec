@@ -74,7 +74,7 @@ export class WsGateway {
     server.on('upgrade', (req, socket, head) => {
       const url = new URL(req.url ?? '', 'http://localhost');
       if (url.pathname !== '/ws') return;
-      const verdict = guard?.(req);
+      const verdict = guard ? this.checkGuard(guard, req) : undefined;
       if (verdict && !verdict.ok) {
         rejectUpgrade(socket, verdict.status, verdict.status === 400 ? 'Bad Request' : 'Forbidden', verdict.message);
         return;
@@ -109,6 +109,20 @@ export class WsGateway {
         this.send(ws, { kind: 'hello', ts: Date.now() });
       });
     });
+  }
+
+  /**
+   * The Host/Origin guard reads the live workspace record — the same registry
+   * read `isMember` guards below, and the same `upgrade` listener nothing can
+   * catch. Fails CLOSED for the same reason.
+   */
+  private checkGuard(guard: (req: IncomingMessage) => GuardVerdict, req: IncomingMessage): GuardVerdict {
+    try {
+      return guard(req);
+    } catch (err) {
+      console.warn('[ws] host/origin check failed, rejecting upgrade:', err);
+      return { ok: false, status: 403, code: 'HOST_NOT_ALLOWED', message: 'host/origin check failed' };
+    }
   }
 
   /**

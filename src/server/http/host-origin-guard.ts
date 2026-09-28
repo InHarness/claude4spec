@@ -1,17 +1,23 @@
 import type { IncomingMessage } from 'node:http';
 import type { RequestHandler } from 'express';
-import { effectivePublicUrl, LOOPBACK_HOSTNAMES, type WorkspaceNetwork } from '../../core/workspace/network.js';
+import {
+  effectivePublicUrl,
+  isLoopbackHost,
+  isWildcardHost,
+  type WorkspaceNetwork,
+} from '../../core/workspace/network.js';
 
 /**
  * 2.1.0 (M49) — browser barriers in front of an UNAUTHENTICATED server. Both run
  * BEFORE any route and before the project key is read, for plain requests and
  * for the WebSocket upgrade alike.
  *
- *  1. Host allowlist — a request whose `Host` is not the `publicUrl` host or a
- *     loopback name is refused (DNS-rebinding guard). Hostnames are compared,
- *     ports are not: a reverse proxy may forward a different port.
+ *  1. Host allowlist — a request whose `Host` is not the `publicUrl` host, a
+ *     loopback name or a concrete (non-wildcard) `bindHost` is refused
+ *     (DNS-rebinding guard). Hostnames are compared, ports are not: a reverse
+ *     proxy may forward a different port.
  *  2. Origin check — a MUTATING request, or a WS upgrade, carrying an `Origin`
- *     other than the `publicUrl` origin or a loopback origin is refused, so a
+ *     other than the `publicUrl` origin or a loopback / `bindHost` origin is refused, so a
  *     foreign page cannot drive the API from a victim's browser. A request with
  *     no `Origin` (CLI, curl, MCP clients) is not a cross-site browser request
  *     and passes.
@@ -32,21 +38,33 @@ function hostnameOf(hostHeader: string): string | null {
   return colon === -1 ? h : h.slice(0, colon);
 }
 
-function allowedHostnames(ws: WorkspaceNetwork): Set<string> {
-  const names = new Set(LOOPBACK_HOSTNAMES.map((n) => n.replace(/^\[|\]$/g, '')));
+const stripBrackets = (h: string): string => h.replace(/^\[|\]$/g, '').toLowerCase();
+
+/** The effective publicUrl, or `null` when a hand-edited stored value does not parse. */
+function publicUrlOf(ws: WorkspaceNetwork): URL | null {
   try {
-    names.add(new URL(effectivePublicUrl(ws)).hostname.replace(/^\[|\]$/g, '').toLowerCase());
+    return new URL(effectivePublicUrl(ws));
   } catch {
-    /* a malformed stored publicUrl adds nothing; loopback still works */
+    return null; // a malformed stored publicUrl admits nothing; loopback still works
   }
-  return names;
+}
+
+/**
+ * Loopback names, and a CONCRETE `bindHost`: `localServerUrl` hands that
+ * address to the launcher's browser and to `c4s` discovery, so refusing it
+ * would lock the local user out of their own server.
+ */
+function isLocalName(name: string, ws: WorkspaceNetwork): boolean {
+  if (isLoopbackHost(name)) return true;
+  return !isWildcardHost(ws.bindHost) && stripBrackets(ws.bindHost!) === name;
 }
 
 export function isAllowedHost(hostHeader: string | undefined, ws: WorkspaceNetwork): boolean {
   if (!hostHeader) return false;
   const name = hostnameOf(hostHeader);
   if (!name) return false;
-  return allowedHostnames(ws).has(name) || /^127\.\d+\.\d+\.\d+$/.test(name);
+  const pub = publicUrlOf(ws);
+  return isLocalName(name, ws) || (pub !== null && stripBrackets(pub.hostname) === name);
 }
 
 export function isAllowedOrigin(origin: string | undefined, ws: WorkspaceNetwork): boolean {
@@ -57,10 +75,8 @@ export function isAllowedOrigin(origin: string | undefined, ws: WorkspaceNetwork
   } catch {
     return false; // `null` (opaque origin) and garbage are refused
   }
-  if (url.origin === new URL(effectivePublicUrl(ws)).origin) return true;
-  const name = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
-  return (url.protocol === 'http:' || url.protocol === 'https:') &&
-    (LOOPBACK_HOSTNAMES.map((n) => n.replace(/^\[|\]$/g, '')).includes(name) || /^127\.\d+\.\d+\.\d+$/.test(name));
+  if (url.origin === publicUrlOf(ws)?.origin) return true;
+  return (url.protocol === 'http:' || url.protocol === 'https:') && isLocalName(stripBrackets(url.hostname), ws);
 }
 
 export type GuardVerdict = { ok: true } | { ok: false; status: 400 | 403; code: string; message: string };

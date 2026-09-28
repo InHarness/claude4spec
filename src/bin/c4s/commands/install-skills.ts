@@ -45,7 +45,8 @@ export async function runInstallSkills(args: ParsedArgs): Promise<void> {
       if (err instanceof AgentError) throw new CliError(err.code as CliErrorCode, err.message, err.hint);
       throw err;
     }
-    ctx = { id: args.project, workspace: remote.workspace, publicUrl: server.replace(/\/+$/, '') };
+    // `defaultPort` is irrelevant: the `--server` address overrides publicUrl.
+    ctx = buildExternalSkillContext({ id: args.project }, { name: remote.workspace, defaultPort: 0 }, server);
   } else {
     const { project, workspace } = resolveWorkspaceProjectOrThrow({
       project: args.project,
@@ -95,6 +96,7 @@ export const installSkillsCommand: CliCommandContribution = {
     'SKILLS_WRITE_FAILED',
     'PROJECT_ID_NOT_FOUND',
     'SERVER_NOT_RUNNING',
+    'SERVER_NOT_RECOGNIZED',
     'PROJECT_NOT_IN_WORKSPACE',
   ],
   handler: runInstallSkills,

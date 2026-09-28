@@ -249,14 +249,14 @@ export class WorkspaceRegistry {
    *  1. a live record for this directory → reused as-is (id never recomputed);
    *  2. a slot in this workspace that belongs to this directory (a detached
    *     project) → its id is recovered, and so is the index in it;
-   *  3. otherwise a fresh id minted from `config.json` `name` (`seed.name`
-   *     overrides it; an absent/unreadable config falls back to the directory
-   *     name), unique against live ids AND every slot directory — a
-   *     new project named like a detached one gets a suffix, never its slot.
+   *  3. otherwise a fresh id minted from `config.json` `name` (an
+   *     absent/unreadable config falls back to the directory name), unique
+   *     against live ids AND every slot directory — a new project named like
+   *     a detached one gets a suffix, never its slot.
    * Minting happens under the registry lock, whoever registers (server or
    * `c4s trust-plugins`).
    */
-  registerProject(ws: WorkspaceRecord, cwd: string, seed: { name?: string } = {}): ProjectRecord {
+  registerProject(ws: WorkspaceRecord, cwd: string): ProjectRecord {
     const absCwd = path.resolve(cwd);
     const wsDir = path.join(this.baseDir, ws.name);
     const project = this.withLock((data) => {
@@ -266,7 +266,7 @@ export class WorkspaceRegistry {
       if (!p) {
         const live = new Set(target.projects.map((x) => x.id));
         const recovered = findSlotIdForCwd(wsDir, absCwd);
-        const name = seed.name ?? readPeerConfigSummary(absCwd).name;
+        const name = readPeerConfigSummary(absCwd).name;
         const id =
           recovered && !live.has(recovered)
             ? recovered
