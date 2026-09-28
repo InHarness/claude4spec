@@ -15,8 +15,8 @@
  *
  * In the `internal` channel this exists ALONGSIDE the `<workspace_projects>`
  * system-prompt block, not instead of it. That block is rendered once, on a
- * thread's first turn, and persisted — later turns do not refresh it, so a slug
- * that changed mid-thread makes `ask` fail with `PROJECT_SLUG_NOT_FOUND`. This
+ * thread's first turn, and persisted — later turns do not refresh it, so a peer
+ * registered or removed mid-thread is invisible to it (`PROJECT_ID_NOT_FOUND`). This
  * tool is how the agent gets a CURRENT picture of the workspace when that
  * happens.
  */
@@ -36,9 +36,9 @@ export function buildWorkspaceToolsServer(listProjects: () => ListProjectsResult
   const listProjectsTool = mcpTool(
     'list_projects',
     [
-      'List the projects of this workspace: id, slug, name, path.',
-      'Use `slug` as the `project` argument of a peer consultation, and `id` as the `:id` segment of a project-scoped route.',
-      'A project whose config.json cannot be read is still listed, without `name` — it stays addressable by `slug`.',
+      'List the projects of this workspace: { workspace, projects: [{ id, name?, description? }] }.',
+      '`id` is the only address of a project — pass it as the `project` argument of `ask`. `name` is a label, never a selector.',
+      'A project whose config.json cannot be read is still listed, without `name` — it stays addressable by `id`. No directories are returned.',
       'Read-only. No pagination.',
     ].join('\n'),
     {},

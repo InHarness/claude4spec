@@ -12,4 +12,5 @@ exec node dist/bin/claude4spec.js \
   --create-project \
   --mode prod \
   --port "$PORT" \
+  --host 0.0.0.0 \
   --no-open

@@ -59,10 +59,6 @@ export async function runAgentCmd(args: ParsedArgs): Promise<void> {
   const rootsFlag = optionalStringList(args, 'roots');
   const suffixFlag = optionalString(args, 'suffix');
 
-  if (project && server) {
-    process.stderr.write('warning: both --project and --server given; --server wins, --project ignored\n');
-  }
-
   if (!threadId) {
     // Early CLI-level validation (livelier hints) ograniczona do samego `--ct`.
     // Predykat trybu (attach vs create) ORAZ mapowanie flag okna na cialo

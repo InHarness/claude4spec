@@ -17,7 +17,7 @@ function projectDir(config: string | null): string {
   return dir;
 }
 
-function workspace(projects: Array<{ id: string; name: string; cwd: string }>): WorkspaceRecord {
+function workspace(projects: Array<{ id: string; cwd: string }>): WorkspaceRecord {
   return {
     name: 'default',
     mode: 'dev',
@@ -32,10 +32,14 @@ afterEach(() => {
 });
 
 describe('list_projects (M31)', () => {
-  it('answers id, slug, name and path per project', () => {
-    const cwd = projectDir(JSON.stringify({ name: 'The Spec' }));
-    const result = listProjects(workspace([{ id: 'abc123', name: 'app-spec', cwd }]));
-    expect(result.projects).toEqual([{ id: 'abc123', slug: 'app-spec', name: 'The Spec', path: cwd }]);
+  it('answers { workspace, projects: [{ id, name, description }] } — no directory, no slug', () => {
+    const cwd = projectDir(JSON.stringify({ name: 'C4S - Marketing', description: 'Marketingowy przekaz.' }));
+    const result = listProjects(workspace([{ id: 'marketing', cwd }]));
+    expect(result).toEqual({
+      workspace: 'default',
+      projects: [{ id: 'marketing', name: 'C4S - Marketing', description: 'Marketingowy przekaz.' }],
+    });
+    expect(JSON.stringify(result)).not.toContain(cwd);
   });
 
   it('a MALFORMED config.json yields an entry without a name, not a failure', () => {
@@ -45,13 +49,12 @@ describe('list_projects (M31)', () => {
     const ok = projectDir(JSON.stringify({ name: 'Fine' }));
     const result = listProjects(
       workspace([
-        { id: 'a', name: 'broken', cwd: broken },
-        { id: 'b', name: 'fine', cwd: ok },
+        { id: 'a', cwd: broken },
+        { id: 'b', cwd: ok },
       ]),
     );
     expect(result.projects[0]!.name).toBeUndefined();
-    // Still addressable: `slug` comes from the registry, not the config.
-    expect(result.projects[0]!.slug).toBe('broken');
+    // Still addressable: `id` comes from the registry, not the config.
     expect(result.projects[0]!.id).toBe('a');
     // And the broken one does not take its neighbour down with it.
     expect(result.projects[1]!.name).toBe('Fine');
@@ -62,7 +65,7 @@ describe('list_projects (M31)', () => {
     // throwing, and a usable label beats a blank one. Same behaviour peer
     // discovery has always had for this field.
     const dir = projectDir(null);
-    const result = listProjects(workspace([{ id: 'a', name: 'no-config', cwd: dir }]));
+    const result = listProjects(workspace([{ id: 'a', cwd: dir }]));
     expect(result.projects[0]!.name).toBe(path.basename(dir));
   });
 

@@ -45,6 +45,19 @@ export async function runTrustPlugins(args: ParsedArgs): Promise<void> {
   }
 
   const registry = new WorkspaceRegistry();
+  // 2.1.0: only the server migrates hash ids (it renames the DB slots too). A
+  // write here would persist a registry whose ids no slot matches.
+  if (registry.isMigrationPending()) {
+    throw new CliError(
+      'REGISTRY_MIGRATION_PENDING',
+      `${registry.filePath} still uses pre-2.1.0 hash project ids`,
+      'start the claude4spec server once (`npx @inharness-ai/claude4spec`) — it migrates the registry — then re-run this command',
+      { steps: [{ action: 'start-server', command: 'npx @inharness-ai/claude4spec' }, { action: 'rerun' }] },
+    );
+  }
+  // The record is minted by the SAME rule as the server's (config.json `name`,
+  // fallback directory name, `-2` on collision), so the server's own boot-time
+  // `registerProject` later reuses it by `cwd`.
   const workspace = registry.selectOrCreate({ port, mode: mode as 'dev' | 'prod' | undefined });
   const project = registry.registerProject(workspace, cwd);
   registry.setProjectTrust(workspace, project.id, value);
@@ -60,6 +73,6 @@ export const trustPluginsCommand: CliCommandContribution = {
   // `registry-write`, not `fs-scoped`: it never resolves a project, it writes
   // the workspace registry directly and creates the project record on demand.
   executionMode: 'registry-write',
-  errorCodes: ['INVALID_ARGS'],
+  errorCodes: ['INVALID_ARGS', 'REGISTRY_MIGRATION_PENDING'],
   handler: runTrustPlugins,
 };

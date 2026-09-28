@@ -27,8 +27,8 @@ export function NameField({
   );
 }
 
-// Display-only string: a project's folder identity comes from sha1(cwd), not the
-// name, so full Unicode is allowed (diacritics, CJK, emoji, `/`…). The only forbidden
+// Display-only string: the project id is minted from the name ONCE at registration
+// and never follows later edits, so full Unicode is allowed (diacritics, CJK, emoji, `/`…). The only forbidden
 // characters are C0/DEL/C1 control characters and newline/tab (both inside the C0 range).
 const CONTROL_CHARS = /[\u0000-\u001F\u007F-\u009F]/;
 

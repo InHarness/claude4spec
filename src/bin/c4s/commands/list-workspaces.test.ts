@@ -60,7 +60,7 @@ describe('c4s list-workspaces', () => {
           mode: 'dev',
           defaultPort: 4600,
           lastOpened: '2026-01-01T00:00:00.000Z',
-          projects: [{ cwd: '/a', id: 'aaaaaaaaaaaa', name: 'a', addedAt: '2026-01-01T00:00:00.000Z' }],
+          projects: [{ cwd: '/a', id: 'a', addedAt: '2026-01-01T00:00:00.000Z' }],
         },
         {
           name: 'newer',
@@ -68,8 +68,8 @@ describe('c4s list-workspaces', () => {
           defaultPort: 4500,
           lastOpened: '2026-06-01T00:00:00.000Z',
           projects: [
-            { cwd: '/b', id: 'bbbbbbbbbbbb', name: 'b', addedAt: '2026-01-01T00:00:00.000Z' },
-            { cwd: '/c', id: 'cccccccccccc', name: 'c', addedAt: '2026-01-01T00:00:00.000Z' },
+            { cwd: '/b', id: 'b', addedAt: '2026-01-01T00:00:00.000Z' },
+            { cwd: '/c', id: 'c', addedAt: '2026-01-01T00:00:00.000Z' },
           ],
         },
       ],

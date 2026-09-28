@@ -31,8 +31,7 @@ export function migrateLegacyDbIfNeeded(
   const legacyDb = path.join(cwd, '.claude4spec', 'db.sqlite');
   if (!fs.existsSync(legacyDb)) return false;
 
-  // Stable stored id — the slot key. Not re-derived from cwd (which would pick
-  // the wrong slot if this project's id diverged from sha1(cwd)).
+  // Stable stored id — the slot key. Never derived from cwd.
   const id = projectId;
   for (const w of registry.listWorkspaces()) {
     if (fs.existsSync(path.join(slotDirFor(w.name, id), 'db.sqlite'))) return false;

@@ -60,7 +60,7 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.
+  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
 </workspace_projects>
 
 <agent_path_scope>
@@ -1435,7 +1435,7 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.
+  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
 </workspace_projects>
 
 <agent_path_scope>
@@ -1641,7 +1641,7 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.
+  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
 </workspace_projects>
 
 <agent_path_scope>
@@ -1845,10 +1845,10 @@ You do not know its conventions yet, and this block does not summarise them.
 </tooling>
 
 <workspace_projects workspace="default">
-  <peer id="spec" name="Spec A" path="/ws/a/spec"/>
-  <peer id="spec" name="Spec B" path="/ws/b/spec"/>
-  <peer path="/ws/broken"/>
-  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.
+  <peer id="spec" name="Spec"/>
+  <peer id="spec-2" name="Spec"/>
+  <peer id="broken"/>
+  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
 </workspace_projects>
 
 <agent_path_scope>
@@ -2060,7 +2060,7 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.
+  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
 </workspace_projects>
 
 <agent_path_scope>
@@ -2268,7 +2268,7 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.
+  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
 </workspace_projects>
 
 <agent_path_scope>
@@ -2477,7 +2477,7 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.
+  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
 </workspace_projects>
 
 <agent_path_scope>
@@ -2678,7 +2678,7 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.
+  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
 </workspace_projects>
 
 <agent_path_scope>
@@ -3008,7 +3008,7 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.
+  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
 </workspace_projects>
 
 <agent_path_scope>
@@ -3204,7 +3204,7 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.
+  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
 </workspace_projects>
 
 <agent_path_scope>
@@ -3405,7 +3405,7 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.
+  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
 </workspace_projects>
 
 <agent_path_scope>
@@ -3616,7 +3616,7 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.
+  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
 </workspace_projects>
 
 <agent_path_scope>
@@ -3827,7 +3827,7 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.
+  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
 </workspace_projects>
 
 <agent_filesystem_access enabled="false">
@@ -4226,7 +4226,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.
+  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
 </workspace_projects>
 
 <agent_path_scope>
@@ -4438,7 +4438,7 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.
+  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
 </workspace_projects>
 
 <agent_path_scope>
@@ -4650,7 +4650,7 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.
+  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
 </workspace_projects>
 
 <agent_path_scope>
@@ -4862,7 +4862,7 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.
+  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
 </workspace_projects>
 
 <agent_path_scope>
@@ -5074,7 +5074,7 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.
+  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
 </workspace_projects>
 
 <agent_path_scope>
@@ -5286,7 +5286,7 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.
+  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
 </workspace_projects>
 
 <agent_path_scope>
@@ -5498,7 +5498,7 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.
+  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
 </workspace_projects>
 
 <agent_path_scope>
@@ -5710,7 +5710,7 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.
+  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
 </workspace_projects>
 
 <agent_path_scope>
@@ -6127,7 +6127,7 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects >
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.
+  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
 </workspace_projects>
 
 <agent_path_scope>
@@ -6339,7 +6339,7 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.
+  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
 </workspace_projects>
 
 <agent_path_scope>
@@ -6551,7 +6551,7 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.
+  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
 </workspace_projects>
 
 <agent_path_scope>
@@ -6747,7 +6747,7 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.
+  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
 </workspace_projects>
 
 <agent_path_scope>
@@ -6955,7 +6955,7 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.
+  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
 </workspace_projects>
 
 <agent_path_scope>
@@ -7318,7 +7318,7 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.
+  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
 </workspace_projects>
 
 <agent_path_scope>
@@ -7675,7 +7675,7 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.
+  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
 </workspace_projects>
 
 <agent_path_scope>
@@ -7900,7 +7900,7 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.
+  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
 </workspace_projects>
 
 <agent_path_scope>
@@ -8126,7 +8126,7 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — that is the registry name the resolver matches. \`name\` is the peer's own label for itself and is NOT an address. Where a \`path\` is also shown, that peer's \`id\` is shared with another project and only the path addresses it unambiguously — pass the path.
+  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
 </workspace_projects>
 
 <agent_path_scope>

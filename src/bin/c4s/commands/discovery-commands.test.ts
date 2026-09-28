@@ -68,6 +68,7 @@ const CONFIG = {
 describe('discovery commands on the CLI', () => {
   let registryDir: string;
   let projectDir: string;
+  let projectId: string;
   let prevHome: string | undefined;
   let stdout: string;
   let server: http.Server;
@@ -100,7 +101,7 @@ describe('discovery commands on the CLI', () => {
     // thing it reads to know where to call.
     const registry = new WorkspaceRegistry(registryDir);
     const ws = registry.selectOrCreate({ name: 'default', port });
-    registry.registerProject(ws, projectDir);
+    projectId = registry.registerProject(ws, projectDir).id;
     __resetDelegateTargets();
 
     stdout = '';
@@ -120,7 +121,7 @@ describe('discovery commands on the CLI', () => {
     fs.rmSync(projectDir, { recursive: true, force: true });
   });
 
-  const identity = () => ['--project', path.basename(projectDir), '--workspace', 'default'];
+  const identity = () => ['--project', projectId, '--workspace', 'default'];
   const args = (...argv: string[]) => parseArgs([...argv, ...identity()]);
   const printed = () => JSON.parse(stdout) as Record<string, unknown>;
   /** The path+query of the one operation request, with the project prefix stripped. */

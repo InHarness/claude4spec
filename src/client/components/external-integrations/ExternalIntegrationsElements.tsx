@@ -14,7 +14,7 @@ interface ExternalSkillSummary {
 
 interface ExternalSkillsListResponse {
   skills: ExternalSkillSummary[];
-  projectSlug: string | null;
+  projectId: string | null;
 }
 
 /**
@@ -158,7 +158,7 @@ function SkillsBlock() {
         </div>
         <p className="text-[11.5px] text-right" style={{ color: 'var(--c-subtle)' }} data-testid="skills-cli-hint">
           Same from the terminal:{' '}
-          <code className="font-mono">c4s install-skills --project {data?.projectSlug ?? '<slug>'}</code>{' '}
+          <code className="font-mono">c4s install-skills --project {data?.projectId ?? '<id>'}</code>{' '}
           (writes directly to <code className="font-mono">.claude/skills</code>).
         </p>
       </div>

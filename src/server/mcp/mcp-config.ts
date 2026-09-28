@@ -49,13 +49,21 @@ function entry(server: Record<string, unknown>): string {
  *   - `stdio` — the `c4s-mcp` bridge, for clients that cannot speak HTTP. It
  *     relays to the project-bound mount; it never starts a server.
  *
- * Loopback, not a hostname: the server is a local process, and a config that
- * resolved to anything else would point a client at someone else's spec.
+ * 2.1.0 — every snippet joins the workspace's effective `publicUrl` with the
+ * project `id`, BOTH taken from the registry, never from request headers (a
+ * forged `Host` must not end up in a config a client copies). With no
+ * `publicUrl` set that is `http://localhost:<defaultPort>`.
  * No absolute path and no workspace selector — resolution belongs to M31
  * inside the server.
  */
-export function renderMcpConfigVariants({ port, projectId }: { port: number; projectId: string }): McpConfigVariant[] {
-  const origin = `http://127.0.0.1:${port}`;
+export function renderMcpConfigVariants({
+  publicUrl,
+  projectId,
+}: {
+  publicUrl: string;
+  projectId: string;
+}): McpConfigVariant[] {
+  const origin = publicUrl.replace(/\/+$/, '');
   const projectUrl = `${origin}${mcpMountPath(projectId)}?profile=${GENERATED_MCP_PROFILE}`;
   const workspaceUrl =
     `${origin}/api/workspace/mcp?project=${encodeURIComponent(projectId)}&profile=${GENERATED_MCP_PROFILE}`;

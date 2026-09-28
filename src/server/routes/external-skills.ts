@@ -57,7 +57,7 @@ export function externalSkillsRouter(deps: ExternalSkillsRouterDeps): Router {
     const project = deps.registry.getProject(deps.workspace, deps.projectId);
     const body: ExternalSkillsListResponse = {
       skills: externalSkillsMetadata(),
-      projectSlug: project ? buildExternalSkillContext(project, deps.workspace.name).slug : null,
+      projectId: project ? project.id : null,
     };
     res.json(body);
   });
@@ -76,7 +76,8 @@ export function externalSkillsRouter(deps: ExternalSkillsRouterDeps): Router {
       if (!project) {
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'project not registered' } });
       }
-      const ctx = buildExternalSkillContext(project, deps.workspace.name);
+      // Live workspace record: `publicUrl` may have changed since server start.
+      const ctx = buildExternalSkillContext(project, deps.registry.getWorkspace(deps.workspace.name) ?? deps.workspace);
       const files = buildExternalSkillsBundle(ctx, selection.length > 0 ? selection : undefined);
 
       res.setHeader('Content-Type', 'application/zip');

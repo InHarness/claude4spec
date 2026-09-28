@@ -26,6 +26,7 @@ const CONFIG = {
 describe('c4s skills registry commands (0.2.99)', () => {
   let registryDir: string;
   let projectDir: string;
+  let projectId: string;
   let prevHome: string | undefined;
   let stdout: string;
   let server: http.Server;
@@ -55,7 +56,7 @@ describe('c4s skills registry commands (0.2.99)', () => {
 
     const registry = new WorkspaceRegistry(registryDir);
     const ws = registry.selectOrCreate({ name: 'default', port });
-    registry.registerProject(ws, projectDir);
+    projectId = registry.registerProject(ws, projectDir).id;
     __resetDelegateTargets();
 
     stdout = '';
@@ -76,7 +77,7 @@ describe('c4s skills registry commands (0.2.99)', () => {
   });
 
   const args = (...argv: string[]) =>
-    parseArgs([...argv, '--project', path.basename(projectDir), '--workspace', 'default']);
+    parseArgs([...argv, '--project', projectId, '--workspace', 'default']);
 
   describe('list-skills', () => {
     const whole = {

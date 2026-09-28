@@ -16,8 +16,9 @@ export const PROJECT_SETTINGS_FIELDS: FieldDeclaration[] = [
     owner: 'project',
     type: 'string',
     default: '',
-    // 0.1.91 — name is display-only (folder identity is sha1(cwd), not the name),
-    // so full Unicode is allowed; reject only C0/DEL/C1 control chars + newline/tab.
+    // 0.1.91 — name is display-only (the project id is minted from it ONCE at
+    // registration and never follows later edits — M31 #13), so full Unicode is
+    // allowed; reject only C0/DEL/C1 control chars + newline/tab.
     validate: (value) => {
       const trimmed = (value as string).trim();
       if (trimmed.length < 1 || trimmed.length > 80 || /[\u0000-\u001F\u007F-\u009F]/.test(trimmed)) {

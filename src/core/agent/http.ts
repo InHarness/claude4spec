@@ -1,5 +1,4 @@
 import path from 'node:path';
-import { createHash } from 'node:crypto';
 import type { Dispatcher } from 'undici';
 import { resolveWorkspaceProject, WorkspaceResolveError } from '../workspace/resolve.js';
 
@@ -37,7 +36,7 @@ import { resolveWorkspaceProject, WorkspaceResolveError } from '../workspace/res
 export type AgentErrorCode =
   | 'PROJECT_NOT_FOUND'
   | 'AMBIGUOUS_WORKSPACE'
-  | 'PROJECT_SLUG_NOT_FOUND'
+  | 'PROJECT_ID_NOT_FOUND'
   | 'AMBIGUOUS_PROJECT'
   | 'PROJECT_NOT_IN_WORKSPACE'
   | 'SERVER_NOT_RUNNING'
@@ -145,13 +144,19 @@ export function encodeArtifactPath(p: string): string {
 /**
  * Resolve `baseUrl` + `projectId` from `--server`/`--project`/`--workspace`.
  *
- * M31: discovery goes through the workspace registry (`defaultPort`), not
- * through `config.json` — the port stopped coming from the config in v3. Every
- * URL is prefixed `/api/projects/<id>`, because a peer serves N projects.
+ * 2.1.0 contract:
+ *  - `--project <id>` is the registry id; without it the CLI walks up from cwd.
+ *  - `--server <url>` gives ONLY the address (a remote server, or a non-sticky
+ *    port) and REQUIRES `--project <id>` — a remote registry cannot be walked
+ *    locally. `--server` without `--project` → INVALID_ARGS before any request.
+ *  - Local discovery: project → workspace (0/1/N) → the workspace's LOCAL address
+ *    (loopback `:defaultPort`, or a concrete `bindHost`) — never `config.json`,
+ *    never `publicUrl`, so a reverse proxy cannot lock the local CLI out.
+ * Every URL is prefixed `/api/projects/<id>`, because a server serves N projects.
  *
- * These are the ONLY files the `c4s` process reads locally as of 0.2.13:
- * `.claude4spec/config.json` (the marker), `~/.claude4spec/workspaces.json` and
- * its `defaultPort`. They serve to FIND the server, never to read content.
+ * The only files the `c4s` process reads locally: `.claude4spec/config.json`
+ * (the marker) and `~/.claude4spec/workspaces.json`. They serve to FIND the
+ * server, never to read content.
  */
 export async function resolveServer(params: {
   project?: string;
@@ -161,35 +166,15 @@ export async function resolveServer(params: {
   let baseUrl: string;
   let projectId: string;
   if (params.server) {
-    baseUrl = params.server.replace(/\/+$/, '');
-    // `--server` with no resolvable project → require `--project` (the id is
-    // computed from the project's absolute path, the way the peer registers it).
-    try {
-      const resolved = resolveWorkspaceProject({ project: params.project, workspace: params.workspace });
-      projectId = resolved.projectId;
-    } catch (err) {
-      if (
-        err instanceof WorkspaceResolveError &&
-        (err.code === 'AMBIGUOUS_WORKSPACE' || err.code === 'AMBIGUOUS_PROJECT')
-      ) {
-        // Real ambiguity (2+ local matches) — surface it rather than silently
-        // hashing the value as a path; the caller needs to disambiguate with
-        // --workspace, not get routed to an arbitrary bogus projectId.
-        throw new AgentError(err.code, err.message, err.hint);
-      } else if (err instanceof WorkspaceResolveError && params.project) {
-        // Path/slug given explicitly but unknown to the local registry (a remote
-        // peer) — derive the id from the path itself.
-        projectId = projectIdForPath(params.project);
-      } else if (err instanceof WorkspaceResolveError) {
-        throw new AgentError(
-          'INVALID_ARGS',
-          '--server requires --project <path> when no local workspace owns the current directory',
-          'the project id in the URL prefix derives from the project path',
-        );
-      } else {
-        throw err;
-      }
+    if (!params.project) {
+      throw new AgentError(
+        'INVALID_ARGS',
+        '--server requires --project <id>: the registry of a remote server cannot be walked locally',
+        'pass --project <id>',
+      );
     }
+    baseUrl = params.server.replace(/\/+$/, '');
+    projectId = params.project;
   } else {
     let resolved;
     try {
@@ -200,16 +185,44 @@ export async function resolveServer(params: {
       }
       throw err;
     }
-    baseUrl = `http://localhost:${resolved.defaultPort}`;
+    baseUrl = resolved.localUrl;
     projectId = resolved.projectId;
   }
-  const apiBase = `${baseUrl}/api/projects/${projectId}`;
+  const apiBase = `${baseUrl}/api/projects/${encodeURIComponent(projectId)}`;
   return { baseUrl, apiBase, projectId };
 }
 
-/** M31: project id = sha1(abs path).slice(0,12) — same derivation as the registry. */
-function projectIdForPath(project: string): string {
-  return createHash('sha1').update(path.resolve(process.cwd(), project)).digest('hex').slice(0, 12);
+/**
+ * 2.1.0 — one read against a server given by `--server <url>`, before a local
+ * write (`fs-scoped` commands such as `c4s install-skills`): confirms `id` is
+ * one of the server's projects and returns the name of the workspace it serves.
+ */
+export async function confirmRemoteProject(server: string, projectId: string): Promise<{ workspace: string }> {
+  const baseUrl = server.replace(/\/+$/, '');
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl}/api/workspace`);
+  } catch {
+    throw new AgentError('SERVER_NOT_RUNNING', `no claude4spec server responding at ${baseUrl}`);
+  }
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch {
+    body = null;
+  }
+  const ws = body as { name?: unknown; projects?: Array<{ id?: unknown }> } | null;
+  if (!res.ok || !ws || typeof ws.name !== 'string' || !Array.isArray(ws.projects)) {
+    throw new AgentError('SERVER_NOT_RECOGNIZED', `process at ${baseUrl} is not a claude4spec server`);
+  }
+  const ids = ws.projects.map((p) => p.id).filter((id): id is string => typeof id === 'string');
+  if (!ids.includes(projectId)) {
+    throw new AgentError(
+      'PROJECT_NOT_IN_WORKSPACE',
+      `the server at ${baseUrl} does not serve project '${projectId}'; available ids: ${ids.join(', ') || '(none)'}`,
+    );
+  }
+  return { workspace: ws.name };
 }
 
 /**
@@ -235,7 +248,7 @@ export async function healthCheck(baseUrl: string, apiBase: string): Promise<voi
     throw new AgentError(
       'SERVER_NOT_RUNNING',
       `no claude4spec server responding at ${baseUrl}`,
-      'start it with `npx @inharness-ai/claude4spec` in the project',
+      'start it with `npx @inharness-ai/claude4spec` (or check the --server address)',
     );
   }
   let body: unknown;

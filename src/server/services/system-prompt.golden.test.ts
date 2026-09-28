@@ -68,13 +68,14 @@ const BRIEF_INVENTORY = [
 ];
 
 const PEERS_UNIQUE: PeerProject[] = [
-  { name: 'Billing API', registryName: 'billing', path: '/ws/billing', description: 'Money "in" & out.' },
-  { name: 'Auth', registryName: 'auth', path: '/ws/auth' },
+  { id: 'billing', name: 'Billing API', description: 'Money "in" & out.' },
+  { id: 'auth', name: 'Auth' },
 ];
+// 2.1.0: names may collide, ids cannot — the block renders ids only, no paths.
 const PEERS_COLLIDING: PeerProject[] = [
-  { name: 'Spec A', registryName: 'spec', path: '/ws/a/spec' },
-  { name: 'Spec B', registryName: 'spec', path: '/ws/b/spec' },
-  { path: '/ws/broken' },
+  { id: 'spec', name: 'Spec' },
+  { id: 'spec-2', name: 'Spec' },
+  { id: 'broken' },
 ];
 
 const ANNOTATIONS: Annotation[] = [

@@ -1,5 +1,5 @@
 import type { ExternalSkillContext } from './types.js';
-import { SERVER_REQUIRED_BLOCK } from './server-required.js';
+import { SERVER_REQUIRED_BLOCK, skillIdentity, staleAddressBlock } from './server-required.js';
 
 export const SPEC_READER_FRONTMATTER = `---
 name: c4s-spec-reader
@@ -8,10 +8,8 @@ description: Read claude4spec specification entities (endpoints, DTOs, tables, A
 `;
 
 export function specReaderBody(ctx: ExternalSkillContext): string {
-  // Quoted: ProjectRecord.name (the slug) is an unvalidated directory basename
-  // and can contain spaces/shell metacharacters — unquoted interpolation here
-  // would break argv parsing when these example commands are run verbatim.
-  const identity = `--project '${ctx.slug}' --workspace '${ctx.workspace}'`;
+  // 2.1.0: `--server <publicUrl> --project <id>` in every command.
+  const identity = skillIdentity(ctx);
   return `# c4s-spec-reader
 
 This skill is bound to one claude4spec specification project — every \`c4s\`
@@ -24,6 +22,8 @@ NOT \`cd\` into the spec repo; the identity is baked in, not derived from cwd.
 never read the spec repo's pages or entity files directly.
 
 ${SERVER_REQUIRED_BLOCK}
+
+${staleAddressBlock(ctx)}
 
 ## Resolving a tag
 
@@ -156,10 +156,9 @@ come back \`AGENT_UNAVAILABLE\` or \`TIMEOUT\`.
 
 ## Errors
 
-If \`c4s\` reports \`PROJECT_SLUG_NOT_FOUND\` or \`AMBIGUOUS_WORKSPACE\` /
-\`AMBIGUOUS_PROJECT\`, this skill's baked-in \`${identity}\` identity no longer
-resolves — regenerate the skill from the spec repo and re-copy it, or pass the
-correct \`--workspace <name>\`. If \`c4s ask\` reports the server isn't recognized
+If \`c4s\` reports \`PROJECT_NOT_IN_WORKSPACE\` or \`PROJECT_ID_NOT_FOUND\`, this
+skill's baked-in address (\`${identity}\`) is stale — stop and ask the user to
+regenerate the skill (see "Stale address" above). If \`c4s ask\` reports the server isn't recognized
 as a claude4spec server, or that the project failed to build
 (\`PROJECT_BUILD_FAILED\`), that's a problem on the spec repo/server side —
 report it to the user; don't try to fix the spec repo from here.

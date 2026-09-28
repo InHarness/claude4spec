@@ -4,12 +4,19 @@
  */
 
 export interface ProjectRecord {
-  /** Absolute project directory; the source of `id`. */
+  /**
+   * Absolute project directory. NOT an address: it never leaves the server
+   * towards an agent or an external client (2.1.0). Editable by hand (a moved
+   * repo) without changing `id`.
+   */
   cwd: string;
-  /** `projectIdForCwd(cwd)` — sha1(cwd).slice(0,12). */
+  /**
+   * 2.1.0 (M31 #13): readable, immutable project id — minted once at
+   * registration from `config.json` `name` (fallback: directory name), see
+   * `mintProjectId`. Never recomputed; no operation changes it. The display
+   * name is NOT stored here — it always comes from `config.json`.
+   */
   id: string;
-  /** Display name (defaults to basename(cwd) at registration). */
-  name: string;
   /** ISO timestamp of registration. */
   addedAt: string;
   /** ISO timestamp of the last SPA open / activation. */
@@ -30,6 +37,17 @@ export interface WorkspaceRecord {
   mode: 'dev' | 'prod';
   /** Port the server listens on when this workspace is started without --port. */
   defaultPort: number;
+  /**
+   * 2.1.0: listen address (`--host`). Absent = loopback. Anything else exposes
+   * an unauthenticated server to whoever can reach the address.
+   */
+  bindHost?: string;
+  /**
+   * 2.1.0: origin clients see (`--public-url`) — absolute http(s) URL without a
+   * path. Absent = `http://localhost:<defaultPort>`. The only source of URLs
+   * handed out (MCP snippets, external skills); never used for local discovery.
+   */
+  publicUrl?: string;
   /**
    * ISO timestamp of the last server start for this workspace. OPTIONAL: a
    * workspace that was never opened simply lacks the field — there is no zero

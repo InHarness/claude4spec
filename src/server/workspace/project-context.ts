@@ -50,6 +50,7 @@ import { rootRenameRouter } from '../routes/config-rename.js';
 import { mcpConfigRouter } from '../routes/mcp-config.js';
 import { PROJECTION_IDS, ProjectionStatusRegistry, type ProjectionId } from '../services/projection-status.js';
 import { listProjects } from './list-projects.js';
+import { writeSlotMarker } from './slot-marker.js';
 import { readPeerConfigSummary } from './peer-config.js';
 import { PatchService } from '../services/patch.js';
 import { artifactsRouter } from '../routes/artifacts.js';
@@ -510,6 +511,11 @@ async function buildInner(
   const db: Db = openDb(workspace, projectId);
   cleanup.push(() => db.close());
   const dbSlotDir = registry.slotDir(workspace, projectId);
+  // 2.1.0 slot continuity: the slot records the directory it serves. A
+  // hand-edited `cwd` (moved repo) re-points the marker on the next build, so a
+  // later detach + re-register from the NEW directory recovers this slot, and a
+  // new project at the OLD directory never inherits it.
+  writeSlotMarker(dbSlotDir, cwd);
 
   // ── M40 phase A: MOUNTS ────────────────────────────────────────────────────
   // Mount → subscribe is a contract, not a preference: `subscribe` to an
@@ -1402,27 +1408,16 @@ async function buildInner(
   // workspace project except this one, build a PeerProject. Re-read per turn so
   // peer-config edits surface on the next thread's first turn.
   //
-  // 0.2.50 — TWO names, and the distinction is load-bearing rather than
-  // cosmetic. `displayName`/`description` come from the peer's own config.json
-  // (source of truth, no denormalization) and are what a human calls the
-  // project: "C4S - App Spec". `registryName` is `ProjectRecord.name` from
-  // `~/.claude4spec/workspaces.json`, and it is the only one of the two that
-  // `ask({ project })` can resolve — `resolveWorkspaceProject` falls back to
-  // `findProjectByName`, which compares against the REGISTRY name exactly. The
-  // prompt used to render the display name beside the path; drop the path and
-  // keep the display name alone, and peer consultation breaks with
-  // PROJECT_SLUG_NOT_FOUND. Unreadable config → registry name and path only.
+  // 2.1.0 — the peer is addressed by its registry `id` alone (what `ask({ project })`
+  // resolves). `name`/`description` come from the peer's own config.json and are
+  // labels only. No directory: a path is not an address and never reaches the agent.
   const listWorkspacePeers = (): PeerProject[] => {
     const ws = registry.getWorkspace(workspace.name);
     if (!ws) return [];
-    // A peer that shares its registry name with THIS project is ambiguous to
-    // the resolver (0.2.97), but the block only sees peers — so flag it here.
-    const ownNames = new Set(ws.projects.filter((p) => p.cwd === cwd).map((p) => p.name));
     return ws.projects
-      .filter((p) => p.cwd !== cwd)
+      .filter((p) => p.id !== projectId)
       .map((p) => {
-        const peer: PeerProject = { path: p.cwd, registryName: p.name };
-        if (ownNames.has(p.name)) peer.nameShared = true;
+        const peer: PeerProject = { id: p.id };
         // The one sanctioned peer-config read; unreadable → no display name,
         // not an error. See `peer-config.ts` for why this bypass exists.
         const { name, description } = readPeerConfigSummary(p.cwd);

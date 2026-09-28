@@ -23,6 +23,7 @@ const CONFIG = { name: 'test-project', roots: [], entitiesDir: 'entities', writi
 describe('c4s plugins reports the server host\'s loader', () => {
   let registryDir: string;
   let projectDir: string;
+  let projectId: string;
   let prevHome: string | undefined;
   let stdout: string;
   let server: http.Server;
@@ -49,7 +50,7 @@ describe('c4s plugins reports the server host\'s loader', () => {
 
     const registry = new WorkspaceRegistry(registryDir);
     const ws = registry.selectOrCreate({ name: 'default', port });
-    registry.registerProject(ws, projectDir);
+    projectId = registry.registerProject(ws, projectDir).id;
     __resetDelegateTargets();
 
     stdout = '';
@@ -70,7 +71,7 @@ describe('c4s plugins reports the server host\'s loader', () => {
   });
 
   const args = (...argv: string[]) =>
-    parseArgs([...argv, '--project', path.basename(projectDir), '--workspace', 'default']);
+    parseArgs([...argv, '--project', projectId, '--workspace', 'default']);
   const printed = () => JSON.parse(stdout) as Record<string, unknown>;
 
   it('asks the server, and asks the route the UI reads', async () => {

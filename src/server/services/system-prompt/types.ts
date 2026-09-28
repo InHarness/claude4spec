@@ -13,36 +13,17 @@ import type { PatchDetail } from '../patch.js';
 /**
  * 0.1.58: a workspace peer the agent may consult via `c4s-tools.ask`.
  *
- * 0.2.50 — THREE fields, two of which are names, and the difference between them
- * is the whole reason this comment is long.
- *
- * `name` is what the peer calls itself in its own `config.json`: "C4S - App
- * Spec". It is a label for a human and is NOT an address — `ask({ project })`
- * resolves a non-path value through `findProjectByName`, which compares against
- * the WORKSPACE REGISTRY's name, and the two are routinely different strings.
- * `registryName` is that registry name (`app-spec`), and it is the one the agent
- * must pass.
- *
- * This was found by running the call, not by reading the code: the obvious
- * simplification of this block — "drop the path, the name is an address" —
- * type-checks, reads correctly, and answers PROJECT_SLUG_NOT_FOUND.
- *
- * `path` is the peer's `cwd` and remains the resolver's first attempt, which is
- * why it survives as the fallback address when a peer's config is unreadable.
+ * 2.1.0 — a peer is addressed by its registry `id` alone: the readable,
+ * workspace-unique id that `ask({ project })` resolves. `name`/`description`
+ * are labels from the peer's own `config.json`. No directory — a path is not an
+ * address and never reaches the agent.
  */
 export interface PeerProject {
+  /** Registry id — the address `ask({ project })` resolves. */
+  id: string;
   /** Display name from the peer's own `config.json`. A label, never an address. */
   name?: string;
-  /** `ProjectRecord.name` from the workspace registry — the address `ask({ project })` resolves. */
-  registryName?: string;
-  path: string;
   description?: string;
-  /**
-   * The registry name is also carried by a project NOT in this list — the
-   * current one, which is filtered out upstream. The block cannot count that
-   * collision itself, so the lister flags it and the peer keeps its `path`.
-   */
-  nameShared?: boolean;
 }
 
 /**

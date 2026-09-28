@@ -1,5 +1,5 @@
 import type { ExternalSkillContext } from './types.js';
-import { SERVER_REQUIRED_BLOCK } from './server-required.js';
+import { SERVER_REQUIRED_BLOCK, skillIdentity, staleAddressBlock } from './server-required.js';
 
 export const REFACTOR_FRONTMATTER = `---
 name: c4s-refactor
@@ -8,10 +8,8 @@ description: Detect drift between the claude4spec specification and the code for
 `;
 
 export function refactorBody(ctx: ExternalSkillContext): string {
-  // Quoted: ProjectRecord.name (the slug) is an unvalidated directory basename
-  // and can contain spaces/shell metacharacters — unquoted interpolation here
-  // would break argv parsing when these example commands are run verbatim.
-  const identity = `--project '${ctx.slug}' --workspace '${ctx.workspace}'`;
+  // 2.1.0: `--server <publicUrl> --project <id>` in every command.
+  const identity = skillIdentity(ctx);
   return `# c4s-refactor
 
 A **spec↔code drift router**. For a single topic this skill reads the claude4spec
@@ -160,6 +158,8 @@ Print and **finish** (no execution):
   \`c4s-brief-implementer\` implements the brief.
 
 ${SERVER_REQUIRED_BLOCK}
+
+${staleAddressBlock(ctx)}
 
 Reading the spec and analyzing the code are not an exception to it: \`resolve\`, the \`list-*\` readers and \`single_element\` delegate to the server exactly as \`c4s ask\` / \`c4s agent\` do. With the server down this skill cannot detect drift, let alone route it.
 

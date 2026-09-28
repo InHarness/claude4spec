@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ProjectRecord } from '../workspace/types.js';
+import { effectivePublicUrl, type WorkspaceNetwork } from '../../core/workspace/network.js';
 import type { ExternalSkillContext, ExternalSkillSummary, FileSet, SkillSlug } from './types.js';
 import {
   SPEC_READER_FRONTMATTER,
@@ -19,14 +20,20 @@ export type { ExternalSkillContext, ExternalSkillSummary, FileSet, SkillSlug } f
 
 /**
  * 0.1.103 M22 — assembles the injected identity the renderers below bake into
- * each generated SKILL.md. Must be called AFTER `registry.registerProject(...)`
- * (the `project.name` — reused as the "slug" identity — only exists once
- * registered).
+ * each generated SKILL.md. 2.1.0: `{ id, workspace, publicUrl }` — the registry
+ * id and the workspace's effective `publicUrl` (never a directory, never a
+ * request header). `publicUrl` overrides it when the address is already known
+ * (`c4s install-skills --server <url>`).
  */
-export function buildExternalSkillContext(project: ProjectRecord, workspaceName: string): ExternalSkillContext {
+export function buildExternalSkillContext(
+  project: Pick<ProjectRecord, 'id'>,
+  workspace: WorkspaceNetwork & { name: string },
+  publicUrl?: string,
+): ExternalSkillContext {
   return {
-    slug: project.name,
-    workspace: workspaceName,
+    id: project.id,
+    workspace: workspace.name,
+    publicUrl: (publicUrl ?? effectivePublicUrl(workspace)).replace(/\/+$/, ''),
   };
 }
 

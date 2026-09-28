@@ -1,4 +1,5 @@
-import type { Server as HttpServer } from 'node:http';
+import type { IncomingMessage, Server as HttpServer } from 'node:http';
+import type { GuardVerdict } from '../http/host-origin-guard.js';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { WsEvent } from '../../shared/types.js';
 
@@ -59,11 +60,25 @@ export class WsGateway {
   private wss: WebSocketServer;
   private rooms = new Map<string, Set<WebSocket>>();
 
-  constructor(server: HttpServer, isRegistered?: ProjectIsRegistered) {
+  /**
+   * `guard` (2.1.0): the Host allowlist + Origin check shared with the HTTP
+   * side (`host-origin-guard.ts`). It runs FIRST — before `?project` is read —
+   * and a refused upgrade never joins any room.
+   */
+  constructor(
+    server: HttpServer,
+    isRegistered?: ProjectIsRegistered,
+    guard?: (req: IncomingMessage) => GuardVerdict,
+  ) {
     this.wss = new WebSocketServer({ noServer: true });
     server.on('upgrade', (req, socket, head) => {
       const url = new URL(req.url ?? '', 'http://localhost');
       if (url.pathname !== '/ws') return;
+      const verdict = guard?.(req);
+      if (verdict && !verdict.ok) {
+        rejectUpgrade(socket, verdict.status, verdict.status === 400 ? 'Bad Request' : 'Forbidden', verdict.message);
+        return;
+      }
       const projectId = url.searchParams.get('project');
       if (!projectId) {
         rejectUpgrade(socket, 400, 'Bad Request', 'missing ?project');

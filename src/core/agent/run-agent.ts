@@ -62,11 +62,14 @@ const DEFAULT_EFFORT = 'medium';
 
 export interface AgentParams {
   message: string;
-  /** Local path do `.claude4spec/` peera; mutex z `server`. */
+  /**
+   * 2.1.0: `id` projektu z rejestru. Brak → walk-up z cwd (tylko powierzchnia
+   * CLI; kanal `mcp` wymaga go zawsze). Wymagane, gdy podano `server`.
+   */
   project?: string;
   /** M31: workspace selector — required when the project is in N workspaces. */
   workspace?: string;
-  /** Override discovery URL serwera peera; gdy podany razem z `project` — `server` wygrywa. */
+  /** Nadpisuje ADRES serwera peera (nie projekt); wymaga `project` (inaczej INVALID_ARGS). */
   server?: string;
   /** Default `'chat'`. Ignorowany gdy podano `threadId`. */
   contextType?: AgentContextType;

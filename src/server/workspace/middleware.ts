@@ -4,6 +4,15 @@ import type { WorkspaceRegistry } from './registry.js';
 import type { WorkspaceRecord } from './types.js';
 
 /**
+ * 2.1.0: the PROJECT_NOT_IN_WORKSPACE message names the available ids — never
+ * directories. Also said when a project NAME is passed where the id belongs.
+ */
+export function projectNotInWorkspaceMessage(ws: WorkspaceRecord, id: string): string {
+  const ids = ws.projects.map((p) => p.id).join(', ') || '(none)';
+  return `project '${id}' is not registered in workspace '${ws.name}'; available ids: ${ids}`;
+}
+
+/**
  * M31 transport middleware — mounted at `/api/projects/:id`. Resolves the
  * project from the URL prefix, lazily builds/fetches its context, and
  * dispatches into the per-context router (Express strips the mount path, so
@@ -25,7 +34,7 @@ export function projectDispatchMiddleware(
       return res.status(404).json({
         error: {
           code: 'PROJECT_NOT_IN_WORKSPACE',
-          message: `project '${id}' is not registered in workspace '${workspace.name}'`,
+          message: projectNotInWorkspaceMessage(registry.getWorkspace(workspace.name) ?? workspace, id),
         },
       });
     }

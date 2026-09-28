@@ -362,7 +362,7 @@ describe('runAgent — brief create-mode', () => {
   });
 });
 
-describe('runAgent — --server branch surfaces real ambiguity instead of hashing the slug', () => {
+describe('runAgent — 2.1.0: --server gives only the address and requires --project <id>', () => {
   let dir: string;
   let prevHome: string | undefined;
 
@@ -378,22 +378,33 @@ describe('runAgent — --server branch surfaces real ambiguity instead of hashin
     vi.unstubAllGlobals();
   });
 
-  it('throws AgentError(AMBIGUOUS_PROJECT) instead of silently hashing the slug as a path', async () => {
-    const registry = new WorkspaceRegistry(dir);
-    const wsA = registry.selectOrCreate({ name: 'ws-a', port: 4521 });
-    const wsB = registry.selectOrCreate({ name: 'ws-b', port: 4522 });
-    registry.registerProject(wsA, path.join(dir, 'repo-a', 'shared-name'));
-    registry.registerProject(wsB, path.join(dir, 'repo-b', 'shared-name'));
-
-    // No fetch stub: a fix regression here would previously hash the slug and
-    // proceed to a network call — asserting rejection means it never reaches fetch.
-    const err = await runAgent({
-      server: 'http://localhost:9999',
-      project: 'shared-name',
-      message: 'hi',
-    }).catch((e) => e);
-
+  it('--server without --project → INVALID_ARGS before any request', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const err = await runAgent({ server: 'http://localhost:9999', message: 'hi' }).catch((e) => e);
     expect(err).toBeInstanceOf(AgentError);
-    expect((err as AgentError).code).toBe('AMBIGUOUS_PROJECT');
+    expect((err as AgentError).code).toBe('INVALID_ARGS');
+    expect((err as AgentError).hint).toContain('--project <id>');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('--server + --project skips the local registry and addresses /api/projects/<id> on that server', async () => {
+    // An id ambiguous in the LOCAL registry is irrelevant: the remote server is
+    // the address, and its registry cannot be walked from here.
+    const registry = new WorkspaceRegistry(dir);
+    registry.registerProject(registry.selectOrCreate({ name: 'ws-a', port: 4521 }), path.join(dir, 'a', 'shared'));
+    registry.registerProject(registry.selectOrCreate({ name: 'ws-b', port: 4522 }), path.join(dir, 'b', 'shared'));
+
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      urls.push(String(url));
+      throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } });
+    }));
+    const err = await runAgent({ server: 'http://remote.example:7000/', project: 'shared', message: 'hi' }).catch(
+      (e) => e,
+    );
+    expect((err as AgentError).code).toBe('SERVER_NOT_RUNNING');
+    expect((err as AgentError).message).toContain('at http://remote.example:7000');
+    expect(urls[0]).toBe('http://remote.example:7000/api/projects/shared/config');
   });
 });
