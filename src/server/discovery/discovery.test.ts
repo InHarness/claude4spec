@@ -2168,6 +2168,19 @@ describe('discovery core', () => {
     expect(flagged).not.toContain('m99');
   });
 
+  it('search_pages: on an indexed root a match outside every section (frontmatter, preamble, unanchored heading) is a page-level hit', async () => {
+    await writePage(
+      'pages',
+      'outside.md',
+      ['---', 'title: needle in fm', '---', 'needle preamble', '', '<!-- anchor: inside01 -->', '## In', 'needle inside', '', '## Loose', 'needle loose', ''].join('\n'),
+    );
+    await indexPageLikeTheIndexer('pages', 'pages', 'outside.md');
+    const result = await core([pagesRoot()]).searchPages({ query: 'needle', mode: 'map' });
+    if (result.mode !== 'map') throw new Error('expected map mode');
+    const byKind = result.items.map((h) => [h.kind, h.anchor ?? null, h.matchCount]);
+    expect(byKind).toEqual(expect.arrayContaining([['section', 'inside01', 1], ['page', null, 3]]));
+  });
+
   describe('2.0.0 — rule 2 and the shared brokenReferences list', () => {
     it('rule 2 reports an entity_tag row whose entity no longer exists', async () => {
       db.prepare(`INSERT INTO widget (slug, format, source) VALUES ('flow', 'mermaid', 'graph TD')`).run();
