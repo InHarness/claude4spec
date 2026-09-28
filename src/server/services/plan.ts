@@ -33,12 +33,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import matter from 'gray-matter';
-import { customAlphabet } from 'nanoid';
 import type { Plan, PlanChangedBy, PlanFrontmatter, PlanListItem } from '../../shared/entities.js';
 import { PLAN_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
 import { PLAN_ROOT_MARKER } from '../../shared/types.js';
-import { ANCHOR_LINE_RE, ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
 import { slugify } from './slug.js';
+import { injectAnchorsFor } from './anchor-injection.js';
 import type { PagesService } from './pages.js';
 import type { RecordStore } from '../fs/record-store.js';
 import type { MarkdownRecord } from '../fs/record-adapters.js';
@@ -65,9 +64,7 @@ import { applyTextEdits, type TextEdit } from './text-edits.js';
 import { bodyPositionResolver } from './section-text.js';
 
 // Generator stays strict 8 (per M06 spec `15u7sazr` — auto-inject contract).
-const nanoid8 = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8);
 
-const PLAN_HEADING_RE = /^(#{2,4})\s+(.+?)\s*$/;
 
 export interface PlanServiceDeps {
   plansPages: PagesService;
@@ -382,7 +379,7 @@ export class PlanService {
 
   /**
    * Resolve a heading anchor (the `<!-- anchor: xxxxxxxx -->` marker injected
-   * by {@link injectAnchors}) back to the plan that contains it. Plans are not
+   * by `injectAnchorsFor`, M06) back to the plan that contains it. Plans are not
    * indexed in `section_index` (`sectionIndexed: false`), so a brute-force
    * scan over `plansDir`'s files is used instead — acceptable given the low
    * plan count (same justification as the pre-0.1.127 DB `content LIKE` scan
@@ -703,7 +700,7 @@ export class PlanService {
         throw new ConflictError('PLAN_CONFLICT', 'plan changed since last read', current.hash);
       }
       const composed = composePlanBody(current.body, payload);
-      const finalContent = injectAnchors(composed.body);
+      const finalContent = injectAnchorsFor('plan', composed.body);
       const { version, plan } = await this.persist({
         planPath: existingPath,
         body: finalContent,
@@ -741,7 +738,7 @@ export class PlanService {
    * `BriefService.writeBytes` for why this writes with `chain: false`.
    *
    * Plans are the one artifact kind with a registered `write-back`, and it stays
-   * unreachable from here on purpose: `PlanService` runs `injectAnchors`
+   * unreachable from here on purpose: `PlanService` runs `injectAnchorsFor`
    * SYNCHRONOUSLY before composing the bytes, because `insert_after_section`
    * must see the anchors with no window in between. The registered subscriber
    * exists for writes that bypass this service entirely — an agent or a user
@@ -1015,7 +1012,7 @@ export class PlanService {
  * a thread, and `create_plan`), so the two can never disagree on its shape.
  */
 function newPlanBytes(title: string, body: string, changedBy: PlanChangedBy): { injected: string; fullContent: string } {
-  const injected = injectAnchors(body);
+  const injected = injectAnchorsFor('plan', body);
   const frontmatter: PlanFrontmatter = {
     type: 'plan',
     title,
@@ -1127,75 +1124,6 @@ function buildPlanResults(
       ? { previousHeading: composed.previousHeadingOf.get(edit.anchor) ?? '' }
       : {}),
   }));
-}
-
-/**
- * Mint an anchor that is free WITHIN THIS PLAN FILE. The uniqueness scope of a plan
- * anchor is the file it lives in — never `section_index`, which indexes page roots and
- * which plans are deliberately absent from. Colliding with a page's anchor is therefore
- * not a collision at all: `update_plan` resolves anchors only inside
- * `chat_thread.plan_path`, and page-side references resolve only through `section_index`.
- *
- * Bounded like the section indexer's mint loop: with 36^8 values a repeat is already
- * vanishingly unlikely, so exhausting the attempts means something is wrong, not unlucky.
- */
-function mintPlanAnchor(taken: Set<string>): string {
-  for (let attempt = 0; attempt < 8; attempt++) {
-    const candidate = nanoid8();
-    if (!taken.has(candidate)) {
-      taken.add(candidate);
-      return candidate;
-    }
-  }
-  throw new Error('[plan] could not mint a free anchor in 8 attempts');
-}
-
-/**
- * M06 anchor injection for plans — ONE implementation, TWO triggers.
- *
- * `update_plan(action: insert_after_section)` must see anchors immediately after
- * the preceding write, with no debounce window, so `PlanService.update` calls
- * this synchronously. For writes that bypass `PlanService` entirely (an agent or
- * user editing a plan file on disk) the same function runs as the
- * `m06-plan-anchor-injection` write-back on the `artifacts:plan` source.
- *
- * Scope is unchanged either way: plans stay `sectionIndexed: false` and never
- * enter `section_index`, so plan anchors are unique within their file only.
- */
-export function injectAnchors(content: string): string {
-  const lines = content.split('\n');
-  // Seed with every anchor already composed into this plan, so a value injected in this
-  // pass can collide neither with an existing one nor with an earlier injection of the
-  // same pass. Auto-injected anchors must never duplicate.
-  const taken = new Set<string>();
-  const scan = new RegExp(ANCHOR_PATTERN_SOURCE, 'g');
-  for (const m of content.matchAll(scan)) taken.add(m[1]!);
-
-  const out: string[] = [];
-  let inFence = false;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!;
-    // A `## x` inside a fenced block is code, not a heading — anchoring it would
-    // edit the code sample.
-    if (/^\s*```/.test(line)) inFence = !inFence;
-    const m = inFence ? null : line.match(PLAN_HEADING_RE);
-    if (!m) {
-      out.push(line);
-      continue;
-    }
-    // 0.2.89 — look past blank lines, as the page indexer does: an anchor with a
-    // blank line before its heading still owns it, and a second one would be a
-    // duplicate, not a repair.
-    let k = out.length - 1;
-    while (k >= 0 && out[k]!.trim() === '') k--;
-    if (k >= 0 && ANCHOR_LINE_RE.test(out[k]!)) {
-      out.push(line);
-      continue;
-    }
-    out.push(`<!-- anchor: ${mintPlanAnchor(taken)} -->`);
-    out.push(line);
-  }
-  return out.join('\n');
 }
 
 /**

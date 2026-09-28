@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { injectAnchors } from './plan.js';
+import { injectArtifactAnchors as injectAnchors, injectAnchorsFor } from './anchor-injection.js';
 import { artifactRegistry } from './artifact-registry.js';
 import { ANCHOR_LINE_RE } from '../../shared/anchor-pattern.js';
 
@@ -30,5 +30,27 @@ describe('plan anchor injection', () => {
   it('the registry says plans are anchored but not section-indexed', () => {
     expect(artifactRegistry.plan.anchorInjection).toBe(true);
     expect(artifactRegistry.plan.sectionIndexed).toBe(false);
+  });
+});
+
+describe('anchor injection — 2.0.0, on the shared section parser (M06)', () => {
+  it('leaves a heading inside a multi-line HTML comment alone, and never splits the comment', () => {
+    const src = ['# Plan', '', '<!--', '## Commented out', '-->', '', '## Real', ''].join('\n');
+    const out = injectAnchors(src);
+    const lines = out.split('\n');
+    expect(lines.slice(2, 5)).toEqual(['<!--', '## Commented out', '-->']);
+    expect(lines[lines.indexOf('## Real') - 1]).toMatch(/^<!-- anchor: [a-z0-9]{8} -->$/);
+  });
+
+  it('leaves a heading inside a ~~~ fence alone', () => {
+    const src = ['~~~md', '## Example', '~~~', ''].join('\n');
+    expect(injectAnchors(src)).toBe(src);
+  });
+
+  it('is declared by the registry: plans get anchors, briefs and patches never do', () => {
+    const src = '## Step\n';
+    expect(injectAnchorsFor('plan', src)).not.toBe(src);
+    expect(injectAnchorsFor('brief', src)).toBe(src);
+    expect(injectAnchorsFor('patch', src)).toBe(src);
   });
 });
