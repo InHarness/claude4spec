@@ -2168,6 +2168,37 @@ describe('discovery core', () => {
     expect(flagged).not.toContain('m99');
   });
 
+  describe('2.0.0 — rule 2 and the shared brokenReferences list', () => {
+    it('rule 2 reports an entity_tag row whose entity no longer exists', async () => {
+      db.prepare(`INSERT INTO widget (slug, format, source) VALUES ('flow', 'mermaid', 'graph TD')`).run();
+      db.prepare(`INSERT OR IGNORE INTO tag (slug, name) VALUES ('t1', 't1')`).run();
+      db.prepare(`INSERT INTO entity_tag (entity_type, entity_slug, tag_slug) VALUES ('widget', 'flow', 't1')`).run();
+      db.prepare(`INSERT INTO entity_tag (entity_type, entity_slug, tag_slug) VALUES ('widget', 'gone', 't1')`).run();
+      const report = await core([pagesRoot()]).checkConsistency({ rule: 2 });
+      expect(report.orphanedEntityTags).toEqual([{ entityType: 'widget', entitySlug: 'gone', tagSlug: 't1' }]);
+    });
+
+    it('rules 1, 5 and 6 share one list told apart by reason; `rule` keeps only its own rows', async () => {
+      await writePage(
+        'pages',
+        'refs.md',
+        [
+          '<inline_mention type="widget" slug="ghost"/>',
+          '<inline_mention type="nosuchtype" slug="x"/>',
+          '',
+        ].join('\n'),
+      );
+      const c = core([pagesRoot()]);
+      const all = await c.checkConsistency({});
+      expect((all.brokenReferences as Array<{ reason: string }>).map((r) => r.reason).sort()).toEqual(['missing', 'unknown']);
+      expect(all.brokenReferenceCounts).toEqual({ missing: 1, unknown: 1 });
+      const unknownOnly = await c.checkConsistency({ rule: 6 });
+      expect((unknownOnly.brokenReferences as Array<{ reason: string }>).map((r) => r.reason)).toEqual(['unknown']);
+      const missingOnly = await c.checkConsistency({ rule: 'broken-reference' });
+      expect((missingOnly.brokenReferences as Array<{ slug: string }>).map((r) => r.slug)).toEqual(['ghost']);
+    });
+  });
+
   /**
    * Rule 14 — a tag entities carry that no embed selects on.
    *

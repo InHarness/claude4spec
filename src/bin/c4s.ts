@@ -179,7 +179,8 @@ Discovery (through the server's operations — see "Server required" below):
   resolve-identity --query <q> [--types <t1,t2>] [--limit <n>]
                                     the only cross-type command: "what is this called?"
   check-consistency [--severity error|warning] [--rule <r>] [--limit <n>]
-                                    broken references, drift between disk and index
+                                    the 16 rules: broken references (one list, by reason),
+                                    unanchored headings, code blocks, drift between disk and index
 
 Pages and sections (a page is (rootId, path); an anchor is globally unique):
   list-pages --root-id <id> [--prefix <p>] [--sort path|modified]

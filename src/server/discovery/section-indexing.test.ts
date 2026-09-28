@@ -203,6 +203,55 @@ describe('discovery core over the real section indexer', () => {
    * hold: the collision is REPORTED, and until it is fixed the read is
    * deterministic rather than a function of directory order.
    */
+  describe('2.0.0 — rules 7, 13, 15, 16 read the shared section parser', () => {
+    it('rule 7 reports a heading without an anchor; a ## X inside a code block is code', async () => {
+      // Written without indexing, so no anchor is minted.
+      await pages.write('raw.md', { body: ['## Loose', 'x', '```md', '## In code', '```', ''].join('\n') });
+      const report = await core.checkConsistency({ rule: 7 });
+      expect(report.unanchoredHeadings).toEqual([
+        { rootId: 'pages', pagePath: 'raw.md', line: 1, heading: 'Loose' },
+      ]);
+    });
+
+    it('rule 13 ignores the same anchor inside a code block', async () => {
+      const a = '<!-- anchor: samesame -->';
+      await index('code-dup.md', ['# Top', '', a, '## Real', 'x', '', '```md', a, '## Example', '```', ''].join('\n'));
+      const report = await core.checkConsistency({ rule: 'duplicate-anchor' });
+      expect(report.duplicateAnchors).toEqual([]);
+    });
+
+    it('rule 15 reports an anchor line in code right above a heading-shaped line — nothing without the heading', async () => {
+      await index(
+        'trace.md',
+        ['# Top', '', '```md', '<!-- anchor: tracetra -->', '## Example', '<!-- anchor: lonelyli -->', 'text', '```', ''].join('\n'),
+      );
+      const report = await core.checkConsistency({ rule: 15 });
+      expect(report.anchorLinesInCode).toEqual([
+        expect.objectContaining({ path: 'trace.md', anchor: 'tracetra' }),
+      ]);
+      // Informational: a warning, never an error.
+      expect(report.summary.errors).toBe(0);
+    });
+
+    it('rule 16 reports a code block or a multi-line comment nothing closes, by its opening line', async () => {
+      await index('open.md', ['# Top', '', 'x', '```', '## Swallowed', ''].join('\n'));
+      await index('open-comment.md', ['# Top', '', '<!--', '## Hidden', ''].join('\n'));
+      const report = await core.checkConsistency({ rule: 'unclosed-code-block' });
+      const rows = report.unclosedCodeBlocks as Array<{ path: string; line: number }>;
+      expect(rows.map((r) => r.path).sort()).toEqual(['open-comment.md', 'open.md']);
+      // `line` is the OPENING line, in the page body's coordinates.
+      for (const r of rows) {
+        const body = (await pages.read(r.path)).body.split('\n');
+        expect(body[r.line - 1]).toBe(r.path === 'open.md' ? '```' : '<!--');
+      }
+    });
+
+    it('rule accepts 1–16; anything else is INVALID_ARGUMENT naming the catalogue', async () => {
+      await expect(core.checkConsistency({ rule: 17 })).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+      for (let r = 1; r <= 16; r++) await expect(core.checkConsistency({ rule: r })).resolves.toBeTruthy();
+    });
+  });
+
   describe('duplicate anchors', () => {
     const dup = '<!-- anchor: dupdupdu -->';
 

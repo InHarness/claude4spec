@@ -140,7 +140,7 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
     const result = await checkConsistency(client);
 
     expect(result.brokenReferences).toContainEqual(
-      expect.objectContaining({ type: 'diagram', slug: 'nonexistent', category: 'broken-reference' }),
+      expect.objectContaining({ type: 'diagram', slug: 'nonexistent', reason: 'missing' }),
     );
   });
 
@@ -228,7 +228,7 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
     const result = await checkConsistency(client);
 
     expect(result.brokenReferences).toContainEqual(
-      expect.objectContaining({ type: 'diagram', slug: 'ghost', category: 'broken-reference' }),
+      expect.objectContaining({ type: 'diagram', slug: 'ghost', reason: 'missing' }),
     );
   });
 

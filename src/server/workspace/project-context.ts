@@ -1097,6 +1097,7 @@ async function buildInner(
     projectDir: cwd,
     packageVersion: readPackageVersion(),
     projectionStatus,
+    sections: sectionsService,
   });
   discoveryCore = discovery;
   /**
@@ -1123,6 +1124,7 @@ async function buildInner(
       packageVersion: readPackageVersion(),
       // Narrowing the root list does not narrow the fail-closed rule.
       projectionStatus,
+      sections: sectionsService,
     });
   pluginHost.registerMcpServer('entity-tools', () =>
     createEntityToolsServer({
