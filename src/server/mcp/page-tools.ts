@@ -321,13 +321,13 @@ export function createPageToolsServer(
     'update_sections',
     [
       'Edit one or more sections of ONE page, addressed by anchor. Read-modify-write of the whole page under the hood — a convenience over update_page, not a separate store.',
-      'Actions: `replace` (swap the body), `append` (add at the end of the body), `insert_after` (add after the section and its subsections), `delete` (remove heading, anchor and body), `edit` (substitute literal fragments inside the subtree), `rename` (rewrite the heading line). EXACTLY ONE field per action: `content` for replace/append/insert_after, `textEdits` for `edit`, `heading` for `rename`, and nothing at all for `delete`. Any other combination — a field the action does not take, or its own field missing — is INVALID_ARGUMENT for the WHOLE batch.',
-      '`rename` rewrites the heading LINE ALONE — level and anchor preserved, body untouched. Refused when the same batch addresses an ancestor with `replace` or `delete`. It is IDEMPOTENT by heading text: repeating it with the same text succeeds and leaves the page identical, because it matches nothing literally and so has nothing to fail to find. It never drops an anchor, so it can never trip ANCHOR_LOSS.',
+      'Actions: `replace` (swap the body), `append` (add at the end of the section's OWN body, before its first subsection), `insert_after` (add after the section and its subsections), `delete` (remove the SUBTREE with its heading and anchor), `edit` (substitute literal fragments inside the subtree), `rename` (rewrite the heading line). EXACTLY ONE field per action: `content` for replace/append/insert_after, `textEdits` for `edit`, `heading` for `rename`, and nothing at all for `delete`. Any other combination — a field the action does not take, or its own field missing — is INVALID_ARGUMENT for the WHOLE batch.',
+      '`rename` rewrites the heading LINE ALONE — level and anchor preserved, body untouched. Refused when the same batch addresses an ancestor with `replace` or `delete`. It is IDEMPOTENT by heading text: repeating it with the same text succeeds and leaves the page identical, because it matches nothing literally and so has nothing to fail to find. It never drops an anchor, so it can never trip ANCHOR_LOSS — and neither can `append`.',
       '`edit` matches LITERALLY, byte for byte, inside the addressed subtree only. One `edit` entry may carry many substitutions; do not repeat an anchor to get a second one — a repeated anchor in a batch is refused as ambiguous. Omitting `expectedMatches` means EXACTLY 1. Zero hits → FIND_NOT_FOUND (with a whitespace-normalization diagnosis); wrong count → MATCH_COUNT_MISMATCH (with each hit as anchor + line).',
       'SECTION SCOPE VS PAGE SCOPE: `update_page` with `textEdits` covers everything this covers, since a literal `find` can be made unique page-wide. The section scope buys two things — a shorter `find`, needing no disambiguating context, and a narrower space to hit by accident. Use the section when the target sits in one known section; use the page when it crosses sections or lies outside all of them.',
       '`edit` is NOT idempotent, and one `edit` costs the WHOLE BATCH its idempotence, because the batch is all-or-nothing. Replaying a successful one answers FIND_NOT_FOUND. An `edit` nested inside a section another entry replaces or deletes is refused (INVALID_ARGUMENT) — split them into separate calls.',
       'A section is its SUBTREE, not the prose under its heading: `replace` on a `##` carrying three `###` replaces all four sections, and `delete` removes all four. To change only the parent preamble, reproduce the subsections in `content` or edit them separately.',
-      'ANCHOR LOSS: because of that, replace/delete destroy the anchor comments of the subsections they span. If a destroyed anchor is cited anywhere (`<section_ref/>` or a `page.md#anchor` link) the WHOLE batch is refused with ANCHOR_LOSS (400), listing each anchor, its heading text and who cites it. To go ahead anyway, name those anchors in `dropAnchors`; to keep them, put their `<!-- anchor: … -->` comments in `content`. Dropping an UNCITED anchor is never refused — it is just reported.',
+      'ANCHOR LOSS: because of that, replace/delete destroy the anchor comments of the subsections they span — and content that opens a code block nothing closes turns every section below it into code, swallowing their anchors too. An anchor-shaped line inside a code block is an example, never an anchor, and never counts. If a destroyed anchor is cited anywhere (`<section_ref/>` or a `page.md#anchor` link) the WHOLE batch is refused with ANCHOR_LOSS (400), listing each anchor, its heading text and who cites it. To go ahead anyway, name those anchors in `dropAnchors`; to keep them, put their `<!-- anchor: … -->` comments in `content`. Dropping an UNCITED anchor is never refused — it is just reported.',
       'ANCHOR DUPLICATE: never send an `<!-- anchor: … -->` comment for a NEW heading. Anchor values are minted by the indexer alone, so a comment in your `content` is a copied line: if the value is already held anywhere in the project, or its line ends up over no heading of its own, the WHOLE batch is refused with ANCHOR_DUPLICATE (400) naming where the value currently lives. There is no override — drop the comment and the new heading is given a fresh anchor on the next indexing pass. Moving a section WITHIN one page is unaffected: `delete` plus `insert_after` in the same batch nets to zero, so the anchor survives the move. Between pages, remove it from the source first, then insert it in the target.',
       'All anchors must be on the SAME page (else INVALID_ARGUMENT), and no anchor may appear twice (INVALID_ARGUMENT).',
       'TRANSACTIONAL — unlike every other batch here, there is no partial success: either all edits land or none do. They apply bottom-up regardless of the order you list them, so earlier edits never shift later ones.',
@@ -367,16 +367,19 @@ export function createPageToolsServer(
           }),
         )
         .min(1)
-        .describe('The edits to apply, all addressing sections of one page.'),
+        .describe(
+          'The edits to apply, all addressing sections of one page. ' +
+            "append — add at the end of the section's OWN body, before its first subsection — a heading outside a code block at or above the addressed section's level in `content` is INVALID_ARGUMENT for the whole batch; deeper headings become its first children",
+        ),
       dropAnchors: z
         .array(z.string())
         .optional()
         .describe(
           'Anchors this batch is allowed to destroy. Required only for dropped anchors that are CITED elsewhere — ' +
             'without them the batch is refused with ANCHOR_LOSS. Every entry must lie inside the scope the batch ' +
-            'actually TOUCHES: the addressed subtree for the four whole-section actions, the matched fragments for ' +
-            '`edit`, and NOTHING at all for `rename`, which rewrites one heading line and can therefore drop no ' +
-            'anchor; listing MORE than the batch actually drops is fine, so a repeated call can send the same list ' +
+            'actually TOUCHES: the addressed subtree for `replace` and `delete`, the matched fragments for ' +
+            '`edit`, the sections a never-closed code block in `content` swallows, and NOTHING at all for `append`, ' +
+            '`insert_after` and `rename`, which overwrite nothing and can therefore drop no anchor; listing MORE than the batch actually drops is fine, so a repeated call can send the same list ' +
             'unchanged.',
         ),
     },
