@@ -262,9 +262,9 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
     /**
      * Index one section the way the indexer does — over the page body, 1-based.
      *
-     * `body` is left empty on purpose: these cases are about the COORDINATES
-     * reaching the tools, and `get_sections` slices its content out of the file
-     * regardless of what the column holds. Passing real text here would suggest
+     * `body` is left empty on purpose: these cases are about the index rows
+     * reaching the tools, and `get_sections` reads its content out of the file
+     * (by anchor, through the section parser) regardless of what the column holds. Passing real text here would suggest
      * the tool reads it, which is exactly the question 0.2.46 leaves open.
      */
     function indexSection(anchor: string, page: string, heading: string, start: number, end: number): void {
@@ -277,7 +277,7 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
     }
 
     it('get_page_outline returns a tree and measures each section before it is fetched', async () => {
-      await pagesService.write('page.md', { body: '# Alpha\n\nbody line\nanother line\n' });
+      await pagesService.write('page.md', { body: '<!-- anchor: aaaaaa11 -->\n# Alpha\n\nbody line\nanother line\n' });
       indexSection('aaaaaa11', 'page.md', 'Alpha', 1, 4);
       const client = await connectClient(deps());
 
@@ -301,7 +301,7 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
       // body; what keeps the column out of the answer is the explicit projection in
       // `toRawSection`, so this checks KEYS — a value check would pass just as
       // happily against a row that carried an empty `body` through.
-      await pagesService.write('page.md', { body: '# Alpha\n\nbody line\nanother line\n' });
+      await pagesService.write('page.md', { body: '<!-- anchor: aaaaaa11 -->\n# Alpha\n\nbody line\nanother line\n' });
       db.prepare(
         `INSERT INTO section_index
            (rootId, anchor, page_path, parent_anchor, heading_level, heading_text,
@@ -421,7 +421,7 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
     });
 
     it('get_page without rootId refuses and lists the roots — no silent built-in default', async () => {
-      await pagesService.write('page.md', { body: '# Alpha\n' });
+      await pagesService.write('page.md', { body: '<!-- anchor: aaaaaa11 -->\n# Alpha\n' });
       const client = await connectClient(deps());
 
       const { isError, body } = await call(client, 'get_page', { path: 'page.md' });
@@ -432,7 +432,7 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
     });
 
     it('get_page refuses a line range on a section-indexed root and points at the better window', async () => {
-      await pagesService.write('page.md', { body: '# Alpha\n\nbody\n' });
+      await pagesService.write('page.md', { body: '<!-- anchor: aaaaaa11 -->\n# Alpha\n\nbody\n' });
       const client = await connectClient(deps());
 
       const { isError, body } = await call(client, 'get_page', {
@@ -449,7 +449,7 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
 
     it('get_page returns the page AS AUTHORED — an embed stays an embed', async () => {
       await pagesService.write('page.md', {
-        body: '# Alpha\n\n<single_element type="diagram" slug="flow" caption="x"/>\n',
+        body: '<!-- anchor: aaaaaa11 -->\n# Alpha\n\n<single_element type="diagram" slug="flow" caption="x"/>\n',
       });
       const client = await connectClient(deps());
 
@@ -461,9 +461,9 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
 
     it('get_sections returns each body with its tag intact, and no edges beside it', async () => {
       await pagesService.write('page.md', {
-        body: '# Alpha\n\n<single_element type="diagram" slug="flow" caption="x"/>\n',
+        body: '<!-- anchor: bbbbbb22 -->\n# Alpha\n\n<single_element type="diagram" slug="flow" caption="x"/>\n',
       });
-      // The heading is line 1 of the body; the section runs to the end.
+      // The section is read off the file by its anchor; the row places it.
       indexSection('bbbbbb22', 'page.md', 'Alpha', 1, 4);
       const client = await connectClient(deps());
 
@@ -486,7 +486,7 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
      * failure — which is precisely the behaviour 0.2.5 removed.
      */
     it('get_sections reports an unknown anchor per item, not as a failed call', async () => {
-      await pagesService.write('page.md', { body: '# Alpha\n\nbody\n' });
+      await pagesService.write('page.md', { body: '<!-- anchor: bbbbbb22 -->\n# Alpha\n\nbody\n' });
       indexSection('bbbbbb22', 'page.md', 'Alpha', 1, 4);
       const client = await connectClient(deps());
 
@@ -500,7 +500,7 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
     });
 
     it('search_pages finds prose the entity graph cannot: a bare path in running text', async () => {
-      await pagesService.write('page.md', { body: '# Alpha\n\nthe handler lives at GET /v1/widgets\n' });
+      await pagesService.write('page.md', { body: '<!-- anchor: aaaaaa11 -->\n# Alpha\n\nthe handler lives at GET /v1/widgets\n' });
       const client = await connectClient(deps());
 
       const { isError, body } = await call(client, 'search_pages', { query: '/v1/widgets' });
@@ -510,7 +510,7 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
     });
 
     it('search_pages mode "count" answers the size without the rows', async () => {
-      await pagesService.write('page.md', { body: '# Alpha\n\nwidget widget widget\n' });
+      await pagesService.write('page.md', { body: '<!-- anchor: aaaaaa11 -->\n# Alpha\n\nwidget widget widget\n' });
       const client = await connectClient(deps());
 
       const { isError, body } = await call(client, 'search_pages', { query: 'widget', mode: 'count' });
