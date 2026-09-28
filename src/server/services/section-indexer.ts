@@ -7,7 +7,13 @@ import {
   parseXmlTagsExcludingCode,
   type XmlTag,
 } from '../../shared/xml-tags.js';
-import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
+import {
+  fileKindOf,
+  ownBodyOf,
+  parseSections,
+  type ParsedSection,
+  type SectionFileKind,
+} from '../../shared/section-parser.js';
 import type { PagesService } from './pages.js';
 import type { WatchSubscriber, WatchScope } from '../fs/watcher.js';
 import { requireRootId, pageSource } from '../fs/sources.js';
@@ -17,54 +23,9 @@ import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 // Generator stays strict 8 (per M06 spec `15u7sazr` — auto-inject contract).
 const nanoid8 = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8);
 
-/**
- * The anchor pattern as a WHOLE LINE — an anchor comment is a line, and a
- * sentence that merely quotes the syntax is prose about an anchor, not one.
- * `parseHeadings` walks upward over a block of these, so an unanchored match
- * would let a line of prose mentioning the syntax be swallowed into the block
- * and silently pushed out of the previous section's body. Kept identical to
- * the rule `anchorValuesIn` applies, so the write path's accounting and the
- * indexer's ownership recognize exactly the same set of lines.
- */
-const ANCHOR_LINE_RE = new RegExp(`^${ANCHOR_PATTERN_SOURCE}$`);
-const HEADING_RE = /^(#{1,6})\s+(.+?)\s*$/;
-
-export interface ParsedHeading {
-  level: number;
-  text: string;
-  lineIndex: number;
-  anchor: string | null;
-  anchorLineIndex: number | null;
-  /**
-   * 0.2.75 — the TOPMOST line of the anchor-comment block above this heading,
-   * where `anchorLineIndex` is the bottom-most (the owner).
-   *
-   * The two differ only when several anchor comments are stacked over one
-   * heading. Exactly one of them can own it — the nearest — but none of the
-   * others is content of the section ABOVE either: they are orphans sitting in
-   * the gap between two sections. So the boundary is drawn at the top of the
-   * whole block, which is what {@link headingStart} answers.
-   */
-  anchorBlockStart: number | null;
-}
-
-/**
- * Where a heading's territory begins: its anchor block when it has one, the
- * heading line itself when it does not.
- *
- * The single definition of a section's END, since a section runs up to the next
- * heading's start. Every derived range — the indexed `line_end`, the section
- * read, the section overwrite — reads it from here rather than recomputing it,
- * because two independent computations of this number is precisely the drift
- * that put a neighbour's anchor comment inside the previous section's body.
- */
-export function headingStart(h: ParsedHeading): number {
-  return h.anchorBlockStart ?? h.lineIndex;
-}
-
 interface SectionInfo {
   anchor: string;
-  heading: ParsedHeading;
+  heading: ParsedSection;
   /**
    * 0.2.59 — the anchor of the enclosing section, or `null` for a page's first one.
    *
@@ -75,9 +36,13 @@ interface SectionInfo {
    * built from.
    */
   parentAnchor: string | null;
-  headingSlug: string;
+  /** First line of the anchor block (1-based). */
   lineStart: number;
+  /** End of the OWN body (1-based, inclusive). */
   lineEnd: number;
+  /** End of the subtree (1-based, inclusive). */
+  subtreeLineEnd: number;
+  /** The OWN body as authored. */
   content: string;
   contentHash: string;
   paragraphCount: number;
@@ -207,7 +172,7 @@ export class SectionIndexerService implements WatchSubscriber {
     } catch {
       return false; // gone — nothing to inject into
     }
-    const minted = this.mintInto(page.body);
+    const minted = this.mintInto(page.body, fileKindOf(relPath));
     if (!minted) return false;
     suppress(source, relPath);
     await root.pages.write(relPath, { frontmatter: page.frontmatter, body: minted });
@@ -225,23 +190,27 @@ export class SectionIndexerService implements WatchSubscriber {
    * two headings in one pass cannot collide with each other, and seeded with what
    * this file already carries — the file may not be in the index yet.
    */
-  private mintInto(body: string): string | null {
+  private mintInto(body: string, kind: SectionFileKind): string | null {
     const lines = body.split('\n');
-    const headings = parseHeadings(lines);
-    const taken = new Set(headings.map((h) => h.anchor).filter((a): a is string => a !== null));
-    let changed = false;
-    for (const h of headings) {
-      if (h.anchor !== null) continue;
-      const newAnchor = this.freshAnchor(taken);
-      taken.add(newAnchor);
-      lines.splice(h.lineIndex, 0, `<!-- anchor: ${newAnchor} -->`);
-      shiftHeadingLines(headings, h.lineIndex, 1);
-      h.anchor = newAnchor;
-      h.anchorLineIndex = h.lineIndex - 1;
-      h.anchorBlockStart = h.lineIndex - 1;
-      changed = true;
+    // 2.0.0 — headings come from the shared section parser, so a heading-shaped
+    // line inside a code block, a multi-line HTML comment or (in `.mdx`) an
+    // unknown JSX region gets no anchor. An anchor-shaped line inside a code
+    // block is not an anchor either — and is never "cleaned up": opening a
+    // project modifies no file on its account.
+    const sections = parseSections(body, kind, { frontmatter: false }).sections;
+    const taken = new Set(sections.map((sec) => sec.anchor).filter((a): a is string => a !== null));
+    const missing = sections.filter((sec) => sec.anchor === null);
+    if (missing.length === 0) return null;
+    // Bottom-up, so earlier heading lines stay where the parse put them.
+    const minted = missing.map(() => {
+      const a = this.freshAnchor(taken);
+      taken.add(a);
+      return a;
+    });
+    for (let k = missing.length - 1; k >= 0; k--) {
+      lines.splice(missing[k]!.headingLine - 1, 0, `<!-- anchor: ${minted[k]} -->`);
     }
-    return changed ? lines.join('\n') : null;
+    return lines.join('\n');
   }
 
   /**
@@ -419,7 +388,9 @@ export class SectionIndexerService implements WatchSubscriber {
     if (!root) return false;
     try {
       const page = await root.pages.read(relPath);
-      return parseHeadings(page.body.split('\n')).some((h) => h.anchor === anchor);
+      return parseSections(page.body, fileKindOf(relPath), { frontmatter: false }).sections.some(
+        (sec) => sec.anchor === anchor,
+      );
     } catch {
       // Page gone (deleted or renamed) — it claims nothing.
       return false;
@@ -492,7 +463,8 @@ export class SectionIndexerService implements WatchSubscriber {
      * in. There the anchors go to `pendingInjections` and are written by
      * `flushPendingInjections` once the sweep is over.
      */
-    const minted = this.mintInto(body);
+    const kind = fileKindOf(relPath);
+    const minted = this.mintInto(body, kind);
     if (minted !== null) {
       this.pendingInjections.set(this.key(rootId, relPath), {
         frontmatter: page.frontmatter,
@@ -506,10 +478,7 @@ export class SectionIndexerService implements WatchSubscriber {
       this.pendingInjections.delete(this.key(rootId, relPath));
     }
 
-    const lines = body.split('\n');
-    const headings = parseHeadings(lines);
-
-    const sections = buildSections(lines, headings);
+    const sections = buildSections(body, kind);
 
     const priorRows = this.db
       .prepare(
@@ -531,6 +500,8 @@ export class SectionIndexerService implements WatchSubscriber {
        * 0.2.46 — the upsert also writes `section_index.body`: the section AS
        * AUTHORED, i.e. `s.content`, the RAW slice between the boundaries with the
        * heading line and the anchor comment already excluded by `buildSections`.
+       * 2.0.0 — the OWN body: up to the next section of ANY level, so the
+       * first child's anchor line and everything below it are not in it.
        *
        * Deliberately NOT `normalizeContent(s.content)` — normalization is the
        * hash's input and nothing but the hash consumes it. Writing it here would
@@ -544,21 +515,21 @@ export class SectionIndexerService implements WatchSubscriber {
        */
       const upsertStmt = this.db.prepare(
         `INSERT INTO section_index
-            (rootId, anchor, page_path, parent_anchor, heading_slug, heading_level,
-             heading_text, content_hash, body, line_start, line_end, paragraph_count,
-             created_at, updated_at)
+            (rootId, anchor, page_path, parent_anchor, heading_level,
+             heading_text, content_hash, body, line_start, line_end, subtree_line_end,
+             paragraph_count, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
           ON CONFLICT(anchor) DO UPDATE SET
             rootId = excluded.rootId,
             page_path = excluded.page_path,
             parent_anchor = excluded.parent_anchor,
-            heading_slug = excluded.heading_slug,
             heading_level = excluded.heading_level,
             heading_text = excluded.heading_text,
             content_hash = excluded.content_hash,
             body = excluded.body,
             line_start = excluded.line_start,
             line_end = excluded.line_end,
+            subtree_line_end = excluded.subtree_line_end,
             paragraph_count = excluded.paragraph_count,
             updated_at = datetime('now')`
       );
@@ -569,13 +540,13 @@ export class SectionIndexerService implements WatchSubscriber {
           s.anchor,
           relPath,
           s.parentAnchor,
-          s.headingSlug,
           s.heading.level,
-          s.heading.text,
+          s.heading.heading,
           s.contentHash,
           s.content,
           s.lineStart,
           s.lineEnd,
+          s.subtreeLineEnd,
           s.paragraphCount
         );
       }
@@ -703,152 +674,53 @@ export class SectionIndexerService implements WatchSubscriber {
   }
 }
 
-/**
- * The single definition of "which anchor belongs to which heading".
- *
- * Exported because `check_consistency`'s duplicate-anchor rule has to answer
- * exactly this question, and a second implementation of it is a second answer:
- * a rule that recognizes fewer anchors than the indexer misses real collisions,
- * and one that recognizes more reports prose as a defect.
- */
-export function parseHeadings(lines: string[]): ParsedHeading[] {
-  const out: ParsedHeading[] = [];
-  let inFence = false;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? '';
-    /**
-     * 0.2.89 — a `# comment` inside a fenced block is code, not a heading. Seen
-     * as one, it would split the section around the sample and get an anchor
-     * comment injected into the code itself.
-     */
-    if (/^\s*```/.test(line)) {
-      inFence = !inFence;
-      continue;
-    }
-    if (inFence) continue;
-    const m = HEADING_RE.exec(line);
-    if (!m) continue;
-    const level = (m[1] ?? '').length;
-    const text = (m[2] ?? '').trim();
-    let anchor: string | null = null;
-    let anchorLineIndex: number | null = null;
-    let anchorBlockStart: number | null = null;
-    /**
-     * Upward past blank lines AND past further anchor comments: the FIRST one
-     * found owns the heading, every one above it is an orphan, and the walk
-     * keeps going only to learn where that block starts. Any other non-blank
-     * line ends it — prose above a heading is the previous section's content.
-     */
-    for (let j = i - 1; j >= 0; j--) {
-      const above = (lines[j] ?? '').trim();
-      if (above === '') continue;
-      const am = ANCHOR_LINE_RE.exec(above);
-      if (!am) break;
-      if (anchor === null) {
-        anchor = am[1] ?? null;
-        anchorLineIndex = j;
-      }
-      anchorBlockStart = j;
-    }
-    out.push({ level, text, lineIndex: i, anchor, anchorLineIndex, anchorBlockStart });
-  }
-  return out;
-}
-
-function shiftHeadingLines(headings: ParsedHeading[], fromIndex: number, delta: number): void {
-  for (const h of headings) {
-    if (h.lineIndex >= fromIndex) h.lineIndex += delta;
-    if (h.anchorLineIndex !== null && h.anchorLineIndex >= fromIndex) {
-      h.anchorLineIndex += delta;
-    }
-    if (h.anchorBlockStart !== null && h.anchorBlockStart >= fromIndex) {
-      h.anchorBlockStart += delta;
-    }
-  }
-}
-
-function buildSections(lines: string[], headings: ParsedHeading[]): SectionInfo[] {
+function buildSections(body: string, kind: SectionFileKind): SectionInfo[] {
+  const parsed = parseSections(body, kind, { frontmatter: false });
+  const lines = body.split('\n');
   const sections: SectionInfo[] = [];
-  const stack: ParsedHeading[] = [];
   // Hand-authored anchors are unpoliced, so the same value CAN appear twice in
   // one file. Deterministic rule, half one: within a page the FIRST occurrence
   // (lowest line) owns the anchor and the rest are not indexed. Never "whichever
   // the upsert wrote last".
   const claimed = new Set<string>();
-  // The headings that actually GOT a row, by identity. `claimed` answers "is this
-  // anchor string spoken for", which is a different question: a collision loser
-  // shares its anchor string with the winner, so asking `claimed` about the loser
-  // says yes and re-parents its children onto the winner — a heading elsewhere in
-  // the page. Identity is the only thing that tells the two frames apart.
-  const owners = new Set<ParsedHeading>();
-  for (let idx = 0; idx < headings.length; idx++) {
-    const h = headings[idx]!;
-    if (!h.anchor) continue;
+  // Positions (in `parsed.sections`) that actually GOT a row. A collision loser
+  // shares its anchor string with the winner, so asking `claimed` about the
+  // loser would re-parent its children onto the winner — a heading elsewhere in
+  // the page. Identity (position) is the only thing that tells the two apart.
+  const owners = new Set<number>();
+  for (const sec of parsed.sections) {
+    if (!sec.anchor) continue;
     /**
-     * Pops MANY frames at once, and that is load-bearing: Markdown allows level
-     * jumps (`##` -> `####` -> `##`), so closing one frame per heading would leave
-     * a `####` sitting under a sibling it does not belong to. Depth is not level.
-     */
-    while (stack.length && stack[stack.length - 1]!.level >= h.level) stack.pop();
-    /**
-     * The nearest ancestor THAT OWNS A ROW, not simply the nearest ancestor.
-     *
-     * A heading that lost a within-page anchor collision stays on the stack — it
-     * still shapes what nests under it — but it is never written, so pointing at it
-     * would leave `parent_anchor` referencing a row that does not exist. Walking
-     * past it re-parents the child onto the nearest real ancestor: a shallower tree,
-     * which is a truthful one, rather than a dangling edge.
+     * The nearest ancestor THAT OWNS A ROW, not simply the nearest ancestor. A
+     * heading without an anchor, or one that lost a within-page collision, still
+     * shapes the nesting but owns no row; pointing at it would leave
+     * `parent_anchor` dangling. Walking past it gives a shallower, truthful tree.
      */
     let parentAnchor: string | null = null;
-    for (let s = stack.length - 1; s >= 0; s--) {
-      const candidate = stack[s]!;
-      if (owners.has(candidate)) {
-        parentAnchor = candidate.anchor;
+    for (let p = sec.parent; p !== null; p = parsed.sections[p]!.parent) {
+      if (owners.has(p)) {
+        parentAnchor = parsed.sections[p]!.anchor;
         break;
       }
     }
-    const headingSlug = slugifyHeading(h.text);
-    stack.push(h);
-    // Skipped AFTER the stack is maintained: the losing heading still shapes the
-    // nesting of everything below it, it just does not get a row.
-    if (claimed.has(h.anchor)) continue;
-    claimed.add(h.anchor);
-    owners.add(h);
+    if (claimed.has(sec.anchor)) continue;
+    claimed.add(sec.anchor);
+    owners.add(sec.position);
 
-    let endLine = lines.length;
-    for (let j = idx + 1; j < headings.length; j++) {
-      if (headings[j]!.level <= h.level) {
-        endLine = headingStart(headings[j]!);
-        break;
-      }
-    }
-    const startLine = h.lineIndex;
-    const sectionLines = lines.slice(startLine, endLine);
-    const rawBody = sectionLines.slice(1).join('\n');
-    const normalized = normalizeContent(rawBody);
-    const contentHash = crypto.createHash('sha256').update(normalized).digest('hex');
-    const paragraphCount = countParagraphs(rawBody);
+    const rawBody = ownBodyOf(lines, sec);
     sections.push({
-      anchor: h.anchor,
-      heading: h,
+      anchor: sec.anchor,
+      heading: sec,
       parentAnchor,
-      headingSlug,
-      lineStart: startLine + 1,
-      lineEnd: endLine,
+      lineStart: sec.startLine,
+      lineEnd: sec.ownEndLine,
+      subtreeLineEnd: sec.subtreeEndLine,
       content: rawBody,
-      contentHash,
-      paragraphCount,
+      contentHash: crypto.createHash('sha256').update(normalizeContent(rawBody)).digest('hex'),
+      paragraphCount: countParagraphs(rawBody),
     });
   }
   return sections;
-}
-
-function slugifyHeading(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .trim()
-    .replace(/\s+/g, '-');
 }
 
 export function normalizeContent(content: string): string {

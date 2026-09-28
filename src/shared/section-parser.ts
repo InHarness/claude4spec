@@ -91,6 +91,19 @@ export function anchorOfLine(line: string): string | null {
   return m ? (m[1] ?? null) : null;
 }
 
+/**
+ * GitHub-style slug of a heading text. 2.0.0 — no longer stored
+ * (`section_index.heading_slug` is gone): sections are addressed by anchor, and
+ * the slug is derived from `heading_text` where a read still reports it.
+ */
+export function slugifyHeading(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-');
+}
+
 /** `.mdx` by extension, `.md` otherwise. */
 export function fileKindOf(path: string): SectionFileKind {
   return path.toLowerCase().endsWith('.mdx') ? 'mdx' : 'md';
@@ -115,10 +128,23 @@ function frontmatterEnd(lines: readonly string[]): number | null {
   return null;
 }
 
-export function parseSections(text: string, fileKind: SectionFileKind = 'md'): SectionParseResult {
+export interface ParseOptions {
+  /**
+   * `false` — `text` is a body already stripped of its frontmatter (a page body
+   * as `PagesService.read` returns it, a plan body), so a leading `---` is a
+   * thematic break, not a frontmatter fence. Default `true`.
+   */
+  frontmatter?: boolean;
+}
+
+export function parseSections(
+  text: string,
+  fileKind: SectionFileKind = 'md',
+  opts: ParseOptions = {},
+): SectionParseResult {
   const lines = text.split('\n');
   try {
-    return parse(lines, fileKind);
+    return parse(lines, fileKind, opts.frontmatter ?? true);
   } catch {
     // Totality: a parser bug must never take a caller down. A page nobody can
     // split is, conservatively, all preamble.
@@ -126,9 +152,9 @@ export function parseSections(text: string, fileKind: SectionFileKind = 'md'): S
   }
 }
 
-function parse(lines: string[], fileKind: SectionFileKind): SectionParseResult {
+function parse(lines: string[], fileKind: SectionFileKind, withFrontmatter: boolean): SectionParseResult {
   const n = lines.length;
-  const fmEnd = frontmatterEnd(lines);
+  const fmEnd = withFrontmatter ? frontmatterEnd(lines) : null;
   const bodyFrom = fmEnd === null ? 0 : fmEnd + 1; // 0-based first body line
 
   // Scan the body only — frontmatter lines are blanked so line numbers hold.
@@ -314,6 +340,37 @@ export function ownBodyOf(text: string | readonly string[], s: ParsedSection): s
 /** Whole subtree body: below the heading line through the end of the subtree. */
 export function subtreeBodyOf(text: string | readonly string[], s: ParsedSection): string {
   return sliceLines(text, { start: s.headingLine + 1, end: s.subtreeEndLine });
+}
+
+/**
+ * 0-based index of the anchor line that OWNS `s` (the nearest anchor line above
+ * its heading), or null for a heading without an anchor. Stacked orphans above
+ * it are not its anchor.
+ */
+export function anchorLineIndexOf(lines: readonly string[], s: ParsedSection): number | null {
+  if (s.anchor === null) return null;
+  for (let j = s.headingLine - 2; j >= s.startLine - 1; j--) {
+    if (anchorOfLine(lines[j] ?? '') !== null) return j;
+  }
+  return null;
+}
+
+/**
+ * Anchor values carried by anchor LINES outside every excluded range, in order,
+ * duplicates kept. An anchor-shaped line inside a code block is an example,
+ * not an anchor (2.0.0).
+ */
+export function liveAnchorValues(text: string, fileKind: SectionFileKind = 'md'): string[] {
+  const r = parseSections(text, fileKind, { frontmatter: false });
+  const lines = text.split('\n');
+  const excluded = (i: number) =>
+    r.excludedRanges.some((x) => i + 1 >= x.range.start && i + 1 <= x.range.end);
+  const out: string[] = [];
+  lines.forEach((l, i) => {
+    const a = anchorOfLine(l);
+    if (a !== null && !excluded(i)) out.push(a);
+  });
+  return out;
 }
 
 /** Headings of the ancestors, outermost first. */

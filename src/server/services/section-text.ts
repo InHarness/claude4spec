@@ -1,7 +1,15 @@
 import crypto from 'node:crypto';
-import { headingStart, parseHeadings } from './section-indexer.js';
 import { DomainError } from './tags.js';
-import { ANCHOR_LINE_RE, ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
+import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
+import {
+  anchorLineIndexOf,
+  HEADING_LINE_RE,
+  liveAnchorValues,
+  parseSections,
+  type ParsedSection,
+  type SectionFileKind,
+  type SectionParseResult,
+} from '../../shared/section-parser.js';
 import type { MatchPosition, PositionResolver } from './text-edits.js';
 
 /**
@@ -113,9 +121,9 @@ export interface LineSpan {
 export function anchorsInLineSpans(lines: string[], spans: readonly LineSpan[]): string[] {
   const covered = (line: number) => spans.some((s) => line >= s.from && line <= s.to);
   const out: string[] = [];
-  for (const h of parseHeadings(lines)) {
-    if (!h.anchor || out.includes(h.anchor)) continue;
-    if (covered(h.anchorLineIndex ?? h.lineIndex)) out.push(h.anchor);
+  for (const sec of parseBody(lines).sections) {
+    if (!sec.anchor || out.includes(sec.anchor)) continue;
+    if (covered(anchorLineIndexOf(lines, sec) ?? sec.headingLine - 1)) out.push(sec.anchor);
   }
   return out;
 }
@@ -125,42 +133,51 @@ export function anchorsInLineSpans(lines: string[], spans: readonly LineSpan[]):
  * duplicates included.
  *
  * Line-wise rather than a free scan of the string: an anchor comment is a LINE,
- * and a value mentioned mid-sentence is prose about an anchor, not one. Fences
- * are deliberately NOT tracked, because `parseHeadings` does not track them
- * either — a fenced anchor line above a fenced heading is adopted by the
- * indexer, so a guard that looked away from fences would wave through exactly
- * the duplicate the indexer then creates. The cost is the mirror case: a page
- * DOCUMENTING the anchor syntax with a real value in a fence is refused, and
- * the way through is to quote a value nothing holds.
- * Duplicates are kept because the answer is used as a multiset
- * — a value that leaves a range and re-enters it is a net zero, and collapsing
- * the two would report a move as an addition.
+ * and a value mentioned mid-sentence is prose about an anchor, not one.
+ *
+ * 2.0.0 — fences ARE tracked now, because the section parser tracks them: an
+ * anchor-shaped line inside a code block is an example, never an anchor. It is
+ * not indexed, not an orphan, and it does not count toward `dropAnchors` — a
+ * page documenting the anchor syntax with a real value in a fence is no longer
+ * refused. Duplicates are kept because the answer is used as a multiset — a
+ * value that leaves a range and re-enters it is a net zero, and collapsing the
+ * two would report a move as an addition.
  */
 export function anchorValuesIn(text: string): string[] {
-  const re = new RegExp(`^${ANCHOR_PATTERN_SOURCE}$`);
-  const out: string[] = [];
-  for (const line of text.split('\n')) {
-    const m = re.exec(line.trim());
-    if (m?.[1]) out.push(m[1]);
-  }
-  return out;
+  return liveAnchorValues(text);
+}
+
+/**
+ * THE parse of a body (no frontmatter) — every walk in this file reads its
+ * headings, anchors and boundaries from the shared section parser (M06, 2.0.0).
+ */
+export function parseBody(lines: readonly string[] | string, kind: SectionFileKind = 'md'): SectionParseResult {
+  const text = typeof lines === 'string' ? lines : lines.join('\n');
+  return parseSections(text, kind, { frontmatter: false });
+}
+
+/** Anchored sections, first occurrence of an anchor only — the indexer's collision rule. */
+function claimedSections(parsed: SectionParseResult): ParsedSection[] {
+  const claimed = new Set<string>();
+  return parsed.sections.filter((sec) => {
+    if (!sec.anchor || claimed.has(sec.anchor)) return false;
+    claimed.add(sec.anchor);
+    return true;
+  });
 }
 
 /**
  * Where the anchored section lives in THESE lines: `[lineStart, lineEnd)`,
- * 1-based start (the heading line), exclusive end — the same pair
- * `section_index` stores, recomputed from the file.
- *
- * The end rule is the indexer's, not an approximation of it: a section runs to
- * the next heading of equal or higher level, and stops at the top of that
- * heading's ANCHOR BLOCK when it has one, so the neighbour's anchor is never
- * inside the range — `headingStart` is the one place that number is decided.
- * Duplicating five lines from `section-indexer.ts` would be exactly the drift
- * this release exists to remove, so the parser is imported and only the walk
- * lives here.
+ * 1-based start (the heading line), exclusive end — the subtree end, where the
+ * next section of equal or higher level begins its anchor block. Read off the
+ * shared section parser, the same one that fills `section_index`.
  */
-export function liveRangeOf(lines: string[], anchor: string): { lineStart: number; lineEnd: number } | null {
-  return sectionRanges(lines).find((r) => r.anchor === anchor) ?? null;
+export function liveRangeOf(
+  lines: string[],
+  anchor: string,
+  kind: SectionFileKind = 'md',
+): { lineStart: number; lineEnd: number } | null {
+  return sectionRanges(lines, kind).find((r) => r.anchor === anchor) ?? null;
 }
 
 /**
@@ -171,30 +188,26 @@ export function liveRangeOf(lines: string[], anchor: string): { lineStart: numbe
  * of one; running the same walk twice with two slightly different end rules is
  * how the section index and the write path would drift apart again.
  */
-export function sectionRanges(lines: string[]): Array<{ anchor: string; lineStart: number; lineEnd: number }> {
-  const headings = parseHeadings(lines);
+export function sectionRanges(
+  lines: string[],
+  kind: SectionFileKind = 'md',
+): Array<{ anchor: string; lineStart: number; lineEnd: number }> {
   /**
    * Hand-authored anchors are unpoliced, so the same value can appear twice on
-   * one page. `buildSections` in the indexer settles that the same way — first
-   * occurrence owns the anchor, the rest get no row — and this has to agree with
-   * it, not merely resemble it: `liveRangeOf` takes the first match, so a delta
-   * keyed on the last one would report a section the splice never touched and
-   * the index does not own.
+   * one page. The indexer settles that — first occurrence owns the anchor, the
+   * rest get no row — and this has to agree with it, not merely resemble it:
+   * `liveRangeOf` takes the first match, so a delta keyed on the last one would
+   * report a section the splice never touched and the index does not own.
+   *
+   * `lineEnd` is the SUBTREE end (1-based inclusive = 0-based exclusive): the
+   * range of the whole-section actions `replace`, `delete`, `insert_after`,
+   * `edit`.
    */
-  const claimed = new Set<string>();
-  return headings.flatMap((self, idx) => {
-    if (!self.anchor || claimed.has(self.anchor)) return [];
-    claimed.add(self.anchor);
-    let lineEnd = lines.length;
-    for (let j = idx + 1; j < headings.length; j++) {
-      const next = headings[j]!;
-      if (next.level <= self.level) {
-        lineEnd = headingStart(next);
-        break;
-      }
-    }
-    return [{ anchor: self.anchor, lineStart: self.lineIndex + 1, lineEnd }];
-  });
+  return claimedSections(parseBody(lines, kind)).map((sec) => ({
+    anchor: sec.anchor!,
+    lineStart: sec.headingLine,
+    lineEnd: sec.subtreeEndLine,
+  }));
 }
 
 /**
@@ -218,25 +231,49 @@ export function ownEndOf(
   lines: string[],
   range: { lineStart: number; lineEnd: number },
   /**
-   * The heading starts of `lines`, when the caller already has them. A batch
-   * over one page (the read side's `get_sections`, `sectionDigests` below)
-   * parses the headings ONCE and asks per section; a single call lets this
-   * function parse for itself.
+   * The parse of `lines`, when the caller already has it. A batch over one page
+   * (the read side's `get_sections`, `sectionDigests` below) parses ONCE and
+   * asks per section; a single call lets this function parse for itself.
    */
-  headingStarts: readonly number[] = parseHeadings(lines).map(headingStart),
+  parsed: SectionParseResult = parseBody(lines),
 ): number {
-  const nextHeading = headingStarts.find((s) => s >= range.lineStart);
-  return Math.min(range.lineEnd, nextHeading ?? range.lineEnd);
+  const self = parsed.sections.find((sec) => sec.headingLine === range.lineStart);
+  const own = self ? self.ownEndLine : range.lineEnd;
+  return Math.min(range.lineEnd, own);
 }
 
-export function sectionDigests(body: string): Map<string, string> {
+export function sectionDigests(body: string, kind: SectionFileKind = 'md'): Map<string, string> {
   const lines = body.split('\n');
-  const starts = parseHeadings(lines).map(headingStart);
+  const parsed = parseBody(lines, kind);
   const out = new Map<string, string>();
-  for (const r of sectionRanges(lines)) {
-    out.set(r.anchor, sha256(lines.slice(r.lineStart, ownEndOf(lines, r, starts)).join('\n')));
+  for (const sec of claimedSections(parsed)) {
+    out.set(sec.anchor!, sha256(lines.slice(sec.headingLine, sec.ownEndLine).join('\n')));
   }
   return out;
+}
+
+/**
+ * 2.0.0 — `append` may not carry a heading at or above the addressed section's
+ * level: it would close the section it was meant to extend and open a sibling
+ * (or an ancestor's sibling) in its place. Deeper headings are fine — they
+ * become the section's first children. A heading-shaped line in a code block
+ * of `content` is code, not a heading. Refused for the whole batch, before the
+ * file is touched.
+ */
+export function assertAppendContent(content: string, level: number, anchor: string): void {
+  const offending = parseBody(content).sections.find((sec) => sec.level <= level);
+  if (!offending) return;
+  throw new DomainError(
+    'INVALID_ARGUMENT',
+    `append for '${anchor}' carries a level-${offending.level} heading ('${offending.heading}') — at or above the section's own level ${level}`,
+    'append adds to the section\'s OWN body; deeper headings become its first children. To add a sibling use insert_after',
+  );
+}
+
+/** The heading level of the section whose heading sits on `headingLine` (1-based). */
+export function levelAt(lines: string[], headingLine: number): number | null {
+  const m = HEADING_LINE_RE.exec(lines[headingLine - 1] ?? '');
+  return m ? m[1]!.length : null;
 }
 
 /**
@@ -338,17 +375,17 @@ export function renameHeading(
   heading: string,
 ): string {
   const lineIndex = range.lineStart - 1;
-  const self = parseHeadings(lines).find((h) => h.lineIndex === lineIndex);
+  const self = parseBody(lines).sections.find((sec) => sec.headingLine === range.lineStart);
   if (!self) {
     /**
      * Unreachable through either operation: the range came from `liveRangeOf`,
-     * which derives it from the same `parseHeadings` walk. Kept because a silent
+     * which derives it from the same section parse. Kept because a silent
      * no-op here would report a rename that never happened.
      */
     throw new DomainError('INVALID_ARGUMENT', `no heading at line ${range.lineStart} to rename`);
   }
   lines[lineIndex] = `${'#'.repeat(self.level)} ${heading}`;
-  return self.text;
+  return self.heading;
 }
 
 /**
@@ -412,20 +449,13 @@ export function applySectionEdit(
        * survived would not have been deleted, and an anchor comment left behind
        * keeps every deep link to the removed section resolving.
        *
-       * Which comment belongs to this heading is `parseHeadings`' question, and
-       * the answer is "the first non-blank line above" — blank lines between the
-       * two are ordinary in a hand-edited file. Matching only `headingIdx - 1`
-       * would recognize fewer anchors than the indexer does, which is precisely
-       * the second answer that helper exists to prevent.
+       * Which comment belongs to this heading is the section parser's question
+       * (`anchorLineIndexOf`) — blank lines between the two are ordinary in a
+       * hand-edited file. 2.0.0: the whole SUBTREE goes (`range.lineEnd`).
        */
+      const self = parseBody(lines).sections.find((sec) => sec.headingLine === range.lineStart);
       const headingIdx = range.lineStart - 1;
-      let anchorIdx = headingIdx;
-      for (let j = headingIdx - 1; j >= 0; j--) {
-        const above = (lines[j] ?? '').trim();
-        if (above === '') continue;
-        if (ANCHOR_LINE_RE.test(above)) anchorIdx = j;
-        break;
-      }
+      const anchorIdx = (self && anchorLineIndexOf(lines, self)) ?? headingIdx;
       lines.splice(anchorIdx, range.lineEnd - anchorIdx);
       return;
     }

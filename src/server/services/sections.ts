@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3';
 import type { SectionIndexEntry } from '../../shared/entities.js';
 import { parseXmlTagsExcludingCode, serializeXmlTag } from '../../shared/xml-tags.js';
 import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
+import { slugifyHeading } from '../../shared/section-parser.js';
 import type { PagesService } from './pages.js';
 import type { SelfWriteMarker } from '../fs/sources.js';
 
@@ -38,7 +39,7 @@ const SECTION_BODY_READ_CHARS = SECTION_CONTENT_SNIPPET_CHARS * 4;
  * it enters only as the `substr` above, under the alias `body_head`, so that no
  * later `SELECT *` can quietly put the whole column back on the read path.
  */
-const SECTION_COLUMNS = `id, anchor, rootId, page_path, heading_slug, heading_level,
+const SECTION_COLUMNS = `id, anchor, rootId, page_path, heading_level,
        heading_text, content_hash, substr(body, 1, ${SECTION_BODY_READ_CHARS}) AS body_head,
        line_start, line_end, paragraph_count, created_at, updated_at`;
 
@@ -68,7 +69,6 @@ interface SectionRow {
   anchor: string;
   rootId: string;
   page_path: string;
-  heading_slug: string;
   heading_level: number;
   heading_text: string;
   content_hash: string;
@@ -238,7 +238,7 @@ export class SectionsService {
       anchor: row.anchor,
       rootId: row.rootId,
       pagePath: row.page_path,
-      headingSlug: row.heading_slug,
+      headingSlug: slugifyHeading(row.heading_text),
       headingLevel: row.heading_level,
       headingText: row.heading_text,
       contentHash: row.content_hash,

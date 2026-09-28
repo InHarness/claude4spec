@@ -1,10 +1,12 @@
 import { DomainError } from './tags.js';
-import { parseHeadings } from './section-indexer.js';
 import {
   anchorsInLineSpans,
   applySectionEdit,
+  assertAppendContent,
   assertHeadingText,
+  levelAt,
   liveRangeOf,
+  parseBody,
   renameHeading,
   sectionRanges,
   subtreePositionResolver,
@@ -316,8 +318,8 @@ export function applyPlanBatch(body: string, edits: readonly PlanSectionEdit[]):
    * to be detected here or it would be silently resolved in the caller's favour.
    */
   const occurrences = new Map<string, number>();
-  for (const h of parseHeadings(lines)) {
-    if (h.anchor) occurrences.set(h.anchor, (occurrences.get(h.anchor) ?? 0) + 1);
+  for (const sec of parseBody(lines).sections) {
+    if (sec.anchor) occurrences.set(sec.anchor, (occurrences.get(sec.anchor) ?? 0) + 1);
   }
 
   const rangeByAnchor = new Map(sectionRanges(lines).map((r) => [r.anchor, r]));
@@ -336,6 +338,17 @@ export function applyPlanBatch(body: string, edits: readonly PlanSectionEdit[]):
         'read the plan with get_plan and take the anchor from an `<!-- anchor: … -->` comment',
       );
     }
+  }
+
+  /**
+   * 2.0.0 — same `append` rule as `update_sections`: a heading outside a code
+   * block at or above the addressed section's level is refused for the whole
+   * batch, before anything is composed.
+   */
+  for (const edit of edits) {
+    if (edit.action !== 'append') continue;
+    const level = levelAt(lines, rangeByAnchor.get(edit.anchor)!.lineStart);
+    if (level !== null) assertAppendContent(edit.content ?? '', level, edit.anchor);
   }
 
   /**
@@ -438,9 +451,13 @@ export function applyPlanBatch(body: string, edits: readonly PlanSectionEdit[]):
       continue;
     }
     const inRange = sectionRanges(lines)
-      .filter((r) => r.lineStart > range.lineStart && r.lineStart < range.lineEnd)
+      .filter((r) => r.lineStart > range.lineStart && r.lineStart <= range.lineEnd)
       .map((r) => r.anchor);
-    scopeOf.set(edit.anchor, edit.action === 'delete' ? [edit.anchor, ...inRange] : inRange);
+    // `append` / `insert_after` overwrite nothing — they can never drop an anchor.
+    scopeOf.set(
+      edit.anchor,
+      edit.action === 'delete' ? [edit.anchor, ...inRange] : edit.action === 'replace' ? inRange : [],
+    );
     applySectionEdit(lines, edit, range);
   }
 

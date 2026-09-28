@@ -181,15 +181,14 @@ describe('discovery core', () => {
   }): void {
     db.prepare(
       `INSERT INTO section_index
-         (rootId, anchor, page_path, parent_anchor, heading_slug, heading_level, heading_text,
+         (rootId, anchor, page_path, parent_anchor, heading_level, heading_text,
           content_hash, body, line_start, line_end, paragraph_count)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'hash', ?, ?, ?, 1)`,
+       VALUES (?, ?, ?, ?, ?, ?, 'hash', ?, ?, ?, 1)`,
     ).run(
       row.rootId,
       row.anchor,
       row.page,
       row.parent ?? null,
-      row.heading.toLowerCase(),
       row.level ?? 2,
       row.heading,
       row.body ?? '',
@@ -2670,9 +2669,9 @@ describe('applyPagesOverride, through the core that consumes it', () => {
     await write('drafts', 'notes.md', CITES);
     db.prepare(
       `INSERT INTO section_index
-         (rootId, anchor, page_path, parent_anchor, heading_slug, heading_level, heading_text,
+         (rootId, anchor, page_path, parent_anchor, heading_level, heading_text,
           content_hash, body, line_start, line_end, paragraph_count)
-       VALUES ('pages', 'aaaa1111', 'notes.md', NULL, 'notes', 1, 'Notes', 'h', '', 1, 9, 1)`,
+       VALUES ('pages', 'aaaa1111', 'notes.md', NULL, 1, 'Notes', 'h', '', 1, 9, 1)`,
     ).run();
 
     // The configured root DOES get the anchor — the control that gives the

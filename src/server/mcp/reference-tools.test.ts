@@ -270,10 +270,10 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
     function indexSection(anchor: string, page: string, heading: string, start: number, end: number): void {
       db.prepare(
         `INSERT INTO section_index
-           (rootId, anchor, page_path, parent_anchor, heading_slug, heading_level, heading_text,
+           (rootId, anchor, page_path, parent_anchor, heading_level, heading_text,
             content_hash, body, line_start, line_end, paragraph_count)
-         VALUES ('pages', ?, ?, NULL, ?, 1, ?, 'hash', '', ?, ?, 1)`,
-      ).run(anchor, page, heading.toLowerCase(), heading, start, end);
+         VALUES ('pages', ?, ?, NULL, 1, ?, 'hash', '', ?, ?, 1)`,
+      ).run(anchor, page, heading, start, end);
     }
 
     it('get_page_outline returns a tree and measures each section before it is fetched', async () => {
@@ -304,9 +304,9 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
       await pagesService.write('page.md', { body: '# Alpha\n\nbody line\nanother line\n' });
       db.prepare(
         `INSERT INTO section_index
-           (rootId, anchor, page_path, parent_anchor, heading_slug, heading_level, heading_text,
+           (rootId, anchor, page_path, parent_anchor, heading_level, heading_text,
             content_hash, body, line_start, line_end, paragraph_count)
-         VALUES ('pages', 'aaaaaa11', 'page.md', NULL, 'alpha', 1, 'Alpha', 'hash',
+         VALUES ('pages', 'aaaaaa11', 'page.md', NULL, 1, 'Alpha', 'hash',
                  'BODY THAT MUST NOT BE LISTED', 1, 4, 1)`,
       ).run();
       const client = await connectClient(deps());

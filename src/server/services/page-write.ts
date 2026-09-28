@@ -14,7 +14,7 @@ import {
 } from '../fs/record-store.js';
 import { PROJECTION_IDS, type ProjectionStatusRegistry } from './projection-status.js';
 import { DomainError } from './tags.js';
-import { parseHeadings } from './section-indexer.js';
+import { fileKindOf, parseSections } from '../../shared/section-parser.js';
 import { applyTextEdits, type MatchRange, type PositionResolver, type TextEdit } from './text-edits.js';
 /**
  * 0.2.43 — the section walk moved to `section-text.ts` so `plan-write.ts` runs
@@ -25,6 +25,8 @@ import {
   anchorDelta,
   anchorValuesIn,
   anchorsInLineSpans,
+  assertAppendContent,
+  levelAt,
   applySectionEdit,
   assertHeadingText,
   bodyPositionResolver,
@@ -1566,11 +1568,12 @@ export async function updateSections(
   await assertUnchanged(target, first.pagePath, input.expectedHash);
   const page = await target.pages.read(first.pagePath);
   const lines = page.body.split('\n');
+  const kind = fileKindOf(first.pagePath);
 
   // The index is built over the page BODY (frontmatter stripped), which is what
-  // `read()` returns — so `parseHeadings` here sees the same lines the indexer
-  // saw, and 1-based `lineStart` is `lineIndex + 1` on both sides.
-  const startOfAnchor = new Map(sectionRanges(lines).map((r) => [r.anchor, r.lineStart]));
+  // `read()` returns — so the section parser here sees the same lines the
+  // indexer saw, and ranges are measured in the same coordinates.
+  const startOfAnchor = new Map(sectionRanges(lines, kind).map((r) => [r.anchor, r.lineStart]));
   /**
    * The refusal carries the file's hash, not an empty string. `expectedHash`
    * just matched, so this IS the hash the caller already holds — but a client
@@ -1640,7 +1643,21 @@ export async function updateSections(
    * the order of the batch would start to matter, which is exactly what
    * `applyTextEdits` promises it never does.
    */
-  const rangeByAnchor = new Map(sectionRanges(lines).map((r) => [r.anchor, r]));
+  const rangeByAnchor = new Map(sectionRanges(lines, kind).map((r) => [r.anchor, r]));
+
+  /**
+   * 2.0.0 — `append` adds to the section's OWN body, before its first
+   * subsection. A heading in `content` (outside a code block) at or above the
+   * addressed section's level would close that section and open a sibling in
+   * its place, so the whole batch is refused before the file is touched.
+   * Deeper headings become the section's first children.
+   */
+  for (const { edit } of located) {
+    if (edit.action !== 'append') continue;
+    const level = levelAt(lines, rangeByAnchor.get(edit.anchor)!.lineStart);
+    if (level !== null) assertAppendContent(edit.content ?? '', level, edit.anchor);
+  }
+
   for (const { edit } of located) {
     if (edit.action !== 'edit') continue;
     const mine = rangeByAnchor.get(edit.anchor)!;
@@ -1711,7 +1728,7 @@ export async function updateSections(
   const broughtInOf = new Map<string, string[]>();
   const takenOutOf = new Map<string, string[]>();
   for (const { edit } of order) {
-    const range = liveRangeOf(lines, edit.anchor);
+    const range = liveRangeOf(lines, edit.anchor, kind);
     if (!range) {
       throw new ConflictError(
         'PAGE_CONFLICT',
@@ -1764,10 +1781,24 @@ export async function updateSections(
       lines.splice(range.lineStart, range.lineEnd - range.lineStart, ...applied.text.split('\n'));
       continue;
     }
-    const inRange = sectionRanges(lines)
-      .filter((r) => r.lineStart > range.lineStart && r.lineStart < range.lineEnd)
+    const inRange = sectionRanges(lines, kind)
+      .filter((r) => r.lineStart > range.lineStart && r.lineStart <= range.lineEnd)
       .map((r) => r.anchor);
-    scopeOf.set(edit.anchor, edit.action === 'delete' ? [edit.anchor, ...inRange] : inRange);
+    /**
+     * 2.0.0 — `append` can never drop an anchor (like `rename`): it adds to the
+     * section's own body and overwrites nothing, so its scope is empty and a
+     * `dropAnchors` entry declared "alongside" it is a stranger. `insert_after`
+     * likewise overwrites nothing. Only `replace` and `delete` put the subtree
+     * at risk.
+     */
+    scopeOf.set(
+      edit.anchor,
+      edit.action === 'delete'
+        ? [edit.anchor, ...inRange]
+        : edit.action === 'replace'
+          ? inRange
+          : [],
+    );
     /**
      * What leaves is what the splice OVERWRITES, which is the action's own
      * span: `replace` and `delete` take a range out (`delete` including the
@@ -1802,10 +1833,19 @@ export async function updateSections(
    * different one from this: the guard is about identities surviving, not about
    * where they land.
    */
-  const finalAnchors = new Set(sectionRanges(lines).map((r) => r.anchor));
+  const finalAnchors = new Set(sectionRanges(lines, kind).map((r) => r.anchor));
   const droppedOf = new Map<string, string[]>(
     [...scopeOf].map(([anchor, scope]) => [anchor, scope.filter((a) => !finalAnchors.has(a))]),
   );
+  /**
+   * 2.0.0 — anchors SWALLOWED outside every scope: a write that opens a code
+   * block nothing closes turns every section below it into code, so their
+   * anchors stop being anchors although no range addressed them. They are lost
+   * all the same — declarable in `dropAnchors`, refused as `ANCHOR_LOSS` when
+   * undeclared and referenced.
+   */
+  const scoped = new Set([...scopeOf.values()].flat());
+  const swallowed = [...startOfAnchor.keys()].filter((a) => !finalAnchors.has(a) && !scoped.has(a));
   /**
    * Per edit, what IT brought in that it did not also take out — the row-level
    * mirror of `droppedAnchors`. The guard above nets across the whole batch (a
@@ -1844,7 +1884,7 @@ export async function updateSections(
    * declared nothing.
    */
   const declared = new Set(input.dropAnchors ?? []);
-  const inScope = new Set([...scopeOf.values()].flat());
+  const inScope = new Set([...[...scopeOf.values()].flat(), ...swallowed]);
   const onPage = new Set(startOfAnchor.keys());
   const stranger = [...declared].find((a) => onPage.has(a) && !inScope.has(a));
   if (stranger !== undefined) {
@@ -1897,11 +1937,10 @@ export async function updateSections(
      * an orphan comment, or the upper half of a stacked block over a heading that
      * already has a nearer anchor, names a section that does not exist.
      */
-    const headings = parseHeadings(lines);
     const owners = new Map<string, string[]>();
-    for (const h of headings) {
-      if (h.anchor === null) continue;
-      owners.set(h.anchor, [...(owners.get(h.anchor) ?? []), h.text]);
+    for (const sec of parseSections(lines.join('\n'), kind, { frontmatter: false }).sections) {
+      if (sec.anchor === null) continue;
+      owners.set(sec.anchor, [...(owners.get(sec.anchor) ?? []), sec.heading]);
     }
     const duplicates: AnchorDuplicate[] = [];
     for (const anchor of broughtInAll) {
@@ -1938,7 +1977,7 @@ export async function updateSections(
     if (duplicates.length > 0) throw new AnchorDuplicateError(duplicates);
   }
 
-  const undeclared = [...new Set([...droppedOf.values()].flat())].filter((a) => !declared.has(a));
+  const undeclared = [...new Set([...[...droppedOf.values()].flat(), ...swallowed])].filter((a) => !declared.has(a));
   if (undeclared.length > 0 && deps.findSectionReferents) {
     const losses: AnchorLoss[] = [];
     for (const anchor of undeclared) {

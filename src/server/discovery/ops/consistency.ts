@@ -19,7 +19,7 @@
 import { readConfig, type ConsistencySeverity } from '../../config.js';
 import { parseXmlTagsExcludingCode, taggedListVia } from '../../../shared/xml-tags.js';
 import { getExtensionReferenceType } from '../../../shared/reference-extensions.js';
-import { parseHeadings } from '../../services/section-indexer.js';
+import { anchorLineIndexOf, fileKindOf, parseSections } from '../../../shared/section-parser.js';
 import { invalidArgument } from '../errors.js';
 import { classifyVerifies, readActiveAcs } from './ac-rules.js';
 import type { PageSource } from '../page-source.js';
@@ -527,7 +527,7 @@ interface AnchorOccurrence {
  * the table one of the two occurrences has already been discarded — the index is
  * the one place where the collision is guaranteed to be invisible.
  *
- * Occurrences are resolved by the INDEXER'S OWN `parseHeadings`, not by a second
+ * Occurrences are resolved by the SHARED SECTION PARSER (the indexer's), not by a second
  * matcher written to look equivalent. Two implementations of "which anchor
  * belongs to which heading" are two answers, and they fail in opposite
  * directions: a stricter rule misses real collisions (an anchor comment the
@@ -542,16 +542,17 @@ function collectAnchors(
   rootId: string,
   page: { path: string; body: string },
 ): void {
-  for (const h of parseHeadings(page.body.split('\n'))) {
-    if (h.anchor === null) continue;
-    const list = into.get(h.anchor) ?? [];
+  const lines = page.body.split('\n');
+  for (const sec of parseSections(page.body, fileKindOf(page.path), { frontmatter: false }).sections) {
+    if (sec.anchor === null) continue;
+    const list = into.get(sec.anchor) ?? [];
     list.push({
       rootId,
       pagePath: page.path,
-      line: (h.anchorLineIndex ?? h.lineIndex) + 1,
-      heading: h.text,
+      line: (anchorLineIndexOf(lines, sec) ?? sec.headingLine - 1) + 1,
+      heading: sec.heading,
     });
-    into.set(h.anchor, list);
+    into.set(sec.anchor, list);
   }
 }
 
