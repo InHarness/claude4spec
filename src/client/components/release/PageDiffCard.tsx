@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { RawDeltaPageChange, ModifiedSectionLite } from '../../../shared/entities.js';
+import type { FileDiff, FileDiffModifiedSection, SectionKey } from '../../../shared/entities.js';
 import { colorForOp, labelForOp } from '../../lib/release-diff/colors.js';
 import { DiffView } from '../../host-ui-kit/detail/DiffView.js';
 import { toDiffViewHunks } from '../../lib/release-diff/to-diff-view.js';
@@ -7,24 +7,29 @@ import { FrontmatterDiffPanel } from './FrontmatterDiffPanel.js';
 import { XmlRefsDiffPanel } from './XmlRefsDiffPanel.js';
 
 interface Props {
-  change: RawDeltaPageChange;
+  change: FileDiff;
 }
 
 /**
  * Hybrid C render dla strony (M17 m17ui002):
  *   1. header z typem + path + label (added/modified/deleted)
  *   2. bullet list operacji sekcji (+ section, − section, ~ section, ↕ section)
- *   3. collapsible line-diff per `section_modified`
+ *   3. collapsible line-diff per entry of `modified_sections`
  *   4. side-channels: frontmatter_diff, xml_refs_diff
+ *
+ * 2.0.0 — the diff comes from the shared section parser: a row exists only
+ * when a section's OWN body (or its heading) changed, so a parent touched only
+ * through a child has no row of its own; a subsection row names its ancestors
+ * (`headingPath`); a change above the first heading is a "Page preamble" row,
+ * rendered before the section rows.
  */
 export function PageDiffCard({ change }: Props) {
   const op = colorForOp(change.op);
-  // 0.1.118: the git-anchored release-diff path (ReleaseService.tryGitAnchoredDiff)
-  // is file-level only — it always emits empty section arrays and null
-  // frontmatter/xml diffs (an accepted, spec-confirmed fidelity tradeoff).
-  // Without this fallback the card renders a bare op badge with no body at
-  // all, indistinguishable from a real "nothing to show" bug — say so
-  // explicitly instead.
+  // A page whose content could not be read on one side (the git-anchored path
+  // degrades it to its file-level status) comes with empty section arrays and
+  // null side-channels. Without this fallback the card renders a bare op badge
+  // with no body at all, indistinguishable from a real "nothing to show" bug —
+  // say so explicitly instead.
   const hasDetail =
     change.added_sections.length > 0 ||
     change.removed_sections.length > 0 ||
@@ -56,8 +61,8 @@ export function PageDiffCard({ change }: Props) {
         <SectionBullets change={change} />
         {change.modified_sections.length > 0 && (
           <div className="space-y-1.5">
-            {change.modified_sections.map((s) => (
-              <ModifiedSectionDetails key={s.anchor} section={s} />
+            {preambleFirst(change.modified_sections).map((s, i) => (
+              <ModifiedSectionDetails key={s.anchor ?? `${s.heading}-${i}`} section={s} />
             ))}
           </div>
         )}
@@ -73,40 +78,54 @@ export function PageDiffCard({ change }: Props) {
   );
 }
 
-function SectionBullets({ change }: { change: RawDeltaPageChange }) {
-  const items: Array<{ kind: 'add' | 'remove' | 'modify' | 'move'; label: string }> = [];
-  for (const s of change.added_sections) {
-    items.push({ kind: 'add', label: sectionLabel(s.heading, s.anchor) });
-  }
-  for (const s of change.removed_sections) {
-    items.push({ kind: 'remove', label: sectionLabel(s.heading, s.anchor) });
-  }
-  for (const s of change.modified_sections) {
-    items.push({ kind: 'modify', label: sectionLabel(s.heading, s.anchor) });
-  }
+type RowKind = 'add' | 'remove' | 'modify' | 'move';
+
+/** The preamble row renders before every section row. */
+function preambleFirst<T extends SectionKey>(entries: readonly T[]): T[] {
+  return [...entries.filter((e) => e.kind === 'preamble'), ...entries.filter((e) => e.kind !== 'preamble')];
+}
+
+function SectionBullets({ change }: { change: FileDiff }) {
+  const items: Array<{ kind: RowKind; key: SectionKey | null; label: string }> = [];
+  const push = (kind: RowKind, entries: readonly SectionKey[]) => {
+    for (const s of entries) items.push({ kind, key: s, label: sectionLabel(s) });
+  };
+  push('add', change.added_sections);
+  push('remove', change.removed_sections);
+  push('modify', change.modified_sections);
   for (const s of change.moved_sections) {
-    items.push({
-      kind: 'move',
-      label: `${s.anchor} (${s.from_position} → ${s.to_position})`,
-    });
+    items.push({ kind: 'move', key: null, label: `${s.anchor} (${s.from_position} → ${s.to_position})` });
   }
   if (items.length === 0) return null;
+  const ordered = [
+    ...items.filter((it) => it.key?.kind === 'preamble'),
+    ...items.filter((it) => it.key?.kind !== 'preamble'),
+  ];
   return (
     <ul className="space-y-0.5 text-[12.5px] font-mono">
-      {items.map((it, i) => (
-        <li key={i} className="flex items-baseline gap-1.5">
+      {ordered.map((it, i) => (
+        <li key={i} className="flex items-baseline gap-1.5" data-testid="section-row">
           <span style={{ color: glyphColor(it.kind), width: 10, display: 'inline-block' }}>
             {glyphFor(it.kind)}
           </span>
-          <span style={{ color: 'var(--c-muted)' }}>section</span>
-          <span style={{ color: 'var(--c-ink)' }}>{it.label}</span>
+          {it.key?.kind === 'preamble' ? (
+            <span style={{ color: 'var(--c-ink)' }}>Page preamble</span>
+          ) : (
+            <>
+              <span style={{ color: 'var(--c-muted)' }}>section</span>
+              {it.key && it.key.headingPath.length > 0 && (
+                <span style={{ color: 'var(--c-subtle)' }}>{it.key.headingPath.join(' › ')} ›</span>
+              )}
+              <span style={{ color: 'var(--c-ink)' }}>{it.label}</span>
+            </>
+          )}
         </li>
       ))}
     </ul>
   );
 }
 
-function ModifiedSectionDetails({ section }: { section: ModifiedSectionLite }) {
+function ModifiedSectionDetails({ section }: { section: FileDiffModifiedSection }) {
   const [expanded, setExpanded] = useState(false);
   return (
     <div
@@ -118,7 +137,11 @@ function ModifiedSectionDetails({ section }: { section: ModifiedSectionLite }) {
         className="w-full flex items-baseline gap-1.5 px-2 py-1 text-left text-[11.5px] font-mono"
       >
         <span style={{ color: 'var(--c-muted)' }}>{expanded ? '▾' : '▸'}</span>
-        <span style={{ color: 'var(--c-ink)' }}>{sectionLabel(section.heading, section.anchor)}</span>
+        <span style={{ color: 'var(--c-ink)' }}>
+          {section.kind === 'preamble'
+            ? 'Page preamble'
+            : [...section.headingPath, sectionLabel(section)].join(' › ')}
+        </span>
         <span className="flex-1" />
         <span style={{ color: 'var(--c-subtle)' }}>line diff</span>
       </button>
@@ -131,19 +154,21 @@ function ModifiedSectionDetails({ section }: { section: ModifiedSectionLite }) {
   );
 }
 
-function sectionLabel(heading: string, anchor: string): string {
-  const h = heading?.trim();
-  return h ? `${h} (${anchor})` : anchor;
+function sectionLabel(s: SectionKey): string {
+  if (s.kind === 'preamble') return 'Page preamble';
+  const h = s.heading?.trim() ?? '';
+  if (s.anchor === null) return h;
+  return h ? `${h} (${s.anchor})` : s.anchor;
 }
 
-function glyphFor(kind: 'add' | 'remove' | 'modify' | 'move'): string {
+function glyphFor(kind: RowKind): string {
   if (kind === 'add') return '+';
   if (kind === 'remove') return '−';
   if (kind === 'modify') return '~';
   return '↕';
 }
 
-function glyphColor(kind: 'add' | 'remove' | 'modify' | 'move'): string {
+function glyphColor(kind: RowKind): string {
   if (kind === 'add') return '#059669';
   if (kind === 'remove') return '#dc2626';
   if (kind === 'modify') return '#2563eb';

@@ -52,11 +52,12 @@ const emptyPageDiffFields = {
 
 const fakeFileSerializer = {
   version: 'v1',
-  diff: (a: unknown, b: unknown, path: string) => {
-    if (a == null && b == null) return { path, op: 'noop', ...emptyPageDiffFields };
-    if (a == null) return { path, op: 'created', ...emptyPageDiffFields };
-    if (b == null) return { path, op: 'deleted', ...emptyPageDiffFields };
-    return { path, op: JSON.stringify(a) === JSON.stringify(b) ? 'noop' : 'modified', ...emptyPageDiffFields };
+  // 2.0.0 — the real serializer stamps the page's root on the `FileDiff`; so does the fake.
+  diff: (a: unknown, b: unknown, path: string, rootId: string) => {
+    if (a == null && b == null) return { rootId, path, op: 'noop', ...emptyPageDiffFields };
+    if (a == null) return { rootId, path, op: 'created', ...emptyPageDiffFields };
+    if (b == null) return { rootId, path, op: 'deleted', ...emptyPageDiffFields };
+    return { rootId, path, op: JSON.stringify(a) === JSON.stringify(b) ? 'noop' : 'modified', ...emptyPageDiffFields };
   },
 } as unknown as FileSerializer;
 

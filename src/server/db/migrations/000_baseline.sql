@@ -230,7 +230,6 @@ CREATE TABLE section_index (
   -- ON DELETE SET NULL: losing a parent promotes a section to a page-level root,
   -- which is both truthful and what the next reindex writes anyway.
   parent_anchor TEXT NULL REFERENCES section_index(anchor) ON DELETE SET NULL,
-  heading_slug TEXT NOT NULL,
   -- 0.2.59: 1-6, and NOT derivable from depth in the outline tree -- Markdown
   -- allows level jumps (## -> ####), so depth != level and both are needed. That
   -- is also why there is no `depth` column: it falls out of `parent_anchor`.
@@ -239,9 +238,14 @@ CREATE TABLE section_index (
   content_hash TEXT NOT NULL,
   -- 0.2.46 (051): the section AS AUTHORED -- no heading line, no anchor line, no
   -- normalization. Materialization, not emission: no generic operation hands it out.
+  -- 2.0.0 (054): the OWN body only -- up to the next section of ANY level. The
+  -- hash, `line_end` and `paragraph_count` describe the same own body.
   body TEXT NOT NULL,
+  -- 2.0.0 (054): first line of the anchor block (heading line without an anchor).
   line_start INTEGER NOT NULL,
   line_end INTEGER NOT NULL,
+  -- 2.0.0 (054): end of the subtree -- the range of whole-section write actions.
+  subtree_line_end INTEGER NOT NULL DEFAULT 0,
   paragraph_count INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -295,7 +299,6 @@ CREATE UNIQUE INDEX uq_remote_session_remote_account_id
   ON remote_session(remote_account_id);
 CREATE INDEX idx_sel_anchor ON section_entity_link(anchor);
 CREATE INDEX idx_sel_entity ON section_entity_link(rootId, entity_type, entity_slug);
-CREATE INDEX idx_si_hash ON section_index(content_hash);
 CREATE INDEX idx_si_root_page ON section_index(rootId, page_path);
 CREATE INDEX idx_spec_release_created_at ON spec_release(created_at DESC);
 CREATE UNIQUE INDEX idx_spec_release_slug ON spec_release(slug);

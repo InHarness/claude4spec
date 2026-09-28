@@ -59,6 +59,19 @@ describe('parseXmlTagsExcludingCode', () => {
   });
 
   // 0.2.92 — a backtick inside an attribute VALUE is not an inline-code delimiter.
+  it('2.0.0 — drops a tag inside a multi-line HTML comment; a one-line comment keeps it live', () => {
+    const md = [
+      '<!--',
+      '<inline_mention type="ac" slug="commented"/>',
+      '-->',
+      '<!-- <inline_mention type="ac" slug="oneline"/> -->',
+      '```',
+      '<inline_mention type="ac" slug="fenced"/>',
+      '```',
+    ].join('\n');
+    expect(parseXmlTagsExcludingCode(md).map((t) => t.attrs.slug)).toEqual(['oneline']);
+  });
+
   it('[ac:m19-caption-backtick-pair-resolved] keeps a tag whose caption carries a backtick pair', () => {
     const md = 'Intro.\n\n<single_element type="ac" slug="kept" caption="use `foo` here"/>\n';
     expect(parseXmlTagsExcludingCode(md).map((t) => t.attrs.slug)).toEqual(['kept']);

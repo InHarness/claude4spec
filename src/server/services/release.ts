@@ -16,7 +16,6 @@ import type {
   ChangedBy,
   RawDelta,
   RawDeltaEntityChange,
-  RawDeltaPageChange,
   Release,
   ReleaseCountBreakdown,
   ReleaseDetail,
@@ -1226,8 +1225,8 @@ export class ReleaseService {
     readOld: (absPath: string) => Promise<string | null>,
     readNew: (absPath: string) => Promise<string | null>,
     logLabel: string,
-  ): Promise<RawDeltaPageChange[]> {
-    const degradedPageChange = (c: (typeof pageCandidates)[number], op: RawDeltaPageChange['op']): RawDeltaPageChange => ({
+  ): Promise<FileDiff[]> {
+    const degradedPageChange = (c: (typeof pageCandidates)[number], op: FileDiff['op']): FileDiff => ({
       rootId: c.rootId,
       path: c.relPath,
       op,
@@ -1241,7 +1240,7 @@ export class ReleaseService {
 
     return (
       await Promise.all(
-        pageCandidates.map(async (c): Promise<RawDeltaPageChange | null> => {
+        pageCandidates.map(async (c): Promise<FileDiff | null> => {
           const op = STATUS_TO_OP[c.status];
           const wantOld = op !== 'created';
           const wantNew = op !== 'deleted';
@@ -1262,8 +1261,8 @@ export class ReleaseService {
             const bData = newContent != null
               ? this.pageSerializer.snapshotFromContent(c.relPath, newContent)
               : null;
-            const diff = this.pageSerializer.diff(aData, bData, c.relPath);
-            return diff.op === 'noop' ? null : toRawDeltaPageChange(c.rootId, diff);
+            const diff = this.pageSerializer.diff(aData, bData, c.relPath, c.rootId);
+            return diff.op === 'noop' ? null : diff;
           } catch (err) {
             console.error(
               `[release] ${logLabel}: failed to diff page '${c.relPath}' — degrading to file-level status only:`,
@@ -1273,7 +1272,7 @@ export class ReleaseService {
           }
         }),
       )
-    ).filter((d): d is RawDeltaPageChange => d !== null);
+    ).filter((d): d is FileDiff => d !== null);
   }
 
   /**
@@ -1446,7 +1445,7 @@ export class ReleaseService {
       );
     }
 
-    const pageChanges: RawDeltaPageChange[] = [];
+    const pageChanges: FileDiff[] = [];
     // Key by (rootId, path) so the same relative path in two roots keeps an
     // independent timeline and is never cross-diffed.
     //
@@ -1470,9 +1469,9 @@ export class ReleaseService {
       const bData = b && b.op !== 'delete'
         ? (safeJsonParse(b.data) as ReturnType<FileSerializer['snapshotFromContent']>)
         : null;
-      const diff = this.pageSerializer.diff(aData, bData, path);
+      const diff = this.pageSerializer.diff(aData, bData, path, (a ?? b)!.rootId);
       if (diff.op === 'noop') continue;
-      pageChanges.push(toRawDeltaPageChange((a ?? b)!.rootId, diff));
+      pageChanges.push(diff);
     }
 
     return {
@@ -2394,20 +2393,3 @@ function safeJsonParse(raw: string): unknown {
   }
 }
 
-/**
- * Shared by computeDelta and tryGitAnchoredDiff — the wire shape is a 1:1 copy of
- * FileDiff's fields plus the page's `rootId` (0.2.102), which FileDiff does not carry.
- */
-function toRawDeltaPageChange(rootId: string, diff: FileDiff): RawDeltaPageChange {
-  return {
-    rootId,
-    path: diff.path,
-    op: diff.op,
-    added_sections: diff.added_sections,
-    removed_sections: diff.removed_sections,
-    modified_sections: diff.modified_sections,
-    moved_sections: diff.moved_sections,
-    frontmatter_diff: diff.frontmatter_diff,
-    xml_refs_diff: diff.xml_refs_diff,
-  };
-}

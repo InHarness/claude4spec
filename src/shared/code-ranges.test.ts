@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeCodeRanges,
+  computeExcludedRanges,
   findInlineCodeSpans,
   intersectsCode,
   maskTagAttributeValues,
+  scanExcluded,
+  scanExcludedBlocks,
   scanFences,
 } from './code-ranges.js';
 
@@ -102,5 +105,74 @@ describe('maskTagAttributeValues', () => {
     const text = '<single_element type="ac" slug="x" caption="`a`"/> then `real`';
     const ranges = computeCodeRanges(text);
     expect(ranges.map(([s, e]) => text.slice(s, e))).toEqual(['`real`']);
+  });
+});
+
+describe('scanExcludedBlocks — CommonMark fences and multi-line HTML comments (2.0.0)', () => {
+  const kinds = (text: string) =>
+    scanExcludedBlocks(text).map((b) => [b.kind, b.startLine, b.endLine, b.closed]);
+
+  it('a shorter fence inside a longer one is content', () => {
+    expect(kinds('````\n```\n## X\n```\n````\nafter')).toEqual([['fence', 1, 5, true]]);
+  });
+
+  it('a different fence char does not close', () => {
+    expect(kinds('~~~\n```\n~~~\n')).toEqual([['fence', 1, 3, true]]);
+  });
+
+  it('a backtick fence whose info string holds a backtick is not a fence', () => {
+    expect(kinds('``` a`b\n## X')).toEqual([]);
+  });
+
+  it('an unclosed fence runs to end of document', () => {
+    expect(kinds('a\n```\n## X\nmore')).toEqual([['fence', 2, 4, false]]);
+  });
+
+  it('opens after a list marker and closes at the item content indent', () => {
+    const text = '- item\n  ```\n  ## not a heading\n  ```\n## Real';
+    expect(kinds(text)).toEqual([['fence', 2, 4, true]]);
+    const onMarker = '1. ```js\n   code\n   ```\nafter';
+    expect(kinds(onMarker)).toEqual([['fence', 1, 3, true]]);
+  });
+
+  it('a fence inside a nested list item deeper than 3 spaces still opens', () => {
+    const text = '- a\n  - b\n    ```\n    x\n    ```\n';
+    expect(kinds(text)).toEqual([['fence', 3, 5, true]]);
+  });
+
+  it('opens after a block-quote marker; leaving the quote ends it', () => {
+    expect(kinds('> ```\n> ## X\n> ```\nout')).toEqual([['fence', 1, 3, true]]);
+    expect(kinds('> ```\n> code\nplain')).toEqual([['fence', 1, 2, true]]);
+  });
+
+  it('a multi-line HTML comment is a block through the first line with -->', () => {
+    expect(kinds('a\n<!--\n## X\n-->\nb')).toEqual([['html-comment', 2, 4, true]]);
+    expect(kinds('<!-- start\n## X')).toEqual([['html-comment', 1, 2, false]]);
+  });
+
+  it('a one-line comment (anchor line included) is not a block', () => {
+    expect(kinds('<!-- anchor: abcd1234 -->\n## X\n<!-- note -->')).toEqual([]);
+  });
+
+  it('fenced text never opens a comment and vice versa', () => {
+    expect(kinds('```\n<!--\n```\nx')).toEqual([['fence', 1, 3, true]]);
+    expect(kinds('<!--\n```\n-->\nx')).toEqual([['html-comment', 1, 3, true]]);
+  });
+});
+
+describe('scanExcluded', () => {
+  it('reports region kinds and unclosed blocks; jsx is opt-out', () => {
+    const text = '<Callout>\nx\n</Callout>\n<!--\nopen';
+    const withJsx = scanExcluded(text);
+    expect(withJsx.regions.map((r) => r.kind)).toEqual(['jsx', 'html-comment']);
+    expect(withJsx.unclosed.map((b) => b.startLine)).toEqual([4]);
+    expect(scanExcluded(text, { jsx: false }).regions.map((r) => r.kind)).toEqual(['html-comment']);
+  });
+
+  it('computeExcludedRanges drops a tag inside a multi-line HTML comment', () => {
+    const text = '<!--\n<inline_mention type="ac" slug="x"/>\n-->';
+    const ranges = computeExcludedRanges(text);
+    const at = text.indexOf('<inline');
+    expect(intersectsCode(at, at + 5, ranges)).toBe(true);
   });
 });

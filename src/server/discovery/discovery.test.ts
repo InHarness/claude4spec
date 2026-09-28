@@ -36,6 +36,7 @@ import { DEFAULT_PAGES_ROOT_PROPS, DEFAULT_USER_ROOT_PROPS } from '../../shared/
 import { acFixtureModule as acBackendModule } from '../../../tests/helpers/ac-fixture.js';
 import { z } from 'zod';
 import matter from 'gray-matter';
+import { ownBodyOf, parseSections } from '../../shared/section-parser.js';
 
 /**
  * 2.0.0: the fixture declares its OWN schema and gets its own generated table.
@@ -181,15 +182,14 @@ describe('discovery core', () => {
   }): void {
     db.prepare(
       `INSERT INTO section_index
-         (rootId, anchor, page_path, parent_anchor, heading_slug, heading_level, heading_text,
+         (rootId, anchor, page_path, parent_anchor, heading_level, heading_text,
           content_hash, body, line_start, line_end, paragraph_count)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'hash', ?, ?, ?, 1)`,
+       VALUES (?, ?, ?, ?, ?, ?, 'hash', ?, ?, ?, 1)`,
     ).run(
       row.rootId,
       row.anchor,
       row.page,
       row.parent ?? null,
-      row.heading.toLowerCase(),
       row.level ?? 2,
       row.heading,
       row.body ?? '',
@@ -210,43 +210,22 @@ describe('discovery core', () => {
    */
   async function indexPageLikeTheIndexer(rootId: string, dir: string, relPath: string): Promise<void> {
     const raw = await fs.readFile(path.join(cwd, dir, relPath), 'utf-8');
-    const lines = matter(raw).content.split('\n');
-    const heads: Array<{ level: number; text: string; line: number; anchor?: string; anchorLine?: number }> = [];
-    for (let i = 0; i < lines.length; i++) {
-      const m = /^(#{1,6})\s+(.+?)\s*$/.exec(lines[i] ?? '');
-      if (!m) continue;
-      const anchorMatch = /<!--\s*anchor:\s*([a-z0-9]{6,12})\s*-->/.exec(lines[i + 1] ?? '');
-      heads.push({
-        level: m[1]!.length,
-        text: m[2]!,
-        line: i,
-        anchor: anchorMatch?.[1],
-        anchorLine: anchorMatch ? i + 1 : undefined,
-      });
-    }
-    for (let idx = 0; idx < heads.length; idx++) {
-      const h = heads[idx]!;
-      if (!h.anchor) continue;
-      let end = lines.length;
-      for (let j = idx + 1; j < heads.length; j++) {
-        if (heads[j]!.level <= h.level) {
-          end = heads[j]!.anchorLine ?? heads[j]!.line;
-          break;
-        }
-      }
+    const content = matter(raw).content;
+    const lines = content.split('\n');
+    // 2.0.0 — the shared section parser, exactly as the real indexer runs it:
+    // anchor ABOVE the heading, `line_start` = top of the anchor block,
+    // `line_end` = end of the OWN body, `body` = the own body as authored.
+    for (const sec of parseSections(content, 'md', { frontmatter: false }).sections) {
+      if (!sec.anchor) continue;
       indexSection({
         rootId,
-        anchor: h.anchor,
+        anchor: sec.anchor,
         page: relPath,
-        heading: h.text,
-        start: h.line + 1,
-        end,
-        level: h.level,
-        // As authored, with neither the heading line nor the anchor comment.
-        // The real indexer drops the heading with a `.slice(1)` and never sees
-        // its own anchor (it sits ABOVE the heading there); this fixture puts
-        // the comment BELOW, so it has to skip one more line.
-        body: lines.slice(h.line + (h.anchorLine === undefined ? 1 : 2), end).join('\n'),
+        heading: sec.heading,
+        start: sec.startLine,
+        end: sec.ownEndLine,
+        level: sec.level,
+        body: ownBodyOf(lines, sec),
       });
     }
   }
@@ -871,7 +850,7 @@ describe('discovery core', () => {
      * `section_index` column and the REST section endpoints.
      */
     it('carries no content_hash — the response is the content, not a version of it', async () => {
-      await writePage('pages', 'h.md', ['# Top', '', '## S', '<!-- anchor: abcdef12 -->', '', 'body', ''].join('\n'));
+      await writePage('pages', 'h.md', ['# Top', '', '<!-- anchor: abcdef12 -->', '## S', '', 'body', ''].join('\n'));
       indexSection({ rootId: 'pages', anchor: 'abcdef12', page: 'h.md', heading: 'S', start: 3, end: 7 });
       const c = core([pagesRoot()]);
 
@@ -905,8 +884,8 @@ describe('discovery core', () => {
         [
           '# Top',
           '',
-          '## Section',
           '<!-- anchor: abcdef12 -->',
+          '## Section',
           '',
           'Prose with <single_element type="widget" slug="flow"/> inside.',
           '',
@@ -947,13 +926,13 @@ describe('discovery core', () => {
         [
           '# Top',
           '',
-          '## One',
           '<!-- anchor: aaaaaa11 -->',
+          '## One',
           '',
           big,
           '',
-          '## Two',
           '<!-- anchor: bbbbbb22 -->',
+          '## Two',
           '',
           'Prose with <single_element type="widget" slug="flow"/> inside.',
           '',
@@ -1005,13 +984,13 @@ describe('discovery core', () => {
         [
           '# Top',
           '',
-          '## One',
           '<!-- anchor: aaaaaa11 -->',
+          '## One',
           '',
           big,
           '',
-          '## Two',
           '<!-- anchor: bbbbbb22 -->',
+          '## Two',
           '',
           'Once: <single_element type="widget" slug="flow"/> and @other.md#abcdef01.',
           '',
@@ -1049,13 +1028,13 @@ describe('discovery core', () => {
       const body = [
         '# Top',
         '',
-        '## First',
         '<!-- anchor: aaaaaa11 -->',
+        '## First',
         '',
         'FIRST SECTION BODY',
         '',
-        '## Second',
         '<!-- anchor: bbbbbb22 -->',
+        '## Second',
         '',
         'SECOND SECTION BODY',
         '',
@@ -1077,7 +1056,7 @@ describe('discovery core', () => {
       await writePage(
         'pages',
         'fm2.md',
-        ['---', 'title: X', '---', '', '# Top', '', '## S', '<!-- anchor: cccccc33 -->', '', 'needle', ''].join('\n'),
+        ['---', 'title: X', '---', '', '# Top', '', '<!-- anchor: cccccc33 -->', '## S', '', 'needle', ''].join('\n'),
       );
       await indexPageLikeTheIndexer('pages', 'pages', 'fm2.md');
       const c = core([pagesRoot()]);
@@ -1100,7 +1079,7 @@ describe('discovery core', () => {
       await writePage(
         'pages',
         'mix.md',
-        ['# Top', '', '## Real', '<!-- anchor: aaaaaa11 -->', '', 'REAL BODY', ''].join('\n'),
+        ['# Top', '', '<!-- anchor: aaaaaa11 -->', '## Real', '', 'REAL BODY', ''].join('\n'),
       );
       await indexPageLikeTheIndexer('pages', 'pages', 'mix.md');
       const c = core([pagesRoot()]);
@@ -1120,13 +1099,13 @@ describe('discovery core', () => {
         [
           '# Top',
           '',
-          '## First',
           '<!-- anchor: aaaaaa11 -->',
+          '## First',
           '',
           'ONE',
           '',
-          '## Second',
           '<!-- anchor: bbbbbb22 -->',
+          '## Second',
           '',
           'TWO',
           '',
@@ -1172,18 +1151,18 @@ describe('discovery core', () => {
         [
           '# Top',
           '',
-          '## One',
           '<!-- anchor: aaaaaa11 -->',
+          '## One',
           '',
           big,
           '',
-          '## Two',
           '<!-- anchor: bbbbbb22 -->',
+          '## Two',
           '',
           big,
           '',
-          '## Three',
           '<!-- anchor: cccccc33 -->',
+          '## Three',
           '',
           big,
           '',
@@ -1234,23 +1213,23 @@ describe('discovery core', () => {
         [
           '# Top',
           '',
-          '## Parent',
           '<!-- anchor: aaaaaa11 -->',
+          '## Parent',
           '',
           'PARENT BODY',
           '',
-          '### Child',
           '<!-- anchor: bbbbbb22 -->',
+          '### Child',
           '',
           'CHILD BODY',
           '',
-          '#### Grand',
           '<!-- anchor: dddddd44 -->',
+          '#### Grand',
           '',
           'GRAND BODY',
           '',
-          '## Sibling',
           '<!-- anchor: cccccc33 -->',
+          '## Sibling',
           '',
           'SIBLING BODY',
           '',
@@ -1300,7 +1279,7 @@ describe('discovery core', () => {
       await writePage(
         'pages',
         'range.md',
-        ['# Top', '', '## Parent', '<!-- anchor: aaaaaa11 -->', '', 'P', '', '### Child', '<!-- anchor: bbbbbb22 -->', '', 'C', ''].join('\n'),
+        ['# Top', '', '<!-- anchor: aaaaaa11 -->', '## Parent', '', 'P', '', '<!-- anchor: bbbbbb22 -->', '### Child', '', 'C', ''].join('\n'),
       );
       await indexPageLikeTheIndexer('pages', 'pages', 'range.md');
       const indexed = db.prepare('SELECT line_end FROM section_index WHERE anchor = ?').get('aaaaaa11') as { line_end: number };
@@ -1325,7 +1304,7 @@ describe('discovery core', () => {
       await writePage(
         'pages',
         'both.md',
-        ['# Top', '', '## Parent', '<!-- anchor: aaaaaa11 -->', '', 'P', '', '### Child', '<!-- anchor: bbbbbb22 -->', '', 'C', '', '### Other', '<!-- anchor: cccccc33 -->', '', 'O', ''].join('\n'),
+        ['# Top', '', '<!-- anchor: aaaaaa11 -->', '## Parent', '', 'P', '', '<!-- anchor: bbbbbb22 -->', '### Child', '', 'C', '', '<!-- anchor: cccccc33 -->', '### Other', '', 'O', ''].join('\n'),
       );
       await indexPageLikeTheIndexer('pages', 'pages', 'both.md');
       const c = core([pagesRoot()]);
@@ -1344,7 +1323,7 @@ describe('discovery core', () => {
       await writePage(
         'pages',
         'order.md',
-        ['# Top', '', '## Parent', '<!-- anchor: aaaaaa11 -->', '', 'P', '', '### Child', '<!-- anchor: bbbbbb22 -->', '', 'C', '', '### Other', '<!-- anchor: cccccc33 -->', '', 'O', ''].join('\n'),
+        ['# Top', '', '<!-- anchor: aaaaaa11 -->', '## Parent', '', 'P', '', '<!-- anchor: bbbbbb22 -->', '### Child', '', 'C', '', '<!-- anchor: cccccc33 -->', '### Other', '', 'O', ''].join('\n'),
       );
       await indexPageLikeTheIndexer('pages', 'pages', 'order.md');
       const c = core([pagesRoot()]);
@@ -1364,10 +1343,10 @@ describe('discovery core', () => {
      * same thing.
      */
     it('[ac:ac-rozwiniecie-dajace-wiecej-niz-50-item] an expansion past the ceiling comes back as the first 50 items in output order, with the ceiling named', async () => {
-      const lines = ['# Top', '', '## Parent', '<!-- anchor: aaaaaa11 -->', '', 'P', ''];
+      const lines = ['# Top', '', '<!-- anchor: aaaaaa11 -->', '## Parent', '', 'P', ''];
       for (let i = 1; i <= 60; i++) {
         const anchor = `child${String(i).padStart(3, '0')}`;
-        lines.push(`### Child ${i}`, `<!-- anchor: ${anchor} -->`, '', `BODY ${i}`, '');
+        lines.push(`<!-- anchor: ${anchor} -->`, `### Child ${i}`, '', `BODY ${i}`, '');
       }
       await writePage('pages', 'many.md', lines.join('\n'));
       await indexPageLikeTheIndexer('pages', 'pages', 'many.md');
@@ -1400,12 +1379,12 @@ describe('discovery core', () => {
      * named, can see missing, and is told not to retry for.
      */
     it('an explicit anchor requested AFTER a large expansion keeps its item; only the expansion is cut', async () => {
-      const lines = ['# Top', '', '## Parent', '<!-- anchor: aaaaaa11 -->', '', 'P', ''];
+      const lines = ['# Top', '', '<!-- anchor: aaaaaa11 -->', '## Parent', '', 'P', ''];
       for (let i = 1; i <= 60; i++) {
         const anchor = `child${String(i).padStart(3, '0')}`;
-        lines.push(`### Child ${i}`, `<!-- anchor: ${anchor} -->`, '', `BODY ${i}`, '');
+        lines.push(`<!-- anchor: ${anchor} -->`, `### Child ${i}`, '', `BODY ${i}`, '');
       }
-      lines.push('## Other', '<!-- anchor: cccccc33 -->', '', 'O', '');
+      lines.push('<!-- anchor: cccccc33 -->', '## Other', '', 'O', '');
       await writePage('pages', 'seated.md', lines.join('\n'));
       await indexPageLikeTheIndexer('pages', 'pages', 'seated.md');
       const c = core([pagesRoot()]);
@@ -1437,10 +1416,10 @@ describe('discovery core', () => {
         'grandchild.md',
         [
           '# Top', '',
-          '## A', '<!-- anchor: aaaaaa11 -->', '', 'A', '',
-          '### B', '<!-- anchor: bbbbbb22 -->', '', 'B', '',
-          '#### C', '<!-- anchor: cccccc33 -->', '', 'C', '',
-          '### D', '<!-- anchor: dddddd44 -->', '', 'D', '',
+          '<!-- anchor: aaaaaa11 -->', '## A', '', 'A', '',
+          '<!-- anchor: bbbbbb22 -->', '### B', '', 'B', '',
+          '<!-- anchor: cccccc33 -->', '#### C', '', 'C', '',
+          '<!-- anchor: dddddd44 -->', '### D', '', 'D', '',
         ].join('\n'),
       );
       await indexPageLikeTheIndexer('pages', 'pages', 'grandchild.md');
@@ -1466,9 +1445,9 @@ describe('discovery core', () => {
       await writePage(
         'pages',
         'gone.md',
-        ['# Top', '', '## Parent', '<!-- anchor: aaaaaa11 -->', '', 'P', '', '### Child', '<!-- anchor: bbbbbb22 -->', '', 'C', ''].join('\n'),
+        ['# Top', '', '<!-- anchor: aaaaaa11 -->', '## Parent', '', 'P', '', '<!-- anchor: bbbbbb22 -->', '### Child', '', 'C', ''].join('\n'),
       );
-      await writePage('pages', 'here.md', ['# Top', '', '## Here', '<!-- anchor: cccccc33 -->', '', 'H', ''].join('\n'));
+      await writePage('pages', 'here.md', ['# Top', '', '<!-- anchor: cccccc33 -->', '## Here', '', 'H', ''].join('\n'));
       await indexPageLikeTheIndexer('pages', 'pages', 'gone.md');
       await indexPageLikeTheIndexer('pages', 'pages', 'here.md');
       await fs.rm(path.join(cwd, 'pages', 'gone.md'));
@@ -1485,10 +1464,10 @@ describe('discovery core', () => {
 
     it('the ceiling bites before the budget, and the message carries both remedies', async () => {
       const big = 'z'.repeat(70_000);
-      const lines = ['# Top', '', '## Parent', '<!-- anchor: aaaaaa11 -->', '', big, ''];
+      const lines = ['# Top', '', '<!-- anchor: aaaaaa11 -->', '## Parent', '', big, ''];
       for (let i = 1; i <= 55; i++) {
         const anchor = `child${String(i).padStart(3, '0')}`;
-        lines.push(`### Child ${i}`, `<!-- anchor: ${anchor} -->`, '', i === 1 ? big : `BODY ${i}`, '');
+        lines.push(`<!-- anchor: ${anchor} -->`, `### Child ${i}`, '', i === 1 ? big : `BODY ${i}`, '');
       }
       await writePage('pages', 'cap-budget.md', lines.join('\n'));
       await indexPageLikeTheIndexer('pages', 'pages', 'cap-budget.md');
@@ -1508,7 +1487,7 @@ describe('discovery core', () => {
     /**
      * `edges` describe the OWN body. A child's tag comes back on the child's
      * item — through the prose scan AND through the `section_entity_link`
-     * augmentation, which the indexer fills from the subtree range.
+     * augmentation, which the indexer fills from the OWN body (2.0.0).
      */
     it('[ac:ac-edges-ucietego-itemu-sa-liczone-z-pel] a cut parent reports the edges of its own body only, never its children\'s', async () => {
       const big = 'x'.repeat(80_000);
@@ -1518,30 +1497,30 @@ describe('discovery core', () => {
         [
           '# Top',
           '',
-          '## Lead',
           '<!-- anchor: dddddd44 -->',
+          '## Lead',
           '',
           big,
           '',
-          '## Parent',
           '<!-- anchor: aaaaaa11 -->',
+          '## Parent',
           '',
           'Own <single_element type="widget" slug="mine"/> here.',
           '',
           big,
           '',
-          '### Child',
           '<!-- anchor: bbbbbb22 -->',
+          '### Child',
           '',
           'Child <single_element type="widget" slug="theirs"/> and a link to @other.md#abcdef01.',
           '',
         ].join('\n'),
       );
       await indexPageLikeTheIndexer('pages', 'pages', 'own-edges.md');
-      // The link table as the indexer writes it: the parent's range spans the child.
+      // The link table as the indexer writes it (2.0.0): each row's links come
+      // from its OWN body, so the child's entity is on the child's row only.
       const link = db.prepare('INSERT INTO section_entity_link (rootId, anchor, entity_type, entity_slug) VALUES (?, ?, ?, ?)');
       link.run('pages', 'aaaaaa11', 'widget', 'mine');
-      link.run('pages', 'aaaaaa11', 'widget', 'theirs');
       link.run('pages', 'bbbbbb22', 'widget', 'theirs');
       const c = core([pagesRoot()]);
 
@@ -1566,7 +1545,7 @@ describe('discovery core', () => {
       await writePage(
         'pages',
         'measure.md',
-        ['# Top', '', '## Parent', '<!-- anchor: aaaaaa11 -->', '', 'Parent prose, zażółć.', '', '### Child', '<!-- anchor: bbbbbb22 -->', '', 'Child prose.', ''].join('\n'),
+        ['# Top', '', '<!-- anchor: aaaaaa11 -->', '## Parent', '', 'Parent prose, zażółć.', '', '<!-- anchor: bbbbbb22 -->', '### Child', '', 'Child prose.', ''].join('\n'),
       );
       await indexPageLikeTheIndexer('pages', 'pages', 'measure.md');
       const c = core([pagesRoot()]);
@@ -1597,7 +1576,7 @@ describe('discovery core', () => {
       await writePage(
         'pages',
         'gone.md',
-        ['# Top', '', '## Parent', '<!-- anchor: aaaaaa11 -->', '', 'P', '', '### Child', '<!-- anchor: bbbbbb22 -->', '', 'C', ''].join('\n'),
+        ['# Top', '', '<!-- anchor: aaaaaa11 -->', '## Parent', '', 'P', '', '<!-- anchor: bbbbbb22 -->', '### Child', '', 'C', ''].join('\n'),
       );
       await indexPageLikeTheIndexer('pages', 'pages', 'gone.md');
       // Same rows, but the root no longer declares a section index.
@@ -1624,8 +1603,8 @@ describe('discovery core', () => {
         [
           '# Top',
           '',
-          '## Big',
           '<!-- anchor: eeeeee55 -->',
+          '## Big',
           '',
           'z'.repeat(130_000),
           '',
@@ -1668,7 +1647,7 @@ describe('discovery core', () => {
   });
 
   it('get_page_outline measures each section before anything is fetched', async () => {
-    await writePage('pages', 'm.md', ['# Top', '', '## S', '<!-- anchor: abcdef12 -->', '', 'exactly this', ''].join('\n'));
+    await writePage('pages', 'm.md', ['# Top', '', '<!-- anchor: abcdef12 -->', '## S', '', 'exactly this', ''].join('\n'));
     indexSection({ rootId: 'pages', anchor: 'abcdef12', page: 'm.md', heading: 'S', start: 3, end: 7 });
     const c = core([pagesRoot()]);
 
@@ -1749,7 +1728,7 @@ describe('discovery core', () => {
    * guard that fails on every page that has any.
    */
   it('carries the page file hash on the envelope', async () => {
-    const body = ['---', 'title: M', '---', '# Top', '', '## S', '<!-- anchor: abcdef12 -->', '', 'body', ''].join('\n');
+    const body = ['---', 'title: M', '---', '# Top', '', '<!-- anchor: abcdef12 -->', '## S', '', 'body', ''].join('\n');
     await writePage('pages', 'm.md', body);
     indexSection({ rootId: 'pages', anchor: 'abcdef12', page: 'm.md', heading: 'S', start: 3, end: 7 });
     const c = core([pagesRoot()]);
@@ -1785,7 +1764,7 @@ describe('discovery core', () => {
    * `heading_path`: the hierarchy is the node's POSITION now.
    */
   it('a node carries no section hash of any spelling, and no headingPath', async () => {
-    await writePage('pages', 'm.md', ['# Top', '', '## S', '<!-- anchor: abcdef12 -->', '', 'body', ''].join('\n'));
+    await writePage('pages', 'm.md', ['# Top', '', '<!-- anchor: abcdef12 -->', '## S', '', 'body', ''].join('\n'));
     indexSection({ rootId: 'pages', anchor: 'abcdef12', page: 'm.md', heading: 'S', start: 3, end: 7 });
     const c = core([pagesRoot()]);
 
@@ -2189,6 +2168,50 @@ describe('discovery core', () => {
     expect(flagged).not.toContain('m99');
   });
 
+  it('search_pages: on an indexed root a match outside every section (frontmatter, preamble, unanchored heading) is a page-level hit', async () => {
+    await writePage(
+      'pages',
+      'outside.md',
+      ['---', 'title: needle in fm', '---', 'needle preamble', '', '<!-- anchor: inside01 -->', '## In', 'needle inside', '', '## Loose', 'needle loose', ''].join('\n'),
+    );
+    await indexPageLikeTheIndexer('pages', 'pages', 'outside.md');
+    const result = await core([pagesRoot()]).searchPages({ query: 'needle', mode: 'map' });
+    if (result.mode !== 'map') throw new Error('expected map mode');
+    const byKind = result.items.map((h) => [h.kind, h.anchor ?? null, h.matchCount]);
+    expect(byKind).toEqual(expect.arrayContaining([['section', 'inside01', 1], ['page', null, 3]]));
+  });
+
+  describe('2.0.0 — rule 2 and the shared brokenReferences list', () => {
+    it('rule 2 reports an entity_tag row whose entity no longer exists', async () => {
+      db.prepare(`INSERT INTO widget (slug, format, source) VALUES ('flow', 'mermaid', 'graph TD')`).run();
+      db.prepare(`INSERT OR IGNORE INTO tag (slug, name) VALUES ('t1', 't1')`).run();
+      db.prepare(`INSERT INTO entity_tag (entity_type, entity_slug, tag_slug) VALUES ('widget', 'flow', 't1')`).run();
+      db.prepare(`INSERT INTO entity_tag (entity_type, entity_slug, tag_slug) VALUES ('widget', 'gone', 't1')`).run();
+      const report = await core([pagesRoot()]).checkConsistency({ rule: 2 });
+      expect(report.orphanedEntityTags).toEqual([{ entityType: 'widget', entitySlug: 'gone', tagSlug: 't1' }]);
+    });
+
+    it('rules 1, 5 and 6 share one list told apart by reason; `rule` keeps only its own rows', async () => {
+      await writePage(
+        'pages',
+        'refs.md',
+        [
+          '<inline_mention type="widget" slug="ghost"/>',
+          '<inline_mention type="nosuchtype" slug="x"/>',
+          '',
+        ].join('\n'),
+      );
+      const c = core([pagesRoot()]);
+      const all = await c.checkConsistency({});
+      expect((all.brokenReferences as Array<{ reason: string }>).map((r) => r.reason).sort()).toEqual(['missing', 'unknown']);
+      expect(all.brokenReferenceCounts).toEqual({ missing: 1, unknown: 1 });
+      const unknownOnly = await c.checkConsistency({ rule: 6 });
+      expect((unknownOnly.brokenReferences as Array<{ reason: string }>).map((r) => r.reason)).toEqual(['unknown']);
+      const missingOnly = await c.checkConsistency({ rule: 'broken-reference' });
+      expect((missingOnly.brokenReferences as Array<{ slug: string }>).map((r) => r.slug)).toEqual(['ghost']);
+    });
+  });
+
   /**
    * Rule 14 — a tag entities carry that no embed selects on.
    *
@@ -2554,7 +2577,7 @@ describe('discovery core', () => {
   });
 
   it('search_pages degrades hit identity on a root with no section index', async () => {
-    await writePage('pages', 'a.md', ['# T', '<!-- anchor: abcdef12 -->', 'needle', ''].join('\n'));
+    await writePage('pages', 'a.md', ['<!-- anchor: abcdef12 -->', '# T', 'needle', ''].join('\n'));
     await writePage('notes', 'n.md', 'needle\n');
     indexSection({ rootId: 'pages', anchor: 'abcdef12', page: 'a.md', heading: 'T', start: 1, end: 4 });
     const c = core([pagesRoot(), flatRoot()]);
@@ -2670,9 +2693,9 @@ describe('applyPagesOverride, through the core that consumes it', () => {
     await write('drafts', 'notes.md', CITES);
     db.prepare(
       `INSERT INTO section_index
-         (rootId, anchor, page_path, parent_anchor, heading_slug, heading_level, heading_text,
+         (rootId, anchor, page_path, parent_anchor, heading_level, heading_text,
           content_hash, body, line_start, line_end, paragraph_count)
-       VALUES ('pages', 'aaaa1111', 'notes.md', NULL, 'notes', 1, 'Notes', 'h', '', 1, 9, 1)`,
+       VALUES ('pages', 'aaaa1111', 'notes.md', NULL, 1, 'Notes', 'h', '', 1, 9, 1)`,
     ).run();
 
     // The configured root DOES get the anchor — the control that gives the

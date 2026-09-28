@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { DEFAULT_PAGE_LIMIT, projectReleaseDiff, projectSpecSnapshot } from './projection.js';
 import { resolvePagination } from './index.js';
 import { DomainError } from '../../services/tags.js';
-import type { RawDelta, RawDeltaPageChange, SpecSnapshot } from '../../../shared/entities.js';
+import type { RawDelta, FileDiff, SpecSnapshot } from '../../../shared/entities.js';
 import type { IncludeFilter, MCPEntityDelta, MCPPageDelta } from './types.js';
 import { DEFAULT_BUDGET_CHARS } from '../../discovery/budget.js';
 
@@ -85,7 +85,7 @@ describe('projectSpecSnapshot — pagination (0.1.70)', () => {
 
 // ── Fixture: a release_diff with 4 entities (create/update/delete/create) and ──
 // ── 2 pages (create/delete). from/to snapshots carry the before/after data.   ──
-function emptyPage(path: string, op: RawDeltaPageChange['op'], rootId = 'pages'): RawDeltaPageChange {
+function emptyPage(path: string, op: FileDiff['op'], rootId = 'pages'): FileDiff {
   return {
     rootId,
     path,
@@ -579,5 +579,40 @@ describe('projectReleaseDiff — the unreleased `to` (0.2.62)', () => {
       { summaryOnly: true },
     );
     expect(out.to).toEqual({ id: 9, name: 'current' });
+  });
+});
+
+describe('projectReleaseDiff — section deltas on the shared section parser (2.0.0)', () => {
+  it('each delta carries kind + headingPath; the preamble is its own delta; content is the own body', async () => {
+    const { FileSerializer } = await import('../../services/file-serializer.js');
+    const ser = new FileSerializer({ root: '/x', rootId: 'pages' } as never);
+    const before = ['intro', '', '<!-- anchor: parent01 -->', '## Parent', 'own', '', '<!-- anchor: child001 -->', '### Child', 'old', ''].join('\n');
+    const after = before.replace('intro', 'intro 2').replace('old', 'new').replace('## Parent', '## Parent renamed');
+    const fileDiff = ser.diff(ser.snapshotFromContent('p.md', before), ser.snapshotFromContent('p.md', after), 'p.md');
+    const release = (id: number, name: string): SpecSnapshot['release'] => ({
+      id, name, description: '', createdBy: 'agent', createdAt: '2026-06-19T00:00:00.000Z',
+    });
+    const snap = (id: number, content: string): SpecSnapshot => ({
+      release: release(id, `v${id}`),
+      serializer_versions: {},
+      entities: [],
+      pages: [{ path: 'p.md', op: 'update', data: { content } }],
+    });
+    const out = projectReleaseDiff(
+      { from: { id: 1, name: 'v1' }, to: { id: 2, name: 'v2' }, entities: [], pages: [fileDiff] },
+      snap(1, before),
+      snap(2, after),
+      { include: ['pages'] },
+    );
+    const sections = (out.pages as MCPPageDelta[])[0]!.sections;
+    const preamble = sections.find((s) => s.kind === 'preamble')!;
+    expect(preamble).toMatchObject({ anchor: '~preamble', headingPath: [] });
+    expect(preamble.heading).toBeUndefined();
+    const child = sections.find((s) => s.anchor === 'child001')!;
+    expect(child).toMatchObject({ kind: 'section', heading: 'Child', headingPath: ['Parent renamed'] });
+    expect(child.content).not.toContain('own');
+    const parent = sections.find((s) => s.anchor === 'parent01')!;
+    expect(parent.content).toContain('<before_change>## Parent</before_change>');
+    expect(parent.content).toContain('<after_change>## Parent renamed</after_change>');
   });
 });

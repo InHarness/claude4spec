@@ -5,7 +5,8 @@ import type Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestDb } from '../../../tests/helpers/test-db.js';
 import { PagesService } from './pages.js';
-import { SectionIndexerService, parseHeadings } from './section-indexer.js';
+import { SectionIndexerService } from './section-indexer.js';
+import { parseSections } from '../../shared/section-parser.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 
 /**
@@ -144,9 +145,9 @@ describe('section index integrity', () => {
   });
 
   it('does not treat a # line inside a fenced code block as a heading', () => {
-    const headings = parseHeadings(
-      ['<!-- anchor: aaaaaa11 -->', '# Top', '', '```sh', '# not a heading', '```', '', '## Real', ''].join('\n').split('\n'),
+    const { sections } = parseSections(
+      ['<!-- anchor: aaaaaa11 -->', '# Top', '', '```sh', '# not a heading', '```', '', '## Real', ''].join('\n'),
     );
-    expect(headings.map((h) => h.text)).toEqual(['Top', 'Real']);
+    expect(sections.map((h) => h.heading)).toEqual(['Top', 'Real']);
   });
 });

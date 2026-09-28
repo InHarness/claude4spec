@@ -23,10 +23,9 @@
 
 import { createMcpServer, mcpTool, type CapturedMcpServer } from '../plugin-runtime/index.js';
 import { z } from 'zod';
-import { ConflictError, type BriefService } from '../services/brief.js';
+import { ConflictError, composeBriefBody, type BriefService } from '../services/brief.js';
 import { toolFailure, toolSuccess } from '../operations/envelope.js';
 import { DomainError } from '../services/tags.js';
-import { ANCHOR_LINE_RE } from '../../shared/anchor-pattern.js';
 import { applyTextEdits, type MatchPosition, type PositionResolver, type TextEdit } from '../services/text-edits.js';
 import { bodyPositionResolver } from '../services/section-text.js';
 
@@ -91,7 +90,6 @@ const BRIEF_RANGE_ARG = {
 };
 
 const AGENT_ACTIONS = z.enum(['replace', 'append', 'insert_after_section']);
-const HEADING_RE = /^(#{2,6})\s+(.+?)\s*$/;
 
 export function buildBriefToolsServer(
   ctx: BriefToolsContext | ExplicitBriefToolsContext,
@@ -202,8 +200,10 @@ export function buildBriefToolsServer(
       '(A) `action` + `content`:',
       '- replace: full rewrite (provide complete markdown in `content`).',
       '- append: append fragment at end of body.',
-      '- insert_after_section: insert fragment after a section identified by `anchor`',
-      '  (preferred — 8-char nanoid in `<!-- anchor: ... -->`) or `heading` (text match).',
+      '- insert_after_section: insert fragment after a section (its whole subtree) identified by `anchor`',
+      '  (preferred — the id in an `<!-- anchor: ... -->` line above a heading) or `heading` (text match).',
+      'A heading inside a code block is never a target, and a `heading` matching several headings lands after the first of them, with a warning in the answer.',
+      'No target → the fragment is appended at the END, with a warning.',
       '(B) `textEdits`: literal find/replaceWith substitutions counted over the WHOLE body',
       '(frontmatter excluded). All finds are evaluated against the body BEFORE the write;',
       'overlapping matches are INVALID_ARGUMENT. The response carries `replacements`.',
@@ -217,7 +217,7 @@ export function buildBriefToolsServer(
       'REQUIRED `expectedHash` (sha256 from get_brief) — read the brief, then pass the hash',
       'you read back here. Mismatch → BRIEF_CONFLICT (re-read brief before retrying);',
       'omitting it → VALIDATION. There is no unguarded write.',
-      'Returns { newHash, replacements? } — never the content you sent.',
+      'Returns { newHash, replacements?, warning? } — never the content you sent.',
       'Each mutation captures a row in file_version with changed_by="agent".',
     ].join(' '),
     {
@@ -304,6 +304,7 @@ export function buildBriefToolsServer(
         }
         let newBody: string;
         let replacements: number | undefined;
+        let warning: string | undefined;
         if (hasTextEdits) {
           const applied = applyTextEdits(current.body, args.textEdits as TextEdit[], briefPositionResolver(current.content, current.body));
           newBody = applied.text;
@@ -312,13 +313,15 @@ export function buildBriefToolsServer(
           if (args.action === undefined || typeof args.content !== 'string') {
             throw new DomainError('INVALID_ARGUMENT', '`action` and `content` go together');
           }
-          newBody = composeBody(
+          const composed = composeBriefBody(
             current.body,
             args.action as 'replace' | 'append' | 'insert_after_section',
             args.content,
             typeof args.anchor === 'string' ? args.anchor : undefined,
             typeof args.heading === 'string' ? args.heading : undefined,
           );
+          newBody = composed.body;
+          warning = composed.warning;
         }
         // Reconstruct full content with original frontmatter (immutable for agent).
         const matter = await import('gray-matter');
@@ -330,9 +333,16 @@ export function buildBriefToolsServer(
           changedBy: 'agent',
           changeSummary: typeof args.changeSummary === 'string' ? args.changeSummary : undefined,
         });
-        /** echo-free: the timeline, plus the one count the caller could not predict. */
+        /**
+         * echo-free: the timeline, plus what the caller could not predict — the
+         * count, and (2.0.0) where an `insert_after_section` did NOT land as asked.
+         */
         return ok(
-          { newHash: result.newHash, ...(replacements !== undefined ? { replacements } : {}) },
+          {
+            newHash: result.newHash,
+            ...(replacements !== undefined ? { replacements } : {}),
+            ...(warning !== undefined ? { warning } : {}),
+          },
           'update_brief',
         );
       } catch (err) {
@@ -416,85 +426,4 @@ function briefPositionResolver(fullText: string, body: string): PositionResolver
     const pos = inBody(offset, sourceText);
     return { anchor: pos.anchor, line: pos.line + bodyFirstLine };
   };
-}
-
-function composeBody(
-  prior: string,
-  action: 'replace' | 'append' | 'insert_after_section',
-  fragment: string,
-  anchor?: string,
-  heading?: string,
-): string {
-  switch (action) {
-    case 'replace':
-      return fragment;
-    case 'append': {
-      if (prior.trim().length === 0) return fragment;
-      const sep = prior.endsWith('\n') ? '\n' : '\n\n';
-      return `${prior}${sep}${fragment}`;
-    }
-    case 'insert_after_section':
-      if (!anchor && !heading) {
-        throw new DomainError('MISSING_TARGET', 'insert_after_section requires anchor or heading');
-      }
-      return insertAfterSection(prior, fragment, anchor, heading);
-  }
-}
-
-function insertAfterSection(prior: string, fragment: string, anchor?: string, heading?: string): string {
-  const lines = prior.split('\n');
-  let targetLine = -1;
-  let targetLevel = -1;
-  const matches: Array<{ line: number; level: number }> = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!;
-    const m = line.match(HEADING_RE);
-    if (!m) continue;
-    const level = m[1]!.length;
-    const text = m[2]!.trim();
-    if (anchor) {
-      const prev = i > 0 ? lines[i - 1]! : '';
-      const am = prev.match(ANCHOR_LINE_RE);
-      if (am && am[1] === anchor) {
-        targetLine = i;
-        targetLevel = level;
-        break;
-      }
-    } else if (heading && text === heading.trim()) {
-      matches.push({ line: i, level });
-    }
-  }
-
-  if (targetLine === -1 && heading && !anchor) {
-    if (matches.length === 0) {
-      // Fallback: spec mówi "unknown anchor → fallback append-at-end + warning"
-      // dla brief, przyjmujemy ten sam fallback dla heading mismatch (deterministyczny).
-      return prior.endsWith('\n') ? `${prior}\n${fragment}` : `${prior}\n\n${fragment}`;
-    }
-    if (matches.length > 1) {
-      throw new DomainError('AMBIGUOUS_HEADING', `heading "${heading}" matches ${matches.length} sections`);
-    }
-    targetLine = matches[0]!.line;
-    targetLevel = matches[0]!.level;
-  }
-
-  if (targetLine === -1) {
-    // Anchor podany, ale nie znaleziono — fallback append-at-end (M21 spec).
-    return prior.endsWith('\n') ? `${prior}\n${fragment}` : `${prior}\n\n${fragment}`;
-  }
-
-  let endLine = lines.length;
-  for (let i = targetLine + 1; i < lines.length; i++) {
-    const m = lines[i]!.match(HEADING_RE);
-    if (m && m[1]!.length <= targetLevel) {
-      endLine = i;
-      break;
-    }
-  }
-  const before = lines.slice(0, endLine).join('\n');
-  const after = lines.slice(endLine).join('\n');
-  const sep = before.endsWith('\n\n') ? '' : before.endsWith('\n') ? '\n' : '\n\n';
-  const afterSep = after.length > 0 ? '\n\n' : '';
-  return `${before}${sep}${fragment}${afterSep}${after}`.replace(/\n{3,}/g, '\n\n');
 }

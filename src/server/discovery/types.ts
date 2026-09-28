@@ -61,6 +61,15 @@ export interface DiscoveryDeps {
    * only move the hang further out. Absent ⇒ the core constant applies.
    */
   searchBudgetMs?: number;
+  /**
+   * 2.0.0 — the current `ProjectContext`'s `SectionsService`, which answers
+   * `check_consistency` rule 8 (`<section_ref anchor>` resolves?) directly.
+   * Replaces the process-wide `validate` callback a `section_ref` extension
+   * could not carry — an anchor is only valid against ONE project's index.
+   * Optional for rigs without one: absent ⇒ the core reads `section_index`
+   * through `db`, which is the same table.
+   */
+  sections?: { has(anchor: string): boolean };
 }
 
 // ── Meta ────────────────────────────────────────────────────────────────────

@@ -5,6 +5,7 @@ import { columnOf, isEmbedded, type FieldNode } from '../../shared/plugin-host/d
 import { countProjectionCollection, readProjectionCollection } from '../db/projection-read.js';
 import { toIsoMs, type SystemStamp } from '../serialization/system-fields.js';
 import { RAW_SECTION_COLUMNS } from './ops/sections.js';
+import { slugifyHeading } from '../../shared/section-parser.js';
 
 /**
  * An entity type id, kebab-case. 0.2.11: a plain `string`, not a union.
@@ -752,7 +753,7 @@ export class RawEntityReader {
       anchor: row.anchor as string,
       pagePath: row.page_path as string,
       parentAnchor: (row.parent_anchor as string | null) ?? null,
-      headingSlug: row.heading_slug as string,
+      headingSlug: slugifyHeading(row.heading_text as string),
       headingText: row.heading_text as string,
       headingLevel: row.heading_level as number,
       lineStart: row.line_start as number,

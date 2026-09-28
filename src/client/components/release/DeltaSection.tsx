@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { RawDeltaEntityChange, RawDeltaPageChange, SpecSnapshot } from '../../../shared/entities.js';
+import type { FileDiff, RawDeltaEntityChange, SpecSnapshot } from '../../../shared/entities.js';
 import { clientPluginHost } from '../../core/plugin-host/host.js';
 import { EntityDiffCard } from './EntityDiffCard.js';
 import { PageDiffCard } from './PageDiffCard.js';
@@ -39,7 +39,7 @@ export function DeltaSection({
   emptyMessage = 'No changes between these two releases.',
 }: {
   entityChanges: RawDeltaEntityChange[];
-  pageChanges: RawDeltaPageChange[];
+  pageChanges: FileDiff[];
   fromSnapshot?: SpecSnapshot;
   emptyMessage?: string;
 }) {
@@ -85,7 +85,7 @@ export function DeltaSection({
           <SectionHeading label={`Pages (${visiblePages.length})`} />
           <div className="space-y-2">
             {visiblePages.map((c) => (
-              <PageDiffCard key={c.path} change={c} />
+              <PageDiffCard key={`${c.rootId}/${c.path}`} change={c} />
             ))}
           </div>
         </section>

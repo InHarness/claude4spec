@@ -36,7 +36,8 @@ import { SectionsService } from '../services/sections.js';
 import { registerExtensionReferenceType } from '../../shared/reference-extensions.js';
 import { SUPPORTED_LANGUAGES, isSupportedLanguage } from '../../shared/languages.js';
 import { slugify } from '../../shared/slug.js';
-import { PlanService, injectAnchors } from '../services/plan.js';
+import { PlanService } from '../services/plan.js';
+import { artifactAnchorInjectionSubscriber } from '../services/anchor-injection.js';
 import { plansRouter } from '../routes/plans.js';
 import { skillsRouter } from '../routes/skills.js';
 import { backfillPlansToFilesystem } from './plan-migration.js';
@@ -1096,6 +1097,7 @@ async function buildInner(
     projectDir: cwd,
     packageVersion: readPackageVersion(),
     projectionStatus,
+    sections: sectionsService,
   });
   discoveryCore = discovery;
   /**
@@ -1122,6 +1124,7 @@ async function buildInner(
       packageVersion: readPackageVersion(),
       // Narrowing the root list does not narrow the fail-closed rule.
       projectionStatus,
+      sections: sectionsService,
     });
   pluginHost.registerMcpServer('entity-tools', () =>
     createEntityToolsServer({
@@ -1548,26 +1551,6 @@ async function buildInner(
   );
   const anchorInjection = sectionIndexer.anchorInjectionSubscriber((source, relPath) => w.suppress(source, relPath));
 
-  // M06 anchor injection for plan files written OUTSIDE `PlanService.update`
-  // (an agent or user editing `plansDir` directly). `PlanService.update` runs the
-  // same `injectAnchors` synchronously, because `insert_after_section` must see
-  // the anchors with no debounce window in between.
-  const artifactAnchorInjection = (mount: { pages: PagesService }): WatchSubscriber => ({
-    onChange: async (_scope, source, relPath) => {
-      let page;
-      try {
-        page = await mount.pages.read(relPath);
-      } catch {
-        return; // already gone — skip idempotently
-      }
-      const injected = injectAnchors(page.body);
-      if (injected === page.body) return;
-      w.suppress(source, relPath);
-      await mount.pages.write(relPath, { frontmatter: page.frontmatter, body: injected });
-    },
-    onUnlink: () => {},
-  });
-
   for (const rt of rootRuntimes) {
     const source = rt.source;
 
@@ -1652,14 +1635,14 @@ async function buildInner(
         filter: MARKDOWN_FILTER,
       });
     }
-    // Plans are the one artifact kind with `anchorInjection: true` — the same
-    // implementation `PlanService.update` runs synchronously, registered here for
-    // writes that bypass the service entirely (an agent or user editing the file
-    // on disk). 0.2.89: gated on the registry's own decision, not on the kind —
-    // M06 subscribes to what M36 mounts and anchors what M36 says to anchor.
-    // Those files are anchored, never indexed (`sectionIndexed: false`).
+    // Plans are the one artifact kind with `anchorInjection: true`. 2.0.0: the
+    // implementation and both of its triggers live in the sections module (M06,
+    // `anchor-injection.ts`); the service runs it synchronously, this write-back
+    // covers writes that bypass the service (an agent or user editing the file
+    // on disk). Gated on the registry's own declaration, not on the kind. Those
+    // files are anchored, never indexed (`sectionIndexed: false`).
     if (m.entry.anchorInjection) {
-      w.subscribe(source, artifactAnchorInjection(m), {
+      w.subscribe(source, artifactAnchorInjectionSubscriber(m.entry.kind, m, (src, rel) => w.suppress(src, rel)), {
         id: 'm06-plan-anchor-injection',
         phase: 'write-back',
         filter: MARKDOWN_FILTER,
@@ -1729,6 +1712,18 @@ async function buildInner(
   // The boot rebuild mints anchors but nothing dispatches for those files, so the
   // `write-back` phase never runs — drain the stash explicitly or the anchors
   // would live only in `section_index` and never reach the .md files.
+  /**
+   * 2.0.0 — an EMPTY `section_index` at boot is not a fresh one. Migration 054
+   * empties the table (every row was computed under the old boundaries), and a
+   * section write that ran before the first rebuild finished would resolve its
+   * anchor against nothing. So the projection starts globally stale — section
+   * writes answer `INDEX_STALE` — and the boot pass below clears it, because the
+   * marking predates its token. A rule over the index's state rather than a
+   * special case for one migration: any empty index at boot is repaired the
+   * same way, and costs nothing once the pass is done.
+   */
+  const indexedRows = (db.handle.prepare('SELECT COUNT(*) AS n FROM section_index').get() as { n: number }).n;
+  if (indexedRows === 0) projectionStatus.markStale(PROJECTION_IDS.sections);
   const sectionsBootPass = projectionStatus.beginRebuild();
   sectionIndexer
     .indexAll()

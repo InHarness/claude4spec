@@ -71,6 +71,7 @@ export interface ArtifactRegistryEntry {
   binding: ArtifactBinding;
   danglingPolicy: 'invariant-banner' | 'graceful-degrade';
   gitPolicy: 'committed-by-default';
+  /** Whether a file write of this kind gets anchors (plan only). The injection itself lives in M06 (`anchor-injection.ts`). */
   anchorInjection: boolean;
   sectionIndexed: false;
   /** WS event kind broadcast on a change to this artifact's mount (see PagesFrontmatterIndexer.broadcastRootChange). */

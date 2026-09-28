@@ -5,17 +5,18 @@
  */
 
 import type {
+  FileDiff,
   LineDiffLite,
   PageXmlRefLite,
   RawDelta,
   RawDeltaEntityChange,
-  RawDeltaPageChange,
+  SectionKey,
   SpecSnapshot,
   SpecSnapshotEntityRow,
   SpecSnapshotPageRow,
 } from '../../../shared/entities.js';
 import { CURRENT_RELEASE_NAME } from '../../../shared/entities.js';
-import { parseSections } from '../../services/file-serializer.js';
+import { fileKindOf, headingPathOf, parseSections } from '../../../shared/section-parser.js';
 import {
   applyItemBudget,
   DEFAULT_BUDGET_CHARS,
@@ -35,7 +36,7 @@ import type {
 } from './types.js';
 
 type RawEntityOp = RawDeltaEntityChange['op'];
-type RawPageOp = RawDeltaPageChange['op'];
+type RawPageOp = FileDiff['op'];
 type MCPOp = 'create' | 'update' | 'delete';
 
 /*
@@ -314,7 +315,7 @@ function projectEntities(
 }
 
 function projectPages(
-  rawPages: RawDeltaPageChange[],
+  rawPages: FileDiff[],
   fromSnap: SpecSnapshot | null,
   toSnap: SpecSnapshot,
 ): MCPPageDelta[] {
@@ -330,43 +331,50 @@ function projectPages(
     const sections: MCPSectionDelta[] = [];
     const fromPage = fromPagesMap.get(p.path);
     const toPage = toPagesMap.get(p.path);
+    const kind = fileKindOf(p.path);
+    const fromTree = sectionTree((fromPage?.data as { content?: string } | undefined)?.content, kind);
+    const toTree = sectionTree((toPage?.data as { content?: string } | undefined)?.content, kind);
+
+    const head = (s: SectionKey, tree: SectionTree): Omit<MCPSectionDelta, 'content'> =>
+      s.kind === 'preamble'
+        ? { kind: 'preamble', anchor: s.anchor ?? PREAMBLE, headingPath: [] }
+        : {
+            kind: 'section',
+            ...(s.anchor !== null ? { anchor: s.anchor } : {}),
+            headingPath: s.headingPath ?? tree.pathOf(s),
+            ...(s.heading !== null ? { heading: s.heading } : {}),
+          };
 
     for (const s of p.added_sections) {
-      sections.push({
-        anchor: s.anchor,
-        heading: s.heading,
-        content: `<after_change>${escapeInlineTags(s.content)}</after_change>`,
-      });
+      sections.push({ ...head(s, toTree), content: `<after_change>${escapeInlineTags(s.content)}</after_change>` });
     }
     for (const s of p.removed_sections) {
-      sections.push({
-        anchor: s.anchor,
-        heading: s.heading,
-        content: `<before_change>${escapeInlineTags(s.content)}</before_change>`,
-      });
+      sections.push({ ...head(s, fromTree), content: `<before_change>${escapeInlineTags(s.content)}</before_change>` });
     }
     for (const s of p.modified_sections) {
-      sections.push({
-        anchor: s.anchor,
-        heading: s.heading,
-        content: projectLineDiffToInlineTags(s.line_diff),
-      });
+      // The own body carries no heading line, so a renamed / re-levelled heading
+      // is stated up front as its own before/after pair.
+      const before = s.anchor !== null ? fromTree.headingLineOf(s.anchor) : null;
+      const after = s.kind === 'section' && s.heading !== null ? `${'#'.repeat(s.level ?? 1)} ${s.heading}` : null;
+      const headingChange =
+        before !== null && after !== null && before !== after
+          ? `<before_change>${escapeInlineTags(before)}</before_change>\n<after_change>${escapeInlineTags(after)}</after_change>\n`
+          : '';
+      sections.push({ ...head(s, toTree), content: headingChange + projectLineDiffToInlineTags(s.line_diff) });
     }
-    // Pure moves only — M02 invariant: anchor jest w `moved_sections` XOR
-    // w `modified_sections` (patrz `file-serializer.ts` w `FileSerializer.diff`),
-    // ale filtrujemy defensywnie. Heading wyciągamy parsując `toPage.content`,
-    // bo `MovedSectionLite` nie niesie heading'u.
+    // Pure moves only: a moved section that also changed is already listed as
+    // modified above. The heading comes from the `to` snapshot's parse, because
+    // a move entry carries only its anchor.
     if (p.moved_sections.length > 0) {
       const modifiedAnchors = new Set(p.modified_sections.map((s) => s.anchor));
-      const toContent = (toPage?.data as { content?: string } | undefined)?.content;
-      const headingMap = toContent
-        ? new Map(parseSections(toContent).map((s) => [s.anchor, s.heading]))
-        : new Map<string, string>();
       for (const s of p.moved_sections) {
         if (modifiedAnchors.has(s.anchor)) continue;
+        const key = toTree.keyOf(s.anchor);
         sections.push({
+          kind: 'section',
           anchor: s.anchor,
-          heading: headingMap.get(s.anchor) ?? '',
+          headingPath: key ? toTree.pathOf({ kind: 'section', anchor: s.anchor, heading: key.heading, level: null, parent: null, headingPath: [] }) : [],
+          heading: key?.heading ?? '',
           moved: true,
         });
       }
@@ -403,6 +411,44 @@ function projectPages(
     out.push(pageDelta);
   }
   return out;
+}
+
+const PREAMBLE = '~preamble';
+
+interface SectionTree {
+  /** Ancestor headings of a diff entry, outermost first. */
+  pathOf(key: SectionKey): string[];
+  /** The markdown heading line of an anchored section, or null. */
+  headingLineOf(anchor: string): string | null;
+  keyOf(anchor: string): { heading: string } | null;
+}
+
+/**
+ * One snapshot's section tree, from the shared section parser — the same split
+ * the diff was computed with, so `headingPath` names the same ancestors the
+ * diff saw. A section without an anchor is found by its heading text.
+ */
+function sectionTree(content: string | undefined, kind: 'md' | 'mdx'): SectionTree {
+  const parsed = content === undefined ? null : parseSections(content, kind);
+  const find = (key: { anchor: string | null; heading: string | null }) =>
+    parsed?.sections.find((s) =>
+      key.anchor !== null && key.anchor !== PREAMBLE ? s.anchor === key.anchor : s.anchor === null && s.heading === key.heading,
+    ) ?? null;
+  return {
+    pathOf: (key) => {
+      if (!parsed || key.kind === 'preamble') return [];
+      const sec = find(key);
+      return sec ? headingPathOf(parsed, sec) : [];
+    },
+    headingLineOf: (anchor) => {
+      const sec = find({ anchor, heading: null });
+      return sec ? `${'#'.repeat(sec.level)} ${sec.heading}` : null;
+    },
+    keyOf: (anchor) => {
+      const sec = find({ anchor, heading: null });
+      return sec ? { heading: sec.heading } : null;
+    },
+  };
 }
 
 /** MCP-only default window size for `release_show` / `release_list` (M17). */

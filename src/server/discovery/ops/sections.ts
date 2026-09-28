@@ -35,6 +35,7 @@ import type { RawEntityReader, RawSection } from '../raw-entity-reader.js';
 import type { RootSet } from '../roots.js';
 import { serializeSection } from '../../serialization/serializers/section.js';
 import { hydrateSectionFrom, PageLines } from '../section-hydrator.js';
+import { fileKindOf, slugifyHeading } from '../../../shared/section-parser.js';
 import {
   applyItemBudget,
   DEFAULT_BUDGET_CHARS,
@@ -98,7 +99,7 @@ export async function getPageOutline(
     rootId: root.id,
     path: input.path,
     hash: read.hash,
-    ...buildOutline(rows, read.body),
+    ...buildOutline(rows, read.body, fileKindOf(input.path)),
   };
 }
 
@@ -112,12 +113,13 @@ export async function getPageOutline(
 function buildOutline(
   rows: readonly RawSection[],
   pageBody: string,
+  kind: 'md' | 'mdx' = 'md',
 ): { sections: OutlineNode[]; truncated?: true; message?: string } {
   const nodes = new Map<string, OutlineNode>();
   // The page is split and its headings parsed ONCE for the whole outline, not
   // once per section: measurement before fetching is the point of the
   // operation, and paying a parse per heading to deliver it would defeat it.
-  const page = new PageLines(pageBody);
+  const page = new PageLines(pageBody, kind);
   for (const row of rows) {
     nodes.set(row.anchor, {
       anchor: row.anchor,
@@ -194,7 +196,7 @@ const OUTLINE_TRUNCATION_MESSAGE =
  * slices the file — so a star here would load the corpus to throw it away.
  */
 export const RAW_SECTION_COLUMNS =
-  'rootId, anchor, page_path, parent_anchor, heading_slug, heading_text, heading_level, content_hash, line_start, line_end';
+  'rootId, anchor, page_path, parent_anchor, heading_text, heading_level, content_hash, line_start, line_end';
 
 export function selectSections(db: Database, where: string, params: unknown[]): RawSection[] {
   const rows = db
@@ -209,7 +211,7 @@ export function toRawSection(row: Record<string, unknown>): RawSection {
     anchor: row.anchor as string,
     pagePath: row.page_path as string,
     parentAnchor: (row.parent_anchor as string | null) ?? null,
-    headingSlug: row.heading_slug as string,
+    headingSlug: slugifyHeading(row.heading_text as string),
     headingText: row.heading_text as string,
     headingLevel: row.heading_level as number,
     contentHash: row.content_hash as string,
@@ -471,7 +473,7 @@ class PageCache {
       // stripped body (see PageSource.readBody). Slicing the raw file by them
       // shifts every section by the height of the frontmatter block.
       content = this.pages.readBody(section.rootId, section.pagePath).then(
-        (body) => new PageLines(body),
+        (body) => new PageLines(body, fileKindOf(section.pagePath)),
         (err: unknown) => {
           if (err instanceof DiscoveryError) return err;
           throw err;

@@ -38,6 +38,8 @@
  */
 
 import type { Database } from 'better-sqlite3';
+import matter from 'gray-matter';
+import { frontmatterInnerLines } from '../../../shared/section-parser.js';
 import { invalidArgument } from '../errors.js';
 import type { PageSource } from '../page-source.js';
 import { DEFAULT_LIMITS, resolvePageRequest } from '../pagination.js';
@@ -111,12 +113,36 @@ export async function searchPages(
       if (anchorFilter && !pageAnchors?.some((a) => anchorFilter.has(a.anchor))) continue;
 
       let content: string;
+      let frontmatterLines: string[] = [];
       try {
         // Frontmatter-stripped: a match's line has to be comparable with the
         // section index's line ranges, or the anchor attached to it is wrong.
-        content = await pages.readBody(root.id, rel);
+        // The frontmatter is searched too (2.0.0), from the same one read —
+        // it lies outside every section, so a match there is a PAGE-level hit.
+        const raw = await pages.read(root.id, rel);
+        // The body exactly as `readBody` gives it (gray-matter — the section
+        // index's coordinate space); the frontmatter block from the section
+        // parser. Not gray-matter's `.matter`: its string cache drops that field
+        // on a repeated input.
+        content = matter(raw).content;
+        frontmatterLines = frontmatterInnerLines(raw);
       } catch {
         continue;
+      }
+      if (!anchorFilter) {
+        for (const text of frontmatterLines) {
+          if (!matcher(text)) continue;
+          matches++;
+          const key = `${root.id} ${rel}`;
+          let acc = bySection.get(key);
+          if (!acc) {
+            acc = { kind: 'page', rootId: root.id, path: rel, sortLine: 0, matchCount: 0, matchLines: [] };
+            bySection.set(key, acc);
+          }
+          // Counted, never hunked: the hunk coordinates are the body's. The
+          // content of a page-level hit is read with `get_page`.
+          acc.matchCount++;
+        }
       }
       const lines = content.split('\n');
       for (let i = 0; i < lines.length; i++) {
@@ -511,8 +537,13 @@ function withHeadingPaths(rows: readonly Omit<AnchorRow, 'headingPath'>[]): Anch
   });
 }
 
-/** The innermost section containing `line` — the deepest range wins, so a match
- *  inside a sub-section reports the sub-section rather than its parent. */
+/**
+ * The section whose OWN range contains `line`. 2.0.0: `section_index` stores own
+ * bodies (`line_start` = top of the anchor block, `line_end` = end of the own
+ * body), so ranges no longer nest and at most one contains a line; the
+ * narrowest-wins rule stays as a guard. A line inside NO range — the preamble,
+ * the body of a heading without an anchor — is a PAGE-level hit.
+ */
 function innermost(rows: readonly AnchorRow[], line: number): AnchorRow | undefined {
   let best: AnchorRow | undefined;
   for (const row of rows) {

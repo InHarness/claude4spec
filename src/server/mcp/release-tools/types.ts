@@ -107,16 +107,30 @@ export interface MCPPageDelta {
 }
 
 export interface MCPSectionDelta {
-  anchor: string;
+  /** 2.0.0 — `"section"`, or `"preamble"` for the text above the page's first heading. */
+  kind: 'section' | 'preamble';
+  /**
+   * 2.0.0 — optional. Absent for a section whose heading carries no anchor
+   * (then `heading` identifies it); `~preamble` for the preamble.
+   */
+  anchor?: string;
+  /**
+   * 2.0.0 — headings of the ancestors, outermost first, down to the direct
+   * parent (side `to`; for a removed section side `from`). `[]` for a top-level
+   * section and for the preamble. Subsections are their own deltas, so this is
+   * how a delta says where it sits.
+   */
+  headingPath: string[];
   /**
    * Current heading sekcji (after-side dla create/update; before-side dla
-   * delete; dla pure-move = current). Jeśli sam tekst headingu się zmienił,
-   * zmiana pojawia się jak każda inna linia w `content` (z tagami
-   * `<before_change>` / `<after_change>` przy linijce nagłówka).
+   * delete; dla pure-move = current). Pominięte dla preambuły. 2.0.0: `content`
+   * obejmuje wyłącznie ciało własne, więc zmiana samego nagłówka pojawia się na
+   * początku `content` jako para `<before_change>` / `<after_change>` linii
+   * nagłówka.
    */
-  heading: string;
+  heading?: string;
   /**
-   * Raw markdown sekcji z inline tagami line-diff'u
+   * 2.0.0 — raw markdown OWN BODY sekcji (podsekcje są osobnymi deltami) z inline tagami line-diff'u
    * (`<before_change>old</before_change>` przy linijkach usuniętych,
    * `<after_change>new</after_change>` przy dodanych; literalne wystąpienia
    * tych tagów w treści są escape'owane jako encje XML). Pomijane wyłącznie

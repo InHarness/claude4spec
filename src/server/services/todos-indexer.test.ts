@@ -52,6 +52,21 @@ describe('TodosIndexerService', () => {
     expect(hits[2]!.col).toBeGreaterThan(hits[1]!.col);
   });
 
+  it('2.0.0 — a TODO inside a code block or a multi-line HTML comment is not a marker', async () => {
+    pagesFiles['a.md'] = [
+      '<todo comment="live"/>',
+      '```',
+      '<todo comment="in fence"/>',
+      '```',
+      '<!--',
+      '<todo comment="commented out"/>',
+      '-->',
+      '<!-- <todo comment="one-line comment stays live"/> -->',
+    ].join('\n');
+    await indexer.onChange(scope, 'pages:pages', 'a.md');
+    expect(indexer.listByPath('pages', 'a.md').map((h) => h.comment)).toEqual(['live', 'one-line comment stays live']);
+  });
+
   it('keeps an empty comment and decodes an escaped quote', async () => {
     pagesFiles['a.md'] = '<todo comment=""/>\n<todo comment="say &quot;hi&quot;"/>';
     await indexer.onChange(scope, 'pages:pages', 'a.md');

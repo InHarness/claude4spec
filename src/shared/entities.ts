@@ -365,7 +365,7 @@ export interface SpecSnapshot {
  * 0.2.31 — `changes` is the closed eight-operation dictionary rather than a
  * per-type bag of differently-named keys, and `raw` is gone with the deep-diff
  * mode that used to fill it. `op` spells the state `updated`, matching the
- * `EntityDiff` envelope this row carries; the PAGE-side `RawDeltaPageChange`
+ * `EntityDiff` envelope this row carries; the PAGE-side `FileDiff`
  * keeps `modified`, because that vocabulary belongs to M02's `FileDiff` and
  * pages have no logical schema to generate a delta from.
  */
@@ -377,13 +377,35 @@ export interface RawDeltaEntityChange {
   _serializerVersionMismatch?: { type: string; from: string | null; to: string | null };
 }
 
-export interface PageSectionLite {
-  anchor: string;
-  heading: string;
-  level: number;
-  content: string;
-  position: number;
+/**
+ * 2.0.0 — the identity of one page-diff entry (M02 `FileDiff`), from the shared
+ * section parser.
+ *
+ * `anchor`: `'~preamble'` for the preamble; `null` for a heading without an
+ * anchor (added/removed only — it has no identity to pair across sides, and is
+ * identified by `heading`). `heading`/`level`: `null` for the preamble.
+ * `parent`: the parent section's anchor (side `b` for added/modified, `a` for
+ * removed); `null` at the top level, when the parent has no anchor, and for the
+ * preamble.
+ */
+export interface SectionKey {
+  kind: 'section' | 'preamble';
+  anchor: string | null;
+  heading: string | null;
+  level: number | null;
+  parent: string | null;
+  /**
+   * Headings of the ancestors, outermost first, on the same side as `parent`.
+   * `[]` at the top level and for the preamble. Beyond the brief's `SectionKey`:
+   * `parent` names only the direct parent, which need not be in the diff, so a
+   * reader rendering a subsection row (Release Detail) could not name its
+   * ancestors without it.
+   */
+  headingPath: string[];
 }
+
+/** An added/removed entry: `content` is the OWN body only (subsections are their own entries). */
+export type FileDiffSection = SectionKey & { content: string };
 
 export interface LineDiffLineLite {
   op: 'keep' | 'added' | 'removed';
@@ -394,13 +416,8 @@ export interface LineDiffLite {
   lines: LineDiffLineLite[];
 }
 
-export interface ModifiedSectionLite {
-  anchor: string;
-  heading: string;
-  level: number;
-  /** Mandatory in M17 decyzja 10 wariant C. */
-  line_diff: LineDiffLite;
-}
+/** A modified entry: `line_diff` covers the OWN body only. Mandatory in M17 decyzja 10 wariant C. */
+export type FileDiffModifiedSection = SectionKey & { line_diff: LineDiffLite };
 
 export interface MovedSectionLite {
   anchor: string;
@@ -425,19 +442,24 @@ export interface XmlRefsDiffLite {
   removed: PageXmlRefLite[];
 }
 
-export interface RawDeltaPageChange {
+/**
+ * M02 — one page's diff between two states. 2.0.0: also the page entry of a
+ * release delta (`RawDelta.pages: FileDiff[]`) — the former page-delta shape is
+ * gone; the diff reaches the client as the serializer computed it.
+ */
+export interface FileDiff {
   /**
-   * 0.2.102: the page's root — first half of its full key `<rootId>/<path>`.
-   * A page's identity in history is the pair (rootId, path); `path` alone can
-   * collide across roots.
+   * The page's root — first half of its full key `<rootId>/<path>`. A page's
+   * identity in history is the pair (rootId, path); `path` alone can collide
+   * across roots.
    */
   rootId: string;
   /** Path relative to the page's root. */
   path: string;
   op: 'created' | 'deleted' | 'modified' | 'noop';
-  added_sections: PageSectionLite[];
-  removed_sections: PageSectionLite[];
-  modified_sections: ModifiedSectionLite[];
+  added_sections: FileDiffSection[];
+  removed_sections: FileDiffSection[];
+  modified_sections: FileDiffModifiedSection[];
   moved_sections: MovedSectionLite[];
   frontmatter_diff: FrontmatterDiffLite | null;
   xml_refs_diff: XmlRefsDiffLite | null;
@@ -476,7 +498,8 @@ export interface RawDelta {
   from: { id: number; name: string } | null;
   to: { id: number; name: string };
   entities: RawDeltaEntityChange[];
-  pages: RawDeltaPageChange[];
+  /** 2.0.0 — one `FileDiff` per page. */
+  pages: FileDiff[];
 }
 
 // --- v0.1.13: Acceptance Criteria ---

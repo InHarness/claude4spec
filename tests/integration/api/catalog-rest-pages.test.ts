@@ -229,10 +229,10 @@ describe('GET /api/sections — the index listing', () => {
   function insert(db: Database.Database, anchor: string, page: string, heading: string, body: string): void {
     db.prepare(
       `INSERT INTO section_index
-         (rootId, anchor, page_path, parent_anchor, heading_slug, heading_level, heading_text,
+         (rootId, anchor, page_path, parent_anchor, heading_level, heading_text,
           content_hash, body, line_start, line_end, paragraph_count)
-       VALUES ('pages', ?, ?, NULL, ?, 2, ?, 'hash', ?, 1, 5, 1)`,
-    ).run(anchor, page, heading.toLowerCase(), heading, body);
+       VALUES ('pages', ?, ?, NULL, 2, ?, 'hash', ?, 1, 5, 1)`,
+    ).run(anchor, page, heading, body);
   }
 
   it('emits a bounded snippet and never the materialized column', async () => {

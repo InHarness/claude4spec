@@ -1648,6 +1648,80 @@ describe('update_sections — the anchor-loss guard', () => {
     expect((await pages.read('doc.md')).body).toContain('CHILD ONE BODY');
   });
 
+  describe('2.0.0 — append on the shared section parser', () => {
+    const appendTo = async (heading: string, content: string, dropAnchors?: string[]) =>
+      updateSections(
+        deps(),
+        {
+          expectedHash: await hashOfPage('doc.md'),
+          edits: [{ anchor: anchorOf(heading), action: 'append', content }],
+          ...(dropAnchors ? { dropAnchors } : {}),
+        },
+        'agent',
+      );
+
+    it('refuses a heading at or above the section level, before touching the file', async () => {
+      await index('doc.md', nested);
+      const before = await hashOfPage('doc.md');
+      const err = await appendTo('Parent', 'text\n\n## Sibling-level\n').catch((e) => e);
+      expect(err.code).toBe('INVALID_ARGUMENT');
+      const higher = await appendTo('Child one', '## Higher\n').catch((e) => e);
+      expect(higher.code).toBe('INVALID_ARGUMENT');
+      expect(await hashOfPage('doc.md')).toBe(before);
+    });
+
+    it('a deeper heading becomes the first child; a heading-shaped line in a code block is code', async () => {
+      await index('doc.md', nested);
+      await appendTo('Parent', '### First\n\n```md\n## not a heading\n```\n');
+      const lines = (await pages.read('doc.md')).body.split('\n');
+      expect(lines.indexOf('### First')).toBeLessThan(lines.indexOf('### Child one'));
+      expect(lines.indexOf('## not a heading')).toBeGreaterThan(-1);
+    });
+
+    it('append can never drop an anchor, so naming one in dropAnchors beside it is a stranger', async () => {
+      await index('doc.md', nested);
+      const err = await appendTo('Parent', 'MORE\n', [anchorOf('Child one')]).catch((e) => e);
+      expect(err.code).toBe('INVALID_ARGUMENT');
+    });
+  });
+
+  describe('2.0.0 — code blocks and the anchor guard', () => {
+    it('content opening a never-closed fence swallows cited sections → ANCHOR_LOSS unless declared', async () => {
+      await index('doc.md', nested);
+      const sibling = anchorOf('Sibling');
+      await citeWithTag(sibling);
+      const ed = async (dropAnchors?: string[]) =>
+        updateSections(
+          deps(),
+          {
+            expectedHash: await hashOfPage('doc.md'),
+            edits: [{ anchor: anchorOf('Child two'), action: 'replace', content: 'x\n```\nopen' }],
+            ...(dropAnchors ? { dropAnchors } : {}),
+          },
+          'agent',
+        );
+      const err = await ed().catch((e) => e);
+      expect(err.code).toBe('ANCHOR_LOSS');
+      expect(err.details.map((d: { anchor: string }) => d.anchor)).toContain(sibling);
+      await expect(ed([sibling])).resolves.toBeTruthy();
+    });
+
+    it('an anchor-shaped line inside a code block is not an anchor — a taken value in a fence is no duplicate', async () => {
+      await index('doc.md', nested);
+      const taken = anchorOf('Sibling');
+      await expect(
+        updateSections(
+          deps(),
+          {
+            expectedHash: await hashOfPage('doc.md'),
+            edits: [{ anchor: anchorOf('Child one'), action: 'replace', content: `\`\`\`md\n<!-- anchor: ${taken} -->\n## Example\n\`\`\`\n` }],
+          },
+          'agent',
+        ),
+      ).resolves.toBeTruthy();
+    });
+  });
+
   it('also sees a `page.md#anchor` link as a citation, not only a section_ref tag', async () => {
     await index('doc.md', nested);
     const childOne = anchorOf('Child one');

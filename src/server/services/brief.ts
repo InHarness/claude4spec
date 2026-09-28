@@ -16,6 +16,7 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { parseSections } from '../../shared/section-parser.js';
 import matter from 'gray-matter';
 import type { Brief, BriefChangedBy, BriefFrontmatter } from '../../shared/entities.js';
 import { BRIEF_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
@@ -667,4 +668,83 @@ function slugify(input: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 80) || 'brief';
+}
+
+/**
+ * M21 (2.0.0) — compose a brief body for `update_brief`'s action shape. Lives in
+ * the SERVICE so every channel gets the same targeting.
+ *
+ * `insert_after_section` resolves its target with the shared section parser
+ * (M06) run over the brief's CURRENT body — never a scan of its own:
+ *  - `anchor` matches an anchor paired with a heading. A brief has one only
+ *    where its author left it: the system injects none. An orphan anchor is not
+ *    an address.
+ *  - `heading` matches heading text. A heading inside a code block (an
+ *    excluded range) is never a target.
+ *  - No target (including a `heading` that matches only a line in code) is not a
+ *    refusal: the fragment is appended at the END and the answer carries a
+ *    `warning`. Until 2.0.0 that miss was completely silent.
+ *  - Several headings match: the fragment lands after the FIRST in document
+ *    order, and the answer carries an ambiguity `warning`.
+ * The fragment goes after the target's whole subtree.
+ */
+export function composeBriefBody(
+  prior: string,
+  action: 'replace' | 'append' | 'insert_after_section',
+  fragment: string,
+  anchor?: string,
+  heading?: string,
+): { body: string; warning?: string } {
+  switch (action) {
+    case 'replace':
+      return { body: fragment };
+    case 'append':
+      return { body: appendAtEnd(prior, fragment) };
+    case 'insert_after_section':
+      if (!anchor && !heading) {
+        throw new DomainError('MISSING_TARGET', 'insert_after_section requires anchor or heading');
+      }
+      return insertAfterSection(prior, fragment, anchor, heading);
+  }
+}
+
+function appendAtEnd(prior: string, fragment: string): string {
+  if (prior.trim().length === 0) return fragment;
+  return prior.endsWith('\n') ? `${prior}\n${fragment}` : `${prior}\n\n${fragment}`;
+}
+
+function insertAfterSection(
+  prior: string,
+  fragment: string,
+  anchor?: string,
+  heading?: string,
+): { body: string; warning?: string } {
+  const sections = parseSections(prior, 'md', { frontmatter: false }).sections;
+  const wanted = heading?.trim();
+  const matches = anchor
+    ? sections.filter((s) => s.anchor === anchor)
+    : sections.filter((s) => s.heading === wanted);
+  const target = matches[0];
+  if (!target) {
+    const what = anchor ? `anchor '${anchor}'` : `heading '${wanted}'`;
+    return {
+      body: appendAtEnd(prior, fragment),
+      warning: `insert_after_section: ${what} matches no section of this brief — the fragment was appended at the END of the brief`,
+    };
+  }
+  const lines = prior.split('\n');
+  // Blank lines are normalized at the two seams only — never across the whole
+  // body, where a run of blank lines can be content (inside a code block).
+  const before = lines.slice(0, target.subtreeEndLine).join('\n').replace(/\n+$/, '');
+  const after = lines.slice(target.subtreeEndLine).join('\n').replace(/^\n+/, '');
+  const frag = fragment.replace(/^\n+/, '');
+  const body = after.length > 0 ? `${before}\n\n${frag.replace(/\n+$/, '')}\n\n${after}` : `${before}\n\n${frag}`;
+  if (matches.length > 1) {
+    const what = anchor ? `anchor '${anchor}'` : `heading '${wanted}'`;
+    return {
+      body,
+      warning: `insert_after_section: ${what} matches ${matches.length} sections — the fragment landed after the FIRST of them (line ${target.headingLine}); address it by anchor to be exact`,
+    };
+  }
+  return { body };
 }

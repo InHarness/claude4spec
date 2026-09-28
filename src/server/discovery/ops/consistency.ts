@@ -19,7 +19,7 @@
 import { readConfig, type ConsistencySeverity } from '../../config.js';
 import { parseXmlTagsExcludingCode, taggedListVia } from '../../../shared/xml-tags.js';
 import { getExtensionReferenceType } from '../../../shared/reference-extensions.js';
-import { parseHeadings } from '../../services/section-indexer.js';
+import { anchorLineIndexOf, fileKindOf, parseSections } from '../../../shared/section-parser.js';
 import { invalidArgument } from '../errors.js';
 import { classifyVerifies, readActiveAcs } from './ac-rules.js';
 import type { PageSource } from '../page-source.js';
@@ -42,6 +42,15 @@ interface TagWithoutConsumerRow {
   severity: ConsistencySeverity;
 }
 
+/**
+ * 2.0.0 — rules 1, 5, 6 (and 12) are separate rules of the catalogue with
+ * different detection conditions, but their rows land in ONE list, told apart
+ * by `reason`: `missing` (rule 1 — no such entity), `inactive` (rule 5 — the
+ * type's plugin is not active), `unknown` (rule 6 — no such type). Until 2.0.0
+ * they were three report categories distinguished by text.
+ */
+export type BrokenReferenceReason = 'missing' | 'inactive' | 'unknown';
+
 interface BrokenReferenceRow {
   rootId: string;
   pagePath: string;
@@ -49,26 +58,52 @@ interface BrokenReferenceRow {
   type: string;
   slug: string;
   line: number;
-  category: 'broken-reference' | 'inactive-plugin' | 'unknown-type';
+  reason: BrokenReferenceReason;
+}
+
+interface RuleDef {
+  id: number;
+  bucket: string;
+  /** For rules sharing a bucket: which rows are this rule's. Absent = every row. */
+  rows?: (row: Record<string, unknown>) => boolean;
 }
 
 /**
- * The rule catalogue, as data. `rule` accepts either the number or the name, so
- * an agent that read the report can filter by what it saw without a lookup
- * table of its own.
+ * The rule catalogue (2.0.0: 1–16), as data. `rule` accepts the number or any
+ * of the names below, so an agent that read the report can filter by what it
+ * saw without a lookup table of its own. Pre-2.0.0 names stay accepted as
+ * aliases of the rule they now belong to.
  */
-const RULES: Record<string, { id: number; bucket: string }> = {
-  'broken-reference': { id: 1, bucket: 'brokenReferences' },
-  'inactive-plugin': { id: 2, bucket: 'brokenReferences' },
+const RULES: Record<string, RuleDef> = {
+  'broken-reference': { id: 1, bucket: 'brokenReferences', rows: (r) => r.reason === 'missing' },
+  'orphaned-entity-tag': { id: 2, bucket: 'orphanedEntityTags' },
+  'unreferenced-entity': { id: 3, bucket: 'unreferencedEntities' },
   'tag-driven-reference': { id: 3, bucket: 'unreferencedEntities' },
+  'invalid-tag-reference': { id: 4, bucket: 'invalidTagReferences' },
+  'inactive-plugin-reference': { id: 5, bucket: 'brokenReferences', rows: (r) => r.reason === 'inactive' },
+  'inactive-plugin': { id: 5, bucket: 'brokenReferences', rows: (r) => r.reason === 'inactive' },
+  'unknown-type-reference': { id: 6, bucket: 'brokenReferences', rows: (r) => r.reason === 'unknown' },
+  'unknown-type': { id: 6, bucket: 'brokenReferences', rows: (r) => r.reason === 'unknown' },
+  'unanchored-heading': { id: 7, bucket: 'unanchoredHeadings' },
+  'broken-section-ref': { id: 8, bucket: 'brokenExtensionReferences' },
   'broken-extension-reference': { id: 8, bucket: 'brokenExtensionReferences' },
   'broken-ac-verify': { id: 9, bucket: 'brokenAcVerifies' },
   'entity-without-ac-coverage': { id: 10, bucket: 'entitiesWithoutAcCoverage' },
   'module-without-ac': { id: 11, bucket: 'modulesWithoutAc' },
-  'unknown-type': { id: 12, bucket: 'brokenReferences' },
-  'invalid-tag-reference': { id: 4, bucket: 'invalidTagReferences' },
+  /**
+   * Rule 12 is a GUARANTEE rather than a detector: a reference to a hidden type
+   * (`diagram`, `code-snippet` — types without routes/detail panel of their own)
+   * is validated exactly like any other, resolving its type from the tag's
+   * `type` attribute, and lands in `brokenReferences` under the same three
+   * reasons. The server carries no "hidden" flag to split on (hiddenness is a
+   * frontend-slot property), so selecting rule 12 selects the whole list its
+   * rows share with rules 1/5/6.
+   */
+  'hidden-type-reference': { id: 12, bucket: 'brokenReferences' },
   'duplicate-anchor': { id: 13, bucket: 'duplicateAnchors' },
   'tag-without-consumer': { id: 14, bucket: 'tagsWithoutConsumer' },
+  'anchor-line-in-code': { id: 15, bucket: 'anchorLinesInCode' },
+  'unclosed-code-block': { id: 16, bucket: 'unclosedCodeBlocks' },
 };
 
 /** Buckets whose every row is an error, regardless of configuration. */
@@ -98,20 +133,26 @@ function severityOf(bucket: string, row: unknown): 'error' | 'warning' {
   return 'warning';
 }
 
-function bucketsFor(rule: string | number | undefined): Set<string> | null {
+/** The selected rules, or null when `rule` was not given. */
+function rulesFor(rule: string | number | undefined): RuleDef[] | null {
   if (rule === undefined) return null;
   const entries = Object.entries(RULES).filter(
     ([name, def]) => name === String(rule) || def.id === Number(rule),
   );
   if (!entries.length) {
+    const byId = new Map<number, string[]>();
+    for (const [name, def] of Object.entries(RULES)) byId.set(def.id, [...(byId.get(def.id) ?? []), name]);
     throw invalidArgument(
       `unknown rule '${String(rule)}'`,
-      `rule accepts a number or a name: ${Object.entries(RULES)
-        .map(([name, def]) => `${def.id} (${name})`)
+      `rule accepts a number 1–16 or a name: ${[...byId]
+        .sort((a, b) => a[0] - b[0])
+        .map(([id, names]) => `${id} (${names.join(' | ')})`)
         .join(', ')}`,
     );
   }
-  return new Set(entries.map(([, def]) => def.bucket));
+  // Dedupe by id: aliases select the same rule.
+  const seen = new Set<number>();
+  return entries.map(([, def]) => def).filter((def) => !seen.has(def.id) && seen.add(def.id));
 }
 
 export async function checkConsistency(
@@ -120,7 +161,7 @@ export async function checkConsistency(
   roots: RootSet,
   input: CheckConsistencyInput = {},
 ): Promise<ConsistencyReport> {
-  const wanted = bucketsFor(input.rule);
+  const wanted = rulesFor(input.rule);
   const host = deps.host;
   const reader = deps.reader;
 
@@ -142,11 +183,23 @@ export async function checkConsistency(
     );
   }
   const tagSlugs = new Set(reader.listTags().map((t) => t.slug));
-  const knownAnchors = new Set(
-    (deps.db.prepare('SELECT anchor FROM section_index').all() as Array<{ anchor: string }>).map(
-      (r) => r.anchor,
-    ),
-  );
+  /**
+   * Rule 8 (2.0.0) asks the current project's `SectionsService` directly — the
+   * process-wide `validate` callback a `section_ref` extension could carry never
+   * could answer it, since an anchor is only valid against ONE project's index.
+   * A rig without a service reads the same table.
+   */
+  const anchorExists =
+    deps.sections !== undefined
+      ? (anchor: string) => deps.sections!.has(anchor)
+      : (() => {
+          const known = new Set(
+            (deps.db.prepare('SELECT anchor FROM section_index').all() as Array<{ anchor: string }>).map(
+              (r) => r.anchor,
+            ),
+          );
+          return (anchor: string) => known.has(anchor);
+        })();
 
   /**
    * Every tag slug NAMED by a `tagged_list` / `tagged_list_mixed` embed, filled
@@ -167,10 +220,10 @@ export async function checkConsistency(
     category: string;
   }> = [];
 
-  const categorise = (type: string): BrokenReferenceRow['category'] | 'active' => {
+  const categorise = (type: string): BrokenReferenceReason | 'active' => {
     if (host.getEntity(type)) return 'active';
-    if (host.getAvailable(type)) return 'inactive-plugin';
-    return 'unknown-type';
+    if (host.getAvailable(type)) return 'inactive';
+    return 'unknown';
   };
 
   const scanned = roots.referenceValidated();
@@ -186,11 +239,12 @@ export async function checkConsistency(
    */
   const sectionIndexedIds = new Set(roots.sectionIndexed().map((r) => r.id));
   const anchorOccurrences = new Map<string, AnchorOccurrence[]>();
+  const structure: StructureRows = { unanchoredHeadings: [], anchorLinesInCode: [], unclosedCodeBlocks: [] };
 
   for (const root of scanned) {
     for (const page of await pages.readAll([root])) {
       allPagePaths.push({ rootId: root.id, path: page.path });
-      if (sectionIndexedIds.has(root.id)) collectAnchors(anchorOccurrences, root.id, page);
+      collectStructure(structure, anchorOccurrences, root.id, sectionIndexedIds.has(root.id), page);
       for (const tag of parseXmlTagsExcludingCode(page.body)) {
         // 0.2.15 — the entity type comes from `type=` and nowhere else. The
         // branch that derived it from a registered extension tag's name is
@@ -214,7 +268,7 @@ export async function checkConsistency(
                 type: tagType,
                 slug,
                 line: tag.line,
-                category,
+                reason: category,
               });
             }
             continue;
@@ -231,7 +285,7 @@ export async function checkConsistency(
                 type: tagType,
                 slug,
                 line: tag.line,
-                category: 'broken-reference',
+                reason: 'missing',
               });
           }
         }
@@ -264,7 +318,7 @@ export async function checkConsistency(
             // against, which is not the same as having a broken anchor.
             if (!root.sectionIndexed) continue;
             const anchor = tag.attrs.anchor ?? '';
-            if (!anchor || !knownAnchors.has(anchor)) {
+            if (!anchor || !anchorExists(anchor)) {
               brokenExtensionReferences.push({
                 rootId: root.id,
                 pagePath: page.path,
@@ -426,7 +480,26 @@ export async function checkConsistency(
   // Section-indexed roots the reference sweep above did NOT cover.
   for (const root of roots.sectionIndexed()) {
     if (scanned.some((r) => r.id === root.id)) continue;
-    for (const page of await pages.readAll([root])) collectAnchors(anchorOccurrences, root.id, page);
+    for (const page of await pages.readAll([root])) {
+      collectStructure(structure, anchorOccurrences, root.id, true, page);
+    }
+  }
+
+  /**
+   * Rule 2 — an `entity_tag` row whose entity no longer exists (a dangling
+   * ASSIGNMENT). The other end of rule 14's edge: there the assignment is sound
+   * and the consumer is missing; here the assignment points at nothing.
+   * `tag_slug` is a FK with ON DELETE CASCADE, so a missing TAG cannot orphan a
+   * row — only a missing entity can. A type whose table the reader does not
+   * hold (inactive / unknown) is outside the sweep, like every other rule.
+   */
+  const orphanedEntityTags: Array<{ entityType: string; entitySlug: string; tagSlug: string }> = [];
+  for (const row of deps.db
+    .prepare('SELECT entity_type, entity_slug, tag_slug FROM entity_tag ORDER BY entity_type, entity_slug, tag_slug')
+    .all() as Array<{ entity_type: string; entity_slug: string; tag_slug: string }>) {
+    const set = slugSets[row.entity_type];
+    if (!set || set.has(row.entity_slug)) continue;
+    orphanedEntityTags.push({ entityType: row.entity_type, entitySlug: row.entity_slug, tagSlug: row.tag_slug });
   }
 
   const duplicateAnchors = [...anchorOccurrences.entries()]
@@ -437,7 +510,10 @@ export async function checkConsistency(
   const buckets: Record<string, unknown[]> = {
     brokenReferences,
     duplicateAnchors,
-    orphanedEntityTags: [],
+    orphanedEntityTags,
+    unanchoredHeadings: structure.unanchoredHeadings,
+    anchorLinesInCode: structure.anchorLinesInCode,
+    unclosedCodeBlocks: structure.unclosedCodeBlocks,
     unreferencedEntities,
     invalidTagReferences,
     brokenExtensionReferences,
@@ -465,13 +541,18 @@ export async function checkConsistency(
     duplicateAnchors.length +
     acErrors +
     tagsWithoutConsumer.filter((t) => t.severity === 'error').length;
+  // Rules 2, 7, 15, 16 are informational: warnings, never blocking a write.
   const warnings =
     unreferencedEntities.length +
+    orphanedEntityTags.length +
+    structure.unanchoredHeadings.length +
+    structure.anchorLinesInCode.length +
+    structure.unclosedCodeBlocks.length +
     acWarnings +
     tagsWithoutConsumer.filter((t) => t.severity === 'warn').length;
 
   const report: ConsistencyReport = {
-    brokenReferenceCounts: countBy(brokenReferences, (r) => r.category),
+    brokenReferenceCounts: countBy(brokenReferences, (r) => r.reason),
     brokenExtensionReferenceCounts: countBy(brokenExtensionReferences, (r) => `${r.tagType}:${r.category}`),
     brokenAcVerifyCounts: countBy(brokenAcVerifies, (r) => r.category),
     summary: { total: errors + warnings, errors, warnings },
@@ -494,11 +575,18 @@ export async function checkConsistency(
    */
   let truncated = false;
   for (const [name, rows] of Object.entries(buckets)) {
-    if (wanted && !wanted.has(name)) {
+    const selecting = wanted?.filter((def) => def.bucket === name);
+    if (selecting && selecting.length === 0) {
       report[name] = [];
       continue;
     }
-    const kept = input.severity ? rows.filter((row) => severityOf(name, row) === input.severity) : rows;
+    // A bucket shared by several rules (1/5/6/12 → brokenReferences) keeps the
+    // rows of the SELECTED rules only.
+    const ruled =
+      selecting && !selecting.some((def) => def.rows === undefined)
+        ? rows.filter((row) => selecting.some((def) => def.rows!(row as Record<string, unknown>)))
+        : rows;
+    const kept = input.severity ? ruled.filter((row) => severityOf(name, row) === input.severity) : ruled;
     if (input.limit !== undefined && kept.length > input.limit) truncated = true;
     report[name] = input.limit === undefined ? kept : kept.slice(0, input.limit);
   }
@@ -515,43 +603,66 @@ interface AnchorOccurrence {
   heading: string;
 }
 
+interface StructureRows {
+  /** Rule 7. */
+  unanchoredHeadings: Array<{ rootId: string; pagePath: string; line: number; heading: string }>;
+  /** Rule 15. */
+  anchorLinesInCode: Array<{ rootId: string; path: string; line: number; anchor: string }>;
+  /** Rule 16. */
+  unclosedCodeBlocks: Array<{ rootId: string; path: string; line: number }>;
+}
+
 /**
- * Rule 13 — one anchor, two headings.
+ * Rules 7, 13, 15 and 16 — one parse per page, and no scan of their own: they
+ * read headings, anchors and diagnostics from the SHARED SECTION PARSER (M06),
+ * the same one the indexer runs. Two implementations of "which anchor belongs
+ * to which heading" are two answers, failing in opposite directions — a stricter
+ * rule misses real collisions, a looser one reports prose (or a code sample) as
+ * a defect. A heading-shaped or anchor-shaped line inside a code block is code:
+ * it produces no rule 7 row and never counts toward rule 13.
  *
- * An anchor is an identity: `get_sections({ anchors })`,
- * `get_page_outline` and `<section_ref anchor="…"/>` all assume it
- * names exactly one section. A duplicate makes every reference to it ambiguous.
+ * Rule 7 (headings without an anchor) and rule 13 (one anchor, two headings)
+ * only mean something where anchors are minted, so they run on section-indexed
+ * roots. Rule 13's evidence comes from the PAGE TEXT, not `section_index`:
+ * `anchor` is UNIQUE there, so the index is the one place a collision is
+ * guaranteed to be invisible.
  *
- * The evidence comes from the PAGE TEXT, not from `section_index`. It cannot come
- * from the index: `anchor` is UNIQUE there, so by the time a duplicate reaches
- * the table one of the two occurrences has already been discarded — the index is
- * the one place where the collision is guaranteed to be invisible.
- *
- * Occurrences are resolved by the INDEXER'S OWN `parseHeadings`, not by a second
- * matcher written to look equivalent. Two implementations of "which anchor
- * belongs to which heading" are two answers, and they fail in opposite
- * directions: a stricter rule misses real collisions (an anchor comment the
- * indexer accepts mid-sentence above a heading), a looser one reports prose as a
- * defect (the `xxxxxxxx` placeholder on the pages that DOCUMENT the anchor
- * format — a false positive this rule actually produced against the real
- * specification). Sharing the function makes the two agree by construction —
- * the same lesson as B10 in this release, one layer down.
+ * Rule 15 — an anchor-shaped line inside a code block DIRECTLY above a
+ * heading-shaped line in that block (the trace of a failed injection); without
+ * the heading line below it there is no row. Rule 16 — a fence or multi-line
+ * HTML comment nothing closes, `line` being its opening line. Both are
+ * informational and never block a write; both run on every scanned root.
  */
-function collectAnchors(
-  into: Map<string, AnchorOccurrence[]>,
+function collectStructure(
+  rows: StructureRows,
+  anchors: Map<string, AnchorOccurrence[]>,
   rootId: string,
+  sectionIndexed: boolean,
   page: { path: string; body: string },
 ): void {
-  for (const h of parseHeadings(page.body.split('\n'))) {
-    if (h.anchor === null) continue;
-    const list = into.get(h.anchor) ?? [];
-    list.push({
-      rootId,
-      pagePath: page.path,
-      line: (h.anchorLineIndex ?? h.lineIndex) + 1,
-      heading: h.text,
-    });
-    into.set(h.anchor, list);
+  const lines = page.body.split('\n');
+  const parsed = parseSections(page.body, fileKindOf(page.path), { frontmatter: false });
+  if (sectionIndexed) {
+    for (const sec of parsed.sections) {
+      if (sec.anchor === null) {
+        rows.unanchoredHeadings.push({ rootId, pagePath: page.path, line: sec.headingLine, heading: sec.heading });
+        continue;
+      }
+      const list = anchors.get(sec.anchor) ?? [];
+      list.push({
+        rootId,
+        pagePath: page.path,
+        line: (anchorLineIndexOf(lines, sec) ?? sec.headingLine - 1) + 1,
+        heading: sec.heading,
+      });
+      anchors.set(sec.anchor, list);
+    }
+  }
+  for (const a of parsed.diagnostics.anchorLinesInCode) {
+    if (a.adjacentToHeadingLine) rows.anchorLinesInCode.push({ rootId, path: page.path, line: a.line, anchor: a.anchor });
+  }
+  for (const u of parsed.diagnostics.unclosedCodeBlocks) {
+    rows.unclosedCodeBlocks.push({ rootId, path: page.path, line: u.openLine });
   }
 }
 

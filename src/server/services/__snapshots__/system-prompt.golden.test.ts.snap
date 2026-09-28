@@ -378,10 +378,10 @@ brief-tools is scoped automatically to this brief — there is no path parameter
   - update_brief — edits the body through EXACTLY ONE of two shapes:
       * \`textEdits\` — literal { find, replaceWith, expectedMatches? } substitutions over the whole body (omitted expectedMatches = exactly 1; overlapping matches refused). Prefer it for punctual changes.
       * \`action\` (replace | append | insert_after_section) + \`content\` — rewrites, appends, section inserts.
-      * the answer is { newHash, replacements? } — never your content back.
+      * the answer is { newHash, replacements?, warning? } — never your content back.
       * frontmatter is IMMUTABLE for you (type, from_release, to_release, roots, generated_at).
       * expectedHash is REQUIRED: pass the hash get_brief returned (stale → BRIEF_CONFLICT, missing → VALIDATION).
-      * insert_after_section MISSES SILENTLY. A target it cannot find — an anchor that is not in the brief, a heading that matches nothing — is NOT an error: the fragment is appended at the END of the brief and the call reports success. Nothing warns you. So read the brief before addressing a section, and check afterwards that the text landed where you meant it to.
+      * insert_after_section never refuses a missing target. One it cannot find — an anchor that is not in the brief, a heading that matches nothing or only a line inside a code block — appends the fragment at the END of the brief, and the answer carries a \`warning\`. A heading matching several headings lands after the FIRST of them, also with a \`warning\`. Read the \`warning\` whenever it is there; address sections by anchor when the brief has one.
   - list_brief_versions / get_brief_version — the brief's version history and one snapshot with content.
 </brief_tools_usage>
 
@@ -487,10 +487,10 @@ brief-tools is scoped automatically to this brief — there is no path parameter
   - update_brief — edits the body through EXACTLY ONE of two shapes:
       * \`textEdits\` — literal { find, replaceWith, expectedMatches? } substitutions over the whole body (omitted expectedMatches = exactly 1; overlapping matches refused). Prefer it for punctual changes.
       * \`action\` (replace | append | insert_after_section) + \`content\` — rewrites, appends, section inserts.
-      * the answer is { newHash, replacements? } — never your content back.
+      * the answer is { newHash, replacements?, warning? } — never your content back.
       * frontmatter is IMMUTABLE for you (type, from_release, to_release, roots, generated_at).
       * expectedHash is REQUIRED: pass the hash get_brief returned (stale → BRIEF_CONFLICT, missing → VALIDATION).
-      * insert_after_section MISSES SILENTLY. A target it cannot find — an anchor that is not in the brief, a heading that matches nothing — is NOT an error: the fragment is appended at the END of the brief and the call reports success. Nothing warns you. So read the brief before addressing a section, and check afterwards that the text landed where you meant it to.
+      * insert_after_section never refuses a missing target. One it cannot find — an anchor that is not in the brief, a heading that matches nothing or only a line inside a code block — appends the fragment at the END of the brief, and the answer carries a \`warning\`. A heading matching several headings lands after the FIRST of them, also with a \`warning\`. Read the \`warning\` whenever it is there; address sections by anchor when the brief has one.
   - list_brief_versions / get_brief_version — the brief's version history and one snapshot with content.
 </brief_tools_usage>
 
@@ -596,10 +596,10 @@ brief-tools is scoped automatically to this brief — there is no path parameter
   - update_brief — edits the body through EXACTLY ONE of two shapes:
       * \`textEdits\` — literal { find, replaceWith, expectedMatches? } substitutions over the whole body (omitted expectedMatches = exactly 1; overlapping matches refused). Prefer it for punctual changes.
       * \`action\` (replace | append | insert_after_section) + \`content\` — rewrites, appends, section inserts.
-      * the answer is { newHash, replacements? } — never your content back.
+      * the answer is { newHash, replacements?, warning? } — never your content back.
       * frontmatter is IMMUTABLE for you (type, from_release, to_release, roots, generated_at).
       * expectedHash is REQUIRED: pass the hash get_brief returned (stale → BRIEF_CONFLICT, missing → VALIDATION).
-      * insert_after_section MISSES SILENTLY. A target it cannot find — an anchor that is not in the brief, a heading that matches nothing — is NOT an error: the fragment is appended at the END of the brief and the call reports success. Nothing warns you. So read the brief before addressing a section, and check afterwards that the text landed where you meant it to.
+      * insert_after_section never refuses a missing target. One it cannot find — an anchor that is not in the brief, a heading that matches nothing or only a line inside a code block — appends the fragment at the END of the brief, and the answer carries a \`warning\`. A heading matching several headings lands after the FIRST of them, also with a \`warning\`. Read the \`warning\` whenever it is there; address sections by anchor when the brief has one.
   - list_brief_versions / get_brief_version — the brief's version history and one snapshot with content.
 </brief_tools_usage>
 
@@ -659,10 +659,10 @@ brief-tools is scoped automatically to this brief — there is no path parameter
   - update_brief — edits the body through EXACTLY ONE of two shapes:
       * \`textEdits\` — literal { find, replaceWith, expectedMatches? } substitutions over the whole body (omitted expectedMatches = exactly 1; overlapping matches refused). Prefer it for punctual changes.
       * \`action\` (replace | append | insert_after_section) + \`content\` — rewrites, appends, section inserts.
-      * the answer is { newHash, replacements? } — never your content back.
+      * the answer is { newHash, replacements?, warning? } — never your content back.
       * frontmatter is IMMUTABLE for you (type, from_release, to_release, roots, generated_at).
       * expectedHash is REQUIRED: pass the hash get_brief returned (stale → BRIEF_CONFLICT, missing → VALIDATION).
-      * insert_after_section MISSES SILENTLY. A target it cannot find — an anchor that is not in the brief, a heading that matches nothing — is NOT an error: the fragment is appended at the END of the brief and the call reports success. Nothing warns you. So read the brief before addressing a section, and check afterwards that the text landed where you meant it to.
+      * insert_after_section never refuses a missing target. One it cannot find — an anchor that is not in the brief, a heading that matches nothing or only a line inside a code block — appends the fragment at the END of the brief, and the answer carries a \`warning\`. A heading matching several headings lands after the FIRST of them, also with a \`warning\`. Read the \`warning\` whenever it is there; address sections by anchor when the brief has one.
   - list_brief_versions / get_brief_version — the brief's version history and one snapshot with content.
 </brief_tools_usage>
 
@@ -734,10 +734,10 @@ brief-tools is scoped automatically to this brief — there is no path parameter
   - update_brief — edits the body through EXACTLY ONE of two shapes:
       * \`textEdits\` — literal { find, replaceWith, expectedMatches? } substitutions over the whole body (omitted expectedMatches = exactly 1; overlapping matches refused). Prefer it for punctual changes.
       * \`action\` (replace | append | insert_after_section) + \`content\` — rewrites, appends, section inserts.
-      * the answer is { newHash, replacements? } — never your content back.
+      * the answer is { newHash, replacements?, warning? } — never your content back.
       * frontmatter is IMMUTABLE for you (type, from_release, to_release, roots, generated_at).
       * expectedHash is REQUIRED: pass the hash get_brief returned (stale → BRIEF_CONFLICT, missing → VALIDATION).
-      * insert_after_section MISSES SILENTLY. A target it cannot find — an anchor that is not in the brief, a heading that matches nothing — is NOT an error: the fragment is appended at the END of the brief and the call reports success. Nothing warns you. So read the brief before addressing a section, and check afterwards that the text landed where you meant it to.
+      * insert_after_section never refuses a missing target. One it cannot find — an anchor that is not in the brief, a heading that matches nothing or only a line inside a code block — appends the fragment at the END of the brief, and the answer carries a \`warning\`. A heading matching several headings lands after the FIRST of them, also with a \`warning\`. Read the \`warning\` whenever it is there; address sections by anchor when the brief has one.
   - list_brief_versions / get_brief_version — the brief's version history and one snapshot with content.
 </brief_tools_usage>
 
@@ -834,10 +834,10 @@ brief-tools is scoped automatically to this brief — there is no path parameter
   - update_brief — edits the body through EXACTLY ONE of two shapes:
       * \`textEdits\` — literal { find, replaceWith, expectedMatches? } substitutions over the whole body (omitted expectedMatches = exactly 1; overlapping matches refused). Prefer it for punctual changes.
       * \`action\` (replace | append | insert_after_section) + \`content\` — rewrites, appends, section inserts.
-      * the answer is { newHash, replacements? } — never your content back.
+      * the answer is { newHash, replacements?, warning? } — never your content back.
       * frontmatter is IMMUTABLE for you (type, from_release, to_release, roots, generated_at).
       * expectedHash is REQUIRED: pass the hash get_brief returned (stale → BRIEF_CONFLICT, missing → VALIDATION).
-      * insert_after_section MISSES SILENTLY. A target it cannot find — an anchor that is not in the brief, a heading that matches nothing — is NOT an error: the fragment is appended at the END of the brief and the call reports success. Nothing warns you. So read the brief before addressing a section, and check afterwards that the text landed where you meant it to.
+      * insert_after_section never refuses a missing target. One it cannot find — an anchor that is not in the brief, a heading that matches nothing or only a line inside a code block — appends the fragment at the END of the brief, and the answer carries a \`warning\`. A heading matching several headings lands after the FIRST of them, also with a \`warning\`. Read the \`warning\` whenever it is there; address sections by anchor when the brief has one.
   - list_brief_versions / get_brief_version — the brief's version history and one snapshot with content.
 </brief_tools_usage>
 
@@ -932,10 +932,10 @@ brief-tools is scoped automatically to this brief — there is no path parameter
   - update_brief — edits the body through EXACTLY ONE of two shapes:
       * \`textEdits\` — literal { find, replaceWith, expectedMatches? } substitutions over the whole body (omitted expectedMatches = exactly 1; overlapping matches refused). Prefer it for punctual changes.
       * \`action\` (replace | append | insert_after_section) + \`content\` — rewrites, appends, section inserts.
-      * the answer is { newHash, replacements? } — never your content back.
+      * the answer is { newHash, replacements?, warning? } — never your content back.
       * frontmatter is IMMUTABLE for you (type, from_release, to_release, roots, generated_at).
       * expectedHash is REQUIRED: pass the hash get_brief returned (stale → BRIEF_CONFLICT, missing → VALIDATION).
-      * insert_after_section MISSES SILENTLY. A target it cannot find — an anchor that is not in the brief, a heading that matches nothing — is NOT an error: the fragment is appended at the END of the brief and the call reports success. Nothing warns you. So read the brief before addressing a section, and check afterwards that the text landed where you meant it to.
+      * insert_after_section never refuses a missing target. One it cannot find — an anchor that is not in the brief, a heading that matches nothing or only a line inside a code block — appends the fragment at the END of the brief, and the answer carries a \`warning\`. A heading matching several headings lands after the FIRST of them, also with a \`warning\`. Read the \`warning\` whenever it is there; address sections by anchor when the brief has one.
   - list_brief_versions / get_brief_version — the brief's version history and one snapshot with content.
 </brief_tools_usage>
 
@@ -1037,10 +1037,10 @@ brief-tools is scoped automatically to this brief — there is no path parameter
   - update_brief — edits the body through EXACTLY ONE of two shapes:
       * \`textEdits\` — literal { find, replaceWith, expectedMatches? } substitutions over the whole body (omitted expectedMatches = exactly 1; overlapping matches refused). Prefer it for punctual changes.
       * \`action\` (replace | append | insert_after_section) + \`content\` — rewrites, appends, section inserts.
-      * the answer is { newHash, replacements? } — never your content back.
+      * the answer is { newHash, replacements?, warning? } — never your content back.
       * frontmatter is IMMUTABLE for you (type, from_release, to_release, roots, generated_at).
       * expectedHash is REQUIRED: pass the hash get_brief returned (stale → BRIEF_CONFLICT, missing → VALIDATION).
-      * insert_after_section MISSES SILENTLY. A target it cannot find — an anchor that is not in the brief, a heading that matches nothing — is NOT an error: the fragment is appended at the END of the brief and the call reports success. Nothing warns you. So read the brief before addressing a section, and check afterwards that the text landed where you meant it to.
+      * insert_after_section never refuses a missing target. One it cannot find — an anchor that is not in the brief, a heading that matches nothing or only a line inside a code block — appends the fragment at the END of the brief, and the answer carries a \`warning\`. A heading matching several headings lands after the FIRST of them, also with a \`warning\`. Read the \`warning\` whenever it is there; address sections by anchor when the brief has one.
   - list_brief_versions / get_brief_version — the brief's version history and one snapshot with content.
 </brief_tools_usage>
 
@@ -1136,10 +1136,10 @@ brief-tools is scoped automatically to this brief — there is no path parameter
   - update_brief — edits the body through EXACTLY ONE of two shapes:
       * \`textEdits\` — literal { find, replaceWith, expectedMatches? } substitutions over the whole body (omitted expectedMatches = exactly 1; overlapping matches refused). Prefer it for punctual changes.
       * \`action\` (replace | append | insert_after_section) + \`content\` — rewrites, appends, section inserts.
-      * the answer is { newHash, replacements? } — never your content back.
+      * the answer is { newHash, replacements?, warning? } — never your content back.
       * frontmatter is IMMUTABLE for you (type, from_release, to_release, roots, generated_at).
       * expectedHash is REQUIRED: pass the hash get_brief returned (stale → BRIEF_CONFLICT, missing → VALIDATION).
-      * insert_after_section MISSES SILENTLY. A target it cannot find — an anchor that is not in the brief, a heading that matches nothing — is NOT an error: the fragment is appended at the END of the brief and the call reports success. Nothing warns you. So read the brief before addressing a section, and check afterwards that the text landed where you meant it to.
+      * insert_after_section never refuses a missing target. One it cannot find — an anchor that is not in the brief, a heading that matches nothing or only a line inside a code block — appends the fragment at the END of the brief, and the answer carries a \`warning\`. A heading matching several headings lands after the FIRST of them, also with a \`warning\`. Read the \`warning\` whenever it is there; address sections by anchor when the brief has one.
   - list_brief_versions / get_brief_version — the brief's version history and one snapshot with content.
 </brief_tools_usage>
 
@@ -1238,10 +1238,10 @@ brief-tools is scoped automatically to this brief — there is no path parameter
   - update_brief — edits the body through EXACTLY ONE of two shapes:
       * \`textEdits\` — literal { find, replaceWith, expectedMatches? } substitutions over the whole body (omitted expectedMatches = exactly 1; overlapping matches refused). Prefer it for punctual changes.
       * \`action\` (replace | append | insert_after_section) + \`content\` — rewrites, appends, section inserts.
-      * the answer is { newHash, replacements? } — never your content back.
+      * the answer is { newHash, replacements?, warning? } — never your content back.
       * frontmatter is IMMUTABLE for you (type, from_release, to_release, roots, generated_at).
       * expectedHash is REQUIRED: pass the hash get_brief returned (stale → BRIEF_CONFLICT, missing → VALIDATION).
-      * insert_after_section MISSES SILENTLY. A target it cannot find — an anchor that is not in the brief, a heading that matches nothing — is NOT an error: the fragment is appended at the END of the brief and the call reports success. Nothing warns you. So read the brief before addressing a section, and check afterwards that the text landed where you meant it to.
+      * insert_after_section never refuses a missing target. One it cannot find — an anchor that is not in the brief, a heading that matches nothing or only a line inside a code block — appends the fragment at the END of the brief, and the answer carries a \`warning\`. A heading matching several headings lands after the FIRST of them, also with a \`warning\`. Read the \`warning\` whenever it is there; address sections by anchor when the brief has one.
   - list_brief_versions / get_brief_version — the brief's version history and one snapshot with content.
 </brief_tools_usage>
 
@@ -1347,10 +1347,10 @@ brief-tools is scoped automatically to this brief — there is no path parameter
   - update_brief — edits the body through EXACTLY ONE of two shapes:
       * \`textEdits\` — literal { find, replaceWith, expectedMatches? } substitutions over the whole body (omitted expectedMatches = exactly 1; overlapping matches refused). Prefer it for punctual changes.
       * \`action\` (replace | append | insert_after_section) + \`content\` — rewrites, appends, section inserts.
-      * the answer is { newHash, replacements? } — never your content back.
+      * the answer is { newHash, replacements?, warning? } — never your content back.
       * frontmatter is IMMUTABLE for you (type, from_release, to_release, roots, generated_at).
       * expectedHash is REQUIRED: pass the hash get_brief returned (stale → BRIEF_CONFLICT, missing → VALIDATION).
-      * insert_after_section MISSES SILENTLY. A target it cannot find — an anchor that is not in the brief, a heading that matches nothing — is NOT an error: the fragment is appended at the END of the brief and the call reports success. Nothing warns you. So read the brief before addressing a section, and check afterwards that the text landed where you meant it to.
+      * insert_after_section never refuses a missing target. One it cannot find — an anchor that is not in the brief, a heading that matches nothing or only a line inside a code block — appends the fragment at the END of the brief, and the answer carries a \`warning\`. A heading matching several headings lands after the FIRST of them, also with a \`warning\`. Read the \`warning\` whenever it is there; address sections by anchor when the brief has one.
   - list_brief_versions / get_brief_version — the brief's version history and one snapshot with content.
 </brief_tools_usage>
 
