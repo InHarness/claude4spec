@@ -1142,7 +1142,7 @@ export function registerCoreOperations(): void {
   CATALOG.register({
     name: 'update_brief',
     summary:
-      'Write a brief body through EXACTLY ONE of two input shapes — `action` + `content` (replace / append / insert_after_section) or `textEdits` (literal substitutions counted over the whole body) — guarded by a REQUIRED `expectedHash`. Answers `{ newHash, replacements? }`.',
+      'Write a brief body through EXACTLY ONE of two input shapes — `action` + `content` (replace / append / insert_after_section) or `textEdits` (literal substitutions counted over the whole body) — guarded by a REQUIRED `expectedHash`. Answers `{ newHash, replacements?, warning? }` — `warning` when an `insert_after_section` target is missing (appended at the end) or ambiguous (after the first match).',
     scope: 'project',
     mediation: 'direct',
     opClass: 'brief',
@@ -1172,7 +1172,6 @@ export function registerCoreOperations(): void {
       'INVALID_ARGUMENT',
       'IMMUTABLE_FIELD',
       'MISSING_TARGET',
-      'AMBIGUOUS_HEADING',
       'FIND_NOT_FOUND',
       'MATCH_COUNT_MISMATCH',
     ],

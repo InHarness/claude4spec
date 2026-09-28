@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import matter from 'gray-matter';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BriefService, type BriefServiceDeps } from './brief.js';
+import { BriefService, composeBriefBody, type BriefServiceDeps } from './brief.js';
 import { PagesService } from './pages.js';
 import { hashContent } from './artifact-content.js';
 import type { SelfWriteMarker } from '../fs/sources.js';
@@ -471,5 +471,43 @@ describe('BriefService.getBrief — `full` is the writer’s read', () => {
     expect(after).toContain('# Brief edited');
     expect(after).toContain('TAIL MARKER');
     expect(after.length).toBeGreaterThan(200_000);
+  });
+});
+
+describe('composeBriefBody — insert_after_section on the shared section parser (2.0.0)', () => {
+  const body = ['# Brief', '', '## Goals', 'g', '', '### Detail', 'd', '', '## Risks', 'r', ''].join('\n');
+
+  it('lands after the target subtree, found by heading text', () => {
+    const out = composeBriefBody(body, 'insert_after_section', 'NEW', undefined, 'Goals');
+    expect(out.warning).toBeUndefined();
+    expect(out.body.indexOf('NEW')).toBeGreaterThan(out.body.indexOf('d'));
+    expect(out.body.indexOf('NEW')).toBeLessThan(out.body.indexOf('## Risks'));
+  });
+
+  it('a heading inside a code block is never a target — miss appends at the end, with a warning', () => {
+    const fenced = ['## Real', 'x', '```md', '## Example', '```', ''].join('\n');
+    const out = composeBriefBody(fenced, 'insert_after_section', 'NEW', undefined, 'Example');
+    expect(out.body.trimEnd().endsWith('NEW')).toBe(true);
+    expect(out.warning).toMatch(/matches no section/);
+  });
+
+  it('an unknown anchor appends at the end, with a warning', () => {
+    const out = composeBriefBody(body, 'insert_after_section', 'NEW', 'zzzzzzzz');
+    expect(out.body.trimEnd().endsWith('NEW')).toBe(true);
+    expect(out.warning).toMatch(/anchor 'zzzzzzzz'/);
+  });
+
+  it('an ambiguous heading lands after the FIRST match, with an ambiguity warning', () => {
+    const twice = ['## Notes', 'a', '', '## Notes', 'b', ''].join('\n');
+    const out = composeBriefBody(twice, 'insert_after_section', 'NEW', undefined, 'Notes');
+    expect(out.body.indexOf('NEW')).toBeLessThan(out.body.indexOf('b'));
+    expect(out.warning).toMatch(/matches 2 sections/);
+  });
+
+  it('an anchor left by the author addresses its heading', () => {
+    const anchored = ['<!-- anchor: abcdefgh -->', '## A', 'a', '', '## B', 'b', ''].join('\n');
+    const out = composeBriefBody(anchored, 'insert_after_section', 'NEW', 'abcdefgh');
+    expect(out.warning).toBeUndefined();
+    expect(out.body.indexOf('NEW')).toBeLessThan(out.body.indexOf('## B'));
   });
 });
