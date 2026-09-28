@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.0.0] - 2026-09-28
 
 ### Changed
 
@@ -163,6 +163,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - The short-lived M35 Progress view (route, endpoint, service, sidebar entry), added and removed within this same release window. Its useful parts — ahead/behind git status and a per-release brief list — were redistributed into the sidebar Git badge and the `/releases` cards instead.
 
+[2.0.0]: https://github.com/InHarness/claude4spec/compare/v1.0.25...v2.0.0
 [1.0.25]: https://github.com/InHarness/claude4spec/compare/v1.0.24...v1.0.25
 
 ## [1.0.24] - 2026-06-28
