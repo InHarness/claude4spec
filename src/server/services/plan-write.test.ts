@@ -200,33 +200,127 @@ describe('applyPlanBatch — the edit action', () => {
     ).toThrow(/lies inside/);
   });
 
-  it('refuses an edit that encloses a section the same batch deletes', () => {
+  /**
+   * 2.1.x — the refusal is on the MATCHED FRAGMENTS, not on section ranges. A
+   * parent `edit` touching its own intro writes nothing a child entry writes,
+   * so the two go through together; the `find` is still matched on the plan as
+   * read, never on text the batch produced.
+   */
+  it('lets a parent edit on its own intro pass alongside a child delete', () => {
+    const out = applyPlanBatch(PLAN, [
+      { anchor: 'aaaa0002', action: 'delete' },
+      { anchor: 'aaaa0001', action: 'edit', textEdits: [{ find: 'alpha body', replaceWith: 'ALPHA' }] },
+    ]);
+    expect(out.body).toContain('ALPHA');
+    expect(out.body).not.toContain('child body');
+    expect(anchorsOf(out.body)).toEqual(['aaaa0001', 'bbbb0001']);
+  });
+
+  it('lets a parent edit on its own intro pass alongside a child replace, whatever the order', () => {
+    const edit: PlanSectionEdit = { anchor: 'aaaa0001', action: 'edit', textEdits: [{ find: 'alpha body', replaceWith: 'ALPHA' }] };
+    const replace: PlanSectionEdit = { anchor: 'aaaa0002', action: 'replace', content: '\nnew child\n' };
+    const one = applyPlanBatch(PLAN, [edit, replace]);
+    const two = applyPlanBatch(PLAN, [replace, edit]);
+    expect(one.body).toBe(two.body);
+    expect(one.body).toContain('ALPHA');
+    expect(one.body).toContain('new child');
+    expect(one.replacementsOf.get('aaaa0001')).toBe(1);
+  });
+
+  it('refuses a parent edit whose find lands in the body a child replace writes', () => {
     expect(() =>
+      applyPlanBatch(PLAN, [
+        { anchor: 'aaaa0002', action: 'replace', content: 'new child' },
+        { anchor: 'aaaa0001', action: 'edit', textEdits: [{ find: 'child body', replaceWith: 'x' }] },
+      ]),
+    ).toThrow(/find 'child body' \(line 9\) lies inside the section 'aaaa0002'/);
+  });
+
+  it('matches a parent edit on the plan AS READ, never on what a child append writes', () => {
+    // 'body' occurs twice in Alpha's subtree before the batch; the appended line
+    // carries a third that must be neither counted nor substituted.
+    const out = applyPlanBatch(PLAN, [
+      { anchor: 'aaaa0002', action: 'append', content: 'brand new body line' },
+      { anchor: 'aaaa0001', action: 'edit', textEdits: [{ find: 'body', replaceWith: 'text', expectedMatches: 'all' }] },
+    ]);
+    expect(out.replacementsOf.get('aaaa0001')).toBe(2);
+    expect(out.body).toContain('brand new body line');
+    expect(out.body).toContain('child text');
+  });
+
+  it('refuses a fragment that eats the anchor comment of a section another entry addresses', () => {
+    expect(() =>
+      applyPlanBatch(PLAN, [
+        { anchor: 'aaaa0002', action: 'append', content: 'more' },
+        { anchor: 'aaaa0001', action: 'edit', textEdits: [{ find: '<!-- anchor: aaaa0002 -->', replaceWith: '' }] },
+      ]),
+    ).toThrow(/touches the anchor comment of 'aaaa0002'/);
+  });
+
+  it('refuses a fragment on a heading another entry renames', () => {
+    expect(() =>
+      applyPlanBatch(PLAN, [
+        { anchor: 'aaaa0002', action: 'rename', heading: 'Renamed child' },
+        { anchor: 'aaaa0001', action: 'edit', textEdits: [{ find: '### Alpha child', replaceWith: '### X' }] },
+      ]),
+    ).toThrow(/touches the heading of 'aaaa0002'/);
+  });
+
+  it('names EVERY collision in one refusal, so one retry is enough', () => {
+    try {
       applyPlanBatch(PLAN, [
         { anchor: 'aaaa0002', action: 'delete' },
-        { anchor: 'aaaa0001', action: 'edit', textEdits: [{ find: 'alpha body', replaceWith: 'x' }] },
-      ]),
-    ).toThrow(/encloses/);
+        {
+          anchor: 'aaaa0001',
+          action: 'edit',
+          textEdits: [
+            { find: 'Alpha child', replaceWith: 'X' },
+            { find: 'child body', replaceWith: 'y' },
+          ],
+        },
+      ]);
+      expect.unreachable('should have refused');
+    } catch (e) {
+      const err = e as { code: string; message: string };
+      expect(err.code).toBe('INVALID_ARGUMENT');
+      expect(err.message).toMatch(/find 'Alpha child' \(line 7\) lies inside the section 'aaaa0002'/);
+      expect(err.message).toMatch(/find 'child body' \(line 9\) lies inside the section 'aaaa0002'/);
+    }
   });
 
-  it('refuses an edit that encloses a section the same batch APPENDS to', () => {
-    // Not only `replace`/`delete`: the child splices first either way, so the
-    // parent's `find` would be matched against text this same batch wrote.
-    expect(() =>
-      applyPlanBatch(PLAN, [
-        { anchor: 'aaaa0002', action: 'append', content: 'brand new body line' },
-        { anchor: 'aaaa0001', action: 'edit', textEdits: [{ find: 'body', replaceWith: 'text', expectedMatches: 'all' }] },
-      ]),
-    ).toThrow(/encloses/);
+  it('lets a parent edit and a child edit with disjoint fragments both land', () => {
+    const out = applyPlanBatch(PLAN, [
+      { anchor: 'aaaa0001', action: 'edit', textEdits: [{ find: 'alpha body', replaceWith: 'ALPHA' }] },
+      { anchor: 'aaaa0002', action: 'edit', textEdits: [{ find: 'child body', replaceWith: 'CHILD' }] },
+    ]);
+    expect(out.body).toContain('ALPHA');
+    expect(out.body).toContain('CHILD');
+    expect(out.replacementsOf.get('aaaa0001')).toBe(1);
+    expect(out.replacementsOf.get('aaaa0002')).toBe(1);
   });
 
-  it('refuses an edit nested inside a section the same batch inserts after', () => {
-    expect(() =>
+  it('refuses a parent and a child edit matching the same fragment — reported once', () => {
+    try {
       applyPlanBatch(PLAN, [
-        { anchor: 'aaaa0001', action: 'insert_after', content: 'tail' },
-        { anchor: 'aaaa0002', action: 'edit', textEdits: [{ find: 'child body', replaceWith: 'x' }] },
-      ]),
-    ).toThrow(/lies inside/);
+        { anchor: 'aaaa0001', action: 'edit', textEdits: [{ find: 'child body', replaceWith: 'A' }] },
+        { anchor: 'aaaa0002', action: 'edit', textEdits: [{ find: 'child body', replaceWith: 'B' }] },
+      ]);
+      expect.unreachable('should have refused');
+    } catch (e) {
+      const err = e as { code: string; message: string };
+      expect(err.code).toBe('INVALID_ARGUMENT');
+      expect(err.message.match(/overlaps a fragment/g)).toHaveLength(1);
+    }
+  });
+
+  it('lets an edit on a child pass alongside an insert_after on its parent', () => {
+    // The insert point sits after Alpha's whole subtree; 'child body' does not cross it.
+    const out = applyPlanBatch(PLAN, [
+      { anchor: 'aaaa0001', action: 'insert_after', content: 'tail' },
+      { anchor: 'aaaa0002', action: 'edit', textEdits: [{ find: 'child body', replaceWith: 'CHILD' }] },
+    ]);
+    expect(out.body).toContain('CHILD');
+    expect(out.body).toContain('tail');
   });
 
   it('scopes an edit to its MATCHED fragments, not to the subtree it was aimed at', () => {
