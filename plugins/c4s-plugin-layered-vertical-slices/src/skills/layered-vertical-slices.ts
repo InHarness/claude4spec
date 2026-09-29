@@ -17,6 +17,7 @@ import partReadingDeps from './layered-vertical-slices/parts/reading-deps.md?raw
 import partDomainTest from './layered-vertical-slices/parts/domain-test.md?raw';
 import partDomainForm from './layered-vertical-slices/parts/domain-form.md?raw';
 import partModuleVsLayer from './layered-vertical-slices/parts/module-vs-layer.md?raw';
+import partChoices from './layered-vertical-slices/parts/choices.md?raw';
 
 /**
  * Drop the leading YAML frontmatter block.
@@ -66,6 +67,7 @@ const PARTS: Readonly<Record<string, string>> = {
   'parts/domain-test.md': partDomainTest,
   'parts/domain-form.md': partDomainForm,
   'parts/module-vs-layer.md': partModuleVsLayer,
+  'parts/choices.md': partChoices,
 };
 
 /**

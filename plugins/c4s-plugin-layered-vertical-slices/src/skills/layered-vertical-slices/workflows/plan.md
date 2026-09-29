@@ -8,7 +8,9 @@ The user almost never speaks in spec-language — they speak in *intent* ("what 
 
 Restate the user's *intent* in their own terms — what they are trying to enable, for whom, why now — in 2–3 lines, and ask one targeted clarification if anything is murky:
 
-> *"Read as: you want endpoint authors to be able to express retry policy per-endpoint, because the current spec forces retry logic into shared middleware. Confirm? (Or is the goal narrower — just a `retries` count column without the policy framing?)"*
+> *"Read as: you want endpoint authors to be able to express retry policy per-endpoint, because the current spec forces retry logic into shared middleware. Confirm? Or is the goal narrower? Policy framing → a new L-level convention every endpoint module fills; just a `retries` count column → one line in M03's L1 section, retry behaviour stays in middleware. I'd start narrow: the column is cheap to widen into a convention later, a convention is costly to retract from every module."*
+
+Two readings are a choice: give each its consequence and recommend one (the choice rule at the end of this file).
 
 Do this even when the user thinks they are filing an explicit edit: edits without grounded intent become entries no one — human or code-gen agent — can later interpret. This is also the place to push back: if you cannot construct a coherent user-need behind the request — architectural taste, speculative cleanup with no user-visible improvement — say so plainly and ask. A translator can refuse to translate noise.
 
@@ -35,6 +37,8 @@ Map the change onto the grid; the rules at the end of this file decide. Where so
 - **Not a spec change at all.** Implementation detail, UX micro-decision, code style. Say so plainly and stop.
 - **Not yet decided.** Real but unresolved → `<index>`'s `Open questions`, verbatim.
 
+When more than one bucket fits, do not ask the user to pick one bare: present each with its consequence on the grid and recommend one (the choice rule at the end of this file).
+
 For every layer the change touches, read that layer's `## Module slice schema` **now**: the plan names the fields the change answers, so that whoever executes it fills the schema instead of rediscovering it.
 
 ## Step 5 — Write the plan
@@ -53,7 +57,7 @@ Close the plan with **Seen, not planned**: places you met during the read that c
 
 In plan mode the plan is persisted with `update_plan`. Outside it, a small change is 2–4 lines and a confirmation:
 
-> *"I read this as: change to M03 (new column `retries: int`), plus a new edge case (retry exhaustion). No layer change — retry counts are per-endpoint, not a cross-cutting concern. Confirm?"*
+> *"I read this as: change to M03 (new column `retries: int`), plus a new edge case (retry exhaustion). No layer change — retry counts are per-endpoint, not a cross-cutting concern. No other module changes; the brief will carry one new column and one edge case. Confirm?"*
 
 Then stop. Execution is `workflows/apply.md`, on the user's word.
 
@@ -70,3 +74,5 @@ Split it, do not compress it. Hand a scope to a child thread with `runTransagent
 <!-- include: parts/module-vs-layer.md -->
 
 <!-- include: parts/reading-sweep.md -->
+
+<!-- include: parts/choices.md -->

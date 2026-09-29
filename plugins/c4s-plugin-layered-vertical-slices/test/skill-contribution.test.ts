@@ -157,6 +157,21 @@ describe('c4s-plugin-layered-vertical-slices — the writing style it contribute
   });
 
   /**
+   * The choice rule has one home and rides the two workflows that put options in
+   * front of the user — planning a change and bootstrapping a spec. Not `read.md`
+   * or `apply.md`: read offers no choice, apply executes one already made.
+   */
+  it('delivers the choice rule to plan and bootstrap, and nowhere else', () => {
+    const heading = '## Offer a choice as its consequences';
+    expect(includeUsage['parts/choices.md']).toBe(2);
+    expect(style.files?.['workflows/plan.md']).toContain(heading);
+    expect(style.files?.['workflows/bootstrap.md']).toContain(heading);
+    expect(style.files?.['workflows/read.md']).not.toContain(heading);
+    expect(style.files?.['workflows/apply.md']).not.toContain(heading);
+    expect(style.content).not.toContain(heading);
+  });
+
+  /**
    * The tool documents what `planPath` and `planMode` do; the workflow has to
    * say which one carries its decision. `payload` is an open record, so
    * `planMode` written inside it validates and the child silently runs

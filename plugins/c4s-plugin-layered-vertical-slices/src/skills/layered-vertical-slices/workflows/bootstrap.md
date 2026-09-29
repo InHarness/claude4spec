@@ -53,6 +53,8 @@ Present as a table:
 Then ask:
 > Confirm this layer set, or suggest additions / renames / removals. Layers should be few enough to keep in your head (3–7) and generic enough that any module can declare which ones it touches.
 
+Where a row is disputable — a layer that might as well be a module, or a candidate you left out — give its consequence alongside it (the choice rule at the end of this file): which modules will have to fill it, what a later change to it touches.
+
 Iterate until the user confirms.
 
 ## Phase 3 — Module identification
@@ -70,7 +72,7 @@ Guidance:
 - Modules can skip layers they don't touch (e.g. a pure-UI module might not touch L1).
 - Aim for 3–10 modules. If you're heading toward 15+, suggest merging related ones or deferring scope.
 
-Ask the user to confirm, reorder, add, or remove. Iterate until confirmed.
+Ask the user to confirm, reorder, add, or remove. Where a row is disputable — two modules that might merge, one that might split — give the consequence of each way (the choice rule at the end of this file): the module numbers taken, the dependency records between them, and how many module files a later change to that behaviour touches. Iterate until confirmed.
 
 ## Phase 4 — Skeleton generation
 
@@ -108,7 +110,7 @@ Apply the layer-purity test (rule 2) as you go: every line in a layer file must 
 After all layers are written, update `<index>`:
 - Add a final top-of-file paragraph summarizing the system.
 
-Announce completion and offer: *"Spec skeleton and contents are complete. Want me to (a) do a coverage review, (b) generate a one-page summary for onboarding, or (c) stop here?"*
+Announce completion and offer: *"Spec skeleton and contents are complete. Want me to (a) do a coverage review — I check every module against the jobs heard and every layer's schema, and report gaps as a list of plan entries, nothing written yet; (b) generate a one-page summary for onboarding — a new page beside `<index>`, no module or layer changes; or (c) stop here — the spec stays as written, with no coverage check behind it? I'd go with (a): gaps are cheapest to close before the first brief goes to a coding agent."*
 
 ---
 
@@ -121,3 +123,5 @@ Announce completion and offer: *"Spec skeleton and contents are complete. Want m
 <!-- include: parts/domain-test.md -->
 
 <!-- include: parts/domain-form.md -->
+
+<!-- include: parts/choices.md -->
