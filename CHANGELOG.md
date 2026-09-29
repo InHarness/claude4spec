@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-09-29
+
+### Changed
+
+- **BREAKING (registry, CLI, MCP): projects have a readable, immutable id.** The id is minted once from `config.json`'s `name` (falling back to the directory name), with `-2`/`-3` appended on collision, and stays unique across live ids and slot directories. A slot marker (`slot.json`) lets a detached project recover its id and slot from its directory. At server start, a one-way migration renames hash ids to readable ids (registry schema 3), including the slot directories, and resumes if it is interrupted. CLI reads apply the migration in memory only. `trust-plugins` refuses to run with `REGISTRY_MIGRATION_PENDING` until the migration has happened and lists the steps.
+- **BREAKING (CLI): `--project <id>` only.** `--project` takes only the id; without it, the CLI walks up from the current directory. `--server` requires `--project`. `PROJECT_SLUG_NOT_FOUND` is now `PROJECT_ID_NOT_FOUND`, and `AMBIGUOUS_PROJECT` returns `{ id, workspace }`.
+- **BREAKING (MCP):** `ask.project` is required. `list_projects` returns `{ workspace, projects: [{ id, name?, description? }] }`, and `<workspace_projects>` no longer carries a path. Mounts accept only an id. mcp-config snippets and the generated external skills are built from `publicUrl` + id (`--server <publicUrl> --project <id>`), and all three skills include a hint for when the address is stale. **Re-run `c4s install-skills`.**
+
+### Added
+
+- **Workspace `bindHost` / `publicUrl`** via `--host` / `--public-url`. Both are persisted; passing an empty value resets one, and `publicUrl` is validated. The server listens on `bindHost`, which defaults to loopback, and warns when it listens beyond loopback without auth. The browser opens the local address. An unbindable `--host` exits with a hint (`--host=` returns to loopback).
+- **Host allowlist and Origin check** before every route and on WebSocket upgrade. The WebSocket guard fails closed when the registry is unreadable, and a malformed stored `publicUrl` admits no host. `isLoopbackHost` requires a full `127.x.y.z` address.
+
+### Fixed
+
+- The editor's raw JSX block no longer collapses to height 0. It re-measures after mount, and long lines scroll horizontally instead of being clipped.
+- SSE responses send `Cache-Control: no-transform`. The Docker entrypoint binds `0.0.0.0`. The MCP settings card names the public URL instead of the default port.
+
+[2.1.0]: https://github.com/InHarness/claude4spec/compare/v2.0.0...v2.1.0
+
 ## [2.0.0] - 2026-09-28
 
 ### Changed
