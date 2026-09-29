@@ -2,7 +2,8 @@ import path from 'node:path';
 import type { ParsedArgs } from '../args.js';
 import { optionalString, optionalStringList } from '../args.js';
 import { resolveWorkspaceProjectOrThrow } from '../project-selector.js';
-import { CliError } from '../errors.js';
+import { CliError, type CliErrorCode } from '../errors.js';
+import { AgentError, confirmRemoteProject } from '../../../core/agent/http.js';
 import { writeOutput } from '../output.js';
 import {
   ALL_SKILL_SLUGS,
@@ -15,24 +16,44 @@ import {
 import type { CliCommandContribution } from '../registry.js';
 
 /**
- * 0.1.104 M22 — filesystem-only, no server/sqlite: writes the on-demand
- * external skills into a CODE repo's `.claude/skills/` (the Claude Code
- * harness dir the CLI is invoked FROM, via `process.cwd()`) — NOT the
- * `--project`-resolved spec repo's `.claude4spec/skills/`, which nothing
- * writes to anymore. `--project <slug>` only selects which registered
- * claude4spec project's identity/paths get baked into the generated
- * SKILL.md content.
+ * 0.1.104 M22 — writes the on-demand external skills into a CODE repo's
+ * `.claude/skills/` (the Claude Code harness dir the CLI is invoked FROM, via
+ * `process.cwd()`); `--dir` overrides the target.
  *
- *   c4s install-skills --project my-spec-project
- *   c4s install-skills --project my-spec-project --skills spec-reader,refactor
- *   c4s install-skills --project my-spec-project --dir ./tools/skills
+ * 2.1.0 — two ways to resolve the baked-in `{ id, workspace, publicUrl }`:
+ *   c4s install-skills [--project <id>]              local registry (--project or
+ *                                                    walk-up); offline — no server,
+ *                                                    no DB slot
+ *   c4s install-skills --server <url> --project <id> the arguments, confirmed by ONE
+ *                                                    read on that server before the
+ *                                                    write (id present + workspace name)
+ *
+ *   c4s install-skills --project app-spec --skills spec-reader,refactor
+ *   c4s install-skills --server https://c4s.example.com --project app-spec
  */
 export async function runInstallSkills(args: ParsedArgs): Promise<void> {
-  const { project, workspaceName } = resolveWorkspaceProjectOrThrow({
-    project: args.project,
-    workspace: args.workspace,
-  });
-  const ctx = buildExternalSkillContext(project, workspaceName);
+  const server = optionalString(args, 'server');
+  let ctx;
+  if (server !== undefined) {
+    if (!args.project) {
+      throw new CliError('INVALID_ARGS', '--server requires --project <id>', 'pass --project <id>');
+    }
+    let remote;
+    try {
+      remote = await confirmRemoteProject(server, args.project);
+    } catch (err) {
+      if (err instanceof AgentError) throw new CliError(err.code as CliErrorCode, err.message, err.hint);
+      throw err;
+    }
+    // `defaultPort` is irrelevant: the `--server` address overrides publicUrl.
+    ctx = buildExternalSkillContext({ id: args.project }, { name: remote.workspace, defaultPort: 0 }, server);
+  } else {
+    const { project, workspace } = resolveWorkspaceProjectOrThrow({
+      project: args.project,
+      workspace: args.workspace,
+    });
+    ctx = buildExternalSkillContext(project, workspace);
+  }
 
   const skillsRaw = optionalStringList(args, 'skills');
   let selection: SkillSlug[] | undefined;
@@ -70,6 +91,13 @@ export async function runInstallSkills(args: ParsedArgs): Promise<void> {
 export const installSkillsCommand: CliCommandContribution = {
   name: 'install-skills',
   executionMode: 'fs-scoped',
-  errorCodes: ['INVALID_ARGS', 'SKILLS_WRITE_FAILED'],
+  errorCodes: [
+    'INVALID_ARGS',
+    'SKILLS_WRITE_FAILED',
+    'PROJECT_ID_NOT_FOUND',
+    'SERVER_NOT_RUNNING',
+    'SERVER_NOT_RECOGNIZED',
+    'PROJECT_NOT_IN_WORKSPACE',
+  ],
   handler: runInstallSkills,
 };

@@ -23,19 +23,19 @@ describe('GET /_meta/mcp-config', () => {
     return { registry, workspace, app };
   }
 
-  it('answers three server-rendered variants with port and project id injected', async () => {
+  it('answers three server-rendered variants with the effective publicUrl and project id injected', async () => {
     const { app } = setup(4555);
     const res = await request(app).get('/_meta/mcp-config').expect(200);
     const body = res.body as McpConfigResponse;
     expect(body.variants.map((v) => v.id)).toEqual(['http-project', 'http-workspace', 'stdio']);
     for (const v of body.variants) {
       expect(typeof v.label).toBe('string');
-      expect(v.snippet).toContain('127.0.0.1:4555');
+      expect(v.snippet).toContain('http://localhost:4555/api/');
       expect(v.snippet).toContain('p1');
     }
   });
 
-  it('renders per request — a changed workspace port shows on the next read', async () => {
+  it('renders per request — a changed workspace port or publicUrl shows on the next read', async () => {
     const { app } = setup(4555);
     await request(app).get('/_meta/mcp-config').expect(200);
     const file = path.join(dir, 'workspaces.json');
@@ -43,7 +43,24 @@ describe('GET /_meta/mcp-config', () => {
     data.workspaces[0]!.defaultPort = 4777;
     fs.writeFileSync(file, JSON.stringify(data));
     const res = await request(app).get('/_meta/mcp-config').expect(200);
-    expect((res.body as McpConfigResponse).variants[0]!.snippet).toContain('127.0.0.1:4777');
+    expect((res.body as McpConfigResponse).variants[0]!.snippet).toContain('http://localhost:4777/api/');
+
+    const { registry } = setup(4777);
+    registry.setNetwork('default', { publicUrl: 'https://c4s.firma.dev' });
+    const again = await request(app).get('/_meta/mcp-config').expect(200);
+    expect((again.body as McpConfigResponse).variants[0]!.snippet).toContain(
+      'https://c4s.firma.dev/api/projects/p1/mcp',
+    );
+  });
+
+  it('never takes the address from request headers', async () => {
+    const { app } = setup(4555);
+    const res = await request(app)
+      .get('/_meta/mcp-config')
+      .set('Host', 'evil.example')
+      .set('X-Forwarded-Host', 'evil.example')
+      .expect(200);
+    for (const v of (res.body as McpConfigResponse).variants) expect(v.snippet).not.toContain('evil.example');
   });
 
   it('writes nothing to disk', async () => {

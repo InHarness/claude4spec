@@ -30,11 +30,14 @@ export type CliErrorCode =
   // (rebuild the projection, retry), not in a shell-level branch.
   | 'INDEX_STALE'
   | 'PROJECT_NOT_IN_WORKSPACE'
-  // 0.1.103 — --project resolved as a NAME/slug (not a path): distinguishes
-  // an injected, externally-copied SKILL.md identity from the path-based
-  // PROJECT_NOT_FOUND/AMBIGUOUS_WORKSPACE above.
-  | 'PROJECT_SLUG_NOT_FOUND'
+  // 2.1.0 — `--project <id>` matches no registered project id (was
+  // PROJECT_SLUG_NOT_FOUND, when --project took a path or a slug). The message
+  // lists the available ids — never directories.
+  | 'PROJECT_ID_NOT_FOUND'
   | 'AMBIGUOUS_PROJECT'
+  // 2.1.0 — a registry-writing command (`c4s trust-plugins`) met a registry that
+  // still carries pre-2.1.0 hash ids. Only the server migrates; start it once.
+  | 'REGISTRY_MIGRATION_PENDING'
   // M33 phase 3 — `c4s plugins doctor` exits with this when a pool package was
   // built against an incompatible MAJOR Host API (the only non-zero plugins exit).
   | 'HOST_API_INCOMPATIBLE'
@@ -107,7 +110,17 @@ export type CliErrorCode =
   | 'NOT_TEXT';
 
 export class CliError extends Error {
-  constructor(public code: CliErrorCode, message: string, public hint?: string) {
+  /**
+   * 2.1.0 convention: a code whose repair is known and stepwise carries the
+   * steps as structured descriptors here (rendered into the stderr envelope),
+   * not only as prose in `hint`.
+   */
+  constructor(
+    public code: CliErrorCode,
+    message: string,
+    public hint?: string,
+    public details?: Record<string, unknown>,
+  ) {
     super(message);
     this.name = 'CliError';
   }

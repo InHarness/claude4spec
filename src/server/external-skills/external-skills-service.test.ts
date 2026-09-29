@@ -22,35 +22,40 @@ const SKILL_DIRS = [
   'c4s-refactor',
 ] as const;
 
-// 0.1.103: identity injected into every generated SKILL.md — see ExternalSkillContext.
+// 2.1.0: address injected into every generated SKILL.md — see ExternalSkillContext.
 const FIXTURE_CTX: ExternalSkillContext = {
-  slug: 'my-spec-project',
+  id: 'my-spec-project',
   workspace: 'default',
+  publicUrl: 'https://c4s.example.dev',
 };
+const IDENTITY = `--server '${FIXTURE_CTX.publicUrl}' --project '${FIXTURE_CTX.id}'`;
 
 describe('renderers', () => {
-  it('bake in the injected --project <slug> --workspace <name> identity, no filesystem fallback', () => {
+  it('bake in --server <publicUrl> --project <id> in every c4s command, no filesystem fallback', () => {
     const outputs = {
       'c4s-spec-reader': renderSpecReaderSkill(FIXTURE_CTX),
       'c4s-brief-implementer': renderBriefImplementerSkill(FIXTURE_CTX),
       'c4s-refactor': renderRefactorSkill(FIXTURE_CTX),
     };
     for (const [name, body] of Object.entries(outputs)) {
-      // Quoted: the slug is an unvalidated directory basename (may contain
-      // spaces/shell metacharacters), so it's single-quoted in every example.
-      expect(body, name).toContain(`--project '${FIXTURE_CTX.slug}' --workspace '${FIXTURE_CTX.workspace}'`);
+      expect(body, name).toContain(IDENTITY);
+      // No slug-era selector survives: --workspace is implied by --server.
+      expect(body, name).not.toMatch(/--workspace '/);
+      // Every `c4s <verb>` command line in a sh block carries the address.
+      for (const line of body.split('\n').filter((l) => /^c4s [a-z_-]+ /.test(l) && !l.trimEnd().endsWith('\\'))) {
+        expect(line, `${name}: ${line}`).toContain(IDENTITY);
+      }
+      // 2.1.0: identical stale-address hint in all three skills.
+      expect(body, name).toContain('## Stale address — `PROJECT_NOT_IN_WORKSPACE`');
+      expect(body, name).toContain(
+        `the server at \`${FIXTURE_CTX.publicUrl}\` does not serve the project \`${FIXTURE_CTX.id}\``,
+      );
+      expect(body, name).toContain('Stop and ask the user to regenerate this skill');
       // frontmatter description starts with a verb (Read… / Implement… / Detect…)
       const desc = body.match(/^description:\s*(\S+)/m)?.[1];
       expect(desc, `${name} description verb`).toMatch(/^(Read|Implement|Detect)/);
-      // the old walk-up/symlink workaround is gone, replaced by PROJECT_SLUG_NOT_FOUND guidance
       expect(body, name).not.toMatch(/walk up the directory tree/);
-      // 0.1.108: PROJECT_SLUG_NOT_FOUND/AMBIGUOUS_WORKSPACE troubleshooting text was duplicated
-      // across all three skills — only c4s-spec-reader keeps a (condensed) copy now.
-      if (name === 'c4s-spec-reader') {
-        expect(body, name).toContain('PROJECT_SLUG_NOT_FOUND');
-      } else {
-        expect(body, name).not.toContain('PROJECT_SLUG_NOT_FOUND');
-      }
+      expect(body, name).not.toContain('PROJECT_SLUG_NOT_FOUND');
       // 0.1.106: strictly CLI-only — no filesystem-fallback reads/writes, no MCP setup block.
       expect(body, name).not.toMatch(/[Ff]allback \(no/);
       expect(body, name).not.toMatch(/yq -i/);
@@ -74,7 +79,7 @@ describe('renderers', () => {
 describe('c4s-brief-implementer loop (0.2.96 verbs)', () => {
   it('[ac:ac-body-c4s-brief-implementer-skill-md-op] discovers with list-briefs, reads with get-brief, files feedback with create-patch', () => {
     const body = renderBriefImplementerSkill(FIXTURE_CTX);
-    const identity = `--project '${FIXTURE_CTX.slug}' --workspace '${FIXTURE_CTX.workspace}'`;
+    const identity = IDENTITY;
     expect(body).toContain(`c4s list-briefs --status pending --limit 10 ${identity}`);
     expect(body).toContain(`c4s get-brief <brief-path> ${identity}`);
     expect(body).toMatch(/printf '%s\\n' "\$PATCH_BODY" \| c4s create-patch/);
@@ -96,14 +101,28 @@ describe('c4s-brief-implementer loop (0.2.96 verbs)', () => {
 describe('buildExternalSkillContext', () => {
   const project: ProjectRecord = {
     cwd: '/abs/my-spec-project',
-    id: 'abc123',
-    name: 'my-spec-project',
+    id: 'my-spec-project',
     addedAt: '2026-01-01T00:00:00.000Z',
   };
 
-  it('derives the identity from ProjectRecord.name and the given workspace name', () => {
-    const ctx = buildExternalSkillContext(project, 'default');
-    expect(ctx).toEqual({ slug: 'my-spec-project', workspace: 'default' });
+  it('carries { id, workspace, publicUrl } — no slug, no directory', () => {
+    const ctx = buildExternalSkillContext(project, { name: 'default', defaultPort: 4500 });
+    expect(ctx).toEqual({ id: 'my-spec-project', workspace: 'default', publicUrl: 'http://localhost:4500' });
+    expect(JSON.stringify(ctx)).not.toContain('/abs/');
+  });
+
+  it("uses the workspace's publicUrl when set, and an explicit override over it", () => {
+    const ws = { name: 'team', defaultPort: 4500, publicUrl: 'https://c4s.firma.dev' };
+    expect(buildExternalSkillContext(project, ws).publicUrl).toBe('https://c4s.firma.dev');
+    expect(buildExternalSkillContext(project, ws, 'https://other.dev/').publicUrl).toBe('https://other.dev');
+  });
+
+  it('renders identical skills before and after the spec repo moved', () => {
+    const moved = { ...project, cwd: '/elsewhere/renamed-dir' };
+    const ws = { name: 'default', defaultPort: 4500 };
+    expect(buildExternalSkillsBundle(buildExternalSkillContext(moved, ws))).toEqual(
+      buildExternalSkillsBundle(buildExternalSkillContext(project, ws)),
+    );
   });
 });
 

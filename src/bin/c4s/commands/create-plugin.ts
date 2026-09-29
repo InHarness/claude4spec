@@ -9,8 +9,9 @@ import type { CliCommandContribution } from '../registry.js';
  * project from a git template into a fresh subdirectory of `process.cwd()`.
  *
  * The first command that resolves no project and no workspace — it runs
- * outside any specification project, so the shared `--project` /
- * `--project-path` / `--workspace` / `--server` selectors do not apply. This
+ * outside any specification project, so the shared
+ * `--project` / `--workspace` / `--server` selectors do not apply (nor does the
+ * implicit walk-up or the health-check). This
  * file is flag parsing and delegation only; all domain logic lives in the M38
  * core.
  *

@@ -1,3 +1,5 @@
+import type { ExternalSkillContext } from './types.js';
+
 /**
  * 0.2.13 item 29 — the "Server required — for every step" invariant, written
  * once and rendered into all three shipped skills.
@@ -26,11 +28,12 @@
  * exactly the way the release's operation catalog exists to stop. One
  * declaration, three renderings — same shape, one scale down.
  *
- * The generated copy under `.claude4spec/skills/` is refreshed from here on
- * server start. The copy under a code repo's `.claude/skills/` is hand-editable
- * and deliberately NEVER overwritten, so this text landing here does not reach
- * an existing installation — see the release-contract test, which holds this
- * repo's own copies to the same invariant.
+ * Skills are generated on demand (Settings → ZIP, or `c4s install-skills`);
+ * nothing refreshes them on server start. The copy under a code repo's
+ * `.claude/skills/` is hand-editable and deliberately NEVER overwritten, so this
+ * text landing here does not reach an existing installation — see the
+ * release-contract test, which holds this repo's own copies to the same
+ * invariant.
  */
 export const SERVER_REQUIRED_BLOCK = `## Server required — for every step
 
@@ -38,4 +41,25 @@ Every \`c4s\` command in this skill talks to a running \`npx @inharness-ai/claud
 
 **\`SERVER_NOT_RUNNING\` (exit 8) from any command — stop.** Ask the user to start the server, and wait. Do not start one yourself (a CLI-spawned server is an unsupervised second process on the user's machine), and do not work around the failure by reading or writing the spec repo's files by hand — that is the thing this skill exists to prevent, and the reason it is CLI-only.
 
-Two neighbouring codes mean something else, and starting a server will not fix either: \`SERVER_NOT_RECOGNIZED\` (something is listening, but it is not claude4spec) and \`PROJECT_NOT_IN_WORKSPACE\` (the server is fine; this project is not registered in the workspace you named). Report those as they are.`;
+Two neighbouring codes mean something else, and starting a server will not fix either: \`SERVER_NOT_RECOGNIZED\` (something is listening, but it is not claude4spec) and \`PROJECT_NOT_IN_WORKSPACE\` (the server is fine, but it does not serve this skill's project — see "Stale address" below). Report those as they are.`;
+
+/**
+ * 2.1.0 (M22) — the address every generated skill bakes into EVERY `c4s`
+ * command: `--server <publicUrl> --project <id>`. Quoted so a command copied
+ * verbatim stays one argv word per value. `--workspace` is not passed — the
+ * server implies its workspace.
+ */
+export function skillIdentity(ctx: ExternalSkillContext): string {
+  return `--server '${ctx.publicUrl}' --project '${ctx.id}'`;
+}
+
+/**
+ * 2.1.0 (M22) — identical hint in all three skills: PROJECT_NOT_IN_WORKSPACE
+ * means the baked-in address is stale (the server at `publicUrl` does not serve
+ * project `id`); the only repair is regenerating the skill.
+ */
+export function staleAddressBlock(ctx: ExternalSkillContext): string {
+  return `## Stale address — \`PROJECT_NOT_IN_WORKSPACE\`
+
+\`PROJECT_NOT_IN_WORKSPACE\` means the server at \`${ctx.publicUrl}\` does not serve the project \`${ctx.id}\` — the address baked into this skill is stale. **Stop and ask the user to regenerate this skill** (Settings → External Integrations, or \`c4s install-skills\`). Do not guess another \`--project\` or \`--server\` value.`;
+}

@@ -76,30 +76,23 @@ export interface WorkspaceMcpDeps {
 }
 
 /**
- * Resolve `?project=` against the workspace: by registry id first, then by slug.
- *
- * "Slug" means the REGISTRY's name for the project (`ProjectRecord.name`) — the
- * same string `c4s --project <slug>` matches and the same one `list_projects`
- * reports as `slug`. That round-trip is the point: a caller discovers projects
- * with `list_projects` and connects with what it was handed.
- *
- * Explicitly NOT the display name from `config.json`. That is `list_projects`'
- * separate `name` field, it goes missing when the config is unreadable, and
- * matching on it would leave a project with a broken config addressable by an
- * id the caller was never told.
+ * Resolve `?project=` against the workspace — by registry `id` ONLY (2.1.0).
+ * The id is the value `list_projects` and `<workspace_projects>` hand out; a
+ * display name is never a selector, so passing one is refused with the list of
+ * available ids.
  */
 function findProject(deps: WorkspaceMcpDeps, selector: string) {
   const fresh = deps.registry.getWorkspace(deps.workspace.name) ?? deps.workspace;
-  const byId = fresh.projects.find((p) => p.id === selector);
-  if (byId) return byId;
-  /**
-   * 0.2.97 — a name is not unique inside a workspace. Two projects sharing it
-   * resolve to NEITHER rather than to whichever was registered first: serving
-   * the first would connect the caller to a project it did not choose, while a
-   * refusal sends it back to `list_projects`, whose `id` is unambiguous.
-   */
-  const byName = fresh.projects.filter((p) => p.name === selector);
-  return byName.length === 1 ? byName[0]! : null;
+  return fresh.projects.find((p) => p.id === selector) ?? null;
+}
+
+function notFoundMessage(deps: WorkspaceMcpDeps, req: Request): string {
+  const fresh = deps.registry.getWorkspace(deps.workspace.name) ?? deps.workspace;
+  const raw = typeof req.query.project === 'string' ? req.query.project.trim() : '';
+  const ids = fresh.projects.map((p) => p.id).join(', ') || '(none)';
+  return raw === ''
+    ? `pass ?project=<id>; available ids in workspace '${fresh.name}': ${ids}`
+    : `project '${raw}' is not registered in workspace '${fresh.name}' (pass the project id, not its name); available ids: ${ids}`;
 }
 
 /** `/api/workspace/mcp` — mounted on the workspace router. */
@@ -126,6 +119,7 @@ export function workspaceMcpRouter(deps: WorkspaceMcpDeps): Router {
      * session cross between them.
      */
     binding: (req) => `selector:${typeof req.query.project === 'string' ? req.query.project.trim() : ''}`,
+    notFoundMessage: (req) => notFoundMessage(deps, req),
   });
   router.post('/', handler);
   router.get('/', handler);

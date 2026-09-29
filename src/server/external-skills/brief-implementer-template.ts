@@ -1,17 +1,15 @@
 import type { ExternalSkillContext } from './types.js';
-import { SERVER_REQUIRED_BLOCK } from './server-required.js';
+import { SERVER_REQUIRED_BLOCK, skillIdentity, staleAddressBlock } from './server-required.js';
 
 export const BRIEF_IMPLEMENTER_FRONTMATTER = `---
 name: c4s-brief-implementer
-description: Implement features described in claude4spec briefs. Briefs are self-contained markdown files (entity snapshots, section diffs, narrative) that live in the companion specification repository, reached from your code repo via the c4s CLI (c4s list-briefs / get-brief, with --project and --workspace baked in). After implementation, if you discover drift between the brief and reality (missing details, incorrect assumptions, edge cases not covered), file a patch via c4s create-patch as feedback for the specification author. Use when implementing a claude4spec brief in a code repository.
+description: Implement features described in claude4spec briefs. Briefs are self-contained markdown files (entity snapshots, section diffs, narrative) that live in the companion specification repository, reached from your code repo via the c4s CLI (c4s list-briefs / get-brief, with --server and --project baked in). After implementation, if you discover drift between the brief and reality (missing details, incorrect assumptions, edge cases not covered), file a patch via c4s create-patch as feedback for the specification author. Use when implementing a claude4spec brief in a code repository.
 ---
 `;
 
 export function briefImplementerBody(ctx: ExternalSkillContext): string {
-  // Quoted: ProjectRecord.name (the slug) is an unvalidated directory basename
-  // and can contain spaces/shell metacharacters — unquoted interpolation here
-  // would break argv parsing when these example commands are run verbatim.
-  const identity = `--project '${ctx.slug}' --workspace '${ctx.workspace}'`;
+  // 2.1.0: `--server <publicUrl> --project <id>` in every command.
+  const identity = skillIdentity(ctx);
   return `# c4s-brief-implementer
 
 This skill describes how to implement a release brief in **your code repository** (not the spec repo). A brief is a self-contained markdown file that captures everything you need to ship the change: entity snapshots, section diffs, narrative, acceptance criteria. Briefs live in the **spec** repository, a different repo from the one you are working in — you never touch it directly; the \`c4s\` CLI reaches everything for you.
@@ -19,6 +17,8 @@ This skill describes how to implement a release brief in **your code repository*
 **Reaching the briefs.** This skill is **CLI-only**: it reaches the briefs and writes patches solely through the \`c4s\` CLI, with the spec project's identity baked into this skill (\`${identity}\`) — \`c4s list-briefs\` / \`c4s get-brief\` / \`c4s create-patch\` work from any directory, and each of them delegates to the server (see below). If \`c4s\` is not installed, **stop** and ask the user to install it — do not read or write the spec repo's files by hand. There is no fallback **even when a \`c4s\` command fails**: a failed command ends the work and asks the user to intervene; it is never a reason to go read the specification's files instead.
 
 ${SERVER_REQUIRED_BLOCK}
+
+${staleAddressBlock(ctx)}
 
 **The brief is self-contained.** You do not need to read the main specification or query the entity database — everything is in the brief body. If the brief references something you cannot find in its body, treat that as drift and file a patch (step 4 below).
 

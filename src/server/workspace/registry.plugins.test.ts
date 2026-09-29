@@ -32,7 +32,7 @@ describe('workspaces.json schema migration (v1 → v2)', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('reads a legacy v1 record (no plugins[]) and rewrites it as v2 on mutation', () => {
+  it('reads a legacy v1 record (no plugins[]) and rewrites it at the current schema version on mutation', () => {
     const file = path.join(dir, 'workspaces.json');
     fs.writeFileSync(
       file,
@@ -54,7 +54,7 @@ describe('workspaces.json schema migration (v1 → v2)', () => {
     registry.touchLastOpened('default');
     const after = JSON.parse(fs.readFileSync(file, 'utf8'));
     expect(after.$schemaVersion).toBe(WORKSPACES_SCHEMA_VERSION);
-    expect(WORKSPACES_SCHEMA_VERSION).toBe(2);
+    expect(WORKSPACES_SCHEMA_VERSION).toBe(3);
   });
 
   it('rejects a workspaces.json written by a newer schema', () => {

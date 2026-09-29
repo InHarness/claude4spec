@@ -51,10 +51,11 @@ describe('workspace-bound MCP mount', () => {
     const workspace = {
       name: 'default',
       projects: [
-        { id: 'proj-a', cwd: app.cwd, name: 'Project A' },
-        // Two projects sharing a registry name inside ONE workspace (0.2.97, M31).
-        { id: 'twin-1', cwd: app.cwd, name: 'twin' },
-        { id: 'twin-2', cwd: app.cwd, name: 'twin' },
+        { id: 'proj-a', cwd: app.cwd },
+        // Two projects of ONE workspace whose names would have collided; since
+        // 2.1.0 each has its own id and a shared prefix addresses neither.
+        { id: 'twin-1', cwd: app.cwd },
+        { id: 'twin-2', cwd: app.cwd },
       ],
     } as unknown as WorkspaceRecord;
     const cache = {
@@ -122,12 +123,18 @@ describe('workspace-bound MCP mount', () => {
     expect((await client.listTools()).tools.map((t) => t.name)).toContain('overview');
   });
 
-  it('resolves by the slug `list_projects` reports, which is what a caller holds', async () => {
-    // `list_projects` returns the slug `--project` resolves against; a caller
-    // that had to translate it back to a registry id before connecting would
-    // make the operation useless for its stated purpose.
-    const client = await connect('?project=' + encodeURIComponent('Project A'));
-    expect((await client.listTools()).tools.map((t) => t.name)).toContain('overview');
+  /**
+   * 2.1.0 — the mount accepts a project ONLY by `id`. A display name is refused
+   * with PROJECT_NOT_IN_WORKSPACE, and the message lists the available ids —
+   * never a directory.
+   */
+  it('refuses a project NAME, listing the available ids and no directory', async () => {
+    const res = await initialize('?project=' + encodeURIComponent('Project A'));
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { error: { message: string; data: { code: string } } };
+    expect(body.error.data.code).toBe('PROJECT_NOT_IN_WORKSPACE');
+    expect(body.error.message).toContain('proj-a');
+    expect(body.error.message).not.toContain(app.cwd);
   });
 
   /**

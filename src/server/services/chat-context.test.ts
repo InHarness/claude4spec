@@ -42,8 +42,8 @@ function build(overrides: Partial<SystemPromptInput>): string {
 }
 
 const PEERS: PeerProject[] = [
-  { name: 'Billing API', registryName: 'billing', path: '/ws/billing', description: 'Money in, money out.' },
-  { name: 'Auth', registryName: 'auth', path: '/ws/auth' },
+  { id: 'billing', name: 'Billing API', description: 'Money in, money out.' },
+  { id: 'auth', name: 'Auth' },
 ];
 
 /** The mounted-server inventory the turn hands the prompt. `<tooling>` is derived
@@ -219,35 +219,23 @@ describe('buildSystemPrompt — <workspace_projects> (0.1.58)', () => {
   });
 
   /**
-   * 0.2.50 — the peer's ADDRESS is `id`, the registry name, and this is the
-   * assertion that keeps it from being "simplified" back to the display name.
-   *
-   * `ask({ project })` resolves a non-path value through `findProjectByName`,
-   * which compares against `ProjectRecord.name` from the workspace registry —
-   * not the `name` the peer gives itself in its own config.json. A peer that
-   * shows as "Billing API" is registered as `billing`, and passing the former
-   * answers PROJECT_SLUG_NOT_FOUND. This was found by making the call; the
-   * change it refutes had survived three readings of the code.
+   * 2.1.0 — the peer's ADDRESS is its registry `id` (what `ask({ project })`
+   * resolves), `name` is a label only, and no directory ever reaches the agent.
    */
-  it('renders the REGISTRY name as `id` — the address — with `name` as a label only', () => {
+  it('renders `<peer id name description/>` — the id is the only address, no path', () => {
     const out = withC4s({ workspaceProjects: PEERS });
-    expect(out).toContain(
-      '<peer id="billing" name="Billing API" description="Money in, money out."/>',
-    );
-    // The display name must never be the only identifier offered.
-    expect(out).not.toContain('<peer name="Billing API" path=');
-    expect(out).toContain('Pass a peer\'s `id` as the `project` argument');
+    expect(out).toContain('<peer id="billing" name="Billing API" description="Money in, money out."/>');
+    expect(out).not.toMatch(/<peer [^>]*path=/);
+    expect(out).toContain("`id` is the project's only address — pass it as the `project` argument of `ask`");
   });
 
   it('drops an empty description, keeping the addressable id', () => {
     expect(withC4s({ workspaceProjects: PEERS })).toContain('<peer id="auth" name="Auth"/>');
   });
 
-  /** A peer with no registry name keeps `path`, which the resolver tries first —
-   *  better a longer address than a decorative one. */
-  it('falls back to path when a peer has no registry name', () => {
-    const out = withC4s({ workspaceProjects: [{ name: 'Legacy', path: '/ws/legacy' }] });
-    expect(out).toContain('<peer name="Legacy" path="/ws/legacy"/>');
+  it('a peer with an unreadable config is still listed by its id alone', () => {
+    const out = withC4s({ workspaceProjects: [{ id: 'legacy' }] });
+    expect(out).toContain('<peer id="legacy"/>');
   });
 
   it('never renders the block in a brief frame', () => {
@@ -1749,43 +1737,22 @@ describe('buildSystemPrompt — the block table under frames it was not written 
   });
 
   /**
-   * A registry name is NOT a key — two projects sharing a name inside one
-   * workspace answer `AMBIGUOUS_PROJECT` (0.2.97). `path` is tried before the
-   * name fallback and is exact, so the colliding peers keep it while everyone
-   * else stays short.
+   * 2.1.0 — path-based peer disambiguation is withdrawn: ids are unique inside
+   * a workspace, so peers sharing a display NAME are told apart by `id`, and no
+   * peer carries a directory.
    */
-  it('keeps `path` on peers whose registry name is shared, and only on those', () => {
+  it('peers sharing a display name are told apart by id; none carries a path', () => {
     const out = build({
       mcpInventory: inv(['c4s-tools', ['ask']]),
       workspaceName: 'default',
       workspaceProjects: [
-        { name: 'Work spec', registryName: 'spec', path: '/work/foo/spec' },
-        { name: 'Other spec', registryName: 'spec', path: '/work/bar/spec' },
-        { name: 'Billing API', registryName: 'billing', path: '/ws/billing' },
+        { id: 'spec', name: 'Spec' },
+        { id: 'spec-2', name: 'Spec' },
       ],
     } as Partial<SystemPromptInput>);
-    expect(out).toContain('<peer id="spec" name="Work spec" path="/work/foo/spec"/>');
-    expect(out).toContain('<peer id="spec" name="Other spec" path="/work/bar/spec"/>');
-    expect(out).toContain('<peer id="billing" name="Billing API"/>');
-    expect(out).toContain('only the path addresses it unambiguously');
-  });
-
-  /**
-   * The current project is filtered out of the list, so a peer sharing its name
-   * with IT looks unique to the block — yet `ask({ project: id })` is ambiguous.
-   * The lister flags it (`nameShared`) and the peer keeps its `path`.
-   */
-  it('keeps `path` on a peer whose registry name is shared with the current project', () => {
-    const out = build({
-      mcpInventory: inv(['c4s-tools', ['ask']]),
-      workspaceName: 'default',
-      workspaceProjects: [
-        { name: 'Other spec', registryName: 'spec', path: '/ws/b/spec', nameShared: true },
-        { name: 'Billing API', registryName: 'billing', path: '/ws/billing' },
-      ],
-    } as Partial<SystemPromptInput>);
-    expect(out).toContain('<peer id="spec" name="Other spec" path="/ws/b/spec"/>');
-    expect(out).toContain('<peer id="billing" name="Billing API"/>');
+    expect(out).toContain('<peer id="spec" name="Spec"/>');
+    expect(out).toContain('<peer id="spec-2" name="Spec"/>');
+    expect(out).not.toContain('path=');
   });
 
   /**

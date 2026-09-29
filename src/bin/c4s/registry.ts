@@ -26,7 +26,7 @@ import type { CliErrorCode } from './errors.js';
  *                           starting a server, so it cannot be delegated to one.
  *   - `scaffold`          — server-free bootstrap of a NEW directory under the CWD
  *                           (M38 `create-plugin`). The only mode that runs outside
- *                           any specification project: no `--project`/`--project-path`
+ *                           any specification project: no `--project`
  *                           walk-up to `.claude4spec/`, no db-slot, no health-check,
  *                           and the shared `--project` / `--workspace` / `--server`
  *                           selectors do not apply. From the M11 runtime it inherits
@@ -56,7 +56,7 @@ import type { CliErrorCode } from './errors.js';
  */
 export const SHARED_RESOLVER_CODES: readonly CliErrorCode[] = [
   'PROJECT_NOT_FOUND',
-  'PROJECT_SLUG_NOT_FOUND',
+  'PROJECT_ID_NOT_FOUND',
   'AMBIGUOUS_WORKSPACE',
   'AMBIGUOUS_PROJECT',
 ];

@@ -54,6 +54,7 @@ describe('markBriefImplemented', () => {
   let dir: string;
   let prevHome: string | undefined;
   let projectDir: string;
+  let projectId: string;
 
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-mbi-'));
@@ -63,7 +64,7 @@ describe('markBriefImplemented', () => {
     fs.mkdirSync(projectDir, { recursive: true });
     const registry = new WorkspaceRegistry(dir);
     const ws = registry.selectOrCreate({ name: 'default', port: 4531 });
-    registry.registerProject(ws, projectDir);
+    projectId = registry.registerProject(ws, projectDir).id;
   });
 
   afterEach(() => {
@@ -82,7 +83,7 @@ describe('markBriefImplemented', () => {
 
     const result = await markBriefImplemented({
       briefPath: 'v0-1-16-to-v0-1-17.md',
-      project: projectDir,
+      project: projectId,
       workspace: 'default',
     });
 
@@ -96,7 +97,7 @@ describe('markBriefImplemented', () => {
   it('URL-encodes each path segment of a nested brief path', async () => {
     const { calls } = stubFlow({ status: 200, ok: true, body: { data: {} } });
 
-    await markBriefImplemented({ briefPath: 'sub dir/brief one.md', project: projectDir, workspace: 'default' });
+    await markBriefImplemented({ briefPath: 'sub dir/brief one.md', project: projectId, workspace: 'default' });
 
     const patch = calls.find((c) => c.url.endsWith('/frontmatter'));
     expect(patch?.url).toContain('/artifacts/brief/sub%20dir/brief%20one.md/frontmatter');
@@ -110,7 +111,7 @@ describe('markBriefImplemented', () => {
       }),
     );
 
-    const err = await markBriefImplemented({ briefPath: 'x.md', project: projectDir, workspace: 'default' }).catch(
+    const err = await markBriefImplemented({ briefPath: 'x.md', project: projectId, workspace: 'default' }).catch(
       (e) => e,
     );
     expect(err).toBeInstanceOf(AgentError);
@@ -130,7 +131,7 @@ describe('markBriefImplemented', () => {
       }),
     );
 
-    const err = await markBriefImplemented({ briefPath: 'x.md', project: projectDir, workspace: 'default' }).catch(
+    const err = await markBriefImplemented({ briefPath: 'x.md', project: projectId, workspace: 'default' }).catch(
       (e) => e,
     );
     expect(err).not.toBeInstanceOf(AgentError);
@@ -146,7 +147,7 @@ describe('markBriefImplemented', () => {
 
     const err = await markBriefImplemented({
       briefPath: 'missing.md',
-      project: projectDir,
+      project: projectId,
       workspace: 'default',
     }).catch((e) => e);
     expect(err).toBeInstanceOf(AgentError);
@@ -166,7 +167,7 @@ describe('markBriefImplemented', () => {
       },
     });
 
-    const err = await markBriefImplemented({ briefPath: 'x.md', project: projectDir, workspace: 'default' }).catch(
+    const err = await markBriefImplemented({ briefPath: 'x.md', project: projectId, workspace: 'default' }).catch(
       (e) => e,
     );
     expect(err).toBeInstanceOf(AgentError);

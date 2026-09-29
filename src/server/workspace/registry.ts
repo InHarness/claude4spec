@@ -1,15 +1,25 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { projectIdForCwd } from './project-id.js';
+import { mintProjectId } from './project-id.js';
+import { readPeerConfigSummary } from './peer-config.js';
+import {
+  isMigrationPendingFor,
+  planRegistryMigration,
+  READABLE_IDS_SCHEMA_VERSION,
+  type ProjectIdRename,
+} from './registry-migration.js';
+import { findSlotIdForCwd, listSlotIds, writeSlotMarker } from './slot-marker.js';
 import type { ProjectRecord, WorkspaceRecord, WorkspacesFile } from './types.js';
 
 // v2 (M33): WorkspaceRecord gains optional `plugins[]`. Legacy v1 records lack
-// the field and read as predefined-only — no rewrite needed on read. NOTE: any
-// mutation by a >=0.1.73 binary rewrites `$schemaVersion` to 2, after which an
-// OLDER binary (max schema 1) refuses to open the file (read() forward-compat
-// guard). Mixed-version use against one `~/.claude4spec/` is a one-way upgrade.
-export const WORKSPACES_SCHEMA_VERSION = 2;
+// the field and read as predefined-only — no rewrite needed on read.
+// v3 (2.1.0): readable project ids (M31 #13) + workspace `bindHost`/`publicUrl`.
+// A v≤2 file with projects needs the id migration, which ONLY the server runs
+// (`migrateIfNeeded`, before listen). Until then reads see the migrated ids in
+// memory and writes refuse with REGISTRY_MIGRATION_PENDING. An older binary
+// refuses a v3 file (read() forward-compat guard): a one-way upgrade.
+export const WORKSPACES_SCHEMA_VERSION = READABLE_IDS_SCHEMA_VERSION;
 export const DEFAULT_WORKSPACE_PORT = 4500;
 const DEFAULT_WORKSPACE_NAME = 'default';
 const LOCK_STALE_MS = 5_000;
@@ -33,67 +43,37 @@ const LOCK_STALE_MS = 5_000;
 export const PREDEFINED_PLUGINS: readonly string[] = [];
 
 /**
- * Find a project record by its directory: prefer the stored `cwd` field (the
- * authoritative source once a project's `id` is allowed to diverge from
- * `sha1(cwd)`, e.g. after a hand-edit), falling back to an id computed fresh
- * from `cwd` only for records that predate this field or somehow lack it.
- * Precedence matters — a cwd match must win over an id-fallback match, so
- * this is NOT equivalent to a single `p.cwd === cwd || p.id === id` filter.
- * Single source of truth for this lookup — reused by `resolveWorkspacesForCwd`
- * below and by `resolveWorkspaceProject` in `src/core/workspace/resolve.ts`.
- * `registerProject` deliberately does NOT use this (cwd-only, no id
- * fallback) — falling back to id there would conflate two DIFFERENT projects
- * whose ids happen to collide (see `uniqueProjectId`).
+ * Find a project record by its stored directory. Single source of truth for
+ * this lookup — reused by `resolveWorkspacesForCwd` below and by
+ * `resolveWorkspaceProject` in `src/core/workspace/resolve.ts`. A hand-edited
+ * `cwd` (moved repo) is found under its NEW path and keeps its stored `id`.
  */
 export function findProjectByCwd(projects: ProjectRecord[], cwd: string): ProjectRecord | undefined {
-  return projects.find((p) => p.cwd === cwd) ?? projects.find((p) => p.id === projectIdForCwd(cwd));
+  const target = path.resolve(cwd);
+  return projects.find((p) => path.resolve(p.cwd) === target);
 }
 
 /**
- * Find every project across the given workspaces registered under an exact
- * `name` (the cosmetic `basename(cwd)`-derived label, NOT a unique key —
- * unlike `id`/`cwd`, two different projects, even in the same workspace, can
- * share a `name`). Used by `resolveWorkspaceProject`'s `--project <name>`
- * fallback (`src/core/workspace/resolve.ts`) after path resolution finds
- * nothing — callers must handle 0/1/N matches themselves (0 → not found,
- * 1 → resolve, 2+ → ambiguous).
- *
- * 0.2.97 — N is reachable INSIDE one workspace too. The search used to take the
- * first match per workspace, so two projects sharing a basename in the same
- * workspace resolved to whichever was registered first and the other was
- * unaddressable by name — silently, since the caller only ever saw one match.
+ * Every `(workspace, project)` whose `id` equals `id` — 0 or 1 per workspace,
+ * 0/1/N across workspaces. The only project selector (`--project <id>`).
  */
-export function findProjectByName(
+export function findProjectsById(
   workspaces: WorkspaceRecord[],
-  name: string,
+  id: string,
 ): Array<{ workspace: WorkspaceRecord; project: ProjectRecord }> {
   const matches: Array<{ workspace: WorkspaceRecord; project: ProjectRecord }> = [];
   for (const workspace of workspaces) {
-    for (const project of workspace.projects) {
-      if (project.name === name) matches.push({ workspace, project });
-    }
+    const project = workspace.projects.find((p) => p.id === id);
+    if (project) matches.push({ workspace, project });
   }
   return matches;
 }
 
-/**
- * Mint an id for a brand-new project record, guaranteed not to collide with
- * an id already held by a DIFFERENT record in this workspace's `projects`.
- * A collision is possible once a project's stored `id` is allowed to diverge
- * from `sha1(cwd)` (a hand-edited `cwd`): the vacated path can later be
- * reused for an unrelated project, whose freshly-computed `sha1(cwd)` would
- * otherwise equal the moved project's still-stored id — merging both onto one
- * DB slot / context-cache entry. Retries with a salted hash on collision;
- * `PROJECT_ROUTE_RE` (`/^\/p\/([0-9a-f]{12})(\/|$)/` in server/index.ts)
- * requires exactly 12 lowercase hex chars, so the salt must go into the hash
- * input, not appended to the output.
- */
-function uniqueProjectId(existing: ProjectRecord[], cwd: string): string {
-  let id = projectIdForCwd(cwd);
-  for (let salt = 1; existing.some((p) => p.id === id); salt += 1) {
-    id = projectIdForCwd(`${cwd}\0${salt}`);
+export class RegistryMigrationPendingError extends Error {
+  readonly code = 'REGISTRY_MIGRATION_PENDING';
+  constructor(file: string) {
+    super(`${file} still uses pre-2.1.0 hash project ids — start the claude4spec server once to migrate it`);
   }
-  return id;
 }
 
 /**
@@ -200,9 +180,8 @@ export class WorkspaceRegistry {
 
   /**
    * Every workspace containing a project for this cwd (0/1/N rule for the CLI).
-   * Matches the stored `cwd` field (not a re-hash of it), so a project keeps
-   * resolving from its directory even after its `id` diverged from `sha1(cwd)`
-   * (e.g. a hand-edited path). Falls back to id-match for legacy safety.
+   * Matches the stored `cwd` field, so after a hand-edited `cwd` the project
+   * resolves from its new directory with its unchanged `id`.
    */
   resolveWorkspacesForCwd(cwd: string): WorkspaceRecord[] {
     return this.read().workspaces.filter((w) => findProjectByCwd(w.projects, cwd) !== undefined);
@@ -263,23 +242,44 @@ export class WorkspaceRegistry {
     });
   }
 
-  /** Idempotent: registers cwd into the workspace, creates the DB slot dir. */
+  /**
+   * Idempotent: registers cwd into the workspace, creates the DB slot dir.
+   *
+   * 2.1.0 id resolution, in order:
+   *  1. a live record for this directory → reused as-is (id never recomputed);
+   *  2. a slot in this workspace that belongs to this directory (a detached
+   *     project) → its id is recovered, and so is the index in it;
+   *  3. otherwise a fresh id minted from `config.json` `name` (an
+   *     absent/unreadable config falls back to the directory name), unique
+   *     against live ids AND every slot directory — a new project named like
+   *     a detached one gets a suffix, never its slot.
+   * Minting happens under the registry lock, whoever registers (server or
+   * `c4s trust-plugins`).
+   */
   registerProject(ws: WorkspaceRecord, cwd: string): ProjectRecord {
+    const absCwd = path.resolve(cwd);
+    const wsDir = path.join(this.baseDir, ws.name);
     const project = this.withLock((data) => {
       const target = data.workspaces.find((w) => w.name === ws.name);
       if (!target) throw new Error(`workspace "${ws.name}" no longer exists in ${this.file}`);
-      // Reuse an existing entry for this directory first (so a project whose
-      // stored id diverged from sha1(cwd) — e.g. hand-edited path — isn't
-      // duplicated). sha1(cwd) is only the GENERATOR for a brand-new project.
-      let p = target.projects.find((x) => x.cwd === cwd);
+      let p = findProjectByCwd(target.projects, absCwd);
       if (!p) {
-        const id = uniqueProjectId(target.projects, cwd);
-        p = { cwd, id, name: path.basename(cwd), addedAt: nowIso() };
+        const live = new Set(target.projects.map((x) => x.id));
+        const recovered = findSlotIdForCwd(wsDir, absCwd);
+        const name = readPeerConfigSummary(absCwd).name;
+        const id =
+          recovered && !live.has(recovered)
+            ? recovered
+            : mintProjectId(
+                name && name.trim() !== '' ? name : path.basename(absCwd),
+                new Set([...live, ...listSlotIds(wsDir)]),
+              );
+        p = { cwd: absCwd, id, addedAt: nowIso() };
         target.projects.push(p);
       }
       return p;
     });
-    fs.mkdirSync(this.slotDir(ws, project.id), { recursive: true });
+    writeSlotMarker(this.slotDir(ws, project.id), project.cwd);
     return project;
   }
 
@@ -331,6 +331,65 @@ export class WorkspaceRegistry {
   }
 
   /**
+   * 2.1.0: persist `--host` / `--public-url` on a workspace. `undefined` leaves
+   * a field untouched; `''` removes it (back to the default: loopback /
+   * `http://localhost:<defaultPort>`). Callers validate `publicUrl` first.
+   */
+  setNetwork(wsName: string, net: { bindHost?: string; publicUrl?: string }): WorkspaceRecord | null {
+    return this.withLock((data) => {
+      const ws = data.workspaces.find((w) => w.name === wsName);
+      if (!ws) return null;
+      if (net.bindHost !== undefined) {
+        if (net.bindHost === '') delete ws.bindHost;
+        else ws.bindHost = net.bindHost;
+      }
+      if (net.publicUrl !== undefined) {
+        if (net.publicUrl === '') delete ws.publicUrl;
+        else ws.publicUrl = net.publicUrl;
+      }
+      return ws;
+    });
+  }
+
+  /** True while the file on disk still carries pre-2.1.0 hash ids. */
+  isMigrationPending(): boolean {
+    return isMigrationPendingFor(this.readRaw());
+  }
+
+  /**
+   * 2.1.0: hash ids → readable ids, run by the server at start, before listen,
+   * under the advisory lock. Per project: write the slot marker into the hash
+   * slot → rename `<ws>/<hash>/` → `<ws>/<id>/`; then write the registry as v3.
+   * Every step is detectable from disk, so a run interrupted after any rename
+   * is completed by the next start (the renamed slot's marker names its
+   * directory, and the plan adopts it). Detached projects' slots are left as
+   * they are and recovered by their directory on re-registration.
+   */
+  migrateIfNeeded(): ProjectIdRename[] {
+    fs.mkdirSync(this.baseDir, { recursive: true });
+    this.acquireLock();
+    try {
+      const data = this.readRaw();
+      if (!isMigrationPendingFor(data)) return [];
+      const { file, renames } = planRegistryMigration(data, this.baseDir);
+      for (const r of renames) {
+        const from = path.join(this.baseDir, r.workspace, r.from);
+        const to = path.join(this.baseDir, r.workspace, r.to);
+        if (fs.existsSync(from) && !fs.existsSync(to)) {
+          writeSlotMarker(from, r.cwd);
+          fs.renameSync(from, to);
+        } else if (fs.existsSync(to)) {
+          writeSlotMarker(to, r.cwd);
+        }
+      }
+      this.writeAtomic(file);
+      return renames;
+    } finally {
+      this.releaseLock();
+    }
+  }
+
+  /**
    * Carry of config-v3 harvested values — first-wins: only fills the workspace
    * when registry creation predated knowing them. A dropped port logs a warn.
    */
@@ -358,7 +417,16 @@ export class WorkspaceRegistry {
 
   // ─── persistence ─────────────────────────────────────────────────────────
 
+  /**
+   * Registry as callers see it: a pre-2.1.0 file is presented with its ids
+   * migrated IN MEMORY (read-only CLI commands never migrate the file).
+   */
   private read(): WorkspacesFile {
+    const data = this.readRaw();
+    return isMigrationPendingFor(data) ? planRegistryMigration(data, this.baseDir).file : data;
+  }
+
+  private readRaw(): WorkspacesFile {
     // 0.2.65: the read is ATTEMPTED, not pre-checked with `existsSync`.
     // `existsSync` answers false for two very different situations — the file
     // is absent, and the file cannot be reached because its directory is
@@ -399,16 +467,23 @@ export class WorkspaceRegistry {
     fs.mkdirSync(this.baseDir, { recursive: true });
     this.acquireLock();
     try {
-      const data = this.read();
+      const data = this.readRaw();
+      // Writing would persist ids nobody migrated the slots for — the server
+      // migrates first (`migrateIfNeeded`), the CLI refuses.
+      if (isMigrationPendingFor(data)) throw new RegistryMigrationPendingError(this.file);
       data.$schemaVersion = WORKSPACES_SCHEMA_VERSION;
       const result = mutate(data);
-      const tmp = this.file + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify(data, null, 2) + '\n', 'utf8');
-      fs.renameSync(tmp, this.file);
+      this.writeAtomic(data);
       return result;
     } finally {
       this.releaseLock();
     }
+  }
+
+  private writeAtomic(data: WorkspacesFile): void {
+    const tmp = this.file + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(data, null, 2) + '\n', 'utf8');
+    fs.renameSync(tmp, this.file);
   }
 
   private acquireLock(): void {

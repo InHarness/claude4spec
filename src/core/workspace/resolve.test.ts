@@ -3,17 +3,28 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { WorkspaceRegistry } from '../../server/workspace/registry.js';
+import { legacyHashId } from '../../server/workspace/project-id.js';
 import { resolveWorkspaceProject, WorkspaceResolveError } from './resolve.js';
 
-describe('resolveWorkspaceProject — --project <name> fallback', () => {
+function expectResolveError(fn: () => unknown): WorkspaceResolveError {
+  try {
+    fn();
+  } catch (err) {
+    expect(err).toBeInstanceOf(WorkspaceResolveError);
+    return err as WorkspaceResolveError;
+  }
+  return expect.unreachable('expected resolveWorkspaceProject to throw');
+}
+
+describe('resolveWorkspaceProject — 2.1.0: --project <id> is the only selector', () => {
   let dir: string;
   let prevHome: string | undefined;
 
   beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-resolve-'));
+    dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-resolve-')));
     prevHome = process.env.C4S_HOME;
-    // resolveWorkspaceProject always constructs `new WorkspaceRegistry()` with
-    // no override — it reads C4S_HOME itself, so setup must target the SAME dir.
+    // resolveWorkspaceProject constructs `new WorkspaceRegistry()` with no
+    // override — it reads C4S_HOME itself, so setup must target the SAME dir.
     process.env.C4S_HOME = dir;
   });
   afterEach(() => {
@@ -22,179 +33,147 @@ describe('resolveWorkspaceProject — --project <name> fallback', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('resolves a unique name match within an explicit --workspace', () => {
+  it('resolves a registered id, returning the local address of its workspace', () => {
+    const registry = new WorkspaceRegistry(dir);
+    const ws = registry.selectOrCreate({ name: 'default', port: 4611 });
+    const project = registry.registerProject(ws, path.join(dir, 'App Spec'));
+    expect(project.id).toBe('app-spec');
+
+    const result = resolveWorkspaceProject({ project: 'app-spec' });
+    expect(result.workspaceName).toBe('default');
+    expect(result.projectId).toBe('app-spec');
+    expect(result.localUrl).toBe('http://localhost:4611');
+  });
+
+  it('never resolves a path or a display name — only the id', () => {
     const registry = new WorkspaceRegistry(dir);
     const ws = registry.selectOrCreate({ name: 'default' });
-    const projectCwd = path.join(dir, 'app-spec-real');
-    registry.registerProject(ws, projectCwd);
+    const cwd = path.join(dir, 'spec');
+    registry.registerProject(ws, cwd);
 
-    const result = resolveWorkspaceProject({ project: 'app-spec-real', workspace: 'default' });
-
-    expect(result.workspaceName).toBe('default');
-    expect(result.projectDir).toBe(projectCwd);
+    expect(expectResolveError(() => resolveWorkspaceProject({ project: cwd })).code).toBe('PROJECT_ID_NOT_FOUND');
+    expect(expectResolveError(() => resolveWorkspaceProject({ project: 'Spec' })).code).toBe('PROJECT_ID_NOT_FOUND');
   });
 
-  it('resolves a unique name match across all workspaces when --workspace is omitted', () => {
+  it('PROJECT_ID_NOT_FOUND lists the available ids and no directory', () => {
     const registry = new WorkspaceRegistry(dir);
-    const wsA = registry.selectOrCreate({ name: 'ws-a', port: 4501 });
-    const projectCwd = path.join(dir, 'only-here');
-    registry.registerProject(wsA, projectCwd);
-    registry.selectOrCreate({ name: 'ws-b', port: 4502 }); // no matching project
+    const ws = registry.selectOrCreate({ name: 'default' });
+    registry.registerProject(ws, path.join(dir, 'alpha'));
+    registry.registerProject(ws, path.join(dir, 'beta'));
 
-    const result = resolveWorkspaceProject({ project: 'only-here' });
-
-    expect(result.workspaceName).toBe('ws-a');
-    expect(result.projectDir).toBe(projectCwd);
+    const err = expectResolveError(() => resolveWorkspaceProject({ project: 'gamma' }));
+    expect(err.code).toBe('PROJECT_ID_NOT_FOUND');
+    expect(err.message).toContain('alpha');
+    expect(err.message).toContain('beta');
+    expect(err.message).not.toContain(dir);
   });
 
-  it('throws AMBIGUOUS_PROJECT when a name matches 2+ projects and --workspace is omitted', () => {
+  it('AMBIGUOUS_PROJECT across workspaces carries { id, workspace } candidates, never a directory', () => {
     const registry = new WorkspaceRegistry(dir);
     const wsA = registry.selectOrCreate({ name: 'ws-a', port: 4501 });
     const wsB = registry.selectOrCreate({ name: 'ws-b', port: 4502 });
-    registry.registerProject(wsA, path.join(dir, 'repo-a', 'shared-name'));
-    registry.registerProject(wsB, path.join(dir, 'repo-b', 'shared-name'));
+    registry.registerProject(wsA, path.join(dir, 'repo-a', 'shared'));
+    registry.registerProject(wsB, path.join(dir, 'repo-b', 'shared'));
 
-    try {
-      resolveWorkspaceProject({ project: 'shared-name' });
-      expect.unreachable('expected resolveWorkspaceProject to throw');
-    } catch (err) {
-      expect(err).toBeInstanceOf(WorkspaceResolveError);
-      expect((err as WorkspaceResolveError).code).toBe('AMBIGUOUS_PROJECT');
-      expect((err as WorkspaceResolveError).message).toContain('shared-name');
-    }
+    const err = expectResolveError(() => resolveWorkspaceProject({ project: 'shared' }));
+    expect(err.code).toBe('AMBIGUOUS_PROJECT');
+    expect(err.message).toContain('{"id":"shared","workspace":"ws-a"}');
+    expect(err.message).toContain('{"id":"shared","workspace":"ws-b"}');
+    expect(err.message).not.toContain(dir);
+    expect(err.hint).toContain('--workspace');
+
+    expect(resolveWorkspaceProject({ project: 'shared', workspace: 'ws-b' }).workspaceName).toBe('ws-b');
   });
 
-  it('prefers a resolving path over a DIFFERENT project sharing that same name (precedence)', () => {
+  it('two projects sharing a directory name in ONE workspace get distinct ids (-2), both addressable', () => {
     const registry = new WorkspaceRegistry(dir);
     const ws = registry.selectOrCreate({ name: 'default' });
-    // realpath: on macOS the tmp dir is reached through a symlink (/var →
-    // /private/var) and `process.cwd()` after `chdir` reports the resolved form.
-    // Registered under the unresolved one, the path attempt missed, and this test
-    // passed only because the name fallback used to take the FIRST same-named
-    // project — which is exactly the silent choice 0.2.97 removed.
-    const realDir = fs.realpathSync(dir);
-    const realPath = path.join(realDir, 'actual-project');
-    const decoyPath = path.join(realDir, 'decoy-project');
-    registry.registerProject(ws, realPath); // name defaults to 'actual-project'
-    registry.registerProject(ws, decoyPath);
-    // Hand-edit the decoy's name to collide with the real project's — if name
-    // fallback ran unconditionally (instead of only after path resolution
-    // fails), this could resolve to the WRONG project.
-    const workspacesFile = JSON.parse(fs.readFileSync(path.join(dir, 'workspaces.json'), 'utf8'));
-    workspacesFile.workspaces[0].projects.find((p: { cwd: string }) => p.cwd === decoyPath).name =
-      'actual-project';
-    fs.writeFileSync(path.join(dir, 'workspaces.json'), JSON.stringify(workspacesFile));
+    const a = registry.registerProject(ws, path.join(dir, 'repo-a', 'spec'));
+    const b = registry.registerProject(ws, path.join(dir, 'repo-b', 'spec'));
+    expect([a.id, b.id]).toEqual(['spec', 'spec-2']);
 
-    // `--project actual-project` as a RELATIVE path from `dir` resolves
-    // exactly to `realPath` — this must win over the name-collision with decoy.
-    const prevCwd = process.cwd();
-    process.chdir(realDir);
-    try {
-      const result = resolveWorkspaceProject({ project: 'actual-project' });
-      expect(result.projectDir).toBe(realPath);
-    } finally {
-      process.chdir(prevCwd);
-    }
+    expect(resolveWorkspaceProject({ project: 'spec' }).projectDir).toBe(a.cwd);
+    expect(resolveWorkspaceProject({ project: 'spec-2' }).projectDir).toBe(b.cwd);
   });
 
-  it('reports PROJECT_SLUG_NOT_FOUND mentioning both the path and name attempts when neither matches', () => {
-    const registry = new WorkspaceRegistry(dir);
-    registry.selectOrCreate({ name: 'default' });
-
-    try {
-      resolveWorkspaceProject({ project: 'nonexistent-anything' });
-      expect.unreachable('expected resolveWorkspaceProject to throw');
-    } catch (err) {
-      expect(err).toBeInstanceOf(WorkspaceResolveError);
-      expect((err as WorkspaceResolveError).code).toBe('PROJECT_SLUG_NOT_FOUND');
-      expect((err as WorkspaceResolveError).message).toContain('nonexistent-anything');
-      expect((err as WorkspaceResolveError).hint).toContain('regenerate the skill');
-    }
-  });
-
-  it('throws AMBIGUOUS_PROJECT with a hint to pass --workspace when a name collides', () => {
-    const registry = new WorkspaceRegistry(dir);
-    const wsA = registry.selectOrCreate({ name: 'ws-a', port: 4511 });
-    const wsB = registry.selectOrCreate({ name: 'ws-b', port: 4512 });
-    registry.registerProject(wsA, path.join(dir, 'repo-a', 'twin-name'));
-    registry.registerProject(wsB, path.join(dir, 'repo-b', 'twin-name'));
-
-    try {
-      resolveWorkspaceProject({ project: 'twin-name' });
-      expect.unreachable('expected resolveWorkspaceProject to throw');
-    } catch (err) {
-      expect(err).toBeInstanceOf(WorkspaceResolveError);
-      expect((err as WorkspaceResolveError).code).toBe('AMBIGUOUS_PROJECT');
-      expect((err as WorkspaceResolveError).hint).toContain('--workspace');
-    }
-  });
-
-  /**
-   * 0.2.97 (M31) — a project name is not unique even INSIDE a workspace: two
-   * projects whose directories share a basename share the name. The search used
-   * to take the first match per workspace, so the second was unaddressable by
-   * name and the first answered for both, silently. `--workspace` cannot tell
-   * them apart, so the hint names the one thing that can.
-   */
-  it('throws AMBIGUOUS_PROJECT for two same-named projects inside ONE workspace', () => {
-    const registry = new WorkspaceRegistry(dir);
-    const ws = registry.selectOrCreate({ name: 'default' });
-    registry.registerProject(ws, path.join(dir, 'repo-a', 'spec'));
-    registry.registerProject(ws, path.join(dir, 'repo-b', 'spec'));
-
-    for (const opts of [{ project: 'spec' }, { project: 'spec', workspace: 'default' }]) {
-      try {
-        resolveWorkspaceProject(opts);
-        expect.unreachable('expected resolveWorkspaceProject to throw');
-      } catch (err) {
-        expect(err).toBeInstanceOf(WorkspaceResolveError);
-        expect((err as WorkspaceResolveError).code).toBe('AMBIGUOUS_PROJECT');
-        expect((err as WorkspaceResolveError).message).toContain(path.join(dir, 'repo-a', 'spec'));
-        expect((err as WorkspaceResolveError).message).toContain(path.join(dir, 'repo-b', 'spec'));
-        expect((err as WorkspaceResolveError).hint).toContain('--project <path>');
-        expect((err as WorkspaceResolveError).hint).not.toContain('--workspace');
-      }
-    }
-  });
-
-  it('still resolves either of two same-named projects by its path', () => {
-    const registry = new WorkspaceRegistry(dir);
-    const ws = registry.selectOrCreate({ name: 'default' });
-    const b = path.join(dir, 'repo-b', 'spec');
-    registry.registerProject(ws, path.join(dir, 'repo-a', 'spec'));
-    registry.registerProject(ws, b);
-
-    expect(resolveWorkspaceProject({ project: b, workspace: 'default' }).projectDir).toBe(b);
-  });
-
-  it('does not widen an explicit --workspace scope to find a name registered elsewhere', () => {
+  it('does not widen an explicit --workspace scope to find an id registered elsewhere', () => {
     const registry = new WorkspaceRegistry(dir);
     const wsA = registry.selectOrCreate({ name: 'ws-a', port: 4501 });
     registry.selectOrCreate({ name: 'ws-b', port: 4502 });
     registry.registerProject(wsA, path.join(dir, 'only-in-a'));
 
-    expect(() => resolveWorkspaceProject({ project: 'only-in-a', workspace: 'ws-b' })).toThrow(
-      WorkspaceResolveError,
+    expect(expectResolveError(() => resolveWorkspaceProject({ project: 'only-in-a', workspace: 'ws-b' })).code).toBe(
+      'PROJECT_ID_NOT_FOUND',
     );
   });
 
-  it('reports an unrecognized --workspace distinctly from PROJECT_SLUG_NOT_FOUND', () => {
+  it('reports an unrecognized --workspace distinctly from PROJECT_ID_NOT_FOUND', () => {
     const registry = new WorkspaceRegistry(dir);
     const ws = registry.selectOrCreate({ name: 'default' });
     registry.registerProject(ws, path.join(dir, 'app-spec-real'));
 
+    const err = expectResolveError(() =>
+      resolveWorkspaceProject({ project: 'app-spec-real', workspace: 'no-such-workspace' }),
+    );
+    expect(err.code).toBe('PROJECT_NOT_FOUND');
+    expect(err.message).toContain("workspace 'no-such-workspace' is not registered");
+    expect(err.hint).toContain('default');
+  });
+
+  it('without --project walks up from cwd to the nearest registered project', () => {
+    const registry = new WorkspaceRegistry(dir);
+    const ws = registry.selectOrCreate({ name: 'default' });
+    const cwd = path.join(dir, 'walk');
+    fs.mkdirSync(path.join(cwd, 'deep', 'er'), { recursive: true });
+    registry.registerProject(ws, cwd);
+
+    const prev = process.cwd();
+    process.chdir(path.join(cwd, 'deep', 'er'));
     try {
-      // A valid, registered slug — but paired with a --workspace typo that
-      // doesn't exist at all. The bug this guards: this used to fall through
-      // to the name-fallback with an empty candidate list, mislabeling a
-      // workspace typo as a stale/ambiguous slug.
-      resolveWorkspaceProject({ project: 'app-spec-real', workspace: 'no-such-workspace' });
-      expect.unreachable('expected resolveWorkspaceProject to throw');
-    } catch (err) {
-      expect(err).toBeInstanceOf(WorkspaceResolveError);
-      expect((err as WorkspaceResolveError).code).toBe('PROJECT_NOT_FOUND');
-      expect((err as WorkspaceResolveError).message).toContain("workspace 'no-such-workspace' is not registered");
-      expect((err as WorkspaceResolveError).hint).toContain('default');
+      expect(resolveWorkspaceProject().projectId).toBe('walk');
+    } finally {
+      process.chdir(prev);
     }
+  });
+
+  it('a hand-edited cwd keeps the stored id (walk-up finds it under the new path)', () => {
+    const registry = new WorkspaceRegistry(dir);
+    const ws = registry.selectOrCreate({ name: 'default' });
+    registry.registerProject(ws, path.join(dir, 'old-place'));
+    const moved = path.join(dir, 'new-place');
+    fs.mkdirSync(moved, { recursive: true });
+    const file = path.join(dir, 'workspaces.json');
+    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+    data.workspaces[0].projects[0].cwd = moved;
+    fs.writeFileSync(file, JSON.stringify(data));
+
+    const prev = process.cwd();
+    process.chdir(moved);
+    try {
+      expect(resolveWorkspaceProject().projectId).toBe('old-place');
+    } finally {
+      process.chdir(prev);
+    }
+    expect(resolveWorkspaceProject({ project: 'old-place' }).projectDir).toBe(moved);
+  });
+
+  it('reads a pre-2.1.0 (hash-id) registry with the migrated ids IN MEMORY, never rewriting it', () => {
+    const cwd = path.join(dir, 'legacy-spec');
+    const file = path.join(dir, 'workspaces.json');
+    const legacy = {
+      $schemaVersion: 2,
+      workspaces: [
+        {
+          name: 'default',
+          mode: 'prod',
+          defaultPort: 4500,
+          projects: [{ cwd, id: legacyHashId(cwd), name: 'legacy-spec', addedAt: '2026-01-01T00:00:00.000Z' }],
+        },
+      ],
+    };
+    fs.writeFileSync(file, JSON.stringify(legacy));
+
+    expect(resolveWorkspaceProject({ project: 'legacy-spec' }).projectId).toBe('legacy-spec');
+    expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual(legacy);
   });
 });

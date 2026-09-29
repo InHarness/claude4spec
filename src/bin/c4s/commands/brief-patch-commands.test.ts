@@ -35,6 +35,7 @@ const CONFIG = {
 describe('[ac:ac-rodzina-brief-patch-list-briefs-read] the brief/patch family delegates', () => {
   let registryDir: string;
   let projectDir: string;
+  let projectId: string;
   let prevHome: string | undefined;
   let stdout: string;
   let server: http.Server;
@@ -68,7 +69,7 @@ describe('[ac:ac-rodzina-brief-patch-list-briefs-read] the brief/patch family de
 
     const registry = new WorkspaceRegistry(registryDir);
     const ws = registry.selectOrCreate({ name: 'default', port });
-    registry.registerProject(ws, projectDir);
+    projectId = registry.registerProject(ws, projectDir).id;
     __resetDelegateTargets();
 
     stdout = '';
@@ -89,7 +90,7 @@ describe('[ac:ac-rodzina-brief-patch-list-briefs-read] the brief/patch family de
   });
 
   const args = (...argv: string[]) =>
-    parseArgs([...argv, '--project', path.basename(projectDir), '--workspace', 'default']);
+    parseArgs([...argv, '--project', projectId, '--workspace', 'default']);
   const printed = () => JSON.parse(stdout) as Record<string, unknown>;
 
   describe('list-briefs', () => {

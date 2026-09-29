@@ -49,12 +49,13 @@ export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
     packageVersion: readPackageVersion(),
   }));
 
-  // Registry stores `name` as basename(cwd) at registration; prefer the
-  // project's own configured name so the switcher lists project names.
+  // UI surface (switcher, /welcome, RemoveProjectResponse): the display name
+  // comes from the project's config.json, falling back to the id. `path` stays
+  // here deliberately — this is the UI, not an agent channel.
   const serializeProjects = (ws: WorkspaceRecord) =>
     ws.projects.map((p) => ({
       ...p,
-      name: readPeerConfigSummary(p.cwd).name ?? p.name,
+      name: readPeerConfigSummary(p.cwd).name ?? p.id,
       live: cache.isLive(p.id),
     }));
 

@@ -10,7 +10,7 @@
  * absolute peer URLs use plain `fetch` and pass through untouched.
  */
 
-/** Project id injected by the server into the served HTML (12 hex chars). */
+/** Project id injected by the server into the served HTML (readable registry id, e.g. `app-spec`). */
 export const PROJECT_ID: string =
   (typeof window !== 'undefined' && window.__C4S_PROJECT__?.id) || '';
 

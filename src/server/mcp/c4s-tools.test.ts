@@ -50,7 +50,7 @@ describe('buildC4sToolsServer — ask workspace inheritance', () => {
 
   it('(a) inherits callerWorkspace when input.workspace is absent', async () => {
     const client = await connectClient('ws-5555');
-    const res = await client.callTool({ name: 'ask', arguments: { message: 'ping' } });
+    const res = await client.callTool({ name: 'ask', arguments: { message: 'ping', project: 'peer' } });
 
     expect(res.isError).toBeFalsy();
     expect(hoisted.calls).toHaveLength(1);
@@ -59,7 +59,7 @@ describe('buildC4sToolsServer — ask workspace inheritance', () => {
 
   it('(b) explicit input.workspace overrides callerWorkspace', async () => {
     const client = await connectClient('ws-5555');
-    await client.callTool({ name: 'ask', arguments: { message: 'ping', workspace: 'ws-5556' } });
+    await client.callTool({ name: 'ask', arguments: { message: 'ping', project: 'peer', workspace: 'ws-5556' } });
 
     expect(hoisted.calls).toHaveLength(1);
     expect(hoisted.calls[0]).toMatchObject({ workspace: 'ws-5556' });
@@ -67,7 +67,7 @@ describe('buildC4sToolsServer — ask workspace inheritance', () => {
 
   it('degrades to undefined when neither caller nor input supplies a workspace', async () => {
     const client = await connectClient();
-    await client.callTool({ name: 'ask', arguments: { message: 'ping' } });
+    await client.callTool({ name: 'ask', arguments: { message: 'ping', project: 'peer' } });
 
     expect(hoisted.calls).toHaveLength(1);
     expect(hoisted.calls[0]?.workspace).toBeUndefined();
@@ -75,7 +75,7 @@ describe('buildC4sToolsServer — ask workspace inheritance', () => {
 
   it('forwards the optional effort param to runAgent', async () => {
     const client = await connectClient('ws-5555');
-    await client.callTool({ name: 'ask', arguments: { message: 'ping', effort: 'low' } });
+    await client.callTool({ name: 'ask', arguments: { message: 'ping', project: 'peer', effort: 'low' } });
 
     expect(hoisted.calls).toHaveLength(1);
     expect(hoisted.calls[0]).toMatchObject({ effort: 'low' });
@@ -83,7 +83,7 @@ describe('buildC4sToolsServer — ask workspace inheritance', () => {
 
   it('leaves effort undefined when not supplied (default resolves in runAgent)', async () => {
     const client = await connectClient('ws-5555');
-    await client.callTool({ name: 'ask', arguments: { message: 'ping' } });
+    await client.callTool({ name: 'ask', arguments: { message: 'ping', project: 'peer' } });
 
     expect(hoisted.calls).toHaveLength(1);
     expect(hoisted.calls[0]?.effort).toBeUndefined();
@@ -93,7 +93,7 @@ describe('buildC4sToolsServer — ask workspace inheritance', () => {
     const client = await connectClient('ws-5555');
     await client.callTool({
       name: 'ask',
-      arguments: { message: 'ping', model: 'opus-5.5', effort: 'high' },
+      arguments: { message: 'ping', project: 'peer', model: 'opus-5.5', effort: 'high' },
     });
 
     expect(hoisted.calls).toHaveLength(1);
@@ -115,7 +115,7 @@ describe('buildC4sToolsServer — ask workspace inheritance', () => {
     const client = await connectClient('ws-5555');
     await client.callTool({
       name: 'ask',
-      arguments: { message: 'ping', model: 'gpt-4' },
+      arguments: { message: 'ping', project: 'peer', model: 'gpt-4' },
     });
 
     expect(hoisted.calls).toHaveLength(1);
@@ -126,11 +126,49 @@ describe('buildC4sToolsServer — ask workspace inheritance', () => {
     const client = await connectClient('ws-5555');
     const res = await client.callTool({
       name: 'ask',
-      arguments: { message: 'ping', effort: 'max' },
+      arguments: { message: 'ping', project: 'peer', effort: 'max' },
     });
 
     expect(res.isError).toBeTruthy();
     expect(hoisted.calls).toHaveLength(0);
+  });
+});
+
+describe('buildC4sToolsServer — ask addressing (2.1.0)', () => {
+  beforeEach(() => {
+    hoisted.calls.length = 0;
+  });
+
+  it('forwards `project` (the id) and `server` to runAgent', async () => {
+    const client = await connectClient('ws-5555');
+    const res = await client.callTool({
+      name: 'ask',
+      arguments: { message: 'ping', project: 'app-spec', server: 'https://c4s.firma.dev' },
+    });
+    expect(res.isError).toBeFalsy();
+    expect(hoisted.calls[0]).toMatchObject({ project: 'app-spec', server: 'https://c4s.firma.dev', contextType: 'ask' });
+  });
+
+  it('refuses LOCALLY, before any peer call: missing project, empty project, empty message', async () => {
+    const client = await connectClient('ws-5555');
+    for (const args of [{ message: 'ping' }, { message: 'ping', project: '  ' }, { message: '', project: 'app-spec' }]) {
+      const res = await client.callTool({ name: 'ask', arguments: args });
+      expect(res.isError, JSON.stringify(args)).toBeTruthy();
+    }
+    expect(hoisted.calls).toHaveLength(0);
+  });
+
+  it('declares `project` required and has no projectSlug/projectPath/contextType/brief input', async () => {
+    const client = await connectClient();
+    const { tools } = await client.listTools();
+    const schema = tools.find((t) => t.name === 'ask')!.inputSchema as {
+      required?: string[];
+      properties: Record<string, unknown>;
+    };
+    expect(schema.required).toEqual(expect.arrayContaining(['message', 'project']));
+    for (const gone of ['projectSlug', 'projectPath', 'contextType', 'brief']) {
+      expect(schema.properties).not.toHaveProperty(gone);
+    }
   });
 });
 
@@ -145,6 +183,6 @@ describe('buildC4sToolsServer — ask description (0.2.97)', () => {
     const client = await connectClient('ws-5555');
     const { tools } = await client.listTools();
     const ask = tools.find((t) => t.name === 'ask');
-    expect(ask?.description).toContain('Peers available in this workspace are listed in <workspace_projects/>.');
+    expect(ask?.description).toContain('exactly as <workspace_projects/> (or `list_projects`) gives it');
   });
 });

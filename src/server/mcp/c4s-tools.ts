@@ -39,9 +39,9 @@ export function buildC4sToolsServer(callerWorkspace?: string): CapturedMcpServer
     [
       'Consult another claude4spec specification synchronously. Returns { threadId, answer }.',
       'The peer is READ-ONLY, and by a gate rather than by persuasion: it runs under the `ask` context profile, which admits only read/plan operations, so the write tools of every mounted MCP server are filtered out of its `tools/list` and its file-write and shell built-ins are off.',
-      'Use `project` OR `server` (URL override); if both, `server` wins.',
-      '`project` accepts EITHER a local path to the peer project directory OR the project name as registered in the workspace (`~/.claude4spec/workspaces.json`) — the path is tried first, then the registry name. The registry name is NOT necessarily the display name in the peer\'s config.json: a peer shown as "C4S - App Spec" may be registered as `app-spec`, and only the latter resolves.',
-      'Peers available in this workspace are listed in <workspace_projects/>.',
+      '`project` is REQUIRED: the peer\'s `id`, exactly as <workspace_projects/> (or `list_projects`) gives it — not a path and not its display name.',
+      '`server` is optional and valid only together with `project`: it replaces the peer\'s ADDRESS, not the project.',
+      '`workspace` is needed only when the `id` is ambiguous across workspaces.',
       'Continue an existing peer thread by passing its `threadId`.',
       'Works in plan_mode — that flag gates built-ins only and does not apply to MCP at all, so this works where Bash-shelled `c4s ask` does not.',
       'Same contract as the `c4s ask` CLI shorthand: same discovery, same errors.',
@@ -51,15 +51,15 @@ export function buildC4sToolsServer(callerWorkspace?: string): CapturedMcpServer
       message: z.string().describe('Question/prompt for the peer spec.'),
       project: z
         .string()
-        .optional()
-        .describe(
-          'The peer project: a local path to its directory, or its name as registered in the workspace. Resolved as a path first, then by registry name.',
-        ),
+        .describe("The peer project's `id`, exactly as <workspace_projects/> lists it. Not a path, not a name."),
       workspace: z
         .string()
         .optional()
         .describe("Workspace override; defaults to the caller's workspace when omitted."),
-      server: z.string().optional().describe('Peer server URL override; wins over `project` if both set.'),
+      server: z
+        .string()
+        .optional()
+        .describe('Peer server address override (e.g. its publicUrl). Valid only together with `project`.'),
       threadId: z.string().optional().describe('Continue an existing peer thread.'),
       /**
        * Pass-through STRING, deliberately not `z.enum(ALLOWED_MODELS)`.
@@ -88,10 +88,19 @@ export function buildC4sToolsServer(callerWorkspace?: string): CapturedMcpServer
         ),
     },
     async (input) => {
+      // 2.1.0 — refused LOCALLY, before anything reaches a peer. There is no
+      // walk-up here: the server process's cwd is not a project, so `project`
+      // is mandatory in the `mcp` channel (optional only on the CLI).
+      const message = typeof input.message === 'string' ? input.message : '';
+      const project = typeof input.project === 'string' ? input.project.trim() : '';
+      if (message.trim() === '') return toolError('INVALID_ARGS', '`message` must not be empty');
+      if (project === '') {
+        return toolError('INVALID_ARGS', '`project` is required', "pass the peer's `id` from <workspace_projects/>");
+      }
       try {
         const result = await runAgent({
-          message: String(input.message ?? ''),
-          project: typeof input.project === 'string' ? input.project : undefined,
+          message,
+          project,
           // Jawny input wygrywa; w przeciwnym razie dziedzicz workspace wolajacego.
           workspace: (typeof input.workspace === 'string' ? input.workspace : undefined) ?? callerWorkspace,
           server: typeof input.server === 'string' ? input.server : undefined,

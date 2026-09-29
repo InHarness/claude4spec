@@ -443,7 +443,10 @@ describe('the CLI holds no handle on the specification', () => {
     expect(src).not.toMatch(/ensureMcpJson/);
     expect(fs.existsSync(path.join(REPO_ROOT, 'src/server/mcp/ensure-mcp-json.ts'))).toBe(false);
     const route = read('src/server/routes/mcp-config.ts');
-    expect(route, 'the config route must use the canonical port').toContain('defaultPort');
+    // 2.1.0: the canonical ADDRESS is the workspace's effective publicUrl
+    // (registry), never the bound port or a request header.
+    expect(route, 'the config route must use the workspace publicUrl').toContain('effectivePublicUrl');
+    expect(route).not.toMatch(/req\.(headers|get\(|hostname|host\b)/);
   });
 
   it('item 22: the HELP text\'s exception list matches the actual non-delegating commands', () => {

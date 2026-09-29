@@ -1,6 +1,6 @@
 {
   "name": "@inharness-ai/claude4spec",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Plan the whole system before your agent writes a line of code. Local-first planning layer with structured entities and typed relations.",
   "license": "MIT",
   "author": "Mike Tomala <mike@inharness.ai>",

@@ -584,7 +584,10 @@ export function chatRouter(deps: AgentTurnDeps): Router {
 
 function setupSse(res: Response): void {
   res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
+  // 2.1.0: behind a reverse proxy events must arrive as emitted, not batched —
+  // `no-transform` forbids re-encoding/compression buffering, `X-Accel-Buffering`
+  // turns nginx's response buffering off for this response.
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();

@@ -40,10 +40,6 @@ export async function runAsk_cli(args: ParsedArgs): Promise<void> {
   const project = args.project;
   const workspace = args.workspace;
 
-  if (project && server) {
-    process.stderr.write('warning: both --project and --server given; --server wins, --project ignored\n');
-  }
-
   let result: { threadId: string; answer: string };
   try {
     result = await runAgent({

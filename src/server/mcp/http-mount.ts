@@ -65,6 +65,12 @@ export interface McpMountOptions {
    * re-point an established session at a different project.
    */
   binding: (req: Request) => string;
+  /**
+   * 2.1.0: message of the 404 PROJECT_NOT_IN_WORKSPACE answered when `resolve`
+   * returns `null` — the workspace-bound mount lists the available ids there
+   * (ids only, never directories).
+   */
+  notFoundMessage?: (req: Request) => string;
 }
 
 interface Session {
@@ -307,7 +313,12 @@ export function mcpRequestHandler(opts: McpMountOptions) {
       return;
     }
     if (!deps) {
-      jsonRpcError(res, 404, 'PROJECT_NOT_IN_WORKSPACE', 'no project resolvable for this mount point');
+      jsonRpcError(
+        res,
+        404,
+        'PROJECT_NOT_IN_WORKSPACE',
+        opts.notFoundMessage?.(req) ?? 'no project resolvable for this mount point',
+      );
       return;
     }
 

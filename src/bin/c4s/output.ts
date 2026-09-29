@@ -18,6 +18,7 @@ export function writeError(err: CliError): void {
       code: err.code,
       message: err.message,
       ...(err.hint ? { hint: err.hint } : {}),
+      ...(err.details ?? {}),
     },
   };
   process.stderr.write(JSON.stringify(payload, null, 2) + '\n');

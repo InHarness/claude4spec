@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { GENERATED_MCP_PROFILE, mcpMountPath, renderMcpConfigVariants } from './mcp-config.js';
 
 describe('renderMcpConfigVariants', () => {
-  const variants = renderMcpConfigVariants({ port: 3123, projectId: 'proj-7' });
+  const variants = renderMcpConfigVariants({ publicUrl: 'http://localhost:3123', projectId: 'proj-7' });
   const server = (i: number) =>
     (JSON.parse(variants[i]!.snippet) as { mcpServers: Record<string, Record<string, unknown>> }).mcpServers[
       'c4s-spec-reader'
@@ -15,13 +15,13 @@ describe('renderMcpConfigVariants', () => {
 
   it('HTTP project-bound entry addresses the project mount with the read-only profile', () => {
     expect(GENERATED_MCP_PROFILE).toBe('ask');
-    expect(server(0)).toEqual({ type: 'http', url: `http://127.0.0.1:3123${mcpMountPath('proj-7')}?profile=ask` });
+    expect(server(0)).toEqual({ type: 'http', url: `http://localhost:3123${mcpMountPath('proj-7')}?profile=ask` });
   });
 
   it('HTTP workspace-bound entry names the project through ?project=', () => {
     expect(server(1)).toEqual({
       type: 'http',
-      url: 'http://127.0.0.1:3123/api/workspace/mcp?project=proj-7&profile=ask',
+      url: 'http://localhost:3123/api/workspace/mcp?project=proj-7&profile=ask',
     });
   });
 
@@ -34,7 +34,7 @@ describe('renderMcpConfigVariants', () => {
       '@inharness-ai/claude4spec',
       'c4s-mcp',
       '--url',
-      'http://127.0.0.1:3123/api/projects/proj-7/mcp?profile=ask',
+      'http://localhost:3123/api/projects/proj-7/mcp?profile=ask',
     ]);
   });
 
@@ -42,5 +42,15 @@ describe('renderMcpConfigVariants', () => {
     for (const v of variants) {
       expect(v.snippet).not.toMatch(/--project\b|--workspace\b|x-c4s-generated-by/);
     }
+  });
+
+  it('joins publicUrl with the project id — e.g. https://c4s.firma.dev/api/projects/app-spec/mcp', () => {
+    const [project, workspace, stdio] = renderMcpConfigVariants({
+      publicUrl: 'https://c4s.firma.dev/',
+      projectId: 'app-spec',
+    }).map((v) => JSON.parse(v.snippet).mcpServers['c4s-spec-reader']);
+    expect(project.url).toBe('https://c4s.firma.dev/api/projects/app-spec/mcp?profile=ask');
+    expect(workspace.url).toBe('https://c4s.firma.dev/api/workspace/mcp?project=app-spec&profile=ask');
+    expect(stdio.args.at(-1)).toBe('https://c4s.firma.dev/api/projects/app-spec/mcp?profile=ask');
   });
 });

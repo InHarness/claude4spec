@@ -9,6 +9,9 @@ import { PLUGINS_BASE_SOURCE } from './fs/sources.js';
 import { WorkspaceRegistry, DEFAULT_WORKSPACE_PORT } from './workspace/registry.js';
 import { migrateLegacyDbIfNeeded } from './workspace/db-migration.js';
 import { bootstrapProject } from './workspace/bootstrap.js';
+import { readPeerConfigSummary } from './workspace/peer-config.js';
+import { checkRequest, hostOriginGuard } from './http/host-origin-guard.js';
+import { effectiveBindHost, localServerUrl } from '../core/workspace/network.js';
 import { buildProjectContext } from './workspace/project-context.js';
 import { ProjectContextCache } from './workspace/context-cache.js';
 import { projectDispatchMiddleware } from './workspace/middleware.js';
@@ -44,6 +47,11 @@ export interface StartOptions {
    */
   createProject?: boolean;
   port?: number;
+  /**
+   * 2.1.0: listen address. Absent ⇒ the workspace's `bindHost` (loopback when
+   * unset) — never "all interfaces" by accident.
+   */
+  host?: string;
   mode?: 'dev' | 'prod';
   pagesDir?: string;
   name?: string;
@@ -79,7 +87,7 @@ const DEFAULT_PORT = DEFAULT_WORKSPACE_PORT;
 // M01: deterministyczny port. Przy zajetym porcie serwer NIE wskakuje juz na
 // `port+1` — failuje z czytelnym bledem i niezerowym exit code. Powod: stały
 // port workspace'u jest warunkiem discovery serwera przez `c4s ask`.
-async function listenOrExit(server: HttpServer, port: number): Promise<number> {
+async function listenOrExit(server: HttpServer, port: number, host: string): Promise<number> {
   try {
     await new Promise<void>((resolve, reject) => {
       const onError = (err: NodeJS.ErrnoException) => {
@@ -92,13 +100,23 @@ async function listenOrExit(server: HttpServer, port: number): Promise<number> {
       };
       server.once('error', onError);
       server.once('listening', onListening);
-      server.listen(port);
+      server.listen(port, host);
     });
     return port;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'EADDRINUSE') {
       console.error(
-        `port ${port} is in use — stop the other instance or change the workspace port / pass --port`,
+        `${host}:${port} is in use — stop the other instance or change the workspace port / pass --port`,
+      );
+      process.exit(1);
+    }
+    // 2.1.0: `--host` persists in the registry, so an address this machine
+    // cannot bind (a typo, a DHCP address that moved) fails EVERY later start
+    // too — say how to get back to loopback instead of dumping a stack.
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'EADDRNOTAVAIL' || code === 'ENOTFOUND' || code === 'EAI_AGAIN') {
+      console.error(
+        `cannot listen on ${host}:${port} (${code}) — the workspace's listen address is stored in ~/.claude4spec/workspaces.json; pass --host=<addr> to change it, or --host= to return to loopback`,
       );
       process.exit(1);
     }
@@ -164,7 +182,7 @@ async function mountDevVite(app: Express, deps: SpaDeps) {
       }
       const { project } = resolution;
       deps.registry.touchLastOpened(deps.workspace.name, project.id);
-      html = injectProjectGlobal(html, project.id, project.name);
+      html = injectProjectGlobal(html, project.id, readPeerConfigSummary(project.cwd).name ?? project.id);
       res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
     } catch (err) {
       vite.ssrFixStacktrace(err as Error);
@@ -195,7 +213,7 @@ function mountProd(app: Express, deps: SpaDeps) {
       res
         .status(200)
         .set({ 'Content-Type': 'text/html' })
-        .end(injectProjectGlobal(raw, project.id, project.name));
+        .end(injectProjectGlobal(raw, project.id, readPeerConfigSummary(project.cwd).name ?? project.id));
     } catch (err) {
       next(err);
     }
@@ -217,7 +235,23 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   const mode = opts.mode ?? (process.env.NODE_ENV === 'production' ? 'prod' : 'dev');
   const portRef = { current: opts.port ?? DEFAULT_PORT };
 
+  // M31: workspace registry — DB lives in the workspace slot, not the project dir.
+  // 2.1.0: hash ids → readable ids first (no-op once migrated; the launcher
+  // normally did it already). Before listen, under the registry lock.
+  const registry = new WorkspaceRegistry();
+  registry.migrateIfNeeded();
+  const workspace =
+    opts.workspace ?? registry.selectOrCreate({ port: opts.port, mode: opts.mode });
+  const liveWorkspace = () => {
+    const ws = registry.getWorkspace(workspace.name) ?? workspace;
+    // The port actually bound wins over the stored default (a non-sticky --port).
+    return { ...ws, defaultPort: portRef.current };
+  };
+
   const app = express();
+  // 2.1.0: Host allowlist + Origin check BEFORE every route (and before the
+  // project key is read). The WS upgrade runs the same check in the gateway.
+  app.use(hostOriginGuard(liveWorkspace));
   app.use(express.json({ limit: '2mb' }));
 
   // DIAGNOSTIC (perf): true server-side handler duration per /api request. In dev
@@ -236,10 +270,6 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     });
   }
 
-  // M31: workspace registry — DB lives in the workspace slot, not the project dir.
-  const registry = new WorkspaceRegistry();
-  const workspace =
-    opts.workspace ?? registry.selectOrCreate({ port: opts.port, mode: opts.mode });
   // Decision #11: a workspace-only start (`createProject === false`) registers
   // and activates nothing — `cwd` stays untouched and the bare command lands on
   // `/welcome`. Default `true` keeps the historic "always create" behavior.
@@ -281,7 +311,11 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // `~/.claude4spec`, a `$schemaVersion` from a newer build). The gateway
   // catches that and fails closed — see `WsGateway.isMember` for why the guard
   // belongs there and not here.
-  const gateway = new WsGateway(httpServer, (id) => registry.getProject(workspace, id) !== null);
+  const gateway = new WsGateway(
+    httpServer,
+    (id) => registry.getProject(workspace, id) !== null,
+    (req) => checkRequest(req, liveWorkspace(), { checkOrigin: true }),
+  );
 
   // M40: ONE file-watch runtime per PROCESS, not per ProjectContext. It has to
   // outlive context rebuilds for two reasons a context-owned watcher could never
@@ -461,10 +495,13 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   const spaDeps = { registry, workspace, startCwd: cwd };
   const closeAssets = mode === 'dev' ? await mountDevVite(app, spaDeps) : mountProd(app, spaDeps);
 
-  const port = await listenOrExit(httpServer, portRef.current);
+  const host = opts.host ?? effectiveBindHost(liveWorkspace());
+  const port = await listenOrExit(httpServer, portRef.current, host);
   portRef.current = port;
   if (initialProject) registry.touchLastOpened(workspace.name, initialProject.id);
-  const url = `http://localhost:${port}`;
+  // The LOCAL address (loopback, or a concrete bindHost) — what the launcher
+  // opens in the browser. Never `publicUrl`.
+  const url = localServerUrl({ defaultPort: port, bindHost: host });
 
   return {
     url,

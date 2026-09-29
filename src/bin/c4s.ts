@@ -227,7 +227,7 @@ Brief/patch (M11 — server-delegating, like every read above):
   create-patch --brief <brief-path> --desc <s> [--kind drift|missing|incorrect|clarification]
              [--body-file <f>]      body from --body-file or stdin; the SERVER writes the
                                     file under patchesDir and mints its slug
-  mark-brief-implemented <brief-path> --project <slug> --workspace <name>
+  mark-brief-implemented <brief-path> [--project <id>]
                                      wraps PATCH /api/artifacts/brief/:path/frontmatter
                                      ('implemented' is the only mutable frontmatter key)
 
@@ -250,7 +250,7 @@ Skills registry (M37 — server-delegating; the project's skills, served from me
                                     the content alone. Unknown slug/file → exit 25, binary → exit 26
 
 Skills (M22 — filesystem-only, no server; on-demand, no bootstrap side-effect):
-  install-skills [--project <slug>] [--dir <path>] [--skills <s1,s2>]
+  install-skills [--project <id>] [--server <url> --project <id>] [--dir <path>] [--skills <s1,s2>]
                   writes <dir|.claude/skills>/<name>/SKILL.md under process cwd (the
                   CODE repo), not the --project spec repo; --skills default: all three
 
@@ -280,8 +280,9 @@ Server required — for every step:
   No server → SERVER_NOT_RUNNING, exit 8. \`c4s\` never starts one for you.
 
 Global flags:
-  --project <path|name>  override project (path tried first, else matched by registered name)
-  --workspace <name>      pick the workspace when the project is registered in more than one
+  --project <id>          the project's registry id (default: walk up from cwd to the nearest project)
+  --workspace <name>      pick the workspace when the id / directory is registered in more than one
+  --server <url>          server address override (remote server or non-default port); requires --project <id>
   --format json|text      output format (default: json; resolve default: inline)
   --compact               minified JSON (for pipelines)
   --sort-keys             deterministic key order in JSON
@@ -400,14 +401,27 @@ function codeToExit(code: string): number {
      * not readable yet, deal with the environment", and that is still exactly
      * what it means. `INDEX_NOT_MATERIALIZED` survives only on internal paths.
      */
+    // 2.1.0 — "something else answers at that address" is the same shell-level
+    // branch as "nothing answers": the environment, not the command, is wrong.
+    case 'SERVER_NOT_RECOGNIZED':
     case 'SERVER_NOT_RUNNING':
       return 8;
     case 'HOST_API_INCOMPATIBLE':
       return 9;
-    case 'PROJECT_SLUG_NOT_FOUND':
-      return 10;
+    // 2.1.0 — `--project <id>` matches no registered id: the same exit status
+    // as every other "no such project" (PROJECT_NOT_IN_WORKSPACE falls to the
+    // generic 1 as well). The exit-10 slot of the retired PROJECT_SLUG_NOT_FOUND
+    // is not reused.
+    case 'PROJECT_ID_NOT_FOUND':
+      return 1;
+    // 2.1.0 — an ambiguous project id is resolved the same way as an ambiguous
+    // workspace (pass --workspace), so it shares its exit status.
     case 'AMBIGUOUS_PROJECT':
-      return 11;
+      return 7;
+    // 2.1.0 — a registry-writing command met a pre-2.1.0 registry (hash ids).
+    // The repair is to start the server once; nothing is wrong with the command.
+    case 'REGISTRY_MIGRATION_PENDING':
+      return 27;
     // 0.2.6 — the core's two ambiguity codes. A caller that has to disambiguate
     // must be able to see it from the exit status, the way it already can for
     // the two workspace-level ambiguities above.

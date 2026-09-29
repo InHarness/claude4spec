@@ -1,7 +1,9 @@
 import type { WorkspaceRegistry } from './registry.js';
 import type { ProjectRecord, WorkspaceRecord } from './types.js';
 
-export const PROJECT_ROUTE_RE = /^\/p\/([0-9a-f]{12})(\/|$)/;
+// 2.1.0: readable ids (`[a-z0-9-]`, ≤ 48 chars). A pre-2.1.0 `/p/<hash>/`
+// bookmark still matches the shape, finds no project and redirects to `/`.
+export const PROJECT_ROUTE_RE = /^\/p\/([a-z0-9][a-z0-9-]{0,47})(\/|$)/;
 
 export type SpaResolution =
   | { kind: 'project'; project: ProjectRecord }
