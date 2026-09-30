@@ -335,7 +335,17 @@ export function prepareSubstitutions(
   for (let i = 0, at = 0; i < lines.length; at += lines[i]!.length + 1, i++) lineOffsets.push(at);
   /** Offset of the start of 0-based line `i`; one past the text for the line after the last. */
   const off = (i: number) => (i < lines.length ? lineOffsets[i]! : text.length + 1);
-  const lineAt = (o: number) => text.slice(0, o).split('\n').length - 1;
+  /** 0-based line holding offset `o` — a binary search over `lineOffsets`, not a re-split of the prefix. */
+  const lineAt = (o: number) => {
+    let lo = 0;
+    let hi = lineOffsets.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (lineOffsets[mid]! <= o) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo;
+  };
 
   const parsed = parseBody(lines, kind);
   const rangeByAnchor = new Map(sectionRanges(lines, kind).map((r) => [r.anchor, r]));
@@ -363,8 +373,13 @@ export function prepareSubstitutions(
     });
   }
 
-  /** What an entry writes, in character offsets of the original body. A point has `start === end`. */
-  interface Written { start: number; end: number; what: string }
+  /**
+   * What an entry writes, in character offsets of the original body. A point
+   * has `start === end`. `address` marks the anchor comment line every
+   * addressed entry owns — checked in BOTH directions between two `edit`s,
+   * unlike their fragments, whose overlap is symmetric and reported once.
+   */
+  interface Written { start: number; end: number; what: string; address?: true }
   const writtenBy = (entry: SubstitutionEntry): Written[] => {
     const range = rangeByAnchor.get(entry.anchor)!;
     const self = parsed.sections.find((sec) => sec.headingLine === range.lineStart);
@@ -374,7 +389,8 @@ export function prepareSubstitutions(
       out.push({
         start: off(anchorIdx),
         end: off(anchorIdx + 1),
-        what: `the anchor comment of '${entry.anchor}', which another entry in this batch addresses (action '${entry.action}')`,
+        what: `touches the anchor comment of '${entry.anchor}', which another entry in this batch addresses (action '${entry.action}')`,
+        address: true,
       });
     }
     const lineRange = (from: number, to: number, what: string) =>
@@ -406,30 +422,27 @@ export function prepareSubstitutions(
     return out;
   };
 
+  const HINT =
+    'a substitution may not touch lines another entry in the same batch writes — move that substitution into a separate call, or narrow its find to text no other entry writes';
+  const written = entries.map(writtenBy);
   const collisions: string[] = [];
   entries.forEach((entry, i) => {
     if (entry.action !== 'edit') return;
     for (const f of fragmentsOf.get(entry.anchor)!) {
       entries.forEach((other, j) => {
         if (other.anchor === entry.anchor) return;
-        // Two edits colliding are one collision, reported once.
-        if (other.action === 'edit' && j < i) return;
-        for (const w of writtenBy(other)) {
+        for (const w of written[j]!) {
+          // Two edits' fragments colliding are one collision, reported once;
+          // an edit's anchor comment is guarded whichever of the two came first.
+          if (other.action === 'edit' && j < i && !w.address) continue;
           const hit = w.start === w.end ? f.start < w.start && w.start < f.end : f.start < w.end && w.start < f.end;
           if (!hit) continue;
-          const relation = w.what.startsWith('the anchor comment') ? `touches ${w.what}` : w.what;
-          collisions.push(`edit on '${entry.anchor}': find '${preview(f.find)}' (line ${lineAt(f.start) + 1}) ${relation}`);
+          collisions.push(`edit on '${entry.anchor}': find '${preview(f.find)}' (line ${lineAt(f.start) + 1}) ${w.what}`);
         }
       });
     }
   });
-  if (collisions.length > 0) {
-    throw new DomainError(
-      'INVALID_ARGUMENT',
-      collisions.join('; '),
-      'a substitution may not touch lines another entry in the same batch writes — move that substitution into a separate call, or narrow its find to text no other entry writes',
-    );
-  }
+  if (collisions.length > 0) throw new DomainError('INVALID_ARGUMENT', collisions.join('; '), HINT);
 
   let out = text;
   for (const f of [...fragmentsOf.values()].flat().sort((a, b) => b.start - a.start)) {

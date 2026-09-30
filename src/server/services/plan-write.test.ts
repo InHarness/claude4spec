@@ -313,6 +313,17 @@ describe('applyPlanBatch — the edit action', () => {
     }
   });
 
+  it('guards an edit\'s anchor comment against another edit, whatever the order', () => {
+    const child: PlanSectionEdit = { anchor: 'aaaa0002', action: 'edit', textEdits: [{ find: 'child body', replaceWith: 'X' }] };
+    const parent: PlanSectionEdit = {
+      anchor: 'aaaa0001',
+      action: 'edit',
+      textEdits: [{ find: '<!-- anchor: aaaa0002 -->', replaceWith: '' }],
+    };
+    expect(() => applyPlanBatch(PLAN, [child, parent])).toThrow(/touches the anchor comment of 'aaaa0002'/);
+    expect(() => applyPlanBatch(PLAN, [parent, child])).toThrow(/touches the anchor comment of 'aaaa0002'/);
+  });
+
   it('lets an edit on a child pass alongside an insert_after on its parent', () => {
     // The insert point sits after Alpha's whole subtree; 'child body' does not cross it.
     const out = applyPlanBatch(PLAN, [
