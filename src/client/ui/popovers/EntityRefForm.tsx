@@ -9,7 +9,7 @@ import {
   TextInput,
   type PopoverFormProps,
 } from '../Popover.js';
-import { listActiveEntityTypes } from '../../entities/index.js';
+import { listPickerEntityTypes } from '../../entities/index.js';
 import type { EntityType } from '../../../shared/entities.js';
 
 // Handles `mention` and `element` popover kinds — both ask for { type, slug }.
@@ -35,7 +35,7 @@ function EntityRefForm({ request, onClose, title, iconKind }: InnerProps) {
   // documents) would render a <select> whose value matches no option: the browser
   // shows the first real one while state still says 'endpoint', and the chip is
   // written with a type the project does not have.
-  const [type, setType] = useState<EntityType>(() => listActiveEntityTypes()[0] ?? '');
+  const [type, setType] = useState<EntityType>(() => listPickerEntityTypes('element')[0] ?? '');
   const [slug, setSlug] = useState('');
   const [error, setError] = useState<string | null>(null);
   const slugRef = useRef<HTMLInputElement>(null);
@@ -69,7 +69,7 @@ function EntityRefForm({ request, onClose, title, iconKind }: InnerProps) {
         <div style={{ width: 140 }}>
           <FieldLabel>Type</FieldLabel>
           <SelectInput value={type} onChange={(e) => setType(e.target.value as EntityType)}>
-            {listActiveEntityTypes().map((t) => (
+            {listPickerEntityTypes('element').map((t) => (
               <option key={t} value={t}>
                 {t}
               </option>

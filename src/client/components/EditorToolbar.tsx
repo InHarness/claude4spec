@@ -2,7 +2,7 @@ import { ChevronRight } from 'lucide-react';
 import { ButtonGroup } from './ButtonGroup.js';
 import { OutlineButton } from './OutlineButton.js';
 import { PageViewSwitcher } from './PageViewSwitcher.js';
-import { useBaseRootId } from '../hooks/useConfig.js';
+import { useBaseRootId, useRoots } from '../hooks/useConfig.js';
 
 interface Props {
   rootId: string;
@@ -16,6 +16,11 @@ export function EditorToolbar({ rootId, path }: Props) {
   // to be called `pages`.
   const baseRootId = useBaseRootId();
   const segments = (rootId === baseRootId ? [] : [rootId]).concat(path.split('/'));
+  // 2.1.1 — no outline toggle in a root without a section index (the editor
+  // renders no gutter there). An unresolved root keeps the button: the default
+  // it stands in for is the full, section-indexed one.
+  const root = useRoots().find((r) => r.id === rootId);
+  const showOutline = root?.sectionIndexed ?? true;
 
   return (
     <div
@@ -42,9 +47,11 @@ export function EditorToolbar({ rootId, path }: Props) {
       </div>
       <span className="flex-1" />
       <PageViewSwitcher />
-      <ButtonGroup>
-        <OutlineButton onPage />
-      </ButtonGroup>
+      {showOutline && (
+        <ButtonGroup>
+          <OutlineButton onPage />
+        </ButtonGroup>
+      )}
     </div>
   );
 }

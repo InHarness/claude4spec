@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { WsEvent } from '../../shared/types.js';
-import { createInvalidationBatcher } from '../lib/wsBatcher.js';
+import { createInvalidationBatcher, type InvalidationBatcher } from '../lib/wsBatcher.js';
 import { PROJECT_ID } from '../lib/api-core.js';
 import { useFileEventsStore } from '../state/fileEvents.js';
 import { useHtmlViewerStore } from '../state/htmlViewer.js';
@@ -34,6 +34,19 @@ function entityListKey(type: string): string {
   const prefix = clientPluginHost.getAvailable(type)?.pathPrefix;
   const base = prefix?.split('/').filter(Boolean).pop();
   return base ?? 'entities';
+}
+
+/**
+ * 2.1.1 — the query prefixes of the two tag-driven list views
+ * (`TaggedListView`, `TaggedListMixedView`). Their rows depend on which entities
+ * carry which tags, so any entity or tag change can alter them — but neither key
+ * starts with a type's list key, so the invalidations above never reached them
+ * and a tagged list kept its old rows until remount.
+ */
+export const TAGGED_LIST_QUERY_PREFIXES = [['tagged-list'], ['tagged-list-mixed']] as const;
+
+function queueTaggedLists(batcher: InvalidationBatcher): void {
+  for (const prefix of TAGGED_LIST_QUERY_PREFIXES) batcher.queue([...prefix]);
 }
 
 export function useFileWatcher() {
@@ -69,12 +82,14 @@ export function useFileWatcher() {
             batcher.queue([entityListKey(data.entityType)]);
             batcher.queue([data.entityType, data.slug]);
             batcher.queue(['entities']);
+            queueTaggedLists(batcher);
           } else if (data.kind === 'entity:indexed') {
             // M29: a file-watch reindex (external edit / git pull). Invalidate
             // the same React Query keys as a write-API change — idempotent.
             batcher.queue([entityListKey(data.type)]);
             batcher.queue([data.type, data.slug]);
             batcher.queue(['entities']);
+            queueTaggedLists(batcher);
           } else if (data.kind === 'tag:changed') {
             // 0.2.11: every active type, not three hardcoded ones. A tag
             // change alters the tag chips on every entity list, but this
@@ -86,6 +101,7 @@ export function useFileWatcher() {
               batcher.queue([entityListKey(m.type)]);
             }
             batcher.queue(['entities']);
+            queueTaggedLists(batcher);
           } else if (data.kind === 'section:indexed') {
             batcher.queue(['sections']);
           } else if (data.kind === 'todos:changed') {

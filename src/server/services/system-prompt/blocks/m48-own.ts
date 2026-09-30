@@ -1,6 +1,5 @@
 import { PLAN_MODE_DENY_GROUPS, type ToolGroup } from '@inharness-ai/agent-adapters';
 import { buildClaudeCodeToolPolicy, claudeCodeKnownBuiltins } from '@inharness-ai/agent-adapters/claude-code';
-import type { Annotation } from '../../../../shared/entities.js';
 import type { Root } from '../../../../shared/types.js';
 import type { ProjectPluginHost } from '../../../core/plugin-host/types.js';
 import { CATALOG } from '../../../operations/catalog.js';
@@ -519,41 +518,6 @@ function buildTooling(inventory: readonly McpInventoryEntry[], builtinsEnabled: 
   return lines.join('\n');
 }
 
-/**
- * 0.2.50 — each annotation now carries the `root` of the page it sits on, where
- * that is knowable.
- *
- * `page` alone is not an address: `get_page` without a `rootId` answers
- * INVALID_ARGUMENT. `<current_page>` has always carried its root, so an
- * annotation — which asks the agent to go and read a page — was the one block
- * naming a page it could not open. The asymmetry had no reason behind it.
- *
- * Knowable means: an annotation is raised from the page the user is viewing, so
- * an annotation whose `page` matches the current page shares its root. An
- * annotation carried over from a different page does not say which root it came
- * from — the client's annotation record has no such field — and rather than
- * guess, those render without the attribute and `<annotation_handling>` says
- * what to do about it. Threading a root through the client's annotation wire
- * type is the real fix and is a change of its own.
- */
-function buildAnnotations(
-  annotations: Annotation[],
-  currentPagePath: string | null,
-  currentPageRootId: string,
-): string {
-  const lines: string[] = [`<annotations>`];
-  for (const a of annotations) {
-    const root = currentPagePath && a.page === currentPagePath ? currentPageRootId : undefined;
-    lines.push(
-      `  <annotation ${attrs({ page: a.page, root, comment: a.comment ?? '' })}>`,
-      a.text,
-      `  </annotation>`,
-    );
-  }
-  lines.push(`</annotations>`);
-  return lines.join('\n');
-}
-
 export const M48_PROMPT_BLOCKS: readonly PromptBlock[] = [
   { name: 'claude4spec_identity', render: (c) => buildIdentity(c.projectName) },
   {
@@ -601,19 +565,6 @@ export const M48_PROMPT_BLOCKS: readonly PromptBlock[] = [
   { name: 'todo_markers', render: () => TODO_MARKERS },
   { name: 'task_tracking', render: (c) => (c.contextType === 'ask' ? null : TASK_TRACKING) },
   { name: 'sections_and_anchors', render: () => SECTIONS_AND_ANCHORS },
-  {
-    name: 'annotations',
-    /**
-     * Option `pageRoot: false` — for a composition with no `<current_page>`, so
-     * that no annotation borrows a root from a page the prompt does not show.
-     */
-    render: (c, options) =>
-      c.annotations.length > 0
-        ? options?.pageRoot === false
-          ? buildAnnotations(c.annotations, null, 'pages')
-          : buildAnnotations(c.annotations, c.currentPagePath, c.currentPageRootId)
-        : null,
-  },
   { name: 'annotation_handling', render: (c) => (c.annotations.length > 0 ? ANNOTATION_HANDLING : null) },
   { name: 'claude4spec_plan_mode', render: (c) => (c.planMode ? buildPlanMode(c.mcpInventory) : null) },
 ];

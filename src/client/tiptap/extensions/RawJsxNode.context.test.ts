@@ -110,3 +110,34 @@ describe('raw node gate 2 — allowlisted tag, node not mounted in this context'
     expect(toks.filter((t) => !t.raw)).toHaveLength(3); // the three inline mentions
   });
 });
+
+/**
+ * 2.1.1 — the same gate, stated as what the user sees: a reference tag the
+ * editor of THIS place cannot draw shows as raw code, not as a chip. The spec's
+ * two examples — `<single_element type="dto" slug="x"/>` in an entity
+ * description and `<todo …/>` in a plan — are each pinned in their own context.
+ */
+describe('a tag this editor has no chip for is shown as raw code', () => {
+  const PLAN = resolveContextSpec('plan', FULL_ROOT_EDITOR_PROPS, {
+    extensionNames: () => [],
+    slashCommandIds: () => [],
+  }).extensions;
+
+  it('[ac:m20-tag-bez-chipu-widoczny-jako-surowy-kod] <single_element type="dto" slug="x"/> in a description', () => {
+    const src = '<single_element type="dto" slug="x"/>';
+    const toks = tokens(descriptionMd(), src);
+    expect(toks).toHaveLength(1);
+    expect(toks[0]!.raw).toBe(src);
+    expect(toks[0]!.content).not.toContain('</single_element>');
+  });
+
+  it('[ac:m20-tag-bez-chipu-widoczny-jako-surowy-kod] [ac:ac-zapis-w-kontekscie-o-zawezonej-whitel] <todo …/> in a plan, back byte for byte', () => {
+    expect(PLAN).not.toContain('todo');
+    const md = new MarkdownIt({ html: true, breaks: false, linkify: false });
+    setupRawJsxRules(md, rawTagPredicate(PLAN));
+    const src = '<todo comment="pick the index strategy"/>';
+    const toks = tokens(md, `Step 1 ${src} then step 2`);
+    expect(toks.map((t) => t.raw)).toEqual([src]);
+    expect(serialize(RawJsxInlineNode, toks[0]!.raw!)).toBe(src);
+  });
+});
