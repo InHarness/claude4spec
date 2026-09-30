@@ -39,7 +39,7 @@ export function OutlineFloater({ editor }: Props) {
             fontSize: 12,
           }}
         >
-          Brak nagłówków
+          No headings
         </div>
       ) : (
         <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
