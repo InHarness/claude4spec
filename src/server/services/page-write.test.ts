@@ -2760,12 +2760,12 @@ describe('differential writes — textEdits', () => {
   });
 
   /**
-   * The mirror of the case above, and the worse one: bottom-up ordering splices
-   * the inner entry FIRST, so an unguarded outer `edit` would match against text
-   * this same batch just wrote — the one thing `applyTextEdits` promises never
-   * happens.
+   * The mirror of the case above — and since 2.1.x no longer a refusal on the
+   * RANGE: the parent's `find` is matched on the page as the caller read it,
+   * before the child's `replace` splices, so text this same batch wrote is
+   * never visible to it. 'FRESHLY' was not on the page, hence FIND_NOT_FOUND.
    */
-  it('refuses an edit that encloses a section another entry replaces', async () => {
+  it('never matches an enclosing edit against text another entry of the batch writes', async () => {
     await index('doc.md', nested);
     const err = await updateSections(
       deps(),
@@ -2778,8 +2778,78 @@ describe('differential writes — textEdits', () => {
       },
       'agent',
     ).catch((e) => e);
+    expect(err.code).toBe('FIND_NOT_FOUND');
+  });
+
+  it('lets a parent edit on its own intro land alongside a child replace, whatever the order', async () => {
+    await index('doc.md', nested);
+    const parent = anchorOf('Parent');
+    const child = anchorOf('Child one');
+    const editEntry = { anchor: parent, action: 'edit' as const, textEdits: [{ find: 'teh word', replaceWith: 'the word' }] };
+    const replaceEntry = { anchor: child, action: 'replace' as const, content: '\nNEW CHILD ONE\n' };
+    const original = await fs.readFile(path.join(pages.root, 'doc.md'), 'utf-8');
+
+    const res = await updateSections(
+      deps(),
+      { expectedHash: await hashOfPage(), edits: [editEntry, replaceEntry] },
+      'agent',
+    );
+    expect(res.results[0]).toMatchObject({ anchor: parent, action: 'edit', replacements: 1 });
+    const first = await fs.readFile(path.join(pages.root, 'doc.md'), 'utf-8');
+    expect(first).toContain('the word');
+    expect(first).toContain('NEW CHILD ONE');
+    expect(first).not.toContain('CHILD ONE BODY');
+
+    await fs.writeFile(path.join(pages.root, 'doc.md'), original);
+    await updateSections(
+      deps(),
+      { expectedHash: await hashOfPage(), edits: [replaceEntry, editEntry] },
+      'agent',
+    );
+    expect(await fs.readFile(path.join(pages.root, 'doc.md'), 'utf-8')).toBe(first);
+  });
+
+  it('refuses a parent edit whose find lands in the body a child replace writes', async () => {
+    await index('doc.md', nested);
+    const err = await updateSections(
+      deps(),
+      {
+        expectedHash: await hashOfPage(),
+        edits: [
+          { anchor: anchorOf('Child one'), action: 'replace', content: 'X\n' },
+          { anchor: anchorOf('Parent'), action: 'edit', textEdits: [{ find: 'CHILD ONE BODY', replaceWith: 'Y' }] },
+        ],
+      },
+      'agent',
+    ).catch((e) => e);
     expect(err.code).toBe('INVALID_ARGUMENT');
-    expect(err.message).toMatch(/encloses/);
+    expect(err.message).toMatch(/find 'CHILD ONE BODY' \(line \d+\) lies inside the section/);
+  });
+
+  it('names every collision of a batch in one refusal', async () => {
+    await index('doc.md', nested);
+    const err = await updateSections(
+      deps(),
+      {
+        expectedHash: await hashOfPage(),
+        edits: [
+          { anchor: anchorOf('Child one'), action: 'replace', content: 'X\n' },
+          { anchor: anchorOf('Child two'), action: 'delete' },
+          {
+            anchor: anchorOf('Parent'),
+            action: 'edit',
+            textEdits: [
+              { find: 'CHILD ONE BODY', replaceWith: 'Y' },
+              { find: 'CHILD TWO BODY', replaceWith: 'Z' },
+            ],
+          },
+        ],
+      },
+      'agent',
+    ).catch((e) => e);
+    expect(err.code).toBe('INVALID_ARGUMENT');
+    expect(err.message).toMatch(/'CHILD ONE BODY'.*replaces/);
+    expect(err.message).toMatch(/'CHILD TWO BODY'.*deletes/);
   });
 
   it('a substitution that touches no anchor comment drops nothing', async () => {

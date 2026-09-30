@@ -31,11 +31,11 @@ import {
   bodyPositionResolver,
   liveRangeOf,
   ownEndOf,
+  prepareSubstitutions,
   renameHeading,
   sectionDigests,
   sectionRanges,
   sha256,
-  subtreePositionResolver,
   type LineSpan,
 } from './section-text.js';
 
@@ -1626,22 +1626,6 @@ export async function updateSections(
    * anchor comment with it. `replace` does not: the heading and its anchor
    * comment survive the splice, only the body below them is overwritten.
    */
-  /**
-   * An `edit` that NESTS with another entry — either direction — is refused, and
-   * only `edit` is: the bottom-up walk already makes `replace`-inside-`replace`
-   * well defined, because a whole-section action states its result outright and
-   * the outer one simply wins.
-   *
-   * A substitution states a CHANGE instead, and both directions break it. With
-   * the `edit` inside, an outer entry overwrites the same lines and the caller
-   * has no answer to "did my substitution survive?" — and a `replacements` count
-   * reporting work that was then thrown away. With the `edit` outside, the inner
-   * entry splices FIRST, so the `find` would be matched against text this same
-   * batch just wrote: a pattern that never existed in the page the caller read
-   * could match, and one that did could vanish into `FIND_NOT_FOUND`. Either way
-   * the order of the batch would start to matter, which is exactly what
-   * `applyTextEdits` promises it never does.
-   */
   const rangeByAnchor = new Map(sectionRanges(lines, kind).map((r) => [r.anchor, r]));
 
   /**
@@ -1654,28 +1638,6 @@ export async function updateSections(
   for (const { edit } of located) {
     if (edit.action !== 'append') continue;
     assertAppendContent(edit.content ?? '', rangeByAnchor.get(edit.anchor)!.level, edit.anchor);
-  }
-
-  for (const { edit } of located) {
-    if (edit.action !== 'edit') continue;
-    const mine = rangeByAnchor.get(edit.anchor)!;
-    const clash = located.find(({ edit: other }) => {
-      if (other.anchor === edit.anchor) return false;
-      const theirs = rangeByAnchor.get(other.anchor);
-      if (!theirs) return false;
-      const insideThem = theirs.lineStart < mine.lineStart && theirs.lineEnd >= mine.lineEnd;
-      const aroundThem = mine.lineStart < theirs.lineStart && mine.lineEnd >= theirs.lineEnd;
-      return insideThem || aroundThem;
-    });
-    if (clash) {
-      const theirs = rangeByAnchor.get(clash.edit.anchor)!;
-      const relation = theirs.lineStart < mine.lineStart ? 'lies inside' : 'encloses';
-      throw new DomainError(
-        'INVALID_ARGUMENT',
-        `edit on '${edit.anchor}' ${relation} the section '${clash.edit.anchor}' that another entry in this batch ${clash.edit.action}s`,
-        'split them into separate calls, or fold the substitution into the outer entry\'s content',
-      );
-    }
   }
 
   /**
@@ -1711,6 +1673,19 @@ export async function updateSections(
     }
   }
 
+  /**
+   * Every `edit` is matched and applied FIRST, on the page as the caller read
+   * it, so a `find` can never hit text this same batch wrote. One whose matched
+   * fragment touches lines another entry writes — a replaced or deleted
+   * subtree, a renamed heading, an append/insert point, a neighbour's anchor
+   * comment — refuses the whole batch, every collision named at once (see
+   * {@link prepareSubstitutions}). An `edit` nested in a `replace`/`delete`
+   * is therefore always refused: its fragments lie in the overwritten body by
+   * definition. A parent `edit` on its own intro next to a child `replace` is
+   * not — nothing both entries write.
+   */
+  const substituted = prepareSubstitutions(lines, located.map(({ edit }) => edit), kind);
+
   const scopeOf = new Map<string, string[]>();
   const replacementsOf = new Map<string, number>();
   /** Per `rename` entry, the heading text read off the file just before the splice. */
@@ -1725,7 +1700,23 @@ export async function updateSections(
    */
   const broughtInOf = new Map<string, string[]>();
   const takenOutOf = new Map<string, string[]>();
+  for (const [anchor, sub] of substituted.byAnchor) {
+    replacementsOf.set(anchor, sub.replacements);
+    broughtInOf.set(anchor, anchorValuesIn(sub.subtreeAfter));
+    takenOutOf.set(anchor, anchorValuesIn(sub.subtreeBefore));
+    /**
+     * Scope from the MATCHED FRAGMENTS, not from the addressed subtree — the
+     * one place `edit` parts company with the other four actions. A
+     * substitution three headings down destroys nothing above it, so naming
+     * those anchors in `dropAnchors` would be declaring a loss this entry
+     * cannot cause. Measured on the lines the fragments were matched in.
+     */
+    scopeOf.set(anchor, anchorsInLineSpans(lines, sub.spans, kind));
+  }
+  lines.splice(0, lines.length, ...substituted.lines);
+
   for (const { edit } of order) {
+    if (edit.action === 'edit') continue;
     const range = liveRangeOf(lines, edit.anchor, kind);
     if (!range) {
       throw new ConflictError(
@@ -1749,34 +1740,6 @@ export async function updateSections(
       broughtInOf.set(edit.anchor, []);
       takenOutOf.set(edit.anchor, []);
       previousHeadingOf.set(edit.anchor, renameHeading(lines, range, (edit.heading ?? '').trim()));
-      continue;
-    }
-    if (edit.action === 'edit') {
-      /**
-       * The subtree, heading line excluded — the same span `replace` overwrites,
-       * so an `edit` can no more swallow its own anchor comment than a `replace`
-       * can. Descendants' anchors are inside it and ARE at risk, which is what
-       * the scope below is measured for.
-       */
-      const subtreeText = lines.slice(range.lineStart, range.lineEnd).join('\n');
-      const applied = applyTextEdits(subtreeText, edit.textEdits ?? [], subtreePositionResolver(edit.anchor));
-      replacementsOf.set(edit.anchor, applied.replacements);
-      broughtInOf.set(edit.anchor, anchorValuesIn(applied.text));
-      takenOutOf.set(edit.anchor, anchorValuesIn(subtreeText));
-      /**
-       * Scope from the MATCHED FRAGMENTS, not from the addressed subtree — the
-       * one place `edit` parts company with the other four actions. A
-       * substitution three headings down destroys nothing above it, so naming
-       * those anchors in `dropAnchors` would be declaring a loss this entry
-       * cannot cause.
-       */
-      const lineAt = (o: number) => subtreeText.slice(0, o).split('\n').length - 1;
-      const spans = applied.matchRanges.map((r) => ({
-        from: range.lineStart + lineAt(r.start),
-        to: range.lineStart + lineAt(r.end),
-      }));
-      scopeOf.set(edit.anchor, anchorsInLineSpans(lines, spans, kind));
-      lines.splice(range.lineStart, range.lineEnd - range.lineStart, ...applied.text.split('\n'));
       continue;
     }
     const inRange = sectionRanges(lines, kind)

@@ -6,11 +6,11 @@ import {
   assertHeadingText,
   liveRangeOf,
   parseBody,
+  prepareSubstitutions,
   renameHeading,
   sectionRanges,
-  subtreePositionResolver,
 } from './section-text.js';
-import { applyTextEdits, type TextEdit } from './text-edits.js';
+import type { TextEdit } from './text-edits.js';
 
 /**
  * 0.2.43 M10 — the plan's edit grammar, as three mutually exclusive input
@@ -350,43 +350,12 @@ export function applyPlanBatch(body: string, edits: readonly PlanSectionEdit[]):
   }
 
   /**
-   * An `edit` that NESTS with ANY other entry — either direction, whatever that
-   * entry's action — is refused, and only `edit` is: the bottom-up walk already
-   * makes `replace`-inside-`replace` well defined, because a whole-section
-   * action states its result outright and the outer one simply wins.
-   *
-   * A substitution states a CHANGE instead, and both directions break it. With
-   * the `edit` inside, an outer entry overwrites the same lines and the caller
-   * has no answer to "did my substitution survive?". With the `edit` outside,
-   * the inner entry splices first, so the `find` would be matched against text
-   * this same batch just wrote. Either way the order of the batch would start to
-   * matter, which is exactly what the engine promises it never does. That holds
-   * for an inner `append`/`insert_after`/`edit` just as it does for a `replace`:
-   * they splice first too, so an outer substitution would count and rewrite text
-   * this same batch produced and the caller never read.
+   * Every `edit` is matched and applied first, on the plan as the caller read
+   * it; one whose matched fragment touches lines another entry writes refuses
+   * the whole batch (see {@link prepareSubstitutions}). A parent `edit` on its
+   * own intro next to a child `replace` is fine — only fragments count.
    */
-  for (const edit of edits) {
-    if (edit.action !== 'edit') continue;
-    const mine = rangeByAnchor.get(edit.anchor)!;
-    const clash = edits.find((other) => {
-      if (other.anchor === edit.anchor) return false;
-      const theirs = rangeByAnchor.get(other.anchor);
-      if (!theirs) return false;
-      const insideThem = theirs.lineStart < mine.lineStart && theirs.lineEnd >= mine.lineEnd;
-      const aroundThem = mine.lineStart < theirs.lineStart && mine.lineEnd >= theirs.lineEnd;
-      return insideThem || aroundThem;
-    });
-    if (clash) {
-      const theirs = rangeByAnchor.get(clash.anchor)!;
-      const relation = theirs.lineStart < mine.lineStart ? 'lies inside' : 'encloses';
-      throw new DomainError(
-        'INVALID_ARGUMENT',
-        `edit on '${edit.anchor}' ${relation} the section '${clash.anchor}', which another entry in this batch ` +
-          `also writes (action '${clash.action}')`,
-        "split them into separate calls, or fold the substitution into the outer entry's content",
-      );
-    }
-  }
+  const substituted = prepareSubstitutions(lines, edits);
 
   const order = [...edits].sort(
     (a, b) => rangeByAnchor.get(b.anchor)!.lineStart - rangeByAnchor.get(a.anchor)!.lineStart,
@@ -396,7 +365,20 @@ export function applyPlanBatch(body: string, edits: readonly PlanSectionEdit[]):
   const replacementsOf = new Map<string, number>();
   const previousHeadingOf = new Map<string, string>();
 
+  /**
+   * Scope from the MATCHED FRAGMENTS, not from the addressed subtree — the one
+   * place `edit` parts company with the other four actions. A substitution
+   * three headings down destroys nothing above it. Measured on the lines the
+   * fragments were matched in, i.e. before the batch.
+   */
+  for (const [anchor, sub] of substituted.byAnchor) {
+    replacementsOf.set(anchor, sub.replacements);
+    scopeOf.set(anchor, anchorsInLineSpans(lines, sub.spans));
+  }
+  lines.splice(0, lines.length, ...substituted.lines);
+
   for (const edit of order) {
+    if (edit.action === 'edit') continue;
     /**
      * Re-measured immediately before its own splice, never taken from the map
      * above: a section's range CONTAINS its subtree, so an edit lower in the
@@ -421,31 +403,6 @@ export function applyPlanBatch(body: string, edits: readonly PlanSectionEdit[]):
        */
       scopeOf.set(edit.anchor, []);
       previousHeadingOf.set(edit.anchor, renameHeading(lines, range, (edit.heading ?? '').trim()));
-      continue;
-    }
-    if (edit.action === 'edit') {
-      /**
-       * The subtree, heading line excluded — the same span `replace` overwrites,
-       * so an `edit` can no more swallow its own anchor comment than a `replace`
-       * can. This is also the scope difference the release calls a trap worth
-       * remembering: a top-level `textEdits` counts its matches over the WHOLE
-       * plan, this one only over the addressed subtree.
-       */
-      const subtreeText = lines.slice(range.lineStart, range.lineEnd).join('\n');
-      const applied = applyTextEdits(subtreeText, edit.textEdits ?? [], subtreePositionResolver(edit.anchor));
-      replacementsOf.set(edit.anchor, applied.replacements);
-      /**
-       * Scope from the MATCHED FRAGMENTS, not from the addressed subtree — the
-       * one place `edit` parts company with the other four actions. A
-       * substitution three headings down destroys nothing above it.
-       */
-      const lineAt = (o: number) => subtreeText.slice(0, o).split('\n').length - 1;
-      const spans = applied.matchRanges.map((r) => ({
-        from: range.lineStart + lineAt(r.start),
-        to: range.lineStart + lineAt(r.end),
-      }));
-      scopeOf.set(edit.anchor, anchorsInLineSpans(lines, spans));
-      lines.splice(range.lineStart, range.lineEnd - range.lineStart, ...applied.text.split('\n'));
       continue;
     }
     const inRange = sectionRanges(lines)

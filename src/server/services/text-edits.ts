@@ -56,6 +56,14 @@ export interface MatchPosition {
 export interface MatchRange {
   start: number;
   end: number;
+  /**
+   * The pattern that matched here and what replaces it — so a caller holding
+   * several ranges can name the substitution in an error, or re-apply the
+   * span itself in a frame wider than the text the engine was handed (a batch
+   * of section `edit`s composed over one whole body).
+   */
+  find: string;
+  replaceWith: string;
 }
 
 export interface TextEditResult {
@@ -255,7 +263,12 @@ export function applyTextEdits(
 
   const spans = found
     .flatMap(({ edit, offsets }) =>
-      offsets.map((start) => ({ start, end: start + edit.find.length, replaceWith: edit.replaceWith })),
+      offsets.map((start) => ({
+        start,
+        end: start + edit.find.length,
+        find: edit.find,
+        replaceWith: edit.replaceWith,
+      })),
     )
     .sort((a, b) => a.start - b.start);
 
@@ -288,12 +301,12 @@ export function applyTextEdits(
   return {
     text: out,
     replacements: spans.length,
-    matchRanges: spans.map(({ start, end }) => ({ start, end })),
+    matchRanges: spans,
   };
 }
 
 /** A pattern is arbitrarily long; an error message is not. */
-function preview(text: string): string {
+export function preview(text: string): string {
   const flat = text.replace(/\s+/g, ' ').trim();
   return flat.length > 60 ? `${flat.slice(0, 57)}…` : flat;
 }

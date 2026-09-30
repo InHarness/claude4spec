@@ -9,7 +9,7 @@ import {
   type SectionFileKind,
   type SectionParseResult,
 } from '../../shared/section-parser.js';
-import type { MatchPosition, PositionResolver } from './text-edits.js';
+import { applyTextEdits, preview, type MatchPosition, type PositionResolver, type TextEdit } from './text-edits.js';
 
 /**
  * M06 — the section walk over markdown TEXT, shared by every artifact kind that
@@ -272,6 +272,183 @@ export function assertAppendContent(content: string, level: number, anchor: stri
     `append for '${anchor}' carries a level-${offending.level} heading ('${offending.heading}') — at or above the section's own level ${level}`,
     'append adds to the section\'s OWN body; deeper headings become its first children. To add a sibling use insert_after',
   );
+}
+
+/** What {@link prepareSubstitutions} needs of a batch entry: where it points and what it does. */
+export interface SubstitutionEntry {
+  anchor: string;
+  action: SectionSplice['action'];
+  textEdits?: TextEdit[];
+}
+
+/** One `edit` entry's substitutions, measured on the body BEFORE the batch. */
+export interface PreparedSubstitution {
+  replacements: number;
+  /** 0-based line spans of the matched fragments, in the original lines — the entry's anchor scope. */
+  spans: LineSpan[];
+  /** The addressed subtree as it stood before the batch, and after this entry's own substitutions. */
+  subtreeBefore: string;
+  subtreeAfter: string;
+}
+
+/**
+ * 2.1.x — every `edit` entry of a section batch, matched and applied on the
+ * body AS THE CALLER READ IT, before any other entry splices.
+ *
+ * ## Refused on fragments, not on ranges
+ *
+ * A substitution states a CHANGE, so it may not touch lines another entry of
+ * the same batch writes: with the fragment under a `replace` or `delete` the
+ * caller could not tell whether the substitution survived, and anywhere else
+ * the two entries would be describing the same text twice. What an entry
+ * writes is measured on the original lines — `replace` its body, `delete` its
+ * subtree with heading and anchor comment, `rename` its heading line,
+ * `append`/`insert_after` their insertion POINT, `edit` its matched fragments —
+ * and every addressed entry also owns its anchor comment line, so no fragment
+ * can eat the address a neighbour in the batch resolves by.
+ *
+ * Until 2.1.0 the rule was on RANGES: any `edit` nesting with any other entry
+ * was refused, so a parent `edit` fixing its own intro alongside a child
+ * `replace` lost the whole batch. Only an overlap of the matched text matters.
+ *
+ * Every collision is reported at once, so one retry is enough.
+ *
+ * ## No cascade
+ *
+ * Because all `edit`s are matched here, before anything else splices, a
+ * `find` can only ever hit text the caller read — never text the same batch
+ * wrote. The substitutions are disjoint (overlaps were just refused), so they
+ * are applied together, right to left, over the whole body; the remaining
+ * entries then splice bottom-up on ranges re-measured live by anchor, which a
+ * changed line count cannot mislead.
+ */
+export function prepareSubstitutions(
+  lines: string[],
+  entries: readonly SubstitutionEntry[],
+  kind: SectionFileKind = 'md',
+): { lines: string[]; byAnchor: Map<string, PreparedSubstitution> } {
+  const byAnchor = new Map<string, PreparedSubstitution>();
+  if (!entries.some((e) => e.action === 'edit')) return { lines, byAnchor };
+
+  const text = lines.join('\n');
+  const lineOffsets: number[] = [];
+  for (let i = 0, at = 0; i < lines.length; at += lines[i]!.length + 1, i++) lineOffsets.push(at);
+  /** Offset of the start of 0-based line `i`; one past the text for the line after the last. */
+  const off = (i: number) => (i < lines.length ? lineOffsets[i]! : text.length + 1);
+  /** 0-based line holding offset `o` — a binary search over `lineOffsets`, not a re-split of the prefix. */
+  const lineAt = (o: number) => {
+    let lo = 0;
+    let hi = lineOffsets.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (lineOffsets[mid]! <= o) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo;
+  };
+
+  const parsed = parseBody(lines, kind);
+  const rangeByAnchor = new Map(sectionRanges(lines, kind).map((r) => [r.anchor, r]));
+
+  interface Fragment { start: number; end: number; find: string; replaceWith: string }
+  const fragmentsOf = new Map<string, Fragment[]>();
+  for (const entry of entries) {
+    if (entry.action !== 'edit') continue;
+    const range = rangeByAnchor.get(entry.anchor)!;
+    const subtreeBefore = lines.slice(range.lineStart, range.lineEnd).join('\n');
+    const applied = applyTextEdits(subtreeBefore, entry.textEdits ?? [], subtreePositionResolver(entry.anchor));
+    const base = off(range.lineStart);
+    const fragments = applied.matchRanges.map((r) => ({
+      start: base + r.start,
+      end: base + r.end,
+      find: r.find,
+      replaceWith: r.replaceWith,
+    }));
+    fragmentsOf.set(entry.anchor, fragments);
+    byAnchor.set(entry.anchor, {
+      replacements: applied.replacements,
+      spans: fragments.map((f) => ({ from: lineAt(f.start), to: lineAt(f.end) })),
+      subtreeBefore,
+      subtreeAfter: applied.text,
+    });
+  }
+
+  /**
+   * What an entry writes, in character offsets of the original body. A point
+   * has `start === end`. `address` marks the anchor comment line every
+   * addressed entry owns — checked in BOTH directions between two `edit`s,
+   * unlike their fragments, whose overlap is symmetric and reported once.
+   */
+  interface Written { start: number; end: number; what: string; address?: true }
+  const writtenBy = (entry: SubstitutionEntry): Written[] => {
+    const range = rangeByAnchor.get(entry.anchor)!;
+    const self = parsed.sections.find((sec) => sec.headingLine === range.lineStart);
+    const anchorIdx = self ? anchorLineIndexOf(lines, self) : null;
+    const out: Written[] = [];
+    if (anchorIdx !== null) {
+      out.push({
+        start: off(anchorIdx),
+        end: off(anchorIdx + 1),
+        what: `touches the anchor comment of '${entry.anchor}', which another entry in this batch addresses (action '${entry.action}')`,
+        address: true,
+      });
+    }
+    const lineRange = (from: number, to: number, what: string) =>
+      out.push({ start: off(from), end: from === to ? off(from) : off(to), what });
+    switch (entry.action) {
+      case 'replace':
+        lineRange(range.lineStart, range.lineEnd, `lies inside the section '${entry.anchor}' that another entry in this batch replaces`);
+        break;
+      case 'delete':
+        lineRange(anchorIdx ?? range.lineStart - 1, range.lineEnd, `lies inside the section '${entry.anchor}' that another entry in this batch deletes`);
+        break;
+      case 'rename':
+        lineRange(range.lineStart - 1, range.lineStart, `touches the heading of '${entry.anchor}', which another entry in this batch renames`);
+        break;
+      case 'append': {
+        const at = ownEndOf(lines, range, parsed);
+        lineRange(at, at, `crosses the point where another entry in this batch appends to '${entry.anchor}'`);
+        break;
+      }
+      case 'insert_after':
+        lineRange(range.lineEnd, range.lineEnd, `crosses the point where another entry in this batch inserts after '${entry.anchor}'`);
+        break;
+      case 'edit':
+        for (const f of fragmentsOf.get(entry.anchor) ?? []) {
+          out.push({ start: f.start, end: f.end, what: `overlaps a fragment the edit on '${entry.anchor}' also substitutes` });
+        }
+        break;
+    }
+    return out;
+  };
+
+  const HINT =
+    'a substitution may not touch lines another entry in the same batch writes — move that substitution into a separate call, or narrow its find to text no other entry writes';
+  const written = entries.map(writtenBy);
+  const collisions: string[] = [];
+  entries.forEach((entry, i) => {
+    if (entry.action !== 'edit') return;
+    for (const f of fragmentsOf.get(entry.anchor)!) {
+      entries.forEach((other, j) => {
+        if (other.anchor === entry.anchor) return;
+        for (const w of written[j]!) {
+          // Two edits' fragments colliding are one collision, reported once;
+          // an edit's anchor comment is guarded whichever of the two came first.
+          if (other.action === 'edit' && j < i && !w.address) continue;
+          const hit = w.start === w.end ? f.start < w.start && w.start < f.end : f.start < w.end && w.start < f.end;
+          if (!hit) continue;
+          collisions.push(`edit on '${entry.anchor}': find '${preview(f.find)}' (line ${lineAt(f.start) + 1}) ${w.what}`);
+        }
+      });
+    }
+  });
+  if (collisions.length > 0) throw new DomainError('INVALID_ARGUMENT', collisions.join('; '), HINT);
+
+  let out = text;
+  for (const f of [...fragmentsOf.values()].flat().sort((a, b) => b.start - a.start)) {
+    out = out.slice(0, f.start) + f.replaceWith + out.slice(f.end);
+  }
+  return { lines: out.split('\n'), byAnchor };
 }
 
 /**
