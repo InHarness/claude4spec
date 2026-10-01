@@ -2,6 +2,7 @@ import path from 'node:path';
 import type { Root } from '../../../../shared/types.js';
 import { hasServer } from '../glue.js';
 import type { McpInventoryEntry, PromptBlock } from '../types.js';
+import { M05_TURN_BLOCKS } from './m05-chat-turn.js';
 
 /* M05 — Chat & Agent: where the agent may reach, and whether it has built-in
  * filesystem tools at all. */
@@ -145,4 +146,6 @@ export const M05_PROMPT_BLOCKS: readonly PromptBlock[] = [
     name: 'agent_filesystem_access',
     render: (c) => buildAgentFilesystemAccess(c.agentFilesystemAccess ?? { enabled: false }),
   },
+  // 2.1.1 — the turn's own blocks (annotations, task list); see m05-chat-turn.ts.
+  ...M05_TURN_BLOCKS,
 ];

@@ -9,7 +9,7 @@ import {
   TextInput,
   type PopoverFormProps,
 } from '../Popover.js';
-import { listActiveEntityTypes } from '../../entities/index.js';
+import { listPickerEntityTypes } from '../../entities/index.js';
 import type { EntityType } from '../../../shared/entities.js';
 
 export function ListForm({ request, onClose }: PopoverFormProps<'list'>) {
@@ -19,7 +19,7 @@ export function ListForm({ request, onClose }: PopoverFormProps<'list'>) {
   // documents) would render a <select> whose value matches no option: the browser
   // shows the first real one while state still says 'endpoint', and the chip is
   // written with a type the project does not have.
-  const [type, setType] = useState<EntityType>(() => listActiveEntityTypes()[0] ?? '');
+  const [type, setType] = useState<EntityType>(() => listPickerEntityTypes('list')[0] ?? '');
   const [slugsRaw, setSlugsRaw] = useState('');
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -30,6 +30,12 @@ export function ListForm({ request, onClose }: PopoverFormProps<'list'>) {
   }, []);
 
   function submit() {
+    // No listable type active (or none chosen yet): writing `type=""` would
+    // only produce an "unknown type" chip.
+    if (!type) {
+      setError('No entity type with a list view is active');
+      return;
+    }
     const slugs = slugsRaw
       .split(',')
       .map((s) => s.trim())
@@ -56,7 +62,7 @@ export function ListForm({ request, onClose }: PopoverFormProps<'list'>) {
         onChange={(e) => setType(e.target.value as EntityType)}
         style={{ marginBottom: 8 }}
       >
-        {listActiveEntityTypes().map((t) => (
+        {listPickerEntityTypes('list').map((t) => (
           <option key={t} value={t}>
             {t}
           </option>

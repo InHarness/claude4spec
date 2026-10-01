@@ -75,14 +75,19 @@ export function getEntityDef<T = unknown>(type: string): EntityDef<T> | null {
 }
 
 /**
- * The ACTIVE entity types, in display order.
+ * Which picker a type is offered in.
  *
- * 0.2.11 — replaces `listEntityDefs()`, which read the local `registry` object
- * and therefore saw built-ins only: it was blind to exactly the plugin types
- * `getEntityDef` above had been fixed to resolve. It had no callers left, so
- * nothing depended on the wrong answer; this is the enumeration counterpart to
- * `getEntityDef`, reading the same single source of truth.
+ *  - `element` — `/element`, `/mention` and the edit popover of a chip or card:
+ *    every ACTIVE type, hidden ones (e.g. `diagram`) included. A hidden type has
+ *    no route, but it does have a card and a chip.
+ *  - `list` — `/list`, `/tagged` and the edit popover of a list node: only the
+ *    active types that render a list row. A type without `renderRow` (e.g.
+ *    `diagram`) would only ever produce a "not listable" placeholder.
  */
-export function listActiveEntityTypes(): EntityType[] {
-  return clientPluginHost.listEntities().map((m) => m.type);
+export type EntityPickerKind = 'element' | 'list';
+
+/** 2.1.1 — the active types a type picker of `kind` offers, in display order. */
+export function listPickerEntityTypes(kind: EntityPickerKind): EntityType[] {
+  const active = clientPluginHost.listEntities();
+  return (kind === 'list' ? active.filter((m) => m.renderRow) : active).map((m) => m.type);
 }

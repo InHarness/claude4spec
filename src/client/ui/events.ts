@@ -373,6 +373,7 @@ export const UI_EVENTS = {
  * `diagram` and every plugin type were unreachable from the editor, not by
  * decision but because this constant had never been extended.
  *
- * The popovers now read `listActiveEntityTypes()` from the entity registry.
+ * The popovers now read `listPickerEntityTypes(kind)` from the entity registry
+ * (2.1.1: `element` = every active type, `list` = the active types with a row).
  */
 export const HTTP_METHODS: readonly HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];

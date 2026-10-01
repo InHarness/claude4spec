@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Edit3 } from 'lucide-react';
 import {
   FieldLabel,
@@ -10,7 +10,7 @@ import {
   type PopoverFormProps,
 } from '../Popover.js';
 import { type ChipNodeType } from '../events.js';
-import { listActiveEntityTypes } from '../../entities/index.js';
+import { listPickerEntityTypes } from '../../entities/index.js';
 import type { EntityType } from '../../../shared/entities.js';
 
 type FilterMode = 'and' | 'or';
@@ -40,9 +40,16 @@ export function EditChipForm({ request, onClose }: PopoverFormProps<'edit-chip'>
   // 0.2.11: the chip's OWN type wins (editing must not silently retype it); the
   // fallback is the first active type rather than a hardcoded 'endpoint', which
   // may not be among the <option>s this project offers.
-  const [type, setType] = useState<EntityType>(
-    (str(attrs.type, '') as EntityType) || listActiveEntityTypes()[0] || '',
-  );
+  // 2.1.1: the options follow the picker rule of the node being edited — a
+  // chip/card takes any active type (hidden ones too), a list only types that
+  // render a row. The chip's own type stays selectable even outside that set.
+  const ownType = str(attrs.type, '') as EntityType;
+  const typeOptions = useMemo(() => {
+    const kind = nodeType === 'element_list' || nodeType === 'tagged_list' ? 'list' : 'element';
+    const options = listPickerEntityTypes(kind);
+    return ownType && !options.includes(ownType) ? [ownType, ...options] : options;
+  }, [nodeType, ownType]);
+  const [type, setType] = useState<EntityType>(ownType || typeOptions[0] || '');
   const [slug, setSlug] = useState(str(attrs.slug));
   const [slugsRaw, setSlugsRaw] = useState(parseCsv(attrs.slugs));
   const [tagsRaw, setTagsRaw] = useState(parseCsv(attrs.tags));
@@ -124,7 +131,7 @@ export function EditChipForm({ request, onClose }: PopoverFormProps<'edit-chip'>
             onChange={(e) => setType(e.target.value as EntityType)}
             style={{ marginBottom: 8 }}
           >
-            {listActiveEntityTypes().map((t) => (
+            {typeOptions.map((t) => (
               <option key={t} value={t}>
                 {t}
               </option>

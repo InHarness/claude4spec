@@ -8,7 +8,8 @@
 // `c4s-plugin-ac` with the `ac-audit` subagent it cannot work without.
 import './diagram/plugin.js';
 
-export { getEntityDef, listActiveEntityTypes, registerEntity } from './registry.js';
+export { getEntityDef, listPickerEntityTypes, registerEntity } from './registry.js';
+export type { EntityPickerKind } from './registry.js';
 export type {
   EntityDef,
   EntityRowProps,

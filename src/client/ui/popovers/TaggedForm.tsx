@@ -9,7 +9,7 @@ import {
   TextInput,
   type PopoverFormProps,
 } from '../Popover.js';
-import { listActiveEntityTypes } from '../../entities/index.js';
+import { listPickerEntityTypes } from '../../entities/index.js';
 import type { EntityType } from '../../../shared/entities.js';
 
 type FilterMode = 'and' | 'or';
@@ -28,7 +28,7 @@ export function TaggedForm({ request, onClose }: PopoverFormProps<'tagged'>) {
   // documents) would render a <select> whose value matches no option: the browser
   // shows the first real one while state still says 'endpoint', and the chip is
   // written with a type the project does not have.
-  const [type, setType] = useState<EntityType>(() => listActiveEntityTypes()[0] ?? '');
+  const [type, setType] = useState<EntityType>(() => listPickerEntityTypes('list')[0] ?? '');
   const { tagsRaw, setTagsRaw, filter, setFilter, error, setError } = useTagsAndFilter();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -38,6 +38,12 @@ export function TaggedForm({ request, onClose }: PopoverFormProps<'tagged'>) {
   }, []);
 
   function submit() {
+    // No listable type active (or none chosen yet): writing `type=""` would
+    // only produce an "unknown type" chip.
+    if (!type) {
+      setError('No entity type with a list view is active');
+      return;
+    }
     const tags = tagsRaw
       .split(',')
       .map((s) => s.trim())
@@ -62,7 +68,7 @@ export function TaggedForm({ request, onClose }: PopoverFormProps<'tagged'>) {
         <div style={{ flex: 1 }}>
           <FieldLabel>Type</FieldLabel>
           <SelectInput value={type} onChange={(e) => setType(e.target.value as EntityType)}>
-            {listActiveEntityTypes().map((t) => (
+            {listPickerEntityTypes('list').map((t) => (
               <option key={t} value={t}>
                 {t}
               </option>
