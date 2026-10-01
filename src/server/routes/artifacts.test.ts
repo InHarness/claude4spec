@@ -24,7 +24,11 @@ import type { ReleaseService } from '../services/release.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 
 const fakeWs = { broadcast: () => {} } as unknown as WsEmitter;
-const fakeReleaseService = {} as unknown as ReleaseService;
+/** Release names in creation order (index = rank); tests that need ranks set it. */
+let releasesInCreationOrder: string[] = [];
+const fakeReleaseService = {
+  releaseRankByName: () => new Map(releasesInCreationOrder.map((name, i) => [name, i])),
+} as unknown as ReleaseService;
 
 describe('artifactsRouter — /api/artifacts/:kind/*', () => {
   let cwd: string;
@@ -56,6 +60,7 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
   }
 
   beforeEach(async () => {
+    releasesInCreationOrder = [];
     cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-artifacts-test-'));
     db = new Database(':memory:');
     runMigrations(db);
@@ -257,46 +262,67 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
       expect(pendingOnly.body.data).toHaveLength(1);
     });
 
-    it('lists newest release first, open-`to` briefs ahead of them — not path-alphabetical', async () => {
+    describe('the release axis (2.1.3)', () => {
       /**
-       * The order is part of the operation, and it has exactly one consumer for
-       * whom it is load-bearing in a way nobody sees: `c4s list-briefs` prints
-       * whatever it is handed and pages `--limit`/`--offset` over it, and the
-       * first row is what the brief-implementer skill reads to decide what to
-       * build. The indexer answers path-alphabetically, which for
-       * `<from>-to-<to>.md` names is ASCENDING release order — so "the first
-       * brief" was the oldest one in the repo.
-       *
-       * `0-2-9` versus `0-2-13` is the case a plain string compare gets wrong,
-       * so it is in the fixture on purpose.
+       * The order is the operation's, and `c4s list-briefs` pages over it — its
+       * first row is what the brief-implementer skill reads. Rank is creation
+       * order, never the name: `v0.10` stands above `v0.9` even though a string
+       * compare (and the old `to_release desc`) put it below.
        */
-      const fm = (to: string | null) => ({
+      const fm = (from: string | null, to: string | null, implemented = false) => ({
         type: 'brief',
-        from_release: 'x',
+        from_release: from,
         to_release: to,
         generated_at: '2026-01-01T00:00:00.000Z',
-        implemented: false,
+        implemented,
       });
-      await writeArtifact('brief', '0-1-90-to-0-1-91.md', fm('0.1.91'), '# old\n');
-      await writeArtifact('brief', '0-2-9-to-0-2-10.md', fm('0.2.10'), '# mid\n');
-      await writeArtifact('brief', '0-2-12-to-0-2-13.md', fm('0.2.13'), '# new\n');
-      await writeArtifact('brief', 'aaa-analysis.md', fm(null), '# against the current state\n');
+      const paths = (res: request.Response) => res.body.data.map((r: { path: string }) => r.path);
 
-      const res = await request(app).get('/api/artifacts/brief');
-      expect(res.body.data.map((r: { path: string }) => r.path)).toEqual([
-        // No target release — describes the state as of HEAD, so it leads.
-        'aaa-analysis.md',
-        // A release NAME is an opaque string, not semver: `v2` sorts above every
-        // numeric one because letters follow digits. That is the honest answer
-        // for a vocabulary the sort cannot interpret, and it is why this is a
-        // descending sort over names rather than a version comparison.
+      beforeEach(async () => {
+        // `v1`/`v2` (the describe's fixture brief) were created before the v0.x line.
+        releasesInCreationOrder = ['v1', 'v2', 'v0.8', 'v0.9', 'v0.10'];
+        await writeArtifact('brief', 'h-null.md', fm(null, null), '# none\n');
+        await writeArtifact('brief', 'f-108.md', fm('0-2-108', '0-2-109', true), '# tail\n');
+        await writeArtifact('brief', 'e-v08.md', fm(null, 'v0.8', true), '# first\n');
+        await writeArtifact('brief', 'c-open-v09.md', fm('v0.9', null), '# open 0.9\n');
+        await writeArtifact('brief', 'g-71.md', fm('0-2-71', '0-2-72'), '# tail\n');
+        await writeArtifact('brief', 'a-open-v010.md', fm('v0.10', null), '# open newest\n');
+        await writeArtifact('brief', 'd-v09.md', fm('v0.8', 'v0.9', true), '# 0.9\n');
+        await writeArtifact('brief', 'b-v010.md', fm('v0.9', 'v0.10'), '# 0.10\n');
+      });
+
+      const FULL = [
+        'a-open-v010.md',
+        'b-v010.md',
+        'c-open-v09.md',
+        'd-v09.md',
+        'e-v08.md',
         'v1-to-v2.md',
-        '0-2-12-to-0-2-13.md',
-        // The case a plain string compare gets wrong: `0.2.9` must sort BELOW
-        // `0.2.13`, which only a numeric-aware compare gets right.
-        '0-2-9-to-0-2-10.md',
-        '0-1-90-to-0-1-91.md',
-      ]);
+        'f-108.md',
+        'g-71.md',
+        'h-null.md',
+      ];
+
+      it('lists newest cycle first, open windows above their from_release, unknown releases and null→null last', async () => {
+        expect(paths(await request(app).get('/api/artifacts/brief'))).toEqual(FULL);
+      });
+
+      it('the implemented filter removes rows and never reorders the rest', async () => {
+        const done = paths(await request(app).get('/api/artifacts/brief?implemented=true'));
+        const pending = paths(await request(app).get('/api/artifacts/brief?implemented=false'));
+        expect(done).toEqual(FULL.filter((p) => done.includes(p)));
+        expect(pending).toEqual(FULL.filter((p) => pending.includes(p)));
+        expect(done.length + pending.length).toBe(FULL.length);
+      });
+
+      it('with no releases in the DB the whole list is tail, by name descending in numeric segments', async () => {
+        releasesInCreationOrder = [];
+        const got = paths(await request(app).get('/api/artifacts/brief'));
+        // `v0.10` > `v0.9` by numeric segments, which a string compare gets backwards.
+        expect(got.indexOf('b-v010.md')).toBeLessThan(got.indexOf('d-v09.md'));
+        expect(got.indexOf('f-108.md')).toBeLessThan(got.indexOf('g-71.md'));
+        expect(got.at(-1)).toBe('h-null.md');
+      });
     });
 
     it('404 on an unknown brief carries the list of real ones', async () => {

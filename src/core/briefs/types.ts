@@ -17,24 +17,6 @@ export interface BriefFrontmatterRaw {
   [key: string]: unknown;
 }
 
-export interface BriefListItem {
-  /** Relative to briefsDir, e.g. "v0-3-to-v0-4.md". */
-  path: string;
-  frontmatter: BriefFrontmatterRaw;
-  implemented: boolean;
-}
-
-export interface BriefListOpts {
-  limit?: number;
-  offset?: number;
-  status?: 'implemented' | 'pending';
-}
-
-export interface BriefListResult {
-  items: BriefListItem[];
-  total: number;
-}
-
 export interface BriefReadResult {
   frontmatter: BriefFrontmatterRaw;
   body: string;

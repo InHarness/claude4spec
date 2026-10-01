@@ -1,11 +1,9 @@
-export { listBriefsFs, listAllBriefs } from './list-briefs.js';
+export { compareBriefsByReleaseAxis, compareNumericSegments } from './release-axis.js';
+export type { ReleaseAxisItem } from './release-axis.js';
 export { readBriefFs, assertSafeRelPath, assertBriefExists } from './read-brief.js';
 export { writePatchFs } from './create-patch.js';
 export type {
   BriefFrontmatterRaw,
-  BriefListItem,
-  BriefListOpts,
-  BriefListResult,
   BriefReadResult,
   PatchKind,
   BriefFsErrorCode,
