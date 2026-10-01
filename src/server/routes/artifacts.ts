@@ -83,6 +83,8 @@ function buildBriefAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
       }
       // Maps listBriefs()'s already-fetched frontmatter/hash directly — no
       // second frontmatter-indexer lookup or file_version query per row.
+      // The ORDER is the owning module's (M21, release axis); this endpoint
+      // declares none of its own, so it must never re-sort.
       return briefs.listBriefs({ implemented }).map((item) => ({
         path: item.path,
         frontmatter: item.frontmatter,

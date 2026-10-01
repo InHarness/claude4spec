@@ -132,6 +132,31 @@ describe('[ac:ac-rodzina-brief-patch-list-briefs-read] the brief/patch family de
       expect(printed().total).toBe(3);
     });
 
+    it('[ac:ac-c4s-list-briefs-kolejnosc-jak-ui] prints the server\'s order untouched — it is the release axis, not `to_release desc`', async () => {
+      // An order no name-based sort would produce: the open window first, a
+      // `v0.10` above a `v0.9`, an unknown release in the tail.
+      const axis = [
+        { path: 'open.md', frontmatter: { type: 'brief', from_release: 'v0.10', to_release: null } },
+        { path: 'ten.md', frontmatter: { type: 'brief', to_release: 'v0.10' } },
+        { path: 'nine.md', frontmatter: { type: 'brief', to_release: 'v0.9' } },
+        { path: 'tail.md', frontmatter: { type: 'brief', to_release: 'zzz' } },
+      ];
+      reply = { data: axis };
+      await runListBriefs(args('list-briefs'));
+      expect((printed().items as Array<{ path: string }>).map((i) => i.path)).toEqual(axis.map((r) => r.path));
+    });
+
+    it('[ac:ac-c4s-list-briefs-kolejnosc-przed-limit] [ac:ac-c4s-list-briefs-limit-n-offset-m] pages concatenate into the full order', async () => {
+      reply = { data: rows };
+      const page = async (offset: number) => {
+        stdout = '';
+        await runListBriefs(args('list-briefs', '--limit', '2', '--offset', String(offset)));
+        expect(printed().total).toBe(3);
+        return (printed().items as Array<{ path: string }>).map((i) => i.path);
+      };
+      expect([...(await page(0)), ...(await page(2))]).toEqual(rows.map((r) => r.path));
+    });
+
     it('refuses a nonsense window before addressing the server', async () => {
       await expect(runListBriefs(args('list-briefs', '--limit', '0'))).rejects.toMatchObject({
         code: 'INVALID_ARGS',

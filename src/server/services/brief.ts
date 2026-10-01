@@ -35,6 +35,7 @@ import type { PagesFrontmatterIndexer } from './pages-frontmatter-indexer.js';
 import { DomainError } from './tags.js';
 import { readArtifactWindow, windowBody, type ArtifactRange } from './artifact-read.js';
 import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
+import { compareBriefsByReleaseAxis } from '../../core/briefs/release-axis.js';
 
 export interface BriefServiceDeps {
   briefsPages: PagesService;
@@ -277,41 +278,23 @@ export class BriefService {
   }
 
   /**
-   * `to_release` DESCENDING, briefs open to the current state first, path as
-   * the tiebreak.
+   * The list comes back on the RELEASE AXIS (`core/briefs/release-axis.ts`):
+   * newest cycle on top, a brief open to the current state directly above the
+   * briefs of the release it starts from, unknown releases in the tail.
    *
    * The order is part of the operation, not a presentation choice, which is why
-   * it lives here rather than in a caller. The indexer answers in
-   * path-alphabetical order; for briefs named `<from>-to-<to>` that is
-   * ascending release order, so "the first row" was the OLDEST brief. Every
-   * consumer then had to re-sort or be wrong, and they diverged exactly that
-   * way: `BriefsList.tsx` ranks client-side and was right, and `c4s
-   * list-briefs` — whose first row is what the brief-implementer skill reads,
-   * and which pages with `--limit`/`--offset` over whatever order it is handed
-   * — silently became wrong when item 23 moved it onto this service.
-   *
-   * Numeric locale compare, so `0-2-9` sorts below `0-2-13` rather than above it.
+   * it lives here rather than in a caller: `/briefs`, `GET /api/artifacts/brief`
+   * and `c4s list-briefs` (which pages `--limit`/`--offset` over whatever it is
+   * handed) must see one order. It is computed over ALL briefs, BEFORE the
+   * `implemented` filter, so filtering only removes rows and never reorders the
+   * rest.
    */
-  private static compareBriefs(a: BriefListItem, b: BriefListItem): number {
-    const at = a.toRelease;
-    const bt = b.toRelease;
-    // A brief whose window is open at the `to` end has no target release; it
-    // describes the state as of HEAD, so it sorts ahead of every named release
-    // rather than below all of them.
-    if (at === null && bt === null) return a.path.localeCompare(b.path);
-    if (at === null) return -1;
-    if (bt === null) return 1;
-    const cmp = bt.localeCompare(at, undefined, { numeric: true });
-    return cmp !== 0 ? cmp : a.path.localeCompare(b.path);
-  }
-
   listBriefs(opts: BriefListOpts = {}): BriefListItem[] {
     const records = this.deps.frontmatterIndexer.findByFrontmatterType('brief', { rootId: BRIEF_ROOT_MARKER });
     const out: BriefListItem[] = [];
     for (const rec of records) {
       const fm = rec.frontmatter as BriefFrontmatter;
       const implemented = fm.implemented === true;
-      if (opts.implemented !== undefined && opts.implemented !== implemented) continue;
       const lastVersion = this.deps.pageVersions.getLatestForPath(rec.path);
       out.push({
         path: rec.path,
@@ -327,7 +310,9 @@ export class BriefService {
         hash: lastVersion ? hashContent(lastVersion.data.content) : '',
       });
     }
-    return out.sort(BriefService.compareBriefs);
+    const rankByName = this.deps.releaseService.releaseRankByName();
+    out.sort((a, b) => compareBriefsByReleaseAxis(a, b, rankByName));
+    return opts.implemented === undefined ? out : out.filter((b) => b.implemented === opts.implemented);
   }
 
   // ─── Mutations ──────────────────────────────────────────────────────────
