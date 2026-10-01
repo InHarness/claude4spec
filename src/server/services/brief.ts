@@ -169,6 +169,11 @@ export interface BriefListItem {
   hash: string;
 }
 
+function generatedAtIso(value: unknown): string {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? '' : value.toISOString();
+  return String(value ?? '');
+}
+
 export class BriefService {
   constructor(private deps: BriefServiceDeps) {}
 
@@ -285,9 +290,11 @@ export class BriefService {
    * The order is part of the operation, not a presentation choice, which is why
    * it lives here rather than in a caller: `/briefs`, `GET /api/artifacts/brief`
    * and `c4s list-briefs` (which pages `--limit`/`--offset` over whatever it is
-   * handed) must see one order. It is computed over ALL briefs, BEFORE the
-   * `implemented` filter, so filtering only removes rows and never reorders the
-   * rest.
+   * handed) must see one order. The comparator is a pairwise total order that
+   * reads nothing but the two rows and the release ranks, so the `implemented`
+   * filter only removes rows and never reorders the rest — which is why the
+   * filter may (and does) run first, before a filtered-out row pays for its
+   * version lookup, content hash and thread count.
    */
   listBriefs(opts: BriefListOpts = {}): BriefListItem[] {
     const records = this.deps.frontmatterIndexer.findByFrontmatterType('brief', { rootId: BRIEF_ROOT_MARKER });
@@ -295,6 +302,7 @@ export class BriefService {
     for (const rec of records) {
       const fm = rec.frontmatter as BriefFrontmatter;
       const implemented = fm.implemented === true;
+      if (opts.implemented !== undefined && opts.implemented !== implemented) continue;
       const lastVersion = this.deps.pageVersions.getLatestForPath(rec.path);
       out.push({
         path: rec.path,
@@ -303,7 +311,9 @@ export class BriefService {
         // A window open to the current state carries `to_release: null` → toRelease stays null.
         toRelease: typeof fm.to_release === 'string' ? fm.to_release : null,
         implemented,
-        generatedAt: String(fm.generated_at ?? ''),
+        // An unquoted YAML timestamp parses to a Date; `String(date)` would give
+        // "Thu Oct 01 …", which the release axis's tie-break compares as text.
+        generatedAt: generatedAtIso(fm.generated_at),
         lastModifiedAt: lastVersion?.createdAt ?? null,
         threadCount: opts.includeThreadInfo ? this.deps.chatService.threadCountForBrief(rec.path) : 0,
         frontmatter: fm,
@@ -311,8 +321,7 @@ export class BriefService {
       });
     }
     const rankByName = this.deps.releaseService.releaseRankByName();
-    out.sort((a, b) => compareBriefsByReleaseAxis(a, b, rankByName));
-    return opts.implemented === undefined ? out : out.filter((b) => b.implemented === opts.implemented);
+    return out.sort((a, b) => compareBriefsByReleaseAxis(a, b, rankByName));
   }
 
   // ─── Mutations ──────────────────────────────────────────────────────────
