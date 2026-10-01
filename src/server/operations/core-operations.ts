@@ -1094,7 +1094,7 @@ export function registerCoreOperations(): void {
    */
   CATALOG.register({
     name: 'list_briefs',
-    summary: 'Briefs of the project, newest release first, optionally narrowed to implemented or pending.',
+    summary: 'Briefs of the project on the release axis (newest cycle first, unknown releases last), optionally narrowed to implemented or pending.',
     scope: 'project',
     mediation: 'direct',
     opClass: 'brief',

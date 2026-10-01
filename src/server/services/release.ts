@@ -436,6 +436,17 @@ export class ReleaseService {
     return rows.map((r) => this.toRelease(r));
   }
 
+  /**
+   * M21's release axis: `name -> rank`, where the rank is the release's place in
+   * CREATION order (ascending primary key), so a higher rank is a newer cycle.
+   * Deliberately not by name (opaque, and the newest one is renameable) nor by
+   * any date.
+   */
+  releaseRankByName(): Map<string, number> {
+    const rows = this.db.prepare(`SELECT name FROM spec_release ORDER BY id ASC`).all() as { name: string }[];
+    return new Map(rows.map((r, i) => [r.name, i]));
+  }
+
   /** 0.1.104: name of the most recent release, or `null` if none exist yet. */
   getLatestReleaseName(): string | null {
     const row = this.db

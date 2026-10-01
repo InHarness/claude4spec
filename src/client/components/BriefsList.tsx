@@ -1,8 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { FileText, FileWarning, MessageSquarePlus, ChevronDown, ChevronRight } from 'lucide-react';
 import { useBriefs, useCreateBriefThread } from '../hooks/useBriefs.js';
-import { useReleaseList } from '../hooks/useReleases.js';
 import { usePatches, useCreatePatchThread } from '../hooks/usePatches.js';
 import { encodeBriefPath, type BriefListItemView } from '../lib/briefs-api.js';
 import { encodePatchPath, type PatchListItemView } from '../lib/patches-api.js';
@@ -15,12 +14,10 @@ type ImplementedFilter = 'all' | 'done' | 'pending';
 
 /**
  * M21 /briefs list. 3-state filter (All / Done / Pending) sterujący query
- * paramem `?implemented`. Default `all`. Sort wg kanonicznej kolejności wydań
- * ze `spec_release` (najnowszy target release na gorze) — `useReleaseList()`
- * zwraca releasy w porządku `created_at DESC`, więc pozycja w liście = ranga.
- * Briefy targetujące release nieobecny w liście (usunięty/zmieniona nazwa, lub
- * lista jeszcze się ładuje) lądują na końcu z fallbackiem na heurystykę
- * nazwy (`toRelease` numeric desc) i `path`.
+ * paramem `?implemented`. Default `all`. Kolejność wierszy liczy SERWER (oś
+ * wydań, `core/briefs/release-axis.ts`) — ekran renderuje odpowiedź tak, jak
+ * przyszła, bez sortowania po stronie klienta, więc `c4s list-briefs` widzi ten
+ * sam porządek, a filtr tylko usuwa wiersze, nigdy ich nie przestawia.
  *
  * M23: patches are shown nested under their originating brief. Patches with no
  * resolvable brief land in a separate "Orphaned patches" group at the bottom.
@@ -30,7 +27,6 @@ export function BriefsList() {
   const implementedFilter =
     filter === 'all' ? undefined : filter === 'done';
   const { data: briefs = [], isLoading } = useBriefs({ implemented: implementedFilter });
-  const { data: releases = [] } = useReleaseList();
   const { data: patches = [] } = usePatches();
   const [collapsed, setCollapsed] = usePersistedState<string[]>(
     projectKey('c4s:briefs:collapsed-patches'),
@@ -43,35 +39,6 @@ export function BriefsList() {
         ? collapsed.filter((p) => p !== path)
         : [...collapsed, path],
     );
-
-  // name → canonical rank from spec_release order (0 = newest target release).
-  const releaseRank = useMemo(() => {
-    const m = new Map<string, number>();
-    releases.forEach((r, i) => m.set(r.name, i));
-    return m;
-  }, [releases]);
-
-  const sortedBriefs = useMemo(() => {
-    // 0.1.69: a window open to the current state carries `toRelease === null`
-    // (no target release) — those sort to the top (rank -1), ahead of any
-    // released target.
-    const rankOf = (name: string | null) =>
-      name === null
-        ? -1
-        : releaseRank.has(name)
-          ? releaseRank.get(name)!
-          : Number.POSITIVE_INFINITY;
-    return briefs.slice().sort((a, b) => {
-      const ra = rankOf(a.toRelease);
-      const rb = rankOf(b.toRelease);
-      if (ra !== rb) return ra - rb; // canonical release order, newest first
-      // same target release (or both unknown): existing name/path tiebreakers.
-      return (
-        (b.toRelease ?? '').localeCompare(a.toRelease ?? '', undefined, { numeric: true }) ||
-        a.path.localeCompare(b.path)
-      );
-    });
-  }, [briefs, releaseRank]);
 
   // Group patches by their resolved brief; unresolved ⇒ orphan. `ArtifactListItem`
   // has no top-level `briefPath` (only raw `frontmatter` survives at the list
@@ -128,7 +95,7 @@ export function BriefsList() {
               Loading…
             </div>
           )}
-          {!isLoading && sortedBriefs.length === 0 && (
+          {!isLoading && briefs.length === 0 && (
             <div
               className="text-center py-20 rounded-lg"
               style={{
@@ -152,7 +119,7 @@ export function BriefsList() {
             </div>
           )}
           <div className="space-y-2">
-            {sortedBriefs.map((b) => {
+            {briefs.map((b) => {
               const briefPatches = patchesByBrief.get(b.path) ?? [];
               const isCollapsed = collapsed.includes(b.path);
               return (

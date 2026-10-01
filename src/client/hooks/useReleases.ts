@@ -75,6 +75,8 @@ export function useCreateRelease() {
     mutationFn: (input: { name: string; description: string }) => releasesApi.create(input),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['releases'] });
+      // A release's rank places briefs on the release axis (server-computed).
+      qc.invalidateQueries({ queryKey: ['briefs', 'list'] });
     },
   });
 }
@@ -95,6 +97,8 @@ export function useUpdateRelease() {
       }),
     onSuccess: (updated) => {
       qc.invalidateQueries({ queryKey: ['releases'] });
+      // A rename moves briefs on the release axis (rank is looked up by name).
+      qc.invalidateQueries({ queryKey: ['briefs', 'list'] });
       qc.invalidateQueries({ queryKey: ['release', String(updated.id)] });
       qc.invalidateQueries({ queryKey: ['release', updated.name] });
     },

@@ -13,17 +13,16 @@ import { SERVER_DELEGATING_CODES, type CliCommandContribution } from '../registr
  * `briefsDir` itself and parse every frontmatter, which worked without a server
  * and is exactly the local specification read item 22 removes.
  *
- * The ORDER improves as a side effect, and that is worth stating rather than
- * discovering. The filesystem path sorted by `to_release desc` with analysis
- * briefs first — its own comment called that "an approximation of the UI's
- * canonical `spec_release` order, which this FS-only path cannot consult without
- * SQLite". Delegating consults it. The two orders differ for releases the UI's
- * list knows and a string compare does not.
+ * The ORDER is the server's, never this command's: `BriefService.listBriefs`
+ * returns the release axis (newest cycle first, unknown releases last), the
+ * same rows `/briefs` renders for the same filter. This command must not sort.
  *
  * `--status` maps to the route's `?implemented=`; the window is applied here,
  * because that route answers the whole set by design (a project has tens of
  * briefs, not thousands) and paging it server-side would be a second contract
- * for the UI to keep.
+ * for the UI to keep. The window lands on the already sorted AND filtered list,
+ * and `total` counts that list before the window, so pages concatenate into the
+ * full order.
  */
 export async function runListBriefs(args: ParsedArgs): Promise<void> {
   const limit = optionalInt(args, 'limit');
