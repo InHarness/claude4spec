@@ -6,10 +6,8 @@ import { CreateTagForm } from './CreateTagForm.js';
 import { MentionForm, ElementForm } from './EntityRefForm.js';
 import { ListForm } from './ListForm.js';
 import { TaggedForm, TaggedMixedForm } from './TaggedForm.js';
-import { EditChipForm } from './EditChipForm.js';
 import { DiagramForm } from './DiagramForm.js';
-import { SectionPickerForm } from './SectionPickerForm.js';
-import { TodoForm } from './TodoForm.js';
+import { XmlTagForm } from './XmlTagForm.js';
 import { PageRefBrokenForm } from './PageRefBrokenForm.js';
 import { PageRefPopoverForm } from '../../tiptap/extensions/PageRefPopover.js';
 
@@ -25,11 +23,8 @@ export const POPOVER_RENDERERS: RendererMap = {
   list: ListForm,
   tagged: TaggedForm,
   'tagged-mixed': TaggedMixedForm,
-  'edit-chip': EditChipForm,
   diagram: DiagramForm,
-  section: SectionPickerForm,
-  'todo-create': TodoForm,
-  'todo-edit': TodoForm,
+  'xml-tag': XmlTagForm,
   'page-ref': PageRefPopoverForm,
   'page-ref-broken': PageRefBrokenForm,
 };

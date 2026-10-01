@@ -1,7 +1,7 @@
 import type Database from 'better-sqlite3';
 import type { EntityType, ReferenceHit } from '../../shared/entities.js';
 import {
-  parseXmlTagsExcludingCode,
+  parseXmlTags,
   serializeXmlTag,
   type XmlTag,
 } from '../../shared/xml-tags.js';
@@ -132,7 +132,7 @@ export class ReferencesService {
   async findPagesReferencingSlugs(type: EntityType, slugs: Set<string>): Promise<Set<string>> {
     const out = new Set<string>();
     await this.walkPages(async (_rootId, relPath, body) => {
-      for (const tag of parseXmlTagsExcludingCode(body)) {
+      for (const tag of parseXmlTags(body)) {
         if (tag.attrs.type && tag.attrs.type !== type && tag.kind !== 'tagged_list_mixed') continue;
         const hasSlug = entitySlugsInTag(tag).some((s) => slugs.has(s));
         if (hasSlug) out.add(relPath);
@@ -276,7 +276,7 @@ function rewriteTagsInBody(
   body: string,
   mutate: (tag: XmlTag) => Record<string, string> | null
 ): string {
-  const tags = parseXmlTagsExcludingCode(body);
+  const tags = parseXmlTags(body);
   if (tags.length === 0) return body;
   let out = '';
   let cursor = 0;

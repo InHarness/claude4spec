@@ -1,32 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
-  getDispatchAllowlist,
   isJsxComponentName,
   isPassthroughTag,
   matchJsxTagOpen,
   findJsxSpanEnd,
   findUnknownJsxRanges,
 } from './jsx-passthrough.js';
-import { registerExtensionReferenceType } from './reference-extensions.js';
-
-describe('getDispatchAllowlist (derived, not hardcoded)', () => {
-  it('is the 6 core kinds when no extension types are registered', () => {
-    const a = getDispatchAllowlist();
-    expect(a.size).toBe(6);
-    expect(a.has('inline_mention')).toBe(true);
-    expect(a.has('todo')).toBe(true);
-    expect(a.has('section_ref')).toBe(false);
-  });
-
-  it('grows to 8 once section_ref + diagram are registered', () => {
-    registerExtensionReferenceType({ tag: 'section_ref', attrOrder: ['anchor'] });
-    registerExtensionReferenceType({ tag: 'diagram', attrOrder: ['slug', 'caption'] });
-    const a = getDispatchAllowlist();
-    expect(a.size).toBe(8);
-    expect(a.has('section_ref')).toBe(true);
-    expect(a.has('diagram')).toBe(true);
-  });
-});
 
 describe('JSX-component shape gate', () => {
   it('treats uppercase-initial and dotted names as components', () => {
@@ -37,14 +16,13 @@ describe('JSX-component shape gate', () => {
     expect(isJsxComponentName('inline_mention')).toBe(false);
   });
 
-  it('routes only component-shaped tags ∉ allowlist; never lowercase HTML or allowlist names', () => {
+  it('routes only component-shaped tags outside the registry; never lowercase HTML or registered names', () => {
     expect(isPassthroughTag('Callout')).toBe(true);
     expect(isPassthroughTag('ui.Card')).toBe(true);
     expect(isPassthroughTag('br')).toBe(false); // lowercase HTML stays in pipeline
     expect(isPassthroughTag('img')).toBe(false);
-    expect(isPassthroughTag('inline_mention')).toBe(false); // allowlist
-    registerExtensionReferenceType({ tag: 'diagram', attrOrder: ['slug'] });
-    expect(isPassthroughTag('diagram')).toBe(false); // allowlist (extension)
+    expect(isPassthroughTag('inline_mention')).toBe(false); // registered tag
+    expect(isPassthroughTag('section_ref')).toBe(false); // registered tag
   });
 });
 

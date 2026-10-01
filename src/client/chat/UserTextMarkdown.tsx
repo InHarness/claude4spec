@@ -2,7 +2,11 @@ import React, { useMemo } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { buildMarkdownIt } from '../tiptap/markdown/buildMarkdownIt.js';
 import { PageRefChip } from '../components/PageRefChip.js';
-import { SectionRefChipWithData } from '../components/SectionRefChipWithData.js';
+import '../xml-markup/host-renders.js';
+import { clientPluginHost } from '../core/plugin-host/host.js';
+import { findXmlTagCandidates } from '../../shared/xml-tags.js';
+import { isChipTag, sanitizeTag, type SanitizedChip } from './xml-chip-preprocess.js';
+import { XmlChipDispatcher } from './XmlChipDispatcher.js';
 import { usePageLinks } from '../hooks/usePageLinks.js';
 import { useBaseRootId, useRoots } from '../hooks/useConfig.js';
 import { pageTarget } from '../lib/pageTarget.js';
@@ -20,6 +24,8 @@ interface RenderCtx {
   /** A chat message has no document root — a bare path resolves in the base root. */
   baseRootId: string | null;
   rootIds: string[];
+  /** The `type` whitelist of chip tags — the host's available types. */
+  availableTypes: ReadonlySet<string>;
 }
 
 interface PageRefAttrs {
@@ -58,7 +64,9 @@ export function UserTextMarkdown({ text }: Props) {
     return md.parse(text, {});
   }, [text, pagesIndex]);
 
-  return <>{renderBlocks(tokens, { navigate, pagesIndex, baseRootId, rootIds })}</>;
+  const availableTypes = useMemo(() => new Set(clientPluginHost.listAvailable().map((m) => m.type)), []);
+
+  return <>{renderBlocks(tokens, { navigate, pagesIndex, baseRootId, rootIds, availableTypes })}</>;
 }
 
 function renderBlocks(tokens: any[], ctx: RenderCtx): React.ReactNode[] {
@@ -184,9 +192,11 @@ function renderInline(children: any[], ctx: RenderCtx, keyPrefix: string): React
         break;
       }
       case 'html_inline': {
-        const sectionAnchor = parseSectionRefHtml(tok.content);
-        if (sectionAnchor) {
-          out.push(<SectionRefChipWithData key={`${keyPrefix}sref-${key++}`} anchor={sectionAnchor} />);
+        // M51 — a registered tag the editor's `xml_inline` rule emitted: the
+        // same chip rule and dispatcher as the assistant's chat markdown.
+        const chip = chipFromHtml(tok.content, ctx.availableTypes);
+        if (chip) {
+          out.push(<XmlChipDispatcher key={`${keyPrefix}xml-${key++}`} chip={chip} />);
           i++;
           break;
         }
@@ -258,12 +268,15 @@ function resolvePath(path: string, index: Map<string, FileMeta> | undefined): st
   return null;
 }
 
-function parseSectionRefHtml(html: string): string | null {
-  const m = /<section_ref\s+([^>]+?)\s*\/?>/.exec(html);
-  if (!m) return null;
-  const attrs = m[1] ?? '';
-  const am = /anchor="([^"]*)"/.exec(attrs);
-  return am ? decodeAttr(am[1] ?? '') : null;
+/** A chip tag at the start of an `html_inline` token (paired HTML from `xml_inline`), sanitized. */
+function chipFromHtml(html: string, availableTypes: ReadonlySet<string>): SanitizedChip | null {
+  const [tag] = findXmlTagCandidates(html);
+  if (!tag || tag.start !== 0 || !isChipTag(tag.kind)) return null;
+  return sanitizeTag({ kind: tag.kind, attrs: decodeAttrs(tag.attrs) }, availableTypes);
+}
+
+function decodeAttrs(attrs: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(attrs).map(([k, v]) => [k, decodeAttr(v)]));
 }
 
 function parsePageRefHtml(html: string): PageRefAttrs | null {

@@ -23,7 +23,7 @@ import type { FrontendModule } from '../core/plugin-host/types.js';
 import { BASE_ROUTE_CHILDREN, rootRoute } from '../router.js';
 import { createRoute } from '@tanstack/react-router';
 import { mountFrontend } from './mountFrontend.js';
-import { isRegisteredXmlTag } from './extensions/xmlNodes.js';
+import { isRegisteredXmlTag } from '../../shared/xml-markup/registry.js';
 
 // 0.2.88 — the smoke test needs a DOM this suite does not have (node env), so
 // the per-slot rejection path is driven by a controllable validator: `real`
@@ -203,15 +203,14 @@ describe('mountFrontend collects the hoisted entity routes', () => {
     // Only the rejected slot is swapped — the card the plugin shipped stays.
     expect((flaky.renderChip as { displayName?: string }).displayName).toBe('RejectedSlotFallback(flaky.renderChip)');
     expect(flaky.renderCard).toBe(originalCard);
-    // Registration was not blocked: routes and the tag landed as usual.
+    // Registration was not blocked: the routes landed as usual.
     expect(mountedPaths()).toContain('/flakies');
-    expect(isRegisteredXmlTag('flaky')).toBe(true);
     warn.mockRestore();
   });
 });
 
-describe('mountFrontend and the XML tag allowlist (0.2.88)', () => {
-  it('a hidden type contributes no tag name of its own; a surfaced type does', () => {
+describe('mountFrontend and the XML tag registry (2.1.2, M51)', () => {
+  it('no entity type — hidden or surfaced — contributes a tag name', () => {
     const hidden = {
       ...moduleWith('shy', undefined),
       routes: undefined,
@@ -221,6 +220,6 @@ describe('mountFrontend and the XML tag allowlist (0.2.88)', () => {
     mountFrontend(fakeRouter(), [hidden, moduleWith('loud', fragmentFor('/louds'))]);
 
     expect(isRegisteredXmlTag('shy')).toBe(false);
-    expect(isRegisteredXmlTag('loud')).toBe(true);
+    expect(isRegisteredXmlTag('loud')).toBe(false);
   });
 });

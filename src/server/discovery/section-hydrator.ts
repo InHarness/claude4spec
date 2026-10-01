@@ -18,7 +18,7 @@
  */
 
 import type { Database } from 'better-sqlite3';
-import { parseXmlTagsExcludingCode } from '../../shared/xml-tags.js';
+import { parseXmlTags } from '../../shared/xml-tags.js';
 import { extractSlugs, extractTags } from '../../shared/xml-tags.js';
 import { parseLinks } from '../services/pages-link-indexer.js';
 import { ownBodyOf, parseSections, type ParsedSection } from '../../shared/section-parser.js';
@@ -85,7 +85,7 @@ export function parseEdges(db: Database, section: RawSection, body: string): Sec
   // reproduce the markdown it was parsed from, and it does not carry a line
   // number nothing addresses. Order of occurrence within the section is the one
   // positional fact that survives, and it survives as array order.
-  for (const tag of parseXmlTagsExcludingCode(body)) {
+  for (const tag of parseXmlTags(body)) {
     if (tag.kind === 'section_ref') {
       const anchor = tag.attrs.anchor;
       if (anchor) edges.sectionRefs.push({ anchor });

@@ -1,21 +1,12 @@
+import '../xml-markup/host-renders.js';
 import { registerEditorExtension, registerMentionSource, type RegistryContext } from './registry.js';
-import {
-  InlineMentionNode,
-  SingleElementNode,
-  ElementListNode,
-  TaggedListNode,
-  TaggedListMixedNode,
-  TodoNode,
-} from './extensions/xmlNodes.js';
 import { RawJsxInlineNode, RawJsxBlockNode } from './extensions/RawJsxNode.js';
 import { AnchorMarker } from './extensions/AnchorMarker.js';
 import { AnnotationHighlight } from './extensions/AnnotationHighlight.js';
 import { SlashCommands } from './extensions/SlashCommands.js';
 import { PageRefNode } from './extensions/PageRefNode.js';
 import { MentionExtension } from './extensions/MentionExtension.js';
-import { SectionRefNode } from './extensions/SectionRefNode/index.js';
 import { HeadingActions } from './extensions/HeadingActions/index.js';
-import { registerExtensionReferenceType } from '../../shared/reference-extensions.js';
 import { ANCHOR_ID_SOURCE, ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
@@ -23,7 +14,7 @@ import { pageLinksApi } from '../lib/api.js';
 import { FileText } from 'lucide-react';
 import { createElement } from 'react';
 
-// L8 `ctxregst`: the `description` context is core + `InlineMentionNode` +
+// L8 `ctxregst`: the `description` context is core + the `inline_mention` tag node +
 // `AnchorMarker`, with `/mention` as its only slash command and no `@` mention
 // framework. The anchor marker mounts there so an indexer-written
 // `<!-- anchor: … -->` in an entity description round-trips instead of
@@ -50,10 +41,15 @@ registerEditorExtension({
   availableIn: ['page', 'plan', 'description'],
 });
 
+// 2.1.2 (M51) — the XML tags' NODES are not registered here: the editor builds
+// one per registered tag name (`extensions/xmlNodes.ts`) and a registration
+// under a tag name is rejected. What the owning modules still contribute to the
+// editor are their SLASH COMMANDS — slash-only entries, named for the command —
+// plus the popover fields (`client/xml-markup/`).
+
+// M19 — References.
 registerEditorExtension({
-  name: 'inline_mention',
-  extension: InlineMentionNode,
-  priority: 600,
+  name: 'mention_command',
   availableIn: ['page', 'description', 'plan'],
   slashCommand: {
     id: 'mention',
@@ -61,13 +57,10 @@ registerEditorExtension({
     description: 'Inline mention of an entity',
     hint: 'type + slug',
   },
-  markdownIt: { kind: 'inline', pattern: /^<inline_mention(\s[^>]*?)?\/?\s*>/ },
 });
 
 registerEditorExtension({
-  name: 'single_element',
-  extension: SingleElementNode,
-  priority: 610,
+  name: 'element_command',
   availableIn: ['page', 'plan'],
   slashCommand: {
     id: 'element',
@@ -75,13 +68,10 @@ registerEditorExtension({
     description: 'Block card with full entity details',
     hint: 'type + slug',
   },
-  markdownIt: { kind: 'block', pattern: /^<single_element(\s[^>]*?)?\/?\s*>\s*$/ },
 });
 
 registerEditorExtension({
-  name: 'element_list',
-  extension: ElementListNode,
-  priority: 620,
+  name: 'list_command',
   availableIn: ['page', 'plan'],
   slashCommand: {
     id: 'list',
@@ -89,13 +79,10 @@ registerEditorExtension({
     description: 'Static list of entities by slug',
     hint: 'type + slugs (csv)',
   },
-  markdownIt: { kind: 'block', pattern: /^<element_list(\s[^>]*?)?\/?\s*>\s*$/ },
 });
 
 registerEditorExtension({
-  name: 'tagged_list',
-  extension: TaggedListNode,
-  priority: 630,
+  name: 'tagged_command',
   availableIn: ['page', 'plan'],
   slashCommand: {
     id: 'tagged',
@@ -103,13 +90,10 @@ registerEditorExtension({
     description: 'Dynamic list of entities by tag',
     hint: 'type + tags + filter',
   },
-  markdownIt: { kind: 'block', pattern: /^<tagged_list(\s[^>]*?)?\/?\s*>\s*$/ },
 });
 
 registerEditorExtension({
-  name: 'tagged_list_mixed',
-  extension: TaggedListMixedNode,
-  priority: 640,
+  name: 'tagged_mixed_command',
   availableIn: ['page', 'plan'],
   slashCommand: {
     id: 'tagged-mixed',
@@ -117,21 +101,11 @@ registerEditorExtension({
     description: 'Mixed dynamic list across entity types',
     hint: 'tags + filter',
   },
-  markdownIt: { kind: 'block', pattern: /^<tagged_list_mixed(\s[^>]*?)?\/?\s*>\s*$/ },
 });
 
-// M06 — `<section_ref/>` 6th XML reference type via M19 extension slot.
-// Client-side registration covers parser/serializer fallback in xml-tags.ts;
-// `validate` is server-only (consistency check needs section_index).
-registerExtensionReferenceType({
-  tag: 'section_ref',
-  attrOrder: ['anchor'],
-});
-
+// M06 — Sections: `/section` inserts a `section_ref` tag.
 registerEditorExtension({
-  name: 'section_ref',
-  extension: SectionRefNode,
-  priority: 690,
+  name: 'section_command',
   availableIn: ['page', 'plan', 'chat-input'],
   slashCommand: {
     id: 'section',
@@ -139,13 +113,11 @@ registerEditorExtension({
     description: 'Reference a section by its anchor',
     hint: 'anchor',
   },
-  markdownIt: { kind: 'inline', pattern: /^<section_ref(\s[^>]*?)?\/?\s*>/ },
 });
 
+// M08 — TODOs: `/todo` inserts a `todo` tag.
 registerEditorExtension({
-  name: 'todo',
-  extension: TodoNode,
-  priority: 660,
+  name: 'todo_command',
   availableIn: ['page', 'plan'],
   slashCommand: {
     id: 'todo',
@@ -153,27 +125,15 @@ registerEditorExtension({
     description: 'Insert a TODO marker',
     hint: 'comment',
   },
-  markdownIt: { kind: 'inline', pattern: /^<todo(\s[^>]*?)?\/?\s*>/ },
 });
 
-// 0.2.15 — `<diagram/>` and its `DiagramNode` are gone from here entirely, on
-// both counts: the tag no longer exists (a diagram is embedded as
-// `<single_element type="diagram" …/>`, dispatched by `SingleElementNode`) and
-// the entity contributes no node of its own. What survives is the AUTHORING
-// half — the `/diagram` slash command and its create/edit popover — which the
-// diagram entity module registers itself as `diagramAuthoringExtension`
-// (see `client/entities/diagram/plugin.tsx`).
-//
-// The `<section_ref/>` registration above is therefore the ONLY caller of
-// `registerExtensionReferenceType` left on the client, matching the server.
-//
-// Note what the name column means now: every name registered here belongs to an
-// INFRA module (`inline_mention`, `section_ref`, `todo`, the raw-JSX nodes, …).
-// None of them is an entity type, and none ever will be again.
+// A diagram is embedded as `<single_element type="diagram" …/>`; the diagram
+// entity module registers only its AUTHORING half — the `/diagram` slash
+// command and its popover (`client/entities/diagram/plugin.tsx`).
 
-// M20 — the raw code node. Gate 1: unknown `.mdx` JSX component tags (name ∉
-// dispatch allowlist) preserved byte-perfect and serialized verbatim (no
-// fence). Gate 2 (`ctx4prof` rule 6): an allowlisted tag whose node is NOT in
+// M20 — the raw code node. Gate 1: unknown `.mdx` JSX component tags (name
+// outside the tag registry) preserved byte-perfect and serialized verbatim (no
+// fence). Gate 2 (`ctx4prof` rule 6): a registered tag whose node is NOT in
 // this context's whitelist passes through the same node instead of being
 // dropped by ProseMirror. Mounted in EVERY context for that reason, and at a
 // priority below every XML node so its markdown-it rules sit ahead of theirs.

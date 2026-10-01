@@ -31,7 +31,7 @@ describe('M34/L12 — the version gate counts contribution, not consumption', ()
     // reverted that under the stabilisation rule. Either way the claim this
     // case makes is unchanged — consuming an experimental component moved
     // nothing.
-    expect(HOST_API_VERSION).toBe('2.0.0');
+    expect(HOST_API_VERSION).toBe('2.1.0');
     expect(migrationsBetween(1, 1)).toEqual([]);
   });
 

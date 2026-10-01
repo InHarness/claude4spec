@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import MarkdownIt from 'markdown-it';
-import { SingleElementNode } from './xmlNodes.js';
+import { xmlTagNode } from './xmlNodes.js';
+
+const SingleElementNode = xmlTagNode('single_element');
 
 /**
  * 0.2.92 — a backtick inside a reference tag's attribute value is not an

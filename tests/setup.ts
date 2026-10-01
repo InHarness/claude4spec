@@ -1,8 +1,15 @@
 import { afterEach } from 'vitest';
-import { clearExtensionReferenceTypes } from '../src/shared/reference-extensions.js';
+import '../src/shared/xml-markup/host-tags.js';
+import {
+  restoreXmlTagsForTests,
+  snapshotXmlTagsForTests,
+} from '../src/shared/xml-markup/registry.js';
 
-// The extension reference registry is a module-level Map; reset it so tests
-// that register extension tags never leak into each other.
+// M51 — the XML tag registry is process-global and has no unregistration.
+// The host tags are registered once (import above); a test that registers a
+// scratch tag must not leak it into the next one, so every case ends with the
+// registry restored to the host-only state.
+const hostTags = snapshotXmlTagsForTests();
 afterEach(() => {
-  clearExtensionReferenceTypes();
+  restoreXmlTagsForTests(hostTags);
 });

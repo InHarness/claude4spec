@@ -8,7 +8,10 @@
 import { describe, expect, it } from 'vitest';
 import MarkdownIt from 'markdown-it';
 import '../registrations.js';
-import { TodoNode } from './xmlNodes.js';
+import { xmlTagNode } from './xmlNodes.js';
+
+// M51 — the `todo` node is built from the tag registry, like every tag node.
+const TodoNode = xmlTagNode('todo');
 
 function serialize(comment: string): string {
   let out = '';
@@ -32,6 +35,11 @@ describe('TodoNode markdown round-trip', () => {
   it('[ac:ac-otwarcie-strony-ze-znacznikiem-w-edyt] writes an empty comment back as comment=""', () => {
     expect(serialize('')).toBe('<todo comment=""/>');
     expect(inlineHtml('a <todo comment=""/> b')[0]).toContain('comment=""');
+  });
+
+  it('round-trips a multi-line comment', () => {
+    expect(serialize('line one\nline two')).toBe('<todo comment="line one\nline two"/>');
+    expect(inlineHtml('a <todo comment="line one\nline two"/> b')[0]).toContain('line one\nline two');
   });
 
   it('writes a comment back with its quotes escaped', () => {

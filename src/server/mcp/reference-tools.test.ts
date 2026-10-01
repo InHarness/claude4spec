@@ -9,7 +9,6 @@ import type Database from 'better-sqlite3';
 import { createTestDb } from '../../../tests/helpers/test-db.js';
 import { createReferenceToolsServer, type ReferenceToolsDeps } from './reference-tools.js';
 import { PagesService } from '../services/pages.js';
-import { clearExtensionReferenceTypes, registerExtensionReferenceType } from '../../shared/reference-extensions.js';
 import type { ProjectPluginHost, BackendModule } from '../core/plugin-host/types.js';
 import { createDiscoveryCore } from '../discovery/index.js';
 import { RawEntityReader } from '../discovery/raw-entity-reader.js';
@@ -100,13 +99,11 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
     db = createTestDb();
     pagesService = new PagesService(cwd, 'pages', 'pages');
     await pagesService.ensureRoot();
-    clearExtensionReferenceTypes();
   });
 
   afterEach(async () => {
     db.close();
     await fs.rm(cwd, { recursive: true, force: true });
-    clearExtensionReferenceTypes();
   });
 
   function deps(): ReferenceToolsDeps {

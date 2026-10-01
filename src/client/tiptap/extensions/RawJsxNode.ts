@@ -1,17 +1,13 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer } from '@tiptap/react';
-import {
-  getDispatchAllowlist,
-  isPassthroughTag,
-  matchJsxTagOpen,
-  findJsxSpanEnd,
-} from '../../../shared/jsx-passthrough.js';
+import { isPassthroughTag, matchJsxTagOpen, findJsxSpanEnd } from '../../../shared/jsx-passthrough.js';
+import { isRegisteredXmlTag } from '../../../shared/xml-markup/registry.js';
 import { escapeRawAttr } from '../../../shared/raw-jsx-escape.js';
-import { isRegisteredXmlTag } from './xmlNodes.js';
+import { matchXmlTagAt } from './xmlNodes.js';
 import { RawJsxView } from './views/RawJsxView.js';
 
 /**
- * M20 — unknown `.mdx` JSX component tags (name ∉ dispatch allowlist) are
+ * M20 — unknown `.mdx` JSX component tags (name outside the M51 registry) are
  * preserved BYTE-PERFECT in a dedicated raw code node rather than passed through
  * to tiptap-markdown (which would map/strip them). This reactivates the dormant
  * L8 contract `markdownIt = { kind: 'block_content' }` as the fallback for
@@ -28,15 +24,19 @@ import { RawJsxView } from './views/RawJsxView.js';
  * (inline `<code>`); a paired `<Tag>…</Tag>` opening at line start and closing a
  * line → block node (code block).
  *
- * Two disjoint gates route a tag here (M20 `m20mdxjsx`, `ctx4prof` rule 6):
- *   1. `isPassthroughTag(name)` — component-shaped name ∉ dispatch allowlist
+ * Three disjoint gates route a tag here (M20 `m20mdxjsx`, `ctx4prof` rule 6):
+ *   1. `isPassthroughTag(name)` — component-shaped name outside the registry
  *      (`<Callout/>`), in every context;
- *   2. name ∈ dispatch allowlist (or a plugin embed tag) but its node is NOT
- *      mounted in THIS context (`name ∉ spec.extensions`) — `<single_element/>`
- *      in an entity description, `<todo/>` in a plan, every reference tag in a
- *      brief or patch. Without this gate the XML rule of a sibling node turned
- *      the tag into HTML for a node type the schema does not have, and
- *      ProseMirror dropped it silently on the first save.
+ *   2. a registered XML tag whose node is NOT mounted in THIS context
+ *      (`name ∉ spec.extensions`) — `<single_element/>` in an entity
+ *      description, `<todo/>` in a plan, every reference tag in a brief or
+ *      patch. Without this gate the XML rule of a sibling node turned the tag
+ *      into HTML for a node type the schema does not have, and ProseMirror
+ *      dropped it silently on the first save;
+ *   3. 2.1.2 (M51) — a registered name written in a shape the shared tag
+ *      pattern does not recognise (`<todo/>` — no whitespace after the name).
+ *      The server parser does not see it as a tag either, so the editor must
+ *      not turn it into a node through the stock HTML rules: it stays verbatim.
  * The context whitelist decides what RENDERS, not what SURVIVES a save: a tag
  * routed by gate 2 stays on disk byte for byte and remains a live reference for
  * the server-side M19 operations.
@@ -61,7 +61,7 @@ export function rawTagPredicate(mountedTags: readonly string[] | null): RawTagPr
   return (name) => {
     if (isPassthroughTag(name)) return true;
     if (mounted.has(name)) return false;
-    return getDispatchAllowlist().has(name) || isRegisteredXmlTag(name);
+    return isRegisteredXmlTag(name);
   };
 }
 
@@ -71,6 +71,11 @@ function emitInline(raw: string): string {
 
 function emitBlock(raw: string): string {
   return `<raw_jsx_block data-c4s-raw="${escapeRawAttr(raw)}"></raw_jsx_block>`;
+}
+
+/** Gate 3: a registered name at `pos` that the shared tag pattern does not match. */
+function isUnrecognisedTagShape(src: string, pos: number, name: string): boolean {
+  return isRegisteredXmlTag(name) && matchXmlTagAt(src.slice(pos)) === null;
 }
 
 export function setupRawJsxRules(md: any, isRaw: RawTagPredicate = isPassthroughTag): void {
@@ -89,7 +94,7 @@ export function setupRawJsxRules(md: any, isRaw: RawTagPredicate = isPassthrough
       const pos = state.bMarks[startLine] + state.tShift[startLine];
       if (state.src.charCodeAt(pos) !== 0x3c /* < */) return false;
       const open = matchJsxTagOpen(state.src, pos);
-      if (!open || !isRaw(open.name)) return false;
+      if (!open || !(isRaw(open.name) || isUnrecognisedTagShape(state.src, pos, open.name))) return false;
 
       // Self-closing alone on its own line → block raw node.
       if (open.selfClosing) {
@@ -131,7 +136,7 @@ export function setupRawJsxRules(md: any, isRaw: RawTagPredicate = isPassthrough
     const pos = state.pos;
     if (state.src.charCodeAt(pos) !== 0x3c /* < */) return false;
     const open = matchJsxTagOpen(state.src, pos);
-    if (!open || !isRaw(open.name)) return false;
+    if (!open || !(isRaw(open.name) || isUnrecognisedTagShape(state.src, pos, open.name))) return false;
 
     let end: number;
     if (open.selfClosing) {

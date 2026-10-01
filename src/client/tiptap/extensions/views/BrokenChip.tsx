@@ -32,12 +32,14 @@ interface InlineBrokenChipProps {
   hint?: string;
 }
 
-/** Compact inline chip — used by InlineMentionView and RejectedSlotFallback. */
+/**
+ * Compact inline chip — the broken state of an inline entity chip (M51 §2):
+ * red, reading `[broken: slug]`, or `[broken: type]` where no slug applies
+ * (a chat chip whose type has no module). Why it is broken — unknown type,
+ * inactive plugin, missing entity, rejected slot — is in the tooltip.
+ */
 export function InlineBrokenChip({ category, type, slug, hint }: InlineBrokenChipProps) {
-  const text =
-    category === 'broken-reference'
-      ? `⚠ missing: ${type}/${slug ?? '?'}`
-      : `⚠ ${CATEGORY_LABEL[category]}: ${type || '?'}`;
+  const text = `[broken: ${slug || type || '?'}]`;
   return (
     <span
       className="inline-flex items-center gap-1 rounded px-1.5 py-[1px] text-[11px] font-mono"
@@ -46,7 +48,8 @@ export function InlineBrokenChip({ category, type, slug, hint }: InlineBrokenChi
         color: 'var(--c-red, #c45a3b)',
         border: '1px solid var(--c-red, #c45a3b)',
       }}
-      title={hint ?? CATEGORY_HINT[category]}
+      title={`${CATEGORY_LABEL[category]}: ${type || '?'}${slug ? `/${slug}` : ''} — ${hint ?? CATEGORY_HINT[category]}`}
+      data-broken-category={category}
     >
       {text}
     </span>
@@ -59,7 +62,7 @@ interface BlockBrokenChipProps {
   slug?: string;
 }
 
-/** Block-level dashed card — used by SingleElementView, ElementListView, TaggedListView. */
+/** Block-level dashed card — the broken-reference card of the block entity tags, one contract for every type. */
 export function BlockBrokenChip({ category, type, slug }: BlockBrokenChipProps) {
   const heading =
     category === 'broken-reference'

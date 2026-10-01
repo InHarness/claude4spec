@@ -23,7 +23,7 @@
 import type { Database } from 'better-sqlite3';
 import { findReferences as findEntityReferences } from '../../../core/references/index.js';
 import type { PagesSource } from '../../../core/references/types.js';
-import { parseXmlTagsExcludingCode } from '../../../shared/xml-tags.js';
+import { parseXmlTags } from '../../../shared/xml-tags.js';
 import { parseLinks } from '../../services/pages-link-indexer.js';
 import { invalidArgument, invalidType } from '../errors.js';
 import type { PageSource } from '../page-source.js';
@@ -165,7 +165,7 @@ async function sectionReferences(
   }
   const out: ReferenceHit[] = [];
   for (const page of await pages.readAll(scanned)) {
-    for (const tag of parseXmlTagsExcludingCode(page.body)) {
+    for (const tag of parseXmlTags(page.body)) {
       if (tag.kind === 'section_ref' && tag.attrs.anchor === anchor) {
         out.push({ rootId: page.rootId, pagePath: page.path, tagType: 'section_ref', line: tag.line });
       }

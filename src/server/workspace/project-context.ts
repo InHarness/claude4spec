@@ -33,7 +33,9 @@ import { ReferencesService } from '../services/references.js';
 import { ChatService } from '../services/chat.js';
 import { AgentCredentialService } from '../services/agent-credential.js';
 import { SectionsService } from '../services/sections.js';
-import { registerExtensionReferenceType } from '../../shared/reference-extensions.js';
+// M51 — the host modules' XML tags (M19 entity tags, M06 `section_ref`, M08
+// `todo`) are registered once per process, before any project context parses.
+import '../../shared/xml-markup/host-tags.js';
 import { SUPPORTED_LANGUAGES, isSupportedLanguage } from '../../shared/languages.js';
 import { slugify } from '../../shared/slug.js';
 import { PlanService } from '../services/plan.js';
@@ -146,23 +148,6 @@ import { ensureWelcomePage } from './bootstrap.js';
 import type { WorkspaceRegistry } from './registry.js';
 import type { WorkspaceRecord } from './types.js';
 
-// M06 registers <section_ref/> as the 6th XML reference type via the M19
-// extension reference types slot. Registration is PROCESS-level (tag shape is
-// static), so it carries NO `validate`: an anchor is valid only against one
-// project's section index, and a closure here would leak one project's sections
-// into every other context (M31). The per-project check lives at the call sites
-// that own that index — `check_consistency`'s unknown-anchor rule
-// (discovery/ops/consistency.ts) and the section hydrator.
-registerExtensionReferenceType({
-  tag: 'section_ref',
-  attrOrder: ['anchor'],
-});
-
-// 0.2.15 — `<section_ref/>` above is now the ONLY extension reference type in
-// the process, and this direct call is the registry's only caller. `<diagram/>`
-// used to be the second one (registered here in v0.1.64, then via the entity's
-// Slot B in v0.1.129); it is gone, along with both declarative slots. An entity
-// contributes no tag: the tags in the registry name no entity at all.
 
 /**
  * M29: one-time best-effort backup of the derived SQLite before a DB→text

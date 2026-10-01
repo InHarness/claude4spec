@@ -31,7 +31,7 @@ import path from 'node:path';
 import matter from 'gray-matter';
 import { diffLines } from 'diff';
 import { ANCHOR_LINE_RE } from '../../shared/anchor-pattern.js';
-import { parseXmlTagsExcludingCode } from '../../shared/xml-tags.js';
+import { parseXmlTags } from '../../shared/xml-tags.js';
 import {
   fileKindOf,
   headingPathOf,
@@ -259,7 +259,7 @@ export class FileSerializer {
   snapshotFromContent(relPath: string, content: string): FileSnapshotData {
     const parsed = matter(content);
     const anchors = extractAnchorsInOrder(content, fileKindOf(relPath));
-    const xml_refs = parseXmlTagsExcludingCode(content).map((t) => ({
+    const xml_refs = parseXmlTags(content).map((t) => ({
       tagType: t.kind,
       attributes: t.attrs,
       position: t.start,

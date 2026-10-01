@@ -7,11 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { PluginRegistryImpl } from './registry.js';
 import { loadWorkspacePlugins } from './loader.js';
 import { loadProjectOverlay } from './overlay-loader.js';
-import {
-  clearExtensionReferenceTypes,
-  getExtensionReferenceType,
-  listExtensionReferenceTypes,
-} from '../../../shared/reference-extensions.js';
+import { getXmlTag, listXmlTags } from '../../../shared/xml-markup/registry.js';
 import type { EntityContribution, PluginManifest } from '../../../shared/plugin-host/manifest.js';
 import type { BackendModule } from './types.js';
 
@@ -28,8 +24,10 @@ import type { BackendModule } from './types.js';
  * of a half-removal is silent: a tag that still registers is a tag that still
  * parses, and nobody notices until two plugins collide over one.
  *
- * The registry's own conflict / no-op / shadowing semantics still exist and are
- * covered where they live, in `shared/reference-extensions.test.ts`.
+ * 2.1.2 (M51) — the M19 extension registry itself is gone too: every tag lives
+ * in the one XML markup registry, fed only by host modules at startup. Its own
+ * semantics are covered in `shared/xml-markup/registry.test.ts`; here we pin
+ * that no plugin door adds a name to it.
  */
 
 function entity(type: string): EntityContribution {
@@ -82,25 +80,24 @@ function staleManifest(over: Partial<PluginManifest> = {}): PluginManifest {
   };
 }
 
+const hostTagNames = () => listXmlTags().map((t) => t.name);
+let before: string[];
 beforeEach(() => {
-  clearExtensionReferenceTypes();
-});
-afterEach(() => {
-  clearExtensionReferenceTypes();
+  before = hostTagNames();
 });
 
 describe('an entity module contributes no XML tag', () => {
-  it('registerEntityModule registers nothing in the M19 registry', () => {
+  it('registerEntityModule registers nothing in the XML markup registry', () => {
     const registry = new PluginRegistryImpl();
     registry.registerEntityModule(widgetModule());
-    expect(listExtensionReferenceTypes()).toEqual([]);
+    expect(hostTagNames()).toEqual(before);
   });
 
-  it('registerPlugin registers nothing in the M19 registry, entities and all', () => {
+  it('registerPlugin registers nothing in the XML markup registry, entities and all', () => {
     const registry = new PluginRegistryImpl();
     registry.registerPlugin(staleManifest({ contributes: { entities: [entity('gadget')] } }));
     expect(registry.getAvailable('gadget')).not.toBeNull();
-    expect(listExtensionReferenceTypes()).toEqual([]);
+    expect(hostTagNames()).toEqual(before);
   });
 });
 
@@ -116,7 +113,7 @@ describe('a 2.x plugin still declaring contributes.referenceTypes', () => {
     const registry = new PluginRegistryImpl();
     registry.registerPlugin(staleManifest());
     expect(registry.listPluginRecords().map((r) => r.name)).toEqual(['@acme/c4s-plugin-figure']);
-    expect(getExtensionReferenceType('figure_ref')).toBeUndefined();
+    expect(getXmlTag('figure_ref')).toBeUndefined();
   });
 
   it('base tier: two packages declaring the SAME tag no longer collide, because neither registers it', async () => {
@@ -138,7 +135,7 @@ describe('a 2.x plugin still declaring contributes.referenceTypes', () => {
     const { records } = await loadWorkspacePlugins(registry, ['pkg-a', 'pkg-b'], importer);
 
     expect(records.map((r) => r.status)).toEqual(['loaded', 'loaded']);
-    expect(getExtensionReferenceType('figure_ref')).toBeUndefined();
+    expect(getXmlTag('figure_ref')).toBeUndefined();
   });
 });
 
@@ -182,6 +179,6 @@ describe('overlay tier — a project-local plugin cannot register a tag either',
     );
 
     expect(res.records[0]).toMatchObject({ package: 'a-pkg', status: 'loaded' });
-    expect(getExtensionReferenceType('figure_ref')).toBeUndefined();
+    expect(getXmlTag('figure_ref')).toBeUndefined();
   });
 });

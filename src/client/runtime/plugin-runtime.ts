@@ -29,7 +29,6 @@ export { editorBridge } from './editor-bridge.js';
  * the process-wide singleton — chips elsewhere on the page stop navigating too.
  */
 export { EditorBridgeProvider } from '../tiptap/EditorContext.js';
-export { registerExtensionReferenceType } from '../../shared/reference-extensions.js';
 
 // M34/L11: frontend data-service singletons, each a mirror of the matching
 // backend service already carried in MountContext. All bind to the shared

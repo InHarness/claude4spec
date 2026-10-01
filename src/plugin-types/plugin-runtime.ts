@@ -575,7 +575,15 @@ export interface SlashCommand {
   hint: string;
   pluginPopoverKind?: string;
 }
+/**
+ * An editor extension serves syntax and nodes that are NOT XML markup tags
+ * (and slash commands). A plugin never registers an XML tag: its entity type
+ * contributes only its look (`renderChip` / `renderCard` / `renderRow`), picked
+ * by the `type` attribute of the host's entity tags. A registration whose
+ * `name` is a registered tag name is rejected.
+ */
 export interface EditorExtensionRegistration {
+  /** The extension's name. */
   name: string;
   extension?: unknown;
   priority?: number;
@@ -718,7 +726,6 @@ export declare const clientPluginHost: {
 export declare function registerFrontendModule(module: FrontendModule): void;
 export declare const queryClient: unknown;
 export declare const editorBridge: EditorBridge;
-export declare function registerExtensionReferenceType(...args: unknown[]): void;
 
 // ── M34/L11 frontend data-service singletons + hooks ──
 // Each mirrors a backend service already carried in MountContext, bound to

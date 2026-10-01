@@ -1,20 +1,20 @@
 /**
- * Code-context scanning shared by the chat chip pipeline and the server-side
- * reference parser. Both need to know which character ranges of a markdown
- * string the reader treats as code (fenced blocks + inline code spans), so that
- * XML reference tags appearing inside code — i.e. deliberate syntax examples —
- * are NOT treated as real references.
+ * M51 — the scanner of ranges that are NOT content: fenced and inline code,
+ * unknown JSX regions and multi-line HTML comments. A registered XML tag
+ * inside such a range is a syntax example — not resolved, not backlinked, not
+ * rewritten on a slug / anchor change, not checked, not indexed. Shared by the
+ * tag parser (`xml-tags.ts`), the section parser and the chat chip pipeline.
  *
  * Pure string functions (no DOM, no Node-only APIs); compiled into both the
  * client and server builds via `src/shared`.
  *
- * Known gap: 4-space indented code blocks are NOT detected (rare in agent
- * output and on spec pages, which use fences/inline). markdown-it does detect
- * them, so the editor render path diverges here; closeable later if needed.
+ * A 4-space indented code block is deliberately NOT a range here (M51), even
+ * though the editor's markdown-it tokenizer recognises it: an entity tag in
+ * such a block stays live for the server and `find_references` returns it.
  */
 
 import { findUnknownJsxRanges } from './jsx-passthrough.js';
-import { parseXmlTags } from './xml-tags.js';
+import { findXmlTagCandidates } from './xml-tags.js';
 
 export type CodeRange = [start: number, end: number]; // half-open [start, end)
 
@@ -309,7 +309,7 @@ const ATTR_VALUE_REGEX = /\w+="([^"]*)"/g;
  * Masking gate shared by the server reference parser and the editor's
  * markdown-it pipeline (0.2.92): a backtick inside an attribute VALUE of a tag
  * candidate is not an inline-code delimiter. Returns `text` with every
- * attribute value that contains a backtick, of every `parseXmlTags` candidate
+ * attribute value that contains a backtick, of every tag candidate
  * lying wholly inside one of `gaps`, blanked to spaces — same length, so offsets computed on the masked
  * string are valid on the original. Candidates crossing a fence are left alone.
  */
@@ -318,7 +318,7 @@ export function maskTagAttributeValues(text: string, gaps?: CodeRange[]): string
   const regions = gaps ?? scanFences(text).gaps;
   let out = text;
   let changed = false;
-  for (const tag of parseXmlTags(text)) {
+  for (const tag of findXmlTagCandidates(text)) {
     if (!tag.raw.includes('`')) continue;
     if (!regions.some(([gs, ge]) => tag.start >= gs && tag.end <= ge)) continue;
     ATTR_VALUE_REGEX.lastIndex = 0;
@@ -332,23 +332,6 @@ export function maskTagAttributeValues(text: string, gaps?: CodeRange[]): string
     }
   }
   return changed ? out : text;
-}
-
-/**
- * Char ranges markdown treats as code (fenced blocks + inline code spans), so
- * callers can leave tags inside them untouched.
- *
- * Order (0.2.92): (1) fences, (2) `parseXmlTags` candidates in the gaps,
- * (3) backtick-pair scan over the text with the candidates' attribute values
- * masked, (4) callers filter candidates against the resulting ranges.
- */
-export function computeCodeRanges(text: string): CodeRange[] {
-  const { fenced, gaps } = scanFences(text);
-  const ranges: CodeRange[] = [...fenced];
-  const masked = maskTagAttributeValues(text, gaps);
-  for (const span of findInlineCodeSpans(masked, gaps)) ranges.push([span.start, span.end]);
-  ranges.sort((a, b) => a[0] - b[0]);
-  return ranges;
 }
 
 /** One excluded region with its kind — the section parser's `excludedRanges` source. */
@@ -368,51 +351,45 @@ export interface ExcludedScan {
 }
 
 /**
- * 2.0.0 — THE excluded-range scanner. One pass, one resolution order:
- *  1. fenced code blocks and multi-line HTML comments (`scanExcludedBlocks`);
- *  2. `parseXmlTags` candidates in the gaps between them;
- *  3. backtick-pair scan over the gaps with the candidates' attribute values
+ * M51 — THE non-content scanner. One pass, one resolution order, one result
+ * for every server consumer (tag parser and section parser alike):
+ *  1. fenced code blocks, unknown-JSX component regions (`jsx: false` skips
+ *     them — the section parser applies them to `.mdx` only) and multi-line
+ *     HTML comments;
+ *  2. tag candidates (`findXmlTagCandidates`) in the text left over;
+ *  3. backtick-pair scan over that text with the candidates' attribute values
  *     masked (a backtick in `caption="…"` is not a code delimiter);
- *  4. unknown-JSX component regions outside all of the above (`jsx: false`
- *     skips them — the section parser only applies them to `.mdx`).
- * Callers filter tag candidates against `ranges`.
+ *  4. callers drop the candidates the resulting ranges intersect.
+ * A 4-space indented block is NOT a range on the server side.
  */
 export function scanExcluded(text: string, opts: { jsx?: boolean } = {}): ExcludedScan {
   const blocks = scanExcludedBlocks(text);
-  const gaps = gapsBetween(text.length, blocks);
-  const ranges: CodeRange[] = blocks.map((b) => [b.start, b.end] as CodeRange);
+  const regions: ExcludedRegion[] = blocks.map((b) => ({ kind: b.kind, start: b.start, end: b.end }));
+  const blockRanges: CodeRange[] = blocks.map((b) => [b.start, b.end] as CodeRange);
+  if (opts.jsx ?? true) {
+    for (const [start, end] of findUnknownJsxRanges(text, blockRanges)) {
+      regions.push({ kind: 'jsx', start, end });
+    }
+    regions.sort((a, b) => a.start - b.start);
+  }
+  const gaps = gapsBetweenRanges(text.length, regions);
+  const ranges: CodeRange[] = regions.map((r) => [r.start, r.end] as CodeRange);
   const masked = maskTagAttributeValues(text, gaps);
   for (const span of findInlineCodeSpans(masked, gaps)) ranges.push([span.start, span.end]);
   ranges.sort((a, b) => a[0] - b[0]);
-  const regions: ExcludedRegion[] = blocks.map((b) => ({ kind: b.kind, start: b.start, end: b.end }));
-  if (opts.jsx ?? true) {
-    const jsx = findUnknownJsxRanges(text, ranges);
-    for (const [start, end] of jsx) {
-      ranges.push([start, end]);
-      regions.push({ kind: 'jsx', start, end });
-    }
-    if (jsx.length > 0) {
-      ranges.sort((a, b) => a[0] - b[0]);
-      regions.sort((a, b) => a.start - b.start);
-    }
-  }
   return { regions, unclosed: blocks.filter((b) => !b.closed), ranges };
 }
 
-/**
- * Char ranges that reference operations must treat as "not a live reference":
- * code (fenced + inline), multi-line HTML comments (2.0.0 — a commented-out tag
- * is not live) PLUS unknown-JSX component regions (tags ∉ dispatch allowlist —
- * M20 raw code node). Returned sorted by start.
- *
- * `parseXmlTagsExcludingCode` filters against this so a registered ref nested
- * inside `<Callout>…</Callout>` is ignored — without it, slug rename would
- * byte-rewrite that ref and corrupt the JSX block (M19 `ykze87pl`). Editor
- * render (`computeCodeRanges`) is intentionally left untouched: the editor
- * handles unknown JSX via its own markdown-it rules, not via code ranges.
- */
-export function computeExcludedRanges(text: string): CodeRange[] {
-  return scanExcluded(text).ranges;
+/** Exact gaps between (sorted, possibly mid-line) ranges. */
+function gapsBetweenRanges(len: number, ranges: ReadonlyArray<{ start: number; end: number }>): CodeRange[] {
+  const gaps: CodeRange[] = [];
+  let cursor = 0;
+  for (const r of ranges) {
+    if (r.start > cursor) gaps.push([cursor, r.start]);
+    cursor = Math.max(cursor, r.end);
+  }
+  if (cursor < len) gaps.push([cursor, len]);
+  return gaps;
 }
 
 /** True when [start, end) overlaps any of the (sorted) code ranges. */
