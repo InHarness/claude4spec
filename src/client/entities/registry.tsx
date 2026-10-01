@@ -75,19 +75,6 @@ export function getEntityDef<T = unknown>(type: string): EntityDef<T> | null {
 }
 
 /**
- * The ACTIVE entity types, in display order.
- *
- * 0.2.11 — replaces `listEntityDefs()`, which read the local `registry` object
- * and therefore saw built-ins only: it was blind to exactly the plugin types
- * `getEntityDef` above had been fixed to resolve. It had no callers left, so
- * nothing depended on the wrong answer; this is the enumeration counterpart to
- * `getEntityDef`, reading the same single source of truth.
- */
-export function listActiveEntityTypes(): EntityType[] {
-  return clientPluginHost.listEntities().map((m) => m.type);
-}
-
-/**
  * Which picker a type is offered in.
  *
  *  - `element` — `/element`, `/mention` and the edit popover of a chip or card:

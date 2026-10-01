@@ -1,18 +1,17 @@
 /**
  * 2.1.1 — a tagged list refreshes after an entity or tag change.
  *
- * `entity:changed` / `tag:changed` invalidate through the shell's 500 ms
- * batcher. The two tag-driven list views key their queries under their own
- * prefixes (`['tagged-list', type, tags, filter]`, `['tagged-list-mixed', …]`),
- * which no type list key is a prefix of — so the watcher queues these prefixes
- * explicitly. Pinned here: the prefixes reach the views' actual keys, and they
- * go through the batch window rather than invalidating at once.
+ * `entity:changed` / `entity:indexed` / `tag:changed` all queue `['entities']`
+ * through the shell's 500 ms batcher. The two tag-driven list views key their
+ * queries under that prefix (`['entities', 'tagged-list', …]`,
+ * `['entities', 'tagged-list-mixed', …]`), so that one invalidation reaches
+ * them — no view-specific key in the watcher. Pinned here: the prefix reaches
+ * the views' actual keys, and only once the batch window closes.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
 import { createInvalidationBatcher } from '../lib/wsBatcher.js';
-import { TAGGED_LIST_QUERY_PREFIXES } from './useFileWatcher.js';
 
 describe('tagged list views refresh on entity / tag changes', () => {
   beforeEach(() => {
@@ -24,15 +23,15 @@ describe('tagged list views refresh on entity / tag changes', () => {
     vi.unstubAllGlobals();
   });
 
-  it('[ac:ac-ws-query-keys-edytora-z-mapowania-enti] the queued prefixes invalidate both views after the 500 ms window', () => {
+  it('[ac:ac-ws-query-keys-edytora-z-mapowania-enti] the entities prefix invalidates both views after the 500 ms window', () => {
     const qc = new QueryClient();
-    const tagged = ['tagged-list', 'dto', 'auth', 'or'];
-    const mixed = ['tagged-list-mixed', 'auth', 'or', 'dto,endpoint'];
+    const tagged = ['entities', 'tagged-list', 'dto', ['auth'], 'or'];
+    const mixed = ['entities', 'tagged-list-mixed', ['auth'], 'or', 'dto,endpoint'];
     qc.setQueryData(tagged, []);
     qc.setQueryData(mixed, []);
 
     const batcher = createInvalidationBatcher(qc, 500);
-    for (const prefix of TAGGED_LIST_QUERY_PREFIXES) batcher.queue([...prefix]);
+    batcher.queue(['entities']);
 
     vi.advanceTimersByTime(499);
     expect(qc.getQueryState(tagged)?.isInvalidated).toBe(false);

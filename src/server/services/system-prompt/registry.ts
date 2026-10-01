@@ -1,7 +1,6 @@
 import { M01_PROMPT_BLOCKS } from './blocks/m01-language.js';
 import { M02_PROMPT_BLOCKS } from './blocks/m02-current-page.js';
 import { M05_PROMPT_BLOCKS } from './blocks/m05-agent-scope.js';
-import { M05_ANNOTATION_BLOCKS } from './blocks/m05-annotations.js';
 import { M10_PROMPT_BLOCKS } from './blocks/m10-plan.js';
 import { M13_PROMPT_BLOCKS } from './blocks/m13-entities.js';
 import { M15_PROMPT_BLOCKS } from './blocks/m15-writing-style.js';
@@ -29,7 +28,6 @@ const DECLARATIONS: readonly (readonly PromptBlock[])[] = [
   M01_PROMPT_BLOCKS,
   M02_PROMPT_BLOCKS,
   M05_PROMPT_BLOCKS,
-  M05_ANNOTATION_BLOCKS,
   M10_PROMPT_BLOCKS,
   M13_PROMPT_BLOCKS,
   M15_PROMPT_BLOCKS,

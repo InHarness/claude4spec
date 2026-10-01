@@ -38,6 +38,12 @@ export function TaggedForm({ request, onClose }: PopoverFormProps<'tagged'>) {
   }, []);
 
   function submit() {
+    // No listable type active (or none chosen yet): writing `type=""` would
+    // only produce an "unknown type" chip.
+    if (!type) {
+      setError('No entity type with a list view is active');
+      return;
+    }
     const tags = tagsRaw
       .split(',')
       .map((s) => s.trim())

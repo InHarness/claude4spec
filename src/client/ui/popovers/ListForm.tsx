@@ -30,6 +30,12 @@ export function ListForm({ request, onClose }: PopoverFormProps<'list'>) {
   }, []);
 
   function submit() {
+    // No listable type active (or none chosen yet): writing `type=""` would
+    // only produce an "unknown type" chip.
+    if (!type) {
+      setError('No entity type with a list view is active');
+      return;
+    }
     const slugs = slugsRaw
       .split(',')
       .map((s) => s.trim())

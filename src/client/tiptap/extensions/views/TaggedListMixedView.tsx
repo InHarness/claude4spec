@@ -27,7 +27,8 @@ export function TaggedListMixedView(props: NodeViewProps) {
   type Grouped = Record<string, Entity[]>;
   const activeModules = clientPluginHost.listEntities();
   const { data: grouped, isLoading } = useQuery<Grouped>({
-    queryKey: ['tagged-list-mixed', tags, filter, activeModules.map((m) => m.type).join(',')],
+    // 2.1.1 — under `['entities']`, like `TaggedListView`.
+    queryKey: ['entities', 'tagged-list-mixed', tags, filter, activeModules.map((m) => m.type).join(',')],
     queryFn: async () => {
       const lists = await Promise.all(
         activeModules.map(async (m) => [m.type, await m.listByTags({ tags, filter })] as const)

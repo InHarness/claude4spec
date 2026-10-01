@@ -28,8 +28,11 @@ export function TaggedListView(props: NodeViewProps) {
 
   // Dispatch to the plugin host's listByTags slot; absent module = empty list.
   const mod = clientPluginHost.getEntity(type);
+  // 2.1.1 — keyed under `['entities']`: every entity / tag change already
+  // invalidates that prefix, so the list refreshes without a key of its own
+  // in the file watcher.
   const { data: results = [], isLoading } = useQuery<Listed[]>({
-    queryKey: ['tagged-list', type, tags, filter],
+    queryKey: ['entities', 'tagged-list', type, tags, filter],
     queryFn: async () => (mod ? (await mod.listByTags({ tags, filter })) as Listed[] : []),
     enabled: tags.length > 0 && Boolean(mod),
   });

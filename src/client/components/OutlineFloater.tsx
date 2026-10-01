@@ -75,7 +75,7 @@ export function OutlineFloater({ editor }: Props) {
               >
                 {item.text || (
                   <span style={{ fontStyle: 'italic', color: 'var(--c-subtle)' }}>
-                    (pusty)
+                    (empty)
                   </span>
                 )}
               </button>

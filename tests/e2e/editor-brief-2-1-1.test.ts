@@ -190,7 +190,8 @@ describe.skipIf(!BASE)('editor — brief 2.1.1', () => {
       }
     } finally {
       await fetch(`${api}/pages/${rootId}/${path}`, { method: 'DELETE' }).catch(() => {});
-      pages.splice(pages.findIndex(([r]) => r === rootId), 1);
+      const tracked = pages.findIndex(([r]) => r === rootId);
+      if (tracked !== -1) pages.splice(tracked, 1);
       await fetch(`${api}/config`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },

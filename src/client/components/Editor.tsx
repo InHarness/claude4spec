@@ -8,8 +8,8 @@ import { useScrollToTodo } from '../hooks/useScrollToTodo.js';
 import '../tiptap/registrations.js';
 import { EditorFactory } from '../tiptap/EditorFactory.js';
 import { invokeSlash } from '../tiptap/slashInvoke.js';
-import { assertSaveMode, getContextSpec, FULL_ROOT_EDITOR_PROPS, type RootEditorProps } from '../tiptap/registry.js';
-import { useRoots } from '../hooks/useConfig.js';
+import { assertSaveMode, getContextSpec } from '../tiptap/registry.js';
+import { usePageHasOutline, useRootEditorProps } from '../hooks/useRootEditorProps.js';
 import {
   useEditorCarry,
   useEditorCarryApply,
@@ -35,10 +35,6 @@ interface Props {
   path: string;
   onOpenEntity?: (type: EntityType, slug: string) => void;
   onOpenSection?: (pagePath: string, anchor: string) => void;
-}
-
-function rootPropsKey(p: RootEditorProps): string {
-  return `${p.sectionIndexed}|${p.referenceValidated}|${p.linkTargets.join(',')}`;
 }
 
 /**
@@ -78,34 +74,8 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
   const pagesIndex = usePagesIndex();
   const schemaVersion = useEditorSchemaVersion();
 
-  // L13: the `page` context is derived from the page root's properties, not a
-  // fixed list — a user root without section indexing gets no anchors, one
-  // without reference validation gets no entity chips (their tags pass through
-  // verbatim). Keyed by VALUE, and the not-yet-loaded fallback keys as the
-  // default it stands in for: on a cold deep link the config query settles
-  // after the editor mounted, and a key that flipped from `null` to the same
-  // props would rebuild the instance once for nothing (focus, selection and
-  // an open `/` popup lost). A user root whose props differ from the default
-  // still rebuilds once, carrying the document.
-  const roots = useRoots();
-  const root = roots.find((r) => r.id === rootId);
-  const rootKey = rootPropsKey(
-    root
-      ? { sectionIndexed: root.sectionIndexed, referenceValidated: root.referenceValidated, linkTargets: root.linkTargets }
-      : FULL_ROOT_EDITOR_PROPS,
-  );
-  const rootProps = useMemo<RootEditorProps>(
-    () =>
-      root
-        ? {
-            sectionIndexed: root.sectionIndexed,
-            referenceValidated: root.referenceValidated,
-            linkTargets: [...root.linkTargets],
-          }
-        : FULL_ROOT_EDITOR_PROPS,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rootKey],
-  );
+  const rootProps = useRootEditorProps(rootId);
+  const hasOutline = usePageHasOutline(rootId);
   // Rule 4: the save mechanics come from the context, not from this component.
   const save = assertSaveMode(getContextSpec('page', rootProps), 'debounce');
 
@@ -384,7 +354,7 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
   // 2.1.1 — the outline is a section-index feature: a root with
   // `sectionIndexed: false` has no anchors to navigate, so it gets no gutter at
   // all, whatever the (global, persisted) open flag says.
-  const outlineOpen = useOutlineStore((s) => s.outlineOpen) && rootProps.sectionIndexed;
+  const outlineOpen = useOutlineStore((s) => s.outlineOpen) && hasOutline;
 
   return (
     <EditorBridgeProvider bridge={bridge}>
