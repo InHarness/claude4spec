@@ -21,11 +21,9 @@
  */
 
 import { registerEditorExtension, ALL_EDITOR_CONTEXTS } from './registry.js';
-import { registerXmlEntityType } from './extensions/xmlNodes.js';
 import type { FrontendModule, StateSliceContribution } from '../core/plugin-host/types.js';
 import { validateFrontendModule, type SmokeSlot } from '../runtime/validate-slots.js';
 import { rejectedSlotFallback } from '../runtime/RejectedSlotFallback.js';
-import { isHiddenModule } from '../core/plugin-host/slot-rules.js';
 import {
   rootRoute,
   rebuildRouteTree,
@@ -85,13 +83,9 @@ export function mountFrontend(router: AppRouter, modules: FrontendModule[]): voi
       (m as Record<SmokeSlot, unknown>)[slot] = rejectedSlotFallback(m.type, slot, reason);
     }
 
-    // Auto-allow `<type .../>` as an inline + block XML embed in prose — for
-    // types with a surface of their own. A HIDDEN type (no routes, no detail
-    // panel) is reachable through the generic M19 embeds
-    // (`<single_element type="…"/>`) and contributes no tag name of its own
-    // (0.2.88: the dispatch allowlist is derived from the registry, and hidden
-    // entities do not extend it).
-    if (!isHiddenModule(m)) registerXmlEntityType(m.type);
+    // 2.1.2 (M51) — an entity type contributes NO tag name: a plugin never
+    // registers XML markup. Its entities are embedded through the M19 entity
+    // tags (`<single_element type="…"/>`), which pick its render slots by `type`.
 
     // Pin the plugin's editor extensions onto the shared Tiptap registry.
     for (const ext of m.editorExtensions ?? []) {

@@ -1,137 +1,110 @@
-import {
-  getExtensionReferenceType,
-  listExtensionReferenceTypes,
-} from './reference-extensions.js';
-import { computeExcludedRanges, intersectsCode } from './code-ranges.js';
-import { XML_TAG_KINDS, type XmlTagKind } from './xml-tag-kinds.js';
+import { scanExcluded, intersectsCode, type CodeRange } from './code-ranges.js';
+import { getXmlTag } from './xml-markup/registry.js';
+import { readAttrs, registeredTagRegex } from './xml-markup/pattern.js';
 
-export { XML_TAG_KINDS, type XmlTagKind };
-
+/**
+ * M51 — THE server parser and serializer of XML markup tags. Every server-side
+ * read and write of a tag goes through here: target resolution, rewrite after
+ * a slug / anchor change, the section and todo indexers, the consistency
+ * check, find_references, reference-tools. The contract is byte-exact: a
+ * rewrite leaves the raw markdown untouched and changes only the serialized
+ * tag, which is why this is deliberately NOT a markdown tokenizer.
+ *
+ * Names come from the registry (`xml-markup/registry.ts`) — none is written
+ * down here.
+ */
 export interface XmlTag {
-  kind: XmlTagKind | string;
-  source: 'core' | 'extension';
+  /** The registered tag name. */
+  kind: string;
   attrs: Record<string, string>;
   raw: string;
+  /** Absolute offset of `<`. */
   start: number;
+  /** Absolute offset just past `>`. */
   end: number;
+  /** 1-based line of `start`. */
   line: number;
 }
 
-export const XML_TAG_REGEX =
-  /<(inline_mention|single_element|element_list|tagged_list|tagged_list_mixed|todo)\s+([^>]*?)\/?>/g;
-
-const ATTR_REGEX = /(\w+)="([^"]*)"/g;
-
 /**
- * `single_element` carries an optional `caption` (0.2.15) — advisory prose that
- * belongs to THIS reference, not to the entity, and is therefore never synced
- * back. It applies to any `type`. `serializeXmlTag` skips empty values, so a tag
- * written without a caption never gains a `caption=""` on the way back out.
+ * Every occurrence of a registered tag, code or not, sorted by offset. The
+ * candidates step of the non-content scan (`code-ranges.ts`) — every other
+ * caller wants {@link parseXmlTags}.
  */
-const ATTR_ORDER: Record<XmlTagKind, readonly string[]> = {
-  inline_mention: ['type', 'slug'],
-  single_element: ['type', 'slug', 'caption'],
-  element_list: ['type', 'slugs'],
-  tagged_list: ['type', 'tags', 'filter'],
-  tagged_list_mixed: ['tags', 'filter'],
-  todo: ['comment'],
-};
-
-function readAttrs(attrBody: string): Record<string, string> {
-  const attrs: Record<string, string> = {};
-  ATTR_REGEX.lastIndex = 0;
-  let a: RegExpExecArray | null;
-  while ((a = ATTR_REGEX.exec(attrBody)) !== null) {
-    const key = a[1];
-    const value = a[2];
-    if (key !== undefined && value !== undefined) attrs[key] = value;
-  }
-  return attrs;
-}
-
-export function parseXmlTags(md: string): XmlTag[] {
+export function findXmlTagCandidates(md: string): XmlTag[] {
+  const re = registeredTagRegex();
+  if (!re) return [];
   const out: XmlTag[] = [];
-
-  XML_TAG_REGEX.lastIndex = 0;
+  let line = 1;
+  let lineCursor = 0;
   let m: RegExpExecArray | null;
-  while ((m = XML_TAG_REGEX.exec(md)) !== null) {
-    const kind = m[1] as XmlTagKind;
-    const attrBody = m[2] ?? '';
+  while ((m = re.exec(md)) !== null) {
     const raw = m[0];
     const start = m.index;
-    const end = start + raw.length;
-    const line = md.slice(0, start).split('\n').length;
-    out.push({ kind, source: 'core', attrs: readAttrs(attrBody), raw, start, end, line });
+    for (let i = lineCursor; i < start; i++) if (md.charCodeAt(i) === 10) line++;
+    lineCursor = start;
+    out.push({ kind: m[1]!, attrs: readAttrs(m[2] ?? ''), raw, start, end: start + raw.length, line });
   }
-
-  for (const ext of listExtensionReferenceTypes()) {
-    const re = new RegExp(`<(${ext.tag})\\s+([^>]*?)\\/?>`, 'g');
-    let em: RegExpExecArray | null;
-    while ((em = re.exec(md)) !== null) {
-      const attrBody = em[2] ?? '';
-      const raw = em[0];
-      const start = em.index;
-      const end = start + raw.length;
-      const line = md.slice(0, start).split('\n').length;
-      out.push({ kind: ext.tag, source: 'extension', attrs: readAttrs(attrBody), raw, start, end, line });
-    }
-  }
-
-  out.sort((a, b) => a.start - b.start);
   return out;
 }
 
-/**
- * Like {@link parseXmlTags}, but drops tags that sit inside fenced code blocks
- * or inline code spans — i.e. documentation syntax examples, not real
- * references. Server reference operations (resolve, slug/anchor rename,
- * indexers, consistency, find_references, MCP) use this so they stay consistent
- * with the markdown-it editor, which already renders tags-in-code as literal
- * code rather than chips.
- *
- * Retained tags keep their original absolute `start`/`end`/`line`, so callers
- * that splice the body by offset (e.g. roundtrip-safe rewriters) are unaffected:
- * omitting a code tag is exactly equivalent to leaving it verbatim.
- */
-export function parseXmlTagsExcludingCode(md: string): XmlTag[] {
-  const tags = parseXmlTags(md);
-  if (tags.length === 0) return tags;
-  // Exclude fenced/inline code AND unknown-JSX regions (`.mdx` component tags →
-  // raw code node in the editor M20). Without the JSX exclusion a registered ref
-  // nested inside `<Callout>…<inline_mention/>…</Callout>` would look live and a
-  // slug rename would byte-rewrite it, corrupting the JSX block. See code-ranges.ts.
-  const ranges = computeExcludedRanges(md);
-  return tags.filter((t) => !intersectsCode(t.start, t.end, ranges));
+export interface ParseXmlTagsOptions {
+  /**
+   * Non-content ranges already computed by the caller's scan of the SAME text
+   * (e.g. the section parser's `excludedRanges`) — one scanner, one result for
+   * every consumer. Omitted → computed here.
+   */
+  ranges?: readonly CodeRange[];
 }
 
+/**
+ * The registered tags of `md` that are live content: each with its name,
+ * attributes and exact position. Tags inside non-content ranges — fenced and
+ * inline code, unknown JSX regions, multi-line HTML comments — are syntax
+ * examples and are dropped. Retained tags keep their absolute offsets, so a
+ * caller splicing the body by offset is unaffected: dropping a tag is exactly
+ * equivalent to leaving it verbatim.
+ */
+export function parseXmlTags(md: string, opts: ParseXmlTagsOptions = {}): XmlTag[] {
+  const tags = findXmlTagCandidates(md);
+  if (tags.length === 0) return tags;
+  const ranges = opts.ranges ?? scanExcluded(md).ranges;
+  if (ranges.length === 0) return tags;
+  return tags.filter((t) => !intersectsCode(t.start, t.end, ranges as CodeRange[]));
+}
+
+/**
+ * Writes a tag from a flat attribute set, in the registry's attribute order —
+ * no editor dependency. `null` / `undefined` are absent and skipped; an empty
+ * string is a present attribute and is kept, so a tag round-trips byte-for-byte
+ * (`<todo comment=""/>` stays as is, and a tag written without `caption` never
+ * gains `caption=""`). With no attributes the tag is written `<name />` — the
+ * form the parser recognises.
+ */
 export function serializeXmlTag(
-  kind: XmlTagKind | string,
+  kind: string,
   attrs: Record<string, string | null | undefined>,
 ): string {
-  const coreOrder = (ATTR_ORDER as Record<string, readonly string[] | undefined>)[kind];
-  const order = coreOrder ?? getExtensionReferenceType(kind)?.attrOrder;
-  if (!order) {
+  const def = getXmlTag(kind);
+  if (!def) {
     throw new Error(`Unknown XML tag kind: ${kind}`);
   }
   const parts: string[] = [];
-  for (const key of order) {
+  for (const key of def.attrOrder) {
     const value = attrs[key];
-    if (value == null || value === '') continue;
+    if (value == null) continue;
     parts.push(`${key}="${escapeAttr(value)}"`);
   }
-  return `<${kind} ${parts.join(' ')}/>`;
+  return parts.length > 0 ? `<${kind} ${parts.join(' ')}/>` : `<${kind} />`;
 }
 
-function escapeAttr(v: string | null | undefined): string {
-  if (v == null) return '';
+function escapeAttr(v: string): string {
   return v.replace(/"/g, '&quot;');
 }
 
 /**
- * 0.2.15 — only the generic M19 tags carry entity slugs. There is no longer a
- * tag whose NAME is the entity type, so neither the `diagram` literal nor the
- * registry lookup that generalised it survives: an extension tag names no
- * entity, and an entity reference always spells its type out in `type=`.
+ * Only the M19 entity tags carry entity slugs, and the entity type is always
+ * spelled out in `type=` — no tag name encodes a type.
  */
 export function extractSlugs(tag: XmlTag): string[] {
   if (tag.kind === 'inline_mention' || tag.kind === 'single_element') {
@@ -157,14 +130,11 @@ export function extractTags(tag: XmlTag): string[] {
 }
 
 /**
- * True when a static XML tag (inline_mention / single_element / element_list)
- * explicitly references the entity `(entityType, slug)`. tagged_list / tagged_list_mixed
- * never match here — those are dynamic, tag-driven refs resolved via `taggedListVia`.
- * Single source of truth for static reference matching — used by the references core
- * (M19) and ReferencesService.
- *
- * 0.2.15 — the entity type comes from `type=` and nowhere else. There is no
- * longer a tag that encodes its type in the tag name.
+ * True when a static tag (inline_mention / single_element / element_list)
+ * explicitly references the entity `(entityType, slug)`. tagged_list /
+ * tagged_list_mixed never match here — those are dynamic, tag-driven refs
+ * resolved via `taggedListVia`. Single source of truth for static reference
+ * matching — used by the references core (M19) and ReferencesService.
  */
 export function tagMatchesEntity(tag: XmlTag, entityType: string, slug: string): boolean {
   if (tag.kind === 'tagged_list_mixed') return false;

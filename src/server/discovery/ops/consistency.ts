@@ -17,8 +17,8 @@
  */
 
 import { readConfig, type ConsistencySeverity } from '../../config.js';
-import { parseXmlTagsExcludingCode, taggedListVia } from '../../../shared/xml-tags.js';
-import { getExtensionReferenceType } from '../../../shared/reference-extensions.js';
+import { parseXmlTags, taggedListVia } from '../../../shared/xml-tags.js';
+import { getXmlTag } from '../../../shared/xml-markup/registry.js';
 import { anchorLineIndexOf, fileKindOf, parseSections } from '../../../shared/section-parser.js';
 import { invalidArgument } from '../errors.js';
 import { classifyVerifies, readActiveAcs } from './ac-rules.js';
@@ -245,7 +245,7 @@ export async function checkConsistency(
     for (const page of await pages.readAll([root])) {
       allPagePaths.push({ rootId: root.id, path: page.path });
       collectStructure(structure, anchorOccurrences, root.id, sectionIndexedIds.has(root.id), page);
-      for (const tag of parseXmlTagsExcludingCode(page.body)) {
+      for (const tag of parseXmlTags(page.body)) {
         // 0.2.15 — the entity type comes from `type=` and nowhere else. The
         // branch that derived it from a registered extension tag's name is
         // gone with the tags that needed it; an extension tag now names no
@@ -311,37 +311,41 @@ export async function checkConsistency(
           }
         }
 
-        if (tag.source === 'extension') {
-          if (tag.kind === 'section_ref') {
-            // Section rules apply only where sections exist. Gated on the root
-            // PROPERTY — a root with no index has no anchor space to validate
-            // against, which is not the same as having a broken anchor.
-            if (!root.sectionIndexed) continue;
-            const anchor = tag.attrs.anchor ?? '';
-            if (!anchor || !anchorExists(anchor)) {
-              brokenExtensionReferences.push({
-                rootId: root.id,
-                pagePath: page.path,
-                tagType: tag.kind,
-                attrs: tag.attrs,
-                line: tag.line,
-                category: 'unknown-anchor',
-              });
-            }
-          } else {
-            const extType = getExtensionReferenceType(tag.kind);
-            if (!extType?.validate) continue;
-            const result = extType.validate(tag.attrs);
-            if (!result.ok) {
-              brokenExtensionReferences.push({
-                rootId: root.id,
-                pagePath: page.path,
-                tagType: tag.kind,
-                attrs: tag.attrs,
-                line: tag.line,
-                category: result.category,
-              });
-            }
+        if (tag.kind === 'section_ref') {
+          // Rule 8 — M06's own check: the tag is registered WITHOUT `validate`
+          // (an anchor is valid only against one project's section index), so
+          // it is verified here, against the current context. Section rules
+          // apply only where sections exist: a root with no index has no
+          // anchor space to validate against, which is not a broken anchor.
+          if (!root.sectionIndexed) continue;
+          const anchor = tag.attrs.anchor ?? '';
+          if (!anchor || !anchorExists(anchor)) {
+            brokenExtensionReferences.push({
+              rootId: root.id,
+              pagePath: page.path,
+              tagType: tag.kind,
+              attrs: tag.attrs,
+              line: tag.line,
+              category: 'unknown-anchor',
+            });
+          }
+          continue;
+        }
+
+        // A tag whose validity is a pure function of its attributes declares
+        // `validate` in the M51 registry; run it here.
+        const validate = getXmlTag(tag.kind)?.validate;
+        if (validate) {
+          const result = validate(tag.attrs);
+          if (!result.ok) {
+            brokenExtensionReferences.push({
+              rootId: root.id,
+              pagePath: page.path,
+              tagType: tag.kind,
+              attrs: tag.attrs,
+              line: tag.line,
+              category: result.category,
+            });
           }
         }
       }
@@ -630,7 +634,10 @@ interface StructureRows {
  * Rule 15 — an anchor-shaped line inside a code block DIRECTLY above a
  * heading-shaped line in that block (the trace of a failed injection); without
  * the heading line below it there is no row. Rule 16 — a fence or multi-line
- * HTML comment nothing closes, `line` being its opening line. Both are
+ * HTML comment nothing closes, `line` being its opening line: it runs to the
+ * end of the page, so every XML tag below it drops out of slug rewrites, rules
+ * 1 and 3, find_references and the todo index (M51) — this row is how the
+ * author learns that visibility was lost. Both are
  * informational and never block a write; both run on every scanned root.
  */
 function collectStructure(

@@ -99,13 +99,14 @@ async function popoverFromEditor<T>(editor: Editor, open: () => Promise<T>): Pro
 }
 
 async function runSection(editor: Editor): Promise<void> {
-  const result = await popoverFromEditor(editor, () => openPopover('section', { ...coordsAt(editor) }));
+  const result = await popoverFromEditor(editor, () =>
+    openPopover('xml-tag', { ...coordsAt(editor), name: 'section_ref', mode: 'create', attrs: { anchor: null } }),
+  );
   if (!result) return;
-  if ('__action' in result) return;
   editor
     .chain()
     .focus()
-    .insertContent({ type: 'section_ref', attrs: { anchor: result.anchor } })
+    .insertContent({ type: 'section_ref', attrs: { anchor: result.anchor ?? '' } })
     .insertContent(' ')
     .run();
 }
@@ -178,12 +179,14 @@ async function runDiagram(editor: Editor, deps: SlashInvokeDeps): Promise<void> 
 }
 
 async function runTodo(editor: Editor): Promise<void> {
-  const result = await popoverFromEditor(editor, () => openPopover('todo-create', { ...coordsAt(editor) }));
+  const result = await popoverFromEditor(editor, () =>
+    openPopover('xml-tag', { ...coordsAt(editor), name: 'todo', mode: 'create', attrs: { comment: '' } }),
+  );
   if (!result) return;
   editor
     .chain()
     .focus()
-    .insertContent({ type: 'todo', attrs: { comment: result.comment } })
+    .insertContent({ type: 'todo', attrs: { comment: result.comment ?? '' } })
     .run();
 }
 

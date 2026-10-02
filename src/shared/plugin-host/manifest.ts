@@ -164,8 +164,16 @@ import type { EntityModuleManifest, SystemPromptContribution } from './types.js'
  * the change says nothing about the host surface, so choosing a major bump here
  * would ripple through nine plugin manifests on this file's own initiative.
  * Raised as a patch against the brief: the decision is the spec author's.
+ *
+ * 2.1.0 (brief 2.1.1 → 2.1.2, M51) — the XML tag registration shape (name,
+ * attribute order, optional `validate`, optional `form`) is part of this
+ * surface; adding the optional `form` is an additive, minor-class change. The
+ * registration point itself is host-only (a loaded plugin never calls it), so
+ * the old `registerExtensionReferenceType` export leaves the plugin runtime —
+ * no bundled plugin imported it (checked). Render assignment is not part of
+ * the surface.
  */
-export const HOST_API_VERSION = '2.0.0';
+export const HOST_API_VERSION = '2.1.0';
 
 /** Node/host engine constraints — checked by the loader before registration. */
 export interface PluginEngines {

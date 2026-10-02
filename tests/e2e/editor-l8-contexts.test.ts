@@ -280,7 +280,7 @@ describe.skipIf(!BASE)('editor L8 contexts', () => {
     await expect.poll(() => editor.innerText()).toContain('after');
     await sleep(1500); // let the non-blocking plugin boot settle
     const text = await editor.innerText();
-    expect(text, 'embed rendered as a chip').not.toMatch(/unknown type/i);
+    expect(text, 'embed rendered as a chip').not.toMatch(/unknown type|\[broken:/i);
     expect(text, 'the raw tag is not shown as text').not.toContain('<inline_mention');
 
     expect(consoleErrors, 'console errors').toEqual([]);
@@ -462,7 +462,7 @@ describe.skipIf(!BASE)('editor L8 contexts', () => {
       await expect.poll(() => raw.count()).toBe(2);
       expect(await raw.nth(0).inputValue()).toBe(mention);
       expect(await raw.nth(1).inputValue()).toBe(tag);
-      expect(await editor.innerText()).not.toMatch(/unknown type/i);
+      expect(await editor.innerText()).not.toMatch(/unknown type|\[broken:/i);
 
       await editor.locator('h1').click();
       await page.keyboard.press('End');

@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
+import '../xml-markup/host-renders.js';
 import { clientPluginHost } from '../core/plugin-host/host.js';
 import { CHIP_HREF_PREFIX, decodePayload, preprocessXmlChips } from './xml-chip-preprocess.js';
 import { XmlChipDispatcher } from './XmlChipDispatcher.js';
@@ -12,7 +13,8 @@ import { entityRouteHref } from './entityRouteHref.js';
 /**
  * Shared <Markdown> factory used by chat assistant text (BlockRenderer.tsx)
  * and the subagent summary panel (SubagentPanel.tsx). Single source of truth
- * for XML chip rendering (5 M19 core types + section_ref extension).
+ * for XML chip rendering — every registered tag that targets an entity or a
+ * section (M51), picked from the registry rather than from a list of names.
  *
  * Pipeline: preprocessXmlChips replaces XML tags with placeholder markdown
  * links before parsing; the `a` component override intercepts those hrefs and
@@ -26,8 +28,10 @@ export function ChatMarkdown({
   text: string;
   className?: string;
 }) {
-  const activeTypes = useMemo(() => clientPluginHost.listEntities().map((m) => m.type), []);
-  const processed = useMemo(() => preprocessXmlChips(text, activeTypes), [text, activeTypes]);
+  // The `type` whitelist is every type AVAILABLE in the host (M05): a type
+  // whose plugin is inactive still sanitizes, and renders as a broken chip.
+  const availableTypes = useMemo(() => clientPluginHost.listAvailable().map((m) => m.type), []);
+  const processed = useMemo(() => preprocessXmlChips(text, availableTypes), [text, availableTypes]);
 
   return (
     <Markdown

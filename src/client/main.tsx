@@ -2,6 +2,8 @@
 // import-map shims can hand the exact same React / Tiptap / QueryClient instances
 // to any runtime plugin. Must precede React-dependent imports below.
 import './runtime/shared-runtime.js';
+// M51 — the host modules' XML tags and their browser-side renders, before anything parses.
+import './xml-markup/host-renders.js';
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';

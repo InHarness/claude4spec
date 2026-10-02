@@ -42,6 +42,15 @@ describe('reference tags: from the file to the editor node', () => {
     }
   });
 
+  it('[ac:m51-tag-pattern-whitespace] `<name />` is a tag, `<name/>` is not — the server pattern, in the editor', () => {
+    const html = md().render('a <todo /> b');
+    expect(html).toContain('<todo></todo>');
+    const bare = md().render('a <todo/> b');
+    expect(bare).not.toContain('<todo></todo>');
+    // Kept verbatim through the raw node, never promoted to a todo node by the stock HTML rules.
+    expect(bare).toContain('raw_jsx_inline');
+  });
+
   it('the four block reference nodes go through xml_block, the inline mention does not', () => {
     const m = md();
     const blockRules = (m.block.ruler as unknown as { __rules__: { name: string }[] }).__rules__.map((r) => r.name);

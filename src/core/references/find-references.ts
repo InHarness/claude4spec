@@ -1,5 +1,5 @@
 import {
-  parseXmlTagsExcludingCode,
+  parseXmlTags,
   tagMatchesEntity,
   taggedListVia,
 } from '../../shared/xml-tags.js';
@@ -32,7 +32,7 @@ export async function findReferences(
 
   // Phase 1 — static references.
   for (const page of pages) {
-    for (const tag of parseXmlTagsExcludingCode(page.body)) {
+    for (const tag of parseXmlTags(page.body)) {
       if (tagMatchesEntity(tag, type, slug)) {
         hits.push({ rootId: page.rootId, pagePath: page.path, tagType: tag.kind, line: tag.line, raw: tag.raw });
       }
@@ -44,7 +44,7 @@ export async function findReferences(
     const entityTags = new Set(deps.getEntityTagSlugs?.(type, slug) ?? []);
     if (entityTags.size > 0) {
       for (const page of pages) {
-        for (const tag of parseXmlTagsExcludingCode(page.body)) {
+        for (const tag of parseXmlTags(page.body)) {
           const via = taggedListVia(tag, type, entityTags);
           if (via.length === 0) continue;
           hits.push({ rootId: page.rootId, pagePath: page.path, tagType: tag.kind, line: tag.line, via });

@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3';
 import type { SectionIndexEntry } from '../../shared/entities.js';
-import { parseXmlTagsExcludingCode, serializeXmlTag } from '../../shared/xml-tags.js';
+import { parseXmlTags, serializeXmlTag } from '../../shared/xml-tags.js';
 import { scanFences } from '../../shared/code-ranges.js';
 import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
 import { slugifyHeading } from '../../shared/section-parser.js';
@@ -278,7 +278,7 @@ export function rewritePageLinkAnchor(body: string, oldAnchor: string, newAnchor
 }
 
 function rewriteSectionRefTags(body: string, oldAnchor: string, newAnchor: string): string {
-  const tags = parseXmlTagsExcludingCode(body);
+  const tags = parseXmlTags(body);
   if (tags.length === 0) return body;
   let out = '';
   let cursor = 0;

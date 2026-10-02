@@ -3,6 +3,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { ReactElement } from 'react';
 import type { Annotation } from '../../shared/entities.js';
 import type { SlashCommand } from './extensions/SlashMenu.js';
+import { isRegisteredXmlTag, listXmlTags } from '../../shared/xml-markup/registry.js';
 import {
   resolveContextSpec,
   FULL_ROOT_EDITOR_PROPS,
@@ -54,9 +55,19 @@ export interface RegistryContext {
 
 export type EditorExtensionFactory = AnyExtension | ((ctx: RegistryContext) => AnyExtension);
 
+/**
+ * 2.1.2 (M51) — an editor extension serves syntax and nodes that are NOT XML
+ * markup tags (and slash commands). The node of a registered tag is built by
+ * the editor itself from the registry (`extensions/xmlNodes.ts`); a module
+ * contributing a tag registers neither a node nor a parser rule for it, and
+ * a registration whose `name` is a registered tag name is rejected.
+ */
 export interface EditorExtensionRegistration {
+  /** The extension's name. */
   name: string;
+  /** The extension definition, engine-dependent. */
   extension?: EditorExtensionFactory;
+  /** Load order (default 1000). */
   priority?: number;
   /**
    * HINT per context — the module declares where its extension makes sense.
@@ -66,7 +77,9 @@ export interface EditorExtensionRegistration {
    * the declaration gets fixed.
    */
   availableIn?: EditorContextId[];
+  /** Optional — when the extension contributes a slash command. */
   slashCommand?: SlashCommand;
+  /** Optional — a parser rule of its own; ONLY for syntax outside the XML markup registry. */
   markdownIt?: { kind: 'inline' | 'block' | 'block_content'; pattern: RegExp };
 }
 
@@ -122,6 +135,11 @@ export function subscribeEditorSchema(listener: () => void): () => void {
 }
 
 export function registerEditorExtension(reg: EditorExtensionRegistration): void {
+  if (isRegisteredXmlTag(reg.name)) {
+    throw new Error(
+      `Editor extension "${reg.name}" is rejected — "${reg.name}" is a registered XML tag; its node is built from the tag registry`,
+    );
+  }
   const existing = REGISTRY.findIndex((r) => r.name === reg.name);
   const touchesSchema = !!reg.extension || (existing >= 0 && !!REGISTRY[existing]!.extension);
   if (existing >= 0) REGISTRY[existing] = reg;
@@ -144,14 +162,6 @@ export function registerEditorExtension(reg: EditorExtensionRegistration): void 
  * this is the removal half of it. Prefix-scoped on purpose — `plugin-cmd:` is
  * owned entirely by `pluginCommands.ts`, so clearing it cannot touch a built-in
  * or an entity-borne extension, which register under their own bare names.
- *
- * KNOWN GAP, deliberately left: this closes the slash-command cache only. The
- * XML embed-tag sets in `extensions/xmlNodes.ts` (`registerXmlEntityType`) are
- * the same add-only shape with no removal path, so a departed plugin's
- * `<its-type .../>` keeps parsing as a native embed — with nothing left to
- * render it — until a page reload. Removing those safely needs a rule for who
- * owns an unprefixed tag name, since plugins and built-ins share that namespace;
- * filed as a patch on this brief rather than guessed at here.
  */
 export function unregisterEditorExtensionsByPrefix(prefix: string): void {
   let touchedSchema = false;
@@ -164,7 +174,12 @@ export function unregisterEditorExtensionsByPrefix(prefix: string): void {
 }
 
 const registryView = {
-  extensionNames: () => REGISTRY.filter((r) => r.extension).map((r) => r.name),
+  // Schema extensions plus every registered XML tag — a tag's node is mounted
+  // by name like any extension, but comes from the M51 registry.
+  extensionNames: () => [
+    ...REGISTRY.filter((r) => r.extension).map((r) => r.name),
+    ...listXmlTags().map((t) => t.name),
+  ],
   slashCommandIds: () => REGISTRY.filter((r) => r.slashCommand).map((r) => r.slashCommand!.id),
 };
 
@@ -207,15 +222,38 @@ export function getEditorExtensionsForContext(
   const spec = getContextSpec(contextId, rootProps);
   const allowed = new Set(spec.extensions);
   const ctxWithId: RegistryContext = { ...ctx, contextId, rootProps, contextSpec: spec };
-  return [...REGISTRY]
+  const entries: Array<{ priority: number; build: () => AnyExtension }> = [...REGISTRY]
     .filter((r) => r.extension && allowed.has(r.name))
-    .sort((a, b) => (a.priority ?? 1000) - (b.priority ?? 1000))
-    .map((r) => {
-      warnHintMismatch(r, contextId);
-      return typeof r.extension === 'function'
-        ? (r.extension as (ctx: RegistryContext) => AnyExtension)(ctxWithId)
-        : (r.extension as AnyExtension);
-    });
+    .map((r) => ({
+      priority: r.priority ?? 1000,
+      build: () => {
+        warnHintMismatch(r, contextId);
+        return typeof r.extension === 'function'
+          ? (r.extension as (ctx: RegistryContext) => AnyExtension)(ctxWithId)
+          : (r.extension as AnyExtension);
+      },
+    }));
+  // The nodes of the whitelisted XML tags, built from the M51 registry. They
+  // load after the raw-JSX nodes (300/301), whose rules must run first.
+  for (const node of xmlTagNodesFor(spec.extensions)) {
+    entries.push({ priority: XML_TAG_NODE_PRIORITY, build: () => node });
+  }
+  return entries.sort((a, b) => a.priority - b.priority).map((e) => e.build());
+}
+
+/** Load order of the XML tag nodes: after the raw-JSX nodes, before page refs. */
+const XML_TAG_NODE_PRIORITY = 600;
+
+/**
+ * The builder of XML tag nodes, provided by `extensions/xmlNodes.ts` when it
+ * loads. Injected rather than imported: the nodes' views reach (through the
+ * entity modules) back into this registry, and a static import would evaluate
+ * them before `REGISTRY` exists.
+ */
+let xmlTagNodesFor: (names: readonly string[]) => AnyExtension[] = () => [];
+
+export function provideXmlTagNodes(builder: (names: readonly string[]) => AnyExtension[]): void {
+  xmlTagNodesFor = builder;
 }
 
 /** Registry ∩ `spec.slashCommands` (by `SlashCommand.id`). Read live so plugin commands that arrive later show up. */

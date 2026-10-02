@@ -1,4 +1,4 @@
-import { parseXmlTagsExcludingCode } from '../../shared/xml-tags.js';
+import { parseXmlTags } from '../../shared/xml-tags.js';
 import type { TodoHit } from '../../shared/types.js';
 import type { PagesService } from './pages.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
@@ -63,7 +63,7 @@ export class TodosIndexerService implements WatchSubscriber {
       return;
     }
     const body = page.body;
-    const tags = parseXmlTagsExcludingCode(body).filter((t) => t.kind === 'todo');
+    const tags = parseXmlTags(body).filter((t) => t.kind === 'todo');
 
     const hits: TodoHit[] = [];
     const seenAnchors = new Set<string>();

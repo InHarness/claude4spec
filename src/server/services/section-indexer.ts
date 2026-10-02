@@ -4,7 +4,7 @@ import type Database from 'better-sqlite3';
 import {
   extractSlugs,
   extractTags,
-  parseXmlTagsExcludingCode,
+  parseXmlTags,
   type XmlTag,
 } from '../../shared/xml-tags.js';
 import {
@@ -584,8 +584,13 @@ export class SectionIndexerService implements WatchSubscriber {
           `INSERT OR IGNORE INTO section_entity_link (rootId, anchor, entity_type, entity_slug, relation)
                VALUES (?, ?, ?, ?, 'uses')`
         );
+        // M51 — one parse of the WHOLE page, so every section sees the same
+        // non-content ranges the rest of the server sees for this file (a
+        // fence or comment is never re-judged from inside a slice of it);
+        // each tag then belongs to the section whose own-body lines hold it.
+        const pageTags = parseXmlTags(body);
         for (const s of ownedSections) {
-          const xmlTags = parseXmlTagsExcludingCode(s.content);
+          const xmlTags = pageTags.filter((t) => t.line > s.heading.headingLine && t.line <= s.lineEnd);
           const seen = new Set<string>();
           const link = (type: string, slug: string) => {
             const key = `${type}|${slug}`;

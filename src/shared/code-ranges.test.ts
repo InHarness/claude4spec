@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  computeCodeRanges,
-  computeExcludedRanges,
   findInlineCodeSpans,
   intersectsCode,
   maskTagAttributeValues,
@@ -65,10 +63,10 @@ describe('findInlineCodeSpans', () => {
   });
 });
 
-describe('computeCodeRanges + intersectsCode', () => {
+describe('scanExcluded ranges + intersectsCode', () => {
   it('combines fences and inline spans into sorted ranges', () => {
     const text = '`inline`\n```\nfence\n```';
-    const ranges = computeCodeRanges(text);
+    const ranges = scanExcluded(text).ranges;
     expect(ranges).toHaveLength(2);
     expect(text.slice(...ranges[0]!)).toBe('`inline`');
     expect(text.slice(...ranges[1]!)).toBe('```\nfence\n```');
@@ -101,9 +99,9 @@ describe('maskTagAttributeValues', () => {
     expect(maskTagAttributeValues(text)).toBe(text);
   });
 
-  it('computeCodeRanges no longer opens a code span inside a caption', () => {
+  it('scanExcluded does not open a code span inside a caption', () => {
     const text = '<single_element type="ac" slug="x" caption="`a`"/> then `real`';
-    const ranges = computeCodeRanges(text);
+    const ranges = scanExcluded(text).ranges;
     expect(ranges.map(([s, e]) => text.slice(s, e))).toEqual(['`real`']);
   });
 });
@@ -169,9 +167,9 @@ describe('scanExcluded', () => {
     expect(scanExcluded(text, { jsx: false }).regions.map((r) => r.kind)).toEqual(['html-comment']);
   });
 
-  it('computeExcludedRanges drops a tag inside a multi-line HTML comment', () => {
+  it('scanExcluded drops a tag inside a multi-line HTML comment', () => {
     const text = '<!--\n<inline_mention type="ac" slug="x"/>\n-->';
-    const ranges = computeExcludedRanges(text);
+    const ranges = scanExcluded(text).ranges;
     const at = text.indexOf('<inline');
     expect(intersectsCode(at, at + 5, ranges)).toBe(true);
   });

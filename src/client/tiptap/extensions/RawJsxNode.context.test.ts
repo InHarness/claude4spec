@@ -1,22 +1,21 @@
 /**
- * M20 `ctx4prof` rule 6 — gate 2 of the raw code node: a tag whose name is on
- * the dispatch allowlist but whose node is NOT mounted in this context passes
+ * M20 `ctx4prof` rule 6 — gate 2 of the raw code node: a tag whose name is in
+ * the M51 registry but whose node is NOT mounted in this context passes
  * through verbatim instead of being dropped by ProseMirror on the first save.
  * Pins `ac-zapis-w-kontekscie-o-zawezonej-whitel` at the markdown-it level:
  * the tag becomes a raw token carrying the exact source bytes, and the raw
  * serializer writes those bytes back with no fence.
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import MarkdownIt from 'markdown-it';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import '../registrations.js';
 import { setupRawJsxRules, rawTagPredicate, RawJsxBlockNode, RawJsxInlineNode } from './RawJsxNode.js';
-import { InlineMentionNode } from './xmlNodes.js';
+import { xmlTagNode } from './xmlNodes.js';
 import { unescapeRawAttr } from '../../../shared/raw-jsx-escape.js';
 import { resolveContextSpec, FULL_ROOT_EDITOR_PROPS } from '../contextSpec.js';
-import { registerExtensionReferenceType } from '../../../shared/reference-extensions.js';
 
 const DESCRIPTION = resolveContextSpec('description', FULL_ROOT_EDITOR_PROPS, {
   extensionNames: () => [],
@@ -27,7 +26,7 @@ const DESCRIPTION = resolveContextSpec('description', FULL_ROOT_EDITOR_PROPS, {
 function descriptionMd(): MarkdownIt {
   const md = new MarkdownIt({ html: true, breaks: false, linkify: false });
   setupRawJsxRules(md, rawTagPredicate(DESCRIPTION));
-  (InlineMentionNode as any).config.addStorage().markdown.parse.setup(md);
+  (xmlTagNode('inline_mention') as any).config.addStorage().markdown.parse.setup(md);
   return md;
 }
 
@@ -53,10 +52,6 @@ function serialize(node: any, raw: string): string {
 }
 
 describe('raw node gate 2 — allowlisted tag, node not mounted in this context', () => {
-  // `tests/setup.ts` clears the reference-type registry after every test;
-  // `section_ref` reaches the dispatch allowlist through it (registrations.ts).
-  beforeEach(() => registerExtensionReferenceType({ tag: 'section_ref', attrOrder: ['anchor'] }));
-
   it('routes <single_element/> in a description to the raw node, byte for byte', () => {
     const md = descriptionMd();
     const src = '<single_element type="ui-view" slug="login-form"/>';
@@ -92,7 +87,7 @@ describe('raw node gate 2 — allowlisted tag, node not mounted in this context'
   it('with mountedTags = null (read-only rendering) gate 2 is inert', () => {
     const md = new MarkdownIt({ html: true });
     setupRawJsxRules(md, rawTagPredicate(null));
-    (InlineMentionNode as any).config.addStorage().markdown.parse.setup(md);
+    (xmlTagNode('inline_mention') as any).config.addStorage().markdown.parse.setup(md);
     expect(tokens(md, '<single_element type="dto" slug="x"/>')[0]!.raw).toBeUndefined();
   });
 

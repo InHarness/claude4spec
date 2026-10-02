@@ -1,3 +1,5 @@
+// M51 — host modules register their XML tags at process start.
+import '../shared/xml-markup/host-tags.js';
 import express, { type Express } from 'express';
 import { createServer as createHttpServer, type Server as HttpServer } from 'node:http';
 import path from 'node:path';

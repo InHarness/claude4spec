@@ -150,14 +150,17 @@ const SLASH_COMMAND_GATES: Record<string, keyof Pick<RootEditorProps, 'sectionIn
 /** The two raw-JSX nodes — mounted in EVERY context (rule 6: passthrough verbatim). */
 const RAW_NODES = ['raw_jsx_block', 'raw_jsx_inline'];
 
-/** The 5 generic M19 reference nodes. */
+/** The 5 M19 entity tags (their nodes come from the M51 registry). */
 const M19_NODES = ['inline_mention', 'single_element', 'element_list', 'tagged_list', 'tagged_list_mixed'];
 
 /**
  * M20 `ctxregst` — the three static contexts, transcribed row by row.
  *
+ * The XML tag names in these lists (M51) mount the tag NODES the editor builds
+ * from the tag registry; every other name is a registry extension.
+ *
  * `description`: StarterKit h2–h6 + lists + tables (core, built by
- * EditorFactory) + `InlineMentionNode` (the only generic M19 node allowed) +
+ * EditorFactory) + the `inline_mention` tag node (the only M19 tag allowed) +
  * `AnchorMarker` (passthrough) + the slash framework with `/mention` alone. No
  * `@` mention framework (the field is too short). `task_list`/`task_item` are
  * not in the `ctxregst` row but are GFM syntax the pre-0.2.85 description
@@ -165,9 +168,9 @@ const M19_NODES = ['inline_mention', 'single_element', 'element_list', 'tagged_l
  * `- \[ \] x` on the next blur-save (rule 7 — the core must cover syntax
  * already in the content; patch filed on brief 0-2-87-to-next).
  *
- * `plan`: starter-kit + 5 generic M19 + `SectionRefNode` + `AnchorMarker` +
- * `MentionExtension` + `OutlineExtension` (`heading_actions`); `/section` is
- * the only slash command — no `TodoMarker`, no `/todo`, no plugin commands. A
+ * `plan`: starter-kit + the 5 M19 tag nodes + the `section_ref` tag node +
+ * `AnchorMarker` + `MentionExtension` + `OutlineExtension` (`heading_actions`);
+ * `/section` is the only slash command — no `todo` node, no `/todo`, no plugin commands. A
  * `<todo …/>` in a plan survives its explicit save through the raw node.
  * `page_ref` is implied by the `files` mention source, which inserts one;
  * `task_list`/`task_item` are GFM syntax the core StarterKit already parsed
@@ -175,8 +178,8 @@ const M19_NODES = ['inline_mention', 'single_element', 'element_list', 'tagged_l
  * the content).
  *
  * `chat-input`: minimal — `Document`/`Paragraph`/`Text` (core) +
- * `MentionExtension` + `PageRefNode` + `SectionRefNode` (allowed exception:
- * the chip most often pasted into chat) + `/section`.
+ * `MentionExtension` + `PageRefNode` + the `section_ref` tag node (allowed
+ * exception: the chip most often pasted into chat) + `/section`.
  */
 const STATIC_SPECS: Record<Exclude<EditorContextId, 'page'>, EditorContextSpec> = {
   description: {

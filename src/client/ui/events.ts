@@ -123,13 +123,6 @@ export function showGitErrorModal(recovery: GitErrorRecovery): void {
 
 export type PopoverPosition = { x: number; y: number };
 
-export type ChipNodeType =
-  | 'inline_mention'
-  | 'single_element'
-  | 'element_list'
-  | 'tagged_list'
-  | 'tagged_list_mixed';
-
 export interface MentionResult {
   type: EntityType;
   slug: string;
@@ -154,10 +147,8 @@ export interface TaggedMixedResult {
 export interface NewPageResult {
   path: string;
 }
-export interface SectionResult {
-  anchor: string;
-}
-export type EditChipAttrs = Record<string, unknown>;
+/** An XML tag's attributes as the `xml-tag` popover reads and writes them; absent = `null`. */
+export type XmlTagAttrs = Record<string, string | null>;
 
 /**
  * `title` and `caption` are two different facts, not one field spelled twice.
@@ -197,19 +188,15 @@ export type PopoverMap = {
     props: { rootId: string; candidatePath: string | null };
     result: { action: 'fix' } | { action: 'created'; path: string };
   };
-  'todo-create': { props: NoProps; result: { comment: string } };
-  'todo-edit': { props: { initialComment: string; onRemove: () => void }; result: { comment: string } };
-  section: {
-    props: { initialAnchor?: string; onRemove?: () => void };
-    result: SectionResult | { __action: 'remove' };
-  };
-  'edit-chip': {
-    props: {
-      nodeType: ChipNodeType;
-      attrs: EditChipAttrs;
-      onRemove: () => void;
-    };
-    result: EditChipAttrs;
+  /**
+   * 2.1.2 (M51/M20) — the ONE popover convention for every XML tag: create and
+   * edit. The module owning the tag contributes only its fields
+   * (`client/xml-markup/popover-fields.ts`), keyed by tag name — it replaces the
+   * per-module `edit-chip`, `section`, `todo-create` and `todo-edit` kinds.
+   */
+  'xml-tag': {
+    props: { name: string; mode: 'create' | 'edit'; attrs: XmlTagAttrs; onRemove?: () => void };
+    result: XmlTagAttrs;
   };
   diagram: {
     /**

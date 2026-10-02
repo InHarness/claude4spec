@@ -1,35 +1,16 @@
 /**
  * Single source of truth for the unknown-JSX passthrough mechanism (`.mdx`
- * component tags ∉ dispatch allowlist). Reused by BOTH the editor markdown-it
- * rules (M20 — `RawJsxNode`) and the server-side reference parser (M19 —
- * `code-ranges.ts` → `parseXmlTagsExcludingCode`), so both treat the exact same
- * regions as "raw JSX, not a reference". No duplication of the allowlist or the
- * depth-counting logic.
+ * component tags outside the M51 registry). Reused by BOTH the editor
+ * markdown-it rules (M20 — `RawJsxNode`) and the server-side non-content scanner
+ * (M51 — `code-ranges.ts`), so both treat the exact same regions as "raw JSX,
+ * not content": one source of the name set and of the nesting count.
  *
- * Leaf-ish: imports only the two registry leaves; the `CodeRange` import is
+ * Leaf-ish: imports only the registry leaf; the `CodeRange` import is
  * type-only (erased at compile time) so `code-ranges.ts` can depend on this
  * module without an import cycle.
  */
-import { XML_TAG_KINDS } from './xml-tag-kinds.js';
-import { listExtensionReferenceTypes } from './reference-extensions.js';
+import { isRegisteredXmlTag } from './xml-markup/registry.js';
 import type { CodeRange } from './code-ranges.js';
-
-/**
- * The set of tag names dispatched to dedicated NodeViews by `xml_inline` /
- * `xml_block` — DERIVED from the registries (the 6 core kinds + every
- * registered extension reference type), never a hardcoded count. Today: 7
- * (`inline_mention`, `single_element`, `element_list`, `tagged_list`,
- * `tagged_list_mixed`, `todo`, `section_ref`). It was 8 until 0.2.15, when
- * `diagram` stopped being a tag of its own — no entity contributes a tag any
- * more, so every name here beyond the 6 core kinds comes from an infra module.
- * Evaluated lazily so `section_ref`, registered after import, is always seen.
- */
-export function getDispatchAllowlist(): Set<string> {
-  return new Set<string>([
-    ...XML_TAG_KINDS,
-    ...listExtensionReferenceTypes().map((e) => e.tag),
-  ]);
-}
 
 /**
  * JSX component shape: name starts with an uppercase letter (`<Callout/>`) or
@@ -42,9 +23,9 @@ export function isJsxComponentName(name: string): boolean {
   return /^[A-Z]/.test(name) || name.includes('.');
 }
 
-/** True when a tag should be routed to the raw JSX node: component-shaped AND ∉ allowlist. */
+/** True when a tag should be routed to the raw JSX node: component-shaped AND not a registered tag. */
 export function isPassthroughTag(name: string): boolean {
-  return isJsxComponentName(name) && !getDispatchAllowlist().has(name);
+  return isJsxComponentName(name) && !isRegisteredXmlTag(name);
 }
 
 export interface JsxTagOpen {
@@ -79,7 +60,12 @@ export function matchJsxTagOpen(text: string, pos: number): JsxTagOpen | null {
  * depth-counting. Returns -1 if unbalanced (no matching close) or if the tag at
  * `openStart` is not a non-self-closing `<name>`.
  */
-export function findJsxSpanEnd(text: string, openStart: number, name: string): number {
+export function findJsxSpanEnd(
+  text: string,
+  openStart: number,
+  name: string,
+  skip: ReadonlyArray<CodeRange> = [],
+): number {
   const open = matchJsxTagOpen(text, openStart);
   if (!open || open.name !== name || open.selfClosing) return -1;
   const openRe = new RegExp(`^<${escapeRegExp(name)}((?:\\s[^>]*?)?)(\\/?)>`);
@@ -87,6 +73,12 @@ export function findJsxSpanEnd(text: string, openStart: number, name: string): n
   let depth = 1;
   let i = open.openEnd;
   while (i < text.length) {
+    // A same-name open/close inside a fence or comment is an example, not nesting.
+    const inSkip = skip.find(([rs, re]) => i >= rs && i < re);
+    if (inSkip) {
+      i = inSkip[1];
+      continue;
+    }
     if (text.charCodeAt(i) === 0x3c /* < */) {
       const tail = text.slice(i);
       const c = closeRe.exec(tail);
@@ -117,10 +109,11 @@ function insideRanges(pos: number, ranges: ReadonlyArray<CodeRange>): boolean {
 
 /**
  * Half-open `[start, end)` ranges of unknown JSX component tags (self-closing
- * AND paired) ∉ allowlist. Matches inside `codeRanges` (fenced/inline code) are
- * skipped. Unbalanced paired opens (no matching close) are skipped — not
- * excluded — to avoid over-excluding on malformed input. Used by
- * `code-ranges.ts` so server reference operations ignore refs inside JSX.
+ * AND paired) outside the registry. Opens inside `codeRanges` (fences,
+ * multi-line comments) are skipped, and so is a closing tag inside them.
+ * Unbalanced paired opens (no matching close) are skipped — not excluded — to
+ * avoid over-excluding on malformed input. Used by `code-ranges.ts` so server
+ * reference operations ignore refs inside JSX.
  */
 export function findUnknownJsxRanges(
   text: string,
@@ -137,7 +130,7 @@ export function findUnknownJsxRanges(
           i = open.openEnd;
           continue;
         }
-        const end = findJsxSpanEnd(text, i, open.name);
+        const end = findJsxSpanEnd(text, i, open.name, codeRanges);
         if (end !== -1) {
           ranges.push([i, end]);
           i = end;

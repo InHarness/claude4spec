@@ -2,8 +2,8 @@ import MarkdownIt from 'markdown-it';
 import { setupXmlMarkdownRules } from '../extensions/xmlNodes.js';
 import { setupAnchorMarkerRule } from '../extensions/AnchorMarker.js';
 import { setupPageRefRules } from '../extensions/PageRefNode.js';
-import { setupSectionRefMarkdownRule } from '../extensions/SectionRefNode/index.js';
-import { setupRawJsxRules } from '../extensions/RawJsxNode.js';
+import { rawTagPredicate, setupRawJsxRules } from '../extensions/RawJsxNode.js';
+import { getContextSpec } from '../registry.js';
 import type { FileMeta } from '../../../shared/page-links.js';
 
 export interface BuildMarkdownItOptions {
@@ -38,15 +38,24 @@ export function buildMarkdownIt(options: BuildMarkdownItOptions = {}): MarkdownI
     linkify: options.linkify ?? false,
   });
   // Gate rule setups on the root's properties. Defaults preserve full behaviour
-  // so unmigrated callers (and non-root consumers) keep every rule. Rule order is
-  // preserved to keep markdown-it precedence identical to pre-0.1.96.
-  const referenceValidated = options.root?.referenceValidated ?? true;
+  // so unmigrated callers (and non-root consumers) keep every rule. The XML tag
+  // rules recognise every registered name (M51); a tag the root gates out (an
+  // entity tag in a non-reference-validated root, `section_ref` in a root with
+  // no section index) is routed to the raw node by the raw-JSX rules, which
+  // run first — it round-trips as text instead of becoming a node with no
+  // matching editor schema.
   const sectionIndexed = options.root?.sectionIndexed ?? true;
-  if (referenceValidated) setupXmlMarkdownRules(md); // 5 reference nodes (referenceValidated)
+  const mounted = options.root
+    ? getContextSpec('page', {
+        sectionIndexed,
+        referenceValidated: options.root.referenceValidated ?? true,
+        linkTargets: [],
+      }).extensions
+    : null;
+  setupRawJsxRules(md, rawTagPredicate(mounted)); // raw mdx JSX + gated / malformed tags — base
+  setupXmlMarkdownRules(md); // every registered XML tag (M51)
   if (sectionIndexed) setupAnchorMarkerRule(md); // anchors (sectionIndexed)
   setupPageRefRules(md); // @path.md links — base (scoped by linkTargets)
-  if (sectionIndexed) setupSectionRefMarkdownRule(md); // section refs (sectionIndexed)
-  setupRawJsxRules(md); // raw mdx JSX — base
   if (options.pagesIndex) {
     (md as unknown as { __c4sPagesIndex: ReadonlyMap<string, FileMeta> }).__c4sPagesIndex =
       options.pagesIndex;

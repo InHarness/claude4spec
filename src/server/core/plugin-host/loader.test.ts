@@ -87,7 +87,7 @@ describe('loadWorkspacePlugins', () => {
     const { records } = await loadWorkspacePlugins(registry, ['pkg-old'], importer);
 
     expect(records[0]).toMatchObject({ status: 'incompatible', code: 'PLUGIN_HOST_API_MISMATCH' });
-    expect(records[0]?.migration?.targetHostApiVersion).toBe('2.0.0');
+    expect(records[0]?.migration?.targetHostApiVersion).toBe('2.1.0');
     /**
      * The 1 → 2 crossing, which is what makes this record useful: a plugin one
      * major behind gets the six descriptors naming exactly what it must change

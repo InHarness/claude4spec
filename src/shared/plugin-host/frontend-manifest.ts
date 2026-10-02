@@ -85,7 +85,8 @@ export const PLUGIN_RUNTIME_EXPORT_NAMES = [
   // routes: its detail route must supply one or every entity chip in the body
   // silently stops navigating.
   'EditorBridgeProvider',
-  'registerExtensionReferenceType',
+  // 2.1.2 (M51) — `registerExtensionReferenceType` is gone: XML tag names are
+  // registered by host modules only; a loaded plugin never reaches the registry.
   // M34/L11: frontend data-service singletons + hooks, additive to the 1.0.0
   // baseline (no HOST_API_VERSION bump).
   'versionService',

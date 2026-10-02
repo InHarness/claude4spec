@@ -149,23 +149,37 @@ describe('registry ∩ spec — the whitelist is authoritative', () => {
     expect(getRegisteredMentionSources('page', artefactRootEditorProps('pages')).map((s) => s.id)).toEqual(['files']);
   });
 
-  // LAST in this block: it replaces the real `inline_mention` registration with a stub.
+  it('[ac:m51-editor-extension-tag-name-rejected] a registration named after a registered XML tag is rejected', () => {
+    expect(() =>
+      registerEditorExtension({ name: 'todo', extension: { name: 'todo' } as never, availableIn: ['page'] }),
+    ).toThrow(/registered XML tag/);
+  });
+
+  it('the XML tag nodes of a context come from the registry, gated by its whitelist', () => {
+    const page = names(getEditorExtensionsForContext(ctx, 'page'));
+    for (const tag of ['inline_mention', 'single_element', 'element_list', 'tagged_list', 'tagged_list_mixed', 'section_ref', 'todo']) {
+      expect(page, tag).toContain(tag);
+    }
+    expect(names(getEditorExtensionsForContext(ctx, 'chat-input'))).toContain('section_ref');
+    expect(names(getEditorExtensionsForContext(ctx, 'chat-input'))).not.toContain('todo');
+  });
+
+  // LAST in this block: it replaces the real `task_list` registration with a stub.
   it('a whitelisted name missing from the hint still mounts, with one warning', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     registerEditorExtension({
-      name: 'inline_mention',
-      extension: { name: 'inline_mention' } as never,
+      name: 'task_list',
+      extension: { name: 'task_list' } as never,
       availableIn: ['page'],
     });
     try {
-      expect(names(getEditorExtensionsForContext(ctx, 'description'))).toContain('inline_mention');
+      expect(names(getEditorExtensionsForContext(ctx, 'description'))).toContain('task_list');
       getEditorExtensionsForContext(ctx, 'description');
-      expect(warn.mock.calls.filter((c) => String(c[0]).includes('"inline_mention"'))).toHaveLength(1);
+      expect(warn.mock.calls.filter((c) => String(c[0]).includes('"task_list"'))).toHaveLength(1);
     } finally {
       warn.mockRestore();
     }
   });
-
 });
 
 describe('EditorFactory.buildExtensions', () => {

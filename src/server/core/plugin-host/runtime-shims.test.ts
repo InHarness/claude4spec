@@ -44,7 +44,7 @@ describe('runtime-shims', () => {
     expect(src).toContain('export const clientPluginHost =');
     expect(src).toContain('export const queryClient =');
     expect(src).toContain('export const editorBridge =');
-    expect(src).toContain('export const registerExtensionReferenceType =');
+    expect(src).not.toContain('registerExtensionReferenceType');
   });
 
   it('emits the @c4s/plugin-runtime/ui (Host UI Kit) surface from one host bundle', async () => {

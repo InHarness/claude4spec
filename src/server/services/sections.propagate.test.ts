@@ -9,11 +9,9 @@ import { FileWatchRuntime, type WatchScope } from '../fs/watcher.js';
 import { RecordStore } from '../fs/record-store.js';
 import { markdownAdapter, type MarkdownRecord } from '../fs/record-adapters.js';
 import { boundWriter } from '../fs/sources.js';
-import { registerExtensionReferenceType } from '../../shared/reference-extensions.js';
 
-// Process-level, as `project-context.ts` does it at import — without a registered
-// `section_ref` the XML parser does not see the tag at all.
-registerExtensionReferenceType({ tag: 'section_ref', attrOrder: ['anchor'] });
+// `section_ref` is a host tag registered once per process (M51) — the test
+// setup imports the host registrations, as the server bootstrap does.
 
 /**
  * 0.2.89 — M06 → M42. A changed anchor reaches every file that cites it, and each

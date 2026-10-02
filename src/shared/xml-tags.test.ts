@@ -1,22 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import {
+  findXmlTagCandidates,
   parseXmlTags,
-  parseXmlTagsExcludingCode,
   serializeXmlTag,
   taggedListVia,
   tagMatchesEntity,
   extractSlugs,
 } from './xml-tags.js';
-import { registerExtensionReferenceType } from './reference-extensions.js';
 
 describe('parseXmlTags', () => {
-  it('parses a core tag with correct positions, line number, attrs and source', () => {
+  it('parses a registered tag with correct positions, line number and attrs', () => {
     const md = 'first line\nsee <inline_mention type="dto" slug="user-dto"/> here';
     const tags = parseXmlTags(md);
     expect(tags).toHaveLength(1);
     const tag = tags[0]!;
     expect(tag.kind).toBe('inline_mention');
-    expect(tag.source).toBe('core');
     expect(tag.attrs).toEqual({ type: 'dto', slug: 'user-dto' });
     expect(tag.start).toBe(md.indexOf('<inline_mention'));
     expect(tag.end).toBe(tag.start + tag.raw.length);
@@ -36,14 +34,14 @@ describe('parseXmlTags', () => {
   });
 });
 
-describe('parseXmlTagsExcludingCode', () => {
+describe('parseXmlTags — non-content ranges', () => {
   it('drops tags inside fenced blocks and inline code spans, keeps tags outside', () => {
     const md =
       '<inline_mention type="dto" slug="kept"/>\n' +
       '```\n<inline_mention type="dto" slug="in-fence"/>\n```\n' +
       'inline `<single_element type="ac" slug="in-span"/>` example\n' +
       '<single_element type="ac" slug="also-kept"/>';
-    const tags = parseXmlTagsExcludingCode(md);
+    const tags = parseXmlTags(md);
     expect(tags.map((t) => t.attrs.slug)).toEqual(['kept', 'also-kept']);
   });
 
@@ -54,7 +52,7 @@ describe('parseXmlTagsExcludingCode', () => {
       '  see <inline_mention type="dto" slug="inside-jsx"/>\n' +
       '</Callout>\n' +
       '<single_element type="ac" slug="also-outside"/>';
-    const tags = parseXmlTagsExcludingCode(md);
+    const tags = parseXmlTags(md);
     expect(tags.map((t) => t.attrs.slug)).toEqual(['outside', 'also-outside']);
   });
 
@@ -69,12 +67,12 @@ describe('parseXmlTagsExcludingCode', () => {
       '<inline_mention type="ac" slug="fenced"/>',
       '```',
     ].join('\n');
-    expect(parseXmlTagsExcludingCode(md).map((t) => t.attrs.slug)).toEqual(['oneline']);
+    expect(parseXmlTags(md).map((t) => t.attrs.slug)).toEqual(['oneline']);
   });
 
   it('[ac:m19-caption-backtick-pair-resolved] keeps a tag whose caption carries a backtick pair', () => {
     const md = 'Intro.\n\n<single_element type="ac" slug="kept" caption="use `foo` here"/>\n';
-    expect(parseXmlTagsExcludingCode(md).map((t) => t.attrs.slug)).toEqual(['kept']);
+    expect(parseXmlTags(md).map((t) => t.attrs.slug)).toEqual(['kept']);
   });
 
   it('[ac:m19-caption-backtick-single-resolved] a lone caption backtick does not pair with a later one in the same region', () => {
@@ -82,13 +80,13 @@ describe('parseXmlTagsExcludingCode', () => {
       '<single_element type="ac" slug="first" caption="the ` key"/>\n\n' +
       'text <inline_mention type="dto" slug="between"/> text\n\n' +
       'later prose with a `code` span\n';
-    expect(parseXmlTagsExcludingCode(md).map((t) => t.attrs.slug)).toEqual(['first', 'between']);
+    expect(parseXmlTags(md).map((t) => t.attrs.slug)).toEqual(['first', 'between']);
   });
 
   it('still drops a tag sitting inside a real inline code span next to a backtick caption', () => {
     const md =
       '<single_element type="ac" slug="live" caption="a ` b"/> and `<inline_mention type="dto" slug="example"/>`';
-    expect(parseXmlTagsExcludingCode(md).map((t) => t.attrs.slug)).toEqual(['live']);
+    expect(parseXmlTags(md).map((t) => t.attrs.slug)).toEqual(['live']);
   });
 });
 
@@ -102,16 +100,24 @@ describe('serializeXmlTag', () => {
     expect(out).toBe('<tagged_list type="ac" tags="auth,core" filter="open"/>');
   });
 
-  it('escapes double quotes and omits empty / null / undefined attrs', () => {
+  it('escapes double quotes, omits null / undefined attrs and KEEPS an empty one', () => {
     const out = serializeXmlTag('todo', { comment: 'say "hi"' });
     expect(out).toBe('<todo comment="say &quot;hi&quot;"/>');
 
     const sparse = serializeXmlTag('tagged_list', {
       type: 'dto',
-      tags: '',
+      tags: 'a',
       filter: null,
     });
-    expect(sparse).toBe('<tagged_list type="dto"/>');
+    expect(sparse).toBe('<tagged_list type="dto" tags="a"/>');
+
+    // M51 — a present empty attribute is content: `<todo comment=""/>` round-trips.
+    expect(serializeXmlTag('todo', { comment: '' })).toBe('<todo comment=""/>');
+  });
+
+  it('writes a tag with no attributes as `<name />` — the shape the parser recognises', () => {
+    expect(serializeXmlTag('todo', {})).toBe('<todo />');
+    expect(parseXmlTags('<todo />')).toHaveLength(1);
   });
 
   it('throws for an unknown tag kind', () => {
@@ -119,20 +125,68 @@ describe('serializeXmlTag', () => {
   });
 });
 
-describe('extension reference types', () => {
-  it('parses registered extension tags with source "extension" and serializes them', () => {
-    registerExtensionReferenceType({ tag: 'section_ref', attrOrder: ['anchor'] });
-
+describe('section_ref — a registered tag like any other (M51)', () => {
+  it('parses and serializes with no registration of its own in the test', () => {
     const md = 'see <section_ref anchor="abc123de"/> for details';
     const tags = parseXmlTags(md);
     expect(tags).toHaveLength(1);
     expect(tags[0]!.kind).toBe('section_ref');
-    expect(tags[0]!.source).toBe('extension');
     expect(tags[0]!.attrs).toEqual({ anchor: 'abc123de' });
 
     expect(serializeXmlTag('section_ref', { anchor: 'abc123de' })).toBe(
       '<section_ref anchor="abc123de"/>',
     );
+  });
+});
+
+describe('the M51 pattern', () => {
+  it('needs whitespace after the name: `<name />` is a tag, `<name/>` is not', () => {
+    expect(parseXmlTags('a <todo /> b').map((t) => t.attrs)).toEqual([{}]);
+    expect(parseXmlTags('a <todo/> b')).toEqual([]);
+    expect(parseXmlTags('a <section_ref/> b')).toEqual([]);
+  });
+
+  it('a name outside the registry is plain text, even with a live type + slug', () => {
+    expect(parseXmlTags('<entity_ref type="dto" slug="user"/>')).toEqual([]);
+  });
+
+  it('a `>` inside a quoted attribute value does not cut the tag', () => {
+    const [tag] = parseXmlTags('<single_element type="dto" slug="user" caption="a > b"/>');
+    expect(tag!.attrs.caption).toBe('a > b');
+  });
+
+  it('candidates include tags in code; parseXmlTags drops them', () => {
+    const md = '`<todo comment="x"/>` and <todo comment="y"/>';
+    expect(findXmlTagCandidates(md)).toHaveLength(2);
+    expect(parseXmlTags(md).map((t) => t.attrs.comment)).toEqual(['y']);
+  });
+
+  it('a tag in a 4-space indented block stays live (not a non-content range)', () => {
+    const md = 'para\n\n    <inline_mention type="dto" slug="indented"/>\n';
+    expect(parseXmlTags(md).map((t) => t.attrs.slug)).toEqual(['indented']);
+  });
+
+  it('an unclosed fence hides every tag below it', () => {
+    const md = '<todo comment="above"/>\n```\n<todo comment="below"/>\n';
+    expect(parseXmlTags(md).map((t) => t.attrs.comment)).toEqual(['above']);
+  });
+
+  it('a fence after a list marker is a fence', () => {
+    const md = '- ```\n  <todo comment="in-list-fence"/>\n  ```\n<todo comment="live"/>';
+    expect(parseXmlTags(md).map((t) => t.attrs.comment)).toEqual(['live']);
+  });
+
+  it('a closing JSX tag inside a fence does not close the JSX region early', () => {
+    const md = [
+      '<Callout>',
+      '```',
+      '</Callout>',
+      '```',
+      '<todo comment="inside-jsx"/>',
+      '</Callout>',
+      '<todo comment="outside"/>',
+    ].join('\n');
+    expect(parseXmlTags(md).map((t) => t.attrs.comment)).toEqual(['outside']);
   });
 });
 
@@ -148,7 +202,6 @@ describe('hidden entity types carry no tag of their own', () => {
     const tags = parseXmlTags(md);
     expect(tags).toHaveLength(1);
     expect(tags[0]!.kind).toBe('single_element');
-    expect(tags[0]!.source).toBe('core');
     expect(tags[0]!.attrs).toEqual({ type: 'diagram', slug: 'auth-flow', caption: 'Auth flow' });
 
     expect(
@@ -175,15 +228,11 @@ describe('single_element caption', () => {
   /**
    * The round-trip invariant the caption attribute is subject to: a tag written
    * WITHOUT a caption must not acquire `caption=""` on the way back out. The
-   * serializer skips empty values; the matching half is the tiptap attribute's
-   * `default: null` (see `xmlNodes.ts`), since `mergeAttributes` keeps an empty
-   * string but drops a null.
+   * serializer skips absent (null) values; the matching half is the tiptap
+   * attribute's `default: null` (see `xmlNodes.ts`).
    */
-  it('is omitted entirely when absent or empty', () => {
+  it('is omitted entirely when absent', () => {
     expect(serializeXmlTag('single_element', { type: 'dto', slug: 'user' })).toBe(
-      '<single_element type="dto" slug="user"/>',
-    );
-    expect(serializeXmlTag('single_element', { type: 'dto', slug: 'user', caption: '' })).toBe(
       '<single_element type="dto" slug="user"/>',
     );
     expect(

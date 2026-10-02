@@ -79,7 +79,6 @@ import type { DiscoveryCore } from '../discovery/types.js';
 import { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
 import { DEFAULT_PAGES_ROOT_PROPS } from '../../shared/types.js';
-import { registerExtensionReferenceType } from '../../shared/reference-extensions.js';
 
 /**
  * 0.2.13 item 28 — the page write path as ONE primitive, shared by REST and by
@@ -1332,7 +1331,6 @@ describe('update_sections — the anchor-loss guard', () => {
      * importing `project-context`, which would drag a whole project boot into a
      * unit suite.
      */
-    registerExtensionReferenceType({ tag: 'section_ref', attrOrder: ['anchor'] });
     indexer = undefined;
     injection = undefined;
     cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-anchor-loss-'));
@@ -2361,7 +2359,6 @@ describe('differential writes — textEdits', () => {
   let core: DiscoveryCore;
 
   beforeEach(async () => {
-    registerExtensionReferenceType({ tag: 'section_ref', attrOrder: ['anchor'] });
     indexer = undefined;
     injection = undefined;
     cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-text-edits-'));

@@ -1,79 +1,37 @@
 import { getEntityDef } from '../entities/registry.js';
 import { ChipResolver } from '../entities/ChipResolver.js';
 import { categoriseBrokenChip } from '../core/plugin-host/host.js';
-import { SectionRefChipWithData } from '../components/SectionRefChipWithData.js';
 import { InlineBrokenChip } from '../tiptap/extensions/views/BrokenChip.js';
 import { useEditorBridge } from '../tiptap/EditorContext.js';
 import { openEntityHandler } from '../entities/openEntity.js';
+import { getTagRender } from '../xml-markup/renders.js';
 import type { SanitizedChip } from './xml-chip-preprocess.js';
 
 /**
- * Render a single XML reference tag (one of the 6 kinds) as a chip in chat
- * markdown. All chips render inline in chat v1; block cards stay editor-only.
- *
- * Note: list-style chips (element_list / tagged_list / tagged_list_mixed)
- * render the slugs/tags inline (each entity gets a mini-chip). Forward-compat
- * slot `renderInlineCard` (M13) is not yet wired — fallback to per-slug
- * `renderChip` until the editor pipeline standardises the inline-card shape.
+ * Render one chip tag in chat markdown (2.1.2, M51). The component is picked
+ * in this order:
+ *  1. the render the owning module assigned to the tag's name;
+ *  2. for a tag targeting an entity — the `renderChip` slot of the type in
+ *     its `type` attribute;
+ *  3. no module for that type — the broken chip `[broken: type]`.
+ * Every chip renders its INLINE variant in chat, a `block` tag included: the
+ * block card stays in the page editor only.
  */
 export function XmlChipDispatcher({ chip }: { chip: SanitizedChip }) {
-  if (chip.kind === 'section_ref') {
-    return <SectionRefChipWithData anchor={chip.attrs.anchor ?? ''} />;
-  }
-
-  const type = chip.attrs.type ?? '';
-  const slug = chip.attrs.slug ?? '';
-  const slugs = (chip.attrs.slugs ?? '').split(',').map((s) => s.trim()).filter(Boolean);
-  const tagsCsv = chip.attrs.tags ?? '';
-
-  if (chip.kind === 'inline_mention' || chip.kind === 'single_element') {
-    return <EntityRefChip type={type} slug={slug} />;
-  }
-
-  if (chip.kind === 'element_list') {
-    return (
-      <span className="inline-flex flex-wrap items-center gap-1">
-        {slugs.map((s) => (
-          <EntityRefChip key={s} type={type} slug={s} />
-        ))}
-      </span>
-    );
-  }
-
-  if (chip.kind === 'tagged_list' || chip.kind === 'tagged_list_mixed') {
-    const filter = chip.attrs.filter === 'or' ? 'or' : 'and';
-    const typeLabel = chip.kind === 'tagged_list' ? type : 'mixed';
-    return (
-      <span
-        className="inline-flex items-center gap-1 rounded px-1.5 py-[1px] text-[11px] font-mono"
-        style={{
-          background: 'var(--c-panel)',
-          color: 'var(--c-muted)',
-          border: '1px solid var(--c-hair-strong)',
-        }}
-        title={`tagged_list ${typeLabel} · ${filter}-filter`}
-      >
-        <span style={{ opacity: 0.7 }}>#</span>
-        <span>{tagsCsv}</span>
-        <span style={{ opacity: 0.5 }}>· {typeLabel}</span>
-      </span>
-    );
-  }
-
-  return <span className="font-mono text-[11px]" style={{ color: 'var(--c-subtle)' }}>{`<${chip.kind}/>`}</span>;
+  const Render = getTagRender(chip.kind);
+  if (Render) return <Render name={chip.kind} attrs={chip.attrs} variant="inline" />;
+  return <TypeChip type={chip.attrs.type ?? ''} slug={chip.attrs.slug ?? ''} />;
 }
 
-function EntityRefChip({ type, slug }: { type: string; slug: string }) {
+function TypeChip({ type, slug }: { type: string; slug: string }) {
   const def = getEntityDef(type);
   const bridge = useEditorBridge();
-  // 0.2.15 — the same routing as in the editor: a hidden type opens its
-  // fullscreen overlay, a normal one navigates. This is the call site that
-  // motivated an EVENT rather than a bridge method — in chat there is often no
-  // `EditorBridge` at all, and a diagram chip still has to open.
+  // A hidden type opens its fullscreen overlay, a normal one navigates. In chat
+  // there is often no `EditorBridge` at all, and a diagram chip still has to open.
   const open = openEntityHandler(type, slug, bridge);
   if (!def) {
     const category = categoriseBrokenChip(type) ?? 'unknown-type';
-    return <InlineBrokenChip category={category} type={type} slug={slug} />;
+    return <InlineBrokenChip category={category} type={type} />;
   }
   return <ChipResolver type={type} slug={slug} onOpen={open} />;
 }
