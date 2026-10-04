@@ -2341,14 +2341,22 @@ export class ReleaseService {
     // would fall out of the release entirely.
     const chainIds = this.expandRootChains(rootIds);
     const placeholders = chainIds.map(() => '?').join(', ');
-    const rows = this.db
+    /**
+     * Two phases: pick the winners on metadata alone, then read `data` for the
+     * winners only. `data` is the whole serialized page, and the history of a
+     * long-lived project is hundreds of MB of it (app-spec: ~9k page versions,
+     * ~360 MB) against ~200 latest rows. Selecting `*` here copied all of it
+     * out of SQLite on every snapshot — seconds of synchronous better-sqlite3
+     * work, several times per `release_diff` call, with the event loop blocked.
+     */
+    const heads = this.db
       .prepare(
-        `SELECT pv1.* FROM file_version pv1
-          WHERE pv1.rootId IN (${placeholders})
-            AND (? IS NULL OR (pv1.release_id IS NOT NULL AND pv1.release_id <= ?))
-          ORDER BY pv1.rootId, pv1.path, pv1.version`,
+        `SELECT id, rootId, path, version FROM file_version
+          WHERE rootId IN (${placeholders})
+            AND (? IS NULL OR (release_id IS NOT NULL AND release_id <= ?))
+          ORDER BY rootId, path, version`,
       )
-      .all(...chainIds, releaseId, releaseId) as FileVersionRow[];
+      .all(...chainIds, releaseId, releaseId) as Array<Pick<FileVersionRow, 'id' | 'rootId' | 'path' | 'version'>>;
 
     /**
      * "Latest per page" is reduced HERE rather than in a correlated subquery.
@@ -2358,25 +2366,32 @@ export class ReleaseService {
      * page twice, which in a bundle is a duplicate under two prefixes and in a
      * diff is a phantom delete+create pair.
      */
-    const latest = new Map<string, FileVersionRow>();
-    for (const row of rows) {
+    const latest = new Map<string, (typeof heads)[number]>();
+    for (const row of heads) {
       const key = pageIdentityKey(this.canonicalRootId(row.rootId), row.path);
       const held = latest.get(key);
       if (!held || row.version > held.version) latest.set(key, row);
     }
-    const reduced = [...latest.values()].sort(
-      (a, b) =>
-        this.canonicalRootId(a.rootId).localeCompare(this.canonicalRootId(b.rootId)) ||
-        a.path.localeCompare(b.path),
-    );
     // 0.2.102 `paths`: membership of the pair (rootId, path) in the filter —
     // applied to the rows of the filter's roots, so both tracks yield the same
     // page set for the same filter.
     // Filter keys name the CURRENT id; a row written before a rename carries
     // a retired one, so the match is on the row's canonical root (0.2.101).
-    if (!pageFilter) return reduced;
-    const wanted = new Set(pageFilter.map((k) => pageIdentityKey(k.rootId, k.relPath)));
-    return reduced.filter((r) => wanted.has(pageIdentityKey(this.canonicalRootId(r.rootId), r.path)));
+    // Applied before the blob read, so a narrow filter reads only its pages.
+    if (pageFilter) {
+      const wanted = new Set(pageFilter.map((k) => pageIdentityKey(k.rootId, k.relPath)));
+      for (const key of [...latest.keys()]) if (!wanted.has(key)) latest.delete(key);
+    }
+    if (latest.size === 0) return [];
+    const ids = [...latest.values()].map((h) => h.id);
+    const rows = this.db
+      .prepare(`SELECT * FROM file_version WHERE id IN (SELECT value FROM json_each(?))`)
+      .all(JSON.stringify(ids)) as FileVersionRow[];
+    return rows.sort(
+      (a, b) =>
+        this.canonicalRootId(a.rootId).localeCompare(this.canonicalRootId(b.rootId)) ||
+        a.path.localeCompare(b.path),
+    );
   }
 
   /**
