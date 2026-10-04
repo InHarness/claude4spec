@@ -271,6 +271,7 @@ CREATE TABLE tag (
 CREATE UNIQUE INDEX uq_agent_credential_provider ON agent_credential (provider);
 CREATE INDEX idx_cbt_thread ON chat_background_task(thread_id);
 CREATE INDEX idx_cm_subagent_task ON chat_message(subagent_task_id);
+CREATE INDEX idx_cm_streaming ON chat_message(status) WHERE status = 'streaming';
 CREATE INDEX idx_cm_thread ON chat_message(thread_id);
 CREATE INDEX idx_cm_tool ON chat_message(tool_id);
 CREATE INDEX idx_chat_queued_message_thread_pos ON chat_queued_message (thread_id, position);

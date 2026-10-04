@@ -58,7 +58,9 @@ export class ProjectContextCache {
       this.entries.delete(id);
     }
 
-    this.evictIfOverBudget();
+    // Make room for the context about to be built: it already counts, so stop
+    // evicting one below the budget.
+    this.evictIfOverBudget(1);
 
     const promise = this.build(project).then(
       (ctx) => {
@@ -145,16 +147,26 @@ export class ProjectContextCache {
         });
       }
     }
-    this.evictIfOverBudget();
+    this.evictIfOverBudget(0);
   }
 
-  private evictIfOverBudget(): void {
+  /**
+   * Evict least-recently-used idle contexts until `live + reserve <= maxLive`.
+   *
+   * `reserve` is the slot a caller is about to fill: 1 from `get()` (a build is
+   * starting), 0 from `reapIdle()` (nothing is being added). Reaping with a
+   * reserve of 1 was an off-by-one: with exactly `maxLive` projects live — the
+   * `default` workspace has 8 = DEFAULT_MAX_LIVE — every finished turn evicted
+   * the LRU project although the budget was met, and the next request to it paid
+   * a full rebuild with every concurrent request queued on that build.
+   */
+  private evictIfOverBudget(reserve: 0 | 1): void {
     const ready = [...this.entries.entries()]
       .filter((e): e is [string, Extract<CacheEntry, { state: 'ready' }>] => e[1].state === 'ready')
       .sort((a, b) => a[1].lastUsed - b[1].lastUsed);
     let liveCount = ready.length + [...this.entries.values()].filter((e) => e.state === 'building').length;
     for (const [id, entry] of ready) {
-      if (liveCount < this.maxLive) break;
+      if (liveCount + reserve <= this.maxLive) break;
       // Never dispose an active project — exceed the budget instead; a finished
       // turn re-triggers eviction via reapIdle().
       if (entry.ctx.hasInFlightTurn()) continue;
