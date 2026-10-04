@@ -748,9 +748,14 @@ export class ReleaseService {
    * as its "to" side.
    */
   getCurrentSnapshot(): SpecSnapshot {
+    return this.currentSnapshot(true);
+  }
+
+  private currentSnapshot(withPages: boolean): SpecSnapshot {
     return this.buildSnapshot(
       { id: 0, name: '__current__', description: '', createdBy: 'user', createdAt: '' },
       null,
+      withPages,
     );
   }
 
@@ -777,7 +782,12 @@ export class ReleaseService {
    * of new snapshots, and loses nothing by it: its rows keep their release
    * binding, so re-activating restores every past snapshot retroactively.
    */
-  private buildSnapshot(release: Release, releaseId: number | null): SpecSnapshot {
+  /**
+   * `withPages: false` skips the page half — the diff engines read page rows
+   * themselves (scoped by `opts`) and use the snapshot for entities and
+   * `serializer_versions` only, so reading every page blob here was wasted.
+   */
+  private buildSnapshot(release: Release, releaseId: number | null, withPages = true): SpecSnapshot {
     const entities: SpecSnapshotEntityRow[] = [];
     const serializerVersions: Record<string, string> = {};
     for (const module of this.host.listEntities()) {
@@ -802,11 +812,13 @@ export class ReleaseService {
     }
     serializerVersions.page = this.pageSerializer.version;
 
-    const pages: SpecSnapshotPageRow[] = this.latestPageRowsAtOrBefore(releaseId).map((p) => ({
-      path: p.path,
-      op: p.op as 'create' | 'update' | 'delete',
-      data: safeJsonParse(p.data),
-    }));
+    const pages: SpecSnapshotPageRow[] = withPages
+      ? this.latestPageRowsAtOrBefore(releaseId).map((p) => ({
+          path: p.path,
+          op: p.op as 'create' | 'update' | 'delete',
+          data: safeJsonParse(p.data),
+        }))
+      : [];
 
     return {
       release,
@@ -1317,7 +1329,7 @@ export class ReleaseService {
       if (gitDelta) return gitDelta;
     }
 
-    const toSnap = this.getReleaseSnapshot(toRow.id);
+    const toSnap = this.buildSnapshot(this.toRelease(toRow), toRow.id, false);
     // 0.1.96: pages are correlated by (rootId, path), narrowed by opts.roots
     // (default: all releasable roots) via latestPageRowsAtOrBefore, which carries
     // rootId. Entities are unaffected by the roots narrowing.
@@ -1359,7 +1371,7 @@ export class ReleaseService {
       if (gitDelta) return gitDelta;
     }
 
-    const toSnap = this.getCurrentSnapshot();
+    const toSnap = this.currentSnapshot(false);
     const toPageRows = this.latestPageRowsAtOrBefore(null, opts);
     const toMeta = { id: 0, name: CURRENT_RELEASE_NAME };
     const { fromSnap, fromMeta, fromPageRows } = this.resolveFromSide(fromIdOrName, toSnap, opts);
@@ -1395,7 +1407,7 @@ export class ReleaseService {
     const fromRow = this.findReleaseRow(fromIdOrName);
     if (!fromRow) throw new DomainError('NOT_FOUND', `release '${fromIdOrName}' not found`);
     return {
-      fromSnap: this.getReleaseSnapshot(fromRow.id),
+      fromSnap: this.buildSnapshot(this.toRelease(fromRow), fromRow.id, false),
       fromMeta: { id: fromRow.id, name: fromRow.name },
       fromPageRows: this.latestPageRowsAtOrBefore(fromRow.id, opts),
     };
@@ -1473,6 +1485,8 @@ export class ReleaseService {
     for (const key of allPageKeys) {
       const a = aPagesMap.get(key);
       const b = bPagesMap.get(key);
+      // The same version row on both sides — nothing changed; skip parsing it twice.
+      if (a && b && a.id === b.id) continue;
       const path = (a ?? b)!.path;
       const aData = a && a.op !== 'delete'
         ? (safeJsonParse(a.data) as ReturnType<FileSerializer['snapshotFromContent']>)
