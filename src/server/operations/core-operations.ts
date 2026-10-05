@@ -836,7 +836,7 @@ export function registerCoreOperations(): void {
   CATALOG.register(
     pageWrite(
       'update_sections',
-      'Edit one or more sections of ONE page, addressed by anchor. A convenience over update_page — read-modify-write of the whole page with the same primitive — not a separate store, and not a structural gap in the model. Six actions: `replace`/`append`/`insert_after` take `content` (2.0.0: `append` lands at the end of the section\'s OWN body, before its first subsection, and refuses a heading at or above the section\'s level), `delete` takes neither, `edit` (0.2.37) takes `textEdits` — literal substitutions inside the addressed subtree — and `rename` (0.2.100) takes `heading`, rewriting the heading line alone with its level and its anchor kept. TRANSACTIONAL: the single exception to the partial-success rule, because every edit rewrites the same file. Applied bottom-up whatever order they arrive in.',
+      'Edit one or more sections of ONE page, addressed by anchor. A convenience over update_page — read-modify-write of the whole page with the same primitive — not a separate store, and not a structural gap in the model. Six actions: `replace`/`append`/`insert_after` take `content` (2.1.7: `replace` and `append` act on the section\'s OWN body — below the heading, before its first subsection — and refuse a heading at or above the section\'s level), `delete` takes neither, `edit` (0.2.37) takes `textEdits` — literal substitutions inside the addressed subtree — and `rename` (0.2.100) takes `heading`, rewriting the heading line alone with its level and its anchor kept. TRANSACTIONAL: the single exception to the partial-success rule, because every edit rewrites the same file. One anchor may carry several actions; elements whose claims on the page (as it was before the write) collide refuse the batch, and `results[]` has one row per element.',
       {
         ...expectedHash,
         edits: z.array(
@@ -941,7 +941,7 @@ export function registerCoreOperations(): void {
   CATALOG.register({
     name: 'update_plan',
     summary:
-      "Edit a plan through EXACTLY ONE of three input variants: `content` (the whole plan, literally), `textEdits` (literal substitutions counted over the whole plan), or `edits` (a transactional section batch addressed by anchor, with the same six actions as update_sections). More than one variant, or none, is INVALID_ARGUMENT. The first update in a thread with no plan requires `title` and creates the file; the slug is slugify(title) and immutable thereafter.",
+      "Edit a plan through EXACTLY ONE of three input variants: `content` (the whole plan, literally), `textEdits` (literal substitutions counted over the whole plan), or `edits` (a transactional section batch addressed by anchor, with the same six actions and the same collision rules as update_sections). More than one variant, or none, is INVALID_ARGUMENT. The first update in a thread with no plan requires `title` and creates the file; the slug is slugify(title) and immutable thereafter.",
     scope: 'project',
     mediation: 'direct',
     opClass: 'plan',

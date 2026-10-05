@@ -713,7 +713,7 @@ function insertAfterSection(
   anchor?: string,
   heading?: string,
 ): { body: string; warning?: string } {
-  const sections = parseSections(prior, 'md', { frontmatter: false }).sections;
+  const sections = parseSections(prior, { frontmatter: false }).sections;
   const wanted = heading?.trim();
   const matches = anchor
     ? sections.filter((s) => s.anchor === anchor)

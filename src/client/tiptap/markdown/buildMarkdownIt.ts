@@ -26,7 +26,8 @@ export interface BuildMarkdownItOptions {
 /**
  * Centralized markdown-it factory. Applies all custom rule setups from the editor
  * extension registry plus M14 PageRef rules. Shared by tiptap-markdown (through
- * extension `parse.setup` hooks) and by non-editor consumers (Faza 4: UserTextMarkdown).
+ * extension `parse.setup` hooks). Chat messages use react-markdown (`ChatMarkdown`),
+ * with the same page-ref grammar re-applied by `chat/remark-page-refs.ts`.
  *
  * pagesIndex can also be updated in-place on an already-built instance by assigning
  * to `md.__c4sPagesIndex` — rules dereference it at execution time.

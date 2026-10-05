@@ -16,7 +16,7 @@ import type {
   SpecSnapshotPageRow,
 } from '../../../shared/entities.js';
 import { CURRENT_RELEASE_NAME } from '../../../shared/entities.js';
-import { fileKindOf, headingPathOf, parseSections } from '../../../shared/section-parser.js';
+import { headingPathOf, parseSections } from '../../../shared/section-parser.js';
 import {
   applyItemBudget,
   DEFAULT_BUDGET_CHARS,
@@ -331,9 +331,8 @@ function projectPages(
     const sections: MCPSectionDelta[] = [];
     const fromPage = fromPagesMap.get(p.path);
     const toPage = toPagesMap.get(p.path);
-    const kind = fileKindOf(p.path);
-    const fromTree = sectionTree((fromPage?.data as { content?: string } | undefined)?.content, kind);
-    const toTree = sectionTree((toPage?.data as { content?: string } | undefined)?.content, kind);
+    const fromTree = sectionTree((fromPage?.data as { content?: string } | undefined)?.content);
+    const toTree = sectionTree((toPage?.data as { content?: string } | undefined)?.content);
 
     const head = (s: SectionKey, tree: SectionTree): Omit<MCPSectionDelta, 'content'> =>
       s.kind === 'preamble'
@@ -428,8 +427,8 @@ interface SectionTree {
  * the diff was computed with, so `headingPath` names the same ancestors the
  * diff saw. A section without an anchor is found by its heading text.
  */
-function sectionTree(content: string | undefined, kind: 'md' | 'mdx'): SectionTree {
-  const parsed = content === undefined ? null : parseSections(content, kind);
+function sectionTree(content: string | undefined): SectionTree {
+  const parsed = content === undefined ? null : parseSections(content);
   const find = (key: { anchor: string | null; heading: string | null }) =>
     parsed?.sections.find((s) =>
       key.anchor !== null && key.anchor !== PREAMBLE ? s.anchor === key.anchor : s.anchor === null && s.heading === key.heading,

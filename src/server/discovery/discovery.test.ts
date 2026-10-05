@@ -215,7 +215,7 @@ describe('discovery core', () => {
     // 2.0.0 — the shared section parser, exactly as the real indexer runs it:
     // anchor ABOVE the heading, `line_start` = top of the anchor block,
     // `line_end` = end of the OWN body, `body` = the own body as authored.
-    for (const sec of parseSections(content, 'md', { frontmatter: false }).sections) {
+    for (const sec of parseSections(content, { frontmatter: false }).sections) {
       if (!sec.anchor) continue;
       indexSection({
         rootId,

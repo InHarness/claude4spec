@@ -53,6 +53,7 @@ import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 import { ConflictError } from './brief.js';
 import { hashContent, toIso } from './artifact-content.js';
 import { anchorDelta, sectionDigests, sectionRanges } from './section-text.js';
+import { attributeDropped, type BatchElementOutcome } from './section-batch.js';
 import {
   applyPlanBatch,
   selectPlanVariant,
@@ -190,12 +191,8 @@ export interface PlanUpdateResult {
 /** What {@link composePlanBody} produces: the new body, plus what the response needs. */
 interface ComposedPlanBody {
   body: string;
-  /** Per addressed anchor, the anchors its range covered before the splice. */
-  scopeOf: Map<string, string[]>;
-  /** Per addressed anchor of an `edit`, how many substitutions it made. */
-  replacementsOf: Map<string, number>;
-  /** Per addressed anchor of a `rename`, the heading text from before the splice. */
-  previousHeadingOf: Map<string, string>;
+  /** `edits` variant: per element, in input order (empty for the whole-plan variants). */
+  outcomes: BatchElementOutcome[];
   /** The top-level `textEdits` variant's total, which addresses no anchor. */
   replacements?: number;
 }
@@ -1034,7 +1031,7 @@ function newPlanBytes(title: string, body: string, changedBy: PlanChangedBy): { 
 function composePlanBody(prior: string, payload: PlanEditPayload): ComposedPlanBody {
   switch (payload.variant) {
     case 'content':
-      return { body: payload.content, scopeOf: new Map(), replacementsOf: new Map(), previousHeadingOf: new Map() };
+      return { body: payload.content, outcomes: [] };
     case 'textEdits': {
       /**
        * Counted over the WHOLE plan — the scope trap worth remembering. The same
@@ -1051,20 +1048,13 @@ function composePlanBody(prior: string, payload: PlanEditPayload): ComposedPlanB
       const applied = applyTextEdits(prior, payload.textEdits, bodyPositionResolver(prior));
       return {
         body: applied.text,
-        scopeOf: new Map(),
-        replacementsOf: new Map(),
-        previousHeadingOf: new Map(),
+        outcomes: [],
         replacements: applied.replacements,
       };
     }
     case 'edits': {
       const outcome = applyPlanBatch(prior, payload.edits);
-      return {
-        body: outcome.body,
-        scopeOf: outcome.scopeOf,
-        replacementsOf: outcome.replacementsOf,
-        previousHeadingOf: outcome.previousHeadingOf,
-      };
+      return { body: outcome.body, outcomes: outcome.outcomes };
     }
   }
 }
@@ -1079,7 +1069,7 @@ function composePlanBody(prior: string, payload: PlanEditPayload): ComposedPlanB
  *
  * `droppedAnchors` IS attributable, because each one is measured inside the single
  * range that edit overwrote — and it is reported on SUCCESS, not only on refusal:
- * a `replace` on a `##` section carrying three `###` children takes all four
+ * a `delete` on a `##` section carrying three `###` children takes all four
  * anchors with it, and the caller has no other way to learn that.
  */
 function buildPlanResults(
@@ -1107,18 +1097,25 @@ function buildPlanResults(
     ];
   }
 
-  return payload.edits.map((edit) => ({
+  // One row per ELEMENT, in input order — several may share an anchor, and no
+  // anchor is reported dropped on two rows.
+  const droppedOf = attributeDropped(
+    composed.outcomes,
+    (a) => survivors.has(a),
+    new Map(sectionRanges(priorBody.split('\n')).map((r) => [r.anchor, r.lineStart - 1])),
+  );
+  return payload.edits.map((edit, i) => ({
     anchor: edit.anchor,
     action: edit.action,
     affectedAnchors: affected.filter((a) => a !== edit.anchor),
-    droppedAnchors: (composed.scopeOf.get(edit.anchor) ?? []).filter((a) => !survivors.has(a)),
-    ...(edit.action === 'edit' ? { replacements: composed.replacementsOf.get(edit.anchor) ?? 0 } : {}),
+    droppedAnchors: droppedOf[i] ?? [],
+    ...(edit.action === 'edit' ? { replacements: composed.outcomes[i]?.replacements ?? 0 } : {}),
     /**
      * Spread conditionally so the KEY is absent on every other row — including
      * the whole-plan rows above, which never reach this branch.
      */
     ...(edit.action === 'rename'
-      ? { previousHeading: composed.previousHeadingOf.get(edit.anchor) ?? '' }
+      ? { previousHeading: composed.outcomes[i]?.previousHeading ?? '' }
       : {}),
   }));
 }

@@ -48,7 +48,7 @@ export function InlineBrokenChip({ category, type, slug, hint }: InlineBrokenChi
         color: 'var(--c-red, #c45a3b)',
         border: '1px solid var(--c-red, #c45a3b)',
       }}
-      title={`${CATEGORY_LABEL[category]}: ${type || '?'}${slug ? `/${slug}` : ''} — ${hint ?? CATEGORY_HINT[category]}`}
+      title={brokenTitle(category, type, slug, hint)}
       data-broken-category={category}
     >
       {text}
@@ -62,22 +62,32 @@ interface BlockBrokenChipProps {
   slug?: string;
 }
 
-/** Block-level dashed card — the broken-reference card of the block entity tags, one contract for every type. */
+/** The tooltip both host chips carry: WHY it is broken, which the label does not say. */
+function brokenTitle(category: BrokenChipCategory, type: string, slug?: string, hint?: string): string {
+  return `${CATEGORY_LABEL[category]}: ${type || '?'}${slug ? `/${slug}` : ''} — ${hint ?? CATEGORY_HINT[category]}`;
+}
+
+/**
+ * Block-level dashed card — the host's broken state of the block entity tags
+ * (2.1.7, M19/M20): the same `[broken: <slug>]` label as the inline chip
+ * (`[broken: <type>]` for a tag without a slug), red, with the cause in the
+ * tooltip. The host draws it only when no type slot can — an inactive plugin,
+ * an unknown type or a rejected slot; a deleted entity of an active type is
+ * drawn by that type's own `null` branch.
+ */
 export function BlockBrokenChip({ category, type, slug }: BlockBrokenChipProps) {
-  const heading =
-    category === 'broken-reference'
-      ? `Missing entity: ${type}/${slug ?? '?'}`
-      : `${CATEGORY_LABEL[category]}: ${type || '?'}`;
   return (
     <div
-      className="rounded-md p-3 text-[12px] font-mono"
-      style={{ border: '1px dashed var(--c-red, #c45a3b)', color: 'var(--c-red, #c45a3b)' }}
-      title={CATEGORY_HINT[category]}
+      className="rounded-md px-3 py-2 text-[12px] font-mono"
+      style={{
+        border: '1px dashed var(--c-red, #c45a3b)',
+        background: 'var(--c-red-soft, rgba(196,90,59,0.14))',
+        color: 'var(--c-red, #c45a3b)',
+      }}
+      title={brokenTitle(category, type, slug)}
+      data-broken-category={category}
     >
-      ⚠ {heading}
-      <div className="mt-1 text-[11px]" style={{ opacity: 0.85 }}>
-        {CATEGORY_HINT[category]}
-      </div>
+      {`[broken: ${slug || type || '?'}]`}
     </div>
   );
 }

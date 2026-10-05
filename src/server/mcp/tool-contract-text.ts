@@ -47,7 +47,7 @@ export const GET_SECTIONS_RETURN =
   'body is in this same response. An expanded item is indistinguishable from a ' +
   'requested one (read its place in the tree from `heading_level` and position), and a parent carries ' +
   'ONLY ITS OWN BODY, ending before its first child heading, at either setting of the flag (update_sections ' +
-  '`replace`/`delete` operate on the whole subtree range — a parent\'s body is not its whole range). ' +
+  '`replace` swaps exactly that own body; `delete` takes the whole subtree). ' +
   'De-duplication ' +
   'is global: an anchor that is both requested and inside another requested anchor\'s subtree appears once, ' +
   'at its own input position — a parent and its child both in `anchors` give exactly one item each, and ' +
