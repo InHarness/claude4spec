@@ -541,6 +541,13 @@ describe('release budget — explicit degradation (0.2.40)', () => {
     for (const p of pages.slice(1)) {
       expect(JSON.stringify(p).length).toBeLessThan(DEFAULT_BUDGET_CHARS);
     }
+    // 2.1.5 — and the degraded tail is charged against the SAME budget: the
+    // content of the whole response stays under it, not each page on its own.
+    // (Eight hundred section identities are the floor no cut can go under —
+    // the section window is the remedy for that, and the hint names it.)
+    const content = pages.flatMap((p) => p.sections).reduce((n, s) => n + (s.content?.length ?? 0), 0);
+    expect(content).toBeLessThanOrEqual(DEFAULT_BUDGET_CHARS);
+    expect(out.truncationHint).toContain("pages/a.md'], sectionOffset: 1, sectionLimit: 1");
   });
 });
 
@@ -720,6 +727,10 @@ describe('release_diff — section window and sizes (2.1.5)', () => {
     expect(p!.sections[1]!.truncated).toBe(true);
     // The hint names the page and the next sectionOffset.
     expect(out.truncationHint).toContain("paths: ['pages/big.md'], sectionOffset: 1");
+    // The pointer also bounds the next window (only one section fitted) and
+    // says to drop `roots`, which `paths` cannot be combined with.
+    expect(out.truncationHint).toContain('sectionOffset: 1, sectionLimit: 1');
+    expect(out.truncationHint).toContain('without `roots`');
     expect(out.truncationHint).toContain('summaryOnly');
   });
 
@@ -738,6 +749,12 @@ describe('release_diff — section window and sizes (2.1.5)', () => {
     const raw = { from: { id: 1, name: 'v1' }, to: { id: 2, name: 'v2' }, entities: [], pages: many } as RawDelta;
     const responses = [
       projectReleaseDiff(raw, snap(1), snap(2), { include: ['pages'] }, { summaryOnly: true }),
+      // A heavy page window whose pages each outgrow the budget: the degraded
+      // tail is charged too.
+      projectReleaseDiff(raw, snap(1), snap(2), { include: ['pages'] }, { limit: 6 }),
+      // A page whose section identities alone outgrow the budget, read through
+      // the window the hint names.
+      run(bigPage(40, body), { singlePath: true, sectionOffset: 1, sectionLimit: 1 }),
       run(bigPage(40, body), { singlePath: true }),
       run(bigPage(40, body), { singlePath: true, sectionOffset: 10, sectionLimit: 20 }),
     ];

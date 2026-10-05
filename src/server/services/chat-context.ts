@@ -223,7 +223,7 @@ How to read your slice — two levels, in order:
 
 There is no third level. Nothing gets dumped to disk for you to read back: the response budget sits below the transport ceiling, so a response is never dropped silently, and the only road to more content is a smaller slice. A single section bigger than the budget comes back cut as text with \`truncated: true\` — say so in your distillate rather than inventing the rest.
 
-- \`roots\` scope: if the parent gave you \`roots\`, pass it through verbatim on EVERY \`release_diff\` call — it narrows the PAGES dimension to the brief's scope. Dropping it silently widens the diff to all releasable roots and leaks out-of-scope pages into the brief.
+- \`roots\` scope: if the parent gave you \`roots\`, pass it through verbatim on EVERY \`release_diff\` call that has no \`paths\` — it narrows the PAGES dimension to the brief's scope. Dropping it silently widens the diff to all releasable roots and leaks out-of-scope pages into the brief. A call WITH \`paths\` (a one-page slice, a section window, a \`truncationHint\` pointer) leaves \`roots\` out: the two are mutually exclusive (400 CONFLICTING_FILTERS), and each \`paths\` key already names its root.
 
 Tools: \`release-tools\` MCP (\`release_diff\`; \`release_show\` / \`release_list\` available but rarely needed) and \`load_skill_file\`. Nothing else — no filesystem and no entity graph. Without them you cannot reach \`pages/*.md\` or HEAD's entities at all; but \`release_diff\` itself has a branch that answers with the present (see the hard rules), so the guarantee that you see ONLY the historical diff is upheld by this prompt as well as by your toolset.
 
@@ -304,7 +304,7 @@ function buildDiffExploreSubagent(): SubagentDefinition {
   return {
     name: 'diff-explore',
     description:
-      'Read-only explorer of ONE SLICE of a historical release diff for a brief. Spawn it in parallel (one per disjoint slice) and hand it a `from`/`to` + optional `roots` scope + `entityTypes` and/or `limit`/`offset` window — or one page in `paths` with a `sectionOffset`/`sectionLimit` section window, sized from `size` in the summaryOnly map; it calls heavy `release_diff` for that slice, absorbs the bulk, and returns a concise distillate (facts to inline) — keeping the whole diff out of your own context. When the brief is root-scoped, pass the same `roots` to every diff-explore slice so the pages filter is not lost on fan-out.',
+      'Read-only explorer of ONE SLICE of a historical release diff for a brief. Spawn it in parallel (one per disjoint slice) and hand it a `from`/`to` + optional `roots` scope + `entityTypes` and/or `limit`/`offset` window — or one page in `paths` with a `sectionOffset`/`sectionLimit` section window, sized from `size` in the summaryOnly map; it calls heavy `release_diff` for that slice, absorbs the bulk, and returns a concise distillate (facts to inline) — keeping the whole diff out of your own context. When the brief is root-scoped, pass the same `roots` to every diff-explore slice so the pages filter is not lost on fan-out — except a one-page `paths` slice, which replaces `roots` (the two are mutually exclusive).',
     prompt: diffExplorePrompt(),
     tools: [
       'mcp__release-tools__release_show',

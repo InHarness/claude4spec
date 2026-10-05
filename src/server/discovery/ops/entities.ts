@@ -242,11 +242,14 @@ export function getEntities(deps: DiscoveryDeps, input: GetEntitiesInput): GetEn
   // the caller receives, and a `select: []` call that fits comfortably would
   // otherwise be cut on the strength of a payload nobody was ever going to see.
   const budgeted = applyItemBudget(results, metaOnly, RETRY_HINT);
+  // `metaOnly` leaves a not-found slug untouched, so a cut that only passed over
+  // such slugs degraded nothing — the envelope must not claim it did.
+  const anyCut = budgeted.truncated && budgeted.items.some((item) => 'truncated' in item && item.truncated);
   return {
     type: input.type,
     selectedFields: selectedFieldsOf(input.select, schema),
     results: budgeted.items,
-    ...(budgeted.truncated ? { truncated: true, message: budgeted.truncationHint ?? RETRY_HINT } : {}),
+    ...(anyCut ? { truncated: true, message: budgeted.truncationHint ?? RETRY_HINT } : {}),
   };
 }
 

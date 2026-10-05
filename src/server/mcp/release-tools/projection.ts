@@ -91,13 +91,17 @@ const HEAVY_RETRY_HINT =
 
 /**
  * The concrete rung-3 pointer for one page whose sections did not fit: its
- * `paths` and the position of the first section that came back cut.
+ * `paths`, the position where the next window starts, and a `sectionLimit` no
+ * bigger than what just fitted — without one, a page whose section identities
+ * alone outgrow the budget would answer every follow-up oversized again.
+ * `paths` and `roots` are mutually exclusive, so the pointer says to drop `roots`.
  */
-function sectionWindowHint(page: MCPPageDelta, sectionOffset: number): string {
+function sectionWindowHint(page: MCPPageDelta, sectionOffset: number, fitted: number): string {
   return (
     `page \`${page.rootId}/${page.path}\` did not fit from section ${sectionOffset} on — continue with ` +
-    `\`paths: ['${page.rootId}/${page.path}'], sectionOffset: ${sectionOffset}\` (\`total.sections\` counts its ` +
-    `changed sections; the page is read whole once the windows covered every position).`
+    `\`paths: ['${page.rootId}/${page.path}'], sectionOffset: ${sectionOffset}, sectionLimit: ${Math.max(fitted, 1)}\` ` +
+    `(without \`roots\`, which \`paths\` replaces; \`total.sections\` counts its changed sections; the page is ` +
+    `read whole once the windows covered every position).`
   );
 }
 
@@ -222,38 +226,54 @@ export function projectReleaseDiff(
     } else if (singlePath) {
       out.pages = full.slice(offset, offset + limit).map((page) => {
         const windowed = windowSections(page, sectionOffset, sectionLimit);
-        const { page: fitted, cutAt } = budgetSections(windowed, sectionOffset, remaining() - envelopeReserve(out));
+        const { page: fitted, cutAt, fitted: whole } = budgetSections(
+          windowed,
+          sectionOffset,
+          remaining() - envelopeReserve(out),
+          true,
+        );
         if (cutAt !== undefined) {
           hints.push(HEAVY_RETRY_HINT);
-          if (cutAt < out.total!.sections!) hints.push(sectionWindowHint(fitted, cutAt));
+          if (cutAt < out.total!.sections!) hints.push(sectionWindowHint(fitted, cutAt, whole));
         }
         return fitted;
       });
     } else {
-      const room = remaining();
-      const budgeted = applyItemBudget(full.slice(offset, offset + limit), degradePage, HEAVY_RETRY_HINT, room);
-      // The first page is never degraded as a PAGE — but one bigger than the
-      // whole budget would still bust the transport ceiling, so its guarantee
-      // drops to the section level, as under the section window.
+      /*
+       * ONE room for the whole page window, shared at SECTION level. Pages are
+       * served whole, in order, while they fit; from the first that does not,
+       * every page keeps all its sections' identities and `content` only as far
+       * as the room left reaches. Pages past the cut are CHARGED like any other —
+       * a degraded tail outside the budget is how a "budgeted" response used to
+       * outgrow the transport ceiling. Only the window's first page keeps the
+       * first-item guarantee (its first section is never empty).
+       */
+      const windowPages = full.slice(offset, offset + limit);
+      let left = remaining() - envelopeReserve(out);
+      /** Identity cost of the pages after `i` — reserved before a cut page spends the room. */
+      let tailIdentity: number[] | undefined;
       let pointer: string | undefined;
-      const first = budgeted.items[0];
-      if (first && (JSON.stringify(first)?.length ?? 0) > room) {
-        const { page, cutAt } = budgetSections(first, 0, room - envelopeReserve(out));
-        budgeted.items[0] = page;
-        if (cutAt !== undefined) {
-          budgeted.truncated = true;
-          pointer = cutAt < first.sections.length ? sectionWindowHint(page, cutAt) : '';
+      out.pages = windowPages.map((page, i) => {
+        if (tailIdentity === undefined) {
+          const cost = (JSON.stringify(page)?.length ?? 0) + 1;
+          if (cost <= left) {
+            left -= cost;
+            return page;
+          }
+          tailIdentity = suffixSums(windowPages.map(pageIdentityCost));
         }
-      }
-      out.pages = budgeted.items;
-      if (budgeted.truncated) {
-        hints.push(HEAVY_RETRY_HINT);
+        const reserve = tailIdentity[i + 1] ?? 0;
+        const { page: fitted, cutAt, fitted: whole } = budgetSections(page, 0, left - reserve, i === 0);
+        left -= (JSON.stringify(fitted)?.length ?? 0) + 1;
         // Rung 3, made concrete: the first page whose sections came back cut,
         // and where its section window should resume.
-        if (pointer === undefined) {
-          const page = budgeted.items.find((p) => p.sections.some((sec) => sec.truncated));
-          if (page) pointer = sectionWindowHint(page, page.sections.findIndex((sec) => sec.truncated));
+        if (pointer === undefined && cutAt !== undefined && cutAt < page.sections.length) {
+          pointer = sectionWindowHint(fitted, cutAt, whole);
         }
+        return fitted;
+      });
+      if (tailIdentity !== undefined) {
+        hints.push(HEAVY_RETRY_HINT);
         if (pointer) hints.push(pointer);
       }
     }
@@ -314,46 +334,15 @@ function degradeEntity(e: MCPEntityDelta): MCPEntityDelta {
   return { ...identity, truncated: true };
 }
 
-/**
- * The whole-page ceiling for a degraded page.
- *
- * The per-section cut alone does not bound a page: a page delta carries as many
- * sections as the page has, so a window of four pages with two hundred modified
- * sections each still returns well over a megabyte while reporting that the
- * budget was applied — the precise oversized response this release exists to
- * prevent, now wearing a `truncated` marker. The entity side never has this
- * problem because it drops payloads whole; the section side cuts, so the cut
- * has to compose. Sections are served in order until the ceiling is reached and
- * the remainder keep their identity with `content` emptied — still every
- * section, still marked, never a page that outgrows its own degradation.
- */
-const DEGRADED_PAGE_CHARS = 8_000;
-
-/**
- * A page past the budget keeps every section and every `content`, cut as TEXT.
- *
- * The opposite choice to `degradeEntity`, and for the opposite reason: a section
+/*
+ * A page past the budget keeps every section and every `content`, cut as TEXT —
+ * the opposite choice to `degradeEntity`, and for the opposite reason: a section
  * body is prose with inline diff tags, and a prefix of it is still prose with
- * inline diff tags — the same kind of data, less of it. A `moved` section has no
- * `content` to cut and is left exactly as it is.
+ * inline diff tags. 2.1.5: the cut is `budgetSections`, charged against the ONE
+ * room of the response. The 0.2.40 whole-page ceiling (8 000 characters per
+ * degraded page, OUTSIDE the budget) is gone: four degraded pages of two hundred
+ * sections each added ~100 000 characters on top of a "budgeted" response.
  */
-function degradePage(p: MCPPageDelta): MCPPageDelta {
-  return { ...p, sections: degradeSections(p.sections) };
-}
-
-function degradeSections(sections: readonly MCPSectionDelta[]): MCPSectionDelta[] {
-  let budget = DEGRADED_PAGE_CHARS;
-  return sections.map((section) => {
-    if (section.content === undefined) return section;
-    const allowance = Math.min(DEGRADED_SECTION_CHARS, budget);
-    if (section.content.length <= allowance) {
-      budget -= section.content.length;
-      return section;
-    }
-    budget -= allowance;
-    return { ...section, content: section.content.slice(0, allowance), truncated: true };
-  });
-}
 
 /**
  * 2.1.5 — the section window of the one page addressed through `paths`.
@@ -393,8 +382,9 @@ function budgetSections(
   page: MCPPageDelta,
   sectionOffset: number,
   budgetChars: number,
-): { page: MCPPageDelta; cutAt?: number } {
-  if ((JSON.stringify(page)?.length ?? 0) <= budgetChars) return { page };
+  guaranteeFirst: boolean,
+): { page: MCPPageDelta; cutAt?: number; fitted: number } {
+  if ((JSON.stringify(page)?.length ?? 0) <= budgetChars) return { page, fitted: page.sections.length };
   // Every section keeps its identity, so that is paid for up front; what is left
   // is shared out as content, in order, until it runs out.
   const identity = (sec: MCPSectionDelta): number =>
@@ -402,6 +392,7 @@ function budgetSections(
   const shell = JSON.stringify({ ...page, sections: [] })?.length ?? 0;
   let room = budgetChars - shell - page.sections.reduce((n, sec) => n + identity(sec), 0);
   let cutAt: number | undefined;
+  let fitted = 0;
   const sections = page.sections.map((sec, i) => {
     if (sec.content === undefined) return sec;
     const cost = jsonTextLength(sec.content);
@@ -410,17 +401,36 @@ function budgetSections(
       return sec;
     }
     // The first section past the line is where the next window starts — unless
-    // it is the window's first, which no smaller window can make bigger (there
-    // is no character window yet), so the next window starts after it.
-    if (cutAt === undefined) cutAt = sectionOffset + (i === 0 ? 1 : i);
-    // Never empty for the window's first section: an empty answer leaves no
+    // it is the guaranteed first, which no smaller window can make bigger
+    // (there is no character window yet), so the next window starts after it.
+    const guaranteed = guaranteeFirst && i === 0;
+    if (cutAt === undefined) {
+      cutAt = sectionOffset + (guaranteed ? 1 : i);
+      fitted = guaranteed ? 1 : i;
+    }
+    // Never empty for the guaranteed first section: an empty answer leaves no
     // smaller window to ask for.
-    const allowance = i === 0 ? Math.max(room, DEGRADED_SECTION_CHARS) : Math.max(room, 0);
+    const allowance = guaranteed ? Math.max(room, DEGRADED_SECTION_CHARS) : Math.max(room, 0);
     const content = sliceToJsonLength(sec.content, allowance);
     room -= jsonTextLength(content);
     return { ...sec, content, truncated: true as const };
   });
-  return cutAt === undefined ? { page } : { page: { ...page, sections }, cutAt };
+  return cutAt === undefined ? { page, fitted: page.sections.length } : { page: { ...page, sections }, cutAt, fitted };
+}
+
+/** What a page costs once every section is cut to its identity — the floor a degraded page never goes under. */
+function pageIdentityCost(page: MCPPageDelta): number {
+  const sections = page.sections.map((sec) =>
+    sec.content === undefined ? sec : { ...sec, content: '', truncated: true as const },
+  );
+  return (JSON.stringify({ ...page, sections })?.length ?? 0) + 1;
+}
+
+/** `out[i]` = sum of `costs[i..]`; `out[costs.length]` = 0. */
+function suffixSums(costs: readonly number[]): number[] {
+  const out = new Array<number>(costs.length + 1).fill(0);
+  for (let i = costs.length - 1; i >= 0; i--) out[i] = out[i + 1]! + costs[i]!;
+  return out;
 }
 
 /** Serialized length of a string's JSON body, without the quotes. */
