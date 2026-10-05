@@ -517,6 +517,43 @@ describe('update_sections over a real section index', () => {
     expect(body).toContain('BETA BODY');
   });
 
+  it('an edit on an ancestor next to a delete of a descendant is not a duplicate anchor', async () => {
+    await index('doc.md', page);
+    const beta = anchorOf('Beta');
+    const res = await updateSections(
+      deps(),
+      {
+        expectedHash: await hashOfPage(),
+        edits: [
+          { anchor: anchorOf('Top'), action: 'edit', textEdits: [{ find: 'ALPHA BODY', replaceWith: 'ALPHA2' }] },
+          { anchor: beta, action: 'delete' },
+        ],
+      },
+      'agent',
+    );
+    const body = (await pages.read('doc.md')).body;
+    expect(body).toContain('ALPHA2');
+    expect(body).not.toContain('BETA BODY');
+    expect(res.results.map((r) => r.droppedAnchors)).toEqual([[], [beta]]);
+  });
+
+  it('anchors swallowed by a fence a replace leaves open are reported on that replace row', async () => {
+    await index('doc.md', page);
+    const [alpha, beta] = [anchorOf('Alpha'), anchorOf('Beta')];
+    const res = await updateSections(
+      deps(),
+      {
+        expectedHash: await hashOfPage(),
+        edits: [
+          { anchor: beta, action: 'rename', heading: 'Beta renamed' },
+          { anchor: anchorOf('Top'), action: 'replace', content: '```\nopen' },
+        ],
+      },
+      'agent',
+    );
+    expect(res.results.map((r) => r.droppedAnchors)).toEqual([[], [alpha, beta]]);
+  });
+
   it('answers with what changed, and never with the section or the page', async () => {
     /**
      * The whole point of the echo-free rule, at its sharpest: an agent that

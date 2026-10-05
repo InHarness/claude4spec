@@ -137,7 +137,7 @@ export function parseBody(lines: readonly string[] | string): SectionParseResult
 }
 
 /** Anchored sections, first occurrence of an anchor only — the indexer's collision rule. */
-function claimedSections(parsed: SectionParseResult): ParsedSection[] {
+export function claimedSections(parsed: SectionParseResult): ParsedSection[] {
   const claimed = new Set<string>();
   return parsed.sections.filter((sec) => {
     if (!sec.anchor || claimed.has(sec.anchor)) return false;
@@ -186,25 +186,6 @@ export function sectionRanges(
  * containing your edit is the one thing you could have predicted, which is
  * exactly what this answer is not for.
  */
-/**
- * Where a section's OWN text ends: the first heading at or after its body, or
- * the end of its range when it has no descendants.
- */
-export function ownEndOf(
-  lines: readonly string[],
-  range: { lineStart: number; lineEnd: number },
-  /**
-   * The parse of `lines`, when the caller already has it. A batch over one page
-   * (the read side's `get_sections`, `sectionDigests` below) parses ONCE and
-   * asks per section; a single call lets this function parse for itself.
-   */
-  parsed: SectionParseResult = parseBody(lines),
-): number {
-  const self = parsed.sections.find((sec) => sec.headingLine === range.lineStart);
-  const own = self ? self.ownEndLine : range.lineEnd;
-  return Math.min(range.lineEnd, own);
-}
-
 export function sectionDigests(body: string): Map<string, string> {
   const lines = body.split('\n');
   const parsed = parseBody(lines);

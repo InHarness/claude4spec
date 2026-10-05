@@ -1,6 +1,13 @@
 import { DomainError } from './tags.js';
 import { anchorLineIndexOf, type ParsedSection } from '../../shared/section-parser.js';
-import { anchorValuesIn, anchorsInLineSpans, parseBody, subtreePositionResolver, type LineSpan } from './section-text.js';
+import {
+  anchorValuesIn,
+  anchorsInLineSpans,
+  claimedSections,
+  parseBody,
+  subtreePositionResolver,
+  type LineSpan,
+} from './section-text.js';
 import { applyTextEdits, preview, type TextEdit } from './text-edits.js';
 
 /**
@@ -67,6 +74,13 @@ export interface BatchElementOutcome {
   replacements?: number;
   /** `rename` only — the heading as it stood before the write. */
   previousHeading?: string;
+  /**
+   * 0-based line, in the text BEFORE the write, where this element's write
+   * begins — what {@link attributeDropped} uses to pin an anchor no scope
+   * covers (one swallowed by a code block the write opened) to the nearest
+   * writer above it.
+   */
+  writeLine: number;
 }
 
 export interface ComposedBatch {
@@ -92,13 +106,6 @@ export function assertOwnBodyContent(action: BatchAction, content: string, level
   );
 }
 
-/** Anchored sections, first occurrence wins — the indexer's collision rule. */
-function claimedByAnchor(sections: readonly ParsedSection[]): Map<string, ParsedSection> {
-  const out = new Map<string, ParsedSection>();
-  for (const sec of sections) if (sec.anchor && !out.has(sec.anchor)) out.set(sec.anchor, sec);
-  return out;
-}
-
 const label = (i: number, e: BatchElement) => `edits[${i}] (anchor '${e.anchor}', ${e.action})`;
 
 const SAME_ACTION_REPAIR: Record<BatchAction, string> = {
@@ -117,7 +124,8 @@ const SAME_ACTION_REPAIR: Record<BatchAction, string> = {
  */
 export function composeSectionBatch(lines: readonly string[], elements: readonly BatchElement[]): ComposedBatch {
   const parsed = parseBody(lines);
-  const byAnchor = claimedByAnchor(parsed.sections);
+  // First occurrence owns a duplicated anchor — the indexer's collision rule.
+  const byAnchor = new Map(claimedSections(parsed).map((sec) => [sec.anchor!, sec] as const));
   const sectionOf = (e: BatchElement): ParsedSection => {
     const sec = byAnchor.get(e.anchor);
     if (!sec) throw new DomainError('SECTION_NOT_FOUND', `section '${e.anchor}' not found`);
@@ -203,7 +211,7 @@ export function composeSectionBatch(lines: readonly string[], elements: readonly
     const bodyFrom = sec.headingLine; // 0-based first line below the heading
     const ownEnd = sec.ownEndLine; // 0-based exclusive
     const subtreeEnd = sec.subtreeEndLine; // 0-based exclusive
-    const outcome: BatchElementOutcome = { scope: [], broughtIn: [], takenOut: [] };
+    const outcome: BatchElementOutcome = { scope: [], broughtIn: [], takenOut: [], writeLine: start };
     switch (e.action) {
       case 'delete': {
         claims.push({ el: i, start: off(start), end: off(subtreeEnd), point: false, what: 'subtree' });
@@ -216,6 +224,7 @@ export function composeSectionBatch(lines: readonly string[], elements: readonly
         const s = off(bodyFrom);
         const t = off(ownEnd);
         claims.push({ el: i, start: s, end: t, point: false, what: 'own body' });
+        outcome.writeLine = bodyFrom;
         // An empty own body makes this a zero-width range: it still ENDS at its point.
         ops.push({ el: i, start: s, end: t, text: block(e.content), rank: t > s ? 2 : 0, depth, actionRank: 0 });
         outcome.broughtIn = anchorValuesIn(e.content ?? '');
@@ -235,11 +244,13 @@ export function composeSectionBatch(lines: readonly string[], elements: readonly
           actionRank: 0,
         });
         outcome.previousHeading = sec.heading;
+        outcome.writeLine = headingIdx;
         break;
       }
       case 'append': {
         const p = off(ownEnd);
         claims.push({ el: i, start: p, end: p, point: true, what: 'append point' });
+        outcome.writeLine = ownEnd;
         ops.push({ el: i, start: p, end: p, text: block(e.content), rank: 1, depth, actionRank: 0 });
         outcome.broughtIn = anchorValuesIn(e.content ?? '');
         break;
@@ -247,6 +258,7 @@ export function composeSectionBatch(lines: readonly string[], elements: readonly
       case 'insert_after': {
         const p = off(subtreeEnd);
         claims.push({ el: i, start: p, end: p, point: true, what: 'insert point' });
+        outcome.writeLine = subtreeEnd;
         ops.push({ el: i, start: p, end: p, text: block(e.content), rank: 1, depth, actionRank: 1 });
         outcome.scope = subtreeAnchors(sec);
         outcome.broughtIn = anchorValuesIn(e.content ?? '');
@@ -264,6 +276,7 @@ export function composeSectionBatch(lines: readonly string[], elements: readonly
           ops.push({ el: i, start: s, end: t, text: r.replaceWith, rank: t > s ? 2 : 0, depth, actionRank: 0 });
           spans.push({ from: lineAt(s), to: lineAt(Math.max(s, t - 1)) });
         }
+        if (spans.length > 0) outcome.writeLine = spans[0]!.from;
         outcome.scope = anchorsInLineSpans(lines, spans);
         outcome.broughtIn = anchorValuesIn(applied.text);
         outcome.takenOut = anchorValuesIn(windowText);
@@ -322,6 +335,54 @@ export function composeSectionBatch(lines: readonly string[], elements: readonly
   out += text.slice(cursor);
   if (out.endsWith('\n')) out = out.slice(0, -1);
   return { lines: out.split('\n'), outcomes };
+}
+
+/**
+ * `droppedAnchors` per element, in input order, no anchor on two rows. An
+ * anchor that left the text goes to the element that actually CARRIED IT OUT
+ * (`delete` its subtree, `edit` a matched fragment) before any element that
+ * merely declares it in scope — an `insert_after` on a section declares its
+ * subtree, yet a child deleted next to it was dropped by the `delete`, not by
+ * the insert, whichever of the two the caller listed first.
+ */
+export function attributeDropped(
+  outcomes: readonly BatchElementOutcome[],
+  survives: (anchor: string) => boolean,
+  /**
+   * Every anchor on the artifact BEFORE the write, with its 0-based HEADING
+   * line. An anchor lost outside every scope — swallowed by a code block some
+   * element's content opened and never closed — is still a drop the caller
+   * must hear about: it goes to the nearest element whose write begins above
+   * that heading (the first element when none does), after every scoped drop
+   * is placed. A rename of the swallowed section itself writes ON the heading,
+   * so it is never the one blamed.
+   */
+  priorAnchors: ReadonlyMap<string, number> = new Map(),
+): string[][] {
+  const rows = outcomes.map(() => [] as string[]);
+  const reported = new Set<string>();
+  for (const carriedOutOnly of [true, false]) {
+    outcomes.forEach((o, i) => {
+      for (const a of o.scope) {
+        if (survives(a) || reported.has(a)) continue;
+        if (carriedOutOnly && !o.takenOut.includes(a)) continue;
+        reported.add(a);
+        rows[i]!.push(a);
+      }
+    });
+  }
+  const sorted = rows.map((row, i) => row.sort((x, y) => outcomes[i]!.scope.indexOf(x) - outcomes[i]!.scope.indexOf(y)));
+  if (outcomes.length === 0) return sorted;
+  for (const [a, line] of [...priorAnchors].sort((x, y) => x[1] - y[1])) {
+    if (survives(a) || reported.has(a)) continue;
+    let owner = -1;
+    outcomes.forEach((o, i) => {
+      if (o.writeLine < line && (owner < 0 || o.writeLine > outcomes[owner]!.writeLine)) owner = i;
+    });
+    reported.add(a);
+    sorted[Math.max(owner, 0)]!.push(a);
+  }
+  return sorted;
 }
 
 /** The repair path of brief table 1.4, chosen by what collided with what. */

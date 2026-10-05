@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { composeSectionBatch, type BatchElement } from './section-batch.js';
+import { attributeDropped, composeSectionBatch, type BatchElement } from './section-batch.js';
 
 /**
  * 2.1.7 — the shared section-batch engine (M43 "section batch rules"), tested
@@ -277,5 +277,36 @@ describe('outcomes per element', () => {
     const r = run(PAGE, [{ anchor: 'aaaa0001', action: 'replace', content: 'x\n\n<!-- anchor: aaaa0002 -->\n### Copy' }]);
     expect(r.outcomes[0]!.broughtIn).toEqual(['aaaa0002']);
     expect(r.outcomes[0]!.takenOut).toEqual([]);
+  });
+});
+
+describe('attributeDropped — a dropped anchor goes to the element that carried it out', () => {
+  it('a deleted child is reported on the delete row, not on an insert_after listed first', () => {
+    const composed = run(PAGE, [
+      { anchor: 'aaaa0001', action: 'insert_after', content: 'after alpha' },
+      { anchor: 'aaaa0002', action: 'delete' },
+    ]);
+    const finalAnchors = new Set(['aaaa0001', 'aaaa0003', 'bbbb0001']);
+    expect(attributeDropped(composed.outcomes, (a) => finalAnchors.has(a))).toEqual([[], ['aaaa0002']]);
+  });
+});
+
+describe('attributeDropped — anchors swallowed outside every scope', () => {
+  it('an unclosed fence in a replace is reported on that replace row, never on a rename below it', () => {
+    const composed = run(PAGE, [
+      { anchor: 'bbbb0001', action: 'rename', heading: 'Beta renamed' },
+      { anchor: 'aaaa0001', action: 'replace', content: '```\nopen' },
+    ]);
+    const prior = new Map([
+      ['aaaa0001', 1],
+      ['aaaa0002', 6],
+      ['aaaa0003', 11],
+      ['bbbb0001', 16],
+    ]);
+    const survivors = new Set(['aaaa0001']);
+    expect(attributeDropped(composed.outcomes, (a) => survivors.has(a), prior)).toEqual([
+      [],
+      ['aaaa0002', 'aaaa0003', 'bbbb0001'],
+    ]);
   });
 });

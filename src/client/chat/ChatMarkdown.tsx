@@ -10,7 +10,7 @@ import { ChatCodeBlock } from './ChatCodeBlock.js';
 import { Link } from '@tanstack/react-router';
 import { entityRouteHref } from './entityRouteHref.js';
 import { decodePageRef, remarkPageRefs } from './remark-page-refs.js';
-import { ChatPageRef, useChatPagesIndex } from './ChatPageRef.js';
+import { ChatPageRef, ChatPagesIndexContext, useChatPagesIndex } from './ChatPageRef.js';
 
 /**
  * Shared <Markdown> factory used by chat assistant text, user messages
@@ -47,7 +47,11 @@ export function ChatMarkdown({
 
 function ChatMarkdownWithPageRefs({ text, className }: { text: string; className?: string }) {
   const pagesIndex = useChatPagesIndex();
-  return <ChatMarkdownBase text={text} className={className} pagesIndex={pagesIndex} pageRefs />;
+  return (
+    <ChatPagesIndexContext.Provider value={pagesIndex}>
+      <ChatMarkdownBase text={text} className={className} pagesIndex={pagesIndex} pageRefs />
+    </ChatPagesIndexContext.Provider>
+  );
 }
 
 function ChatMarkdownBase({
@@ -90,7 +94,7 @@ function ChatMarkdownBase({
             </ChatCodeBlock>
           );
         },
-        a: ChipOrLink,
+        a: pageRefs ? ChipOrNewTabLink : ChipOrLink,
       }}
     >
       {processed}
@@ -103,11 +107,20 @@ function ChatMarkdownBase({
  * becomes the chip it encodes; a link to an entity route (0.2.110 M05) becomes a
  * router `<Link>` — client-side navigation, no reload; any other link stays a link.
  */
+/**
+ * A user message's links open in a new tab, as they did before the message
+ * moved to `ChatMarkdown` — following one must not navigate away from the chat.
+ */
+function ChipOrNewTabLink(props: React.ComponentPropsWithoutRef<'a'>) {
+  return <ChipOrLink {...props} newTab />;
+}
+
 function ChipOrLink({
   href,
   children,
+  newTab = false,
   ...rest
-}: React.ComponentPropsWithoutRef<'a'>) {
+}: React.ComponentPropsWithoutRef<'a'> & { newTab?: boolean }) {
   const pageRef = typeof href === 'string' ? decodePageRef(href) : null;
   if (pageRef) return <ChatPageRef refAttrs={pageRef} />;
   if (typeof href === 'string' && href.startsWith(CHIP_HREF_PREFIX)) {
@@ -136,7 +149,7 @@ function ChipOrLink({
     }
   }
   return (
-    <a href={href} {...rest}>
+    <a href={href} {...rest} {...(newTab ? { target: '_blank', rel: 'noopener noreferrer' } : {})}>
       {children}
     </a>
   );

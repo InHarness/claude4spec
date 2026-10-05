@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { createContext, useContext, useMemo } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { PageRefChip } from '../components/PageRefChip.js';
 import { usePageLinks } from '../hooks/usePageLinks.js';
@@ -26,6 +26,12 @@ export function useChatPagesIndex(): Map<string, FileMeta> | undefined {
   }, [data]);
 }
 
+/**
+ * The index a message's `ChatMarkdown` already built, handed to its chips so a
+ * message with N references builds the path map once, not N times.
+ */
+export const ChatPagesIndexContext = createContext<Map<string, FileMeta> | undefined>(undefined);
+
 function basenameTitle(p: string): string {
   const base = p.split('/').pop() ?? p;
   return base.replace(/\.mdx?$/i, '');
@@ -47,7 +53,7 @@ export function ChatPageRef({ refAttrs }: { refAttrs: PageRefPayload }) {
   const navigate = useNavigate();
   const baseRootId = useBaseRootId();
   const roots = useRoots();
-  const pagesIndex = useChatPagesIndex();
+  const pagesIndex = useContext(ChatPagesIndexContext);
   const resolved = resolvePath(refAttrs.path, pagesIndex);
   const meta = resolved ? pagesIndex?.get(resolved) : undefined;
   const onClick =

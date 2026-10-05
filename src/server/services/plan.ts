@@ -53,7 +53,7 @@ import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 import { ConflictError } from './brief.js';
 import { hashContent, toIso } from './artifact-content.js';
 import { anchorDelta, sectionDigests, sectionRanges } from './section-text.js';
-import type { BatchElementOutcome } from './section-batch.js';
+import { attributeDropped, type BatchElementOutcome } from './section-batch.js';
 import {
   applyPlanBatch,
   selectPlanVariant,
@@ -1099,16 +1099,16 @@ function buildPlanResults(
 
   // One row per ELEMENT, in input order — several may share an anchor, and no
   // anchor is reported dropped on two rows.
-  const reported = new Set<string>();
+  const droppedOf = attributeDropped(
+    composed.outcomes,
+    (a) => survivors.has(a),
+    new Map(sectionRanges(priorBody.split('\n')).map((r) => [r.anchor, r.lineStart - 1])),
+  );
   return payload.edits.map((edit, i) => ({
     anchor: edit.anchor,
     action: edit.action,
     affectedAnchors: affected.filter((a) => a !== edit.anchor),
-    droppedAnchors: (composed.outcomes[i]?.scope ?? []).filter((a) => {
-      if (survivors.has(a) || reported.has(a)) return false;
-      reported.add(a);
-      return true;
-    }),
+    droppedAnchors: droppedOf[i] ?? [],
     ...(edit.action === 'edit' ? { replacements: composed.outcomes[i]?.replacements ?? 0 } : {}),
     /**
      * Spread conditionally so the KEY is absent on every other row — including

@@ -15,7 +15,7 @@ import {
 import { PROJECTION_IDS, type ProjectionStatusRegistry } from './projection-status.js';
 import { DomainError } from './tags.js';
 import { parseSections } from '../../shared/section-parser.js';
-import { composeSectionBatch } from './section-batch.js';
+import { attributeDropped, composeSectionBatch } from './section-batch.js';
 import { applyTextEdits, type MatchRange, type PositionResolver, type TextEdit } from './text-edits.js';
 /**
  * 0.2.43 — the section walk moved to `section-text.ts` so `plan-write.ts` runs
@@ -179,7 +179,9 @@ export interface UpdatePageInput {
  * What one edit in an `update_sections` batch does.
  *
  *  - `replace`      — swap the section's OWN body (below the heading, above the
- *                     first subsection). Idempotent.
+ *                     first subsection). Idempotent — unless `content` carries a
+ *                     deeper heading: it becomes a subsection, outside the own
+ *                     body a repeat overwrites, so a repeat adds it again.
  *  - `append`       — add to the end of the section's own body. NOT idempotent.
  *  - `insert_after` — add after the section's subtree. NOT idempotent.
  *  - `delete`       — remove the section with its subtree: anchor comment,
@@ -1593,16 +1595,13 @@ export async function updateSections(
   const finalAnchors = new Set(sectionRanges(lines).map((r) => r.anchor));
   /**
    * Per element, in input order — and no anchor in two rows: a subtree that two
-   * elements both declare (`insert_after` on a section, `edit` eating its anchor)
-   * is reported on the first row that could have dropped it.
+   * elements both declare (`insert_after` on a section, `delete` of its child)
+   * is reported on the row that carried the anchor out (see `attributeDropped`).
    */
-  const reported = new Set<string>();
-  const droppedOf = outcomes.map((o) =>
-    o.scope.filter((a) => {
-      if (finalAnchors.has(a) || reported.has(a)) return false;
-      reported.add(a);
-      return true;
-    }),
+  const droppedOf = attributeDropped(
+    outcomes,
+    (a) => finalAnchors.has(a),
+    new Map([...startOfAnchor].map(([a, lineStart]) => [a, lineStart - 1])),
   );
   /**
    * 2.0.0 — anchors SWALLOWED outside every scope: a write that opens a code
@@ -1636,7 +1635,7 @@ export async function updateSections(
    * anchors actually dropped, and the asymmetry is deliberate.
    *
    * Too wide is fine: a superset inside the scopes passes. That is what keeps
-   * `replace` idempotent — the second call with a refreshed hash drops nothing,
+   * a replayed batch legal — the second call with a refreshed hash drops nothing,
    * and the declaration it repeats verbatim must not become an error for having
    * come true. That replay is also why an anchor NO LONGER ON THE PAGE is not a
    * stranger: on the second call the children it names are already gone, so
@@ -1707,6 +1706,13 @@ export async function updateSections(
       if (sec.anchor === null) continue;
       owners.set(sec.anchor, [...(owners.get(sec.anchor) ?? []), sec.heading]);
     }
+    /**
+     * Every live anchor line the page ends up with. An `edit` carries its whole
+     * window through (`broughtIn`), so an ancestor `edit` next to a `delete` of
+     * a descendant "brings in" the deleted value — gone from the page, which is
+     * a LOSS for the guard below, not a duplicate.
+     */
+    const liveValues = new Set(anchorValuesIn(lines.join('\n')));
     const duplicates: AnchorDuplicate[] = [];
     for (const anchor of broughtInAll) {
       /**
@@ -1731,6 +1737,7 @@ export async function updateSections(
        * headings is a duplicate whether or not anything has noticed yet.
        */
       const headingsWithIt = owners.get(anchor) ?? [];
+      if (headingsWithIt.length === 0 && !liveValues.has(anchor)) continue;
       if (headingsWithIt.length !== 1) {
         duplicates.push({ anchor, page: first.pagePath, headingText: headingsWithIt[0] ?? '' });
       }

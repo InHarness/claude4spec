@@ -1,5 +1,5 @@
 import { DomainError } from './tags.js';
-import { assertHeadingText, parseBody, sectionRanges } from './section-text.js';
+import { assertHeadingText, parseBody } from './section-text.js';
 import { composeSectionBatch, type BatchElementOutcome } from './section-batch.js';
 import type { TextEdit } from './text-edits.js';
 
@@ -284,16 +284,16 @@ export function applyPlanBatch(body: string, edits: readonly PlanSectionEdit[]):
 
   /**
    * A duplicate anchor inside the plan file itself is a defect to fix in the
-   * plan, not a target to guess at. `sectionRanges` settles duplicates by first
+   * plan, not a target to guess at. The batch engine settles duplicates by first
    * occurrence (it must, to agree with every other reader), so the ambiguity has
    * to be detected here or it would be silently resolved in the caller's favour.
+   * The same count answers "is there such a section at all".
    */
   const occurrences = new Map<string, number>();
   for (const sec of parseBody(lines).sections) {
     if (sec.anchor) occurrences.set(sec.anchor, (occurrences.get(sec.anchor) ?? 0) + 1);
   }
 
-  const rangeByAnchor = new Map(sectionRanges(lines).map((r) => [r.anchor, r]));
   for (const edit of edits) {
     if ((occurrences.get(edit.anchor) ?? 0) > 1) {
       throw new DomainError(
@@ -302,7 +302,7 @@ export function applyPlanBatch(body: string, edits: readonly PlanSectionEdit[]):
         'an anchor names exactly one section — remove the duplicate from the plan',
       );
     }
-    if (!rangeByAnchor.has(edit.anchor)) {
+    if (!occurrences.has(edit.anchor)) {
       throw new DomainError(
         'SECTION_NOT_FOUND',
         `section '${edit.anchor}' not found in this plan`,
