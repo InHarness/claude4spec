@@ -121,7 +121,7 @@ export function PatchDetail({ patchPath }: Props) {
               onClick={() => void setApplied.mutateAsync(!applied)}
               className="w-full text-left text-[12px] px-2 py-1 rounded btn-ghost flex items-center gap-2"
               style={{ color: 'var(--c-ink)' }}
-              title="Toggle the 'applied' declaration. Nothing verifies it against the spec — and nothing but this toggle can set it."
+              title="Toggle the 'applied' declaration. Nothing verifies it against the spec. The patch thread's agent sets it when it finishes; only this toggle can unset it."
             >
               {applied ? <Circle size={12} /> : <Check size={12} />}
               {applied ? 'Mark as pending' : 'Mark as applied'}
