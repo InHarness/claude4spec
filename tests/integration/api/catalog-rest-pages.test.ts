@@ -572,7 +572,8 @@ describe('PATCH /api/sections — the rest rendering of update_sections', () => 
         .patch('/api/sections')
         .send({
           expectedHash: (await pages.read('a.md')).hash,
-          edits: [{ anchor: 'aaaa1111', action: 'replace', content: 'new body' }],
+          // 2.1.7 — a `replace` writes the own body and drops nothing; a delete does.
+          edits: [{ anchor: 'aaaa1111', action: 'delete' }],
         })
         .expect(400);
       expect(res.body.error.code).toBe('ANCHOR_LOSS');
@@ -608,7 +609,6 @@ describe('PATCH /api/sections — the rest rendering of update_sections', () => 
               content: 'new body\n\n<!-- anchor: bbbb2222 -->\n## Stolen\nbody',
             },
           ],
-          dropAnchors: ['cccc3333'],
         })
         .expect(400);
       expect(res.body.error.code).toBe('ANCHOR_DUPLICATE');
@@ -633,11 +633,11 @@ describe('PATCH /api/sections — the rest rendering of update_sections', () => 
         .patch('/api/sections')
         .send({
           expectedHash: (await pages.read('a.md')).hash,
-          edits: [{ anchor: 'aaaa1111', action: 'replace', content: 'new body' }],
+          edits: [{ anchor: 'aaaa1111', action: 'delete' }],
           dropAnchors: ['cccc3333'],
         })
         .expect(200);
-      expect(res.body.results[0].droppedAnchors).toEqual(['cccc3333']);
+      expect(res.body.results[0].droppedAnchors).toEqual(['aaaa1111', 'cccc3333']);
       expect((await pages.read('a.md')).body).not.toContain('sub body');
       expect((await pages.read('a.md')).body).toContain('keep me');
     } finally {

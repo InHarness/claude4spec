@@ -54,7 +54,7 @@ describe('selectPlanVariant — exactly one of three', () => {
     expect(() => selectPlanVariant({ edits: [] })).toThrow(/non-empty/);
   });
 
-  it('refuses the same anchor twice in one batch rather than folding the two', () => {
+  it('2.1.7 — lets one anchor carry several DIFFERENT actions through shape validation', () => {
     expect(() =>
       selectPlanVariant({
         edits: [
@@ -62,7 +62,16 @@ describe('selectPlanVariant — exactly one of three', () => {
           { anchor: 'aaaa0001', action: 'append', content: 'two' },
         ],
       }),
-    ).toThrow(/appears more than once/);
+    ).not.toThrow();
+  });
+
+  it('2.1.7 — refuses two elements of the SAME action on one anchor (one-action-per-anchor)', () => {
+    expect(() =>
+      applyPlanBatch(PLAN, [
+        { anchor: 'aaaa0001', action: 'append', content: 'one' },
+        { anchor: 'aaaa0001', action: 'append', content: 'two' },
+      ]),
+    ).toThrow(/same action on one anchor/);
   });
 
   it.each([
@@ -100,14 +109,22 @@ describe('applyPlanBatch — anchor resolution', () => {
   });
 });
 
-describe('applyPlanBatch — a section is its subtree', () => {
-  it('replace on a parent rewrites its children too, and reports them as dropped', () => {
+describe('applyPlanBatch — replace writes the own body, delete the subtree', () => {
+  it('replace on a parent leaves its subsections untouched and drops nothing', () => {
     const out = applyPlanBatch(PLAN, [{ anchor: 'aaaa0001', action: 'replace', content: 'new alpha' }]);
     expect(out.body).toContain('new alpha');
-    expect(out.body).not.toContain('child body');
-    // The parent's own heading and anchor survive a replace; the child's do not.
-    expect(anchorsOf(out.body)).toEqual(['aaaa0001', 'bbbb0001']);
-    expect(out.scopeOf.get('aaaa0001')).toEqual(['aaaa0002']);
+    expect(out.body).not.toContain('alpha body');
+    expect(out.body).toContain('child body');
+    expect(anchorsOf(out.body)).toEqual(['aaaa0001', 'aaaa0002', 'bbbb0001']);
+    expect(out.outcomes[0]!.scope).toEqual([]);
+  });
+
+  it('refuses a replace whose content brings back an existing subsection anchor', () => {
+    expect(() =>
+      applyPlanBatch(PLAN, [
+        { anchor: 'aaaa0001', action: 'replace', content: 'x\n\n<!-- anchor: aaaa0002 -->\n### Copy' },
+      ]),
+    ).toThrow(/duplicate anchor/);
   });
 
   it('delete takes the heading, the anchor comment and the whole subtree', () => {
@@ -115,7 +132,7 @@ describe('applyPlanBatch — a section is its subtree', () => {
     expect(out.body).not.toContain('## Alpha');
     expect(out.body).not.toContain('### Alpha child');
     expect(anchorsOf(out.body)).toEqual(['bbbb0001']);
-    expect(out.scopeOf.get('aaaa0001')).toEqual(['aaaa0001', 'aaaa0002']);
+    expect(out.outcomes[0]!.scope).toEqual(['aaaa0001', 'aaaa0002']);
   });
 
   it('append lands at the end of the section’s OWN text, before its first child', () => {
@@ -159,7 +176,7 @@ describe('applyPlanBatch — the edit action', () => {
       { anchor: 'aaaa0001', action: 'edit', textEdits: [{ find: 'alpha body', replaceWith: 'ALPHA BODY' }] },
     ]);
     expect(out.body).toContain('ALPHA BODY');
-    expect(out.replacementsOf.get('aaaa0001')).toBe(1);
+    expect(out.outcomes[0]!.replacements).toBe(1);
   });
 
   it('counts matches in the SUBTREE only — the trap the top-level variant does not have', () => {
@@ -173,7 +190,7 @@ describe('applyPlanBatch — the edit action', () => {
     const out = applyPlanBatch(PLAN, [
       { anchor: 'aaaa0001', action: 'edit', textEdits: [{ find: 'body', replaceWith: 'text', expectedMatches: 2 }] },
     ]);
-    expect(out.replacementsOf.get('aaaa0001')).toBe(2);
+    expect(out.outcomes[0]!.replacements).toBe(2);
     // Beta's body is outside the subtree and untouched.
     expect(out.body).toContain('beta body');
   });
@@ -191,13 +208,32 @@ describe('applyPlanBatch — the edit action', () => {
     }
   });
 
-  it('refuses an edit nested inside a section the same batch replaces', () => {
+  it('2.1.7 — lets an edit in a subsection pass alongside a replace on its parent', () => {
+    const out = applyPlanBatch(PLAN, [
+      { anchor: 'aaaa0001', action: 'replace', content: 'new alpha' },
+      { anchor: 'aaaa0002', action: 'edit', textEdits: [{ find: 'child body', replaceWith: 'x' }] },
+    ]);
+    expect(out.body).toContain('new alpha');
+    expect(out.body).toContain('### Alpha child');
+    expect(out.body).not.toContain('child body');
+  });
+
+  it('refuses an edit on a ### in a batch that deletes its ## parent', () => {
     expect(() =>
       applyPlanBatch(PLAN, [
-        { anchor: 'aaaa0001', action: 'replace', content: 'new alpha' },
+        { anchor: 'aaaa0001', action: 'delete' },
         { anchor: 'aaaa0002', action: 'edit', textEdits: [{ find: 'child body', replaceWith: 'x' }] },
       ]),
-    ).toThrow(/lies inside/);
+    ).toThrow(/inside the subtree/);
+  });
+
+  it('refuses an insert_after on the last child of a section the batch deletes', () => {
+    expect(() =>
+      applyPlanBatch(PLAN, [
+        { anchor: 'aaaa0001', action: 'delete' },
+        { anchor: 'aaaa0002', action: 'insert_after', content: 'x' },
+      ]),
+    ).toThrow(/inside the subtree/);
   });
 
   /**
@@ -224,7 +260,7 @@ describe('applyPlanBatch — the edit action', () => {
     expect(one.body).toBe(two.body);
     expect(one.body).toContain('ALPHA');
     expect(one.body).toContain('new child');
-    expect(one.replacementsOf.get('aaaa0001')).toBe(1);
+    expect(one.outcomes[0]!.replacements).toBe(1);
   });
 
   it('refuses a parent edit whose find lands in the body a child replace writes', () => {
@@ -233,7 +269,7 @@ describe('applyPlanBatch — the edit action', () => {
         { anchor: 'aaaa0002', action: 'replace', content: 'new child' },
         { anchor: 'aaaa0001', action: 'edit', textEdits: [{ find: 'child body', replaceWith: 'x' }] },
       ]),
-    ).toThrow(/find 'child body' \(line 9\) lies inside the section 'aaaa0002'/);
+    ).toThrow(/edits\[0\] \(anchor 'aaaa0002', replace\) own body \(line 8\) collides with edits\[1\] \(anchor 'aaaa0001', edit\) match 'child body' \(line 9\)/);
   });
 
   it('matches a parent edit on the plan AS READ, never on what a child append writes', () => {
@@ -243,18 +279,19 @@ describe('applyPlanBatch — the edit action', () => {
       { anchor: 'aaaa0002', action: 'append', content: 'brand new body line' },
       { anchor: 'aaaa0001', action: 'edit', textEdits: [{ find: 'body', replaceWith: 'text', expectedMatches: 'all' }] },
     ]);
-    expect(out.replacementsOf.get('aaaa0001')).toBe(2);
+    expect(out.outcomes[1]!.replacements).toBe(2);
     expect(out.body).toContain('brand new body line');
     expect(out.body).toContain('child text');
   });
 
-  it('refuses a fragment that eats the anchor comment of a section another entry addresses', () => {
-    expect(() =>
-      applyPlanBatch(PLAN, [
-        { anchor: 'aaaa0002', action: 'append', content: 'more' },
-        { anchor: 'aaaa0001', action: 'edit', textEdits: [{ find: '<!-- anchor: aaaa0002 -->', replaceWith: '' }] },
-      ]),
-    ).toThrow(/touches the anchor comment of 'aaaa0002'/);
+  it('2.1.7 — a fragment eating the anchor comment of an appended-to section claims nothing the append claims', () => {
+    // `append` claims only its point; the eaten anchor is in the edit's scope.
+    const out = applyPlanBatch(PLAN, [
+      { anchor: 'aaaa0002', action: 'append', content: 'more' },
+      { anchor: 'aaaa0001', action: 'edit', textEdits: [{ find: '<!-- anchor: aaaa0002 -->', replaceWith: '' }] },
+    ]);
+    expect(out.outcomes[1]!.scope).toEqual(['aaaa0002']);
+    expect(out.body).toContain('more');
   });
 
   it('refuses a fragment on a heading another entry renames', () => {
@@ -263,7 +300,7 @@ describe('applyPlanBatch — the edit action', () => {
         { anchor: 'aaaa0002', action: 'rename', heading: 'Renamed child' },
         { anchor: 'aaaa0001', action: 'edit', textEdits: [{ find: '### Alpha child', replaceWith: '### X' }] },
       ]),
-    ).toThrow(/touches the heading of 'aaaa0002'/);
+    ).toThrow(/head \(line 6\) collides with edits\[1\] \(anchor 'aaaa0001', edit\) match '### Alpha child'/);
   });
 
   it('names EVERY collision in one refusal, so one retry is enough', () => {
@@ -283,8 +320,8 @@ describe('applyPlanBatch — the edit action', () => {
     } catch (e) {
       const err = e as { code: string; message: string };
       expect(err.code).toBe('INVALID_ARGUMENT');
-      expect(err.message).toMatch(/find 'Alpha child' \(line 7\) lies inside the section 'aaaa0002'/);
-      expect(err.message).toMatch(/find 'child body' \(line 9\) lies inside the section 'aaaa0002'/);
+      expect(err.message).toMatch(/match 'Alpha child' \(line 7\)/);
+      expect(err.message).toMatch(/match 'child body' \(line 9\)/);
     }
   });
 
@@ -295,8 +332,8 @@ describe('applyPlanBatch — the edit action', () => {
     ]);
     expect(out.body).toContain('ALPHA');
     expect(out.body).toContain('CHILD');
-    expect(out.replacementsOf.get('aaaa0001')).toBe(1);
-    expect(out.replacementsOf.get('aaaa0002')).toBe(1);
+    expect(out.outcomes[0]!.replacements).toBe(1);
+    expect(out.outcomes[1]!.replacements).toBe(1);
   });
 
   it('refuses a parent and a child edit matching the same fragment — reported once', () => {
@@ -309,19 +346,18 @@ describe('applyPlanBatch — the edit action', () => {
     } catch (e) {
       const err = e as { code: string; message: string };
       expect(err.code).toBe('INVALID_ARGUMENT');
-      expect(err.message.match(/overlaps a fragment/g)).toHaveLength(1);
+      expect(err.message.match(/collides with/g)).toHaveLength(1);
     }
   });
 
-  it('guards an edit\'s anchor comment against another edit, whatever the order', () => {
+  it('2.1.7 — two edits with disjoint matches compose whatever the order, even when one eats the other\'s anchor comment', () => {
     const child: PlanSectionEdit = { anchor: 'aaaa0002', action: 'edit', textEdits: [{ find: 'child body', replaceWith: 'X' }] };
     const parent: PlanSectionEdit = {
       anchor: 'aaaa0001',
       action: 'edit',
       textEdits: [{ find: '<!-- anchor: aaaa0002 -->', replaceWith: '' }],
     };
-    expect(() => applyPlanBatch(PLAN, [child, parent])).toThrow(/touches the anchor comment of 'aaaa0002'/);
-    expect(() => applyPlanBatch(PLAN, [parent, child])).toThrow(/touches the anchor comment of 'aaaa0002'/);
+    expect(applyPlanBatch(PLAN, [child, parent]).body).toBe(applyPlanBatch(PLAN, [parent, child]).body);
   });
 
   it('lets an edit on a child pass alongside an insert_after on its parent', () => {
@@ -340,7 +376,7 @@ describe('applyPlanBatch — the edit action', () => {
     const out = applyPlanBatch(PLAN, [
       { anchor: 'aaaa0001', action: 'edit', textEdits: [{ find: 'alpha body', replaceWith: 'x' }] },
     ]);
-    expect(out.scopeOf.get('aaaa0001')).toEqual([]);
+    expect(out.outcomes[0]!.scope).toEqual([]);
   });
 });
 
@@ -381,10 +417,10 @@ describe('applyPlanBatch — the rename action', () => {
 
   it('hands back the heading text from before the splice', () => {
     const out = applyPlanBatch(PLAN, [{ anchor: 'aaaa0002', action: 'rename', heading: 'A child, renamed' }]);
-    expect(out.previousHeadingOf.get('aaaa0002')).toBe('Alpha child');
+    expect(out.outcomes[0]!.previousHeading).toBe('Alpha child');
     // Scope is empty, so the row's `droppedAnchors` comes back empty rather
     // than undefined — there is no line in a rename that could carry an anchor.
-    expect(out.scopeOf.get('aaaa0002')).toEqual([]);
+    expect(out.outcomes[0]!.scope).toEqual([]);
   });
 
   it('is idempotent by heading text — a replay changes nothing', () => {
@@ -392,7 +428,7 @@ describe('applyPlanBatch — the rename action', () => {
     const twice = applyPlanBatch(once.body, [{ anchor: 'aaaa0001', action: 'rename', heading: 'Renamed' }]);
     expect(twice.body).toBe(once.body);
     // …and the second call reports what the FIRST one left, not the original.
-    expect(twice.previousHeadingOf.get('aaaa0001')).toBe('Renamed');
+    expect(twice.outcomes[0]!.previousHeading).toBe('Renamed');
   });
 
   it('refuses the four bad shapes of heading text, each for the whole batch', () => {

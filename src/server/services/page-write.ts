@@ -14,7 +14,8 @@ import {
 } from '../fs/record-store.js';
 import { PROJECTION_IDS, type ProjectionStatusRegistry } from './projection-status.js';
 import { DomainError } from './tags.js';
-import { fileKindOf, parseSections } from '../../shared/section-parser.js';
+import { parseSections } from '../../shared/section-parser.js';
+import { attributeDropped, composeSectionBatch } from './section-batch.js';
 import { applyTextEdits, type MatchRange, type PositionResolver, type TextEdit } from './text-edits.js';
 /**
  * 0.2.43 — the section walk moved to `section-text.ts` so `plan-write.ts` runs
@@ -25,14 +26,8 @@ import {
   anchorDelta,
   anchorValuesIn,
   anchorsInLineSpans,
-  assertAppendContent,
-  applySectionEdit,
   assertHeadingText,
   bodyPositionResolver,
-  liveRangeOf,
-  ownEndOf,
-  prepareSubstitutions,
-  renameHeading,
   sectionDigests,
   sectionRanges,
   sha256,
@@ -183,24 +178,23 @@ export interface UpdatePageInput {
 /**
  * What one edit in an `update_sections` batch does.
  *
- *  - `replace`      — swap the section's body. Idempotent.
- *  - `append`       — add to the end of the section's body. NOT idempotent.
- *  - `insert_after` — add after the section, before the next heading of equal or
- *                     higher level. NOT idempotent.
- *  - `delete`       — remove the section: heading, anchor comment and body.
- *                     Idempotent, and the ONLY action that takes no `content`.
+ *  - `replace`      — swap the section's OWN body (below the heading, above the
+ *                     first subsection). Idempotent — unless `content` carries a
+ *                     deeper heading: it becomes a subsection, outside the own
+ *                     body a repeat overwrites, so a repeat adds it again.
+ *  - `append`       — add to the end of the section's own body. NOT idempotent.
+ *  - `insert_after` — add after the section's subtree. NOT idempotent.
+ *  - `delete`       — remove the section with its subtree: anchor comment,
+ *                     heading and every descendant. Idempotent, and the ONLY
+ *                     action that takes no `content`.
  *
- * Every one of them addresses the section WITH ITS SUBTREE, not the prose under
- * the heading. A section's range runs to the next heading of equal-or-higher
- * level, so it contains its descendants — a `replace` on a `##` carrying three
- * `###` replaces all four sections, and a `delete` removes all four. To change
- * only a parent's preamble, either reproduce the subsections in the new
- * `content` or edit the subsections separately.
- *
- * `append` is the exception in practice, not in principle: it splices at the end
- * of the section's OWN text (before the first descendant heading), because
- * appending to a parent underneath its last grandchild would be adding to a
- * different section than the one addressed.
+ * 2.1.7 — `replace` acts on the OWN body, exactly what `get_sections` returns:
+ * content read, corrected and sent back no longer wipes subsections the caller
+ * never saw. The heading and the subsections with their anchors stay; the
+ * heading changes only through `rename`. `delete`, `insert_after` and the `edit`
+ * match window still act on the SUBTREE. One anchor may carry several actions
+ * (`rename` + `replace` rewrites a whole section in one batch); which elements
+ * collide is the shared engine's question (`section-batch.ts`).
  *
  * 0.2.37 adds a fifth, and it is the one that does NOT fit the paragraph above:
  *
@@ -208,8 +202,9 @@ export interface UpdatePageInput {
  *                     and the only action that takes `textEdits` instead of
  *                     `content`.
  *
- * The four whole-section actions are aimed at a SUBTREE; `edit` is aimed at the
- * FRAGMENTS its patterns match. That distinction is not cosmetic — it decides
+ * `delete` and `insert_after` are aimed at a SUBTREE; `edit` is aimed at the
+ * FRAGMENTS its patterns match; `replace`, `append` and `rename` touch no anchor
+ * at all. That distinction is not cosmetic — it decides
  * which anchors an edit may be declared to drop and which ones trip
  * `ANCHOR_LOSS`, so it is carried all the way through `scopeOf` below.
  *
@@ -257,11 +252,11 @@ export interface SectionEdit {
    * the addressed subtree.
    *
    * One `edit` item may carry N substitutions and perform all of them in a
-   * single batch entry. That is the whole reason the field is a list: repeating
-   * the same anchor to get a second substitution is not merely wasteful, it is
-   * refused, because a duplicated anchor in one batch is ambiguous.
+   * single batch entry. That is the whole reason the field is a list: a second
+   * `edit` element on the same anchor is refused (one-action-per-anchor).
    *
-   * Scope is the SUBTREE, not the page. Against `update_page`'s page-wide
+   * Scope is the SUBTREE from its anchor line, heading included — not the
+   * page. Against `update_page`'s page-wide
    * differential mode this buys exactly two things — a shorter `find`, since it
    * needs no disambiguating context, and a narrower space to hit by accident.
    * Reach for the section scope when the target sits in one known section, and
@@ -291,8 +286,9 @@ export interface UpdateSectionsInput {
   /**
    * 0.2.17 — the anchors this batch is ALLOWED to destroy.
    *
-   * A `replace` or `delete` addresses a section together with its subtree, so it
-   * takes the anchor comments of every descendant heading with it. That was
+   * A `delete` addresses a section together with its subtree, so it takes the
+   * anchor comments of every descendant heading with it (2.1.7: `replace` no
+   * longer does — it writes the own body only, so it can drop nothing). That was
    * silent: the anchors vanished from `section_index`, and anything citing one —
    * a `<section_ref/>`, a `@page.md#anchor` link — broke, to be discovered later
    * by `check_consistency` or not at all.
@@ -366,7 +362,7 @@ export interface SectionEditResult {
    * anchor with referents and no `dropAnchors`), so a caller who wants to know
    * what a write cost in identities reads it off the write itself.
    *
-   * Empty for `append` / `insert_after`, which never span a subtree.
+   * Empty for `replace` / `append` / `rename`, which write no anchor line.
    *
    * For `edit` this is measured over the MATCHED FRAGMENTS rather than the
    * addressed subtree — a substitution destroys the identities its patterns
@@ -417,7 +413,7 @@ export interface UpdateSectionsResult {
   path: string;
   hash: string;
   version: number;
-  /** In the order the edits were GIVEN, not the order they were applied. */
+  /** One row per ELEMENT, in the order given — two rows may share an anchor. */
   results: SectionEditResult[];
 }
 
@@ -469,8 +465,8 @@ async function commit(
     hash: sha256(written),
     content: written,
     version: currentVersionOf(target, relPath),
-    anchors: [...sectionRanges(body.split('\n'), fileKindOf(relPath))].map((r) => r.anchor),
-    digests: sectionDigests(body, fileKindOf(relPath)),
+    anchors: [...sectionRanges(body.split('\n'))].map((r) => r.anchor),
+    digests: sectionDigests(body),
   };
 }
 
@@ -687,7 +683,7 @@ export async function updatePage(
 
   // Read BEFORE writing: the delta is against what was on disk, and this doubles
   // as create-or-replace, so "no page yet" means every anchor is an addition.
-  const before = sectionDigests(await bodyOnDisk(target.pages, relPath), fileKindOf(relPath));
+  const before = sectionDigests(await bodyOnDisk(target.pages, relPath));
 
   if (hasEdits) {
     return await updatePageByTextEdits(target, relPath, input, actor, before, diffDeps);
@@ -1315,49 +1311,26 @@ function pagePositionResolver(fullText: string): PositionResolver {
  * since nothing is written until every edit has been spliced in memory, a
  * failure leaves the file untouched rather than needing a rollback.
  *
- * ## Applied bottom-up, whatever order they arrive in — and re-measured each time
+ * ## Composed in one pass, whatever order the elements arrive in
  *
- * An edit changes the line count, which moves every section BELOW it. Applying
- * in the caller's order would mean each splice landing on coordinates the
- * previous splice invalidated. Descending by `lineStart` fixes the direction:
- * an edit never moves a section that has not been spliced yet.
+ * 2.1.7 — every element CLAIMS part of the page as it was before the write
+ * (`delete` its subtree, `replace` its own body, `edit` its matches, `rename`
+ * its head; `append`/`insert_after` a point). Colliding claims refuse the
+ * batch, so the surviving claims are disjoint and the composition is one
+ * forward pass over the original text, with the insertion order fixed by rule
+ * rather than by input order. No range is re-measured, because no element can
+ * move another's coordinates. See `section-batch.ts`.
  *
- * Direction alone is not enough, and the first version of this got that wrong.
- * Bottom-up is only self-sufficient for DISJOINT ranges, and these ranges are
- * not disjoint: a section's range runs to the next heading of equal-or-higher
- * level, so it CONTAINS its subsections. A batch naming both `## Outer` and its
- * child `### Inner` therefore shrinks or grows Outer's range while spliced
- * against the child — and Outer's stale `lineEnd`, applied afterwards, eats
- * whatever now sits past the real end: the next sibling's `<!-- anchor -->`
- * comment and heading, silently, answered with a 200 and a fresh hash. So each
- * range is re-measured against the CURRENT lines immediately before its own
- * splice. The pre-pass below still locates every anchor first, because a batch
- * that cannot be applied in full must fail before anything is spliced.
+ * `results` is returned one row per element, in the order the elements were
+ * GIVEN.
  *
- * `results` is nevertheless returned in the order the edits were GIVEN — the
- * application order is an implementation detail the caller did not choose.
+ * ## The heading changes only through `rename`
  *
- * ## The heading is not replaceable through here, on purpose
- *
- * `section_index` stores a section as `[lineStart .. lineEnd]`, 1-based
- * inclusive, where `lineStart` IS the heading line and `lineEnd` is the last
- * line before the next sibling's `<!-- anchor -->` comment. `replace` / `append`
- * / `insert_after` touch only what is strictly BELOW the heading, for two
- * reasons that point the same way:
- *
- *  - `get_sections` returns the body without the heading (`rawBody =
- *    sectionLines.slice(1)`), so read → edit → write only round-trips if this
- *    writes back the same shape. Taking the heading here would make an agent
- *    that echoed what it read delete the heading.
- *  - the heading text is the section's IDENTITY — `headingSlug`, its place in the
- *    outline tree, and (through a rename) anchor propagation across every root all
- *    hang off it. A "punctual section edit" quietly restructuring the page is not a
- *    convenience. Rewriting a heading is an `update_page` call, where it is
- *    visible.
- *
- * `delete` is the deliberate exception: it removes the heading and the anchor
- * comment along with the body, because a section whose heading survived would
- * not have been deleted. That is visible in the verb, which is the difference.
+ * `replace` / `append` write strictly BELOW the heading: `get_sections` returns
+ * the body without the heading, so read → edit → write only round-trips if this
+ * writes back the same shape. `rename` rewrites the heading line alone, and
+ * `delete` removes heading and anchor comment with the subtree, because a
+ * section whose heading survived would not have been deleted.
  *
  * ## The line ranges come from the FILE, not from the index
  *
@@ -1387,7 +1360,6 @@ export async function updateSections(
     throw new DomainError('INVALID_ARGUMENT', 'edits must be a non-empty array');
   }
 
-  const seen = new Set<string>();
   for (const edit of edits) {
     if (!edit?.anchor) throw new DomainError('VALIDATION', 'each edit requires an anchor');
     if (!SECTION_EDIT_ACTIONS.includes(edit.action)) {
@@ -1458,16 +1430,6 @@ export async function updateSections(
         throw new DomainError('VALIDATION', `edit for '${edit.anchor}' requires content for action '${edit.action}'`);
       }
     }
-    /**
-     * Two edits to one anchor in one batch is refused rather than folded.
-     * Bottom-up application makes their combined effect depend on an ordering
-     * the caller did not choose, and there is no reading of "replace it, then
-     * append to it" that is not the caller having meant one call.
-     */
-    if (seen.has(edit.anchor)) {
-      throw new DomainError('INVALID_ARGUMENT', `anchor '${edit.anchor}' appears more than once in edits`);
-    }
-    seen.add(edit.anchor);
   }
 
   /**
@@ -1567,12 +1529,11 @@ export async function updateSections(
   await assertUnchanged(target, first.pagePath, input.expectedHash);
   const page = await target.pages.read(first.pagePath);
   const lines = page.body.split('\n');
-  const kind = fileKindOf(first.pagePath);
 
   // The index is built over the page BODY (frontmatter stripped), which is what
   // `read()` returns — so the section parser here sees the same lines the
   // indexer saw, and ranges are measured in the same coordinates.
-  const startOfAnchor = new Map(sectionRanges(lines, kind).map((r) => [r.anchor, r.lineStart]));
+  const startOfAnchor = new Map(sectionRanges(lines).map((r) => [r.anchor, r.lineStart]));
   /**
    * The refusal carries the file's hash, not an empty string. `expectedHash`
    * just matched, so this IS the hash the caller already holds — but a client
@@ -1608,178 +1569,15 @@ export async function updateSections(
     }
   }
 
-  // Descending by start line, re-measuring each range: see "Applied bottom-up"
-  // above for why the direction alone is not enough.
-  const order = [...located].sort(
-    (a, b) => startOfAnchor.get(b.edit.anchor)! - startOfAnchor.get(a.edit.anchor)!,
-  );
   /**
-   * Anchors the batch is ABOUT — per edit, everything inside the range it is
-   * about to splice.
-   *
-   * Captured here, before the splice, because after it the range is gone; and
-   * per edit rather than batch-wide, because unlike `affectedAnchors` this one
-   * CAN be attributed. Every anchor is measured inside the one range that was
-   * overwritten, so no guessing after the fact is involved.
-   *
-   * `delete` includes the addressed anchor itself — it takes its own heading and
-   * anchor comment with it. `replace` does not: the heading and its anchor
-   * comment survive the splice, only the body below them is overwritten.
+   * 2.1.7 — the whole batch is composed by the shared engine (M43 section batch
+   * rules): every element claims part of the page as it was BEFORE the write,
+   * colliding claims refuse the batch with both elements named, and the
+   * composition is one pass over the original text. See `section-batch.ts`.
    */
-  const rangeByAnchor = new Map(sectionRanges(lines, kind).map((r) => [r.anchor, r]));
-
-  /**
-   * 2.0.0 — `append` adds to the section's OWN body, before its first
-   * subsection. A heading in `content` (outside a code block) at or above the
-   * addressed section's level would close that section and open a sibling in
-   * its place, so the whole batch is refused before the file is touched.
-   * Deeper headings become the section's first children.
-   */
-  for (const { edit } of located) {
-    if (edit.action !== 'append') continue;
-    assertAppendContent(edit.content ?? '', rangeByAnchor.get(edit.anchor)!.level, edit.anchor);
-  }
-
-  /**
-   * 0.2.100 — `rename` under an ancestor this same batch REWRITES, and the
-   * asymmetry is read straight off the definition of a section as a subtree.
-   *
-   * `replace` and `delete` on an ancestor overwrite or remove the descendant's
-   * heading LINE — precisely the one line a `rename` exists to change. Bottom-up
-   * application would run the deeper `rename` first and the ancestor would then
-   * throw it away, reporting success and a `previousHeading` for a rename that
-   * is not in the file. So the whole batch is refused.
-   *
-   * `append` and `insert_after` on an ancestor add lines and rewrite nothing, so
-   * a `rename` beneath them PASSES. This is not leniency: there is no line the
-   * two entries both write.
-   */
-  for (const { edit } of located) {
-    if (edit.action !== 'rename') continue;
-    const mine = rangeByAnchor.get(edit.anchor)!;
-    const clash = located.find(({ edit: other }) => {
-      if (other.anchor === edit.anchor) return false;
-      if (other.action !== 'replace' && other.action !== 'delete') return false;
-      const theirs = rangeByAnchor.get(other.anchor);
-      if (!theirs) return false;
-      return theirs.lineStart < mine.lineStart && theirs.lineEnd >= mine.lineEnd;
-    });
-    if (clash) {
-      throw new DomainError(
-        'INVALID_ARGUMENT',
-        `rename on '${edit.anchor}' lies inside the section '${clash.edit.anchor}' that another entry in this batch ${clash.edit.action}s`,
-        'a whole-section write over an ancestor already rewrites that heading line — split them into separate calls',
-      );
-    }
-  }
-
-  /**
-   * Every `edit` is matched and applied FIRST, on the page as the caller read
-   * it, so a `find` can never hit text this same batch wrote. One whose matched
-   * fragment touches lines another entry writes — a replaced or deleted
-   * subtree, a renamed heading, an append/insert point, a neighbour's anchor
-   * comment — refuses the whole batch, every collision named at once (see
-   * {@link prepareSubstitutions}). An `edit` nested in a `replace`/`delete`
-   * is therefore always refused: its fragments lie in the overwritten body by
-   * definition. A parent `edit` on its own intro next to a child `replace` is
-   * not — nothing both entries write.
-   */
-  const substituted = prepareSubstitutions(lines, located.map(({ edit }) => edit), kind);
-
-  const scopeOf = new Map<string, string[]>();
-  const replacementsOf = new Map<string, number>();
-  /** Per `rename` entry, the heading text read off the file just before the splice. */
-  const previousHeadingOf = new Map<string, string>();
-  /**
-   * The anchor values each edit CARRIES IN and the ones it takes OUT, measured
-   * as text at the moment of the splice, when both halves are still in hand.
-   *
-   * Not derivable afterwards from the section ranges: a value that arrives in
-   * `content` without a heading of its own never becomes a range at all, and it
-   * is precisely one of the two things the guard below has to refuse.
-   */
-  const broughtInOf = new Map<string, string[]>();
-  const takenOutOf = new Map<string, string[]>();
-  for (const [anchor, sub] of substituted.byAnchor) {
-    replacementsOf.set(anchor, sub.replacements);
-    broughtInOf.set(anchor, anchorValuesIn(sub.subtreeAfter));
-    takenOutOf.set(anchor, anchorValuesIn(sub.subtreeBefore));
-    /**
-     * Scope from the MATCHED FRAGMENTS, not from the addressed subtree — the
-     * one place `edit` parts company with the other four actions. A
-     * substitution three headings down destroys nothing above it, so naming
-     * those anchors in `dropAnchors` would be declaring a loss this entry
-     * cannot cause. Measured on the lines the fragments were matched in.
-     */
-    scopeOf.set(anchor, anchorsInLineSpans(lines, sub.spans, kind));
-  }
-  lines.splice(0, lines.length, ...substituted.lines);
-
-  for (const { edit } of order) {
-    if (edit.action === 'edit') continue;
-    const range = liveRangeOf(lines, edit.anchor, kind);
-    if (!range) {
-      throw new ConflictError(
-        'PAGE_CONFLICT',
-        `anchor '${edit.anchor}' was removed by an earlier edit in the same batch`,
-        currentHash,
-      );
-    }
-    if (edit.action === 'rename') {
-      /**
-       * Three empty sets, and they are the whole of this action's accounting.
-       *
-       * The touched span is ONE line: not the anchor comment above it, not the
-       * body below it. So there is nothing to drop (`ANCHOR_LOSS` can never fire
-       * here, however many referents the addressed anchor has), nothing brought
-       * in or taken out (`ANCHOR_DUPLICATE`'s netting never sees this entry),
-       * and an empty scope — which is what makes a `dropAnchors` entry declared
-       * "alongside" a `rename` a stranger, and therefore `INVALID_ARGUMENT`.
-       */
-      scopeOf.set(edit.anchor, []);
-      broughtInOf.set(edit.anchor, []);
-      takenOutOf.set(edit.anchor, []);
-      previousHeadingOf.set(edit.anchor, renameHeading(lines, range, (edit.heading ?? '').trim()));
-      continue;
-    }
-    const inRange = sectionRanges(lines, kind)
-      .filter((r) => r.lineStart > range.lineStart && r.lineStart <= range.lineEnd)
-      .map((r) => r.anchor);
-    /**
-     * 2.0.0 — `append` can never drop an anchor (like `rename`): it adds to the
-     * section's own body and overwrites nothing, so its scope is empty and a
-     * `dropAnchors` entry declared "alongside" it is a stranger. `insert_after`
-     * likewise overwrites nothing. Only `replace` and `delete` put the subtree
-     * at risk.
-     */
-    scopeOf.set(
-      edit.anchor,
-      edit.action === 'delete'
-        ? [edit.anchor, ...inRange]
-        : edit.action === 'replace'
-          ? inRange
-          : [],
-    );
-    /**
-     * What leaves is what the splice OVERWRITES, which is the action's own
-     * span: `replace` and `delete` take a range out (`delete` including the
-     * heading's own anchor comment above `lineStart`), while `append` and
-     * `insert_after` overwrite nothing and can only add.
-     */
-    broughtInOf.set(edit.anchor, anchorValuesIn(edit.content ?? ''));
-    takenOutOf.set(
-      edit.anchor,
-      edit.action === 'replace'
-        ? anchorValuesIn(lines.slice(range.lineStart, range.lineEnd).join('\n'))
-        : edit.action === 'delete'
-          ? // Its own anchor comment sits ABOVE the heading, outside the range,
-            // and `applySectionEdit` takes it with the section — so it is named
-            // rather than sliced for.
-            [edit.anchor, ...anchorValuesIn(lines.slice(range.lineStart, range.lineEnd).join('\n'))]
-          : [],
-    );
-    applySectionEdit(lines, edit, range, kind);
-  }
+  const composed = composeSectionBatch(lines, edits);
+  lines.splice(0, lines.length, ...composed.lines);
+  const outcomes = composed.outcomes;
 
   /**
    * The guard. Runs on the spliced lines but BEFORE `commit` — a refusal here
@@ -1794,9 +1592,16 @@ export async function updateSections(
    * different one from this: the guard is about identities surviving, not about
    * where they land.
    */
-  const finalAnchors = new Set(sectionRanges(lines, kind).map((r) => r.anchor));
-  const droppedOf = new Map<string, string[]>(
-    [...scopeOf].map(([anchor, scope]) => [anchor, scope.filter((a) => !finalAnchors.has(a))]),
+  const finalAnchors = new Set(sectionRanges(lines).map((r) => r.anchor));
+  /**
+   * Per element, in input order — and no anchor in two rows: a subtree that two
+   * elements both declare (`insert_after` on a section, `delete` of its child)
+   * is reported on the row that carried the anchor out (see `attributeDropped`).
+   */
+  const droppedOf = attributeDropped(
+    outcomes,
+    (a) => finalAnchors.has(a),
+    new Map([...startOfAnchor].map(([a, lineStart]) => [a, lineStart - 1])),
   );
   /**
    * 2.0.0 — anchors SWALLOWED outside every scope: a write that opens a code
@@ -1805,7 +1610,7 @@ export async function updateSections(
    * all the same — declarable in `dropAnchors`, refused as `ANCHOR_LOSS` when
    * undeclared and referenced.
    */
-  const scoped = new Set([...scopeOf.values()].flat());
+  const scoped = new Set(outcomes.flatMap((o) => o.scope));
   const swallowed = [...startOfAnchor.keys()].filter((a) => !finalAnchors.has(a) && !scoped.has(a));
   /**
    * Per edit, what IT brought in that it did not also take out — the row-level
@@ -1814,25 +1619,23 @@ export async function updateSections(
    * own entry, so a moved anchor shows up as added on the entry that reinstated
    * it and dropped on the one that removed it.
    */
-  const addedOf = new Map<string, string[]>(
-    [...broughtInOf].map(([anchor, broughtIn]) => {
-      const out = [...(takenOutOf.get(anchor) ?? [])];
-      const added: string[] = [];
-      for (const value of broughtIn) {
-        const returned = out.indexOf(value);
-        if (returned >= 0) out.splice(returned, 1);
-        else if (!added.includes(value)) added.push(value);
-      }
-      return [anchor, added];
-    }),
-  );
+  const addedOf = outcomes.map((o) => {
+    const out = [...o.takenOut];
+    const added: string[] = [];
+    for (const value of o.broughtIn) {
+      const returned = out.indexOf(value);
+      if (returned >= 0) out.splice(returned, 1);
+      else if (!added.includes(value)) added.push(value);
+    }
+    return added;
+  });
 
   /**
    * `dropAnchors` is validated against the batch's SCOPES, not against the
    * anchors actually dropped, and the asymmetry is deliberate.
    *
    * Too wide is fine: a superset inside the scopes passes. That is what keeps
-   * `replace` idempotent — the second call with a refreshed hash drops nothing,
+   * a replayed batch legal — the second call with a refreshed hash drops nothing,
    * and the declaration it repeats verbatim must not become an error for having
    * come true. That replay is also why an anchor NO LONGER ON THE PAGE is not a
    * stranger: on the second call the children it names are already gone, so
@@ -1845,7 +1648,7 @@ export async function updateSections(
    * declared nothing.
    */
   const declared = new Set(input.dropAnchors ?? []);
-  const inScope = new Set([...[...scopeOf.values()].flat(), ...swallowed]);
+  const inScope = new Set([...scoped, ...swallowed]);
   const onPage = new Set(startOfAnchor.keys());
   const stranger = [...declared].find((a) => onPage.has(a) && !inScope.has(a));
   if (stranger !== undefined) {
@@ -1867,9 +1670,9 @@ export async function updateSections(
    * before it may appear in the target. That ordering is the remedy; an
    * exemption from the guard is not.
    */
-  const takenOut = [...takenOutOf.values()].flat();
+  const takenOut = outcomes.flatMap((o) => o.takenOut);
   const netAdded: string[] = [];
-  for (const value of [...broughtInOf.values()].flat()) {
+  for (const value of outcomes.flatMap((o) => o.broughtIn)) {
     const returned = takenOut.indexOf(value);
     if (returned >= 0) {
       takenOut.splice(returned, 1);
@@ -1888,7 +1691,7 @@ export async function updateSections(
    * orphan this guard exists to refuse.
    */
   const broughtInAll: string[] = [];
-  for (const value of [...broughtInOf.values()].flat()) {
+  for (const value of outcomes.flatMap((o) => o.broughtIn)) {
     if (!broughtInAll.includes(value)) broughtInAll.push(value);
   }
   if (broughtInAll.length > 0) {
@@ -1899,10 +1702,17 @@ export async function updateSections(
      * already has a nearer anchor, names a section that does not exist.
      */
     const owners = new Map<string, string[]>();
-    for (const sec of parseSections(lines.join('\n'), kind, { frontmatter: false }).sections) {
+    for (const sec of parseSections(lines.join('\n'), { frontmatter: false }).sections) {
       if (sec.anchor === null) continue;
       owners.set(sec.anchor, [...(owners.get(sec.anchor) ?? []), sec.heading]);
     }
+    /**
+     * Every live anchor line the page ends up with. An `edit` carries its whole
+     * window through (`broughtIn`), so an ancestor `edit` next to a `delete` of
+     * a descendant "brings in" the deleted value — gone from the page, which is
+     * a LOSS for the guard below, not a duplicate.
+     */
+    const liveValues = new Set(anchorValuesIn(lines.join('\n')));
     const duplicates: AnchorDuplicate[] = [];
     for (const anchor of broughtInAll) {
       /**
@@ -1927,6 +1737,7 @@ export async function updateSections(
        * headings is a duplicate whether or not anything has noticed yet.
        */
       const headingsWithIt = owners.get(anchor) ?? [];
+      if (headingsWithIt.length === 0 && !liveValues.has(anchor)) continue;
       if (headingsWithIt.length !== 1) {
         duplicates.push({ anchor, page: first.pagePath, headingText: headingsWithIt[0] ?? '' });
       }
@@ -1938,7 +1749,7 @@ export async function updateSections(
     if (duplicates.length > 0) throw new AnchorDuplicateError(duplicates);
   }
 
-  const undeclared = [...new Set([...[...droppedOf.values()].flat(), ...swallowed])].filter((a) => !declared.has(a));
+  const undeclared = [...new Set([...droppedOf.flat(), ...swallowed])].filter((a) => !declared.has(a));
   if (undeclared.length > 0 && deps.findSectionReferents) {
     const losses: AnchorLoss[] = [];
     for (const anchor of undeclared) {
@@ -1959,7 +1770,7 @@ export async function updateSections(
     if (losses.length > 0) throw new AnchorLossError(losses);
   }
 
-  const before = sectionDigests(page.body, kind);
+  const before = sectionDigests(page.body);
   const written = await commit(
     target,
     first.pagePath,
@@ -1985,14 +1796,15 @@ export async function updateSections(
     path: first.pagePath,
     hash: written.hash,
     version: written.version,
-    results: edits.map((edit) => ({
+    // One row per ELEMENT, in input order — two rows may share an anchor.
+    results: edits.map((edit, i) => ({
       anchor: edit.anchor,
       action: edit.action,
       affectedAnchors: affected.filter((a) => a !== edit.anchor),
-      droppedAnchors: droppedOf.get(edit.anchor) ?? [],
-      addedAnchors: addedOf.get(edit.anchor) ?? [],
+      droppedAnchors: droppedOf[i]!,
+      addedAnchors: addedOf[i]!,
       // Only `edit` has a count; the other five rows stay the shape they were.
-      ...(edit.action === 'edit' ? { replacements: replacementsOf.get(edit.anchor) ?? 0 } : {}),
+      ...(edit.action === 'edit' ? { replacements: outcomes[i]!.replacements ?? 0 } : {}),
       /**
        * Conditionally spread for the same reason `replacements` is: on every
        * other row the KEY has to be absent, not present-and-empty, and a
@@ -2000,7 +1812,7 @@ export async function updateSections(
        * `'previousHeading' in row` to a caller holding the object.
        */
       ...(edit.action === 'rename'
-        ? { previousHeading: previousHeadingOf.get(edit.anchor) ?? '' }
+        ? { previousHeading: outcomes[i]!.previousHeading ?? '' }
         : {}),
     })),
   };

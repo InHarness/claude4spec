@@ -11,10 +11,13 @@
  * with such a target shows up in chat with no change here. Tags are read with
  * the shared server parser.
  *
- * Sanitization (whitelist + regex) runs here, before placeholders are emitted:
- * `type` from the host's available types, `slug` / `slugs` / `tags` as
- * `^[a-z0-9-]+$`, `anchor` as `^[a-z0-9]{6,12}$`. A chip tag failing it is
+ * Sanitization (regex, by ATTRIBUTE name) runs here, before placeholders are
+ * emitted: `slug` / `slugs` / `tags` as `^[a-z0-9-]+$`, `anchor` as
+ * `^[a-z0-9]{6,12}$`, `type` as a type-name shape. A chip tag failing it is
  * dropped — react-markdown without rehype-raw would drop the raw HTML anyway.
+ * 2.1.7 (M05) — a `type` outside the host's available types is NOT dropped:
+ * it renders as the host's broken chip `[broken: <slug>]`, like a type with
+ * no module.
  *
  * Code-aware (non-content ranges come from the shared M51 scanner):
  *  - Inline code whose ONLY content is chip tag(s), e.g. `<inline_mention .../>`:
@@ -33,6 +36,8 @@ import { getXmlTag, type XmlTagDefinition } from '../../shared/xml-markup/regist
 export const CHIP_HREF_PREFIX = '#__c4s_chip__';
 
 const SLUG_RE = /^[a-z0-9-]+$/;
+/** The shape of an entity type name — a guard on the payload, not a whitelist. */
+const TYPE_RE = /^[a-z0-9][a-z0-9_-]*$/;
 const ANCHOR_RE = /^[a-z0-9]{6,12}$/;
 
 export interface SanitizedChip {
@@ -61,15 +66,7 @@ export function isChipTag(kind: string): boolean {
   return !!def && chipTargetOf(def) !== null;
 }
 
-/**
- * `availableTypes` — the whitelist of entity types, as `host.listAvailable()`
- * hands it over.
- */
-export function preprocessXmlChips(text: string, availableTypes: readonly string[]): string {
-  return preprocessXmlChipsWith(text, new Set(availableTypes));
-}
-
-function preprocessXmlChipsWith(text: string, availableTypes: Set<string>): string {
+export function preprocessXmlChips(text: string): string {
   if (!text || !text.includes('<')) return text;
   if (!findXmlTagCandidates(text).some((t) => isChipTag(t.kind))) return text;
   // Strip backticks around inline-code spans that contain only chip tag(s), so
@@ -86,7 +83,7 @@ function preprocessXmlChipsWith(text: string, availableTypes: Set<string>): stri
   let cursor = 0;
   for (const tag of tags) {
     out += unwrapped.slice(cursor, tag.start);
-    const sanitized = sanitizeTag(tag, availableTypes);
+    const sanitized = sanitizeTag(tag);
     // A malformed chip tag is dropped (writing `tag.raw` back would re-emit it
     // and confuse downstream layers): empty replacement = silent removal.
     if (sanitized) out += `[__C4S_CHIP](${CHIP_HREF_PREFIX}${encodePayload(sanitized)})`;
@@ -145,10 +142,7 @@ function csv(value: string | undefined): string[] {
  * knows how to check must pass; any other attribute (e.g. `caption`) is not
  * carried into the chip.
  */
-export function sanitizeTag(
-  tag: Pick<XmlTag, 'kind' | 'attrs'>,
-  availableTypes: ReadonlySet<string>,
-): SanitizedChip | null {
+export function sanitizeTag(tag: Pick<XmlTag, 'kind' | 'attrs'>): SanitizedChip | null {
   const def = getXmlTag(tag.kind);
   if (!def) return null;
   const out: Record<string, string> = {};
@@ -156,7 +150,7 @@ export function sanitizeTag(
     const value = tag.attrs[name];
     switch (name) {
       case 'type':
-        if (!value || !availableTypes.has(value)) return null;
+        if (!value || !TYPE_RE.test(value)) return null;
         out.type = value;
         break;
       case 'slug':

@@ -50,7 +50,7 @@ function mintFileAnchor(taken: Set<string>): string {
  * missing.
  */
 export function injectArtifactAnchors(body: string): string {
-  const sections = parseSections(body, 'md', { frontmatter: false }).sections;
+  const sections = parseSections(body, { frontmatter: false }).sections;
   const missing = sections.filter((s) => s.anchor === null && s.level >= MIN_LEVEL && s.level <= MAX_LEVEL);
   if (missing.length === 0) return body;
   // Seeded with every anchor-shaped value in the file, code included: an

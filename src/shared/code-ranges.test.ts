@@ -159,12 +159,11 @@ describe('scanExcludedBlocks — CommonMark fences and multi-line HTML comments 
 });
 
 describe('scanExcluded', () => {
-  it('reports region kinds and unclosed blocks; jsx is opt-out', () => {
+  it('reports region kinds and unclosed blocks; jsx regions always count', () => {
     const text = '<Callout>\nx\n</Callout>\n<!--\nopen';
     const withJsx = scanExcluded(text);
     expect(withJsx.regions.map((r) => r.kind)).toEqual(['jsx', 'html-comment']);
     expect(withJsx.unclosed.map((b) => b.startLine)).toEqual([4]);
-    expect(scanExcluded(text, { jsx: false }).regions.map((r) => r.kind)).toEqual(['html-comment']);
   });
 
   it('scanExcluded drops a tag inside a multi-line HTML comment', () => {

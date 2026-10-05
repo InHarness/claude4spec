@@ -8,12 +8,10 @@ import {
   type XmlTag,
 } from '../../shared/xml-tags.js';
 import {
-  fileKindOf,
   insertAnchorLines,
   ownBodyOf,
   parseSections,
   type ParsedSection,
-  type SectionFileKind,
 } from '../../shared/section-parser.js';
 import type { PagesService } from './pages.js';
 import type { WatchSubscriber, WatchScope } from '../fs/watcher.js';
@@ -173,7 +171,7 @@ export class SectionIndexerService implements WatchSubscriber {
     } catch {
       return false; // gone — nothing to inject into
     }
-    const minted = this.mintInto(page.body, fileKindOf(relPath));
+    const minted = this.mintInto(page.body);
     if (!minted) return false;
     suppress(source, relPath);
     await root.pages.write(relPath, { frontmatter: page.frontmatter, body: minted });
@@ -191,13 +189,13 @@ export class SectionIndexerService implements WatchSubscriber {
    * two headings in one pass cannot collide with each other, and seeded with what
    * this file already carries — the file may not be in the index yet.
    */
-  private mintInto(body: string, kind: SectionFileKind): string | null {
+  private mintInto(body: string): string | null {
     // 2.0.0 — headings come from the shared section parser, so a heading-shaped
-    // line inside a code block, a multi-line HTML comment or (in `.mdx`) an
+    // line inside a code block, a multi-line HTML comment or (in any file) an
     // unknown JSX region gets no anchor. An anchor-shaped line inside a code
     // block is not an anchor either — and is never "cleaned up": opening a
     // project modifies no file on its account.
-    const sections = parseSections(body, kind, { frontmatter: false }).sections;
+    const sections = parseSections(body, { frontmatter: false }).sections;
     const taken = new Set(sections.map((sec) => sec.anchor).filter((a): a is string => a !== null));
     const missing = sections.filter((sec) => sec.anchor === null);
     if (missing.length === 0) return null;
@@ -384,7 +382,7 @@ export class SectionIndexerService implements WatchSubscriber {
     if (!root) return false;
     try {
       const page = await root.pages.read(relPath);
-      return parseSections(page.body, fileKindOf(relPath), { frontmatter: false }).sections.some(
+      return parseSections(page.body, { frontmatter: false }).sections.some(
         (sec) => sec.anchor === anchor,
       );
     } catch {
@@ -459,8 +457,7 @@ export class SectionIndexerService implements WatchSubscriber {
      * in. There the anchors go to `pendingInjections` and are written by
      * `flushPendingInjections` once the sweep is over.
      */
-    const kind = fileKindOf(relPath);
-    const minted = this.mintInto(body, kind);
+    const minted = this.mintInto(body);
     if (minted !== null) {
       this.pendingInjections.set(this.key(rootId, relPath), {
         frontmatter: page.frontmatter,
@@ -474,7 +471,7 @@ export class SectionIndexerService implements WatchSubscriber {
       this.pendingInjections.delete(this.key(rootId, relPath));
     }
 
-    const sections = buildSections(body, kind);
+    const sections = buildSections(body);
 
     const priorRows = this.db
       .prepare(
@@ -675,8 +672,8 @@ export class SectionIndexerService implements WatchSubscriber {
   }
 }
 
-function buildSections(body: string, kind: SectionFileKind): SectionInfo[] {
-  const parsed = parseSections(body, kind, { frontmatter: false });
+function buildSections(body: string): SectionInfo[] {
+  const parsed = parseSections(body, { frontmatter: false });
   const lines = body.split('\n');
   const sections: SectionInfo[] = [];
   // Hand-authored anchors are unpoliced, so the same value CAN appear twice in

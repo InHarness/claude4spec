@@ -35,7 +35,7 @@ import type { RawEntityReader, RawSection } from '../raw-entity-reader.js';
 import type { RootSet } from '../roots.js';
 import { serializeSection } from '../../serialization/serializers/section.js';
 import { hydrateSectionFrom, PageLines } from '../section-hydrator.js';
-import { fileKindOf, slugifyHeading } from '../../../shared/section-parser.js';
+import { slugifyHeading } from '../../../shared/section-parser.js';
 import {
   applyItemBudget,
   DEFAULT_BUDGET_CHARS,
@@ -99,7 +99,7 @@ export async function getPageOutline(
     rootId: root.id,
     path: input.path,
     hash: read.hash,
-    ...buildOutline(rows, read.body, fileKindOf(input.path)),
+    ...buildOutline(rows, read.body),
   };
 }
 
@@ -113,13 +113,12 @@ export async function getPageOutline(
 function buildOutline(
   rows: readonly RawSection[],
   pageBody: string,
-  kind: 'md' | 'mdx' = 'md',
 ): { sections: OutlineNode[]; truncated?: true; message?: string } {
   const nodes = new Map<string, OutlineNode>();
   // The page is split and its headings parsed ONCE for the whole outline, not
   // once per section: measurement before fetching is the point of the
   // operation, and paying a parse per heading to deliver it would defeat it.
-  const page = new PageLines(pageBody, kind);
+  const page = new PageLines(pageBody);
   for (const row of rows) {
     nodes.set(row.anchor, {
       anchor: row.anchor,
@@ -473,7 +472,7 @@ class PageCache {
       // stripped body (see PageSource.readBody). Slicing the raw file by them
       // shifts every section by the height of the frontmatter block.
       content = this.pages.readBody(section.rootId, section.pagePath).then(
-        (body) => new PageLines(body, fileKindOf(section.pagePath)),
+        (body) => new PageLines(body),
         (err: unknown) => {
           if (err instanceof DiscoveryError) return err;
           throw err;

@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { HOST_API_VERSION } from './manifest.js';
-import { buildMigrationInfo, migrationsBetween, rangeMajor, VERSIONED_UI_KIT_COMPONENTS } from './host-api.js';
+import {
+  buildMigrationInfo,
+  HOST_API_MINOR_RELEASES,
+  migrationsBetween,
+  rangeMajor,
+  VERSIONED_UI_KIT_COMPONENTS,
+} from './host-api.js';
 import { UI_KIT_CATALOG } from '../../client/host-ui-kit/registry.js';
 
 /**
@@ -143,5 +149,15 @@ describe('M33 — Host API versioning helpers', () => {
     expect(info).not.toBeNull();
     expect(info!.migrations).toEqual([]);
     expect(info!.shimAvailable).toBe(false);
+  });
+});
+
+describe('2.1.0 — the Host API changelog records the minor bump', () => {
+  it('the newest minor release is the running HOST_API_VERSION, and it removes registerExtensionReferenceType', () => {
+    const latest = HOST_API_MINOR_RELEASES[HOST_API_MINOR_RELEASES.length - 1]!;
+    expect(HOST_API_VERSION).toBe('2.1.0');
+    expect(latest.version).toBe(HOST_API_VERSION);
+    expect(latest.changes.map((c) => c.kind)).toEqual(['slot-added', 'slot-removed']);
+    expect(latest.changes[1]!.slot).toContain('registerExtensionReferenceType');
   });
 });

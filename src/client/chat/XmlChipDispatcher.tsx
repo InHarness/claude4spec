@@ -13,7 +13,8 @@ import type { SanitizedChip } from './xml-chip-preprocess.js';
  *  1. the render the owning module assigned to the tag's name;
  *  2. for a tag targeting an entity — the `renderChip` slot of the type in
  *     its `type` attribute;
- *  3. no module for that type — the broken chip `[broken: type]`.
+ *  3. no module for that type (unknown, or outside `listAvailable()`) — the
+ *     host's broken chip `[broken: slug]` (`[broken: type]` with no slug).
  * Every chip renders its INLINE variant in chat, a `block` tag included: the
  * block card stays in the page editor only.
  */
@@ -31,7 +32,7 @@ function TypeChip({ type, slug }: { type: string; slug: string }) {
   const open = openEntityHandler(type, slug, bridge);
   if (!def) {
     const category = categoriseBrokenChip(type) ?? 'unknown-type';
-    return <InlineBrokenChip category={category} type={type} />;
+    return <InlineBrokenChip category={category} type={type} slug={slug} />;
   }
   return <ChipResolver type={type} slug={slug} onOpen={open} />;
 }

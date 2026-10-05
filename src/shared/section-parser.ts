@@ -9,9 +9,13 @@
  * Pure: no disk, no index, no clock, no randomness. Total and deterministic:
  * every text yields a result and none throws.
  *
- * Excluded ranges (fences, multi-line HTML comments, unknown JSX in `.mdx`)
- * come from the one shared scanner in `code-ranges.ts`; a heading-shaped or
- * anchor-shaped line inside one is content, never structure.
+ * Excluded ranges (fences, multi-line HTML comments, unknown JSX regions — in
+ * EVERY markdown file, 2.1.7) come from the one shared scanner in
+ * `code-ranges.ts`; a heading-shaped or anchor-shaped line inside one is
+ * content, never structure. The file extension is not an input: a `<Callout>`
+ * in a `.md` is raw code to the editor, so it has to be dead text to the server
+ * too, or the parser would inject an anchor into it and a slug change would
+ * rewrite a tag inside it.
  */
 import { scanExcluded } from './code-ranges.js';
 import { ANCHOR_LINE_RE } from './anchor-pattern.js';
@@ -78,8 +82,6 @@ export interface SectionParseResult {
   };
 }
 
-export type SectionFileKind = 'md' | 'mdx';
-
 export const PREAMBLE_KEY = '~preamble' as const;
 
 /** The ATX heading shape. Exported so callers classifying a single line agree with the parser. */
@@ -102,11 +104,6 @@ export function slugifyHeading(text: string): string {
     .replace(/[^a-z0-9\s-]/g, '')
     .trim()
     .replace(/\s+/g, '-');
-}
-
-/** `.mdx` by extension, `.md` otherwise. */
-export function fileKindOf(path: string): SectionFileKind {
-  return path.toLowerCase().endsWith('.mdx') ? 'mdx' : 'md';
 }
 
 function emptyResult(lineCount: number): SectionParseResult {
@@ -148,14 +145,10 @@ export interface ParseOptions {
   frontmatter?: boolean;
 }
 
-export function parseSections(
-  text: string,
-  fileKind: SectionFileKind = 'md',
-  opts: ParseOptions = {},
-): SectionParseResult {
+export function parseSections(text: string, opts: ParseOptions = {}): SectionParseResult {
   const lines = text.split('\n');
   try {
-    return parse(lines, fileKind, opts.frontmatter ?? true);
+    return parse(lines, opts.frontmatter ?? true);
   } catch {
     // Totality: a parser bug must never take a caller down. A page nobody can
     // split is, conservatively, all preamble.
@@ -163,7 +156,7 @@ export function parseSections(
   }
 }
 
-function parse(lines: string[], fileKind: SectionFileKind, withFrontmatter: boolean): SectionParseResult {
+function parse(lines: string[], withFrontmatter: boolean): SectionParseResult {
   const n = lines.length;
   const fmEnd = withFrontmatter ? frontmatterEnd(lines) : null;
   const bodyFrom = fmEnd === null ? 0 : fmEnd + 1; // 0-based first body line
@@ -191,7 +184,7 @@ function parse(lines: string[], fileKind: SectionFileKind, withFrontmatter: bool
     return lo;
   };
 
-  const scan = scanExcluded(scanText, { jsx: fileKind === 'mdx' });
+  const scan = scanExcluded(scanText);
   const excludedRanges: SectionParseResult['excludedRanges'] = [];
   /** Per line: the kind of excluded region covering its first non-space char, or null. */
   const excludedKind: Array<ExcludedRangeKind | null> = new Array(n).fill(null);
@@ -371,8 +364,8 @@ export function anchorLineIndexOf(lines: readonly string[], s: ParsedSection): n
  * duplicates kept. An anchor-shaped line inside a code block is an example,
  * not an anchor (2.0.0).
  */
-export function liveAnchorValues(text: string, fileKind: SectionFileKind = 'md'): string[] {
-  const r = parseSections(text, fileKind, { frontmatter: false });
+export function liveAnchorValues(text: string): string[] {
+  const r = parseSections(text, { frontmatter: false });
   const lines = text.split('\n');
   const excluded = (i: number) =>
     r.excludedRanges.some((x) => i + 1 >= x.range.start && i + 1 <= x.range.end);

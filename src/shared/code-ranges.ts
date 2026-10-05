@@ -353,25 +353,23 @@ export interface ExcludedScan {
 /**
  * M51 — THE non-content scanner. One pass, one resolution order, one result
  * for every server consumer (tag parser and section parser alike):
- *  1. fenced code blocks, unknown-JSX component regions (`jsx: false` skips
- *     them — the section parser applies them to `.mdx` only) and multi-line
- *     HTML comments;
+ *  1. fenced code blocks, unknown-JSX component regions (in every markdown
+ *     file — the extension is not an input, 2.1.7) and multi-line HTML
+ *     comments;
  *  2. tag candidates (`findXmlTagCandidates`) in the text left over;
  *  3. backtick-pair scan over that text with the candidates' attribute values
  *     masked (a backtick in `caption="…"` is not a code delimiter);
  *  4. callers drop the candidates the resulting ranges intersect.
  * A 4-space indented block is NOT a range on the server side.
  */
-export function scanExcluded(text: string, opts: { jsx?: boolean } = {}): ExcludedScan {
+export function scanExcluded(text: string): ExcludedScan {
   const blocks = scanExcludedBlocks(text);
   const regions: ExcludedRegion[] = blocks.map((b) => ({ kind: b.kind, start: b.start, end: b.end }));
   const blockRanges: CodeRange[] = blocks.map((b) => [b.start, b.end] as CodeRange);
-  if (opts.jsx ?? true) {
-    for (const [start, end] of findUnknownJsxRanges(text, blockRanges)) {
-      regions.push({ kind: 'jsx', start, end });
-    }
-    regions.sort((a, b) => a.start - b.start);
+  for (const [start, end] of findUnknownJsxRanges(text, blockRanges)) {
+    regions.push({ kind: 'jsx', start, end });
   }
+  regions.sort((a, b) => a.start - b.start);
   const gaps = gapsBetweenRanges(text.length, regions);
   const ranges: CodeRange[] = regions.map((r) => [r.start, r.end] as CodeRange);
   const masked = maskTagAttributeValues(text, gaps);

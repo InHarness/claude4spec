@@ -49,9 +49,9 @@ export class PageLines {
   readonly lines: string[];
   private readonly byAnchor = new Map<string, ParsedSection>();
 
-  constructor(pageContent: string, kind: 'md' | 'mdx' = 'md') {
+  constructor(pageContent: string) {
     this.lines = pageContent.split('\n');
-    for (const sec of parseSections(pageContent, kind, { frontmatter: false }).sections) {
+    for (const sec of parseSections(pageContent, { frontmatter: false }).sections) {
       // First occurrence owns a duplicated anchor — the indexer's rule.
       if (sec.anchor && !this.byAnchor.has(sec.anchor)) this.byAnchor.set(sec.anchor, sec);
     }
