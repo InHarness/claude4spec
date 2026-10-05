@@ -144,7 +144,8 @@ export function applyPagesOverride(
   // 0.2.101: the base root is the `builtin: true` entry, whatever its
   // identifier — `--pages` keeps its flag name even for a base root called
   // `docs`, and a USER root that happens to be named `pages` is never its target.
-  const builtin = roots.find((r) => r.builtin) ?? roots[0];
+  // 2.1.4: no positional fallback — `roots[]` validation guarantees exactly one.
+  const builtin = roots.find((r) => r.builtin);
   if (!builtin) return [];
   // `rel` rather than `override`: one normalized spelling reaches `PagesService`,
   // so `./drafts` and `drafts` produce the same `pagePath` on every hit.

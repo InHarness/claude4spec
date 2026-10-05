@@ -141,6 +141,13 @@ export function useFileWatcher() {
                 batcher.queue(['briefs', 'detail', data.path]);
               }
             }
+          } else if (data.kind === 'patches:changed') {
+            // 2.1.4: the patch thread's agent flips `applied` itself
+            // (`mark_patch_applied`). The frontmatter projection broadcasts this
+            // on every real change, so an open `/patches/:path` refreshes instead
+            // of showing the old flag until something else refetches.
+            batcher.queue(['patches', 'list']);
+            if (data.path) batcher.queue(['patches', 'detail', data.path]);
           } else if (data.kind === 'plans:changed') {
             // v0.1.129 fix: previously unhandled — parsed then silently
             // dropped, so a plan title/frontmatter change or an external edit

@@ -1440,6 +1440,26 @@ describe('buildSystemPrompt — <current_patch applied=…>', () => {
   it('reads a legacy `status: completed` as applied="false"', () => {
     expect(patchWith({ status: 'completed' })).toContain('applied="false"');
   });
+
+  it('2.1.4: carries the address and frontmatter, never the content or the hash, and points at get_patch', () => {
+    const out = build({
+      contextType: 'patch',
+      patch: {
+        path: 'p1.md',
+        title: 'p1',
+        frontmatter: { type: 'patch', patch_kind: 'drift', brief: 'b1.md', applied: false },
+        body: 'UNIQUE-PATCH-BODY-MARKER',
+        content: '---\ntype: patch\n---\nUNIQUE-PATCH-BODY-MARKER',
+        hash: 'deadbeefcafe',
+      },
+    } as Partial<SystemPromptInput>);
+    expect(out).toContain('<current_patch path="p1.md" patch_kind="drift" applied="false" brief="b1.md">');
+    expect(out).toContain('read it with get_patch');
+    expect(out).not.toContain('UNIQUE-PATCH-BODY-MARKER');
+    expect(out).not.toContain('deadbeefcafe');
+    expect(out).not.toContain('hash=');
+    expect(out).not.toContain('nothing in this thread can');
+  });
 });
 
 /**

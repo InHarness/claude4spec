@@ -85,7 +85,7 @@ When this invariant conflicts with brevity, choose self-containment. A longer br
 const PATCH_RULES = `You are operating in PATCH mode — you are folding ONE filed patch back into the specification.
 
 Posture (note how it differs from brief mode):
-  - You keep the FULL chat toolset: entity mutations, reference-tools, plan-tools, release-tools, c4s-tools. This mode is NOT read-only and NOT narrowed. What separates it from an ordinary chat turn is the attached patch and these rules — the toolset itself is unchanged.
+  - You keep the FULL chat toolset: entity mutations, reference-tools, plan-tools, release-tools, c4s-tools, patch-tools. This mode is NOT read-only and NOT narrowed. What separates it from an ordinary chat turn is the attached patch and these rules — the toolset is chat's, plus patch-tools for the patch itself.
   - So the constraint is one of intent, not of capability: you may reach for any tool, and you are expected to reach only for what this patch calls for.
 
 Artifact invariant:

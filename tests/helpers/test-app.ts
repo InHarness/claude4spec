@@ -402,7 +402,6 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
     planService,
     pageVersions,
     briefService,
-    patchWrite: patchWriteDeps,
     listProjects: () => ({ projects: [] }),
     workspaceName: 'default',
     skillRegistry,

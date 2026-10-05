@@ -38,11 +38,11 @@ import type { PromptBlock, PromptContext } from '../types.js';
 function buildAnnotations(
   annotations: Annotation[],
   currentPagePath: string | null,
-  currentPageRootId: string,
+  currentPageRootId: string | null,
 ): string {
   const lines: string[] = [`<annotations>`];
   for (const a of annotations) {
-    const root = currentPagePath && a.page === currentPagePath ? currentPageRootId : undefined;
+    const root = currentPagePath && a.page === currentPagePath ? (currentPageRootId ?? undefined) : undefined;
     lines.push(
       `  <annotation ${attrs({ page: a.page, root, comment: a.comment ?? '' })}>`,
       a.text,
@@ -123,7 +123,7 @@ export const M05_TURN_BLOCKS: readonly PromptBlock[] = [
     render: (c, options) =>
       hasAnnotations(c)
         ? options?.pageRoot === false
-          ? buildAnnotations(c.annotations, null, 'pages')
+          ? buildAnnotations(c.annotations, null, null)
           : buildAnnotations(c.annotations, c.currentPagePath, c.currentPageRootId)
         : null,
   },

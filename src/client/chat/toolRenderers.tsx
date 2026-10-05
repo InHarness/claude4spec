@@ -666,6 +666,20 @@ const briefRenderers: Record<string, ToolRenderer> = {
   },
 };
 
+// 2.1.4 (M23): the patch thread's own server.
+const patchRenderers: Record<string, ToolRenderer> = {
+  get_patch: {
+    summary() {
+      return 'Read patch';
+    },
+  },
+  mark_patch_applied: {
+    summary() {
+      return 'Mark patch applied';
+    },
+  },
+};
+
 // --- Built-in tools ---
 
 /**
@@ -1240,6 +1254,9 @@ export const toolRenderers: Record<string, ToolRenderer> = {
   ),
   ...Object.fromEntries(
     Object.entries(briefRenderers).map(([k, v]) => [`mcp__brief-tools__${k}`, v]),
+  ),
+  ...Object.fromEntries(
+    Object.entries(patchRenderers).map(([k, v]) => [`mcp__patch-tools__${k}`, v]),
   ),
   ...builtinRenderers,
 };

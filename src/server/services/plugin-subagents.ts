@@ -154,12 +154,20 @@ const MUTATING_VERBS = new Set([
   'apply', 'applied', 'mark', 'tag', 'untag', 'patch', 'move', 'rename', 'archive',
 ]);
 
+/**
+ * 2.1.4: a tool that LEADS with a read verb is a read, whatever noun follows. `patch`
+ * is both a verb and a noun, and `get_patch` (the patch thread's read) would otherwise
+ * be classed as a write by its noun.
+ */
+const READ_VERBS = new Set(['get', 'list', 'search', 'read', 'find']);
+
 export function isMutatingMcpTool(tool: string): boolean {
   if (!tool.startsWith('mcp__')) return false;
   const parts = tool.split('__');
   if (parts.length < 3) return false;
-  const toolSegment = parts.slice(2).join('__');
-  return toolSegment.split('_').some((segment) => MUTATING_VERBS.has(segment));
+  const segments = parts.slice(2).join('__').split('_');
+  if (READ_VERBS.has(segments[0]!)) return false;
+  return segments.some((segment) => MUTATING_VERBS.has(segment));
 }
 
 /**

@@ -471,12 +471,76 @@ export function registerCoreOperations(): void {
     // Two filings of the same drift produce two files — `desc` drives the slug.
     idempotent: false,
     channels: {
-      // `direct` in `internal` is an ALIGNMENT, not a change of semantics: the
-      // built-in chat agent still only ever APPLIES patches, never files them.
-      internal: direct(),
+      // 2.1.4: a patch has ONE producer — the implementer, in its terminal (and
+      // REST under it). The patch thread applies a patch, it never files one, and
+      // no agent channel renders this operation.
+      internal: na('the patch thread applies patches, it never files them'),
       cli: direct(),
-      mcp: direct(),
+      mcp: na('drift has one producer: the implementer in the cli channel'),
       rest: direct(),
+    },
+  });
+
+  /**
+   * 2.1.4 — the patch thread's read. `internal` is `direct` now (it was `n/a`:
+   * the body used to ride in the system prompt); the prompt carries only the
+   * patch's address and frontmatter. Rendered by `patch-tools`, mounted only for
+   * `context_type='patch'`, where `path` defaults to `chat_thread.patch_path`.
+   *
+   * `opClass: 'read'` (not `brief`): the patch profile does not admit `brief`,
+   * and a `brief` row here would make the gate drop the thread's own tool.
+   */
+  CATALOG.register({
+    name: 'get_patch',
+    summary: 'Read a patch: path, frontmatter (patch_kind, applied, brief), markdown content and sha256 hash.',
+    scope: 'project',
+    mediation: 'direct',
+    opClass: 'read',
+    inputSchema: {
+      path: z.string().optional().describe('Patch path relative to patchesDir. Defaulted from the thread only in the `internal` channel.'),
+      range: z
+        .object({ start: z.number().int().positive(), end: z.number().int().positive() })
+        .optional()
+        .describe('1-based inclusive line window; no `sectionIndexed` gate. A `start` past the end of the file is INVALID_ARGUMENT stating the size.'),
+    },
+    errorCodes: ['PATCH_NOT_FOUND', 'INVALID_ARGUMENT'],
+    sideEffects: ['none'],
+    idempotent: true,
+    channels: {
+      internal: direct(),
+      cli: na('no c4s command renders a patch read yet'),
+      mcp: na('the mcp channel has no thread anchored in a patch'),
+      rest: via('get_artifact', 'generic artifact-family endpoint — GET /api/artifacts/patch/:path'),
+    },
+  });
+
+  /**
+   * 2.1.4 — the patch thread's declaration that the patch is folded into the
+   * spec. One-way from the agent channel (`applied: false` is INVALID_ARGUMENT —
+   * reverting is the user's, in the UI) and idempotent (a repeat writes no file
+   * and notifies no client). No concurrency guard: one boolean flipped in one
+   * direction converges to the same value.
+   */
+  CATALOG.register({
+    name: 'mark_patch_applied',
+    summary:
+      'Declare a patch applied to the specification. One-way from the agent channel — `applied: false` is INVALID_ARGUMENT; only the user unsets it. Idempotent: a repeat writes nothing.',
+    scope: 'project',
+    mediation: 'direct',
+    opClass: 'write',
+    inputSchema: {
+      applied: z.boolean().describe('Only true is accepted from the agent channel.'),
+      path: z.string().optional().describe('Patch path relative to patchesDir. Defaulted from the thread only in the `internal` channel.'),
+    },
+    errorCodes: ['PATCH_NOT_FOUND', 'INVALID_ARGUMENT'],
+    sideEffects: ['file', 'db', 'ui-notify'],
+    contentInput: 'n/a',
+    idempotent: true,
+    channels: {
+      internal: direct(),
+      cli: na('the declaration is made by the thread that applies the patch, not a terminal'),
+      mcp: na('the declaration is made by the thread that applies the patch'),
+      rest: via('update_artifact_frontmatter', 'PATCH /api/artifacts/patch/:path/frontmatter with { applied } — two-way, user-driven'),
     },
   });
 

@@ -47,7 +47,6 @@ import { BRIEF_ALLOWED_PLUGIN_MCP, mcpServerSetForProfile } from '../operations/
 import { createC4sReaderServer, type C4sReaderDeps } from './c4s-reader.js';
 import { buildPlanToolsServer } from './plan-tools.js';
 import { buildBriefToolsServer } from './brief-tools.js';
-import { createPatchToolsServer } from './patch-tools.js';
 import { buildC4sToolsServer } from './c4s-tools.js';
 import { buildWorkspaceToolsServer } from './workspace-tools.js';
 import { buildSkillToolsServer } from './skill-tools.js';
@@ -55,7 +54,6 @@ import type { SkillRegistry, SkillResolver } from '../services/skill-registry.js
 import type { BriefService } from '../services/brief.js';
 import type { PlanService } from '../services/plan.js';
 import type { FileVersionService } from '../services/file-version.js';
-import type { PatchWriteDeps } from '../services/patch-write.js';
 import type { ListProjectsResult } from '../workspace/list-projects.js';
 
 export interface ExternalSurfaceDeps {
@@ -67,8 +65,6 @@ export interface ExternalSurfaceDeps {
   planService: PlanService;
   pageVersions: FileVersionService;
   briefService: BriefService;
-  /** M23 `create_patch` — where briefs are read from and patches are written to. */
-  patchWrite: PatchWriteDeps;
   /** M31 `list_projects`. A thunk — the registry is re-read per call. */
   listProjects: () => ListProjectsResult;
   /** The caller's workspace, so `ask` defaults to it. */
@@ -217,24 +213,10 @@ function sourceServers(deps: ExternalSurfaceDeps): Array<{ name: string; server:
     });
   }
 
-  /**
-   * `create_patch` is `opClass: 'brief'`, so it rides the same gate as the brief
-   * tools and no other: filing drift against a brief is a brief operation.
-   *
-   * Host-owned rather than plugin-registered, and that distinction is the whole
-   * reason this sits here. A first pass registered it on the plugin host beside
-   * `page-tools`, which looked equivalent and was not: the `brief` profile
-   * narrows plugin servers to the release-only whitelist, so the one profile
-   * that admits the `brief` class dropped the server before the fine gate ever
-   * saw it — and every other profile refused the class. The tool existed and was
-   * reachable from nowhere, which is the exact defect it was written to fix.
-   */
-  if (set.briefTools) {
-    servers.push({
-      name: 'patch-tools',
-      server: createPatchToolsServer(deps.patchWrite, deps.projectId),
-    });
-  }
+  // 2.1.4 (M23): no `patch-tools` here. `create_patch` is `mcp: n/a` — a patch has
+  // one producer, the implementer in the `cli` channel (plus REST) — and the
+  // thread-bound `get_patch` / `mark_patch_applied` need a thread anchored in a
+  // patch, which an external connection never has.
 
   if (set.c4sTools) {
     servers.push({ name: 'c4s-tools', server: buildC4sToolsServer(deps.workspaceName) });

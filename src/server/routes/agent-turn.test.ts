@@ -1957,7 +1957,7 @@ describe('runAgentTurn — mounting is loud (0-2-35-to-next)', () => {
  * in after `gateServers` had run.
  */
 describe('runAgentTurn — the profile gate covers the inline servers too', () => {
-  async function mountedFor(contextType: string): Promise<string[]> {
+  async function mountedFor(contextType: string, patchPath: string | null = null): Promise<string[]> {
     hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
     const { deps } = makeDeps();
     // The rig is built without a workspace, and workspace-tools mounts only when
@@ -1967,6 +1967,7 @@ describe('runAgentTurn — the profile gate covers the inline servers too', () =
     });
     const input = makeInput();
     (input.thread as unknown as { contextType: string }).contextType = contextType;
+    (input.thread as unknown as { patchPath: string | null }).patchPath = patchPath;
     await runAgentTurn(deps, input);
     return Object.keys((hoisted.lastExecute?.mcpServers ?? {}) as Record<string, unknown>).sort();
   }
@@ -2003,6 +2004,21 @@ describe('runAgentTurn — the profile gate covers the inline servers too', () =
   it('workspace-tools survives the gate for every profile — list_projects is read-class', async () => {
     for (const contextType of ['chat', 'ask', 'patch']) {
       expect(await mountedFor(contextType)).toContain('workspace-tools');
+    }
+  });
+
+  it('2.1.4: a patch thread mounts patch-tools (get_patch, mark_patch_applied) on top of chat\'s set', async () => {
+    expect(await mountedFor('patch', 'p.md')).toEqual(
+      ['c4s-tools', 'patch-tools', 'plan-tools', 'skill-tools', 'transagent-tools', 'workspace-tools'].sort(),
+    );
+    expect(String(hoisted.lastExecute?.systemPrompt)).toContain(
+      '<mcp name="patch-tools">get_patch, mark_patch_applied</mcp>',
+    );
+  });
+
+  it('2.1.4: chat, brief and ask threads never mount patch-tools', async () => {
+    for (const contextType of ['chat', 'brief', 'ask']) {
+      expect(await mountedFor(contextType), contextType).not.toContain('patch-tools');
     }
   });
 
