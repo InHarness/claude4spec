@@ -17,6 +17,7 @@
  */
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { toast } from './host-events.js';
 
 export const PLUGIN_COMMAND_EVENT = 'c4s:plugin-command';
 
@@ -25,12 +26,55 @@ export const EMBED_NODE = 'single_element';
 
 /** Structural view of the editor the host hands over; `@tiptap/core` stays loose. */
 export interface EmbedEditor {
-  chain: () => { focus: () => { insertContent: (content: unknown) => { run: () => void } } };
+  /** Tiptap's flag. A destroyed editor drops the transaction, yet its chain still returns `true`. */
+  isDestroyed?: boolean;
+  chain: () => { focus: () => { insertContent: (content: unknown) => { run: () => boolean } } };
 }
 
-export function insertEmbed(editor: EmbedEditor, type: string, slug: string): void {
-  editor.chain().focus().insertContent({ type: EMBED_NODE, attrs: { type, slug } }).run();
+/**
+ * Insert `content` at the caret and say whether it landed.
+ *
+ * A Tiptap chain reports a refused insert by returning `false` from `run()`,
+ * not by throwing — so a caller that ignores the result never learns that the
+ * entity it just created has no embed. A throw leaves the same state (the
+ * entity exists, nothing references it), so it counts as `false` too rather
+ * than surfacing as a create error inside the form.
+ */
+export function runInsert(editor: EmbedEditor, content: unknown): boolean {
+  // The user left the page while the create was in flight: the editor is gone,
+  // its dispatch is a silent no-op, and `run()` would still report `true`.
+  if (editor.isDestroyed) return false;
+  try {
+    return editor.chain().focus().insertContent(content).run();
+  } catch {
+    return false;
+  }
 }
+
+export function insertEmbed(editor: EmbedEditor, type: string, slug: string): boolean {
+  return runInsert(editor, { type: EMBED_NODE, attrs: { type, slug } });
+}
+
+/** What the user is told when the entity exists but its embed did not land. */
+export function notEmbeddedMessage(name: string, slug: string): string {
+  return (
+    `Entity “${name}” (slug: ${slug}) was created but could not be embedded in the document. ` +
+    'You can embed it manually.'
+  );
+}
+
+/**
+ * Report a created-but-not-embedded entity. A toast, not the form's inline
+ * error: the form closes after the insert, and keeping it open would invite a
+ * second submit — a duplicate entity. Nothing is deleted; the entity stays.
+ */
+export function reportNotEmbedded(name: string, slug: string): void {
+  // Longer than a default warning: the user has to read off the slug to embed it by hand.
+  toast.warning(notEmbeddedMessage(name, slug), { durationMs: NOT_EMBEDDED_TOAST_MS });
+}
+
+/** How long the not-embedded warning stays up (the host's own `/diagram` uses the same). */
+export const NOT_EMBEDDED_TOAST_MS = 10_000;
 
 /** Where to anchor the popover: the caret, in viewport coordinates. */
 export interface CaretCoords {

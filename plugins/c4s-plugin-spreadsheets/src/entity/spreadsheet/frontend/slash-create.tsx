@@ -17,6 +17,8 @@ import {
   type CaretCoords,
   type EmbedEditor,
   mountSlashCreatePopover,
+  reportNotEmbedded,
+  runInsert,
   useSlashSubmit,
 } from '../../../frontend-kit/slash-create.js';
 import { toast } from '../../../frontend-kit/host-events.js';
@@ -35,12 +37,8 @@ export { SPREADSHEET_POPOVER_KIND };
  * `caption` attribute is omitted rather than set to null, so a freshly inserted
  * tag never carries an empty one.
  */
-function insertSpreadsheet(editor: EmbedEditor, slug: string): void {
-  editor
-    .chain()
-    .focus()
-    .insertContent({ type: 'single_element', attrs: { type: SPREADSHEET_TYPE, slug } })
-    .run();
+function insertSpreadsheet(editor: EmbedEditor, slug: string): boolean {
+  return runInsert(editor, { type: 'single_element', attrs: { type: SPREADSHEET_TYPE, slug } });
 }
 
 const DEFAULT_ROWS = 5;
@@ -91,8 +89,11 @@ export function SpreadsheetSlashCreatePopover({
     const created = body.data;
     if (!created?.slug) throw new Error('The server created the spreadsheet but returned no slug');
 
-    insertSpreadsheet(editor, created.slug);
-    toast.success(`Spreadsheet ${created.title ?? created.slug} created`);
+    if (insertSpreadsheet(editor, created.slug)) {
+      toast.success(`Spreadsheet ${created.title ?? created.slug} created`);
+    } else {
+      reportNotEmbedded(created.title ?? created.slug, created.slug);
+    }
     onClose();
     return created;
   });

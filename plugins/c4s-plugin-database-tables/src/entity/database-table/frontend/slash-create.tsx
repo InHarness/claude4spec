@@ -26,6 +26,8 @@ import { createElement, useState } from 'react';
 import {
   SlashPopoverShell,
   mountSlashCreatePopover,
+  reportNotEmbedded,
+  runInsert,
   type EmbedEditor,
 } from '../../../frontend-kit/slash-create.js';
 import {
@@ -72,9 +74,9 @@ export function databaseTableEmbedNode(slug: string): {
   return { type: DATABASE_TABLE_EMBED_NODE, attrs: { type: DATABASE_TABLE_TYPE, slug } };
 }
 
-/** Insert the entity embed for `slug` at the editor's caret. */
-export function insertDatabaseTableEmbed(editor: EmbedEditor, slug: string): void {
-  editor.chain().focus().insertContent(databaseTableEmbedNode(slug)).run();
+/** Insert the entity embed for `slug` at the editor's caret; `false` when it did not land. */
+export function insertDatabaseTableEmbed(editor: EmbedEditor, slug: string): boolean {
+  return runInsert(editor, databaseTableEmbedNode(slug));
 }
 
 /** Width the kit's shell is asked for; the chrome around it is the shell's. */
@@ -138,9 +140,21 @@ export const DatabaseTableSlashCreatePopover: FC<SlashCreatePopoverProps> = ({
     if (!query.trim() || create.isPending) return;
     // Explicit empty `columns` — the create contract requires the key; omitting
     // it is a 400, not an empty table (same as the create dialog).
-    create.mutate(
-      { title: query.trim(), columns: [] },
-      { onSuccess: (entity) => embed(entity.slug) },
+    //
+    // `mutateAsync`, not `mutate(…, { onSuccess })`: per-call callbacks are
+    // dropped once this popover unmounts (Escape / click-outside while the
+    // request is in flight), which would leave the new table neither embedded
+    // nor reported. The awaited continuation runs regardless. A rejection is
+    // already shown inline through `create.error`, so it is swallowed here.
+    //
+    // Picking an existing table orphans nothing if the insert is refused;
+    // a table created just now would, so only this path reports it.
+    void create.mutateAsync({ title: query.trim(), columns: [] }).then(
+      (entity) => {
+        if (!insertDatabaseTableEmbed(editor, entity.slug)) reportNotEmbedded(entity.title, entity.slug);
+        onClose();
+      },
+      () => undefined,
     );
   };
 

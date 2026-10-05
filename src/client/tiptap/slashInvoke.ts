@@ -140,6 +140,7 @@ async function runDiagram(editor: Editor, deps: SlashInvokeDeps): Promise<void> 
   const result = await popoverFromEditor(editor, () => openPopover('diagram', { ...coords, mode: 'create' }));
   if (!result) return;
   if ('__action' in result) return;
+  let diagram: Awaited<ReturnType<typeof diagramsApi.create>>;
   try {
     /**
      * v0.1.64: the DSL `source` is the truth — create the diagram entity, then
@@ -155,27 +156,54 @@ async function runDiagram(editor: Editor, deps: SlashInvokeDeps): Promise<void> 
      * captions. Before this, `caption` did both jobs and the entity ended up
      * with no name of its own.
      */
-    const diagram = await diagramsApi.create({
+    diagram = await diagramsApi.create({
       title: result.title,
       source: result.source,
       format: result.format as DiagramFormat,
     });
-    deps.qc.invalidateQueries({ queryKey: ['diagrams'] });
-    editor
-      .chain()
-      .focus()
-      .insertContent({
-        type: 'single_element',
-        attrs: {
-          type: 'diagram',
-          slug: diagram.slug,
-          caption: result.caption ? result.caption : null,
-        },
-      })
-      .run();
   } catch (err) {
     toast.error((err as Error).message);
+    return;
   }
+  deps.qc.invalidateQueries({ queryKey: ['diagrams'] });
+  /**
+   * A refused insert returns `false` rather than throwing, and a throw here
+   * leaves the same state — the diagram exists, nothing references it. Either
+   * way the user is told, with the name and slug to embed it by hand; the entity
+   * is kept (no cleanup), and the message differs from a create failure above.
+   */
+  const inserted = tryInsert(editor, {
+    type: 'single_element',
+    attrs: {
+      type: 'diagram',
+      slug: diagram.slug,
+      caption: result.caption ? result.caption : null,
+    },
+  });
+  if (!inserted) toast.warning(notEmbeddedMessage(diagram.title || result.title, diagram.slug), { durationMs: 10_000 });
+}
+
+/**
+ * Insert at the caret and say whether it landed. A destroyed editor (the user
+ * left the page while the create was in flight) drops the transaction silently
+ * yet still answers `true`, so it counts as not inserted; so does a throw.
+ * Mirrors the plugin kit's `runInsert`.
+ */
+function tryInsert(editor: Editor, content: Parameters<Editor['commands']['insertContent']>[0]): boolean {
+  if (editor.isDestroyed) return false;
+  try {
+    return editor.chain().focus().insertContent(content).run();
+  } catch {
+    return false;
+  }
+}
+
+/** Mirrors the plugin kit's `notEmbeddedMessage` (`plugins/*\/src/frontend-kit/slash-create.tsx`). */
+function notEmbeddedMessage(name: string, slug: string): string {
+  return (
+    `Entity “${name}” (slug: ${slug}) was created but could not be embedded in the document. ` +
+    'You can embed it manually.'
+  );
 }
 
 async function runTodo(editor: Editor): Promise<void> {

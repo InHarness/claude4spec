@@ -13,6 +13,7 @@ import {
   SlashPopoverShell,
   type CaretCoords,
   insertEmbed,
+  reportNotEmbedded,
   mountSlashCreatePopover,
   useSlashSubmit,
   type EmbedEditor,
@@ -47,8 +48,8 @@ export function DtoSlashCreatePopover({
       title: name.trim(),
       ...(description.trim() ? { description: description.trim() } : {}),
     });
-    insertEmbed(editor, DTO_TYPE, dto.slug);
-    toast.success(`DTO ${dto.title} created`);
+    if (insertEmbed(editor, DTO_TYPE, dto.slug)) toast.success(`DTO ${dto.title} created`);
+    else reportNotEmbedded(dto.title, dto.slug);
     onClose();
     return dto;
   });
