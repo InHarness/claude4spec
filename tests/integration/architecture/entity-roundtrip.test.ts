@@ -227,7 +227,7 @@ describe('release restore projects the stamp even when the diff is a noop', () =
     const releases = releaseServiceFor(t);
     const releaseId = Number(
       t.db
-        .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?,?,?,?)`)
+        .prepare(`INSERT INTO spec_release (name, slug, description, created_by, created_at) VALUES (?,?,?,?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`)
         .run('r1', 'r1', 'first', 'user').lastInsertRowid,
     );
     t.db.prepare(`UPDATE entity_version SET release_id = ? WHERE release_id IS NULL`).run(releaseId);

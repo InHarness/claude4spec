@@ -255,7 +255,7 @@ CREATE TABLE spec_release (
   name         TEXT NOT NULL UNIQUE,                                              -- "v1.0.0", "pre-launch"
   description  TEXT NOT NULL CHECK (length(trim(description)) > 0),               -- decyzja 5
   created_by   TEXT NOT NULL,                                                     -- "user" | "agent"
-  created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at   TEXT NOT NULL,                                                     -- 056: ISO 8601 UTC ms, no default
   slug         TEXT,
   roots        TEXT
 );
@@ -301,5 +301,5 @@ CREATE UNIQUE INDEX uq_remote_session_remote_account_id
 CREATE INDEX idx_sel_anchor ON section_entity_link(anchor);
 CREATE INDEX idx_sel_entity ON section_entity_link(rootId, entity_type, entity_slug);
 CREATE INDEX idx_si_root_page ON section_index(rootId, page_path);
-CREATE INDEX idx_spec_release_created_at ON spec_release(created_at DESC);
+CREATE INDEX idx_spec_release_created_at ON spec_release(created_at, id);
 CREATE UNIQUE INDEX idx_spec_release_slug ON spec_release(slug);

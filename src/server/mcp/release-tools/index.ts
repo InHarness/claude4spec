@@ -294,7 +294,7 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
 
   const releaseUpdate = mcpTool(
     'release_update',
-    `Update the LATEST release only — older releases are frozen. Mutates name/description in-place and optionally pulls all unreleased entity_version + file_version rows (release_id IS NULL) into this release. 409 RELEASE_FROZEN if id != MAX(id). 409 RELEASE_NAME_CONFLICT on rename collision. 400 RELEASE_DESCRIPTION_TOO_LONG / RELEASE_DESCRIPTION_REQUIRED when a given description is over ${MAX_RELEASE_DESCRIPTION_LENGTH} characters or empty.`,
+    `Update the LATEST release only — older releases are frozen. Mutates name/description in-place and optionally pulls all unreleased entity_version + file_version rows (release_id IS NULL) into this release. 409 RELEASE_FROZEN if the release is not the latest on the release axis (latest created_at, tie by id). 409 RELEASE_NAME_CONFLICT on rename collision. 400 RELEASE_DESCRIPTION_TOO_LONG / RELEASE_DESCRIPTION_REQUIRED when a given description is over ${MAX_RELEASE_DESCRIPTION_LENGTH} characters or empty.`,
     {
       idOrName: z.union([z.string(), z.number()]).describe('Numeric id or release name'),
       name: z.string().optional().describe('New name (must be unique). Omit to leave unchanged.'),

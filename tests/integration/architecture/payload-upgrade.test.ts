@@ -381,7 +381,7 @@ describe('a release restore whose capture cannot be upgraded', () => {
     t.db
       .prepare(
         `INSERT INTO spec_release (id, name, description, created_by, created_at)
-         VALUES (7, 'r7', 'legacy release', 'user', datetime('now'))`,
+         VALUES (7, 'r7', 'legacy release', 'user', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`,
       )
       .run();
     t.db

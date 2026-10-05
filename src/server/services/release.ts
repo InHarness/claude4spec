@@ -49,7 +49,7 @@ import { HostEntityWriter } from './entity-writer.js';
 import type { RestoreContext, RestoreResult } from '../serialization/types.js';
 import { canonicalize, toRawDeltaEntityChange } from '../serialization/snapshot.js';
 import { samePayloadVersion } from '../serialization/payload-version.js';
-import { readSystemFields, stripSystemFields } from '../serialization/system-fields.js';
+import { nowIso, readSystemFields, stripSystemFields } from '../serialization/system-fields.js';
 import {
   attachPayloadVersion,
   stripFileEnvelope,
@@ -177,17 +177,30 @@ function assertReleaseDescription(description: string): void {
 }
 
 /**
+ * 2.1.4 (M17): the release AXIS — releases ordered by `created_at` ascending,
+ * ties broken by `id` ascending. `id` is a technical key only: after a rebuild of
+ * `spec_release` from `<releasesDir>/*.json` it follows directory order
+ * (alphabetical by slug), and a file pulled in through git gets a fresh, higher
+ * one. Newest-first listings use the reverse; "the latest release" is the first
+ * row of `LATEST_FIRST`.
+ */
+const LATEST_FIRST = `ORDER BY created_at DESC, id DESC`;
+const AXIS_ORDER = `ORDER BY created_at ASC, id ASC`;
+
+/**
  * Shared frozen-release guard (decyzja 13: implicit last = mutable) — throws
- * `RELEASE_FROZEN` unless `row` is the current latest release (`id ===
- * MAX(id)`). Callable from inside a `db.transaction()` (synchronous, no
+ * `RELEASE_FROZEN` unless `row` is the current latest release on the axis
+ * (latest `created_at`, tie by `id`). Callable from inside a `db.transaction()` (synchronous, no
  * await) — `updateRelease`'s two-transaction split (0.1.124, commit-then-
  * assign) calls this from BOTH transactions: once up front, and once again
  * immediately before the release_id assignment, to catch a release created
  * concurrently during the awaited `commitPull()` in between.
  */
 function assertLatestMutable(db: Database.Database, row: ReleaseRow): void {
-  const maxRow = db.prepare(`SELECT MAX(id) AS maxId FROM spec_release`).get() as { maxId: number | null };
-  if (row.id !== maxRow.maxId) {
+  const latest = db.prepare(`SELECT id FROM spec_release ${LATEST_FIRST} LIMIT 1`).get() as
+    | { id: number }
+    | undefined;
+  if (row.id !== latest?.id) {
     throw new DomainError('RELEASE_FROZEN', `release '${row.name}' is frozen — only the latest release is mutable`);
   }
 }
@@ -315,7 +328,12 @@ export function typeExistedAtRelease(
     .prepare(
       `SELECT 1 FROM entity_version
         WHERE entity_type = ?
-          AND created_at <= COALESCE((SELECT created_at FROM spec_release WHERE id = ?), created_at)
+          -- julianday() on both sides: spec_release.created_at is ISO 8601 with
+          -- ms ('…T…Z', 2.1.4) while entity_version.created_at is datetime('now')
+          -- ('… …'); a byte-wise compare would put a same-day version before the
+          -- release just because ' ' < 'T'.
+          AND julianday(created_at) <= COALESCE(
+                julianday((SELECT created_at FROM spec_release WHERE id = ?)), julianday(created_at))
         LIMIT 1`,
     )
     .get(type, releaseId);
@@ -431,26 +449,27 @@ export class ReleaseService {
 
   listReleases(): Release[] {
     const rows = this.db
-      .prepare(`SELECT * FROM spec_release ORDER BY created_at DESC, id DESC`)
+      .prepare(`SELECT * FROM spec_release ${LATEST_FIRST}`)
       .all() as ReleaseRow[];
     return rows.map((r) => this.toRelease(r));
   }
 
   /**
-   * M21's release axis: `name -> rank`, where the rank is the release's place in
-   * CREATION order (ascending primary key), so a higher rank is a newer cycle.
-   * Deliberately not by name (opaque, and the newest one is renameable) nor by
-   * any date.
+   * M21's release axis: `name -> rank`, where the rank is the release's position
+   * on the M17 release axis (`created_at`, tie by `id`), so a higher rank is a
+   * newer cycle. Deliberately not by name (opaque, and the newest one is
+   * renameable) nor by `id` (after a rebuild from files it is alphabetical by
+   * slug, not creation order).
    */
   releaseRankByName(): Map<string, number> {
-    const rows = this.db.prepare(`SELECT name FROM spec_release ORDER BY id ASC`).all() as { name: string }[];
+    const rows = this.db.prepare(`SELECT name FROM spec_release ${AXIS_ORDER}`).all() as { name: string }[];
     return new Map(rows.map((r, i) => [r.name, i]));
   }
 
   /** 0.1.104: name of the most recent release, or `null` if none exist yet. */
   getLatestReleaseName(): string | null {
     const row = this.db
-      .prepare(`SELECT name FROM spec_release ORDER BY created_at DESC, id DESC LIMIT 1`)
+      .prepare(`SELECT name FROM spec_release ${LATEST_FIRST} LIMIT 1`)
       .get() as { name: string } | undefined;
     return row?.name ?? null;
   }
@@ -530,9 +549,12 @@ export class ReleaseService {
         );
       }
 
+      // 2.1.4: ONE ISO 8601 UTC ms stamp — the row's `created_at` and, through
+      // the row read back below, the release file's `createdAt`. The column has
+      // no default: `datetime('now')` sorts out of time order against ISO text.
       const info = this.db
-        .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
-        .run(name, slug, description, actor);
+        .prepare(`INSERT INTO spec_release (name, slug, description, created_by, created_at) VALUES (?, ?, ?, ?, ?)`)
+        .run(name, slug, description, actor, nowIso());
       const releaseId = Number(info.lastInsertRowid);
 
       this.db
@@ -563,7 +585,8 @@ export class ReleaseService {
 
   /**
    * Mutate the LATEST release only (decyzja 13: implicit last = mutable).
-   * Older releases are frozen — `id != MAX(id)` ⇒ 409 RELEASE_FROZEN.
+   * Older releases are frozen — not the latest on the release axis
+   * (`created_at`, tie by `id`) ⇒ 409 RELEASE_FROZEN.
    * Optionally pulls all `release_id IS NULL` rows from entity_version /
    * file_version into this release (decyzja 14, no untie).
    *
@@ -591,7 +614,7 @@ export class ReleaseService {
    *    captures the rename in that commit, instead of leaving it as a stray
    *    uncommitted change that silently rides into some later, unrelated
    *    commit while the response claims `gitSync.status: 'committed'`.
-   * 2. The assignment transaction RE-CHECKS `id === MAX(id)` itself (not
+   * 2. The assignment transaction RE-CHECKS "is the latest on the axis" itself (not
    *    just the first transaction) — `commitPull()` is an awaited git
    *    subprocess call, which yields the event loop for real time. A
    *    concurrent `createRelease()` during that window would otherwise go
@@ -706,7 +729,7 @@ export class ReleaseService {
     }
 
     if (shouldAssign) {
-      // Re-check id === MAX(id) INSIDE this transaction (code-review fix,
+      // Re-check "latest on the axis" INSIDE this transaction (code-review fix,
       // 2026-07-14) — commitPull() above is an awaited git subprocess call
       // that yields the event loop for real time; a concurrent
       // createRelease() during that window would otherwise go undetected,
@@ -852,9 +875,15 @@ export class ReleaseService {
    */
   private async resolveReignRef(row: ReleaseRow): Promise<string | null> {
     if (!this.gitService || !this.releaseStore) return null;
+    // 2.1.4: the successor is the next release on the AXIS, not the next id —
+    // a release file pulled in through git has a higher id but may sit lower.
     const nextRow = this.db
-      .prepare(`SELECT * FROM spec_release WHERE id > ? ORDER BY id ASC LIMIT 1`)
-      .get(row.id) as ReleaseRow | undefined;
+      .prepare(
+        `SELECT * FROM spec_release
+          WHERE created_at > ? OR (created_at = ? AND id > ?)
+          ${AXIS_ORDER} LIMIT 1`,
+      )
+      .get(row.created_at, row.created_at, row.id) as ReleaseRow | undefined;
     if (!nextRow) return 'HEAD';
     if (!nextRow.slug) return null;
     const nextFile = nodePath.join(this.releaseStore.root, `${nextRow.slug}.json`);

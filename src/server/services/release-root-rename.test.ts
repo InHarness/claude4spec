@@ -114,7 +114,7 @@ describe('release tier across a root rename (0.2.101)', () => {
 
   function insertRelease(name: string): number {
     const info = db
-      .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
+      .prepare(`INSERT INTO spec_release (name, slug, description, created_by, created_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`)
       .run(name, name, `desc for ${name}`, 'user');
     return Number(info.lastInsertRowid);
   }

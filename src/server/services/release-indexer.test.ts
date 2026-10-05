@@ -168,7 +168,7 @@ describe('ReleaseIndexerService — upsert-by-slug id stability', () => {
 
   it('does not touch a pre-existing release row with slug = NULL (legacy, no backing file)', async () => {
     db.prepare(
-      `INSERT INTO spec_release (name, description, created_by) VALUES (?, ?, ?)`,
+      `INSERT INTO spec_release (name, description, created_by, created_at) VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`,
     ).run('legacy-release', 'Born before this feature', 'user');
     const legacyId = rows()[0]!.id;
 

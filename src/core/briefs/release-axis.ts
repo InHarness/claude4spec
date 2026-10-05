@@ -3,9 +3,10 @@
  *
  * A brief takes the place of the release cycle it describes, newest cycle on
  * top, the same way `/releases` reads. The position comes from the RANK of a
- * release — its place in creation order (M17, `spec_release.id`) — and never
- * from its name, which is an opaque, mutable string, nor from any date of the
- * brief file. The caller supplies `rankByName` (higher = newer); this module
+ * release — its position on the M17 release axis (`spec_release.created_at`,
+ * tie by `id`) — and never from its name, which is an opaque, mutable string,
+ * nor from `id` alone (after a rebuild from files it is alphabetical by slug),
+ * nor from any date of the brief file. The caller supplies `rankByName` (higher = newer); this module
  * stays pure so the rule can be tested without a database.
  *
  * Position key, in order:
