@@ -262,6 +262,10 @@ const RETRY_HINT =
  * The first item is therefore kept whole rather than shortened.
  */
 function metaOnly(item: GetEntitiesResult['results'][number]): GetEntitiesResult['results'][number] {
+  // A slug that does not exist has nothing to cut: marking it would turn "does
+  // not exist" into "did not fit", the one confusion `truncated` is there to
+  // prevent. It surfaced once the budget came down to 50 000 (2.1.5).
+  if (item.entity === null) return item;
   return { ...item, entity: null, truncated: true };
 }
 

@@ -138,6 +138,13 @@ describe('AcAnalysisService — adapter execution scope (A19)', () => {
     expect((args.architectureConfig as Record<string, unknown>).claude_sandbox).toBeDefined();
   });
 
+  it('pins the MCP tool-result ceiling itself — the audit bypasses the turn assembly (2.1.5)', async () => {
+    await new AcAnalysisService(depsWithResolvableAc()).analyze();
+    const args = executeMock.mock.calls[0][0] as unknown as { architectureConfig: Record<string, unknown> };
+    expect(args.architectureConfig.custom_env).toEqual({ MAX_MCP_OUTPUT_TOKENS: '25000' });
+    expect(args.architectureConfig.claude_sandbox).toBeDefined();
+  });
+
   it('denies the C4S artifact dirs', async () => {
     await new AcAnalysisService(depsWithResolvableAc()).analyze();
     const args = executeMock.mock.calls[0][0] as unknown as { disallowedPaths: string[] };

@@ -74,7 +74,7 @@ Say which of these you are giving whenever one applies. Each is a statement abou
 
 - **No input.** The project has no release at all, so \`release_diff\` has no left-hand side and there is nothing to compare against. Report that you could not review, and why. Never report it as a clean result.
 - **Empty delta.** There is a release and the delta against the current state is empty: nothing changed. Say exactly that — not "no deviations", which claims you weighed something.
-- **Partial review.** The delta did not fit and you came down the degradation ladder — narrower \`entityTypes\`, then a smaller window, then \`summaryOnly: true\`. Then you judged a SUBSET, and you must open the report with what you did not look at. If you got all the way down to the identity map you judged almost nothing: say so first, and let the author choose a narrower scope. A quiet partial review is worse than no review.
+- **Partial review.** The delta did not fit and you came down the degradation ladder — narrower \`entityTypes\`, then a smaller window, then one page through \`paths\` and its section window (\`sectionOffset\` / \`sectionLimit\`), then \`summaryOnly: true\`. Then you judged a SUBSET, and you must open the report with what you did not look at. If you got all the way down to the identity map you judged almost nothing: say so first, and let the author choose a narrower scope. A quiet partial review is worse than no review.
 
   Your turn budget ends the same way. When it is nearly spent, stop reading and report what you judged as a partial review, naming the pages you never opened.
 

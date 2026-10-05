@@ -140,6 +140,7 @@ export interface AgentTurnDeps {
 }
 
 import { ALLOWED_MODELS, type Model } from './models.js';
+import { TOOL_RESULT_CEILING_TOKENS } from '../discovery/budget.js';
 export { ALLOWED_MODELS, type Model };
 
 export interface PendingInput {
@@ -1643,8 +1644,29 @@ export async function runAgentTurn(
     const backgroundTasksDisallowed =
       ctx.backgroundTasks === 'disabled' || thread.parentThreadId != null || shellDenied;
 
+    const clientEnv = input.architectureConfig.custom_env;
     const architectureConfigForExecute = {
       ...input.architectureConfig,
+      /**
+       * 2.1.5 — the MCP tool-result ceiling, pinned on EVERY turn: chat, brief,
+       * patch and ask (and `c4s ask` through `runAgent`), every transagent
+       * bubble turn — spawn and continuation alike, since the dispatcher runs
+       * them through here — whether or not a user API key is set (that one
+       * stays conditional, added by the routes). Even Claude Code's own default
+       * is pinned: a new CLI default must not silently pull the transport away
+       * from the response budget derived from the same constant.
+       *
+       * Written AFTER the client's keys, so the server wins over a client-sent
+       * `MAX_MCP_OUTPUT_TOKENS`. Built here, past the turn-1 snapshot (which
+       * reads `input.architectureConfig` and strips `custom_env` whole), so it
+       * is never persisted and a changed constant reaches resumed threads on
+       * their next turn. Subagents run in the same Claude Code process and
+       * inherit it — an assumption about the adapter, not its contract.
+       */
+      custom_env: {
+        ...(clientEnv && typeof clientEnv === 'object' ? (clientEnv as Record<string, unknown>) : {}),
+        MAX_MCP_OUTPUT_TOKENS: String(TOOL_RESULT_CEILING_TOKENS),
+      },
       claude_sandbox: resolvedPathScope.claudeSandbox,
       /**
        * Cap the hold at 5 min rather than the library's 90 s: silence during a

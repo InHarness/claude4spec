@@ -213,17 +213,19 @@ Hard rules:
 - NEVER mutate anything (no create/update/delete; you have no such tools).
 - Report pointers (paths / anchors / slugs), not dumps. The parent decides; you locate.`;
 
-const diffExplorePrompt = (builtinsEnabled: boolean): string => `You are a read-only explorer of ONE SLICE of a HISTORICAL release diff, working for a parent that is authoring a release brief.
+const diffExplorePrompt = (): string => `You are a read-only explorer of ONE SLICE of a HISTORICAL release diff, working for a parent that is authoring a release brief.
 
-The parent hands you a slice — a \`from\`/\`to\` pair, an optional \`roots\` page-root scope, plus \`entityTypes\` and/or a \`limit\`/\`offset\` window. Your job: call \`release_diff\` for exactly that slice, absorb its heavy \`before\`/\`after\`/\`content\`, and return a CONCISE DISTILLATE: the concrete facts the parent must inline (each changed entity/section by name, its key signatures / field shapes / SQL / view URLs / file paths, and a one-line framing of the change — including deletions). The bulk stays with you; only the distillate goes back, keeping the parent's context small.
+The parent hands you a slice — a \`from\`/\`to\` pair, an optional \`roots\` page-root scope, plus \`entityTypes\` and/or a \`limit\`/\`offset\` window, or one page in \`paths\` with a \`sectionOffset\`/\`sectionLimit\` section window. Your job: call \`release_diff\` for exactly that slice, absorb its heavy \`before\`/\`after\`/\`content\`, and return a CONCISE DISTILLATE: the concrete facts the parent must inline (each changed entity/section by name, its key signatures / field shapes / SQL / view URLs / file paths, and a one-line framing of the change — including deletions). The bulk stays with you; only the distillate goes back, keeping the parent's context small.
 
-How to read your slice — three levels, in order:
-1. WINDOWING (primary): call \`release_diff({ fromIdOrName, toIdOrName, roots, ...slice })\` and read the returned \`MCPReleaseDiff\` directly — the parent already windowed the slice to fit. The size of the window is the caller's choice: \`entityTypes\` / \`limit\` / \`offset\`.
-2. EXPLICIT DEGRADATION: the operation TELLS you when it could not fit. An item past the budget comes back with its identity and \`truncated: true\` — an entity having lost \`before\`/\`after\` entirely, a section with \`content\` cut as text — and the envelope carries \`truncationHint\` naming the retry. When you see that marker, the slice you are holding is INCOMPLETE: follow the hint down (narrow \`entityTypes\`, lower \`limit\`, advance \`offset\`) and, if nothing else fits, \`summaryOnly: true\`, which is the guaranteed floor. Never report a truncated slice as if it were whole — absence of an item means "unchanged", and only the marker distinguishes that from "it did not fit".
+How to read your slice — two levels, in order:
+1. WINDOWING (primary): call \`release_diff({ fromIdOrName, toIdOrName, roots, ...slice })\` and read the returned \`MCPReleaseDiff\` directly — the parent already sized the slice to fit. Two kinds of window, both the caller's choice: the PAGE window (\`entityTypes\` / \`limit\` / \`offset\`, plus \`paths\`) or the SECTION window of one page (\`paths\` with exactly one page + \`sectionOffset\` / \`sectionLimit\`; \`sectionLimit: 1\` reads it section by section). Size the window from \`size\` in the \`summaryOnly\` map — per page, and with one path per section in \`sectionMap\` — not by guessing.
+2. EXPLICIT DEGRADATION: the operation TELLS you when it could not fit. An item past the budget comes back with its identity and \`truncated: true\` — an entity having lost \`before\`/\`after\` entirely, a section with \`content\` cut as text — and the envelope carries \`truncationHint\` naming the retry. When you see that marker, the slice you are holding is INCOMPLETE: follow the hint down — narrower page window, then the one page through \`paths\`, then that page's section window from the \`sectionOffset\` the hint names — and, if nothing else fits, \`summaryOnly: true\`, the guaranteed floor. Never report a truncated slice as if it were whole — absence of an item means "unchanged", and only the marker distinguishes that from "it did not fit". A page read through the section window is whole only once your windows covered positions 0 to \`total.sections\`.
+
+There is no third level. Nothing gets dumped to disk for you to read back: the response budget sits below the transport ceiling, so a response is never dropped silently, and the only road to more content is a smaller slice. A single section bigger than the budget comes back cut as text with \`truncated: true\` — say so in your distillate rather than inventing the rest.
 
 - \`roots\` scope: if the parent gave you \`roots\`, pass it through verbatim on EVERY \`release_diff\` call — it narrows the PAGES dimension to the brief's scope. Dropping it silently widens the diff to all releasable roots and leaks out-of-scope pages into the brief.
 
-Tools: \`release-tools\` MCP (\`release_diff\`; \`release_show\` / \`release_list\` available but rarely needed).${builtinsEnabled ? ' `Read` is also available, and is the LAST RESORT for a slice that will not fit any window: ask the parent for an on-disk dump and read that file. It is not a licence to read `pages/*.md` — see the hard rules.' : ' Nothing else — no filesystem: without `Read` you cannot reach `pages/*.md` at all. That closes one route to HEAD, not all of them — `release_diff` itself has a branch that answers with the present (see the hard rules) — so the guarantee that you see ONLY the historical diff is upheld by this prompt, not by the shape of your toolset. It also means the on-disk-dump escape hatch is gone: `summaryOnly: true` is your floor.'}
+Tools: \`release-tools\` MCP (\`release_diff\`; \`release_show\` / \`release_list\` available but rarely needed) and \`load_skill_file\`. Nothing else — no filesystem and no entity graph. Without them you cannot reach \`pages/*.md\` or HEAD's entities at all; but \`release_diff\` itself has a branch that answers with the present (see the hard rules), so the guarantee that you see ONLY the historical diff is upheld by this prompt as well as by your toolset.
 
 Hard rules:
 - Read ONLY \`release_diff\` output / release artifacts. NEVER read \`pages/*.md\` (current spec state) and NEVER touch the entity graph (get_*/find_references) — those return HEAD and would break the brief's historical self-containment.
@@ -294,17 +296,17 @@ function buildSpecExploreSubagent(pluginHost: ProjectPluginHost, builtinsEnabled
 }
 
 /** `diff-explore`: read-only exploration of a historical `release_diff`. Deliberately WITHOUT the
- *  entity graph (it returns HEAD) — only release-scoped `release-tools` + Read for the on-disk dump. */
-function buildDiffExploreSubagent(builtinsEnabled: boolean): SubagentDefinition {
+ *  entity graph (it returns HEAD) — only release-scoped `release-tools` + `load_skill_file`.
+ *  2.1.5: no built-ins either. `Read` was there for the on-disk dump of a response too big
+ *  for the transport; the budget now sits below that ceiling and the section window cuts
+ *  a large page at the source, so there is no dump left to read. */
+function buildDiffExploreSubagent(): SubagentDefinition {
   return {
     name: 'diff-explore',
     description:
-      'Read-only explorer of ONE SLICE of a historical release diff for a brief. Spawn it in parallel (one per disjoint slice) and hand it a `from`/`to` + optional `roots` scope + `entityTypes` and/or `limit`/`offset` window; it calls heavy `release_diff` for that slice, absorbs the bulk, and returns a concise distillate (facts to inline) — keeping the whole diff out of your own context. When the brief is root-scoped, pass the same `roots` to every diff-explore slice so the pages filter is not lost on fan-out.',
-    prompt: diffExplorePrompt(builtinsEnabled),
+      'Read-only explorer of ONE SLICE of a historical release diff for a brief. Spawn it in parallel (one per disjoint slice) and hand it a `from`/`to` + optional `roots` scope + `entityTypes` and/or `limit`/`offset` window — or one page in `paths` with a `sectionOffset`/`sectionLimit` section window, sized from `size` in the summaryOnly map; it calls heavy `release_diff` for that slice, absorbs the bulk, and returns a concise distillate (facts to inline) — keeping the whole diff out of your own context. When the brief is root-scoped, pass the same `roots` to every diff-explore slice so the pages filter is not lost on fan-out.',
+    prompt: diffExplorePrompt(),
     tools: [
-      'Read',
-      'Grep',
-      'Glob',
       'mcp__release-tools__release_show',
       'mcp__release-tools__release_diff',
       'mcp__release-tools__release_list',
@@ -358,11 +360,12 @@ export function subagentsFor(
    * agent-adapters 0.9.9 does exactly that (the predicate is now
    * `t.startsWith('mcp__') || allowed.has(t)`), so the branch is gone. Deny-group
    * propagation is unchanged — a denied BUILT-IN still drops from every definition — which
-   * is why the two explorers keep naming Read/Grep/Glob and simply lose them in a gated
-   * posture, while their MCP channel, the one they actually work through, survives whole.
+   * is why `spec-explore` keeps naming Read/Grep/Glob and simply loses them in a gated
+   * posture, while its MCP channel, the one it actually works through, survives whole.
+   * (2.1.5: `diff-explore` names no built-in at all — see its builder.)
    *
-   * `builtinsEnabled` therefore no longer gates the LIST; it still shapes the two built-in
-   * PROMPTS, which must stop promising file tools they will not have.
+   * `builtinsEnabled` therefore no longer gates the LIST; it still shapes `spec-explore`'s
+   * PROMPT, which must stop promising file tools it will not have.
    */
   const { subagent } = CONTEXT_TYPE_REGISTRY[contextType];
   /**
@@ -375,7 +378,7 @@ export function subagentsFor(
   const builtin = withTurnBudget(
     sanitizeSubagentDefinition(
       subagent === 'diff-explore'
-        ? buildDiffExploreSubagent(builtinsEnabled)
+        ? buildDiffExploreSubagent()
         : buildSpecExploreSubagent(pluginHost, builtinsEnabled),
     ),
     DEFAULT_SUBAGENT_TURNS,

@@ -197,7 +197,7 @@ describe('release_diff — the "current" branch', () => {
     const res = await call({ fromIdOrName: 'v1', toIdOrName: 'current', summaryOnly: true });
     const entities = res.body.entities as Array<Record<string, unknown>>;
     expect(entities.find((e) => e.slug === 'dto-gone')).toMatchObject({ op: 'delete' });
-    expect(res.body.pages).toContainEqual({ rootId: 'pages', path: 'pages/gone.md', op: 'delete' });
+    expect(res.body.pages).toContainEqual(expect.objectContaining({ rootId: 'pages', path: 'pages/gone.md', op: 'delete' }));
   });
 
   it('summaryOnly returns the FULL identity map on this branch too, ignoring limit', async () => {
@@ -381,6 +381,49 @@ describe('release_diff — `paths` / `roots` validation', () => {
     expect(paths?.description).toContain(
       "Each element is a page's FULL key `<rootId>/<relPath>` and addresses exactly one page file — a directory prefix is not accepted. Mutually exclusive with `roots`, and rejected when `include` does not carry 'pages'. An empty array, an element without a root prefix, an unknown root id, or a non-releasable root is rejected.",
     );
-    expect(tool.description).toContain('{ rootId, path, op }');
+    expect(tool.description).toContain('{ rootId, path, op, sections, size }');
+    expect(paths?.description).toContain('Exactly one element enables the section window and, in light mode, the section map.');
+  });
+});
+
+describe('release_diff — the section window (2.1.5)', () => {
+  it.each([
+    ['no paths', { sectionOffset: 0 }],
+    ['two paths', { paths: ['pages/a.md', 'pages/b.md'], sectionLimit: 1 }],
+  ])('[ac:ac-l3-mcp-release-diff-z-sectionoffset-a] a section window with %s is CONFLICTING_FILTERS', async (_label, extra) => {
+    const { call } = harness();
+    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', ...extra });
+    expect(res.isError).toBe(true);
+    expect(res.body.code).toBe('CONFLICTING_FILTERS');
+  });
+
+  it('a negative section window is INVALID_PAGINATION, checked before summaryOnly and the filters', async () => {
+    const { call } = harness();
+    for (const w of [{ sectionOffset: -1 }, { sectionLimit: -2 }]) {
+      const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', summaryOnly: true, roots: [], ...w });
+      expect(res.body.code).toBe('INVALID_PAGINATION');
+    }
+  });
+
+  it('one path accepts the window and reports total.sections', async () => {
+    const { call } = harness();
+    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths: ['pages/gone.md'], sectionOffset: 0, sectionLimit: 1 });
+    expect(res.isError).toBeFalsy();
+    expect(res.body.total).toHaveProperty('sections');
+  });
+
+  it('documents the window parameters and the four-rung ladder', () => {
+    const server = createReleaseToolsServer({
+      releaseService: {} as ReleaseService,
+      gitService: {} as GitService,
+      ws: { broadcast: () => {} } as unknown as WsEmitter,
+      roots: () => ROOTS,
+    });
+    const tool = server.tools.find((t) => t.name === 'release_diff')!;
+    const schema = tool.inputSchema as Record<string, { description?: string }>;
+    expect(schema.sectionOffset?.description).toContain('Requires exactly one element in `paths`');
+    expect(schema.sectionLimit?.description).toContain('section by section');
+    expect(schema.summaryOnly?.description).toContain('`sectionMap`');
+    expect(tool.description).toContain('`sectionLimit: 1` reads it section by section');
   });
 });

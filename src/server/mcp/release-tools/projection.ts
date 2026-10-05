@@ -31,6 +31,7 @@ import type {
   MCPPageDeltaLight,
   MCPReleaseDiff,
   MCPSectionDelta,
+  MCPSectionMapRow,
   MCPSpecSnapshot,
   ProjectionOpts,
 } from './types.js';
@@ -73,12 +74,58 @@ const DEGRADED_SECTION_CHARS = 2_000;
  * there, only shorter — and a consumer told its sections were dropped would
  * refetch work it already has.
  */
+/*
+ * 2.1.5 — the retry instruction is a LADDER of four rungs, top to bottom: the
+ * page window, one page (`paths`), that page's section window, and `summaryOnly`
+ * as the floor. Below it there is nothing — the budget sits under the transport
+ * ceiling, so a smaller slice is the only way to more content.
+ */
 const HEAVY_RETRY_HINT =
   'response budget exceeded — every item past the cut is still here, marked `truncated: true`: entities kept ' +
   'their identity and lost `before`/`after` entirely, sections kept `content` cut short as text. Nothing was ' +
-  'omitted, so an item ABSENT from this response is one that did not change. Retry narrower: pass `entityTypes` ' +
-  'to restrict the entity dimension, lower `limit`, advance `offset` to reach the items that degraded, or call ' +
-  'again with `summaryOnly: true` for the identity map of the whole delta.';
+  'omitted, so an item ABSENT from this response is one that did not change. Retry narrower, rung by rung: ' +
+  '(1) the page window — pass `entityTypes` to restrict the entity dimension, lower `limit`, advance `offset` to ' +
+  'reach the items that degraded; (2) one page — `paths` set to it; (3) that page\'s section window — ' +
+  '`sectionOffset` / `sectionLimit`, `sectionLimit: 1` reads it section by section; (4) `summaryOnly: true` for ' +
+  'the identity map of the whole delta, with a `size` per page to plan the slices.';
+
+/**
+ * The concrete rung-3 pointer for one page whose sections did not fit: its
+ * `paths` and the position of the first section that came back cut.
+ */
+function sectionWindowHint(page: MCPPageDelta, sectionOffset: number): string {
+  return (
+    `page \`${page.rootId}/${page.path}\` did not fit from section ${sectionOffset} on — continue with ` +
+    `\`paths: ['${page.rootId}/${page.path}'], sectionOffset: ${sectionOffset}\` (\`total.sections\` counts its ` +
+    `changed sections; the page is read whole once the windows covered every position).`
+  );
+}
+
+/**
+ * What the envelope around a section-budgeted page costs: `from`/`to`/`total`
+ * and the two hints it may carry. Section-level budgeting is the one place that
+ * fills the budget to the brim, so it is the one place that has to leave this out.
+ */
+function envelopeReserve(out: MCPReleaseDiff): number {
+  // `entities` is already charged to `spent`; only the frame is left to count.
+  const { entities: _entities, pages: _pages, ...frame } = out;
+  return (JSON.stringify(frame)?.length ?? 0) + HEAVY_RETRY_HINT.length + 600;
+}
+
+/** Options of `projectReleaseDiff` — the page window, the light switch and the section window. */
+export interface ReleaseDiffWindow {
+  summaryOnly?: boolean;
+  limit?: number;
+  offset?: number;
+  /**
+   * 2.1.5 — the caller addressed exactly ONE page through `paths`. Turns on
+   * `total.sections`, the light `sectionMap` and the section window. The tool
+   * refuses a section window without it, so here it is a plain switch.
+   */
+  singlePath?: boolean;
+  sectionOffset?: number;
+  sectionLimit?: number;
+}
 
 /**
  * Project a raw delta, applying the response budget on the way out.
@@ -117,11 +164,14 @@ export function projectReleaseDiff(
   fromSnap: SpecSnapshot | null,
   toSnap: SpecSnapshot,
   opts: ProjectionOpts,
-  options?: { summaryOnly?: boolean; limit?: number; offset?: number },
+  options?: ReleaseDiffWindow,
 ): MCPReleaseDiff {
   const summaryOnly = options?.summaryOnly ?? false;
   const limit = options?.limit ?? DEFAULT_PAGE_LIMIT;
   const offset = options?.offset ?? 0;
+  const singlePath = options?.singlePath ?? false;
+  const sectionOffset = options?.sectionOffset ?? 0;
+  const sectionLimit = options?.sectionLimit;
   const out: MCPReleaseDiff = { from: raw.from, to: projectTo(raw.to), total: {} };
   const hints: string[] = [];
   let spent = 0;
@@ -159,20 +209,53 @@ export function projectReleaseDiff(
   if (opts.include.includes('pages')) {
     const full = projectPages(raw.pages, fromSnap, toSnap);
     out.total!.pages = full.length;
+    // 2.1.5 — counted after filters, BEFORE the section window, so a window
+    // never changes it. Computed after the section diff and the MCP projection,
+    // which is why the git and SQLite tracks both get it for free.
+    if (singlePath) out.total!.sections = full.reduce((n, p) => n + p.sections.length, 0);
     if (summaryOnly) {
-      const light = full.map(toPageLight);
+      // The light path ignores the section window, exactly as it ignores the page window.
+      const light = full.map((p) => toPageLight(p, singlePath));
       const { items, hint } = budgetLightMap(light, offset, lightShare, 'pages');
       out.pages = items;
       if (hint) hints.push(hint);
+    } else if (singlePath) {
+      out.pages = full.slice(offset, offset + limit).map((page) => {
+        const windowed = windowSections(page, sectionOffset, sectionLimit);
+        const { page: fitted, cutAt } = budgetSections(windowed, sectionOffset, remaining() - envelopeReserve(out));
+        if (cutAt !== undefined) {
+          hints.push(HEAVY_RETRY_HINT);
+          if (cutAt < out.total!.sections!) hints.push(sectionWindowHint(fitted, cutAt));
+        }
+        return fitted;
+      });
     } else {
-      const budgeted = applyItemBudget(
-        full.slice(offset, offset + limit),
-        degradePage,
-        HEAVY_RETRY_HINT,
-        remaining(),
-      );
+      const room = remaining();
+      const budgeted = applyItemBudget(full.slice(offset, offset + limit), degradePage, HEAVY_RETRY_HINT, room);
+      // The first page is never degraded as a PAGE — but one bigger than the
+      // whole budget would still bust the transport ceiling, so its guarantee
+      // drops to the section level, as under the section window.
+      let pointer: string | undefined;
+      const first = budgeted.items[0];
+      if (first && (JSON.stringify(first)?.length ?? 0) > room) {
+        const { page, cutAt } = budgetSections(first, 0, room - envelopeReserve(out));
+        budgeted.items[0] = page;
+        if (cutAt !== undefined) {
+          budgeted.truncated = true;
+          pointer = cutAt < first.sections.length ? sectionWindowHint(page, cutAt) : '';
+        }
+      }
       out.pages = budgeted.items;
-      if (budgeted.truncated) hints.push(HEAVY_RETRY_HINT);
+      if (budgeted.truncated) {
+        hints.push(HEAVY_RETRY_HINT);
+        // Rung 3, made concrete: the first page whose sections came back cut,
+        // and where its section window should resume.
+        if (pointer === undefined) {
+          const page = budgeted.items.find((p) => p.sections.some((sec) => sec.truncated));
+          if (page) pointer = sectionWindowHint(page, page.sections.findIndex((sec) => sec.truncated));
+        }
+        if (pointer) hints.push(pointer);
+      }
     }
     charge(out.pages);
   }
@@ -255,20 +338,103 @@ const DEGRADED_PAGE_CHARS = 8_000;
  * `content` to cut and is left exactly as it is.
  */
 function degradePage(p: MCPPageDelta): MCPPageDelta {
+  return { ...p, sections: degradeSections(p.sections) };
+}
+
+function degradeSections(sections: readonly MCPSectionDelta[]): MCPSectionDelta[] {
   let budget = DEGRADED_PAGE_CHARS;
+  return sections.map((section) => {
+    if (section.content === undefined) return section;
+    const allowance = Math.min(DEGRADED_SECTION_CHARS, budget);
+    if (section.content.length <= allowance) {
+      budget -= section.content.length;
+      return section;
+    }
+    budget -= allowance;
+    return { ...section, content: section.content.slice(0, allowance), truncated: true };
+  });
+}
+
+/**
+ * 2.1.5 — the section window of the one page addressed through `paths`.
+ *
+ * POSITIONAL, not a filter over anchors: the positions are the order `sections[]`
+ * comes back in without a window, so an anchorless create/delete-only section
+ * and the preamble are addressable too, and a pure move occupies a position like
+ * any other. `frontmatter` / `xmlRefs` belong to the window starting at 0 only,
+ * so a page read window by window carries them exactly once. A window past the
+ * end is an empty list, not an error — `total.sections` says where the end is.
+ */
+function windowSections(page: MCPPageDelta, sectionOffset: number, sectionLimit: number | undefined): MCPPageDelta {
+  if (sectionOffset === 0 && sectionLimit === undefined) return page;
+  const { frontmatter, xmlRefs, ...rest } = page;
+  const end = sectionLimit === undefined ? undefined : sectionOffset + sectionLimit;
   return {
-    ...p,
-    sections: p.sections.map((section) => {
-      if (section.content === undefined) return section;
-      const allowance = Math.min(DEGRADED_SECTION_CHARS, budget);
-      if (section.content.length <= allowance) {
-        budget -= section.content.length;
-        return section;
-      }
-      budget -= allowance;
-      return { ...section, content: section.content.slice(0, allowance), truncated: true };
-    }),
+    ...rest,
+    sections: page.sections.slice(sectionOffset, end),
+    ...(sectionOffset === 0 && frontmatter !== undefined ? { frontmatter } : {}),
+    ...(sectionOffset === 0 && xmlRefs !== undefined ? { xmlRefs } : {}),
   };
+}
+
+/**
+ * 2.1.5 — the response budget at SECTION level, for the one page addressed
+ * through `paths`. The window bounds how many sections, the budget how big they
+ * get; the two are independent.
+ *
+ * The first-item guarantee holds here at the level of the section: a first
+ * section bigger than the budget on its own comes back with `content` cut as
+ * text and `truncated: true` — never empty, because an empty answer leaves no
+ * smaller window to ask for. Sections past the cut keep their identity and a
+ * degraded prefix, exactly as on a degraded page. `cutAt` is the absolute
+ * position where the next window should start.
+ */
+function budgetSections(
+  page: MCPPageDelta,
+  sectionOffset: number,
+  budgetChars: number,
+): { page: MCPPageDelta; cutAt?: number } {
+  if ((JSON.stringify(page)?.length ?? 0) <= budgetChars) return { page };
+  // Every section keeps its identity, so that is paid for up front; what is left
+  // is shared out as content, in order, until it runs out.
+  const identity = (sec: MCPSectionDelta): number =>
+    (JSON.stringify({ ...sec, content: '', truncated: true })?.length ?? 0) + 1;
+  const shell = JSON.stringify({ ...page, sections: [] })?.length ?? 0;
+  let room = budgetChars - shell - page.sections.reduce((n, sec) => n + identity(sec), 0);
+  let cutAt: number | undefined;
+  const sections = page.sections.map((sec, i) => {
+    if (sec.content === undefined) return sec;
+    const cost = jsonTextLength(sec.content);
+    if (cutAt === undefined && cost <= room) {
+      room -= cost;
+      return sec;
+    }
+    // The first section past the line is where the next window starts — unless
+    // it is the window's first, which no smaller window can make bigger (there
+    // is no character window yet), so the next window starts after it.
+    if (cutAt === undefined) cutAt = sectionOffset + (i === 0 ? 1 : i);
+    // Never empty for the window's first section: an empty answer leaves no
+    // smaller window to ask for.
+    const allowance = i === 0 ? Math.max(room, DEGRADED_SECTION_CHARS) : Math.max(room, 0);
+    const content = sliceToJsonLength(sec.content, allowance);
+    room -= jsonTextLength(content);
+    return { ...sec, content, truncated: true as const };
+  });
+  return cutAt === undefined ? { page } : { page: { ...page, sections }, cutAt };
+}
+
+/** Serialized length of a string's JSON body, without the quotes. */
+function jsonTextLength(text: string): number {
+  return JSON.stringify(text).length - 2;
+}
+
+/** The longest prefix whose JSON body fits `max` — escapes make that shorter than `max` characters. */
+function sliceToJsonLength(text: string, max: number): string {
+  let cut = text.slice(0, max);
+  while (cut.length > 0 && jsonTextLength(cut) > max) {
+    cut = cut.slice(0, Math.floor((cut.length * max) / jsonTextLength(cut)) - 1);
+  }
+  return cut;
 }
 
 /** Strip a heavy entity delta to its light identifier form (`summaryOnly: true`). */
@@ -276,9 +442,41 @@ function toEntityLight(e: MCPEntityDelta): MCPEntityDeltaLight {
   return { type: e.type, slug: e.slug, name: e.name, op: e.op };
 }
 
-/** Strip a heavy page delta to its light identifier form (`summaryOnly: true`). */
-function toPageLight(p: MCPPageDelta): MCPPageDeltaLight {
-  return { rootId: p.rootId, path: p.path, op: p.op };
+/**
+ * 2.1.5 — a section's size in the budget's unit: the length of its heavy-mode
+ * `content`, without the serialization overhead. A pure move carries none.
+ */
+function sectionSize(s: MCPSectionDelta): number {
+  return s.moved ? 0 : (s.content?.length ?? 0);
+}
+
+/**
+ * Strip a heavy page delta to its light form (`summaryOnly: true`): identity,
+ * op, and the page's size so slices can be planned before content is pulled.
+ * With exactly one path, the page's section map rides along — one fixed-width
+ * row per changed section, in section-window order.
+ */
+function toPageLight(p: MCPPageDelta, withSectionMap: boolean): MCPPageDeltaLight {
+  const row: MCPPageDeltaLight = {
+    rootId: p.rootId,
+    path: p.path,
+    op: p.op,
+    sections: p.sections.length,
+    size: p.sections.reduce((n, sec) => n + sectionSize(sec), 0),
+  };
+  if (withSectionMap) row.sectionMap = p.sections.map(toSectionMapRow);
+  return row;
+}
+
+function toSectionMapRow(s: MCPSectionDelta): MCPSectionMapRow {
+  return {
+    ...(s.anchor !== undefined ? { anchor: s.anchor } : {}),
+    kind: s.kind,
+    ...(s.heading !== undefined ? { heading: s.heading } : {}),
+    headingPath: s.headingPath,
+    ...(s.moved ? { moved: true as const } : {}),
+    size: sectionSize(s),
+  };
 }
 
 function projectEntities(

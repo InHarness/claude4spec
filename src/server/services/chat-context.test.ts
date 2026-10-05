@@ -638,14 +638,12 @@ const rogue: PluginSubagentContribution = {
 };
 
 describe('subagentsFor (0.1.67)', () => {
-  it('brief → diff-explore: release-tools, no entity graph', () => {
+  it('brief → diff-explore: release-tools + load_skill_file, no entity graph, no built-ins (2.1.5)', () => {
     const subs = subagentsFor('brief', entityHost, true);
     expect(subs.map((s) => s.name)).toEqual(['diff-explore']);
     const tools = subs[0].tools ?? [];
+    // `Read` is no longer part of the contract, whatever the posture.
     expect(tools).toEqual([
-      'Read',
-      'Grep',
-      'Glob',
       'mcp__release-tools__release_show',
       'mcp__release-tools__release_diff',
       'mcp__release-tools__release_list',
@@ -828,12 +826,21 @@ describe('subagentsFor (0.1.67)', () => {
   it('tells each explorer the truth about its built-ins, in both postures', () => {
     const specOn = subagentsFor('chat', entityHost, true)[0].prompt;
     expect(specOn).toContain('Read/Grep/Glob are also available');
+    // 2.1.5 — `diff-explore` holds no built-ins in any posture, so its prompt is the
+    // same either way and promises neither `Read` nor an on-disk dump.
     const diffOn = subagentsFor('brief', entityHost, true)[0].prompt;
-    // With the built-ins on, `diff-explore` really does keep `Read` — so it must
-    // not claim its isolation from `pages/*.md` is structural, and the on-disk
-    // dump stays a documented last resort.
-    expect(diffOn).toContain('LAST RESORT');
-    expect(diffOn).not.toContain('that is structural rather than a promise');
+    expect(subagentsFor('brief', entityHost, false)[0].prompt).toBe(diffOn);
+    expect(diffOn).not.toContain('LAST RESORT');
+    expect(diffOn).toContain('no filesystem');
+    expect(diffOn).toContain('There is no third level');
+  });
+
+  it('diff-explore cuts by the page window or the section window, sized from the map (2.1.5)', () => {
+    const prompt = subagentsFor('brief', entityHost)[0].prompt;
+    expect(prompt).toContain('two levels');
+    expect(prompt).toContain('`sectionOffset` / `sectionLimit`');
+    expect(prompt).toContain('`size`');
+    expect(prompt).toContain('`total.sections`');
   });
 
   /**

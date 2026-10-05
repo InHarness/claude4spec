@@ -399,6 +399,13 @@ export declare function contentBytes(value: unknown): number;
  */
 export declare const DEFAULT_CONTENT_OPERATION: string;
 
+/**
+ * The MCP tool-result ceiling in tokens, pinned by the host on every agent turn
+ * as `custom_env.MAX_MCP_OUTPUT_TOKENS`. A plugin calling `adapter.execute`
+ * directly pins it itself, from this constant.
+ */
+export declare const TOOL_RESULT_CEILING_TOKENS: number;
+
 // zod facade (0.1.134→next). A plugin's backend schema code (the `backend.crud`
 // create/update schemas, a custom `backend.mcpServer`'s `mcpTool` shapes) MUST build
 // with the host's `z`, obtained here — NOT a bundled `import { z } from 'zod'`. The

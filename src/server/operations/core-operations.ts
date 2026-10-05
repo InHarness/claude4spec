@@ -1616,10 +1616,13 @@ export function registerCoreOperations(): void {
    * 0.2.102: `paths` (full page keys `<rootId>/<relPath>`) narrows it to single
    * pages; both filters refuse unknown/non-releasable roots, and the page
    * entries carry `rootId` next to `path`.
+   * 2.1.5: the sections of ONE page are addressed positionally by the section
+   * window `sectionOffset` / `sectionLimit`, not by anchor — legal only with
+   * exactly one element in `paths`, otherwise refused.
    */
   releaseOp(
     'release_diff',
-    'What changed between two releases — or, with `toIdOrName: "current"`, between a release and the live not-yet-released state — per entity type and page root; a page entry carries `rootId` next to `path`. `paths` narrows the pages to single pages by full key `<rootId>/<relPath>`. An item cut by the response budget comes back `truncated: true` (an entity without `before`/`after`, a section with `content` cut as text) and the envelope carries `truncationHint`.',
+    'What changed between two releases — or, with `toIdOrName: "current"`, between a release and the live not-yet-released state — per entity type and page root; a page entry carries `rootId` next to `path`. `paths` narrows the pages to single pages by full key `<rootId>/<relPath>`; with exactly one path, the sections of that page are addressed positionally by the section window `sectionOffset` / `sectionLimit`, not by anchor (a window without exactly one path is refused). The light map (`summaryOnly`) carries `sections` and `size` per page. An item cut by the response budget comes back `truncated: true` (an entity without `before`/`after`, a section with `content` cut as text) and the envelope carries `truncationHint`.',
     'read',
     {
       fromIdOrName: z.union([z.string(), z.number(), z.null()]),
@@ -1636,6 +1639,8 @@ export function registerCoreOperations(): void {
       summaryOnly: z.boolean().optional(),
       limit: z.number().optional(),
       offset: z.number().optional(),
+      sectionOffset: z.number().optional().describe('Section window start in the ONE page named by `paths`; positional.'),
+      sectionLimit: z.number().optional().describe('Section window size; requires exactly one element in `paths`.'),
     },
     ['none'],
     [
