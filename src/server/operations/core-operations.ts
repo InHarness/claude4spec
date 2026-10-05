@@ -246,12 +246,32 @@ export function registerCoreOperations(): void {
     }, ['SECTION_NOT_FOUND', 'AMBIGUOUS_ANCHOR']),
   );
 
-  CATALOG.register(
-    coreRead('get_page', 'One page addressed by (rootId, path). Replaced `resolve_page({ path })` — the same relPath in several roots was ambiguous.', {
-      rootId: z.string(),
-      path: z.string(),
-    }, ['PAGE_NOT_FOUND', 'ROOT_NOT_FOUND', 'AMBIGUOUS_PAGE']),
-  );
+  {
+    const getPage = coreRead(
+      'get_page',
+      'One WHOLE page addressed by (rootId, path), as a collection of sections: frontmatter and preamble are envelope fields, each section an item keyed by its anchor. Computed from the file, not the index, so it never answers INDEX_STALE. Replaced `resolve_page({ path })` — the same relPath in several roots was ambiguous.',
+      {
+        rootId: z.string(),
+        path: z.string(),
+        range: z.object({ start: z.number(), end: z.number() }).optional(),
+      },
+      ['PAGE_NOT_FOUND', 'ROOT_NOT_FOUND', 'AMBIGUOUS_PAGE'],
+    );
+    CATALOG.register({
+      ...getPage,
+      channels: {
+        ...getPage.channels,
+        /**
+         * 2.1.6 — the structured read has no REST rendering. `GET /api/pages/:rootId/*`
+         * is M02's own raw read for the editor (DTO `page-detail`: the file byte for
+         * byte plus its hash), not a transport over this operation.
+         */
+        rest: na(
+          '`GET /api/pages/:rootId/*` is NOT a rendering of this operation: it is M02\'s raw read for the editor (`page-detail` — the whole file byte for byte plus its hash, no budget, no sections), because the editor writes the file back whole.',
+        ),
+      },
+    });
+  }
 
   CATALOG.register(
     coreRead(

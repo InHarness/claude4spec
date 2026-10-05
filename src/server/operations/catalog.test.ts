@@ -128,12 +128,11 @@ describe('the seeded catalog', () => {
     }
   });
 
-  it('declares every M39 read operation with full four-channel parity, bar the two with a recorded reason', () => {
+  it('declares every M39 read operation with full four-channel parity, bar the three with a recorded reason', () => {
     const M39 = [
       'describe_types',
       'list_pages',
       'get_sections',
-      'get_page',
       'search_pages',
       'search_entities',
       'list_entities',
@@ -143,7 +142,7 @@ describe('the seeded catalog', () => {
       'check_consistency',
       'resolve_identity',
     ];
-    expect(M39).toHaveLength(12);
+    expect(M39).toHaveLength(11);
     for (const name of M39) {
       const op = CATALOG.get(name);
       expect(op, name).toBeDefined();
@@ -207,10 +206,24 @@ describe('the seeded catalog', () => {
     expect(op.channels.mcp.kind).toBe('direct');
     expect(op.channels.rest.kind).toBe('direct');
 
-    const m39NaCells = ['overview', 'get_page_outline'].flatMap((name) =>
+    const m39NaCells = ['overview', 'get_page_outline', 'get_page'].flatMap((name) =>
       CHANNELS.filter((ch) => CATALOG.require(name).channels[ch].kind === 'na').map((ch) => `${name}.${ch}`),
     );
-    expect(m39NaCells).toEqual(['overview.internal', 'get_page_outline.rest']);
+    expect(m39NaCells).toEqual(['overview.internal', 'get_page_outline.rest', 'get_page.rest']);
+  });
+
+  /**
+   * 2.1.6 — the structured `get_page` has no REST rendering: `GET /api/pages/:rootId/*`
+   * is M02's raw read for the editor (`page-detail`), not a transport over it.
+   */
+  it('`get_page` declares its REST gap, naming the editor route it is not', () => {
+    const op = CATALOG.require('get_page');
+    expect(op.channels.internal.kind).toBe('direct');
+    expect(op.channels.cli.kind).toBe('direct');
+    expect(op.channels.mcp.kind).toBe('direct');
+    expect(op.channels.rest.kind).toBe('na');
+    expect((op.channels.rest as { reason: string }).reason).toContain('/api/pages/:rootId/*');
+    expect((op.channels.rest as { reason: string }).reason).toContain('page-detail');
   });
 
   /**

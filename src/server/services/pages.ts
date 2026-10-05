@@ -2,10 +2,27 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import matter from 'gray-matter';
-import type { PageContent, PageNode, PageWriteInput, PageSearchHit } from '../../shared/types.js';
+import type { PageContent, PageDetail, PageNode, PageWriteInput, PageSearchHit } from '../../shared/types.js';
 import { hasDotSegment, isMarkdownPath } from '../../shared/page-files.js';
 import type { RecordStore } from '../fs/record-store.js';
 import type { MarkdownRecord } from '../fs/record-adapters.js';
+
+/**
+ * 2.1.6 — M02's frontmatter parser for readers that must not fail on a broken
+ * block: the parsed YAML keys of a frontmatter block (fences included), or
+ * `undefined` when the YAML does not parse. A syntax error is an absence of
+ * `fields`, never an error of the read — the literal block is what lets the
+ * caller repair it.
+ */
+export function parseFrontmatterFields(block: string): Record<string, unknown> | undefined {
+  try {
+    // `{}` as options bypasses gray-matter's string-keyed cache, whose entries
+    // are shared mutable objects.
+    return { ...((matter(block, {}).data ?? {}) as Record<string, unknown>) };
+  } catch {
+    return undefined;
+  }
+}
 
 export class PagesService {
   readonly root: string;
@@ -87,6 +104,25 @@ export class PagesService {
       // against the file. Hashing `parsed.content` would make every page with
       // frontmatter fail its own guard.
       hash: crypto.createHash('sha256').update(raw, 'utf-8').digest('hex'),
+    };
+  }
+
+  /**
+   * 2.1.6 — the `page-detail` record for the editor: the raw file and its hash
+   * from ONE read (two reads could hand back a hash of a different file than the
+   * content beside it), plus the editor's frontmatter/body split of it.
+   */
+  async readDetail(relPath: string): Promise<PageDetail> {
+    const abs = this.resolveSafe(relPath);
+    const raw = await fs.readFile(abs, 'utf-8');
+    const parsed = matter(raw, {});
+    return {
+      rootId: this.rootId,
+      path: relPath,
+      content: raw,
+      hash: crypto.createHash('sha256').update(raw, 'utf-8').digest('hex'),
+      frontmatter: (parsed.data ?? {}) as Record<string, unknown>,
+      body: parsed.content,
     };
   }
 

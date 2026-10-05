@@ -397,7 +397,8 @@ export function pagesRouter(
         return res.json(detail);
       }
       if (!(await rt.pages.exists(relPath))) return res.status(404).json({ error: 'not found' });
-      res.json(await rt.pages.read(relPath));
+      // 2.1.6 — DTO `page-detail`: the raw file + its hash for the editor (M02's own read).
+      res.json(await rt.pages.readDetail(relPath));
     } catch (err) {
       next(err);
     }

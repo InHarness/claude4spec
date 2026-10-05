@@ -17,7 +17,12 @@ import { MAX_ANCHORS_PER_CALL, MAX_SECTION_ITEMS_PER_RESPONSE } from '../discove
 
 /** `get_page_outline` — the tree, the envelope's `hash`, and what a node does NOT carry. */
 export const GET_PAGE_OUTLINE_RETURN =
-  'The response is `{ rootId, path, hash, sections[], truncated?, message? }`. `sections` is a TREE in ' +
+  'The response is `{ rootId, path, hash, frontmatter?, preamble?, sections[], truncated?, message? }`. ' +
+  '`frontmatter` is `{ fields?, size }` — ALL the parsed keys, no projection, with `fields` absent when the ' +
+  'YAML does not parse — and `preamble` is `{ size }`, present when the page has text above its first ' +
+  'heading. The frontmatter is never cut: over budget it ships whole beside a prefix of the tree, and a ' +
+  'frontmatter that alone exceeds the budget comes back with `sections: []` and a `message` pointing at ' +
+  'get_page. `sections` is a TREE in ' +
   'DOCUMENT ORDER — the page as it is written — and a node is `{ anchor, heading, level, size }` plus ' +
   '`children` ONLY when it has any: a leaf OMITS the key rather than sending `[]`. `size` is the byte ' +
   "length of that section's OWN body (up to its first child heading), exactly the granularity get_sections " +
@@ -69,8 +74,20 @@ export const GET_SECTIONS_RETURN =
   'tags?, filter? }]`, `edges.pageLinks: [{ rootId, path, anchor? }]`, identifiers only, in order of ' +
   'occurrence. There is no `content_hash`.';
 
-/** `get_page` — the full response shape, and WHEN the hash is taken. */
+/**
+ * `get_page` — 2.1.6: the WHOLE description is the contract, so it lives here once
+ * per server rather than as a shared tail. The envelope sentence is shared by
+ * construction: `reference-tools` states it in full and `c4s-reader` appends
+ * `GET_PAGE_RETURN`.
+ */
 export const GET_PAGE_RETURN =
-  'The response is `{ rootId, path, content, hash, truncated?, truncationHint? }`, where `hash` is the sha256 of ' +
-  'the whole file (frontmatter included) computed BEFORE any `range` narrowing or budget truncation — so a ' +
-  'truncated response still carries a valid `expectedHash` for update_page / update_sections.';
+  'The response is `{ rootId, path, hash, frontmatter?, preamble?, results[], truncated?, message? }`; an item of ' +
+  '`results` is `{ anchor?, heading_text, heading_level, body, truncated? }`.';
+
+/** `reference-tools` → `get_page`, verbatim from the specification (2.1.6). */
+export const REFERENCE_TOOLS_GET_PAGE_DESCRIPTION =
+  "Read one WHOLE page as a collection of sections, addressed by the FULL key of `rootId` plus `path`. A bare path is ambiguous across roots, so a call without `rootId` is refused with the list of roots rather than guessing the built-in one.\n\nThe answer is an envelope `{ rootId, path, hash, frontmatter?, preamble?, results[], truncated?, message? }`. `results` is a FLAT list in document order, one item per section: `anchor`, `heading_text`, `heading_level`, `body`. The anchor is a field of the item, never a comment to parse out of text. `body` excludes the anchor line and the heading line and is otherwise a literal slice of the file, so `textEdits` match it as written; a parent carries only its own body, up to its first child heading. Under a heading the indexer has not tagged yet the item has no `anchor` — readable, not addressable by `get_sections`.\n\n`frontmatter` is `{ raw, fields? }`: `raw` is the literal block, `fields` the parsed keys, absent when the YAML does not parse. `preamble` is the text before the first heading. Embeds are never expanded — a tag is an edge; fetch the entity by its slug.\n\nThe structure is computed from the file, not from the index, so this call answers even while `get_page_outline` and `get_sections` refuse with `INDEX_STALE`. `hash` is the sha256 of the WHOLE file and arms `expectedHash` on a write even when the answer was cut.\n\nOver the budget, an item that does not fit keeps its anchor and heading, loses `body` and carries `truncated: true`; the first item is never dropped — its body is cut as text. `message` names the cut anchors: fetch them with `get_sections`. `range` is a line window allowed ONLY on roots without a section index; on an indexed root it is refused.";
+
+/** `c4s-reader` → `get_page`, verbatim from the specification (2.1.6). */
+export const C4S_READER_GET_PAGE_DESCRIPTION =
+  "Get one whole page as a collection of sections. Requires the full page key: both `rootId` and `path`.\n\nA bare path is ambiguous across roots, so a call without `rootId` is refused with the list of roots rather than quietly falling back to a default root. Get the roots from `overview` and the paths from `list_pages`.\n\nThe answer carries the page `hash`, its `frontmatter` and `preamble`, and `results`: a flat list in document order with one item per section — its anchor, heading text, heading level and body. The anchor is a field of the item, so you never parse it out of text, and you can pass it straight to `get_sections`. A body holds neither the anchor line nor the heading line; a parent carries only its own body. An item under a heading that has no anchor yet comes without one.\n\n`frontmatter` gives the literal block (`raw`) and its parsed keys (`fields`); the keys are missing when the YAML does not parse, and `raw` is then the way to repair it.\n\nThe structure is read from the file, not from the index, so this call still answers when `get_page_outline` and `get_sections` refuse because the index is stale. `hash` is the sha256 of the whole file and works as `expectedHash` on a write even when the answer was cut.\n\nThe tool never expands embeds: an embedded entity's data is fetched separately with `get_entities`, using the slug carried in the embed tag. A tag is an edge, and expanding it in place would replace the edge with a copy.\n\nOn a large page, sections that do not fit keep their anchor and heading but come without a body, and the message names them so you can fetch them with `get_sections`.\n\n`range` is a line window allowed only on roots that are not section-indexed; on a section-indexed root it is refused.";

@@ -197,7 +197,7 @@ describe('discovery commands on the CLI', () => {
 
       seen = [];
       stdout = '';
-      reply = { content: '# Top' };
+      reply = { rootId: 'pages', path: 'budget.md', hash: 'h', results: [] };
       await runGetPage(args('get-page', '--root-id', 'pages', '--path', 'budget.md'));
       // The path is a QUERY parameter: it contains slashes, and no page name can
       // shadow the operation's route.
@@ -471,6 +471,38 @@ describe('discovery commands on the CLI', () => {
       );
       expect(called()).toBe(
         '/references?limit=1000&type=ac&slug=x&includeTagMatches=true&pages=docs%2Fguides&offset=0',
+      );
+    });
+  });
+
+  /**
+   * 2.1.6 — JSON is the core's envelope 1:1; `--format text` assembles markdown
+   * from it by the serializer's rule, which is formatting, not a second shape.
+   */
+  describe('get-page — the envelope, and --format text', () => {
+    const ENVELOPE = {
+      rootId: 'pages',
+      path: 'budget.md',
+      hash: 'h',
+      frontmatter: { raw: '---\ntitle: B\n---\n', fields: { title: 'B' } },
+      preamble: 'Intro.\n\n',
+      results: [
+        { anchor: 'aaaa0001', heading_text: 'Budget', heading_level: 1, body: '\nprose <single_element type="x" slug="y"/>\n' },
+        { heading_text: 'Untagged', heading_level: 2, body: 'tail\n' },
+      ],
+    };
+
+    it('prints the envelope unchanged as JSON', async () => {
+      reply = ENVELOPE;
+      await runGetPage(args('get-page', '--root-id', 'pages', '--path', 'budget.md', '--compact'));
+      expect(JSON.parse(stdout)).toEqual(ENVELOPE);
+    });
+
+    it('--format text assembles the page back into markdown', async () => {
+      reply = ENVELOPE;
+      await runGetPage(args('get-page', '--root-id', 'pages', '--path', 'budget.md', '--format', 'text'));
+      expect(stdout).toBe(
+        '---\ntitle: B\n---\nIntro.\n\n<!-- anchor: aaaa0001 -->\n# Budget\n\nprose <single_element type="x" slug="y"/>\n## Untagged\ntail\n',
       );
     });
   });

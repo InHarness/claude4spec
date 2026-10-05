@@ -116,9 +116,9 @@ export function createPageToolsServer(
   const expectedHashParam = z
     .string()
     .describe(
-      'REQUIRED. sha256 of the full file as you last read it. THREE calls hand it to you: `get_page`, the ' +
-        '`get_page_outline` envelope, and a previous write — so on a large page take it from get_page_outline and skip ' +
-        'the whole-page read entirely. Missing → INVALID_ARGUMENT; mismatch → PAGE_CONFLICT carrying the current hash.',
+      'sha256 of the full file as you last read it — the `hash` from get_page, from the get_page_outline envelope, ' +
+        'or from your previous write. REQUIRED in both modes. Missing → INVALID_ARGUMENT; mismatch → PAGE_CONFLICT ' +
+        'carrying the current hash, so you can refresh and retry instead of overwriting blind.',
     );
 
   /**
@@ -201,8 +201,8 @@ export function createPageToolsServer(
       'The batch is a SET, not a sequence: every `find` is matched against the file as it stands BEFORE the call, so substitutions never cascade and order never matters. Matches may not overlap or contain one another (INVALID_ARGUMENT).',
       'NOT IDEMPOTENT in differential mode. Repeating a successful call with a refreshed expectedHash answers FIND_NOT_FOUND, because the text you looked for is gone — treat it like `delete`, not like `replace`. Literal `body` mode stays idempotent.',
       'Changing a heading\'s TEXT is no longer a reason to come here: `update_sections` carries a `rename` action that rewrites the heading line and keeps the anchor, whereas a `find` swallowing the anchor comment destroys it and needs `dropAnchors`.',
-      'ANCHOR LOSS: if a `find` swallows an `<!-- anchor: … -->` comment that something cites, the write is refused with ANCHOR_LOSS (400) naming each anchor and who cites it. Name those anchors in `dropAnchors` to go ahead; every entry there must lie inside a fragment your patterns actually match (otherwise INVALID_ARGUMENT). The guard does not exist in `body` mode, and does not run on a root without a section index.',
-      'Returns { hash, version, changedAnchors }, plus `replacements` in differential mode. The page is NOT returned. The write-back phase injects `<!-- anchor: … -->` comments for headings you introduced, so the bytes on disk are NOT the bytes you sent: if you need them — e.g. to write the whole page again without stripping those anchors — re-read it with `get_page`. Treat a literal write as having changed the text you hold whenever your body adds headings or omits existing anchor comments — re-read before the next whole-page write or a `find` that spans a heading line. `changedAnchors` lists sections that changed relative to the page BEFORE this write, not relative to what you sent: an empty list does NOT mean the file equals your body.',
+      'ANCHOR LOSS, IN BOTH MODES: if the write removes an `<!-- anchor: … -->` comment that something cites, it is refused with ANCHOR_LOSS (400) naming each anchor and who cites it. Name those anchors in `dropAnchors` to go ahead. In differential mode the touched scope is the matched fragments, so every entry must lie inside one; in literal `body` mode it is the whole page, so every entry must be an anchor this page has now (otherwise INVALID_ARGUMENT). To rewrite a page wholesale, assemble the body from get_page: preamble, then per item its anchor line, heading line and body — an anchor you leave out is a loss. The guard does not run on a root without a section index.',
+      'Returns { hash, version, changedAnchors }, plus `replacements` in differential mode and `droppedAnchors` when the write removed any anchor. The page is NOT returned. The write-back phase injects `<!-- anchor: … -->` comments for headings you introduced, so the bytes on disk are NOT the bytes you sent: if you need them — e.g. to write the whole page again without stripping those anchors — re-read it with `get_page`. Treat a literal write as having changed the text you hold whenever your body adds headings or omits existing anchor comments — re-read before the next whole-page write or a `find` that spans a heading line. `changedAnchors` lists sections that changed relative to the page BEFORE this write, not relative to what you sent: an empty list does NOT mean the file equals your body.',
     ].join('\n'),
     {
       rootId: rootIdParam,
@@ -210,7 +210,11 @@ export function createPageToolsServer(
       body: z
         .string()
         .optional()
-        .describe('LITERAL MODE: the complete markdown body, frontmatter excluded. Mutually exclusive with textEdits.'),
+        .describe(
+          'LITERAL MODE: the complete markdown — the body, with the frontmatter sent beside it in `frontmatter`, or ' +
+            'the whole file assembled from get_page (`frontmatter.raw`, preamble, then per item its anchor line, ' +
+            'heading line and body) with `frontmatter` omitted. Mutually exclusive with textEdits.',
+        ),
       frontmatter: z
         .record(z.string(), z.unknown())
         .optional()
@@ -222,8 +226,12 @@ export function createPageToolsServer(
         .array(z.string())
         .optional()
         .describe(
-          'DIFFERENTIAL MODE only — anchors this write is allowed to destroy. Required only for swallowed anchors ' +
-            'that are CITED elsewhere; without them the write is refused with ANCHOR_LOSS.',
+          'BOTH modes. Anchors this call is allowed to destroy — needed when the write removes an `<!-- anchor: … -->` ' +
+            'comment whose anchor is cited elsewhere; without them the write is refused with ANCHOR_LOSS listing who ' +
+            'cites what. In DIFFERENTIAL mode every entry must sit inside a MATCHED fragment, not merely somewhere on ' +
+            'the page. In LITERAL (`body`) mode the touched scope is the whole page, so every entry must be an anchor ' +
+            'this page has now; an anchor you leave out of the new content and do not name here is refused if anything ' +
+            'cites it. On a root with no section index the guard has no subject and this parameter is meaningless.',
         ),
       expectedHash: expectedHashParam,
     },

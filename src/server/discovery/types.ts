@@ -226,6 +226,13 @@ export interface GetPageOutlineResult {
   rootId: string;
   path: string;
   hash: string;
+  /**
+   * 2.1.6 — ALL the parsed keys (no projection) and the block's size. `fields` is
+   * absent when the YAML does not parse. Never cut by the budget: the tree is.
+   */
+  frontmatter?: { fields?: Record<string, unknown>; size: number };
+  /** 2.1.6 — present for a page with text above its first heading. */
+  preamble?: { size: number };
   sections: OutlineNode[];
   truncated?: true;
   message?: string;
@@ -369,45 +376,60 @@ export interface GetPageInput {
 }
 
 /**
- * 0.2.46 — the M13 record shape for `page`, the second `host foundational type`
- * after `section`. Foundational is the one M13 role whose module does NOT call
- * `registerEntityModule`: the page has no logical schema, so it has no reserved
- * `title` and no `select` (a projection picks from schema fields, and there are
- * none). Its identity key is the pair `(rootId, path)` — the same `path` can
- * exist under several roots, unlike a section's globally unique `anchor`.
+ * 2.1.6 — one section of `get_page`'s answer.
  *
- * `content` is the page AS AUTHORED: frontmatter stays in the text and XML tags
- * stay UNEXPANDED, because a tag is an edge and expanding it would erase it.
- * The record deliberately carries no `hasMore`/`total` and no section listing —
- * sections have their own semantics and their own discovery operations.
+ * `anchor` is a FIELD, never a comment to parse out of text, and it is OMITTED
+ * (not `null`) under a heading the indexer has not tagged yet and on every root
+ * without a section index — such an item is readable but not addressable by
+ * `get_sections`. `body` excludes the anchor line and the heading line and is
+ * otherwise a literal slice of the file, so a `textEdits` `find` taken from it
+ * matches as written. A parent carries only its own body, up to its first child.
  *
- * `truncated` + `truncationHint` are the ONLY cut signal. There is deliberately
- * no line counter beside them: the budget that does the cutting is measured in
- * CHARACTERS, so a line total is denominated in a unit unrelated to the reason
- * the content ended — worse than absent, because it invites arithmetic that
- * cannot work. Resumption goes through the document's structure
- * (`get_page_outline` + `get_sections`) or through an explicit line window
- * (`range`, on roots without a section index), never through a counter.
+ * An item the budget could not carry keeps its anchor and heading, loses `body`
+ * and says `truncated: true` — it is never dropped.
+ */
+export interface PageSectionItem {
+  anchor?: string;
+  heading_text: string;
+  heading_level: number;
+  body?: string;
+  truncated?: true;
+}
+
+/**
+ * 2.1.6 — the page as STRUCTURE rather than one as-authored text (a breaking
+ * change of 0.2.46's `content`). The record still carries no `hasMore`/`total`:
+ * `results` is the whole page, one item per section in document order, and the
+ * budget degrades items instead of dropping them.
+ *
+ * The structure is computed by the section parser over the file as read, in the
+ * same read as `hash` — not from `section_index` — so this operation is never
+ * gated by the projection's freshness: it answers while `get_page_outline` and
+ * `get_sections` refuse with INDEX_STALE.
+ *
+ * Embeds stay unexpanded inside `body`: a tag is an edge.
+ *
+ * `message` replaced `truncationHint`: on a section-indexed root it names EVERY
+ * cut anchor and points at `get_sections`; on a root without an index it points
+ * at a `range` re-read. A hint never proposes a call this operation would refuse.
  */
 export interface GetPageResult {
   rootId: string;
   path: string;
-  content: string;
   /**
    * 0.2.13 (item 28): sha256 of the WHOLE file as read, to hand back as
-   * `expectedHash` on `update_page` / `update_sections`.
-   *
-   * Present even when `content` was truncated or narrowed by `range`, and it
-   * describes the file rather than what was returned — which is the only way it
-   * can serve its purpose. Without it the optimistic-concurrency guard on the
-   * page writes was unreachable from the read side of the same surface: the
-   * agent had no way to obtain a hash, so every agent write was
-   * last-write-wins over whatever a human had just saved in the editor.
-   * `brief-tools.get_brief` has always returned one for exactly this round-trip.
+   * `expectedHash` on `update_page` / `update_sections` — valid even when the
+   * answer was cut or narrowed by `range`, because it describes the file rather
+   * than what was returned.
    */
   hash: string;
-  truncated?: boolean;
-  truncationHint?: string;
+  /** `raw` — the literal block, fences included; `fields` — its parsed keys, absent when the YAML does not parse. */
+  frontmatter?: { raw: string; fields?: Record<string, unknown> };
+  /** The text above the first heading; absent when there is none. */
+  preamble?: string;
+  results: PageSectionItem[];
+  truncated?: true;
+  message?: string;
 }
 
 // ── Search ──────────────────────────────────────────────────────────────────

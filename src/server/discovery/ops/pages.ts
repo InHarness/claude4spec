@@ -11,12 +11,21 @@
 
 import crypto from 'node:crypto';
 import type { Database } from 'better-sqlite3';
-import { truncateText } from '../budget.js';
+import { applyItemBudget, DEFAULT_BUDGET_CHARS, MAX_ANCHORS_PER_CALL } from '../budget.js';
 import { invalidArgument } from '../errors.js';
 import type { PageSource } from '../page-source.js';
 import { DEFAULT_LIMITS, paginate } from '../pagination.js';
 import type { RootSet } from '../roots.js';
-import type { GetPageInput, GetPageResult, ListPagesInput, ListPagesResult, PageListItem } from '../types.js';
+import type {
+  GetPageInput,
+  GetPageResult,
+  ListPagesInput,
+  ListPagesResult,
+  PageListItem,
+  PageSectionItem,
+} from '../types.js';
+import { pageStructure } from '../../../shared/section-parser.js';
+import { parseFrontmatterFields } from '../../services/pages.js';
 
 export async function listPages(
   db: Database,
@@ -69,6 +78,7 @@ export async function getPage(
   pages: PageSource,
   roots: RootSet,
   input: GetPageInput,
+  budgetChars = DEFAULT_BUDGET_CHARS,
 ): Promise<GetPageResult> {
   const root = roots.require(input.rootId, 'get_page');
   if (!input.path) {
@@ -79,7 +89,7 @@ export async function getPage(
   }
 
   /**
-   * ONE predicate, two consumers: the refusal below and the truncation hint
+   * ONE predicate, two consumers: the refusal below and the cut message
    * further down. They used to be independent `if`s, which is how a page on an
    * indexed root came back cut with an instruction to re-read it via `range` —
    * the very argument the refusal rejects. An agent following that hint looped:
@@ -114,6 +124,7 @@ export async function getPage(
    */
   const hash = sha256(content);
 
+  let fromTop = true;
   if (input.range) {
     const { start, end } = input.range;
     if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < start) {
@@ -123,33 +134,122 @@ export async function getPage(
       );
     }
     content = content.split('\n').slice(start - 1, end).join('\n');
+    // A window that does not open on line 1 has no frontmatter: its leading
+    // `---` is a thematic break.
+    fromTop = start === 1;
   }
 
   /**
-   * 0.2.56 — the hint names the WRITE it leads to, not just the pair of reads.
-   *
-   * The rule it already obeyed was feasibility: never propose a call this same
-   * operation would refuse (which is why `range` goes unmentioned on an indexed
-   * root — see `lineWindowsRefused` above). This adds the second half of the same
-   * principle: never propose a path with no exit onto the operation the caller came
-   * for. A caller truncated here is usually on their way to an edit, and a hint that
-   * stopped at `get_sections` left them holding sections and no `expectedHash` — so
-   * the only visible way on was to fetch the whole page they had just been told was
-   * too big. Naming `hash` here is what closes the loop: `get_page_outline` hands it
-   * over on the envelope, and it is the guard's value.
+   * 2.1.6 — the page as STRUCTURE, parsed from the text just read (never from
+   * `section_index`, so no freshness gate). On a root without a section index
+   * there are no anchors to hand out, so no item carries one — an anchor-shaped
+   * comment there is just text.
    */
-  const budgeted = truncateText(
-    content,
-    lineWindowsRefused
-      ? `page truncated by response budget — outline this page with get_page_outline({ rootId: "${root.id}", path: "${input.path}" }), then read the ones you need with get_sections({ anchors }). To edit them, call update_sections with the \`hash\` from that get_page_outline envelope as \`expectedHash\` — the whole page is never needed`
-      : `page truncated by response budget — re-read a window with get_page({ rootId: "${root.id}", path: "${input.path}", range: { start, end } })`,
+  const page = pageStructure(content, { frontmatter: fromTop });
+  const items: PageSectionItem[] = page.sections.map((s) => ({
+    ...(s.anchor !== null && root.sectionIndexed ? { anchor: s.anchor } : {}),
+    heading_text: s.heading,
+    heading_level: s.level,
+    body: s.body,
+  }));
+  const frontmatter =
+    page.frontmatter === null
+      ? undefined
+      : (() => {
+          const fields = parseFrontmatterFields(page.frontmatter);
+          return { raw: page.frontmatter, ...(fields ? { fields } : {}) };
+        })();
+
+  /**
+   * The budget. Nothing is DROPPED: an item past the line keeps its anchor and
+   * heading and loses its body (`applyItemBudget`'s degrade), so the caller
+   * still sees the whole shape of the page and knows exactly what to fetch.
+   * The preamble and the FIRST item are cut as text instead — a page whose one
+   * heading carries an over-budget body would otherwise answer with nothing to
+   * read and no smaller request to make.
+   */
+  let remaining = budgetChars - JSON.stringify({ rootId: root.id, path: input.path, hash, frontmatter }).length;
+  let preamble = page.preamble ?? undefined;
+  let preambleCut: { kept: number; total: number } | null = null;
+  if (preamble !== undefined) {
+    if (preamble.length > remaining) {
+      preambleCut = { kept: Math.max(0, remaining), total: preamble.length };
+      preamble = preamble.slice(0, Math.max(0, remaining));
+    }
+    remaining -= JSON.stringify(preamble).length;
+  }
+  if (items.length) {
+    const first = items[0]!;
+    const cost = JSON.stringify(first).length;
+    if (cost > remaining) {
+      const keep = Math.max(0, first.body!.length - (cost - Math.max(0, remaining)));
+      items[0] = { ...first, body: first.body!.slice(0, keep), truncated: true };
+    }
+  }
+  const budgeted = applyItemBudget(
+    items,
+    ({ body: _body, ...meta }) => ({ ...meta, truncated: true as const }),
+    '',
+    Math.max(0, remaining),
   );
+  const results = budgeted.items;
+  const cut = results.filter((i) => i.truncated);
+
+  const messages: string[] = [];
+  if (preambleCut) {
+    messages.push(
+      `The preamble was cut by the response budget: ${preambleCut.kept} of its ${preambleCut.total} characters came back.`,
+    );
+  }
+  if (cut.length) {
+    messages.push(
+      lineWindowsRefused ? indexedCutMessage(cut) : `${plural(cut.length)} cut by the response budget.`,
+    );
+  }
+  if ((preambleCut || cut.length) && !lineWindowsRefused) {
+    messages.push(
+      `Re-read a window with get_page({ rootId: "${root.id}", path: "${input.path}", range: { start, end } }).`,
+    );
+  }
 
   return {
     rootId: root.id,
     path: input.path,
-    content: budgeted.text,
     hash,
-    ...(budgeted.truncated ? { truncated: true, truncationHint: budgeted.truncationHint } : {}),
+    ...(frontmatter ? { frontmatter } : {}),
+    ...(preamble !== undefined ? { preamble } : {}),
+    results,
+    ...(messages.length ? { truncated: true as const, message: messages.join(' ') } : {}),
   };
+}
+
+function plural(n: number): string {
+  return `${n} section${n === 1 ? '' : 's'}`;
+}
+
+/**
+ * On a section-indexed root the way on is ALWAYS `get_sections` — never `range`,
+ * which this operation refuses there. The message names every cut anchor; the
+ * call it proposes carries at most one batch of them, the most `get_sections`
+ * accepts. The write it names closes the loop: `hash` arms `expectedHash`.
+ */
+function indexedCutMessage(cut: readonly PageSectionItem[]): string {
+  const anchors = cut.flatMap((i) => (i.anchor ? [i.anchor] : []));
+  const untagged = cut.length - anchors.length;
+  const parts: string[] = [];
+  if (anchors.length) {
+    const batch = anchors.slice(0, MAX_ANCHORS_PER_CALL).map((a) => `"${a}"`).join(', ');
+    parts.push(
+      `${plural(anchors.length)} cut by the response budget: ${anchors.join(', ')}. ` +
+        `Fetch ${anchors.length === 1 ? 'it' : 'them'} with get_sections({ anchors: [${batch}] })` +
+        (anchors.length > MAX_ANCHORS_PER_CALL ? ` (at most ${MAX_ANCHORS_PER_CALL} per call)` : '') +
+        '; write with update_sections using this hash as expectedHash.',
+    );
+  }
+  if (untagged) {
+    parts.push(
+      `${plural(untagged)} without an anchor yet cut as well — readable once the indexer has tagged ${untagged === 1 ? 'its heading' : 'their headings'}.`,
+    );
+  }
+  return parts.join(' ');
 }
