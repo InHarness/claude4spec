@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { TOOL_RESULT_CEILING_TOKENS } from '../discovery/budget.js';
 import path from 'node:path';
 
 // 0.1.130: the resolver always folds the C4S artifact dirs (config defaults, resolved vs
@@ -816,6 +817,36 @@ describe('runAgentTurn — M37 per-context skill injection', () => {
     // The block itself is still emitted — an absent block would be indistinguishable
     // from "this host has no notion of skills".
     expect(prompt).toContain('<available_skills>');
+  });
+});
+
+describe('runAgentTurn — the MCP tool-result ceiling (2.1.5)', () => {
+  const env = () =>
+    (hoisted.lastExecute?.architectureConfig as Record<string, unknown>).custom_env as Record<string, unknown>;
+
+  it('[ac:ac-kazda-tura-agenta-przekazuje-adaptero] pins MAX_MCP_OUTPUT_TOKENS on every turn, with no API key set', async () => {
+    hoisted.events = [{ type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    await runAgentTurn(deps, makeInput());
+    expect(env().MAX_MCP_OUTPUT_TOKENS).toBe(String(TOOL_RESULT_CEILING_TOKENS));
+    expect(env().MAX_MCP_OUTPUT_TOKENS).toBe('25000');
+    expect(env()).not.toHaveProperty('ANTHROPIC_API_KEY');
+  });
+
+  it('[ac:ac-max-mcp-output-tokens-przyslane-przez] the server value replaces a client-sent one; other client keys survive', async () => {
+    hoisted.events = [{ type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    const input = makeInput();
+    input.architectureConfig = { custom_env: { MAX_MCP_OUTPUT_TOKENS: '999999', ANTHROPIC_API_KEY: 'sk-x', OTHER: '1' } };
+    await runAgentTurn(deps, input);
+    expect(env()).toEqual({ MAX_MCP_OUTPUT_TOKENS: '25000', ANTHROPIC_API_KEY: 'sk-x', OTHER: '1' });
+  });
+
+  it('keeps the ceiling out of the turn-1 snapshot', async () => {
+    hoisted.events = [{ type: 'result', sessionId: 's1' }];
+    const { deps, snapshots } = makeDeps();
+    await runAgentTurn(deps, makeInput());
+    for (const snap of snapshots) expect(JSON.stringify(snap)).not.toContain('MAX_MCP_OUTPUT_TOKENS');
   });
 });
 

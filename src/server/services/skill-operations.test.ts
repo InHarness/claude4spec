@@ -193,7 +193,7 @@ describe('M37 core — list_skills / load_skill_file', () => {
     });
 
     it('[ac:ac-budzet-uciecia-tresci-podpliku-jest-i] cuts a subfile at the one shared DEFAULT_BUDGET_CHARS', () => {
-      expect(DEFAULT_BUDGET_CHARS).toBe(120_000);
+      expect(DEFAULT_BUDGET_CHARS).toBe(50_000);
       const dir = writeUserSkill('big');
       fs.writeFileSync(path.join(dir, 'huge.md'), 'x'.repeat(DEFAULT_BUDGET_CHARS + 10));
       const res = loadSkillFile(SkillRegistry.load([userRoot], { rescanTtlMs: 0 }), 'big', 'huge.md');

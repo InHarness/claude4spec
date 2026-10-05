@@ -161,4 +161,12 @@ export { contentBytes } from '../../shared/plugin-host/data-schema.js';
  * the two disagree the first time the default moved.
  */
 export { DEFAULT_CONTENT_OPERATION } from '../../shared/plugin-host/data-schema.js';
+
+/**
+ * The MCP tool-result ceiling (tokens) the host pins on every agent turn. A
+ * plugin running its own `adapter.execute` bypasses the turn assembly, so it pins
+ * the same value itself — from this constant, never a re-typed number, so the
+ * ceiling and the core response budget derived from it move together.
+ */
+export { TOOL_RESULT_CEILING_TOKENS } from '../discovery/budget.js';
 export type { ValidatorKind, ValidatorFailure } from '../../shared/plugin-host/named-validators.js';

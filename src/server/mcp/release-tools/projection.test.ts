@@ -3,7 +3,7 @@ import { DEFAULT_PAGE_LIMIT, projectReleaseDiff, projectSpecSnapshot } from './p
 import { resolvePagination } from './index.js';
 import { DomainError } from '../../services/tags.js';
 import type { RawDelta, FileDiff, SpecSnapshot } from '../../../shared/entities.js';
-import type { IncludeFilter, MCPEntityDelta, MCPPageDelta } from './types.js';
+import type { IncludeFilter, MCPEntityDelta, MCPPageDelta, MCPPageDeltaLight } from './types.js';
 import { DEFAULT_BUDGET_CHARS } from '../../discovery/budget.js';
 
 // ── Fixture: a release snapshot with N entities and M pages (all op:create) ──
@@ -163,10 +163,11 @@ describe('projectReleaseDiff — summaryOnly + pagination (0.1.71)', () => {
       expect(Object.keys(e).sort()).toEqual(['name', 'op', 'slug', 'type']);
     }
     const pages = out.pages as unknown as Array<Record<string, unknown>>;
-    // 0.2.102: the light entry is `{ rootId, path, op }` — the page's identity is the pair.
+    // 0.2.102: the page's identity is the pair (rootId, path). 2.1.5: the row
+    // also carries `sections` and `size`, and no `sectionMap` without one path.
     expect(pages).toEqual([
-      { rootId: 'pages', path: 'pages/new.md', op: 'create' },
-      { rootId: 'plugins', path: 'pages/gone.md', op: 'delete' },
+      { rootId: 'pages', path: 'pages/new.md', op: 'create', sections: 0, size: 0 },
+      { rootId: 'plugins', path: 'pages/gone.md', op: 'delete', sections: 0, size: 0 },
     ]);
   });
 
@@ -538,8 +539,15 @@ describe('release budget — explicit degradation (0.2.40)', () => {
      * before the whole-page ceiling each of them alone ran to a megabyte.
      */
     for (const p of pages.slice(1)) {
-      expect(JSON.stringify(p).length).toBeLessThan(DEFAULT_BUDGET_CHARS / 2);
+      expect(JSON.stringify(p).length).toBeLessThan(DEFAULT_BUDGET_CHARS);
     }
+    // 2.1.5 — and the degraded tail is charged against the SAME budget: the
+    // content of the whole response stays under it, not each page on its own.
+    // (Eight hundred section identities are the floor no cut can go under —
+    // the section window is the remedy for that, and the hint names it.)
+    const content = pages.flatMap((p) => p.sections).reduce((n, s) => n + (s.content?.length ?? 0), 0);
+    expect(content).toBeLessThanOrEqual(DEFAULT_BUDGET_CHARS);
+    expect(out.truncationHint).toContain("pages/a.md'], sectionOffset: 1, sectionLimit: 1");
   });
 });
 
@@ -614,5 +622,156 @@ describe('projectReleaseDiff — section deltas on the shared section parser (2.
     const parent = sections.find((s) => s.anchor === 'parent01')!;
     expect(parent.content).toContain('<before_change>## Parent</before_change>');
     expect(parent.content).toContain('<after_change>## Parent renamed</after_change>');
+  });
+});
+
+/**
+ * 2.1.5 — the section window of one page, and sizes in the light map. Computed
+ * after the section diff and the MCP projection, so one fixture covers both the
+ * git and the SQLite tracks.
+ */
+describe('release_diff — section window and sizes (2.1.5)', () => {
+  const release = (id: number): SpecSnapshot['release'] => ({
+    id, name: `v${id}`, description: '', createdBy: 'agent', createdAt: '2026-10-01T00:00:00.000Z',
+  });
+  const snap = (id: number, fm?: Record<string, unknown>): SpecSnapshot => ({
+    release: release(id),
+    serializer_versions: {},
+    entities: [],
+    pages: [{ path: 'big.md', op: 'update', data: { content: '', ...(fm ? { frontmatter: fm } : {}) } }],
+  });
+  /** A page with `count` added sections of `body` chars each, one pure move, and a frontmatter change. */
+  function bigPage(count: number, body: string, op: FileDiff['op'] = 'modified'): FileDiff {
+    return {
+      ...emptyPage('big.md', op),
+      added_sections: Array.from({ length: count }, (_, i) => ({
+        kind: 'section', anchor: `s${String(i).padStart(7, '0')}`, heading: `S${i}`, level: 2, parent: null, headingPath: [],
+        content: `${body}${i}`,
+      })) as unknown as FileDiff['added_sections'],
+      moved_sections: [{ anchor: 'moved001' }] as unknown as FileDiff['moved_sections'],
+      frontmatter_diff: {} as unknown as FileDiff['frontmatter_diff'],
+    };
+  }
+  const run = (page: FileDiff, options: Parameters<typeof projectReleaseDiff>[4]) =>
+    projectReleaseDiff(
+      { from: { id: 1, name: 'v1' }, to: { id: 2, name: 'v2' }, entities: [], pages: [page] },
+      snap(1, { a: 1 }),
+      snap(2, { a: 2 }),
+      { include: ['pages'] },
+      options,
+    );
+
+  it('[ac:ac-l3-mcp-release-diff-summaryonly-true-2] the light row of every page carries `sections` and `size`', () => {
+    const out = run(bigPage(3, 'abc'), { summaryOnly: true });
+    const [row] = out.pages as MCPPageDeltaLight[];
+    // `size` counts heavy-mode `content` only: `<after_change>` wrapping included, the pure move as 0.
+    const each = '<after_change>abc0</after_change>'.length;
+    expect(row).toEqual({ rootId: 'pages', path: 'big.md', op: 'update', sections: 4, size: each * 3 });
+    expect(row).not.toHaveProperty('sectionMap');
+  });
+
+  it('[ac:ac-l3-mcp-release-diff-summaryonly-true-3] with one path the light row carries a section map, sizes and no content', () => {
+    const out = run(bigPage(2, 'abc'), { summaryOnly: true, singlePath: true, sectionOffset: 1, sectionLimit: 1 });
+    const [row] = out.pages as MCPPageDeltaLight[];
+    // The map is complete — the section window is ignored in light mode.
+    expect(row!.sectionMap).toHaveLength(3);
+    expect(row!.sectionMap![0]).toEqual({
+      anchor: 's0000000', kind: 'section', heading: 'S0', headingPath: [], size: '<after_change>abc0</after_change>'.length,
+    });
+    expect(row!.sectionMap![2]).toMatchObject({ anchor: 'moved001', moved: true, size: 0 });
+    for (const r of row!.sectionMap!) expect(r).not.toHaveProperty('content');
+    expect(out.total!.sections).toBe(3);
+  });
+
+  it('[ac:ac-l3-mcp-release-diff-z-dokladnie-jedna] sectionLimit: 1 returns exactly the section at sectionOffset', () => {
+    const page = bigPage(5, 'x');
+    for (const at of [0, 2, 5]) {
+      const out = run(page, { singlePath: true, sectionOffset: at, sectionLimit: 1 });
+      const [p] = out.pages as MCPPageDelta[];
+      expect(p!.sections).toHaveLength(1);
+      // Position 5 is the pure move: it occupies a position like any other.
+      expect(p!.sections[0]!.anchor).toBe(at === 5 ? 'moved001' : `s${String(at).padStart(7, '0')}`);
+      // frontmatter only in the window starting at 0.
+      if (at === 0) expect(p!.frontmatter).toEqual({ before: { a: 1 }, after: { a: 2 } });
+      else expect(p).not.toHaveProperty('frontmatter');
+    }
+  });
+
+  it('[ac:ac-l3-mcp-release-diff-z-jedna-sciezka-w] total.sections counts every changed section, whatever the window', () => {
+    const page = bigPage(5, 'x');
+    for (const w of [{}, { sectionOffset: 3 }, { sectionLimit: 1 }, { sectionOffset: 99, sectionLimit: 2 }]) {
+      const out = run(page, { singlePath: true, ...w });
+      expect(out.total!.sections).toBe(6);
+    }
+    // A window past the end is an empty list, not an error.
+    const past = run(page, { singlePath: true, sectionOffset: 99 });
+    expect((past.pages as MCPPageDelta[])[0]!.sections).toEqual([]);
+    // Without one path there is no `total.sections`, and no window either.
+    expect(run(page, {}).total).not.toHaveProperty('sections');
+  });
+
+  it('create and delete pages window like updates — every section is changed', () => {
+    for (const op of ['created', 'deleted'] as const) {
+      const out = run(bigPage(4, 'x', op), { singlePath: true, sectionOffset: 1, sectionLimit: 2 });
+      expect(out.total!.sections).toBe(5);
+      expect((out.pages as MCPPageDelta[])[0]!.sections).toHaveLength(2);
+    }
+  });
+
+  it('the first section of a window, over the budget on its own, comes back cut as text — never empty', () => {
+    const out = run(bigPage(3, 'q'.repeat(DEFAULT_BUDGET_CHARS * 2)), { singlePath: true, sectionLimit: 2 });
+    const [p] = out.pages as MCPPageDelta[];
+    expect(p!.sections).toHaveLength(2);
+    expect(p!.sections[0]!.truncated).toBe(true);
+    expect(p!.sections[0]!.content!.length).toBeGreaterThan(0);
+    expect(p!.sections[1]!.truncated).toBe(true);
+    // The hint names the page and the next sectionOffset.
+    expect(out.truncationHint).toContain("paths: ['pages/big.md'], sectionOffset: 1");
+    // The pointer also bounds the next window (only one section fitted) and
+    // says to drop `roots`, which `paths` cannot be combined with.
+    expect(out.truncationHint).toContain('sectionOffset: 1, sectionLimit: 1');
+    expect(out.truncationHint).toContain('without `roots`');
+    expect(out.truncationHint).toContain('summaryOnly');
+  });
+
+  it('sections that do not fit resume through the section window, named in the hint', () => {
+    const out = run(bigPage(20, 'w'.repeat(Math.floor(DEFAULT_BUDGET_CHARS / 8))), { singlePath: true });
+    const [p] = out.pages as MCPPageDelta[];
+    const at = p!.sections.findIndex((sec) => sec.truncated);
+    expect(at).toBeGreaterThan(0);
+    expect(p!.sections).toHaveLength(21);
+    expect(out.truncationHint).toContain(`sectionOffset: ${at}`);
+  });
+
+  it('[ac:ac-serializowana-odpowiedz-operacji-odcz] a single-page or light response stays within DEFAULT_BUDGET_CHARS', () => {
+    const body = 'v'.repeat(Math.floor(DEFAULT_BUDGET_CHARS / 10));
+    const many = Array.from({ length: 6 }, (_, i) => ({ ...bigPage(12, body), path: `p${i}.md` }));
+    const raw = { from: { id: 1, name: 'v1' }, to: { id: 2, name: 'v2' }, entities: [], pages: many } as RawDelta;
+    const responses = [
+      projectReleaseDiff(raw, snap(1), snap(2), { include: ['pages'] }, { summaryOnly: true }),
+      // A heavy page window whose pages each outgrow the budget: the degraded
+      // tail is charged too.
+      projectReleaseDiff(raw, snap(1), snap(2), { include: ['pages'] }, { limit: 6 }),
+      // A page whose section identities alone outgrow the budget, read through
+      // the window the hint names.
+      run(bigPage(40, body), { singlePath: true, sectionOffset: 1, sectionLimit: 1 }),
+      run(bigPage(40, body), { singlePath: true }),
+      run(bigPage(40, body), { singlePath: true, sectionOffset: 10, sectionLimit: 20 }),
+    ];
+    for (const r of responses) expect(JSON.stringify(r).length).toBeLessThanOrEqual(DEFAULT_BUDGET_CHARS);
+  });
+
+  it('a first page bigger than the whole budget drops its guarantee to the section level', () => {
+    const body = 'v'.repeat(Math.floor(DEFAULT_BUDGET_CHARS / 10));
+    const raw = {
+      from: { id: 1, name: 'v1' }, to: { id: 2, name: 'v2' }, entities: [],
+      pages: [bigPage(30, body), { ...bigPage(2, 'small'), path: 'p2.md' }],
+    } as RawDelta;
+    const out = projectReleaseDiff(raw, snap(1), snap(2), { include: ['pages'] }, { limit: 5 });
+    const [first] = out.pages as MCPPageDelta[];
+    expect(first!.sections).toHaveLength(31);
+    expect(JSON.stringify(first).length).toBeLessThanOrEqual(DEFAULT_BUDGET_CHARS);
+    const at = first!.sections.findIndex((sec) => sec.truncated);
+    expect(out.truncationHint).toContain(`paths: ['pages/big.md'], sectionOffset: ${at}`);
   });
 });

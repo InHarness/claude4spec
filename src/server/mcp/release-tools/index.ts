@@ -16,9 +16,9 @@
  * that made its toolset safe to hand a subagent without thinking: "release-tools
  * are historical by definition" is no longer true of the WHOLE server, one branch
  * of one tool answers with the present. Nothing here changes to compensate; what
- * changes is that `diff-explore`'s "historical diff only" guarantee now rests on
- * its PROMPT, exactly as its `Read` guarantee always did, rather than on the
- * shape of the tools it holds.
+ * changes is that `diff-explore`'s "historical diff only" guarantee rests on its
+ * PROMPT and on the absence of the entity graph from its toolset (2.1.5: it holds
+ * no `Read` either), rather than on the shape of this server alone.
  */
 
 import { createMcpServer, mcpTool, type CapturedMcpServer } from '../../plugin-runtime/index.js';
@@ -179,7 +179,7 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
 
   const releaseDiff = mcpTool(
     'release_diff',
-    "Compute a SELF-CONTAINED structured diff between two releases. Heavy mode (default): each entity carries full `before`/`after` snapshots (per plugin's serializer); a section delta carries its OWN body (subsections are separate deltas) as raw markdown in `content`, with inline `<before_change>`/`<after_change>` change tags, plus `kind: \"section\"` and `headingPath` (ancestor headings, outermost first); text above the first heading is a delta with `kind: \"preamble\"`; a heading without an anchor has no `anchor` and is identified by `heading`. `entities[]`/`pages[]` are paginated independently by `limit`/`offset` (default 5), and `total: { entities?, pages? }` reports the full count after `include`/`entityTypes` filters, before the window. Light mode (`summaryOnly: true`): returns a delta MAP — `total` + identifiers `{ type, slug, name, op }` per entity and `{ rootId, path, op }` per page (incl. `op:'delete'`), WITHOUT `before`/`after`/`content`; the map is FULL and ignores `limit`. It is the guaranteed floor of degradation: for a map too large to fit in one response it PAGES from `offset` (never dropping a row) and says so via `truncationHint`. RESPONSE BUDGET: an item that does not fit is NEVER silently omitted — it comes back with its identity and `truncated: true`, an entity losing `before`/`after` WHOLE and a section keeping `content` cut as TEXT, while the envelope's `truncationHint` says how to retry. Absence from `entities[]`/`pages[]` therefore means one thing only: that thing did not change. Do NOT assume `op:'update'` implies `before`/`after` — check `truncated` first. A page entry carries `rootId` next to `path` in BOTH modes: a page's identity is the pair (rootId, path), `path` being relative to its root. Intended use: probe with `summaryOnly: true` to learn what changed, then fan out the heavy slices to subagents — three slicing axes: `entityTypes`, the `limit`/`offset` window, and `paths` (single pages by FULL key `<rootId>/<path>`). `paths` + `summaryOnly: true` is an intended pattern, not an edge case: the delta map for just those pages. Pass `from: null` for the initial brief (synthetic empty `from`; all entries become `op:'create'` with `before` omitted). `from === to` returns an empty diff. There is NO `line_diff`. Pass `toIdOrName: \"current\"` to diff a release against the live, not-yet-released state (HEAD): that `after` side is not frozen, so such a diff does not reproduce later. `current` is a reserved release name and never collides with a real one.",
+    "Compute a self-contained structured diff between two releases, or between a release and the current unreleased state. Heavy mode (default) carries, per changed entity, the FULL `before`/`after` snapshots frozen at each release, and per changed page section the section text with inline `<before_change>`/`<after_change>` markers; compare the snapshots yourself. The payload already carries historical state, so do not drill into current files or the live entity graph to explain a past change. `toIdOrName: \"current\"` diffs against the live, not-yet-released state (HEAD); that side is not frozen and does not reproduce later. Light mode (`summaryOnly: true`) returns a complete delta MAP, deletions included, windows ignored: `total` plus `{ type, slug, name, op }` per entity and `{ rootId, path, op, sections, size }` per page, where `size` is the length of the page's changed-section content in characters. With exactly one entry in `paths` it also returns that page's section map, with a `size` per section. Pattern: probe with `summaryOnly`, use `size` to partition into disjoint slices, then pull each slice by `entityTypes`, `paths` and the `limit`/`offset` page window. Read a large page with `paths` set to it and the `sectionOffset`/`sectionLimit` section window; `sectionLimit: 1` reads it section by section, by choice and not only after truncation. `limit` (default 5) and `offset` window entities and pages independently; `total` counts after filters, before the window, and with one path `total.sections` counts its changed sections. A window past the end returns an empty list with `total` present. `fromIdOrName: null` gives the initial diff (every entry `op: 'create'`); `from === to` gives an empty diff. Briefs and patches never appear. Read-only.",
     {
       fromIdOrName: z
         .union([z.string(), z.number(), z.null()])
@@ -207,7 +207,7 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
         .boolean()
         .optional()
         .describe(
-          'Default false. true = light delta-map: only `total` + identifiers `{ type, slug, name, op }` / `{ rootId, path, op }` (incl. deletes), no before/after/content. Full lists — ignores `limit`. `offset` IS honoured, as the resume cursor for a map too big for one response (`truncationHint` names the next offset).',
+          'When true, return the light delta map — identifiers plus op, and per page `sections` (changed-section count) and `size` (their content length in characters); deletions included, no before/after/content. With exactly one element in `paths`, the page row also carries `sectionMap`: one row per changed section with its identity and `size`. The map is always complete and ignores limit/offset and the section window.',
         ),
       roots: z
         .array(z.string())
@@ -219,7 +219,7 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
         .array(z.string())
         .optional()
         .describe(
-          "Narrow the PAGES dimension to single pages. Each element is a page's FULL key `<rootId>/<relPath>` and addresses exactly one page file — a directory prefix is not accepted. Mutually exclusive with `roots`, and rejected when `include` does not carry 'pages'. An empty array, an element without a root prefix, an unknown root id, or a non-releasable root is rejected. Does not affect the entities dimension. A well-formed key unchanged (or absent) on both sides is NOT an error — it yields no page entry and `total.pages: 0`. Errors: 400 INVALID_PATHS_FILTER, 400 CONFLICTING_FILTERS.",
+          "Narrow the PAGES dimension to single pages. Each element is a page's FULL key `<rootId>/<relPath>` and addresses exactly one page file — a directory prefix is not accepted. Mutually exclusive with `roots`, and rejected when `include` does not carry 'pages'. An empty array, an element without a root prefix, an unknown root id, or a non-releasable root is rejected. Does not affect the entities dimension. A well-formed key unchanged (or absent) on both sides is NOT an error — it yields no page entry and `total.pages: 0`. Errors: 400 INVALID_PATHS_FILTER, 400 CONFLICTING_FILTERS. Exactly one element enables the section window and, in light mode, the section map.",
         ),
       limit: z
         .number()
@@ -233,6 +233,18 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
         .describe(
           'Window offset applied independently to entities[] and pages[]. Default 0. Beyond total → empty list + total. Negative → 400 INVALID_PAGINATION. In light mode (`summaryOnly: true`) this is the resume cursor for an identity map that does not fit in one response.',
         ),
+      sectionOffset: z
+        .number()
+        .optional()
+        .describe(
+          "Default 0. Start of the section window in the ONE page named by `paths`; positions count in the order `sections[]` comes back without a window. Requires exactly one element in `paths`, otherwise 400 CONFLICTING_FILTERS. Negative → 400 INVALID_PAGINATION. A window past the end returns an empty section list with `total.sections` present. The page's `frontmatter`/`xmlRefs` come only in the window starting at 0. Ignored with `summaryOnly: true`.",
+        ),
+      sectionLimit: z
+        .number()
+        .optional()
+        .describe(
+          'Size of the section window. Default: every section from `sectionOffset` on. `1` reads the page section by section, usable by choice whatever the page size. Same conditions as `sectionOffset`.',
+        ),
     },
     async (args) => {
       try {
@@ -240,13 +252,22 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
         // is a 400 even though `summaryOnly: true` later ignores the window.
         // The filters come after it (0.2.102 order).
         const { limit, offset } = resolvePagination(args.limit, args.offset);
+        // 2.1.5 — the section window is validated in the same step, for the same reason.
+        const { sectionOffset, sectionLimit } = resolveSectionWindow(args.sectionOffset, args.sectionLimit);
         const summaryOnly = args.summaryOnly === true;
 
         const include = (args.include as IncludeFilter[] | undefined) ?? DEFAULT_INCLUDE;
         const entityTypes = args.entityTypes as EntityTypeFilter[] | undefined;
         const roots = args.roots as string[] | undefined;
         const paths = args.paths as string[] | undefined;
-        validateDiffFilters(args.include as IncludeFilter[] | undefined, entityTypes, roots, paths, deps.roots());
+        validateDiffFilters(
+          args.include as IncludeFilter[] | undefined,
+          entityTypes,
+          roots,
+          paths,
+          deps.roots(),
+          sectionOffset !== undefined || sectionLimit !== undefined,
+        );
 
         const fromIdOrName = args.fromIdOrName as number | string | null;
         const toIdOrName = args.toIdOrName as number | string;
@@ -284,6 +305,9 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
             summaryOnly,
             limit,
             offset,
+            singlePath: paths?.length === 1,
+            sectionOffset,
+            sectionLimit,
           }) satisfies MCPReleaseDiff,
         );
       } catch (err) {
@@ -351,6 +375,24 @@ export function resolvePagination(limit: unknown, offset: unknown): { limit: num
   return { limit: l, offset: o };
 }
 
+/**
+ * 2.1.5 — `release_diff`'s section window, checked with `limit`/`offset` and for
+ * the same reason: a negative value is a 400 even under `summaryOnly: true`,
+ * which then ignores the window. Absent stays absent — the projection tells "no
+ * window" (the page whole) from an explicit one.
+ */
+export function resolveSectionWindow(
+  sectionOffset: unknown,
+  sectionLimit: unknown,
+): { sectionOffset?: number; sectionLimit?: number } {
+  const o = typeof sectionOffset === 'number' ? sectionOffset : undefined;
+  const l = typeof sectionLimit === 'number' ? sectionLimit : undefined;
+  if ((o !== undefined && o < 0) || (l !== undefined && l < 0)) {
+    throw new DomainError('INVALID_PAGINATION', 'sectionOffset and sectionLimit must be >= 0');
+  }
+  return { ...(o !== undefined ? { sectionOffset: o } : {}), ...(l !== undefined ? { sectionLimit: l } : {}) };
+}
+
 function validateFilters(
   include: IncludeFilter[] | undefined,
   entityTypes: EntityTypeFilter[] | undefined,
@@ -376,7 +418,8 @@ function validateFilters(
  * 0.2.102: `release_diff`'s filter validation, in the documented order — empty
  * `include`/`entityTypes`/`roots`/`paths` first, then the conflicts
  * (`entityTypes` without 'entities', `paths` without 'pages', `paths` together
- * with `roots`), then an unknown or non-releasable root. `roots` and `paths`
+ * with `roots`, 2.1.5: a section window without exactly one path), then an
+ * unknown or non-releasable root. `roots` and `paths`
  * REFUSE such a root instead of silently skipping it, and the refusal names the
  * releasable roots. `release_show` keeps the narrower `validateFilters`.
  */
@@ -386,6 +429,7 @@ function validateDiffFilters(
   roots: string[] | undefined,
   paths: string[] | undefined,
   allRoots: ReadonlyArray<Pick<Root, 'id' | 'releasable'>>,
+  sectionWindow = false,
 ): void {
   const releasable = allRoots.filter((r) => r.releasable).map((r) => r.id);
   const available = `releasable roots: [${releasable.join(', ')}]`;
@@ -411,6 +455,13 @@ function validateDiffFilters(
   }
   if (paths !== undefined && roots !== undefined) {
     throw new DomainError('CONFLICTING_FILTERS', 'paths and roots are mutually exclusive — pass one of them');
+  }
+  // A silent ignore would answer a different query than the one asked.
+  if (sectionWindow && paths?.length !== 1) {
+    throw new DomainError(
+      'CONFLICTING_FILTERS',
+      'sectionOffset / sectionLimit address the sections of ONE page — pass exactly one element in paths',
+    );
   }
 
   const rootProblem = (id: string): string | null => {

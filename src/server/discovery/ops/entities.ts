@@ -242,11 +242,14 @@ export function getEntities(deps: DiscoveryDeps, input: GetEntitiesInput): GetEn
   // the caller receives, and a `select: []` call that fits comfortably would
   // otherwise be cut on the strength of a payload nobody was ever going to see.
   const budgeted = applyItemBudget(results, metaOnly, RETRY_HINT);
+  // `metaOnly` leaves a not-found slug untouched, so a cut that only passed over
+  // such slugs degraded nothing — the envelope must not claim it did.
+  const anyCut = budgeted.truncated && budgeted.items.some((item) => 'truncated' in item && item.truncated);
   return {
     type: input.type,
     selectedFields: selectedFieldsOf(input.select, schema),
     results: budgeted.items,
-    ...(budgeted.truncated ? { truncated: true, message: budgeted.truncationHint ?? RETRY_HINT } : {}),
+    ...(anyCut ? { truncated: true, message: budgeted.truncationHint ?? RETRY_HINT } : {}),
   };
 }
 
@@ -262,6 +265,10 @@ const RETRY_HINT =
  * The first item is therefore kept whole rather than shortened.
  */
 function metaOnly(item: GetEntitiesResult['results'][number]): GetEntitiesResult['results'][number] {
+  // A slug that does not exist has nothing to cut: marking it would turn "does
+  // not exist" into "did not fit", the one confusion `truncated` is there to
+  // prevent. It surfaced once the budget came down to 50 000 (2.1.5).
+  if (item.entity === null) return item;
   return { ...item, entity: null, truncated: true };
 }
 

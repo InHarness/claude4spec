@@ -311,7 +311,10 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
       seed();
       const call = diffTool(twoRootService());
       const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths: ['pages/b.md'], summaryOnly: true });
-      expect(res.body.pages).toEqual([{ rootId: 'pages', path: 'b.md', op: 'delete' }]);
+      expect(res.body.pages).toEqual([expect.objectContaining({ rootId: 'pages', path: 'b.md', op: 'delete' })]);
+      // 2.1.5 — one path: the light row carries the section map, and `total.sections` is set.
+      expect(res.body.pages[0]).toHaveProperty('sectionMap');
+      expect(res.body.total).toHaveProperty('sections');
     });
 
     it('[ac:ac-kazdy-wpis-pages-w-zwrotce-release-di] every page entry carries rootId, heavy and summaryOnly alike', async () => {
@@ -385,7 +388,7 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
       expect(entities).toContainEqual(expect.objectContaining({ slug: 'kept', op: 'update' }));
       // The deletion the current branch must not lose.
       expect(entities).toContainEqual(expect.objectContaining({ slug: 'gone', op: 'delete' }));
-      expect(res.body.pages).toContainEqual({ rootId: 'pages', path: 'b.md', op: 'create' });
+      expect(res.body.pages).toContainEqual(expect.objectContaining({ rootId: 'pages', path: 'b.md', op: 'create' }));
     });
 
     it('a real release NAMED current does not shadow the literal', async () => {

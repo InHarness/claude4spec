@@ -11,8 +11,33 @@
  * absence will confidently report the missing part as non-existent.
  */
 
-/** Characters of serialized JSON, not tokens — the core cannot see a tokenizer. */
-export const DEFAULT_BUDGET_CHARS = 120_000;
+/**
+ * The MCP tool-result ceiling of Claude Code, in tokens — the default every
+ * external client arrives with. The server pins it on every agent turn
+ * (`custom_env.MAX_MCP_OUTPUT_TOKENS`), so the transport ceiling and the budget
+ * below derive from ONE number and move together.
+ *
+ * It exists only to derive the budget: no response carries a token count.
+ */
+export const TOOL_RESULT_CEILING_TOKENS = 25_000;
+
+/**
+ * Deliberately low characters-of-serialized-JSON per token. The measured upper
+ * bound is ~3; dense JSON may not reach it, so the floor is what keeps a
+ * budget-sized response under the ceiling.
+ */
+export const CHARS_PER_TOKEN_FLOOR = 2;
+
+/**
+ * Characters of serialized JSON, not tokens — the core cannot see a tokenizer.
+ *
+ * It sits BELOW the transport ceiling on purpose: the operation has to cut a
+ * result before the transport does, because a result the transport refuses
+ * vanishes whole — no `truncated`, no `truncationHint`. The ceiling can only be
+ * raised where we own the environment (the built-in agent), so the budget comes
+ * down instead, which also spares the agent's context window.
+ */
+export const DEFAULT_BUDGET_CHARS = TOOL_RESULT_CEILING_TOKENS * CHARS_PER_TOKEN_FLOOR;
 
 /** `get_entities` refuses a slug list longer than this outright, rather than half-answering it. */
 export const MAX_SLUGS_PER_CALL = 50;

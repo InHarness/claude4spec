@@ -1,5 +1,5 @@
 import { createAdapter, extractText, probeToolGating, type UnifiedEvent } from '@inharness-ai/agent-adapters';
-import { DEFAULT_CONTENT_OPERATION } from '@c4s/plugin-runtime';
+import { DEFAULT_CONTENT_OPERATION, TOOL_RESULT_CEILING_TOKENS } from '@c4s/plugin-runtime';
 import type { AcMountContext, HostRegistryView, ReadOps } from '../../../host-kit/host-types.js';
 import { AC_TYPE } from '../../../identity.js';
 import { readActiveAcs, SLUGS_PER_CALL } from './read-acs.js';
@@ -222,6 +222,17 @@ export class AcAnalysisService {
        */
       ...scope,
       disallowedToolGroups: scope.disallowedToolGroups as never,
+      /**
+       * 2.1.5 — this `adapter.execute` bypasses the host's turn assembly, which
+       * pins the MCP tool-result ceiling on every turn, so the audit pins it
+       * itself — from the same constant, so the ceiling and the core response
+       * budget derived from it cannot drift apart. The sandbox stays as the
+       * scope built it.
+       */
+      architectureConfig: {
+        ...scope.architectureConfig,
+        custom_env: { MAX_MCP_OUTPUT_TOKENS: String(TOOL_RESULT_CEILING_TOKENS) },
+      },
     });
     // 0.2.87: `extractText` ignores `error` events, so a tool-policy refusal (or any
     // adapter failure) surfaced mid-stream used to parse as "no issues". Rethrow it.

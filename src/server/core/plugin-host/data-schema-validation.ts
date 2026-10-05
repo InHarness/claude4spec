@@ -757,7 +757,7 @@ function checkReservedTitle(type: string, schema: DataDeclaration['schema']): vo
  * HYPOTHESIS — one this gate discharges once, at registration.
  *
  * The hypothesis: the declared bound sits below the read budget
- * (`DEFAULT_BUDGET_CHARS`, today 120_000 characters of serialized JSON). While
+ * (`DEFAULT_BUDGET_CHARS`, today 50_000 characters of serialized JSON). While
  * it holds, `renderInlineMention` can take `title` as the chip's label verbatim
  * and no reader has to mark it `truncated`; the only thing standing between a
  * caller and an arbitrarily wide response is the budget's own paging, which is

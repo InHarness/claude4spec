@@ -27,20 +27,28 @@ export interface MCPReleaseDiff {
    * lock-step with `include` (mirrors `MCPSpecSnapshot.total`). Always present so
    * a paginating consumer — or the brief-author probe-map (`summaryOnly: true`) —
    * knows the full cardinality of each filtered dimension.
+   *
+   * 2.1.5 — `sections`: present ONLY with exactly one entry in `paths`; counts
+   * that page's changed sections after filters, BEFORE the section window, so it
+   * does not depend on `sectionOffset` / `sectionLimit`. A page read through the
+   * section window is read whole once the windows covered positions 0 to
+   * `sections`.
    */
-  total?: { entities?: number; pages?: number };
+  total?: { entities?: number; pages?: number; sections?: number };
   /**
    * Heavy variant (`summaryOnly !== true`): full `MCPEntityDelta` with
    * `before`/`after`, windowed by `limit`/`offset`.
    * Light variant (`summaryOnly === true`): `MCPEntityDeltaLight` identifiers
-   * only (full list, window ignored).
+   * only (full list, window ignored — the section window included).
    */
   entities?: MCPEntityDelta[] | MCPEntityDeltaLight[];
   pages?: MCPPageDelta[] | MCPPageDeltaLight[];
   /**
    * 0.2.40 — present IFF anything in this response degraded under the response
-   * budget. A sentence saying HOW to retry: narrow `entityTypes`, lower `limit`,
-   * drop to `summaryOnly`, advance `offset`.
+   * budget. A sentence saying HOW to retry — 2.1.5: a four-rung ladder down:
+   * (1) the page window — narrow `entityTypes`, lower `limit`, advance `offset`;
+   * (2) one page — `paths`; (3) that page's section window — the hint names the
+   * `paths` and the next `sectionOffset`; (4) `summaryOnly` as the floor.
    *
    * The instruction lives ONLY here, at the envelope. An item carries the bare
    * `truncated` flag and nothing else, because the remedy is a property of the
@@ -59,12 +67,51 @@ export interface MCPEntityDeltaLight {
   op: 'create' | 'update' | 'delete';
 }
 
-/** Light delta-map entry (`summaryOnly: true`) — `(rootId, path)` + op, no `sections`/`content`. */
+/**
+ * Light delta-map entry (`summaryOnly: true`) — `(rootId, path)` + op and the
+ * page's SIZE, no section content. Fixed width: the map grows with the number of
+ * pages, not sections, which is what keeps it the guaranteed floor.
+ */
 export interface MCPPageDeltaLight {
   /** 0.2.102: the page's root — see `MCPPageDelta.rootId`. */
   rootId: string;
   path: string;
   op: 'create' | 'update' | 'delete';
+  /** 2.1.5 — number of changed sections of the page. */
+  sections: number;
+  /**
+   * 2.1.5 — total length of those sections' heavy-mode `content`, in
+   * characters: the budget's unit, so slices can be planned before the content
+   * is pulled. A pure move counts 0.
+   */
+  size: number;
+  /**
+   * 2.1.5 — present ONLY with exactly one entry in `paths`: one row per changed
+   * section, in the order `sections[]` comes back in heavy mode (the section
+   * window's positions). Always complete — it ignores the section window.
+   */
+  sectionMap?: MCPSectionMapRow[];
+}
+
+/**
+ * 2.1.5 — one row of a single page's section map (light mode). Same identity and
+ * same order as `MCPSectionDelta`; instead of `content` it carries its length,
+ * so the row has a fixed width.
+ */
+export interface MCPSectionMapRow {
+  /** As `MCPSectionDelta.anchor` — omitted for an anchorless create/delete-only section. */
+  anchor?: string;
+  kind: 'section' | 'preamble';
+  /** Omitted for the preamble. */
+  heading?: string;
+  headingPath: string[];
+  /** Present IFF the section was purely moved. */
+  moved?: true;
+  /**
+   * Length of this section's heavy-mode `content` in characters, without JSON
+   * serialization overhead. 0 for a pure move.
+   */
+  size: number;
 }
 
 export interface MCPEntityDelta {
@@ -101,8 +148,15 @@ export interface MCPPageDelta {
   /** Path relative to the page's root. */
   path: string;
   op: 'create' | 'update' | 'delete';
+  /**
+   * 2.1.5 — with exactly one entry in `paths`, windowed by `sectionOffset` /
+   * `sectionLimit` (whole without them). A window past the end gives `[]`; the
+   * count of all changed sections is the envelope's `total.sections`.
+   */
   sections: MCPSectionDelta[];
+  /** 2.1.5 — under the section window, present only in the window starting at `sectionOffset: 0`. */
   frontmatter?: { before?: Record<string, unknown>; after?: Record<string, unknown> };
+  /** 2.1.5 — under the section window, present only in the window starting at `sectionOffset: 0`. */
   xmlRefs?: { before?: string[]; after?: string[] };
 }
 
@@ -148,7 +202,8 @@ export interface MCPSectionDelta {
   moved?: true;
   /**
    * 0.2.40 — present IFF `content` was cut TEXTUALLY by the response budget.
-   * The line-diff is then incomplete; continue with a smaller window.
+   * The line-diff is then incomplete; continue through the section window
+   * (`paths` set to this page, `sectionOffset` at this section).
    *
    * Deliberately the OPPOSITE mechanism to `MCPEntityDelta.truncated`, and the
    * asymmetry follows the kind of payload rather than being an inconsistency: a

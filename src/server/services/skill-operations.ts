@@ -201,7 +201,7 @@ function normalizeFileArg(raw: string): string {
 /**
  * The response budget, applied to whichever piece of text is being served.
  *
- * `DEFAULT_BUDGET_CHARS` is the same 120 000 every other agent-facing response is
+ * `DEFAULT_BUDGET_CHARS` is the same 50 000 every other agent-facing response is
  * held to, is shared by all four channels, and is NOT configurable — neither per
  * channel nor per skill (a per-skill override would let one package decide how
  * much of a turn's context it is entitled to).
