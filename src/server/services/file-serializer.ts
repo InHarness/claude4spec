@@ -33,13 +33,11 @@ import { diffLines } from 'diff';
 import { ANCHOR_LINE_RE } from '../../shared/anchor-pattern.js';
 import { parseXmlTags } from '../../shared/xml-tags.js';
 import {
-  fileKindOf,
   headingPathOf,
   liveAnchorValues,
   parseSections,
   PREAMBLE_KEY,
   sliceLines,
-  type SectionFileKind,
 } from '../../shared/section-parser.js';
 import type { PagesService } from './pages.js';
 import type {
@@ -105,9 +103,9 @@ export type {
  * there IS a change. Until 2.0.0 the filter switched off entirely as soon as
  * either side held a fence anywhere.
  */
-export function computeLineDiff(a: string, b: string, kind: SectionFileKind = 'md'): LineDiff {
-  const aCode = codeLines(a, kind);
-  const bCode = codeLines(b, kind);
+export function computeLineDiff(a: string, b: string): LineDiff {
+  const aCode = codeLines(a);
+  const bCode = codeLines(b);
   const lines: Array<LineDiffLine & { inCode: boolean }> = [];
   let ai = 0;
   let bi = 0;
@@ -136,10 +134,10 @@ export function computeLineDiff(a: string, b: string, kind: SectionFileKind = 'm
 }
 
 /** 0-based indexes of the lines of `text` that lie inside a fenced code block. */
-function codeLines(text: string, kind: SectionFileKind): Set<number> {
+function codeLines(text: string): Set<number> {
   const out = new Set<number>();
   if (!text.includes('```') && !text.includes('~~~')) return out;
-  for (const r of parseSections(text, kind, { frontmatter: false }).excludedRanges) {
+  for (const r of parseSections(text, { frontmatter: false }).excludedRanges) {
     if (r.kind !== 'fence') continue;
     for (let l = r.range.start; l <= r.range.end; l++) out.add(l - 1);
   }
@@ -147,8 +145,8 @@ function codeLines(text: string, kind: SectionFileKind): Set<number> {
 }
 
 /** Live anchors (outside code) in document order — informational, see `FileSnapshotData.anchors`. */
-export function extractAnchorsInOrder(content: string, kind: SectionFileKind = 'md'): string[] {
-  return liveAnchorValues(content, kind);
+export function extractAnchorsInOrder(content: string): string[] {
+  return liveAnchorValues(content);
 }
 
 /** One side of a diff, split by the shared section parser. */
@@ -170,8 +168,8 @@ interface DiffSide {
   order: string[];
 }
 
-function splitSide(content: string, kind: SectionFileKind): DiffSide {
-  const parsed = parseSections(content, kind);
+function splitSide(content: string): DiffSide {
+  const parsed = parseSections(content);
   const lines = content.split('\n');
   const side: DiffSide = { preamble: null, anchored: new Map(), unanchored: [], order: [] };
   if (parsed.preamble) {
@@ -258,7 +256,7 @@ export class FileSerializer {
   /** Build snapshot from already-read content (used for delete tombstones). */
   snapshotFromContent(relPath: string, content: string): FileSnapshotData {
     const parsed = matter(content);
-    const anchors = extractAnchorsInOrder(content, fileKindOf(relPath));
+    const anchors = extractAnchorsInOrder(content);
     const xml_refs = parseXmlTags(content).map((t) => ({
       tagType: t.kind,
       attributes: t.attrs,
@@ -294,7 +292,6 @@ export class FileSerializer {
     relPath: string,
     rootId: string = this.pages.rootId,
   ): FileDiff {
-    const kind = fileKindOf(relPath);
     const empty: Pick<FileDiff, 'added_sections' | 'removed_sections' | 'modified_sections' | 'moved_sections'> = {
       added_sections: [],
       removed_sections: [],
@@ -310,7 +307,7 @@ export class FileSerializer {
         path: relPath,
         op: 'created',
         ...empty,
-        added_sections: allEntries(splitSide(b!.content, kind)).map(asSection),
+        added_sections: allEntries(splitSide(b!.content)).map(asSection),
         frontmatter_diff: frontmatterDiff({}, b!.frontmatter),
         xml_refs_diff: { added: b!.xml_refs, removed: [] },
       };
@@ -321,21 +318,21 @@ export class FileSerializer {
         path: relPath,
         op: 'deleted',
         ...empty,
-        removed_sections: allEntries(splitSide(a.content, kind)).map(asSection),
+        removed_sections: allEntries(splitSide(a.content)).map(asSection),
         frontmatter_diff: frontmatterDiff(a.frontmatter, {}),
         xml_refs_diff: { added: [], removed: a.xml_refs },
       };
     }
 
-    const aSide = splitSide(a.content, kind);
-    const bSide = splitSide(b.content, kind);
+    const aSide = splitSide(a.content);
+    const bSide = splitSide(b.content);
     const added: FileSection[] = [];
     const removed: FileSection[] = [];
     const modified: ModifiedSection[] = [];
     const moved: FileDiff['moved_sections'] = [];
 
     const compare = (x: DiffEntry, y: DiffEntry) => {
-      const lineDiff = computeLineDiff(x.content, y.content, kind);
+      const lineDiff = computeLineDiff(x.content, y.content);
       const bodyChanged = lineDiff.lines.some((l) => l.op !== 'keep');
       const headingChanged = x.key.heading !== y.key.heading || x.key.level !== y.key.level;
       if (bodyChanged || headingChanged) modified.push({ ...y.key, line_diff: lineDiff });

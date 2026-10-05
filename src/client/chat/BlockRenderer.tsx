@@ -4,7 +4,6 @@ import type { UIContentBlock } from '@inharness-ai/agent-chat';
 import type { UserInputRequest, UserInputResponse } from '@inharness-ai/agent-adapters';
 import { SubagentPanel } from './SubagentPanel.js';
 import { ToolCard, type ToolItem } from './ToolCard.js';
-import { UserTextMarkdown } from './UserTextMarkdown.js';
 import {
   BACKGROUND_TASK_TOOL_NAME,
   TRANSAGENT_TOOL_NAME,
@@ -402,7 +401,7 @@ function UserText({ text, annotations, planMode }: UserTextProps) {
           className="rounded-xl rounded-tr-sm px-3 py-2 text-[13.5px] break-words"
           style={{ background: 'var(--c-accent)', color: '#fff' }}
         >
-          <UserTextMarkdown text={text} />
+          <ChatMarkdown text={text} pageRefs />
         </div>
       </div>
     </div>
@@ -450,7 +449,7 @@ export function QueuedMessageBubble({ text, onCancel }: QueuedMessageBubbleProps
             color: 'var(--c-muted)',
           }}
         >
-          <UserTextMarkdown text={text} />
+          <ChatMarkdown text={text} pageRefs />
         </div>
       </div>
     </div>

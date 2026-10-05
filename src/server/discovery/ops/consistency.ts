@@ -19,7 +19,7 @@
 import { readConfig, type ConsistencySeverity } from '../../config.js';
 import { parseXmlTags, taggedListVia } from '../../../shared/xml-tags.js';
 import { getXmlTag } from '../../../shared/xml-markup/registry.js';
-import { anchorLineIndexOf, fileKindOf, parseSections } from '../../../shared/section-parser.js';
+import { anchorLineIndexOf, parseSections } from '../../../shared/section-parser.js';
 import { invalidArgument } from '../errors.js';
 import { classifyVerifies, readActiveAcs } from './ac-rules.js';
 import type { PageSource } from '../page-source.js';
@@ -648,7 +648,7 @@ function collectStructure(
   page: { path: string; body: string },
 ): void {
   const lines = page.body.split('\n');
-  const parsed = parseSections(page.body, fileKindOf(page.path), { frontmatter: false });
+  const parsed = parseSections(page.body, { frontmatter: false });
   if (sectionIndexed) {
     for (const sec of parsed.sections) {
       if (sec.anchor === null) {

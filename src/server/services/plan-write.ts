@@ -1,15 +1,6 @@
 import { DomainError } from './tags.js';
-import {
-  anchorsInLineSpans,
-  applySectionEdit,
-  assertAppendContent,
-  assertHeadingText,
-  liveRangeOf,
-  parseBody,
-  prepareSubstitutions,
-  renameHeading,
-  sectionRanges,
-} from './section-text.js';
+import { assertHeadingText, parseBody, sectionRanges } from './section-text.js';
+import { composeSectionBatch, type BatchElementOutcome } from './section-batch.js';
 import type { TextEdit } from './text-edits.js';
 
 /**
@@ -56,9 +47,11 @@ import type { TextEdit } from './text-edits.js';
  * 0.2.100 adds `rename`, and it means here exactly what it means there — the
  * heading line alone, level and anchor kept. What differs is what plans do not
  * have: no `dropAnchors`, no `ANCHOR_LOSS`, because a plan's anchors are
- * plan-local and nothing outside the file can cite one. So `rename` enters the
- * plan batch with no referential guard at all, and with no ancestor clause
- * either — that one is `update_sections`' contract, not this one's.
+ * plan-local and nothing outside the file can cite one.
+ *
+ * 2.1.7 — the batch rules are the page's, from the same engine
+ * (`section-batch.ts`): `replace` writes the OWN body, one anchor may carry
+ * several actions, and colliding claims refuse the batch.
  */
 export type PlanEditAction = 'replace' | 'append' | 'insert_after' | 'delete' | 'edit' | 'rename';
 
@@ -181,7 +174,6 @@ function validateBatch(edits: PlanSectionEdit[]): PlanSectionEdit[] {
       'an empty batch describes no change; omit the call instead',
     );
   }
-  const seen = new Set<string>();
   for (const edit of edits) {
     if (typeof edit?.anchor !== 'string' || edit.anchor.length === 0) {
       throw new DomainError('INVALID_ARGUMENT', 'each edit requires an `anchor`', 'anchors come from get_plan');
@@ -258,35 +250,15 @@ function validateBatch(edits: PlanSectionEdit[]): PlanSectionEdit[] {
         );
       }
     }
-    /**
-     * Two edits to one anchor in one batch is refused rather than folded.
-     * Bottom-up application makes their combined effect depend on an ordering
-     * the caller did not choose, and there is no reading of "replace it, then
-     * append to it" that is not the caller having meant one call. An `edit`
-     * carries a LIST of substitutions precisely so a second entry is never the
-     * way to ask for a second one.
-     */
-    if (seen.has(edit.anchor)) {
-      throw new DomainError(
-        'INVALID_ARGUMENT',
-        `anchor '${edit.anchor}' appears more than once in edits`,
-        'one entry per section; an `edit` entry may carry several substitutions',
-      );
-    }
-    seen.add(edit.anchor);
   }
   return edits;
 }
 
 export interface PlanBatchOutcome {
-  /** The plan body after every edit has been spliced, in memory. */
+  /** The plan body after every edit has been composed, in memory. */
   body: string;
-  /** Per addressed anchor, the anchors that edit's range covered (before the splice). */
-  scopeOf: Map<string, string[]>;
-  /** Per addressed anchor of an `edit`, how many substitutions it made. */
-  replacementsOf: Map<string, number>;
-  /** Per addressed anchor of a `rename`, the heading text read off the file before the splice. */
-  previousHeadingOf: Map<string, string>;
+  /** Per element, in input order: scope, replacements, previous heading. */
+  outcomes: BatchElementOutcome[];
 }
 
 /**
@@ -299,13 +271,13 @@ export interface PlanBatchOutcome {
  * `plan:updated`. That is the atomicity the release promises, and it is a
  * property of the batch being composed in a string rather than of a rollback.
  *
- * ## Bottom-up, whatever order the caller sent
+ * ## A set, not a sequence
  *
- * Entries are applied from the bottom of the document upwards, so an earlier
- * splice never moves the lines a later one addresses. Two different orderings of
- * the same batch therefore produce identical text: the caller declares a SET of
- * changes, never a procedure. (`results[]` still comes back in the order given —
- * that is the caller's frame, not the engine's.)
+ * Every element claims part of the plan as it was before the write; colliding
+ * claims refuse the batch and the rest compose in one pass with a fixed
+ * insertion order, so two orderings of the same batch produce identical text.
+ * (`results[]` still comes back in the order given — that is the caller's
+ * frame, not the engine's.)
  */
 export function applyPlanBatch(body: string, edits: readonly PlanSectionEdit[]): PlanBatchOutcome {
   const lines = body.split('\n');
@@ -339,82 +311,27 @@ export function applyPlanBatch(body: string, edits: readonly PlanSectionEdit[]):
     }
   }
 
+  const composed = composeSectionBatch(lines, edits);
+
   /**
-   * 2.0.0 — same `append` rule as `update_sections`: a heading outside a code
-   * block at or above the addressed section's level is refused for the whole
-   * batch, before anything is composed.
+   * 2.1.7 — a `replace` (or any insert) whose `content` carries the anchor of a
+   * section already in the plan would leave two sections answering to one
+   * anchor; refused as a duplicate anchor, for the whole batch. Plans carry no
+   * `ANCHOR_DUPLICATE` code (the brief adds none), so the refusal is
+   * `INVALID_ARGUMENT`, like every other deterministic refusal of the batch.
    */
-  for (const edit of edits) {
-    if (edit.action !== 'append') continue;
-    assertAppendContent(edit.content ?? '', rangeByAnchor.get(edit.anchor)!.level, edit.anchor);
+  const after = new Map<string, number>();
+  for (const sec of parseBody(composed.lines).sections) {
+    if (sec.anchor) after.set(sec.anchor, (after.get(sec.anchor) ?? 0) + 1);
   }
-
-  /**
-   * Every `edit` is matched and applied first, on the plan as the caller read
-   * it; one whose matched fragment touches lines another entry writes refuses
-   * the whole batch (see {@link prepareSubstitutions}). A parent `edit` on its
-   * own intro next to a child `replace` is fine — only fragments count.
-   */
-  const substituted = prepareSubstitutions(lines, edits);
-
-  const order = [...edits].sort(
-    (a, b) => rangeByAnchor.get(b.anchor)!.lineStart - rangeByAnchor.get(a.anchor)!.lineStart,
-  );
-
-  const scopeOf = new Map<string, string[]>();
-  const replacementsOf = new Map<string, number>();
-  const previousHeadingOf = new Map<string, string>();
-
-  /**
-   * Scope from the MATCHED FRAGMENTS, not from the addressed subtree — the one
-   * place `edit` parts company with the other four actions. A substitution
-   * three headings down destroys nothing above it. Measured on the lines the
-   * fragments were matched in, i.e. before the batch.
-   */
-  for (const [anchor, sub] of substituted.byAnchor) {
-    replacementsOf.set(anchor, sub.replacements);
-    scopeOf.set(anchor, anchorsInLineSpans(lines, sub.spans));
-  }
-  lines.splice(0, lines.length, ...substituted.lines);
-
-  for (const edit of order) {
-    if (edit.action === 'edit') continue;
-    /**
-     * Re-measured immediately before its own splice, never taken from the map
-     * above: a section's range CONTAINS its subtree, so an edit lower in the
-     * document may have changed how many lines this one spans even though it
-     * cannot have moved its start.
-     */
-    const range = liveRangeOf(lines, edit.anchor);
-    if (!range) {
-      throw new DomainError(
-        'SECTION_NOT_FOUND',
-        `section '${edit.anchor}' was removed by another edit in the same batch`,
-        'a batch may not both delete a section and address something inside it',
-      );
-    }
-    if (edit.action === 'rename') {
-      /**
-       * One line, and it is neither the anchor comment above it nor the body
-       * below it — so the scope is empty. In a plan that costs nothing to guard
-       * (there is no `dropAnchors` to validate against it and no `ANCHOR_LOSS`
-       * to raise); it is recorded anyway so the result row's `droppedAnchors`
-       * comes back empty rather than undefined.
-       */
-      scopeOf.set(edit.anchor, []);
-      previousHeadingOf.set(edit.anchor, renameHeading(lines, range, (edit.heading ?? '').trim()));
-      continue;
-    }
-    const inRange = sectionRanges(lines)
-      .filter((r) => r.lineStart > range.lineStart && r.lineStart <= range.lineEnd)
-      .map((r) => r.anchor);
-    // `append` / `insert_after` overwrite nothing — they can never drop an anchor.
-    scopeOf.set(
-      edit.anchor,
-      edit.action === 'delete' ? [edit.anchor, ...inRange] : edit.action === 'replace' ? inRange : [],
+  const duplicated = [...after].filter(([a, n]) => n > 1 && (occurrences.get(a) ?? 0) < n).map(([a]) => a);
+  if (duplicated.length > 0) {
+    throw new DomainError(
+      'INVALID_ARGUMENT',
+      `duplicate anchor — this batch would bring in ${duplicated.length === 1 ? 'an anchor' : 'anchors'} the plan already carries: ${duplicated.map((a) => `'${a}'`).join(', ')}`,
+      'remove the anchor comments from the content you send — replace keeps the subsections, so their anchors stay where they are',
     );
-    applySectionEdit(lines, edit, range);
   }
 
-  return { body: lines.join('\n'), scopeOf, replacementsOf, previousHeadingOf };
+  return { body: composed.lines.join('\n'), outcomes: composed.outcomes };
 }

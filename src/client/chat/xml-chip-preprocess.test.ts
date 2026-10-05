@@ -3,10 +3,8 @@ import '../xml-markup/host-renders.js';
 import { chipTargetOf, decodePayload, isChipTag, preprocessXmlChips, CHIP_HREF_PREFIX } from './xml-chip-preprocess.js';
 import { registerXmlTag } from '../../shared/xml-markup/registry.js';
 
-const AVAILABLE = ['dto', 'ac'];
-
 function chips(text: string): Array<{ kind: string; attrs: Record<string, string> }> {
-  const out = preprocessXmlChips(text, AVAILABLE);
+  const out = preprocessXmlChips(text);
   const re = new RegExp(`\\(${CHIP_HREF_PREFIX}([A-Za-z0-9_-]+)\\)`, 'g');
   return [...out.matchAll(re)].map((m) => decodePayload(m[1]!)!);
 }
@@ -17,7 +15,7 @@ describe('chat: chip picked from the registry by target (M51)', () => {
     expect(isChipTag('todo')).toBe(false);
     const text = 'a <todo comment="x"/> b <section_ref anchor="abcd1234"/>';
     expect(chips(text).map((c) => c.kind)).toEqual(['section_ref']);
-    expect(preprocessXmlChips(text, AVAILABLE)).toContain('<todo comment="x"/>');
+    expect(preprocessXmlChips(text)).toContain('<todo comment="x"/>');
   });
 
   it('a newly registered tag with an entity target shows up in chat with no change here', () => {
@@ -28,8 +26,11 @@ describe('chat: chip picked from the registry by target (M51)', () => {
     ]);
   });
 
-  it('sanitizes: type from the available types, slug / tags / anchor by pattern', () => {
-    expect(chips('<inline_mention type="nope" slug="x"/>')).toEqual([]);
+  it('sanitizes by attribute name: slug / tags / anchor by pattern; an unknown type survives (host broken chip)', () => {
+    expect(chips('<inline_mention type="nope" slug="x"/>')).toEqual([
+      { kind: 'inline_mention', attrs: { type: 'nope', slug: 'x' } },
+    ]);
+    expect(chips('<inline_mention type="Bad Type" slug="x"/>')).toEqual([]);
     expect(chips('<inline_mention type="dto" slug="Bad Slug"/>')).toEqual([]);
     expect(chips('<section_ref anchor="ab"/>')).toEqual([]);
     expect(chips('<tagged_list type="ac" tags="a, b" filter="weird"/>')).toEqual([

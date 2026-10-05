@@ -555,17 +555,17 @@ describe('update_sections over a real section index', () => {
     expect(quiet.results[0]!.anchor).toBe(alpha);
     expect(quiet.results[0]!.action).toBe('replace');
 
-    // An edit that swallows a nested section DOES change the anchor set, and a
-    // disappearing anchor is the change a caller is least able to infer: every
-    // `<section_ref/>` pointing at it has just been orphaned.
+    // 2.1.7 — a replace writes the OWN body, so a nested section survives it
+    // untouched and is not reported as moved.
     // Distinct heading text: `anchorOf` looks a section up by heading across the
     // whole index, so reusing "Alpha" here would address the OTHER page's.
     await index('nested.md', ['# Root', '', '## Outer', '', 'A', '', '### Inner', '', 'I', ''].join('\n'));
     const outer = anchorOf('Outer');
     const inner = anchorOf('Inner');
     const shrunk = await replaceOne(outer, 'JUST A\n', 'nested.md');
-    expect(shrunk.results[0]!.affectedAnchors).toContain(inner);
+    expect(shrunk.results[0]!.affectedAnchors).not.toContain(inner);
     expect(shrunk.results[0]!.affectedAnchors).not.toContain(outer);
+    expect(shrunk.results[0]!.droppedAnchors).toEqual([]);
   });
 
   it('keeps the heading AND the anchor comment, so the same section is addressable twice', async () => {
@@ -1071,7 +1071,7 @@ describe('update_sections — the batch contract', () => {
     expect((await pages.read('other.md')).body).toContain('GAMMA BODY');
   });
 
-  it('refuses INVALID_ARGUMENT on a duplicated anchor rather than folding the two edits', async () => {
+  it('2.1.7 — refuses INVALID_ARGUMENT on two elements of the SAME action on one anchor', async () => {
     await index('doc.md', page);
     const alpha = anchorOf('Alpha');
     const err = await updateSections(
@@ -1079,7 +1079,7 @@ describe('update_sections — the batch contract', () => {
       {
         expectedHash: await hashOfPage('doc.md'),
         edits: [
-          { anchor: alpha, action: 'replace', content: 'first' },
+          { anchor: alpha, action: 'append', content: 'first' },
           { anchor: alpha, action: 'append', content: 'second' },
         ],
       },
@@ -1087,7 +1087,33 @@ describe('update_sections — the batch contract', () => {
     ).catch((e) => e);
     expect(err.code).toBe('INVALID_ARGUMENT');
     expect(err.message).toContain(alpha);
+    expect(err.hint).toMatch(/concatenate the two `content`/);
     expect((await pages.read('doc.md')).body).toContain('ALPHA BODY');
+  });
+
+  it('2.1.7 — rename + replace on one anchor rewrites a whole section in ONE batch, one row per element', async () => {
+    await index('doc.md', page);
+    const alpha = anchorOf('Alpha');
+    const res = await updateSections(
+      deps(),
+      {
+        expectedHash: await hashOfPage('doc.md'),
+        edits: [
+          { anchor: alpha, action: 'replace', content: 'NEW ALPHA\n' },
+          { anchor: alpha, action: 'rename', heading: 'Alpha, renamed' },
+        ],
+      },
+      'agent',
+    );
+    const body = (await pages.read('doc.md')).body;
+    expect(body).toContain(`<!-- anchor: ${alpha} -->\n## Alpha, renamed\nNEW ALPHA`);
+    expect(body).not.toContain('ALPHA BODY');
+    expect(res.results.map((r) => [r.anchor, r.action])).toEqual([
+      [alpha, 'replace'],
+      [alpha, 'rename'],
+    ]);
+    expect('previousHeading' in res.results[0]!).toBe(false);
+    expect(res.results[1]!.previousHeading).toBe('Alpha');
   });
 
   it('is transactional — one bad edit in the set leaves the page untouched', async () => {
@@ -1194,7 +1220,6 @@ describe('update_sections — the batch contract', () => {
         {
           expectedHash: await hashOfPage('doc.md'),
           edits: [
-            { anchor: anchorOf('Inner'), action: 'replace', content: '' },
             { anchor: anchorOf('Outer'), action: 'delete' },
           ],
         },
@@ -1210,7 +1235,7 @@ describe('update_sections — the batch contract', () => {
       expect(body).not.toContain('OUTER BODY');
     });
 
-    it('does not strand the child’s new text when the child grows before the parent is replaced', async () => {
+    it('2.1.7 — a replace on the parent and on the child both land: each writes its own body', async () => {
       await index('doc.md', nested);
       await updateSections(
         deps(),
@@ -1224,11 +1249,10 @@ describe('update_sections — the batch contract', () => {
         'agent',
       );
       const body = (await pages.read('doc.md')).body;
-      // Replacing the parent replaces its subtree, so the child's new lines go
-      // with it — what must NOT happen is a tail of them surviving past the
-      // replacement, or the splice running into `## Next`.
       expect(body).toContain('REPLACED');
-      expect(body).not.toContain('L4');
+      expect(body).not.toContain('OUTER BODY');
+      expect(body).toContain('### Inner\nL1\nL2\nL3\nL4');
+      expect(body).not.toContain('INNER BODY');
       expect(body).toContain('## Next');
       expect(body).toContain('NEXT BODY');
     });
@@ -1389,7 +1413,8 @@ describe('update_sections — the anchor-loss guard', () => {
 
   /**
    * A parent carrying two children, which is the shape the whole guard is about:
-   * `replace` on `Parent` spans `Child one` and `Child two`.
+   * `delete` on `Parent` spans `Child one` and `Child two` (2.1.7: `replace`
+   * writes the own body only and spans neither).
    */
   const nested = [
     '# Doc',
@@ -1416,6 +1441,19 @@ describe('update_sections — the anchor-loss guard', () => {
   async function citeWithTag(anchor: string, relPath = 'cites.md'): Promise<void> {
     await index(relPath, ['# Cites', '', `<section_ref anchor="${anchor}"/>`, ''].join('\n'));
   }
+
+  const deleteParent = (dropAnchors?: string[]) =>
+    hashOfPage('doc.md').then((expectedHash) =>
+      updateSections(
+        deps(),
+        {
+          expectedHash,
+          edits: [{ anchor: anchorOf('Parent'), action: 'delete' }],
+          ...(dropAnchors ? { dropAnchors } : {}),
+        },
+        'agent',
+      ),
+    );
 
   const replaceParent = (content: string, dropAnchors?: string[]) =>
     hashOfPage('doc.md').then((expectedHash) =>
@@ -1465,23 +1503,25 @@ describe('update_sections — the anchor-loss guard', () => {
       {
         expectedHash: outline.hash,
         edits: [{ anchor: parent.anchor, action: 'replace', content: 'REWRITTEN PREAMBLE\n' }],
-        dropAnchors: [anchorOf('Child one'), anchorOf('Child two')],
       },
       'agent',
     );
 
     expect((await pages.read('doc.md')).body).toContain('REWRITTEN PREAMBLE');
+    // 2.1.7 — the own body only: both children survive with their anchors.
+    expect(res.results[0]!.droppedAnchors).toEqual([]);
+    expect((await pages.read('doc.md')).body).toContain('CHILD ONE BODY');
     // And the write hands the NEXT hash straight back, so a second edit needs no
     // read between them either — the third channel of the same value.
     expect(res.hash).toBe(await hashOfPage('doc.md'));
   });
 
-  it('refuses the batch with ANCHOR_LOSS when a replace drops a CITED subsection anchor', async () => {
+  it('refuses the batch with ANCHOR_LOSS when a delete drops a CITED subsection anchor', async () => {
     await index('doc.md', nested);
     const childOne = anchorOf('Child one');
     await citeWithTag(childOne);
 
-    const err = await replaceParent('JUST THE PREAMBLE\n').catch((e) => e);
+    const err = await deleteParent().catch((e) => e);
     expect(err.code).toBe('ANCHOR_LOSS');
     // Not a bare list of ids: an anchor is an opaque token, so the refusal has
     // to say WHAT it was and WHO cites it or the caller cannot act on it.
@@ -1499,7 +1539,7 @@ describe('update_sections — the anchor-loss guard', () => {
     await citeWithTag(anchorOf('Child one'));
     const before = (await pages.read('doc.md')).body;
 
-    await replaceParent('JUST THE PREAMBLE\n').catch(() => {});
+    await deleteParent().catch(() => {});
 
     expect((await pages.read('doc.md')).body).toBe(before);
   });
@@ -1509,9 +1549,9 @@ describe('update_sections — the anchor-loss guard', () => {
     const [childOne, childTwo] = [anchorOf('Child one'), anchorOf('Child two')];
     await citeWithTag(childOne);
 
-    const res = await replaceParent('JUST THE PREAMBLE\n', [childOne, childTwo]);
+    const res = await deleteParent([childOne, childTwo]);
 
-    expect(res.results[0]!.droppedAnchors.sort()).toEqual([childOne, childTwo].sort());
+    expect(res.results[0]!.droppedAnchors.sort()).toEqual([anchorOf('Parent'), childOne, childTwo].sort());
     expect((await pages.read('doc.md')).body).not.toContain('CHILD ONE BODY');
     // The sibling was never in the parent's range and must survive untouched.
     expect((await pages.read('doc.md')).body).toContain('SIBLING BODY');
@@ -1519,21 +1559,21 @@ describe('update_sections — the anchor-loss guard', () => {
 
   it('passes a drop of UNCITED anchors without any declaration, reporting them instead', async () => {
     await index('doc.md', nested);
-    const [childOne, childTwo] = [anchorOf('Child one'), anchorOf('Child two')];
+    const [parent, childOne, childTwo] = [anchorOf('Parent'), anchorOf('Child one'), anchorOf('Child two')];
 
-    const res = await replaceParent('JUST THE PREAMBLE\n');
+    const res = await deleteParent();
 
-    expect(res.results[0]!.droppedAnchors.sort()).toEqual([childOne, childTwo].sort());
+    expect(res.results[0]!.droppedAnchors.sort()).toEqual([parent, childOne, childTwo].sort());
   });
 
   it('reports droppedAnchors on SUCCESS, which is what replaces a dry-run mode', async () => {
     await index('doc.md', nested);
 
-    const res = await replaceParent('JUST THE PREAMBLE\n');
+    const res = await deleteParent();
 
     // Present, populated, and on the success envelope — not only in a refusal.
     expect(res.results[0]).toHaveProperty('droppedAnchors');
-    expect(res.results[0]!.droppedAnchors).toHaveLength(2);
+    expect(res.results[0]!.droppedAnchors).toHaveLength(3);
     expect(res.hash).toBeTruthy();
   });
 
@@ -1549,8 +1589,20 @@ describe('update_sections — the anchor-loss guard', () => {
      * guard has nothing to say. Which heading it now belongs to is the adjacency
      * rule's question and deliberately not this one's.
      */
-    const res = await replaceParent(
-      ['PREAMBLE', '', `<!-- anchor: ${childOne} -->`, '#### Renamed and moved', '', 'NEW BODY', ''].join('\n'),
+    const res = await updateSections(
+      deps(),
+      {
+        expectedHash: await hashOfPage('doc.md'),
+        edits: [
+          { anchor: childOne, action: 'delete' },
+          {
+            anchor: anchorOf('Child two'),
+            action: 'insert_after',
+            content: ['', `<!-- anchor: ${childOne} -->`, '#### Renamed and moved', '', 'NEW BODY', ''].join('\n'),
+          },
+        ],
+      },
+      'agent',
     );
 
     expect(res.results[0]!.droppedAnchors).not.toContain(childOne);
@@ -1570,24 +1622,18 @@ describe('update_sections — the anchor-loss guard', () => {
     expect(err.message).toContain(sibling);
   });
 
-  it('stays idempotent: repeating a successful replace with a refreshed hash passes', async () => {
+  it('2.1.7 — a replace on a parent can drop nothing, so naming a subsection in dropAnchors is INVALID_ARGUMENT', async () => {
     await index('doc.md', nested);
-    const [childOne, childTwo] = [anchorOf('Child one'), anchorOf('Child two')];
-    await citeWithTag(childOne);
+    const childOne = anchorOf('Child one');
 
-    await replaceParent('JUST THE PREAMBLE\n', [childOne, childTwo]);
-    await indexer!.indexPage('pages', 'doc.md');
+    const err = await replaceParent('JUST THE PREAMBLE\n', [childOne]).catch((e) => e);
 
-    /**
-     * The second call drops NOTHING — the children are already gone — and
-     * repeats the same declaration verbatim. A `dropAnchors` validated against
-     * what was actually dropped would now reject its own successful predecessor;
-     * validating against the batch's scopes, and allowing a superset, is what
-     * keeps `replace` idempotent.
-     */
-    const again = await replaceParent('JUST THE PREAMBLE\n', [childOne, childTwo]);
-
-    expect(again.results[0]!.droppedAnchors).toEqual([]);
+    expect(err.code).toBe('INVALID_ARGUMENT');
+    expect(err.message).toContain(childOne);
+    // And without the declaration it passes, the subsections intact.
+    const res = await replaceParent('JUST THE PREAMBLE\n');
+    expect(res.results[0]!.droppedAnchors).toEqual([]);
+    expect((await pages.read('doc.md')).body).toContain(`<!-- anchor: ${childOne} -->`);
   });
 
   it('refuses a delete whose own anchor is cited, and names it', async () => {
@@ -1731,7 +1777,7 @@ describe('update_sections — the anchor-loss guard', () => {
      */
     await index('links.md', ['# Links', '', `see [child one](doc.md#${childOne}) for details`, ''].join('\n'));
 
-    const err = await replaceParent('JUST THE PREAMBLE\n').catch((e) => e);
+    const err = await deleteParent().catch((e) => e);
 
     expect(err.code).toBe('ANCHOR_LOSS');
     expect(err.details[0].referencedBy[0].page).toBe('links.md');
@@ -1769,7 +1815,7 @@ describe('update_sections — the anchor-loss guard', () => {
       { sections, resolveRoot: (id: string) => (id === 'pages' ? target : undefined) },
       {
         expectedHash: await hashOfPage('doc.md'),
-        edits: [{ anchor: anchorOf('Parent'), action: 'replace', content: 'JUST THE PREAMBLE\n' }],
+        edits: [{ anchor: anchorOf('Parent'), action: 'delete' }],
       },
       'agent',
     );
@@ -1869,7 +1915,7 @@ describe('update_sections — the anchor-loss guard', () => {
   describe('addedAnchors and the ANCHOR_DUPLICATE guard', () => {
     it('reports an empty addedAnchors on a write that brings in nothing', async () => {
       await index('doc.md', nested);
-      const res = await replaceParent('NEW PARENT BODY\n', [anchorOf('Child one'), anchorOf('Child two')]);
+      const res = await replaceParent('NEW PARENT BODY\n');
       expect(res.results[0]!.addedAnchors).toEqual([]);
     });
 
@@ -1877,7 +1923,6 @@ describe('update_sections — the anchor-loss guard', () => {
       await index('doc.md', nested);
       const res = await replaceParent(
         ['NEW PARENT BODY', '', '<!-- anchor: brandnew1 -->', '### Brand new', '', 'NEW BODY', ''].join('\n'),
-        [anchorOf('Child one'), anchorOf('Child two')],
       );
       expect(res.results[0]!.addedAnchors).toEqual(['brandnew1']);
     });
@@ -1889,7 +1934,6 @@ describe('update_sections — the anchor-loss guard', () => {
 
       const err = await replaceParent(
         ['NEW PARENT BODY', '', `<!-- anchor: ${taken} -->`, '### Stolen', '', 'BODY', ''].join('\n'),
-        [anchorOf('Child one'), anchorOf('Child two')],
       ).catch((e: unknown) => e);
 
       expect(err).toBeInstanceOf(DomainError);
@@ -1905,7 +1949,6 @@ describe('update_sections — the anchor-loss guard', () => {
       await index('doc.md', nested);
       const err = await replaceParent(
         ['NEW PARENT BODY', '', '<!-- anchor: orphanaa -->', '', 'JUST PROSE, NO HEADING', ''].join('\n'),
-        [anchorOf('Child one'), anchorOf('Child two')],
       ).catch((e: unknown) => e);
 
       expect((err as DomainError).code).toBe('ANCHOR_DUPLICATE');
@@ -1927,7 +1970,6 @@ describe('update_sections — the anchor-loss guard', () => {
           'BODY',
           '',
         ].join('\n'),
-        [anchorOf('Child one'), anchorOf('Child two')],
       ).catch((e: unknown) => e);
 
       expect((err as DomainError).code).toBe('ANCHOR_DUPLICATE');
@@ -2180,35 +2222,43 @@ describe('update_sections — the anchor-loss guard', () => {
       });
     }
 
-    it('[ac:ac-rename-na-kotwicy-ktorej-przodek-jest] refuses an ancestor replace or delete in the same batch', async () => {
+    it('[ac:ac-rename-na-kotwicy-ktorej-przodek-jest] refuses an ancestor delete in the same batch; an ancestor replace no longer blocks', async () => {
       await index('doc.md', nested);
       const parent = anchorOf('Parent');
       const childOne = anchorOf('Child one');
 
-      for (const ancestorAction of ['replace', 'delete'] as const) {
-        const err = await updateSections(
-          deps(),
-          {
-            expectedHash: await hashOfPage('doc.md'),
-            edits: [
-              { anchor: childOne, action: 'rename', heading: 'Doomed' },
-              {
-                anchor: parent,
-                action: ancestorAction,
-                ...(ancestorAction === 'replace' ? { content: 'JUST THE PARENT\n' } : {}),
-              },
-            ],
-            // `replace` on the parent drops both children's anchors, so the
-            // declaration is what keeps the refusal ABOUT the collision.
-            dropAnchors: [childOne, anchorOf('Child two')],
-          },
-          'agent',
-        ).catch((e: unknown) => e);
+      const err = await updateSections(
+        deps(),
+        {
+          expectedHash: await hashOfPage('doc.md'),
+          edits: [
+            { anchor: childOne, action: 'rename', heading: 'Doomed' },
+            { anchor: parent, action: 'delete' },
+          ],
+          dropAnchors: [parent, childOne, anchorOf('Child two')],
+        },
+        'agent',
+      ).catch((e: unknown) => e);
+      expect((err as DomainError).code).toBe('INVALID_ARGUMENT');
+      expect((err as DomainError).message).toContain('rename');
+      expect((await pages.read('doc.md')).body).toContain('### Child one');
 
-        expect((err as DomainError).code).toBe('INVALID_ARGUMENT');
-        expect((err as DomainError).message).toContain('rename');
-        expect((await pages.read('doc.md')).body).toContain('### Child one');
-      }
+      // 2.1.7 — `replace` writes the parent's OWN body, never the child's head.
+      const res = await updateSections(
+        deps(),
+        {
+          expectedHash: await hashOfPage('doc.md'),
+          edits: [
+            { anchor: childOne, action: 'rename', heading: 'Renamed child' },
+            { anchor: parent, action: 'replace', content: 'JUST THE PARENT\n' },
+          ],
+        },
+        'agent',
+      );
+      expect(res.results[0]!.previousHeading).toBe('Child one');
+      const body = (await pages.read('doc.md')).body;
+      expect(body).toContain('JUST THE PARENT');
+      expect(body).toContain('### Renamed child');
     });
 
     it('[ac:ac-rename-w-jednej-paczce-z-append-albo] passes beside an append or insert_after on an ancestor', async () => {
@@ -2736,12 +2786,12 @@ describe('differential writes — textEdits', () => {
   });
 
   /**
-   * The outer entry would overwrite the very lines the substitution produced,
-   * leaving `replacements` reporting work that was then thrown away.
+   * 2.1.7 — `replace` on the parent claims its OWN body only, so an edit in a
+   * subsection lands next to it.
    */
-  it('refuses an edit nested inside a section another entry replaces', async () => {
+  it('lets an edit in a subsection land next to a replace on the parent', async () => {
     await index('doc.md', nested);
-    const err = await updateSections(
+    await updateSections(
       deps(),
       {
         expectedHash: await hashOfPage(),
@@ -2751,9 +2801,10 @@ describe('differential writes — textEdits', () => {
         ],
       },
       'agent',
-    ).catch((e) => e);
-    expect(err.code).toBe('INVALID_ARGUMENT');
-    expect(err.message).toMatch(/lies inside/);
+    );
+    const body = (await pages.read('doc.md')).body;
+    expect(body).toContain('FLATTENED');
+    expect(body).toContain('### Child one\n\nX');
   });
 
   /**
@@ -2820,7 +2871,8 @@ describe('differential writes — textEdits', () => {
       'agent',
     ).catch((e) => e);
     expect(err.code).toBe('INVALID_ARGUMENT');
-    expect(err.message).toMatch(/find 'CHILD ONE BODY' \(line \d+\) lies inside the section/);
+    expect(err.message).toMatch(/own body \(line \d+\) collides with edits\[1\] \(anchor '[a-z0-9]+', edit\) match 'CHILD ONE BODY'/);
+    expect(err.hint).toMatch(/write the change into that replace's `content`/);
   });
 
   it('names every collision of a batch in one refusal', async () => {
@@ -2845,8 +2897,8 @@ describe('differential writes — textEdits', () => {
       'agent',
     ).catch((e) => e);
     expect(err.code).toBe('INVALID_ARGUMENT');
-    expect(err.message).toMatch(/'CHILD ONE BODY'.*replaces/);
-    expect(err.message).toMatch(/'CHILD TWO BODY'.*deletes/);
+    expect(err.message).toMatch(/replace\) own body \(line \d+\) collides with edits\[2\] \([^)]*\) match 'CHILD ONE BODY'/);
+    expect(err.message).toMatch(/delete\) subtree \(line \d+\) collides with edits\[2\] \([^)]*\) match 'CHILD TWO BODY'/);
   });
 
   it('a substitution that touches no anchor comment drops nothing', async () => {

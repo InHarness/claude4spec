@@ -550,6 +550,46 @@ export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] =
   },
 ];
 
+/** One MINOR bump of `HOST_API_VERSION` — additive or harmless within the major. */
+export interface HostApiMinorRelease {
+  /** The `HOST_API_VERSION` value the bump set, e.g. "2.1.0". */
+  version: string;
+  title: string;
+  changes: ReadonlyArray<{ slot: string; kind: 'slot-added' | 'slot-removed'; summary: string }>;
+}
+
+/**
+ * Minor bumps of the Host API, newest last. A minor never cuts a package off:
+ * the gate is a full semver range match, and a first-party `^2.0.0` accepts
+ * every `2.x` — so these carry no `migrations[]` descriptor.
+ */
+export const HOST_API_MINOR_RELEASES: readonly HostApiMinorRelease[] = [
+  {
+    version: '2.1.0',
+    title: 'XML markup registry (M51), the first minor bump',
+    changes: [
+      {
+        slot: 'XmlTagDefinition.form',
+        kind: 'slot-added',
+        summary:
+          'The registration shape of an XML tag gains an OPTIONAL `form` (`inline` | `block`). ' +
+          'It picks the editor\'s markdown-it rule for the tag and never narrows recognition: ' +
+          'every registered name is recognised wherever it stands. Additive — a registration ' +
+          'without it defaults to `block`.',
+      },
+      {
+        slot: '@c4s/plugin-runtime registerExtensionReferenceType',
+        kind: 'slot-removed',
+        summary:
+          'Removed from the runtime surface: a loaded plugin contributes no tag NAME, so ' +
+          'there is nothing to call it with. No first-party package imported it and no ' +
+          'external plugin is published, so a minor bump suffices, with no `migrations[]` ' +
+          'descriptor.',
+      },
+    ],
+  },
+];
+
 /** First numeric component of a semver RANGE (e.g. "^1.4.0" → 1, ">=2.5.0" → 2). */
 export function rangeMajor(range: string): number | null {
   const m = /(\d+)/.exec(range);

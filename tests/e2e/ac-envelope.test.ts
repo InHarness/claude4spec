@@ -327,8 +327,8 @@ describe.skipIf(!BASE)('c4s-plugin-ac envelope', () => {
         .toContain('ColdLoadView');
 
       const body = await page.locator('body').innerText();
-      expect(body, 'ac chip resolved').not.toContain('unknown type: ac');
-      expect(body, 'ui-view chip resolved').not.toContain('unknown type: ui-view');
+      // 2.1.7 — the host's broken card reads `[broken: <slug|type>]` (cause in the tooltip).
+      expect(body, 'ac and ui-view chips resolved').not.toContain('[broken:');
       // The `tagged_list` renders the AC by title, and the mixed list renders
       // both — so seeing the ui-view's title twice is what says the mixed list
       // enumerated a registry that had finished loading.

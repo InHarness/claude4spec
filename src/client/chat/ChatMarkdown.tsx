@@ -9,10 +9,13 @@ import { XmlChipDispatcher } from './XmlChipDispatcher.js';
 import { ChatCodeBlock } from './ChatCodeBlock.js';
 import { Link } from '@tanstack/react-router';
 import { entityRouteHref } from './entityRouteHref.js';
+import { decodePageRef, remarkPageRefs } from './remark-page-refs.js';
+import { ChatPageRef, useChatPagesIndex } from './ChatPageRef.js';
 
 /**
- * Shared <Markdown> factory used by chat assistant text (BlockRenderer.tsx)
- * and the subagent summary panel (SubagentPanel.tsx). Single source of truth
+ * Shared <Markdown> factory used by chat assistant text, user messages
+ * (2.1.7 — `UserText` with `pageRefs`, BlockRenderer.tsx) and the subagent
+ * summary panel (SubagentPanel.tsx). The ONLY entry to react-markdown. Single source of truth
  * for XML chip rendering — every registered tag that targets an entity or a
  * section (M51), picked from the registry rather than from a list of names.
  *
@@ -24,19 +27,48 @@ import { entityRouteHref } from './entityRouteHref.js';
 export function ChatMarkdown({
   text,
   className,
+  pageRefs = false,
 }: {
   text: string;
   className?: string;
+  /**
+   * 2.1.7 (M14) — recognise page references (`@path.md`, `` `path.md` ``,
+   * `[label](path.md)`) as navigable chips, with newlines kept as line breaks:
+   * the user-message rendering. Assistant text leaves it off.
+   */
+  pageRefs?: boolean;
 }) {
-  // The `type` whitelist is every type AVAILABLE in the host (M05): a type
-  // whose plugin is inactive still sanitizes, and renders as a broken chip.
-  const availableTypes = useMemo(() => clientPluginHost.listAvailable().map((m) => m.type), []);
-  const processed = useMemo(() => preprocessXmlChips(text, availableTypes), [text, availableTypes]);
+  return pageRefs ? (
+    <ChatMarkdownWithPageRefs text={text} className={className} />
+  ) : (
+    <ChatMarkdownBase text={text} className={className} />
+  );
+}
+
+function ChatMarkdownWithPageRefs({ text, className }: { text: string; className?: string }) {
+  const pagesIndex = useChatPagesIndex();
+  return <ChatMarkdownBase text={text} className={className} pagesIndex={pagesIndex} pageRefs />;
+}
+
+function ChatMarkdownBase({
+  text,
+  className,
+  pageRefs = false,
+  pagesIndex,
+}: {
+  text: string;
+  className?: string;
+  pageRefs?: boolean;
+  pagesIndex?: ReadonlyMap<string, unknown>;
+}) {
+  // A `type` the host does not know, or whose plugin is inactive, still
+  // sanitizes and renders as the host's broken chip `[broken: slug]` (M05).
+  const processed = useMemo(() => preprocessXmlChips(text), [text]);
 
   return (
     <Markdown
       className={className}
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={pageRefs ? [remarkGfm, [remarkPageRefs, { index: pagesIndex, breaks: true }]] : [remarkGfm]}
       rehypePlugins={[rehypeHighlight]}
       components={{
         pre({ children }) {
@@ -76,6 +108,8 @@ function ChipOrLink({
   children,
   ...rest
 }: React.ComponentPropsWithoutRef<'a'>) {
+  const pageRef = typeof href === 'string' ? decodePageRef(href) : null;
+  if (pageRef) return <ChatPageRef refAttrs={pageRef} />;
   if (typeof href === 'string' && href.startsWith(CHIP_HREF_PREFIX)) {
     const payload = href.slice(CHIP_HREF_PREFIX.length);
     const chip = decodePayload(payload);

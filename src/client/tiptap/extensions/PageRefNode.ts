@@ -8,13 +8,14 @@ export type PageRefSyntax = 'at' | 'backticks' | 'link';
 
 // Path segment — letters, digits, underscore, dot, slash, hyphen. Starts with word char.
 const PATH_BODY = String.raw`[\w][\w/.-]*?`;
-const PATH_WITH_EXT_RE = new RegExp(`^(${PATH_BODY}\\.\\w+)(?:#(${ANCHOR_ID_SOURCE}))?$`);
+/** Exported for the chat's page-ref rules (`remark-page-refs.ts`) — one grammar for both. */
+export const PATH_WITH_EXT_RE = new RegExp(`^(${PATH_BODY}\\.\\w+)(?:#(${ANCHOR_ID_SOURCE}))?$`);
 // Inline @-trigger: match after verifying lookbehind manually in rule. Terminates at whitespace, sentence/quote punctuation, or string end.
-const AT_PAYLOAD_RE = new RegExp(`^(${PATH_BODY})(?:#(${ANCHOR_ID_SOURCE}))?(?=[\\s.,;:!?)\\]}"']|$)`);
+export const AT_PAYLOAD_RE = new RegExp(`^(${PATH_BODY})(?:#(${ANCHOR_ID_SOURCE}))?(?=[\\s.,;:!?)\\]}"']|$)`);
 // Link href: optional ../ ./ prefix, then path with extension.
-const LINK_PATH_RE = new RegExp(`^(?:\\.{1,2}/)*${PATH_BODY}\\.\\w+$`);
+export const LINK_PATH_RE = new RegExp(`^(?:\\.{1,2}/)*${PATH_BODY}\\.\\w+$`);
 
-function isWordCodePoint(c: number): boolean {
+export function isWordCodePoint(c: number): boolean {
   return (
     (c >= 0x30 && c <= 0x39) || // 0-9
     (c >= 0x41 && c <= 0x5a) || // A-Z

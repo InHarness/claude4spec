@@ -6,10 +6,9 @@ import {
   liveAnchorValues,
   parseSections,
   type ParsedSection,
-  type SectionFileKind,
   type SectionParseResult,
 } from '../../shared/section-parser.js';
-import { applyTextEdits, preview, type MatchPosition, type PositionResolver, type TextEdit } from './text-edits.js';
+import type { MatchPosition, PositionResolver } from './text-edits.js';
 
 /**
  * M06 — the section walk over markdown TEXT, shared by every artifact kind that
@@ -33,24 +32,6 @@ import { applyTextEdits, preview, type MatchPosition, type PositionResolver, typ
 
 export function sha256(text: string): string {
   return crypto.createHash('sha256').update(text, 'utf-8').digest('hex');
-}
-
-/**
- * What {@link applySectionEdit} needs of an edit: the action and, for the three
- * that carry one, its content.
- *
- * Structural rather than the page's `SectionEdit` so a plan's edit satisfies it
- * too — the splicer never looks at an anchor, only at what to put where.
- */
-export interface SectionSplice {
-  action: 'replace' | 'append' | 'insert_after' | 'delete' | 'edit' | 'rename';
-  content?: string;
-  /**
-   * 0.2.100 — `rename` only: the new heading as PLAIN TEXT. Carried here for the
-   * shape's sake; the splice itself runs through {@link renameHeading}, which
-   * has a previous heading to hand back and therefore cannot be a `void` case.
-   */
-  heading?: string;
 }
 
 /**
@@ -117,14 +98,10 @@ export interface LineSpan {
  * anchor nor earns the right to declare one droppable. An anchor is at risk from
  * exactly one thing — a `find` that swallows the comment carrying it.
  */
-export function anchorsInLineSpans(
-  lines: string[],
-  spans: readonly LineSpan[],
-  kind: SectionFileKind = 'md',
-): string[] {
+export function anchorsInLineSpans(lines: readonly string[], spans: readonly LineSpan[]): string[] {
   const covered = (line: number) => spans.some((s) => line >= s.from && line <= s.to);
   const out: string[] = [];
-  for (const sec of parseBody(lines, kind).sections) {
+  for (const sec of parseBody(lines).sections) {
     if (!sec.anchor || out.includes(sec.anchor)) continue;
     if (covered(anchorLineIndexOf(lines, sec) ?? sec.headingLine - 1)) out.push(sec.anchor);
   }
@@ -154,9 +131,9 @@ export function anchorValuesIn(text: string): string[] {
  * THE parse of a body (no frontmatter) — every walk in this file reads its
  * headings, anchors and boundaries from the shared section parser (M06, 2.0.0).
  */
-export function parseBody(lines: readonly string[] | string, kind: SectionFileKind = 'md'): SectionParseResult {
+export function parseBody(lines: readonly string[] | string): SectionParseResult {
   const text = typeof lines === 'string' ? lines : lines.join('\n');
-  return parseSections(text, kind, { frontmatter: false });
+  return parseSections(text, { frontmatter: false });
 }
 
 /** Anchored sections, first occurrence of an anchor only — the indexer's collision rule. */
@@ -170,20 +147,6 @@ function claimedSections(parsed: SectionParseResult): ParsedSection[] {
 }
 
 /**
- * Where the anchored section lives in THESE lines: `[lineStart, lineEnd)`,
- * 1-based start (the heading line), exclusive end — the subtree end, where the
- * next section of equal or higher level begins its anchor block. Read off the
- * shared section parser, the same one that fills `section_index`.
- */
-export function liveRangeOf(
-  lines: string[],
-  anchor: string,
-  kind: SectionFileKind = 'md',
-): { lineStart: number; lineEnd: number } | null {
-  return sectionRanges(lines, kind).find((r) => r.anchor === anchor) ?? null;
-}
-
-/**
  * Every anchored section's line range in THESE lines, in document order — the
  * walk `liveRangeOf` used to do for one anchor, done once for all of them.
  *
@@ -192,21 +155,18 @@ export function liveRangeOf(
  * how the section index and the write path would drift apart again.
  */
 export function sectionRanges(
-  lines: string[],
-  kind: SectionFileKind = 'md',
+  lines: readonly string[],
 ): Array<{ anchor: string; lineStart: number; lineEnd: number; level: number }> {
   /**
    * Hand-authored anchors are unpoliced, so the same value can appear twice on
    * one page. The indexer settles that — first occurrence owns the anchor, the
    * rest get no row — and this has to agree with it, not merely resemble it:
-   * `liveRangeOf` takes the first match, so a delta keyed on the last one would
-   * report a section the splice never touched and the index does not own.
+   * the batch engine takes the first match, so a delta keyed on the last one
+   * would report a section the splice never touched and the index does not own.
    *
-   * `lineEnd` is the SUBTREE end (1-based inclusive = 0-based exclusive): the
-   * range of the whole-section actions `replace`, `delete`, `insert_after`,
-   * `edit`.
+   * `lineEnd` is the SUBTREE end (1-based inclusive = 0-based exclusive).
    */
-  return claimedSections(parseBody(lines, kind)).map((sec) => ({
+  return claimedSections(parseBody(lines)).map((sec) => ({
     anchor: sec.anchor!,
     lineStart: sec.headingLine,
     lineEnd: sec.subtreeEndLine,
@@ -228,11 +188,10 @@ export function sectionRanges(
  */
 /**
  * Where a section's OWN text ends: the first heading at or after its body, or
- * the end of its range when it has no descendants. Shared by `append` and by
- * `sectionDigests` so the two cannot drift apart.
+ * the end of its range when it has no descendants.
  */
 export function ownEndOf(
-  lines: string[],
+  lines: readonly string[],
   range: { lineStart: number; lineEnd: number },
   /**
    * The parse of `lines`, when the caller already has it. A batch over one page
@@ -246,209 +205,14 @@ export function ownEndOf(
   return Math.min(range.lineEnd, own);
 }
 
-export function sectionDigests(body: string, kind: SectionFileKind = 'md'): Map<string, string> {
+export function sectionDigests(body: string): Map<string, string> {
   const lines = body.split('\n');
-  const parsed = parseBody(lines, kind);
+  const parsed = parseBody(lines);
   const out = new Map<string, string>();
   for (const sec of claimedSections(parsed)) {
     out.set(sec.anchor!, sha256(lines.slice(sec.headingLine, sec.ownEndLine).join('\n')));
   }
   return out;
-}
-
-/**
- * 2.0.0 — `append` may not carry a heading at or above the addressed section's
- * level: it would close the section it was meant to extend and open a sibling
- * (or an ancestor's sibling) in its place. Deeper headings are fine — they
- * become the section's first children. A heading-shaped line in a code block
- * of `content` is code, not a heading. Refused for the whole batch, before the
- * file is touched.
- */
-export function assertAppendContent(content: string, level: number, anchor: string): void {
-  const offending = parseBody(content).sections.find((sec) => sec.level <= level);
-  if (!offending) return;
-  throw new DomainError(
-    'INVALID_ARGUMENT',
-    `append for '${anchor}' carries a level-${offending.level} heading ('${offending.heading}') — at or above the section's own level ${level}`,
-    'append adds to the section\'s OWN body; deeper headings become its first children. To add a sibling use insert_after',
-  );
-}
-
-/** What {@link prepareSubstitutions} needs of a batch entry: where it points and what it does. */
-export interface SubstitutionEntry {
-  anchor: string;
-  action: SectionSplice['action'];
-  textEdits?: TextEdit[];
-}
-
-/** One `edit` entry's substitutions, measured on the body BEFORE the batch. */
-export interface PreparedSubstitution {
-  replacements: number;
-  /** 0-based line spans of the matched fragments, in the original lines — the entry's anchor scope. */
-  spans: LineSpan[];
-  /** The addressed subtree as it stood before the batch, and after this entry's own substitutions. */
-  subtreeBefore: string;
-  subtreeAfter: string;
-}
-
-/**
- * 2.1.x — every `edit` entry of a section batch, matched and applied on the
- * body AS THE CALLER READ IT, before any other entry splices.
- *
- * ## Refused on fragments, not on ranges
- *
- * A substitution states a CHANGE, so it may not touch lines another entry of
- * the same batch writes: with the fragment under a `replace` or `delete` the
- * caller could not tell whether the substitution survived, and anywhere else
- * the two entries would be describing the same text twice. What an entry
- * writes is measured on the original lines — `replace` its body, `delete` its
- * subtree with heading and anchor comment, `rename` its heading line,
- * `append`/`insert_after` their insertion POINT, `edit` its matched fragments —
- * and every addressed entry also owns its anchor comment line, so no fragment
- * can eat the address a neighbour in the batch resolves by.
- *
- * Until 2.1.0 the rule was on RANGES: any `edit` nesting with any other entry
- * was refused, so a parent `edit` fixing its own intro alongside a child
- * `replace` lost the whole batch. Only an overlap of the matched text matters.
- *
- * Every collision is reported at once, so one retry is enough.
- *
- * ## No cascade
- *
- * Because all `edit`s are matched here, before anything else splices, a
- * `find` can only ever hit text the caller read — never text the same batch
- * wrote. The substitutions are disjoint (overlaps were just refused), so they
- * are applied together, right to left, over the whole body; the remaining
- * entries then splice bottom-up on ranges re-measured live by anchor, which a
- * changed line count cannot mislead.
- */
-export function prepareSubstitutions(
-  lines: string[],
-  entries: readonly SubstitutionEntry[],
-  kind: SectionFileKind = 'md',
-): { lines: string[]; byAnchor: Map<string, PreparedSubstitution> } {
-  const byAnchor = new Map<string, PreparedSubstitution>();
-  if (!entries.some((e) => e.action === 'edit')) return { lines, byAnchor };
-
-  const text = lines.join('\n');
-  const lineOffsets: number[] = [];
-  for (let i = 0, at = 0; i < lines.length; at += lines[i]!.length + 1, i++) lineOffsets.push(at);
-  /** Offset of the start of 0-based line `i`; one past the text for the line after the last. */
-  const off = (i: number) => (i < lines.length ? lineOffsets[i]! : text.length + 1);
-  /** 0-based line holding offset `o` — a binary search over `lineOffsets`, not a re-split of the prefix. */
-  const lineAt = (o: number) => {
-    let lo = 0;
-    let hi = lineOffsets.length - 1;
-    while (lo < hi) {
-      const mid = (lo + hi + 1) >> 1;
-      if (lineOffsets[mid]! <= o) lo = mid;
-      else hi = mid - 1;
-    }
-    return lo;
-  };
-
-  const parsed = parseBody(lines, kind);
-  const rangeByAnchor = new Map(sectionRanges(lines, kind).map((r) => [r.anchor, r]));
-
-  interface Fragment { start: number; end: number; find: string; replaceWith: string }
-  const fragmentsOf = new Map<string, Fragment[]>();
-  for (const entry of entries) {
-    if (entry.action !== 'edit') continue;
-    const range = rangeByAnchor.get(entry.anchor)!;
-    const subtreeBefore = lines.slice(range.lineStart, range.lineEnd).join('\n');
-    const applied = applyTextEdits(subtreeBefore, entry.textEdits ?? [], subtreePositionResolver(entry.anchor));
-    const base = off(range.lineStart);
-    const fragments = applied.matchRanges.map((r) => ({
-      start: base + r.start,
-      end: base + r.end,
-      find: r.find,
-      replaceWith: r.replaceWith,
-    }));
-    fragmentsOf.set(entry.anchor, fragments);
-    byAnchor.set(entry.anchor, {
-      replacements: applied.replacements,
-      spans: fragments.map((f) => ({ from: lineAt(f.start), to: lineAt(f.end) })),
-      subtreeBefore,
-      subtreeAfter: applied.text,
-    });
-  }
-
-  /**
-   * What an entry writes, in character offsets of the original body. A point
-   * has `start === end`. `address` marks the anchor comment line every
-   * addressed entry owns — checked in BOTH directions between two `edit`s,
-   * unlike their fragments, whose overlap is symmetric and reported once.
-   */
-  interface Written { start: number; end: number; what: string; address?: true }
-  const writtenBy = (entry: SubstitutionEntry): Written[] => {
-    const range = rangeByAnchor.get(entry.anchor)!;
-    const self = parsed.sections.find((sec) => sec.headingLine === range.lineStart);
-    const anchorIdx = self ? anchorLineIndexOf(lines, self) : null;
-    const out: Written[] = [];
-    if (anchorIdx !== null) {
-      out.push({
-        start: off(anchorIdx),
-        end: off(anchorIdx + 1),
-        what: `touches the anchor comment of '${entry.anchor}', which another entry in this batch addresses (action '${entry.action}')`,
-        address: true,
-      });
-    }
-    const lineRange = (from: number, to: number, what: string) =>
-      out.push({ start: off(from), end: from === to ? off(from) : off(to), what });
-    switch (entry.action) {
-      case 'replace':
-        lineRange(range.lineStart, range.lineEnd, `lies inside the section '${entry.anchor}' that another entry in this batch replaces`);
-        break;
-      case 'delete':
-        lineRange(anchorIdx ?? range.lineStart - 1, range.lineEnd, `lies inside the section '${entry.anchor}' that another entry in this batch deletes`);
-        break;
-      case 'rename':
-        lineRange(range.lineStart - 1, range.lineStart, `touches the heading of '${entry.anchor}', which another entry in this batch renames`);
-        break;
-      case 'append': {
-        const at = ownEndOf(lines, range, parsed);
-        lineRange(at, at, `crosses the point where another entry in this batch appends to '${entry.anchor}'`);
-        break;
-      }
-      case 'insert_after':
-        lineRange(range.lineEnd, range.lineEnd, `crosses the point where another entry in this batch inserts after '${entry.anchor}'`);
-        break;
-      case 'edit':
-        for (const f of fragmentsOf.get(entry.anchor) ?? []) {
-          out.push({ start: f.start, end: f.end, what: `overlaps a fragment the edit on '${entry.anchor}' also substitutes` });
-        }
-        break;
-    }
-    return out;
-  };
-
-  const HINT =
-    'a substitution may not touch lines another entry in the same batch writes — move that substitution into a separate call, or narrow its find to text no other entry writes';
-  const written = entries.map(writtenBy);
-  const collisions: string[] = [];
-  entries.forEach((entry, i) => {
-    if (entry.action !== 'edit') return;
-    for (const f of fragmentsOf.get(entry.anchor)!) {
-      entries.forEach((other, j) => {
-        if (other.anchor === entry.anchor) return;
-        for (const w of written[j]!) {
-          // Two edits' fragments colliding are one collision, reported once;
-          // an edit's anchor comment is guarded whichever of the two came first.
-          if (other.action === 'edit' && j < i && !w.address) continue;
-          const hit = w.start === w.end ? f.start < w.start && w.start < f.end : f.start < w.end && w.start < f.end;
-          if (!hit) continue;
-          collisions.push(`edit on '${entry.anchor}': find '${preview(f.find)}' (line ${lineAt(f.start) + 1}) ${w.what}`);
-        }
-      });
-    }
-  });
-  if (collisions.length > 0) throw new DomainError('INVALID_ARGUMENT', collisions.join('; '), HINT);
-
-  let out = text;
-  for (const f of [...fragmentsOf.values()].flat().sort((a, b) => b.start - a.start)) {
-    out = out.slice(0, f.start) + f.replaceWith + out.slice(f.end);
-  }
-  return { lines: out.split('\n'), byAnchor };
 }
 
 /**
@@ -525,116 +289,4 @@ export function assertHeadingText(heading: unknown, anchor: string): string {
     );
   }
   return trimmed;
-}
-
-/**
- * Rewrite the heading LINE of an anchored section, in place, and hand back the
- * text it carried before.
- *
- * The level is read off the line being replaced rather than taken from the
- * caller, so a `##` stays a `##` whatever arrives. The anchor comment sits ABOVE
- * `range.lineStart - 1` and is outside this write entirely — which is the whole
- * point of the action: the label changes, the address does not. The body below
- * is untouched, so `content_hash` (computed over the body alone) does not move
- * either, and the line COUNT is unchanged, so a bottom-up batch walking past
- * this splice finds every other range exactly where it measured it.
- *
- * Returns rather than voids, which is why `applySectionEdit` cannot host it: the
- * previous heading is the one thing in a `rename`'s answer the caller could not
- * have worked out for itself, since it addressed the section by anchor and
- * somebody else may have renamed it since the caller last read.
- */
-export function renameHeading(
-  lines: string[],
-  range: { lineStart: number; lineEnd: number },
-  heading: string,
-): string {
-  const lineIndex = range.lineStart - 1;
-  const self = parseBody(lines).sections.find((sec) => sec.headingLine === range.lineStart);
-  if (!self) {
-    /**
-     * Unreachable through either operation: the range came from `liveRangeOf`,
-     * which derives it from the same section parse. Kept because a silent
-     * no-op here would report a rename that never happened.
-     */
-    throw new DomainError('INVALID_ARGUMENT', `no heading at line ${range.lineStart} to rename`);
-  }
-  lines[lineIndex] = `${'#'.repeat(self.level)} ${heading}`;
-  return self.heading;
-}
-
-/**
- * Splice ONE edit into `lines`, in place.
- *
- * `range.lineStart` is the heading line 1-based, so `lineStart` as a 0-based
- * index is the first line BELOW the heading — which is why `replace` starts
- * there and leaves the heading and its anchor comment (which sits above
- * `lineStart`) untouched.
- */
-export function applySectionEdit(
-  lines: string[],
-  edit: SectionSplice,
-  range: { lineStart: number; lineEnd: number },
-  /** The page's file kind — the same parse the range came from (`.mdx` excludes unknown JSX). */
-  kind: SectionFileKind = 'md',
-): void {
-  const body = (edit.content ?? '').split('\n');
-  switch (edit.action) {
-    case 'replace':
-      lines.splice(range.lineStart, range.lineEnd - range.lineStart, ...body);
-      return;
-    case 'append': {
-      /**
-       * The end of the section's OWN prose — before its first subsection, not
-       * after the whole subtree. The range runs to the next heading of
-       * equal-or-higher level, so it CONTAINS the descendants; splicing at
-       * `lineEnd` would drop an `append` to a parent section underneath its
-       * last `###` child, in a different section than the one addressed.
-       *
-       * Same end rule as `sectionDigests`, which is the point: "this section's
-       * own text" has to mean one thing across the file.
-       */
-      lines.splice(ownEndOf(lines, range, parseBody(lines, kind)), 0, ...body);
-      return;
-    }
-    case 'insert_after':
-      /**
-       * After the whole subtree — a section's range contains its subsections,
-       * so `lineEnd` is exactly that position. For a leaf section this
-       * coincides with `append`.
-       */
-      lines.splice(range.lineEnd, 0, ...body);
-      return;
-    case 'edit':
-      /**
-       * Unreachable: `updateSections` applies a substitution itself, because it
-       * needs the engine's match ranges for the anchor scope and its count for
-       * the result row — neither of which survives a splicer that returns void.
-       * The case is here so the switch stays exhaustive over the action union.
-       */
-      return;
-    case 'rename':
-      /**
-       * Unreachable for the same reason, one release later: both write paths
-       * call {@link renameHeading} themselves, because the previous heading text
-       * has to reach the result row and a `void` splicer cannot carry it.
-       */
-      return;
-    case 'delete': {
-      /**
-       * The heading and the anchor comment go too — a section whose heading
-       * survived would not have been deleted, and an anchor comment left behind
-       * keeps every deep link to the removed section resolving.
-       *
-       * Which comment belongs to this heading is the section parser's question
-       * (`anchorLineIndexOf`) — blank lines between the two are ordinary in a
-       * hand-edited file. 2.0.0: the whole SUBTREE goes (`range.lineEnd`).
-       */
-      const self = parseBody(lines, kind).sections.find((sec) => sec.headingLine === range.lineStart);
-      const headingIdx = range.lineStart - 1;
-      const anchorIdx = (self && anchorLineIndexOf(lines, self)) ?? headingIdx;
-      lines.splice(anchorIdx, range.lineEnd - anchorIdx);
-      return;
-    }
-  }
 }
