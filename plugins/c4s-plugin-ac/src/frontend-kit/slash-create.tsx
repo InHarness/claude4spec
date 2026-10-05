@@ -17,6 +17,7 @@
  */
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { toast } from './host-events.js';
 
 export const PLUGIN_COMMAND_EVENT = 'c4s:plugin-command';
 
@@ -25,11 +26,45 @@ export const EMBED_NODE = 'single_element';
 
 /** Structural view of the editor the host hands over; `@tiptap/core` stays loose. */
 export interface EmbedEditor {
-  chain: () => { focus: () => { insertContent: (content: unknown) => { run: () => void } } };
+  chain: () => { focus: () => { insertContent: (content: unknown) => { run: () => boolean } } };
 }
 
-export function insertEmbed(editor: EmbedEditor, type: string, slug: string): void {
-  editor.chain().focus().insertContent({ type: EMBED_NODE, attrs: { type, slug } }).run();
+/**
+ * Insert `content` at the caret and say whether it landed.
+ *
+ * A Tiptap chain reports a refused insert by returning `false` from `run()`,
+ * not by throwing — so a caller that ignores the result never learns that the
+ * entity it just created has no embed. A throw leaves the same state (the
+ * entity exists, nothing references it), so it counts as `false` too rather
+ * than surfacing as a create error inside the form.
+ */
+export function runInsert(editor: EmbedEditor, content: unknown): boolean {
+  try {
+    return editor.chain().focus().insertContent(content).run();
+  } catch {
+    return false;
+  }
+}
+
+export function insertEmbed(editor: EmbedEditor, type: string, slug: string): boolean {
+  return runInsert(editor, { type: EMBED_NODE, attrs: { type, slug } });
+}
+
+/** What the user is told when the entity exists but its embed did not land. */
+export function notEmbeddedMessage(name: string, slug: string): string {
+  return (
+    `Entity “${name}” (slug: ${slug}) was created but could not be embedded in the document. ` +
+    'You can embed it manually.'
+  );
+}
+
+/**
+ * Report a created-but-not-embedded entity. A toast, not the form's inline
+ * error: the form closes after the insert, and keeping it open would invite a
+ * second submit — a duplicate entity. Nothing is deleted; the entity stays.
+ */
+export function reportNotEmbedded(name: string, slug: string): void {
+  toast.warning(notEmbeddedMessage(name, slug));
 }
 
 /** Where to anchor the popover: the caret, in viewport coordinates. */

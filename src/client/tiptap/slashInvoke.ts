@@ -140,6 +140,7 @@ async function runDiagram(editor: Editor, deps: SlashInvokeDeps): Promise<void> 
   const result = await popoverFromEditor(editor, () => openPopover('diagram', { ...coords, mode: 'create' }));
   if (!result) return;
   if ('__action' in result) return;
+  let diagram: Awaited<ReturnType<typeof diagramsApi.create>>;
   try {
     /**
      * v0.1.64: the DSL `source` is the truth — create the diagram entity, then
@@ -155,13 +156,25 @@ async function runDiagram(editor: Editor, deps: SlashInvokeDeps): Promise<void> 
      * captions. Before this, `caption` did both jobs and the entity ended up
      * with no name of its own.
      */
-    const diagram = await diagramsApi.create({
+    diagram = await diagramsApi.create({
       title: result.title,
       source: result.source,
       format: result.format as DiagramFormat,
     });
-    deps.qc.invalidateQueries({ queryKey: ['diagrams'] });
-    editor
+  } catch (err) {
+    toast.error((err as Error).message);
+    return;
+  }
+  deps.qc.invalidateQueries({ queryKey: ['diagrams'] });
+  /**
+   * A refused insert returns `false` rather than throwing, and a throw here
+   * leaves the same state — the diagram exists, nothing references it. Either
+   * way the user is told, with the name and slug to embed it by hand; the entity
+   * is kept (no cleanup), and the message differs from a create failure above.
+   */
+  let inserted = false;
+  try {
+    inserted = editor
       .chain()
       .focus()
       .insertContent({
@@ -173,9 +186,18 @@ async function runDiagram(editor: Editor, deps: SlashInvokeDeps): Promise<void> 
         },
       })
       .run();
-  } catch (err) {
-    toast.error((err as Error).message);
+  } catch {
+    inserted = false;
   }
+  if (!inserted) toast.warning(notEmbeddedMessage(diagram.title || result.title, diagram.slug), { durationMs: 10_000 });
+}
+
+/** Mirrors the plugin kit's `notEmbeddedMessage` (`plugins/*\/src/frontend-kit/slash-create.tsx`). */
+export function notEmbeddedMessage(name: string, slug: string): string {
+  return (
+    `Entity “${name}” (slug: ${slug}) was created but could not be embedded in the document. ` +
+    'You can embed it manually.'
+  );
 }
 
 async function runTodo(editor: Editor): Promise<void> {

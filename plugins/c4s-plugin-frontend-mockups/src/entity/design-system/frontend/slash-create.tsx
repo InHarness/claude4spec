@@ -13,6 +13,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   SlashPopoverShell,
   insertEmbed,
+  reportNotEmbedded,
   mountSlashCreatePopover,
   useSlashSubmit,
   type CaretCoords,
@@ -55,8 +56,8 @@ function DesignSystemSlashCreateForm({
       description: description.trim() || undefined,
     });
     void qc.invalidateQueries({ queryKey: designSystemKeys.all });
-    insertEmbed(editor, DESIGN_SYSTEM_TYPE, ds.slug);
-    toast.success(`${DESIGN_SYSTEM_LABEL} ${ds.title} created`);
+    if (insertEmbed(editor, DESIGN_SYSTEM_TYPE, ds.slug)) toast.success(`${DESIGN_SYSTEM_LABEL} ${ds.title} created`);
+    else reportNotEmbedded(ds.title, ds.slug);
     onClose();
     return ds;
   });

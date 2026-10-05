@@ -16,6 +16,7 @@ import {
   SlashPopoverShell,
   type CaretCoords,
   insertEmbed,
+  reportNotEmbedded,
   mountSlashCreatePopover,
   useSlashSubmit,
   type EmbedEditor,
@@ -58,8 +59,8 @@ export function EndpointSlashCreatePopover({
       path: path.trim(),
       ...(summary.trim() ? { summary: summary.trim() } : {}),
     });
-    insertEmbed(editor, ENDPOINT_TYPE, ep.slug);
-    toast.success(`Endpoint ${ep.title} created`);
+    if (insertEmbed(editor, ENDPOINT_TYPE, ep.slug)) toast.success(`Endpoint ${ep.title} created`);
+    else reportNotEmbedded(ep.title, ep.slug);
     onClose();
     return ep;
   });

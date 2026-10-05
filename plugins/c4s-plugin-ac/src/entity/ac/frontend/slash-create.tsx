@@ -20,6 +20,7 @@ import { clientPluginHost } from '@c4s/plugin-runtime';
 import {
   SlashPopoverShell,
   insertEmbed,
+  reportNotEmbedded,
   mountSlashCreatePopover,
   useSlashSubmit,
   type CaretCoords,
@@ -106,8 +107,8 @@ function AcSlashCreateForm({
     // popovers invalidating a key no list query used, a no-op masked by the
     // create hook's own invalidation.
     void qc.invalidateQueries({ queryKey: acKeys.all });
-    insertEmbed(editor, AC_TYPE, ac.slug);
-    toast.success('AC created');
+    if (insertEmbed(editor, AC_TYPE, ac.slug)) toast.success('AC created');
+    else reportNotEmbedded(ac.title, ac.slug);
     onClose();
     return ac;
   });

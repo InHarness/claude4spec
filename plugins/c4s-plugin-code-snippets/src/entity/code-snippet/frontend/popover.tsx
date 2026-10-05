@@ -9,6 +9,8 @@ import {
 import { toast } from '../../../frontend-kit/host-events.js';
 import {
   SlashPopoverShell,
+  reportNotEmbedded,
+  runInsert,
   useSlashSubmit,
   type CaretCoords,
   type EmbedEditor,
@@ -342,12 +344,9 @@ export function CodeSnippetCreatePopover({
       onClose={onClose}
       onSave={async (draft) => {
         const created = await createCodeSnippet(toInput(draft));
-        editor
-          .chain()
-          .focus()
-          .insertContent({ type: 'single_element', attrs: embedAttrs(created.slug, draft.caption) })
-          .run();
-        toast.success(`Code snippet “${created.title}” created`);
+        const content = { type: 'single_element', attrs: embedAttrs(created.slug, draft.caption) };
+        if (runInsert(editor, content)) toast.success(`Code snippet “${created.title}” created`);
+        else reportNotEmbedded(created.title, created.slug);
       }}
     />
   );

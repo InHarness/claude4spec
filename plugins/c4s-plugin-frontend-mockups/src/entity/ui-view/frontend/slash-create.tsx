@@ -19,6 +19,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   SlashPopoverShell,
   insertEmbed,
+  reportNotEmbedded,
   mountSlashCreatePopover,
   useSlashSubmit,
   type CaretCoords,
@@ -59,8 +60,8 @@ function UiViewSlashCreateForm({
       description: description.trim() || undefined,
     });
     void qc.invalidateQueries({ queryKey: uiViewKeys.all });
-    insertEmbed(editor, UI_VIEW_TYPE, view.slug);
-    toast.success(`${UI_VIEW_LABEL} ${view.title} created`);
+    if (insertEmbed(editor, UI_VIEW_TYPE, view.slug)) toast.success(`${UI_VIEW_LABEL} ${view.title} created`);
+    else reportNotEmbedded(view.title, view.slug);
     onClose();
     return view;
   });
