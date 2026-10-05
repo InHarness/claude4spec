@@ -31,8 +31,14 @@ CREATE TABLE spec_release_new (
 INSERT INTO spec_release_new (id, name, description, created_by, created_at, slug, roots)
   SELECT id, name, description, created_by, created_at, slug, roots FROM spec_release;
 
--- Preserve the AUTOINCREMENT high-water mark across the rebuild.
-INSERT OR REPLACE INTO sqlite_sequence (name, seq)
+-- Preserve the AUTOINCREMENT high-water mark across the rebuild. The INSERT
+-- above already created a `spec_release_new` row (seq = MAX(id)), and
+-- sqlite_sequence has no unique key on `name`, so `INSERT OR REPLACE` would add
+-- a SECOND row that SQLite never reads — the old mark (higher than MAX(id) once
+-- a release file was unlinked) would be lost and a deleted release's id, still
+-- referenced by entity_version / file_version.release_id, handed out again.
+DELETE FROM sqlite_sequence WHERE name = 'spec_release_new';
+INSERT INTO sqlite_sequence (name, seq)
   SELECT 'spec_release_new', seq FROM sqlite_sequence WHERE name = 'spec_release';
 
 DROP TABLE spec_release;

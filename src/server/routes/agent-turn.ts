@@ -1568,8 +1568,10 @@ export async function runAgentTurn(
        *
        * Nothing is expected to DROP as a result: each inline tool's catalog
        * `opClass` matches the coarse flag that mounts it (`get_brief` /
-       * `update_brief` / `create_patch` are `brief`, plan tools are `plan`, `ask`
-       * is `peer`, `list_projects` is `read`), and `mcpServerSetForProfile`
+       * `update_brief` are `brief`, plan tools are `plan`, `ask` is `peer`,
+       * `list_projects` and `get_patch` are `read`, `mark_patch_applied` is
+       * `write` — patch-tools is mounted by the thread's anchor, not a coarse
+       * flag, and both classes are admitted by the `patch` profile), and `mcpServerSetForProfile`
        * derives those flags from the same class sets the gate reads. The point
        * is that the two can no longer drift apart in silence: widen a profile
        * without widening the catalog and the gate now has the final word.

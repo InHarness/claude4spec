@@ -311,24 +311,28 @@ export class PatchService {
   }
 
   async updateFrontmatter(opts: PatchUpdateFrontmatterOpts): Promise<PatchDetail> {
-    const changedBy = opts.changedBy ?? 'user';
     const current = await this.getPatch(opts.path, { full: true });
+    await this.writeApplied(current, opts.applied, opts.changedBy ?? 'user');
+    return this.getPatch(opts.path);
+  }
+
+  /** The `applied` write itself, over a `full` read the caller already holds. */
+  private async writeApplied(current: PatchDetail, applied: boolean, changedBy: 'user' | 'agent'): Promise<void> {
     // Spread-then-set: a legacy `status` key already in the file survives the
     // write untouched (gray-matter pass-through), it is simply never read.
-    const next: PatchFrontmatter = { ...current.frontmatter, applied: opts.applied };
+    const next: PatchFrontmatter = { ...current.frontmatter, applied };
     const newContent = matter.stringify(current.body, next as Record<string, unknown>);
-    await this.writeBytes(opts.path, newContent, changedBy);
+    await this.writeBytes(current.path, newContent, changedBy);
     await this.deps.pageVersions.recordVersion(
-      opts.path,
+      current.path,
       'update',
       changedBy,
       undefined,
       this.deps.patchesSerializer,
       'patch',
-      `set applied=${opts.applied}`,
+      `set applied=${applied}`,
     );
-    await this.deps.frontmatterIndexer.indexPage(PATCH_ROOT_MARKER, opts.path);
-    return this.getPatch(opts.path);
+    await this.deps.frontmatterIndexer.indexPage(PATCH_ROOT_MARKER, current.path);
   }
 
   /**
@@ -354,8 +358,7 @@ export class PatchService {
       );
     }
     const current = await this.getPatch(input.path, { full: true });
-    if (current.frontmatter.applied === true) return { path: input.path, applied: true };
-    await this.updateFrontmatter({ path: input.path, applied: true, changedBy: 'agent' });
+    if (current.frontmatter.applied !== true) await this.writeApplied(current, true, 'agent');
     return { path: input.path, applied: true };
   }
 

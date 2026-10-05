@@ -107,6 +107,9 @@ describe('isMutatingMcpTool — blacklist on the TOOL segment', () => {
   it('a tool that leads with a read verb is a read, even when its noun is a verb too (2.1.4)', () => {
     expect(isMutatingMcpTool('mcp__patch-tools__get_patch')).toBe(false);
     expect(isMutatingMcpTool('mcp__patch-tools__mark_patch_applied')).toBe(true);
+    // A leading read verb exempts only noun-capable words; a verb-only word still writes.
+    expect(isMutatingMcpTool('mcp__plugin-srv__get_or_create_tag')).toBe(true);
+    expect(isMutatingMcpTool('mcp__plugin-srv__find_and_delete_rows')).toBe(true);
   });
 
   it('tests the tool segment, not the server name', () => {
