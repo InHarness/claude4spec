@@ -760,6 +760,26 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
   });
 
   describe('0.1.124 "reign" model', () => {
+    it('2.1.4: the successor comes from the release AXIS — a pulled-in release with a higher id but an older created_at is not the latest\'s successor', async () => {
+      const pagesDir = path.join(dir, 'pages');
+      fs.mkdirSync(pagesDir, { recursive: true });
+      const { releaseService } = buildReleaseService(pagesDir);
+      const insert = db.prepare(
+        `INSERT INTO spec_release (name, slug, description, created_by, created_at) VALUES (?, ?, ?, 'user', ?)`,
+      );
+      insert.run('local', 'local', 'Local', '2026-07-09T10:00:00.000Z');
+      // Pulled in through git afterwards: higher id, but created before `local`.
+      insert.run('pulled', 'pulled', 'Pulled', '2026-07-01T10:00:00.000Z');
+      const row = (name: string) => db.prepare(`SELECT * FROM spec_release WHERE name = ?`).get(name);
+      const reign = (r: unknown) =>
+        (releaseService as unknown as { resolveReignRef(r: unknown): Promise<string | null> }).resolveReignRef(r);
+      // `local` is the latest on the axis — its reign runs to HEAD, whatever ids say.
+      expect(await reign(row('local'))).toBe('HEAD');
+      // `pulled` has `local` as successor; `local` has no marker commit here, so
+      // the git track declines (null) rather than answering HEAD.
+      expect(await reign(row('pulled'))).toBeNull();
+    });
+
     it('an implicit plain `git commit` between two release markers is absorbed into the OLDER release\'s reign, not left out', async () => {
       // This is the behavior that distinguishes the reign model from the old
       // anchor model: snapshot(v2) = M_v3~1 (the commit right before v3's
