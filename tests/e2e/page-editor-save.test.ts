@@ -88,7 +88,11 @@ describe.skipIf(!BASE)('page editor — content survives a save', () => {
       body: JSON.stringify({ body: `# Editor save\n\n${MARKER}\n`, expectedHash: current.hash }),
     });
     const ack = (await res.json()) as Record<string, unknown>;
-    expect(Object.keys(ack).sort()).toEqual(['changedAnchors', 'hash', 'version']);
+    // 2.1.6 — `droppedAnchors` joins the delta when the write cost an anchor (this
+    // body replaces the page wholesale, so any anchor it had is gone).
+    const { droppedAnchors, ...rest } = ack;
+    expect(Object.keys(rest).sort()).toEqual(['changedAnchors', 'hash', 'version']);
+    if (droppedAnchors !== undefined) expect(droppedAnchors).toEqual(expect.any(Array));
     /**
      * The ack no longer echoes the page. The in-band `write-back` phase still
      * mints an anchor for the new heading, so the bytes on disk are not the
@@ -96,8 +100,12 @@ describe.skipIf(!BASE)('page editor — content survives a save', () => {
      */
     const settled = (await (
       await fetch(`${BASE}/api/projects/${project.id}/pages/pages/${PAGE_PATH}`)
-    ).json()) as { hash: string; body: string };
+    ).json()) as { hash: string; body: string; content: string; rootId: string };
     expect(settled.hash).toBe(ack.hash);
+    // 2.1.6 — page-detail: the whole file byte for byte, anchor lines in place.
+    expect(settled.rootId).toBe('pages');
+    expect(settled.content).toContain(MARKER);
+    expect(settled.content).toMatch(/<!-- anchor: [a-z0-9]+ -->\n# Editor save/);
     expect(settled.body).toContain(MARKER);
     expect(settled.body).toContain('anchor:');
     // The parsed halves stay out: the caller already had those.
