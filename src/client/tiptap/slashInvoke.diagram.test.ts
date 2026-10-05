@@ -17,10 +17,10 @@ vi.mock('../ui/events.js', () => ({ openPopover: (...a: unknown[]) => openPopove
 
 const { invokeSlash } = await import('./slashInvoke.js');
 
-function fakeEditor(run: () => boolean) {
+function fakeEditor(run: () => boolean, isDestroyed = false) {
   const insertContent = vi.fn(() => ({ insertContent, run }));
   const editor = {
-    isDestroyed: false,
+    isDestroyed,
     commands: { focus: vi.fn() },
     view: {
       state: { selection: { from: 1 } },
@@ -61,6 +61,14 @@ describe('/diagram — failed embed after create', () => {
     expect(toast.warning).toHaveBeenCalledTimes(1);
     expect(toast.warning.mock.calls[0]![0]).toContain('login-flow');
     expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('an editor destroyed during the create is reported, though its chain would answer true', async () => {
+    const { editor, insertContent } = fakeEditor(() => true, true);
+    await invokeSlash(editor, diagramCommand, deps);
+    expect(insertContent).not.toHaveBeenCalled();
+    expect(toast.warning).toHaveBeenCalledTimes(1);
+    expect(toast.warning.mock.calls[0]![0]).toContain('login-flow');
   });
 
   it('a create failure keeps the plain error, with no mention of a created entity', async () => {

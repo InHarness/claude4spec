@@ -18,6 +18,8 @@ export type ToastVariant = 'success' | 'error' | 'warning' | 'info';
 export interface ToastOptions {
   detail?: string;
   duration?: number;
+  /** Per-call display time — the key the host's `ToastHost` actually reads. */
+  durationMs?: number;
 }
 
 const TOAST_EVENT = 'c4s:toast';

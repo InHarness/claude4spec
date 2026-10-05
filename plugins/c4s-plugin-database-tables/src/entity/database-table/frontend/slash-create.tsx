@@ -140,16 +140,21 @@ export const DatabaseTableSlashCreatePopover: FC<SlashCreatePopoverProps> = ({
     if (!query.trim() || create.isPending) return;
     // Explicit empty `columns` — the create contract requires the key; omitting
     // it is a 400, not an empty table (same as the create dialog).
-    create.mutate(
-      { title: query.trim(), columns: [] },
-      {
-        // Picking an existing table orphans nothing if the insert is refused;
-        // a table created just now would, so only this path reports it.
-        onSuccess: (entity) => {
-          if (!insertDatabaseTableEmbed(editor, entity.slug)) reportNotEmbedded(entity.title, entity.slug);
-          onClose();
-        },
+    //
+    // `mutateAsync`, not `mutate(…, { onSuccess })`: per-call callbacks are
+    // dropped once this popover unmounts (Escape / click-outside while the
+    // request is in flight), which would leave the new table neither embedded
+    // nor reported. The awaited continuation runs regardless. A rejection is
+    // already shown inline through `create.error`, so it is swallowed here.
+    //
+    // Picking an existing table orphans nothing if the insert is refused;
+    // a table created just now would, so only this path reports it.
+    void create.mutateAsync({ title: query.trim(), columns: [] }).then(
+      (entity) => {
+        if (!insertDatabaseTableEmbed(editor, entity.slug)) reportNotEmbedded(entity.title, entity.slug);
+        onClose();
       },
+      () => undefined,
     );
   };
 

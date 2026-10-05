@@ -172,28 +172,34 @@ async function runDiagram(editor: Editor, deps: SlashInvokeDeps): Promise<void> 
    * way the user is told, with the name and slug to embed it by hand; the entity
    * is kept (no cleanup), and the message differs from a create failure above.
    */
-  let inserted = false;
-  try {
-    inserted = editor
-      .chain()
-      .focus()
-      .insertContent({
-        type: 'single_element',
-        attrs: {
-          type: 'diagram',
-          slug: diagram.slug,
-          caption: result.caption ? result.caption : null,
-        },
-      })
-      .run();
-  } catch {
-    inserted = false;
-  }
+  const inserted = tryInsert(editor, {
+    type: 'single_element',
+    attrs: {
+      type: 'diagram',
+      slug: diagram.slug,
+      caption: result.caption ? result.caption : null,
+    },
+  });
   if (!inserted) toast.warning(notEmbeddedMessage(diagram.title || result.title, diagram.slug), { durationMs: 10_000 });
 }
 
+/**
+ * Insert at the caret and say whether it landed. A destroyed editor (the user
+ * left the page while the create was in flight) drops the transaction silently
+ * yet still answers `true`, so it counts as not inserted; so does a throw.
+ * Mirrors the plugin kit's `runInsert`.
+ */
+function tryInsert(editor: Editor, content: Parameters<Editor['commands']['insertContent']>[0]): boolean {
+  if (editor.isDestroyed) return false;
+  try {
+    return editor.chain().focus().insertContent(content).run();
+  } catch {
+    return false;
+  }
+}
+
 /** Mirrors the plugin kit's `notEmbeddedMessage` (`plugins/*\/src/frontend-kit/slash-create.tsx`). */
-export function notEmbeddedMessage(name: string, slug: string): string {
+function notEmbeddedMessage(name: string, slug: string): string {
   return (
     `Entity “${name}” (slug: ${slug}) was created but could not be embedded in the document. ` +
     'You can embed it manually.'

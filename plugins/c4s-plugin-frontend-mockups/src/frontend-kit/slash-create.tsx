@@ -26,6 +26,8 @@ export const EMBED_NODE = 'single_element';
 
 /** Structural view of the editor the host hands over; `@tiptap/core` stays loose. */
 export interface EmbedEditor {
+  /** Tiptap's flag. A destroyed editor drops the transaction, yet its chain still returns `true`. */
+  isDestroyed?: boolean;
   chain: () => { focus: () => { insertContent: (content: unknown) => { run: () => boolean } } };
 }
 
@@ -39,6 +41,9 @@ export interface EmbedEditor {
  * than surfacing as a create error inside the form.
  */
 export function runInsert(editor: EmbedEditor, content: unknown): boolean {
+  // The user left the page while the create was in flight: the editor is gone,
+  // its dispatch is a silent no-op, and `run()` would still report `true`.
+  if (editor.isDestroyed) return false;
   try {
     return editor.chain().focus().insertContent(content).run();
   } catch {
@@ -64,8 +69,12 @@ export function notEmbeddedMessage(name: string, slug: string): string {
  * second submit — a duplicate entity. Nothing is deleted; the entity stays.
  */
 export function reportNotEmbedded(name: string, slug: string): void {
-  toast.warning(notEmbeddedMessage(name, slug));
+  // Longer than a default warning: the user has to read off the slug to embed it by hand.
+  toast.warning(notEmbeddedMessage(name, slug), { durationMs: NOT_EMBEDDED_TOAST_MS });
 }
+
+/** How long the not-embedded warning stays up (the host's own `/diagram` uses the same). */
+export const NOT_EMBEDDED_TOAST_MS = 10_000;
 
 /** Where to anchor the popover: the caret, in viewport coordinates. */
 export interface CaretCoords {

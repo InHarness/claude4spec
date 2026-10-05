@@ -6,6 +6,7 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
+  NOT_EMBEDDED_TOAST_MS,
   insertEmbed,
   notEmbeddedMessage,
   reportNotEmbedded,
@@ -62,12 +63,20 @@ describe('slash-create kit — embed result', () => {
     expect(runInsert(ed, { type: 'inline_mention' })).toBe(false);
   });
 
+  it('a destroyed editor counts as not embedded, without touching the chain', () => {
+    // Tiptap drops a destroyed editor's transaction yet its chain answers `true`.
+    const ed = { ...editor(() => true), isDestroyed: true };
+    expect(insertEmbed(ed, 'endpoint', 'get-users')).toBe(false);
+    expect(ed.inserted).toEqual([]);
+  });
+
   it('reportNotEmbedded fires a warning toast naming the entity and slug', () => {
     dispatched.length = 0;
     reportNotEmbedded('GET /api/users', 'get-users');
     expect(dispatched).toHaveLength(1);
     expect(dispatched[0]!.type).toBe('c4s:toast');
     expect(dispatched[0]!.detail.variant).toBe('warning');
+    expect(dispatched[0]!.detail.durationMs).toBe(NOT_EMBEDDED_TOAST_MS);
     expect(dispatched[0]!.detail.message).toBe(notEmbeddedMessage('GET /api/users', 'get-users'));
     expect(dispatched[0]!.detail.message).toMatch(/“GET \/api\/users” \(slug: get-users\) was created/);
   });
