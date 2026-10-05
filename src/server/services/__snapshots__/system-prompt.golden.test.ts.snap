@@ -7263,7 +7263,7 @@ exports[`system prompt — golden (0.2.97) > patch full 1`] = `
 You are operating in PATCH mode — you are folding ONE filed patch back into the specification.
 
 Posture (note how it differs from brief mode):
-  - You keep the FULL chat toolset: entity mutations, reference-tools, plan-tools, release-tools, c4s-tools. This mode is NOT read-only and NOT narrowed. What separates it from an ordinary chat turn is the attached patch and these rules — the toolset itself is unchanged.
+  - You keep the FULL chat toolset: entity mutations, reference-tools, plan-tools, release-tools, c4s-tools, patch-tools. This mode is NOT read-only and NOT narrowed. What separates it from an ordinary chat turn is the attached patch and these rules — the toolset is chat's, plus patch-tools for the patch itself.
   - So the constraint is one of intent, not of capability: you may reach for any tool, and you are expected to reach only for what this patch calls for.
 
 Artifact invariant:
@@ -7313,6 +7313,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
+  <mcp name="patch-tools">get_patch, mark_patch_applied</mcp>
 </tooling>
 
 <workspace_projects workspace="default">
@@ -7441,18 +7442,12 @@ Write all specification content (pages, entity descriptions, briefs) in Polski. 
 Always communicate with the user in Deutsch, regardless of the language they write in.
 </conversational_language>
 
-<current_patch path="p-1.md" patch_kind="drift" applied="false" brief="0-1-0-to-0-2-0.md" hash="patchhash">
-This thread exists to resolve the patch below — a coding agent in another
-terminal filed it as feedback while implementing a brief. Read it, then
-apply its findings to the specification (edit the relevant pages/entities).
-\`applied\` says whether this patch was already folded into the spec once —
-it is a signal to read, not a flag you set: nothing in this thread can
-change it, and only the user flips it from the patch page.
-
----
-type: patch
----
-Patch body
+<current_patch path="p-1.md" patch_kind="drift" applied="false" brief="0-1-0-to-0-2-0.md">
+This thread exists to resolve the patch at \`path\` — a coding agent in another
+terminal filed it as feedback while implementing a brief. Its content is NOT
+in this prompt — read it with get_patch, then apply its findings to the
+specification (edit the relevant pages/entities).
+\`applied\` says whether this patch was already folded into the spec once.
 </current_patch>
 
 <current_page path="modules/m01.md" root="pages" total_lines="45"/>
@@ -7490,7 +7485,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, mark_patch_applied, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -7620,7 +7615,7 @@ exports[`system prompt — golden (0.2.97) > patch without artifact 1`] = `
 You are operating in PATCH mode — you are folding ONE filed patch back into the specification.
 
 Posture (note how it differs from brief mode):
-  - You keep the FULL chat toolset: entity mutations, reference-tools, plan-tools, release-tools, c4s-tools. This mode is NOT read-only and NOT narrowed. What separates it from an ordinary chat turn is the attached patch and these rules — the toolset itself is unchanged.
+  - You keep the FULL chat toolset: entity mutations, reference-tools, plan-tools, release-tools, c4s-tools, patch-tools. This mode is NOT read-only and NOT narrowed. What separates it from an ordinary chat turn is the attached patch and these rules — the toolset is chat's, plus patch-tools for the patch itself.
   - So the constraint is one of intent, not of capability: you may reach for any tool, and you are expected to reach only for what this patch calls for.
 
 Artifact invariant:
@@ -7670,6 +7665,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
+  <mcp name="patch-tools">get_patch, mark_patch_applied</mcp>
 </tooling>
 
 <workspace_projects workspace="default">
@@ -7833,7 +7829,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, mark_patch_applied, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -7845,7 +7841,7 @@ exports[`system prompt — golden (0.2.97) > patch without kind 1`] = `
 You are operating in PATCH mode — you are folding ONE filed patch back into the specification.
 
 Posture (note how it differs from brief mode):
-  - You keep the FULL chat toolset: entity mutations, reference-tools, plan-tools, release-tools, c4s-tools. This mode is NOT read-only and NOT narrowed. What separates it from an ordinary chat turn is the attached patch and these rules — the toolset itself is unchanged.
+  - You keep the FULL chat toolset: entity mutations, reference-tools, plan-tools, release-tools, c4s-tools, patch-tools. This mode is NOT read-only and NOT narrowed. What separates it from an ordinary chat turn is the attached patch and these rules — the toolset is chat's, plus patch-tools for the patch itself.
   - So the constraint is one of intent, not of capability: you may reach for any tool, and you are expected to reach only for what this patch calls for.
 
 Artifact invariant:
@@ -7895,6 +7891,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
+  <mcp name="patch-tools">get_patch, mark_patch_applied</mcp>
 </tooling>
 
 <workspace_projects workspace="default">
@@ -8023,18 +8020,12 @@ Write all specification content (pages, entity descriptions, briefs) in Polski. 
 Always communicate with the user in Deutsch, regardless of the language they write in.
 </conversational_language>
 
-<current_patch path="p-1.md" applied="false" brief="0-1-0-to-0-2-0.md" hash="patchhash">
-This thread exists to resolve the patch below — a coding agent in another
-terminal filed it as feedback while implementing a brief. Read it, then
-apply its findings to the specification (edit the relevant pages/entities).
-\`applied\` says whether this patch was already folded into the spec once —
-it is a signal to read, not a flag you set: nothing in this thread can
-change it, and only the user flips it from the patch page.
-
----
-type: patch
----
-Patch body
+<current_patch path="p-1.md" applied="false" brief="0-1-0-to-0-2-0.md">
+This thread exists to resolve the patch at \`path\` — a coding agent in another
+terminal filed it as feedback while implementing a brief. Its content is NOT
+in this prompt — read it with get_patch, then apply its findings to the
+specification (edit the relevant pages/entities).
+\`applied\` says whether this patch was already folded into the spec once.
 </current_patch>
 
 <current_page path="modules/m01.md" root="pages" total_lines="45"/>
@@ -8072,7 +8063,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, mark_patch_applied, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.
@@ -8121,6 +8112,7 @@ You do not know its conventions yet, and this block does not summarise them.
   <mcp name="c4s-tools">ask</mcp>
   <mcp name="endpoint-tools">link_dto, unlink_dto</mcp>
   <mcp name="legacy-tools"/>
+  <mcp name="patch-tools">get_patch, mark_patch_applied</mcp>
 </tooling>
 
 <workspace_projects workspace="default">
@@ -8249,18 +8241,12 @@ Write all specification content (pages, entity descriptions, briefs) in Polski. 
 Always communicate with the user in Deutsch, regardless of the language they write in.
 </conversational_language>
 
-<current_patch path="p-1.md" patch_kind="drift" applied="false" brief="0-1-0-to-0-2-0.md" hash="patchhash">
-This thread exists to resolve the patch below — a coding agent in another
-terminal filed it as feedback while implementing a brief. Read it, then
-apply its findings to the specification (edit the relevant pages/entities).
-\`applied\` says whether this patch was already folded into the spec once —
-it is a signal to read, not a flag you set: nothing in this thread can
-change it, and only the user flips it from the patch page.
-
----
-type: patch
----
-Patch body
+<current_patch path="p-1.md" patch_kind="drift" applied="false" brief="0-1-0-to-0-2-0.md">
+This thread exists to resolve the patch at \`path\` — a coding agent in another
+terminal filed it as feedback while implementing a brief. Its content is NOT
+in this prompt — read it with get_patch, then apply its findings to the
+specification (edit the relevant pages/entities).
+\`applied\` says whether this patch was already folded into the spec once.
 </current_patch>
 
 <current_page path="modules/m01.md" root="pages" total_lines="45"/>
@@ -8298,7 +8284,7 @@ The built-in file and shell tools are GATED OFF for this turn — not discourage
   - Available: TodoWrite, TaskCreate, TaskGet, TaskUpdate, TaskList, ToolSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode, CronCreate, CronDelete, CronList, ScheduleWakeup, ListMcpResourcesTool, ListMcpResources, ReadMcpResourceTool, ReadMcpResource, ReadMcpResourceDirTool, ReadMcpResourceDir, RefreshMcpTools, SendUserMessage, Brief, ReportFindings, SendFeedback, ClaudeDesign, Projects, ShowOnboardingRolePicker, ReadNotifications, ProposeSkills, ProposeGoal, Artifact, PushNotification, DesignSync, Read, Grep, Glob, NotebookRead, WebFetch, WebSearch, Agent, Task, SendMessage, ListAgents, ListPeers, Workflow, RemoteTrigger
 
 The MCP tools are a different matter, and you should know exactly how. Plan mode does not gate them at all — the tools below are mounted and WILL execute if you call them. This is an instruction, not a barrier:
-  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, tag_entity, unlink_dto, update_entities, update_page, update_sections
+  - Do not call: ask, create_entities, create_page, create_tag, delete_entities, delete_page, link_dto, mark_patch_applied, tag_entity, unlink_dto, update_entities, update_page, update_sections
   - plan-tools are the exception, and the point: persist the plan with update_plan rather than writing it out as prose in your reply.
 
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, describe what you would do — do not do it.

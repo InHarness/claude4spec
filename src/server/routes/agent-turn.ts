@@ -29,8 +29,7 @@ import type { TagsService } from '../services/tags.js';
 import type { SectionsService } from '../services/sections.js';
 import { buildPlanToolsServer } from '../mcp/plan-tools.js';
 import { buildSkillToolsServer } from '../mcp/skill-tools.js';
-import { createPatchToolsServer } from '../mcp/patch-tools.js';
-import type { PatchWriteDeps } from '../services/patch-write.js';
+import { buildPatchToolsServer } from '../mcp/patch-tools.js';
 import { buildBriefToolsServer } from '../mcp/brief-tools.js';
 import { buildC4sToolsServer } from '../mcp/c4s-tools.js';
 import { buildWorkspaceToolsServer } from '../mcp/workspace-tools.js';
@@ -100,8 +99,6 @@ export interface AgentTurnDeps {
   planService: PlanService;
   briefService: BriefService;
   patchService: PatchService;
-  /** M23 `create_patch` over MCP. Optional so the hand-rolled test rigs keep compiling. */
-  patchWrite?: PatchWriteDeps;
   /** 0.1.69 Transagents: dispatcher resolves "latest release" for analysis briefs. */
   releaseService: ReleaseService;
   pageVersions: FileVersionService;
@@ -969,8 +966,9 @@ export async function runAgentTurn(
       }
     }
 
-    // M23: patch threads keep the FULL spec-editing toolset — their job is to edit the
-    // spec; only the system prompt differs (the patch snapshot is injected). `patch_path`
+    // M23: patch threads keep the FULL spec-editing toolset plus `patch-tools` — their
+    // job is to edit the spec. The snapshot read here feeds only the prompt's address +
+    // frontmatter (2.1.4: never the body or hash — that is `get_patch`'s). `patch_path`
     // is set iff context_type='patch' (chat.ts invariant), so its presence IS the gate.
     let patchSnapshot: PatchDetail | null = null;
     if (thread.patchPath) {
@@ -1478,13 +1476,20 @@ export async function runAgentTurn(
           }, deps.projectId ?? null)
         : null;
       /**
-       * M23 `create_patch`. Same gate as the brief tools — it is a `brief`-class
-       * operation — but NOT the same `thread.briefPath` condition: the brief a
-       * patch is filed against is an argument, not the thread's own binding, so a
-       * brief thread can report drift against any brief it names.
+       * M23 `patch-tools` (2.1.4): `get_patch` + `mark_patch_applied`, mounted ONLY
+       * for `context_type='patch'`. The patch profile admits the same operation
+       * classes as `chat`, so the class gate cannot tell them apart — the thread's
+       * anchor can: `patch_path` is set iff context_type='patch' (chat.ts
+       * invariant), and the server closes over it. `create_patch` is no longer
+       * mounted anywhere in a turn: a patch is filed from the terminal (`cli`) or
+       * REST, never from a conversation.
        */
-      const patchTools = ctx.mcp.briefTools && deps.patchWrite
-        ? createPatchToolsServer(deps.patchWrite, deps.projectId ?? null)
+      const patchTools = thread.contextType === 'patch' && thread.patchPath
+        ? buildPatchToolsServer({
+            threadId: thread.id,
+            patchPath: thread.patchPath,
+            patchService: deps.patchService,
+          }, deps.projectId ?? null)
         : null;
       // M24 c4s-tools: cross-cutting MCP exposing the peer-consult flow. Fresh factory
       // per request; closes over `deps.workspaceName` so `ask` defaults to the caller's
@@ -1563,8 +1568,10 @@ export async function runAgentTurn(
        *
        * Nothing is expected to DROP as a result: each inline tool's catalog
        * `opClass` matches the coarse flag that mounts it (`get_brief` /
-       * `update_brief` / `create_patch` are `brief`, plan tools are `plan`, `ask`
-       * is `peer`, `list_projects` is `read`), and `mcpServerSetForProfile`
+       * `update_brief` are `brief`, plan tools are `plan`, `ask` is `peer`,
+       * `list_projects` and `get_patch` are `read`, `mark_patch_applied` is
+       * `write` — patch-tools is mounted by the thread's anchor, not a coarse
+       * flag, and both classes are admitted by the `patch` profile), and `mcpServerSetForProfile`
        * derives those flags from the same class sets the gate reads. The point
        * is that the two can no longer drift apart in silence: widen a profile
        * without widening the catalog and the gate now has the final word.

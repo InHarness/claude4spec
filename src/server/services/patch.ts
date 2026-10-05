@@ -89,6 +89,8 @@ export interface PatchUpdateContentOpts {
 export interface PatchUpdateFrontmatterOpts {
   path: string;
   applied: boolean;
+  /** Who flips it: the user from the patch page (REST), or the patch thread's agent. Default `'user'`. */
+  changedBy?: 'user' | 'agent';
 }
 
 /**
@@ -165,9 +167,10 @@ export class PatchService {
    *
    * `hash` stays the digest of the whole file — see `readArtifactWindow`.
    */
-  async getPatch(relPath: string, opts?: { range?: ArtifactRange }): Promise<PatchDetail> {
+  async getPatch(relPath: string, opts?: { range?: ArtifactRange; full?: boolean }): Promise<PatchDetail> {
     if (!(await this.deps.patchesPages.exists(relPath))) {
-      throw new DomainError('NOT_FOUND', `patch '${relPath}' not found`);
+      // 2.1.4 (M23): the named wire code of the patch family, not a bare NOT_FOUND.
+      throw new DomainError('PATCH_NOT_FOUND', `patch '${relPath}' not found`);
     }
     const abs = this.absPath(relPath);
     const content = await fs.readFile(abs, 'utf-8');
@@ -180,6 +183,18 @@ export class PatchService {
       );
     }
     const hash = hashContent(content);
+    // `full` is the WRITER's read — see BriefService.getBrief: a writer that
+    // recomposes the file from a budget-cut body would delete the rest of it.
+    if (opts?.full === true) {
+      return {
+        path: relPath,
+        title: extractTitle(parsed.content, frontmatter, relPath),
+        frontmatter,
+        body: parsed.content,
+        content,
+        hash,
+      };
+    }
     const windowed = readArtifactWindow(
       content,
       opts?.range,
@@ -240,10 +255,10 @@ export class PatchService {
 
 
   /** The bytes of one patch, through the shared primitive. See `BriefService.writeBytes`. */
-  private async writeBytes(relPath: string, content: string): Promise<void> {
+  private async writeBytes(relPath: string, content: string, actor: 'user' | 'agent' = 'user'): Promise<void> {
     const records = this.deps.patchesRecords;
     if (records) {
-      await records.write(relPath, { raw: content }, { actor: 'user', chain: false });
+      await records.write(relPath, { raw: content }, { actor, chain: false });
       return;
     }
     const abs = this.absPath(relPath);
@@ -296,23 +311,55 @@ export class PatchService {
   }
 
   async updateFrontmatter(opts: PatchUpdateFrontmatterOpts): Promise<PatchDetail> {
-    const current = await this.getPatch(opts.path);
+    const current = await this.getPatch(opts.path, { full: true });
+    await this.writeApplied(current, opts.applied, opts.changedBy ?? 'user');
+    return this.getPatch(opts.path);
+  }
+
+  /** The `applied` write itself, over a `full` read the caller already holds. */
+  private async writeApplied(current: PatchDetail, applied: boolean, changedBy: 'user' | 'agent'): Promise<void> {
     // Spread-then-set: a legacy `status` key already in the file survives the
     // write untouched (gray-matter pass-through), it is simply never read.
-    const next: PatchFrontmatter = { ...current.frontmatter, applied: opts.applied };
+    const next: PatchFrontmatter = { ...current.frontmatter, applied };
     const newContent = matter.stringify(current.body, next as Record<string, unknown>);
-    await this.writeBytes(opts.path, newContent);
+    await this.writeBytes(current.path, newContent, changedBy);
     await this.deps.pageVersions.recordVersion(
-      opts.path,
+      current.path,
       'update',
-      'user',
+      changedBy,
       undefined,
       this.deps.patchesSerializer,
       'patch',
-      `set applied=${opts.applied}`,
+      `set applied=${applied}`,
     );
-    await this.deps.frontmatterIndexer.indexPage(PATCH_ROOT_MARKER, opts.path);
-    return this.getPatch(opts.path);
+    await this.deps.frontmatterIndexer.indexPage(PATCH_ROOT_MARKER, current.path);
+  }
+
+  /**
+   * 2.1.4 (M23) — `mark_patch_applied`: the patch thread's agent declares "what
+   * this patch reported is now folded into the spec", as the LAST step of the
+   * work. A declaration, not a computed fact — nothing checks it against pages
+   * or versions.
+   *
+   * ONE-WAY from the agent channel: `applied: false` is refused; reverting the
+   * flag stays a user action (the toggle on `/patches/:path`, REST frontmatter).
+   * Idempotent: a repeat on an already-applied patch writes no file, records no
+   * version and notifies no client.
+   */
+  async markApplied(input: { path: string; applied: unknown }): Promise<{ path: string; applied: true }> {
+    if (typeof input.applied !== 'boolean') {
+      throw new DomainError('INVALID_ARGUMENT', 'applied is required and must be a boolean');
+    }
+    if (input.applied === false) {
+      throw new DomainError(
+        'INVALID_ARGUMENT',
+        'this tool only marks a patch applied; it cannot unmark one',
+        'unset it in the UI — the settings popover on the patch page',
+      );
+    }
+    const current = await this.getPatch(input.path, { full: true });
+    if (current.frontmatter.applied !== true) await this.writeApplied(current, true, 'agent');
+    return { path: input.path, applied: true };
   }
 
   async createThreadForPatch(
@@ -320,7 +367,7 @@ export class PatchService {
     name?: string | null,
   ): Promise<{ threadId: string }> {
     if (!(await this.deps.patchesPages.exists(relPath))) {
-      throw new DomainError('NOT_FOUND', `patch '${relPath}' not found`);
+      throw new DomainError('PATCH_NOT_FOUND', `patch '${relPath}' not found`);
     }
     const thread = this.deps.chatService.createThread(name ?? `Patch: ${relPath}`, {
       contextType: 'patch',

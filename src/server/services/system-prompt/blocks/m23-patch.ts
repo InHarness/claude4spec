@@ -6,9 +6,11 @@ import type { PromptBlock } from '../types.js';
  * carrier frame): the patch pinned to a patch-resolution thread. */
 
 /**
- * M23: patch snapshot block for a patch-resolution thread. Mirrors
- * `<current_brief>` — full file content verbatim plus a directive framing the
- * task (apply the patch's findings to the spec).
+ * M23: the patch block of a patch-resolution thread. The carrier frame (M36)
+ * brings ONLY the artifact's address; the genre (M23) adds its frontmatter
+ * attributes and the posture prose. 2.1.4: neither the content nor the hash —
+ * those are `get_patch`'s (`patch-tools`), exactly as `<current_brief>` points
+ * at `get_brief`.
  */
 function buildCurrentPatch(patch: PatchDetail): string {
   const fm = patch.frontmatter;
@@ -20,16 +22,12 @@ function buildCurrentPatch(patch: PatchDetail): string {
       // and so does a legacy `status: completed` — that key is unknown now.
       applied: String(fm.applied === true),
       brief: typeof fm.brief === 'string' ? fm.brief : undefined,
-      hash: patch.hash,
     })}>`,
-    `This thread exists to resolve the patch below — a coding agent in another`,
-    `terminal filed it as feedback while implementing a brief. Read it, then`,
-    `apply its findings to the specification (edit the relevant pages/entities).`,
-    `\`applied\` says whether this patch was already folded into the spec once —`,
-    `it is a signal to read, not a flag you set: nothing in this thread can`,
-    `change it, and only the user flips it from the patch page.`,
-    ``,
-    patch.content,
+    `This thread exists to resolve the patch at \`path\` — a coding agent in another`,
+    `terminal filed it as feedback while implementing a brief. Its content is NOT`,
+    `in this prompt — read it with get_patch, then apply its findings to the`,
+    `specification (edit the relevant pages/entities).`,
+    `\`applied\` says whether this patch was already folded into the spec once.`,
     `</current_patch>`,
   ].join('\n');
 }

@@ -8,13 +8,14 @@ import { ReleaseSelect } from './release/ReleaseSelect.js';
 /**
  * `/releases` Compare tab (0.1.122) — diff a chosen release against the live
  * unreleased spec state (`GET /api/releases/<release>/diff/current`).
- * Defaults to the latest release (`id === maxReleaseId`), matching the
+ * Defaults to the latest release (`latestReleaseId` — the first element of the
+ * newest-first `GET /api/releases`, i.e. the latest on the release axis), matching the
  * "latest → current" preset used by the unreleased-changes counter deep-link.
  */
 export function ReleasesCompareTab() {
   const { data: releases = [], isLoading } = useReleaseList();
-  const maxReleaseId = releases.length > 0 ? Math.max(...releases.map((r) => r.id)) : null;
-  const latest = releases.find((r) => r.id === maxReleaseId) ?? null;
+  const latest = releases[0] ?? null;
+  const latestReleaseId = latest?.id ?? null;
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const activeName = selectedName ?? latest?.name ?? null;
 
@@ -45,7 +46,7 @@ export function ReleasesCompareTab() {
             releases={releases}
             value={activeName ?? ''}
             onChange={(v) => setSelectedName(v || null)}
-            latestId={maxReleaseId ?? undefined}
+            latestId={latestReleaseId ?? undefined}
           />
           {activeName && (
             <span className="text-[11.5px]" style={{ color: 'var(--c-subtle)' }}>

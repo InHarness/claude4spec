@@ -155,6 +155,8 @@ export const STATUS_FOR_CODE: Record<string, number> = {
    * go, which a bare "not found" does not.
    */
   PLAN_NOT_FOUND: 404,
+  /** 2.1.4 (M23) — a patch path nothing resolves to (get_patch, mark_patch_applied, REST reads). */
+  PATCH_NOT_FOUND: 404,
   PLAN_INVALID_FRONTMATTER: 400,
   /** 0.2.98 — `create_plan` refuses a taken slug rather than suffixing it. */
   PLAN_ALREADY_EXISTS: 409,

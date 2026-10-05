@@ -36,9 +36,10 @@ export function useUpdatePatchContent(patchPath: string) {
 }
 
 /**
- * 0.2.14 — the patch's execution flag is 100% user-driven: no MCP tool and no
- * `c4s` command can move it in either direction, so this hook is its only
- * writer.
+ * The user's door to the patch's `applied` flag — two-way. 2.1.4: setting it
+ * `true` usually comes from the patch thread's agent (`mark_patch_applied`,
+ * one-way); reverting to `false` is user-only, and this hook is how. An agent
+ * write reaches open views through `patches:changed` (useFileWatcher).
  */
 export function useSetPatchApplied(patchPath: string) {
   const qc = useQueryClient();

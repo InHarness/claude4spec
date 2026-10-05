@@ -1,77 +1,109 @@
 import { z } from 'zod';
 import { createMcpServer, mcpTool, type CapturedMcpServer } from '../plugin-runtime/index.js';
 import { toolFailure, toolSuccess } from '../operations/envelope.js';
-import { createPatch, type PatchWriteDeps } from '../services/patch-write.js';
+import type { PatchService } from '../services/patch.js';
 
 /**
- * `patch-tools` — the `mcp` rendering of `create_patch`, which the catalog had
- * declared and nobody had built.
+ * M23 `patch-tools` — the patch thread's own artifact server (2.1.4).
  *
- * `core-operations.ts` has always listed `create_patch` with `channels.mcp:
- * direct()`, and `direct` is a claim that THIS channel renders the operation
- * itself. It rendered nothing: REST answered `POST /api/patches` and the CLI
- * delegated to that route, while `grep mcpTool('create_patch'` came back empty. A
- * declared-but-unbuilt cell is worse than an honest `na(reason)`, because the
- * catalog is what every profile gate and channel listing reads — the operation
- * was advertised to agents that had no way to call it.
+ * Mounted ONLY for threads with `context_type='patch'`, in process and outside
+ * the sandbox like `plan-tools` / `brief-tools`. The patches directory stays in
+ * the agent's implicit filesystem deny-set, so `get_patch` is the one read path
+ * to the patch's content — the system prompt carries its address and
+ * frontmatter, never its body or hash.
  *
- * The gap mattered most for the one caller it excluded. An agent reading a brief
- * is exactly who discovers that the brief and the code disagree, and filing that
- * discovery was the one thing it could not do from inside the conversation where
- * it made the discovery.
+ * The patch is addressed by `chat_thread.patch_path`, closed over here; `path`
+ * is optional on both tools and defaults to it.
  *
- * The answer is `{ path }`, matching REST byte for byte. Nothing here needs its
- * own shape: the patch body travels TO the server, and echoing it back would be
- * the caller paying twice for text it just wrote.
+ * Invariant (catalog): every patch operation with `internal = direct` has a tool
+ * here, and nothing else does — today `get_patch` and `mark_patch_applied`.
+ * `create_patch` is NOT one of them: a patch is filed by the implementing agent
+ * in its terminal (`cli`) or over REST, and the patch thread applies a patch, it
+ * does not file one.
  */
-export function createPatchToolsServer(
-  deps: PatchWriteDeps,
+export interface PatchThreadToolsContext {
+  threadId: string;
+  patchPath: string;
+  patchService: PatchService;
+}
+
+/** Tool names this server mounts — read by the catalog invariant test. */
+export const PATCH_THREAD_TOOL_NAMES = ['get_patch', 'mark_patch_applied'] as const;
+
+const PATH_ARG = z
+  .string()
+  .optional()
+  .describe('Patch path relative to the patches directory. Omit to address the patch of the current thread.');
+
+export function buildPatchToolsServer(
+  ctx: PatchThreadToolsContext,
   projectId: string | null = null,
 ): CapturedMcpServer {
+  const { patchService } = ctx;
   const ok = (data: unknown, operation: string) =>
     toolSuccess(data, { operation, channel: 'mcp', project: projectId });
   const fail = toolFailure;
 
-  const createPatchTool = mcpTool(
-    'create_patch',
-    [
-      'File a patch against a brief: which brief, what class of deviation, what drifted.',
-      'Takes the INTENT, not a finished file — the server composes the frontmatter',
-      '(type, brief, patch_kind, created_at, created_by, applied) and the heading,',
-      'because that frontmatter is what makes the patch findable by the spec author.',
-      'Returns { path } relative to the patches dir.',
-      'Not idempotent: two filings of the same drift are two files, because a second',
-      'report of the same drift is a real event, not a duplicate to swallow.',
-    ].join(' '),
+  /** No `path` is not an error: the thread's own patch is the normal target. */
+  const resolvePath = (args: Record<string, unknown>): string => {
+    const raw = typeof args.path === 'string' ? args.path.trim() : '';
+    return raw === '' ? ctx.patchPath : raw;
+  };
+
+  const getPatch = mcpTool(
+    'get_patch',
+    "Read the patch this thread is anchored in — content, frontmatter and hash. This is the ONLY way to the patch's content: the system prompt carries the patch's path and frontmatter, never its body. `path` is optional here: omit it and the patch of the current thread is resolved for you; that is the normal call. For a long patch, or when a response comes back truncated, read it in windows with `range`.",
     {
-      brief: z
-        .string()
-        .describe('Brief path relative to briefsDir, e.g. "0-2-14-to-next.md". Must name a real brief → else BRIEF_NOT_FOUND.'),
-      desc: z
-        .string()
-        .describe('Concise description of the drift. Drives the filename slug and the body heading.'),
-      patchKind: z
-        .enum(['drift', 'missing', 'incorrect', 'clarification'])
+      path: PATH_ARG,
+      range: z
+        .object({ start: z.number().int().positive(), end: z.number().int().positive() })
         .optional()
         .describe(
-          'drift = the code does something materially different from the brief; ' +
-            'missing = the brief is silent on a detail you had to decide; ' +
-            'incorrect = the brief is factually wrong about existing code; ' +
-            'clarification = the brief is ambiguous. Defaults to drift.',
+          'Line window, 1-based and inclusive. Use it to read a long patch in parts or to fetch the rest after a truncated response. A `start` past the end of the file is refused with the file size.',
         ),
-      body: z
-        .string()
-        .describe('The patch body in markdown — what drifted, and what the spec author should consider changing.'),
-      createdBy: z.string().optional().describe('Reporter identity. Defaults to "agent".'),
     },
     async (args) => {
       try {
-        return ok(await createPatch(deps, args, 'agent'), 'create_patch');
+        const range = args.range as { start: number; end: number } | undefined;
+        const patch = await patchService.getPatch(resolvePath(args), { range });
+        return ok(
+          {
+            path: patch.path,
+            frontmatter: {
+              patch_kind: patch.frontmatter.patch_kind,
+              applied: patch.frontmatter.applied === true,
+              ...(typeof patch.frontmatter.brief === 'string' ? { brief: patch.frontmatter.brief } : {}),
+            },
+            content: patch.content,
+            hash: patch.hash,
+            ...(patch.truncated ? { truncated: patch.truncated, truncationHint: patch.truncationHint } : {}),
+          },
+          'get_patch',
+        );
+      } catch (err) {
+        return fail(err);
+      }
+    },
+    { readOnlyHint: true },
+  );
+
+  const markPatchApplied = mcpTool(
+    'mark_patch_applied',
+    'Mark this thread\'s patch as applied to the specification. Call it as the LAST step, after the patch\'s findings are in the spec — it declares "what this patch reported is now folded into the spec". It is a declaration, not a computed fact: nothing verifies it against the pages or the version history. Reverting the flag is a user action in the UI; from here the value is always true.',
+    {
+      applied: z
+        .boolean()
+        .describe('Only `true` is accepted from the agent channel. Passing `false` is refused — unset the flag in the UI instead.'),
+      path: PATH_ARG,
+    },
+    async (args) => {
+      try {
+        return ok(await patchService.markApplied({ path: resolvePath(args), applied: args.applied }), 'mark_patch_applied');
       } catch (err) {
         return fail(err);
       }
     },
   );
 
-  return createMcpServer({ name: 'patch-tools', tools: [createPatchTool] });
+  return createMcpServer({ name: 'patch-tools', tools: [getPatch, markPatchApplied] });
 }

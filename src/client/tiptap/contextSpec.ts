@@ -12,7 +12,7 @@
  * Four contexts (M20 `ctxregst`): `page`, `description`, `plan` and the
  * auxiliary `chat-input`. Briefs and patches have no context of their own —
  * they mount `page` with a synthetic property bag (`MINIMAL_ROOT_EDITOR_PROPS`
- * plus `linkTargets: ['pages']`, M21 `m21l13rt` / M23 `m23l13rt`).
+ * plus `linkTargets: [<id of the builtin root>]`, M21 `m21l13rt` / M23 `m23l13rt`).
  */
 
 export type EditorContextId = 'page' | 'description' | 'plan' | 'chat-input';
@@ -41,7 +41,7 @@ export const FULL_ROOT_EDITOR_PROPS: RootEditorProps = {
   linkTargets: [],
 };
 
-/** Minimal-behaviour props — a default user root. Briefs and patches add the base root as a link target. */
+/** Minimal-behaviour props — a root with all three properties set to `false` by hand. Briefs and patches add the base root as a link target. */
 export const MINIMAL_ROOT_EDITOR_PROPS: RootEditorProps = {
   sectionIndexed: false,
   referenceValidated: false,

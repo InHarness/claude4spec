@@ -99,7 +99,7 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
 
   function insertRelease(name: string): number {
     const info = db
-      .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
+      .prepare(`INSERT INTO spec_release (name, slug, description, created_by, created_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`)
       .run(name, name, `desc for ${name}`, 'user');
     return Number(info.lastInsertRowid);
   }
@@ -470,7 +470,7 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
       // migration data (or a release-identity file synced before the indexer
       // guard existed) could already hold that name — insert directly to
       // simulate it, bypassing createRelease's validation.
-      db.prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
+      db.prepare(`INSERT INTO spec_release (name, slug, description, created_by, created_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`)
         .run('current', 'current', 'legacy', 'user');
 
       const updated = await releases.updateRelease({ idOrName: 'current', name: 'current', description: 'new desc' });

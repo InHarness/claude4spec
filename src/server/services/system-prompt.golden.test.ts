@@ -67,6 +67,12 @@ const BRIEF_INVENTORY = [
   { name: 'skill-tools', tools: ['load_skill_file'] },
 ];
 
+// 2.1.4: a patch thread mounts chat's set plus its own `patch-tools`.
+const PATCH_INVENTORY = [
+  ...FULL_INVENTORY,
+  { name: 'patch-tools', tools: ['get_patch', 'mark_patch_applied'] },
+];
+
 const PEERS_UNIQUE: PeerProject[] = [
   { id: 'billing', name: 'Billing API', description: 'Money "in" & out.' },
   { id: 'auth', name: 'Auth' },
@@ -165,7 +171,8 @@ function full(contextType: SystemPromptInput['contextType'], over: Partial<Syste
     annotations: ANNOTATIONS,
     planMode: true,
     currentPlan: plan(),
-    mcpInventory: contextType === 'brief' ? BRIEF_INVENTORY : FULL_INVENTORY,
+    mcpInventory:
+      contextType === 'brief' ? BRIEF_INVENTORY : contextType === 'patch' ? PATCH_INVENTORY : FULL_INVENTORY,
     workspaceProjects: PEERS_UNIQUE,
     workspaceName: 'default',
     writingStyleSkill: { slug: 'layered-vertical-slices', title: 'Layered "vertical" slices' },

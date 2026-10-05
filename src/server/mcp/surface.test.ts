@@ -37,7 +37,6 @@ function stubDeps(overrides: Partial<ExternalSurfaceDeps> = {}): ExternalSurface
     planService: {} as ExternalSurfaceDeps['planService'],
     pageVersions: {} as ExternalSurfaceDeps['pageVersions'],
     briefService: {} as ExternalSurfaceDeps['briefService'],
-    patchWrite: { briefsDirAbs: '/tmp/nonexistent-briefs', patchesDirAbs: '/tmp/nonexistent-patches' },
     listProjects: () => ({ projects: [] }),
     workspaceName: 'default',
     skillRegistry: SkillRegistry.load([]),

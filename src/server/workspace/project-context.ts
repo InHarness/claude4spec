@@ -772,7 +772,7 @@ async function buildInner(
   const sectionIndexedRoots = new Map<string, SectionIndexRoot>();
   const referenceValidatedServices = new Map<string, PagesService>();
   const referenceValidatedWriters = new Map<string, SelfWriteMarker>();
-  const sidebarRoots = new Map<string, PagesService>(); // todos: any root with a visible tree
+  const sidebarRoots = new Map<string, PagesService>(); // todos: `sidebar: 'accordion'` roots only
   const allRootServices = new Map<string, PagesService>();
   for (const rt of rootRuntimes) {
     allRootServices.set(rt.root.id, rt.pages);
@@ -781,7 +781,7 @@ async function buildInner(
       referenceValidatedServices.set(rt.root.id, rt.pages);
       referenceValidatedWriters.set(rt.root.id, rt.writer);
     }
-    if (rt.root.sidebar !== 'hidden') sidebarRoots.set(rt.root.id, rt.pages);
+    if (rt.root.sidebar === 'accordion') sidebarRoots.set(rt.root.id, rt.pages);
   }
 
   const referencesService = new ReferencesService(referenceValidatedServices, referenceValidatedWriters);
@@ -1061,7 +1061,8 @@ async function buildInner(
     createPageToolsServer({
       ...sectionWriteDeps,
       rootIds: () => [...rootById.keys()],
-      isSectionIndexed: (rootId) => rootById.get(rootId)?.root.sectionIndexed ?? true,
+      // 2.1.4: a root entry is complete or invalid — no default for a missing flag.
+      isSectionIndexed: (rootId) => rootById.get(rootId)?.root.sectionIndexed === true,
     }, projectId),
   );
 
@@ -1431,9 +1432,6 @@ async function buildInner(
     planService,
     briefService,
     patchService,
-    // M23: `create_patch` over MCP resolves the same two directories the REST
-    // route does — one operation, one pair of paths, both channels.
-    patchWrite: patchWriteDeps,
     releaseService,
     pageVersions,
     skillResolver,
@@ -1477,7 +1475,6 @@ async function buildInner(
     planService,
     pageVersions,
     briefService,
-    patchWrite: patchWriteDeps,
     listProjects: agentDeps.listWorkspaceProjects,
     workspaceName: workspace.name,
     skillRegistry,
@@ -1562,8 +1559,9 @@ async function buildInner(
       });
     }
 
-    // M08 — todos, on any root with a visible tree. Read-only; never suppresses.
-    if (rt.root.sidebar !== 'hidden') {
+    // M08 — todos, on `sidebar: 'accordion'` roots only (2.1.4: `hidden` roots are
+    // neither subscribed nor scanned). Read-only; never suppresses.
+    if (rt.root.sidebar === 'accordion') {
       w.subscribe(source, todosIndexer, { id: 'm08-todos-indexer', phase: 'projection', filter: MARKDOWN_FILTER });
     }
 

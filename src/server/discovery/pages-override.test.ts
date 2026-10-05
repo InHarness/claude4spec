@@ -8,7 +8,11 @@ const root = (id: string, dir: string, extra: Partial<Root> = {}): Root =>
 const PROJECT = '/repo/spec';
 
 describe('applyPagesOverride', () => {
-  const roots = [root('pages', 'pages'), root('guides', 'docs/guides'), root('adr', 'docs/adr')];
+  const roots = [
+    root('pages', 'pages', { builtin: true }),
+    root('guides', 'docs/guides', { builtin: false }),
+    root('adr', 'docs/adr', { builtin: false }),
+  ];
 
   it('is a no-op without an override', () => {
     expect(applyPagesOverride(roots, undefined, PROJECT)).toEqual(roots);
@@ -138,10 +142,13 @@ describe('applyPagesOverride', () => {
     }
   });
 
-  it('falls back to the first root when there is no built-in `pages` one, and to nothing when there are none', () => {
-    const noBuiltin = [root('guides', 'docs/guides')];
-    expect(applyPagesOverride(noBuiltin, 'x', PROJECT)[0].id).toBe(OVERRIDE_ROOT_ID);
-    expect(applyPagesOverride(noBuiltin, 'x', PROJECT)[0].dir).toBe('x');
+  it('2.1.4: the ad-hoc root derives from the `builtin` entry only — no positional fallback to the first root', () => {
+    const renamedBase = [root('guides', 'docs/guides', { builtin: false }), root('docs', 'docs/main', { builtin: true })];
+    const out = applyPagesOverride(renamedBase, 'x', PROJECT);
+    expect(out[0].id).toBe(OVERRIDE_ROOT_ID);
+    expect(out[0].dir).toBe('x');
+    expect(out[0].name).toBe('docs');
+    expect(applyPagesOverride([root('guides', 'docs/guides', { builtin: false })], 'x', PROJECT)).toEqual([]);
     expect(applyPagesOverride([], 'x', PROJECT)).toEqual([]);
   });
 });

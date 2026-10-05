@@ -52,9 +52,10 @@ export function ReleaseDetail({ idOrName }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // v0.1.12 — najnowszy release jest mutowalny (id == MAX(id)). Lista jest newest-first.
-  const maxReleaseId = allReleases[0]?.id ?? null;
-  const isLatest = release ? release.id === maxReleaseId : false;
+  // 2.1.4 — najnowszy release na osi wydań (created_at, remis po id) jest mutowalny.
+  // GET /api/releases jest newest-first w porządku osi, więc najnowszy = pierwszy element.
+  const latestReleaseId = allReleases[0]?.id ?? null;
+  const isLatest = release ? release.id === latestReleaseId : false;
 
   // Inline-edit drafts dla name/description (tylko gdy isLatest).
   const [nameDraft, setNameDraft] = useState('');
@@ -146,13 +147,12 @@ export function ReleaseDetail({ idOrName }: Props) {
     }
   }
 
-  // Default compare target: previous release (older), or `__INITIAL__` for the first release.
-  const sortedByDate = [...allReleases].sort(
-    (a, b) => a.createdAt.localeCompare(b.createdAt),
-  );
-  const currentIdx = sortedByDate.findIndex((r) => r.name === release?.name);
+  // Default compare target: previous release on the axis (older), or `__INITIAL__`
+  // for the first release. The list is newest-first, so the predecessor is the
+  // NEXT element — list order already carries the `created_at, id` tie-break.
+  const currentIdx = allReleases.findIndex((r) => r.name === release?.name);
   const defaultCompare =
-    currentIdx > 0 ? sortedByDate[currentIdx - 1]!.name : '__INITIAL__';
+    currentIdx >= 0 && currentIdx < allReleases.length - 1 ? allReleases[currentIdx + 1]!.name : '__INITIAL__';
   const activeCompare = compareTo ?? defaultCompare;
 
   const diffFrom = activeCompare === '__INITIAL__' ? null : activeCompare;

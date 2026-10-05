@@ -154,12 +154,24 @@ const MUTATING_VERBS = new Set([
   'apply', 'applied', 'mark', 'tag', 'untag', 'patch', 'move', 'rename', 'archive',
 ]);
 
+/**
+ * 2.1.4: after a LEADING read verb, a word that is also a noun (`patch`, `tag`, `link`,
+ * `set`, `move`, `archive`) names the object read, not an action — `get_patch` (the patch
+ * thread's read) would otherwise be classed as a write by its noun. Verb-only words keep
+ * their force in any position, so `get_or_create_tag` / `list_and_delete_x` stay writes.
+ */
+const READ_VERBS = new Set(['get', 'list', 'search', 'read', 'find']);
+const NOUN_VERBS = new Set(['patch', 'tag', 'link', 'set', 'move', 'archive']);
+
 export function isMutatingMcpTool(tool: string): boolean {
   if (!tool.startsWith('mcp__')) return false;
   const parts = tool.split('__');
   if (parts.length < 3) return false;
-  const toolSegment = parts.slice(2).join('__');
-  return toolSegment.split('_').some((segment) => MUTATING_VERBS.has(segment));
+  const segments = parts.slice(2).join('__').split('_');
+  const leadsWithRead = READ_VERBS.has(segments[0]!);
+  return segments.some(
+    (segment) => MUTATING_VERBS.has(segment) && !(leadsWithRead && NOUN_VERBS.has(segment)),
+  );
 }
 
 /**

@@ -37,9 +37,10 @@ export interface EditorFactoryOptions {
  * a hint, not a gate.
  *
  * `rootProps` (0.1.96) gate the page-root extension set:
- *   - built-in `pages` root ⇒ FULL_ROOT_EDITOR_PROPS (today's full editor),
- *   - a default user root ⇒ minimal (no section / reference extensions),
- *   - briefs / patches ⇒ minimal + `linkTargets: ['pages']` for @path.md links.
+ *   - every root with its properties on (the builtin root, and a user root added
+ *     from settings — 2.1.4) ⇒ FULL_ROOT_EDITOR_PROPS,
+ *   - a root with all three set to `false` by hand ⇒ minimal,
+ *   - briefs / patches ⇒ minimal + `linkTargets: [<builtin root id>]` for @path.md links.
  * It defaults to full behaviour so unmigrated callers are unaffected. It is ignored
  * for non-page contexts (plan / description / chat-input), which are not root-backed.
  */
