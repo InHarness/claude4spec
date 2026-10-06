@@ -34,7 +34,7 @@ export interface PlanToolsContext {
   target?: 'thread' | 'explicit';
   planService: PlanService;
   /** 0.1.127: list_plan_versions/get_plan_version now read the shared M17
-   *  file_version log (keyed rootId='plan') instead of the dropped
+   *  file_version log (keyed rootId='plans') instead of the dropped
    *  `plan_version` table. */
   pageVersions: FileVersionService;
 }

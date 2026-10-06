@@ -50,16 +50,6 @@ import {
 export interface PageToolsDeps extends SectionWriteDeps {
   /** Root ids the caller may address, for the error that lists them. */
   rootIds: () => string[];
-  /**
-   * 0.2.37 — whether a root keeps a section index, for `update_page`'s
-   * differential branch. On a root without one the `ANCHOR_LOSS` guard is
-   * skipped outright rather than run against nothing.
-   *
-   * Optional so existing rigs keep compiling; absent reads as "indexed", which
-   * is the conservative half of the choice — the guard then still needs a
-   * referent lookup before it can refuse anything.
-   */
-  isSectionIndexed?: (rootId: string) => boolean;
 }
 
 export function createPageToolsServer(
@@ -97,10 +87,9 @@ export function createPageToolsServer(
    * `SectionWriteDeps`, so the guard `update_sections` runs and the guard
    * `update_page` runs are literally the same lookup.
    */
-  const diffDeps = (rootId: string): PageDiffDeps => ({
+  const diffDeps = (_rootId: string): PageDiffDeps => ({
     sections: deps.sections,
     ...(deps.findSectionReferents ? { findSectionReferents: deps.findSectionReferents } : {}),
-    ...(deps.isSectionIndexed ? { sectionIndexed: deps.isSectionIndexed(rootId) } : {}),
   });
 
   const rootIdParam = z
@@ -231,7 +220,7 @@ export function createPageToolsServer(
             'cites what. In DIFFERENTIAL mode every entry must sit inside a MATCHED fragment, not merely somewhere on ' +
             'the page. In LITERAL (`body`) mode the touched scope is the whole page, so every entry must be an anchor ' +
             'this page has now; an anchor you leave out of the new content and do not name here is refused if anything ' +
-            'cites it. On a root with no section index the guard has no subject and this parameter is meaningless.',
+            'cites it. The guard runs on every page root — each one has a section index.',
         ),
       expectedHash: expectedHashParam,
     },

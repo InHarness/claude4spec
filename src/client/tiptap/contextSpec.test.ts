@@ -9,11 +9,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import './registrations.js';
 import {
-  artefactRootEditorProps,
+  ALL_EDITOR_CONTEXTS,
   FULL_ROOT_EDITOR_PROPS,
-  MINIMAL_ROOT_EDITOR_PROPS,
   assertSaveMode,
   resolveContextSpec,
+  rootEditorPropsForKind,
 } from './contextSpec.js';
 import {
   getContextSpec,
@@ -75,7 +75,7 @@ describe('resolveContextSpec — the four contexts (M20 ctxregst)', () => {
     expect(spec.save).toEqual({ mode: 'explicit' });
   });
 
-  it('page is derived from root props, not a fixed list (L13)', () => {
+  it('page is derived from the root kind, not a fixed list (L13)', () => {
     const reg = {
       extensionNames: () => ['anchor_marker', 'section_ref', 'single_element', 'todo', 'plugin:thing'],
       slashCommandIds: () => ['mention', 'todo', 'plugin-thing'],
@@ -85,27 +85,35 @@ describe('resolveContextSpec — the four contexts (M20 ctxregst)', () => {
     expect(full.slashCommands).toEqual(['mention', 'todo', 'plugin-thing']);
     expect(full.save).toEqual({ mode: 'debounce', debounceMs: 1000 });
 
-    const minimal = resolveContextSpec('page', MINIMAL_ROOT_EDITOR_PROPS, reg);
-    expect(minimal.extensions).toEqual(['todo', 'plugin:thing']);
-    // The palette follows the schema: a command whose node the root gates out
-    // is not offered (the pick would delete the `/query` and insert nothing).
-    // `/todo` stays; a plugin command inserts an entity embed, so it goes with
-    // the reference gate.
-    expect(minimal.slashCommands).toEqual(['todo']);
-    const sectionsOnly = resolveContextSpec(
-      'page',
-      { ...MINIMAL_ROOT_EDITOR_PROPS, sectionIndexed: true },
-      { ...reg, slashCommandIds: () => ['section', 'element', 'todo'] },
-    );
-    expect(sectionsOnly.slashCommands).toEqual(['section', 'todo']);
+    // 2.1.8: FULL_ROOT_EDITOR_PROPS is the `pages` kind's layers, with no `@`
+    // scope until the config loads; the scope is handed in, never invented.
+    expect(FULL_ROOT_EDITOR_PROPS).toEqual(rootEditorPropsForKind('pages', []));
+    expect(rootEditorPropsForKind('pages', ['docs', 'pages'])).toEqual({
+      sectionIndexed: true,
+      referenceValidated: true,
+      linkTargets: ['docs', 'pages'],
+    });
+  });
 
-    const artefact = resolveContextSpec('page', artefactRootEditorProps('pages'), reg);
-    expect(artefact.extensions).toEqual(minimal.extensions);
-    // 0.2.101: the artefact surfaces link into the BASE root, whatever it is
-    // called — the target follows the configured id, and is empty while the
-    // config is still loading rather than defaulting to a literal.
-    expect(artefactRootEditorProps('docs').linkTargets).toEqual(['docs']);
-    expect(artefactRootEditorProps(null).linkTargets).toEqual([]);
+  /**
+   * 2.1.8 — briefs and patches mount the NAMED `artifact` context: the page
+   * derivation with the section and reference layers off. The palette follows
+   * the schema: a command whose node is gated out is not offered (the pick
+   * would delete the `/query` and insert nothing). `/todo` stays; a plugin
+   * command inserts an entity embed, so it goes with the reference gate.
+   */
+  it('artifact: the page derivation without anchors, section refs or entity nodes, debounced', () => {
+    expect(ALL_EDITOR_CONTEXTS).toContain('artifact');
+    const reg = {
+      extensionNames: () => ['anchor_marker', 'section_ref', 'single_element', 'todo', 'plugin:thing'],
+      slashCommandIds: () => ['mention', 'section', 'todo', 'plugin-thing'],
+    };
+    const artifact = resolveContextSpec('artifact', rootEditorPropsForKind('pages', ['pages']), reg);
+    expect(artifact.id).toBe('artifact');
+    expect(artifact.extensions).toEqual(['todo', 'plugin:thing']);
+    expect(artifact.slashCommands).toEqual(['todo']);
+    expect(artifact.mentions).toEqual(['files']);
+    expect(artifact.save).toEqual({ mode: 'debounce', debounceMs: 1000 });
   });
 });
 
@@ -135,18 +143,31 @@ describe('registry ∩ spec — the whitelist is authoritative', () => {
     expect(mounted).toEqual(expect.arrayContaining(['section_ref', 'single_element', 'taskList', 'taskItem']));
   });
 
-  it('a brief/patch (`page` + artefact props) mounts no section or reference nodes', () => {
-    const mounted = names(getEditorExtensionsForContext(ctx, 'page', artefactRootEditorProps('pages')));
-    for (const gone of ['anchor_marker', 'section_ref', 'heading_actions', 'inline_mention', 'single_element']) {
-      expect(mounted).not.toContain(gone);
+  it("a brief/patch (`artifact` context) mounts no anchor_marker / section_ref / heading_actions / entity nodes, and its id is 'artifact'", () => {
+    expect(getContextSpec('artifact').id).toBe('artifact');
+    const mounted = names(getEditorExtensionsForContext(ctx, 'artifact'));
+    for (const gone of [
+      'anchor_marker',
+      'section_ref',
+      'heading_actions',
+      'inline_mention',
+      'single_element',
+      'element_list',
+      'tagged_list',
+      'tagged_list_mixed',
+    ]) {
+      expect(mounted, gone).not.toContain(gone);
     }
     expect(mounted).toEqual(expect.arrayContaining(['raw_jsx_inline', 'todo', 'mention_extension']));
+    // The same nodes ARE mounted on a page of the same root — the context, not the root, gates them.
+    const page = names(getEditorExtensionsForContext(ctx, 'page'));
+    expect(page).toEqual(expect.arrayContaining(['anchor_marker', 'section_ref', 'inline_mention', 'single_element']));
   });
 
   it('mention sources follow spec.mentions, not the source hint', () => {
     expect(getRegisteredMentionSources('description')).toEqual([]);
     expect(getRegisteredMentionSources('plan').map((s) => s.id)).toEqual(['files']);
-    expect(getRegisteredMentionSources('page', artefactRootEditorProps('pages')).map((s) => s.id)).toEqual(['files']);
+    expect(getRegisteredMentionSources('artifact').map((s) => s.id)).toEqual(['files']);
   });
 
   it('[ac:m51-editor-extension-tag-name-rejected] a registration named after a registered XML tag is rejected', () => {

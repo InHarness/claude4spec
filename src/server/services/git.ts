@@ -19,6 +19,7 @@
  * error recovery).
  */
 
+import { SYSTEM_ROOTS } from '../../shared/root-kinds.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import fs from 'node:fs';
@@ -65,7 +66,7 @@ const NOT_DETECTED: GitStatusResponse = {
 };
 
 export class GitService {
-  /** Releasable root dirs resolved to absolute paths (probe locations). */
+  /** Page root dirs (every `kind: pages` root) resolved to absolute paths — probe locations and staging. */
   private readonly releasableRootDirs: string[];
 
   /**
@@ -185,8 +186,7 @@ export class GitService {
 
   /**
    * Canonicalize the staging targets shared by `commit()` and `commitPull()`:
-   * every releasable root dir + `config.json` + entitiesDir/releasesDir/
-   * briefsDir/patchesDir/plansDir, realpath'd and filtered to those actually
+   * the dir of every registry root + `config.json`, realpath'd and filtered to those actually
    * inside `root`. Root dirs / configPath may be reached through a symlink
    * (e.g. `.claude/skills/specyfikacja` → another repo's worktree). `git add`
    * matches pathspecs lexically against the real worktree root, so an
@@ -206,21 +206,17 @@ export class GitService {
    * ignored path adds nothing).
    */
   private resolveStagingTargets(root: string): string[] {
-    const bootConfig = readConfig(this.cwd);
-    const entitiesPath = path.resolve(this.cwd, bootConfig.entitiesDir);
-    const releasesPath = path.resolve(this.cwd, bootConfig.releasesDir);
-    const briefsPath = path.resolve(this.cwd, bootConfig.briefsDir);
-    const patchesPath = path.resolve(this.cwd, bootConfig.patchesDir);
-    const plansPath = path.resolve(this.cwd, bootConfig.plansDir);
+    // 2.1.8: the staging set is derived from the ROOT REGISTRY — the dir of
+    // EVERY root (all `pages` roots, `entities` with `tags.json`, `releases`,
+    // `plans`/`briefs`/`patches`) plus `config.json`. No user root is skipped,
+    // whatever a legacy `releasable: false` once said. The page roots are the
+    // EFFECTIVE ones this service was built with (`--pages` override applied);
+    // the system roots come from code.
     const targets: string[] = [];
     for (const p of [
       ...this.releasableRootDirs,
+      ...SYSTEM_ROOTS.map((r) => path.resolve(this.cwd, r.dir)),
       configPath(this.cwd),
-      entitiesPath,
-      releasesPath,
-      briefsPath,
-      patchesPath,
-      plansPath,
     ]) {
       let real: string;
       try {
@@ -230,6 +226,7 @@ export class GitService {
       }
       const rel = path.relative(root, real);
       if (!rel.startsWith('..') && !path.isAbsolute(rel)) targets.push(real);
+      else console.warn(`[git] ${p} lies outside the repository at ${root} — not staged`);
     }
     return targets;
   }
@@ -253,7 +250,7 @@ export class GitService {
     if (targets.length === 0) {
       return {
         status: 'skipped',
-        message: 'releasable roots / config.json are outside the detected repository',
+        message: 'page roots / config.json are outside the detected repository',
       };
     }
 
@@ -280,7 +277,7 @@ export class GitService {
   }
 
   /**
-   * Stage every releasable root dir + `config.json` and commit with a
+   * Stage every registry root dir + `config.json` and commit with a
    * `name`/`description`-derived message. Assumes a repo is detected
    * (callers gate via `commitOnRelease`). Returns `'skipped'` on detached
    * HEAD, `'nothing-to-commit'` when nothing is staged, `'error'` on any git
@@ -480,7 +477,7 @@ export class GitService {
     if (targets.length === 0) {
       return {
         status: 'skipped',
-        message: 'releasable roots / config.json are outside the detected repository',
+        message: 'page roots / config.json are outside the detected repository',
       };
     }
     const relTargets = targets.map((abs) => path.relative(root, abs).split(path.sep).join('/'));

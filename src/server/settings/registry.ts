@@ -1,13 +1,8 @@
 import { FieldRegistry } from './field-registry.js';
-import { PROJECT_SETTINGS_FIELDS } from '../workspace/project-settings-fields.js';
+import { PROJECT_SETTINGS_FIELDS, ROOTS_OVERLAP_RULE } from '../workspace/project-settings-fields.js';
 import { WRITING_STYLE_SETTINGS_FIELDS } from '../services/writing-style-settings-fields.js';
 import { AGENT_SETTINGS_FIELDS } from '../services/agent-settings-fields.js';
 import { GIT_COMMIT_TARGET_RULE, GIT_SETTINGS_FIELDS } from '../services/git-settings-fields.js';
-import {
-  ARTIFACT_DIR_SETTINGS_FIELDS,
-  ARTIFACT_DIRS_DIFFER_RULE,
-  WRITE_TARGET_OVERLAP_RULE,
-} from '../services/artifact-dir-settings-fields.js';
 import { REMOTE_SETTINGS_FIELDS } from '../services/remote-settings-fields.js';
 import { CONSISTENCY_SETTINGS_FIELDS } from '../discovery/ops/consistency-settings-fields.js';
 import { entitySettingsFields, pluginSettingsFields } from '../core/plugin-host/entity-settings-fields.js';
@@ -31,14 +26,12 @@ export function buildFieldRegistry(input: BuildFieldRegistryInput = {}): FieldRe
       ...WRITING_STYLE_SETTINGS_FIELDS,
       ...AGENT_SETTINGS_FIELDS,
       ...GIT_SETTINGS_FIELDS,
-      ...ARTIFACT_DIR_SETTINGS_FIELDS,
       ...REMOTE_SETTINGS_FIELDS,
       ...CONSISTENCY_SETTINGS_FIELDS,
       ...entitySettingsFields(input.knownEntityTypes),
       ...pluginSettingsFields(input.pluginSections ?? []),
     )
-    .registerCrossFieldRule(ARTIFACT_DIRS_DIFFER_RULE)
-    .registerCrossFieldRule(WRITE_TARGET_OVERLAP_RULE)
+    .registerCrossFieldRule(ROOTS_OVERLAP_RULE)
     .registerCrossFieldRule(GIT_COMMIT_TARGET_RULE);
 }
 

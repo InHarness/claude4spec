@@ -78,7 +78,6 @@ import { createDiscoveryCore, findReferencesAll } from '../discovery/index.js';
 import type { DiscoveryCore } from '../discovery/types.js';
 import { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
-import { DEFAULT_PAGES_ROOT_PROPS } from '../../shared/types.js';
 
 /**
  * 0.2.13 item 28 — the page write path as ONE primitive, shared by REST and by
@@ -309,7 +308,7 @@ describe('the page write primitive', () => {
         db,
         host,
         serialization: new SerializationEngine(host),
-        roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true, ...DEFAULT_PAGES_ROOT_PROPS }],
+        roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }],
         projectDir: dir,
         packageVersion: 'test',
       });
@@ -443,7 +442,7 @@ describe('update_sections over a real section index', () => {
       db,
       host,
       serialization: new SerializationEngine(host),
-      roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true, ...DEFAULT_PAGES_ROOT_PROPS }],
+      roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }],
       projectDir: cwd,
       packageVersion: 'test',
     });
@@ -1404,7 +1403,7 @@ describe('update_sections — the anchor-loss guard', () => {
       db,
       host,
       serialization: new SerializationEngine(host),
-      roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true, ...DEFAULT_PAGES_ROOT_PROPS }],
+      roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }],
       projectDir: cwd,
       packageVersion: 'test',
     });
@@ -2458,7 +2457,7 @@ describe('differential writes — textEdits', () => {
       db,
       host,
       serialization: new SerializationEngine(host),
-      roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true, ...DEFAULT_PAGES_ROOT_PROPS }],
+      roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }],
       projectDir: cwd,
       packageVersion: 'test',
     });
@@ -2746,26 +2745,6 @@ describe('differential writes — textEdits', () => {
     expect(err.message).toMatch(/matched fragments/);
   });
 
-  /**
-   * Without a section index there is no set of anchors to measure a loss
-   * against, so the guard is skipped OUTRIGHT rather than run against nothing.
-   */
-  it('skips the guard entirely on a root with sectionIndexed = false', async () => {
-    await index('doc.md', nested);
-    const childOne = anchorOf('Child one');
-    await citeWithTag(childOne);
-    const body = (await pages.read('doc.md')).body;
-    const swallow = body.slice(body.indexOf(`<!-- anchor: ${childOne} -->`), body.indexOf('CHILD ONE BODY'));
-
-    const res = await updatePage(
-      target,
-      { path: 'doc.md', textEdits: [{ find: swallow, replaceWith: '' }], expectedHash: await hashOfPage() },
-      'agent',
-      { ...diffDeps(), sectionIndexed: false },
-    );
-    expect(res.replacements).toBe(1);
-  });
-
   // ── update_page, LITERAL (`body`) mode — the same guard, whole-page scope (2.1.6) ──
 
   /** The page's body with one section's anchor line and heading cut out — a wholesale rewrite that loses it. */
@@ -2861,21 +2840,6 @@ describe('differential writes — textEdits', () => {
     ).catch((e) => e);
     expect(err.code).toBe('INVALID_ARGUMENT');
     expect(err.message).toMatch(/does not have/);
-  });
-
-  it('literal mode: no guard on a root with sectionIndexed = false — a body without the anchor lines passes', async () => {
-    await index('doc.md', nested);
-    const childOne = anchorOf('Child one');
-    await citeWithTag(childOne);
-    const body = (await pages.read('doc.md')).body;
-
-    const res = await updatePage(
-      target,
-      { path: 'doc.md', body: body.replace(/<!-- anchor: [^>]+ -->\n/g, ''), expectedHash: await hashOfPage() },
-      'agent',
-      { ...diffDeps(), sectionIndexed: false },
-    );
-    expect(res).not.toHaveProperty('droppedAnchors');
   });
 
   // ── update_sections, the `edit` action ──────────────────────────────────

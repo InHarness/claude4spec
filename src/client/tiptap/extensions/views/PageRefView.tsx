@@ -51,9 +51,10 @@ export function PageRefView(props: NodeViewProps) {
   const sourcePath = (props.editor.storage as Record<string, unknown>).pageRefSourcePath as
     | string
     | undefined;
-  // M50: the chip navigates to `/space/<targetRootId>/…`. The server resolves a
-  // mention inside its source's own root, so the target root is the root of the
-  // document the chip lives in; outside a page (a plan) that is the base root.
+  // M50: the chip navigates to `/space/<targetRootId>/…` — the root the server
+  // resolved the link in (2.1.8: any page root). Without that answer the target
+  // falls back to the root of the document the chip lives in; outside a page (a
+  // plan) that is the base root.
   // Read at click time: the page editor fills `pageRefRootId` from an effect,
   // which may run after this chip's first render.
   const baseRootId = useBaseRootId();
@@ -111,7 +112,12 @@ export function PageRefView(props: NodeViewProps) {
     if (!resolvedPath) return;
     const fallbackRootId = chipRootId();
     if (!fallbackRootId) return;
-    const target = pageTarget(resolvedPath, rootIds, fallbackRootId);
+    // 2.1.8: `@path.md` resolves across every page root (source root → builtin
+    // → `roots[]` order), and the server records where it LANDED. Prefer that
+    // over the document's own root, which is only the first place it looks.
+    const ownLinks = sourcePath ? data?.links[`${fallbackRootId}:${sourcePath}`] : undefined;
+    const landedIn = ownLinks?.find((l) => l.targetPath === resolvedPath)?.targetRootId;
+    const target = landedIn ? { rootId: landedIn, path: resolvedPath } : pageTarget(resolvedPath, rootIds, fallbackRootId);
     void navigate({
       to: '/space/$rootId/$',
       params: { rootId: target.rootId, _splat: target.path },

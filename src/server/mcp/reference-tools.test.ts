@@ -428,20 +428,18 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
       expect(body.hint).toContain('pages');
     });
 
-    it('get_page refuses a line range on a section-indexed root and points at the better window', async () => {
+    it('get_page refuses a system root id exactly like an unknown one — only page roots are addressable', async () => {
       await pagesService.write('page.md', { body: '<!-- anchor: aaaaaa11 -->\n# Alpha\n\nbody\n' });
       const client = await connectClient(deps());
 
-      const { isError, body } = await call(client, 'get_page', {
-        rootId: 'pages',
-        path: 'page.md',
-        range: { start: 1, end: 2 },
-      });
+      const plans = await call(client, 'get_page', { rootId: 'plans', path: 'page.md' });
+      const nope = await call(client, 'get_page', { rootId: 'nope', path: 'page.md' });
 
-      expect(isError).toBe(true);
-      expect(body.code).toBe('INVALID_ARGUMENT');
-      expect(body.hint).toContain('get_page_outline');
-      expect(body.hint).toContain('get_sections');
+      expect(plans.isError).toBe(true);
+      expect(plans.body.code).toBe('INVALID_ARGUMENT');
+      expect(plans.body.code).toBe(nope.body.code);
+      expect(plans.body.error).toContain("unknown rootId 'plans' (page roots in this project: pages)");
+      expect(plans.body.hint).toBe(nope.body.hint);
     });
 
     it('get_page returns the page as sections keyed by anchor — an embed stays an embed in the body', async () => {

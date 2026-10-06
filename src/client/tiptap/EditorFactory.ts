@@ -36,13 +36,10 @@ export interface EditorFactoryOptions {
  * keymap, no input rules, no parser tokens. `availableIn` on a registration is
  * a hint, not a gate.
  *
- * `rootProps` (0.1.96) gate the page-root extension set:
- *   - every root with its properties on (the builtin root, and a user root added
- *     from settings — 2.1.4) ⇒ FULL_ROOT_EDITOR_PROPS,
- *   - a root with all three set to `false` by hand ⇒ minimal,
- *   - briefs / patches ⇒ minimal + `linkTargets: [<builtin root id>]` for @path.md links.
- * It defaults to full behaviour so unmigrated callers are unaffected. It is ignored
- * for non-page contexts (plan / description / chat-input), which are not root-backed.
+ * `rootProps` gate the page-root extension set (2.1.8): derived from the root's
+ * KIND (`rootEditorPropsForKind`) — the factory branches on the kind's layers,
+ * never on a root id. Briefs and patches build the named `artifact` context.
+ * It is ignored for the static contexts (plan / description / chat-input).
  */
 export const EditorFactory = {
   buildExtensions(
@@ -61,6 +58,7 @@ export const EditorFactory = {
 function coreExtensions(contextId: EditorContextId, options: EditorFactoryOptions): AnyExtension[] {
   switch (contextId) {
     case 'page':
+    case 'artifact':
     case 'plan':
       return [
         StarterKit.configure({ heading: { levels: [1, 2, 3, 4, 5, 6] } }),

@@ -208,12 +208,6 @@ function makeDeps() {
         name: 'Pages',
         dir: 'pages',
         builtin: true,
-        releasable: true,
-        sectionIndexed: true,
-        referenceValidated: true,
-        linkTargets: [],
-        sidebar: 'accordion',
-        briefTarget: true,
       },
     ],
     mode: 'dev',
@@ -2435,8 +2429,11 @@ describe('runAgentTurn — session config is settled on the first turn (0.2.113)
     expect(snap.lockedConfig).toMatchObject({
       'agent.allowedPaths': ['/extra'],
       'agent.disallowedPaths': [],
-      plansDir: '.claude4spec/plans',
     });
+    // 2.1.8: the artifact dirs are fixed system roots — no `*Dir` config key is locked any more.
+    for (const k of ['plansDir', 'briefsDir', 'patchesDir', 'entitiesDir', 'releasesDir']) {
+      expect(snap.lockedConfig).not.toHaveProperty(k);
+    }
     expect(snap.promptConfig).toHaveProperty('writingStyle');
     expect(snap.pageRootDirs).toEqual(PAGE_ROOTS_ABS);
   });

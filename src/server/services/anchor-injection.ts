@@ -1,7 +1,8 @@
 import { customAlphabet } from 'nanoid';
 import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
 import { insertAnchorLines, parseSections } from '../../shared/section-parser.js';
-import { artifactRegistry, type ArtifactKind } from './artifact-registry.js';
+import { ARTIFACT_ROOT_KIND, type ArtifactKind } from './artifact-registry.js';
+import { kindSelects } from '../../shared/root-kinds.js';
 import type { PagesService } from './pages.js';
 import type { WatchSubscriber } from '../fs/watcher.js';
 
@@ -60,9 +61,12 @@ export function injectArtifactAnchors(body: string): string {
   return insertAnchorLines(body, missing, missing.map(() => mintFileAnchor(taken)));
 }
 
-/** Whether a file write of this artifact kind gets anchors — the registry's declaration. */
+/**
+ * Whether a file write of this artifact kind gets anchors — 2.1.8: its root
+ * kind selects `m06-anchor-injection` (plans do; briefs and patches do not).
+ */
 export function injectsAnchors(kind: ArtifactKind): boolean {
-  return artifactRegistry[kind].anchorInjection;
+  return kindSelects(ARTIFACT_ROOT_KIND[kind], 'm06-anchor-injection');
 }
 
 /**

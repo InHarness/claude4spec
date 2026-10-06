@@ -46,21 +46,16 @@ describe('field registry — one declarant per key (0.2.113)', () => {
   });
 
   it('derives the rebuild and resume-lock sets from the declarations', () => {
+    // 2.1.8: the artifact `*Dir` keys are gone — system roots are code-registered.
     expect(new Set(STATIC_FIELD_REGISTRY.contextRebuildKeys())).toEqual(
-      new Set(['roots', 'briefsDir', 'patchesDir', 'plansDir', 'entitiesDir', 'releasesDir', 'entities', 'remoteApiUrl']),
+      new Set(['roots', 'entities', 'remoteApiUrl']),
     );
     expect(new Set(STATIC_FIELD_REGISTRY.resumeLockedKeys())).toEqual(
-      new Set([
-        'agent.allowedPaths',
-        'agent.disallowedPaths',
-        'agent.disableDirectFilesystemAccess',
-        'plansDir',
-        'briefsDir',
-        'patchesDir',
-        'entitiesDir',
-        'releasesDir',
-      ]),
+      new Set(['agent.allowedPaths', 'agent.disallowedPaths', 'agent.disableDirectFilesystemAccess']),
     );
+    for (const k of ['plansDir', 'briefsDir', 'patchesDir', 'entitiesDir', 'releasesDir']) {
+      expect(STATIC_FIELD_REGISTRY.get(k)).toBeUndefined();
+    }
   });
 
   it('consistency.* is declared but not writable through the API', () => {
@@ -150,17 +145,24 @@ describe('PATCH /config on the field registry (0.2.113)', () => {
     expect(onDisk().name).toBe('test');
   });
 
-  it('releasesDir collides with briefsDir/patchesDir/plansDir', async () => {
-    const res = await request(app()).patch('/config').send({ plansDir: '.claude4spec/releases' });
+  it('a root overlapping a system root is rejected by the cross-field rule, pinned to roots', async () => {
+    const res = await request(app())
+      .patch('/config')
+      .send({
+        roots: [
+          { id: 'pages', name: 'Pages', dir: 'pages', builtin: true },
+          { id: 'rel', name: 'Rel', dir: '.claude4spec/releases/x', builtin: false },
+        ],
+      });
     expect(res.status).toBe(400);
-    expect(res.body.error.message).toMatch(/'plansDir' overlaps write-target 'releasesDir'/);
-    expect(res.body.error.details.field).toBe('plansDir');
+    expect(res.body.error.message).toMatch(/'rel' overlaps write-target 'releases'/);
+    expect(res.body.error.details.field).toBe('roots');
   });
 
-  it('briefsDir nested inside entitiesDir is an error', async () => {
+  it('a legacy *Dir key is an unknown key now — ignored, not a 400', async () => {
     const res = await request(app()).patch('/config').send({ briefsDir: '.claude4spec/entities/briefs' });
-    expect(res.status).toBe(400);
-    expect(res.body.error.message).toMatch(/'briefsDir' overlaps write-target 'entitiesDir'/);
+    expect(res.status).toBe(200);
+    expect(onDisk()).not.toHaveProperty('briefsDir');
   });
 
   it('an unknown entity slug is saved with a warning', async () => {

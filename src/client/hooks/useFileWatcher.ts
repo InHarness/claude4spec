@@ -1,3 +1,4 @@
+import { isSystemRootId } from '../../shared/root-kinds.js';
 import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { WsEvent } from '../../shared/types.js';
@@ -53,7 +54,27 @@ export function useFileWatcher() {
       ws.onmessage = (e) => {
         try {
           const data = JSON.parse(e.data) as WsEvent;
-          if (data.kind === 'file:changed') {
+          if (data.kind === 'file:changed' && isSystemRootId(data.rootId)) {
+            // 2.1.8: the base `file:changed` fires for EVERY registry root — a
+            // system root's id is its kind. Briefs keep their reload-or-confirm
+            // flow; plans and patches refetch; entities and releases have their
+            // own projection events (`entity:indexed`, release cache).
+            if (data.rootId === 'briefs') {
+              batcher.queue(['briefs', 'list']);
+              batcher.queue(['briefs', 'versions', data.path]);
+              if (data.origin === 'external') useFileEventsStore.getState().notifyBriefExternalChange(data.path);
+              else batcher.queue(['briefs', 'detail', data.path]);
+            } else if (data.rootId === 'plans') {
+              batcher.queue(['plans-list']);
+              batcher.queue(['plan', 'detail', data.path]);
+              batcher.queue(artifactVersionsKey('plan', data.path));
+            } else if (data.rootId === 'patches') {
+              batcher.queue(['patches', 'list']);
+              batcher.queue(['patches', 'detail', data.path]);
+            } else if (data.rootId === 'releases') {
+              batcher.queue(['releases']);
+            }
+          } else if (data.kind === 'file:changed') {
             // 0.1.96 multiroot: page trees + documents are keyed by rootId.
             batcher.queue(['pages', data.rootId]);
             if (data.path.toLowerCase().endsWith('.html')) {

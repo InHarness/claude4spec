@@ -31,21 +31,14 @@ vi.mock('@inharness-ai/agent-adapters', async (importOriginal) => {
  * The operation exists BECAUSE a `PATCH /api/config` carrying a changed `id`
  * cannot be told apart from "delete one root, create another", and the two have
  * opposite consequences for a space's pages and history. These cases pin the
- * contract that makes the difference visible: every refusal code, the relink
- * that rides the same write, the idempotent replay, and the guarantee that a
+ * contract that makes the difference visible: every refusal code, the idempotent
+ * replay, and the guarantee that a
  * rejected request leaves both files exactly as they were.
  */
 describe('POST /config/roots/:rootId/rename (0.2.101)', () => {
   let dir: string;
 
-  const userRoot = (id: string, extra: Partial<Root> = {}): Root => ({
-    ...builtinPagesRoot(),
-    id,
-    name: id,
-    dir: id,
-    builtin: false,
-    ...extra,
-  });
+  const userRoot = (id: string): Root => ({ id, name: id, dir: id, builtin: false });
 
   function write(cfg: Partial<Config>): void {
     const file = configPath(dir);
@@ -55,7 +48,7 @@ describe('POST /config/roots/:rootId/rename (0.2.101)', () => {
 
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-rename-'));
-    write({ roots: [builtinPagesRoot(), userRoot('adr', { linkTargets: ['pages'] })] });
+    write({ roots: [builtinPagesRoot(), userRoot('adr')] });
   });
   afterEach(() => {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -79,7 +72,7 @@ describe('POST /config/roots/:rootId/rename (0.2.101)', () => {
     expect(await currentHash()).not.toBe(before);
   });
 
-  it('renames a user root, keeps dir/name/builtin, and relinks every linkTargets in the same write', async () => {
+  it('renames a user root and keeps dir/name/builtin', async () => {
     const res = await request(app())
       .post('/config/roots/adr/rename')
       .send({ newId: 'decisions', expectedConfigHash: await currentHash() });
@@ -104,22 +97,29 @@ describe('POST /config/roots/:rootId/rename (0.2.101)', () => {
     expect(renamed.at(-1)).toEqual(['adr', 'decisions']);
   });
 
-  it('relinks a linkTargets pointing at the renamed root, and reports who was relinked', async () => {
-    write({
-      roots: [
-        { ...builtinPagesRoot(), linkTargets: ['adr'] },
-        userRoot('adr'),
-      ],
-    });
+  it('reports no relinkedRoots and leaves the other roots untouched (2.1.8)', async () => {
+    write({ roots: [builtinPagesRoot(), userRoot('adr'), userRoot('rfc')] });
     const res = await request(app())
       .post('/config/roots/adr/rename')
       .send({ newId: 'decisions', expectedConfigHash: await currentHash() });
 
     expect(res.status).toBe(200);
-    expect(res.body.relinkedRoots).toEqual(['pages']);
-    // There is no instant with a config pointing at an id no root answers to:
-    // the relink rides the same write, so the file is consistent when read back.
-    expect(readConfig(dir).roots.find((r) => r.builtin)!.linkTargets).toEqual(['decisions']);
+    expect('relinkedRoots' in res.body).toBe(false);
+    expect(readConfig(dir).roots).toEqual([builtinPagesRoot(), { ...userRoot('adr'), id: 'decisions' }, userRoot('rfc')]);
+  });
+
+  it('refuses a rename to a system-root id with VALIDATION and writes nothing', async () => {
+    const hash = await currentHash();
+    for (const newId of ['plans', 'briefs', 'patches', 'entities', 'releases']) {
+      const res = await request(app())
+        .post('/config/roots/adr/rename')
+        .send({ newId, expectedConfigHash: hash });
+      expect(res.status, `newId=${newId}`).toBe(400);
+      expect(res.body.code).toBe('VALIDATION');
+      expect(res.body.error).toMatch(/reserved for a system root/);
+    }
+    expect(readConfig(dir).roots.map((r) => r.id)).toEqual(['pages', 'adr']);
+    expect(fs.existsSync(rootRenamesPath(dir))).toBe(false);
   });
 
   it('renames the BASE root — the role stays in the flag, and `pages` is then just a free name', async () => {

@@ -79,11 +79,9 @@ const RELEASE_DELTA: RawDelta = {
 };
 
 /** `pages` and `plugins` releasable, `scratch` a working root that never enters a release. */
-const ROOTS = [
-  { id: 'pages', releasable: true },
-  { id: 'plugins', releasable: true },
-  { id: 'scratch', releasable: false },
-];
+// 2.1.8: `deps.roots()` yields the PAGE roots of the registry (every page root is
+// releasable; system roots such as `plans` are not page roots).
+const ROOTS = [{ id: 'pages' }, { id: 'plugins' }];
 
 interface Calls {
   getReleaseDiff: Array<[unknown, unknown]>;
@@ -328,14 +326,24 @@ describe('release_diff — `paths` / `roots` validation', () => {
 
   it.each([
     ['an unknown root', ['nope']],
-    ['a non-releasable root', ['scratch']],
-  ])('`roots` with %s is INVALID_ROOTS_FILTER naming the releasable roots', async (_label, roots) => {
+    ['a system root id', ['plans']],
+  ])('`roots` with %s is INVALID_ROOTS_FILTER naming the page roots', async (_label, roots) => {
     const { calls, call } = harness();
     const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', roots });
     expect(res.body.code).toBe('INVALID_ROOTS_FILTER');
-    expect(res.body.error).toContain('releasable roots: [pages, plugins]');
-    expect(res.body.hint).toBe('releasable roots: [pages, plugins]');
+    expect(res.body.error).toContain(`roots: '${roots[0]}' is not a page root (page roots: [pages, plugins])`);
+    expect(res.body.hint).toBe('page roots: [pages, plugins]');
     expect(calls.getReleaseDiff).toEqual([]);
+  });
+
+  it("2.1.8: `release_diff({ roots: ['plans'] })` is INVALID_ROOTS_FILTER listing the page roots — a system root is not a page root", async () => {
+    const { calls, call } = harness();
+    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'current', roots: ['plans'] });
+    expect(res.isError).toBe(true);
+    expect(res.body.code).toBe('INVALID_ROOTS_FILTER');
+    expect(res.body.error).toBe("roots: 'plans' is not a page root (page roots: [pages, plugins])");
+    expect(calls.getReleaseDiff).toEqual([]);
+    expect(calls.getUnreleasedDiff).toEqual([]);
   });
 
   it('[ac:ac-release-diff-z-elementem-paths-pozbaw] an element without a root prefix is INVALID_PATHS_FILTER', async () => {
@@ -351,12 +359,12 @@ describe('release_diff — `paths` / `roots` validation', () => {
   it.each([
     ['an empty array', []],
     ['an unknown root id', ['nope/a.md']],
-    ['a non-releasable root', ['scratch/a.md']],
+    ['a system root id', ['plans/a.md']],
   ])('`paths` with %s is INVALID_PATHS_FILTER', async (_label, paths) => {
     const { call } = harness();
     const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths });
     expect(res.body.code).toBe('INVALID_PATHS_FILTER');
-    expect(res.body.error).toContain('releasable roots: [pages, plugins]');
+    expect(res.body.error).toContain('page roots: [pages, plugins]');
   });
 
   it('checks pagination before the filters, and emptiness before conflicts', async () => {
@@ -379,7 +387,7 @@ describe('release_diff — `paths` / `roots` validation', () => {
     const tool = server.tools.find((t) => t.name === 'release_diff')!;
     const paths = (tool.inputSchema as Record<string, { description?: string }>).paths;
     expect(paths?.description).toContain(
-      "Each element is a page's FULL key `<rootId>/<relPath>` and addresses exactly one page file — a directory prefix is not accepted. Mutually exclusive with `roots`, and rejected when `include` does not carry 'pages'. An empty array, an element without a root prefix, an unknown root id, or a non-releasable root is rejected.",
+      "Each element is a page's FULL key `<rootId>/<relPath>` and addresses exactly one page file — a directory prefix is not accepted. Mutually exclusive with `roots`, and rejected when `include` does not carry 'pages'. An empty array, an element without a root prefix, an unknown root id, or a root that is not a page root is rejected.",
     );
     expect(tool.description).toContain('{ rootId, path, op, sections, size }');
     expect(paths?.description).toContain('Exactly one element enables the section window and, in light mode, the section map.');

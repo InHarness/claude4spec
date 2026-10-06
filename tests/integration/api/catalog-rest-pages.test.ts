@@ -59,7 +59,7 @@ function recordingCore(): { core: DiscoveryCore; calls: Call[] } {
 }
 
 const ROOT: PageRootRuntime = {
-  root: { id: 'mainspec', dir: 'pages', sectionIndexed: true, referenceValidated: true } as never,
+  root: { id: 'mainspec', name: 'Main spec', dir: 'pages', builtin: true } as never,
   pages: { listTree: async () => [] } as never,
   writer: null,
 };
@@ -130,7 +130,7 @@ describe('GET /api/pages/search — the cross-root search_pages', () => {
     await request(appWithPages(core))
       .get('/api/pages/search?regex=%5Ea.*z%24&rootId=mainspec&mode=count&limit=5&offset=10')
       .expect(200);
-    expect(calls[0].input).toEqual({
+    expect(calls[0]!.input).toEqual({
       regex: '^a.*z$',
       rootId: 'mainspec',
       mode: 'count',
@@ -145,7 +145,7 @@ describe('GET /api/pages/search — the cross-root search_pages', () => {
     // An unreadable `mode`/`limit` leaves the CORE's default standing. A
     // transport that invented one would answer differently from the same
     // operation reached over MCP.
-    expect(calls[0].input).toEqual({ query: 'x' });
+    expect(calls[0]!.input).toEqual({ query: 'x' });
   });
 });
 
@@ -194,7 +194,7 @@ describe('GET /api/pages/:rootId/list — the flat list_pages', () => {
     await request(appWithPages(core))
       .get('/api/pages/mainspec/list?prefix=guides/&sort=modified&limit=3')
       .expect(200);
-    expect(calls[0].input).toEqual({
+    expect(calls[0]!.input).toEqual({
       rootId: 'mainspec',
       prefix: 'guides/',
       sort: 'modified',
@@ -319,7 +319,7 @@ describe("GET /api/sections/get, and the /list route 0.2.59 removed", () => {
     // Trimmed, empties dropped — a trailing comma from a shell loop must not
     // become a request for a section called "". `limit` is not a parameter of a
     // fetch-by-key operation and is ignored rather than forwarded.
-    expect(calls[0].input).toEqual({ anchors: ['a1', 'a2', 'a3'], includeSubtree: true });
+    expect(calls[0]!.input).toEqual({ anchors: ['a1', 'a2', 'a3'], includeSubtree: true });
   });
 
   it('get without anchors is VALIDATION', async () => {
@@ -668,7 +668,7 @@ describe('PATCH /api/pages/:rootId/* — the differential rendering of update_pa
     fs.mkdirSync(path.join(dir, 'pages'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'pages', 'a.md'), PAGE, 'utf-8');
     const root: PageRootRuntime = {
-      root: { id: 'mainspec', dir: 'pages', sectionIndexed: true, referenceValidated: true } as never,
+      root: { id: 'mainspec', name: 'Main spec', dir: 'pages', builtin: true } as never,
       pages,
       writer: null,
     };
@@ -994,7 +994,7 @@ describe('GET /api/pages/:rootId/* — page-detail for the editor', () => {
       fs.mkdirSync(path.join(dir, 'pages'), { recursive: true });
       fs.writeFileSync(path.join(dir, 'pages', 'a.md'), FILE, 'utf-8');
       const root: PageRootRuntime = {
-        root: { id: 'mainspec', dir: 'pages', sectionIndexed: true, referenceValidated: true } as never,
+        root: { id: 'mainspec', name: 'Main spec', dir: 'pages', builtin: true } as never,
         pages,
         writer: null,
       };

@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GitService } from './git.js';
 
 const pexec = promisify(execFile);
@@ -20,12 +20,22 @@ async function initRepo(dir: string): Promise<void> {
   await git(['config', 'user.name', 'Test'], dir);
 }
 
-function writeConfigJson(cwd: string, git: Record<string, unknown>): void {
+/**
+ * 2.1.8: the staging set is the dir of every ROOT REGISTRY entry (+ config.json),
+ * read from `config.roots[]` — so the fixture declares its base page root
+ * explicitly. Default `.` = the whole repo is the page root (what the tests
+ * used to get from `new GitService(dir, [dir])`).
+ */
+function writeConfigJson(
+  cwd: string,
+  git: Record<string, unknown>,
+  roots: Array<Record<string, unknown>> = [{ id: 'pages', name: 'Pages', dir: '.', builtin: true }],
+): void {
   const dir = path.join(cwd, '.claude4spec');
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(
     path.join(dir, 'config.json'),
-    JSON.stringify({ $schemaVersion: 4, name: 'test', git }, null, 2),
+    JSON.stringify({ $schemaVersion: 4, name: 'test', roots, git }, null, 2),
   );
 }
 
@@ -363,7 +373,7 @@ describe('GitService — 0.1.118 read-only methods', () => {
       await git(['add', '.'], dir);
       await git(['commit', '-m', 'seed'], dir);
 
-      // Defaults from server/config.ts: briefsDir='.claude4spec/briefs', patchesDir='.claude4spec/patches'.
+      // 2.1.8: fixed system-root dirs .claude4spec/briefs and .claude4spec/patches.
       fs.mkdirSync(path.join(dir, '.claude4spec', 'briefs'), { recursive: true });
       fs.writeFileSync(path.join(dir, '.claude4spec', 'briefs', 'a.md'), '# brief');
       fs.mkdirSync(path.join(dir, '.claude4spec', 'patches'), { recursive: true });
@@ -376,6 +386,73 @@ describe('GitService — 0.1.118 read-only methods', () => {
       const tracked = (await git(['ls-tree', '-r', '--name-only', 'HEAD'], dir)).split('\n');
       expect(tracked).toContain('.claude4spec/briefs/a.md');
       expect(tracked).toContain('.claude4spec/patches/a.md');
+    });
+
+    it('[ac:ac-git-commit-przy-createrelease-obejmuje-w] 2.1.8: stages the dir of EVERY registry root — a page root whose config entry carries legacy `releasable: false` is still staged, plus all five system dirs', async () => {
+      await initRepo(dir);
+      writeConfigJson(dir, { enabled: true }, [
+        { id: 'pages', name: 'Pages', dir: 'pages', builtin: true },
+        { id: 'notes', name: 'Notes', dir: 'notes', builtin: false, releasable: false },
+      ]);
+      fs.writeFileSync(path.join(dir, 'seed.txt'), 'seed');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'seed'], dir);
+
+      fs.mkdirSync(path.join(dir, 'pages'), { recursive: true });
+      fs.writeFileSync(path.join(dir, 'pages', 'a.md'), '# a');
+      fs.mkdirSync(path.join(dir, 'notes'), { recursive: true });
+      fs.writeFileSync(path.join(dir, 'notes', 'n.md'), '# n');
+      for (const kind of ['plans', 'briefs', 'patches', 'entities', 'releases']) {
+        fs.mkdirSync(path.join(dir, '.claude4spec', kind), { recursive: true });
+        fs.writeFileSync(path.join(dir, '.claude4spec', kind, 'f.md'), kind);
+      }
+      // Not under any root — must stay out of the release commit.
+      fs.writeFileSync(path.join(dir, 'outside.txt'), 'x');
+
+      const svc = new GitService(dir, [path.join(dir, 'pages'), path.join(dir, 'notes')]);
+      const result = await svc.commitOnRelease({ name: 'v1', description: 'desc' });
+      expect(result?.status).toBe('committed');
+
+      const tracked = (await git(['ls-tree', '-r', '--name-only', 'HEAD'], dir)).split('\n');
+      expect(tracked).toContain('pages/a.md');
+      expect(tracked).toContain('notes/n.md');
+      for (const kind of ['plans', 'briefs', 'patches', 'entities', 'releases']) {
+        expect(tracked).toContain(`.claude4spec/${kind}/f.md`);
+      }
+      expect(tracked).toContain('.claude4spec/config.json');
+      expect(tracked).not.toContain('outside.txt');
+    });
+
+    it('2.1.8: a root whose dir resolves outside the repository is skipped with a warning; the rest is still committed', async () => {
+      const extDir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-git-ext-'));
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        await initRepo(dir);
+        fs.writeFileSync(path.join(extDir, 'e.md'), '# external');
+        fs.symlinkSync(extDir, path.join(dir, 'ext'));
+        writeConfigJson(dir, { enabled: true }, [
+          { id: 'pages', name: 'Pages', dir: 'pages', builtin: true },
+          { id: 'ext', name: 'External', dir: 'ext', builtin: false },
+        ]);
+        fs.writeFileSync(path.join(dir, 'seed.txt'), 'seed');
+        await git(['add', 'seed.txt'], dir);
+        await git(['commit', '-m', 'seed'], dir);
+
+        fs.mkdirSync(path.join(dir, 'pages'), { recursive: true });
+        fs.writeFileSync(path.join(dir, 'pages', 'a.md'), '# a');
+
+        const svc = new GitService(dir, [path.join(dir, 'pages'), path.join(dir, 'ext')]);
+        const result = await svc.commitOnRelease({ name: 'v1', description: 'desc' });
+        expect(result?.status).toBe('committed');
+
+        const tracked = (await git(['ls-tree', '-r', '--name-only', 'HEAD'], dir)).split('\n');
+        expect(tracked).toContain('pages/a.md');
+        expect(tracked.some((t) => t.startsWith('ext'))).toBe(false);
+        expect(warn.mock.calls.some((c) => String(c[0]).includes('outside the repository'))).toBe(true);
+      } finally {
+        warn.mockRestore();
+        fs.rmSync(extDir, { recursive: true, force: true });
+      }
     });
   });
 
@@ -870,7 +947,7 @@ describe('GitService — 0.1.118 read-only methods', () => {
     });
 
     it('switchAfterRelease reports switch-dirty (commit still durable) when an out-of-scope tracked file genuinely conflicts', async () => {
-      // Narrow the releasable root to `pages/` only, so README.md (repo root)
+      // Narrow the page root to `pages/` only, so README.md (repo root)
       // is "outside spec" — the brief's switch-dirty scenario needs a
       // conflicting file that ISN'T part of what commitForRelease stages
       // (a staged file's target-branch content always matches the working
@@ -900,7 +977,7 @@ describe('GitService — 0.1.118 read-only methods', () => {
         enabled: true,
         commitTarget: { mode: 'named', branch: 'release-target' },
         switchAfterRelease: true,
-      });
+      }, [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }]);
       const svc = new GitService(dir, [pagesDir]);
       const result = await svc.commit({ name: 'v1', description: '' });
 
@@ -990,7 +1067,7 @@ describe('GitService — 0.1.118 read-only methods', () => {
     });
 
     it('mode "named" preserves content unique to the target branch that current HEAD never had (code review regression)', async () => {
-      // Narrow releasable root to `sub/` so `sub/fileA.txt` (present on the
+      // Narrow the page root to `sub/` so `sub/fileA.txt` (present on the
       // target branch's own history, absent from current HEAD's) is
       // in-scope, and the bug (naively `git add`-ing from a target-tip-seeded
       // index silently stages a deletion for anything tracked-there-but-
@@ -1009,7 +1086,9 @@ describe('GitService — 0.1.118 read-only methods', () => {
       await git(['add', '.'], dir);
       await git(['commit', '-m', 'remove fileA on main'], dir);
 
-      writeConfigJson(dir, { enabled: true, commitTarget: { mode: 'named', branch: 'release-target' } });
+      writeConfigJson(dir, { enabled: true, commitTarget: { mode: 'named', branch: 'release-target' } }, [
+        { id: 'pages', name: 'Pages', dir: 'sub', builtin: true },
+      ]);
       fs.writeFileSync(path.join(subDir, 'fileB.txt'), 'b');
 
       const svc = new GitService(dir, [subDir]);
@@ -1131,7 +1210,7 @@ describe('GitService — 0.1.118 read-only methods', () => {
         enabled: true,
         commitTarget: { mode: 'named', branch: 'release-target' },
         switchAfterRelease: true,
-      });
+      }, [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }]);
       const svc = new GitService(dir, [pagesDir]);
       const result = await svc.commit({ name: 'v1', description: '' });
       expect(result.status).toBe('error');

@@ -613,22 +613,13 @@ export async function createPage(
  * the hand-rolled test rigs and `create_page`/`delete_page` still are — and the
  * guard is only reachable on the one branch that can trip it. Structurally a
  * superset of `SectionWriteDeps` minus `resolveRoot`, so a caller that already
- * built one passes `{ ...sectionWriteDeps, sectionIndexed }`.
+ * built one passes `{ ...sectionWriteDeps }`.
  */
 export interface PageDiffDeps {
   /** For the heading text in an `ANCHOR_LOSS` report. Absent → the anchor alone. */
   sections?: SectionsService;
   /** See {@link SectionWriteDeps.findSectionReferents}. Absent → report-only, cannot refuse. */
   findSectionReferents?: (anchor: string) => Promise<SectionReferent[]>;
-  /**
-   * The addressed root's `sectionIndexed` flag.
-   *
-   * `false` skips the guard OUTRIGHT — not "runs it and finds nothing". Without
-   * a section index there is no set of anchors to measure a loss against, so
-   * `dropAnchors` is a parameter with no meaning on such a root, and a guard
-   * that cannot see anything must not pretend it looked.
-   */
-  sectionIndexed?: boolean;
 }
 
 export async function updatePage(
@@ -694,11 +685,11 @@ export async function updatePage(
    * 2.1.6 — the literal mode carries the same guard as the differential one.
    * Its touched scope is the WHOLE page: every anchor the page has now is in
    * play, and one the new body no longer carries is lost. Before the write, so
-   * a refusal leaves the file byte-identical. Skipped on a root without a
-   * section index, exactly as on the differential branch.
+   * a refusal leaves the file byte-identical. 2.1.8: runs on every page root —
+   * each one has a section index.
    */
   let dropped: string[] = [];
-  if (diffDeps?.sectionIndexed !== false) {
+  {
     const linesBefore = bodyBefore.split('\n');
     /**
      * Measured in the same space as `linesBefore` — the body below the
@@ -779,13 +770,12 @@ async function updatePageByTextEdits(
    * The guard, on the same terms `update_sections` states them — and BEFORE the
    * write, so a refusal leaves the file byte-identical.
    *
-   * Skipped whole on a root with no section index: `sectionIndexed === false`
-   * means there are no anchors recorded to lose. An ABSENT flag is treated as
-   * "indexed", because the rigs that pass no deps at all also pass no referent
-   * lookup, and the guard below then degrades to report-only on its own.
+   * 2.1.8: runs on every page root — each one has a section index. Rigs that
+   * pass no deps also pass no referent lookup, and the guard below then
+   * degrades to report-only on its own.
    */
   let dropped: string[] = [];
-  if (diffDeps?.sectionIndexed !== false) {
+  {
     dropped = await assertNoUndeclaredAnchorLoss({
       linesBefore: bodyBefore.split('\n'),
       linesAfter: parsed.content.split('\n'),

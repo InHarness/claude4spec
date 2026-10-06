@@ -303,7 +303,7 @@ export class BriefService {
       const fm = rec.frontmatter as BriefFrontmatter;
       const implemented = fm.implemented === true;
       if (opts.implemented !== undefined && opts.implemented !== implemented) continue;
-      const lastVersion = this.deps.pageVersions.getLatestForPath(rec.path);
+      const lastVersion = this.deps.pageVersions.getLatestForPath(rec.path, undefined, BRIEF_ROOT_MARKER);
       out.push({
         path: rec.path,
         title: typeof fm.title === 'string' ? (fm.title as string) : null,

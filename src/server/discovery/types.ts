@@ -74,11 +74,15 @@ export interface DiscoveryDeps {
 
 // ── Meta ────────────────────────────────────────────────────────────────────
 
+/**
+ * 2.1.8: one `kind: pages` root — no flags. Every page root has a section index,
+ * so the identity of a search hit does not depend on the root.
+ */
 export interface OverviewRoot {
   id: string;
   name: string;
-  sectionIndexed: boolean;
-  referenceValidated: boolean;
+  dir: string;
+  builtin: boolean;
   pageCount: number;
 }
 
@@ -368,19 +372,18 @@ export interface GetSectionsResult {
   message?: string;
 }
 
+/** 2.1.8: no line window — a cut read resumes through `get_page_outline` + `get_sections`. */
 export interface GetPageInput {
   rootId: string;
   path: string;
-  /** Line range, 1-based inclusive. Allowed ONLY on roots without a section index. */
-  range?: { start: number; end: number };
 }
 
 /**
  * 2.1.6 — one section of `get_page`'s answer.
  *
  * `anchor` is a FIELD, never a comment to parse out of text, and it is OMITTED
- * (not `null`) under a heading the indexer has not tagged yet and on every root
- * without a section index — such an item is readable but not addressable by
+ * (not `null`) under a heading the indexer has not tagged yet — such an item is
+ * readable but not addressable by
  * `get_sections`. `body` excludes the anchor line and the heading line and is
  * otherwise a literal slice of the file, so a `textEdits` `find` taken from it
  * matches as written. A parent carries only its own body, up to its first child.
@@ -409,9 +412,9 @@ export interface PageSectionItem {
  *
  * Embeds stay unexpanded inside `body`: a tag is an edge.
  *
- * `message` replaced `truncationHint`: on a section-indexed root it names EVERY
- * cut anchor and points at `get_sections`; on a root without an index it points
- * at a `range` re-read. A hint never proposes a call this operation would refuse.
+ * `message` replaced `truncationHint`. It has one variant (2.1.8): it names EVERY
+ * cut anchor, points at `get_sections` and ends on `update_sections` (the
+ * envelope's `hash` is then `expectedHash`).
  */
 export interface GetPageResult {
   rootId: string;
@@ -419,8 +422,7 @@ export interface GetPageResult {
   /**
    * 0.2.13 (item 28): sha256 of the WHOLE file as read, to hand back as
    * `expectedHash` on `update_page` / `update_sections` — valid even when the
-   * answer was cut or narrowed by `range`, because it describes the file rather
-   * than what was returned.
+   * answer was cut, because it describes the file rather than what was returned.
    */
   hash: string;
   /** `raw` — the literal block, fences included; `fields` — its parsed keys, absent when the YAML does not parse. */

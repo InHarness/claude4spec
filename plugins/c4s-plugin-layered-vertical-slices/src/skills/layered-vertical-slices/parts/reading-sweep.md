@@ -15,7 +15,7 @@ search_pages({
 
 Map mode returns addresses with no prose: you want the anchors now and the bodies once. **`limit` is part of the call**, set well above any module count you expect — a windowed map reports no shortfall of its own. Read `total` and `hasMore` in the answer and page on `offset` until `hasMore` is false: a module missing from an unread second page looks exactly like a module whose heading was renamed (the failure mode below), and the repair for one does nothing for the other.
 
-A map row without an `anchor` cannot feed call 2. If that is what comes back, the root carries no section index and the corpus cannot be swept this way — stop and say so; no amount of retrying changes it.
+A map row without an `anchor` cannot feed call 2. Every page root has a section index, so such a row means the match fell outside every section — in the frontmatter, above the first heading, or under a heading the indexer has not tagged yet. Read that page with `get_page` instead; do not retry the sweep for it.
 
 **The path filter is a step of this protocol, not a variant of it.** A module's main file is named after the module — `modules/M03-endpoint.md`, or `modules/M03-endpoint/M03-endpoint.md` once the module is split — and its subpages never begin with that prefix, because they are named after the *layer* they carry (`L1-db.md`). That is exactly what the pattern above encodes: a file directly under `modules/`, or a file inside a module directory whose own name repeats the directory's (the `\2` backreference). Drop the filter and the sweep still succeeds, silently returning the purpose of a **file** rather than the purpose of a **module**. That is not a slower answer; it is a different one.
 

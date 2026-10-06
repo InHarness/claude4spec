@@ -9,7 +9,8 @@ import { chromium, type Browser, type Page } from 'playwright';
  *   `/list` does not (a diagram has no list row).
  * - `[ac:m20-outline-click-scrolls-to-heading]` clicking a heading in the
  *   outline gutter scrolls the document to it.
- * - The outline toggle is absent in a root with `sectionIndexed: false`.
+ * - 2.1.8: a freshly added user root gets the full page lifecycle — the outline
+ *   toggle is present (every page root has a section index).
  * - `[ac:ac-ws-query-keys-edytora-z-mapowania-enti]` a `tagged_list` already on
  *   screen picks up an entity tagged AFTER the page was opened — through the
  *   `entity:changed` batch, with no reload.
@@ -150,8 +151,8 @@ describe.skipIf(!BASE)('editor — brief 2.1.1', () => {
     }
   }, 60_000);
 
-  it('a root with sectionIndexed: false shows no outline toggle and no gutter', async () => {
-    const rootId = `e2e-nosec-${stamp}`;
+  it('a freshly added user root (four fields) shows the outline toggle — every page root has a section index', async () => {
+    const rootId = `e2e-newroot-${stamp}`;
     const cfg = (await (await fetch(`${api}/config`)).json()) as { roots: Array<Record<string, unknown>> };
     const roots = cfg.roots;
     const patched = await fetch(`${api}/config`, {
@@ -162,15 +163,9 @@ describe.skipIf(!BASE)('editor — brief 2.1.1', () => {
           ...roots,
           {
             id: rootId,
-            name: 'E2E no section index',
+            name: 'E2E new root',
             dir: rootId,
             builtin: false,
-            releasable: false,
-            sectionIndexed: false,
-            referenceValidated: false,
-            linkTargets: ['pages'],
-            sidebar: 'accordion',
-            briefTarget: false,
           },
         ],
       }),
@@ -181,8 +176,9 @@ describe.skipIf(!BASE)('editor — brief 2.1.1', () => {
       const { page, editor, consoleErrors, badResponses } = await openPage(rootId, path, `# No index\n\n## A heading\n\nText.\n`);
       try {
         await expect.poll(() => editor.innerText()).toContain('No index');
-        expect(await page.getByRole('button', { name: 'Outline', exact: true }).count(), 'outline toggle').toBe(0);
-        expect(await page.locator('nav[aria-label="Document outline"]').count(), 'outline gutter').toBe(0);
+        await expect
+          .poll(() => page.getByRole('button', { name: 'Outline', exact: true }).count(), { timeout: 5_000 })
+          .toBeGreaterThan(0);
         expect(consoleErrors, 'console errors').toEqual([]);
         expect(badResponses, 'responses >= 400').toEqual([]);
       } finally {

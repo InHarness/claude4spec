@@ -5,9 +5,9 @@ import type { RawDelta } from '../../../shared/entities.js';
 import { apiFetch, handle } from '../../lib/api-core.js';
 
 /**
- * 0.1.96 brief scope. Whole-release covers every releasable root (no `roots`
- * frontmatter / slug segment). A scoped brief carries an explicit list of
- * briefTarget root ids.
+ * 0.1.96 brief scope. Whole-release covers every page root (no `roots`
+ * frontmatter / slug segment). A scoped brief carries an explicit list of page
+ * root ids (2.1.8: every `kind: pages` root is selectable).
  */
 export type BriefScope =
   | { kind: 'whole-release' }
@@ -19,7 +19,7 @@ interface FieldsProps {
   /** `null` = initial brief (no predecessor). Only used to probe changed-page counts. */
   fromReleaseName: string | null;
   toReleaseName: string;
-  /** `config.roots` — filtered to `briefTarget` internally. */
+  /** `config.roots` — every page root is a scope target (2.1.8). */
   roots: Root[];
   /** Reports the current scope up on every mode/selection change. */
   onChange: (scope: BriefScope) => void;
@@ -32,9 +32,10 @@ interface FieldsProps {
 
 /**
  * 0.1.96 brief-scope picker fields (M21 modal-scope, L13). Two modes:
- *   - whole-release (default): the brief covers every releasable root.
- *   - selected roots: the author checks specific briefTarget roots; each shows
- *     its changed-page count for the `from → to` diff so the scope is informed.
+ *   - whole-release (default): the brief covers every page root.
+ *   - selected roots: the author checks specific page roots; each shows its
+ *     changed-page count for the `from → to` diff, and the entity changes —
+ *     root-agnostic — show once, as one shared count.
  *
  * Presentational + probe logic only (no dialog chrome / confirm button) so it can
  * be embedded directly inside the "Generate brief" modal (CreateBriefDialog) as
@@ -49,17 +50,24 @@ export function BriefScopeFields({
   onChange,
   fetchChangedCount,
 }: FieldsProps) {
-  const targets = roots.filter((r) => r.briefTarget);
+  // 2.1.8: every page root is a scope target (kind `pages`), with its own count.
+  const targets = roots;
 
   const [mode, setMode] = useState<'whole-release' | 'roots'>('whole-release');
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [counts, setCounts] = useState<Record<string, Count>>({});
+  // Entity changes are root-agnostic: every probe answers the same number, so it
+  // is shown once. Only the default probe can report it.
+  const [entityCount, setEntityCount] = useState<Count>(fetchChangedCount ? null : 'loading');
 
   useEffect(() => {
     let cancelled = false;
     const probe =
       fetchChangedCount ??
-      ((rootId: string) => defaultChangedCount(fromReleaseName, toReleaseName, rootId));
+      ((rootId: string) =>
+        defaultChangedCount(fromReleaseName, toReleaseName, rootId, (n) => {
+          if (!cancelled) setEntityCount(n);
+        }));
     setCounts(Object.fromEntries(targets.map((r) => [r.id, 'loading' as Count])));
     for (const root of targets) {
       probe(root.id)
@@ -110,7 +118,7 @@ export function BriefScopeFields({
         <span>
           <span style={{ color: 'var(--c-ink)' }}>Whole release</span>
           <span className="block text-[11.5px]" style={{ color: 'var(--c-muted)' }}>
-            Cover every releasable root.
+            Cover every page root.
           </span>
         </span>
       </label>
@@ -138,7 +146,7 @@ export function BriefScopeFields({
         >
           {targets.length === 0 && (
             <div className="text-[11.5px]" style={{ color: 'var(--c-muted)' }}>
-              No brief-target roots configured.
+              No page roots configured.
             </div>
           )}
           {targets.map((root) => {
@@ -169,6 +177,18 @@ export function BriefScopeFields({
               </label>
             );
           })}
+          {!fetchChangedCount && (
+            <div
+              className="flex items-center justify-between gap-2 px-1 pt-1.5 text-[11px]"
+              style={{ borderTop: '1px solid var(--c-hair)', color: 'var(--c-muted)' }}
+              data-testid="brief-scope-entity-count"
+            >
+              <span>Entities (shared by every root)</span>
+              <span className="font-mono">
+                {entityCount === 'loading' ? '…' : entityCount == null ? '—' : `${entityCount} changed`}
+              </span>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -276,6 +296,7 @@ async function defaultChangedCount(
   fromReleaseName: string | null,
   toReleaseName: string,
   rootId: string,
+  onEntities?: (n: number) => void,
 ): Promise<number | null> {
   const fromSeg = fromReleaseName === null ? '__INITIAL__' : encodeURIComponent(fromReleaseName);
   const params = new URLSearchParams({ summaryOnly: 'true', roots: rootId });
@@ -285,6 +306,7 @@ async function defaultChangedCount(
         `/api/releases/${fromSeg}/diff/${encodeURIComponent(toReleaseName)}?${params.toString()}`,
       ),
     );
+    if (Array.isArray(delta.entities)) onEntities?.(delta.entities.length);
     return Array.isArray(delta.pages) ? delta.pages.length : 0;
   } catch {
     return null;

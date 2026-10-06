@@ -833,7 +833,7 @@ export interface Plan {
    */
   truncated?: true;
   truncationHint?: string;
-  /** Derived from `file_version` (MAX(version) for this path under rootId='plan'), not a stored column. */
+  /** Derived from `file_version` (MAX(version) for this path under rootId='plans'), not a stored column. */
   currentVersion: number;
   createdAt: string;
   updatedAt: string;

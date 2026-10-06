@@ -2,8 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { applyPagesOverride, OVERRIDE_ROOT_ID } from './pages-override.js';
 import type { Root } from '../../shared/types.js';
 
-const root = (id: string, dir: string, extra: Partial<Root> = {}): Root =>
-  ({ id, dir, name: id, sectionIndexed: true, referenceValidated: true, ...extra }) as Root;
+const root = (id: string, dir: string, extra: Partial<Root> = {}): Root => ({
+  id,
+  dir,
+  name: id,
+  builtin: false,
+  ...extra,
+});
 
 const PROJECT = '/repo/spec';
 
@@ -24,7 +29,7 @@ describe('applyPagesOverride', () => {
     // caller never named.
     const out = applyPagesOverride(roots, 'docs/guides', PROJECT);
     expect(out).toHaveLength(1);
-    expect(out[0].id).toBe('guides');
+    expect(out[0]!.id).toBe('guides');
   });
 
   it('keeps the owning root verbatim — the override names a DIRECTORY, not a root', () => {
@@ -44,33 +49,25 @@ describe('applyPagesOverride', () => {
       const out = applyPagesOverride(roots, spelling, PROJECT);
       expect(out, spelling).toHaveLength(1);
       expect(out[0]!.id, spelling).toBe('pages');
-      expect(out[0]!.sectionIndexed, spelling).toBe(true);
+      expect(out[0], spelling).toEqual(roots[0]);
     }
   });
 
-  it('an ad-hoc directory IS swept, and is not section-indexed', () => {
+  it('an ad-hoc directory IS swept: the builtin root, re-pointed, with no flags of its own', () => {
     /**
-     * `referenceValidated` must stay TRUE, and this is the assertion that says
-     * why rather than leaving it to a comment: `findReferences` filters roots on
-     * exactly this property, so `false` here means the sweep walks nothing and
-     * `--pages <dir>` answers "nothing references this" for every directory the
-     * project has not already declared — the whole set the flag exists for. The
-     * empty answer is indistinguishable from a real one, and it is the answer
-     * that authorizes a rename or a delete.
-     *
-     * `sectionIndexed: false` is the honest half: there is no section index for
-     * an undeclared directory.
+     * 2.1.8 — `Root` is exactly `{ id, name, dir, builtin }`. The ad-hoc root
+     * is the builtin entry with its own id and the normalized dir — nothing
+     * else. It used to carry `referenceValidated`/`sectionIndexed` flags, and a
+     * wrong `referenceValidated: false` once made every `--pages` sweep answer
+     * "nothing references this"; a page root now IS in the reference graph by
+     * its kind, so there is no flag left to get wrong.
      */
     const out = applyPagesOverride(roots, 'scratch', PROJECT);
-    expect(out).toHaveLength(1);
-    expect(out[0].dir).toBe('scratch');
-    expect(out[0].referenceValidated).toBe(true);
-    expect(out[0].sectionIndexed).toBe(false);
+    expect(out).toEqual([{ id: OVERRIDE_ROOT_ID, name: 'pages', dir: 'scratch', builtin: true }]);
   });
 
   it('gives the ad-hoc root an id of its OWN, so its hits cannot borrow real anchors', () => {
     /**
-     * `sectionIndexed: false` describes the root and does not travel with a hit.
      * `anchorFor` matches `section_index` on `(rootId, pagePath, line)` alone, so
      * an ad-hoc root that kept the built-in id had `drafts/architecture.md`
      * decorated with the anchor of `pages/architecture.md` — sending the caller
@@ -145,9 +142,9 @@ describe('applyPagesOverride', () => {
   it('2.1.4: the ad-hoc root derives from the `builtin` entry only — no positional fallback to the first root', () => {
     const renamedBase = [root('guides', 'docs/guides', { builtin: false }), root('docs', 'docs/main', { builtin: true })];
     const out = applyPagesOverride(renamedBase, 'x', PROJECT);
-    expect(out[0].id).toBe(OVERRIDE_ROOT_ID);
-    expect(out[0].dir).toBe('x');
-    expect(out[0].name).toBe('docs');
+    expect(out[0]!.id).toBe(OVERRIDE_ROOT_ID);
+    expect(out[0]!.dir).toBe('x');
+    expect(out[0]!.name).toBe('docs');
     expect(applyPagesOverride([root('guides', 'docs/guides', { builtin: false })], 'x', PROJECT)).toEqual([]);
     expect(applyPagesOverride([], 'x', PROJECT)).toEqual([]);
   });

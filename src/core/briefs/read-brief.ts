@@ -8,7 +8,7 @@ import type { BriefReadResult } from './types.js';
 /** Rejects an absolute path or one that escapes briefsDir via `..`. */
 export function assertSafeRelPath(rel: string): void {
   if (path.isAbsolute(rel)) {
-    throw new BriefFsError('INVALID_ARGS', `path must be relative to briefsDir, got absolute path '${rel}'`);
+    throw new BriefFsError('INVALID_ARGS', `path must be relative to the briefs root, got absolute path '${rel}'`);
   }
   const normalized = path.normalize(rel);
   if (
@@ -16,7 +16,7 @@ export function assertSafeRelPath(rel: string): void {
     normalized.startsWith(`..${path.sep}`) ||
     normalized.includes(`${path.sep}..${path.sep}`)
   ) {
-    throw new BriefFsError('INVALID_ARGS', `path '${rel}' escapes briefsDir`);
+    throw new BriefFsError('INVALID_ARGS', `path '${rel}' escapes the briefs root`);
   }
 }
 
@@ -30,7 +30,7 @@ export function assertBriefExists(briefsDirAbs: string, relPath: string): void {
     throw new BriefFsError(
       'BRIEF_NOT_FOUND',
       `brief '${relPath}' not found`,
-      available.length > 0 ? `available briefs: ${available.join(', ')}` : 'no briefs found in briefsDir',
+      available.length > 0 ? `available briefs: ${available.join(', ')}` : 'no briefs found in the briefs root',
     );
   }
 }

@@ -314,10 +314,8 @@ export async function checkConsistency(
         if (tag.kind === 'section_ref') {
           // Rule 8 — M06's own check: the tag is registered WITHOUT `validate`
           // (an anchor is valid only against one project's section index), so
-          // it is verified here, against the current context. Section rules
-          // apply only where sections exist: a root with no index has no
-          // anchor space to validate against, which is not a broken anchor.
-          if (!root.sectionIndexed) continue;
+          // it is verified here, against the current context (2.1.8: every
+          // page root has a section index).
           const anchor = tag.attrs.anchor ?? '';
           if (!anchor || !anchorExists(anchor)) {
             brokenExtensionReferences.push({

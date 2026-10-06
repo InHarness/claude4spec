@@ -18,8 +18,7 @@ export {
   ALL_EDITOR_CONTEXTS,
   assertSaveMode,
   FULL_ROOT_EDITOR_PROPS,
-  MINIMAL_ROOT_EDITOR_PROPS,
-  artefactRootEditorProps,
+  rootEditorPropsForKind,
   type EditorContextId,
   type EditorContextSpec,
   type EditorSavePolicy,
@@ -198,7 +197,10 @@ export function getContextSpec(
 const hintWarned = new Set<string>();
 
 function warnHintMismatch(reg: EditorExtensionRegistration, contextId: EditorContextId): void {
-  if (!reg.availableIn || reg.availableIn.includes(contextId)) return;
+  // The `artifact` context is a narrowed page (2.1.8): a registration that
+  // declares `page` is not mis-declared for it.
+  const hintContext = contextId === 'artifact' ? 'page' : contextId;
+  if (!reg.availableIn || reg.availableIn.includes(hintContext)) return;
   const key = `${reg.name}@${contextId}`;
   if (hintWarned.has(key)) return;
   hintWarned.add(key);

@@ -1,4 +1,7 @@
 import Database from 'better-sqlite3';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { runMigrations } from '../db/migrate.js';
 import { ReleaseService } from './release.js';
@@ -9,7 +12,9 @@ import { diffEntity } from '../serialization/snapshot.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
 import type { FileSerializer } from './file-serializer.js';
 import type { VersionService } from './versions.js';
-import type { FileVersionService } from './file-version.js';
+import { FileVersionService } from './file-version.js';
+import { RootRegistry } from '../roots/registry.js';
+import { readConfig } from '../config.js';
 import type { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import type { TagsService } from './tags.js';
 import type { PagesService } from './pages.js';
@@ -255,11 +260,8 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
         releaseService: service,
         gitService: {} as GitService,
         ws: { broadcast: () => {} } as unknown as WsEmitter,
-        roots: () => [
-          { id: 'pages', releasable: true },
-          { id: 'plugins', releasable: true },
-          { id: 'scratch', releasable: false },
-        ],
+        // 2.1.8: the PAGE roots of the registry — every one of them releasable.
+        roots: () => [{ id: 'pages' }, { id: 'plugins' }],
       });
       const tool = server.tools.find((t) => t.name === 'release_diff')!;
       return async (args: Record<string, unknown>) => {
@@ -338,14 +340,14 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
       expect(res.body.entities).toContainEqual(expect.objectContaining({ slug: 'e1', op: 'update' }));
     });
 
-    it('refuses a non-releasable root in `roots` instead of silently skipping it, listing the releasable roots', async () => {
+    it('2.1.8: refuses a system root id in `roots` instead of silently skipping it, listing the page roots', async () => {
       seed();
       const call = diffTool(twoRootService());
-      const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', roots: ['scratch'] });
+      const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', roots: ['plans'] });
       expect(res.isError).toBe(true);
       expect(res.body.code).toBe('INVALID_ROOTS_FILTER');
-      expect(res.body.error).toContain('pages, plugins');
-      expect(res.body.hint).toContain('pages, plugins');
+      expect(res.body.error).toContain("'plans' is not a page root");
+      expect(res.body.hint).toBe('page roots: [pages, plugins]');
     });
   });
 
@@ -355,7 +357,7 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
         releaseService: releases,
         gitService: {} as GitService,
         ws: { broadcast: () => {} } as unknown as WsEmitter,
-        roots: () => [{ id: 'pages', releasable: true }],
+        roots: () => [{ id: 'pages' }],
       });
       const tool = server.tools.find((t) => t.name === 'release_diff')!;
       return async (args: Record<string, unknown>) => {
@@ -486,5 +488,77 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
         releases.updateRelease({ idOrName: 'v1', name: 'current', description: 'x' }),
       ).rejects.toMatchObject({ code: 'RELEASE_NAME_RESERVED' });
     });
+  });
+});
+
+/**
+ * 2.1.8: every `pages` root is releasable — the release scope is the registry's
+ * `release`-flagged roots, built from `config.json` exactly as project-context does.
+ * A legacy `releasable: false` on a root entry is an unknown field with no effect.
+ */
+describe('ReleaseService — legacy `releasable: false` in config.json (2.1.8)', () => {
+  let cwd: string;
+  let db: Database.Database;
+
+  beforeEach(() => {
+    cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-legacy-releasable-'));
+    fs.mkdirSync(path.join(cwd, '.claude4spec'), { recursive: true });
+    fs.writeFileSync(
+      path.join(cwd, '.claude4spec', 'config.json'),
+      JSON.stringify({
+        $schemaVersion: 4,
+        name: 'legacy',
+        roots: [
+          { id: 'pages', name: 'Pages', dir: 'pages', builtin: true },
+          { id: 'notes', name: 'Notes', dir: 'notes', builtin: false, releasable: false },
+        ],
+      }),
+    );
+    db = new Database(':memory:');
+    runMigrations(db);
+  });
+
+  afterEach(() => {
+    db.close();
+    fs.rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it("[ac:ac-korzen-uzytkownika-z-releasable-false-w] assigns the pages of a root whose config entry carries `releasable: false` to the new release", () => {
+    const registry = new RootRegistry(readConfig(cwd).roots);
+    const releaseRootIds = registry.withFlag('release').map((r) => r.id);
+    expect(releaseRootIds).toEqual(['pages', 'notes']);
+
+    const insert = db.prepare(
+      `INSERT INTO file_version (path, version, data, serializer_version, op, release_id, changed_by, rootId)
+       VALUES (?, 1, '{}', 'v1', 'create', NULL, 'user', ?)`,
+    );
+    insert.run('a.md', 'pages');
+    insert.run('n.md', 'notes');
+    // An artifact marker (system root) — never released through the page track.
+    insert.run('b.md', 'briefs');
+
+    const service = new ReleaseService(
+      db,
+      fakeHost,
+      fakeVersions,
+      new FileVersionService(db, fakeFileSerializer),
+      fakeFileSerializer,
+      fakeRawReader,
+      fakeTagsService,
+      fakePagesService,
+      () => null,
+      cwd,
+      releaseRootIds,
+    );
+    const rel = service.createRelease({ name: 'v1', description: 'first' }, 'user');
+
+    const rows = db
+      .prepare(`SELECT rootId, path, release_id FROM file_version ORDER BY rootId, path`)
+      .all() as Array<{ rootId: string; path: string; release_id: number | null }>;
+    expect(rows).toEqual([
+      { rootId: 'briefs', path: 'b.md', release_id: null },
+      { rootId: 'notes', path: 'n.md', release_id: rel.id },
+      { rootId: 'pages', path: 'a.md', release_id: rel.id },
+    ]);
   });
 });

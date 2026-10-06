@@ -39,8 +39,8 @@ export async function overview(deps: DiscoveryDeps, pages: PageSource, roots: Ro
     rootEntries.push({
       id: root.id,
       name: root.name,
-      sectionIndexed: root.sectionIndexed,
-      referenceValidated: root.referenceValidated,
+      dir: root.dir,
+      builtin: root.builtin,
       pageCount,
     });
   }

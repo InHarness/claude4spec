@@ -86,7 +86,7 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
       fakeRawReader,
       fakeTagsService,
       fakePagesService,
-      null,
+      () => null,
       dir,
       ['pages'],
       [pagesDir],
@@ -114,7 +114,7 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
       fakeRawReader,
       fakeTagsService,
       fakePagesService,
-      null,
+      () => null,
       dir,
       rootIds,
       rootDirs,
@@ -706,11 +706,10 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
     });
   });
 
-  // code-review fix (0-1-123-to-next): readConfig() only type-checks briefsDir/patchesDir as
-  // strings — an empty string (e.g. a careless hand-edit of config.json) must not resolve
-  // briefsAbs/patchesAbs to cwd itself, which would make isInside() match every file and
-  // silently empty the whole diff.
-  it('does not silently drop every page when briefsDir is an empty string', async () => {
+  // code-review fix (0-1-123-to-next), kept for 2.1.8: a legacy `briefsDir` key (here the
+  // degenerate empty string that once resolved briefsAbs to cwd itself and silently emptied
+  // the whole diff) is ignored now — the briefs system root sits at its fixed dir.
+  it('does not silently drop every page when config carries a legacy empty briefsDir', async () => {
     const pagesDir = path.join(dir, 'pages');
     fs.mkdirSync(pagesDir, { recursive: true });
     fs.writeFileSync(

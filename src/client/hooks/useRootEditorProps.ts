@@ -1,48 +1,38 @@
 import { useMemo } from 'react';
-import { useRoots } from './useConfig.js';
 import { FULL_ROOT_EDITOR_PROPS, getContextSpec, type RootEditorProps } from '../tiptap/registry.js';
 
-function rootPropsKey(p: RootEditorProps): string {
-  return `${p.sectionIndexed}|${p.referenceValidated}|${p.linkTargets.join(',')}`;
+/**
+ * L13 / 2.1.8: the `page` context is derived from the page root's KIND, not
+ * from per-root flags (there are none) and never from its id. Every user root
+ * is of kind `pages`, so every page editor gets the same layers — anchors and
+ * `section_ref`, entity nodes, and `@` over every `pages` root (resolved
+ * server-side by the link indexer: source root → builtin → `roots[]` order).
+ *
+ * The same object for every page root on purpose: the editor instance is keyed
+ * by `(rootId, path)`, and props that changed identity when the config query
+ * settled would rebuild a just-mounted editor for an identical answer (focus,
+ * selection and an open `/` popup lost).
+ */
+export function useRootEditorProps(_rootId: string): RootEditorProps {
+  return FULL_ROOT_EDITOR_PROPS;
 }
 
 /**
- * L13: the `page` context is derived from the page root's properties, not a
- * fixed list — a user root without section indexing gets no anchors, one
- * without reference validation gets no entity chips (their tags pass through
- * verbatim). Keyed by VALUE, and the not-yet-loaded fallback keys as the
- * default it stands in for: on a cold deep link the config query settles
- * after the editor mounted, and a key that flipped from `null` to the same
- * props would rebuild the instance once for nothing (focus, selection and
- * an open `/` popup lost). A user root whose props differ from the default
- * still rebuilds once, carrying the document.
+ * 2.1.8 — the layers of the named `artifact` context (briefs, patches): prose
+ * and `@` links over the `pages` roots (from the builtin root on), without
+ * `section_ref`, `AnchorMarker` or entity nodes.
  */
-export function useRootEditorProps(rootId: string): RootEditorProps {
-  const root = useRoots().find((r) => r.id === rootId);
-  const rootKey = rootPropsKey(
-    root
-      ? { sectionIndexed: root.sectionIndexed, referenceValidated: root.referenceValidated, linkTargets: root.linkTargets }
-      : FULL_ROOT_EDITOR_PROPS,
-  );
-  return useMemo<RootEditorProps>(
-    () =>
-      root
-        ? {
-            sectionIndexed: root.sectionIndexed,
-            referenceValidated: root.referenceValidated,
-            linkTargets: [...root.linkTargets],
-          }
-        : FULL_ROOT_EDITOR_PROPS,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rootKey],
-  );
-}
+export const ARTIFACT_EDITOR_PROPS: RootEditorProps = {
+  sectionIndexed: false,
+  referenceValidated: false,
+  linkTargets: [],
+};
 
 /**
  * 2.1.1 — whether a page in `rootId` has an outline. Read off the resolved
- * `page` context (the outline is the `heading_actions` extension, gated on
- * `sectionIndexed`), so the gutter and its toggle button answer from the one
- * rule that decides what the editor mounts.
+ * `page` context (the outline is the `heading_actions` extension, gated on the
+ * anchor layer), so the gutter and its toggle button answer from the one rule
+ * that decides what the editor mounts.
  */
 export function usePageHasOutline(rootId: string): boolean {
   const rootProps = useRootEditorProps(rootId);

@@ -1,3 +1,5 @@
+import { RootRegistry } from '../roots/registry.js';
+import { PAGES_KIND } from '../../shared/root-kinds.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadOrCreateConfig, migrateConfigToV3, migrateConfigToV4, readConfig, type Config } from '../config.js';
@@ -88,12 +90,11 @@ export function bootstrapProject(
   // absence, not just a version number.
   //
   // 0.1.96 config v4: map the legacy `pagesDir` scalar to the built-in `pages`
-  // root (config.roots[]); 0.2.8 also materializes absent root fields and
-  // carries a legacy `git.syncCommitOnRelease`. Idempotent.
+  // root (config.roots[]); 0.2.8 also carries a legacy `git.syncCommitOnRelease`.
+  // Idempotent.
   // 0.2.101: a root rename commits the config and the transition registry as two
   // writes. If the process died between them, this replays the journal — finishing
-  // the rename or undoing it entirely — BEFORE anything reads `roots[]`, so the
-  // project never starts with half-relinked `linkTargets`.
+  // the rename or undoing it entirely — BEFORE anything reads `roots[]`.
   recoverPendingRootRename(cwd);
   migrateConfigToV4(cwd);
   // M31 config v3: physically remove pre-v3 port/mode; harvested values seed
@@ -111,22 +112,16 @@ export function bootstrapProject(
   const config = readConfig(cwd);
 
   const gitignoreExisted = fs.existsSync(path.join(cwd, '.gitignore'));
-  ensureGitignore(cwd, {
-    briefsDir: config.briefsDir,
-    patchesDir: config.patchesDir,
-    plansDir: config.plansDir,
-    releasesDir: config.releasesDir,
-    gitEnabled: config.git.enabled,
-  });
+  const rootRegistry = new RootRegistry(config.roots);
+  ensureGitignore(cwd, { roots: rootRegistry.list(), gitEnabled: config.git.enabled });
   // 0.1.56: welcome page deferred to onboarding close — see ensureWelcomePage.
-  fs.mkdirSync(path.resolve(cwd, config.entitiesDir), {
-    recursive: true,
-  });
-  // 0.1.118: releasesDir — same forward-compat default as entitiesDir, so a
-  // fresh project has the dir before the ReleasesWatcher roots there.
-  fs.mkdirSync(path.resolve(cwd, config.releasesDir), {
-    recursive: true,
-  });
+  // 2.1.8: activation creates the dir of every SYSTEM root (plans, briefs,
+  // patches, entities, releases) — none of them is written to `config.json`.
+  // User roots' dirs are created by the context build. `tags.json` stays lazy.
+  for (const root of rootRegistry.list()) {
+    if (root.kind === PAGES_KIND) continue;
+    fs.mkdirSync(path.resolve(cwd, root.dir), { recursive: true });
+  }
   const project = registry.registerProject(workspace, cwd);
   migrateLegacyDbIfNeeded(registry, workspace, cwd, project.id);
 

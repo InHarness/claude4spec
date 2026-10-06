@@ -21,8 +21,8 @@
  *   3. That the CLI's OWN guards still refuse before a request is made — a flag
  *      the command does not accept must not reach the server at all.
  *
- * Guards that used to be asserted here and are not any more — `--range` on a
- * section-indexed root, an empty `--anchors`, an unknown `--root-id` — belong to
+ * Guards that used to be asserted here and are not any more — an empty
+ * `--anchors`, an unknown `--root-id` (2.1.8: also a system root id) — belong to
  * the core, which raises them with the repair path attached. They are asserted
  * in `src/server/discovery/discovery.test.ts`; asserting them again through a
  * stub would only prove the stub.
@@ -60,7 +60,6 @@ import { runElementList } from './element-list.js';
 const CONFIG = {
   name: 'test-project',
   roots: [{ id: 'pages', dir: 'pages' }],
-  entitiesDir: 'entities',
   writingStyle: null,
   onboarding: {},
 };
@@ -508,6 +507,13 @@ describe('discovery commands on the CLI', () => {
   });
 
   describe('the guards the transport owns — refused before any request', () => {
+    it('get-page --range is refused before any request — 2.1.8 removed the line window', async () => {
+      await expect(
+        runGetPage(args('get-page', '--root-id', 'pages', '--path', 'budget.md', '--range', '1:20')),
+      ).rejects.toMatchObject({ code: 'INVALID_ARGS' });
+      expect(seen).toEqual([]);
+    });
+
     it('page commands require --root-id and do not fall back to the built-in root', async () => {
       await expect(runListPages(args('list-pages'))).rejects.toMatchObject({ code: 'INVALID_ARGS' });
       await expect(runGetPage(args('get-page', '--path', 'budget.md'))).rejects.toMatchObject({

@@ -1,7 +1,8 @@
-import { parseRootsArray } from '../config.js';
+import { parseRootsArray, validateRootDirs } from '../config.js';
 import { retiredRootIds } from '../root-renames.js';
 import { SUPPORTED_LANGUAGES, isSupportedLanguage } from '../../shared/languages.js';
-import type { FieldDeclaration } from '../settings/field-registry.js';
+import type { Root } from '../../shared/types.js';
+import type { CrossFieldRule, FieldDeclaration } from '../settings/field-registry.js';
 
 /**
  * 0.2.113 — config fields the PROJECT module answers for: its identity (name,
@@ -69,8 +70,8 @@ export const PROJECT_SETTINGS_FIELDS: FieldDeclaration[] = [
     owner: 'project',
     type: 'object',
     default: [],
-    // Structural validation (types, path safety, unique ids, dangling linkTargets,
-    // built-in root present). Rule 7: an identifier an earlier rename retired must
+    // Structural validation (types, path safety, unique and non-reserved ids,
+    // exactly one built-in root). Rule 7: an identifier an earlier rename retired must
     // not come back through a full-array write either.
     validate: (value, ctx) => {
       try {
@@ -95,3 +96,20 @@ export const PROJECT_SETTINGS_FIELDS: FieldDeclaration[] = [
     apiWritable: true,
   },
 ];
+
+/**
+ * D4 (2.1.8): a user root's namespace must not overlap another registry root
+ * (user or system) nor `.claude4spec/plugins`. Only a request carrying `roots`
+ * can introduce an overlap — the system roots are fixed — so it is the only
+ * request this rule refuses.
+ */
+export const ROOTS_OVERLAP_RULE: CrossFieldRule = {
+  owner: 'project',
+  id: 'roots-namespace-overlap',
+  touches: ['roots'],
+  check: (effective, ctx) => {
+    if (!ctx.touched.has('roots')) return { ok: true };
+    const { errors } = validateRootDirs(effective('roots') as Root[]);
+    return errors.length > 0 ? { ok: false, key: 'roots', error: errors[0]! } : { ok: true };
+  },
+};

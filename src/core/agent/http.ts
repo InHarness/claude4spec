@@ -294,14 +294,17 @@ function isC4sErrorEnvelope(body: unknown): boolean {
   return !!e && typeof e === 'object' && typeof (e as { code?: unknown }).code === 'string';
 }
 
-/** M31/0.1.96 shape — no port/mode; `roots[]` (was `pagesDir`) + entitiesDir required. */
+/**
+ * M31/0.1.96 shape — no port/mode; `roots[]` (was `pagesDir`). 2.1.8: the
+ * `*Dir` keys left the response (system roots are fixed in code), so
+ * `entitiesDir` is no longer part of the fingerprint.
+ */
 function isConfigShape(body: unknown): boolean {
   if (!body || typeof body !== 'object') return false;
   const c = body as Record<string, unknown>;
   return (
     typeof c.name === 'string' &&
     Array.isArray(c.roots) &&
-    typeof c.entitiesDir === 'string' &&
     'writingStyle' in c &&
     !!c.onboarding &&
     typeof c.onboarding === 'object'

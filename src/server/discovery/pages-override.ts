@@ -56,25 +56,14 @@ export const OVERRIDE_ROOT_ID = 'pages-override';
  * refuses rather than silently clamping — a narrowing quietly redirected is the
  * failure this parameter exists to prevent.
  *
- * ## The ad-hoc root keeps `referenceValidated`, and that is not optional
+ * ## The ad-hoc root is swept, under an id of its own
  *
- * 0.2.13 §2 says ad-hoc roots "come back with `referenceValidated=false`", and a
- * first pass at this implemented that literally. It cannot be implemented
- * literally: `referenceValidated` is the property `findReferences` FILTERS ON
- * (`ops/references.ts` → `roots.referenceValidated()`), so a root carrying
- * `false` is not swept at all. With the override replacing the root list, the
- * only root was unswept and `--pages <dir>` answered `{ references: [], total: 0 }`
- * for every directory the project had not already declared — which is the whole
- * set of directories the flag exists to point at. A confidently empty answer to
- * "is anything still pointing at this before I rename it" is the worst possible
- * output of this command, and it is what the literal reading produces.
- *
- * So the sweep runs. What the project does not vouch for is expressed where it
- * costs nothing: `sectionIndexed: false`, and an id of its own.
+ * 2.1.8: a root has no per-root flags any more — the ad-hoc root is a `pages`
+ * root for the sweep (`find_references`, `check_consistency`). What the project
+ * does not vouch for is expressed where it costs nothing: an id of its own.
  *
  * ## Why the id has to change
  *
- * `sectionIndexed: false` describes the root; it does not travel with a hit.
  * `anchorFor` (`ops/references.ts`) matches `section_index` rows on
  * `(rootId, pagePath, line)` alone — so an ad-hoc root that KEPT the built-in id
  * had its hits decorated with the anchors of identically-named files in the real
@@ -150,6 +139,6 @@ export function applyPagesOverride(
   // `rel` rather than `override`: one normalized spelling reaches `PagesService`,
   // so `./drafts` and `drafts` produce the same `pagePath` on every hit.
   return [
-    { ...builtin, id: OVERRIDE_ROOT_ID, dir: rel, referenceValidated: true, sectionIndexed: false },
+    { ...builtin, id: OVERRIDE_ROOT_ID, dir: rel },
   ];
 }

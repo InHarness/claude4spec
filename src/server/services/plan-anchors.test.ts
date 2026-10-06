@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { injectArtifactAnchors as injectAnchors, injectAnchorsFor } from './anchor-injection.js';
-import { artifactRegistry } from './artifact-registry.js';
+import { injectArtifactAnchors as injectAnchors, injectAnchorsFor, injectsAnchors } from './anchor-injection.js';
+import { kindSelects } from '../../shared/root-kinds.js';
 import { ANCHOR_LINE_RE } from '../../shared/anchor-pattern.js';
 
 /**
@@ -27,9 +27,13 @@ describe('plan anchor injection', () => {
     expect(injectAnchors(src)).toBe(src);
   });
 
-  it('the registry says plans are anchored but not section-indexed', () => {
-    expect(artifactRegistry.plan.anchorInjection).toBe(true);
-    expect(artifactRegistry.plan.sectionIndexed).toBe(false);
+  it('the plans kind says plans are anchored but not section-indexed', () => {
+    // 2.1.8: decided by the root kind's reactions, not by a registry flag.
+    expect(injectsAnchors('plan')).toBe(true);
+    expect(injectsAnchors('brief')).toBe(false);
+    expect(injectsAnchors('patch')).toBe(false);
+    expect(kindSelects('plans', 'm06-anchor-injection')).toBe(true);
+    expect(kindSelects('plans', 'm06-section-indexer')).toBe(false);
   });
 });
 

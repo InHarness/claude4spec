@@ -29,9 +29,9 @@ import { chromium, type Browser, type Page, type Request } from 'playwright';
  *   byte instead of being dropped.
  * - `[ac:ac-opis-encji-zawierajacy-naglowki-h2-h6]` headings h2–h6, a list, a
  *   GFM task list and a table in a description survive the blur-save.
- * - A page under a user root with `referenceValidated: false` (the derived
- *   `page` context, L13) shows reference tags as raw code and autosaves them
- *   verbatim.
+ * - A page under a freshly added user root (2.1.8: four fields, kind `pages`)
+ *   gets the FULL derived `page` context — reference tags render as nodes, the
+ *   `/` palette offers `/mention` and `/section` — and autosaves them verbatim.
  *
  * Every case asserts zero console errors and zero responses >= 400.
  */
@@ -404,7 +404,7 @@ describe.skipIf(!BASE)('editor L8 contexts', () => {
     await page.close();
   }, 60_000);
 
-  it('page context derived from root props: a non-validated user root shows reference tags as raw code and autosaves them verbatim', async () => {
+  it('page context derived from the root kind: a new user root gets the full page context and autosaves tags verbatim', async () => {
     const rootId = `e2e-min-${stamp}`;
     const cfg = (await (await fetch(`${api}/config`)).json()) as { roots: Array<Record<string, unknown>> };
     const roots = cfg.roots;
@@ -413,15 +413,9 @@ describe.skipIf(!BASE)('editor L8 contexts', () => {
       ...roots,
       {
         id: rootId,
-        name: 'E2E minimal root',
+        name: 'E2E user root',
         dir: rootId,
         builtin: false,
-        releasable: false,
-        sectionIndexed: false,
-        referenceValidated: false,
-        linkTargets: ['pages'],
-        sidebar: 'accordion',
-        briefTarget: false,
       },
     ];
     const patched = await fetch(`${api}/config`, {
@@ -458,11 +452,9 @@ describe.skipIf(!BASE)('editor L8 contexts', () => {
       await expect.poll(() => editor.count(), { timeout: 15_000 }).toBe(1);
       await expect.poll(() => editor.innerText()).toContain('Minimal root');
       await sleep(1500); // let the non-blocking plugin boot settle
+      // Kind `pages` ⇒ the reference layer is mounted: the tags are nodes, not raw code.
       const raw = editor.locator('.c4s-raw-jsx textarea, .c4s-raw-jsx input');
-      await expect.poll(() => raw.count()).toBe(2);
-      expect(await raw.nth(0).inputValue()).toBe(mention);
-      expect(await raw.nth(1).inputValue()).toBe(tag);
-      expect(await editor.innerText()).not.toMatch(/unknown type|\[broken:/i);
+      expect(await raw.count()).toBe(0);
 
       await editor.locator('h1').click();
       await page.keyboard.press('End');
@@ -474,18 +466,16 @@ describe.skipIf(!BASE)('editor L8 contexts', () => {
       expect(body).toContain(tag);
       expect(body).not.toContain('```');
 
-      // The `/` palette follows the schema: a root without reference
-      // validation / section indexing offers neither `/mention` nor
-      // `/section` (their nodes are not mounted — a pick would insert
-      // nothing), while `/todo` stays.
+      // The `/` palette follows the schema: every page root carries the anchor
+      // and reference layers, so `/mention` and `/section` are offered.
       await page.keyboard.press('Enter');
       await page.keyboard.type('/');
       const menu = page.locator('[data-slash-menu]');
       await expect.poll(() => menu.count(), { timeout: 5_000 }).toBe(1);
       const offered = await menu.locator('button > span:first-child').evaluateAll((els) => els.map((el) => el.textContent ?? ''));
       expect(offered.some((t) => /todo/i.test(t)), `offers /todo: ${offered.join(' | ')}`).toBe(true);
-      expect(offered.some((t) => /mention/i.test(t)), `hides /mention: ${offered.join(' | ')}`).toBe(false);
-      expect(offered.some((t) => /section/i.test(t)), `hides /section: ${offered.join(' | ')}`).toBe(false);
+      expect(offered.some((t) => /mention/i.test(t)), `offers /mention: ${offered.join(' | ')}`).toBe(true);
+      expect(offered.some((t) => /section/i.test(t)), `offers /section: ${offered.join(' | ')}`).toBe(true);
       await page.keyboard.press('Escape');
       await page.keyboard.press('Backspace');
 

@@ -210,7 +210,7 @@ export function buildBriefToolsServer(
       'Both shapes, or neither, → INVALID_ARGUMENT.',
       'You CANNOT modify frontmatter (type, from_release, to_release, roots,',
       'generated_at, implemented). `roots` is the brief scope (the',
-      "releasable roots this brief covers; absent = whole-release) — pass it to release_diff",
+      "page roots this brief covers; absent = whole-release) — pass it to release_diff",
       'as `roots` to keep the diff scoped to this brief. `implemented` is owned by the',
       'implementer-agent in the target repo and toggled via filesystem edit, not via this MCP.',
       'Any frontmatter mutation attempt → IMMUTABLE_FIELD.',

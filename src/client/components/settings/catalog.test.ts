@@ -40,12 +40,8 @@ describe('/settings card catalog (0.2.113 §1.6)', () => {
       ['writing-style', 'select'],
     ]);
     expect(byAnchor.get('directories')!.elements.map((e) => [e.id, e.kind])).toEqual([
+      // 2.1.8: the artifact *Dir path elements are gone — system roots live in code.
       ['roots', 'custom'],
-      ['plansDir', 'path'],
-      ['briefsDir', 'path'],
-      ['patchesDir', 'path'],
-      ['entitiesDir', 'path'],
-      ['releasesDir', 'path'],
     ]);
     expect(byAnchor.get('agent')!.elements.map((e) => e.id)).toEqual([
       'conversational-language',

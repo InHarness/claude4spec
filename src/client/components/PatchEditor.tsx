@@ -5,8 +5,8 @@ import { usePatch, useUpdatePatchContent } from '../hooks/usePatches.js';
 import '../tiptap/registrations.js';
 import { EditorFactory } from '../tiptap/EditorFactory.js';
 import { invokeSlash } from '../tiptap/slashInvoke.js';
-import { assertSaveMode, getContextSpec, artefactRootEditorProps } from '../tiptap/registry.js';
-import { useBaseRootId } from '../hooks/useConfig.js';
+import { assertSaveMode, getContextSpec } from '../tiptap/registry.js';
+import { ARTIFACT_EDITOR_PROPS } from '../hooks/useRootEditorProps.js';
 import {
   useEditorCarry,
   useEditorCarryApply,
@@ -21,7 +21,7 @@ interface Props {
 }
 
 /**
- * M23 patch artifact panel. Mirror of `BriefEditor` — Tiptap `'page'` factory
+ * M23 patch artifact panel. Mirror of `BriefEditor` — Tiptap `'artifact'` context
  * (patches render the same XML refs / mentions), storage through patches-api
  * with `expectedHash` sha256 optimistic concurrency. Only the BODY is fed to
  * Tiptap; on save the (immutable) frontmatter is recomposed via gray-matter.
@@ -37,16 +37,14 @@ export function PatchEditor({ patchPath }: Props) {
   const [conflict, setConflict] = useState<boolean>(false);
 
   const schemaVersion = useEditorSchemaVersion();
-  // 0.2.101: `@path.md` here reaches the BASE page root, found by its flag —
-  // the identifier is no longer guaranteed to be `pages`.
-  const baseRootId = useBaseRootId();
-  const rootProps = useMemo(() => artefactRootEditorProps(baseRootId), [baseRootId]);
+  // 2.1.8: the named `artifact` context — prose and `@` links over the page roots.
+  const rootProps = ARTIFACT_EDITOR_PROPS;
   const extensions = useMemo(
     () =>
       // A patch has no context of its own: `page` with the artefact property
       // bag (M23 `m23l13rt`) — see BriefEditor.
       EditorFactory.buildExtensions(
-        'page',
+        'artifact',
         {
           qc,
           currentPath: patchPath,
@@ -59,7 +57,7 @@ export function PatchEditor({ patchPath }: Props) {
       ),
     [qc, patchPath, schemaVersion, rootProps],
   );
-  const save = assertSaveMode(getContextSpec('page', rootProps), 'debounce');
+  const save = assertSaveMode(getContextSpec('artifact', rootProps), 'debounce');
   const carry = useEditorCarry(extensions);
 
   const editor = useEditor(

@@ -9,7 +9,7 @@ import { SERVER_DELEGATING_CODES, type CliCommandContribution } from '../registr
 /**
  *   c4s get-brief <brief-path> [--range <from>:<to>] [--format json|text]
  *
- * `<brief-path>` is relative to `briefsDir` — parity with the `--brief` argument
+ * `<brief-path>` is relative to the `briefs` root's dir — parity with the `--brief` argument
  * elsewhere.
  *
  * 0.2.13 — `server-delegating`, over `GET /api/artifacts/brief/<path>`.

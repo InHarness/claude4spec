@@ -37,25 +37,29 @@ interface ParseResult {
 /**
  * M14 link indexer.
  *
- * 0.2.10 (M40): registered as `{ id: 'm14-link-indexer', phase: 'projection',
- * after: ['m06-section-indexer'] }` on every `pages:<rootId>` source. The `after`
- * declaration is CONDITIONAL on the owner's gate — on a root without
- * `sectionIndexed`, M02 never registers M06, so there is no predecessor and this
- * indexer runs on its own. Anchors are then unresolved on that root, which is a
- * signal to the author rather than silence.
+ * 0.2.10 (M40) / 2.1.8: bound as `m14-link-indexer` (`after:
+ * ['m06-section-indexer']`) on every root whose kind selects it — today every
+ * `pages` root. `after` is resolved per source: where the section indexer is
+ * not bound, the dependency is satisfied and this indexer runs on its own.
+ *
+ * 2.1.8 — the resolution scope of `@path.md` is EVERY root this indexer covers
+ * (all `kind: pages` roots), with precedence: the source page's root, then the
+ * `builtin` root, then the rest in `roots[]` order. The same path in several
+ * roots resolves to the first hit; a resolved link records the root it landed
+ * in (`targetRootId`). `linkTargets` is gone.
  *
  * Its own pending-timer map is gone: debounce belongs to the mount.
  */
 export class PagesLinkIndexerService implements WatchSubscriber {
-  // 0.1.96: all maps keyed by composite `${rootId}:${path}`. Resolution is
-  // scoped to the source root only (default linkTargets: [] ⇒ today's behaviour);
-  // cross-root `@`-autocomplete scope is applied client-side by the editor.
+  // 0.1.96: all maps keyed by composite `${rootId}:${path}`. The reverse index
+  // is keyed by the TARGET's root, which (2.1.8) may differ from the source's.
   private byPath = new Map<string, FileMeta>();
   private linkIndex = new Map<string, PageLink[]>();
   private reverseIndex = new Map<string, Set<string>>();
   private unresolved = new Map<string, UnresolvedMention[]>();
 
   constructor(
+    /** The roots in scope, in `roots[]` order (Map insertion order). */
     private roots: Map<string, PagesService>,
     private ws: WsEmitter,
     /**
@@ -63,6 +67,12 @@ export class PagesLinkIndexerService implements WatchSubscriber {
      * projection registry owns nothing that could be marked.
      */
     private projectionStatus?: ProjectionStatusRegistry,
+    /**
+     * 2.1.8 — the resolution precedence inputs: the `builtin` root's id (second
+     * in line after the source root) and each root's cwd-relative dir, so a
+     * CWD-relative path (`docs/adr/x.md`) is checked against every root in scope.
+     */
+    private scope: { builtinRootId?: string; rootDirs?: ReadonlyMap<string, string> } = {},
   ) {}
 
   /**
@@ -97,24 +107,25 @@ export class PagesLinkIndexerService implements WatchSubscriber {
   async renameSync(rootId: string, from: string, to: string, actor: WatchActor = 'user'): Promise<string[]> {
     this.projectionStatus?.assertFresh(PROJECTION_IDS.pageLinks);
 
-    const svc = this.roots.get(rootId);
-    if (!svc?.records) return [];
+    if (!this.roots.get(rootId)) return [];
     // Read the citing pages BEFORE anything is written — the index is about to
     // be rewritten underneath us by each write's own chain.
     /**
      * `reverseIndex` stores COMPOSITE keys (`${rootId}:${relPath}`) — the same
      * keying every map in this class uses — so the prefix has to come off before
      * a path reaches the record store, which addresses records relative to the
-     * root. Passing the composite through would produce `absFor` refusals for
-     * every citing page, i.e. a propagation that silently rewrote nothing.
+     * root. 2.1.8: a citing page may sit in ANOTHER page root (cross-root
+     * resolution), and it is rewritten in its own root.
      */
-    const prefix = `${rootId}:`;
-    const sources = this.getReverseLinks(rootId, from)
-      .filter((k) => k.startsWith(prefix))
-      .map((k) => k.slice(prefix.length));
+    const sources = this.getReverseLinks(rootId, from).map((k) => {
+      const i = k.indexOf(':');
+      return { sourceRootId: k.slice(0, i), sourcePath: k.slice(i + 1) };
+    });
     const rewritten: string[] = [];
-    for (const sourcePath of sources) {
-      if (sourcePath === from) continue;
+    for (const { sourceRootId, sourcePath } of sources) {
+      if (sourceRootId === rootId && sourcePath === from) continue;
+      const svc = this.roots.get(sourceRootId);
+      if (!svc?.records) continue;
       const raw = svc.records.readRaw(sourcePath);
       if (raw === null) continue;
       const next = rewritePageCitations(raw, from, to);
@@ -134,11 +145,17 @@ export class PagesLinkIndexerService implements WatchSubscriber {
 
   async indexAll(): Promise<void> {
     let fileCount = 0;
+    // 2.1.8: two passes over ALL roots — a link may resolve into a root later
+    // in the order, so every root's pages must be known before any is resolved.
+    const filesByRoot = new Map<string, string[]>();
     for (const [rootId, svc] of this.roots) {
       const files = await svc.listMarkdownFiles();
+      filesByRoot.set(rootId, files);
       for (const rel of files) await this.parseAndStoreMeta(rootId, rel);
-      for (const rel of files) await this.parseAndStoreLinks(rootId, rel, { silent: true });
       fileCount += files.length;
+    }
+    for (const [rootId, files] of filesByRoot) {
+      for (const rel of files) await this.parseAndStoreLinks(rootId, rel, { silent: true });
     }
     console.log(
       `[pages-link-indexer] indexed ${fileCount} pages, ${this.totalLinksCount()} links, ${this.unresolvedCount()} unresolved`
@@ -233,6 +250,7 @@ export class PagesLinkIndexerService implements WatchSubscriber {
       resolvedLinks.push({
         syntax: cand.syntax,
         rawToken: cand.rawToken,
+        targetRootId: hit.rootId,
         targetPath: hit.path,
         anchor: cand.anchor,
         line: cand.line,
@@ -246,9 +264,9 @@ export class PagesLinkIndexerService implements WatchSubscriber {
     let changed = !sameLinks(prevLinks, resolvedLinks);
     if (!changed) changed = !sameUnresolved(prevUnresolved, unresolvedEntries);
 
-    // Reverse index keyed by composite target `${rootId}:${targetPath}` (self-scope).
-    const oldTargets = new Set(prevLinks.map((l) => this.key(rootId, l.targetPath)));
-    const newTargets = new Set(resolvedLinks.map((l) => this.key(rootId, l.targetPath)));
+    // Reverse index keyed by composite target `${targetRootId}:${targetPath}`.
+    const oldTargets = new Set(prevLinks.map((l) => this.key(l.targetRootId ?? rootId, l.targetPath)));
+    const newTargets = new Set(resolvedLinks.map((l) => this.key(l.targetRootId ?? rootId, l.targetPath)));
     for (const t of oldTargets) {
       if (!newTargets.has(t)) {
         const srcs = this.reverseIndex.get(t);
@@ -281,7 +299,7 @@ export class PagesLinkIndexerService implements WatchSubscriber {
       return this.unresolved.delete(sourceKey);
     }
     for (const l of prev) {
-      const t = this.key(rootId, l.targetPath);
+      const t = this.key(l.targetRootId ?? rootId, l.targetPath);
       const srcs = this.reverseIndex.get(t);
       if (srcs) {
         srcs.delete(sourceKey);
@@ -293,30 +311,68 @@ export class PagesLinkIndexerService implements WatchSubscriber {
     return true;
   }
 
-  /** Resolve a candidate path within the SAME root (self-scope). */
-  resolve(candidate: string, sourcePath: string, rootId: string): { path: string; anchor?: string } | null {
+  /**
+   * The roots `@path.md` is resolved against from a page of `sourceRootId`, in
+   * precedence order: the source root, the `builtin` root, then the rest in
+   * `roots[]` order. A source outside the indexed roots (an artifact — plan,
+   * brief, patch) starts at the `builtin` root.
+   */
+  private resolutionOrder(sourceRootId: string | null): string[] {
+    const order: string[] = [];
+    const push = (id: string | undefined): void => {
+      if (id && this.roots.has(id) && !order.includes(id)) order.push(id);
+    };
+    push(sourceRootId ?? undefined);
+    push(this.scope.builtinRootId);
+    for (const id of this.roots.keys()) push(id);
+    return order;
+  }
+
+  /**
+   * Resolve a candidate path across the roots in scope (2.1.8). Per root, in
+   * precedence order: relative to the source page (source root only), then the
+   * path as a root-relative one, then — for a CWD-relative spelling — with that
+   * root's own `dir` stripped. First hit wins.
+   *
+   * `sourceRootId: null` resolves for an artifact (from the `builtin` root on).
+   */
+  resolve(
+    candidate: string,
+    sourcePath: string,
+    sourceRootId: string | null,
+  ): { rootId: string; path: string; anchor?: string } | null {
     if (!candidate) return null;
     const hashIdx = candidate.indexOf('#');
     const rawPath = hashIdx >= 0 ? candidate.slice(0, hashIdx) : candidate;
     const anchor = hashIdx >= 0 ? candidate.slice(hashIdx + 1) : undefined;
     const stripped = rawPath.replace(/^\/+/, '');
     if (!stripped) return null;
+    const normalized = path.posix.normalize(stripped);
 
-    const has = (p: string): boolean => this.byPath.has(this.key(rootId, p));
-
-    if (sourcePath) {
-      const dir = path.posix.dirname(sourcePath);
-      const joined = path.posix.normalize(path.posix.join(dir, stripped));
-      if (!joined.startsWith('..') && !joined.startsWith('/')) {
-        if (has(joined)) return { path: joined, anchor };
-        if (has(joined + '.md')) return { path: joined + '.md', anchor };
+    for (const rootId of this.resolutionOrder(sourceRootId)) {
+      const hit = (p: string): { rootId: string; path: string; anchor?: string } | null => {
+        if (this.byPath.has(this.key(rootId, p))) return { rootId, path: p, anchor };
+        if (this.byPath.has(this.key(rootId, p + '.md'))) return { rootId, path: p + '.md', anchor };
+        return null;
+      };
+      if (sourcePath && rootId === sourceRootId) {
+        const dir = path.posix.dirname(sourcePath);
+        const joined = path.posix.normalize(path.posix.join(dir, stripped));
+        if (!joined.startsWith('..') && !joined.startsWith('/')) {
+          const found = hit(joined);
+          if (found) return found;
+        }
+      }
+      if (normalized.startsWith('..') || normalized.startsWith('/')) continue;
+      const direct = hit(normalized);
+      if (direct) return direct;
+      const rootDir = this.scope.rootDirs?.get(rootId);
+      const prefix = rootDir ? path.posix.normalize(rootDir.replace(/\\/g, '/')).replace(/\/+$/, '') : '';
+      if (prefix && prefix !== '.' && normalized.startsWith(prefix + '/')) {
+        const found = hit(normalized.slice(prefix.length + 1));
+        if (found) return found;
       }
     }
-
-    const normalized = path.posix.normalize(stripped);
-    if (normalized.startsWith('..') || normalized.startsWith('/')) return null;
-    if (has(normalized)) return { path: normalized, anchor };
-    if (has(normalized + '.md')) return { path: normalized + '.md', anchor };
     return null;
   }
 

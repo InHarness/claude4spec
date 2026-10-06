@@ -1,3 +1,4 @@
+import { agentDeniedDirs } from '../../../shared/root-kinds.js';
 import { useState } from 'react';
 import {
   useAgentCredentials,
@@ -194,10 +195,12 @@ function FileAccessEnforcement(ctx: ElementContext) {
 /**
  * The artifact directories — never reachable through the agent's own file tools,
  * editable only through its MCP tools. Read-only, and not part of
- * `agent.disallowedPaths`: it cannot be switched off.
+ * `agent.disallowedPaths`: it cannot be switched off. 2.1.8: derived from the
+ * root registry — the `dir` of every root whose kind has `agentDirectFs = false`,
+ * relative to the project directory.
  */
 function AlwaysExcluded({ config }: ElementContext) {
-  const dirs = [config.plansDir, config.briefsDir, config.patchesDir, config.entitiesDir, config.releasesDir];
+  const dirs = agentDeniedDirs(config.roots);
   return (
     <div
       className="flex flex-col gap-1.5 rounded-md px-3 py-2"

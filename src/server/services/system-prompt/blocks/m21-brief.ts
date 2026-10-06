@@ -50,7 +50,7 @@ function buildBriefScope(brief: Brief, roots: readonly Root[]): string | null {
   return [
     `<brief_scope ${attrs({ roots: list })}>`,
     `This brief is SCOPED to specific page roots: ${list}. It does NOT cover the whole release.`,
-    `- PAGES: pass \`roots: ${arr}\` to EVERY release_diff call (the summary probe AND every heavy slice), and hand the same \`roots\` to each diff-explore subagent slice. Pages outside these roots MUST NOT enter the brief. Omitting \`roots\` defaults release_diff to ALL releasable roots and silently breaks this scope.`,
+    `- PAGES: pass \`roots: ${arr}\` to EVERY release_diff call (the summary probe AND every heavy slice), and hand the same \`roots\` to each diff-explore subagent slice. Pages outside these roots MUST NOT enter the brief. Omitting \`roots\` defaults release_diff to ALL page roots and silently breaks this scope.`,
     `- ENTITIES are root-agnostic (release_diff never filters them by root): include entity changes that are referenced in the scoped pages' prose or are thematically tied to this scope — a relevance judgement, not a structural filter.`,
     includesPages
       ? `- This scope INCLUDES the base page root \`${baseRootId}\` (the carrier of the entity graph), so treat entities as whole-release: include ALL entity changes — omitting one would silently make the brief incomplete.`

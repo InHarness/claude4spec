@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
-import { builtinRoot, migrateConfigToV4, readConfig, resolveDirAbs, validateRootDirs } from '../config.js';
+import { builtinRoot, migrateConfigToV4, readConfig, validateRootDirs } from '../config.js';
 import { recoverPendingRootRename, rootIdChain, readRootRenames } from '../root-renames.js';
 import type { Root } from '../../shared/types.js';
 import { resolveAgentTurnScope } from '../services/agent-execution-scope.js';
@@ -67,7 +67,12 @@ import { TodosIndexerService } from '../services/todos-indexer.js';
 import { PagesLinkIndexerService } from '../services/pages-link-indexer.js';
 import { FileSerializer } from '../services/file-serializer.js';
 import { FileVersionService } from '../services/file-version.js';
-import { artifactRegistry, type ArtifactKind, type ArtifactRegistryEntry } from '../services/artifact-registry.js';
+import {
+  ARTIFACT_CHANGED_EVENT,
+  ARTIFACT_KIND_OF_ROOT_KIND,
+  type ArtifactKind,
+  type ArtifactRootKind,
+} from '../services/artifact-registry.js';
 import { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import { createDiscoveryCore, findReferencesAll } from '../discovery/index.js';
 import type { DiscoveryCore } from '../discovery/types.js';
@@ -87,20 +92,19 @@ import { gitRouter } from '../routes/git.js';
 import type { WsGateway } from '../ws/gateway.js';
 import type { WatchScope, WatchSubscriber, FileWatchRuntime } from '../fs/watcher.js';
 import {
-  pageSource,
-  artifactSource,
+  sourceNameFor,
   boundSuppress,
   boundWriter,
   ENTITIES_SOURCE,
   RELEASES_SOURCE,
   PLUGINS_OVERLAY_SOURCE,
-  MARKDOWN_FILTER,
-  HTML_FILTER,
-  JSON_FILTER,
   type SelfWriteMarker,
   rootIdFromSource,
 } from '../fs/sources.js';
-import { pageChangedNotifier, htmlPreviewNotifier, artifactChangedNotifier } from '../fs/notifications.js';
+import { ReactionBinder, validateKindRequirements, kindDecl } from '../fs/reactions.js';
+import { registerCoreReactions, type CoreReactionContext } from './core-reactions.js';
+import { RootRegistry, rootDirAbs } from '../roots/registry.js';
+import { BASE_REACTION_ID, PAGES_KIND, kindHasMarkdown, type RegistryRoot } from '../../shared/root-kinds.js';
 import { FileVersionCapture } from '../services/file-version-capture.js';
 import { EntityStore } from '../services/entity-store.js';
 import { EntityIndexerService } from '../services/entity-indexer.js';
@@ -344,54 +348,21 @@ async function buildInner(
   const effectiveRoots: Root[] = bootConfig.roots.map((r) =>
     r.builtin && deps.pagesDirOverride ? { ...r, dir: deps.pagesDirOverride } : r,
   );
-  // M21: briefsDir, default '.claude4spec/briefs'. Must be relative, must not escape cwd.
-  const briefsDir = bootConfig.briefsDir ?? '.claude4spec/briefs';
-  resolveDirAbs(cwd, briefsDir, 'briefsDir');
-  // M23: patchesDir, default '.claude4spec/patches'. Same validation as briefsDir.
-  const patchesDir = bootConfig.patchesDir ?? '.claude4spec/patches';
-  resolveDirAbs(cwd, patchesDir, 'patchesDir');
-  // 0.1.127 M10/M36: plansDir, default '.claude4spec/plans'. Same validation as
-  // briefsDir/patchesDir.
-  const plansDir = bootConfig.plansDir ?? '.claude4spec/plans';
-  resolveDirAbs(cwd, plansDir, 'plansDir');
+  // 2.1.8: the ROOT REGISTRY — the user roots above (kind `pages`) plus the five
+  // system roots registered in code (plans, briefs, patches, entities, releases),
+  // each at its fixed `.claude4spec/<kind>`. No directory is read from a config key.
+  registerCoreReactions();
+  const rootRegistry = new RootRegistry(effectiveRoots);
+  const briefsDir = rootRegistry.system('briefs').dir;
+  const patchesDir = rootRegistry.system('patches').dir;
+  const entitiesDir = rootRegistry.system('entities').dir;
+  const releasesDir = rootRegistry.system('releases').dir;
 
-  // M29: entitiesDir, default '.claude4spec/entities'. Same path-safety as
-  // briefsDir/patchesDir — but this directory is COMMITTED to git (source of
-  // truth for entities; SQLite is a derived index rebuilt from it at boot).
-  const entitiesDir = bootConfig.entitiesDir ?? '.claude4spec/entities';
-  const entitiesAbs = resolveDirAbs(cwd, entitiesDir, 'entitiesDir');
-
-  // 0.1.118: releasesDir, default '.claude4spec/releases'. Same path-safety +
-  // git-committed treatment as entitiesDir — source of truth for release
-  // identity files; spec_release (SQLite) is a derived cache rebuilt from it.
-  const releasesDir = bootConfig.releasesDir ?? '.claude4spec/releases';
-  const releasesAbs = resolveDirAbs(cwd, releasesDir, 'releasesDir');
-
-  // 0.1.96: cross-field root overlap validation. Hard errors abort the build
-  // (mirrors the PATCH /api/config guard); soft warnings (vs briefs/patches) log.
+  // D4: namespace overlap between a user root and any other registry root (or
+  // `.claude4spec/plugins`) aborts the build — mirrors the PATCH /api/config guard.
   {
-    const { errors, warnings, newPairConflicts } = validateRootDirs(effectiveRoots, { entitiesDir, releasesDir, briefsDir, patchesDir, plansDir });
-    for (const w of warnings) console.warn(`[config] ${w}`);
-    // 0.2.9: entitiesDir/releasesDir/plugins were never compared against each other
-    // before, so an existing project may already violate the new pair rule. Refusing to
-    // boot would strand it — the Settings screen that repairs config lives inside this
-    // very context. Loud warning here, hard 400 on the next PATCH.
-    for (const c of newPairConflicts) console.warn(`[config] ${c} — writes will collide; fix this in Settings → Directories`);
+    const { errors } = validateRootDirs(effectiveRoots);
     if (errors.length > 0) throw new Error(errors[0]);
-    // Artifact catalogs are distinct — an identical dir double-captures every
-    // file into file_version under two markers. Warn (the PATCH route hard-400s).
-    const artifactDirPairs: Array<[string, string, string, string]> = [
-      ['briefsDir', briefsDir, 'patchesDir', patchesDir],
-      ['briefsDir', briefsDir, 'plansDir', plansDir],
-      ['patchesDir', patchesDir, 'plansDir', plansDir],
-    ];
-    for (const [aName, aDir, bName, bDir] of artifactDirPairs) {
-      if (path.resolve(cwd, aDir) === path.resolve(cwd, bDir)) {
-        console.warn(
-          `[config] ${aName} === ${bName} ("${aDir}") — files will be double-indexed`,
-        );
-      }
-    }
   }
   // M01 (0.1.36): resolve the remote base URL with precedence
   // `--remote-url` flag (deps) > config.json > prod constant. The prod-constant
@@ -517,10 +488,16 @@ async function buildInner(
   const w = deps.watchRuntime.scoped(watchScope);
   cleanup.push(() => w.dispose());
 
-  // 0.1.96: one runtime (PagesService + StaticHtmlService + FileSerializer) per
-  // configured page root, plus a `pages:<rootId>` mount. The built-in 'pages'
-  // root is always present; user roots are additive. Every per-directory
-  // behaviour is gated on the root's PROPERTIES below, never on `root.id === 'pages'`.
+  // ── 2.1.8: the root-registry loop (M02 is its implementor) ─────────────────
+  // ONE loop over every registry root — user roots and system roots alike:
+  //   1. create the directory and mount its source (chokidar silently swallows
+  //      ENOENT on a missing dir, so the mount must come after the mkdir);
+  //   2. a markdown file store for every kind whose file map has a markdown
+  //      entry; the `PagesService` FACADE (tree, static html, editor) only for
+  //      kind `pages`;
+  //   3. the kind's acceptance requirements — a violation stops the build.
+  // Reactions are bound further down (step 4), once the services exist: mount →
+  // bind is a contract per source.
   interface RootRuntime {
     root: Root;
     pages: PagesService;
@@ -529,73 +506,66 @@ async function buildInner(
     writer: SelfWriteMarker;
     serializer: FileSerializer;
   }
-  const rootRuntimes: RootRuntime[] = [];
-  for (const root of effectiveRoots) {
-    const pagesSvc = new PagesService(cwd, root.dir, root.id);
-    await pagesSvc.ensureRoot();
-    const staticSvc = new StaticHtmlService(cwd, root.dir);
-    const source = pageSource(root.id);
-    w.mountSource({ source, dir: pagesSvc.root });
-    pagesSvc.records = markdownRecordStore(w, source, pagesSvc.root);
-    rootRuntimes.push({
-      root,
-      pages: pagesSvc,
-      staticHtml: staticSvc,
-      source,
-      writer: boundWriter(w, source),
-      serializer: new FileSerializer(pagesSvc),
-    });
-  }
-  const rootById = new Map(rootRuntimes.map((rt) => [rt.root.id, rt]));
-  // The BASE root's runtime backs the many single-root consumers that still take
-  // one PagesService/FileSerializer (release restore, entity reference-tools,
-  // current-page fetch, etc.). 0.2.101: selected by the `builtin` flag — the
-  // identifier is the author's to change, so `rootById.get('pages')` would be a
-  // crash waiting for the first project that renamed its base root.
-  const baseRoot = builtinRoot(effectiveRoots);
-  const pagesRuntime = rootById.get(baseRoot.id)!;
-  const pages = pagesRuntime.pages;
-  const pagesWriter = pagesRuntime.writer;
-  const pageSerializer = pagesRuntime.serializer;
-
-  // M36: artifact mounts — one {PagesService, M40 mount, FileSerializer} per
-  // `artifactRegistry` entry (brief/patch today; a follow-up brief adds 'plan').
-  // Briefs & patches are NOT roots — `Root`'s releasable/referenceValidated/
-  // linkTargets/sidebar/briefTarget flags have no meaning for artifacts — so
-  // this stays a separate map (`artifactMounts`), never folded into
-  // `rootRuntimes`/`rootById`. Resolving each entry's directory through this
-  // lookup (rather than a hardcoded per-kind branch) is what lets a future
-  // `plan` entry be "add one key to `artifactDirs` + one registry entry",
-  // not a rewrite of this loop.
+  /** A system root of kind plans/briefs/patches — markdown store, no facade. */
   interface ArtifactMount {
-    entry: ArtifactRegistryEntry;
+    kind: ArtifactKind;
+    rootId: string;
     pages: PagesService;
     source: string;
     writer: SelfWriteMarker;
     serializer: FileSerializer;
   }
-  const artifactDirs: Record<ArtifactRegistryEntry['dirConfigKey'], string> = {
-    briefsDir,
-    patchesDir,
-    plansDir,
-  };
+  const rootRuntimes: RootRuntime[] = [];
   const artifactMounts = new Map<ArtifactKind, ArtifactMount>();
-  await Promise.all(
-    Object.values(artifactRegistry).map(async (entry) => {
-      const mountPages = new PagesService(cwd, artifactDirs[entry.dirConfigKey], entry.rootId);
-      await mountPages.ensureRoot();
-      const source = artifactSource(entry.kind);
-      w.mountSource({ source, dir: mountPages.root });
-      mountPages.records = markdownRecordStore(w, source, mountPages.root);
-      artifactMounts.set(entry.kind, {
-        entry,
-        pages: mountPages,
+  const sourceByRootId = new Map<string, string>();
+  const storeByRootId = new Map<string, PagesService>();
+  const writerByRootId = new Map<string, SelfWriteMarker>();
+  const serializerByRootId = new Map<string, FileSerializer>();
+  // Which root dirs this build CREATES — a failed clone rolls back exactly those
+  // (the system roots included), even when `.claude4spec/` existed before it.
+  const rootDirsCreatedHere = rootRegistry
+    .list()
+    .filter((r) => !fs.existsSync(rootDirAbs(cwd, r)))
+    .map((r) => r.dir);
+  for (const root of rootRegistry.list()) {
+    validateKindRequirements(kindDecl(root.kind));
+    const source = sourceNameFor(root);
+    const abs = rootDirAbs(cwd, root);
+    await fs.promises.mkdir(abs, { recursive: true });
+    w.mountSource({ source, dir: abs });
+    sourceByRootId.set(root.id, source);
+    if (!kindHasMarkdown(root.kind)) continue;
+    const store = new PagesService(cwd, root.dir, root.id);
+    store.records = markdownRecordStore(w, source, store.root);
+    const writer = boundWriter(w, source);
+    const serializer = new FileSerializer(store);
+    storeByRootId.set(root.id, store);
+    writerByRootId.set(root.id, writer);
+    serializerByRootId.set(root.id, serializer);
+    if (root.kind === PAGES_KIND) {
+      const userRoot = effectiveRoots.find((r) => r.id === root.id)!;
+      rootRuntimes.push({
+        root: userRoot,
+        pages: store,
+        staticHtml: new StaticHtmlService(cwd, root.dir),
         source,
-        writer: boundWriter(w, source),
-        serializer: new FileSerializer(mountPages),
+        writer,
+        serializer,
       });
-    }),
-  );
+    } else {
+      const kind = ARTIFACT_KIND_OF_ROOT_KIND[root.kind as ArtifactRootKind];
+      artifactMounts.set(kind, { kind, rootId: root.id, pages: store, source, writer, serializer });
+    }
+  }
+  const rootById = new Map(rootRuntimes.map((rt) => [rt.root.id, rt]));
+  // The BASE root's runtime backs the many single-root consumers that still take
+  // one PagesService/FileSerializer (release restore, entity reference-tools,
+  // current-page fetch, etc.). Selected by the `builtin` flag, never by id.
+  const baseRoot = builtinRoot(effectiveRoots);
+  const pagesRuntime = rootById.get(baseRoot.id)!;
+  const pages = pagesRuntime.pages;
+  const pagesWriter = pagesRuntime.writer;
+  const pageSerializer = pagesRuntime.serializer;
   const briefsMount = artifactMounts.get('brief')!;
   const patchesMount = artifactMounts.get('patch')!;
   const plansMount = artifactMounts.get('plan')!;
@@ -650,12 +620,8 @@ async function buildInner(
     overlayRecords.filter((r) => r.manifestVersion).map((r) => [r.package, r.manifestVersion!]),
   );
   const entityStore = new EntityStore(cwd, entitiesDir, boundSuppress(w, ENTITIES_SOURCE), rawReader, pluginHost);
-  entityStore.ensureRoot();
-  // M29: mount only AFTER `ensureRoot()` — chokidar silently swallows ENOENT on a
-  // missing directory and never picks it up later, so mounting first left a fresh
-  // project with entity edits that were never reindexed for the whole life of the
-  // context. (The page and artifact mounts above already await `ensureRoot()`.)
-  w.mountSource({ source: ENTITIES_SOURCE, dir: entitiesAbs });
+  // 2.1.8: the `entities` source is mounted by the root-registry loop above
+  // (after its mkdir); the store only reads and writes inside it.
   entityStore.records = new RecordStore({
     registrar: w,
     source: ENTITIES_SOURCE,
@@ -765,24 +731,22 @@ async function buildInner(
     dir: releaseFileStore.root,
     adapter: jsonAdapter as unknown as RecordFormatAdapter<ReleaseFileData>,
   });
-  releaseFileStore.ensureRoot();
-  w.mountSource({ source: RELEASES_SOURCE, dir: releasesAbs });
+  // 2.1.8: mounted by the root-registry loop above, like `entities`.
   const releaseIndexer = new ReleaseIndexerService(db.handle, releaseFileStore, boundSuppress(w, RELEASES_SOURCE));
-  // 0.1.96: per-behaviour root maps (gated on root PROPERTIES, not id).
-  const sectionIndexedRoots = new Map<string, SectionIndexRoot>();
-  const referenceValidatedServices = new Map<string, PagesService>();
-  const referenceValidatedWriters = new Map<string, SelfWriteMarker>();
-  const sidebarRoots = new Map<string, PagesService>(); // todos: `sidebar: 'accordion'` roots only
-  const allRootServices = new Map<string, PagesService>();
-  for (const rt of rootRuntimes) {
-    allRootServices.set(rt.root.id, rt.pages);
-    if (rt.root.sectionIndexed) sectionIndexedRoots.set(rt.root.id, { pages: rt.pages });
-    if (rt.root.referenceValidated) {
-      referenceValidatedServices.set(rt.root.id, rt.pages);
-      referenceValidatedWriters.set(rt.root.id, rt.writer);
-    }
-    if (rt.root.sidebar === 'accordion') sidebarRoots.set(rt.root.id, rt.pages);
-  }
+  // 2.1.8: per-behaviour root maps, gated on the root's KIND — the reactions it
+  // selects and the flags it carries — never on an id or a per-root property.
+  const storesOf = (roots: readonly RegistryRoot[]): Map<string, PagesService> =>
+    new Map(roots.filter((r) => storeByRootId.has(r.id)).map((r) => [r.id, storeByRootId.get(r.id)!]));
+  const sectionIndexedRoots = new Map<string, SectionIndexRoot>(
+    [...storesOf(rootRegistry.selecting('m06-section-indexer'))].map(([id, svc]) => [id, { pages: svc }]),
+  );
+  // `references = yes`: the markdown entries of these roots are the reference graph.
+  const referenceValidatedServices = storesOf(rootRegistry.withFlag('references'));
+  const referenceValidatedWriters = new Map(
+    [...referenceValidatedServices.keys()].map((id) => [id, writerByRootId.get(id)!]),
+  );
+  const todosRoots = storesOf(rootRegistry.selecting('m08-todos-indexer'));
+  const linkRoots = storesOf(rootRegistry.selecting('m14-link-indexer'));
 
   const referencesService = new ReferencesService(referenceValidatedServices, referenceValidatedWriters);
   const sectionsService = new SectionsService(db.handle);
@@ -798,10 +762,14 @@ async function buildInner(
   );
 
   const sectionIndexer = new SectionIndexerService(db.handle, sectionIndexedRoots, ws, pluginHost);
-  const todosIndexer = new TodosIndexerService(sidebarRoots, ws);
-  // pages-link indexer covers every page root (autocomplete/meta), resolving links
-  // within each root (self-scope); cross-root @-scope is applied client-side.
-  const pagesLinkIndexer = new PagesLinkIndexerService(allRootServices, ws, projectionStatus);
+  const todosIndexer = new TodosIndexerService(todosRoots, ws);
+  // 2.1.8: the link index covers every root selecting `m14-link-indexer` (today
+  // every `pages` root) and resolves `@path.md` across all of them — source root,
+  // then the builtin root, then `roots[]` order.
+  const pagesLinkIndexer = new PagesLinkIndexerService(linkRoots, ws, projectionStatus, {
+    builtinRootId: baseRoot.id,
+    rootDirs: new Map(rootRegistry.pages().map((r) => [r.id, r.dir])),
+  });
   // M17: page versioning — shared instance; per-root serializer + rootId passed per recordVersion.
   /**
    * 0.2.101 — the identifier chain of a page space, read from the rename
@@ -812,13 +780,12 @@ async function buildInner(
   const renameTransitions = readRootRenames(cwd).transitions;
   const resolveRootIdChain = (rootId: string): string[] => rootIdChain(renameTransitions, rootId);
   const pageVersions = new FileVersionService(db.handle, pageSerializer, resolveRootIdChain);
-  // M36: in-memory frontmatter indexer over every page root + the artifact mounts.
-  const frontmatterRoots = new Map<string, PagesService>(allRootServices);
-  for (const m of artifactMounts.values()) frontmatterRoots.set(m.entry.rootId, m.pages);
-  // rootId -> WS event kind, derived from the registry (replaces a hardcoded
-  // per-kind if/else inside PagesFrontmatterIndexer.broadcastRootChange).
+  // M02: in-memory frontmatter indexer over every root selecting it (pages,
+  // plans, briefs, patches).
+  const frontmatterRoots = storesOf(rootRegistry.selecting('m02-frontmatter-indexer'));
+  // rootId -> the domain WS event its frontmatter changes announce.
   const artifactChangedEvents = new Map(
-    Object.values(artifactRegistry).map((e) => [e.rootId, e.changedEvent] as const),
+    [...artifactMounts.values()].map((m) => [m.rootId, ARTIFACT_CHANGED_EVENT[m.kind]] as const),
   );
   const pagesFrontmatterIndexer = new PagesFrontmatterIndexer(frontmatterRoots, ws, artifactChangedEvents);
 
@@ -1055,14 +1022,17 @@ async function buildInner(
      * fires before the first rewrite, so a stale link index aborts the
      * propagation instead of rewriting from a list it cannot trust.
      */
-    propagateRename: (rootId, from, to, actor) => pagesLinkIndexer.renameSync(rootId, from, to, actor),
+    // 2.1.8: admitted only on a root whose kind bound `m14-rename-sync`.
+    propagateRename: async (rootId, from, to, actor) => {
+      const source = sourceByRootId.get(rootId);
+      if (!source || !reactionBinder.isBound('m14-rename-sync', source)) return [];
+      return pagesLinkIndexer.renameSync(rootId, from, to, actor);
+    },
   };
   pluginHost.registerMcpServer('page-tools', () =>
     createPageToolsServer({
       ...sectionWriteDeps,
       rootIds: () => [...rootById.keys()],
-      // 2.1.4: a root entry is complete or invalid — no default for a missing flag.
-      isSectionIndexed: (rootId) => rootById.get(rootId)?.root.sectionIndexed === true,
     }, projectId),
   );
 
@@ -1137,8 +1107,11 @@ async function buildInner(
   // reference-tools, owned by the host (not a plugin) — release semantics
   // are dual-track (entities + pages), neither side is a plugin owner.
   // 0.1.96: releasable roots drive releases/bundles/diffs and git staging.
-  const releasableRootIds = effectiveRoots.filter((r) => r.releasable).map((r) => r.id);
-  const releasableRootDirs = effectiveRoots.filter((r) => r.releasable).map((r) => path.resolve(cwd, r.dir));
+  // 2.1.8: pages enter a release by their KIND (`release` flag) — every `pages`
+  // root; no user root is left out, whatever a legacy `releasable` once said.
+  const releaseRoots = rootRegistry.withFlag('release');
+  const releasableRootIds = releaseRoots.map((r) => r.id);
+  const releasableRootDirs = releaseRoots.map((r) => rootDirAbs(cwd, r));
   const releaseService = new ReleaseService(
     db.handle,
     pluginHost,
@@ -1175,7 +1148,7 @@ async function buildInner(
     cwd,
   );
   pluginHost.registerMcpServer('release-tools', () =>
-    createReleaseToolsServer({ releaseService, gitService, ws, roots: () => effectiveRoots }),
+    createReleaseToolsServer({ releaseService, gitService, ws, roots: () => rootRegistry.pages() }),
   );
 
   // M27 Project Clone — bootstrap-time only. Runs after services exist (DB
@@ -1204,6 +1177,10 @@ async function buildInner(
       db.close();
       rollbackClone(cwd, {
         rootDirs: effectiveRoots.map((r) => r.dir),
+        systemRootDirs: rootRegistry
+          .list()
+          .filter((r) => r.kind !== PAGES_KIND && rootDirsCreatedHere.includes(r.dir))
+          .map((r) => r.dir),
         configCreated: deps.clone.configCreated,
         claudeDirCreated: deps.clone.claudeDirCreated,
         gitignoreCreated: deps.clone.gitignoreCreated,
@@ -1426,7 +1403,7 @@ async function buildInner(
     pagesService: pages,
     // Resolve a page-root's service by id so the chat "current page" context is read
     // from the root the user is actually viewing (not always the built-in `pages`).
-    resolvePagesService: (rootId: string) => allRootServices.get(rootId),
+    resolvePagesService: (rootId: string) => rootById.get(rootId)?.pages,
     tagsService,
     sectionsService,
     planService,
@@ -1520,134 +1497,57 @@ async function buildInner(
   // runtime at dispatch time, not by the order of these lines. There are no
   // wildcards on `source`, so a subscriber of many sources iterates them here
   // explicitly.
-  const captureSerializers = new Map<string, FileSerializer>();
-  for (const rt of rootRuntimes) captureSerializers.set(rt.root.id, rt.serializer);
-  for (const m of artifactMounts.values()) captureSerializers.set(m.entry.rootId, m.serializer);
+  // M17 capture — a serializer for every root selecting `m17-capture`.
+  const captureSerializers = new Map<string, FileSerializer>(
+    rootRegistry
+      .selecting('m17-capture')
+      .filter((r) => serializerByRootId.has(r.id))
+      .map((r): [string, FileSerializer] => [r.id, serializerByRootId.get(r.id)!]),
+  );
   const versionCapture = new FileVersionCapture(pageVersions, captureSerializers, (scope, source, relPath) =>
     deps.watchRuntime.peekActor(scope, source, relPath),
   );
-  const anchorInjection = sectionIndexer.anchorInjectionSubscriber((source, relPath) => w.suppress(source, relPath));
-
-  for (const rt of rootRuntimes) {
-    const source = rt.source;
-
-    // M02 — frontmatter projection + the `file:changed` notification it owns.
-    w.subscribe(source, pagesFrontmatterIndexer, {
-      id: 'm02-frontmatter-indexer',
-      phase: 'projection',
-      filter: MARKDOWN_FILTER,
-    });
-    w.subscribe(source, pageChangedNotifier(ws), {
-      id: 'm02-file-changed',
-      phase: 'notification',
-      filter: MARKDOWN_FILTER,
-    });
-
-    // M06 — the gate decides whether the SUBSCRIPTION exists; the source is
-    // mounted for every root regardless. That is why M14's `after` below can go
-    // unsatisfied on a non-indexed root without being a registration race.
-    if (rt.root.sectionIndexed) {
-      w.subscribe(source, sectionIndexer, {
-        id: 'm06-section-indexer',
-        phase: 'projection',
-        filter: MARKDOWN_FILTER,
-      });
-      w.subscribe(source, anchorInjection, {
-        id: 'm06-anchor-injection',
-        phase: 'write-back',
-        filter: MARKDOWN_FILTER,
-      });
+  // M06 write-back per source: a `pages` root mints through the section indexer
+  // (whose stash the projection reads); any other kind selecting the reaction
+  // (plans) gets the artifact injection — anchors for `edits[]` addressing,
+  // unique per file, never indexed. Branches on the KIND, never on an id.
+  const suppressFn = (source: string, relPath: string): void => w.suppress(source, relPath);
+  const pageAnchorInjection = sectionIndexer.anchorInjectionSubscriber(suppressFn);
+  const anchorInjectionBySource = new Map<string, WatchSubscriber>();
+  for (const root of rootRegistry.selecting('m06-anchor-injection')) {
+    const source = sourceByRootId.get(root.id)!;
+    if (root.kind === PAGES_KIND) {
+      anchorInjectionBySource.set(source, pageAnchorInjection);
+    } else {
+      const mount = artifactMounts.get(ARTIFACT_KIND_OF_ROOT_KIND[root.kind as ArtifactRootKind]);
+      if (mount) anchorInjectionBySource.set(source, artifactAnchorInjectionSubscriber(mount.kind, mount, suppressFn));
     }
-
-    // M08 — todos, on `sidebar: 'accordion'` roots only (2.1.4: `hidden` roots are
-    // neither subscribed nor scanned). Read-only; never suppresses.
-    if (rt.root.sidebar === 'accordion') {
-      w.subscribe(source, todosIndexer, { id: 'm08-todos-indexer', phase: 'projection', filter: MARKDOWN_FILTER });
-    }
-
-    // M14 — link index. Must not run before M06 has minted anchors on a root
-    // where M06 runs at all; where it does not, this dependency is simply
-    // unsatisfied and M14 runs alone (leaving `@page.md#anchor` unresolved,
-    // which is a signal to the author rather than silence).
-    w.subscribe(source, pagesLinkIndexer, {
-      id: 'm14-link-indexer',
-      phase: 'projection',
-      after: ['m06-section-indexer'],
-      filter: MARKDOWN_FILTER,
-    });
-
-    // M30 — `.html` preview refresh. The filter is the whole reaction: html files
-    // get no anchors, no references and no versions.
-    w.subscribe(source, htmlPreviewNotifier(ws), {
-      id: 'm30-html-preview',
-      phase: 'notification',
-      filter: HTML_FILTER,
-    });
-
-    // M17 — capture, after every write-back, so the version contains the anchors.
-    w.subscribe(source, versionCapture, {
-      id: 'm17-capture',
-      phase: 'capture',
-      after: ['write-back'],
-      filter: MARKDOWN_FILTER,
-    });
   }
 
-  // M36: artifact sources get the frontmatter projection, their own owner's
-  // notification, and capture — but NEVER section/todos/link indexing. Briefs and
-  // patches are not pages in the M02 sense: not part of the navigable tree, and
-  // they do not aggregate section_ref/todos into tables. `sectionIndexed: false`
-  // on every registry entry formalizes this.
-  for (const m of artifactMounts.values()) {
-    const source = m.source;
-    w.subscribe(source, pagesFrontmatterIndexer, {
-      id: 'm02-frontmatter-indexer',
-      phase: 'projection',
-      filter: MARKDOWN_FILTER,
-    });
-    const notifier = artifactChangedNotifier(ws, m.entry.kind);
-    if (notifier) {
-      w.subscribe(source, notifier, {
-        id: `m36-${m.entry.kind}-changed`,
-        phase: 'notification',
-        filter: MARKDOWN_FILTER,
-      });
-    }
-    // Plans are the one artifact kind with `anchorInjection: true`. 2.0.0: the
-    // implementation and both of its triggers live in the sections module (M06,
-    // `anchor-injection.ts`); the service runs it synchronously, this write-back
-    // covers writes that bypass the service (an agent or user editing the file
-    // on disk). Gated on the registry's own declaration, not on the kind. Those
-    // files are anchored, never indexed (`sectionIndexed: false`).
-    if (m.entry.anchorInjection) {
-      w.subscribe(source, artifactAnchorInjectionSubscriber(m.entry.kind, m, (src, rel) => w.suppress(src, rel)), {
-        id: 'm06-plan-anchor-injection',
-        phase: 'write-back',
-        filter: MARKDOWN_FILTER,
-      });
-    }
-    w.subscribe(source, versionCapture, {
-      id: 'm17-capture',
-      phase: 'capture',
-      after: ['write-back'],
-      filter: MARKDOWN_FILTER,
-    });
+  // ── 2.1.8 step 4: bind the reactions each root's KIND selected, plus the base
+  // `m02-file-changed` (bound on every root; no kind opts out). Explicit
+  // iteration of the registry — there are no wildcards on `source`. An unknown
+  // reaction id or an unmounted source throws (fail-fast).
+  const reactionBinder = new ReactionBinder<CoreReactionContext>(w, {
+    ws,
+    frontmatterIndexer: pagesFrontmatterIndexer,
+    anchorInjectionFor: (source) => {
+      const sub = anchorInjectionBySource.get(source);
+      if (!sub) throw new Error(`[m06] no anchor injection for source '${source}'`);
+      return sub;
+    },
+    sectionIndexer,
+    todosIndexer,
+    linkIndexer: pagesLinkIndexer,
+    versionCapture,
+    entityIndexer,
+    releaseIndexer,
+  });
+  for (const root of rootRegistry.list()) {
+    const source = sourceByRootId.get(root.id)!;
+    for (const id of kindDecl(root.kind).reactions) reactionBinder.bindReaction(id, source, root.kind);
+    reactionBinder.bindReaction(BASE_REACTION_ID, source, root.kind);
   }
-
-  // M29: external edits / git pull of entity files → incremental reindex. This
-  // projection blocks project readiness (see the awaited `indexAll()` below).
-  w.subscribe(ENTITIES_SOURCE, entityIndexer, {
-    id: 'm29-entity-indexer',
-    phase: 'projection',
-    filter: JSON_FILTER,
-  });
-  // 0.1.118: same for release-identity files — upsert-by-slug, never delete-all
-  // (see ReleaseIndexerService's header comment).
-  w.subscribe(RELEASES_SOURCE, releaseIndexer, {
-    id: 'm29-release-cache',
-    phase: 'projection',
-    filter: JSON_FILTER,
-  });
 
   // M33 phase 3: overlay reload. Only registered when the trust gate let the
   // mount exist at all. Invalidating THIS context retires it and the rebuilt
@@ -1773,11 +1673,11 @@ async function buildInner(
       try {
         const files = await m.pages.listMarkdownFiles();
         for (const relPath of files) {
-          if (pageVersions.hasAny(relPath, m.entry.rootId)) continue;
-          await pageVersions.recordVersion(relPath, 'create', 'filesystem', undefined, m.serializer, m.entry.rootId);
+          if (pageVersions.hasAny(relPath, m.rootId)) continue;
+          await pageVersions.recordVersion(relPath, 'create', 'filesystem', undefined, m.serializer, m.rootId);
         }
       } catch (err) {
-        console.warn(`[file-version] ${m.entry.kind}s initial sync failed:`, (err as Error).message);
+        console.warn(`[file-version] ${m.rootId} initial sync failed:`, (err as Error).message);
       }
     }
     try {

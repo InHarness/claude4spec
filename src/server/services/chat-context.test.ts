@@ -15,14 +15,14 @@ import { DEFAULT_SUBAGENT_TURNS } from './plugin-subagents.js';
 import type { PluginSubagentContribution } from '../../shared/plugin-host/manifest.js';
 import { acFixtureSystemPrompt as acSystemPrompt } from '../../../tests/helpers/ac-fixture.js';
 import { diagramSystemPrompt } from '../entities/diagram/system-prompt.js';
-import { DEFAULT_PAGES_ROOT_PROPS, type Root } from '../../shared/types.js';
+import type { Root } from '../../shared/types.js';
 import { PROMPT_BLOCKS } from './system-prompt/registry.js';
 import { DEFAULT_COMPOSITION } from './system-prompt/compositions/default.js';
 import { BRIEF_COMPOSITION } from './system-prompt/compositions/brief.js';
 
 /** Minimal Root at `dir` for prompt tests. */
 function rootAt(dir: string, id = 'pages'): Root {
-  return { id, name: id, dir, builtin: id === 'pages', ...DEFAULT_PAGES_ROOT_PROPS, linkTargets: [] };
+  return { id, name: id, dir, builtin: id === 'pages' };
 }
 
 // buildSystemPrompt only calls host.listEntities() (no active plugins needed for

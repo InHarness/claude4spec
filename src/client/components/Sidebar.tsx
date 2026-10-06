@@ -1,3 +1,4 @@
+import { KIND_DECLARATIONS, PAGES_KIND } from '../../shared/root-kinds.js';
 import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { stripBase } from '../lib/api-core.js';
 import { ProjectSwitcher } from './ProjectSwitcher.js';
@@ -81,7 +82,9 @@ export function Sidebar({
 }: SidebarProps) {
   const navigate = useNavigate();
   const roots = useRoots();
-  const accordionRoots = roots.filter((r) => r.sidebar === 'accordion');
+  // 2.1.8: the sidebar mode is the KIND's — every user root is of kind `pages`
+  // (`sidebar: accordion`); system roots never reach this list.
+  const accordionRoots = KIND_DECLARATIONS[PAGES_KIND].sidebar === 'accordion' ? roots : [];
   const pathname = stripBase(useRouterState({ select: (s) => s.location.pathname }));
   // /space/<rootId>/<path…>
   const spaceMatch = /^\/space\/([^/]+)\/(.*)$/.exec(pathname);

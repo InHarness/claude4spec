@@ -52,8 +52,8 @@ export function metaRouter(discovery: DiscoveryCore, host: ProjectPluginHost): R
   const router = Router();
 
   /**
-   * The entry point to a specification: page roots with their properties
-   * (`sectionIndexed`, `referenceValidated`, `pageCount`), the active entity
+   * The entry point to a specification: the page roots (`id`, `name`, `dir`,
+   * `builtin`, `pageCount` — 2.1.8: no per-root flags), the active entity
    * types with counts and `payloadVersion`, the tag count, and the claude4spec
    * version. One call that answers "what is in here".
    */

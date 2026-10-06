@@ -29,7 +29,7 @@ export class PagesService {
   /**
    * 0.2.76 — the M42 record store this root writes through.
    *
-   * `PagesService` is now a FAÇADE: the tree, the hidden-page filter and L13
+   * `PagesService` is now a FAÇADE: the tree and L13
    * ownership stay here, the markdown adapter sits below it and the primitive
    * below that — three links, not two. Set after construction because the mount
    * this store is bound to is claimed later in `buildProjectContext`.

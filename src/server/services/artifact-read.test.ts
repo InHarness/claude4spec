@@ -6,7 +6,13 @@ import {
   windowBody,
   ARTIFACT_FAMILY_ERROR_CODES,
 } from './artifact-read.js';
-import { artifactRegistry, type ArtifactKind } from './artifact-registry.js';
+import {
+  ARTIFACT_READ_FAMILY,
+  ARTIFACT_ROOT_KIND,
+  artifactHeaderContract,
+  type ArtifactKind,
+} from './artifact-registry.js';
+import { kindSelects } from '../../shared/root-kinds.js';
 import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 import { DomainError } from './tags.js';
 
@@ -15,9 +21,9 @@ const FILE = Array.from({ length: 10 }, (_, i) => `line ${i + 1}`).join('\n');
 
 describe('artifact read family — one window, one taxonomy (0.2.40)', () => {
   it('[ac:ac-get-brief-ma-okno-odczytu-range-i-jaw] range returns the named window, with no sectionIndexed gate to pass', () => {
-    // Every artifact kind is `sectionIndexed: false`, so there is nothing the
-    // gate could gate: a window is unconditionally the right question here.
-    for (const kind of KINDS) expect(artifactRegistry[kind].sectionIndexed).toBe(false);
+    // 2.1.8: no artifact root kind selects the section indexer, so there is
+    // nothing a gate could gate: a window is unconditionally the right question.
+    for (const kind of KINDS) expect(kindSelects(ARTIFACT_ROOT_KIND[kind], 'm06-section-indexer')).toBe(false);
 
     expect(applyArtifactRange(FILE, { start: 3, end: 5 }, { kind: 'brief', path: 'b.md' })).toBe(
       'line 3\nline 4\nline 5',
@@ -78,9 +84,10 @@ describe('artifact read family — one window, one taxonomy (0.2.40)', () => {
     expect(ARTIFACT_FAMILY_ERROR_CODES).toContain('IMMUTABLE_FIELD');
     // Every kind's frontmatter contract names what may change; the REFUSAL for
     // everything else is one code, owned by the family.
+    // 2.1.8: the contract is the header contract of the kind's file map.
     for (const kind of KINDS) {
-      expect(artifactRegistry[kind].frontmatterContract.mutable.length).toBeGreaterThan(0);
-      expect(artifactRegistry[kind].frontmatterContract.immutable.length).toBeGreaterThan(0);
+      expect(artifactHeaderContract(kind).mutable.length).toBeGreaterThan(0);
+      expect(artifactHeaderContract(kind).immutable.length).toBeGreaterThan(0);
     }
   });
 
@@ -93,7 +100,7 @@ describe('artifact read family — one window, one taxonomy (0.2.40)', () => {
   it('[ac:ac-kazda-pozycja-rodziny-odczytu-artefak] every kind declares a value for all four positions of the read family', () => {
     const positions = ['list', 'getWithWindow', 'search', 'responseBudget'] as const;
     for (const kind of KINDS) {
-      const family = artifactRegistry[kind].readFamily;
+      const family = ARTIFACT_READ_FAMILY[kind];
       for (const position of positions) {
         const value = family[position];
         expect(typeof value, `${kind}.${position} must be declared`).toBe('string');
@@ -105,8 +112,8 @@ describe('artifact read family — one window, one taxonomy (0.2.40)', () => {
   it("[ac:ac-kazda-pozycja-rodziny-odczytu-artefak] the missing brief search is recorded as a named gap, not left silent", () => {
     // This is the point of the rule: `search_briefs` does not exist, and that
     // absence is now a written `n/a` with a reason someone can pick up.
-    expect(artifactRegistry.brief.readFamily.search).toMatch(/^n\/a — /);
-    expect(artifactRegistry.brief.readFamily.search).toContain('search_briefs');
+    expect(ARTIFACT_READ_FAMILY.brief.search).toMatch(/^n\/a — /);
+    expect(ARTIFACT_READ_FAMILY.brief.search).toContain('search_briefs');
   });
 
   /**

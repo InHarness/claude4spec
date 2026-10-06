@@ -8,6 +8,7 @@
  * is how one copy ends up laxer than the other.
  */
 
+import { isMarkdownPath } from '../../shared/page-files.js';
 import crypto from 'node:crypto';
 import matter from 'gray-matter';
 import { pageStructure } from '../../shared/section-parser.js';
@@ -82,6 +83,9 @@ export class PageSource {
    * {@link readBody} instead — see the note there.
    */
   async read(rootId: string, relPath: string): Promise<string> {
+    // 2.1.8: only markdown entries of a root are addressable — a `.html` file is
+    // a raw preview entry of the kind's file map, never a page.
+    if (!isMarkdownPath(relPath)) throw pageNotFound(rootId, relPath, [...this.services.keys()]);
     return await this.guard(rootId, relPath, () => this.service(rootId).readRaw(relPath));
   }
 

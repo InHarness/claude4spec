@@ -72,8 +72,8 @@ export function sectionNotFound(anchor: string, alternatives: readonly string[])
     'SECTION_NOT_FOUND',
     `no section with anchor '${anchor}'`,
     alternatives.length
-      ? `nearby anchors: ${sample(alternatives)}. Use search_pages to find a section by text — a hit carries the anchor.`
-      : 'Use search_pages to find a section by text — a hit carries the anchor.',
+      ? `nearby anchors: ${sample(alternatives)}. Use search_pages to find a section by text — a hit carries the anchor — or get_page_outline for a page's anchors.`
+      : "Use search_pages to find a section by text — a hit carries the anchor — or get_page_outline for a page's anchors.",
   );
 }
 
@@ -84,8 +84,8 @@ export function pageNotFound(
 ): DiscoveryError {
   return new DiscoveryError(
     'PAGE_NOT_FOUND',
-    `no page '${pagePath}' in root '${rootId}'`,
-    `roots in this project: ${sample(rootIds)}. Use list_pages({ rootId }) to see what a root contains.`,
+    `no page '${pagePath}' in root '${rootId}' (page roots: ${rootIds.join(', ')})`,
+    `page roots in this project: ${sample(rootIds)}. Use list_pages({ rootId }) to see what a root contains.`,
   );
 }
 

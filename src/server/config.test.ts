@@ -12,6 +12,7 @@ import {
   parseRootsArray,
   builtinPagesRoot,
 } from './config.js';
+import type { Root } from '../shared/types.js';
 
 // 0.1.58: additive `description` field (string | null, 0–200). Type validation
 // lives in config.ts `validate()` (mirrors `language`); the 0–200 length cap is
@@ -295,44 +296,45 @@ describe('config — roots[] / v4 migration (0.1.96)', () => {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, JSON.stringify(cfg));
   };
+  /** A 2.1.8 user root: exactly four fields. */
+  const userRoot = (id: string, dir: string): Root => ({ id, name: id, dir, builtin: false });
 
   it('migrateConfigToV4 maps a legacy pagesDir to the built-in pages root', () => {
     writeRaw({ $schemaVersion: 3, name: 'X', pagesDir: 'docs', briefsDir: '.claude4spec/briefs' });
-    const { migrated, config } = migrateConfigToV4(dir);
-    expect(migrated).toBe(true);
-    expect(config.$schemaVersion).toBe(4);
-    const pages = config.roots.find((r) => r.id === 'pages');
-    expect(pages?.dir).toBe('docs');
-    expect(pages?.builtin).toBe(true);
-    // pagesDir is physically removed; briefsDir untouched.
-    const raw = JSON.parse(fs.readFileSync(configPath(dir), 'utf8'));
-    expect('pagesDir' in raw).toBe(false);
-    expect(raw.briefsDir).toBe('.claude4spec/briefs');
-    // idempotent: a second run is a no-op.
-    expect(migrateConfigToV4(dir).migrated).toBe(false);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const { migrated, config } = migrateConfigToV4(dir);
+      expect(migrated).toBe(true);
+      expect(config.$schemaVersion).toBe(4);
+      const pages = config.roots.find((r) => r.id === 'pages');
+      expect(pages).toEqual({ id: 'pages', name: 'Pages', dir: 'docs', builtin: true });
+      // pagesDir is physically removed; the legacy briefsDir is an unknown field
+      // left in the file untouched.
+      const raw = JSON.parse(fs.readFileSync(configPath(dir), 'utf8'));
+      expect('pagesDir' in raw).toBe(false);
+      expect(raw.briefsDir).toBe('.claude4spec/briefs');
+      // idempotent: a second run is a no-op.
+      expect(migrateConfigToV4(dir).migrated).toBe(false);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
-  // 0.2.8: the loader REJECTS an incomplete roots[] entry instead of defaulting
-  // it, so materializing the missing fields is the migration's job — otherwise a
-  // config written before a field existed is permanently unloadable.
-  it('migrateConfigToV4 materializes missing root fields on an already-v4 config', () => {
-    writeRaw({
-      $schemaVersion: 4,
-      name: 'X',
-      roots: [
-        { id: 'pages', name: 'Pages', dir: 'pages', builtin: true, sidebar: 'accordion' },
-        { id: 'guides', name: 'Guides', dir: 'guides' },
-      ],
-    });
+  // 2.1.8: roots[] entries are no longer materialized — legacy per-root flags are
+  // unknown fields, left in the file and dropped from the parsed root.
+  it('migrateConfigToV4 leaves an already-v4 config with legacy per-root flags untouched', () => {
+    const roots = [
+      { id: 'pages', name: 'Pages', dir: 'pages', builtin: true, sidebar: 'accordion', releasable: true },
+      { id: 'guides', name: 'Guides', dir: 'guides', builtin: false, linkTargets: [] },
+    ];
+    writeRaw({ $schemaVersion: 4, name: 'X', roots });
     const { migrated, config } = migrateConfigToV4(dir);
-    expect(migrated).toBe(true);
-    const pages = config.roots.find((r) => r.id === 'pages');
-    expect(pages).toMatchObject({ releasable: true, sectionIndexed: true, referenceValidated: true, briefTarget: true, linkTargets: [] });
-    // A user root gets the full-lifecycle defaults, and is NOT marked builtin.
-    const guides = config.roots.find((r) => r.id === 'guides');
-    expect(guides).toMatchObject({ builtin: false, releasable: true, sectionIndexed: true, referenceValidated: true, sidebar: 'accordion', briefTarget: true });
-    // Values already present are preserved, and a second run is a no-op.
-    expect(migrateConfigToV4(dir).migrated).toBe(false);
+    expect(migrated).toBe(false);
+    expect(config.roots).toEqual([
+      { id: 'pages', name: 'Pages', dir: 'pages', builtin: true },
+      { id: 'guides', name: 'Guides', dir: 'guides', builtin: false },
+    ]);
+    expect(JSON.parse(fs.readFileSync(configPath(dir), 'utf8')).roots).toEqual(roots);
   });
 
   it('migrateConfigToV4 does NOT invent a root identity field', () => {
@@ -340,13 +342,14 @@ describe('config — roots[] / v4 migration (0.1.96)', () => {
     writeRaw({
       $schemaVersion: 4,
       name: 'X',
-      roots: [{ id: 'pages', name: 'Pages', builtin: true, sidebar: 'accordion' }],
+      roots: [{ id: 'pages', name: 'Pages', builtin: true }],
+      git: { syncCommitOnRelease: true },
     });
     expect(() => migrateConfigToV4(dir)).toThrow(/roots\[0\]\.dir/);
     // ...and the unrepairable file is left exactly as it was, not half-written.
     const raw = JSON.parse(fs.readFileSync(configPath(dir), 'utf8'));
-    expect(raw.roots[0]).toEqual({ id: 'pages', name: 'Pages', builtin: true, sidebar: 'accordion' });
-    expect('briefTarget' in raw.roots[0]).toBe(false);
+    expect(raw.roots[0]).toEqual({ id: 'pages', name: 'Pages', builtin: true });
+    expect(raw.git).toEqual({ syncCommitOnRelease: true });
   });
 
   it('migrateConfigToV4 refuses a config from a NEWER schema version', () => {
@@ -363,7 +366,12 @@ describe('config — roots[] / v4 migration (0.1.96)', () => {
       roots: [builtinPagesRoot('pages')],
       git: { syncCommitOnRelease: true, syncPushOnPush: false },
     });
-    expect(migrateConfigToV4(dir).migrated).toBe(true);
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      expect(migrateConfigToV4(dir).migrated).toBe(true);
+    } finally {
+      log.mockRestore();
+    }
     const raw = JSON.parse(fs.readFileSync(configPath(dir), 'utf8'));
     expect(raw.git).toEqual({ enabled: true, syncPushOnPush: false });
     expect(readConfig(dir).git.enabled).toBe(true);
@@ -387,164 +395,157 @@ describe('config — roots[] / v4 migration (0.1.96)', () => {
     expect(cfg.roots.find((r) => r.id === 'pages')?.dir).toBe('.');
   });
 
-  it('validateRootDirs flags a hard overlap between a root and entitiesDir', () => {
-    const roots = [builtinPagesRoot('pages'), {
-      id: 'ent', name: 'Ent', dir: '.claude4spec/entities', builtin: false,
-      releasable: false, sectionIndexed: false, referenceValidated: false,
-      linkTargets: [], sidebar: 'accordion' as const, briefTarget: false,
-    }];
-    const { errors } = validateRootDirs(roots, {
-      entitiesDir: '.claude4spec/entities', releasesDir: '.claude4spec/releases', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches', plansDir: '.claude4spec/plans',
-    });
-    expect(errors.some((e) => e.includes('entitiesDir'))).toBe(true);
+  it('builtinPagesRoot returns exactly the four root fields', () => {
+    expect(builtinPagesRoot('docs')).toEqual({ id: 'pages', name: 'Pages', dir: 'docs', builtin: true });
+  });
+
+  it('validateRootDirs flags a hard overlap between a user root and a system root', () => {
+    const { errors } = validateRootDirs([builtinPagesRoot('pages'), userRoot('ent', '.claude4spec/entities')]);
+    expect(errors).toContain("config.json: 'ent' overlaps write-target 'entities'");
   });
 
   it('validateRootDirs rejects a root overlapping the .claude4spec/plugins write-target', () => {
-    const roots = [builtinPagesRoot('pages'), {
-      id: 'gen', name: 'Gen', dir: '.claude4spec/plugins', builtin: false,
-      releasable: false, sectionIndexed: false, referenceValidated: false,
-      linkTargets: [], sidebar: 'accordion' as const, briefTarget: false,
-    }];
-    const { errors } = validateRootDirs(roots, {
-      entitiesDir: '.claude4spec/entities', releasesDir: '.claude4spec/releases', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches', plansDir: '.claude4spec/plans',
-    });
+    const { errors } = validateRootDirs([builtinPagesRoot('pages'), userRoot('gen', '.claude4spec/plugins')]);
     expect(errors).toContain("config.json: 'gen' overlaps write-target '.claude4spec/plugins'");
   });
 
-  it('validateRootDirs leaves a root at "." alone — the pages walker never descends into .claude4spec', () => {
-    // Regression for the D4 bidirectional sweep (0.2.9): `dirsOverlap` is asymmetric
-    // because the walker skips dot-dirs, so reading `.claude4spec/entities` as the
-    // CONTAINER of a root at '.' would hard-error every project migrated from the
-    // legacy `pagesDir: '.'`. Only pairs where neither side walks are compared plainly.
-    const { errors, warnings } = validateRootDirs([builtinPagesRoot('.')], {
-      entitiesDir: '.claude4spec/entities', releasesDir: '.claude4spec/releases', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches', plansDir: '.claude4spec/plans',
-    });
-    expect(errors).toEqual([]);
-    expect(warnings).toEqual([]);
+  it('validateRootDirs returns only errors', () => {
+    expect(Object.keys(validateRootDirs([builtinPagesRoot('pages')]))).toEqual(['errors']);
   });
 
-  it('validateRootDirs reports two non-root write targets on the same dir as a NEW-PAIR conflict, not a boot error', () => {
-    // The genuinely new coverage in 0.2.9: before, only a root could be the left-hand
-    // side, so entitiesDir vs releasesDir was never compared at all. It lands in
-    // `newPairConflicts` rather than `errors` because boot throws on `errors[0]`, and a
-    // project already violating a rule invented in this release must still open — the
-    // screen that repairs config.json is served from the context that would fail.
-    const { errors, newPairConflicts } = validateRootDirs([builtinPagesRoot('pages')], {
-      entitiesDir: 'shared', releasesDir: 'shared', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches', plansDir: '.claude4spec/plans',
-    });
-    expect(errors).toEqual([]);
-    expect(newPairConflicts).toContain("config.json: 'entitiesDir' overlaps write-target 'releasesDir'");
+  it('[ac:ac-korzen-uzytkownika-z-dir-przechodzi-w] dir: "." passes validateRootDirs — the namespace of "." excludes .claude4spec/', () => {
+    expect(validateRootDirs([builtinPagesRoot('.')]).errors).toEqual([]);
   });
 
-  it('validateRootDirs catches a non-root write target NESTED in another one', () => {
-    const { newPairConflicts } = validateRootDirs([builtinPagesRoot('pages')], {
-      entitiesDir: 'store', releasesDir: 'store/releases', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches', plansDir: '.claude4spec/plans',
-    });
-    expect(newPairConflicts).toContain("config.json: 'entitiesDir' overlaps write-target 'releasesDir'");
+  it('[ac:ac-korzen-uzytkownika-z-dir-rownym-claud] dir under .claude4spec/plans is an overlap error', () => {
+    const { errors } = validateRootDirs([builtinPagesRoot('pages'), userRoot('x', '.claude4spec/plans/x')]);
+    expect(errors).toContain("config.json: 'x' overlaps write-target 'plans'");
+    // …and a root AT the system root's dir too.
+    expect(validateRootDirs([builtinPagesRoot('.claude4spec/plans')]).errors).toContain(
+      "config.json: 'pages' overlaps write-target 'plans'",
+    );
   });
 
-  it('validateRootDirs keeps a root-vs-write-target overlap a HARD error (pre-0.2.9 rule)', () => {
-    const { errors } = validateRootDirs([builtinPagesRoot('pages')], {
-      entitiesDir: 'pages', releasesDir: '.claude4spec/releases', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches', plansDir: '.claude4spec/plans',
-    });
-    expect(errors).toContain("config.json: 'pages' overlaps write-target 'entitiesDir'");
+  it('validateRootDirs flags two user roots on the same dir', () => {
+    const { errors } = validateRootDirs([builtinPagesRoot('shared'), userRoot('b', 'shared')]);
+    expect(errors).toContain("config.json: 'pages' overlaps write-target 'b'");
   });
 
   it('validateRootDirs allows a root nested under another root inside a dot-directory', () => {
-    // Regression for the bidirectional D4 sweep: `dirsOverlap`'s "root nested under
-    // other" clause is unconditional, so ORing both directions reports a conflict for
-    // two roots that never see each other's files — the walker at '.' skips the dot-dir,
-    // and the one inside it never climbs out. Boot throws on errors[0], so a false
-    // positive here makes a legal, documented layout unopenable.
-    const skills = {
-      id: 'skills', name: 'Skills', dir: '.claude4spec/skills', builtin: false,
-      releasable: false, sectionIndexed: false, referenceValidated: false,
-      linkTargets: [], sidebar: 'accordion' as const, briefTarget: false,
-    };
-    const opts = {
-      entitiesDir: '.claude4spec/entities', releasesDir: '.claude4spec/releases', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches', plansDir: '.claude4spec/plans',
-    };
-    expect(validateRootDirs([builtinPagesRoot('.'), skills], opts).errors).toEqual([]);
+    // Two roots that never see each other's files: the namespace of '.' skips the
+    // dot-dir, and the one inside it never climbs out.
+    const skills = userRoot('skills', '.claude4spec/skills');
+    expect(validateRootDirs([builtinPagesRoot('.'), skills]).errors).toEqual([]);
     // Order must not change the verdict either.
-    expect(validateRootDirs([skills, builtinPagesRoot('.')], opts).errors).toEqual([]);
+    expect(validateRootDirs([skills, builtinPagesRoot('.')]).errors).toEqual([]);
 
-    const archive = { ...skills, id: 'arch', dir: 'docs/.archive' };
-    const docs = { ...skills, id: 'docs', dir: 'docs' };
-    expect(validateRootDirs([docs, archive], opts).errors).toEqual([]);
+    expect(validateRootDirs([userRoot('docs', 'docs'), userRoot('arch', 'docs/.archive')]).errors).toEqual([]);
   });
 
-  it('validateRootDirs still flags a root nested under another when the walker DOES reach it', () => {
-    const opts = {
-      entitiesDir: '.claude4spec/entities', releasesDir: '.claude4spec/releases', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches', plansDir: '.claude4spec/plans',
-    };
-    const docs = {
-      id: 'docs', name: 'Docs', dir: 'docs', builtin: false, releasable: false,
-      sectionIndexed: false, referenceValidated: false, linkTargets: [],
-      sidebar: 'accordion' as const, briefTarget: false,
-    };
-    // No dot segment on the way down — the walker really would index both.
-    expect(validateRootDirs([docs, { ...docs, id: 'sub', dir: 'docs/sub' }], opts).errors).toHaveLength(1);
+  it('validateRootDirs still flags a root nested under another when the namespace DOES reach it', () => {
+    const docs = userRoot('docs', 'docs');
+    // No dot segment on the way down — both namespaces hold the same files.
+    expect(validateRootDirs([docs, userRoot('sub', 'docs/sub')]).errors).toHaveLength(1);
     // And a root at '.' still swallows an ordinary sibling directory.
-    expect(validateRootDirs([builtinPagesRoot('.'), docs], opts).errors).toHaveLength(1);
+    expect(validateRootDirs([builtinPagesRoot('.'), docs]).errors).toHaveLength(1);
   });
 
   it('validateRootDirs verdict does not depend on the order of roots[]', () => {
-    const a = { id: 'a', name: 'A', dir: 'shared', builtin: false, releasable: false, sectionIndexed: false, referenceValidated: false, linkTargets: [], sidebar: 'accordion' as const, briefTarget: false };
-    const b = { ...a, id: 'b', name: 'B', dir: 'shared/nested' };
-    const opts = {
-      entitiesDir: '.claude4spec/entities', releasesDir: '.claude4spec/releases', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches', plansDir: '.claude4spec/plans',
-    };
-    const forward = validateRootDirs([builtinPagesRoot('pages'), a, b], opts).errors.length;
-    const reversed = validateRootDirs([builtinPagesRoot('pages'), b, a], opts).errors.length;
+    const a = userRoot('a', 'shared');
+    const b = userRoot('b', 'shared/nested');
+    const forward = validateRootDirs([builtinPagesRoot('pages'), a, b]).errors.length;
+    const reversed = validateRootDirs([builtinPagesRoot('pages'), b, a]).errors.length;
     expect(forward).toBeGreaterThan(0);
     expect(reversed).toBe(forward);
   });
 
   it('validateRootDirs allows .claude4spec/skills as a user root (0.1.104: nothing writes there anymore)', () => {
-    const roots = [builtinPagesRoot('pages'), {
-      id: 'gen', name: 'Gen', dir: '.claude4spec/skills', builtin: false,
-      releasable: false, sectionIndexed: false, referenceValidated: false,
-      linkTargets: [], sidebar: 'accordion' as const, briefTarget: false,
-    }];
-    const { errors } = validateRootDirs(roots, {
-      entitiesDir: '.claude4spec/entities', releasesDir: '.claude4spec/releases', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches', plansDir: '.claude4spec/plans',
-    });
-    expect(errors).toHaveLength(0);
+    expect(validateRootDirs([builtinPagesRoot('pages'), userRoot('gen', '.claude4spec/skills')]).errors).toHaveLength(0);
   });
 
   it('validateRootDirs allows .claude/skills as a user root (writing styles, M15)', () => {
-    const roots = [builtinPagesRoot('pages'), {
-      id: 'styles', name: 'Styles', dir: '.claude/skills', builtin: false,
-      releasable: false, sectionIndexed: false, referenceValidated: false,
-      linkTargets: [], sidebar: 'accordion' as const, briefTarget: false,
-    }];
-    const { errors } = validateRootDirs(roots, {
-      entitiesDir: '.claude4spec/entities', releasesDir: '.claude4spec/releases', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches', plansDir: '.claude4spec/plans',
-    });
-    expect(errors).toHaveLength(0);
+    expect(validateRootDirs([builtinPagesRoot('pages'), userRoot('styles', '.claude/skills')]).errors).toHaveLength(0);
   });
 
-  it('parseRootsArray rejects a dangling linkTargets id', () => {
-    expect(() => parseRootsArray([{ ...builtinPagesRoot(), linkTargets: ['ghost'] }])).toThrow(
-      /dangling link scope/,
+  it('[ac:ac-korzen-uzytkownika-o-identyfikatorze] roots[] entry with id plans is a reserved-identifier error', () => {
+    expect(() => parseRootsArray([builtinPagesRoot(), userRoot('plans', 'my-plans')])).toThrow(
+      /root id 'plans' is reserved for a system root/,
     );
+    // Every system-root id, on read as well as on write.
+    for (const id of ['plans', 'briefs', 'patches', 'entities', 'releases']) {
+      expect(() => parseRootsArray([builtinPagesRoot(), userRoot(id, `x-${id}`)], { reservedIds: 'warn', idShape: 'warn' })).toThrow(
+        /reserved for a system root/,
+      );
+    }
+    writeRaw({ $schemaVersion: 4, name: 'X', roots: [builtinPagesRoot(), userRoot('plans', 'my-plans')] });
+    expect(() => readConfig(dir)).toThrow(/root id 'plans' is reserved for a system root/);
+    fs.rmSync(configPath(dir));
+    expect(() => writeConfig(dir, { roots: [builtinPagesRoot(), userRoot('plans', 'my-plans')] })).toThrow(
+      /reserved for a system root/,
+    );
+  });
+
+  it('[ac:ac-konfiguracja-ktorej-roots-nie-ma-dokl] config without exactly one builtin is rejected on read and on write', () => {
+    writeRaw({ $schemaVersion: 4, name: 'X', roots: [userRoot('docs', 'docs')] });
+    expect(() => readConfig(dir)).toThrow(/exactly one root must have builtin: true \(found 0\)/);
+    writeRaw({ $schemaVersion: 4, name: 'X', roots: [builtinPagesRoot(), { ...builtinPagesRoot('docs'), id: 'docs' }] });
+    expect(() => readConfig(dir)).toThrow(/exactly one root must have builtin: true \(found 2\)/);
+
+    fs.rmSync(configPath(dir));
+    expect(() => writeConfig(dir, { roots: [userRoot('docs', 'docs')] })).toThrow(/found 0/);
+    expect(() =>
+      writeConfig(dir, { roots: [builtinPagesRoot(), { ...builtinPagesRoot('docs'), id: 'docs' }] }),
+    ).toThrow(/found 2/);
+    // Nothing was written by the refused writes.
+    expect(fs.existsSync(configPath(dir))).toBe(false);
+  });
+
+  it('[ac:ac-wpis-roots-z-polem-spoza-id-name-dir] unknown field on a roots[] entry loads without error and the root keeps exactly 4 keys', () => {
+    writeRaw({
+      $schemaVersion: 4,
+      name: 'X',
+      roots: [{ ...builtinPagesRoot(), releasable: false, foo: 1 }, { ...userRoot('docs', 'docs'), sidebar: 'hidden', linkTargets: ['ghost'] }],
+    });
+    const cfg = readConfig(dir);
+    expect(cfg.roots).toEqual([
+      { id: 'pages', name: 'Pages', dir: 'pages', builtin: true },
+      { id: 'docs', name: 'docs', dir: 'docs', builtin: false },
+    ]);
+    for (const r of cfg.roots) expect(Object.keys(r).sort()).toEqual(['builtin', 'dir', 'id', 'name']);
+  });
+
+  it('[ac:ac-config-json-z-kluczem-dir-dla-planow] plansDir in config.json is ignored with a warning and absent from the read config', () => {
+    writeRaw({ $schemaVersion: 4, name: 'X', roots: [builtinPagesRoot()], plansDir: 'docs/plans' });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const cfg = readConfig(dir);
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/plansDir/));
+      expect('plansDir' in cfg).toBe(false);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('a legacy *Dir equal to the fixed system dir is ignored silently', () => {
+    writeRaw({ $schemaVersion: 4, name: 'X', roots: [builtinPagesRoot()], briefsDir: '.claude4spec/briefs' });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const cfg = readConfig(dir);
+      expect(warn).not.toHaveBeenCalled();
+      expect('briefsDir' in cfg).toBe(false);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('parseRootsArray rejects a root id that a route already claims', () => {
     /**
      * 0.2.13 mounts the cross-root `search_pages` rendering at
-     * `GET /api/pages/search`, ahead of `/api/pages/:rootId` — it has to be
-     * ahead, or `search` is captured as a root id and the operation answers
-     * ROOT_NOT_FOUND. That creates the mirror-image trap: a project declaring a
-     * root called `search` loses `GET /api/pages/search` for its own tree, and
-     * loses it SILENTLY — the symptom is a root missing from the sidebar, not a
-     * 500. Refused at config validation, where the collision is visible.
+     * `GET /api/pages/search`, ahead of `/api/pages/:rootId`. A root called
+     * `search` would lose that path SILENTLY, so the id is refused at config
+     * validation, where the collision is visible.
      */
-    const search = {
-      id: 'search', name: 'Search', dir: 'search', builtin: false,
-      releasable: false, sectionIndexed: false, referenceValidated: false,
-      linkTargets: [], sidebar: 'accordion', briefTarget: false,
-    };
+    const search = userRoot('search', 'search');
     expect(() => parseRootsArray([builtinPagesRoot(), search])).toThrow(/reserved/);
     // Only the ids a route actually claims — this is a reserved LIST, not a
     // blanket restriction on what a root may be called.
@@ -557,26 +558,20 @@ describe('config — roots[] / v4 migration (0.1.96)', () => {
    * became nothing but the default a new project starts with.
    */
   it('parseRootsArray requires exactly one builtin root, whatever its id', () => {
-    const userRoot = {
-      id: 'skills', name: 'Skills', dir: 'skills', builtin: false,
-      releasable: false, sectionIndexed: false, referenceValidated: false,
-      linkTargets: [], sidebar: 'accordion', briefTarget: false,
-    };
-    expect(() => parseRootsArray([userRoot])).toThrow(/exactly one root must have builtin: true \(found 0\)/);
+    const skills = userRoot('skills', 'skills');
+    expect(() => parseRootsArray([skills])).toThrow(/exactly one root must have builtin: true \(found 0\)/);
     expect(() =>
       parseRootsArray([builtinPagesRoot(), { ...builtinPagesRoot(), id: 'docs', dir: 'docs' }]),
     ).toThrow(/exactly one root must have builtin: true \(found 2\)/);
     // The BASE root renamed away from `pages`, with no entry of that name left,
     // is a perfectly ordinary config — this is the whole point of 0.2.101.
-    expect(() =>
-      parseRootsArray([{ ...builtinPagesRoot(), id: 'docs' }, userRoot]),
-    ).not.toThrow();
+    expect(() => parseRootsArray([{ ...builtinPagesRoot(), id: 'docs' }, skills])).not.toThrow();
   });
 
-  it('parseRootsArray requires the builtin root to keep sidebar accordion', () => {
-    expect(() =>
-      parseRootsArray([{ ...builtinPagesRoot(), id: 'docs', sidebar: 'hidden' as const }]),
-    ).toThrow(/the builtin root 'docs' must have sidebar 'accordion'/);
+  it('parseRootsArray requires builtin on every entry', () => {
+    expect(() => parseRootsArray([builtinPagesRoot(), { id: 'docs', name: 'Docs', dir: 'docs' }])).toThrow(
+      /roots\[1\]\.builtin/,
+    );
   });
 
   it('parseRootsArray rejects a root id that is not a kebab-case slug', () => {
@@ -598,7 +593,7 @@ describe('config — roots[] / v4 migration (0.1.96)', () => {
     try {
       const file = configPath(dir);
       fs.mkdirSync(path.dirname(file), { recursive: true });
-      const legacy = { ...builtinPagesRoot(), id: 'api_docs', dir: 'api_docs', builtin: false };
+      const legacy = userRoot('api_docs', 'api_docs');
       fs.writeFileSync(
         file,
         JSON.stringify({ $schemaVersion: 4, name: 'X', roots: [builtinPagesRoot(), legacy] }, null, 2),
@@ -744,7 +739,11 @@ describe('config — central default normalizer (C23, 0.2.8)', () => {
       expect(onDisk.agent).toBeUndefined();
       expect(onDisk.plugins).toBeUndefined();
       expect(onDisk.onboardingCompleted).toBe(false);
-      expect(onDisk.briefsDir).toBe('.claude4spec/briefs');
+      expect(onDisk.roots).toEqual([{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }]);
+      // 2.1.8: the artifact dir keys are gone — system roots live in code.
+      for (const k of ['plansDir', 'briefsDir', 'patchesDir', 'entitiesDir', 'releasesDir']) {
+        expect(k in onDisk).toBe(false);
+      }
     } finally {
       fs.rmSync(fresh, { recursive: true, force: true });
     }

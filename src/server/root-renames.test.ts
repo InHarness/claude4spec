@@ -9,7 +9,6 @@ import {
   formerIdsOf,
   readRootRenames,
   recoverPendingRootRename,
-  relinkRoots,
   resolveCurrentRootId,
   retiredRootIds,
   rootIdChain,
@@ -20,7 +19,6 @@ import {
   writeRootRenames,
   type RootRenameTransition,
 } from './root-renames.js';
-import type { Root } from '../shared/types.js';
 
 const t = (from: string, to: string): RootRenameTransition => ({ from, to, at: '2026-01-01T00:00:00.000Z' });
 
@@ -96,20 +94,6 @@ describe('root-renames — persistence (0.2.101)', () => {
     expect(() => appendTransition(dir, 'docs', 'pages')).toThrow(/cycle/);
   });
 
-  it('relinkRoots rewrites every linkTargets entry and names the roots it touched', () => {
-    const roots: Root[] = [
-      { ...builtinPagesRoot(), linkTargets: ['adr'] },
-      { ...builtinPagesRoot(), id: 'adr', dir: 'adr', builtin: false, linkTargets: [] },
-      { ...builtinPagesRoot(), id: 'rfc', dir: 'rfc', builtin: false, linkTargets: ['adr', 'pages'] },
-    ];
-    const { roots: next, relinked } = relinkRoots(roots, 'adr', 'decisions');
-    expect(relinked).toEqual(['pages', 'rfc']);
-    expect(next[0]!.linkTargets).toEqual(['decisions']);
-    expect(next[2]!.linkTargets).toEqual(['decisions', 'pages']);
-    // Nothing else moves: the rename changes an address, not a directory.
-    expect(next.map((r) => r.dir)).toEqual(roots.map((r) => r.dir));
-  });
-
   it('seeds a clone from a manifest so the retired ids are taken from its first boot', () => {
     seedRootRenamesFromManifest(dir, [{ id: 'spec', formerIds: ['pages', 'docs'] }, { id: 'adr' }]);
     expect(retiredRootIds(dir)).toEqual(new Set(['pages', 'docs']));
@@ -126,7 +110,7 @@ describe('root-renames — persistence (0.2.101)', () => {
  * Crash recovery. A rename commits two files, so a process death between them
  * is the one state no single atomic write can rule out. The journal names the
  * intent and startup replays it — the invariant being protected is that the
- * project never opens with `linkTargets` half-rewritten.
+ * project never opens with a config and a rename registry that disagree.
  */
 describe('root-renames — recovery from an interrupted rename (0.2.101)', () => {
   let dir: string;
@@ -155,7 +139,7 @@ describe('root-renames — recovery from an interrupted rename (0.2.101)', () =>
     write({
       roots: [
         { ...builtinPagesRoot(), id: 'docs' },
-        { ...builtinPagesRoot(), id: 'rfc', dir: 'rfc', builtin: false, linkTargets: ['pages'] },
+        { ...builtinPagesRoot(), id: 'rfc', dir: 'rfc', builtin: false },
       ],
     });
     writeRenameJournal(dir, { from: 'pages', to: 'docs', startedAt: '2026-01-01T00:00:00.000Z' });
@@ -164,9 +148,8 @@ describe('root-renames — recovery from an interrupted rename (0.2.101)', () =>
     expect(readRootRenames(dir).transitions).toEqual([
       expect.objectContaining({ from: 'pages', to: 'docs' }),
     ]);
-    // The half-done relink is finished too — this is the state the contract
-    // rules out by name.
-    expect(readConfig(dir).roots.find((r) => r.id === 'rfc')!.linkTargets).toEqual(['docs']);
+    // 2.1.8: no relink step — the other roots are left exactly as they were.
+    expect(readConfig(dir).roots.map((r) => r.id)).toEqual(['docs', 'rfc']);
     expect(fs.existsSync(rootRenameJournalPath(dir))).toBe(false);
   });
 

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { ensureGitignore } from './gitignore.js';
+import { SYSTEM_ROOTS, type RegistryRoot } from '../shared/root-kinds.js';
 
 describe('ensureGitignore — M33 phase 2 defaults', () => {
   let dir: string;
@@ -84,11 +85,37 @@ describe('ensureGitignore — 0.1.118 git.enabled bidirectional toggle', () => {
     expect(content).toContain('.claude4spec/patches/');
   });
 
-  it('respects custom briefsDir/patchesDir values', () => {
-    ensureGitignore(dir, { gitEnabled: false, briefsDir: 'docs/briefs', patchesDir: 'docs/patches' });
+  // 2.1.8: the block lists the dirs of the registry roots whose kind carries the
+  // `gitignore` flag, read off the roots it is handed — never a config `*Dir` key.
+  it('lists the dirs of the roots it is handed, by kind', () => {
+    const roots: RegistryRoot[] = [
+      { id: 'pages', name: 'Pages', dir: 'pages', kind: 'pages', builtin: true },
+      ...SYSTEM_ROOTS.map((r) => (r.kind === 'briefs' ? { ...r, dir: 'docs/briefs' } : r)),
+    ];
+    ensureGitignore(dir, { gitEnabled: false, roots });
     const content = read();
     expect(content).toContain('docs/briefs/');
-    expect(content).toContain('docs/patches/');
+    // A pages-kind root is never ignored.
+    expect(content).not.toMatch(/^pages\/$/m);
+  });
+
+  it('gitEnabled=false lists plans, briefs, patches, releases in registry order with *.deprecated LAST — never entities', () => {
+    ensureGitignore(dir, { gitEnabled: false });
+    expect(read()).toBe(
+      '# claude4spec (auto-added)\n' +
+        '.claude4spec/plans/\n' +
+        '.claude4spec/briefs/\n' +
+        '.claude4spec/patches/\n' +
+        '.claude4spec/releases/\n' +
+        '*.deprecated\n' +
+        '# /claude4spec (auto-added)\n',
+    );
+    expect(read()).not.toContain('.claude4spec/entities');
+  });
+
+  it('gitEnabled=true lists no root dir — only *.deprecated', () => {
+    ensureGitignore(dir, { gitEnabled: true });
+    expect(read()).toBe('# claude4spec (auto-added)\n*.deprecated\n# /claude4spec (auto-added)\n');
   });
 
   it('preserves user-authored content above the managed block across a toggle flip', () => {
@@ -135,11 +162,6 @@ describe('ensureGitignore — 0.1.118 git.enabled bidirectional toggle', () => {
   it('gitEnabled=true OMITS releasesDir too', () => {
     ensureGitignore(dir, { gitEnabled: true });
     expect(read()).not.toContain('.claude4spec/releases');
-  });
-
-  it('respects a custom releasesDir value', () => {
-    ensureGitignore(dir, { gitEnabled: false, releasesDir: 'docs/releases' });
-    expect(read()).toContain('docs/releases/');
   });
 
   // 0.1.118 code-review fix: the regenerate-in-place rewrite used to treat

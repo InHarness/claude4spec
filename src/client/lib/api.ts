@@ -161,6 +161,10 @@ export interface ConfigResponse {
    * 0.2.101: exactly one entry carries `builtin: true` and THAT is the base page
    * root, whatever its `id` — a response with no entry named `pages` is correct,
    * and nothing may look the base root up by that literal.
+   *
+   * 2.1.8: the USER roots only (kind `pages`, `{ id, name, dir, builtin }`). The
+   * system roots (plans, briefs, patches, entities, releases) are fixed in code
+   * (`src/shared/root-kinds.ts`) and never part of this response.
    */
   roots: Root[];
   writingStyle: string | null;
@@ -171,16 +175,6 @@ export interface ConfigResponse {
   /** 0.1.58: local one-line "elevator pitch" (0–200); surfaced to peer agents. */
   description: string | null;
   onboarding: { completed: boolean };
-  /** M21: catalog of brief files. */
-  briefsDir: string;
-  /** M23: catalog of patch files. */
-  patchesDir: string;
-  /** 0.1.127 M10/M36: catalog of plan files. */
-  plansDir: string;
-  /** M29/M31: committed entity JSON files dir (source of truth; SQLite is derived). */
-  entitiesDir: string;
-  /** 0.1.118: on-disk release identity files dir; spec_release (SQLite) is derived from it. */
-  releasesDir: string;
   /** M13: whitelist of active entity-plugin types; undefined = all registered active. */
   entities?: string[];
   /** M26: hot-reload Claude agent flags. 0.1.51 adds conversationalLanguage; 0.1.90 adds FS path scope. */
@@ -262,15 +256,11 @@ export interface ConfigPatch {
   /**
    * A full roots array replaces the whole set server-side. 0.2.101: replacing
    * the set is NOT a rename — a body without an existing `id` but with a new one
-   * deletes one space and creates another (its pages, history and `linkTargets`
-   * do not travel). Use `configApi.renameRoot` to change an identifier.
+   * deletes one space and creates another (its pages and history do not
+   * travel). Use `configApi.renameRoot` to change an identifier. Each entry
+   * needs all four fields `{ id, name, dir, builtin }`.
    */
   roots?: Root[];
-  briefsDir?: string;
-  patchesDir?: string;
-  plansDir?: string;
-  entitiesDir?: string;
-  releasesDir?: string;
   writingStyle?: string | null;
   /** 0.1.51: spec-authoring language; null or a SUPPORTED_LANGUAGES member. */
   language?: string | null;
@@ -319,7 +309,6 @@ export interface RenameRootResponse {
   dir: string;
   name: string;
   builtin: boolean;
-  relinkedRoots: string[];
   alreadyApplied: boolean;
   configHash: string;
 }

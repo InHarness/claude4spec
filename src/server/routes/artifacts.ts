@@ -4,7 +4,7 @@ import type { PatchService } from '../services/patch.js';
 import type { PlanService } from '../services/plan.js';
 import type { FileVersionService } from '../services/file-version.js';
 import type { ChatService, ArtifactThreadColumn } from '../services/chat.js';
-import { artifactRegistry, type ArtifactKind } from '../services/artifact-registry.js';
+import { artifactEntry, artifactHeaderContract, artifactRootId, type ArtifactKind } from '../services/artifact-registry.js';
 import type {
   ArtifactListItem,
   ArtifactResponse,
@@ -297,7 +297,7 @@ export function artifactsRouter(deps: ArtifactsRouterDeps): Router {
     paging: { limit: number; offset: number } = { limit: 20, offset: 0 },
   ): ArtifactThreadListItem[] =>
     deps.chat.listThreadsByArtifact({
-      threadColumn: artifactRegistry[kind].binding.threadColumn as ArtifactThreadColumn,
+      threadColumn: artifactEntry(kind).binding.threadColumn as ArtifactThreadColumn,
       path,
       ...paging,
     });
@@ -325,7 +325,7 @@ export function artifactsRouter(deps: ArtifactsRouterDeps): Router {
     try {
       const kind = req.params.kind as ArtifactKind;
       const path = extractPath(req.params);
-      const versions = deps.pageVersions.listVersions(path, artifactRegistry[kind].rootId);
+      const versions = deps.pageVersions.listVersions(path, artifactRootId(kind));
       res.json({ data: versions });
     } catch (err) {
       next(err);
@@ -341,7 +341,7 @@ export function artifactsRouter(deps: ArtifactsRouterDeps): Router {
         throw new DomainError('VALIDATION', 'version must be a positive integer');
       }
       const path = extractPath(req.params);
-      const detail = deps.pageVersions.getVersion(path, version, artifactRegistry[kind].rootId);
+      const detail = deps.pageVersions.getVersion(path, version, artifactRootId(kind));
       if (!detail) throw new DomainError('VERSION_NOT_FOUND', `version ${version} not found`);
       res.json({ data: detail });
     } catch (err) {
@@ -376,7 +376,8 @@ export function artifactsRouter(deps: ArtifactsRouterDeps): Router {
       const path = extractPath(req.params);
       const body = (req.body ?? {}) as { frontmatter?: Record<string, unknown> };
       const frontmatter = body.frontmatter ?? {};
-      const mutable = new Set(artifactRegistry[kind].frontmatterContract.mutable);
+      // 2.1.8: the mutable fields come from the root kind's header contract.
+      const mutable = new Set(artifactHeaderContract(kind).mutable);
       const invalid = Object.keys(frontmatter).filter((k) => !mutable.has(k));
       if (invalid.length > 0) {
         throw new DomainError(

@@ -98,8 +98,8 @@ export async function searchPages(
      * two above it is not a ladder. The file scan dominates the cost regardless;
      * this is one indexed SELECT per root.
      */
-    const anchors = root.sectionIndexed ? anchorIndex(db, root.id) : null;
-    if (anchorFilter && !anchors) continue; // an unindexed root has no sections to name
+    // 2.1.8: every page root has a section index.
+    const anchors = anchorIndex(db, root.id);
 
     for (const rel of await safeList(pages, root.id)) {
       // Before the path filter, not after: a run that spends its whole budget

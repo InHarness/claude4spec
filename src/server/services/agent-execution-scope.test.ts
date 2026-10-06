@@ -58,11 +58,26 @@ describe('resolveAgentExecutionScope', () => {
     expect(second.allowedPaths).toEqual([path.join(cwd, 'after')]);
   });
 
-  it('honours custom artifact dir locations from config', () => {
-    writeConfig({ briefsDir: 'docs/briefs' });
+  it('2.1.8: ignores legacy artifact dir keys in config — the deny-set stays the fixed .claude4spec/<kind> dirs', () => {
+    writeConfig({ briefsDir: 'docs/briefs', plansDir: 'docs/plans' });
     const scope = resolveAgentExecutionScope({ cwd, roots: [] });
-    expect(scope.disallowedPaths).toContain(path.join(cwd, 'docs', 'briefs'));
-    expect(scope.disallowedPaths).not.toContain(path.join(cwd, '.claude4spec', 'briefs'));
+    expect(scope.artifactDenyDirs).toEqual(
+      ['plans', 'briefs', 'patches', 'entities', 'releases'].map((k) => path.join(cwd, '.claude4spec', k)),
+    );
+    expect(scope.disallowedPaths).not.toContain(path.join(cwd, 'docs', 'briefs'));
+    expect(scope.disallowedPaths).not.toContain(path.join(cwd, 'docs', 'plans'));
+  });
+
+  it('2.1.8: page roots passed in become pageRootDirs; system roots never do', () => {
+    const scope = resolveAgentExecutionScope({
+      cwd,
+      roots: [
+        { id: 'pages', name: 'Pages', dir: 'pages', builtin: true },
+        { id: 'notes', name: 'Notes', dir: 'notes', builtin: false },
+      ],
+    });
+    expect(scope.pageRootDirs).toEqual([path.join(cwd, 'pages'), path.join(cwd, 'notes')]);
+    for (const d of scope.artifactDenyDirs) expect(scope.pageRootDirs).not.toContain(d);
   });
 
   it('derives claude_sandbox from the same resolved lists', () => {

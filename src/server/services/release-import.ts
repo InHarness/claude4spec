@@ -276,11 +276,18 @@ export function rollbackClone(
   cwd: string,
   opts: {
     /**
-     * 0.1.96: dirs (relative to `cwd`) of every releasable root the restore
-     * created — was the single `pagesDir` scalar. Each is wholly a restore
-     * mutation of this run (ensureBootstrap is skipped for clone).
+     * 0.1.96: dirs (relative to `cwd`) of every page root the restore created —
+     * was the single `pagesDir` scalar. Each is wholly a restore mutation of
+     * this run (ensureBootstrap is skipped for clone).
      */
     rootDirs: string[];
+    /**
+     * 2.1.8: dirs (relative to `cwd`) of the SYSTEM roots this run created —
+     * `entities` (its files and `tags.json` are restored by the clone) and the
+     * others mkdir'ed by the context build. Removed even when `.claude4spec/`
+     * existed before the clone, which used to leave restored entity files behind.
+     */
+    systemRootDirs?: string[];
     configCreated: boolean;
     claudeDirCreated: boolean;
     gitignoreCreated: boolean;
@@ -296,8 +303,9 @@ export function rollbackClone(
   for (const dir of [claudeDir, ...(opts.dbSlotDir ? [opts.dbSlotDir] : [])]) {
     for (const f of ['db.sqlite', 'db.sqlite-wal', 'db.sqlite-shm']) rm(path.join(dir, f));
   }
-  // Each releasable root's dir + restored files.
+  // Each page root's dir + restored files, and the system roots created here.
   for (const dir of opts.rootDirs) rm(path.join(cwd, dir));
+  for (const dir of opts.systemRootDirs ?? []) rm(path.join(cwd, dir));
   // Run-created scaffolding only — a pre-existing config.json / .claude4spec/ /
   // .gitignore (we'd have only appended to the last) is left untouched.
   if (opts.configCreated) rm(path.join(claudeDir, 'config.json')); // M01 step 5
@@ -306,9 +314,11 @@ export function rollbackClone(
 }
 
 /**
- * Resolve the releasable roots to persist into a cloned project's config. A v2
- * bundle carries `roots[]` directly; a v1 bundle carries only the legacy
- * `pagesDir` scalar → map it to the built-in 'pages' root (the v3→v4 path).
+ * Resolve the page roots to persist into a cloned project's config. A v2+
+ * bundle carries `roots[]` directly (written in four fields; any legacy per-root
+ * field is dropped by the config writer); a v1 bundle carries only the legacy
+ * `pagesDir` scalar → map it to the built-in root. Artifact directory keys a
+ * v1 bundle may carry are ignored — the system roots are fixed in code.
  */
 function resolveBundleRoots(bundleConfig: BundleConfig | null): Root[] | undefined {
   if (!bundleConfig) return undefined;

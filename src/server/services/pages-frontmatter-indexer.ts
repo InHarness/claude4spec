@@ -1,9 +1,7 @@
 /**
  * M21 / M02 (m02fmidx): in-memory index of YAML frontmatter for every markdown
- * file across ALL page roots (`config.roots[]`) plus the M36 artifact mounts
- * (briefs/patches). Fed by every root's `PagesWatcher` plus the dedicated
- * artifact watchers. Provides synchronous lookups for:
- *   - hidden-tree filter (`pagesRouter` excludes pages with `frontmatter.type === 'brief'`)
+ * file of every registry root whose kind selects `m02-frontmatter-indexer`
+ * (2.1.8: pages, plans, briefs, patches). Provides synchronous lookups for:
  *   - `briefService.listBriefs()` (find by `frontmatter.type === 'brief'`)
  *   - any future module that wants to discover pages by frontmatter type
  *

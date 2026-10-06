@@ -1,60 +1,27 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { type Root, type RootSidebar, DEFAULT_PAGES_ROOT_PROPS, DEFAULT_USER_ROOT_PROPS } from '../shared/types.js';
-import { hasDotSegment } from '../shared/page-files.js';
+import { type Root } from '../shared/types.js';
+import {
+  SYSTEM_ROOTS,
+  SYSTEM_ROOT_KINDS,
+  isSystemRootId,
+  namespacesOverlap,
+  systemRootDir,
+  type SystemRootKind,
+} from '../shared/root-kinds.js';
 
 export interface Config {
   $schemaVersion: number;
   name: string;
   /**
-   * 0.1.96 multiroot: ordered list of named page roots. The built-in `'pages'`
-   * root (`builtin: true`) is always present. Replaces the single `pagesDir`
-   * scalar. Briefs/patches are NOT roots — they stay as `briefsDir`/`patchesDir`
-   * scalars below.
+   * 0.1.96 multiroot: ordered list of the USER roots (2.1.8: all of kind
+   * `pages`, four fields each). Exactly one carries `builtin: true`. The system
+   * roots (plans, briefs, patches, entities, releases) are registered in code
+   * (`src/shared/root-kinds.ts`) and have no keys here — the former
+   * `plansDir`/`briefsDir`/`patchesDir`/`entitiesDir`/`releasesDir` are gone.
    */
   roots: Root[];
-  /**
-   * M21: catalog of brief files (relative to cwd, default `.claude4spec/briefs`).
-   * Same validation as `pagesDir` (must be relative, must not escape cwd).
-   * Forward-compat: missing in pre-M21 configs = treated as default.
-   */
-  briefsDir: string;
-  /**
-   * M23: catalog of patch files (relative to cwd, default `.claude4spec/patches`).
-   * Same validation as `pagesDir`/`briefsDir` (must be relative, must not
-   * escape cwd). Forward-compat: missing in pre-M23 configs = treated as default.
-   */
-  patchesDir: string;
-  /**
-   * 0.1.127 M10/M36: catalog of plan files (relative to cwd, default
-   * `.claude4spec/plans`). Same validation as `briefsDir`/`patchesDir` (must be
-   * relative, must not escape cwd). Active once the plan → filesystem migration
-   * lands (see brief 0-1-126-to-0-1-127). Forward-compat: missing = treated as
-   * default. Additive — no `$schemaVersion` bump.
-   */
-  plansDir: string;
-  /**
-   * M29: directory of committed entity JSON files + tags.json (relative to cwd,
-   * default `.claude4spec/entities`). Source of truth for entities; SQLite is a
-   * derived index rebuilt from these files at boot. Same validation as
-   * `briefsDir`/`patchesDir` (must be relative, must not escape cwd) — but,
-   * unlike them, this directory is COMMITTED to git. Forward-compat: missing in
-   * pre-M29 configs = treated as default. Additive — no `$schemaVersion` bump.
-   */
-  entitiesDir: string;
-  /**
-   * 0.1.118: directory of on-disk release identity files (relative to cwd,
-   * default `.claude4spec/releases`). One `<slug>.json` per release (name,
-   * slug, description, createdAt, createdBy, roots) — identity only, no
-   * version content. `spec_release` (SQLite) is a derived cache rebuilt from
-   * these files, analogous to how entities are rebuilt from `entitiesDir`.
-   * Same validation as `entitiesDir` (must be relative, must not escape cwd,
-   * included in the D4 no-overlap check). Committed to git when `git.enabled`,
-   * local-only otherwise. Forward-compat: missing = treated as default.
-   * Additive — no `$schemaVersion` bump.
-   */
-  releasesDir: string;
   writingStyle: string | null;
   /**
    * 0.1.58: one-line "elevator pitch" (0–200 chars) describing this specification.
@@ -352,14 +319,7 @@ export function builtinRoot(roots: readonly Root[]): Root {
 }
 
 export function builtinPagesRoot(dir: string = 'pages'): Root {
-  return {
-    id: 'pages',
-    name: 'Pages',
-    dir,
-    builtin: true,
-    ...DEFAULT_PAGES_ROOT_PROPS,
-    linkTargets: [...DEFAULT_PAGES_ROOT_PROPS.linkTargets],
-  };
+  return { id: 'pages', name: 'Pages', dir, builtin: true };
 }
 
 /**
@@ -416,11 +376,6 @@ export function bootstrapDefaults(cwd: string): Config {
     $schemaVersion: CURRENT_SCHEMA_VERSION,
     name: path.basename(cwd),
     roots: [builtinPagesRoot()],
-    briefsDir: '.claude4spec/briefs',
-    patchesDir: '.claude4spec/patches',
-    plansDir: '.claude4spec/plans',
-    entitiesDir: '.claude4spec/entities',
-    releasesDir: '.claude4spec/releases',
     writingStyle: null,
     // 0.1.51: brak dyrektywy jezykowej dla tresci spec (dotychczasowe zachowanie).
     language: null,
@@ -513,195 +468,36 @@ function isPathSafeRelative(dir: string): boolean {
   return true;
 }
 
-/** Normalize a cwd-relative dir for overlap comparison (trailing slash stripped). */
-function normDir(dir: string): string {
-  const n = path.normalize(dir).replace(/[\\/]+$/, '');
-  return n === '.' ? '' : n;
-}
-
-/** True when `child` equals or is nested under `parent` (both normalized). */
-function isInsideDir(parent: string, child: string): boolean {
-  if (parent === child) return true;
-  if (parent === '') return true; // cwd root contains everything
-  return child.startsWith(parent + path.sep);
-}
-
 /**
- * True when a page root at `rootDir` genuinely conflicts with `otherDir`:
- *  - equal dirs, or
- *  - the root sits inside `otherDir` (its own files would live under a write-target), or
- *  - `otherDir` sits inside the root AND is reachable by the pages walker (no dot-dir
- *    segment on the way — the walker skips `.`-prefixed directories, so a root at '.'
- *    does NOT actually index `.claude4spec/*`).
- */
-export function dirsOverlap(rootDir: string, otherDir: string): boolean {
-  const na = normDir(rootDir);
-  const nb = normDir(otherDir);
-  if (na === nb) return true;
-  if (isInsideDir(nb, na)) return true; // root nested under other
-  if (walkerReaches(na, nb)) return true; // other under root, and the walker gets there
-  return false;
-}
-
-/**
- * Would a pages walker rooted at `container` actually descend into `child`? Containment
- * alone is not enough: the walker skips `.`-prefixed directories, so a root at '.' never
- * indexes `.claude4spec/*`.
- */
-function walkerReaches(container: string, child: string): boolean {
-  if (!isInsideDir(container, child)) return false;
-  const rel = container === '' ? child : path.relative(container, child);
-  return !hasDotSegment(rel);
-}
-
-/**
- * Do two PAGE ROOTS collide? Symmetric, so the verdict never depends on the order of
- * `roots[]` — but the dot-dir exemption is kept in BOTH directions, which is what
- * separates this from `dirsOverlap(a,b) || dirsOverlap(b,a)`.
+ * 2.1.8 (D4): overlap of NAMESPACES, not of directories. A root's namespace is
+ * the files under its `dir`, excluding every subtree passing through a
+ * dot-segment. The collision set is the namespace of every registry root — user
+ * and system — plus `.claude4spec/plugins`. Only pairs involving a USER root are
+ * checked (the system roots are fixed and disjoint by construction).
  *
- * That naive OR is wrong because `dirsOverlap`'s clause 2 ("root nested under other")
- * is unconditional: read `.claude4spec/skills` as the root and '.' as the other, and it
- * reports a conflict for two roots that never see each other's files — the walker at '.'
- * skips the dot-dir, and the one at `.claude4spec/skills` stays inside it. Roots laid out
- * that way are legal (`validateRootDirs allows .claude4spec/skills as a user root`), and
- * boot throws on the first error, so getting this wrong makes the project unopenable.
- */
-function rootsOverlap(aDir: string, bDir: string): boolean {
-  const na = normDir(aDir);
-  const nb = normDir(bDir);
-  if (na === nb) return true;
-  return walkerReaches(na, nb) || walkerReaches(nb, na);
-}
-
-/**
- * Does this pair of write targets collide? The reading depends on which side, if any,
- * is a page root — the dot-dir exemption in `dirsOverlap`/`rootsOverlap` only means
- * anything for a side that actually walks a tree.
+ * Consequences: a user root at `.` passes (it does not reach `.claude4spec/`,
+ * and neither does CLI `--pages .`); a root at or under `.claude4spec/plans` is
+ * refused; `.claude/skills` is not in the set (it is a lazy skill reader).
  *
- *  - root vs root      → `rootsOverlap`: symmetric, exemption honoured both ways.
- *  - root vs target    → the root is the walker; ask it that way round.
- *  - target vs target  → neither walks. Plain equality-or-containment, no dot-dir
- *                        exemption: two things WRITING into nested dirs clobber each
- *                        other whether or not a walker would have found them.
+ * Returns hard `errors` (→ 400 on PATCH, boot throw).
  */
-function targetsOverlap(
-  a: { dir: string; isRoot: boolean },
-  b: { dir: string; isRoot: boolean },
-): boolean {
-  if (a.isRoot && b.isRoot) return rootsOverlap(a.dir, b.dir);
-  if (a.isRoot) return dirsOverlap(a.dir, b.dir);
-  if (b.isRoot) return dirsOverlap(b.dir, a.dir);
-  const na = normDir(a.dir);
-  const nb = normDir(b.dir);
-  return na === nb || isInsideDir(na, nb) || isInsideDir(nb, na);
-}
-
-/**
- * 0.1.96: cross-field validation of `roots[]` dirs against each other and the
- * other write/read targets. Returns hard `errors` (→ 400 / boot throw) and
- * `warnings` (log-only). Kept separate from `validate()` because it needs the
- * fully-merged config (entitiesDir/briefsDir/patchesDir), not a partial.
- *
- * 0.2.9 adds a third bucket, `newPairConflicts`: collisions between two non-root write
- * targets (entitiesDir / releasesDir / `.claude4spec/plugins`). Those pairs were never
- * compared before, so a project can already be violating one — and since boot throws on
- * `errors[0]` before the HTTP listener exists, promoting them straight to `errors` would
- * make such a project unopenable with no in-app route to the screen that repairs it.
- * Boot logs them; `PATCH /api/config` refuses them. That is the same split the artifact
- * dirs (briefs/patches/plans) already use.
- */
-export function validateRootDirs(
-  roots: Root[],
-  opts: { entitiesDir: string; releasesDir: string; briefsDir: string; patchesDir: string; plansDir: string },
-): { errors: string[]; warnings: string[]; newPairConflicts: string[] } {
+export function validateRootDirs(roots: readonly Root[]): { errors: string[] } {
   const errors: string[] = [];
-  const warnings: string[] = [];
-  const newPairConflicts: string[] = [];
-
-  // D4: every "smudging" write target is checked against every other one, PAIRWISE and
-  // BIDIRECTIONALLY — a page root is no longer privileged as the only left-hand side.
-  // Before this, `entitiesDir` vs `releasesDir` (and either vs `.claude4spec/plugins`)
-  // was never compared at all: two write targets could be pointed at the same directory
-  // and nothing complained until something clobbered something else at runtime.
-  const writeTargets: Array<{ id: string; dir: string; isRoot: boolean }> = [
-    ...roots.map((r) => ({ id: r.id, dir: r.dir, isRoot: true })),
-    { id: 'entitiesDir', dir: opts.entitiesDir, isRoot: false },
-    { id: 'releasesDir', dir: opts.releasesDir, isRoot: false },
-    ...RESERVED_WRITE_TARGETS.map((d) => ({ id: d, dir: d, isRoot: false })),
-  ];
-  for (let i = 0; i < writeTargets.length; i++) {
-    for (let j = i + 1; j < writeTargets.length; j++) {
-      const a = writeTargets[i]!;
-      const b = writeTargets[j]!;
-      if (!targetsOverlap(a, b)) continue;
-      const msg = `config.json: '${a.id}' overlaps write-target '${b.id}'`;
-      // Pairs involving a root were already hard errors before 0.2.9 — keep them there.
-      // A pair of non-root targets is newly compared, so it only hardens at write time.
-      if (a.isRoot || b.isRoot) errors.push(msg);
-      else newPairConflicts.push(msg);
-    }
-  }
-
-  // Rule 3a: briefs/patches/plans overlapping a Page Root stays a WARNING, not a hard
-  // error — the files are readable as pages, which is untidy rather than destructive.
-  // Evaluated over all roots × all three dirs regardless of which side of the pair the
-  // caller happened to send, so a diff-only PATCH carrying just `briefsDir` still warns.
-  // '.claude/skills' overlap is allowed and intentionally absent here.
-  const softTargets: Array<{ id: string; dir: string }> = [
-    { id: 'briefsDir', dir: opts.briefsDir },
-    { id: 'patchesDir', dir: opts.patchesDir },
-    { id: 'plansDir', dir: opts.plansDir },
-  ];
-  for (const r of roots) {
-    for (const t of softTargets) {
-      // The root is the walker here, so the one-directional reading is the right one —
-      // same reason as in `targetsOverlap`.
-      if (dirsOverlap(r.dir, t.dir)) {
-        warnings.push(`config.json: root '${r.id}' dir overlaps ${t.id} — pages may appear in both`);
-      }
-    }
-  }
-
-  return { errors, warnings, newPairConflicts };
-}
-
-/**
- * 0.2.113: briefs/patches/plans against the three non-root WRITE targets
- * (entitiesDir, releasesDir, `.claude4spec/plugins`). Overlapping a page root is
- * only untidy (rule 3a — frontmatter `type: brief|patch` tells the files apart), but
- * sharing a directory with the entity store, the release identity files or the
- * plugin overlay is destructive, so it is an error.
- *
- * Kept out of `validateRootDirs` on purpose: boot never compared these pairs, so a
- * project can already violate one, and promoting them into boot's hard errors would
- * make it unopenable. `PATCH /api/config` refuses a pair only when the request
- * touches one of its two sides — the same repairability rule as `newPairConflicts`.
- */
-export function artifactDirConflicts(opts: {
-  entitiesDir: string;
-  releasesDir: string;
-  briefsDir: string;
-  patchesDir: string;
-  plansDir: string;
-}): Array<{ a: string; b: string; message: string }> {
-  const artifactDirs = [
-    { id: 'briefsDir', dir: opts.briefsDir },
-    { id: 'patchesDir', dir: opts.patchesDir },
-    { id: 'plansDir', dir: opts.plansDir },
-  ];
-  const writeTargets = [
-    { id: 'entitiesDir', dir: opts.entitiesDir },
-    { id: 'releasesDir', dir: opts.releasesDir },
+  const others: Array<{ id: string; dir: string }> = [
+    ...SYSTEM_ROOTS.map((r) => ({ id: r.id, dir: r.dir })),
     ...RESERVED_WRITE_TARGETS.map((d) => ({ id: d, dir: d })),
   ];
-  const out: Array<{ a: string; b: string; message: string }> = [];
-  for (const a of artifactDirs) {
-    for (const b of writeTargets) {
-      if (!targetsOverlap({ dir: a.dir, isRoot: false }, { dir: b.dir, isRoot: false })) continue;
-      out.push({ a: a.id, b: b.id, message: `config.json: '${a.id}' overlaps write-target '${b.id}'` });
+  for (let i = 0; i < roots.length; i++) {
+    const a = roots[i]!;
+    for (let j = i + 1; j < roots.length; j++) {
+      const b = roots[j]!;
+      if (namespacesOverlap(a.dir, b.dir)) errors.push(`config.json: '${a.id}' overlaps write-target '${b.id}'`);
+    }
+    for (const b of others) {
+      if (namespacesOverlap(a.dir, b.dir)) errors.push(`config.json: '${a.id}' overlaps write-target '${b.id}'`);
     }
   }
-  return out;
+  return { errors };
 }
 
 /**
@@ -763,9 +559,8 @@ export function isReservedRootId(id: string): boolean {
 
 /**
  * Structural validation of a raw `roots[]` value: each element well-typed +
- * path-safe, ids VALID (kebab slug) and unique, linkTargets reference existing
- * roots, and exactly one entry carrying `builtin: true` with sidebar
- * 'accordion'. Throws on any violation. Shared by `validate()` (boot/read) and
+ * path-safe, ids VALID (kebab slug), unique and not reserved for a system root,
+ * and exactly one entry carrying `builtin: true`. Throws on any violation. Shared by `validate()` (boot/read) and
  * the PATCH /api/config route (→ 400).
  *
  * 0.2.101: the base root is recognised by its FLAG, never by `id === 'pages'`.
@@ -804,6 +599,14 @@ export function parseRootsArray(
       }
     }
     if (seen.has(root.id)) throw new Error(`config.json: duplicate root id '${root.id}'`);
+    // 2.1.8: the five system roots own these identifiers — a user root under one
+    // of them would be a second root at the same address. Refused on read too:
+    // there is no reading under which the project has a sane registry.
+    if (isSystemRootId(root.id)) {
+      throw new Error(
+        `config.json: root id '${root.id}' is reserved for a system root (${SYSTEM_ROOT_KINDS.join(', ')})`,
+      );
+    }
     if (opts.retiredIds?.has(root.id)) {
       throw new Error(
         `config.json: root id '${root.id}' was retired by an earlier rename and cannot be reused — a retired identifier stays taken so page history under it keeps naming one space`,
@@ -825,14 +628,6 @@ export function parseRootsArray(
     }
     seen.add(root.id);
   }
-  // linkTargets must reference existing root ids ("dangling link scope").
-  for (const root of roots) {
-    for (const t of root.linkTargets) {
-      if (!seen.has(t)) {
-        throw new Error(`config.json: root '${root.id}' has dangling link scope '${t}'`);
-      }
-    }
-  }
   // Rule 5 — the base root is present and unambiguous. Zero entries would leave
   // the project with no space for the welcome page, module pages or `@`-links to
   // land in; two would make "the base root" a question with two answers, and
@@ -844,14 +639,8 @@ export function parseRootsArray(
       `config.json: exactly one root must have builtin: true (found ${builtins.length}) — the base root is recognised by that flag, not by its id`,
     );
   }
-  const baseRoot = builtins[0]!;
-  if (baseRoot.sidebar !== 'accordion') {
-    throw new Error(`config.json: the builtin root '${baseRoot.id}' must have sidebar 'accordion'`);
-  }
   return roots;
 }
-
-const VALID_SIDEBAR = new Set<RootSidebar>(['accordion', 'hidden']);
 
 /** Structural validation of one raw `roots[]` element. Throws on any violation. */
 function validateRoot(raw: unknown, index: number): Root {
@@ -875,25 +664,11 @@ function validateRoot(raw: unknown, index: number): Root {
   if (!isPathSafeRelative(dir)) {
     throw new Error(`config.json: root '${id}' dir '${dir}' must be a relative path inside cwd`);
   }
-  const sidebar = r.sidebar;
-  if (typeof sidebar !== 'string' || !VALID_SIDEBAR.has(sidebar as RootSidebar)) {
-    throw new Error(`config.json: root '${id}' sidebar expected 'accordion' | 'hidden', got ${JSON.stringify(sidebar)}`);
-  }
-  if (!Array.isArray(r.linkTargets) || !r.linkTargets.every((x) => typeof x === 'string')) {
-    throw typeError(`roots[${index}].linkTargets`, 'string[]', r.linkTargets);
-  }
-  return {
-    id,
-    name,
-    dir,
-    builtin: bool('builtin'),
-    releasable: bool('releasable'),
-    sectionIndexed: bool('sectionIndexed'),
-    referenceValidated: bool('referenceValidated'),
-    linkTargets: r.linkTargets as string[],
-    sidebar: sidebar as RootSidebar,
-    briefTarget: bool('briefTarget'),
-  };
+  // 2.1.8: exactly four fields. Anything else on the entry (the pre-2.1.8
+  // `releasable`/`sectionIndexed`/`referenceValidated`/`linkTargets`/`sidebar`/
+  // `briefTarget`, or any other key) is an unknown field: ignored, no effect.
+  // Nothing is defaulted — an entry is complete or invalid.
+  return { id, name, dir, builtin: bool('builtin') };
 }
 
 function validate(raw: unknown): Partial<Config> {
@@ -921,26 +696,6 @@ function validate(raw: unknown): Partial<Config> {
     // Read path: an id written under an older release warns, it does not brick
     // the project. `PATCH /api/config` still refuses — see RESERVED_ROOT_IDS.
     out.roots = parseRootsArray(r.roots, { reservedIds: 'warn', idShape: 'warn' });
-  }
-  if ('briefsDir' in r) {
-    if (typeof r.briefsDir !== 'string') throw typeError('briefsDir', 'string', r.briefsDir);
-    out.briefsDir = r.briefsDir;
-  }
-  if ('patchesDir' in r) {
-    if (typeof r.patchesDir !== 'string') throw typeError('patchesDir', 'string', r.patchesDir);
-    out.patchesDir = r.patchesDir;
-  }
-  if ('plansDir' in r) {
-    if (typeof r.plansDir !== 'string') throw typeError('plansDir', 'string', r.plansDir);
-    out.plansDir = r.plansDir;
-  }
-  if ('entitiesDir' in r) {
-    if (typeof r.entitiesDir !== 'string') throw typeError('entitiesDir', 'string', r.entitiesDir);
-    out.entitiesDir = r.entitiesDir;
-  }
-  if ('releasesDir' in r) {
-    if (typeof r.releasesDir !== 'string') throw typeError('releasesDir', 'string', r.releasesDir);
-    out.releasesDir = r.releasesDir;
   }
   if ('writingStyle' in r) {
     if (r.writingStyle !== null && typeof r.writingStyle !== 'string') {
@@ -1201,6 +956,44 @@ function splitCli(cli: ConfigCliArgs): { patch: Partial<Config>; pagesDir?: stri
 }
 
 /**
+ * 2.1.8: the pre-2.1.8 directory keys, now unknown fields. Each maps to the
+ * system root that replaced it.
+ */
+const LEGACY_DIR_KEYS: ReadonlyArray<readonly [string, SystemRootKind]> = [
+  ['plansDir', 'plans'],
+  ['briefsDir', 'briefs'],
+  ['patchesDir', 'patches'],
+  ['entitiesDir', 'entities'],
+  ['releasesDir', 'releases'],
+];
+
+/** `cwd|key|value` already warned about — `readConfig` runs per agent turn. */
+const WARNED_LEGACY_DIRS = new Set<string>();
+
+/**
+ * The only trace a legacy `*Dir` key leaves: a log warning when its value
+ * differs from the fixed directory of the system root that replaced it. The
+ * key is otherwise ignored — that root's files are read ONLY from
+ * `.claude4spec/<kind>`, and files left in the old location are no longer
+ * visible (without an error). The file is not rewritten.
+ */
+function warnLegacyDirKeys(cwd: string, raw: Record<string, unknown>): void {
+  if (raw === null || typeof raw !== 'object') return;
+  for (const [key, kind] of LEGACY_DIR_KEYS) {
+    const value = raw[key];
+    if (typeof value !== 'string') continue;
+    const fixed = systemRootDir(kind);
+    if (path.normalize(value).replace(/[\\/]+$/, '') === path.normalize(fixed)) continue;
+    const token = `${cwd}|${key}|${value}`;
+    if (WARNED_LEGACY_DIRS.has(token)) continue;
+    WARNED_LEGACY_DIRS.add(token);
+    console.warn(
+      `[config] ${cwd}: '${key}' ("${value}") is no longer read — ${kind} live only in the fixed directory '${fixed}'; files left in "${value}" are not visible`,
+    );
+  }
+}
+
+/**
  * Pure disk read configu — bez side-effectow (mkdir/atomic write/CLI merge).
  * Uzywany przez SkillResolver per query, zeby edycja config.json miedzy turami
  * threadu byla efektywna od nastepnego POST /api/chat.
@@ -1229,6 +1022,7 @@ function readValidatedFile(cwd: string): Partial<Config> | null {
     throw new Error(`config.json: invalid JSON — ${(err as Error).message}`);
   }
   const loaded = validate(parsed);
+  warnLegacyDirKeys(cwd, parsed as Record<string, unknown>);
   // Auto-bump older schemas in memory (v1→v2: `entities` undefined = all
   // plugins active; v2→v3: stale port/mode ignored; v3→v4: legacy pagesDir →
   // pages root). Physical rewrite happens in migrateConfigToV3/V4 (activation
@@ -1286,8 +1080,9 @@ export interface MigrateV3Result {
 /**
  * M31 config v3 migration — runs from the project activation hook (NOT at
  * process start). Harvests `port`/`mode` from the raw JSON (they move to the
- * workspace registry), deletes them, bumps `$schemaVersion` to 3 and ensures
- * `entitiesDir` is materialized. Atomic write; no-op when already v3-shaped.
+ * workspace registry), deletes them and bumps `$schemaVersion` to 3. Atomic
+ * write; no-op when already v3-shaped. (2.1.8: no longer materializes
+ * `entitiesDir` — the entities root is a system root in code.)
  */
 export function migrateConfigToV3(cwd: string): MigrateV3Result {
   const file = configPath(cwd);
@@ -1311,8 +1106,7 @@ export function migrateConfigToV3(cwd: string): MigrateV3Result {
     typeof raw.$schemaVersion === 'number' &&
     raw.$schemaVersion >= 3 &&
     !('port' in raw) &&
-    !('mode' in raw) &&
-    typeof raw.entitiesDir === 'string';
+    !('mode' in raw);
   if (alreadyV3) {
     return { config: readConfig(cwd), migrated: false, carried };
   }
@@ -1324,37 +1118,8 @@ export function migrateConfigToV3(cwd: string): MigrateV3Result {
   // Bring the file to at least v3; the pagesDir→roots (v4) bump is owned by
   // migrateConfigToV4, called right after this at activation.
   if (typeof raw.$schemaVersion !== 'number' || raw.$schemaVersion < 3) raw.$schemaVersion = 3;
-  if (typeof raw.entitiesDir !== 'string') raw.entitiesDir = '.claude4spec/entities';
   atomicWrite(file, JSON.stringify(raw, null, 2) + '\n');
   return { config: readConfig(cwd), migrated: true, carried };
-}
-
-/**
- * 0.2.8: fill in the fields a `roots[]` entry is MISSING. `validateRoot` rejects
- * an incomplete entry outright (it no longer defaults anything at load time), so
- * materializing starting values is the migration's job — a config written before
- * a field existed would otherwise be permanently unloadable. Only ABSENT keys are
- * filled; a present-but-malformed value stays for `validateRoot` to reject.
- * Returns true when anything was written into `entry`.
- */
-function materializeRootFields(entry: Record<string, unknown>): boolean {
-  const isBuiltinPages = entry.builtin === true || entry.id === 'pages';
-  // IDENTITY (`id`, `name`, `dir`) is deliberately absent from both default sets.
-  // A behaviour flag has a defensible starting value; an identity field does not
-  // — inventing `dir: 'pages'` for an entry that never had one would point the
-  // root at a directory nobody chose and hand back an empty sidebar instead of
-  // the loud `roots[i].dir expected non-empty string` the user can act on.
-  const { id: _id, name: _name, dir: _dir, ...builtinDefaults } = builtinPagesRoot();
-  const defaults: Record<string, unknown> = isBuiltinPages
-    ? builtinDefaults
-    : { builtin: false, ...DEFAULT_USER_ROOT_PROPS };
-  let changed = false;
-  for (const [key, value] of Object.entries(defaults)) {
-    if (key in entry) continue;
-    entry[key] = Array.isArray(value) ? [...value] : value;
-    changed = true;
-  }
-  return changed;
 }
 
 /**
@@ -1363,10 +1128,11 @@ function materializeRootFields(entry: Record<string, unknown>): boolean {
  * root (with default props), deletes `pagesDir`, and bumps `$schemaVersion` to 4.
  * Does NOT touch `briefsDir`/`patchesDir`/`entitiesDir` (they stay scalars).
  *
- * 0.2.8 adds two repairs that must run even on an ALREADY-v4 file, because both
- * fix shapes the current loader rejects (or silently drops) rather than tolerates:
- * `git.syncCommitOnRelease` → `git.enabled`, and materialization of every field
- * on every `roots[]` entry. Atomic write; no-op when nothing needed changing.
+ * 0.2.8 adds a repair that must run even on an ALREADY-v4 file:
+ * `git.syncCommitOnRelease` → `git.enabled`. (2.1.8: `roots[]` entries are no
+ * longer materialized — four fields, complete or invalid; legacy per-root
+ * flags are unknown fields and stay in the file untouched.) Atomic write;
+ * no-op when nothing needed changing.
  */
 export function migrateConfigToV4(cwd: string): { config: NormalizedConfig; migrated: boolean } {
   const file = configPath(cwd);
@@ -1411,12 +1177,6 @@ export function migrateConfigToV4(cwd: string): { config: NormalizedConfig; migr
   if ('pagesDir' in raw) {
     delete raw.pagesDir;
     changed = true;
-  }
-
-  // Every roots[] entry must carry all ten fields — see materializeRootFields.
-  for (const entry of raw.roots as unknown[]) {
-    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) continue;
-    if (materializeRootFields(entry as Record<string, unknown>)) changed = true;
   }
 
   // `git.syncCommitOnRelease` (removed in 0.1.124) becomes the `git.enabled`

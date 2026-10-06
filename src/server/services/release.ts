@@ -8,6 +8,7 @@
  * `m17dom001`, `m17dcre01`).
  */
 
+import { systemRootDir } from '../../shared/root-kinds.js';
 import nodeFs from 'node:fs';
 import nodeOs from 'node:os';
 import nodePath from 'node:path';
@@ -1081,15 +1082,13 @@ export class ReleaseService {
         return p;
       }
     };
-    const entitiesAbs = realOrSelf(this.entityStore?.root ?? nodePath.resolve(this.cwd, config.entitiesDir));
+    const entitiesAbs = realOrSelf(this.entityStore?.root ?? nodePath.resolve(this.cwd, systemRootDir('entities')));
     const releasesAbs = realOrSelf(this.releaseStore!.root);
-    // `readConfig` only type-checks briefsDir/patchesDir as strings (unlike the stricter
-    // PATCH /api/config route) — a hand-edited config.json with `briefsDir: ''` (or '.')
-    // would otherwise resolve briefsAbs to cwd itself, making isInside(briefsAbs, ...) match
-    // every file in the diff. Guard against that degenerate case explicitly.
+    // 2.1.8: the briefs/patches system roots sit at fixed dirs — the only way
+    // their files reach a git diff is a stray pathspec, and they are excluded.
     const cwdAbs = realOrSelf(this.cwd);
-    const briefsAbs = realOrSelf(nodePath.resolve(this.cwd, config.briefsDir));
-    const patchesAbs = realOrSelf(nodePath.resolve(this.cwd, config.patchesDir));
+    const briefsAbs = realOrSelf(nodePath.resolve(this.cwd, systemRootDir('briefs')));
+    const patchesAbs = realOrSelf(nodePath.resolve(this.cwd, systemRootDir('patches')));
     const rootDirsById = new Map(
       this.releasableRootIds.map((id, i) => [id, realOrSelf(this.releasableRootDirs[i]!)]),
     );
