@@ -193,8 +193,10 @@ Pages and sections (a page is (rootId, path); an anchor is globally unique):
                                     one's subtree behind it in document order; an unknown anchor
                                     errors inside its own item and the exit code stays 0
   get-page --root-id <id> --path <p> [--range <from:to>]
-                                    the page as authored, XML tags untouched; --range is
-                                    accepted only on a root without a section index
+                                    the page as sections keyed by anchor, with frontmatter and
+                                    preamble as fields, XML tags untouched; --format text
+                                    assembles markdown; --range is accepted only on a root
+                                    without a section index
   search-pages (--query <q> | --regex <r>) [--root-id <id>] [--mode count|map|hits]
                [--path-include <re>] [--path-exclude <re>] [--anchors <a1,a2>] [--context <n>]
                                     hits on an indexed root carry an anchor

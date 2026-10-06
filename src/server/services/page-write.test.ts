@@ -2565,7 +2565,7 @@ describe('differential writes — textEdits', () => {
     expect(err.message).toMatch(/expectedHash/);
   });
 
-  it('refuses dropAnchors on a whole-body write — that branch has no guard to override', async () => {
+  it('refuses a dropAnchors entry on a whole-body write that the page does not have (2.1.6)', async () => {
     await index('doc.md', nested);
     const err = await updatePage(
       target,
@@ -2764,6 +2764,118 @@ describe('differential writes — textEdits', () => {
       { ...diffDeps(), sectionIndexed: false },
     );
     expect(res.replacements).toBe(1);
+  });
+
+  // ── update_page, LITERAL (`body`) mode — the same guard, whole-page scope (2.1.6) ──
+
+  /** The page's body with one section's anchor line and heading cut out — a wholesale rewrite that loses it. */
+  const withoutSection = (body: string, anchor: string, heading: string): string =>
+    body.replace(`<!-- anchor: ${anchor} -->\n`, '').replace(new RegExp(`^#+ ${heading}\n`, 'm'), '');
+
+  it('literal mode: refuses with ANCHOR_LOSS when the new body loses a CITED anchor', async () => {
+    await index('doc.md', nested);
+    const childOne = anchorOf('Child one');
+    await citeWithTag(childOne);
+    const body = (await pages.read('doc.md')).body;
+
+    const err = await updatePage(
+      target,
+      { path: 'doc.md', body: withoutSection(body, childOne, 'Child one'), expectedHash: await hashOfPage() },
+      'agent',
+      diffDeps(),
+    ).catch((e) => e);
+
+    expect(err.code).toBe('ANCHOR_LOSS');
+    expect(err.details).toEqual([
+      { anchor: childOne, headingText: 'Child one', referencedBy: [expect.objectContaining({ page: 'cites.md' })] },
+    ]);
+    expect((await pages.read('doc.md')).body).toBe(body);
+  });
+
+  it('literal mode: the same write passes once the anchor is in dropAnchors, and reports it', async () => {
+    await index('doc.md', nested);
+    const childOne = anchorOf('Child one');
+    await citeWithTag(childOne);
+    const body = (await pages.read('doc.md')).body;
+
+    const res = await updatePage(
+      target,
+      {
+        path: 'doc.md',
+        body: withoutSection(body, childOne, 'Child one'),
+        dropAnchors: [childOne],
+        expectedHash: await hashOfPage(),
+      },
+      'agent',
+      diffDeps(),
+    );
+    expect(res.droppedAnchors).toEqual([childOne]);
+  });
+
+  it('literal mode: an uncited anchor lost passes and is listed informationally', async () => {
+    await index('doc.md', nested);
+    const childTwo = anchorOf('Child two');
+    const body = (await pages.read('doc.md')).body;
+
+    const res = await updatePage(
+      target,
+      { path: 'doc.md', body: withoutSection(body, childTwo, 'Child two'), expectedHash: await hashOfPage() },
+      'agent',
+      diffDeps(),
+    );
+    expect(res.droppedAnchors).toEqual([childTwo]);
+  });
+
+  it('literal mode: a write that keeps every anchor reports no droppedAnchors', async () => {
+    await index('doc.md', nested);
+    const body = (await pages.read('doc.md')).body;
+    const res = await updatePage(
+      target,
+      { path: 'doc.md', body: body.replace('SIBLING BODY', 'NEW SIBLING BODY'), expectedHash: await hashOfPage() },
+      'agent',
+      diffDeps(),
+    );
+    expect(res).not.toHaveProperty('droppedAnchors');
+  });
+
+  it('literal mode: a body carrying frontmatter.raw is measured below it — YAML never swallows an anchor', async () => {
+    await index('doc.md', nested);
+    const childOne = anchorOf('Child one');
+    await citeWithTag(childOne);
+    const body = (await pages.read('doc.md')).body;
+    // An unclosed `<!--` in a YAML value would, read as markdown, hide every anchor below it.
+    const whole = `---\nnote: "<!-- draft"\n---\n${body}`;
+
+    const res = await updatePage(target, { path: 'doc.md', body: whole, expectedHash: await hashOfPage() }, 'agent', diffDeps());
+    expect(res).not.toHaveProperty('droppedAnchors');
+  });
+
+  it('literal mode: a dropAnchors entry this page does not have is INVALID_ARGUMENT', async () => {
+    await index('doc.md', nested);
+    const body = (await pages.read('doc.md')).body;
+    const err = await updatePage(
+      target,
+      { path: 'doc.md', body, dropAnchors: ['zzzzzzzz'], expectedHash: await hashOfPage() },
+      'agent',
+      diffDeps(),
+    ).catch((e) => e);
+    expect(err.code).toBe('INVALID_ARGUMENT');
+    expect(err.message).toMatch(/does not have/);
+  });
+
+  it('literal mode: no guard on a root with sectionIndexed = false — a body without the anchor lines passes', async () => {
+    await index('doc.md', nested);
+    const childOne = anchorOf('Child one');
+    await citeWithTag(childOne);
+    const body = (await pages.read('doc.md')).body;
+
+    const res = await updatePage(
+      target,
+      { path: 'doc.md', body: body.replace(/<!-- anchor: [^>]+ -->\n/g, ''), expectedHash: await hashOfPage() },
+      'agent',
+      { ...diffDeps(), sectionIndexed: false },
+    );
+    expect(res).not.toHaveProperty('droppedAnchors');
   });
 
   // ── update_sections, the `edit` action ──────────────────────────────────

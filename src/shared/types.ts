@@ -29,6 +29,23 @@ export interface PageContent {
 }
 
 /**
+ * 2.1.6 — DTO `page-detail`: what `GET /api/pages/:rootId/*` answers — M02's own
+ * read for the editor, not a rendering of the agent-facing `get_page` (which has
+ * no REST channel). `content` is the WHOLE file byte for byte: frontmatter in the
+ * text, anchor lines in place, XML tags unexpanded. `hash` is the sha256 of that
+ * same file — the value `get_page` returns and the one the editor sends back as
+ * `expectedHash`. No budget, no cut, no `truncated`/`hasMore`/`total` and no
+ * section listing: the editor writes the file back whole.
+ *
+ * `frontmatter` and `body` stay alongside as the editor's split of the same
+ * read, so it keeps writing through `PUT` without re-parsing the file itself.
+ */
+export interface PageDetail extends PageContent {
+  rootId: string;
+  content: string;
+}
+
+/**
  * What `PUT /api/pages/:rootId/<path>` answers with: what the caller could not
  * have predicted, and nothing it already had. Deliberately NOT `PageContent` —
  * see the echo-free rule in `server/services/page-write.ts`.
@@ -42,6 +59,8 @@ export interface PageWriteAck {
   hash: string;
   version: number;
   changedAnchors: string[];
+  /** 2.1.6 — anchors the write removed, when it removed any. */
+  droppedAnchors?: string[];
 }
 
 /**

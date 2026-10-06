@@ -10,7 +10,11 @@ import type { EntityType } from '../../shared/entities.js';
 import type { EntityStore } from '../services/entity-store.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import { isDiscoveryError, type DiscoveryCore } from '../discovery/index.js';
-import { GET_PAGE_OUTLINE_RETURN, GET_PAGE_RETURN, GET_SECTIONS_RETURN } from './tool-contract-text.js';
+import {
+  GET_PAGE_OUTLINE_RETURN,
+  GET_SECTIONS_RETURN,
+  REFERENCE_TOOLS_GET_PAGE_DESCRIPTION,
+} from './tool-contract-text.js';
 
 /**
  * `reference-tools` — tag CRUD, and the in-process transport over the M39
@@ -450,7 +454,7 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): CapturedMc
 
   const getPage = mcpTool(
     'get_page',
-    'Read one page as authored — XML tags untouched — addressed by the FULL key (rootId, path). A bare path is ambiguous across roots, so a call without `rootId` returns INVALID_ARGUMENT with the root list rather than guessing the built-in one. `range` is a line window and is allowed only on roots WITHOUT a section index; on an indexed root it is refused with a pointer to get_page_outline + get_sections, which is semantic, measurable up front and carries its own edges. Embeds are never expanded — fetch the entity by slug instead. ' + GET_PAGE_RETURN,
+    REFERENCE_TOOLS_GET_PAGE_DESCRIPTION,
     {
       rootId: z.string().optional().describe('Which page root — required'),
       path: z.string().optional().describe('Page path relative to the root'),

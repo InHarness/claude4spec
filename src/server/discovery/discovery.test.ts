@@ -266,56 +266,33 @@ describe('discovery core', () => {
       await writePage('notes', 'n.md', 'one\ntwo\nthree\n');
       const c = core([pagesRoot(), flatRoot()]);
       const page = await c.getPage({ rootId: 'notes', path: 'n.md', range: { start: 2, end: 2 } });
-      expect(page.content).toBe('two');
-      // No `total`, no `hasMore`: the budget that truncates counts CHARACTERS,
-      // so a line counter beside it measures in the wrong unit. `truncated` is
-      // the whole cut signal.
+      expect(page.preamble).toBe('two');
+      expect(page.results).toEqual([]);
+      // No `total`, no `hasMore`: `results` is the whole page and the budget
+      // degrades items instead of dropping them.
       expect(page).not.toHaveProperty('total');
       expect(page).not.toHaveProperty('hasMore');
     });
 
-    /**
-     * The loop this closes: a page on an indexed root came back truncated with
-     * an instruction to re-read it via `range` — the argument the very same
-     * operation refuses. Following the hint produced INVALID_ARGUMENT, which
-     * sent the agent back to get_page, which produced the same hint.
-     */
-    it('the truncation hint on an indexed root never proposes the range that get_page refuses', async () => {
-      await writePage('pages', 'big.md', `# H\n\n${'x'.repeat(DEFAULT_BUDGET_CHARS + 1000)}\n`);
+    it('a cut item on an indexed root names get_sections and the write, never the range get_page refuses', async () => {
+      await writePage(
+        'pages',
+        'big.md',
+        `<!-- anchor: aaaa0001 -->\n# H\n\nshort\n<!-- anchor: aaaa0002 -->\n## Big\n\n${'x'.repeat(DEFAULT_BUDGET_CHARS + 1000)}\n`,
+      );
       const c = core([pagesRoot()]);
       const page = await c.getPage({ rootId: 'pages', path: 'big.md' });
       expect(page.truncated).toBe(true);
-      expect(page.truncationHint).toMatch(/get_page_outline.*get_sections/);
-      /**
-       * 0.2.56 — and the hint reaches the WRITE, not just the pair of reads. A
-       * caller truncated here is usually on the way to an edit; a hint that stopped
-       * at `get_sections` left them holding sections and no `expectedHash`, whose
-       * only visible remedy was fetching the whole page they were just told is too
-       * big. `get_page_outline` hands the hash over, so the path has an exit.
-       */
-      expect(page.truncationHint).toMatch(/update_sections/);
-      expect(page.truncationHint).not.toMatch(/range/);
-    });
-
-    /**
-     * The same rule, second half: a hint may not propose a path with no exit onto
-     * the operation the caller came for. Stopping at `get_sections` left a caller
-     * who wanted to EDIT holding sections and no `expectedHash`, whose only visible
-     * source was the whole-page read they had just been told was too big.
-     */
-    it('the truncation hint on an indexed root closes on the write, not on a pair of reads', async () => {
-      await writePage('pages', 'big.md', `# H\n\n${'x'.repeat(DEFAULT_BUDGET_CHARS + 1000)}\n`);
-      const c = core([pagesRoot()]);
-      const page = await c.getPage({ rootId: 'pages', path: 'big.md' });
-      expect(page.truncationHint).toMatch(/update_sections/);
-      expect(page.truncationHint).toMatch(/expectedHash/);
-      expect(page.truncationHint).toMatch(/hash/);
+      expect(page.message).toMatch(/get_sections/);
+      expect(page.message).toMatch(/update_sections/);
+      expect(page.message).toMatch(/expectedHash/);
+      expect(page.message).not.toMatch(/range/);
+      expect(page).not.toHaveProperty('truncationHint');
     });
 
     /**
      * The hash is of the FILE, not of the payload that fit. A hash of the returned
-     * prefix would look identical and arm a guard that can never pass, and the
-     * caller cannot tell the two values apart by looking at them.
+     * prefix would look identical and arm a guard that can never pass.
      */
     it('a truncated page still carries the hash of the whole file', async () => {
       const body = `# H\n\n${'x'.repeat(DEFAULT_BUDGET_CHARS + 1000)}\n`;
@@ -323,16 +300,147 @@ describe('discovery core', () => {
       const c = core([pagesRoot()]);
       const page = await c.getPage({ rootId: 'pages', path: 'big.md' });
       expect(page.truncated).toBe(true);
-      expect(page.content.length).toBeLessThan(body.length);
+      expect(page.results[0]!.body!.length).toBeLessThan(body.length);
       expect(page.hash).toBe(createHash('sha256').update(body, 'utf-8').digest('hex'));
     });
 
-    it('the truncation hint on a root without a section index still proposes range', async () => {
-      await writePage('notes', 'big.md', 'x'.repeat(DEFAULT_BUDGET_CHARS + 1000));
+    it('the cut message on a root without a section index still proposes range', async () => {
+      await writePage('notes', 'big.md', `# H\n\nshort\n## Big\n\n${'x'.repeat(DEFAULT_BUDGET_CHARS + 1000)}\n`);
       const c = core([pagesRoot(), flatRoot()]);
       const page = await c.getPage({ rootId: 'notes', path: 'big.md' });
       expect(page.truncated).toBe(true);
-      expect(page.truncationHint).toMatch(/range/);
+      expect(page.message).toMatch(/range/);
+      expect(page.message).not.toMatch(/get_sections/);
+    });
+  });
+
+  describe('get_page — the page as a collection of sections (2.1.6)', () => {
+    const PAGE =
+      '---\ntitle: Snapshots\ntags: [a, b]\n---\nIntro line.\n\n' +
+      '<!-- anchor: m17top000 -->\n# M17\n\n' +
+      '<!-- anchor: m17top001 -->\n## Cel\n\nAutor zamraża <single_element type="diagram" slug="flow"/>\n\n' +
+      '### Untagged\n\nno anchor yet\n';
+
+    it('one item per section in document order, keyed by anchor; body without the anchor and heading lines', async () => {
+      await writePage('pages', 'm.md', PAGE);
+      const page = await core([pagesRoot()]).getPage({ rootId: 'pages', path: 'm.md' });
+      expect(page.results.map((i) => [i.anchor, i.heading_text, i.heading_level])).toEqual([
+        ['m17top000', 'M17', 1],
+        ['m17top001', 'Cel', 2],
+        [undefined, 'Untagged', 3],
+      ]);
+      expect(page.results[0]!.body).toBe('\n');
+      expect(page.results[1]!.body).toBe('\nAutor zamraża <single_element type="diagram" slug="flow"/>\n\n');
+      for (const item of page.results) {
+        expect(item.body).not.toMatch(/<!-- anchor:/);
+        expect(item.body).not.toMatch(/^#/m);
+      }
+      // A heading the indexer has not tagged: the KEY is absent, not null.
+      expect(page.results[2]).not.toHaveProperty('anchor');
+      expect(page).not.toHaveProperty('content');
+    });
+
+    it('frontmatter is { raw, fields } with raw verbatim; preamble is the text above the first heading', async () => {
+      await writePage('pages', 'm.md', PAGE);
+      const page = await core([pagesRoot()]).getPage({ rootId: 'pages', path: 'm.md' });
+      expect(page.frontmatter).toEqual({
+        raw: '---\ntitle: Snapshots\ntags: [a, b]\n---\n',
+        fields: { title: 'Snapshots', tags: ['a', 'b'] },
+      });
+      expect(page.preamble).toBe('Intro line.\n\n');
+    });
+
+    it('a page with no text before its first heading carries no preamble', async () => {
+      await writePage('pages', 'p.md', '# A\n\nbody\n');
+      const page = await core([pagesRoot()]).getPage({ rootId: 'pages', path: 'p.md' });
+      expect(page).not.toHaveProperty('preamble');
+      expect(page).not.toHaveProperty('frontmatter');
+    });
+
+    it('a page with no heading comes back as results: [] with everything in the preamble', async () => {
+      await writePage('pages', 'p.md', '---\na: 1\n---\njust prose\nmore\n');
+      const page = await core([pagesRoot()]).getPage({ rootId: 'pages', path: 'p.md' });
+      expect(page.results).toEqual([]);
+      expect(page.preamble).toBe('just prose\nmore\n');
+    });
+
+    it('a YAML syntax error drops fields, never the read — raw is there to repair it', async () => {
+      await writePage('pages', 'p.md', '---\ntitle: [unclosed\n---\n# A\n');
+      const page = await core([pagesRoot()]).getPage({ rootId: 'pages', path: 'p.md' });
+      expect(page.frontmatter).toEqual({ raw: '---\ntitle: [unclosed\n---\n' });
+      expect(page.results).toHaveLength(1);
+    });
+
+    it('an over-budget item keeps anchor and heading, loses body, and message names EVERY cut anchor', async () => {
+      const big = 'x'.repeat(DEFAULT_BUDGET_CHARS);
+      await writePage(
+        'pages',
+        'big.md',
+        `<!-- anchor: aaaa0001 -->\n# One\n\nfirst\n<!-- anchor: aaaa0002 -->\n## Two\n\n${big}\n<!-- anchor: aaaa0003 -->\n## Three\n\nthird\n`,
+      );
+      const page = await core([pagesRoot()]).getPage({ rootId: 'pages', path: 'big.md' });
+      expect(page.truncated).toBe(true);
+      expect(page.results[0]).toEqual({ anchor: 'aaaa0001', heading_text: 'One', heading_level: 1, body: '\nfirst\n' });
+      expect(page.results[1]).toEqual({ anchor: 'aaaa0002', heading_text: 'Two', heading_level: 2, truncated: true });
+      expect(page.results[2]).toEqual({ anchor: 'aaaa0003', heading_text: 'Three', heading_level: 2, truncated: true });
+      expect(page.message).toContain('aaaa0002');
+      expect(page.message).toContain('aaaa0003');
+      expect(page.message).toMatch(/get_sections/);
+    });
+
+    it('the skeletons of the cut items and the message naming them stay inside the budget', async () => {
+      const lines: string[] = [];
+      for (let i = 0; i < 300; i++) {
+        lines.push(`<!-- anchor: s${String(i).padStart(7, '0')} -->`, `## Section number ${i}`, '', '"quoted"\n'.repeat(40));
+      }
+      await writePage('pages', 'many.md', lines.join('\n'));
+      const page = await core([pagesRoot()]).getPage({ rootId: 'pages', path: 'many.md' });
+      expect(page.truncated).toBe(true);
+      expect(page.results).toHaveLength(300);
+      expect(page.message).toContain('s0000299');
+      expect(JSON.stringify(page).length).toBeLessThanOrEqual(DEFAULT_BUDGET_CHARS);
+    });
+
+    it('a first body cut as text is priced as JSON — escapes included', async () => {
+      await writePage('pages', 'nl.md', `<!-- anchor: aaaa0001 -->\n# One\n\n${'"\n'.repeat(DEFAULT_BUDGET_CHARS)}`);
+      const page = await core([pagesRoot()]).getPage({ rootId: 'pages', path: 'nl.md' });
+      expect(page.results[0]!.truncated).toBe(true);
+      expect(page.results[0]!.body!.length).toBeGreaterThan(0);
+      expect(JSON.stringify(page).length).toBeLessThanOrEqual(DEFAULT_BUDGET_CHARS);
+    });
+
+    it('the first item is never reduced to its heading — its body is cut as text', async () => {
+      await writePage('pages', 'big.md', `<!-- anchor: aaaa0001 -->\n# One\n\n${'x'.repeat(DEFAULT_BUDGET_CHARS + 500)}\n`);
+      const page = await core([pagesRoot()]).getPage({ rootId: 'pages', path: 'big.md' });
+      expect(page.truncated).toBe(true);
+      expect(page.results[0]!.body!.length).toBeGreaterThan(0);
+      expect(page.results[0]!.truncated).toBe(true);
+      expect(JSON.stringify(page).length).toBeLessThanOrEqual(DEFAULT_BUDGET_CHARS + 1000);
+    });
+
+    it('an over-budget preamble comes back as a prefix, and message says the preamble was cut', async () => {
+      const pre = 'p'.repeat(DEFAULT_BUDGET_CHARS + 500);
+      await writePage('pages', 'big.md', `${pre}\n# A\n\nbody\n`);
+      const page = await core([pagesRoot()]).getPage({ rootId: 'pages', path: 'big.md' });
+      expect(page.truncated).toBe(true);
+      expect(pre.startsWith(page.preamble!)).toBe(true);
+      expect(page.preamble!.length).toBeLessThan(pre.length);
+      expect(page.message).toMatch(/preamble/);
+    });
+
+    it('on a root without a section index no item carries an anchor, with or without range', async () => {
+      await writePage('notes', 'n.md', '<!-- anchor: aaaa0001 -->\n# A\n\nbody\n');
+      const c = core([pagesRoot(), flatRoot()]);
+      const whole = await c.getPage({ rootId: 'notes', path: 'n.md' });
+      expect(whole.results).toEqual([{ heading_text: 'A', heading_level: 1, body: '\nbody\n' }]);
+      const windowed = await c.getPage({ rootId: 'notes', path: 'n.md', range: { start: 1, end: 3 } });
+      expect(windowed.results[0]).not.toHaveProperty('anchor');
+    });
+
+    it('a missing page is PAGE_NOT_FOUND', async () => {
+      await expect(core([pagesRoot()]).getPage({ rootId: 'pages', path: 'nope.md' })).rejects.toMatchObject({
+        code: 'PAGE_NOT_FOUND',
+      });
     });
   });
 
@@ -1658,6 +1766,56 @@ describe('discovery core', () => {
     expect(outline.sections[0]!.anchor).toBe('abcdef12');
   });
 
+  describe('get_page_outline — frontmatter and preamble on the envelope (2.1.6)', () => {
+    it('carries ALL parsed frontmatter keys with the block size, and the preamble size', async () => {
+      const fm = '---\ntitle: Snapshots\nstatus: draft\nowners: [a, b]\n---\n';
+      await writePage('pages', 'm.md', `${fm}Intro.\n\n<!-- anchor: abcdef12 -->\n## S\n\nbody\n`);
+      await indexPageLikeTheIndexer('pages', 'pages', 'm.md');
+      const outline = await core([pagesRoot()]).getPageOutline({ rootId: 'pages', path: 'm.md' });
+      expect(outline.frontmatter).toEqual({
+        fields: { title: 'Snapshots', status: 'draft', owners: ['a', 'b'] },
+        size: fm.length,
+      });
+      expect(outline.preamble).toEqual({ size: 'Intro.\n\n'.length });
+      expect(outline.sections.map((n) => n.anchor)).toEqual(['abcdef12']);
+    });
+
+    it('a YAML syntax error leaves size without fields — the outline still answers', async () => {
+      const fm = '---\ntitle: [unclosed\n---\n';
+      await writePage('pages', 'm.md', `${fm}<!-- anchor: abcdef12 -->\n## S\n\nbody\n`);
+      indexSection({ rootId: 'pages', anchor: 'abcdef12', page: 'm.md', heading: 'S', start: 1, end: 4 });
+      const outline = await core([pagesRoot()]).getPageOutline({ rootId: 'pages', path: 'm.md' });
+      expect(outline.frontmatter).toEqual({ size: fm.length });
+      expect(outline).not.toHaveProperty('preamble');
+      expect(outline.sections).toHaveLength(1);
+    });
+
+    it('the frontmatter is never cut: a cut tree still ships every key', async () => {
+      const keys = Object.fromEntries(Array.from({ length: 50 }, (_, i) => [`k${i}`, `v${i}`]));
+      const fm = `---\n${Object.entries(keys).map(([k, v]) => `${k}: ${v}`).join('\n')}\n---\n`;
+      const count = Math.ceil(DEFAULT_BUDGET_CHARS / 40) + 50;
+      const lines: string[] = [];
+      for (let i = 0; i < count; i++) lines.push(`<!-- anchor: s${String(i).padStart(7, '0')} -->`, `## Section ${i}`, '');
+      await writePage('pages', 'big.md', fm + lines.join('\n'));
+      await indexPageLikeTheIndexer('pages', 'pages', 'big.md');
+      const outline = await core([pagesRoot()]).getPageOutline({ rootId: 'pages', path: 'big.md' });
+      expect(outline.truncated).toBe(true);
+      expect(outline.sections.length).toBeLessThan(count);
+      expect(outline.frontmatter!.fields).toEqual(keys);
+    });
+
+    it('a frontmatter over the budget alone ships whole, with sections: [] and a message pointing at get_page', async () => {
+      const big = 'x'.repeat(DEFAULT_BUDGET_CHARS + 100);
+      await writePage('pages', 'm.md', `---\nblob: ${big}\n---\n<!-- anchor: abcdef12 -->\n## S\n\nbody\n`);
+      indexSection({ rootId: 'pages', anchor: 'abcdef12', page: 'm.md', heading: 'S', start: 1, end: 4 });
+      const outline = await core([pagesRoot()]).getPageOutline({ rootId: 'pages', path: 'm.md' });
+      expect(outline.frontmatter!.fields).toEqual({ blob: big });
+      expect(outline.sections).toEqual([]);
+      expect(outline.truncated).toBe(true);
+      expect(outline.message).toMatch(/get_page\(/);
+    });
+  });
+
   /**
    * The tree is the operation. `parent_anchor` is the only carrier of the relation,
    * and DOCUMENT ORDER is the contract — not the anchor sort the flat listing used,
@@ -2838,7 +2996,7 @@ describe('the fail-closed read gate', () => {
      * too and a marked section index would leave no way to write the page at all.
      */
     const page = await c.getPage({ rootId: 'pages', path: 'a.md' });
-    expect(page.content).toContain('# A');
-    expect(page.hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(page.results).toEqual([{ heading_text: 'A', heading_level: 1, body: '\nbody\n' }]);
+    expect(page.hash).toBe(createHash('sha256').update('# A\n\nbody\n', 'utf-8').digest('hex'));
   });
 });

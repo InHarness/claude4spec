@@ -8,6 +8,9 @@
  * is how one copy ends up laxer than the other.
  */
 
+import crypto from 'node:crypto';
+import matter from 'gray-matter';
+import { pageStructure } from '../../shared/section-parser.js';
 import type { Root } from '../../shared/types.js';
 import { PagesService } from '../services/pages.js';
 import { invalidArgument, pageNotFound } from './errors.js';
@@ -113,10 +116,46 @@ export class PageSource {
    * file, so hashing the frontmatter-stripped half would arm a guard that never
    * passes on any page that has frontmatter.
    */
-  async readWithHash(rootId: string, relPath: string): Promise<{ body: string; hash: string }> {
+  async readWithHash(
+    rootId: string,
+    relPath: string,
+  ): Promise<{
+    body: string;
+    hash: string;
+    /** 2.1.6 — the literal block (fences included) and its keys, `fields` absent when the YAML does not parse. */
+    frontmatter: { raw: string; fields?: Record<string, unknown> } | null;
+    /** 2.1.6 — the text above the first heading, null when blank. */
+    preamble: string | null;
+  }> {
     return await this.guard(rootId, relPath, async () => {
-      const page = await this.service(rootId).read(relPath);
-      return { body: page.body, hash: page.hash };
+      const raw = await this.service(rootId).readRaw(relPath);
+      const hash = crypto.createHash('sha256').update(raw, 'utf-8').digest('hex');
+      const structure = pageStructure(raw);
+      /**
+       * The body in the coordinate space the index was built in — gray-matter's
+       * `content` — and the keys from the SAME parse, so the YAML is read once.
+       * A block whose YAML does not parse is still a block: the reader must
+       * answer (the outline reports its size without `fields`), so the body is
+       * then the text after the closing fence, which is what gray-matter would
+       * have returned had the YAML parsed. `{}` as options bypasses gray-matter's
+       * shared-object cache.
+       */
+      let body: string;
+      let fields: Record<string, unknown> | undefined;
+      try {
+        const parsed = matter(raw, {});
+        body = parsed.content;
+        fields = { ...((parsed.data ?? {}) as Record<string, unknown>) };
+      } catch {
+        body = raw.slice(structure.frontmatter?.length ?? 0);
+      }
+      return {
+        body,
+        hash,
+        frontmatter:
+          structure.frontmatter === null ? null : { raw: structure.frontmatter, ...(fields ? { fields } : {}) },
+        preamble: structure.preamble,
+      };
     });
   }
 

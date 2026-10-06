@@ -59,6 +59,7 @@ export async function getPageOutline(
   pages: PageSource,
   roots: RootSet,
   input: GetPageOutlineInput,
+  budgetChars = DEFAULT_BUDGET_CHARS,
 ): Promise<GetPageOutlineResult> {
   const root = roots.requireSectionIndexed(input.rootId, 'get_page_outline');
   /**
@@ -95,12 +96,27 @@ export async function getPageOutline(
 
   const rows = selectSections(db, 'WHERE rootId = ? AND page_path = ?', [root.id, input.path]);
 
-  return {
+  /**
+   * 2.1.6 — the frontmatter is OUTSIDE the cut: every parsed key, whole, and the
+   * tree budget is what is left after it. A block that alone exceeds the budget
+   * still ships whole, with an empty tree and a message pointing at `get_page`.
+   */
+  const frontmatter = read.frontmatter
+    ? { ...(read.frontmatter.fields ? { fields: read.frontmatter.fields } : {}), size: read.frontmatter.raw.length }
+    : undefined;
+  const preamble = read.preamble !== null ? { size: read.preamble.length } : undefined;
+  const head = {
     rootId: root.id,
     path: input.path,
     hash: read.hash,
-    ...buildOutline(rows, read.body),
+    ...(frontmatter ? { frontmatter } : {}),
+    ...(preamble ? { preamble } : {}),
   };
+  const treeBudget = budgetChars - JSON.stringify(head).length;
+  if (treeBudget <= 0) {
+    return { ...head, sections: [], truncated: true, message: FRONTMATTER_OVER_BUDGET_MESSAGE(root.id, input.path) };
+  }
+  return { ...head, ...buildOutline(rows, read.body, treeBudget) };
 }
 
 /**
@@ -113,6 +129,7 @@ export async function getPageOutline(
 function buildOutline(
   rows: readonly RawSection[],
   pageBody: string,
+  budgetChars: number,
 ): { sections: OutlineNode[]; truncated?: true; message?: string } {
   const nodes = new Map<string, OutlineNode>();
   // The page is split and its headings parsed ONCE for the whole outline, not
@@ -152,7 +169,7 @@ function buildOutline(
     // Priced as it ships. `children` is not counted here because the child pays for
     // itself when its own turn comes.
     const cost = JSON.stringify(node).length;
-    if (spent + cost > DEFAULT_BUDGET_CHARS && (roots.length > 0 || parent)) {
+    if (spent + cost > budgetChars && (roots.length > 0 || parent)) {
       truncated = true;
       break;
     }
@@ -185,6 +202,11 @@ const OUTLINE_TRUNCATION_MESSAGE =
   'every node present has its parent present. There is no smaller retry to make (this operation takes no ' +
   'limit, offset or depth), so go on from here: read the sections you need with get_sections({ anchors }) ' +
   'using the anchors already returned.';
+
+/** 2.1.6 — the frontmatter alone filled the budget: no tree fits, and the whole page is the way on. */
+const FRONTMATTER_OVER_BUDGET_MESSAGE = (rootId: string, path: string): string =>
+  'outline truncated by response budget — the frontmatter alone exceeds it, so no section fits beside it. ' +
+  `Read the page with get_page({ rootId: "${rootId}", path: "${path}" }): its sections come back as items, the ones over the budget named for get_sections.`;
 
 /**
  * 0.2.46 — every column a `RawSection` is built from, and not one more.

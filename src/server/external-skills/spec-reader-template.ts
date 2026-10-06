@@ -50,7 +50,7 @@ takes a path to a markdown file **you already have** — a page in the repo you
 are working in, for instance. It is not how you read the specification's own
 pages, and there is no MCP equivalent: expanding a tag pastes the entity's
 payload over the reference, and the reference is the more useful half. To read a
-spec page, ask for it as authored and follow the embeds you care about by slug
+spec page, ask for it with \`get-page\` (tags stay unexpanded) and follow the embeds you care about by slug
 (\`c4s single_element --type <t> --slug <s>\`).
 
 ## Navigating pages and sections
@@ -84,17 +84,14 @@ c4s get-page-outline --root-id pages --path some/page.md ${identity}
 c4s list-pages --root-id pages [--prefix modules/] ${identity}
 \`\`\`
 
-Whole page, when you really want the file:
+Whole page, when you really want all of it:
 
 \`\`\`sh
 c4s get-page --root-id pages --path some/page.md ${identity}
 \`\`\`
 
-The page comes back **as authored**, with XML tags left untouched — the tag is
-the edge to another entity, so expanding it would replace a link with a payload.
-Resolve the tags you care about with the commands above. \`--range <from:to>\` is
-only accepted on a non-section-indexed root; on an indexed one the command
-refuses and tells you to use \`get-page-outline\` + \`get-sections\` instead.
+The page comes back as **structure**, not as one text: \`{ rootId, path, hash, frontmatter?, preamble?, results[] }\`. Each item of \`results\` is one section — \`anchor\`, \`heading_text\`, \`heading_level\`, \`body\` — in document order. The anchor is a field, so you pass it straight to \`get-sections\`; \`body\` holds neither the anchor line nor the heading line. \`frontmatter.raw\` is the frontmatter verbatim and \`frontmatter.fields\` its parsed keys (absent when the YAML does not parse); \`preamble\` is the text above the first heading. \`hash\` is what a write expects. Add \`--format text\` to get the page assembled back into markdown for reading.
+XML tags in \`body\` are left untouched — the tag is the edge to another entity, so expanding it would replace a link with a payload. Resolve the tags you care about with the commands above. On a page over the response budget, some items come back with \`truncated: true\` and no \`body\`, and \`message\` names their anchors — fetch those with \`get-sections\`. \`--range <from:to>\` is only accepted on a non-section-indexed root; on an indexed one the command refuses and tells you to use \`get-page-outline\` + \`get-sections\` instead.
 
 ## Discovery
 

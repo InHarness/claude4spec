@@ -978,3 +978,42 @@ describe('PATCH /api/pages/:rootId/* — the differential rendering of update_pa
     });
   });
 });
+
+/**
+ * 2.1.6 — `GET /api/pages/:rootId/*` is M02's raw read for the editor (DTO
+ * `page-detail`), not a rendering of the structured `get_page`: the whole file
+ * byte for byte, anchor lines in place, plus the hash a write sends back.
+ */
+describe('GET /api/pages/:rootId/* — page-detail for the editor', () => {
+  it('returns content byte for byte with its anchor lines, and the sha256 of that same file', async () => {
+    const FILE = '---\ntitle: Doc\n---\nIntro.\n\n<!-- anchor: aaaa0001 -->\n# Doc\n\n<single_element type="diagram" slug="flow"/>\n';
+    const { core } = recordingCore();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-page-detail-'));
+    try {
+      const pages = new PagesService(dir, 'pages', 'mainspec');
+      fs.mkdirSync(path.join(dir, 'pages'), { recursive: true });
+      fs.writeFileSync(path.join(dir, 'pages', 'a.md'), FILE, 'utf-8');
+      const root: PageRootRuntime = {
+        root: { id: 'mainspec', dir: 'pages', sectionIndexed: true, referenceValidated: true } as never,
+        pages,
+        writer: null,
+      };
+      const app = express();
+      app.use('/api/pages/:rootId', pagesRouter((id) => (id === 'mainspec' ? root : undefined), null, core));
+
+      const res = await request(app).get('/api/pages/mainspec/a.md').expect(200);
+      const { createHash } = await import('node:crypto');
+      expect(res.body.rootId).toBe('mainspec');
+      expect(res.body.path).toBe('a.md');
+      expect(res.body.content).toBe(FILE);
+      expect(res.body.hash).toBe(createHash('sha256').update(FILE, 'utf-8').digest('hex'));
+      for (const absent of ['truncated', 'hasMore', 'total', 'results', 'sections']) {
+        expect(res.body).not.toHaveProperty(absent);
+      }
+      // The editor's split of the same read rides along.
+      expect(res.body.frontmatter).toEqual({ title: 'Doc' });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

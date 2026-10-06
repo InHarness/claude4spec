@@ -397,7 +397,8 @@ export function pagesRouter(
         return res.json(detail);
       }
       if (!(await rt.pages.exists(relPath))) return res.status(404).json({ error: 'not found' });
-      res.json(await rt.pages.read(relPath));
+      // 2.1.6 — DTO `page-detail`: the raw file + its hash for the editor (M02's own read).
+      res.json(await rt.pages.readDetail(relPath));
     } catch (err) {
       next(err);
     }
@@ -425,6 +426,13 @@ export function pagesRouter(
             ...(body.expectedHash !== undefined ? { expectedHash: body.expectedHash } : {}),
           },
           'user',
+          /**
+           * 2.1.6 — the root's flag only: the editor's save stays report-only
+           * (no referent lookup, so it cannot answer ANCHOR_LOSS), but on a root
+           * without a section index the guard must not run at all — `droppedAnchors`
+           * is absent there by contract.
+           */
+          { sectionIndexed: rt.root.sectionIndexed },
         ),
       );
     } catch (err) {

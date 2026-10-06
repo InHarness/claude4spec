@@ -444,7 +444,7 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
       expect(body.hint).toContain('get_sections');
     });
 
-    it('get_page returns the page AS AUTHORED — an embed stays an embed', async () => {
+    it('get_page returns the page as sections keyed by anchor — an embed stays an embed in the body', async () => {
       await pagesService.write('page.md', {
         body: '<!-- anchor: aaaaaa11 -->\n# Alpha\n\n<single_element type="diagram" slug="flow" caption="x"/>\n',
       });
@@ -453,7 +453,16 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
       const { isError, body } = await call(client, 'get_page', { rootId: 'pages', path: 'page.md' });
 
       expect(isError).toBe(false);
-      expect(body.content).toContain('<single_element type="diagram" slug="flow" caption="x"/>');
+      expect(body).not.toHaveProperty('content');
+      expect(body.results).toEqual([
+        {
+          anchor: 'aaaaaa11',
+          heading_text: 'Alpha',
+          heading_level: 1,
+          body: '\n<single_element type="diagram" slug="flow" caption="x"/>\n',
+        },
+      ]);
+      expect(body.hash).toMatch(/^[0-9a-f]{64}$/);
     });
 
     it('get_sections returns each body with its tag intact, and no edges beside it', async () => {

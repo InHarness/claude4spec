@@ -147,3 +147,61 @@ describe('parseSections — totality and determinism', () => {
     }
   });
 });
+
+describe('pageStructure / serializePageStructure (2.1.6)', () => {
+  const PAGE = [
+    '---',
+    'title: T',
+    '---',
+    'Intro.',
+    '',
+    A('aaaa0001'),
+    '# One',
+    '',
+    'one body',
+    A('aaaa0002'),
+    '## Two',
+    'two body',
+    '### Untagged',
+    'tail',
+    '',
+  ].join('\n');
+
+  it('slices frontmatter, preamble and own bodies literally — concatenation is the file', async () => {
+    const { pageStructure } = await import('./section-parser.js');
+    const s = pageStructure(PAGE);
+    expect(s.frontmatter).toBe('---\ntitle: T\n---\n');
+    expect(s.preamble).toBe('Intro.\n\n');
+    expect(s.sections).toEqual([
+      { anchor: 'aaaa0001', level: 1, heading: 'One', body: '\none body\n' },
+      { anchor: 'aaaa0002', level: 2, heading: 'Two', body: 'two body\n' },
+      { anchor: null, level: 3, heading: 'Untagged', body: 'tail\n' },
+    ]);
+  });
+
+  it('round-trips byte for byte on a canonical page', async () => {
+    const { pageStructure, serializePageStructure } = await import('./section-parser.js');
+    expect(serializePageStructure(pageStructure(PAGE))).toBe(PAGE);
+  });
+
+  it('round-trips STRUCTURALLY when anchors are stacked — only the owner returns', async () => {
+    const { pageStructure, serializePageStructure } = await import('./section-parser.js');
+    const stacked = [A('dead0001'), A('aaaa0001'), '# One', 'x', ''].join('\n');
+    const again = pageStructure(serializePageStructure(pageStructure(stacked)));
+    expect(again.sections).toEqual(pageStructure(stacked).sections);
+    expect(serializePageStructure(pageStructure(stacked))).not.toContain('dead0001');
+  });
+
+  it('a page with no heading is all preamble; a blank preamble is null', async () => {
+    const { pageStructure } = await import('./section-parser.js');
+    expect(pageStructure('just prose\n')).toEqual({ frontmatter: null, preamble: 'just prose\n', sections: [] });
+    expect(pageStructure('\n# A\n').preamble).toBeNull();
+  });
+
+  it('a heading-only item (a body the budget cut) serializes as anchor + heading', async () => {
+    const { serializePageStructure } = await import('./section-parser.js');
+    expect(
+      serializePageStructure({ sections: [{ anchor: 'aaaa0001', level: 2, heading: 'Two' }, { level: 2, heading: 'Three', body: 'x\n' }] }),
+    ).toBe('<!-- anchor: aaaa0001 -->\n## Two\n## Three\nx\n');
+  });
+});

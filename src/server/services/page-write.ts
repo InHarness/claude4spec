@@ -342,6 +342,14 @@ export interface UpdatePageResult {
    * for what a write is allowed to report.
    */
   replacements?: number;
+  /**
+   * 2.1.6 — anchors this write removed from the page, reported on SUCCESS: the
+   * ones nothing cited (they pass silently past the guard) and the ones the
+   * caller named in `dropAnchors`. Absent — the key missing — when the write
+   * cost no anchor, or on a root without a section index, where the guard has
+   * nothing to measure.
+   */
+  droppedAnchors?: string[];
 }
 
 /** One edit's outcome inside an {@link UpdateSectionsResult}. */
@@ -670,23 +678,45 @@ export async function updatePage(
       'substitute the frontmatter text with a `textEdits` entry, or send `body` + `frontmatter` instead',
     );
   }
-  if (hasBody && input.dropAnchors !== undefined) {
-    throw new DomainError(
-      'INVALID_ARGUMENT',
-      'dropAnchors applies to textEdits only',
-      'a whole-page `body` write has no anchor-loss guard to override',
-    );
-  }
-
   // The guard runs identically on both branches — see `assertUnchanged`.
   await assertUnchanged(target, relPath, input.expectedHash);
 
   // Read BEFORE writing: the delta is against what was on disk, and this doubles
   // as create-or-replace, so "no page yet" means every anchor is an addition.
-  const before = sectionDigests(await bodyOnDisk(target.pages, relPath));
+  const bodyBefore = await bodyOnDisk(target.pages, relPath);
+  const before = sectionDigests(bodyBefore);
 
   if (hasEdits) {
     return await updatePageByTextEdits(target, relPath, input, actor, before, diffDeps);
+  }
+
+  /**
+   * 2.1.6 — the literal mode carries the same guard as the differential one.
+   * Its touched scope is the WHOLE page: every anchor the page has now is in
+   * play, and one the new body no longer carries is lost. Before the write, so
+   * a refusal leaves the file byte-identical. Skipped on a root without a
+   * section index, exactly as on the differential branch.
+   */
+  let dropped: string[] = [];
+  if (diffDeps?.sectionIndexed !== false) {
+    const linesBefore = bodyBefore.split('\n');
+    /**
+     * Measured in the same space as `linesBefore` — the body below the
+     * frontmatter. A body assembled from get_page with `frontmatter` omitted
+     * carries `frontmatter.raw` on top, and YAML read as markdown (an unclosed
+     * `<!--` or a fence in a value) could swallow the anchors below it.
+     */
+    const linesAfter = (input.body as string).split('\n');
+    const fm = input.frontmatter === undefined ? parseSections(input.body as string).frontmatter : null;
+    dropped = await assertNoUndeclaredAnchorLoss({
+      linesBefore,
+      linesAfter: fm ? linesAfter.slice(fm.range.end) : linesAfter,
+      scope: sectionRanges(linesBefore).map((r) => r.anchor),
+      declared: input.dropAnchors ?? [],
+      deps: diffDeps,
+      strangerHint:
+        'in a literal write dropAnchors may only name anchors this page has now — read them off get_page or get_page_outline',
+    });
   }
 
   const written = await commit(
@@ -700,6 +730,7 @@ export async function updatePage(
     hash: written.hash,
     version: written.version,
     changedAnchors: anchorDelta(before, written.digests),
+    ...(dropped.length ? { droppedAnchors: dropped } : {}),
   };
 }
 
@@ -753,8 +784,9 @@ async function updatePageByTextEdits(
    * "indexed", because the rigs that pass no deps at all also pass no referent
    * lookup, and the guard below then degrades to report-only on its own.
    */
+  let dropped: string[] = [];
   if (diffDeps?.sectionIndexed !== false) {
-    await assertNoUndeclaredAnchorLoss({
+    dropped = await assertNoUndeclaredAnchorLoss({
       linesBefore: bodyBefore.split('\n'),
       linesAfter: parsed.content.split('\n'),
       touchedSpans: bodyLineSpans(fullBefore, bodyBefore, applied.matchRanges),
@@ -776,6 +808,7 @@ async function updatePageByTextEdits(
     version: written.version,
     changedAnchors: anchorDelta(before, written.digests),
     replacements: applied.replacements,
+    ...(dropped.length ? { droppedAnchors: dropped } : {}),
   };
 }
 
@@ -1210,28 +1243,37 @@ function bodyLineSpans(fullText: string, bodyText: string, ranges: readonly Matc
 async function assertNoUndeclaredAnchorLoss(args: {
   linesBefore: string[];
   linesAfter: string[];
-  touchedSpans: readonly LineSpan[];
+  /** Differential mode — the matched fragments, in body lines. */
+  touchedSpans?: readonly LineSpan[];
+  /**
+   * Literal mode (2.1.6) — the scope given outright: every anchor the page has.
+   * A declared anchor the page does not have is then a stranger too.
+   */
+  scope?: readonly string[];
   declared: readonly string[];
   deps: PageDiffDeps | undefined;
   strangerHint: string;
-}): Promise<void> {
-  const scope = anchorsInLineSpans(args.linesBefore, args.touchedSpans);
+}): Promise<string[]> {
+  const scope = args.scope ? [...args.scope] : anchorsInLineSpans(args.linesBefore, args.touchedSpans ?? []);
   const onPage = new Set(sectionRanges(args.linesBefore).map((r) => r.anchor));
   const inScope = new Set(scope);
 
-  const stranger = args.declared.find((a) => onPage.has(a) && !inScope.has(a));
+  const stranger = args.declared.find((a) => (args.scope ? !inScope.has(a) : onPage.has(a) && !inScope.has(a)));
   if (stranger !== undefined) {
     throw new DomainError(
       'INVALID_ARGUMENT',
-      `dropAnchors names '${stranger}', which none of this write's matched fragments contains`,
+      args.scope
+        ? `dropAnchors names '${stranger}', which this page does not have`
+        : `dropAnchors names '${stranger}', which none of this write's matched fragments contains`,
       args.strangerHint,
     );
   }
 
   const survivors = new Set(sectionRanges(args.linesAfter).map((r) => r.anchor));
   const declared = new Set(args.declared);
-  const undeclared = scope.filter((a) => !survivors.has(a) && !declared.has(a));
-  if (undeclared.length === 0 || !args.deps?.findSectionReferents) return;
+  const lost = scope.filter((a) => !survivors.has(a));
+  const undeclared = lost.filter((a) => !declared.has(a));
+  if (undeclared.length === 0 || !args.deps?.findSectionReferents) return lost;
 
   const losses: AnchorLoss[] = [];
   for (const anchor of undeclared) {
@@ -1244,6 +1286,7 @@ async function assertNoUndeclaredAnchorLoss(args: {
     });
   }
   if (losses.length > 0) throw new AnchorLossError(losses);
+  return lost;
 }
 
 /**

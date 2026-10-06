@@ -406,3 +406,89 @@ export function headingPathOf(result: SectionParseResult, s: ParsedSection): str
   }
   return path;
 }
+
+// ── Whole-page structure and its inverse (2.1.6) ────────────────────────────
+
+/** One section of a page as `get_page` hands it out: its own body only, as a literal slice. */
+export interface PageStructureSection {
+  anchor: string | null;
+  level: 1 | 2 | 3 | 4 | 5 | 6;
+  heading: string;
+  /**
+   * The text from just after the heading line up to the next section's first
+   * line (its anchor block, or its heading) — the boundaries of `ownBodyOf`,
+   * kept as CHARACTERS, line terminators included, so a `find` taken from it
+   * matches the file as written.
+   */
+  body: string;
+}
+
+export interface PageStructure {
+  /** The literal frontmatter block, fences and trailing newline included; null when the page has none. */
+  frontmatter: string | null;
+  /** The literal text between the frontmatter and the first section; null when it is blank. */
+  preamble: string | null;
+  sections: PageStructureSection[];
+}
+
+/**
+ * 2.1.6 — the WHOLE page as structure, computed from the text as it is now
+ * (never from `section_index`), so a reader of it is never gated by the
+ * freshness of the projection. Every piece is a character slice of `text`:
+ * concatenating frontmatter, preamble and, per section, its anchor block,
+ * heading line and body gives the file back.
+ *
+ * `opts.frontmatter: false` — `text` is a window that does not start at the top
+ * of the file, so a leading `---` is a thematic break.
+ */
+export function pageStructure(text: string, opts: ParseOptions = {}): PageStructure {
+  const r = parseSections(text, opts);
+  const lines = text.split('\n');
+  const starts: number[] = [];
+  let off = 0;
+  for (const l of lines) {
+    starts.push(off);
+    off += l.length + 1;
+  }
+  /** Char offset where 1-based line `n` begins; past the end → text length. */
+  const at = (n: number): number => (n - 1 < starts.length ? starts[n - 1]! : text.length);
+
+  const bodyFrom = r.frontmatter ? r.frontmatter.range.end + 1 : 1;
+  const frontmatter = r.frontmatter ? text.slice(0, at(bodyFrom)) : null;
+  const firstStart = r.sections.length ? r.sections[0]!.startLine : lines.length + 1;
+  const pre = text.slice(at(bodyFrom), at(firstStart));
+  const sections = r.sections.map((s) => ({
+    anchor: s.anchor,
+    level: s.level,
+    heading: s.heading,
+    body: text.slice(at(s.headingLine + 1), at(s.ownEndLine + 1)),
+  }));
+  return { frontmatter, preamble: pre.trim() === '' ? null : pre, sections };
+}
+
+/**
+ * The inverse of `pageStructure` — how a page is assembled back from structure
+ * (an agent rewriting a page with `update_page`, `c4s get-page --format text`):
+ * frontmatter, preamble, then per section its anchor line (when it has one),
+ * its heading line and its own body.
+ *
+ * The guarantee is STRUCTURAL, not byte-for-byte: re-parsing the result yields
+ * the same anchors, levels, headings and bodies, but an anchor line comes back
+ * canonical and of several anchors stacked over one heading only the owner
+ * returns.
+ */
+export function serializePageStructure(page: {
+  frontmatter?: string | null;
+  preamble?: string | null;
+  sections: ReadonlyArray<{ anchor?: string | null; level: number; heading: string; body?: string }>;
+}): string {
+  let out = page.frontmatter ?? '';
+  out += page.preamble ?? '';
+  for (const s of page.sections) {
+    if (out !== '' && !out.endsWith('\n')) out += '\n';
+    if (s.anchor) out += `<!-- anchor: ${s.anchor} -->\n`;
+    out += `${'#'.repeat(s.level)} ${s.heading}\n`;
+    out += s.body ?? '';
+  }
+  return out;
+}
