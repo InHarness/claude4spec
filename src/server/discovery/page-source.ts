@@ -12,7 +12,7 @@ import crypto from 'node:crypto';
 import matter from 'gray-matter';
 import { pageStructure } from '../../shared/section-parser.js';
 import type { Root } from '../../shared/types.js';
-import { PagesService, parseFrontmatterFields } from '../services/pages.js';
+import { PagesService } from '../services/pages.js';
 import { invalidArgument, pageNotFound } from './errors.js';
 
 export interface PageFile {
@@ -131,17 +131,21 @@ export class PageSource {
       const raw = await this.service(rootId).readRaw(relPath);
       const hash = crypto.createHash('sha256').update(raw, 'utf-8').digest('hex');
       const structure = pageStructure(raw);
-      const fields = structure.frontmatter === null ? undefined : parseFrontmatterFields(structure.frontmatter);
       /**
        * The body in the coordinate space the index was built in — gray-matter's
-       * `content`. A block whose YAML does not parse is still a block: the
-       * reader must answer (the outline reports its size without `fields`), so
-       * the body is then the text after the closing fence, which is what
-       * gray-matter would have returned had the YAML parsed.
+       * `content` — and the keys from the SAME parse, so the YAML is read once.
+       * A block whose YAML does not parse is still a block: the reader must
+       * answer (the outline reports its size without `fields`), so the body is
+       * then the text after the closing fence, which is what gray-matter would
+       * have returned had the YAML parsed. `{}` as options bypasses gray-matter's
+       * shared-object cache.
        */
       let body: string;
+      let fields: Record<string, unknown> | undefined;
       try {
-        body = matter(raw, {}).content;
+        const parsed = matter(raw, {});
+        body = parsed.content;
+        fields = { ...((parsed.data ?? {}) as Record<string, unknown>) };
       } catch {
         body = raw.slice(structure.frontmatter?.length ?? 0);
       }

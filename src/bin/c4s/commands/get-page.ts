@@ -57,12 +57,7 @@ export function renderPageText(page: PageEnvelope): string {
   return serializePageStructure({
     frontmatter: page.frontmatter?.raw ?? null,
     preamble: page.preamble ?? null,
-    sections: page.results.map((i) => ({
-      anchor: i.anchor ?? null,
-      level: i.heading_level,
-      heading: i.heading_text,
-      ...(i.body !== undefined ? { body: i.body } : {}),
-    })),
+    sections: page.results.map((i) => ({ anchor: i.anchor, level: i.heading_level, heading: i.heading_text, body: i.body })),
   });
 }
 

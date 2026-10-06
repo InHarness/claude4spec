@@ -426,6 +426,13 @@ export function pagesRouter(
             ...(body.expectedHash !== undefined ? { expectedHash: body.expectedHash } : {}),
           },
           'user',
+          /**
+           * 2.1.6 — the root's flag only: the editor's save stays report-only
+           * (no referent lookup, so it cannot answer ANCHOR_LOSS), but on a root
+           * without a section index the guard must not run at all — `droppedAnchors`
+           * is absent there by contract.
+           */
+          { sectionIndexed: rt.root.sectionIndexed },
         ),
       );
     } catch (err) {

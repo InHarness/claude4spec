@@ -11,7 +11,7 @@
 
 import crypto from 'node:crypto';
 import type { Database } from 'better-sqlite3';
-import { applyItemBudget, DEFAULT_BUDGET_CHARS, MAX_ANCHORS_PER_CALL } from '../budget.js';
+import { DEFAULT_BUDGET_CHARS, MAX_ANCHORS_PER_CALL } from '../budget.js';
 import { invalidArgument } from '../errors.js';
 import type { PageSource } from '../page-source.js';
 import { DEFAULT_LIMITS, paginate } from '../pagination.js';
@@ -162,37 +162,64 @@ export async function getPage(
 
   /**
    * The budget. Nothing is DROPPED: an item past the line keeps its anchor and
-   * heading and loses its body (`applyItemBudget`'s degrade), so the caller
+   * heading and loses its body (`applyItemBudget`'s rule), so the caller
    * still sees the whole shape of the page and knows exactly what to fetch.
    * The preamble and the FIRST item are cut as text instead — a page whose one
    * heading carries an over-budget body would otherwise answer with nothing to
    * read and no smaller request to make.
+   *
+   * Because every item ships, a degraded one as its skeleton, the skeletons
+   * behind an item — and the message's mention of each cut anchor — are priced
+   * BEFORE that item's body is admitted. Pricing them only after the cut is how
+   * a page of many sections answered far past the budget, and past the
+   * transport ceiling a result vanishes whole. Costs are JSON lengths, never
+   * raw string lengths: escaping (`\n`, `"`) makes the two differ.
    */
-  let remaining = budgetChars - JSON.stringify({ rootId: root.id, path: input.path, hash, frontmatter }).length;
+  const degrade = ({ body: _body, ...meta }: PageSectionItem): PageSectionItem => ({ ...meta, truncated: true });
+  const skeletonCost = items.map(
+    (i) => JSON.stringify(degrade(i)).length + 1 + (i.anchor ? 2 * i.anchor.length + MESSAGE_CHARS_PER_ANCHOR : 0),
+  );
+  /** `tail[k]` — what items k.. cost as skeletons. */
+  const tail = new Array<number>(items.length + 1).fill(0);
+  for (let k = items.length - 1; k >= 0; k--) tail[k] = tail[k + 1]! + skeletonCost[k]!;
+
+  let remaining =
+    budgetChars -
+    JSON.stringify({ rootId: root.id, path: input.path, hash, frontmatter, results: [], truncated: true, message: '' })
+      .length -
+    MESSAGE_RESERVE_CHARS;
   let preamble = page.preamble ?? undefined;
   let preambleCut: { kept: number; total: number } | null = null;
   if (preamble !== undefined) {
-    if (preamble.length > remaining) {
-      preambleCut = { kept: Math.max(0, remaining), total: preamble.length };
-      preamble = preamble.slice(0, Math.max(0, remaining));
-    }
-    remaining -= JSON.stringify(preamble).length;
+    const total = preamble.length;
+    const cost = (s: string) => JSON.stringify({ preamble: s }).length;
+    preamble = fitPrefix(preamble, cost, remaining - tail[0]!);
+    if (preamble.length < total) preambleCut = { kept: preamble.length, total };
+    remaining -= cost(preamble);
   }
-  if (items.length) {
-    const first = items[0]!;
-    const cost = JSON.stringify(first).length;
-    if (cost > remaining) {
-      const keep = Math.max(0, first.body!.length - (cost - Math.max(0, remaining)));
-      items[0] = { ...first, body: first.body!.slice(0, keep), truncated: true };
+  const results: PageSectionItem[] = [];
+  let spent = 0;
+  let cutFrom: number | null = null;
+  items.forEach((item, k) => {
+    if (cutFrom !== null) {
+      results.push(degrade(item));
+      return;
     }
-  }
-  const budgeted = applyItemBudget(
-    items,
-    ({ body: _body, ...meta }) => ({ ...meta, truncated: true as const }),
-    '',
-    Math.max(0, remaining),
-  );
-  const results = budgeted.items;
+    const avail = remaining - spent - tail[k + 1]!;
+    const cost = JSON.stringify(item).length + 1;
+    if (cost <= avail) {
+      results.push(item);
+      spent += cost;
+    } else if (k === 0) {
+      const cutItem = { ...item, truncated: true as const };
+      const body = fitPrefix(item.body!, (s) => JSON.stringify({ ...cutItem, body: s }).length + 1, avail);
+      results.push({ ...cutItem, body });
+      spent += JSON.stringify({ ...cutItem, body }).length + 1;
+    } else {
+      cutFrom = k;
+      results.push(degrade(item));
+    }
+  });
   const cut = results.filter((i) => i.truncated);
 
   const messages: string[] = [];
@@ -221,6 +248,33 @@ export async function getPage(
     results,
     ...(messages.length ? { truncated: true as const, message: messages.join(' ') } : {}),
   };
+}
+
+/**
+ * What the cut message costs beyond the anchors it names: its fixed prose (the
+ * preamble notice, the `get_sections` / `range` instruction, the untagged note)
+ * plus the envelope keys around it. Reserved whether or not a cut happens.
+ */
+const MESSAGE_RESERVE_CHARS = 600;
+
+/**
+ * Per cut anchor, beyond twice its length: the message lists it once and the
+ * proposed `get_sections` batch quotes it again (JSON-escaped quotes, comma).
+ */
+const MESSAGE_CHARS_PER_ANCHOR = 10;
+
+/** The longest prefix of `text` whose `cost` stays within `avail` (empty when nothing fits). */
+function fitPrefix(text: string, cost: (s: string) => number, avail: number): string {
+  if (cost(text) <= avail) return text;
+  // Binary search: a JSON cost is monotonic in the prefix length but not linear in it.
+  let lo = 0;
+  let hi = text.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (cost(text.slice(0, mid)) <= avail) lo = mid;
+    else hi = mid - 1;
+  }
+  return text.slice(0, lo);
 }
 
 function plural(n: number): string {

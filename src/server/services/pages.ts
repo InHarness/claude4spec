@@ -92,8 +92,11 @@ export class PagesService {
   }
 
   async read(relPath: string): Promise<PageContent> {
-    const abs = this.resolveSafe(relPath);
-    const raw = await fs.readFile(abs, 'utf-8');
+    return this.parseRead(relPath, await this.readRaw(relPath));
+  }
+
+  /** `read()`'s split of bytes already read — shared with `readDetail` so both answer from ONE read. */
+  private parseRead(relPath: string, raw: string): PageContent {
     const parsed = matter(raw);
     return {
       path: relPath,
@@ -113,17 +116,8 @@ export class PagesService {
    * content beside it), plus the editor's frontmatter/body split of it.
    */
   async readDetail(relPath: string): Promise<PageDetail> {
-    const abs = this.resolveSafe(relPath);
-    const raw = await fs.readFile(abs, 'utf-8');
-    const parsed = matter(raw, {});
-    return {
-      rootId: this.rootId,
-      path: relPath,
-      content: raw,
-      hash: crypto.createHash('sha256').update(raw, 'utf-8').digest('hex'),
-      frontmatter: (parsed.data ?? {}) as Record<string, unknown>,
-      body: parsed.content,
-    };
+    const raw = await this.readRaw(relPath);
+    return { rootId: this.rootId, ...this.parseRead(relPath, raw), content: raw };
   }
 
   /**

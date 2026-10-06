@@ -388,6 +388,27 @@ describe('discovery core', () => {
       expect(page.message).toMatch(/get_sections/);
     });
 
+    it('the skeletons of the cut items and the message naming them stay inside the budget', async () => {
+      const lines: string[] = [];
+      for (let i = 0; i < 300; i++) {
+        lines.push(`<!-- anchor: s${String(i).padStart(7, '0')} -->`, `## Section number ${i}`, '', '"quoted"\n'.repeat(40));
+      }
+      await writePage('pages', 'many.md', lines.join('\n'));
+      const page = await core([pagesRoot()]).getPage({ rootId: 'pages', path: 'many.md' });
+      expect(page.truncated).toBe(true);
+      expect(page.results).toHaveLength(300);
+      expect(page.message).toContain('s0000299');
+      expect(JSON.stringify(page).length).toBeLessThanOrEqual(DEFAULT_BUDGET_CHARS);
+    });
+
+    it('a first body cut as text is priced as JSON — escapes included', async () => {
+      await writePage('pages', 'nl.md', `<!-- anchor: aaaa0001 -->\n# One\n\n${'"\n'.repeat(DEFAULT_BUDGET_CHARS)}`);
+      const page = await core([pagesRoot()]).getPage({ rootId: 'pages', path: 'nl.md' });
+      expect(page.results[0]!.truncated).toBe(true);
+      expect(page.results[0]!.body!.length).toBeGreaterThan(0);
+      expect(JSON.stringify(page).length).toBeLessThanOrEqual(DEFAULT_BUDGET_CHARS);
+    });
+
     it('the first item is never reduced to its heading — its body is cut as text', async () => {
       await writePage('pages', 'big.md', `<!-- anchor: aaaa0001 -->\n# One\n\n${'x'.repeat(DEFAULT_BUDGET_CHARS + 500)}\n`);
       const page = await core([pagesRoot()]).getPage({ rootId: 'pages', path: 'big.md' });

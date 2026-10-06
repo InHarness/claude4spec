@@ -2838,6 +2838,18 @@ describe('differential writes — textEdits', () => {
     expect(res).not.toHaveProperty('droppedAnchors');
   });
 
+  it('literal mode: a body carrying frontmatter.raw is measured below it — YAML never swallows an anchor', async () => {
+    await index('doc.md', nested);
+    const childOne = anchorOf('Child one');
+    await citeWithTag(childOne);
+    const body = (await pages.read('doc.md')).body;
+    // An unclosed `<!--` in a YAML value would, read as markdown, hide every anchor below it.
+    const whole = `---\nnote: "<!-- draft"\n---\n${body}`;
+
+    const res = await updatePage(target, { path: 'doc.md', body: whole, expectedHash: await hashOfPage() }, 'agent', diffDeps());
+    expect(res).not.toHaveProperty('droppedAnchors');
+  });
+
   it('literal mode: a dropAnchors entry this page does not have is INVALID_ARGUMENT', async () => {
     await index('doc.md', nested);
     const body = (await pages.read('doc.md')).body;

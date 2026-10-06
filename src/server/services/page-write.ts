@@ -683,7 +683,8 @@ export async function updatePage(
 
   // Read BEFORE writing: the delta is against what was on disk, and this doubles
   // as create-or-replace, so "no page yet" means every anchor is an addition.
-  const before = sectionDigests(await bodyOnDisk(target.pages, relPath));
+  const bodyBefore = await bodyOnDisk(target.pages, relPath);
+  const before = sectionDigests(bodyBefore);
 
   if (hasEdits) {
     return await updatePageByTextEdits(target, relPath, input, actor, before, diffDeps);
@@ -698,10 +699,18 @@ export async function updatePage(
    */
   let dropped: string[] = [];
   if (diffDeps?.sectionIndexed !== false) {
-    const linesBefore = (await bodyOnDisk(target.pages, relPath)).split('\n');
+    const linesBefore = bodyBefore.split('\n');
+    /**
+     * Measured in the same space as `linesBefore` — the body below the
+     * frontmatter. A body assembled from get_page with `frontmatter` omitted
+     * carries `frontmatter.raw` on top, and YAML read as markdown (an unclosed
+     * `<!--` or a fence in a value) could swallow the anchors below it.
+     */
+    const linesAfter = (input.body as string).split('\n');
+    const fm = input.frontmatter === undefined ? parseSections(input.body as string).frontmatter : null;
     dropped = await assertNoUndeclaredAnchorLoss({
       linesBefore,
-      linesAfter: (input.body as string).split('\n'),
+      linesAfter: fm ? linesAfter.slice(fm.range.end) : linesAfter,
       scope: sectionRanges(linesBefore).map((r) => r.anchor),
       declared: input.dropAnchors ?? [],
       deps: diffDeps,
