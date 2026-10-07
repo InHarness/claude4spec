@@ -69,7 +69,7 @@ export const releasesApi = {
     );
   },
   async diff(from: string | number | null, to: string | number): Promise<RawDelta> {
-    const fromSegment = from === null ? '__INITIAL__' : encodeURIComponent(String(from));
+    const fromSegment = from === null ? 'initial' : encodeURIComponent(String(from));
     return handle<RawDelta>(
       await apiFetch(
         `/api/releases/${fromSegment}/diff/${encodeURIComponent(String(to))}`,

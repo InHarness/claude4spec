@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Layers, X } from 'lucide-react';
 import type { Root } from '../../../shared/types.js';
-import type { RawDelta } from '../../../shared/entities.js';
 import { apiFetch, handle } from '../../lib/api-core.js';
 
 /**
@@ -268,7 +267,8 @@ export function BriefScopeModal({
 }
 
 /**
- * Default probe — `release_diff({ summaryOnly: true, roots: [rootId] })` via REST.
+ * Default probe — `release_diff({ summaryOnly: true, include: ['pages'], roots: [rootId] })`
+ * via REST `view=operation` (2.1.11: the raw diff projection takes no filters).
  * Returns the changed-page count for `rootId` between `from → to`, or `null` when
  * the diff cannot be computed.
  */
@@ -277,15 +277,15 @@ async function defaultChangedCount(
   toReleaseName: string,
   rootId: string,
 ): Promise<number | null> {
-  const fromSeg = fromReleaseName === null ? '__INITIAL__' : encodeURIComponent(fromReleaseName);
-  const params = new URLSearchParams({ summaryOnly: 'true', roots: rootId });
+  const fromSeg = fromReleaseName === null ? 'initial' : encodeURIComponent(fromReleaseName);
+  const params = new URLSearchParams({ view: 'operation', summaryOnly: 'true', include: 'pages', roots: rootId });
   try {
-    const delta = await handle<RawDelta>(
+    const { data } = await handle<{ data: { total?: { pages?: number } } }>(
       await apiFetch(
         `/api/releases/${fromSeg}/diff/${encodeURIComponent(toReleaseName)}?${params.toString()}`,
       ),
     );
-    return Array.isArray(delta.pages) ? delta.pages.length : 0;
+    return data.total?.pages ?? 0;
   } catch {
     return null;
   }

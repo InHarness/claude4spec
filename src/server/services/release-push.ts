@@ -94,15 +94,9 @@ export class ReleasePushService {
     const accountId = account.remoteAccountId ?? '';
     const accountEmail = account.accountEmail ?? null;
 
-    // 2. Validate the local release exists (frozen releases are allowed).
-    try {
-      this.releaseService.getRelease(releaseId);
-    } catch (err) {
-      if (err instanceof DomainError && err.code === 'NOT_FOUND') {
-        throw new DomainError('RELEASE_NOT_FOUND', `release '${releaseId}' not found`);
-      }
-      throw err;
-    }
+    // 2. Validate the local release exists (frozen releases are allowed) —
+    // `getRelease` refuses a missing one with RELEASE_NOT_FOUND itself (2.1.11).
+    this.releaseService.getRelease(releaseId);
 
     // 3. Build the bundle (M17). All bytes-derived values come from here.
     const bundle = await this.releaseService.buildBundleArchive(releaseId);

@@ -91,11 +91,20 @@ export type QueryValue = string | number | boolean | readonly string[] | undefin
  * is what lets the core's own default stand. Arrays join with a comma, the
  * spelling every one of these routes reads.
  */
-function queryString(query: Record<string, QueryValue> | undefined): string {
+function queryString(
+  query: Record<string, QueryValue> | undefined,
+  lists: 'comma' | 'repeat' = 'comma',
+): string {
   if (!query) return '';
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(query)) {
     if (v === undefined || v === false) continue;
+    if (Array.isArray(v) && lists === 'repeat') {
+      // 2.1.11 — the release routes read a list as the repeated key
+      // (`entityTypes=a&entityTypes=b`), which also lets an empty element travel.
+      for (const item of v) params.append(k, item);
+      continue;
+    }
     params.set(k, Array.isArray(v) ? v.join(',') : String(v));
   }
   const s = params.toString();
@@ -123,9 +132,10 @@ export async function delegateGet(
   args: ParsedArgs,
   path: string,
   query?: Record<string, QueryValue>,
+  opts?: { lists?: 'comma' | 'repeat' },
 ): Promise<unknown> {
   const { apiBase } = await resolveTarget(args).catch(asCliError);
-  return getJson(`${apiBase}${path}${queryString(query)}`).catch(asCliError);
+  return getJson(`${apiBase}${path}${queryString(query, opts?.lists)}`).catch(asCliError);
 }
 
 /** POST — `create-patch` and the agent flow's siblings. */

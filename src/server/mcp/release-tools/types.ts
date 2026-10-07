@@ -258,4 +258,10 @@ export type EntityTypeFilter = string;
 export interface ProjectionOpts {
   include: IncludeFilter[];
   entityTypes?: EntityTypeFilter[];
+  /**
+   * 2.1.11 — `release_diff` only: narrows the entity dimension to these bare
+   * slugs of the ONE type in `entityTypes` (the operation refuses any other
+   * shape). Applied before `total` is counted.
+   */
+  slugs?: string[];
 }

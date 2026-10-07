@@ -359,13 +359,16 @@ describe('release_diff — `paths` / `roots` validation', () => {
     expect(res.body.error).toContain('releasable roots: [pages, plugins]');
   });
 
-  it('checks pagination before the filters, and emptiness before conflicts', async () => {
+  it('checks pagination before the filters, and every single-filter refusal before conflicts (2.1.11)', async () => {
     const { call } = harness();
     const paging = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', limit: -1, roots: [] });
     expect(paging.body.code).toBe('INVALID_PAGINATION');
     const empty = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths: [], roots: ['pages'] });
     expect(empty.body.code).toBe('INVALID_PATHS_FILTER');
-    const conflict = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths: ['nope/a.md'], roots: ['nope'] });
+    // An unknown root is a single-filter refusal, so it wins over the paths+roots conflict.
+    const unknown = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths: ['nope/a.md'], roots: ['nope'] });
+    expect(unknown.body.code).toBe('INVALID_ROOTS_FILTER');
+    const conflict = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths: ['pages/a.md'], roots: ['pages'] });
     expect(conflict.body.code).toBe('CONFLICTING_FILTERS');
   });
 
@@ -425,5 +428,101 @@ describe('release_diff — the section window (2.1.5)', () => {
     expect(schema.sectionLimit?.description).toContain('section by section');
     expect(schema.summaryOnly?.description).toContain('`sectionMap`');
     expect(tool.description).toContain('`sectionLimit: 1` reads it section by section');
+  });
+});
+
+/**
+ * 2.1.11 — the diff window's literal matrix and the `slugs` filter. Both live in
+ * `releaseDiffOperation`; asserted here through the tool because the tool is a
+ * thin call into it.
+ */
+describe('release_diff — 2.1.11 literal matrix', () => {
+  it('[ac:release-diff-initial-equivalence] treats "initial", "null" and null as the same empty state', async () => {
+    for (const from of [null, 'null', 'initial']) {
+      const { calls, call } = harness();
+      const res = await call({ fromIdOrName: from, toIdOrName: 'v2' });
+      expect(res.isError).toBe(false);
+      expect(calls.getReleaseDiff).toEqual([[null, 'v2']]);
+      // No left snapshot is resolved for the empty state.
+      expect(calls.getReleaseSnapshot).toEqual(['v2']);
+    }
+  });
+
+  it.each([
+    [{ fromIdOrName: null, toIdOrName: 'current' }],
+    [{ fromIdOrName: 'null', toIdOrName: 'current' }],
+    [{ fromIdOrName: 'initial', toIdOrName: 'current' }],
+    [{ fromIdOrName: 'current', toIdOrName: 'v2' }],
+    [{ fromIdOrName: 'v1', toIdOrName: 'initial' }],
+    [{ fromIdOrName: 'v1', toIdOrName: 'null' }],
+  ])('refuses %o with INVALID_DIFF_RANGE before any lookup', async (args) => {
+    const { calls, call } = harness();
+    const res = await call(args);
+    expect(res.body.code).toBe('INVALID_DIFF_RANGE');
+    expect(calls.getReleaseDiff).toEqual([]);
+    expect(calls.getUnreleasedDiff).toEqual([]);
+    expect(calls.getReleaseSnapshot).toEqual([]);
+  });
+
+  it('validates filters before the literals — CONFLICTING_FILTERS wins with toIdOrName: "current"', async () => {
+    const { call } = harness();
+    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'current', include: ['pages'], entityTypes: ['endpoint'] });
+    expect(res.body.code).toBe('CONFLICTING_FILTERS');
+  });
+});
+
+describe('release_diff — 2.1.11 `slugs` filter', () => {
+  it('narrows entities[] to the named slug before `total` is counted', async () => {
+    const { call } = harness();
+    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'current', entityTypes: ['endpoint'], slugs: ['ep-new'] });
+    expect(res.isError).toBe(false);
+    expect(res.body.entities.map((e: { slug: string }) => e.slug)).toEqual(['ep-new']);
+    expect(res.body.total.entities).toBe(1);
+  });
+
+  it('answers an unchanged or absent slug with an empty list, not an error', async () => {
+    const { call } = harness();
+    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'current', entityTypes: ['endpoint'], slugs: ['nope'] });
+    expect(res.isError).toBe(false);
+    expect(res.body.entities).toEqual([]);
+    expect(res.body.total.entities).toBe(0);
+  });
+
+  it('narrows the light map too', async () => {
+    const { call } = harness();
+    const res = await call({
+      fromIdOrName: 'v1',
+      toIdOrName: 'current',
+      entityTypes: ['endpoint'],
+      slugs: ['ep-kept'],
+      summaryOnly: true,
+    });
+    expect(res.body.entities.map((e: { slug: string }) => e.slug)).toEqual(['ep-kept']);
+  });
+
+  it('combines with `paths` — the pages dimension is untouched', async () => {
+    const { call } = harness();
+    const res = await call({
+      fromIdOrName: 'v1',
+      toIdOrName: 'current',
+      entityTypes: ['endpoint'],
+      slugs: ['ep-new'],
+      paths: ['pages/new.md'],
+    });
+    expect(res.isError).toBe(false);
+  });
+
+  it.each([
+    [{ slugs: [] }, 'INVALID_SLUGS_FILTER'],
+    [{ entityTypes: ['endpoint'], slugs: ['a', '', 'b'] }, 'INVALID_SLUGS_FILTER'],
+    // A single-filter refusal outranks the combination refusal.
+    [{ slugs: [], include: ['pages'] }, 'INVALID_SLUGS_FILTER'],
+    [{ slugs: ['a'] }, 'CONFLICTING_FILTERS'],
+    [{ entityTypes: ['endpoint', 'dto'], slugs: ['a'] }, 'CONFLICTING_FILTERS'],
+    [{ include: ['pages'], slugs: ['a'] }, 'CONFLICTING_FILTERS'],
+  ])('refuses %o with %s', async (extra, code) => {
+    const { call } = harness();
+    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', ...extra });
+    expect(res.body.code).toBe(code);
   });
 });

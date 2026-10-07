@@ -1,18 +1,41 @@
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import type { ReleaseService } from '../services/release.js';
 import type { GitService } from '../services/git.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import { CURRENT_RELEASE_NAME } from '../../shared/entities.js';
+import type { Root } from '../../shared/types.js';
+import { DomainError } from '../services/tags.js';
+import {
+  INCLUDE_VALUES,
+  releaseDiffOperation,
+  releaseListOperation,
+  releaseShowOperation,
+  resolveDiffRange,
+  type ReleaseOperationDeps,
+} from '../services/release-operations.js';
+import type { IncludeFilter } from '../mcp/release-tools/types.js';
 
 export function releasesRouter(
   releases: ReleaseService,
   ws?: WsEmitter,
   gitService?: GitService,
+  roots: () => ReadonlyArray<Pick<Root, 'id' | 'releasable'>> = () => [],
 ): Router {
   const router = Router();
+  const opDeps: ReleaseOperationDeps = { releaseService: releases, roots };
 
-  router.get('/', (_req, res, next) => {
+  /*
+   * 2.1.11 — `view=operation` answers `{ data: <operation payload> }`, the same
+   * payload the MCP tool returns for the same parameters (`release_list`). Without
+   * `view` the route keeps its UI projection, and an operation parameter there is
+   * a 400 rather than a silent fall-back to the default projection.
+   */
+  router.get('/', (req, res, next) => {
     try {
+      if (readView(req, LIST_PARAMS)) {
+        res.json({ data: releaseListOperation(opDeps, { limit: intParam(req, 'limit'), offset: intParam(req, 'offset') }) });
+        return;
+      }
       res.json({ releases: releases.listReleases() });
     } catch (err) {
       next(err);
@@ -87,6 +110,17 @@ export function releasesRouter(
    */
   router.get('/:idOrName/snapshot', (req, res, next) => {
     try {
+      if (readView(req, SHOW_PARAMS)) {
+        const data = releaseShowOperation(opDeps, {
+          releaseName: decodeIdOrName(req.params.idOrName),
+          include: listParam(req, 'include') as IncludeFilter[] | undefined,
+          entityTypes: listParam(req, 'entityTypes'),
+          limit: intParam(req, 'limit'),
+          offset: intParam(req, 'offset'),
+        });
+        res.json({ data });
+        return;
+      }
       const snap = releases.getReleaseSnapshot(decodeIdOrName(req.params.idOrName));
       res.json(snap);
     } catch (err) {
@@ -96,29 +130,36 @@ export function releasesRouter(
 
   router.get('/:from/diff/:to', async (req, res, next) => {
     try {
-      const fromParam =
-        req.params.from === '__INITIAL__' ? null : decodeIdOrName(req.params.from);
-      // 0.1.96 (L13): narrow the pages dimension to the requested root(s). Express
-      // gives a string for `?roots=pages` and an array for `?roots=pages&roots=skills`;
-      // normalize both to `string[]`. Absent/empty ⇒ undefined ⇒ all releasable roots
-      // (unchanged behaviour for the release-detail diff view). Backs the brief-scope
-      // picker's per-root changed-page count probe.
-      const rawRoots = req.query.roots;
-      const roots = (Array.isArray(rawRoots) ? rawRoots : rawRoots === undefined ? [] : [rawRoots])
-        .filter((r): r is string => typeof r === 'string');
-      // 0.1.122: reserved literal `:to === 'current'` resolved BEFORE the
-      // nameOrId lookup — diff `:from` against the live/unreleased spec state.
-      if (req.params.to === CURRENT_RELEASE_NAME) {
-        const delta = await releases.getUnreleasedDiff(fromParam, {
-          roots: roots.length > 0 ? roots : undefined,
+      // 2.1.11 — `:from` takes `initial` / `null` for the empty state, `:to` takes
+      // `current` for HEAD. Both projections share the literal matrix with the
+      // operation, so `initial → current` is a 400 here too, `view` or not.
+      const fromSeg = req.params.from;
+      const toSeg = req.params.to;
+      if (readView(req, DIFF_PARAMS)) {
+        const data = await releaseDiffOperation(opDeps, {
+          fromReleaseName: decodeIdOrName(fromSeg),
+          toReleaseName: decodeIdOrName(toSeg),
+          include: listParam(req, 'include') as IncludeFilter[] | undefined,
+          entityTypes: listParam(req, 'entityTypes'),
+          slugs: listParam(req, 'slugs'),
+          roots: listParam(req, 'roots'),
+          paths: listParam(req, 'paths'),
+          summaryOnly: boolParam(req, 'summaryOnly'),
+          limit: intParam(req, 'limit'),
+          offset: intParam(req, 'offset'),
+          sectionOffset: intParam(req, 'sectionOffset'),
+          sectionLimit: intParam(req, 'sectionLimit'),
         });
-        res.json(delta);
+        res.json({ data });
         return;
       }
-      const delta = await releases.getReleaseDiff(fromParam, decodeIdOrName(req.params.to), {
-        roots: roots.length > 0 ? roots : undefined,
-      });
-      res.json(delta);
+      // The raw projection (the UI's coloured diff) exposes no filters.
+      const { from, to } = resolveDiffRange(decodeIdOrName(fromSeg), decodeIdOrName(toSeg));
+      if (to === CURRENT_RELEASE_NAME) {
+        res.json(await releases.getUnreleasedDiff(from));
+        return;
+      }
+      res.json(await releases.getReleaseDiff(from, to));
     } catch (err) {
       next(err);
     }
@@ -171,7 +212,87 @@ export function releasesRouter(
 
 function decodeIdOrName(value: string | undefined): number | string {
   if (!value) throw new Error('missing release id or name');
-  // numeric string => id, otherwise name
+  // numeric string => id, otherwise name. Express has already percent-decoded
+  // the segment, so decoding again would corrupt a name carrying `%`.
   if (/^\d+$/.test(value)) return Number(value);
-  return decodeURIComponent(value);
+  return value;
+}
+
+/** The query keys each operation route reads under `view=operation` — its operation's parameters. */
+const LIST_PARAMS = ['limit', 'offset'] as const;
+const SHOW_PARAMS = ['include', 'entityTypes', 'limit', 'offset'] as const;
+const DIFF_PARAMS = [
+  'include',
+  'entityTypes',
+  'slugs',
+  'roots',
+  'paths',
+  'summaryOnly',
+  'limit',
+  'offset',
+  'sectionOffset',
+  'sectionLimit',
+] as const;
+const VIEWS = ['operation'] as const;
+
+/**
+ * The route's `view`, enforced both ways: an unknown value is a 400, and so is
+ * an operation parameter given WITHOUT `view=operation` — answering it with the
+ * default projection would silently ignore a filter the caller asked for.
+ * Returns true for `view=operation`.
+ */
+function readView(req: Request, operationParams: readonly string[]): boolean {
+  const view = req.query.view;
+  if (view !== undefined && (typeof view !== 'string' || !(VIEWS as readonly string[]).includes(view))) {
+    throw new DomainError(
+      'INVALID_ARGUMENT',
+      `unknown view '${String(view)}' — this route accepts: ${VIEWS.join(', ')}`,
+      'omit `view` for the default projection, or pass `view=operation` for the operation payload',
+    );
+  }
+  if (view === 'operation') return true;
+  const stray = operationParams.filter((p) => req.query[p] !== undefined);
+  if (stray.length > 0) {
+    throw new DomainError(
+      'INVALID_ARGUMENT',
+      `${stray.join(', ')} ${stray.length === 1 ? 'is a parameter' : 'are parameters'} of view=operation — the default projection takes none`,
+      `add \`view=operation\` to the query to get the operation payload with these parameters`,
+    );
+  }
+  return false;
+}
+
+/** A list parameter: the key repeated (`entityTypes=a&entityTypes=b`). Empty elements are kept and validated by the operation. */
+function listParam(req: Request, key: string): string[] | undefined {
+  const raw = req.query[key];
+  if (raw === undefined) return undefined;
+  const values = Array.isArray(raw) ? raw : [raw];
+  if (!values.every((v): v is string => typeof v === 'string')) {
+    throw new DomainError('INVALID_ARGUMENT', `${key} must be a list of strings, given as the repeated key ${key}=a&${key}=b`);
+  }
+  if (key === 'include') {
+    const bad = values.filter((v) => !(INCLUDE_VALUES as readonly string[]).includes(v));
+    if (bad.length > 0) {
+      throw new DomainError('INVALID_ARGUMENT', `include: unknown value(s) ${bad.join(', ')} — expected ${INCLUDE_VALUES.join(', ')}`);
+    }
+  }
+  return values;
+}
+
+function intParam(req: Request, key: string): number | undefined {
+  const raw = req.query[key];
+  if (raw === undefined) return undefined;
+  if (typeof raw !== 'string' || !/^-?\d+$/.test(raw)) {
+    throw new DomainError('INVALID_ARGUMENT', `${key} must be an integer`);
+  }
+  return Number(raw);
+}
+
+function boolParam(req: Request, key: string): boolean | undefined {
+  const raw = req.query[key];
+  if (raw === undefined) return undefined;
+  if (raw !== 'true' && raw !== 'false') {
+    throw new DomainError('INVALID_ARGUMENT', `${key} must be true or false`);
+  }
+  return raw === 'true';
 }
