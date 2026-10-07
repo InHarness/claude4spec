@@ -232,7 +232,10 @@ export function optionalRawStringList(args: ParsedArgs, flag: string): string[] 
 export function repeatedStrings(args: ParsedArgs, flag: string): string[] | undefined {
   if (!args.flags.has(flag)) return undefined;
   const values = args.multi.get(flag);
-  if (!values || values.length === 0) {
+  // `flags` is last-wins: `true` there means the LAST occurrence had no value
+  // (`--paths a --paths`), which `multi` does not record — refuse it rather than
+  // answer for the occurrences that did.
+  if (!values || values.length === 0 || args.flags.get(flag) === true) {
     throw new CliError('INVALID_ARGUMENT', `--${flag} requires a value`);
   }
   return values;
@@ -245,12 +248,13 @@ export const GLOBAL_FLAGS: readonly string[] = ['project', 'workspace', 'server'
  * 2.1.11 — a command whose flag set IS its operation's parameter set refuses
  * any other flag, and a missing required one, LOCALLY: nothing is sent, and the
  * message lists the legal flags. An ignored flag would answer a different query
- * than the one asked.
+ * than the one asked — and so would a flag given twice that is not `repeatable`:
+ * `flags` is last-wins, so `--slugs a --slugs b` would silently drop `a`.
  */
 export function assertFlagSet(
   args: ParsedArgs,
   command: string,
-  spec: { required: readonly string[]; optional: readonly string[] },
+  spec: { required: readonly string[]; optional: readonly string[]; repeatable?: readonly string[] },
 ): void {
   const legal = [...spec.required, ...spec.optional];
   const listing = `legal flags: ${legal.map((f) => `--${f}`).join(', ')}`;
@@ -270,6 +274,16 @@ export function assertFlagSet(
     throw new CliError(
       'INVALID_ARGUMENT',
       `${command}: missing required flag${missing.length > 1 ? 's' : ''} ${missing.map((f) => `--${f}`).join(', ')} — ${listing}`,
+      listing,
+    );
+  }
+  const repeated = legal.filter(
+    (f) => !(spec.repeatable ?? []).includes(f) && (args.multi.get(f)?.length ?? 0) > 1,
+  );
+  if (repeated.length > 0) {
+    throw new CliError(
+      'INVALID_ARGUMENT',
+      `${command}: ${repeated.map((f) => `--${f}`).join(', ')} given more than once — pass it once (lists are comma-separated)`,
       listing,
     );
   }

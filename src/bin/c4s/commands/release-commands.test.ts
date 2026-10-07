@@ -170,6 +170,26 @@ describe('c4s release commands (2.1.11)', () => {
       expect(seen).toEqual([]);
     });
 
+    it('refuses a non-repeatable list flag given twice instead of keeping the last', async () => {
+      await expect(
+        runReleaseDiff(args('release-diff', '--from', 'v1', '--to', 'v2', '--entity-types', 't', '--slugs', 'a', '--slugs', 'b')),
+      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT', message: expect.stringContaining('--slugs') });
+      expect(seen).toEqual([]);
+    });
+
+    it('refuses a trailing valueless --paths rather than dropping it', async () => {
+      await expect(
+        runReleaseDiff(args('release-diff', '--from', 'v1', '--to', 'v2', '--paths', 'pages/a.md', '--paths')),
+      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+      expect(seen).toEqual([]);
+    });
+
+    it('reads --summary-only=true as the switch', async () => {
+      reply = { data: { from: null, to: { id: 2, name: 'v2' }, total: {} } };
+      await runReleaseDiff(args('release-diff', '--from', 'v1', '--to', 'v2', '--summary-only=true'));
+      expect(query(seen[0]!).get('summaryOnly')).toBe('true');
+    });
+
     it('marks a cut answer `truncated` and prints the hint in flag form', async () => {
       reply = {
         data: {
@@ -199,6 +219,15 @@ describe('toCliHint (2.1.11)', () => {
     );
     expect(toCliHint('`summaryOnly: true` and `sectionLimit: 1`')).toBe('`--summary-only` and `--section-limit 1`');
     expect(toCliHint('pass `toIdOrName` or `fromReleaseName`')).toBe('pass `--to` or `--from`');
+  });
+
+  it('keeps a hinted value one shell word, apostrophes and spaces included', () => {
+    expect(toCliHint("continue with `paths: ['pages/my notes.md'], sectionOffset: 2, sectionLimit: 1`")).toBe(
+      "continue with `--paths 'pages/my notes.md' --section-offset 2 --section-limit 1`",
+    );
+    expect(toCliHint("continue with `paths: ['pages/don't.md'], sectionOffset: 2`")).toBe(
+      "continue with `--paths 'pages/don'\\''t.md' --section-offset 2`",
+    );
   });
 
   it('leaves prose and unknown code spans alone', () => {

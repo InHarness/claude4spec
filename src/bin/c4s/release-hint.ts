@@ -43,17 +43,30 @@ export function flagFor(param: string): string {
   return FLAG_EXCEPTIONS[param] ?? param.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
 }
 
+/**
+ * A value as one shell word. The hint is meant to be RUN, and a page path with a
+ * space or a quote (`pages/my notes.md`) would split into two arguments.
+ */
+function shellWord(value: string): string {
+  return /^[A-Za-z0-9_./:@%+=,-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
 function renderPair(param: string, rawValue: string): string {
   const flag = flagFor(param);
   const value = rawValue.trim();
   if (value === 'true') return `--${flag}`;
   const list = /^\[(.*)\]$/.exec(value);
   if (list) {
-    const items = [...list[1]!.matchAll(/'([^']*)'|"([^"]*)"/g)].map((m) => m[1] ?? m[2] ?? '');
-    if (REPEATED_FLAGS.has(param)) return items.map((item) => `--${flag} ${item}`).join(' ');
-    return `--${flag} ${items.join(',')}`;
+    // An item ends at a quote followed by the separator or the list's end, so an
+    // apostrophe INSIDE a value (`'pages/don't.md'`) does not cut it short — the
+    // operation writes its values unescaped.
+    const items = [...list[1]!.matchAll(/'(.*?)'(?=\s*(?:,|$))|"(.*?)"(?=\s*(?:,|$))/g)].map(
+      (m) => m[1] ?? m[2] ?? '',
+    );
+    if (REPEATED_FLAGS.has(param)) return items.map((item) => `--${flag} ${shellWord(item)}`).join(' ');
+    return `--${flag} ${shellWord(items.join(','))}`;
   }
-  return `--${flag} ${value.replace(/^['"]|['"]$/g, '')}`;
+  return `--${flag} ${shellWord(value.replace(/^['"]|['"]$/g, ''))}`;
 }
 
 /** One code span: `param: value` pairs, or a bare parameter name. Anything else is returned untouched. */
