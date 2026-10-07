@@ -87,10 +87,10 @@ export function createPageToolsServer(
    * `SectionWriteDeps`, so the guard `update_sections` runs and the guard
    * `update_page` runs are literally the same lookup.
    */
-  const diffDeps = (_rootId: string): PageDiffDeps => ({
+  const diffDeps: PageDiffDeps = {
     sections: deps.sections,
     ...(deps.findSectionReferents ? { findSectionReferents: deps.findSectionReferents } : {}),
-  });
+  };
 
   const rootIdParam = z
     .string()
@@ -241,7 +241,7 @@ export function createPageToolsServer(
               ...(args.expectedHash !== undefined ? { expectedHash: String(args.expectedHash) } : {}),
             },
             'agent',
-            diffDeps(rootId),
+            diffDeps,
           ),
           'update_page',
         );

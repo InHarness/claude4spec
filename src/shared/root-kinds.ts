@@ -21,6 +21,7 @@ import {
   PATCH_IMMUTABLE_FRONTMATTER_KEYS,
   PLAN_IMMUTABLE_FRONTMATTER_KEYS,
 } from './entities.js';
+import { hasDotSegment } from './page-files.js';
 
 /** Kinds contributed by the core modules: M02 (pages), M10, M21, M23, M29. */
 export type RootKind = 'pages' | 'plans' | 'briefs' | 'patches' | 'entities' | 'releases';
@@ -251,18 +252,24 @@ export function kindSelects(kind: RootKind, reactionId: string): boolean {
 /**
  * The single glob that matches a kind's file-map entries of the given formats.
  * Patterns of the shape `**\/*.{a,b}` / `**\/*.x` / `*.x` are merged by their
- * extensions; the runtime filter understands exactly those shapes.
+ * extensions; the runtime filter understands exactly those shapes. Entries of
+ * different depths (`*.x` next to `**\/*.y`) cannot be merged without widening
+ * the shallow one, so that combination is refused rather than silently widened.
  */
 export function fileMapFilter(kind: RootKind, formats: readonly FileFormat[]): string | undefined {
   const entries = KIND_DECLARATIONS[kind].fileMap.filter((e) => formats.includes(e.format));
   if (entries.length === 0) return undefined;
   if (entries.length === 1) return entries[0]!.pattern;
   const exts: string[] = [];
-  let deep = false;
+  let deep: boolean | undefined;
   for (const e of entries) {
     const m = /^(\*\*\/)?\*\.(?:\{([^}]+)\}|([A-Za-z0-9]+))$/.exec(e.pattern);
     if (!m) throw new Error(`root kind '${kind}': file-map pattern '${e.pattern}' cannot be merged into one filter`);
-    if (m[1]) deep = true;
+    const entryDeep = m[1] !== undefined;
+    if (deep !== undefined && deep !== entryDeep) {
+      throw new Error(`root kind '${kind}': file-map patterns of different depths cannot be merged into one filter`);
+    }
+    deep = entryDeep;
     exts.push(...(m[2] ? m[2].split(',') : [m[3]!]));
   }
   return `${deep ? '**/' : ''}*.{${exts.join(',')}}`;
@@ -299,7 +306,7 @@ function namespaceReaches(container: string, child: string): boolean {
   if (!isUnder(container, child)) return false;
   const rel = container === '' ? child : child.slice(container.length + 1);
   if (rel === '') return true;
-  return !rel.split('/').some((seg) => seg.startsWith('.'));
+  return !hasDotSegment(rel);
 }
 
 /** Do two namespaces overlap? Symmetric; the dot-subtree exclusion holds both ways. */

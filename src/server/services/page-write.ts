@@ -688,27 +688,24 @@ export async function updatePage(
    * a refusal leaves the file byte-identical. 2.1.8: runs on every page root —
    * each one has a section index.
    */
-  let dropped: string[] = [];
-  {
-    const linesBefore = bodyBefore.split('\n');
-    /**
-     * Measured in the same space as `linesBefore` — the body below the
-     * frontmatter. A body assembled from get_page with `frontmatter` omitted
-     * carries `frontmatter.raw` on top, and YAML read as markdown (an unclosed
-     * `<!--` or a fence in a value) could swallow the anchors below it.
-     */
-    const linesAfter = (input.body as string).split('\n');
-    const fm = input.frontmatter === undefined ? parseSections(input.body as string).frontmatter : null;
-    dropped = await assertNoUndeclaredAnchorLoss({
-      linesBefore,
-      linesAfter: fm ? linesAfter.slice(fm.range.end) : linesAfter,
-      scope: sectionRanges(linesBefore).map((r) => r.anchor),
-      declared: input.dropAnchors ?? [],
-      deps: diffDeps,
-      strangerHint:
-        'in a literal write dropAnchors may only name anchors this page has now — read them off get_page or get_page_outline',
-    });
-  }
+  const linesBefore = bodyBefore.split('\n');
+  /**
+   * Measured in the same space as `linesBefore` — the body below the
+   * frontmatter. A body assembled from get_page with `frontmatter` omitted
+   * carries `frontmatter.raw` on top, and YAML read as markdown (an unclosed
+   * `<!--` or a fence in a value) could swallow the anchors below it.
+   */
+  const linesAfter = (input.body as string).split('\n');
+  const fm = input.frontmatter === undefined ? parseSections(input.body as string).frontmatter : null;
+  const dropped = await assertNoUndeclaredAnchorLoss({
+    linesBefore,
+    linesAfter: fm ? linesAfter.slice(fm.range.end) : linesAfter,
+    scope: sectionRanges(linesBefore).map((r) => r.anchor),
+    declared: input.dropAnchors ?? [],
+    deps: diffDeps,
+    strangerHint:
+      'in a literal write dropAnchors may only name anchors this page has now — read them off get_page or get_page_outline',
+  });
 
   const written = await commit(
     target,
@@ -774,17 +771,14 @@ async function updatePageByTextEdits(
    * pass no deps also pass no referent lookup, and the guard below then
    * degrades to report-only on its own.
    */
-  let dropped: string[] = [];
-  {
-    dropped = await assertNoUndeclaredAnchorLoss({
-      linesBefore: bodyBefore.split('\n'),
-      linesAfter: parsed.content.split('\n'),
-      touchedSpans: bodyLineSpans(fullBefore, bodyBefore, applied.matchRanges),
-      declared: input.dropAnchors ?? [],
-      deps: diffDeps,
-      strangerHint: 'dropAnchors may only name anchors inside the fragments your textEdits match',
-    });
-  }
+  const dropped = await assertNoUndeclaredAnchorLoss({
+    linesBefore: bodyBefore.split('\n'),
+    linesAfter: parsed.content.split('\n'),
+    touchedSpans: bodyLineSpans(fullBefore, bodyBefore, applied.matchRanges),
+    declared: input.dropAnchors ?? [],
+    deps: diffDeps,
+    strangerHint: 'dropAnchors may only name anchors inside the fragments your textEdits match',
+  });
 
   const written = await commit(
     target,
