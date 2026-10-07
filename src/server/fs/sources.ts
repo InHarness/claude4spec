@@ -151,7 +151,5 @@ export const NULL_WRITER: SelfWriteMarker = {
   unsuppress: () => {},
 };
 
-/** Mechanical filters. Markdown drives indexing; `.html` is preview-only (M30). */
-export const MARKDOWN_FILTER = '**/*.{md,mdx}';
-export const HTML_FILTER = '**/*.html';
-export const JSON_FILTER = '**/*.json';
+// 2.1.8: the mechanical filters are derived from each kind's file map
+// (`fileMapFilter` in `src/shared/root-kinds.ts`), per reaction binding.

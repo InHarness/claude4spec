@@ -33,27 +33,25 @@ export interface RootEditorProps {
   sectionIndexed: boolean;
   /** Entity nodes + their validation — the kind's `references` flag. */
   referenceValidated: boolean;
-  /**
-   * The `@` scope: every `kind: pages` root, in resolution precedence (source
-   * root → builtin → `roots[]` order). Empty while the config is loading.
-   */
-  linkTargets: string[];
 }
 
-/** The editor layers a root of `kind` gets, with the `@` scope of the project. */
-export function rootEditorPropsForKind(kind: RootKind, linkTargets: readonly string[]): RootEditorProps {
+/**
+ * The editor layers a root of `kind` gets. The `@` scope is not a layer: it is
+ * every `kind: pages` root, resolved server-side by the link indexer (source
+ * root → builtin → `roots[]` order).
+ */
+export function rootEditorPropsForKind(kind: RootKind): RootEditorProps {
   return {
     sectionIndexed: kindSelects(kind, 'm06-anchor-injection'),
     referenceValidated: KIND_DECLARATIONS[kind].flags.references,
-    linkTargets: [...linkTargets],
   };
 }
 
-/** A `pages` root's editor before the config has loaded — the kind's layers, no `@` scope yet. */
-export const FULL_ROOT_EDITOR_PROPS: RootEditorProps = rootEditorPropsForKind('pages', []);
+/** A `pages` root's editor — the kind's layers. */
+export const FULL_ROOT_EDITOR_PROPS: RootEditorProps = rootEditorPropsForKind('pages');
 
-/** The layers the `artifact` context is built from: prose and `@` links only. */
-const ARTIFACT_LAYERS: Pick<RootEditorProps, 'sectionIndexed' | 'referenceValidated'> = {
+/** The props the brief / patch surfaces mount the `artifact` context with: prose and `@` links only. */
+export const ARTIFACT_EDITOR_PROPS: RootEditorProps = {
   sectionIndexed: false,
   referenceValidated: false,
 };
@@ -224,7 +222,7 @@ export function resolveContextSpec(
   if (contextId === 'artifact') {
     // Same derivation as a page, over the artifact layers: no anchors, no
     // section refs, no entity nodes — prose and `@` links over the page roots.
-    return { ...resolveContextSpec('page', { ...rootProps, ...ARTIFACT_LAYERS }, registry), id: 'artifact' };
+    return { ...resolveContextSpec('page', { ...rootProps, ...ARTIFACT_EDITOR_PROPS }, registry), id: 'artifact' };
   }
   if (contextId !== 'page') return STATIC_SPECS[contextId];
   return {

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { type Root } from '../shared/types.js';
 import {
+  RESERVED_WRITE_TARGETS,
   SYSTEM_ROOTS,
   SYSTEM_ROOT_KINDS,
   isSystemRootId,
@@ -266,13 +267,6 @@ export interface ConfigCliArgs {
  * roots). Migrated by `migrateConfigToV4` at project activation.
  */
 export const CURRENT_SCHEMA_VERSION = 4;
-
-/**
- * Directories the app WRITES to; a root's `dir` overlapping one is a hard
- * error. 0.1.104: `.claude4spec/skills` dropped — nothing writes there
- * anymore (external skills are on-demand now, see `buildExternalSkillsBundle`).
- */
-export const RESERVED_WRITE_TARGETS = ['.claude4spec/plugins'] as const;
 
 export function configPath(cwd: string): string {
   return path.join(cwd, '.claude4spec', 'config.json');

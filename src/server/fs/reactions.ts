@@ -1,6 +1,5 @@
 import type { ScopedWatchRegistrar, WatchPhase, WatchSubscriber } from './watcher.js';
 import {
-  KIND_DECLARATIONS,
   fileMapFilter,
   type FileFormat,
   type KindDeclaration,
@@ -53,10 +52,6 @@ export function defineReaction<C>(def: ReactionDefinition<C>): void {
   if (PHASES.has(def.id)) throw new Error(`[m40] reaction id '${def.id}' collides with a phase name`);
   if (DEFINITIONS.has(def.id)) throw new Error(`[m40] duplicate reaction definition '${def.id}'`);
   DEFINITIONS.set(def.id, def);
-}
-
-export function getReactionDefinition(id: string): ReactionDefinition<unknown> | undefined {
-  return DEFINITIONS.get(id);
 }
 
 /**
@@ -116,9 +111,4 @@ export class ReactionBinder<C> {
   isBound(id: string, source: string): boolean {
     return this.bound.get(id)?.has(source) ?? false;
   }
-}
-
-/** Convenience for the build loop — the kind's own declaration. */
-export function kindDecl(kind: RootKind): KindDeclaration {
-  return KIND_DECLARATIONS[kind];
 }

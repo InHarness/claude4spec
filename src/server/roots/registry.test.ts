@@ -77,6 +77,10 @@ describe('root kinds', () => {
     expect(namespacesOverlap('.claude4spec/plans/x', '.claude4spec/plans')).toBe(true);
     expect(namespacesOverlap('docs', 'docs/adr')).toBe(true);
     expect(namespacesOverlap('docs', 'docs/.hidden')).toBe(false);
+    // Non-canonical spellings of a system root's dir still collide with it.
+    expect(namespacesOverlap('pages/../.claude4spec/plans', '.claude4spec/plans')).toBe(true);
+    expect(namespacesOverlap('.claude4spec//plans', '.claude4spec/plans')).toBe(true);
+    expect(namespacesOverlap('./.claude4spec/./plans/', '.claude4spec/plans')).toBe(true);
   });
 
   it('every kind carries the four policy flags and only system kinds come from code', () => {

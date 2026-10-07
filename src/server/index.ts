@@ -72,6 +72,8 @@ export interface StartOptions {
   claudeDirCreated?: boolean;
   /** M27 (0.1.37): did THIS bootstrap run create .gitignore (vs append to a user's)? Drives clone rollback. */
   gitignoreCreated?: boolean;
+  /** 2.1.8: system root dirs THIS bootstrap run created. Drives clone rollback. */
+  systemRootDirsCreated?: string[];
 }
 
 export interface ServerHandle {
@@ -352,6 +354,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
         configCreated: opts.configCreated ?? false,
         claudeDirCreated: opts.claudeDirCreated ?? false,
         gitignoreCreated: opts.gitignoreCreated ?? false,
+        systemRootDirsCreated: opts.systemRootDirsCreated ?? [],
       }
     : undefined;
 

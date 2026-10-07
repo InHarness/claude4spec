@@ -62,21 +62,32 @@ export function BriefScopeFields({
 
   useEffect(() => {
     let cancelled = false;
+    // Reset per probe round: a stale count from the previous endpoints must not
+    // show, and a round where no probe reports entities (every one failed, or
+    // there are no roots) settles on "—" instead of spinning forever.
+    let entitiesReported = false;
+    if (!fetchChangedCount) setEntityCount('loading');
     const probe =
       fetchChangedCount ??
       ((rootId: string) =>
         defaultChangedCount(fromReleaseName, toReleaseName, rootId, (n) => {
+          entitiesReported = true;
           if (!cancelled) setEntityCount(n);
         }));
     setCounts(Object.fromEntries(targets.map((r) => [r.id, 'loading' as Count])));
-    for (const root of targets) {
+    const rounds = targets.map((root) =>
       probe(root.id)
         .then((n) => {
           if (!cancelled) setCounts((prev) => ({ ...prev, [root.id]: n }));
         })
         .catch(() => {
           if (!cancelled) setCounts((prev) => ({ ...prev, [root.id]: null }));
-        });
+        }),
+    );
+    if (!fetchChangedCount) {
+      void Promise.allSettled(rounds).then(() => {
+        if (!cancelled && !entitiesReported) setEntityCount(null);
+      });
     }
     return () => {
       cancelled = true;

@@ -85,14 +85,10 @@ describe('resolveContextSpec — the four contexts (M20 ctxregst)', () => {
     expect(full.slashCommands).toEqual(['mention', 'todo', 'plugin-thing']);
     expect(full.save).toEqual({ mode: 'debounce', debounceMs: 1000 });
 
-    // 2.1.8: FULL_ROOT_EDITOR_PROPS is the `pages` kind's layers, with no `@`
-    // scope until the config loads; the scope is handed in, never invented.
-    expect(FULL_ROOT_EDITOR_PROPS).toEqual(rootEditorPropsForKind('pages', []));
-    expect(rootEditorPropsForKind('pages', ['docs', 'pages'])).toEqual({
-      sectionIndexed: true,
-      referenceValidated: true,
-      linkTargets: ['docs', 'pages'],
-    });
+    // 2.1.8: FULL_ROOT_EDITOR_PROPS is the `pages` kind's layers; no per-root
+    // `@` scope (`linkTargets` is gone).
+    expect(FULL_ROOT_EDITOR_PROPS).toEqual(rootEditorPropsForKind('pages'));
+    expect(rootEditorPropsForKind('pages')).toEqual({ sectionIndexed: true, referenceValidated: true });
   });
 
   /**
@@ -108,7 +104,7 @@ describe('resolveContextSpec — the four contexts (M20 ctxregst)', () => {
       extensionNames: () => ['anchor_marker', 'section_ref', 'single_element', 'todo', 'plugin:thing'],
       slashCommandIds: () => ['mention', 'section', 'todo', 'plugin-thing'],
     };
-    const artifact = resolveContextSpec('artifact', rootEditorPropsForKind('pages', ['pages']), reg);
+    const artifact = resolveContextSpec('artifact', rootEditorPropsForKind('pages'), reg);
     expect(artifact.id).toBe('artifact');
     expect(artifact.extensions).toEqual(['todo', 'plugin:thing']);
     expect(artifact.slashCommands).toEqual(['todo']);

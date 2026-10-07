@@ -217,14 +217,16 @@ export function agentDeniedDirs(userRoots: ReadonlyArray<{ id: string; name: str
     .map((r) => r.dir);
 }
 
+/**
+ * Directories the app WRITES to besides the registry roots — part of the D4
+ * collision set, shared by the server's `validateRootDirs` and the client
+ * mirror. 0.1.104: `.claude4spec/skills` dropped — nothing writes there anymore.
+ */
+export const RESERVED_WRITE_TARGETS = ['.claude4spec/plugins'] as const;
+
 /** Identifiers a user root may never take — each would be a second root under one address. */
 export function isSystemRootId(id: string): boolean {
   return (SYSTEM_ROOT_KINDS as readonly string[]).includes(id);
-}
-
-/** True for a kind registered in code (one root, fixed dir). */
-export function isSystemKind(kind: string): kind is SystemRootKind {
-  return (SYSTEM_ROOT_KINDS as readonly string[]).includes(kind);
 }
 
 export function kindDeclaration(kind: RootKind): KindDeclaration {
@@ -266,10 +268,20 @@ export function fileMapFilter(kind: RootKind, formats: readonly FileFormat[]): s
   return `${deep ? '**/' : ''}*.{${exts.join(',')}}`;
 }
 
-/** Normalised ("" for the project dir), slash-separated, no trailing slash. */
+/**
+ * Normalised ("" for the project dir), slash-separated, no trailing slash, with
+ * `.` / empty segments dropped and `..` resolved — so `pages/../.claude4spec/plans`
+ * and `.claude4spec//plans` compare equal to the system root they alias. (Pure
+ * string work: this module is shared with the client and imports nothing from Node.)
+ */
 function normDir(dir: string): string {
-  const n = dir.replace(/\\/g, '/').replace(/\/+$/, '').replace(/^\.\/+/, '');
-  return n === '.' ? '' : n;
+  const out: string[] = [];
+  for (const seg of dir.trim().replace(/\\/g, '/').split('/')) {
+    if (seg === '' || seg === '.') continue;
+    if (seg === '..') out.pop();
+    else out.push(seg);
+  }
+  return out.join('/');
 }
 
 function isUnder(parent: string, child: string): boolean {

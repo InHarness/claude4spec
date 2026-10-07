@@ -5,7 +5,7 @@
  * system) and the plugin dir. The namespace logic itself is shared
  * (`src/shared/root-kinds.ts`); the server re-validates on every PATCH.
  */
-import { SYSTEM_ROOTS, namespacesOverlap } from '../../../shared/root-kinds.js';
+import { RESERVED_WRITE_TARGETS, SYSTEM_ROOTS, namespacesOverlap } from '../../../shared/root-kinds.js';
 
 /** A relative directory inside the project: not absolute, no `..` escape. */
 export function isPathSafeRelative(dir: string): boolean {
@@ -16,9 +16,6 @@ export function isPathSafeRelative(dir: string): boolean {
   if (norm === '..' || norm.startsWith('../') || norm.includes('/../')) return false;
   return true;
 }
-
-/** Directories the app writes to besides the registry roots. */
-export const RESERVED_WRITE_TARGETS = ['.claude4spec/plugins'];
 
 /**
  * The fixed targets a user root may not overlap: the five system roots and the

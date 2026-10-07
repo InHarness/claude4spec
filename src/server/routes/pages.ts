@@ -207,6 +207,15 @@ export function pagesRouter(
       if (!rt) return;
       const pagePath = typeof req.query.path === 'string' ? req.query.path : '';
       if (!pagePath) throw new DomainError('VALIDATION', 'path query param required');
+      // 2.1.8: a leftover `?range=` is refused, not ignored — ignoring it would
+      // answer with the whole page a caller believes it narrowed (same rule as
+      // `c4s get-page --range`).
+      if (req.query.range !== undefined) {
+        throw new DomainError(
+          'VALIDATION',
+          'get_page has no line window (range was removed in 2.1.8) — resume a cut read through get_page_outline + get_sections',
+        );
+      }
       res.json(await discovery.getPage({ rootId: rt.root.id, path: pagePath }));
     } catch (err) {
       next(err);

@@ -39,8 +39,6 @@ export interface RegistryContext {
   contextId?: EditorContextId;
   /**
    * 0.1.96: per-root behaviour props of the page's root. Set by EditorFactory.
-   * Factory extensions (e.g. the `@` mention framework) may read
-   * `rootProps.linkTargets` to scope their link/autocomplete targets.
    */
   rootProps?: RootEditorProps;
   /**

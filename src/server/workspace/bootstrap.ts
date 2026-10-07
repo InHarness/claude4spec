@@ -27,6 +27,12 @@ export interface BootstrapResult {
   configCreated: boolean;
   claudeDirCreated: boolean;
   gitignoreCreated: boolean;
+  /**
+   * 2.1.8: cwd-relative dirs of the SYSTEM roots this run created. Captured here,
+   * not in the context build — this function mkdirs them first, so by the time
+   * the build looks they always exist.
+   */
+  systemRootDirsCreated: string[];
 }
 
 /**
@@ -118,9 +124,12 @@ export function bootstrapProject(
   // 2.1.8: activation creates the dir of every SYSTEM root (plans, briefs,
   // patches, entities, releases) — none of them is written to `config.json`.
   // User roots' dirs are created by the context build. `tags.json` stays lazy.
+  const systemRootDirsCreated: string[] = [];
   for (const root of rootRegistry.list()) {
     if (root.kind === PAGES_KIND) continue;
-    fs.mkdirSync(path.resolve(cwd, root.dir), { recursive: true });
+    const abs = path.resolve(cwd, root.dir);
+    if (!fs.existsSync(abs)) systemRootDirsCreated.push(root.dir);
+    fs.mkdirSync(abs, { recursive: true });
   }
   const project = registry.registerProject(workspace, cwd);
   migrateLegacyDbIfNeeded(registry, workspace, cwd, project.id);
@@ -132,5 +141,6 @@ export function bootstrapProject(
     configCreated,
     claudeDirCreated: !claudeDirExisted,
     gitignoreCreated: !gitignoreExisted,
+    systemRootDirsCreated,
   };
 }

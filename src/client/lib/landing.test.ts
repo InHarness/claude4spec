@@ -23,12 +23,6 @@ function root(id: string, builtin = id === 'pages'): Root {
     name: id,
     dir: id,
     builtin,
-    releasable: true,
-    sectionIndexed: true,
-    referenceValidated: true,
-    linkTargets: [],
-    sidebar: { collapsedByDefault: false },
-    briefTarget: true,
   } as unknown as Root;
 }
 

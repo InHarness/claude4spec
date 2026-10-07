@@ -101,10 +101,10 @@ import {
   type SelfWriteMarker,
   rootIdFromSource,
 } from '../fs/sources.js';
-import { ReactionBinder, validateKindRequirements, kindDecl } from '../fs/reactions.js';
+import { ReactionBinder, validateKindRequirements } from '../fs/reactions.js';
 import { registerCoreReactions, type CoreReactionContext } from './core-reactions.js';
 import { RootRegistry, rootDirAbs } from '../roots/registry.js';
-import { BASE_REACTION_ID, PAGES_KIND, kindHasMarkdown, type RegistryRoot } from '../../shared/root-kinds.js';
+import { BASE_REACTION_ID, PAGES_KIND, kindDeclaration, kindHasMarkdown, kindSelects, type RegistryRoot } from '../../shared/root-kinds.js';
 import { FileVersionCapture } from '../services/file-version-capture.js';
 import { EntityStore } from '../services/entity-store.js';
 import { EntityIndexerService } from '../services/entity-indexer.js';
@@ -216,6 +216,8 @@ export interface ProjectContextDeps {
     configCreated: boolean;
     claudeDirCreated: boolean;
     gitignoreCreated: boolean;
+    /** 2.1.8: system root dirs the activation (bootstrap) created before this build. */
+    systemRootDirsCreated?: string[];
   };
 }
 
@@ -528,7 +530,7 @@ async function buildInner(
     .filter((r) => !fs.existsSync(rootDirAbs(cwd, r)))
     .map((r) => r.dir);
   for (const root of rootRegistry.list()) {
-    validateKindRequirements(kindDecl(root.kind));
+    validateKindRequirements(kindDeclaration(root.kind));
     const source = sourceNameFor(root);
     const abs = rootDirAbs(cwd, root);
     await fs.promises.mkdir(abs, { recursive: true });
@@ -1177,10 +1179,17 @@ async function buildInner(
       db.close();
       rollbackClone(cwd, {
         rootDirs: effectiveRoots.map((r) => r.dir),
-        systemRootDirs: rootRegistry
-          .list()
-          .filter((r) => r.kind !== PAGES_KIND && rootDirsCreatedHere.includes(r.dir))
-          .map((r) => r.dir),
+        // Bootstrap mkdirs the system roots BEFORE this build, so its own record
+        // is the one that knows which of them this run created.
+        systemRootDirs: [
+          ...new Set([
+            ...(deps.clone.systemRootDirsCreated ?? []),
+            ...rootRegistry
+              .list()
+              .filter((r) => r.kind !== PAGES_KIND && rootDirsCreatedHere.includes(r.dir))
+              .map((r) => r.dir),
+          ]),
+        ],
         configCreated: deps.clone.configCreated,
         claudeDirCreated: deps.clone.claudeDirCreated,
         gitignoreCreated: deps.clone.gitignoreCreated,
@@ -1507,21 +1516,26 @@ async function buildInner(
   const versionCapture = new FileVersionCapture(pageVersions, captureSerializers, (scope, source, relPath) =>
     deps.watchRuntime.peekActor(scope, source, relPath),
   );
-  // M06 write-back per source: a `pages` root mints through the section indexer
-  // (whose stash the projection reads); any other kind selecting the reaction
-  // (plans) gets the artifact injection — anchors for `edits[]` addressing,
-  // unique per file, never indexed. Branches on the KIND, never on an id.
+  // M06 write-back per source: a root whose kind also selects the section
+  // indexer mints through that indexer (whose stash the projection reads); any
+  // other kind selecting the reaction (plans) gets the artifact injection —
+  // anchors for `edits[]` addressing, unique per file, never indexed. Decided by
+  // what the KIND selects, never by an id; a kind with neither path fails the
+  // build here rather than the first file event at dispatch.
   const suppressFn = (source: string, relPath: string): void => w.suppress(source, relPath);
   const pageAnchorInjection = sectionIndexer.anchorInjectionSubscriber(suppressFn);
   const anchorInjectionBySource = new Map<string, WatchSubscriber>();
   for (const root of rootRegistry.selecting('m06-anchor-injection')) {
     const source = sourceByRootId.get(root.id)!;
-    if (root.kind === PAGES_KIND) {
+    if (kindSelects(root.kind, 'm06-section-indexer')) {
       anchorInjectionBySource.set(source, pageAnchorInjection);
-    } else {
-      const mount = artifactMounts.get(ARTIFACT_KIND_OF_ROOT_KIND[root.kind as ArtifactRootKind]);
-      if (mount) anchorInjectionBySource.set(source, artifactAnchorInjectionSubscriber(mount.kind, mount, suppressFn));
+      continue;
     }
+    const mount = artifactMounts.get(ARTIFACT_KIND_OF_ROOT_KIND[root.kind as ArtifactRootKind]);
+    if (!mount) {
+      throw new Error(`root kind '${root.kind}': m06-anchor-injection has no write-back for root '${root.id}'`);
+    }
+    anchorInjectionBySource.set(source, artifactAnchorInjectionSubscriber(mount.kind, mount, suppressFn));
   }
 
   // ── 2.1.8 step 4: bind the reactions each root's KIND selected, plus the base
@@ -1545,7 +1559,7 @@ async function buildInner(
   });
   for (const root of rootRegistry.list()) {
     const source = sourceByRootId.get(root.id)!;
-    for (const id of kindDecl(root.kind).reactions) reactionBinder.bindReaction(id, source, root.kind);
+    for (const id of kindDeclaration(root.kind).reactions) reactionBinder.bindReaction(id, source, root.kind);
     reactionBinder.bindReaction(BASE_REACTION_ID, source, root.kind);
   }
 

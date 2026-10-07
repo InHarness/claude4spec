@@ -232,7 +232,7 @@ export class PatchService {
       const briefPath = this.resolveBriefPath(rec.path, fm, briefPaths);
       if (opts.brief !== undefined && opts.brief !== briefPath) continue;
       if (opts.applied !== undefined && opts.applied !== applied) continue;
-      const lastVersion = this.deps.pageVersions.getLatestForPath(rec.path, undefined, 'patch');
+      const lastVersion = this.deps.pageVersions.getLatestForPath(rec.path, undefined, PATCH_ROOT_MARKER);
       const createdAt = toIso(fm.created_at);
       out.push({
         path: rec.path,

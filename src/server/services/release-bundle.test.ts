@@ -40,7 +40,7 @@ const RELEASE: Release = {
 const CONFIG = {
   $schemaVersion: 4,
   name: 'demo',
-  roots: [{ id: 'pages', name: 'Pages', dir: 'pages', releasable: true, linkTargets: [] }],
+  roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true, releasable: true, linkTargets: [] }],
   writingStyle: null,
   onboardingCompleted: true,
   entities: ['endpoint', 'design-system', 'diagram'],
@@ -393,7 +393,7 @@ describe('buildBundleArchive — round trip', () => {
 });
 
 describe('buildBundleArchive — sanitized config', () => {
-  it('carries only releasable roots and the allow-listed keys', async () => {
+  it('carries the page roots in their four fields and the allow-listed keys', async () => {
     const { dir, cleanup } = await build([]);
     try {
       const config = JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf8'));
@@ -406,6 +406,9 @@ describe('buildBundleArchive — sanitized config', () => {
         'roots',
         'writingStyle',
       ]);
+      // 2.1.8: a legacy per-root flag in the source config (`releasable`,
+      // `linkTargets`) never leaves the machine.
+      expect(config.roots).toEqual([{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }]);
       for (const excluded of ['pagesDir', 'mode', 'briefsDir', 'patchesDir', 'plansDir', 'entitiesDir', 'releasesDir', 'remoteApiUrl']) {
         expect(config).not.toHaveProperty(excluded);
       }
