@@ -273,14 +273,19 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
   const getPage = op(
     'get_page',
     C4S_READER_GET_PAGE_DESCRIPTION + ' ' + GET_PAGE_RETURN,
-    {
-      rootId: z.string().optional().describe('Which page root — required; see overview().roots'),
-      path: z.string().optional().describe('Page path relative to the root'),
-    },
+    // A LOOSE object, not a bare shape: the SDK strips unknown keys from a bare
+    // shape, so a stale `range` would vanish before the core could refuse it.
+    z
+      .object({
+        rootId: z.string().optional().describe('Which page root — required; see overview().roots'),
+        path: z.string().optional().describe('Page path relative to the root'),
+      })
+      .loose() as unknown as Record<string, unknown>, // the SDK takes a ZodObject; the adapters type says raw shape
     (discovery, args) =>
       discovery.getPage({
         rootId: optionalString(args.rootId),
         path: optionalString(args.path),
+        ...(args.range !== undefined ? { range: args.range } : {}),
       } as Parameters<DiscoveryCore['getPage']>[0]),
   );
 

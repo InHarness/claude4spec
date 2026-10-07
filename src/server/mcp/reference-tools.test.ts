@@ -463,6 +463,22 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
       expect(body.hash).toMatch(/^[0-9a-f]{64}$/);
     });
 
+    it('get_page REFUSES a stale `range` — the SDK must not strip it before the core sees it', async () => {
+      await pagesService.write('page.md', { body: '<!-- anchor: aaaaaa11 -->\n# Alpha\n\none\ntwo\n' });
+      const client = await connectClient(deps());
+
+      const { isError, body } = await call(client, 'get_page', {
+        rootId: 'pages',
+        path: 'page.md',
+        range: { start: 1, end: 2 },
+      });
+
+      expect(isError).toBe(true);
+      expect(body.code).toBe('INVALID_ARGUMENT');
+      expect(body.error).toContain('no line window');
+      expect(body.hint).toContain('get_page_outline');
+    });
+
     it('get_sections returns each body with its tag intact, and no edges beside it', async () => {
       await pagesService.write('page.md', {
         body: '<!-- anchor: bbbbbb22 -->\n# Alpha\n\n<single_element type="diagram" slug="flow" caption="x"/>\n',

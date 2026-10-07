@@ -87,6 +87,13 @@ export async function getPage(
       `get_page({ rootId: "${root.id}", path: "<relative path>" }) — use list_pages({ rootId: "${root.id}" }) to see them`,
     );
   }
+  // 2.1.8 — refused here, once, for every channel (MCP, REST, in-process).
+  if (input.range !== undefined) {
+    throw invalidArgument(
+      'get_page has no line window (range was removed in 2.1.8)',
+      `get_page_outline({ rootId: "${root.id}", path: "${input.path}" }), then get_sections({ anchors: [...] })`,
+    );
+  }
 
   /**
    * Hashed over the whole file — `expectedHash` is compared against the file on

@@ -455,16 +455,21 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): CapturedMc
   const getPage = mcpTool(
     'get_page',
     REFERENCE_TOOLS_GET_PAGE_DESCRIPTION,
-    {
-      rootId: z.string().optional().describe('Which page root — required'),
-      path: z.string().optional().describe('Page path relative to the root'),
-    },
+    // A LOOSE object, not a bare shape: the SDK strips unknown keys from a bare
+    // shape, so a stale `range` would vanish before the core could refuse it.
+    z
+      .object({
+        rootId: z.string().optional().describe('Which page root — required'),
+        path: z.string().optional().describe('Page path relative to the root'),
+      })
+      .loose() as unknown as Record<string, unknown>, // the SDK takes a ZodObject; the adapters type says raw shape
     async (args) => {
       try {
         return ok(
           await deps.discovery.getPage({
             rootId: args.rootId === undefined ? undefined : String(args.rootId),
             path: args.path === undefined ? undefined : String(args.path),
+            ...(args.range !== undefined ? { range: args.range } : {}),
           } as Parameters<DiscoveryCore['getPage']>[0]),
         );
       } catch (err) {

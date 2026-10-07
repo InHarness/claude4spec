@@ -54,6 +54,7 @@ function recordingCore(): { core: DiscoveryCore; calls: Call[] } {
     searchPages: record('searchPages', Promise.resolve({ items: [], total: 0, hasMore: false })),
     getPageOutline: record('getPageOutline', Promise.resolve({ rootId: 'mainspec', path: 'a.md', hash: 'h', sections: [] })),
     getSections: record('getSections', Promise.resolve({ sections: [] })),
+    getPage: record('getPage', Promise.resolve({ rootId: 'mainspec', path: 'a.md', hash: 'h', results: [] })),
   } as unknown as DiscoveryCore;
   return { core, calls };
 }
@@ -150,6 +151,16 @@ describe('GET /api/pages/search — the cross-root search_pages', () => {
 });
 
 describe('an unknown :rootId', () => {
+  it('2.1.8 — a leftover `?range=` reaches the core (which refuses it), never dropped by the adapter', async () => {
+    const { core, calls } = recordingCore();
+    await request(appWithPages(core)).get('/api/pages/mainspec/get').query({ path: 'a.md', range: '1-20' }).expect(200);
+    await request(appWithPages(core)).get('/api/pages/mainspec/get').query({ path: 'a.md' }).expect(200);
+    expect(calls).toEqual([
+      { op: 'getPage', input: { rootId: 'mainspec', path: 'a.md', range: '1-20' } },
+      { op: 'getPage', input: { rootId: 'mainspec', path: 'a.md' } },
+    ]);
+  });
+
   it('names the roots that DO exist rather than answering a bare not-found', () => {
     /**
      * Before the read commands became server-delegating this refusal came from

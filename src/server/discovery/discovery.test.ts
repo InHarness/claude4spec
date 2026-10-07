@@ -426,12 +426,14 @@ describe('discovery core', () => {
       expect(whole.results[1]).not.toHaveProperty('anchor');
     });
 
-    it('get_page takes no line window — GetPageInput is { rootId, path }', async () => {
+    it('get_page takes no line window — a stale `range` is REFUSED, never ignored', async () => {
       await writePage('pages', 'a.md', '<!-- anchor: aaaa0001 -->\n# A\n\none\ntwo\n');
       const c = core([pagesRoot()]);
-      // A stale caller still passing `range` gets the whole page, not a window.
-      const page = await c.getPage({ rootId: 'pages', path: 'a.md', range: { start: 4, end: 4 } } as never);
-      expect(page.results[0]).toMatchObject({ anchor: 'aaaa0001', body: '\none\ntwo\n' });
+      // Ignoring it would hand the whole page to a caller who believes it narrowed.
+      await expect(c.getPage({ rootId: 'pages', path: 'a.md', range: { start: 4, end: 4 } })).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+        message: expect.stringContaining('no line window'),
+      });
     });
 
     it('a missing page is PAGE_NOT_FOUND', async () => {

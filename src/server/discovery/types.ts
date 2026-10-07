@@ -381,6 +381,12 @@ export interface GetSectionsResult {
 export interface GetPageInput {
   rootId: string;
   path: string;
+  /**
+   * 2.1.8 — REMOVED. Kept on the input only so every channel forwards a stale
+   * caller's window to the core, which refuses it: ignoring it would answer
+   * with the whole page a caller believes it narrowed.
+   */
+  range?: unknown;
 }
 
 /**
