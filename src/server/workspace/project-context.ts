@@ -1065,7 +1065,7 @@ async function buildInner(
   });
   discoveryCore = discovery;
   /**
-   * 0.2.13 (tier C) — the same core over a NARROWED root list, for `?pages=`.
+   * 0.2.13 (tier C) — the same core over a re-pointed root list, for `?pages=` (2.1.8: only the builtin root's `dir` changes).
    *
    * The CLI used to build this itself: `--pages <dir>` was applied while
    * `src/bin/c4s/context.ts` assembled its own discovery core. With execution
@@ -1077,19 +1077,22 @@ async function buildInner(
    * serialization engine are all shared with the project's own core; only the
    * root list differs. Nothing is loaded, migrated or indexed by this call.
    */
-  const discoveryForRoots = (pagesOverride: string): DiscoveryCore =>
-    createDiscoveryCore({
+  const discoveryForRoots = (pagesOverride: string): DiscoveryCore => {
+    const { roots: overriddenRoots, unindexedRootIds } = applyPagesOverride(effectiveRoots, pagesOverride, cwd);
+    return createDiscoveryCore({
       reader: rawReader,
       db: db.handle,
       host: pluginHost,
       serialization: serializationEngine,
-      roots: applyPagesOverride(effectiveRoots, pagesOverride, cwd),
+      roots: overriddenRoots,
+      unindexedRootIds,
       projectDir: cwd,
       packageVersion: readPackageVersion(),
-      // Narrowing the root list does not narrow the fail-closed rule.
+      // Re-pointing the base root does not narrow the fail-closed rule.
       projectionStatus,
       sections: sectionsService,
     });
+  };
   pluginHost.registerMcpServer('entity-tools', () =>
     createEntityToolsServer({
       host: pluginHost,

@@ -4,116 +4,66 @@ import { invalidArgument } from './errors.js';
 
 
 /**
- * The id an ad-hoc override root is given.
+ * `--pages <dir>` / `?pages=<dir>` — re-point the BASE root of a sweep
+ * (`find_references`, `check_consistency`).
  *
- * NOT the built-in root's id, and that distinction is load-bearing rather than
- * cosmetic — see the note on anchors below.
- */
-export const OVERRIDE_ROOT_ID = 'pages-override';
-
-/**
- * `--pages <dir>` / `?pages=<dir>` — NARROW a sweep to one directory.
+ * ## Why this lives on the server
  *
- * ## Why this lives on the server now
+ * Root iteration is server-side (0.2.13), so the override is applied where the
+ * root list is assembled rather than re-implemented as a filter over results.
  *
- * It used to live in `src/bin/c4s/context.ts`, applied while the CLI built a
- * discovery core of its own. 0.2.13 took that core away: root iteration is
- * server-side, so the override has to be too, or the flag would have to be
- * re-implemented as a filter over results — which is not the same thing, because
- * a root is also what a hit's `rootId` and relative path are reported against.
+ * ## What it does (2.1.8, M11 L13 / M19 L14)
  *
- * ## What it does, and the two mistakes it avoids
+ * It overrides ONLY the `dir` of the root carrying `builtin: true` — found by
+ * the flag, never by an id or a directory. Its `id` stays, and every other page
+ * root is still swept: the full set is what keeps the answer identical across
+ * channels. `--pages .` is a valid spelling; the walk skips dot-segment subtrees
+ * and reads markdown entries only, so it never reaches `.claude4spec/`.
  *
- * It REPLACES the root list rather than rewriting one entry. Rewriting the
- * built-in root's `dir` and leaving the others in place looks equivalent and is
- * not: a caller that explicitly narrowed the scan would still get hits from every
- * other reference-validated root, with paths relative to a root it never named —
- * and pointing a second root id at a directory another root already covers slips
- * past the overlap validation in `validateRootsConfig`, so every hit there is
- * reported twice under two ids.
+ * A kept root whose directory lies inside the re-pointed one is NOT
+ * deduplicated: a hit is keyed `(rootId, pagePath)`, so the same file under two
+ * roots is two distinguishable addresses (a `clarification` patch is filed).
  *
- * When a CONFIGURED root already claims that directory, that root is used
- * verbatim — id and properties intact. The override names a DIRECTORY, not a
- * root, so hits stay attributable to whoever owns it.
+ * ## Anchors
  *
- * ## Matching is by RESOLVED path, not by string
+ * `anchorFor` (`ops/references.ts`) matches `section_index` rows on
+ * `(rootId, pagePath, line)` alone, and the index was built over the CONFIGURED
+ * dir. A re-pointed builtin root keeps its id, so its hits would borrow the
+ * anchors of identically-named files in the real directory — `--pages drafts`
+ * reporting `drafts/notes.md` with the anchor of `pages/notes.md`. The root is
+ * therefore reported in `unindexedRootIds` and its hits carry no anchor. An
+ * override that resolves to the configured dir changes nothing.
  *
- * `--pages ./pages`, `--pages pages/` and `--pages /abs/repo/pages` all name the
- * directory the built-in root already owns. Comparing `Root.dir` by string
- * equality answered "no configured root claims this" for all three and fell to
- * the ad-hoc branch, so the identical query with and without the flag came back
- * with and without anchors. Both sides are resolved against `projectDir` before
- * comparing.
+ * ## Matching is by RESOLVED path
+ *
+ * `./pages`, `pages/` and `/abs/repo/pages` all name the dir the builtin root
+ * already owns; both sides are resolved against `projectDir` before comparing.
  *
  * ## The override cannot leave the project
  *
- * The parameter reaches this function from an HTTP query string (`?pages=`) and
- * from the MCP-over-HTTP mount, not just from a flag the user typed at their own
- * shell. `PageSource` turns `Root.dir` into `path.join(projectDir, dir)` with no
- * containment check of its own, so `?pages=../../..` would walk and read every
- * markdown file above the project and return its paths and tag text. Config
- * roots go through `validateRootDirs`; this one gets the equivalent here, and
- * refuses rather than silently clamping — a narrowing quietly redirected is the
- * failure this parameter exists to prevent.
- *
- * ## The ad-hoc root is swept, under an id of its own
- *
- * 2.1.8: a root has no per-root flags any more — the ad-hoc root is a `pages`
- * root for the sweep (`find_references`, `check_consistency`). What the project
- * does not vouch for is expressed where it costs nothing: an id of its own.
- *
- * ## Why the id has to change
- *
- * `anchorFor` (`ops/references.ts`) matches `section_index` rows on
- * `(rootId, pagePath, line)` alone — so an ad-hoc root that KEPT the built-in id
- * had its hits decorated with the anchors of identically-named files in the real
- * pages root. `--pages drafts` reporting a hit in `drafts/architecture.md` with
- * the anchor of `pages/architecture.md` sends the caller to `get-sections` for a
- * section of a different file, and nothing in the answer says so. A distinct id
- * matches no row, so the promise this module already made — "hits from an ad-hoc
- * root carry no anchor" — becomes true by construction.
- *
- * A `clarification` patch is filed against the brief; this is the reading under
- * which the flag does anything at all.
+ * The parameter arrives from an HTTP query string and the MCP-over-HTTP mount,
+ * and `PageSource` joins `Root.dir` onto the project dir with no containment
+ * check of its own — `?pages=../../..` would read every markdown file above the
+ * project. Refused rather than clamped.
  */
+export interface PagesOverride {
+  roots: Root[];
+  /** Roots whose `dir` is not the one `section_index` was built over — their hits carry no anchor. */
+  unindexedRootIds: ReadonlySet<string>;
+}
+
+const NONE: ReadonlySet<string> = new Set();
+
 export function applyPagesOverride(
   roots: readonly Root[],
   override: string | undefined,
   projectDir: string,
-): Root[] {
-  if (!override) return [...roots];
+): PagesOverride {
+  if (!override) return { roots: [...roots], unindexedRootIds: NONE };
 
   const projectAbs = path.resolve(projectDir);
   const overrideAbs = path.resolve(projectAbs, override);
   const rel = path.relative(projectAbs, overrideAbs);
-  /**
-   * `rel === ''` — the override IS the project directory (`--pages .`, `./`,
-   * `"$PWD"`) — is refused with the escape cases rather than accepted with them.
-   *
-   * It passes the containment test below on a technicality: `''` neither starts
-   * with `..` nor is absolute. But no configured root resolves to the project
-   * root either, so it fell through to the ad-hoc branch and built a root with
-   * `dir: ''`, which `PageSource` joins into the project directory itself. The
-   * sweep then walked every markdown file in the repository — `releases/`, a
-   * non-dot briefs or patches dir, plugin READMEs, a vendored `node_modules` —
-   * and reported them as page hits under `pages-override`, an id no other
-   * operation accepts, so `get-page` refuses every hit the same command just
-   * printed.
-   *
-   * That is the opposite of what the parameter is for. `--pages` NARROWS a
-   * sweep; the one spelling that silently widens it to everything has to be the
-   * loudest refusal here, not the quietest acceptance.
-   */
-  if (rel === '') {
-    throw invalidArgument(
-      `pages override '${override}' is the project directory itself, not a page directory`,
-      roots.length > 0
-        ? `--pages narrows a sweep to one directory — name one, e.g. ${roots
-            .map((r) => r.dir)
-            .join(' or ')}; omit the flag to sweep every configured root`
-        : 'name a page directory inside the project; omit the flag to sweep every configured root',
-    );
-  }
   if (rel.startsWith('..') || path.isAbsolute(rel)) {
     throw invalidArgument(
       `pages override '${override}' resolves outside the project`,
@@ -127,18 +77,16 @@ export function applyPagesOverride(
     );
   }
 
-  const owning = roots.find((r) => path.resolve(projectAbs, r.dir) === overrideAbs);
-  if (owning) return [owning];
-
-  // 0.2.101: the base root is the `builtin: true` entry, whatever its
-  // identifier — `--pages` keeps its flag name even for a base root called
-  // `docs`, and a USER root that happens to be named `pages` is never its target.
   // 2.1.4: no positional fallback — `roots[]` validation guarantees exactly one.
   const builtin = roots.find((r) => r.builtin);
-  if (!builtin) return [];
+  if (!builtin || path.resolve(projectAbs, builtin.dir) === overrideAbs) {
+    return { roots: [...roots], unindexedRootIds: NONE };
+  }
   // `rel` rather than `override`: one normalized spelling reaches `PagesService`,
   // so `./drafts` and `drafts` produce the same `pagePath` on every hit.
-  return [
-    { ...builtin, id: OVERRIDE_ROOT_ID, dir: rel },
-  ];
+  const dir = rel === '' ? '.' : rel;
+  return {
+    roots: roots.map((r) => (r === builtin ? { ...r, dir } : r)),
+    unindexedRootIds: new Set([builtin.id]),
+  };
 }

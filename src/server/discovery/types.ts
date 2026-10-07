@@ -70,6 +70,11 @@ export interface DiscoveryDeps {
    * through `db`, which is the same table.
    */
   sections?: { has(anchor: string): boolean };
+  /**
+   * 2.1.8 — roots whose `dir` is not the one `section_index` was built over (a
+   * `--pages` re-pointed builtin root): their reference hits carry no anchor.
+   */
+  unindexedRootIds?: ReadonlySet<string>;
 }
 
 // ── Meta ────────────────────────────────────────────────────────────────────

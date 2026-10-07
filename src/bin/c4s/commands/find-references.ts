@@ -13,8 +13,9 @@ import type { CliCommandContribution } from '../registry.js';
  * 0.2.13 — `server-delegating`, over `GET /api/references`. It used to open
  * SQLite `readonly: true` and needed no server; it now needs one, like every
  * other read. `--pages <dir>` travels as `?pages=` and is applied where the
- * roots are assembled, which is the server process — an ad-hoc directory is
- * swept under an id of its own (`pages-override`), so its hits carry no anchor.
+ * roots are assembled, which is the server process — 2.1.8: it re-points only
+ * the `builtin` root's `dir` (id kept, other page roots still swept), and the
+ * re-pointed root's hits carry no anchor.
  *
  *   c4s find-references --type <t> --slug <s> [--include-tag-matches] [--pages <dir>]
  *

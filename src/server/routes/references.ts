@@ -37,10 +37,10 @@ export function referencesRouter(
   references: ReferencesService,
   discovery: DiscoveryCore,
   /**
-   * 0.2.13 (tier C) — build a one-off core over a narrowed root list, for
+   * 0.2.13 (tier C) — build a one-off core over a re-pointed root list, for
    * `?pages=<dir>`. A factory rather than a second core built up front: the
    * override is per-request, and a project serves far more requests without it
-   * than with it. See `discovery/pages-override.ts` for what "narrowed" means.
+   * than with it. See `discovery/pages-override.ts` for what the override does.
    */
   discoveryForRoots: (pagesOverride: string) => DiscoveryCore,
 ): Router {
@@ -93,7 +93,7 @@ export function referencesRouter(
       };
 
       /**
-       * 0.2.13 (tier C) — `?pages=<dir>` narrows the sweep to one directory.
+       * 0.2.13 (tier C) — `?pages=<dir>` re-points the builtin root (2.1.8: its `dir` only; other roots stay).
        *
        * Every arm below runs against `core` rather than `discovery`, so the
        * narrowing applies to sections and pages as well as entities — the

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyPagesOverride, OVERRIDE_ROOT_ID } from './pages-override.js';
+import { applyPagesOverride } from './pages-override.js';
 import type { Root } from '../../shared/types.js';
 
 const root = (id: string, dir: string, extra: Partial<Root> = {}): Root => ({
@@ -12,6 +12,16 @@ const root = (id: string, dir: string, extra: Partial<Root> = {}): Root => ({
 
 const PROJECT = '/repo/spec';
 
+const refuse = (roots: Root[], override: string): { code?: string; hint?: string } | null => {
+  try {
+    applyPagesOverride(roots, override, PROJECT);
+    return null;
+  } catch (e) {
+    return e as { code?: string; hint?: string };
+  }
+};
+
+/** 2.1.8 — M11 L13 / M19 L14: `--pages` overrides only the `builtin` root's `dir`. */
 describe('applyPagesOverride', () => {
   const roots = [
     root('pages', 'pages', { builtin: true }),
@@ -20,132 +30,56 @@ describe('applyPagesOverride', () => {
   ];
 
   it('is a no-op without an override', () => {
-    expect(applyPagesOverride(roots, undefined, PROJECT)).toEqual(roots);
+    expect(applyPagesOverride(roots, undefined, PROJECT)).toEqual({ roots, unindexedRootIds: new Set() });
   });
 
-  it('REPLACES the root list rather than rewriting one entry', () => {
-    // Rewriting the built-in root's dir and leaving the others would still sweep
-    // every reference-validated root, reporting paths relative to a root the
-    // caller never named.
-    const out = applyPagesOverride(roots, 'docs/guides', PROJECT);
-    expect(out).toHaveLength(1);
-    expect(out[0]!.id).toBe('guides');
+  it('re-points ONLY the builtin root: its id stays, every other page root is still swept', () => {
+    const out = applyPagesOverride(roots, 'drafts', PROJECT);
+    expect(out.roots).toEqual([root('pages', 'drafts', { builtin: true }), roots[1], roots[2]]);
+    // The index was built over `pages/` — the re-pointed root's hits carry no anchor.
+    expect([...out.unindexedRootIds]).toEqual(['pages']);
   });
 
-  it('keeps the owning root verbatim — the override names a DIRECTORY, not a root', () => {
+  it('does not recognise a root by its dir — naming another root\'s dir still re-points the builtin one', () => {
     const out = applyPagesOverride(roots, 'docs/adr', PROJECT);
-    expect(out[0]).toEqual(roots[2]);
+    expect(out.roots.map((r) => [r.id, r.dir])).toEqual([
+      ['pages', 'docs/adr'],
+      ['guides', 'docs/guides'],
+      ['adr', 'docs/adr'],
+    ]);
   });
 
-  it('recognises the owning root through any spelling of the same directory', () => {
-    /**
-     * Matching by raw string equality on `Root.dir` sent `./pages`, `pages/` and
-     * the absolute form to the ad-hoc branch, so the identical query with and
-     * without `--pages` came back with and without anchors — the CLI/MCP
-     * divergence this module exists to remove. All three are what a shell's
-     * tab-completion produces.
-     */
-    for (const spelling of ['./pages', 'pages/', `${PROJECT}/pages`, 'docs/../pages']) {
-      const out = applyPagesOverride(roots, spelling, PROJECT);
-      expect(out, spelling).toHaveLength(1);
-      expect(out[0]!.id, spelling).toBe('pages');
-      expect(out[0], spelling).toEqual(roots[0]);
+  it('any spelling of the configured dir changes nothing, anchors included', () => {
+    for (const spelling of ['pages', './pages', 'pages/', `${PROJECT}/pages`, 'docs/../pages']) {
+      expect(applyPagesOverride(roots, spelling, PROJECT), spelling).toEqual({ roots, unindexedRootIds: new Set() });
     }
   });
 
-  it('an ad-hoc directory IS swept: the builtin root, re-pointed, with no flags of its own', () => {
-    /**
-     * 2.1.8 — `Root` is exactly `{ id, name, dir, builtin }`. The ad-hoc root
-     * is the builtin entry with its own id and the normalized dir — nothing
-     * else. It used to carry `referenceValidated`/`sectionIndexed` flags, and a
-     * wrong `referenceValidated: false` once made every `--pages` sweep answer
-     * "nothing references this"; a page root now IS in the reference graph by
-     * its kind, so there is no flag left to get wrong.
-     */
-    const out = applyPagesOverride(roots, 'scratch', PROJECT);
-    expect(out).toEqual([{ id: OVERRIDE_ROOT_ID, name: 'pages', dir: 'scratch', builtin: true }]);
-  });
-
-  it('gives the ad-hoc root an id of its OWN, so its hits cannot borrow real anchors', () => {
-    /**
-     * `anchorFor` matches `section_index` on `(rootId, pagePath, line)` alone, so
-     * an ad-hoc root that kept the built-in id had `drafts/architecture.md`
-     * decorated with the anchor of `pages/architecture.md` — sending the caller
-     * to `get-sections` for a section of a different file, with nothing in the
-     * answer to say so. A distinct id matches no row.
-     */
-    const out = applyPagesOverride(roots, 'drafts', PROJECT);
-    expect(out[0]!.id).toBe(OVERRIDE_ROOT_ID);
-    expect(out[0]!.id).not.toBe('pages');
+  it('`--pages .` is accepted — the walk skips dot-segment subtrees, so it never reaches .claude4spec/', () => {
+    for (const whole of ['.', './', PROJECT, `${PROJECT}/`, 'docs/..']) {
+      expect(applyPagesOverride(roots, whole, PROJECT).roots[0], whole).toEqual(root('pages', '.', { builtin: true }));
+    }
   });
 
   it('normalizes the dir it hands on, so one spelling reaches PagesService', () => {
-    // Otherwise `./drafts` and `drafts` produce different `pagePath` values for
-    // the same file.
-    expect(applyPagesOverride(roots, './drafts/', PROJECT)[0]!.dir).toBe('drafts');
+    expect(applyPagesOverride(roots, './drafts/', PROJECT).roots[0]!.dir).toBe('drafts');
   });
 
   it('REFUSES an override that resolves outside the project', () => {
-    /**
-     * This parameter is no longer a flag the user types at their own shell: it
-     * arrives as `?pages=` over HTTP and through the MCP mount. `PageSource`
-     * joins it onto the project dir with no containment check of its own, so
-     * `../../..` walked and read every markdown file above the project and
-     * returned its paths and tag text; deeper still, it is a full-filesystem
-     * scan on one request. Config roots are validated; this one was not.
-     *
-     * Refused rather than clamped — a narrowing silently redirected is the exact
-     * failure this parameter exists to prevent.
-     */
+    // It arrives as `?pages=` over HTTP and through the MCP mount; `PageSource`
+    // has no containment check of its own. Refused rather than clamped.
     for (const escape of ['../..', '/etc', `${PROJECT}/../other`, 'docs/../../elsewhere']) {
-      const err = (() => {
-        try {
-          applyPagesOverride(roots, escape, PROJECT);
-          return null;
-        } catch (e) {
-          return e as { code?: string; hint?: string };
-        }
-      })();
+      const err = refuse(roots, escape);
       expect(err, escape).not.toBeNull();
       expect(err!.code, escape).toBe('INVALID_ARGUMENT');
       expect(err!.hint, escape).toContain('inside the project');
     }
   });
 
-  it('REFUSES the project directory itself — the one spelling that WIDENS the sweep', () => {
-    /**
-     * `path.relative(p, p)` is `''`, which is neither `..`-prefixed nor
-     * absolute, so this walked straight through the containment check above and
-     * out the ad-hoc branch with `dir: ''` — a root at the project directory.
-     * The sweep then covered `releases/`, a non-dot briefs or patches dir,
-     * plugin READMEs, any vendored `node_modules`, and reported them all as page
-     * hits under `pages-override`, an id no other operation accepts.
-     *
-     * A flag whose entire job is to NARROW a sweep must not have a spelling that
-     * quietly turns it into everything.
-     */
-    for (const whole of ['.', './', PROJECT, `${PROJECT}/`, 'docs/..']) {
-      const err = (() => {
-        try {
-          applyPagesOverride(roots, whole, PROJECT);
-          return null;
-        } catch (e) {
-          return e as { code?: string; hint?: string };
-        }
-      })();
-      expect(err, whole).not.toBeNull();
-      expect(err!.code, whole).toBe('INVALID_ARGUMENT');
-      expect(err!.hint, whole).toContain('narrows');
-    }
-  });
-
-  it('2.1.4: the ad-hoc root derives from the `builtin` entry only — no positional fallback to the first root', () => {
-    const renamedBase = [root('guides', 'docs/guides', { builtin: false }), root('docs', 'docs/main', { builtin: true })];
+  it('2.1.4: the target is the `builtin` entry, whatever its id or position', () => {
+    const renamedBase = [root('guides', 'docs/guides'), root('docs', 'docs/main', { builtin: true })];
     const out = applyPagesOverride(renamedBase, 'x', PROJECT);
-    expect(out[0]!.id).toBe(OVERRIDE_ROOT_ID);
-    expect(out[0]!.dir).toBe('x');
-    expect(out[0]!.name).toBe('docs');
-    expect(applyPagesOverride([root('guides', 'docs/guides', { builtin: false })], 'x', PROJECT)).toEqual([]);
-    expect(applyPagesOverride([], 'x', PROJECT)).toEqual([]);
+    expect(out.roots).toEqual([renamedBase[0], root('docs', 'x', { builtin: true })]);
+    expect([...out.unindexedRootIds]).toEqual(['docs']);
   });
 });

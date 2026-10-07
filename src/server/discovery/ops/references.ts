@@ -61,6 +61,7 @@ export async function findReferences(
   }
 
   for (const hit of hits) {
+    if (deps.unindexedRootIds?.has(hit.rootId)) continue;
     const anchor = anchorFor(anchors, hit.rootId, hit.pagePath, hit.line);
     if (anchor) hit.anchor = anchor;
   }

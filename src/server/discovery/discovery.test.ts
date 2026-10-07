@@ -2808,7 +2808,8 @@ describe('discovery core', () => {
 });
 
 /**
- * 0.2.13 — `--pages <dir>` / `?pages=<dir>`, against the REAL core.
+ * 0.2.13 — `--pages <dir>` / `?pages=<dir>`, against the REAL core (2.1.8: it
+ * re-points only the builtin root's `dir`).
  *
  * The unit test for `applyPagesOverride` asserts the root it returns, and the
  * route test stubs `findReferences` entirely. Between them they left the only
@@ -2854,49 +2855,48 @@ describe('applyPagesOverride, through the core that consumes it', () => {
 
   const CITES = '# Notes\n\n<inline_mention type="widget" slug="flow"/>\n';
 
-  it('an UNDECLARED directory is still swept — the flag is not a silent no-op', async () => {
-    await write('scratch', 'draft.md', CITES);
-    const configured = [pagesRoot()];
+  const overridden = (roots: Root[], dir: string): DiscoveryCore => {
+    const { roots: rs, unindexedRootIds } = applyPagesOverride(roots, dir, cwd);
+    const pluginHost = host([widgetModule()]);
+    return createDiscoveryCore({
+      reader: new RawEntityReader(db, pluginHost),
+      db,
+      host: pluginHost,
+      serialization: new SerializationEngine(pluginHost),
+      roots: rs,
+      unindexedRootIds,
+      projectDir: cwd,
+      packageVersion: 'test',
+    });
+  };
 
-    // The whole point of the flag: `scratch` is not a configured root.
-    const narrowed = build(applyPagesOverride(configured, 'scratch', cwd));
-    const found = await narrowed.findReferences({ target: 'entity', type: 'widget', slug: 'flow' });
+  it('an UNDECLARED directory is swept under the builtin root\'s id — the flag is not a silent no-op', async () => {
+    await write('scratch', 'draft.md', CITES);
+    const found = await overridden([pagesRoot()], 'scratch').findReferences({ target: 'entity', type: 'widget', slug: 'flow' });
     expect(found.total).toBe(1);
-    expect(found.references[0]!.pagePath).toBe('draft.md');
+    expect(found.references[0]).toMatchObject({ rootId: 'pages', pagePath: 'draft.md' });
   });
 
-  it('and the narrowing is real — the configured roots are NOT swept alongside it', async () => {
+  it('2.1.8: the other page roots are still swept alongside the re-pointed builtin one', async () => {
     await write('pages', 'configured.md', CITES);
     await write('scratch', 'draft.md', CITES);
+    await write('docs', 'guide.md', CITES);
+    const docs: Root = { id: 'docs', name: 'Docs', dir: 'docs', builtin: false };
 
-    const wide = build([pagesRoot()]);
-    expect((await wide.findReferences({ target: 'entity', type: 'widget', slug: 'flow' })).total).toBe(1);
-
-    const narrowed = build(applyPagesOverride([pagesRoot()], 'scratch', cwd));
-    const found = await narrowed.findReferences({ target: 'entity', type: 'widget', slug: 'flow' });
-    // One hit, and it is the SCRATCH one — not the configured page, and not both.
-    expect(found.total).toBe(1);
-    expect(found.references[0]!.pagePath).toBe('draft.md');
+    const found = await overridden([pagesRoot(), docs], 'scratch').findReferences({ target: 'entity', type: 'widget', slug: 'flow' });
+    // `pages/configured.md` is out (its root now points at `scratch/`); `docs` stays.
+    expect(found.references.map((h) => [h.rootId, h.pagePath])).toEqual([
+      ['docs', 'guide.md'],
+      ['pages', 'draft.md'],
+    ]);
   });
 
-  it('a directory a configured root already claims is answered by that root, id intact', async () => {
-    await write('pages', 'configured.md', CITES);
-    const narrowed = build(applyPagesOverride([pagesRoot()], 'pages', cwd));
-    const found = await narrowed.findReferences({ target: 'entity', type: 'widget', slug: 'flow' });
-    expect(found.total).toBe(1);
-    expect(found.references[0]!.rootId).toBe('pages');
-  });
-
-  it('a hit from an ad-hoc root carries NO anchor, even when a real page shares its name', async () => {
+  it('a hit from the re-pointed root carries NO anchor, even when a real page shares its name', async () => {
     /**
-     * The failure this pins: the ad-hoc root used to keep the built-in root's
-     * id, and `anchorFor` matches `section_index` on `(rootId, pagePath, line)`
-     * alone — so a hit in `drafts/notes.md` was decorated with the anchor of
-     * `pages/notes.md`. `c4s get-sections --anchors <that>` then read a section
-     * of a completely different file and nothing in the answer said so.
-     *
-     * The row is inserted by hand rather than indexed, because what is under
-     * test is the JOIN, not the indexer.
+     * `anchorFor` matches `section_index` on `(rootId, pagePath, line)` alone,
+     * and the re-pointed root keeps its id — so a hit in `drafts/notes.md` would
+     * borrow the anchor of `pages/notes.md`. The row is inserted by hand: what
+     * is under test is the JOIN, not the indexer.
      */
     await write('pages', 'notes.md', CITES);
     await write('drafts', 'notes.md', CITES);
@@ -2907,14 +2907,14 @@ describe('applyPagesOverride, through the core that consumes it', () => {
        VALUES ('pages', 'aaaa1111', 'notes.md', NULL, 1, 'Notes', 'h', '', 1, 9, 1)`,
     ).run();
 
-    // The configured root DOES get the anchor — the control that gives the
-    // assertion below its meaning.
-    const wide = build([pagesRoot()]);
-    const wideHit = (await wide.findReferences({ target: 'entity', type: 'widget', slug: 'flow' })).references[0]!;
+    // The configured root DOES get the anchor — the control.
+    const wideHit = (await build([pagesRoot()]).findReferences({ target: 'entity', type: 'widget', slug: 'flow' })).references[0]!;
     expect(wideHit.anchor).toBe('aaaa1111');
+    // An override naming the configured dir changes nothing.
+    const same = (await overridden([pagesRoot()], './pages').findReferences({ target: 'entity', type: 'widget', slug: 'flow' })).references[0]!;
+    expect(same.anchor).toBe('aaaa1111');
 
-    const narrowed = build(applyPagesOverride([pagesRoot()], 'drafts', cwd));
-    const hit = (await narrowed.findReferences({ target: 'entity', type: 'widget', slug: 'flow' })).references[0]!;
+    const hit = (await overridden([pagesRoot()], 'drafts').findReferences({ target: 'entity', type: 'widget', slug: 'flow' })).references[0]!;
     expect(hit.pagePath).toBe('notes.md');
     expect(hit.anchor).toBeUndefined();
   });
