@@ -103,13 +103,23 @@ describe('2.1.8 — bindReaction', () => {
     const w = r.scoped('context:p1');
     const dir = tmp();
     w.mountSource({ source: 'pages:pages', dir });
+    // The predecessor IS bound in this context — but on another source: `after`
+    // is resolved per source, so it does not hold the reaction on 'pages:pages'.
+    w.mountSource({ source: 'pages:adr', dir: tmp() });
     const ran: string[] = [];
-    // m14-link-indexer declares `after: ['m06-section-indexer']`; bind it ALONE.
-    const ctx = { ...coreCtx([]), linkIndexer: { onChange: () => void ran.push('m14'), onUnlink: () => {} } };
-    new ReactionBinder(w, ctx).bindReaction('m14-link-indexer', 'pages:pages', 'pages');
+    // m14-link-indexer declares `after: ['m06-section-indexer']`; bind it ALONE on 'pages:pages'.
+    const ctx = {
+      ...coreCtx([]),
+      linkIndexer: { onChange: (_s: unknown, src: string) => void ran.push(`m14@${src}`), onUnlink: () => {} },
+    } as CoreReactionContext;
+    const binder = new ReactionBinder(w, ctx);
+    binder.bindReaction('m06-anchor-injection', 'pages:adr', 'pages');
+    binder.bindReaction('m06-section-indexer', 'pages:adr', 'pages');
+    binder.bindReaction('m14-link-indexer', 'pages:pages', 'pages');
+    expect(binder.isBound('m06-section-indexer', 'pages:pages')).toBe(false);
     fs.writeFileSync(path.join(dir, 'a.md'), '# A\n');
     await w.flush('pages:pages', 'a.md');
-    expect(ran).toEqual(['m14']);
+    expect(ran).toEqual(['m14@pages:pages']);
   });
 
   it('the binding narrows a source to the formats the reaction accepts', async () => {

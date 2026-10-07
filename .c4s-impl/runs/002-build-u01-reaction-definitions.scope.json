@@ -1,0 +1,56 @@
+{
+  "unit": {
+    "id": "u01-reaction-definitions",
+    "goal": "Runtime obserwacji plików (M40) rozdziela definicję reakcji (`defineReaction`, stabilne `id`, raz na proces) od jej wiązania ze źródłem (`bindReaction(id, source, scope)`, per kontekst). Wiązanie z niezamontowanym źródłem albo z nieznanym `id` kończy się błędem fail-fast. `after:` jest rozstrzygane per źródło, a niezwiązany poprzednik nie blokuje reakcji. Cykl życia kontekstu przechodzi na kolejność mount→bind. Znika model „moduł sam subskrybuje”.",
+    "recipe": {
+      "pages": [
+        {
+          "key": "pages/modules/m40-file-watch-runtime.md",
+          "change": "all",
+          "context": {
+            "offset": 1,
+            "limit": 3,
+            "anchors": [
+              "21j8a8rx",
+              "lezr5lgy",
+              "afv6ao1g"
+            ]
+          },
+          "deferred": [
+            {
+              "what": "przeniesienie montowania źródeł korzeni rejestru (`pages:*`, `entities`, `releases`, `artifacts:*`) do implementora L13 oraz jedyny właściciel `file:changed` (reakcja bazowa `m02-file-changed`)",
+              "to": "u03-root-registry",
+              "why": "rejestr jeszcze nie istnieje; dotychczasowi montujący montują dalej"
+            }
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "type": "ac",
+          "slugs": [
+            "ac-after-wskazujacy-definicje-reakcji-ni",
+            "ac-na-roocie-bez-indeksu-sekcji-deklarac",
+            "ac-w-roocie-bez-sectionindexed-link-indek"
+          ]
+        }
+      ]
+    },
+    "dependsOn": []
+  },
+  "stateDir": ".c4s-impl/",
+  "portion": {
+    "name": "u01-reaction-definitions/p1",
+    "layers": [
+      "L7",
+      "L10",
+      "L13"
+    ],
+    "slugs": [
+      "ac-after-wskazujacy-definicje-reakcji-ni"
+    ],
+    "packet": ".c4s-impl/packets/u01-reaction-definitions.md"
+  },
+  "only": [],
+  "mode": "build"
+}

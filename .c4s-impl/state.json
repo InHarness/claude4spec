@@ -1,5 +1,5 @@
 {
-  "iteration": 1,
+  "iteration": 4,
   "conventions": [
     {
       "label": "L7 (File Change Reactions)",
@@ -116,11 +116,28 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "in-progress",
-      "portions": [],
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u01-reaction-definitions/p1",
+          "layers": [
+            "L7",
+            "L10",
+            "L13"
+          ],
+          "slugs": [
+            "ac-after-wskazujacy-definicje-reakcji-ni"
+          ],
+          "status": "verified",
+          "rounds": 1,
+          "uncovered": [],
+          "only": []
+        }
+      ],
       "startCommit": "085f80704f66a9cededc730957c9ad20f5ec5864",
       "rounds": {
-        "review": 0
+        "review": 0,
+        "unit": 1
       }
     },
     {

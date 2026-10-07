@@ -14,9 +14,11 @@ import { makeWatchIgnore } from './watch-ignore.js';
  * debounce, each recognized its own writes, and reaction order was an accident
  * of registration order inside `buildProjectContext`.
  *
- * Now: directory owners `mountSource(...)`, reacting modules `subscribe(...)`
- * with a declared phase and `after: [...]`, and this runtime enforces order,
- * self-write handling and dispatch.
+ * Now: whoever is responsible for a source `mountSource(...)`s it, and reactions
+ * are bound to it (2.1.8: `defineReaction` once per process + `bindReaction` per
+ * context, see `reactions.ts`; underneath, `subscribe(...)` with a declared phase
+ * and `after: [...]`), and this runtime enforces order, self-write handling and
+ * dispatch.
  *
  * The runtime is purely mechanical — it does not know what any source MEANS,
  * does not parse content, does not evaluate gates and holds no projections.
@@ -458,7 +460,8 @@ export class FileWatchRuntime {
   /**
    * Register a reaction. Validation is FAIL-FAST at registration, never queued:
    * subscribing to an unmounted source throws. That is why "no predecessor" at
-   * dispatch is always the consequence of an owner's gate, never a registration race.
+   * dispatch is always the consequence of a definition not bound on that source,
+   * never a registration race.
    */
   subscribe(source: string, handler: WatchSubscriber, opts: SubscribeOptions & { scope: WatchScope }): void {
     const { scope, id, phase, after = [], filter } = opts;
