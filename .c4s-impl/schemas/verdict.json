@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "verdict",
+  "description": "Output of the verifier (portion, unit or system scope). One row per slug the verifier derived from the specification; nothing else.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "role",
+    "scope",
+    "release",
+    "rows",
+    "suite"
+  ],
+  "properties": {
+    "role": {
+      "enum": [
+        "verifier",
+        "verifier-system"
+      ]
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "portion",
+            "unit",
+            "system"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "description": "portion name (m05/p2-l2), unit id (m05) or 'system'"
+        }
+      }
+    },
+    "release": {
+      "type": "string"
+    },
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "slug",
+          "level",
+          "status",
+          "evidence"
+        ],
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "entity or criterion slug, or a pseudo-slug: goal:<unit>, stub:<dependent>-<provider>, job:<id>, deviation:<id>, regression"
+          },
+          "type": {
+            "type": "string",
+            "description": "entity type of the row's slug (a built type for shape rows, the criteria type for behaviour rows); omitted for pseudo-slugs"
+          },
+          "level": {
+            "enum": [
+              1,
+              2,
+              3
+            ],
+            "description": "1 shape, 2 behaviour (criteria and goal:<unit>), 3 system (jobs, stubs, deviations)"
+          },
+          "status": {
+            "enum": [
+              "covered",
+              "uncovered",
+              "test-fails",
+              "test-not-verifying"
+            ]
+          },
+          "evidence": {
+            "type": "string",
+            "description": "path:line, quoted assertion, or the tail of the command output"
+          }
+        }
+      }
+    },
+    "suite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "exitCode"
+      ],
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "exitCode": {
+          "type": "integer"
+        },
+        "summary": {
+          "type": "string",
+          "description": "last lines of the runner output"
+        }
+      }
+    }
+  }
+}

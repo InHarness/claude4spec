@@ -1,0 +1,1600 @@
+{
+  "iteration": 1,
+  "conventions": [
+    {
+      "label": "L7 (File Change Reactions)",
+      "key": "pages/layers/L7-file-change-reactions.md",
+      "offset": 2,
+      "anchor": "6qppsun2"
+    },
+    {
+      "label": "L13 (Korzenie i rodzaje korzeni)",
+      "key": "pages/layers/L13-page-roots.md",
+      "offset": 1,
+      "anchor": "l13role01"
+    }
+  ],
+  "waves": [
+    {
+      "n": 1,
+      "units": [
+        "u01-reaction-definitions"
+      ],
+      "startCommit": "085f80704f66a9cededc730957c9ad20f5ec5864"
+    },
+    {
+      "n": 2,
+      "units": [
+        "u02-page-reactions"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 3,
+      "units": [
+        "u03-root-registry"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 4,
+      "units": [
+        "u04-entities-root",
+        "u07-editor-contexts"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 5,
+      "units": [
+        "u05-releases-root",
+        "u06-discovery-references"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 6,
+      "units": [
+        "u09-plans-artifact-registry"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 7,
+      "units": [
+        "u10-briefs-patches-roots"
+      ],
+      "startCommit": null
+    },
+    {
+      "n": 8,
+      "units": [
+        "u08-agent-path-scope",
+        "u11-config-settings",
+        "u12-git-clone"
+      ],
+      "startCommit": null
+    }
+  ],
+  "units": [
+    {
+      "id": "u01-reaction-definitions",
+      "goal": "Runtime obserwacji plików (M40) rozdziela definicję reakcji (`defineReaction`, stabilne `id`, raz na proces) od jej wiązania ze źródłem (`bindReaction(id, source, scope)`, per kontekst). Wiązanie z niezamontowanym źródłem albo z nieznanym `id` kończy się błędem fail-fast. `after:` jest rozstrzygane per źródło, a niezwiązany poprzednik nie blokuje reakcji. Cykl życia kontekstu przechodzi na kolejność mount→bind. Znika model „moduł sam subskrybuje”.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m40-file-watch-runtime.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "21j8a8rx",
+                "lezr5lgy",
+                "afv6ao1g"
+              ]
+            },
+            "deferred": [
+              {
+                "what": "przeniesienie montowania źródeł korzeni rejestru (`pages:*`, `entities`, `releases`, `artifacts:*`) do implementora L13 oraz jedyny właściciel `file:changed` (reakcja bazowa `m02-file-changed`)",
+                "to": "u03-root-registry",
+                "why": "rejestr jeszcze nie istnieje; dotychczasowi montujący montują dalej"
+              }
+            ]
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-after-wskazujacy-definicje-reakcji-ni",
+              "ac-na-roocie-bez-indeksu-sekcji-deklarac",
+              "ac-w-roocie-bez-sectionindexed-link-indek"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [],
+      "wave": 1,
+      "status": "in-progress",
+      "portions": [],
+      "startCommit": "085f80704f66a9cededc730957c9ad20f5ec5864",
+      "rounds": {
+        "review": 0
+      }
+    },
+    {
+      "id": "u02-page-reactions",
+      "goal": "Reakcje działające na plikach stron stają się nazwanymi definicjami z kontraktem przyjęcia:\n  - `m06-anchor-injection` zostaje wydzielona z indeksera sekcji. Indekser traci krok wstrzykiwania kotwic i ma teraz 8 kroków. Osobna reakcja kotwiczenia planów zostaje usunięta.\n  - Dochodzą `m06-section-indexer` (wymaga `m06-anchor-injection` i `references = tak` na tym samym rodzaju), `m14-link-indexer`, `m14-rename-sync`, `m08-todos-indexer` i `m17-capture` (przyjmuje wyłącznie wpisy z torem `file_version`).\n  - Rozwiązywanie `@path.md` obejmuje wszystkie korzenie rodzaju `pages` z precedencją: korzeń źródłowy, potem `builtin`, potem kolejność w `roots[]`. Właściwość `linkTargets` zostaje usunięta.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m06-sections.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "1aq60bj4",
+                "ko9x8zqw",
+                "pb7v6bmz"
+              ]
+            },
+            "deferred": [
+              {
+                "what": "wiązanie reakcji przez deklarację rodzaju `pages` i sprawdzanie wymagań przy montażu",
+                "to": "u03-root-registry",
+                "why": "do tego czasu reakcje wiąże po `id` dotychczasowy montujący"
+              },
+              {
+                "what": "związanie `m06-anchor-injection` ze źródłem korzenia `plans`",
+                "to": "u09-plans-artifact-registry",
+                "why": "rodzaj `plans` powstaje dopiero tam"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m14-page-links.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m14cel01",
+                "m14dep01"
+              ]
+            },
+            "deferred": [
+              {
+                "what": "wiązanie `m14-link-indexer` / `m14-rename-sync` przez deklarację rodzaju",
+                "to": "u03-root-registry",
+                "why": "rejestr jeszcze nie istnieje"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m14-page-links.md",
+            "change": null,
+            "context": {
+              "offset": 4,
+              "limit": 1,
+              "anchors": [
+                "m14dom01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m08-todos.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "5n5li2kx",
+                "htyo2j01",
+                "t9y889ve"
+              ]
+            },
+            "deferred": [
+              {
+                "what": "wiązanie `m08-todos-indexer` przez deklarację rodzaju i `rootId` z wejścia reakcji",
+                "to": "u03-root-registry",
+                "why": "rejestr jeszcze nie istnieje"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+            "change": {
+              "offset": 12,
+              "limit": 1,
+              "anchors": [
+                "yg8keaew"
+              ]
+            },
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "xkpt256d",
+                "m17zal001",
+                "y7fdm1jc"
+              ]
+            },
+            "deferred": [
+              {
+                "what": "wiązanie `m17-capture` przez rodzaje (L13)",
+                "to": "u03-root-registry",
+                "why": "rejestr jeszcze nie istnieje"
+              }
+            ]
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-resolve-i-autocomplete-path-md-sa-ogran"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u01-reaction-definitions",
+          "why": "definicje i `bindReaction` muszą istnieć"
+        }
+      ],
+      "wave": 2,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "rounds": {
+        "review": 0
+      }
+    },
+    {
+      "id": "u03-root-registry",
+      "goal": "M02 staje się implementorem L13 i właścicielem rodzaju `pages`:\n  - Rejestr ma wpisy `{id,name,dir,kind,builtin}` z dwóch źródeł: `config.roots[]` (rodzaj `pages`) oraz kodu (rodzaje systemowe).\n  - Typ pliku wynika z mapy plików rodzaju. `.html` to wpis surowy z torem `brak`: widoczny w drzewie, ale nie jest stroną.\n  - Przy budowie `ProjectContext` (M31) dla każdego korzenia: montaż źródła, walidacja wymagań reakcji (niespełnione wymaganie przerywa budowę), `bindReaction` reakcji wybranych przez rodzaj oraz reakcja bazowa `m02-file-changed`, która emituje `file:changed {rootId,path,origin}`.\n  - Przestrzeń nazw korzenia pomija poddrzewa z segmentem zaczynającym się od kropki.\n  - Usunięte: filtr ukrytego drzewa (hidden-tree filter), kod `ROOT_NOT_WRITABLE`, rozgałęzienia guardu kotwic po `sectionIndexed` (`ANCHOR_LOSS` działa zawsze) oraz własna reakcja M30. Podgląd `.html` odświeża się na bazowym `file:changed`.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m02-pages.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "487vmesk",
+                "lzt9r2fu",
+                "6o9jy3sm"
+              ]
+            },
+            "deferred": [
+              {
+                "what": "rejestracja korzenia systemowego `entities`",
+                "to": "u04-entities-root",
+                "why": "deklarację rodzaju wnosi M29"
+              },
+              {
+                "what": "rejestracja korzenia systemowego `releases`",
+                "to": "u05-releases-root",
+                "why": "deklarację rodzaju wnosi M17"
+              },
+              {
+                "what": "rejestracja korzenia systemowego `plans` i rekordy frontmattera z `rootId='plans'`",
+                "to": "u09-plans-artifact-registry",
+                "why": "deklarację rodzaju wnosi M10"
+              },
+              {
+                "what": "rejestracja korzeni systemowych `briefs` i `patches` oraz rekordy frontmattera z `rootId='briefs'`/`'patches'`",
+                "to": "u10-briefs-patches-roots",
+                "why": "deklaracje wnoszą M21/M23"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m31-workspace.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 4,
+              "anchors": [
+                "m31purp01",
+                "m31dec001",
+                "m31deps01",
+                "m31l2001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m30-static-html.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "z7k52855",
+                "zqehkg0f",
+                "iqp1idox"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m40-file-watch-runtime.md",
+            "change": {
+              "offset": 3,
+              "limit": 1,
+              "anchors": [
+                "kc23agex"
+              ]
+            },
+            "context": null,
+            "completes": [
+              {
+                "what": "montowanie źródeł korzeni rejestru przez implementora L13 i reakcja bazowa `m02-file-changed` jako jedyny właściciel `file:changed`",
+                "from": "u01-reaction-definitions"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m40-file-watch-runtime.md",
+            "change": {
+              "offset": 5,
+              "limit": 1,
+              "anchors": [
+                "814g9r4w"
+              ]
+            },
+            "context": null
+          },
+          {
+            "key": "pages/modules/m06-sections.md",
+            "change": {
+              "offset": 14,
+              "limit": 1,
+              "anchors": [
+                "o8crf4hk"
+              ]
+            },
+            "context": null,
+            "completes": [
+              {
+                "what": "wiązanie reakcji M06 przez deklarację rodzaju `pages` i sprawdzanie wymagań przy montażu",
+                "from": "u02-page-reactions"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m06-sections.md",
+            "change": {
+              "offset": 17,
+              "limit": 1,
+              "anchors": [
+                "m06l13rt"
+              ]
+            },
+            "context": null
+          },
+          {
+            "key": "pages/modules/m14-page-links.md",
+            "change": {
+              "offset": 1,
+              "limit": 1,
+              "anchors": [
+                "1z2653we"
+              ]
+            },
+            "context": null,
+            "completes": [
+              {
+                "what": "wiązanie reakcji M14 przez deklarację rodzaju",
+                "from": "u02-page-reactions"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m14-page-links.md",
+            "change": {
+              "offset": 4,
+              "limit": 1,
+              "anchors": [
+                "m14l13rt"
+              ]
+            },
+            "context": null
+          },
+          {
+            "key": "pages/modules/m08-todos.md",
+            "change": {
+              "offset": 0,
+              "limit": 1,
+              "anchors": [
+                "j5vqicfm"
+              ]
+            },
+            "context": null,
+            "completes": [
+              {
+                "what": "wiązanie `m08-todos-indexer` przez deklarację rodzaju",
+                "from": "u02-page-reactions"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m08-todos.md",
+            "change": {
+              "offset": 2,
+              "limit": 1,
+              "anchors": [
+                "m08l13rt"
+              ]
+            },
+            "context": null
+          },
+          {
+            "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+            "change": {
+              "offset": 12,
+              "limit": 1,
+              "anchors": [
+                "yg8keaew"
+              ]
+            },
+            "context": null,
+            "completes": [
+              {
+                "what": "wiązanie `m17-capture` przez rodzaje",
+                "from": "u02-page-reactions"
+              }
+            ]
+          },
+          {
+            "key": "pages/layers/L13-page-roots.md",
+            "change": null,
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "l13role01",
+                "l13slice0"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "code-snippet",
+            "slugs": [
+              "page-root-runtime-construction"
+            ]
+          },
+          {
+            "type": "mcp-tool",
+            "slugs": [
+              "page-tools-update-page"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-deklaracja-rodzaju-korzenia-wybieraja",
+              "ac-plik-html-lezacy-w-korzeniu-stron-jes",
+              "ac-plik-html-w-korzeniu-stron-bez-file-version",
+              "ac-section-indexer-walidacja-referencji-i",
+              "ac-update-page-w-trybie-content-na-stron",
+              "ac-update-page-z-textedits-na-stronie-ro",
+              "ac-projectcontext-montuje-n-par-pagesservic",
+              "ac-kazde-zachowanie-per-katalog-jest-bramko",
+              "ac-content-i-textedits-w-update-page-sa",
+              "ac-kazdy-wiersz-katalogu-l3-opisujacy-op",
+              "ac-textedits-gubiacy-anchor-majacy-refer",
+              "ac-update-page-bez-content-i-bez-textedi",
+              "ac-update-page-w-trybie-content-ktorego",
+              "ac-update-page-z-content-i-textedits-pod",
+              "ac-update-page-z-textedits-podmienia-wys",
+              "ac-zapis-strony-wprowadzajacy-nowy-naglo"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u01-reaction-definitions",
+          "why": "`defineReaction`/`bindReaction` i kolejność mount→bind"
+        },
+        {
+          "unit": "u02-page-reactions",
+          "why": "rodzaj `pages` wiąże zdefiniowane tam reakcje po `id`"
+        }
+      ],
+      "wave": 3,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "rounds": {
+        "review": 0
+      }
+    },
+    {
+      "id": "u04-entities-root",
+      "goal": "M29 deklaruje rodzaj korzenia `entities`:\n  - Stały katalog `.claude4spec/entities`, sidebar `hidden`.\n  - Mapa plików: `tags.json` (tor `HEAD`) oraz `*/*.json` (tor `entity_version`).\n  - Flagi: tylko `release` = tak. Reakcja: `m29-entity-indexer`.\n  - M29 przestaje sam zamawiać montaż źródeł `entities`/`releases`; robi to implementor L13.\n  - Usunięte: klucz konfiguracji `entitiesDir`, element ustawień „Entities directory” i obsługa relokacji katalogu.\n  - M18 lokalizuje `tags.json` przez korzeń rodzaju `entities`, nie przez klucz konfiguracji.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m29-entity-store.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "m29cel001",
+                "m29dep001",
+                "4p5w4eb1"
+              ]
+            },
+            "deferred": [
+              {
+                "what": "związanie `m29-release-cache` ze źródłem korzenia `releases`",
+                "to": "u05-releases-root",
+                "why": "rodzaj `releases` deklaruje M17 dopiero tam; definicję reakcji wnosi ta jednostka"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m02-pages.md",
+            "change": {
+              "offset": 9,
+              "limit": 3,
+              "anchors": [
+                "m02l13001",
+                "l13model0",
+                "m02multidir"
+              ]
+            },
+            "context": null,
+            "completes": [
+              {
+                "what": "rejestracja korzenia systemowego `entities`",
+                "from": "u03-root-registry"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m18-tags.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m18cel00",
+                "m18dep00"
+              ]
+            }
+          }
+        ],
+        "entities": []
+      },
+      "dependsOn": [
+        {
+          "unit": "u03-root-registry",
+          "why": "rejestr, w którym rodzaj się rejestruje i który montuje jego źródło"
+        }
+      ],
+      "wave": 4,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "rounds": {
+        "review": 0
+      }
+    },
+    {
+      "id": "u07-editor-contexts",
+      "goal": "Kontekst edytora strony wynika z rodzaju korzenia, a nie z właściwości korzenia:\n  - Rodzaj `pages` dostaje pełny kontekst `page`. `section_ref`/`AnchorMarker` są dostępne, gdy rodzaj wybrał `m06-anchor-injection`, a węzły encji, gdy `references = tak`.\n  - `@` obejmuje wszystkie korzenie rodzaju `pages` z precedencją M14.\n  - Dochodzi stały kontekst `artifact` (proza i `@`, bez `section_ref` i węzłów encji) dla edytorów briefu i patcha.\n  - Usunięte: minimalny kontekst strony dla korzeni bez indeksu i syntetyczny zestaw właściwości dla powierzchni briefu i patcha.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m20-editor-tiptap.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "m20cel00",
+                "m20dep00",
+                "8f8ku0gd"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-editorfactory-buduje-editorcontextspec-d"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u03-root-registry",
+          "why": "rodzaj i flagi korzenia, z których `EditorFactory` wyprowadza kontekst"
+        }
+      ],
+      "wave": 4,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "rounds": {
+        "review": 0
+      }
+    },
+    {
+      "id": "u05-releases-root",
+      "goal": "M17 deklaruje rodzaj korzenia `releases`:\n  - Stały katalog `.claude4spec/releases`, mapa `*.json` (metadane wydania), tor `brak`, `gitignore` = tak, reakcja `m29-release-cache`.\n  - Zakres wydania wyznacza teraz rodzaj `pages` (oś `file_version`, filtry `roots`/`paths`, układ paczki), a pathspece git diffu dają katalogi rodzajów z flagą `release` plus korzeń `releases`.\n  - Filtry `roots`/`paths` odrzucają `rootId` spoza rodzaju `pages`.\n  - Jednorazowa, idempotentna migracja `file_version.rootId`: `'brief'`→`'briefs'`, `'patch'`→`'patches'`, `'plan'`→`'plans'`.\n  - Biała lista `config.json` w paczce publikuje `roots[]` jako `{id,name,dir,builtin}`.\n  - Usunięte: flaga `releasable` (korzeń z `releasable: false` wchodzi do wydania), klucz `releasesDir`, element ustawień „Releases directory” i obsługa relokacji katalogu wydań.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+            "change": {
+              "offset": 0,
+              "limit": 12,
+              "anchors": [
+                "1dufnk2n",
+                "9vwvitnu",
+                "fpvyd29b",
+                "3696lnd3",
+                "c6jzief9",
+                "feel2dvz",
+                "m17ergo01",
+                "m17errtx1",
+                "m17db001",
+                "d8871ce9",
+                "m17open01",
+                "m17l13rt"
+              ]
+            },
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "xkpt256d",
+                "m17zal001",
+                "y7fdm1jc"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+            "change": {
+              "offset": 13,
+              "limit": 2,
+              "anchors": [
+                "ic73uiw3",
+                "jkmeauua"
+              ]
+            },
+            "context": null
+          },
+          {
+            "key": "pages/modules/m17-snapshots-releases/L1-db.md",
+            "change": "all",
+            "context": null
+          },
+          {
+            "key": "pages/modules/m17-snapshots-releases/L2-domain.md",
+            "change": "all",
+            "context": null
+          },
+          {
+            "key": "pages/modules/m17-snapshots-releases/bundle-archive-format.md",
+            "change": "all",
+            "context": null
+          },
+          {
+            "key": "pages/modules/m29-entity-store.md",
+            "change": {
+              "offset": 8,
+              "limit": 1,
+              "anchors": [
+                "m29idx001"
+              ]
+            },
+            "context": null,
+            "completes": [
+              {
+                "what": "związanie `m29-release-cache` ze źródłem korzenia `releases`",
+                "from": "u04-entities-root"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m02-pages.md",
+            "change": {
+              "offset": 9,
+              "limit": 3,
+              "anchors": [
+                "m02l13001",
+                "l13model0",
+                "m02multidir"
+              ]
+            },
+            "context": null,
+            "completes": [
+              {
+                "what": "rejestracja korzenia systemowego `releases`",
+                "from": "u03-root-registry"
+              }
+            ]
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-file-version-z-rootid-brief-po-migracji",
+              "ac-korzen-uzytkownika-z-releasable-false-w",
+              "ac-config-json-w-bundle-u-zawiera-tylko-pol",
+              "ac-zmiana-pliku-w-dowolnym-korzeniu-reje",
+              "ac-zrodla-zdarzen-korzeni-entities-i-rel"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u03-root-registry",
+          "why": "rejestr i rodzaj `pages`"
+        },
+        {
+          "unit": "u04-entities-root",
+          "why": "definicja `m29-release-cache` i korzeń `entities` w zakresie wydania"
+        }
+      ],
+      "wave": 5,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "rounds": {
+        "review": 0
+      }
+    },
+    {
+      "id": "u06-discovery-references",
+      "goal": "Odkrywanie (rdzeń M39 i jego transporty M12, M11, M22) adresuje wyłącznie korzenie rodzaju `pages`. Identyfikator korzenia systemowego, np. `plans`, daje ten sam błąd co nieznany.\n  - `overview` zwraca `{id,name,dir,builtin,pageCount}`.\n  - `get_page` traci parametr `range` (także `c4s get-page --range` i tekst skilla `c4s-spec-reader`). Wznowienie odczytu idzie przez `get_page_outline` → `get_sections`.\n  - `get_sections` ma tylko błąd nieznanej kotwicy.\n  - Trafienie `search_pages` bez kotwicy oznacza dopasowanie poza sekcjami.\n  - `.html` nie jest stroną.\n  - Graf referencji M19 (walidacja, `find_references`, `check_consistency`, propagacja slugów) iteruje wpisy markdown korzeni z `references = tak`. Faza cross-entity działa osobno, po korzeniu rodzaju `entities`.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m39-discovery-core/m39-discovery-core.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "xmxv4lpo",
+                "yx7z9ivl",
+                "p7vq8lkf"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m39-discovery-core/L2-domain.md",
+            "change": "all",
+            "context": null
+          },
+          {
+            "key": "pages/modules/m12-external-mcp.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "m12cel00",
+                "m12dep00",
+                "m12dom00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m11-c4s/L13-page-roots.md",
+            "change": "all",
+            "context": null
+          },
+          {
+            "key": "pages/modules/m11-c4s/L14-cli-commands.md",
+            "change": "all",
+            "context": null
+          },
+          {
+            "key": "pages/modules/m22-external-skills/m22-external-skills.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m22cel00",
+                "m22dep00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m22-external-skills/c4s-spec-reader.md",
+            "change": "all",
+            "context": null
+          },
+          {
+            "key": "pages/modules/m19-references.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "m19cel00",
+                "m19dep00",
+                "eja05viu"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "mcp-tool",
+            "slugs": [
+              "c4s-reader-get-page-outline",
+              "c4s-reader-get-page",
+              "c4s-reader-get-sections",
+              "c4s-reader-overview",
+              "c4s-reader-search-pages",
+              "reference-tools-get-page-outline",
+              "reference-tools-get-page",
+              "reference-tools-get-sections",
+              "reference-tools-list-pages",
+              "reference-tools-search-pages"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-anchors-na-roocie-bez-indeksu-sekcji",
+              "ac-get-page-z-parametrem-range-na-rooci",
+              "ac-wywolanie-get-page-z-range-na-roocie",
+              "ac-list-pages-z-rootid-plans-konczy-sie",
+              "ac-c4s-get-page-root-id-id-path-p",
+              "ac-body-c4s-spec-reader-skill-md-zawiera",
+              "ac-body-c4s-spec-reader-skill-md-zawiera-2",
+              "ac-truncationhint-z-get-page-na-roocie-s",
+              "ac-anchor-pochloniety-rozwinieciem-inneg",
+              "ac-anchor-rodzica-i-anchor-jego-dziecka",
+              "ac-body-itemu-get-page-nie-zawiera-linii",
+              "ac-edges-ucietego-itemu-sa-liczone-z-pel",
+              "ac-frontmatter-fields-w-odpowiedzi-get-p",
+              "ac-frontmatter-raw-w-odpowiedzi-get-page",
+              "ac-get-page-na-roocie-indeksowanym-zwrac",
+              "ac-get-page-outline-dla-strony-ktorej-fr",
+              "ac-get-page-outline-dla-strony-ktorej-fr-2",
+              "ac-get-page-outline-dla-strony-z-preambu",
+              "ac-get-page-outline-niesie-hash-strony-w",
+              "ac-get-page-outline-zwraca-drzewo-naglow",
+              "ac-get-page-po-przekroczeniu-budzetu-zwra",
+              "ac-get-page-zwraca-hash-liczony-z-pelneg",
+              "ac-get-sections-z-includesubtree-true-zw",
+              "ac-item-pochodzacy-z-rozwiniecia-poddrze",
+              "ac-item-sekcji-nadrzednej-przy-includesu",
+              "ac-message-odpowiedzi-get-page-outline-d",
+              "ac-message-odpowiedzi-get-page-ucietej-b",
+              "ac-message-odpowiedzi-get-page-z-preambu",
+              "ac-message-przy-ucieciu-sufitem-liczby-i",
+              "ac-naglowek-ktoremu-indekser-nie-wstrzyk",
+              "ac-obie-encje-mcp-tool-renderujace-get-p",
+              "ac-odpowiedz-get-page-dla-strony-bez-tek",
+              "ac-odpowiedz-get-page-outline-dla-strony",
+              "ac-odpowiedz-get-page-z-preambula-ucieta",
+              "ac-preambula-wieksza-niz-budzet-odpowied",
+              "ac-przebieg-wyszukiwania-ktory-wyczerpie",
+              "ac-przy-bledzie-skladni-yaml-frontmatter",
+              "ac-przy-bledzie-skladni-yaml-frontmatter-2",
+              "ac-przy-cieciu-budzetowym-drzewa-get-pag",
+              "ac-przy-ucieciu-sufitem-liczby-itemow-ko",
+              "ac-redakcja-strony-przekraczajacej-budze",
+              "ac-rozwiniecie-dajace-wiecej-niz-50-item",
+              "ac-strona-bez-zadnego-naglowka-wraca-z-g",
+              "ac-uciety-outline-jest-prefiksem-drzewa",
+              "ac-wezel-get-page-outline-nie-niesie-con",
+              "ac-wzorzec-regex-dluzszy-niz-limit-dlugo"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u03-root-registry",
+          "why": "rodzaje i flaga `references`"
+        },
+        {
+          "unit": "u04-entities-root",
+          "why": "korzeń `entities` rozpoznawany po rodzaju w fazie cross-entity M19"
+        }
+      ],
+      "wave": 5,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "rounds": {
+        "review": 0
+      }
+    },
+    {
+      "id": "u09-plans-artifact-registry",
+      "goal": "M10 deklaruje rodzaj korzenia `plans`:\n  - Stały katalog `.claude4spec/plans`, mapa `*.md` z kontraktem frontmattera (mutowalne tylko `title` i `applied`), tor `file_version`, `gitignore` = tak.\n  - Reakcje: `m06-anchor-injection`, `m02-frontmatter-indexer`, `m17-capture` i `m10-plan-updated` (ta ostatnia wymaga `m17-capture`). Rodzaj nie wybiera indeksera sekcji.\n  - `file_version` planów ma `rootId='plans'`.\n  - M36 przestaje montować własne magazyny i źródła `artifacts:*` oraz definiować własną reakcję. `artifactRegistry` jest kluczowany rodzajem korzenia i niesie tylko `binding` i `danglingPolicy`. Guard pól frontmattera czyta pola mutowalne z deklaracji rodzaju.\n  - Usunięte: klucz `plansDir`, element ustawień „Plans directory” oraz pola wpisu rejestru `dirConfigKey`, `rootId`, `frontmatterContract`, `gitPolicy` i `anchorInjection`.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m36-chat-artifacts/m36-chat-artifacts.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m36cel01",
+                "m36dep01"
+              ]
+            },
+            "deferred": [
+              {
+                "what": "wpisy `artifactRegistry` dla `briefs` i `patches` kluczowane rodzajem oraz ich pola mutowalne z deklaracji rodzaju",
+                "to": "u10-briefs-patches-roots",
+                "why": "te rodzaje deklarują M21/M23"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m10-plans.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "m10cel00",
+                "m10dep00",
+                "m10dom00"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m06-sections.md",
+            "change": {
+              "offset": 14,
+              "limit": 1,
+              "anchors": [
+                "o8crf4hk"
+              ]
+            },
+            "context": null,
+            "completes": [
+              {
+                "what": "związanie `m06-anchor-injection` ze źródłem korzenia `plans`",
+                "from": "u02-page-reactions"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m02-pages.md",
+            "change": {
+              "offset": 7,
+              "limit": 1,
+              "anchors": [
+                "m02fmidx"
+              ]
+            },
+            "context": null,
+            "completes": [
+              {
+                "what": "rejestracja korzenia systemowego `plans` i rekordy frontmattera z `rootId='plans'`",
+                "from": "u03-root-registry"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m02-pages.md",
+            "change": {
+              "offset": 9,
+              "limit": 3,
+              "anchors": [
+                "m02l13001",
+                "l13model0",
+                "m02multidir"
+              ]
+            },
+            "context": null
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-m36-fiksuje-scheme-sekcji-konsumenta",
+              "ac-m36-montuje-per-kind-instancje-prymitywo",
+              "ac-m36-trzyma-artifactregistry-jeden-wp",
+              "ac-nowy-naglowek-zapisany-w-pliku-planu"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u02-page-reactions",
+          "why": "`m06-anchor-injection` i `m17-capture` jako definicje"
+        },
+        {
+          "unit": "u03-root-registry",
+          "why": "rejestr i magazyn plików korzenia"
+        },
+        {
+          "unit": "u05-releases-root",
+          "why": "migracja `rootId` w `file_version`, od której zależą wiersze `rootId='plans'`"
+        }
+      ],
+      "wave": 6,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "rounds": {
+        "review": 0
+      }
+    },
+    {
+      "id": "u10-briefs-patches-roots",
+      "goal": "M21 i M23 deklarują rodzaje korzeni `briefs` i `patches`:\n  - Stałe katalogi `.claude4spec/briefs` i `.claude4spec/patches`, mapy `*.md` z kontraktami frontmattera, tor `file_version`, `gitignore` = tak.\n  - Reakcje: `m02-frontmatter-indexer` i `m17-capture`. Rodzaje nie wybierają ani kotwiczenia, ani indeksera.\n  - `file_version` ma `rootId='briefs'`/`'patches'`. Ścieżki (`brief_path`, `patch_path`, `brief:` w patchu) są względne wobec katalogu korzenia.\n  - Edytory briefu i patcha działają w kontekście `artifact`.\n  - Modal „Generate brief” w trybie (b) wylicza wszystkie korzenie rodzaju `pages`.\n  - Nakładanie się korzenia użytkownika na katalog `patches` to twardy błąd D4.\n  - Usunięte: klucze `briefsDir` i `patchesDir`, ich elementy ustawień, właściwość `briefTarget` oraz przypadki brzegowe kolizji katalogów briefów i patchy.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m21-briefs.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m21cel001",
+                "m21zal001"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m21-briefs.md",
+            "change": null,
+            "context": {
+              "offset": 5,
+              "limit": 1,
+              "anchors": [
+                "a5ur9rmr"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m23-patches.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m23cel01",
+                "m23dep01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m23-patches.md",
+            "change": null,
+            "context": {
+              "offset": 5,
+              "limit": 1,
+              "anchors": [
+                "m23dom01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m36-chat-artifacts/m36-chat-artifacts.md",
+            "change": {
+              "offset": 0,
+              "limit": 1,
+              "anchors": [
+                "m36reg01"
+              ]
+            },
+            "context": null,
+            "completes": [
+              {
+                "what": "wpisy `artifactRegistry` dla `briefs` i `patches` kluczowane rodzajem oraz ich pola mutowalne z deklaracji rodzaju",
+                "from": "u09-plans-artifact-registry"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m36-chat-artifacts/m36-chat-artifacts.md",
+            "change": {
+              "offset": 2,
+              "limit": 1,
+              "anchors": [
+                "m36wire01"
+              ]
+            },
+            "context": null
+          },
+          {
+            "key": "pages/modules/m36-chat-artifacts/m36-chat-artifacts.md",
+            "change": {
+              "offset": 5,
+              "limit": 1,
+              "anchors": [
+                "m36l4fam"
+              ]
+            },
+            "context": null
+          },
+          {
+            "key": "pages/modules/m02-pages.md",
+            "change": {
+              "offset": 7,
+              "limit": 1,
+              "anchors": [
+                "m02fmidx"
+              ]
+            },
+            "context": null,
+            "completes": [
+              {
+                "what": "rejestracja korzeni systemowych `briefs` i `patches` oraz rekordy frontmattera z `rootId='briefs'`/`'patches'`",
+                "from": "u03-root-registry"
+              }
+            ]
+          },
+          {
+            "key": "pages/modules/m02-pages.md",
+            "change": {
+              "offset": 9,
+              "limit": 3,
+              "anchors": [
+                "m02l13001",
+                "l13model0",
+                "m02multidir"
+              ]
+            },
+            "context": null
+          }
+        ],
+        "entities": [
+          {
+            "type": "mcp-tool",
+            "slugs": [
+              "brief-tools-update-brief"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-brief-nie-jest-page-rootem-zyje-w-bri",
+              "ac-briefsdir-bedacy-sciezka-absolutna-al",
+              "ac-modal-generate-brief-ma-scope-przestr",
+              "ac-plik-z-type-brief-lezacy-w-pagesdir-j",
+              "ac-wersjonowanie-briefu-reuse-uje-tabele",
+              "ac-zmiana-briefsdir-w-config-json-wymaga",
+              "ac-frontmatter-roots-string-jest-immutab",
+              "ac-insert-after-section-z-heading-pasuja",
+              "ac-insert-after-section-z-heading-pasuja-2",
+              "ac-insert-after-section-z-heading-pasuja-3",
+              "ac-insert-after-section-z-heading-pasuja-4",
+              "ac-kazda-operacja-briefu-renderowana-w-k",
+              "ac-mcp-update-brief-wywoluje-recordversi",
+              "ac-przy-odrzuconej-zmianie-immutable-pol",
+              "ac-update-brief-action-insert-after-sect",
+              "ac-update-brief-blokuje-zmiane-implement",
+              "ac-update-brief-odrzuca-probe-zmiany-kto",
+              "ac-w-initial-generation-pierwsza-tura-wa"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u09-plans-artifact-registry",
+          "why": "odchudzony `artifactRegistry` kluczowany rodzajem"
+        },
+        {
+          "unit": "u07-editor-contexts",
+          "why": "kontekst edytora `artifact`"
+        },
+        {
+          "unit": "u05-releases-root",
+          "why": "migracja `rootId` w `file_version`"
+        }
+      ],
+      "wave": 7,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "rounds": {
+        "review": 0
+      }
+    },
+    {
+      "id": "u08-agent-path-scope",
+      "goal": "Zakres plików agenta wynika z rejestru korzeni:\n  - `resolveAgentPathScope({cwd, roots, allowedPaths, disallowedPaths})` traci parametry `*Dir`.\n  - Baza implicit to `cwd` ∪ katalogi korzeni rodzaju `pages`.\n  - Implicit deny-set to katalogi korzeni, których rodzaj ma `agentDirectFs = nie`. Trafia on do `disallowedPaths` i do snapshotu tury 1.\n  - Karta `#agent` „Always excluded” pokazuje te katalogi.\n  - Blok promptu `<agent_path_scope>` i atrybut `roots` w `<project>` biorą pod uwagę tylko rodzaj `pages`.\n  - Audyt `AcAnalysisService` dziedziczy ten sam deny-set.\n  - Usunięte: honorowanie niestandardowych lokalizacji `*Dir` i efekt „relokacja katalogu → `409 RESUME_CONFIG_LOCKED`”.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m05-chat-agent/m05-chat-agent.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "iv1lmc33",
+                "t3fsdybv",
+                "qi69o94d"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m05-chat-agent/agent-posture.md",
+            "change": "all",
+            "context": null
+          },
+          {
+            "key": "pages/modules/m05-chat-agent/turn-runtime.md",
+            "change": "all",
+            "context": null
+          },
+          {
+            "key": "pages/modules/m48-system-prompt-composition.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "xdnw931t",
+                "603o6bq9",
+                "kg2e0kqr"
+              ]
+            }
+          },
+          {
+            "key": "plugins/modules/c4s-plugin-ac.md",
+            "change": "all",
+            "context": {
+              "offset": 5,
+              "limit": 2,
+              "anchors": [
+                "5f8l7spw",
+                "205ctsev"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "code-snippet",
+            "slugs": [
+              "szablon-agent-path-scope"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-custom-lokalizacje-dir-ustawione-przez",
+              "ac-puste-allowedpaths-i-disallowedpaths-n",
+              "ac-wbudowany-write-edit-bash-agenta-na-kata",
+              "ac-relokacja-katalogu-artefaktow-plansdir"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u03-root-registry",
+          "why": "rejestr i flaga `agentDirectFs`"
+        },
+        {
+          "unit": "u04-entities-root",
+          "why": "deny-set jest kompletny dopiero, gdy wszystkie korzenie systemowe są zarejestrowane, a wcześniejsze przełączenie odsłoniłoby agentowi katalogi artefaktów"
+        },
+        {
+          "unit": "u05-releases-root",
+          "why": "deny-set jest kompletny dopiero, gdy wszystkie korzenie systemowe są zarejestrowane, a wcześniejsze przełączenie odsłoniłoby agentowi katalogi artefaktów"
+        },
+        {
+          "unit": "u09-plans-artifact-registry",
+          "why": "deny-set jest kompletny dopiero, gdy wszystkie korzenie systemowe są zarejestrowane, a wcześniejsze przełączenie odsłoniłoby agentowi katalogi artefaktów"
+        },
+        {
+          "unit": "u10-briefs-patches-roots",
+          "why": "deny-set jest kompletny dopiero, gdy wszystkie korzenie systemowe są zarejestrowane, a wcześniejsze przełączenie odsłoniłoby agentowi katalogi artefaktów"
+        }
+      ],
+      "wave": 8,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "rounds": {
+        "review": 0
+      }
+    },
+    {
+      "id": "u11-config-settings",
+      "goal": "`config.json` zawiera tylko korzenie użytkownika:\n  - Wpis `roots[]` ma cztery pola (`id`, `name`, `dir`, `builtin`). Dokładnie jeden wpis ma `builtin: true`. Identyfikatory `plans`/`briefs`/`patches`/`entities`/`releases` są zastrzeżone.\n  - Nakładanie się przestrzeni nazw dowolnego korzenia rejestru (także systemowego) albo `.claude4spec/plugins` to błąd. Dozwolony jest `dir: '.'`.\n  - Stare pola i klucze `*Dir` wczytują się bez błędu i są ignorowane. Gdy wskazują inny katalog, w logu pojawia się ostrzeżenie.\n  - Bootstrap tworzy katalogi wszystkich korzeni rejestru i nie zapisuje korzeni systemowych do pliku.\n  - Karta Directories ma tylko element Roots. Przemianowanie dotyczy wyłącznie korzeni użytkownika (`relinkedRoots` znika z odpowiedzi).\n  - Zapis ustawień przelicza blok `.gitignore` tylko przy zmianie `git`.\n  - Usunięte: pięć kluczy `*Dir`, reguła 3a (ostrzeżenie o nakładaniu i „must differ”), domknięcie `linkTargets` oraz wymóg `sidebar: 'accordion'`.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m01-project.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "85hp4f2v",
+                "cri3lyli",
+                "cjx6s5bd"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m26-project-settings.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 2,
+              "anchors": [
+                "m26cel01",
+                "m26dep01"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m26-project-settings.md",
+            "change": null,
+            "context": {
+              "offset": 4,
+              "limit": 1,
+              "anchors": [
+                "m26dom01"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "code-snippet",
+            "slugs": [
+              "config-json-shape"
+            ]
+          },
+          {
+            "type": "dto",
+            "slugs": [
+              "app-config-response",
+              "patch-config-request",
+              "rename-root-response"
+            ]
+          },
+          {
+            "type": "endpoint",
+            "slugs": [
+              "post-api-config-roots-rootid-rename"
+            ]
+          },
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-briefsdir-ma-kolizje-z-pagesdir-np",
+              "ac-briefsdir-sciezka-absolutna-hard-err",
+              "ac-config-json-z-kluczem-dir-dla-planow",
+              "ac-config-roots-zawiera-trzy-wpisy-builti",
+              "ac-ekran-m26-directories-blokuje-przycisk",
+              "ac-entitiesdir-sciezka-absolutna-lub-poza",
+              "ac-kolizja-katalogow-artefaktow-jest-odrzuc",
+              "ac-konfiguracja-ktorej-roots-nie-ma-dokl",
+              "ac-korzen-uzytkownika-o-identyfikatorze",
+              "ac-korzen-uzytkownika-z-dir-przechodzi-w",
+              "ac-korzen-uzytkownika-z-dir-rownym-claud",
+              "ac-lista-elementu-roots-na-karcie-direct",
+              "ac-migracja-sprzed-m21-config-bez-briefsd",
+              "ac-migracja-sprzed-m23-config-bez-patches",
+              "ac-migracja-sprzed-m29-entitiesdir-brak",
+              "ac-migracja-sprzed-m29-entitiesdir-istn",
+              "ac-patch-api-config-zawierajacy-wylacznie",
+              "ac-patch-api-config-zawierajacy-wylacznie-2",
+              "ac-patchesdir-ma-kolizje-z-pagesdir-br",
+              "ac-patchesdir-sciezka-absolutna-lub-poza",
+              "ac-pole-config-releasesdir-default-claude",
+              "ac-przy-config-json-z-kluczem-dir-dla-pl",
+              "ac-swiezy-bootstrap-nie-zapisuje-w-confi",
+              "ac-swiezy-bootstrap-tworzy-katalog-entitie",
+              "ac-swiezy-bootstrap-tworzy-katalogi-wszy",
+              "ac-swiezy-bootstrap-zapisuje-briefsdir",
+              "ac-swiezy-bootstrap-zapisuje-patchesdir",
+              "ac-wpis-roots-z-polem-spoza-id-name-dir",
+              "ac-continue-z-agent-conversationallangua",
+              "ac-continue-z-waznym-formularzem-wysyla",
+              "ac-continue-ze-zmienionym-dir-builtin-ro",
+              "ac-drugie-przemianowanie-w-tym-samym-pro",
+              "ac-m26-sekcja-agent-settings-zawiera-d",
+              "ac-m26-sekcja-project-settings-zawiera-2",
+              "ac-odczyt-konfiguracji-po-swiezym-bootst",
+              "ac-odmowa-przemianowania-na-continue-zos",
+              "ac-pola-agent-allowedpaths-agent-disallowed",
+              "ac-po-domknieciu-onboardingu-odczyt-konf",
+              "ac-po-przemianowaniu-przestrzeni-podstaw",
+              "ac-ponowne-zatwierdzenie-juz-zakonczoneg",
+              "ac-projekt-sprzed-m16-ktorego-config-nie",
+              "ac-przemianowanie-przerwane-restartem-pr",
+              "ac-przemianowanie-przestrzeni-zostawia-j",
+              "ac-przemianowanie-rootu-zatwierdzone-z-t",
+              "ac-restart-serwera-bumpuje-serverstartedat",
+              "ac-skip-nie-wysyla-roots-dir-builtin-roo",
+              "ac-skip-otwiera-confirmmodal-a-po-potwie",
+              "ac-textarea-allowed-disallowed-paths-sekcj",
+              "ac-w-sekcji-advanced-onboardingu-mozna-z"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u03-root-registry",
+          "why": "model korzenia i przestrzeń nazw"
+        },
+        {
+          "unit": "u04-entities-root",
+          "why": "zastrzeżone identyfikatory, walidacja nakładania i katalogi tworzone przy bootstrapie wymagają zarejestrowania wszystkich pięciu rodzajów systemowych"
+        },
+        {
+          "unit": "u05-releases-root",
+          "why": "zastrzeżone identyfikatory, walidacja nakładania i katalogi tworzone przy bootstrapie wymagają zarejestrowania wszystkich pięciu rodzajów systemowych"
+        },
+        {
+          "unit": "u09-plans-artifact-registry",
+          "why": "zastrzeżone identyfikatory, walidacja nakładania i katalogi tworzone przy bootstrapie wymagają zarejestrowania wszystkich pięciu rodzajów systemowych"
+        },
+        {
+          "unit": "u10-briefs-patches-roots",
+          "why": "zastrzeżone identyfikatory, walidacja nakładania i katalogi tworzone przy bootstrapie wymagają zarejestrowania wszystkich pięciu rodzajów systemowych"
+        }
+      ],
+      "wave": 8,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "rounds": {
+        "review": 0
+      }
+    },
+    {
+      "id": "u12-git-clone",
+      "goal": "Synchronizacja z gitem (M28) staguje katalogi wszystkich korzeni rejestru (`real(dir)`) plus `config.json`, zarówno przy commicie wydania, jak i przy `commitPull`. Korzenie użytkownika z dawnym `releasable: false` też są stagowane.\n  - Blok zarządzany `.gitignore` przy wyłączonym gicie powstaje z katalogów korzeni, których rodzaj ma flagę `gitignore`.\n  - Pathspece `diffRefs` dają rodzaje z flagą `release` plus korzeń `releases`.\n  - Rollback nieudanego klonu (M27) usuwa też pliki korzeni systemowych odtworzone w tym przebiegu.\n  - Usunięte: polityka `gitPolicy` M36 jako źródło zakresu commitu i ignorowania.",
+      "recipe": {
+        "pages": [
+          {
+            "key": "pages/modules/m28-git-sync.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 1,
+              "anchors": [
+                "incf3qhp"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m28-git-sync.md",
+            "change": null,
+            "context": {
+              "offset": 3,
+              "limit": 1,
+              "anchors": [
+                "snn15dck"
+              ]
+            }
+          },
+          {
+            "key": "pages/modules/m27-project-clone/m27-project-clone.md",
+            "change": "all",
+            "context": {
+              "offset": 1,
+              "limit": 3,
+              "anchors": [
+                "kih7l6ry",
+                "n4iqqtfg",
+                "ovugyzsk"
+              ]
+            }
+          }
+        ],
+        "entities": [
+          {
+            "type": "ac",
+            "slugs": [
+              "ac-bootstrap-tworzy-aktualizuje-gitignore",
+              "ac-clone-restore-odtwarza-wszystkie-releasa",
+              "ac-git-commit-przy-createrelease-obejmuje-w",
+              "ac-katalogi-artefaktow-briefsdir-patche",
+              "ac-przy-w-czonym-config-git-synccommitonre"
+            ]
+          }
+        ]
+      },
+      "dependsOn": [
+        {
+          "unit": "u05-releases-root",
+          "why": "flaga `release` i korzeń `releases` w pathspecach oraz układ paczki dla restore"
+        },
+        {
+          "unit": "u04-entities-root",
+          "why": "zbiór stagowania i blok `.gitignore` obejmują korzenie systemowe dopiero po ich zarejestrowaniu"
+        },
+        {
+          "unit": "u09-plans-artifact-registry",
+          "why": "zbiór stagowania i blok `.gitignore` obejmują korzenie systemowe dopiero po ich zarejestrowaniu"
+        },
+        {
+          "unit": "u10-briefs-patches-roots",
+          "why": "zbiór stagowania i blok `.gitignore` obejmują korzenie systemowe dopiero po ich zarejestrowaniu"
+        }
+      ],
+      "wave": 8,
+      "status": "pending",
+      "portions": [],
+      "startCommit": null,
+      "rounds": {
+        "review": 0
+      }
+    }
+  ],
+  "entityTypes": [
+    {
+      "type": "ac",
+      "role": "criteria",
+      "checks": "verifies",
+      "links": [
+        "verifies"
+      ],
+      "inactive": "status = deprecated",
+      "version": 3
+    },
+    {
+      "type": "mcp-tool",
+      "role": "built",
+      "inCode": "the tool definition registered in src/server/mcp/*-tools.ts (tool name, input params, description) for the server named in `server`",
+      "verify": "a contract test in the colocated src/server/mcp/<x>-tools.test.ts whose name carries [entity:<slug>], asserting the tool name and its parameter set",
+      "links": [],
+      "version": 1
+    },
+    {
+      "type": "endpoint",
+      "role": "built",
+      "inCode": "an Express route in src/server/routes/ (method + path) wired into the app",
+      "verify": "a supertest test in the colocated *.route.test.ts whose name carries [entity:<slug>], asserting method/path and status codes",
+      "links": [
+        "linkedDtos[].dto"
+      ],
+      "version": 3
+    },
+    {
+      "type": "dto",
+      "role": "built",
+      "inCode": "the request/response type the route serves (in the route module or src/shared)",
+      "verify": "the endpoint route test whose name carries [entity:<slug>], asserting the DTO fields on the wire",
+      "links": [],
+      "version": 2
+    },
+    {
+      "type": "code-snippet",
+      "role": "built",
+      "inCode": "the code construct the snippet title names (a type, a template, a construction site) - matched in shape, not verbatim",
+      "verify": "a trace.md line, plus a test whose name carries [entity:<slug>] where the shape is observable",
+      "links": [],
+      "version": 1
+    }
+  ]
+}

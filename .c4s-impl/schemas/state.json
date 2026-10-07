@@ -1,0 +1,507 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "state",
+  "description": "The loop's machine state (.c4s-impl/state.json). Parsed once from the brief at setup; afterwards written only by the orchestrator.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "units",
+    "waves",
+    "conventions",
+    "iteration",
+    "entityTypes"
+  ],
+  "properties": {
+    "iteration": {
+      "type": "integer"
+    },
+    "conventions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "label",
+          "key",
+          "offset"
+        ],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "offset": {
+            "type": "integer",
+            "description": "0-based section position at <to>"
+          },
+          "anchor": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "waves": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "n",
+          "units"
+        ],
+        "properties": {
+          "n": {
+            "type": "integer"
+          },
+          "units": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "startCommit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "systemVerified": {
+      "type": "boolean"
+    },
+    "errors": {
+      "type": "integer",
+      "description": "consecutive error exits, reset on progress"
+    },
+    "units": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "goal",
+          "recipe",
+          "dependsOn",
+          "wave",
+          "status",
+          "portions"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "goal": {
+            "type": "string"
+          },
+          "recipe": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "pages",
+              "entities"
+            ],
+            "description": "the brief's Read: lines, parsed; reading-the-spec.md turns them into c4s release-diff commands",
+            "properties": {
+              "pages": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "key"
+                  ],
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "description": "<rootId>/<path>"
+                    },
+                    "change": {
+                      "anyOf": [
+                        {
+                          "const": "all"
+                        },
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "offset",
+                            "limit"
+                          ],
+                          "properties": {
+                            "offset": {
+                              "type": "integer",
+                              "description": "0-based position among this read's sections[]"
+                            },
+                            "limit": {
+                              "type": "integer"
+                            },
+                            "anchors": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "labels to check the read against, not the address"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "read --from <from>; numbers count the changed sections only. Absent in an initial window"
+                    },
+                    "context": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "offset",
+                            "limit"
+                          ],
+                          "properties": {
+                            "offset": {
+                              "type": "integer",
+                              "description": "0-based position among this read's sections[]"
+                            },
+                            "limit": {
+                              "type": "integer"
+                            },
+                            "anchors": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "labels to check the read against, not the address"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "read --from initial; numbers count every section at <to>. An initial window's `sections:` lands here"
+                    },
+                    "deferred": {
+                      "type": "array",
+                      "description": "parts of this read the unit must not build yet (the brief's `not yet:`)",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "what",
+                          "to"
+                        ],
+                        "properties": {
+                          "what": {
+                            "type": "string"
+                          },
+                          "to": {
+                            "type": "string",
+                            "description": "the later unit that completes it"
+                          },
+                          "why": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "completes": {
+                      "type": "array",
+                      "description": "parts deferred to this unit by an earlier one (the brief's `completes:`)",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "what",
+                          "from"
+                        ],
+                        "properties": {
+                          "what": {
+                            "type": "string"
+                          },
+                          "from": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "entities": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "type",
+                    "slugs"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "description": "entity type, as the brief's line names it; its role is in entityTypes"
+                    },
+                    "slugs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "minItems": 1
+                    },
+                    "deferred": {
+                      "type": "array",
+                      "description": "parts of this read the unit must not build yet (the brief's `not yet:`)",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "what",
+                          "to"
+                        ],
+                        "properties": {
+                          "what": {
+                            "type": "string"
+                          },
+                          "to": {
+                            "type": "string",
+                            "description": "the later unit that completes it"
+                          },
+                          "why": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "completes": {
+                      "type": "array",
+                      "description": "parts deferred to this unit by an earlier one (the brief's `completes:`)",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "what",
+                          "from"
+                        ],
+                        "properties": {
+                          "what": {
+                            "type": "string"
+                          },
+                          "from": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "dependsOn": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "unit"
+              ],
+              "properties": {
+                "unit": {
+                  "type": "string"
+                },
+                "why": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "wave": {
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "in-progress",
+              "verified",
+              "blocked"
+            ]
+          },
+          "blockedBy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "a deviation id, 'stuck' or 'review'"
+          },
+          "startCommit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "portions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "slugs",
+                "status",
+                "rounds"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "<unit>/p1-l1"
+                },
+                "layers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "slugs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "status": {
+                  "enum": [
+                    "pending",
+                    "in-progress",
+                    "verified"
+                  ]
+                },
+                "rounds": {
+                  "type": "integer"
+                },
+                "uncovered": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "only": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "slug": {
+                        "type": "string"
+                      },
+                      "finding": {
+                        "type": "string"
+                      }
+                    },
+                    "description": "one open item: { slug } from a verifier row, or { finding } — a blocking review finding id"
+                  }
+                },
+                "criteriaGroup": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "only": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "slug": {
+                  "type": "string"
+                },
+                "finding": {
+                  "type": "string"
+                }
+              },
+              "description": "one open item: { slug } from a verifier row, or { finding } — a blocking review finding id"
+            },
+            "description": "unit-scope items a reopen carries"
+          },
+          "rounds": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "review": {
+                "type": "integer"
+              },
+              "unit": {
+                "type": "integer"
+              }
+            }
+          },
+          "lastBlocking": {
+            "type": "integer",
+            "description": "blocking findings in the last review round — the 'did not shrink' test"
+          }
+        }
+      }
+    },
+    "baselineGreen": {
+      "type": "boolean",
+      "description": "startMode resume: the full suite was green before the first unit"
+    },
+    "entityTypes": {
+      "type": "array",
+      "description": "setup step 5: the project's entity types the recipes read, and how each is built and verified in this repo",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "role"
+        ],
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "criteria",
+              "built",
+              "context"
+            ]
+          },
+          "checks": {
+            "type": "string",
+            "description": "criteria: the link field naming the entities a criterion checks"
+          },
+          "inCode": {
+            "type": "string",
+            "description": "built: the counterpart in this repo"
+          },
+          "verify": {
+            "type": "string",
+            "description": "built: the test that proves the counterpart has the entity's shape, and where it lives"
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "link fields assembleSlice follows"
+          },
+          "inactive": {
+            "type": "string",
+            "description": "field = value that retires an entity, e.g. status = <value>"
+          },
+          "version": {
+            "type": "integer",
+            "description": "the catalog's payloadVersion this plan was made against"
+          }
+        }
+      }
+    }
+  }
+}

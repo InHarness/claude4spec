@@ -1,0 +1,39 @@
+{
+  "project": "app-spec",
+  "workspace": "default",
+  "from": "2.1.7",
+  "to": "2.1.8",
+  "brief": "2-1-7-to-2-1-8-workflow-test.md",
+  "harness": "claude-code-session",
+  "build": {
+    "tests": {
+      "suite": "env-runner: full npm test + e2e once, at system verification only (never locally)",
+      "filtered": "none - static verification (read test bodies, never run)"
+    },
+    "isolation": {
+      "kind": "worktree",
+      "path": ".worktrees/2-1-7-to-2-1-8"
+    },
+    "budget": {
+      "packetKB": 40,
+      "implementer": 60,
+      "verifier": 40,
+      "reviewer": 30
+    },
+    "gates": [
+      "wave"
+    ],
+    "review": "per-unit",
+    "reviewer": "same-harness",
+    "verifierTools": [],
+    "startMode": "resume",
+    "waiting": {
+      "recipient": "the user in this Claude Code session",
+      "channel": "stdout"
+    },
+    "retries": {
+      "error": 2
+    },
+    "stuckRounds": 3
+  }
+}
