@@ -1492,7 +1492,7 @@ async function buildInner(
   // M37 (0.2.99) — `list_skills` / `load_skill_file`, the same core functions the
   // turn's and the external surface's `skill-tools` call.
   router.use('/skills', skillsRouter({ skillRegistry, skillResolver }));
-  router.use('/releases', releasesRouter(releaseService, ws, gitService));
+  router.use('/releases', releasesRouter(releaseService, ws, gitService, () => effectiveRoots));
   router.use('/release-pushes', releasePushesRouter(releasePushService));
   // 0.1.123: on a successful checkout, reuse the same invalidate path as a
   // context-defining config change — no new M31 reload machinery needed.

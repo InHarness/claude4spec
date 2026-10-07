@@ -8,6 +8,7 @@ function makeArgs(overrides: Partial<ParsedArgs> = {}): ParsedArgs {
     command: null,
     positional: [],
     flags: new Map(),
+    multi: new Map(),
     format: 'json',
     compact: false,
     sortKeys: false,

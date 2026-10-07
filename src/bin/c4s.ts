@@ -45,6 +45,9 @@ import { loadSkillFileCommand } from './c4s/commands/load-skill-file.js';
 import { installSkillsCommand } from './c4s/commands/install-skills.js';
 import { createPluginCommand } from './c4s/commands/create-plugin.js';
 import { listWorkspacesCommand } from './c4s/commands/list-workspaces.js';
+import { releaseListCommand } from './c4s/commands/release-list.js';
+import { releaseShowCommand } from './c4s/commands/release-show.js';
+import { releaseDiffCommand } from './c4s/commands/release-diff.js';
 
 /**
  * L14 — CLI Commands: every command a module contributes to this bin, keyed
@@ -78,6 +81,11 @@ const COMMANDS: CliCommandContribution[] = [
   searchEntitiesCommand,
   checkConsistencyCommand,
   resolveIdentityCommand,
+  // 2.1.11 — the release module's readers, the first commands a module beyond
+  // the M39 core contributes; each renders its catalog row 1:1.
+  releaseListCommand,
+  releaseShowCommand,
+  releaseDiffCommand,
   agentCommand,
   askCommand,
   pluginsCommand,
@@ -208,6 +216,28 @@ Pagination (every list command above):
                                     so the valve is the input-length cap plus the response budget),
                                     nor by resolve-identity / check-consistency, whose output is
                                     bounded by its own nature (a top-N ranking; a counted report).
+
+Releases (M17 — server-delegating; each command renders its operation 1:1 and prints the
+same payload the MCP tool returns, through GET /api/releases…?view=operation):
+  release-list [--limit N] [--offset N]
+                                    { releases, total }, newest first
+  release-show --release <name> [--include pages,entities] [--entity-types <t1,t2>]
+               [--limit N] [--offset N]
+                                    what the release holds: entity slugs and page paths
+  release-diff --from <name|initial|null> --to <name|current>
+               [--include …] [--entity-types …] [--slugs …] [--roots …] [--paths <p> …]
+               [--summary-only] [--section-offset N] [--section-limit N] [--limit N] [--offset N]
+                                    what changed between two releases, or a release and the
+                                    current state; --slugs (with exactly one --entity-types)
+                                    narrows to single entities, --paths repeats
+                                    Flags are the operation's parameters in kebab-case
+                                    (fromReleaseName → --from, toReleaseName → --to,
+                                    releaseName → --release). Lists are comma-separated and sent
+                                    as written — the server judges them. The window is the
+                                    operation's: without --limit at most 5 entries in entities[]
+                                    and in pages[]. A cut answer carries truncated +
+                                    truncationHint, the hint already in flag form. An unknown or
+                                    missing flag is INVALID_ARGUMENT before anything is sent.
 
 Plugins (M33 — server-delegating: reports the SERVER host's loader, not a second one):
   plugins list                     pool packages: tier, version, contributed types (exit 0)

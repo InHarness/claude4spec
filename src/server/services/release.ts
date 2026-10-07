@@ -119,7 +119,12 @@ const STATUS_TO_ENTITY_OP: Record<'A' | 'M' | 'D' | 'R', 'created' | 'updated' |
  * without it `toIdOrName: "current"` would have two readings and the choice
  * between them would fall out of the database's contents at call time.
  */
-const RESERVED_RELEASE_NAMES = new Set<string>([CURRENT_RELEASE_NAME]);
+/*
+ * 2.1.11: `initial` and `null` join it — they name the empty state on the left
+ * side of a diff (`fromReleaseName`, the REST `:from` segment), and a release
+ * carrying either name would make that literal ambiguous in the same way.
+ */
+const RESERVED_RELEASE_NAMES = new Set<string>([CURRENT_RELEASE_NAME, 'initial', 'null']);
 
 export function isReservedReleaseName(name: string): boolean {
   return RESERVED_RELEASE_NAMES.has(name);
@@ -476,7 +481,7 @@ export class ReleaseService {
 
   getRelease(idOrName: number | string): ReleaseDetail {
     const row = this.findReleaseRow(idOrName);
-    if (!row) throw new DomainError('NOT_FOUND', `release '${idOrName}' not found`);
+    if (!row) throw new DomainError('RELEASE_NOT_FOUND', `release '${idOrName}' not found`);
     const release = this.toRelease(row);
     return { ...release, countBreakdown: this.computeCountBreakdown(row.id) };
   }
@@ -636,7 +641,7 @@ export class ReleaseService {
   }): Promise<UpdateReleaseResponse> {
     const tx = this.db.transaction(() => {
       const row = this.findReleaseRow(input.idOrName);
-      if (!row) throw new DomainError('NOT_FOUND', `release '${input.idOrName}' not found`);
+      if (!row) throw new DomainError('RELEASE_NOT_FOUND', `release '${input.idOrName}' not found`);
 
       assertLatestMutable(this.db, row);
 
@@ -738,7 +743,7 @@ export class ReleaseService {
       // comment for the full rationale.
       this.db.transaction(() => {
         const row = this.findReleaseRow(releaseId);
-        if (!row) throw new DomainError('NOT_FOUND', `release '${releaseId}' not found`);
+        if (!row) throw new DomainError('RELEASE_NOT_FOUND', `release '${releaseId}' not found`);
         assertLatestMutable(this.db, row);
         this.db
           .prepare(`UPDATE entity_version SET release_id = ? WHERE release_id IS NULL`)
@@ -759,7 +764,7 @@ export class ReleaseService {
    */
   getReleaseSnapshot(idOrName: number | string): SpecSnapshot {
     const row = this.findReleaseRow(idOrName);
-    if (!row) throw new DomainError('NOT_FOUND', `release '${idOrName}' not found`);
+    if (!row) throw new DomainError('RELEASE_NOT_FOUND', `release '${idOrName}' not found`);
     return this.buildSnapshot(this.toRelease(row), row.id);
   }
 
@@ -1349,11 +1354,11 @@ export class ReleaseService {
     opts?: PageScopeOpts,
   ): Promise<RawDelta> {
     const toRow = this.findReleaseRow(toIdOrName);
-    if (!toRow) throw new DomainError('NOT_FOUND', `release '${toIdOrName}' not found`);
+    if (!toRow) throw new DomainError('RELEASE_NOT_FOUND', `release '${toIdOrName}' not found`);
 
     if (fromIdOrName !== null) {
       const fromRowForGit = this.findReleaseRow(fromIdOrName);
-      if (!fromRowForGit) throw new DomainError('NOT_FOUND', `release '${fromIdOrName}' not found`);
+      if (!fromRowForGit) throw new DomainError('RELEASE_NOT_FOUND', `release '${fromIdOrName}' not found`);
       const gitDelta = await this.tryGitAnchoredDiff(fromRowForGit, toRow, opts);
       if (gitDelta) return gitDelta;
     }
@@ -1395,7 +1400,7 @@ export class ReleaseService {
   ): Promise<RawDelta> {
     if (fromIdOrName !== null) {
       const fromRowForGit = this.findReleaseRow(fromIdOrName);
-      if (!fromRowForGit) throw new DomainError('NOT_FOUND', `release '${fromIdOrName}' not found`);
+      if (!fromRowForGit) throw new DomainError('RELEASE_NOT_FOUND', `release '${fromIdOrName}' not found`);
       const gitDelta = await this.tryGitAnchoredUnreleasedDiff(fromRowForGit, opts);
       if (gitDelta) return gitDelta;
     }
@@ -1434,7 +1439,7 @@ export class ReleaseService {
       };
     }
     const fromRow = this.findReleaseRow(fromIdOrName);
-    if (!fromRow) throw new DomainError('NOT_FOUND', `release '${fromIdOrName}' not found`);
+    if (!fromRow) throw new DomainError('RELEASE_NOT_FOUND', `release '${fromIdOrName}' not found`);
     return {
       fromSnap: this.buildSnapshot(this.toRelease(fromRow), fromRow.id, false),
       fromMeta: { id: fromRow.id, name: fromRow.name },
@@ -1577,7 +1582,7 @@ export class ReleaseService {
 
   restoreEntity(input: RestoreEntityInput, actor: ChangedBy = 'user'): RestoreEntityResult {
     const releaseRow = this.findReleaseRow(input.releaseId);
-    if (!releaseRow) throw new DomainError('NOT_FOUND', `release '${input.releaseId}' not found`);
+    if (!releaseRow) throw new DomainError('RELEASE_NOT_FOUND', `release '${input.releaseId}' not found`);
 
     const targetRow = this.latestEntityRowForSlug(input.type, input.slug, releaseRow.id);
     const writer = new HostEntityWriter(this.host, this.tagsService, {}, {
@@ -1732,7 +1737,7 @@ export class ReleaseService {
    */
   async restorePage(input: RestorePageInput, _actor: ChangedBy = 'user'): Promise<RestorePageResult> {
     const releaseRow = this.findReleaseRow(input.releaseId);
-    if (!releaseRow) throw new DomainError('NOT_FOUND', `release '${input.releaseId}' not found`);
+    if (!releaseRow) throw new DomainError('RELEASE_NOT_FOUND', `release '${input.releaseId}' not found`);
     const target = this.pageVersions.getLatestForPath(input.path, releaseRow.id);
     if (!target || target.op === 'delete') {
       // Snapshot says page didn't exist — delete current file if present.
@@ -1818,7 +1823,7 @@ export class ReleaseService {
    */
   async restoreSpec(input: RestoreSpecInput, actor: ChangedBy = 'user'): Promise<RestoreSpecResult> {
     const releaseRow = this.findReleaseRow(input.releaseId);
-    if (!releaseRow) throw new DomainError('NOT_FOUND', `release '${input.releaseId}' not found`);
+    if (!releaseRow) throw new DomainError('RELEASE_NOT_FOUND', `release '${input.releaseId}' not found`);
     const releaseId = releaseRow.id;
 
     const entityResults: RestoreEntityResult[] = [];

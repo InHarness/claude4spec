@@ -152,7 +152,7 @@ describe('Single Abstraction Rule', () => {
    * all prose in comments, which `codeLines()` strips.
    */
   it('the release tier enumerates no entity type', () => {
-    const files = ['release.ts', 'release-bundle.ts', 'release-push.ts'].map((f) =>
+    const files = ['release.ts', 'release-bundle.ts', 'release-push.ts', 'release-operations.ts'].map((f) =>
       path.join(REPO_ROOT, 'src', 'server', 'services', f),
     );
     const pattern = /['"](endpoint|dto|database-table|ui-view|ac|design-system|diagram)['"]/;

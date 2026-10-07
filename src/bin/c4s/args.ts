@@ -4,6 +4,12 @@ export interface ParsedArgs {
   command: string | null;
   positional: string[];
   flags: Map<string, string | boolean>;
+  /**
+   * 2.1.11 — every value a flag was given, in order. `flags` stays last-wins for
+   * the commands that read one value; a REPEATABLE flag (`c4s release-diff
+   * --paths p1 --paths p2`) reads all of them here.
+   */
+  multi: Map<string, string[]>;
   project?: string;
   /** M31: workspace selector — disambiguates a cwd registered in N workspaces. */
   workspace?: string;
@@ -26,6 +32,8 @@ const KNOWN_BOOLEAN_FLAGS = new Set([
   'include-subtree',
   'include-tag-matches',
   'with-counts',
+  // 2.1.11 — `c4s release-diff --summary-only --limit 3` must not swallow `--limit`'s neighbour.
+  'summary-only',
 ]);
 
 export function parseArgs(argv: string[]): ParsedArgs {
@@ -33,6 +41,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     command: null,
     positional: [],
     flags: new Map(),
+    multi: new Map(),
     format: 'json',
     compact: false,
     sortKeys: false,
@@ -68,6 +77,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
       }
     }
     result.flags.set(name, value);
+    if (typeof value === 'string') result.multi.set(name, [...(result.multi.get(name) ?? []), value]);
   }
 
   const format = result.flags.get('format');
@@ -202,4 +212,68 @@ export function optionalStringList(args: ParsedArgs, flag: string): string[] | u
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+/**
+ * 2.1.11 — a comma list whose EMPTY elements travel to the server.
+ *
+ * `optionalStringList` drops empties, which is right where an empty element is
+ * noise. It is wrong for an operation that refuses one (`--slugs a,,b` is
+ * `INVALID_SLUGS_FILTER` on every other channel): the server judges the list, so
+ * the list has to arrive as written. Elements are trimmed, not filtered.
+ */
+export function optionalRawStringList(args: ParsedArgs, flag: string): string[] | undefined {
+  const raw = optionalRawString(args, flag);
+  if (raw === undefined) return undefined;
+  return raw.split(',').map((s) => s.trim());
+}
+
+/** Every value of a repeatable flag (`--paths p1 --paths p2`), in order; `undefined` when absent. */
+export function repeatedStrings(args: ParsedArgs, flag: string): string[] | undefined {
+  if (!args.flags.has(flag)) return undefined;
+  const values = args.multi.get(flag);
+  if (!values || values.length === 0) {
+    throw new CliError('INVALID_ARGUMENT', `--${flag} requires a value`);
+  }
+  return values;
+}
+
+/** Flags every command accepts, whatever its own set — the dispatcher's. */
+export const GLOBAL_FLAGS: readonly string[] = ['project', 'workspace', 'server', 'format', 'compact', 'sort-keys', 'help'];
+
+/**
+ * 2.1.11 — a command whose flag set IS its operation's parameter set refuses
+ * any other flag, and a missing required one, LOCALLY: nothing is sent, and the
+ * message lists the legal flags. An ignored flag would answer a different query
+ * than the one asked.
+ */
+export function assertFlagSet(
+  args: ParsedArgs,
+  command: string,
+  spec: { required: readonly string[]; optional: readonly string[] },
+): void {
+  const legal = [...spec.required, ...spec.optional];
+  const listing = `legal flags: ${legal.map((f) => `--${f}`).join(', ')}`;
+  const unknown = [...args.flags.keys()].filter((f) => !legal.includes(f) && !GLOBAL_FLAGS.includes(f));
+  if (unknown.length > 0) {
+    throw new CliError(
+      'INVALID_ARGUMENT',
+      `${command}: unknown flag${unknown.length > 1 ? 's' : ''} ${unknown.map((f) => `--${f}`).join(', ')} — ${listing}`,
+      listing,
+    );
+  }
+  const missing = spec.required.filter((f) => {
+    const v = args.flags.get(f);
+    return typeof v !== 'string' || v === '';
+  });
+  if (missing.length > 0) {
+    throw new CliError(
+      'INVALID_ARGUMENT',
+      `${command}: missing required flag${missing.length > 1 ? 's' : ''} ${missing.map((f) => `--${f}`).join(', ')} — ${listing}`,
+      listing,
+    );
+  }
+  if (args.positional.length > 0) {
+    throw new CliError('INVALID_ARGUMENT', `${command} takes no positional arguments — ${listing}`, listing);
+  }
 }

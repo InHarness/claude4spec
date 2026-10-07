@@ -75,22 +75,36 @@ const DEGRADED_SECTION_CHARS = 2_000;
  * refetch work it already has.
  */
 /*
- * 2.1.5 — the retry instruction is a LADDER of four rungs, top to bottom: the
- * page window, one page (`paths`), that page's section window, and `summaryOnly`
- * as the floor. Below it there is nothing — the budget sits under the transport
- * ceiling, so a smaller slice is the only way to more content.
+ * 2.1.5 — the retry instruction is a LADDER, top to bottom: the page window, one
+ * page (`paths`), that page's section window, and `summaryOnly` as the floor.
+ * 2.1.11 adds the one-entity rung (`entityTypes` with one type + `slugs`) between
+ * the window and the one page. Below the floor there is nothing — the budget sits
+ * under the transport ceiling, so a smaller slice is the only way to more content.
  */
 const HEAVY_RETRY_HINT =
   'response budget exceeded — every item past the cut is still here, marked `truncated: true`: entities kept ' +
   'their identity and lost `before`/`after` entirely, sections kept `content` cut short as text. Nothing was ' +
   'omitted, so an item ABSENT from this response is one that did not change. Retry narrower, rung by rung: ' +
   '(1) the page window — pass `entityTypes` to restrict the entity dimension, lower `limit`, advance `offset` to ' +
-  'reach the items that degraded; (2) one page — `paths` set to it; (3) that page\'s section window — ' +
-  '`sectionOffset` / `sectionLimit`, `sectionLimit: 1` reads it section by section; (4) `summaryOnly: true` for ' +
-  'the identity map of the whole delta, with a `size` per page to plan the slices.';
+  'reach the items that degraded; (2) one entity — `entityTypes` with its one type plus `slugs` set to it; ' +
+  '(3) one page — `paths` set to it; (4) that page\'s section window — `sectionOffset` / `sectionLimit`, ' +
+  '`sectionLimit: 1` reads it section by section; (5) `summaryOnly: true` for the identity map of the whole ' +
+  'delta, with a `size` per page to plan the slices.';
 
 /**
- * The concrete rung-3 pointer for one page whose sections did not fit: its
+ * 2.1.11 — the concrete rung-2 pointer for the first entity whose `before` /
+ * `after` fell out of the budget: one entity is always served whole (the first
+ * item never degrades), so this call answers it in full.
+ */
+function entityHint(entity: MCPEntityDelta): string {
+  return (
+    `entity \`${entity.type}/${entity.slug}\` lost its \`before\`/\`after\` to the budget — read it with ` +
+    `\`entityTypes: ['${entity.type}'], slugs: ['${entity.slug}']\`.`
+  );
+}
+
+/**
+ * The concrete rung-4 pointer for one page whose sections did not fit: its
  * `paths`, the position where the next window starts, and a `sectionLimit` no
  * bigger than what just fitted — without one, a page whose section identities
  * alone outgrow the budget would answer every follow-up oversized again.
@@ -191,7 +205,7 @@ export function projectReleaseDiff(
   // light (`summaryOnly`) strips to identifiers; heavy slices
   // `entities[]`/`pages[]` independently by the same `limit`/`offset`.
   if (opts.include.includes('entities')) {
-    const full = projectEntities(raw.entities, fromSnap, toSnap, opts.entityTypes);
+    const full = projectEntities(raw.entities, fromSnap, toSnap, opts.entityTypes, opts.slugs);
     out.total!.entities = full.length;
     if (summaryOnly) {
       const light = full.map(toEntityLight);
@@ -206,7 +220,11 @@ export function projectReleaseDiff(
         remaining(),
       );
       out.entities = budgeted.items;
-      if (budgeted.truncated) hints.push(HEAVY_RETRY_HINT);
+      if (budgeted.truncated) {
+        hints.push(HEAVY_RETRY_HINT);
+        const firstCut = budgeted.items.find((e) => e.truncated);
+        if (firstCut) hints.push(entityHint(firstCut));
+      }
     }
     charge(out.entities);
   }
@@ -265,7 +283,7 @@ export function projectReleaseDiff(
         const reserve = tailIdentity[i + 1] ?? 0;
         const { page: fitted, cutAt, fitted: whole } = budgetSections(page, 0, left - reserve, i === 0);
         left -= (JSON.stringify(fitted)?.length ?? 0) + 1;
-        // Rung 3, made concrete: the first page whose sections came back cut,
+        // Rung 4, made concrete: the first page whose sections came back cut,
         // and where its section window should resume.
         if (pointer === undefined && cutAt !== undefined && cutAt < page.sections.length) {
           pointer = sectionWindowHint(fitted, cutAt, whole);
@@ -494,6 +512,7 @@ function projectEntities(
   fromSnap: SpecSnapshot | null,
   toSnap: SpecSnapshot,
   entityTypes: EntityTypeFilter[] | undefined,
+  slugs?: string[],
 ): MCPEntityDelta[] {
   const fromMap = indexEntitiesByTypeSlug(fromSnap?.entities ?? []);
   const toMap = indexEntitiesByTypeSlug(toSnap.entities);
@@ -502,6 +521,7 @@ function projectEntities(
   for (const e of rawEntities) {
     if (e.op === 'noop') continue;
     if (entityTypes && !entityTypes.includes(e.type as EntityTypeFilter)) continue;
+    if (slugs && !slugs.includes(e.slug)) continue;
 
     const op = mapEntityOp(e.op);
     if (!op) continue;
@@ -658,7 +678,7 @@ function sectionTree(content: string | undefined): SectionTree {
   };
 }
 
-/** MCP-only default window size for `release_show` / `release_list` (M17). */
+/** Default operation window for `release_list` / `release_show` / `release_diff`, in every channel (M17, 2.1.11). */
 export const DEFAULT_PAGE_LIMIT = 5;
 
 export function projectSpecSnapshot(
