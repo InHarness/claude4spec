@@ -5,7 +5,6 @@ import { type Root } from '../shared/types.js';
 import {
   RESERVED_WRITE_TARGETS,
   SYSTEM_ROOTS,
-  SYSTEM_ROOT_KINDS,
   isSystemRootId,
   namespacesOverlap,
   systemRootDir,
@@ -593,12 +592,13 @@ export function parseRootsArray(
       }
     }
     if (seen.has(root.id)) throw new Error(`config.json: duplicate root id '${root.id}'`);
-    // 2.1.8: the five system roots own these identifiers — a user root under one
-    // of them would be a second root at the same address. Refused on read too:
-    // there is no reading under which the project has a sane registry.
+    // 2.1.8: the system roots own these identifiers — a user root under one of
+    // them would be a second root at the same address. Refused on read too:
+    // there is no reading under which the project has a sane registry. 2.1.9:
+    // the reserved set is the registry's roots of kinds with source `code`.
     if (isSystemRootId(root.id)) {
       throw new Error(
-        `config.json: root id '${root.id}' is reserved for a system root (${SYSTEM_ROOT_KINDS.join(', ')})`,
+        `config.json: root id '${root.id}' is reserved for a system root (${SYSTEM_ROOTS.map((r) => r.id).join(', ')})`,
       );
     }
     if (opts.retiredIds?.has(root.id)) {

@@ -1,0 +1,126 @@
+{
+  "role": "verifier",
+  "scope": {
+    "kind": "unit",
+    "id": "u01-root-facades"
+  },
+  "release": "2.1.9",
+  "rows": [
+    {
+      "slug": "get-api-sidebar-accordions",
+      "type": "endpoint",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/routes/sidebar-accordions.ts:110 GET / → res.json({ data: source.listAccordions() }), mounted src/server/workspace/project-context.ts:1308 '/sidebar-accordions'; test src/server/routes/sidebar-accordions.route.test.ts:94 asserts status 200, Object.keys(body)==['data'], ordered array [{pages..},{adr..}], hidden roots absent, /sidebar-accordions/pages → 404"
+    },
+    {
+      "slug": "get-api-pages-rootid",
+      "type": "endpoint",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/routes/pages.ts resolve() → 404 ROOT_NOT_FOUND for ids outside rootById (facade runtimes, project-context.ts:481); GET / → { tree }. Test src/server/routes/pages-facade-roots.route.test.ts:119 asserts 200 tree with markdown+html nodes for 'adr', no 'data', and ROOT_NOT_FOUND for briefs/patches/entities/releases/nope"
+    },
+    {
+      "slug": "get-api-pages",
+      "type": "endpoint",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/routes/pages-facade-roots.route.test.ts:138 asserts 200 page-detail (rootId, path, content byte-for-byte, frontmatter, hash=sha256) on 'pages' and expectRootNotFound on /api/pages/briefs/b.md"
+    },
+    {
+      "slug": "post-api-pages",
+      "type": "endpoint",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/routes/pages-facade-roots.route.test.ts:155 asserts 201 {rootId,path,hash} with default template 'title: New' on 'adr'; POST /api/pages/patches → 404 ROOT_NOT_FOUND and file not written"
+    },
+    {
+      "slug": "put-api-pages",
+      "type": "endpoint",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/routes/pages-facade-roots.route.test.ts:171 asserts 200 hash/version/changedAnchors, 409 PAGE_CONFLICT with currentHash (errors.ts:76-78), and PUT /api/pages/plans/p.md → 404 ROOT_NOT_FOUND with the file untouched"
+    },
+    {
+      "slug": "delete-api-pages",
+      "type": "endpoint",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/routes/pages-facade-roots.route.test.ts:195 asserts 200 {ok:true,deleted:true} + file gone on 'adr'; DELETE on 'briefs' → 404 ROOT_NOT_FOUND, file kept"
+    },
+    {
+      "slug": "get-api-pages-rootid-search",
+      "type": "endpoint",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/routes/pages-facade-roots.route.test.ts:208 asserts 200 { hits } scoped to root 'pages' (['one.md'], no 'data') and 404 ROOT_NOT_FOUND on /api/pages/plans/search even though a plan file matches"
+    },
+    {
+      "slug": "post-api-pages-rootid-move",
+      "type": "endpoint",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/routes/pages-facade-roots.route.test.ts:223 asserts 200 {rootId, path:'sub/to.md', hash unchanged, version:number} and file moved; /api/pages/plans/move → 404 ROOT_NOT_FOUND, source kept"
+    },
+    {
+      "slug": "sidebar-accordion",
+      "type": "dto",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/shared/types.ts:225 interface SidebarAccordion { rootId; key; label; path } (all string, required) matches the 4 DTO fields; test src/server/routes/sidebar-accordions.route.test.ts:112 asserts keys exactly ['key','label','path','rootId'], all strings, (rootId,key) unique, minimal example {rootId:'pages',key:'pages',label:'Pages',path:''}, reducer subtree paths"
+    },
+    {
+      "slug": "page-tools-create-page",
+      "type": "mcp-tool",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/page-tools.ts target() resolves only facade runtimes; test src/server/mcp/page-tools.facade-roots.test.ts:79 asserts inputSchema props ['content','path','rootId','title'], required ['path','rootId'], answer {rootId,path,hash=sha(onDisk),anchors[]}, default template on omitted content, PAGE_EXISTS on duplicate, ROOT_NOT_FOUND for 'briefs' with nothing written. Note: M02 gj2vdsjm (after) says the agent channel reports an unknown root as NOT_FOUND; code/test keep ROOT_NOT_FOUND — flagged in code as ASSUMPTION:dev-0101 (page-tools.ts:76), not a field of this entity"
+    },
+    {
+      "slug": "page-root-runtime-construction",
+      "type": "code-snippet",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/workspace/root-registry-runtime.ts:159 `if (kindHasFacade(root.kind))` (kindHasFacade = sidebar !== 'hidden', src/shared/root-kinds.ts:538) matches snippet `if (kind.sidebar !== 'hidden')`; trace.md line present; test src/server/workspace/root-registry-runtime.test.ts:291 asserts rootRuntimes == registry roots with sidebar≠hidden (['pages','adr']), bare MarkdownFileStore for plans/briefs/patches, kind reactions + m02-file-changed per root, source names, and m02-sidebar-reducer bound only for a reducer kind"
+    },
+    {
+      "slug": "ac-get-api-pages-plans-zwraca-404-root-n",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/routes/pages-facade-roots.route.test.ts:108 GET /api/pages/plans → expect(res.status).toBe(404); expect(res.body.error.code).toBe('ROOT_NOT_FOUND'); hint lists only 'pages, adr'; no 'tree' — while plans has a store (mounted.storeByRootId.has('plans'))"
+    },
+    {
+      "slug": "ac-projectcontext-montuje-n-par-pagesservic",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/workspace/root-registry-runtime.test.ts:102 asserts N facades = roots with sidebar≠hidden (and +plans when plans is made 'accordion'), source mounted for every registry root, reactions bound, dispose unmounts all sources/bindings, PATCH roots[] → onContextConfigChanged → cache.invalidate rebuild, and the re-run hook yields ['pages','adr','specs']"
+    },
+    {
+      "slug": "ac-swiezy-bootstrap-tworzy-katalogi-wszy",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/workspace/bootstrap.ts:137 creates every registry root dir, systemRootDirsCreated by kindDeclaration(...).source==='code'; test src/server/workspace/bootstrap.system-roots.test.ts:31 derives code roots from KIND_DECLARATIONS/registry.codeRoots(), asserts dirs absent before and `.claude4spec/<kind>` isDirectory after boot(), and systemRootDirsCreated equals exactly those"
+    },
+    {
+      "slug": "ac-zadna-operacja-rdzenia-nie-ma-parametru",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/mcp/page-tools.facade-roots.test.ts:113 asserts every page-tools input lacks dir/kind/path-like params, create/update/delete/move on briefs/patches/plans/entities → isError + code 'ROOT_NOT_FOUND' with files untouched; discovery half: RootSet over registry.pages() ids ['pages','adr'] and require(id) throws /unknown rootId/ for each forbidden id (production discovery core is built over config roots, project-context.ts:985-990 `roots: effectiveRoots`)"
+    },
+    {
+      "slug": "goal:u01-root-facades",
+      "level": 2,
+      "status": "covered",
+      "evidence": "facade per root with sidebar≠hidden: root-registry-runtime.ts:159 + registry.ts facades(); routes/page-tools resolve only facade runtimes (project-context.ts:481,921,1245) → 404 ROOT_NOT_FOUND otherwise; discovery stays on kind pages (createDiscoveryCore roots: effectiveRoots, project-context.ts:990; registry.pages()); m02-sidebar-reducer reaction core-reactions.ts:80 + bound in bindRegistryReactions step 5 (root-registry-runtime.ts:214) + SidebarAccordionsService (services/sidebar-accordions.ts); GET /api/sidebar-accordions routes/sidebar-accordions.ts mounted project-context.ts:1308; WS sidebar:accordions-changed in WsEvent (shared/types.ts:181) emitted services/sidebar-accordions.ts:149; reserved ids/system dirs derived from source:'code' (root-kinds.ts SYSTEM_ROOT_KINDS derived, isSystemRootId over SYSTEM_ROOTS, config.ts:599, bootstrap.ts:137, sources.ts sourceNameFor) — hard-coded SYSTEM_ROOT_KINDS tuple and SYSTEM_ROOT_NAMES removed. Deferred `skills` kind correctly not added (RootKind unchanged). Open spec conflict on agent-channel unknown-root code (gj2vdsjm NOT_FOUND vs ROOT_NOT_FOUND kept) carried as dev-0101"
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "tsc -p tsconfig.server.json / client / types + typecheck:envelopes + workspace plugins: all passed (EXIT 0). Static review: tests touching changed code (registry.test, config.test, config.route.test, root-kind-gating, artifact-registry.test) still match — SYSTEM_ROOTS names/ids and reserved-id message unchanged."
+  }
+}

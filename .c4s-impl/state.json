@@ -1,5 +1,5 @@
 {
-  "iteration": 0,
+  "iteration": 1,
   "conventions": [
     {
       "label": "L3 (Spec Operations)",
@@ -47,7 +47,7 @@
         "u03-editor-command-sources",
         "u04-skill-registry-sources"
       ],
-      "startCommit": null
+      "startCommit": "30308bd1eae823c2d3fb43c29963b342c2cbc979"
     },
     {
       "n": 2,
@@ -278,15 +278,49 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "u01-root-facades/p1-l3-l13",
+          "layers": [
+            "L3",
+            "L4",
+            "L7",
+            "L10",
+            "L13"
+          ],
+          "slugs": [
+            "get-api-sidebar-accordions",
+            "get-api-pages-rootid",
+            "get-api-pages",
+            "post-api-pages",
+            "put-api-pages",
+            "delete-api-pages",
+            "get-api-pages-rootid-search",
+            "post-api-pages-rootid-move",
+            "sidebar-accordion",
+            "page-tools-create-page",
+            "page-root-runtime-construction",
+            "ac-get-api-pages-plans-zwraca-404-root-n",
+            "ac-projectcontext-montuje-n-par-pagesservic",
+            "ac-swiezy-bootstrap-tworzy-katalogi-wszy",
+            "ac-zadna-operacja-rdzenia-nie-ma-parametru"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "30308bd1eae823c2d3fb43c29963b342c2cbc979",
+      "baseCommit": "30308bd1eae823c2d3fb43c29963b342c2cbc979",
       "rounds": {
         "review": 0,
-        "unit": 0
-      }
+        "unit": 1
+      },
+      "lastUncovered": 0
     },
     {
       "id": "u02-references-expansion",

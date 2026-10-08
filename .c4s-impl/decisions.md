@@ -33,3 +33,18 @@ Implementation-only decisions (no user-observable effect) and set-up choices.
 - `wklad-do-edytora-m52` — built, row `spec-skills`, key `Nazwa`: the command source M52 registers in `chat-input`.
 - `znaczniki-xml-m52` — built, row `skill_ref`, key `Znacznik`: the XML tag M52 registers.
 - `katalog-operacji-m52` — built, all data rows, key = operation name: L3 operation catalog entries; rows land per unit (`update_skill_file` u07, `list_exposed_projects` u11, `fork_writing_style` u12).
+- Baseline (static): `npm ci`, `build:envelopes` and `npm run typecheck` green in the worktree at 30308bd.
+
+## Loop decisions
+
+- (u01 split, 2026-10-08) `reading-the-spec.md`'s read problem "active criterion with an empty `checks` field → blocking clarification" misfires on this specification: ≈103 of the 129 ACs the recipes name have an empty `verifies`, so it would block every unit. Replaced for this build by a bounded rule (appended to the implementer/verifier/verifier-system prompts): such an AC checks its own title/description against its unit's page sections, like a `criteria` item of a `per-entity` part. No product-observable effect; no patch per AC. To be fixed in the skill itself (rule over exception).
+
+## u01-root-facades / p1-l3-l13 (implementer)
+
+- The kind registry stays the `KIND_DECLARATIONS` record; "registration order" of kinds = its key order. `SYSTEM_ROOT_KINDS` is now derived from it (`source: 'code'`), so reserved ids (`isSystemRootId` reads `SYSTEM_ROOTS`), fixed dirs and bootstrap's system dirs follow the declarations. A system root's `name` is its kind capitalised (no new declaration field — keeps the declaration objects' shape, which several tests pin with `toEqual`).
+- `sidebar` is typed `'hidden' | 'accordion' | SidebarReducer` (`{ glob, reduce }`); helpers `kindHasFacade`, `sidebarReducerOf`, `accordionCase`, `enforceAccordionRules` live in `src/shared/root-kinds.ts`. No kind declares a reducer yet (u05 adds `skills`); tests put one on a kind temporarily.
+- Facades: `mountRegistryRoots` builds `PagesService` for every kind whose `sidebar` is not `hidden`; `RootRuntime` gained `kind`; a code-source root's facade record is `{ id, name, dir, builtin }`. A kind can be both an artifact mount and a facade. The boot `file_version` baseline over facades is gated on `m17-capture` and skips artifact roots (they have their own pass).
+- Source names (L13 step 1): config source → `pages:<id>`; code source → the kind's name, except plans/briefs/patches → `artifacts:*` (`sourceNameFor` is now generic; `rootIdFromSource` maps a code-source kind name back to its id).
+- Sidebar reducer: `SidebarAccordionsService` (src/server/services/sidebar-accordions.ts) is both the cache/`listAccordions()` and the `m02-sidebar-reducer` handler (`CoreReactionContext.sidebarReducer`, optional; binding without it throws). "Different from the previous array, also after a context rebuild" is kept in a process-level map keyed `(projectId, rootId)`; the first computation in a process emits nothing (no previous array). The context build runs `rebuildAll()` fire-and-forget after binding.
+- `PagesService.listTree` uses the root kind's file map (`store.kind ?? 'pages'`).
+- Client landing (`4dcvgivu`): the remembered root must be a registry root with a facade (`registryList(roots)` + `kindHasFacade`).

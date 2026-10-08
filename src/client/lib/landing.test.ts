@@ -49,6 +49,18 @@ describe('resolveLandingTarget', () => {
     expect(target).toEqual({ rootId: 'pages', path: 'index.md' });
   });
 
+  it('2.1.9 — falls through silently when the remembered root is a registry root WITHOUT a facade (a hidden system root such as plans)', () => {
+    const pagesTree = [file('index.md', 'index.md')];
+    const plansTree = [file('p.md', 'p.md')];
+    const target = resolveLandingTarget({
+      lastPage: { rootId: 'plans', path: 'p.md' },
+      roots: [root('pages')],
+      pagesTree,
+      lastPageTree: plansTree,
+    });
+    expect(target).toEqual({ rootId: 'pages', path: 'index.md' });
+  });
+
   it('falls through silently when the remembered path no longer exists in its root tree', () => {
     const pagesTree = [file('index.md', 'index.md')];
     const target = resolveLandingTarget({

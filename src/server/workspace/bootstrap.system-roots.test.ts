@@ -4,6 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { WorkspaceRegistry } from './registry.js';
 import { bootstrapProject } from './bootstrap.js';
+import { RootRegistry } from '../roots/registry.js';
+import { KIND_DECLARATIONS, SYSTEM_ROOTS, type RootKind } from '../../shared/root-kinds.js';
 
 /**
  * 2.1.8 — activation creates the directory of every registry root, the five
@@ -26,17 +28,24 @@ describe('bootstrapProject — system roots', () => {
     return bootstrapProject(registry, ws, cwd);
   };
 
-  it('[ac:ac-swiezy-bootstrap-tworzy-katalogi-wszy] a fresh bootstrap creates the directories of all five system roots', () => {
-    for (const kind of ['plans', 'briefs', 'patches', 'entities', 'releases']) {
-      expect(fs.existsSync(path.join(cwd, '.claude4spec', kind))).toBe(false);
+  it('[ac:ac-swiezy-bootstrap-tworzy-katalogi-wszy] a fresh bootstrap creates `.claude4spec/<kind>` for every root of a kind with source `code` in the root registry', () => {
+    // The set comes from the registry — the kinds whose declaration says
+    // `source: 'code'` — not from a list kept by bootstrap or by this test.
+    const codeKinds = (Object.keys(KIND_DECLARATIONS) as RootKind[]).filter((k) => KIND_DECLARATIONS[k].source === 'code');
+    const codeRoots = new RootRegistry([{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }]).codeRoots();
+    expect(codeRoots.map((r) => r.kind)).toEqual(codeKinds);
+    expect(codeRoots.map((r) => r.id)).toEqual(SYSTEM_ROOTS.map((r) => r.id));
+    // Today's code-source kinds — a premise of the fixture, not of the rule.
+    expect(codeKinds).toEqual(expect.arrayContaining(['plans', 'briefs', 'patches', 'entities', 'releases']));
+    for (const root of codeRoots) {
+      expect(root.dir).toBe(`.claude4spec/${root.kind}`);
+      expect(fs.existsSync(path.join(cwd, root.dir))).toBe(false);
     }
     const result = boot();
-    for (const kind of ['plans', 'briefs', 'patches', 'entities', 'releases']) {
-      expect(fs.statSync(path.join(cwd, '.claude4spec', kind)).isDirectory()).toBe(true);
+    for (const root of codeRoots) {
+      expect(fs.statSync(path.join(cwd, '.claude4spec', root.kind)).isDirectory(), root.kind).toBe(true);
     }
-    expect([...result.systemRootDirsCreated].sort()).toEqual(
-      ['.claude4spec/briefs', '.claude4spec/entities', '.claude4spec/patches', '.claude4spec/plans', '.claude4spec/releases'],
-    );
+    expect([...result.systemRootDirsCreated].sort()).toEqual(codeRoots.map((r) => `.claude4spec/${r.kind}`).sort());
   });
 
   it('[ac:ac-swiezy-bootstrap-nie-zapisuje-w-confi] a fresh bootstrap writes no system root into config.json — neither as roots[] entries nor as separate keys', () => {

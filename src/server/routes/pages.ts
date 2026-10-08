@@ -28,8 +28,8 @@ export interface PageRootRuntime {
 
 /**
  * 0.1.96: pages router is mounted at `/pages/:rootId`. Each handler resolves the
- * target root's runtime via `resolveRoot(req.params.rootId)`; an unknown id →
- * 404 ROOT_NOT_FOUND (no fallback). The `file_version` store is shared across
+ * target root's runtime via `resolveRoot(req.params.rootId)`; a root without a
+ * facade or outside the registry → 404 ROOT_NOT_FOUND (no fallback). The `file_version` store is shared across
  * roots and keyed by (rootId, path).
  */
 /**
@@ -132,8 +132,10 @@ export function pagesRouter(
        * end on the surface whose whole job is to be navigable. The catalog's own
        * contract says a NOT_FOUND carries its alternatives.
        *
-       * 2.1.8 — only `kind: pages` runtimes resolve here, so a system root id
-       * (`plans`) gets this very refusal, and the list never names one.
+       * 2.1.9 — only the roots WITH A FACADE resolve here (kinds whose
+       * `sidebar` is not `hidden`), for reads and writes alike, so a root
+       * without one (`plans`, `briefs`, …) or outside the registry gets this
+       * very refusal, and the list names only roots with a facade.
        * ASSUMPTION:dev-0009 — REST/CLI keep ROOT_NOT_FOUND (list in `hint`) where
        * M11 L14 names the core's INVALID_ARGUMENT (list in `message`).
        */

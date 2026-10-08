@@ -7,7 +7,13 @@ import request from 'supertest';
 import { FileWatchRuntime, type WatchSubscriber } from '../fs/watcher.js';
 import { ReactionBinder, validateKindRequirements, type ReactionHandler } from '../fs/reactions.js';
 import { RootRegistry } from '../roots/registry.js';
-import { KIND_DECLARATIONS, kindDeclaration } from '../../shared/root-kinds.js';
+import {
+  KIND_DECLARATIONS,
+  SIDEBAR_REDUCER_ID,
+  kindDeclaration,
+  type RootKind,
+  type SidebarDeclaration,
+} from '../../shared/root-kinds.js';
 import { PagesService } from '../services/pages.js';
 import { MarkdownFileStore } from '../services/markdown-file-store.js';
 import { configPath } from '../config.js';
@@ -24,7 +30,8 @@ import { ReleaseFileStore } from '../services/release-store.js';
 
 /**
  * 2.1.8 — the build hook of the L13 implementor (M02), run while M31 builds a
- * `ProjectContext`: N `PagesService` facades (one per `kind: pages` root), a
+ * `ProjectContext`: N `PagesService` facades (2.1.9: one per root whose kind's
+ * `sidebar` is not `hidden`), a
  * mounted M40 source and the bound reactions for EVERY registry root; dispose
  * takes all of them down; a `roots[]` change invalidates the context and the
  * rebuild runs the hook again. Deterministic watcher mode (`fsEvents: false`).
@@ -74,25 +81,56 @@ const USER_ROOTS: Root[] = [
   { id: 'adr', name: 'ADRs', dir: 'docs/adr', builtin: false },
 ];
 
+/** Puts `sidebar` on a kind for the duration of `fn` — the loop reads the declaration at call time. */
+async function withSidebar<T>(kind: RootKind, sidebar: SidebarDeclaration, fn: () => Promise<T>): Promise<T> {
+  const decl = KIND_DECLARATIONS[kind];
+  const previous = decl.sidebar;
+  decl.sidebar = sidebar;
+  try {
+    return await fn();
+  } finally {
+    decl.sidebar = previous;
+  }
+}
+
 const fileChanged = (events: WsEvent[]) =>
   (events.filter((e) => e.kind === 'file:changed') as Array<Extract<WsEvent, { kind: 'file:changed' }>>).map(
     (e) => [e.rootId, e.path],
   );
 
 describe('2.1.8 — root-registry runtime per ProjectContext (M02 m02multidir, L13)', () => {
-  it('[ac:ac-projectcontext-montuje-n-par-pagesservic] N PagesService facades (one per pages root), every registry root mounted and bound by the build hook; dispose takes down every source and binding; a roots[] change invalidates and the rebuild re-runs the hook', async () => {
+  it('[ac:ac-projectcontext-montuje-n-par-pagesservic] N PagesService facades (one per root of a kind whose sidebar is not hidden), every registry root mounted and bound by the build hook; dispose takes down every source and binding; a roots[] change invalidates and the rebuild re-runs the hook', async () => {
     const cwd = tmp();
     const r = runtime();
     const w = r.scoped('context:p1#1');
     const registry = new RootRegistry(USER_ROOTS);
     const mounted = await mountRegistryRoots({ cwd, registry, userRoots: USER_ROOTS, w });
 
-    // N facades — exactly the `kind: pages` roots, each its own PagesService.
-    expect(mounted.rootRuntimes.map((rt) => rt.root.id)).toEqual(['pages', 'adr']);
+    // N facades — exactly the roots of kinds with `sidebar` ≠ `hidden` (today: the
+    // `pages` roots), each its own PagesService.
+    expect(registry.facades().map((root) => root.id)).toEqual(['pages', 'adr']);
+    for (const root of registry.list()) {
+      expect(registry.facades().includes(root), root.id).toBe(KIND_DECLARATIONS[root.kind].sidebar !== 'hidden');
+    }
+    expect(mounted.rootRuntimes.map((rt) => rt.root.id)).toEqual(registry.facades().map((root) => root.id));
     for (const rt of mounted.rootRuntimes) expect(rt.pages).toBeInstanceOf(PagesService);
     expect(mounted.rootRuntimes[0]!.pages).not.toBe(mounted.rootRuntimes[1]!.pages);
-    // System roots get a markdown store where their kind has markdown entries, never a facade.
+    // System roots (`hidden`) get a markdown store where their kind has markdown entries, never a facade.
     expect([...mounted.artifactMounts.values()].map((m) => m.rootId).sort()).toEqual(['briefs', 'patches', 'plans']);
+
+    // The rule is the kind's `sidebar`, not the kind's name: a system kind that
+    // is not `hidden` gets a facade over its root's store too (one more facade).
+    await withSidebar('plans', 'accordion', async () => {
+      const wPlans = runtime().scoped('context:p1-plans#1');
+      const withPlans = await mountRegistryRoots({ cwd, registry, userRoots: USER_ROOTS, w: wPlans });
+      expect(withPlans.rootRuntimes.map((rt) => rt.root.id)).toEqual(['pages', 'adr', 'plans']);
+      const plansFacade = withPlans.rootRuntimes.find((rt) => rt.root.id === 'plans')!;
+      expect(plansFacade.kind).toBe('plans');
+      expect(plansFacade.pages).toBeInstanceOf(PagesService);
+      expect(plansFacade.pages.store).toBe(withPlans.storeByRootId.get('plans'));
+      expect(plansFacade.root).toEqual({ id: 'plans', name: 'Plans', dir: '.claude4spec/plans', builtin: false });
+      await wPlans.dispose();
+    });
 
     // The hook mounts a source for EVERY registry root — user and system roots alike.
     const allIds = registry.list().map((root) => root.id);
@@ -250,7 +288,7 @@ describe('2.1.8 — root-registry runtime per ProjectContext (M02 m02multidir, L
     }
   });
 
-  it('[entity:page-root-runtime-construction] the loop over the registry: mount per root, a MarkdownFileStore primitive per markdown kind (bare for plans/briefs/patches), the PagesService facade over it only for kind pages, kind reactions + base reaction bound on every root', async () => {
+  it('[entity:page-root-runtime-construction] the loop over the registry: mount per root, a MarkdownFileStore primitive per markdown kind (bare for plans/briefs/patches), the PagesService facade over it only for kinds whose sidebar is not hidden, kind reactions + base reaction bound on every root', async () => {
     const cwd = tmp();
     const w = runtime().scoped('context:p2#1');
     const registry = new RootRegistry(USER_ROOTS);
@@ -270,10 +308,15 @@ describe('2.1.8 — root-registry runtime per ProjectContext (M02 m02multidir, L
       expect(m.store).not.toBeInstanceOf(PagesService);
       expect(m).not.toHaveProperty('pages');
     }
-    // Facade: kind pages only — `new PagesService({ root, store })` over THAT root's store.
-    expect(mounted.rootRuntimes.map((rt) => rt.root.id)).toEqual(registry.pages().map((r) => r.id));
+    // Facade: `if (kind.sidebar !== 'hidden')` — `new PagesService({ root, store })`
+    // over THAT root's store; today exactly the `pages` roots.
+    expect(mounted.rootRuntimes.map((rt) => rt.root.id)).toEqual(
+      registry.list().filter((r) => kindDeclaration(r.kind).sidebar !== 'hidden').map((r) => r.id),
+    );
+    expect(mounted.rootRuntimes.map((rt) => rt.root.id)).toEqual(['pages', 'adr']);
     for (const rt of mounted.rootRuntimes) {
-      expect(registry.get(rt.root.id)!.kind).toBe('pages');
+      expect(kindDeclaration(registry.get(rt.root.id)!.kind).sidebar).not.toBe('hidden');
+      expect(rt.kind).toBe(registry.get(rt.root.id)!.kind);
       expect(rt.pages).toBeInstanceOf(PagesService);
       expect(rt.pages.store).toBe(mounted.storeByRootId.get(rt.root.id));
       expect(rt.pages.rootId).toBe(rt.root.id);
@@ -297,6 +340,33 @@ describe('2.1.8 — root-registry runtime per ProjectContext (M02 m02multidir, L
       const ids = calls.filter(([rootId]) => rootId === root.id).map(([, id]) => id);
       expect(ids, root.id).toEqual([...kindDeclaration(root.kind).reactions, 'm02-file-changed']);
       for (const [rootId, , source] of calls) if (rootId === root.id) expect(source).toBe(mounted.sourceByRootId.get(root.id));
+    }
+    // The source names: `pages:<id>` for the configuration source, the kind's
+    // name for the code source, `artifacts:*` kept for plans/briefs/patches.
+    expect(Object.fromEntries(mounted.sourceByRootId)).toEqual({
+      pages: 'pages:pages',
+      adr: 'pages:adr',
+      plans: 'artifacts:plan',
+      briefs: 'artifacts:brief',
+      patches: 'artifacts:patch',
+      entities: 'entities',
+      releases: 'releases',
+    });
+    // Step 5: a kind whose `sidebar` declares a reducer gets `m02-sidebar-reducer`
+    // bound on its roots' sources, after its own reactions and the base one;
+    // `hidden` / `accordion` kinds never do.
+    expect(calls.some(([, id]) => id === SIDEBAR_REDUCER_ID)).toBe(false);
+    calls.length = 0;
+    await withSidebar('pages', { glob: '*/index.md', reduce: () => [] }, async () => {
+      bindRegistryReactions(registry, mounted.sourceByRootId, recorder);
+    });
+    for (const root of registry.list()) {
+      const ids = calls.filter(([rootId]) => rootId === root.id).map(([, id]) => id);
+      expect(ids, root.id).toEqual(
+        root.kind === 'pages'
+          ? [...kindDeclaration(root.kind).reactions, 'm02-file-changed', SIDEBAR_REDUCER_ID]
+          : [...kindDeclaration(root.kind).reactions, 'm02-file-changed'],
+      );
     }
     // Binding before a mount is fail-fast (mount → bind is a contract per source).
     const unmounted = new Map(mounted.sourceByRootId);

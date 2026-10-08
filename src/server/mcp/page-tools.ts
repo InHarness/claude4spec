@@ -69,6 +69,14 @@ export function createPageToolsServer(
     toolSuccess(data, { operation, channel: 'mcp', project: projectId });
   const fail = toolFailure;
 
+  /**
+   * 2.1.9 — `resolveRoot` answers the roots WITH A FACADE (kinds whose `sidebar`
+   * is not `hidden`), the same set the REST page routes resolve: the domain of
+   * `rootId` does not depend on the channel (M02 `o01s9mwl`).
+   * ASSUMPTION:dev-0101 — an unknown root stays `ROOT_NOT_FOUND` (with the roots
+   * that have a facade in `hint`) on this channel too, as the L3 catalog row
+   * lists it; M02 `gj2vdsjm` says the agent channel reports it as `NOT_FOUND`.
+   */
   const target = (rootId: string): PageWriteTarget => {
     const rt = deps.resolveRoot(rootId);
     if (!rt) {

@@ -11,6 +11,8 @@ import { openDb, type Db } from '../db/index.js';
 import { applyProjection } from '../db/projection.js';
 import type { MarkdownFileStore } from '../services/markdown-file-store.js';
 import { crossRootPagesRouter, pagesRouter } from '../routes/pages.js';
+import { sidebarAccordionsRouter } from '../routes/sidebar-accordions.js';
+import { SidebarAccordionsService } from '../services/sidebar-accordions.js';
 import { StaticHtmlService } from '../services/static-html.js';
 import { staticRouter } from '../routes/static.js';
 import { tagsRouter } from '../routes/tags.js';
@@ -101,7 +103,7 @@ import { ReactionBinder, type ReactionHandler } from '../fs/reactions.js';
 import { registerCoreReactions, type CoreReactionContext } from './core-reactions.js';
 import { mountRegistryRoots, bindRegistryReactions } from './root-registry-runtime.js';
 import { RootRegistry, rootDirAbs } from '../roots/registry.js';
-import { PAGES_KIND, kindSelects, type RegistryRoot } from '../../shared/root-kinds.js';
+import { kindDeclaration, kindSelects, type RegistryRoot } from '../../shared/root-kinds.js';
 import { FileVersionCapture } from '../services/file-version-capture.js';
 import { EntityStore } from '../services/entity-store.js';
 import { EntityIndexerService } from '../services/entity-indexer.js';
@@ -463,7 +465,9 @@ async function buildInner(
   // (`root-registry-runtime.ts`): the kind's acceptance requirements (a
   // violation stops the build), the dir + its source mount, a `MarkdownFileStore`
   // primitive for every kind whose file map has a markdown entry, and the
-  // `PagesService` FACADE over it (tree, static html, editor) only for kind `pages`.
+  // `PagesService` FACADE over it (tree, static html, editor) for every kind whose
+  // `sidebar` is not `hidden` (2.1.9 — "roots with a facade"; `rootById` below
+  // holds exactly them, so the page routes and page-tools address only them).
   // Reactions are bound further down (`bindRegistryReactions`), once the
   // services exist: mount → bind is a contract per source.
   // Which root dirs this build CREATES — a failed clone rolls back exactly those
@@ -706,6 +710,16 @@ async function buildInner(
     [...artifactMounts.values()].map((m) => [m.rootId, ARTIFACT_CHANGED_EVENT[m.kind]] as const),
   );
   const pagesFrontmatterIndexer = new PagesFrontmatterIndexer(frontmatterRoots, ws, artifactChangedEvents);
+  // 2.1.9 (M02 `m02l13001`): the sidebar's accordion arrays — `hidden` /
+  // `accordion` straight from the kind's declaration, a reducer root through the
+  // `m02-sidebar-reducer` reaction bound below; served by `GET /sidebar-accordions`.
+  const sidebarAccordions = new SidebarAccordionsService({
+    cwd,
+    registry: rootRegistry,
+    ws,
+    projectKey: projectId,
+    frontmatterOf: (rootId, relPath) => pagesFrontmatterIndexer.getFrontmatter(rootId, relPath),
+  });
 
   /**
    * Host API 2.0.0 — build the entity projection BEFORE anything mounts, reads
@@ -1100,12 +1114,12 @@ async function buildInner(
       ...(deps.clone.systemRootDirsCreated ?? []),
       ...rootRegistry
         .list()
-        .filter((r) => r.kind !== PAGES_KIND && rootDirsCreatedHere.includes(r.dir))
+        .filter((r) => kindDeclaration(r.kind).source === 'code' && rootDirsCreatedHere.includes(r.dir))
         .map((r) => r.dir),
     ]);
     const preexistingSystemRoots = rootRegistry
       .list()
-      .filter((r) => r.kind !== PAGES_KIND && !systemRootDirsCreated.has(r.dir))
+      .filter((r) => kindDeclaration(r.kind).source === 'code' && !systemRootDirsCreated.has(r.dir))
       .map((r) => ({ dir: r.dir, filesBefore: snapshotRootFiles(cwd, r.dir) }));
     try {
       const result = await importService.clone(deps.clone.slug, { nameOverride: deps.clone.nameOverride });
@@ -1290,6 +1304,8 @@ async function buildInner(
     pagesRouter(resolveRoot, pageVersions, discovery, () => [...rootById.keys()], sectionWriteDeps),
   );
   router.use('/static/:rootId', staticRouter(resolveStatic));
+  // 2.1.9 — the sidebar's accordion array of every root; no `:rootId` segment.
+  router.use('/sidebar-accordions', sidebarAccordionsRouter(sidebarAccordions));
   router.use('/tags', tagsRouter(tagsService, referencesService, discovery));
   router.use('/references', referencesRouter(pluginHost, referencesService, discovery, discoveryForRoots));
   router.use('/entities', entitiesRouter(pluginHost, tagsService, versionService, entityStore, rawReader, discovery, ws));
@@ -1492,10 +1508,18 @@ async function buildInner(
     versionCapture,
     entityIndexer,
     releaseIndexer,
+    sidebarReducer: sidebarAccordions,
   });
   // Each binding carries the registry entry's id as the reaction's input — the
   // `rootId` the reactions key their state `(rootId, path)` on.
   bindRegistryReactions(rootRegistry, sourceByRootId, reactionBinder);
+  // 2.1.9: the reducer roots' full rebuild — "budowa ProjectContext". It does not
+  // block the project: until it lands, a reducer root is served the `accordion`
+  // fallback; a result differing from the predecessor context's array emits
+  // `sidebar:accordions-changed`.
+  void sidebarAccordions.rebuildAll().catch((err) => {
+    console.warn('[m02] sidebar accordions initial build failed:', (err as Error).message);
+  });
 
   // M33 phase 3: overlay mount + reload, AFTER the root-registry build hook
   // (M31 build order: the L13 implementor's mounts and bindings, then M33).
@@ -1603,7 +1627,11 @@ async function buildInner(
   // (server down, `git checkout` between restarts): without this, the phantom
   // `delete` stays the latest row and release diffs show the page as removed.
   (async () => {
+    // 2.1.9: the facades of the roots whose kind captures `file_version` and is
+    // not an artifact kind (those have their own baseline pass just below).
+    const artifactRootIds = new Set([...artifactMounts.values()].map((m) => m.rootId));
     for (const rt of rootRuntimes) {
+      if (!kindSelects(rt.kind, 'm17-capture') || artifactRootIds.has(rt.root.id)) continue;
       try {
         const files = await rt.pages.listMarkdownFiles();
         for (const relPath of files) {
