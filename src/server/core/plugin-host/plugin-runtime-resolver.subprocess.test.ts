@@ -236,22 +236,27 @@ describe('builtin envelope — real load path', () => {
     // here would be the version gate, which is how `spreadsheet` was absent for
     // the whole of 2.0.0 while its plugin still declared `^1.0.0`.
     //
-    // NINE since 0.2.80, and the type list below is TEN — the two counts have
-    // never matched and are not meant to. ONE of the nine packages still
-    // contributes no entity type at all (`c4s-plugin-writing-style-author`, one
-    // contextual skill and nothing else), while `c4s-plugin-frontend-mockups`
-    // contributes two.
+    // TEN since 2.1.9, and the type list below is TEN too — by coincidence: the
+    // two counts are not meant to match. TWO of the packages contribute no entity
+    // type at all (`c4s-plugin-writing-style-author` and `c4s-plugin-skill-author`,
+    // one contextual skill each and nothing else), while
+    // `c4s-plugin-frontend-mockups` contributes two.
     //
     // 0.2.70 moved `c4s-plugin-layered-vertical-slices` from the first group to
     // the ordinary one: it now brings `module-dependency`, so the list below grew
     // by one while the status list did not. That package is no longer the
-    // capability-class example — `writing-style-author` is the last of them.
+    // capability-class example — `writing-style-author` was then the last of them.
     //
     // 0.2.80 grew BOTH by one: `c4s-plugin-ac` is a new package contributing a
     // new type. It is also the first envelope to contribute a SUBAGENT alongside
     // its type, which this assertion does not see — `envelope-delivery-axes`
     // covers that half.
+    //
+    // 2.1.9 grew the status list ALONE, to TEN: `c4s-plugin-skill-author` is the
+    // second package contributing no entity type (one contextual skill,
+    // `skill-author`), so the type list below is unchanged.
     expect(parsed.statuses).toEqual([
+      'loaded',
       'loaded',
       'loaded',
       'loaded',

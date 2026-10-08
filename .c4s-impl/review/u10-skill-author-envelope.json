@@ -1,0 +1,19 @@
+{
+  "role": "reviewer",
+  "scope": {
+    "kind": "unit",
+    "id": "u10-skill-author-envelope",
+    "base": "38db371a18827648cc4eca620b3a05bc669f375c"
+  },
+  "findings": [
+    {
+      "id": "rev-0001",
+      "file": "plugins/c4s-plugin-skill-author/src/env.d.ts",
+      "line": 4,
+      "blocking": false,
+      "reason": "Comment copied verbatim from c4s-plugin-writing-style-author: \"The style's package travels as literals…\". This envelope carries an agent skill, not a writing style (its own manifest comment stresses that distinction), so the doc comment misdescribes the package. Reword to \"The skill's package…\".",
+      "portion": "p1-l2-l11"
+    }
+  ],
+  "deviations": []
+}

@@ -2119,6 +2119,103 @@ describe('runAgentTurn — spec-skill-tools mounting (M52, 2.1.9)', () => {
 });
 
 /**
+ * 2.1.9 (`c4s-plugin-skill-author`, M52 `3nbgrss4`) — the `skill-author` skill
+ * writes a package with `update_skill_file` and nothing else, so it works with
+ * `agent.disableDirectFilesystemAccess` on. Asserted on a real chat turn under the
+ * flag: the turn denies every built-in file and shell group, yet mounts
+ * `spec-skill-tools`, and the very server the turn mounted writes the package the
+ * skill describes into the project's `skills` root (mounted as `project-context.ts`
+ * mounts it).
+ */
+describe('runAgentTurn — skill-author under a blocked file system (2.1.9)', () => {
+  it('[ac:pkg-skill-author-writes-with-file-access-blocked] with direct file access blocked, a chat turn still mounts update_skill_file, and skill-author writes a skill package through it', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+    const { InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js');
+    const { FileWatchRuntime } = await import('../fs/watcher.js');
+    const { RootRegistry } = await import('../roots/registry.js');
+    const { registerCoreReactions } = await import('../workspace/core-reactions.js');
+    const { mountRegistryRoots } = await import('../workspace/root-registry-runtime.js');
+    const { skillAuthorSkill } = await import(
+      '../../../plugins/c4s-plugin-skill-author/src/skills/skill-author.js'
+    );
+
+    // The skill names this tool as its ONLY write channel.
+    expect(skillAuthorSkill.contextTypes).toContain('chat');
+    expect(skillAuthorSkill.content).toContain('update_skill_file');
+
+    registerCoreReactions();
+    const userRoots = [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }];
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-skill-author-blocked-'));
+    const runtime = new FileWatchRuntime({ fsEvents: false });
+    try {
+      const mounted = await mountRegistryRoots({
+        cwd,
+        registry: new RootRegistry(userRoots),
+        userRoots,
+        w: runtime.scoped('context:skill-author#1'),
+      });
+      const skillsRoot = mounted.rootRuntimes.find((rt) => rt.root.id === 'skills');
+      expect(skillsRoot, 'the skills root has a facade').toBeDefined();
+      const element = new SpecSkillTools({ skillsRoot: () => ({ pages: skillsRoot!.pages }) }, 'p1');
+      let built = null as ReturnType<SpecSkillTools['build']>;
+
+      hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
+      hoisted.agent = { disableDirectFilesystemAccess: true };
+      const { deps } = makeDeps();
+      (deps as unknown as { specSkillTools: Pick<SpecSkillTools, 'build'> }).specSkillTools = {
+        build: () => (built = element.build()),
+      };
+      await runAgentTurn(deps, makeInput());
+
+      // The block is on: no built-in may read or write a file, no shell.
+      const groups = [...((hoisted.lastExecute?.disallowedToolGroups ?? []) as string[])];
+      expect(groups).toEqual(expect.arrayContaining(['file-read', 'file-write', 'shell']));
+      // …and the write channel is mounted all the same.
+      expect(Object.keys((hoisted.lastExecute?.mcpServers ?? {}) as Record<string, unknown>)).toContain(
+        'spec-skill-tools',
+      );
+      expect(built).not.toBeNull();
+
+      // Write a package the way the skill instructs: SKILL.md with a non-empty
+      // description, `expectedHash: ""` for a file that must not exist yet.
+      const skillMd = [
+        '---',
+        'title: Release notes',
+        'description: Open when writing a release note.',
+        'version: 1',
+        'language: en',
+        'scope: contextual',
+        '---',
+        '',
+        '# Release notes',
+        '',
+      ].join('\n');
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      const client = new Client({ name: 'skill-author-test', version: '0.0.0' });
+      await built!.server.connect(serverTransport);
+      await client.connect(clientTransport);
+      try {
+        const res = await client.callTool({
+          name: 'update_skill_file',
+          arguments: { slug: 'release-notes', content: skillMd, expectedHash: '' },
+        });
+        expect(res.isError).toBeFalsy();
+        const body = JSON.parse((res.content as Array<{ text: string }>)[0]!.text) as Record<string, unknown>;
+        expect(body).toMatchObject({ slug: 'release-notes', file: 'SKILL.md' });
+        expect(fs.readFileSync(path.join(cwd, '.claude4spec/skills/release-notes/SKILL.md'), 'utf-8')).toBe(skillMd);
+      } finally {
+        await client.close();
+      }
+    } finally {
+      await runtime.close();
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
  * TERMINAL ERROR DELIVERY (0.2.50).
  *
  * The contract is explicit that "the iterator never throws (M01/M13)" — every

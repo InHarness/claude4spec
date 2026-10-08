@@ -1,5 +1,5 @@
 {
-  "iteration": 9,
+  "iteration": 10,
   "conventions": [
     {
       "label": "L3 (Spec Operations)",
@@ -72,7 +72,7 @@
         "u10-skill-author-envelope",
         "u11-exposed-projects"
       ],
-      "startCommit": null
+      "startCommit": "38db371a18827648cc4eca620b3a05bc669f375c"
     },
     {
       "n": 5,
@@ -1891,15 +1891,35 @@
         }
       ],
       "wave": 4,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "u10-skill-author-envelope/p1-l2-l11",
+          "layers": [
+            "L2",
+            "L11"
+          ],
+          "slugs": [
+            "pkg-skill-author-listed-in-chat",
+            "pkg-skill-author-listed-in-patch",
+            "pkg-skill-author-not-listed-in-brief",
+            "pkg-skill-author-writes-with-file-access-blocked"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "38db371a18827648cc4eca620b3a05bc669f375c",
+      "baseCommit": "38db371a18827648cc4eca620b3a05bc669f375c",
       "rounds": {
         "review": 0,
-        "unit": 0
-      }
+        "unit": 1
+      },
+      "lastUncovered": 0
     },
     {
       "id": "u11-exposed-projects",

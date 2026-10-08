@@ -1,0 +1,46 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "unit", "id": "u10-skill-author-envelope" },
+  "release": "2.1.9",
+  "rows": [
+    {
+      "slug": "pkg-skill-author-listed-in-chat",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/architecture/envelope-delivery-axes.test.ts:570 `expect(listingIn('chat')).toContain(SKILL)` — listing built via real loader (loadBuiltinEnvelopes) + SkillResolver.resolveForContext; filter src/server/services/skill-registry.ts:733 (s.contextTypes.includes(contextType)); skill contextTypes ['chat','patch'] at plugins/c4s-plugin-skill-author/src/skills/skill-author.ts"
+    },
+    {
+      "slug": "pkg-skill-author-listed-in-patch",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/architecture/envelope-delivery-axes.test.ts:574 `expect(listingIn('patch')).toContain(SKILL)`; same loader+resolver path, skill-registry.ts:733"
+    },
+    {
+      "slug": "pkg-skill-author-not-listed-in-brief",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/architecture/envelope-delivery-axes.test.ts:578 `expect(listingIn('brief')).not.toContain(SKILL)` (+ ask not listed, `skills.has(SKILL)` true — loadable); contextTypes excludes 'brief' at skill-author.ts"
+    },
+    {
+      "slug": "pkg-skill-author-writes-with-file-access-blocked",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/routes/agent-turn.test.ts:2131 chat turn with hoisted.agent={disableDirectFilesystemAccess:true}: `expect(groups).toEqual(expect.arrayContaining(['file-read','file-write','shell']))`, `expect(Object.keys(mcpServers)).toContain('spec-skill-tools')`, then update_skill_file call `expect(res.isError).toBeFalsy()` and `expect(fs.readFileSync(.../.claude4spec/skills/release-notes/SKILL.md)).toBe(skillMd)`; skill content asserts update_skill_file as only write channel (SKILL.md:20-25); mounting in agent-turn.ts:1552-1616"
+    },
+    {
+      "slug": "goal:u10-skill-author-envelope",
+      "level": 2,
+      "status": "covered",
+      "evidence": "plugins/c4s-plugin-skill-author/src/manifest.ts (name c4s-plugin-skill-author, contributes.entities: [], skills: [skillAuthorSkill], hostApiVersion ^2.0.0, no backend); src/skills/skill-author.ts (slug skill-author, scope 'contextual', contextTypes ['chat','patch'], content = SKILL.md body via ?raw); SKILL.md writes only via update_skill_file, works under agent.disableDirectFilesystemAccess; discovery by directory in src/server/core/plugin-host/builtin-envelopes.ts:127 (dist/plugins/* then plugins/*), vite outDir dist/plugins/c4s-plugin-skill-author, package.json build:envelopes/test/typecheck include the package; no trust gate (built-in path); loader test envelope-delivery-axes.test.ts 'is discovered as a built-in envelope…' asserts contributedTypes [] ; plugin-runtime-resolver.subprocess.test.ts statuses grown to ten 'loaded'"
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "server/client/types tsc --noEmit green; typecheck:envelopes green incl. > @inharness-ai/c4s-plugin-skill-author@2.1.9 typecheck > tsc --noEmit"
+  }
+}

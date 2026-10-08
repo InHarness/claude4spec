@@ -1,0 +1,1 @@
+{"role":"implementer","unit":"u10-skill-author-envelope","packetBytes":88023,"portions":[{"name":"u10-skill-author-envelope/p1-l2-l11","layers":["L2","L11"],"slugs":["pkg-skill-author-listed-in-chat","pkg-skill-author-listed-in-patch","pkg-skill-author-not-listed-in-brief","pkg-skill-author-writes-with-file-access-blocked"]}],"deviations":[]}
