@@ -16,6 +16,7 @@ import { SerializationEngine } from '../core/plugin-host/serialization-engine.js
 import { builtinPagesRoot } from '../config.js';
 import { createC4sReaderServer } from './c4s-reader.js';
 import { GET_PAGE_OUTLINE_RETURN } from './tool-contract-text.js';
+import { KIND_DECLARATIONS } from '../../shared/root-kinds.js';
 
 /**
  * Rule 12 — broken-reference detection for a HIDDEN entity type.
@@ -707,6 +708,111 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
       for (const tool of [reader, reference]) {
         for (const key of ['limit', 'offset']) expect(params(tool)).not.toContain(key);
       }
+    });
+  });
+
+  /**
+   * 2.1.9 — the two M19 tools as declared, and the address of a hit/row in a
+   * root whose kind does not inject section anchors. Today every reference root
+   * is of kind `pages`, which selects `m06-anchor-injection`; the anchorless case
+   * is reached by taking that reaction off the kind for the duration of a case —
+   * the gate reads the kind's choice, so that is exactly what it must follow.
+   */
+  describe('the M19 tools as declared (2.1.9)', () => {
+    type ListedTool = Awaited<ReturnType<Client['listTools']>>['tools'][number];
+    const params = (tool: ListedTool) => Object.keys(tool.inputSchema.properties ?? {}).sort();
+    async function declared(name: string): Promise<ListedTool> {
+      const { tools } = await (await connectClient(deps())).listTools();
+      const tool = tools.find((t) => t.name === name);
+      expect(tool, `tool ${name}`).toBeDefined();
+      return tool!;
+    }
+    async function call(name: string, args: Record<string, unknown> = {}) {
+      const client = await connectClient(deps());
+      const res = await client.callTool({ name, arguments: args });
+      const text = (res.content as Array<{ type: string; text?: string }>)[0]?.text ?? '{}';
+      return { isError: res.isError === true, body: JSON.parse(text) as Record<string, any> };
+    }
+    function indexSection(anchor: string, page: string, heading: string, start: number, end: number): void {
+      db.prepare(
+        `INSERT INTO section_index
+           (rootId, anchor, page_path, parent_anchor, heading_level, heading_text,
+            content_hash, body, line_start, line_end, paragraph_count)
+         VALUES ('pages', ?, ?, NULL, 1, ?, 'hash', '', ?, ?, 1)`,
+      ).run(anchor, page, heading, start, end);
+    }
+    async function withoutAnchorInjection<T>(fn: () => Promise<T>): Promise<T> {
+      const previous = KIND_DECLARATIONS.pages.reactions;
+      KIND_DECLARATIONS.pages.reactions = previous.filter((r) => r !== 'm06-anchor-injection');
+      try {
+        return await fn();
+      } finally {
+        KIND_DECLARATIONS.pages.reactions = previous;
+      }
+    }
+
+    it('[entity:reference-tools-find-references] find_references takes the target union and paging; a hit is { rootId, pagePath, anchor?, tagType, line } with total/hasMore, and loses only the anchor in a root without anchors', async () => {
+      const tool = await declared('find_references');
+      expect(tool.name).toBe('find_references');
+      expect(params(tool)).toEqual(
+        ['anchor', 'includeTagMatches', 'limit', 'offset', 'path', 'rootId', 'slug', 'target', 'type'].sort(),
+      );
+      expect((tool.inputSchema.properties!.target as { enum?: string[] }).enum).toEqual(['entity', 'section', 'page']);
+      expect(tool.description).toContain('addressed by `rootId`, `pagePath` and `line`');
+
+      await pagesService.write('page.md', {
+        body: '<!-- anchor: aaaaaa11 -->\n# Alpha\n\n<single_element type="diagram" slug="d1"/>\n',
+      });
+      indexSection('aaaaaa11', 'page.md', 'Alpha', 1, 4);
+      const args = { target: 'entity', type: 'diagram', slug: 'd1' };
+
+      const anchored = await call('find_references', args);
+      expect(anchored.isError).toBe(false);
+      expect(anchored.body).toMatchObject({ total: 1, hasMore: false });
+      expect(anchored.body.references).toEqual([
+        expect.objectContaining({ rootId: 'pages', pagePath: 'page.md', anchor: 'aaaaaa11', tagType: 'single_element', line: 4 }),
+      ]);
+
+      // The same root, its kind no longer injecting anchors: same hit, same
+      // line, no `anchor` key at all — the address is (rootId, pagePath, line).
+      const bare = await withoutAnchorInjection(() => call('find_references', args));
+      expect(bare.isError).toBe(false);
+      expect(bare.body).toMatchObject({ total: 1, hasMore: false });
+      const [hit] = bare.body.references as Array<Record<string, unknown>>;
+      expect(hit).toMatchObject({ rootId: 'pages', pagePath: 'page.md', tagType: 'single_element', line: 4 });
+      expect(hit).not.toHaveProperty('anchor');
+    });
+
+    it('[entity:reference-tools-check-consistency] check_consistency takes severity/rule/limit; a page-pointing row carries rootId and pagePath, summary the full counters', async () => {
+      const tool = await declared('check_consistency');
+      expect(tool.name).toBe('check_consistency');
+      expect(params(tool)).toEqual(['limit', 'rule', 'severity']);
+      expect((tool.inputSchema.properties!.severity as { enum?: string[] }).enum).toEqual(['error', 'warning']);
+      expect(tool.description).toContain('carries the page key `rootId` + `pagePath`');
+
+      await pagesService.write('page.md', {
+        body: '# Page\n\n<single_element type="diagram" slug="gone"/>\n\n```\nnever closed\n',
+      });
+      const { isError, body } = await call('check_consistency', {});
+      expect(isError).toBe(false);
+      expect(body.summary).toEqual({ total: expect.any(Number), errors: expect.any(Number), warnings: expect.any(Number) });
+      expect(body.brokenReferences).toEqual([
+        expect.objectContaining({ rootId: 'pages', pagePath: 'page.md', tagType: 'single_element', slug: 'gone', reason: 'missing' }),
+      ]);
+      expect(body.unclosedCodeBlocks).toEqual([{ rootId: 'pages', pagePath: 'page.md', line: 5 }]);
+      expect(body.unanchoredHeadings).toEqual([
+        expect.objectContaining({ rootId: 'pages', pagePath: 'page.md', line: 1, heading: 'Page' }),
+      ]);
+
+      // In a root whose kind does not inject anchors the rows keep the same key
+      // and carry no anchor; rule 7 (a finding only where anchors are minted) is silent.
+      const bare = await withoutAnchorInjection(() => call('check_consistency', {}));
+      expect(bare.isError).toBe(false);
+      for (const row of bare.body.brokenReferences as Array<Record<string, unknown>>) {
+        expect(row).toMatchObject({ rootId: 'pages', pagePath: 'page.md', line: expect.any(Number) });
+        expect(row).not.toHaveProperty('anchor');
+      }
+      expect(bare.body.unanchoredHeadings).toEqual([]);
     });
   });
 });

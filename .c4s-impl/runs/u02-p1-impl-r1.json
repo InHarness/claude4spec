@@ -1,0 +1,23 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.9",
+  "unit": "u02-references-expansion",
+  "portion": "u02-references-expansion/p1-l7-l13",
+  "claimed": [
+    "reference-tools-find-references",
+    "reference-tools-check-consistency",
+    "ac-lista-po-etykietach-w-rozwinieciu-daj",
+    "ac-rozwiniecie-nie-zmienia-linii-kotwic",
+    "ac-rozwiniecie-tekstu-w-kontekscie-proje",
+    "ac-rozwiniecie-w-formacie-inline-zastepu",
+    "ac-rozwiniecie-zastepuje-link-do-strony",
+    "ac-rozwiniecie-zastepuje-section-ref-tek",
+    "ac-rozwiniecie-zostawia-znacznik-z-zerwa",
+    "ac-kazdy-wiersz-check-consistency-wskazu"
+  ],
+  "deviations": ["dev-0201"],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

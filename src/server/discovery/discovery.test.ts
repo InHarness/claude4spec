@@ -2454,6 +2454,78 @@ describe('discovery core', () => {
     expect(flagged).not.toContain('m99');
   });
 
+  /**
+   * 2.1.9 (M19 `q91m4kgl`) — the report's page key. Every row that points at a
+   * page names it by `(rootId, pagePath)`, whatever rule produced it: the
+   * reference rules, the structure rules 7/13/15/16 (15 and 16 used to say
+   * `path`), and rule 11, whose row names the module's page.
+   */
+  it('[ac:ac-kazdy-wiersz-check-consistency-wskazu] every check_consistency row that points at a page carries rootId', async () => {
+    await fs.mkdir(path.join(cwd, '.claude4spec'), { recursive: true });
+    await fs.writeFile(
+      path.join(cwd, '.claude4spec', 'config.json'),
+      JSON.stringify({ consistency: { requireModuleAc: 'warn' } }),
+      'utf-8',
+    );
+    await writePage(
+      'pages',
+      'refs.md',
+      [
+        '# Refs',
+        '',
+        '<inline_mention type="widget" slug="nope"/>',
+        '',
+        '<tagged_list type="widget" tags="no-such-tag"/>',
+        '',
+        '<section_ref anchor="zzzzzz99"/>',
+        '',
+        '## Loose heading',
+        '',
+        '<!-- anchor: dupdup11 -->',
+        '## First',
+        '',
+        '```md',
+        '<!-- anchor: tracetra -->',
+        '## Example',
+        '```',
+        '',
+      ].join('\n'),
+    );
+    await writePage('pages', 'dup.md', ['<!-- anchor: dupdup11 -->', '# Second', ''].join('\n'));
+    await writePage('pages', 'open.md', ['# Open', '', '```', '## Swallowed', ''].join('\n'));
+    await writePage('pages', 'modules/m16-onboarding.md', '<!-- anchor: m16xxxx1 -->\n# M16\n');
+
+    const report = await core([pagesRoot()], [widgetModule(), acBackendModule]).checkConsistency({});
+
+    const pageRows: Record<string, Array<Record<string, unknown>>> = {
+      brokenReferences: report.brokenReferences as Array<Record<string, unknown>>,
+      invalidTagReferences: report.invalidTagReferences as Array<Record<string, unknown>>,
+      brokenExtensionReferences: report.brokenExtensionReferences as Array<Record<string, unknown>>,
+      unanchoredHeadings: report.unanchoredHeadings as Array<Record<string, unknown>>,
+      anchorLinesInCode: report.anchorLinesInCode as Array<Record<string, unknown>>,
+      unclosedCodeBlocks: report.unclosedCodeBlocks as Array<Record<string, unknown>>,
+      modulesWithoutAc: report.modulesWithoutAc as Array<Record<string, unknown>>,
+      duplicateAnchorOccurrences: (report.duplicateAnchors as Array<{ occurrences: Array<Record<string, unknown>> }>).flatMap(
+        (d) => d.occurrences,
+      ),
+    };
+    for (const [bucket, rows] of Object.entries(pageRows)) {
+      // Each bucket was actually exercised — an empty bucket would pass vacuously.
+      expect(rows.length, bucket).toBeGreaterThan(0);
+      for (const row of rows) {
+        expect(row, bucket).toMatchObject({ rootId: 'pages', pagePath: expect.any(String) });
+        expect(row, bucket).not.toHaveProperty('path');
+      }
+    }
+    expect(pageRows.brokenReferences!.map((r) => r.pagePath)).toEqual(['refs.md']);
+    expect(pageRows.anchorLinesInCode!.map((r) => r.pagePath)).toEqual(['refs.md']);
+    expect(pageRows.unclosedCodeBlocks!.map((r) => r.pagePath)).toEqual(['open.md']);
+    expect(pageRows.modulesWithoutAc).toEqual([
+      expect.objectContaining({ module: 'm16', rootId: 'pages', pagePath: 'modules/m16-onboarding.md' }),
+    ]);
+    expect(pageRows.duplicateAnchorOccurrences!.map((o) => o.pagePath).sort()).toEqual(['dup.md', 'refs.md']);
+  });
+
   it('search_pages: on an indexed root a match outside every section (frontmatter, preamble, unanchored heading) is a page-level hit', async () => {
     await writePage(
       'pages',

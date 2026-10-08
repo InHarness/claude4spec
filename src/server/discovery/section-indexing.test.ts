@@ -226,7 +226,7 @@ describe('discovery core over the real section indexer', () => {
       );
       const report = await core.checkConsistency({ rule: 15 });
       expect(report.anchorLinesInCode).toEqual([
-        expect.objectContaining({ path: 'trace.md', anchor: 'tracetra' }),
+        expect.objectContaining({ pagePath: 'trace.md', anchor: 'tracetra' }),
       ]);
       // Informational: a warning, never an error.
       expect(report.summary.errors).toBe(0);
@@ -236,12 +236,12 @@ describe('discovery core over the real section indexer', () => {
       await index('open.md', ['# Top', '', 'x', '```', '## Swallowed', ''].join('\n'));
       await index('open-comment.md', ['# Top', '', '<!--', '## Hidden', ''].join('\n'));
       const report = await core.checkConsistency({ rule: 'unclosed-code-block' });
-      const rows = report.unclosedCodeBlocks as Array<{ path: string; line: number }>;
-      expect(rows.map((r) => r.path).sort()).toEqual(['open-comment.md', 'open.md']);
+      const rows = report.unclosedCodeBlocks as Array<{ pagePath: string; line: number }>;
+      expect(rows.map((r) => r.pagePath).sort()).toEqual(['open-comment.md', 'open.md']);
       // `line` is the OPENING line, in the page body's coordinates.
       for (const r of rows) {
-        const body = (await pages.read(r.path)).body.split('\n');
-        expect(body[r.line - 1]).toBe(r.path === 'open.md' ? '```' : '<!--');
+        const body = (await pages.read(r.pagePath)).body.split('\n');
+        expect(body[r.line - 1]).toBe(r.pagePath === 'open.md' ? '```' : '<!--');
       }
     });
 

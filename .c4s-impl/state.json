@@ -1,5 +1,5 @@
 {
-  "iteration": 1,
+  "iteration": 2,
   "conventions": [
     {
       "label": "L3 (Spec Operations)",
@@ -380,15 +380,41 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "u02-references-expansion/p1-l7-l13",
+          "layers": [
+            "L7",
+            "L13"
+          ],
+          "slugs": [
+            "reference-tools-find-references",
+            "reference-tools-check-consistency",
+            "ac-lista-po-etykietach-w-rozwinieciu-daj",
+            "ac-rozwiniecie-nie-zmienia-linii-kotwic",
+            "ac-rozwiniecie-tekstu-w-kontekscie-proje",
+            "ac-rozwiniecie-w-formacie-inline-zastepu",
+            "ac-rozwiniecie-zastepuje-link-do-strony",
+            "ac-rozwiniecie-zastepuje-section-ref-tek",
+            "ac-rozwiniecie-zostawia-znacznik-z-zerwa",
+            "ac-kazdy-wiersz-check-consistency-wskazu"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "81b279852d77ee1bef8feb88c66f934a1ac3b5a3",
+      "baseCommit": "81b279852d77ee1bef8feb88c66f934a1ac3b5a3",
       "rounds": {
         "review": 0,
-        "unit": 0
-      }
+        "unit": 1
+      },
+      "lastUncovered": 0
     },
     {
       "id": "u03-editor-command-sources",

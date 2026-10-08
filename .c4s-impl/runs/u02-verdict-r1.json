@@ -1,0 +1,88 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "unit", "id": "u02-references-expansion" },
+  "release": "2.1.9",
+  "rows": [
+    {
+      "slug": "reference-tools-find-references",
+      "type": "mcp-tool",
+      "level": 1,
+      "status": "covered",
+      "evidence": "trace.md line present; src/server/mcp/reference-tools.ts:262 params target/type/slug/anchor/rootId/path/includeTagMatches/limit/offset match the window record; anchor gate by kind's m06-anchor-injection at src/server/discovery/ops/references.ts:71-73. Test src/server/mcp/reference-tools.test.ts:752 [entity:reference-tools-find-references]: asserts params, target enum, hit `{ rootId:'pages', pagePath:'page.md', anchor:'aaaaaa11', tagType, line:4 }` + total/hasMore, and in an anchorless kind `expect(hit).not.toHaveProperty('anchor')` with same rootId/pagePath/line."
+    },
+    {
+      "slug": "reference-tools-check-consistency",
+      "type": "mcp-tool",
+      "level": 1,
+      "status": "covered",
+      "evidence": "trace.md line present; params severity/rule/limit match (src/server/mcp/reference-tools.ts:300); page rows keyed (rootId, pagePath) incl. rules 15/16 renamed path->pagePath and rule 11 row (src/server/discovery/ops/consistency.ts:375,633-636,693-696). Test src/server/mcp/reference-tools.test.ts:783 [entity:reference-tools-check-consistency]: `expect(body.unclosedCodeBlocks).toEqual([{ rootId: 'pages', pagePath: 'page.md', line: 5 }])`, brokenReferences/unanchoredHeadings carry rootId+pagePath, anchorless kind rows carry no `anchor`. Note (pre-existing, unchanged by this window): record names buckets/fields `brokenSectionRefs`, `moduleSlug`/`modulePath` where code has `brokenExtensionReferences`, `module`/`pagePath` — already in the 2.1.8 record; code follows the window's `returns` sentence (rows carry `rootId` and `pagePath`)."
+    },
+    {
+      "slug": "ac-lista-po-etykietach-w-rozwinieciu-daj",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/core/references/expand-embeds.test.ts:99 — `expect(ctx.listByTags).toHaveBeenCalledWith({ type: 'endpoint', tags: ['auth','users'], filter: 'or' })`, `expect(ctx.readEntities).not.toHaveBeenCalled()`, `expect(...entities).toEqual(listed)`; code src/core/references/expand-embeds.ts:146-167; also src/server/discovery/expansion-context.test.ts:120 over createExpansionContext (`['a','c']`)."
+    },
+    {
+      "slug": "ac-rozwiniecie-nie-zmienia-linii-kotwic",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/core/references/expand-embeds.test.ts:126 — `expect(inline.text.startsWith(`${frontmatter}\\n`)).toBe(true)`, anchor lines still followed by their headings, json `expect(json.text).toBe(text)`; code skips tags before frontmatterEnd (expand-embeds.ts:39-40,185) and only splices tag ranges."
+    },
+    {
+      "slug": "ac-rozwiniecie-tekstu-w-kontekscie-proje",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/expansion-context.test.ts:65 — two cores with same slugs; `expect(out).not.toContain('Q:')`, `expect(q.asked).toEqual([])`, spies on Q `not.toHaveBeenCalled()`; code src/server/discovery/expansion-context.ts:34-84 reads only deps.discovery of the given context."
+    },
+    {
+      "slug": "ac-rozwiniecie-w-formacie-inline-zastepu",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/core/references/expand-embeds.test.ts:46 — `expect(out).toBe('Call [List users](/endpoints/get-users) first.\\n')` (label = `title`, not slug/method+path); code labelOf reads entity.title (expand-embeds.ts:232-239)."
+    },
+    {
+      "slug": "ac-rozwiniecie-zastepuje-link-do-strony",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/expansion-context.test.ts:97 — `expect(inline.text).toBe('See M19 — References & Consistency and Writing guide.\\n')` for `@path` and `[..](path)` links; code expand-embeds.ts:183-195 + expansion-context.ts:63-83."
+    },
+    {
+      "slug": "ac-rozwiniecie-zastepuje-section-ref-tek",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/core/references/expand-embeds.test.ts:87 — `expect(out).toBe('Read Authentication flow before.\\n')`; code expand-embeds.ts:169-174 (ctx.sectionHeading)."
+    },
+    {
+      "slug": "ac-rozwiniecie-zostawia-znacznik-z-zerwa",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/core/references/expand-embeds.test.ts:66 — `expect(inline.text).toContain(broken)` for mention/card/list with broken slugs, json `errors.map(r=>r.raw)` equals the three tags and error names the slug; code push() skips replacement when error set (expand-embeds.ts:87-92)."
+    },
+    {
+      "slug": "ac-kazdy-wiersz-check-consistency-wskazu",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:2463 — for each page-pointing bucket (brokenReferences, invalidTagReferences, brokenExtensionReferences, unanchoredHeadings, anchorLinesInCode, unclosedCodeBlocks, modulesWithoutAc, duplicateAnchors occurrences) `expect(rows.length).toBeGreaterThan(0)` and `toMatchObject({ rootId: 'pages', pagePath: expect.any(String) })`, `not.toHaveProperty('path')`; code consistency.ts:375-456,633-696."
+    },
+    {
+      "slug": "goal:u02-references-expansion",
+      "level": 2,
+      "status": "covered",
+      "evidence": "Serverless core src/core/references/expand-embeds.ts (imports only shared/xml-tags parser; text from caller, no file reads; formats inline/json; frontmatter and anchor lines untouched; reader calls grouped per (type, projection); lists by tags via listing) exported from src/core/references/index.ts; project-context collaborators src/server/discovery/expansion-context.ts; not added to the operations catalog. Anchorless-kind address: references.ts:71-73 gates `anchor` on roots.anchorInjected() (kind choice, not name); every page-pointing consistency row carries rootId+pagePath (consistency.ts). Deletion in window: only a <todo> comment in page prose (no code counterpart). No stubs in stubs.json."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "tsc --noEmit across root + plugin workspaces; last: @inharness-ai/c4s-plugin-ac typecheck > tsc --noEmit; exit 0. Static read: renamed rule 15/16 field path->pagePath — only consumer test (src/server/discovery/section-indexing.test.ts:228-245) updated in the same commit; no other code/test reads those rows' `path`."
+  }
+}
