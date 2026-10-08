@@ -1,0 +1,58 @@
+{
+  "role": "implementer",
+  "unit": "u09-plans-artifact-registry",
+  "packetBytes": 161379,
+  "portions": [
+    {
+      "name": "u09-plans-artifact-registry/p1-l1-l17",
+      "layers": [
+        "L1",
+        "L3",
+        "L7",
+        "L10",
+        "L13",
+        "L17"
+      ],
+      "slugs": [
+        "ac-m36-fiksuje-scheme-sekcji-konsumenta",
+        "ac-m36-trzyma-artifactregistry-jeden-wp",
+        "ac-nowy-naglowek-zapisany-w-pliku-planu",
+        "section:m36reg01",
+        "section:m36bind01",
+        "section:m36wire01",
+        "section:mg4flnix",
+        "section:m36csch1",
+        "section:m36l4fam",
+        "section:9p8nltkf",
+        "section:wbyljxtx",
+        "section:m36touch1",
+        "section:m36l10a1",
+        "section:jf89cb8j",
+        "section:m36ac001",
+        "section:vgopt1vq",
+        "section:q1txzrf0",
+        "section:implngws",
+        "section:vggwc1b9",
+        "section:iybe9zbj",
+        "section:m10art36",
+        "section:m10appl1",
+        "section:ww4lujgo",
+        "section:r2xkum62",
+        "section:jo0r7uh9",
+        "section:m10anchu",
+        "section:m54wlttz",
+        "section:m10db000",
+        "section:m10mcp00",
+        "section:m10opappl",
+        "section:m10ws000",
+        "section:d5h8jyik",
+        "section:i9qlure1",
+        "section:o8crf4hk",
+        "section:m02fmidx",
+        "section:m02l13001",
+        "section:l13model0",
+        "section:m02multidir"
+      ]
+    }
+  ]
+}

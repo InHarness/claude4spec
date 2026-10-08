@@ -79,7 +79,7 @@ export interface ArtifactBinding {
  * suite), not dispatch data. Nothing branches on them.
  */
 export interface ArtifactReadFamily {
-  /** Paginated listing, filtered by the execution flag in `frontmatterContract`. */
+  /** Paginated listing, filtered by the execution flag of the root kind's header contract. */
   list: string;
   /** Content + frontmatter + hash, plus a `range` line window that is always allowed. */
   getWithWindow: string;

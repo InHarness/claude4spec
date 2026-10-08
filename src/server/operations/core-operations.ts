@@ -938,7 +938,7 @@ export function registerCoreOperations(): void {
     mediation: 'direct',
     opClass: 'plan',
     inputSchema: {
-      path: z.string().optional().describe('Plan path relative to plansDir. Defaulted from the thread only in the `internal` channel.'),
+      path: z.string().optional().describe('Plan path relative to the plans root (.claude4spec/plans). Defaulted from the thread only in the `internal` channel.'),
       range: z
         .object({ start: z.number().int().positive(), end: z.number().int().positive() })
         .optional()
@@ -1055,7 +1055,7 @@ export function registerCoreOperations(): void {
     mediation: 'direct',
     opClass: 'plan',
     inputSchema: {
-      path: z.string().optional().describe('Plan path relative to plansDir. Defaulted from the thread only in the `internal` channel.'),
+      path: z.string().optional().describe('Plan path relative to the plans root (.claude4spec/plans). Defaulted from the thread only in the `internal` channel.'),
       applied: z.boolean().describe('Must be true from a non-user channel.'),
     },
     /**

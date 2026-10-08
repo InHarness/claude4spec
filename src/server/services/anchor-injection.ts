@@ -17,9 +17,10 @@ import type { WatchSubscriber } from '../fs/watcher.js';
  * multi-line comment, where its `-->` used to close the outer comment early and
  * expose the rest as page content.
  *
- * The artifact registry only DECLARES who gets anchors (`anchorInjection`):
- * today plans alone. Briefs and patches never do. No artifact kind enters
- * `section_index` — artifact anchors are unique within their file only.
+ * Who gets anchors is the ROOT KIND's choice (2.1.8): a kind selecting
+ * `m06-anchor-injection` without `m06-section-indexer` — today `plans` alone.
+ * Briefs and patches select neither. No artifact kind enters `section_index` —
+ * artifact anchors are unique within their file only.
  */
 
 // Generator stays strict 8 (M06 `15u7sazr` — auto-inject contract).
@@ -70,8 +71,8 @@ export function injectsAnchors(kind: ArtifactKind): boolean {
 }
 
 /**
- * The injection for one artifact write: anchors for kinds that declare
- * `anchorInjection`, the body untouched for every other kind.
+ * The injection for one artifact write: anchors for kinds whose root kind
+ * selects `m06-anchor-injection`, the body untouched for every other kind.
  */
 export function injectAnchorsFor(kind: ArtifactKind, body: string): string {
   return injectsAnchors(kind) ? injectArtifactAnchors(body) : body;

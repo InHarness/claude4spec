@@ -487,7 +487,7 @@ async function buildInner(
   const patchesMount = artifactMounts.get('patch')!;
   const plansMount = artifactMounts.get('plan')!;
   // 0.1.127: one-time boot cutover of legacy SQLite plan rows to
-  // `plansDir/*.md` — must run before the M36 initial-sync IIFE below (~line
+  // the `plans` root (`.claude4spec/plans/*.md`) — must run before the initial-sync IIFE below (~line
   // 962) so its file_version capture picks up these files, and before
   // PlanService is constructed since it reads exclusively through plansMount now.
   await backfillPlansToFilesystem({
@@ -1606,7 +1606,7 @@ async function buildInner(
     }
   })();
 
-  // M36: initial sync — file_version baseline per artifact mount + frontmatter indexer.
+  // Initial sync of the plans/briefs/patches system roots (`m17-capture` baseline) + the frontmatter indexer.
   (async () => {
     for (const m of artifactMounts.values()) {
       try {

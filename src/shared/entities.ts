@@ -621,7 +621,7 @@ export interface ChatThread {
   planMode: boolean;
   usage: UsageStats | null;
   contextSize: number | null;
-  /** 0.1.127: N:1 attach — path relative to plansDir, no FK (dangling = graceful-degrade). */
+  /** 0.1.127: N:1 attach — path relative to the `plans` root, no FK (dangling = graceful-degrade). */
   planPath: string | null;
   hasSystemPrompt: boolean;
   contextType: ChatContextType;
@@ -819,7 +819,7 @@ export interface PlanFrontmatter {
 }
 
 export interface Plan {
-  /** Path relative to plansDir, e.g. "add-dark-mode.md" (slug = slugify(title), immutable once created). */
+  /** Path relative to the `plans` root, e.g. "add-dark-mode.md" (slug = slugify(title), immutable once created). */
   path: string;
   frontmatter: PlanFrontmatter;
   body: string;
@@ -1115,7 +1115,7 @@ export interface ArtifactContentUpdateRequest {
   expectedHash: string;
 }
 
-/** Partial map of fields mutable per the kind's `frontmatterContract.mutable` (artifact-registry.ts). */
+/** Partial map of fields mutable per the root kind's header contract (`headerContractOf`, root-kinds.ts). */
 export interface ArtifactFrontmatterUpdateRequest {
   frontmatter: Record<string, unknown>;
 }

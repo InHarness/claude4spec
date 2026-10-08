@@ -2,7 +2,7 @@
  * 0.1.127 M10 PlanService — filesystem-backed, mirrors BriefService/PatchService
  * (M36 consumer-slice pattern) instead of the pre-0.1.127 SQLite `plan`/
  * `plan_version` tables (see brief 0-1-126-to-0-1-127). A plan is a markdown
- * file in `plansDir` with mandatory frontmatter (`type: plan`, `title`,
+ * file in the `plans` system root (`.claude4spec/plans`) with mandatory frontmatter (`type: plan`, `title`,
  * `created_at`, `created_by`); identity is the file path (`slug =
  * slugify(title)`, immutable once created — a later title edit changes
  * frontmatter only, never the filename/route).
@@ -13,7 +13,7 @@
  *     threads pointing nowhere; the UI degrades to a banner instead of the
  *     invariant brief/patch enforce).
  *   - `file_version` (M17) — automatic via the shared FileVersionService,
- *     keyed by `rootId = PLAN_ROOT_MARKER`. `currentVersion` is derived from
+ *     keyed by `rootId` = the id of the `plans` root (`plans`). `currentVersion` is derived from
  *     this table (MAX(version) for the path), NOT a stored column — the old
  *     `plan.current_version` DB column no longer exists.
  *
@@ -22,12 +22,10 @@
  *   - **Optimistic concurrency** by sha256 hash of full content (frontmatter+body).
  *   - **Immutable frontmatter** keys protected: type/created_at/created_by.
  *     Only `title` is mutable.
- *   - Anchor injection (`<!-- anchor: xxxxxxxx -->` before headings) stays a
- *     local pure function here rather than a shared M06 utility — no such
- *     shared utility exists in this codebase yet (checked section-indexer.ts);
- *     `plan` is still the only registry entry with `anchorInjection: true`, so
- *     there is nothing else to share it with. Flagged as a `clarification`
- *     patch for the spec author.
+ *   - Anchor injection (`<!-- anchor: xxxxxxxx -->` before headings) is M06's
+ *     `m06-anchor-injection`, selected by the `plans` root kind (2.1.8): called
+ *     here synchronously in the write path, and bound by the L13 implementor
+ *     on the `plans` root's source for writes made outside this service.
  */
 
 import fs from 'node:fs/promises';
@@ -35,7 +33,6 @@ import path from 'node:path';
 import matter from 'gray-matter';
 import type { Plan, PlanChangedBy, PlanFrontmatter, PlanListItem } from '../../shared/entities.js';
 import { PLAN_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
-import { PLAN_ROOT_MARKER } from '../../shared/types.js';
 import { slugify } from './slug.js';
 import { injectAnchorsFor } from './anchor-injection.js';
 import type { MarkdownFileStore } from './markdown-file-store.js';
@@ -224,7 +221,7 @@ export interface PlanUpdateFrontmatterOpts {
 
 /** Input of {@link PlanService.setAppliedByThread} — the `mark_plan_applied` operation. */
 export interface PlanSetAppliedInput {
-  /** Plan path relative to plansDir. Defaulted from the thread in the `internal` channel. */
+  /** Plan path relative to the `plans` root. Defaulted from the thread in the `internal` channel. */
   path?: string;
   /** Required. Only `true` passes through the agent channel — see the method. */
   applied: boolean;
@@ -232,6 +229,15 @@ export interface PlanSetAppliedInput {
 
 export class PlanService {
   constructor(private deps: PlanServiceDeps) {}
+
+  /**
+   * 2.1.8 — the id of the root this service works on: the `plans` root, taken
+   * from the registry BY KIND (the store the L13 implementor built for it), never
+   * a literal id. The `file_version` and frontmatter rows of a plan are keyed by it.
+   */
+  get rootId(): string {
+    return this.deps.plansPages.rootId;
+  }
 
   /** Per-key (plan path, or thread while the plan doesn't exist yet) write queue. */
   private locks = new Map<string, Promise<unknown>>();
@@ -294,7 +300,7 @@ export class PlanService {
         : {}),
       currentVersion: this.currentVersionFor(planPath),
       createdAt: toIso(frontmatter.created_at),
-      updatedAt: this.deps.pageVersions.getLatestForPath(planPath, undefined, PLAN_ROOT_MARKER)?.createdAt ?? toIso(frontmatter.created_at),
+      updatedAt: this.deps.pageVersions.getLatestForPath(planPath, undefined, this.rootId)?.createdAt ?? toIso(frontmatter.created_at),
     };
   }
 
@@ -322,7 +328,7 @@ export class PlanService {
       currentVersion: this.currentVersionFor(planPath),
       createdAt: toIso(frontmatter.created_at),
       updatedAt:
-        this.deps.pageVersions.getLatestForPath(planPath, undefined, PLAN_ROOT_MARKER)?.createdAt ??
+        this.deps.pageVersions.getLatestForPath(planPath, undefined, this.rootId)?.createdAt ??
         toIso(frontmatter.created_at),
     };
   }
@@ -374,8 +380,8 @@ export class PlanService {
   /**
    * Resolve a heading anchor (the `<!-- anchor: xxxxxxxx -->` marker injected
    * by `injectAnchorsFor`, M06) back to the plan that contains it. Plans are not
-   * indexed in `section_index` (`sectionIndexed: false`), so a brute-force
-   * scan over `plansDir`'s files is used instead — acceptable given the low
+   * indexed in `section_index` (the `plans` kind does not select `m06-section-indexer`), so a brute-force
+   * scan over the `plans` root's files is used instead — acceptable given the low
    * plan count (same justification as the pre-0.1.127 DB `content LIKE` scan
    * this replaces). `threadId` is best-effort (the plan's OLDEST attached
    * thread, or null) — a stable reference point so the same anchor link keeps
@@ -411,7 +417,7 @@ export class PlanService {
    * / search keystroke. Pass `true` for a caller that actually needs them.
    */
   listPlans(opts: { search?: string; applied?: boolean; includeThreadInfo?: boolean } = {}): PlanListItem[] {
-    const records = this.deps.frontmatterIndexer.findByFrontmatterType('plan', { rootId: PLAN_ROOT_MARKER });
+    const records = this.deps.frontmatterIndexer.findByFrontmatterType('plan', { rootId: this.rootId });
     const search = opts.search?.trim().toLowerCase();
     const out: PlanListItem[] = [];
     for (const rec of records) {
@@ -423,7 +429,7 @@ export class PlanService {
       // A plan with no `applied` key counts as `false` — the filter reads the
       // indexer's frontmatter, so no file is opened per row.
       if (opts.applied !== undefined && opts.applied !== (fm.applied === true)) continue;
-      const lastVersion = this.deps.pageVersions.getLatestForPath(rec.path, undefined, PLAN_ROOT_MARKER);
+      const lastVersion = this.deps.pageVersions.getLatestForPath(rec.path, undefined, this.rootId);
       out.push({
         path: rec.path,
         title,
@@ -512,10 +518,10 @@ export class PlanService {
           toFileChangedBy(changedBy),
           undefined,
           this.deps.plansSerializer,
-          PLAN_ROOT_MARKER,
+          this.rootId,
         );
         versionId = row?.id ?? null;
-        await this.deps.frontmatterIndexer.indexPage(PLAN_ROOT_MARKER, planPath);
+        await this.deps.frontmatterIndexer.indexPage(this.rootId, planPath);
       } catch (err) {
         await this.undoCreate(planPath, thread.id, written, versionId);
         throw err;
@@ -544,7 +550,7 @@ export class PlanService {
           await fs.rm(this.absPath(planPath), { force: true });
         }
       } catch { /* keep undoing */ }
-      try { this.deps.frontmatterIndexer.handleUnlink(PLAN_ROOT_MARKER, planPath); } catch { /* keep undoing */ }
+      try { this.deps.frontmatterIndexer.handleUnlink(this.rootId, planPath); } catch { /* keep undoing */ }
     }
     try { this.deps.chatService.deleteThread(threadId); } catch { /* keep undoing */ }
   }
@@ -642,10 +648,10 @@ export class PlanService {
             toFileChangedBy(changedBy),
             undefined,
             this.deps.plansSerializer,
-            PLAN_ROOT_MARKER,
+            this.rootId,
             changeSummary,
           );
-          await this.deps.frontmatterIndexer.indexPage(PLAN_ROOT_MARKER, allocated);
+          await this.deps.frontmatterIndexer.indexPage(this.rootId, allocated);
           return {
             planPath: allocated,
             version: this.currentVersionFor(allocated),
@@ -736,7 +742,7 @@ export class PlanService {
    * SYNCHRONOUSLY before composing the bytes, because `insert_after_section`
    * must see the anchors with no window in between. The registered subscriber
    * exists for writes that bypass this service entirely — an agent or a user
-   * editing `plansDir` on disk.
+   * editing the `plans` root on disk.
    */
   private async writeBytes(relPath: string, content: string): Promise<void> {
     const records = this.deps.plansRecords;
@@ -780,10 +786,10 @@ export class PlanService {
       toFileChangedBy(args.changedBy),
       undefined,
       this.deps.plansSerializer,
-      PLAN_ROOT_MARKER,
+      this.rootId,
       args.changeSummary,
     );
-    await this.deps.frontmatterIndexer.indexPage(PLAN_ROOT_MARKER, args.planPath);
+    await this.deps.frontmatterIndexer.indexPage(this.rootId, args.planPath);
     return { version: this.currentVersionFor(args.planPath), plan: await this.getByPath(args.planPath) };
   }
 
@@ -904,7 +910,7 @@ export class PlanService {
       }
       const newContent = matter.stringify(current.body, next as Record<string, unknown>);
       await this.writeBytes(opts.path, newContent);
-      await this.deps.frontmatterIndexer.indexPage(PLAN_ROOT_MARKER, opts.path);
+      await this.deps.frontmatterIndexer.indexPage(this.rootId, opts.path);
       const updated = await this.getByPath(opts.path);
       this.deps.ws.broadcast({
         kind: 'plan:updated',
@@ -982,7 +988,7 @@ export class PlanService {
   }
 
   private currentVersionFor(planPath: string): number {
-    return this.deps.pageVersions.getLatestForPath(planPath, undefined, PLAN_ROOT_MARKER)?.version ?? 0;
+    return this.deps.pageVersions.getLatestForPath(planPath, undefined, this.rootId)?.version ?? 0;
   }
 
   /** `base` is the already-slugified filename stem (caller computes it — see

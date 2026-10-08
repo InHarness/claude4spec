@@ -198,7 +198,7 @@ export class GitService {
    * gitignored, so the whole dir can be staged safely. 0.1.118: also stages
    * the `releases` root so a new release's identity file lands in the same commit as
    * its marker (for `resolveReleaseCommit` later) — and, when the git master
-   * switch is on, briefsDir/patchesDir/plansDir too: `ensureGitignore`
+   * switch is on, the briefs/patches/plans system roots too: `ensureGitignore`
    * un-gitignores them specifically so they "become committed and shared with
    * the team" (see its own doc comment) — that promise is empty unless
    * staging actually includes them. When the switch is off they're still

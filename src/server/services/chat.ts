@@ -29,7 +29,7 @@ interface ChatThreadRow {
   plan_mode: number;
   last_usage_json: string | null;
   last_context_size: number | null;
-  /** 0.1.127: N:1 attach — path relative to plansDir, no FK. */
+  /** 0.1.127: N:1 attach — path relative to the `plans` root, no FK. */
   plan_path: string | null;
   has_system_prompt: number;
   context_type: string;

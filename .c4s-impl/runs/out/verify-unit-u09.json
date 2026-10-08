@@ -1,0 +1,258 @@
+{
+ "role": "verifier",
+ "scope": {
+  "kind": "unit",
+  "id": "u09-plans-artifact-registry"
+ },
+ "release": "2.1.8",
+ "rows": [
+  {
+   "slug": "ac-m36-trzyma-artifactregistry-jeden-wp",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/artifact-registry.test.ts:35 asserts keys ['briefs','patches','plans'], each entry keys toEqual(['binding','danglingPolicy']), removed fields absent, binding matrix; code src/server/services/artifact-registry.ts:96-113"
+  },
+  {
+   "slug": "ac-m36-fiksuje-scheme-sekcji-konsumenta",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/artifact-registry.test.ts:68 asserts kind declaration per root kind (code/hidden/header contract), entry = binding+danglingPolicy, cross-link artifactEntry/artifactHeaderContract; plan mutable ['applied','title']"
+  },
+  {
+   "slug": "ac-nowy-naglowek-zapisany-w-pliku-planu",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/workspace/plans-root.test.ts:88 outside write of '## New heading' via bound m06-anchor-injection on artifacts:plan → expect(lines[at - 1]).toMatch(ANCHOR_LINE_RE); m06-section-indexer not bound; code src/server/services/anchor-injection.ts:93-111, src/shared/root-kinds.ts:131-138"
+  },
+  {
+   "slug": "section:m36reg01",
+   "level": 2,
+   "status": "covered",
+   "evidence": "artifactRegistry keyed by root kind, only binding+danglingPolicy: src/server/services/artifact-registry.ts:91-113; dir/header/flags in src/shared/root-kinds.ts:90-138"
+  },
+  {
+   "slug": "section:m36bind01",
+   "level": 2,
+   "status": "covered",
+   "evidence": "binding matrix briefs/patches anchor, plans attach plan_path no contextType, dangling policies: src/server/services/artifact-registry.ts:96-113 (test artifact-registry.test.ts:53-66)"
+  },
+  {
+   "slug": "section:m36wire01",
+   "level": 2,
+   "status": "covered",
+   "evidence": "M36 mounts nothing; store per system root built by L13 implementor src/server/workspace/root-registry-runtime.ts:135-155; plans store/rootId 'plans' used by PlanService (src/server/services/plan.ts:233-240, project-context.ts:488-495,1157-1160); frontmatter-only PATCH on plan skips recordVersion (plan.ts:~905-915)"
+  },
+  {
+   "slug": "section:mg4flnix",
+   "level": 2,
+   "status": "covered",
+   "evidence": "same primitive/store/file_version for pages and system roots: src/server/workspace/root-registry-runtime.ts:135-155"
+  },
+  {
+   "slug": "section:m36csch1",
+   "level": 2,
+   "status": "covered",
+   "evidence": "consumer schema = root kind + binding + danglingPolicy (+cross-link via ARTIFACT_ROOT_KIND/artifactEntry): src/server/services/artifact-registry.ts:17-56,91-118; removed rows (dirConfigKey/rootId/frontmatterContract/gitPolicy/anchorInjection) absent (artifact-registry.test.ts:24-33)"
+  },
+  {
+   "slug": "section:m36l4fam",
+   "level": 2,
+   "status": "covered",
+   "evidence": "PATCH frontmatter guard reads artifactHeaderContract(kind).mutable, IMMUTABLE_FIELD shared code: src/server/routes/artifacts.ts:372-386"
+  },
+  {
+   "slug": "section:9p8nltkf",
+   "level": 2,
+   "status": "covered",
+   "evidence": "read family entries for brief/patch/plan incl. range window + applied/implemented list filter: src/server/services/artifact-registry.ts:120-145, src/server/routes/artifacts.ts:59-88,133-187"
+  },
+  {
+   "slug": "section:wbyljxtx",
+   "level": 2,
+   "status": "covered",
+   "evidence": "M36 defines no reaction/mount; m10-plan-updated/m06/m17/m02 defined in src/server/workspace/core-reactions.ts and bound per kind via bindRegistryReactions (root-registry-runtime.ts:168-180)"
+  },
+  {
+   "slug": "section:m36touch1",
+   "level": 2,
+   "status": "covered",
+   "evidence": "gitignore from kind flag: src/bin/gitignore.ts:54-63 (KIND_DECLARATIONS[r.kind].flags.gitignore); plans selects m06-anchor-injection not section-indexer: root-kinds.ts:131-138; release=false"
+  },
+  {
+   "slug": "section:m36l10a1",
+   "level": 2,
+   "status": "covered",
+   "evidence": "no M36 context elements; stores from root registry runtime: src/server/workspace/root-registry-runtime.ts:65-67,135-155"
+  },
+  {
+   "slug": "section:jf89cb8j",
+   "level": 2,
+   "status": "covered",
+   "evidence": "no artifact dir keys: src/server/config.ts:23,957 (legacy keys ignored w/ warning); config.test.ts:517, field-registry.test.ts:56, tests/e2e/settings-directories.test.ts:79-89 assert absence"
+  },
+  {
+   "slug": "section:m36ac001",
+   "level": 2,
+   "status": "covered",
+   "evidence": "criteria rows above; retired ac-m36-montuje-per-kind-instancje-prymitywo (status deprecated) named by no test"
+  },
+  {
+   "slug": "section:vgopt1vq",
+   "level": 2,
+   "status": "covered",
+   "evidence": "M10 contributes and consumes the plans kind: src/shared/root-kinds.ts:130-138; PlanService on registry store (project-context.ts:488-495)"
+  },
+  {
+   "slug": "section:q1txzrf0",
+   "level": 2,
+   "status": "covered",
+   "evidence": "plans declaration code/hidden/'*.md' markdown PLAN_HEADER (immutable type,created_at,created_by; mutable title,applied)/file_version, flags release/references no, gitignore yes, agentDirectFs no, 4 reactions: src/shared/root-kinds.ts:90-94,130-138; test plans-root.test.ts:63-83; dir .claude4spec/plans asserted :77"
+  },
+  {
+   "slug": "section:implngws",
+   "level": 2,
+   "status": "covered",
+   "evidence": "PlanService/plan-tools key rows by planService.rootId (= registry store of kind plans): src/server/services/plan.ts:233-240, src/server/mcp/plan-tools.ts:353,379; store taken by kind root-registry-runtime.ts:153-154"
+  },
+  {
+   "slug": "section:vggwc1b9",
+   "level": 2,
+   "status": "covered",
+   "evidence": "plansDir key removed: src/server/config.ts:23,957 (legacy, ignored with warning); src/server/config.test.ts:517-523, routes/config.route.test.ts:355-361"
+  },
+  {
+   "slug": "section:iybe9zbj",
+   "level": 2,
+   "status": "covered",
+   "evidence": "'Plans directory' settings element absent: no match in src/client; tests/e2e/settings-directories.test.ts:89 asserts absence"
+  },
+  {
+   "slug": "section:m10art36",
+   "level": 2,
+   "status": "covered",
+   "evidence": "plan entry keyed 'plans' with attach/plan_path/graceful-degrade: src/server/services/artifact-registry.ts:108-112"
+  },
+  {
+   "slug": "section:m10appl1",
+   "level": 2,
+   "status": "covered",
+   "evidence": "frontmatter-only plan write does not recordVersion, file_version keyed rootId 'plans' (this.rootId), plan:updated still broadcast: src/server/services/plan.ts:~900-920,988-990"
+  },
+  {
+   "slug": "section:ww4lujgo",
+   "level": 2,
+   "status": "covered",
+   "evidence": "update writes via plans root store (plansPages/plansRecords from plansMount): src/server/workspace/project-context.ts:1157-1160; plan.ts:745-795"
+  },
+  {
+   "slug": "section:r2xkum62",
+   "level": 2,
+   "status": "covered",
+   "evidence": "PlanService delegates storage to plans root store and versioning to FileVersionService: src/server/services/plan.ts:745-795"
+  },
+  {
+   "slug": "section:jo0r7uh9",
+   "level": 2,
+   "status": "covered",
+   "evidence": "sync injectAnchorsFor in write path (plan.ts:35,742-750) + write-back bound on plans source (project-context.ts:1451-1475; plans-root.test.ts:88); plan:updated broadcast by service (dev-0010)"
+  },
+  {
+   "slug": "section:m10anchu",
+   "level": 2,
+   "status": "covered",
+   "evidence": "plans kind selects anchor injection, not section indexer: root-kinds.ts:137; plan-local mint src/server/services/anchor-injection.ts:36-63"
+  },
+  {
+   "slug": "section:m54wlttz",
+   "level": 2,
+   "status": "covered",
+   "evidence": "plans release=false: src/shared/root-kinds.ts:136; release iterates pages-kind roots (registry.test.ts per u05)"
+  },
+  {
+   "slug": "section:m10db000",
+   "level": 2,
+   "status": "covered",
+   "evidence": "file_version rows rootId='plans': PLAN_ROOT_MARKER='plans' src/shared/types.ts:205, PlanService.rootId src/server/services/plan.ts:237-239"
+  },
+  {
+   "slug": "section:m10mcp00",
+   "level": 2,
+   "status": "covered",
+   "evidence": "plan-tools path described as relative to plans root, versions keyed by planService.rootId: src/server/mcp/plan-tools.ts:50,353,379"
+  },
+  {
+   "slug": "section:m10opappl",
+   "level": 2,
+   "status": "covered",
+   "evidence": "mark_plan_applied input = path + applied only: src/server/mcp/plan-tools.ts:405-413; guard in REST reads kind header (artifacts.ts:378)"
+  },
+  {
+   "slug": "section:m10ws000",
+   "level": 2,
+   "status": "covered",
+   "evidence": "m10-plan-updated: accepts markdown, requires m17-capture, notification, watcher skipped (origin external) src/server/workspace/core-reactions.ts:140-150, src/server/fs/notifications.ts:33-57; outside edit → file:changed rootId 'plans' (plans-root.test.ts:110-121); after:[capture] not expressible — dev-0010 (sent, drift)"
+  },
+  {
+   "slug": "section:d5h8jyik",
+   "level": 2,
+   "status": "covered",
+   "evidence": "PlanService over plans root store, plan-tools per context: src/server/workspace/project-context.ts:488-495,1157-1160"
+  },
+  {
+   "slug": "section:i9qlure1",
+   "level": 2,
+   "status": "covered",
+   "evidence": "no plan config key/settings element: src/server/config.ts:957; settings-directories.test.ts:79-89"
+  },
+  {
+   "slug": "section:o8crf4hk",
+   "level": 2,
+   "status": "covered",
+   "evidence": "m06-anchor-injection bound on the plans root source (completes u02): project-context.ts:1451-1475 (artifactAnchorInjectionSubscriber per artifact mount), plans-root.test.ts:88-107; plans not section-indexed"
+  },
+  {
+   "slug": "section:m02fmidx",
+   "level": 2,
+   "status": "covered",
+   "evidence": "plans root registered as system root and frontmatter rows rootId 'plans' (completes u03): root-registry-runtime.ts:135-155, plan.ts indexPage(this.rootId,...) :524,654,792,913; sources.ts rootIdFromSource artifacts:plan→'plans'"
+  },
+  {
+   "slug": "section:m02l13001",
+   "level": 2,
+   "status": "covered",
+   "evidence": "implementor mounts every registry root, builds stores, binds kind reactions + m02-file-changed: src/server/workspace/root-registry-runtime.ts:110-180; plans-root.test.ts:79-82 asserts bindings"
+  },
+  {
+   "slug": "section:l13model0",
+   "level": 2,
+   "status": "covered",
+   "evidence": "system roots id=kind, fixed dir .claude4spec/<kind>: src/shared/root-kinds.ts:28-35,186-200; plans-root.test.ts:77"
+  },
+  {
+   "slug": "section:m02multidir",
+   "level": 2,
+   "status": "covered",
+   "evidence": "PagesService only for kind pages, markdown store w/o facade for plans/briefs/patches: src/server/workspace/root-registry-runtime.ts:142-155"
+  },
+  {
+   "slug": "goal:u09-plans-artifact-registry",
+   "level": 2,
+   "status": "covered",
+   "evidence": "plans kind decl src/shared/root-kinds.ts:130-138 (fixed dir, *.md PLAN_HEADER mutable title/applied, file_version, gitignore, 4 reactions, m10-plan-updated requires m17-capture core-reactions.ts:146, no section indexer); file_version rootId 'plans' (types.ts:205, plan.ts:237); M36 no mounts/reaction, registry keyed by root kind with binding+danglingPolicy only (artifact-registry.ts:91-113); guard reads kind header (artifacts.ts:378); plansDir/settings element/dirConfigKey/rootId/frontmatterContract/gitPolicy/anchorInjection gone (only legacy-ignore + absence tests remain). briefs/patches entries are deferred to u10 but their kinds already exist (root-kinds.ts:140-155) — not a defect"
+  },
+  {
+   "slug": "regression",
+   "level": 3,
+   "status": "covered",
+   "evidence": "npm run typecheck exit 0; tsc -p tsconfig.test.json --noEmit: no errors. Tests changed since 9b56a6a (artifact-registry.test.ts, plans-root.test.ts) read as passing against current code (isBound reactions.ts:154, artifactMounts/sourceByRootId root-registry-runtime.ts:65-67, PLAN_HEADER.mutable ['title','applied'])"
+  }
+ ],
+ "suite": {
+  "command": "npm run typecheck",
+  "exitCode": 0,
+  "summary": "> @inharness-ai/c4s-plugin-ac@0.2.80 typecheck\n> tsc --noEmit (all workspaces clean)"
+ }
+}

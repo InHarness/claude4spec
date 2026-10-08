@@ -83,7 +83,7 @@ export class AgentError extends Error {
  *
  * ## Why this is one function rather than an encode at each call site
  *
- * A relative artifact path (a brief under `briefsDir`, a plan under `plansDir`)
+ * A relative artifact path (a brief under the `briefs` root, a plan under the `plans` root)
  * used to be read in this process, where `assertSafeRelPath` refused `..` before
  * anything opened. Once the read moved to the server, the obvious translation —
  * `p.split('/').map(encodeURIComponent).join('/')` — looks like it carries the

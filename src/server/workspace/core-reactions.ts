@@ -1,6 +1,6 @@
 import { defineReaction, type ReactionHandler } from '../fs/reactions.js';
 import type { WatchSubscriber } from '../fs/watcher.js';
-import { fileChangedNotifier, planChangedNotifier } from '../fs/notifications.js';
+import { fileChangedNotifier, planUpdatedNotifier } from '../fs/notifications.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import { BASE_REACTION_ID } from '../../shared/root-kinds.js';
 
@@ -137,13 +137,16 @@ export function registerCoreReactions(): void {
     factory: (ctx) => ctx.versionCapture,
   });
 
-  // M10 — requires capture on the same kind.
+  // M10 (m10ws000) — selected by the `plans` kind. Acceptance: markdown with the
+  // plan contract; requires `m17-capture` on the same kind (the payload carries
+  // the `file_version` number). Trigger `primitive`: the watcher never fires it —
+  // an outside edit is announced by the base `file:changed`.
   defineReaction<CoreReactionContext>({
     id: 'm10-plan-updated',
     phase: 'notification',
     accepts: ['markdown'],
     requires: ['m17-capture'],
-    factory: (ctx) => planChangedNotifier(ctx.ws),
+    factory: (ctx) => planUpdatedNotifier(ctx.ws),
   });
 
   // M29 (m29idx001) — entity files → incremental reindex. M29 mounts no source:

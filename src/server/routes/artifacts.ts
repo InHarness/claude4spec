@@ -368,8 +368,8 @@ export function artifactsRouter(deps: ArtifactsRouterDeps): Router {
     }
   });
 
-  // PATCH /api/artifacts/:kind/<path>/frontmatter — only keys in the kind's
-  // frontmatterContract.mutable are accepted; anything else -> 400 IMMUTABLE_FIELD.
+  // PATCH /api/artifacts/:kind/<path>/frontmatter — only the mutable fields of
+  // the root kind's header contract are accepted; anything else -> 400 IMMUTABLE_FIELD.
   router.patch('/:kind/*/frontmatter', async (req, res, next) => {
     try {
       const kind = req.params.kind as ArtifactKind;

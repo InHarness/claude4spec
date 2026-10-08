@@ -42,7 +42,7 @@ async function findExistingMigratedFile(
 
 /**
  * 0.1.127 (brief 0-1-126-to-0-1-127): one-time boot cutover of the Plan
- * artifact from SQLite (`plan`/`plan_version`) to `plansDir/<slug>.md` files.
+ * artifact from SQLite (`plan`/`plan_version`) to `.claude4spec/plans/<slug>.md` files (the `plans` system root).
  * Guarded on the `plan` table still existing — a no-op on every subsequent
  * boot (including a brand-new project, where migrations 014→047 still create
  * an empty `plan` table from scratch before this drops it once).
@@ -198,5 +198,5 @@ export async function backfillPlansToFilesystem(params: {
     if (fkWasOn) db.pragma('foreign_keys = ON');
   }
 
-  console.log(`[plan-migration] migrated ${rows.length} plan(s) to filesystem storage under plansDir`);
+  console.log(`[plan-migration] migrated ${rows.length} plan(s) to filesystem storage under .claude4spec/plans`);
 }
