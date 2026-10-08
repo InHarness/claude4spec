@@ -1,0 +1,1043 @@
+{
+ "role": "verifier-system",
+ "scope": {
+  "kind": "system",
+  "id": "system"
+ },
+ "release": "2.1.8",
+ "rows": [
+  {
+   "slug": "ac-after-wskazujacy-definicje-reakcji-ni",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/fs/reactions.test.ts:137 binds m14-link-indexer alone on 'pages:pages' (m06-section-indexer bound only on 'pages:adr'), writes a.md, expect(ran).toEqual(['m14@pages:pages']) (no unit verdict; body read here)"
+  },
+  {
+   "slug": "ac-anchor-injection-section-indexera-nigdy",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-anchor-injection-section-indexera-nigdy] (git grep: 0 hits); not in any unit recipe; tags l13,m06 -> owner u02"
+  },
+  {
+   "slug": "ac-anchory-sa-globalnie-unikalne-across-wsz",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-anchory-sa-globalnie-unikalne-across-wsz] (git grep: 0 hits); not in any unit recipe; tags l13,m06 -> owner u02"
+  },
+  {
+   "slug": "ac-artefakty-m36-sa-wersjonowane-we-wspolny",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-artefakty-m36-sa-wersjonowane-we-wspolny] (git grep: 0 hits); not in any unit recipe; tags m36 -> owner u09"
+  },
+  {
+   "slug": "ac-blok-agent-path-scope-jest-pomijany-gd",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/chat-context.test.ts:1145 brief frame with a scope: not.toContain('<agent_path_scope') and not 'ALWAYS DISALLOWED'; same describe :1131 patch/ask emit the block, :1150 ALWAYS DISALLOWED line stays when lists are empty/partial (no unit verdict; body read here)"
+  },
+  {
+   "slug": "ac-body-c4s-spec-reader-skill-md-zawiera",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u06.json: src/server/external-skills/external-skills-service.test.ts:104 (5 mapping rows, resolve, navigation incl. list-pages/get-page, 'not.toContain(\"--range\")', discovery, c4s ask, CLI-only)"
+  },
+  {
+   "slug": "ac-body-c4s-spec-reader-skill-md-zawiera-2",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u06.json: src/server/external-skills/external-skills-service.test.ts:132 (anchor hit, batched get-sections, document-order tree, structure envelope, resumption via get-page-outline + get-sections)"
+  },
+  {
+   "slug": "ac-boot-na-nowej-wersji-gdy-entitiesdir",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-boot-na-nowej-wersji-gdy-entitiesdir] (git grep: 0 hits); not in any unit recipe; tags m29 -> owner u04"
+  },
+  {
+   "slug": "ac-bootstrap-nie-ignoruje-entitiesdir-ta",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-bootstrap-nie-ignoruje-entitiesdir-ta] (git grep: 0 hits); not in any unit recipe; tags m01 -> owner u11"
+  },
+  {
+   "slug": "ac-bootstrap-tworzy-aktualizuje-gitignore",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u12.json: src/server/workspace/bootstrap.system-roots.test.ts:82 asserts block lines toEqual ['.claude4spec/plans/','.claude4spec/briefs/','.claude4spec/patches/','.claude4spec/releases/','*.deprecated'], not entities/config.json/db.sqlite;"
+  },
+  {
+   "slug": "ac-brak-katalogu-patchesdir-nie-jest-ble",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/core/briefs/create-patch.test.ts:78 existsSync(patchesDirAbs) false before writePatchFs, true after (no unit verdict; body read here)"
+  },
+  {
+   "slug": "ac-brief-nie-jest-page-rootem-zyje-w-bri",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u10.json: src/server/workspace/briefs-patches-roots.test.ts:233 asserts file in .claude4spec/briefs, rows(...).rootId == ['briefs'], disk-dropped brief captured {rootId:'briefs',changedBy:'filesystem'}, registry.pages() excludes it"
+  },
+  {
+   "slug": "ac-brief-nie-wchodzi-do-specsnapshot-mar",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-brief-nie-wchodzi-do-specsnapshot-mar] (git grep: 0 hits); not in any unit recipe; tags m21 -> owner u10"
+  },
+  {
+   "slug": "ac-brief-path-escapujacy-briefsdir-sciez",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/bin/c4s/commands/brief-patch-commands.test.ts:197 (get-brief '../../config') and :394 (create-patch --brief ../, /etc/passwd, sub/../../) -> CliError INVALID_ARGS, expect(seen).toEqual([]) (no request) (no unit verdict; body read here)"
+  },
+  {
+   "slug": "ac-bundle-tar-gz-grupuje-strony-w-podkatalo",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-bundle-tar-gz-grupuje-strony-w-podkatalo] (git grep: 0 hits); not in any unit recipe; tags l13,m17 -> owner u05"
+  },
+  {
+   "slug": "ac-c4s-file-patch-bez-uprawnien-zapisu-w",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/bin/c4s/commands/brief-patch-commands.test.ts:382 server 500 PATCH_WRITE_FAILED -> rejects.toMatchObject({code:'PATCH_WRITE_FAILED'}) (no unit verdict; body read here)"
+  },
+  {
+   "slug": "ac-c4s-file-patch-brief-brief-path-d",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/bin/c4s/commands/brief-patch-commands.test.ts:336 method POST, url /patches$, body {brief,desc,patchKind:'drift',body,createdBy}; nothing written locally (no unit verdict; body read here)"
+  },
+  {
+   "slug": "ac-c4s-find-references-rozwiazuje-zbior-s",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-c4s-find-references-rozwiazuje-zbior-s] (git grep: 0 hits); not in any unit recipe; tags cli,m19 -> owner u06"
+  },
+  {
+   "slug": "ac-c4s-get-page-root-id-id-path-p",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u06.json: src/bin/c4s/commands/discovery-commands.test.ts:653 ('expect(plans.code).toBe(unknown.code)', message+hint equal, real pagesRouter over RootRegistry; code ROOT_NOT_FOUND per dev-0009)"
+  },
+  {
+   "slug": "ac-c4s-list-briefs-na-pusty-briefsdir-zwr",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-c4s-list-briefs-na-pusty-briefsdir-zwr] (git grep: 0 hits); not in any unit recipe; tags cli,m21-edge -> owner u10"
+  },
+  {
+   "slug": "ac-c4s-read-brief-brief-path-zwraca",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/bin/c4s/commands/brief-patch-commands.test.ts:172 url /artifacts/brief/sub/x.md, printed toEqual {frontmatter, body, content} (no unit verdict; body read here)"
+  },
+  {
+   "slug": "ac-checkout-podczas-aktywnej-tury-mutuj",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-checkout-podczas-aktywnej-tury-mutuj] (git grep: 0 hits); not in any unit recipe; tags m28-edge,m31 -> owner u12"
+  },
+  {
+   "slug": "ac-clone-restore-odtwarza-wszystkie-releasa",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u12.json: src/server/services/release-clone-roots.test.ts:67 — restoreBundleArchive writes pages/intro.md and docs/adr/intro.md; buildClonePatch roots toEqual [['pages','pages'],['adr','docs/adr']]; rollbackClone removes every root dir + cr"
+  },
+  {
+   "slug": "ac-commitforrelease-staguje-tez-releasesdir",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-commitforrelease-staguje-tez-releasesdir] (git grep: 0 hits); not in any unit recipe; tags m28,releases-on-disk -> owner u12"
+  },
+  {
+   "slug": "ac-config-json-w-bundle-u-zawiera-tylko-pol",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u05-r2.json: src/server/services/release-bundle.test.ts:435 '[ac:ac-config-json-w-bundle-u-zawiera-tylko-pol] ...' : input config carries briefsDir/patchesDir/plansDir/entitiesDir/releasesDir/remoteApiUrl (precondition toHaveProperty), then as"
+  },
+  {
+   "slug": "ac-config-json-z-kluczem-dir-dla-planow",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u11.json: src/server/config.test.ts:517 expect(warn).toHaveBeenCalledWith(stringMatching(/plansDir/)); expect('plansDir' in cfg).toBe(false) — readConfig does not throw; code config.ts:974-994"
+  },
+  {
+   "slug": "ac-createrelease-zapisuje-lekki-plik-metada",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-createrelease-zapisuje-lekki-plik-metada] (git grep: 0 hits); not in any unit recipe; tags m17,releases-on-disk -> owner u05"
+  },
+  {
+   "slug": "ac-deklaracja-rodzaju-korzenia-wybieraja",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u03.json: src/server/fs/reactions.test.ts:64: `expect(() => validateKindRequirements(broken)).toThrow(/m06-section-indexer.*requires 'm06-anchor-injection'/)`. The test also pins that the check is the first statement of the registry loop, b"
+  },
+  {
+   "slug": "ac-dir-rootu-nie-moze-overlappowac-write-ta",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-dir-rootu-nie-moze-overlappowac-write-ta] (git grep: 0 hits); not in any unit recipe; tags l13,m01 -> owner u11"
+  },
+  {
+   "slug": "ac-editorfactory-buduje-editorcontextspec-d",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u07.json: Title at 2.1.8: pages root renders with entity chips and anchors, `artifact` context (brief, patch) renders as prose with `@` links. src/client/tiptap/markdown/buildMarkdownIt.context.test.ts:42 [ac:...] asserts rootEditorPropsFor"
+  },
+  {
+   "slug": "ac-efektywny-zakres-fs-resolveagentpathsco",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-efektywny-zakres-fs-resolveagentpathsco] (git grep: 0 hits); not in any unit recipe; tags m05 -> owner u08"
+  },
+  {
+   "slug": "ac-ekran-m26-directories-blokuje-przycisk",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u11.json: src/client/components/settings/catalog.test.ts:89 expect(elements.map((e) => e.id)).toEqual(['roots']) + no *Dir configKey on any element"
+  },
+  {
+   "slug": "ac-file-version-z-rootid-brief-po-migracji",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u05-r2.json: src/server/db/file-version-root-ids.migration.test.ts:34 inserts a row with rootId 'brief' (plus patch/plan/pages), execs 057, asserts `expect(rootIds(db)).toEqual([{ path: 'v1.md', rootId: 'briefs' }, ...])`; idempotence at :50, "
+  },
+  {
+   "slug": "ac-gdy-wszystkie-releasable-roota-leza-poza",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-gdy-wszystkie-releasable-roota-leza-poza] (git grep: 0 hits); not in any unit recipe; tags m28-edge -> owner u12"
+  },
+  {
+   "slug": "ac-get-brief-ma-okno-odczytu-range-i-jaw",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/artifact-read.test.ts:23 range -> 'line 3..5', no kind selects m06-section-indexer; :35 over-budget without range -> truncated true, truncationHint contains 'range'; src/server/mcp/brief-tools.test.ts:203 MCP forwards range (no unit verdict; body read here)"
+  },
+  {
+   "slug": "ac-get-patch-range-zwraca-wskazane-okno",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-get-patch-range-zwraca-wskazane-okno] (git grep: 0 hits); not in any unit recipe; tags m23 -> owner u10"
+  },
+  {
+   "slug": "ac-git-commit-przy-createrelease-obejmuje-w",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u12.json: src/server/services/git.test.ts:391 — config root 'notes' with releasable:false; tracked toContain 'pages/a.md','notes/n.md', .claude4spec/{plans,briefs,patches,entities,releases}/f.md, '.claude4spec/entities/tags.json', '.claude4"
+  },
+  {
+   "slug": "ac-gitservice-commitpull-latest-commituje",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-gitservice-commitpull-latest-commituje] (git grep: 0 hits); not in any unit recipe; tags git-enabled,m28 -> owner u12"
+  },
+  {
+   "slug": "ac-katalogi-artefaktow-briefsdir-patche",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u12.json: src/bin/gitignore.test.ts:121 — gitEnabled:false: every gitignore-flagged root dir in block, unflagged not; gitEnabled:true: none of them, '*.deprecated' kept. Code: gitignore.ts dynamicPatterns returns [] when gitEnabled"
+  },
+  {
+   "slug": "ac-kazda-nie-surogatowa-kolumna-kazdej-tabe",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-kazda-nie-surogatowa-kolumna-kazdej-tabe] (git grep: 0 hits); not in any unit recipe; tags m13 -> owner none (M13 plugin host, no unit)"
+  },
+  {
+   "slug": "ac-kazda-pozycja-strony-w-wejsciu-i-wyjsciu",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-kazda-pozycja-strony-w-wejsciu-i-wyjsciu] (git grep: 0 hits); not in any unit recipe; tags l13,m39 -> owner u06"
+  },
+  {
+   "slug": "ac-kazde-zachowanie-per-katalog-jest-bramko",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u03.json: tests/integration/architecture/root-kind-gating.test.ts:62. `expect(shape(renamed)).toEqual(shape(conventional))` checks base, pages, release/references/gitignore/agentDirectFs flags, selecting(indexer/capture). Each flag equals `"
+  },
+  {
+   "slug": "ac-kolumna-spec-release-created-at-kazde",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-kolumna-spec-release-created-at-kazde] (git grep: 0 hits); not in any unit recipe; tags m17 -> owner u05"
+  },
+  {
+   "slug": "ac-konfiguracja-ktorej-roots-nie-ma-dokl",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u11.json: src/server/config.test.ts:488 readConfig and writeConfig throw /found 0/ and /found 2/; nothing written; code config.ts:630-635"
+  },
+  {
+   "slug": "ac-korze-tar-bundle-a-zawiera-wy-cznie-ma",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-korze-tar-bundle-a-zawiera-wy-cznie-ma] (git grep: 0 hits); not in any unit recipe; tags m17 -> owner u05"
+  },
+  {
+   "slug": "ac-korzen-uzytkownika-o-identyfikatorze",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u11.json: src/server/config.test.ts:470 readConfig/writeConfig/parseRootsArray throw /root id 'plans' is reserved for a system root/; code config.ts:597-603"
+  },
+  {
+   "slug": "ac-korzen-uzytkownika-z-dir-przechodzi-w",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u11.json: src/server/config.test.ts:416 expect(validateRootDirs([builtinPagesRoot('.')]).errors).toEqual([]) (checked against SYSTEM_ROOTS, config.ts:480-483)"
+  },
+  {
+   "slug": "ac-korzen-uzytkownika-z-dir-rownym-claud",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u11.json: src/server/config.test.ts:420 errors toContain \"'x' overlaps write-target 'plans'\" for .claude4spec/plans/x and for dir == .claude4spec/plans"
+  },
+  {
+   "slug": "ac-korzen-uzytkownika-z-releasable-false-w",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u05-r2.json: src/server/services/release-unreleased-diff.test.ts:526 '[ac:ac-korzen-uzytkownika-z-releasable-false-w] assigns the pages of a root whose config entry carries `releasable: false` to the new release' — config.json with { id:'notes"
+  },
+  {
+   "slug": "ac-kotwica-release-u-w-gicie-commit-wprow",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-kotwica-release-u-w-gicie-commit-wprow] (git grep: 0 hits); not in any unit recipe; tags git-enabled,m17 -> owner u05"
+  },
+  {
+   "slug": "ac-list-pages-z-rootid-plans-konczy-sie",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u06.json: src/server/discovery/discovery.test.ts:2339 ('expect(plans.code).toBe(nope.code)', identical message shape/hint)"
+  },
+  {
+   "slug": "ac-lista-elementu-roots-na-karcie-direct",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u11.json: tests/e2e/settings-directories.test.ts:87 Directories section text not.toContain each .claude4spec/<kind> dir; no artifact dir labels"
+  },
+  {
+   "slug": "ac-m02-montuje-pare-pagesservice-pageswatch",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-m02-montuje-pare-pagesservice-pageswatch] (git grep: 0 hits); not in any unit recipe; tags l13,m02 -> owner u03"
+  },
+  {
+   "slug": "ac-m29-odbudowuje-metadata-spec-release-z-p",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-m29-odbudowuje-metadata-spec-release-z-p] (git grep: 0 hits); not in any unit recipe; tags m29,releases-on-disk -> owner u04"
+  },
+  {
+   "slug": "ac-m36-fiksuje-scheme-sekcji-konsumenta",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u09.json: src/server/services/artifact-registry.test.ts:68 asserts kind declaration per root kind (code/hidden/header contract), entry = binding+danglingPolicy, cross-link artifactEntry/artifactHeaderContract; plan mutable ['applied','title"
+  },
+  {
+   "slug": "ac-m36-trzyma-artifactregistry-jeden-wp",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u09.json: src/server/services/artifact-registry.test.ts:35 asserts keys ['briefs','patches','plans'], each entry keys toEqual(['binding','danglingPolicy']), removed fields absent, binding matrix; code src/server/services/artifact-registry.t"
+  },
+  {
+   "slug": "ac-manifest-json-zawiera-bundleschemaversio",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-manifest-json-zawiera-bundleschemaversio] (git grep: 0 hits); not in any unit recipe; tags m17 -> owner u05"
+  },
+  {
+   "slug": "ac-modal-generate-brief-ma-scope-przestr",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u10.json: src/client/components/briefs/BriefScopeModal.test.ts:25 asserts whole-release default checked, mode (b) checkboxes == every pages root (no system roots), per-root count cells x2, one 'brief-scope-entity-count' row; probe URL carri"
+  },
+  {
+   "slug": "ac-nowy-naglowek-zapisany-w-pliku-planu",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u09.json: src/server/workspace/plans-root.test.ts:88 outside write of '## New heading' via bound m06-anchor-injection on artifacts:plan → expect(lines[at - 1]).toMatch(ANCHOR_LINE_RE); m06-section-indexer not bound; code src/server/services"
+  },
+  {
+   "slug": "ac-pagesfrontmatterindexer-l7-zasilany",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-pagesfrontmatterindexer-l7-zasilany] (git grep: 0 hits); not in any unit recipe; tags m02 -> owner u03"
+  },
+  {
+   "slug": "ac-plik-bez-frontmatteru-w-briefsdir-jes",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-plik-bez-frontmatteru-w-briefsdir-jes] (git grep: 0 hits); not in any unit recipe; tags m21-edge -> owner u10"
+  },
+  {
+   "slug": "ac-plik-html-lezacy-w-korzeniu-stron-jes",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u03.json: src/server/discovery/discovery.test.ts:2297: `expect(tree).toContainEqual({ type: 'file', name: 'mock.html', path: 'mock.html', fileType: 'html' })` on that root's `listTree`, plus `expect(paths).not.toContain('mock.html')` on `li"
+  },
+  {
+   "slug": "ac-plik-html-w-korzeniu-stron-bez-file-version",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u03.json: src/server/fs/reactions.test.ts:239 uses a real FileVersionCapture over a migrated DB, with m17-capture bound as the pages-kind loop binds it. It runs add/change/unlink on mock.html and writes a.md, then asserts `expect(rows).toEq"
+  },
+  {
+   "slug": "ac-plugin-host-m13-pozostaje-agnostyczny-wz",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-plugin-host-m13-pozostaje-agnostyczny-wz] (git grep: 0 hits); not in any unit recipe; tags m13 -> owner none (M13 plugin host, no unit)"
+  },
+  {
+   "slug": "ac-po-odbudowie-spec-release-z-plikow-re",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-po-odbudowie-spec-release-z-plikow-re] (git grep: 0 hits); not in any unit recipe; tags m17 -> owner u05"
+  },
+  {
+   "slug": "ac-po-odbudowie-spec-release-z-plikow-re-2",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-po-odbudowie-spec-release-z-plikow-re-2] (git grep: 0 hits); not in any unit recipe; tags m17 -> owner u05"
+  },
+  {
+   "slug": "ac-po-odbudowie-spec-release-z-plikow-re-3",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-po-odbudowie-spec-release-z-plikow-re-3] (git grep: 0 hits); not in any unit recipe; tags m17 -> owner u05"
+  },
+  {
+   "slug": "ac-po-odbudowie-spec-release-z-plikow-re-4",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-po-odbudowie-spec-release-z-plikow-re-4] (git grep: 0 hits); not in any unit recipe; tags m21 -> owner u10"
+  },
+  {
+   "slug": "ac-post-api-patches-tworzy-plik-patcha-z",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "tests/integration/api/catalog-rest.test.ts:414 POST /api/patches -> 201, data.path 'b1-route-drifted.md' read from patches/; 404 BRIEF_NOT_FOUND half at :457 (untagged sibling) (no unit verdict; body read here)"
+  },
+  {
+   "slug": "ac-proba-dotarcia-do-briefu-patcha-planu",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-proba-dotarcia-do-briefu-patcha-planu] (git grep: 0 hits); not in any unit recipe; tags l13,m39-edge -> owner u06"
+  },
+  {
+   "slug": "ac-projectcontext-montuje-n-par-pagesservic",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u03.json: src/server/workspace/root-registry-runtime.test.ts:82 covers both halves of the title end to end. (1) N facades: `rootRuntimes` ids ['pages','adr'], each `toBeInstanceOf(PagesService)` and distinct. (2) Every registry root mounted"
+  },
+  {
+   "slug": "ac-propagateslugchange-oraz-check-consisten",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-propagateslugchange-oraz-check-consisten] (git grep: 0 hits); not in any unit recipe; tags l13,m19 -> owner u06"
+  },
+  {
+   "slug": "ac-propagatetagslugchange-przepisuje-atrybu",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-propagatetagslugchange-przepisuje-atrybu] (git grep: 0 hits); not in any unit recipe; tags l13,m18 -> owner u04"
+  },
+  {
+   "slug": "ac-przy-config-json-z-kluczem-dir-dla-pl",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u11.json: src/server/roots/registry.test.ts:60 warn matches /plansDir.*\\.claude4spec\\/plans/; new RootRegistry(cfg.roots).system('plans').dir === '.claude4spec/plans'"
+  },
+  {
+   "slug": "ac-przy-git-enabled-zakres-release-diff",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-przy-git-enabled-zakres-release-diff] (git grep: 0 hits); not in any unit recipe; tags m17,m17-edge -> owner u05"
+  },
+  {
+   "slug": "ac-przy-w-czonym-config-git-synccommitonre",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u12.json: src/server/routes/releases.test.ts:192 — POST /api/releases with git.enabled:true (stale syncCommitOnRelease:false) → 201, gitSync.status 'committed', git log -1 body 'v1\\n\\nfirst cut', tracked pages/a.md, .claude4spec/entities/ta"
+  },
+  {
+   "slug": "ac-purge-nie-kasuje-config-json-ani-tres",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-purge-nie-kasuje-config-json-ani-tres] (git grep: 0 hits); not in any unit recipe; tags m31 -> owner u03"
+  },
+  {
+   "slug": "ac-puste-allowedpaths-i-disallowedpaths-n",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u08.json: src/server/services/agent-path-scope.test.ts:55 '[ac:ac-puste-allowedpaths-i-disallowedpaths-n]': expect(r.allowedPaths).toEqual([outside]); expect(r.allowedPaths).not.toContain(CWD); expect(r.disallowedPaths).toEqual(artifactAbs("
+  },
+  {
+   "slug": "ac-release-snapshot-diff-bundle-restore-o",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-release-snapshot-diff-bundle-restore-o] (git grep: 0 hits); not in any unit recipe; tags l13,m17 -> owner u05"
+  },
+  {
+   "slug": "ac-release-z-opisem-dluzszym-niz-500-zna",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-release-z-opisem-dluzszym-niz-500-zna] (git grep: 0 hits); not in any unit recipe; tags m17 -> owner u05"
+  },
+  {
+   "slug": "ac-resolve-i-autocomplete-path-md-sa-ogran",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u02-r2.json: End to end, five [ac:] tests consistent with current code. Server/indexer: src/server/services/pages-link-indexer.test.ts:224 asserts resolve precedence source→builtin→map order (rootId 'c' / 'pages' / 'b'; null source → 'pages') "
+  },
+  {
+   "slug": "ac-resolveagentpathscope-buduje-baze-implic",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-resolveagentpathscope-buduje-baze-implic] (git grep: 0 hits); not in any unit recipe; tags l13,m05 -> owner u08"
+  },
+  {
+   "slug": "ac-rodzina-brief-patch-rozwiazuje-projek",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-rodzina-brief-patch-rozwiazuje-projek] (git grep: 0 hits); not in any unit recipe; tags cli,m21,m23 -> owner u10"
+  },
+  {
+   "slug": "ac-rozszerzenia-plikow-stron-md-mdx",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-rozszerzenia-plikow-stron-md-mdx] (git grep: 0 hits); not in any unit recipe; tags m01-edge -> owner u11"
+  },
+  {
+   "slug": "ac-section-indexer-indeksuje-wylacznie-r",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-section-indexer-indeksuje-wylacznie-r] (git grep: 0 hits); not in any unit recipe; tags m06 -> owner u02"
+  },
+  {
+   "slug": "ac-section-indexer-walidacja-referencji-i",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u03.json: src/server/workspace/root-registry-runtime.test.ts:176. A user entry with sectionIndexed/releasable/referenceValidated=false is still in `registry.selecting('m06-section-indexer')`, `withFlag('references')`, `selecting('m17-captur"
+  },
+  {
+   "slug": "ac-spec-release-metadata-jest-pochodnym-c",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-spec-release-metadata-jest-pochodnym-c] (git grep: 0 hits); not in any unit recipe; tags m17,releases-on-disk -> owner u05"
+  },
+  {
+   "slug": "ac-swiezy-bootstrap-nie-zapisuje-w-confi",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u11.json: src/server/workspace/bootstrap.system-roots.test.ts:42 no *Dir keys, roots ids ['pages'], JSON.stringify(raw) not.toContain('.claude4spec/')"
+  },
+  {
+   "slug": "ac-swiezy-bootstrap-tworzy-katalogi-wszy",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u11.json: src/server/workspace/bootstrap.system-roots.test.ts:29 all five .claude4spec/<kind> isDirectory() after bootstrapProject; code bootstrap.ts:130-136"
+  },
+  {
+   "slug": "ac-trigger-rebuild-on-head-change-git-on",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-trigger-rebuild-on-head-change-git-on] (git grep: 0 hits); not in any unit recipe; tags git-enabled,m28,m28-edge -> owner u12"
+  },
+  {
+   "slug": "ac-update-page-w-trybie-content-na-rooci",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-update-page-w-trybie-content-na-rooci] (git grep: 0 hits); not in any unit recipe; tags m02 -> owner u03"
+  },
+  {
+   "slug": "ac-upgrade-projektu-sprzed-m29-entitiesdi",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-upgrade-projektu-sprzed-m29-entitiesdi] (git grep: 0 hits); not in any unit recipe; tags m01 -> owner u11"
+  },
+  {
+   "slug": "ac-w-roocie-z-sectionindexed-true-link-i",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/fs/watcher.test.ts:192 m14 subscribed first with after:[m06-section-indexer], flush -> log ['m06','m14'] (no unit verdict; body read here)"
+  },
+  {
+   "slug": "ac-wbudowany-write-edit-bash-agenta-na-kata",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u08.json: src/server/services/agent-execution-scope.test.ts:85 '[ac:ac-wbudowany-write-edit-bash-agenta-na-kata]': flag off + allowedPaths opening .claude4spec/plans|entities → disallowedToolGroups lacks file/shell groups; for every system "
+  },
+  {
+   "slug": "ac-wersjonowanie-briefu-reuse-uje-tabele",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u10.json: src/server/workspace/briefs-patches-roots.test.ts:259 asserts rows == [{briefs,create,filesystem,1},{briefs,update,user,2},{briefs,update,agent,3}] and no table LIKE '%brief%'"
+  },
+  {
+   "slug": "ac-wpis-roots-z-polem-spoza-id-name-dir",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u11.json: src/server/config.test.ts:503 entries with releasable/sidebar/linkTargets/foo load; cfg.roots toEqual four-key entries"
+  },
+  {
+   "slug": "ac-zadna-operacja-rdzenia-nie-ma-parametru",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-zadna-operacja-rdzenia-nie-ma-parametru] (git grep: 0 hits); not in any unit recipe; tags l13,m39 -> owner u06"
+  },
+  {
+   "slug": "ac-zmiana-pliku-w-dowolnym-korzeniu-reje",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u05-r2.json: src/server/workspace/root-registry-runtime.test.ts:445 (the duplicate tag removed from src/server/fs/reactions.test.ts:319) mounts+binds every registry root, writes a file per root matching its kind's map (releases '2-1-8.json', e"
+  },
+  {
+   "slug": "ac-zmiana-pol-per-projekt-rebuildujacych-ko",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:ac-zmiana-pol-per-projekt-rebuildujacych-ko] (git grep: 0 hits); not in any unit recipe; tags m01 -> owner u11"
+  },
+  {
+   "slug": "ac-zrodla-zdarzen-korzeni-entities-i-rel",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "verify-unit-u05-r2.json: src/server/workspace/root-registry-runtime.test.ts:415  asserts w.isMounted('entities'|'releases') false before, then after mountRegistryRoots: root.kind===id, dir `.claude4spec/<id>`, sourceByRootId.get(id)===id, isMounted true; "
+  },
+  {
+   "slug": "m19-services-mounted-per-project-context",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:m19-services-mounted-per-project-context] (git grep: 0 hits); not in any unit recipe; tags m19 -> owner u06"
+  },
+  {
+   "slug": "m19-slug-rename-cross-entity",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:m19-slug-rename-cross-entity] (git grep: 0 hits); not in any unit recipe; tags m19 -> owner u06"
+  },
+  {
+   "slug": "m19-slug-rename-pages-atomic",
+   "type": "ac",
+   "level": 2,
+   "status": "uncovered",
+   "evidence": "active, updated in 2.1.7->2.1.8; no test carries [ac:m19-slug-rename-pages-atomic] (git grep: 0 hits); not in any unit recipe; tags m19 -> owner u06"
+  },
+  {
+   "slug": "config-json-shape",
+   "type": "code-snippet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "trace.md:15 present (op update)"
+  },
+  {
+   "slug": "page-root-runtime-construction",
+   "type": "code-snippet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "trace.md:2 present (op update)"
+  },
+  {
+   "slug": "patch-frontmatter-contract",
+   "type": "code-snippet",
+   "level": 1,
+   "status": "uncovered",
+   "evidence": "code-snippet updated in 2.1.7->2.1.8 (release-diff --entity-types mcp-tool,endpoint,dto,code-snippet); no line in .c4s-impl/trace.md; not in any unit recipe"
+  },
+  {
+   "slug": "szablon-agent-path-scope",
+   "type": "code-snippet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "trace.md:14 present (op update)"
+  },
+  {
+   "slug": "szablon-brief-scope",
+   "type": "code-snippet",
+   "level": 1,
+   "status": "uncovered",
+   "evidence": "code-snippet updated in 2.1.7->2.1.8 (release-diff --entity-types mcp-tool,endpoint,dto,code-snippet); no line in .c4s-impl/trace.md; not in any unit recipe"
+  },
+  {
+   "slug": "app-config-response",
+   "type": "dto",
+   "level": 1,
+   "status": "covered",
+   "evidence": "trace.md:16 present (op update)"
+  },
+  {
+   "slug": "artifact-list-item",
+   "type": "dto",
+   "level": 1,
+   "status": "uncovered",
+   "evidence": "dto updated in 2.1.7->2.1.8 (release-diff --entity-types mcp-tool,endpoint,dto,code-snippet); no line in .c4s-impl/trace.md; not in any unit recipe"
+  },
+  {
+   "slug": "bundle-manifest",
+   "type": "dto",
+   "level": 1,
+   "status": "uncovered",
+   "evidence": "dto updated in 2.1.7->2.1.8 (release-diff --entity-types mcp-tool,endpoint,dto,code-snippet); no line in .c4s-impl/trace.md; not in any unit recipe"
+  },
+  {
+   "slug": "patch-config-request",
+   "type": "dto",
+   "level": 1,
+   "status": "covered",
+   "evidence": "trace.md:17 present (op update)"
+  },
+  {
+   "slug": "patch-create-request",
+   "type": "dto",
+   "level": 1,
+   "status": "uncovered",
+   "evidence": "dto updated in 2.1.7->2.1.8 (release-diff --entity-types mcp-tool,endpoint,dto,code-snippet); no line in .c4s-impl/trace.md; not in any unit recipe"
+  },
+  {
+   "slug": "rename-root-request",
+   "type": "dto",
+   "level": 1,
+   "status": "uncovered",
+   "evidence": "dto updated in 2.1.7->2.1.8 (release-diff --entity-types mcp-tool,endpoint,dto,code-snippet); no line in .c4s-impl/trace.md; not in any unit recipe"
+  },
+  {
+   "slug": "rename-root-response",
+   "type": "dto",
+   "level": 1,
+   "status": "covered",
+   "evidence": "trace.md:18 present (op update)"
+  },
+  {
+   "slug": "spec-snapshot",
+   "type": "dto",
+   "level": 1,
+   "status": "uncovered",
+   "evidence": "dto updated in 2.1.7->2.1.8 (release-diff --entity-types mcp-tool,endpoint,dto,code-snippet); no line in .c4s-impl/trace.md; not in any unit recipe"
+  },
+  {
+   "slug": "post-api-config-roots-rootid-rename",
+   "type": "endpoint",
+   "level": 1,
+   "status": "covered",
+   "evidence": "trace.md:19 present (op update)"
+  },
+  {
+   "slug": "brief-tools-update-brief",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "trace.md:13 present (op update); param set per accepted deviation dev-0011"
+  },
+  {
+   "slug": "c4s-reader-get-page-outline",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "trace.md:4 present (op update)"
+  },
+  {
+   "slug": "c4s-reader-get-page",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "trace.md:6 present (op update)"
+  },
+  {
+   "slug": "c4s-reader-get-sections",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "trace.md:5 present (op update)"
+  },
+  {
+   "slug": "c4s-reader-overview",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "trace.md:3 present (op update)"
+  },
+  {
+   "slug": "c4s-reader-search-pages",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "trace.md:7 present (op update)"
+  },
+  {
+   "slug": "entity-tools-create-entities",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "uncovered",
+   "evidence": "mcp-tool updated in 2.1.7->2.1.8 (release-diff --entity-types mcp-tool,endpoint,dto,code-snippet); no line in .c4s-impl/trace.md; not in any unit recipe"
+  },
+  {
+   "slug": "entity-tools-describe-entity-type",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "uncovered",
+   "evidence": "mcp-tool updated in 2.1.7->2.1.8 (release-diff --entity-types mcp-tool,endpoint,dto,code-snippet); no line in .c4s-impl/trace.md; not in any unit recipe"
+  },
+  {
+   "slug": "page-tools-update-page",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "trace.md:1 present (op update); shape differs from entity (`body`+`frontmatter` vs `content`) by accepted deviation dev-0002"
+  },
+  {
+   "slug": "reference-tools-get-page-outline",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "trace.md:8 present (op update)"
+  },
+  {
+   "slug": "reference-tools-get-page",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "trace.md:9 present (op update)"
+  },
+  {
+   "slug": "reference-tools-get-sections",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "trace.md:10 present (op update)"
+  },
+  {
+   "slug": "reference-tools-list-pages",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "trace.md:11 present (op update)"
+  },
+  {
+   "slug": "reference-tools-search-pages",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "trace.md:12 present (op update)"
+  },
+  {
+   "slug": "release-tools-release-create",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "uncovered",
+   "evidence": "mcp-tool updated in 2.1.7->2.1.8 (release-diff --entity-types mcp-tool,endpoint,dto,code-snippet); no line in .c4s-impl/trace.md; not in any unit recipe"
+  },
+  {
+   "slug": "release-tools-release-diff",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "uncovered",
+   "evidence": "mcp-tool updated in 2.1.7->2.1.8 (release-diff --entity-types mcp-tool,endpoint,dto,code-snippet); no line in .c4s-impl/trace.md; not in any unit recipe"
+  },
+  {
+   "slug": "release-tools-release-show",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "uncovered",
+   "evidence": "mcp-tool updated in 2.1.7->2.1.8 (release-diff --entity-types mcp-tool,endpoint,dto,code-snippet); no line in .c4s-impl/trace.md; not in any unit recipe"
+  },
+  {
+   "slug": "deviation:dev-0001",
+   "level": 3,
+   "status": "covered",
+   "evidence": ".c4s-impl/deviations/dev-0001.json: sent: true (kind clarification)"
+  },
+  {
+   "slug": "deviation:dev-0002",
+   "level": 3,
+   "status": "covered",
+   "evidence": ".c4s-impl/deviations/dev-0002.json: sent: true (kind drift)"
+  },
+  {
+   "slug": "deviation:dev-0003",
+   "level": 3,
+   "status": "covered",
+   "evidence": ".c4s-impl/deviations/dev-0003.json: sent: true (kind incorrect)"
+  },
+  {
+   "slug": "deviation:dev-0004",
+   "level": 3,
+   "status": "covered",
+   "evidence": ".c4s-impl/deviations/dev-0004.json: sent: true (kind drift)"
+  },
+  {
+   "slug": "deviation:dev-0005",
+   "level": 3,
+   "status": "covered",
+   "evidence": ".c4s-impl/deviations/dev-0005.json: sent: true (kind drift)"
+  },
+  {
+   "slug": "deviation:dev-0006",
+   "level": 3,
+   "status": "covered",
+   "evidence": ".c4s-impl/deviations/dev-0006.json: sent: true (kind missing)"
+  },
+  {
+   "slug": "deviation:dev-0007",
+   "level": 3,
+   "status": "covered",
+   "evidence": ".c4s-impl/deviations/dev-0007.json: sent: true (kind drift)"
+  },
+  {
+   "slug": "deviation:dev-0008",
+   "level": 3,
+   "status": "covered",
+   "evidence": ".c4s-impl/deviations/dev-0008.json: sent: true (kind incorrect)"
+  },
+  {
+   "slug": "deviation:dev-0009",
+   "level": 3,
+   "status": "covered",
+   "evidence": ".c4s-impl/deviations/dev-0009.json: sent: true (kind drift)"
+  },
+  {
+   "slug": "deviation:dev-0010",
+   "level": 3,
+   "status": "covered",
+   "evidence": ".c4s-impl/deviations/dev-0010.json: sent: true (kind drift)"
+  },
+  {
+   "slug": "deviation:dev-0011",
+   "level": 3,
+   "status": "covered",
+   "evidence": ".c4s-impl/deviations/dev-0011.json: sent: true (kind drift)"
+  },
+  {
+   "slug": "deviation:dev-0012",
+   "level": 3,
+   "status": "covered",
+   "evidence": ".c4s-impl/deviations/dev-0012.json: sent: true (kind drift)"
+  },
+  {
+   "slug": "deviation:dev-0013",
+   "level": 3,
+   "status": "covered",
+   "evidence": ".c4s-impl/deviations/dev-0013.json: sent: true (kind drift)"
+  },
+  {
+   "slug": "deviation:dev-0014",
+   "level": 3,
+   "status": "covered",
+   "evidence": ".c4s-impl/deviations/dev-0014.json: sent: true (kind clarification)"
+  },
+  {
+   "slug": "regression",
+   "level": 3,
+   "status": "covered",
+   "evidence": ".c4s-impl/runs/system-suite.md Run 3 (d1e37e1 = HEAD code): 399/399 files, 4853/4853 vitest passed, exit 0; e2e Run 1: 34/39, the 5 red files fail on empty-env seed preconditions ('seed one first', 'no unversioned entity'; envelope-entity-pages 7/7 alone) - not branch failures. stubs.json: {\"stubs\":[]} (no open stub). User jobs: none at 2.1.8."
+  }
+ ],
+ "suite": {
+  "command": "env-runner pr258-system: full npm test (vitest) + e2e, per .c4s-impl/runs/system-suite.md",
+  "exitCode": 0,
+  "summary": "Run 3 d1e37e1: 399/399 files, 4853/4853 tests passed, 0 failed; e2e (run 1) 34/39, 5 failures = empty-env seed preconditions"
+ }
+}
