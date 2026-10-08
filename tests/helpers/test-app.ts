@@ -34,12 +34,13 @@ import { VersionService } from '../../src/server/services/versions.js';
 import { ReferencesService } from '../../src/server/services/references.js';
 import { RawEntityReader } from '../../src/server/discovery/raw-entity-reader.js';
 import { PagesService } from '../../src/server/services/pages.js';
+import { MarkdownFileStore } from '../../src/server/services/markdown-file-store.js';
 import { FileWatchRuntime, type WatchScope } from '../../src/server/fs/watcher.js';
 import { pageSource, artifactSource, boundWriter, boundSuppress, ENTITIES_SOURCE } from '../../src/server/fs/sources.js';
 import { FileSerializer } from '../../src/server/services/file-serializer.js';
 import { FileVersionService } from '../../src/server/services/file-version.js';
 import { PagesFrontmatterIndexer } from '../../src/server/services/pages-frontmatter-indexer.js';
-import { BRIEF_ROOT_MARKER, PATCH_ROOT_MARKER, PLAN_ROOT_MARKER } from '../../src/shared/types.js';
+import { systemRootId } from '../../src/shared/root-kinds.js';
 import { EntityStore } from '../../src/server/services/entity-store.js';
 import { errorHandler } from '../../src/server/routes/errors.js';
 import { createDiscoveryCore } from '../../src/server/discovery/index.js';
@@ -76,7 +77,7 @@ export interface TestApp {
   broadcasts: unknown[];
   cwd: string;
   /** M36 plan mount — exposed so tests can seed `.md` files directly (mirrors artifacts.test.ts's writeArtifact). */
-  plansPages: PagesService;
+  plansPages: MarkdownFileStore;
   plansSerializer: FileSerializer;
   pageVersions: FileVersionService;
   frontmatterIndexer: PagesFrontmatterIndexer;
@@ -325,13 +326,14 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
 
   // M36 artifact mounts (briefs/patches/plans) — minimal wiring so tests can
   // exercise the generic /api/artifacts/:kind/* family alongside each kind's
-  // bespoke routes (e.g. plansRouter's create-thread).
+  // bespoke routes (e.g. plansRouter's create-thread). System roots get the bare
+  // store, as in production — `PagesService` is the facade of `pages` roots only.
   const chatService = new ChatService(db);
-  const briefsPages = new PagesService(cwd, 'briefs', BRIEF_ROOT_MARKER);
+  const briefsPages = new MarkdownFileStore({ cwd, dir: 'briefs', rootId: systemRootId('briefs'), kind: 'briefs' });
   await briefsPages.ensureRoot();
-  const patchesPages = new PagesService(cwd, 'patches', PATCH_ROOT_MARKER);
+  const patchesPages = new MarkdownFileStore({ cwd, dir: 'patches', rootId: systemRootId('patches'), kind: 'patches' });
   await patchesPages.ensureRoot();
-  const plansPages = new PagesService(cwd, 'plans', PLAN_ROOT_MARKER);
+  const plansPages = new MarkdownFileStore({ cwd, dir: 'plans', rootId: systemRootId('plans'), kind: 'plans' });
   await plansPages.ensureRoot();
   for (const kind of ['brief', 'patch', 'plan'] as const) {
     const dir = { brief: briefsPages, patch: patchesPages, plan: plansPages }[kind].root;
@@ -346,9 +348,9 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
   const pageVersions = new FileVersionService(db, briefsSerializer);
   const frontmatterIndexer = new PagesFrontmatterIndexer(
     new Map([
-      [BRIEF_ROOT_MARKER, briefsPages],
-      [PATCH_ROOT_MARKER, patchesPages],
-      [PLAN_ROOT_MARKER, plansPages],
+      [systemRootId('briefs'), briefsPages],
+      [systemRootId('patches'), patchesPages],
+      [systemRootId('plans'), plansPages],
     ]),
     ws,
   );

@@ -1,6 +1,7 @@
 import type { WatchSubscriber, WatchScope, WatchOrigin } from './watcher.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
-import { requireRootId } from './sources.js';
+import type { ReactionInput } from './reactions.js';
+import { reactionRootId } from './sources.js';
 
 /**
  * `notification`-phase subscribers.
@@ -20,13 +21,24 @@ import { requireRootId } from './sources.js';
  * open `.html` preview (M30) reloads on this same event, narrowed client-side to
  * `**\/*.html` — M30 has no reaction of its own.
  */
-export function fileChangedNotifier(ws: WsEmitter): WatchSubscriber {
-  const emit = (source: string, relPath: string, event: 'change' | 'unlink', origin: WatchOrigin): void => {
-    ws.broadcast({ kind: 'file:changed', event, path: relPath, rootId: requireRootId(source), origin });
+export function fileChangedNotifier(ws: WsEmitter): {
+  onChange(scope: WatchScope, source: string, relPath: string, origin: WatchOrigin, input?: ReactionInput): void;
+  onUnlink(scope: WatchScope, source: string, relPath: string, origin: WatchOrigin, input?: ReactionInput): void;
+} {
+  // `rootId` comes from the binding's input, like every other registry reaction
+  // (reactionRootId) — the source-name suffix is only the direct-call fallback.
+  const emit = (
+    source: string,
+    relPath: string,
+    event: 'change' | 'unlink',
+    origin: WatchOrigin,
+    input?: ReactionInput,
+  ): void => {
+    ws.broadcast({ kind: 'file:changed', event, path: relPath, rootId: reactionRootId(source, input), origin });
   };
   return {
-    onChange: (_scope, source, relPath, origin) => emit(source, relPath, 'change', origin),
-    onUnlink: (_scope, source, relPath, origin) => emit(source, relPath, 'unlink', origin),
+    onChange: (_scope, source, relPath, origin, input) => emit(source, relPath, 'change', origin, input),
+    onUnlink: (_scope, source, relPath, origin, input) => emit(source, relPath, 'unlink', origin, input),
   };
 }
 

@@ -3,7 +3,7 @@ import type { ReleaseService } from '../services/release.js';
 import type { GitService } from '../services/git.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import { CURRENT_RELEASE_NAME } from '../../shared/entities.js';
-import { DomainError } from '../services/tags.js';
+import { refuseNonPageRoots } from '../mcp/release-tools/index.js';
 
 export function releasesRouter(
   releases: ReleaseService,
@@ -107,19 +107,9 @@ export function releasesRouter(
       const rawRoots = req.query.roots;
       const roots = (Array.isArray(rawRoots) ? rawRoots : rawRoots === undefined ? [] : [rawRoots])
         .filter((r): r is string => typeof r === 'string');
-      // 2.1.8 (M17 m17errtx1): same refusal as `release_diff` — an unknown id or a
-      // root of a kind other than `pages` (a system root) is 400, never silently
-      // skipped, and the message lists the `kind: pages` roots.
-      const pageRootIds = releases.pageRootIds();
-      const notPage = roots.find((r) => !pageRootIds.includes(r));
-      if (notPage !== undefined) {
-        const available = `page roots: [${pageRootIds.join(', ')}]`;
-        throw new DomainError(
-          'INVALID_ROOTS_FILTER',
-          `roots: '${notPage}' is not a page root (${available})`,
-          available,
-        );
-      }
+      // 2.1.8 (M17 m17errtx1): the same refusal as `release_diff`, from the one
+      // helper both channels call.
+      refuseNonPageRoots(roots, releases.pageRootIds());
       // 0.1.122: reserved literal `:to === 'current'` resolved BEFORE the
       // nameOrId lookup — diff `:from` against the live/unreleased spec state.
       if (req.params.to === CURRENT_RELEASE_NAME) {

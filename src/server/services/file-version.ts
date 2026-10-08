@@ -100,7 +100,7 @@ export class FileVersionService {
    *
    * M21 (m02multidir): caller can pass an alternative `serializer` so this
    * single shared `FileVersionService` can capture files from any root. Each
-   * `FileSerializer` is bound to a specific `PagesService` (= a root dir) at
+   * `FileSerializer` is bound to a specific `MarkdownFileStore` (= a root dir) at
    * construction time; the `file_version` table is keyed by `(rootId, path)`.
    *
    * 0.1.96: `rootId` is a dynamic string — the id of a registry root: a page

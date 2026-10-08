@@ -7,7 +7,7 @@ import express from 'express';
 import request from 'supertest';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { runMigrations } from '../db/migrate.js';
-import { PagesService } from '../services/pages.js';
+import { MarkdownFileStore } from '../services/pages.js';
 import { FileWatchRuntime } from '../fs/watcher.js';
 import { artifactSource, boundWriter } from '../fs/sources.js';
 import { FileSerializer } from '../services/file-serializer.js';
@@ -19,7 +19,7 @@ import { PatchService } from '../services/patch.js';
 import { PlanService } from '../services/plan.js';
 import { artifactsRouter } from './artifacts.js';
 import { errorHandler } from './errors.js';
-import { BRIEF_ROOT_MARKER, PATCH_ROOT_MARKER, PLAN_ROOT_MARKER } from '../../shared/types.js';
+import { systemRootId } from '../../shared/root-kinds.js';
 import type { ReleaseService } from '../services/release.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 
@@ -50,7 +50,7 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
     body: string,
   ): Promise<void> {
     const dir = kind === 'brief' ? briefsDir : patchesDir;
-    const rootId = kind === 'brief' ? BRIEF_ROOT_MARKER : PATCH_ROOT_MARKER;
+    const rootId = kind === 'brief' ? systemRootId('briefs') : systemRootId('patches');
     const serializer = kind === 'brief' ? briefsSerializer : patchesSerializer;
     const abs = path.join(cwd, dir, relPath);
     await fs.mkdir(path.dirname(abs), { recursive: true });
@@ -65,11 +65,11 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
     db = new Database(':memory:');
     runMigrations(db);
 
-    const briefsPages = new PagesService(cwd, briefsDir, BRIEF_ROOT_MARKER);
+    const briefsPages = new MarkdownFileStore({ cwd, dir: briefsDir, rootId: systemRootId('briefs'), kind: 'briefs' });
     await briefsPages.ensureRoot();
-    const patchesPages = new PagesService(cwd, patchesDir, PATCH_ROOT_MARKER);
+    const patchesPages = new MarkdownFileStore({ cwd, dir: patchesDir, rootId: systemRootId('patches'), kind: 'patches' });
     await patchesPages.ensureRoot();
-    const plansPages = new PagesService(cwd, plansDir, PLAN_ROOT_MARKER);
+    const plansPages = new MarkdownFileStore({ cwd, dir: plansDir, rootId: systemRootId('plans'), kind: 'plans' });
     await plansPages.ensureRoot();
     const watchRuntime = new FileWatchRuntime({ fsEvents: false });
     const scoped = watchRuntime.scoped('context:test');
@@ -84,9 +84,9 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
     const plansSerializer = new FileSerializer(plansPages);
     pageVersions = new FileVersionService(db, briefsSerializer);
     const frontmatterRoots = new Map([
-      [BRIEF_ROOT_MARKER, briefsPages],
-      [PATCH_ROOT_MARKER, patchesPages],
-      [PLAN_ROOT_MARKER, plansPages],
+      [systemRootId('briefs'), briefsPages],
+      [systemRootId('patches'), patchesPages],
+      [systemRootId('plans'), plansPages],
     ]);
     frontmatterIndexer = new PagesFrontmatterIndexer(frontmatterRoots, fakeWs);
     const chatService = new ChatService(db);

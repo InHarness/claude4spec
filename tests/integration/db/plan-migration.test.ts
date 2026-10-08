@@ -5,19 +5,19 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createTestDb } from '../../helpers/test-db.js';
 import { backfillPlansToFilesystem } from '../../../src/server/workspace/plan-migration.js';
-import { PagesService } from '../../../src/server/services/pages.js';
-import { PLAN_ROOT_MARKER } from '../../../src/shared/types.js';
+import { MarkdownFileStore } from '../../../src/server/services/pages.js';
+import { systemRootId } from '../../../src/shared/root-kinds.js';
 
 interface Harness {
   cwd: string;
   db: Database.Database;
-  plansPages: PagesService;
+  plansPages: MarkdownFileStore;
 }
 
 async function setup(): Promise<Harness> {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-plan-migration-test-'));
   const db = createTestDb();
-  const plansPages = new PagesService(cwd, 'plans', PLAN_ROOT_MARKER);
+  const plansPages = new MarkdownFileStore({ cwd, dir: 'plans', rootId: systemRootId('plans'), kind: 'plans' });
   await plansPages.ensureRoot();
   return { cwd, db, plansPages };
 }

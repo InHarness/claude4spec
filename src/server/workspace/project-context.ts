@@ -1027,12 +1027,14 @@ async function buildInner(
   // M17: ReleaseService + cross-cutting `release-tools` MCP. Like
   // reference-tools, owned by the host (not a plugin) — release semantics
   // are dual-track (entities + pages), neither side is a plugin owner.
-  // 0.1.96: the `pages` roots drive releases/bundles/diffs; the release-flag roots drive git staging and pathspecs.
+  // 0.1.96: the `pages` roots drive releases/bundles/diffs; the release-flag roots drive the git pathspecs
+  // (`setReleaseFlagRootDirs`). 2.1.8: git STAGING is every registry root plus config.json, and repo
+  // detection probes the roots of kind `pages` (`GitService(pagesKindRootDirs)`).
   // 2.1.8: every `pages` root takes part — no user root is left out, whatever
   // a legacy `releasable` once said. M02 m02l13001: consumers that must see PAGES only (the `assignToRelease`
   // filter, the `file_version` path filter, bundle `roots` sanitisation) iterate
   // the roots of KIND `pages`, not the `release` flag — entities are released
-  // too, and these lists do not cover them. Git staging/pathspecs read the flag.
+  // too, and these lists do not cover them. Only the git pathspecs read the flag.
   const releasePageRoots = rootRegistry.pages();
   const pagesKindRootIds = releasePageRoots.map((r) => r.id);
   const pagesKindRootDirs = releasePageRoots.map((r) => rootDirAbs(cwd, r));

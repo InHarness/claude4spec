@@ -4,6 +4,7 @@ import path from 'node:path';
 import matter from 'gray-matter';
 import type { PageContent, PageDetail, PageWriteInput, PageSearchHit } from '../../shared/types.js';
 import { hasDotSegment, isMarkdownPath } from '../../shared/page-files.js';
+import { fileMapEntryOf, type RootKind } from '../../shared/root-kinds.js';
 import type { RecordStore } from '../fs/record-store.js';
 import type { MarkdownRecord } from '../fs/record-adapters.js';
 
@@ -29,12 +30,22 @@ export interface MarkdownFileStoreOptions {
   dir: string;
   /** Project directory the root's `dir` resolves against. */
   cwd: string;
+  /**
+   * The root's kind. When given, the store serves only the paths its kind's file
+   * map lists as markdown entries (`fileMapEntryOf`) — the same set the live
+   * reaction filters see, so a file outside the map (a nested or `.mdx` brief)
+   * is invisible to the boot listing, the readers and the writer alike. Omitted
+   * by the hand-rolled rigs: every `.md` / `.mdx` path under the dir.
+   */
+  kind?: RootKind;
 }
 
 export class MarkdownFileStore {
   /** Absolute directory of the root. */
   readonly root: string;
   readonly rootId: string;
+  /** The root's kind, when the store was built for a registry root (see the option). */
+  readonly kind: RootKind | undefined;
   /**
    * 0.2.76 — the M42 record store this root writes through. Set after
    * construction because the mount this store is bound to is claimed by the
@@ -46,6 +57,12 @@ export class MarkdownFileStore {
   constructor(opts: MarkdownFileStoreOptions) {
     this.root = path.join(opts.cwd, opts.dir);
     this.rootId = opts.rootId;
+    this.kind = opts.kind;
+  }
+
+  /** Is `relPath` a markdown entry of this root's kind's file map? Always true without a kind. */
+  servesPath(relPath: string): boolean {
+    return this.kind === undefined || fileMapEntryOf(this.kind, relPath)?.format === 'markdown';
   }
 
   async ensureRoot(): Promise<void> {
@@ -60,7 +77,7 @@ export class MarkdownFileStore {
    */
   async listMarkdownFiles(): Promise<string[]> {
     await this.ensureRoot();
-    return collectMarkdown(this.root, '');
+    return (await collectMarkdown(this.root, '')).filter((rel) => this.servesPath(rel));
   }
 
   /**
@@ -70,7 +87,7 @@ export class MarkdownFileStore {
    */
   async listMarkdownFilesReadonly(): Promise<string[]> {
     try {
-      return await collectMarkdown(this.root, '');
+      return (await collectMarkdown(this.root, '')).filter((rel) => this.servesPath(rel));
     } catch (err) {
       if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'ENOENT') return [];
       throw err;
@@ -95,16 +112,20 @@ export class MarkdownFileStore {
    * (M39 `get_page` returns a page as-authored because a tag IS an edge).
    */
   async readRaw(relPath: string): Promise<string> {
-    return await fs.readFile(resolveSafe(this.root, relPath), 'utf-8');
+    return await fs.readFile(resolveServed(this, relPath), 'utf-8');
   }
 
   /** Size + mtime without reading the file — `list_pages` measures before fetching. */
   async stat(relPath: string): Promise<{ size: number; mtimeMs: number }> {
-    const st = await fs.stat(resolveSafe(this.root, relPath));
+    const st = await fs.stat(resolveServed(this, relPath));
     return { size: st.size, mtimeMs: st.mtimeMs };
   }
 
   async write(relPath: string, input: PageWriteInput): Promise<PageContent> {
+    resolveSafe(this.root, relPath); // path-safety refusals first, as on every other method
+    if (!this.servesPath(relPath)) {
+      throw new Error(`path '${relPath}' is not an entry of the '${this.kind}' root's file map`);
+    }
     const written = await writeBytes(this, relPath, input);
     return {
       path: relPath,
@@ -119,7 +140,7 @@ export class MarkdownFileStore {
   }
 
   async remove(relPath: string): Promise<void> {
-    await fs.unlink(resolveSafe(this.root, relPath));
+    await fs.unlink(resolveServed(this, relPath));
   }
 
   async search(query: string, limit = 50): Promise<PageSearchHit[]> {
@@ -162,7 +183,7 @@ export class MarkdownFileStore {
 
   async exists(relPath: string): Promise<boolean> {
     try {
-      await fs.access(resolveSafe(this.root, relPath));
+      await fs.access(resolveServed(this, relPath));
       return true;
     } catch {
       return false;
@@ -215,6 +236,21 @@ export function resolveSafe(root: string, relPath: string): string {
   const rel = path.relative(root, abs);
   if (rel.startsWith('..') || path.isAbsolute(rel)) {
     throw new Error(`path escapes pages root: ${relPath}`);
+  }
+  return abs;
+}
+
+/**
+ * `resolveSafe` for a path the store serves. A path outside the kind's file map
+ * reads as absent (`ENOENT`) — the same answer a reader gets for a missing file,
+ * so every route that maps a missing file to 404 treats it alike.
+ */
+function resolveServed(store: MarkdownFileStore, relPath: string): string {
+  const abs = resolveSafe(store.root, relPath);
+  if (!store.servesPath(relPath)) {
+    throw Object.assign(new Error(`ENOENT: '${relPath}' is not an entry of the '${store.kind}' root's file map`), {
+      code: 'ENOENT',
+    });
   }
   return abs;
 }

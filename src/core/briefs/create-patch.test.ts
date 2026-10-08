@@ -52,21 +52,15 @@ describe('writePatchFs', () => {
     expect(parsed.content).toContain('Explanation of the gap.');
   });
 
-  it('two briefs with the same basename in different subdirectories produce distinct patch filenames', async () => {
+  it('refuses a brief outside the briefs file map (a nested file) as BRIEF_NOT_FOUND, writing nothing', async () => {
     fs.mkdirSync(path.join(briefsDirAbs, 'scoped-a'), { recursive: true });
-    fs.mkdirSync(path.join(briefsDirAbs, 'scoped-b'), { recursive: true });
     fs.writeFileSync(
       path.join(briefsDirAbs, 'scoped-a', 'foo.md'),
       matter.stringify('# Brief A\n', { type: 'brief', to_release: '0.2', implemented: false }),
       'utf8',
     );
-    fs.writeFileSync(
-      path.join(briefsDirAbs, 'scoped-b', 'foo.md'),
-      matter.stringify('# Brief B\n', { type: 'brief', to_release: '0.2', implemented: false }),
-      'utf8',
-    );
 
-    const resultA = await writePatchFs({
+    const err = await writePatchFs({
       briefsDirAbs,
       patchesDirAbs,
       briefRelPath: 'scoped-a/foo.md',
@@ -74,20 +68,11 @@ describe('writePatchFs', () => {
       kind: 'drift',
       body: 'body A',
       createdBy: 'test',
-    });
-    const resultB = await writePatchFs({
-      briefsDirAbs,
-      patchesDirAbs,
-      briefRelPath: 'scoped-b/foo.md',
-      desc: 'typo fix',
-      kind: 'drift',
-      body: 'body B',
-      createdBy: 'test',
-    });
+    }).catch((e: unknown) => e);
 
-    expect(resultA.path).not.toBe(resultB.path);
-    expect(fs.readFileSync(path.join(patchesDirAbs, resultA.path), 'utf8')).toContain('body A');
-    expect(fs.readFileSync(path.join(patchesDirAbs, resultB.path), 'utf8')).toContain('body B');
+    expect(err).toBeInstanceOf(BriefFsError);
+    expect((err as BriefFsError).code).toBe('BRIEF_NOT_FOUND');
+    expect(fs.existsSync(patchesDirAbs)).toBe(false);
   });
 
   it('[ac:ac-brak-katalogu-patchesdir-nie-jest-ble] creates patchesDir lazily when it does not exist yet', async () => {

@@ -132,7 +132,7 @@ export async function mountRegistryRoots(opts: {
     // 2. the root's file store: the primitive for every kind with markdown
     //    entries; the facade on top of it for kind `pages` only.
     if (kindHasMarkdown(root.kind)) {
-      const store = new MarkdownFileStore({ cwd, rootId: root.id, dir: root.dir });
+      const store = new MarkdownFileStore({ cwd, rootId: root.id, dir: root.dir, kind: root.kind });
       store.records = markdownRecordStore(w, source, store.root);
       const writer = boundWriter(w, source);
       const serializer = new FileSerializer(store);

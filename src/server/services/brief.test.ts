@@ -9,7 +9,7 @@ import { toolFailure } from '../operations/envelope.js';
 import { BRIEF_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
 import { BRIEF_HEADER } from '../../shared/root-kinds.js';
 import { M21_PROMPT_BLOCKS } from './system-prompt/blocks/m21-brief.js';
-import { PagesService } from './pages.js';
+import { MarkdownFileStore } from './pages.js';
 import { hashContent } from './artifact-content.js';
 import type { SelfWriteMarker } from '../fs/sources.js';
 
@@ -30,7 +30,7 @@ describe('BriefService.updateContent — the suppress token and a failed write',
   const BODY = ['---', 'type: brief', 'implemented: false', '---', '# Brief', ''].join('\n');
 
   function makeService(overrides: Partial<BriefServiceDeps> = {}): BriefService {
-    const briefsPages = new PagesService(cwd, 'briefs', 'briefs');
+    const briefsPages = new MarkdownFileStore({ cwd, dir: 'briefs', rootId: 'briefs', kind: 'briefs' });
     const writer: SelfWriteMarker = {
       markOrigin: () => {},
       flush: async () => {},
@@ -133,7 +133,7 @@ describe('BriefService.createBrief — the window is the provenance', () => {
     } as unknown as BriefServiceDeps['releaseService'],
   ): BriefService {
     return new BriefService({
-      briefsPages: new PagesService(cwd, 'briefs', 'briefs'),
+      briefsPages: new MarkdownFileStore({ cwd, dir: 'briefs', rootId: 'briefs', kind: 'briefs' }),
       briefsWatcher: {
         markOrigin: () => {},
         flush: async () => {},
@@ -335,7 +335,7 @@ describe('BriefService — legacy briefs carrying source / generator_version', (
 
   function makeService(): BriefService {
     return new BriefService({
-      briefsPages: new PagesService(cwd, 'briefs', 'briefs'),
+      briefsPages: new MarkdownFileStore({ cwd, dir: 'briefs', rootId: 'briefs', kind: 'briefs' }),
       briefsWatcher: {
         markOrigin: () => {},
         flush: async () => {},
@@ -451,7 +451,7 @@ describe('BriefService — the `roots` scope frontmatter', () => {
 
   function makeService(): BriefService {
     return new BriefService({
-      briefsPages: new PagesService(cwd, 'briefs', 'briefs'),
+      briefsPages: new MarkdownFileStore({ cwd, dir: 'briefs', rootId: 'briefs', kind: 'briefs' }),
       briefsWatcher: { markOrigin: () => {}, flush: async () => {}, suppress: () => {}, unsuppress: () => {} } as SelfWriteMarker,
       briefsSerializer: {} as BriefServiceDeps['briefsSerializer'],
       pageVersions: { recordVersion: async () => {} } as unknown as BriefServiceDeps['pageVersions'],
@@ -535,7 +535,7 @@ describe('BriefService.getBrief — `full` is the writer’s read', () => {
 
   function makeService(): BriefService {
     return new BriefService({
-      briefsPages: new PagesService(cwd, 'briefs', 'briefs'),
+      briefsPages: new MarkdownFileStore({ cwd, dir: 'briefs', rootId: 'briefs', kind: 'briefs' }),
       briefsWatcher: {
         markOrigin: () => {},
         flush: async () => {},

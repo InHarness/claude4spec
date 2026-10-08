@@ -164,14 +164,8 @@ describe('2.1.8 — root-registry runtime per ProjectContext (M02 m02multidir, L
     expect(() =>
       bindRegistryReactions(registry2, remounted.sourceByRootId, new ReactionBinder(w2, coreCtx(events))),
     ).not.toThrow();
-
-    // The rebuilt context runs the hook (mount, then bind) before its boot `indexAll()` passes.
-    const build = fs.readFileSync(path.join(import.meta.dirname, 'project-context.ts'), 'utf8');
-    const mountCall = build.indexOf('await mountRegistryRoots(');
-    const bindCall = build.indexOf('bindRegistryReactions(rootRegistry,');
-    expect(mountCall).toBeGreaterThan(-1);
-    expect(bindCall).toBeGreaterThan(mountCall);
-    expect(build.indexOf('.indexAll(', bindCall)).toBeGreaterThan(bindCall);
+    // (The build-order source check — mount, bind, then boot indexAll — lives in
+    // tests/integration/architecture/registry-mounts-source.test.ts.)
   });
 
   it('[ac:ac-section-indexer-walidacja-referencji-i] section index, reference validation and version capture follow the reactions and flags of the root\'s KIND, not fields of its entry; files of a kind without m06-anchor-injection get no anchors', async () => {
@@ -360,14 +354,6 @@ describe('2.1.8 — root-registry runtime per ProjectContext (M02 m02multidir, L
       ).not.toThrow();
     }
 
-    // No M29 module mounts a source of its own; observation goes through M40 via the registry hook.
-    for (const file of ['entity-store.ts', 'entity-indexer.ts', 'release-store.ts', 'release-indexer.ts']) {
-      const src = fs.readFileSync(path.join(import.meta.dirname, '..', 'services', file), 'utf8');
-      expect(src, file).not.toMatch(/mountSource\(/);
-      expect(src, file).not.toMatch(/\bchokidar\b|fs\.watch\(/);
-    }
-    const build = fs.readFileSync(path.join(import.meta.dirname, 'project-context.ts'), 'utf8');
-    expect(build).not.toMatch(/mountSource\(\{\s*source:\s*(ENTITIES_SOURCE|RELEASES_SOURCE)/);
   });
 
   it('M29 m29idx001: the L13 implementor mounts the `releases` root (fixed `.claude4spec/releases`) and binds m29-release-cache there because the `releases` kind selects it — json `<slug>.json` only, input rootId `releases`, cache key = slug from the path', async () => {
@@ -429,17 +415,9 @@ describe('2.1.8 — event sources of the `entities` and `releases` roots (M02 m0
       expect(w.isMounted(id)).toBe(true);
       expect(fs.existsSync(path.join(cwd, root.dir))).toBe(true);
     }
-    // The entity-projection modules (M29 store/indexers) never mount or watch a source themselves …
-    for (const file of ['entity-store.ts', 'entity-indexer.ts', 'release-store.ts', 'release-indexer.ts']) {
-      const src = fs.readFileSync(path.join(import.meta.dirname, '..', 'services', file), 'utf8');
-      expect(src, file).not.toMatch(/mountSource\(/);
-      expect(src, file).not.toMatch(/\bchokidar\b|fs\.watch\(/);
-    }
-    // … and the context build has no hand-made mount of either source: its only
-    // registry mounts are the implementor's hook.
-    const build = fs.readFileSync(path.join(import.meta.dirname, 'project-context.ts'), 'utf8');
-    expect(build).not.toMatch(/mountSource\(\{\s*source:\s*(ENTITIES_SOURCE|RELEASES_SOURCE|'entities'|'releases')/);
-    expect(build).toContain('await mountRegistryRoots(');
+    // The source half — no M29 store/indexer mounts or watches on its own, and the
+    // context build mounts no registry root by hand — is the architecture test
+    // tests/integration/architecture/registry-mounts-source.test.ts.
   });
 
   it('[ac:ac-zmiana-pliku-w-dowolnym-korzeniu-reje] a file change in ANY registry root — entities and releases included — emits file:changed carrying that root\'s id', async () => {

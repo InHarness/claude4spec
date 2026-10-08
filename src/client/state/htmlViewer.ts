@@ -21,13 +21,14 @@ interface HtmlViewerState {
 
 /**
  * 2.1.8 (M30): does a `file:changed` path reach the open `.html` preview? Only a
- * path that is the raw `**\/*.html` entry of the `pages` kind's file map — the
- * narrowing comes from the kind declaration, not from an extension check of our
- * own, so the preview follows whatever the map calls a raw HTML entry.
+ * path that falls under a raw entry of the `pages` kind's file map (today
+ * `**\/*.html`) — the narrowing comes from the kind declaration, classified the
+ * way `PagesService.walk` classifies it (`format === 'raw'`), not from an
+ * extension or a pattern literal of our own.
  */
 export function isHtmlPreviewPath(path: string): boolean {
   const entry = fileMapEntryOf(PAGES_KIND, path);
-  return entry !== undefined && entry.format === 'raw' && entry.pattern === '**/*.html';
+  return entry?.format === 'raw';
 }
 
 export const htmlRevisionKey = (rootId: string, path: string): string => `${rootId}:${path}`;

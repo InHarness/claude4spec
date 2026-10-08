@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { createTestApp, type TestApp } from '../../helpers/test-app.js';
-import { PLAN_ROOT_MARKER } from '../../../src/shared/types.js';
+import { systemRootId } from '../../../src/shared/root-kinds.js';
 
 /** Writes a plan `.md` file + captures its file_version + indexes it — mirrors artifacts.test.ts's writeArtifact. */
 async function seedPlan(
@@ -22,8 +22,8 @@ async function seedPlan(
     },
     body,
   });
-  await t.frontmatterIndexer.indexPage(PLAN_ROOT_MARKER, relPath);
-  await t.pageVersions.recordVersion(relPath, 'create', 'filesystem', undefined, t.plansSerializer, PLAN_ROOT_MARKER);
+  await t.frontmatterIndexer.indexPage(systemRootId('plans'), relPath);
+  await t.pageVersions.recordVersion(relPath, 'create', 'filesystem', undefined, t.plansSerializer, systemRootId('plans'));
   return relPath;
 }
 

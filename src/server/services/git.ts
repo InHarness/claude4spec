@@ -5,8 +5,8 @@
  * a missing repo, or a failed command never throws to the caller — it resolves
  * to a non-throwing result shape.
  *
- * `detect()` answers "is any release-flag root inside a worktree, and what does it
- * look like". `commit()` / `push()` perform the two sync actions. `commitOnRelease()`
+ * `detect()` answers "is any root of kind `pages` inside a worktree, and what does
+ * it look like". `commit()` / `push()` perform the two sync actions. `commitOnRelease()`
  * / `pushOnPush()` are the gated entry points the hooks call: they read the
  * (hot-reloaded) config flag, detect the repo, and either act or return `null`
  * (flag off OR no repo). `commitPull()` is the 0.1.124 sibling of
@@ -493,7 +493,7 @@ export class GitService {
     try {
       await this.git(['read-tree', parentSha], root, env);
       for (const rel of relTargets) {
-        // rel === '' (a release-flag root configured as the repo root itself)
+        // rel === '' (a registry root's dir configured as the repo root itself)
         // means the capture's ENTIRE tree is in scope — `ls-tree -r <tree>`
         // with no pathspec lists everything; `-- ''` would be a malformed
         // empty pathspec, so omit `--`/the pathspec entirely in that case.

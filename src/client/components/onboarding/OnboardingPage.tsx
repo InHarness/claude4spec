@@ -89,13 +89,11 @@ export function OnboardingPage() {
           renameRoot: (input) => renameRoot.mutateAsync(input),
           refetchConfig: async () => (await refetchConfig()).data,
           patchConfig: (body) => patchConfig.mutateAsync(body),
-          navigate: (to) => {
-            toast.success('Setup complete');
-            navigate({ to });
-          },
+          navigate: (to) => navigate({ to }),
         },
       );
-      if (!result.ok && 'rootIdError' in result) setRootIdError(result.rootIdError);
+      if (result.ok) toast.success('Setup complete');
+      else if ('rootIdError' in result) setRootIdError(result.rootIdError);
     } catch (e) {
       toast.error((e as Error).message);
     }

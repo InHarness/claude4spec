@@ -9,8 +9,9 @@ import type { ReactionInput } from './reactions.js';
  * mounting party (2.1.8: the root-registry implementor for every registry root,
  * M33 for `plugins:*`) encodes it in the suffix. Reactions bound on a registry
  * root take `rootId` from their input (the binding passes the registry entry's
- * id, {@link reactionRootId}); the suffix serves readers outside a binding (the
- * projection staleness scope, the base notification).
+ * id, {@link reactionRootId}) — the base `m02-file-changed` notification and
+ * `m02-frontmatter-indexer` included; the suffix serves readers outside a
+ * binding (the projection staleness scope) and direct calls.
  */
 
 /** One source per `pages` root, mounted by the root-registry implementor (L13) from the registry. Builtin root is `pages:pages`. */

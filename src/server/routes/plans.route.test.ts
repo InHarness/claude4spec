@@ -6,7 +6,7 @@ import express from 'express';
 import request from 'supertest';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { runMigrations } from '../db/migrate.js';
-import { PagesService } from '../services/pages.js';
+import { MarkdownFileStore } from '../services/pages.js';
 import { FileWatchRuntime } from '../fs/watcher.js';
 import { artifactSource, boundWriter } from '../fs/sources.js';
 import { FileSerializer } from '../services/file-serializer.js';
@@ -16,7 +16,7 @@ import { ChatService } from '../services/chat.js';
 import { PlanService } from '../services/plan.js';
 import { plansRouter } from './plans.js';
 import { errorHandler } from './errors.js';
-import { PLAN_ROOT_MARKER } from '../../shared/types.js';
+import { systemRootId } from '../../shared/root-kinds.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 
 const fakeWs = { broadcast: () => {} } as unknown as WsEmitter;
@@ -35,7 +35,7 @@ describe('plansRouter — POST /api/plans', () => {
     cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-plans-route-test-'));
     db = new Database(':memory:');
     runMigrations(db);
-    const plansPages = new PagesService(cwd, 'plans', PLAN_ROOT_MARKER);
+    const plansPages = new MarkdownFileStore({ cwd, dir: 'plans', rootId: systemRootId('plans'), kind: 'plans' });
     await plansPages.ensureRoot();
     const watchRuntime = new FileWatchRuntime({ fsEvents: false });
     watchRuntime.mountSource({ source: artifactSource('plan'), dir: plansPages.root, scope: 'context:test' });
@@ -46,7 +46,7 @@ describe('plansRouter — POST /api/plans', () => {
       plansSerializer,
       pageVersions: new FileVersionService(db, plansSerializer),
       chatService: new ChatService(db),
-      frontmatterIndexer: new PagesFrontmatterIndexer(new Map([[PLAN_ROOT_MARKER, plansPages]]), fakeWs),
+      frontmatterIndexer: new PagesFrontmatterIndexer(new Map([[systemRootId('plans'), plansPages]]), fakeWs),
       ws: fakeWs,
     });
     app = express().use(express.json()).use('/api/plans', plansRouter(planService)).use(errorHandler);

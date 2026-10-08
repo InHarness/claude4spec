@@ -1,0 +1,14 @@
+{
+  "role": "reviewer",
+  "scope": { "kind": "unit", "id": "cleanup", "base": "26e2066cd40ef053468a7d69fa7bf92f7265c424" },
+  "findings": [
+    {
+      "id": "rev-0022",
+      "file": "src/server/workspace/root-registry-runtime.test.ts",
+      "line": 401,
+      "blocking": false,
+      "reason": "Moving the source scans out (rev-0003/0005/0012) left the `[ac:ac-zrodla-zdarzen-korzeni-entities-i-rel]` test title promising '… and no entity-projection module mounts one', but its body now asserts only the hook half: nothing is mounted before `mountRegistryRoots`, and then `entities`/`releases` are mounted at their fixed dirs. The 'no M29 store/indexer mounts or watches a source' half lives only in tests/integration/architecture/registry-mounts-source.test.ts, which has no `[ac:]` tag, so slug-based coverage tooling no longer links that clause to the criterion. Add `[ac:ac-zrodla-zdarzen-korzeni-entities-i-rel]` to the first architecture test (the projection-module scan), or drop the clause from this test's title so the title says only what the test asserts.",
+      "portion": "cleanup"
+    }
+  ]
+}

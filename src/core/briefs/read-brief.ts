@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import matter from 'gray-matter';
-import { collectBriefFiles } from './list-briefs.js';
+import { collectBriefFiles, isBriefEntry } from './list-briefs.js';
 import { BriefFsError } from './types.js';
 import type { BriefReadResult } from './types.js';
 
@@ -20,10 +20,14 @@ export function assertSafeRelPath(rel: string): void {
   }
 }
 
-/** Throws BRIEF_NOT_FOUND (with a hint listing available briefs) if `relPath` doesn't exist. */
+/**
+ * Throws BRIEF_NOT_FOUND (with a hint listing available briefs) if `relPath`
+ * doesn't exist — or is not an entry of the `briefs` file map (a nested or
+ * `.mdx` file), which the server does not serve as a brief either.
+ */
 export function assertBriefExists(briefsDirAbs: string, relPath: string): void {
   assertSafeRelPath(relPath);
-  if (!fs.existsSync(path.join(briefsDirAbs, relPath))) {
+  if (!isBriefEntry(relPath) || !fs.existsSync(path.join(briefsDirAbs, relPath))) {
     // Cheap directory-listing only — no need to read+parse every file's
     // frontmatter just to build a "here's what exists" hint.
     const available = collectBriefFiles(briefsDirAbs).slice(0, 10);

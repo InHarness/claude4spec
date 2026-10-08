@@ -222,8 +222,8 @@ function AlwaysExcluded({ config }: ElementContext) {
         ))}
       </ul>
       <span className="text-[11px]" style={{ color: 'var(--c-subtle)' }}>
-        {/* M05 8lk6hpxp, verbatim. */}
-        Always excluded — artifacts are edited only through the agent&apos;s tools (not by hand). This cannot be turned off.
+        {/* M05 8lk6hpxp: the spec sentence split as heading ("Always excluded", above) + this caption. */}
+        Artifacts are edited only through the agent&apos;s tools (not by hand). This cannot be turned off.
       </span>
     </div>
   );

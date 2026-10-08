@@ -26,7 +26,11 @@ import type { WatchSubscriber } from '../fs/watcher.js';
 // Generator stays strict 8 (M06 `15u7sazr` — auto-inject contract).
 const nanoid8 = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8);
 
-/** Plans anchor `##`–`####`: `#` is the plan title, deeper levels are detail. */
+/**
+ * Plans anchor `##`–`####`: `#` is the plan title, deeper levels are detail.
+ * ASSUMPTION:dev-0014 — the range M10 names; M06 says plans get anchors "by the
+ * same definition as a page", which anchors every level.
+ */
 const MIN_LEVEL = 2;
 const MAX_LEVEL = 4;
 

@@ -21,7 +21,8 @@
  *   - **Zero new tables**. Listing comes from PagesFrontmatterIndexer.
  *   - **Optimistic concurrency** by sha256 hash of full content (frontmatter+body).
  *   - **Immutable frontmatter** keys protected: type/created_at/created_by.
- *     Only `title` is mutable.
+ *     `title` and `applied` are mutable — the `plans` kind's header contract,
+ *     `PLAN_HEADER` (root-kinds.ts).
  *   - Anchor injection (`<!-- anchor: xxxxxxxx -->` before headings) is M06's
  *     `m06-anchor-injection`, selected by the `plans` root kind (2.1.8): called
  *     here synchronously in the write path, and bound by the L13 implementor

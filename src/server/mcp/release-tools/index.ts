@@ -415,6 +415,20 @@ function validateFilters(
 }
 
 /**
+ * 2.1.8 (M17 m17errtx1): the `roots` filter refusal, shared by `release_diff`
+ * and the REST release diff (`GET /api/releases/:from/diff/:to?roots=`) so both
+ * channels answer with one contract: an unknown id or a root of a kind other
+ * than `pages` is `INVALID_ROOTS_FILTER`, never silently skipped, and the
+ * message and hint list the `kind: pages` roots.
+ */
+export function refuseNonPageRoots(roots: readonly string[], pageRootIds: readonly string[]): void {
+  const notPage = roots.find((r) => !pageRootIds.includes(r));
+  if (notPage === undefined) return;
+  const available = `page roots: [${pageRootIds.join(', ')}]`;
+  throw new DomainError('INVALID_ROOTS_FILTER', `roots: '${notPage}' is not a page root (${available})`, available);
+}
+
+/**
  * 0.2.102: `release_diff`'s filter validation, in the documented order — empty
  * `include`/`entityTypes`/`roots`/`paths` first, then the conflicts
  * (`entityTypes` without 'entities', `paths` without 'pages', `paths` together
@@ -465,10 +479,7 @@ function validateDiffFilters(
 
   const rootProblem = (id: string): string | null =>
     pageRoots.some((r) => r.id === id) ? null : `'${id}' is not a page root`;
-  for (const id of roots ?? []) {
-    const problem = rootProblem(id);
-    if (problem) refuse('INVALID_ROOTS_FILTER', `roots: ${problem}`);
-  }
+  refuseNonPageRoots(roots ?? [], pageRoots.map((r) => r.id));
   for (const key of paths ?? []) {
     const parsed = splitPageKey(key);
     if (!parsed) {

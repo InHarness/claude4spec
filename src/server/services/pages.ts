@@ -42,9 +42,10 @@ export interface PagesRootRef {
  * `pages` kind's file map) on top of the store's CRUD + frontmatter + sha256,
  * which it forwards unchanged.
  *
- * The positional `(cwd, dir, rootId)` form builds its own store — kept for the
- * hand-rolled rigs (tests, the serverless discovery reader) that have no
- * registry loop.
+ * The positional `(cwd, dir, rootId)` form builds its own store — no production
+ * code uses it any more (the discovery reader builds `{ root, store }` too). It
+ * stays for the colocated test rigs of `pages` roots, which have no registry
+ * loop; a rig for a system root builds the bare `MarkdownFileStore` instead.
  */
 export class PagesService {
   readonly store: MarkdownFileStore;
@@ -87,6 +88,12 @@ export class PagesService {
 
   // ── forwarded to the primitive ─────────────────────────────────────────────
 
+  get kind(): MarkdownFileStore['kind'] {
+    return this.store.kind;
+  }
+  servesPath(relPath: string): boolean {
+    return this.store.servesPath(relPath);
+  }
   ensureRoot(): Promise<void> {
     return this.store.ensureRoot();
   }

@@ -193,16 +193,10 @@ export type WsEvent =
   // project-local overlay reload.
   | { kind: 'plugin:reloaded'; name: string; version: string; tier: 'base' | 'overlay' };
 
-/**
- * 0.1.96 multiroot: a file is keyed by `(rootId, path)`. 2.1.8: `rootId` is
- * always the id of a ROOT REGISTRY entry — a user root (`kind: pages`) or one
- * of the five system roots, whose id equals their kind. Briefs, patches and
- * plans are system roots, so their `file_version` rows carry these ids.
- */
-export const BRIEF_ROOT_MARKER = 'briefs';
-export const PATCH_ROOT_MARKER = 'patches';
-/** 0.1.127 M10: plan artifact, filesystem-backed. */
-export const PLAN_ROOT_MARKER = 'plans';
+// 0.1.96 multiroot: a file is keyed by `(rootId, path)`. 2.1.8: `rootId` is
+// always the id of a ROOT REGISTRY entry — a user root (`kind: pages`) or one of
+// the five system roots, whose id is `systemRootId(kind)` (root-kinds.ts). There
+// are no per-artifact root-id literals: ask `systemRootId` or the store's rootId.
 
 /**
  * A user root from `config.json` → `roots[]` (2.1.8: always of kind `pages`).

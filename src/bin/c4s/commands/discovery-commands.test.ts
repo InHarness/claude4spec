@@ -638,11 +638,6 @@ describe('discovery commands on the CLI', () => {
   });
 
   /**
-   * Item 24 and the exit-code remap, at the level the CLI owns them: a command
-   * that cannot reach a server says so with the code that maps to exit 8, and it
-   * says it BEFORE trying the operation.
-   */
-  /**
    * 2.1.8 — a system root has no address in discovery. The CLI defines no rule
    * of its own for it: the request reaches the server's page router (the real
    * one, resolving over the `kind: pages` roots of a real root registry, as the
@@ -694,6 +689,11 @@ describe('discovery commands on the CLI', () => {
     });
   });
 
+  /**
+   * Item 24 and the exit-code remap, at the level the CLI owns them: a command
+   * that cannot reach a server says so with the code that maps to exit 8, and it
+   * says it BEFORE trying the operation.
+   */
   describe('no server', () => {
     it('[ac:ac-przed-tura-runagent-wykonuje-health-ch] answers SERVER_NOT_RUNNING from the health-check, not from the operation', async () => {
       await new Promise<void>((resolve) => server.close(() => resolve()));

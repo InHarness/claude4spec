@@ -1,14 +1,6 @@
 import { useMemo } from 'react';
 import { getContextSpec, type RootEditorProps } from '../tiptap/registry.js';
-import { rootEditorPropsForKind } from '../tiptap/contextSpec.js';
-import { PAGES_KIND } from '../../shared/root-kinds.js';
-
-/**
- * Every page editor opens a page of a `config.roots[]` entry, and every such
- * entry is of kind `pages` (system roots have no page editor). One object for
- * all of them — see the identity note below.
- */
-const PAGE_ROOT_LAYERS: RootEditorProps = rootEditorPropsForKind(PAGES_KIND);
+import { FULL_ROOT_EDITOR_PROPS } from '../tiptap/contextSpec.js';
 
 /**
  * L13 / 2.1.8: the `page` context is derived from the page root's KIND, not
@@ -23,7 +15,10 @@ const PAGE_ROOT_LAYERS: RootEditorProps = rootEditorPropsForKind(PAGES_KIND);
  * selection and an open `/` popup lost).
  */
 export function useRootEditorProps(_rootId: string): RootEditorProps {
-  return PAGE_ROOT_LAYERS;
+  // Every page editor opens a page of a `config.roots[]` entry, and every such
+  // entry is of kind `pages` (system roots have no page editor): the `pages`
+  // kind's layers, the one constant `EditorFactory` also defaults to.
+  return FULL_ROOT_EDITOR_PROPS;
 }
 
 /**
