@@ -88,7 +88,7 @@ describe('resolveContextSpec — the four contexts (M20 ctxregst)', () => {
     // 2.1.8: FULL_ROOT_EDITOR_PROPS is the `pages` kind's layers; no per-root
     // `@` scope (`linkTargets` is gone).
     expect(FULL_ROOT_EDITOR_PROPS).toEqual(rootEditorPropsForKind('pages'));
-    expect(rootEditorPropsForKind('pages')).toEqual({ sectionIndexed: true, referenceValidated: true });
+    expect(rootEditorPropsForKind('pages')).toEqual({ sectionIndexed: true, referenceValidated: true, pageLinks: true });
   });
 
   /**

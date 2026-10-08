@@ -57,3 +57,19 @@ Implementation-only decisions (no user-observable effect) and set-up choices.
 - Tags inside a leading frontmatter block are not expanded (the block returns byte-identical); anchor lines are HTML comments, never touched.
 - find_references: a hit gets an `anchor` only when its root's kind selects `m06-anchor-injection` (`RootSet.anchorInjected()`), on top of the existing `unindexedRootIds` gate.
 - check_consistency: rules 15/16 rows renamed `path` → `pagePath` (section-indexing.test.ts updated); rule-11 row gains `rootId` + `pagePath` (first matching module page of the builtin root). See dev-0201 for the bucket names left as shipped.
+
+## u03-editor-command-sources / p1-l5-l13 (implementer)
+
+- Command sources: `registerSlashCommandSource` / `getSlashCommandSourcesForContext` in src/client/tiptap/registry.ts (shape `{ id, context, list, onSelect }`, items `{ id, label, description, hint, origin?, narrowTo? }`). Gate = the context's `slashCommands` whitelist only; `context` is a declaration. The derived `page` context admits sources declaring `page` (by id, reference-layer gate like a plugin command).
+- The popover's listing is a pure `SlashSession` (src/client/tiptap/slashPalette.ts); `SlashCommands` holds one per opening (created on the first `items` call, dropped in `onExit`), so sources are pulled once per opening and never cached across openings.
+- Narrowing is declarative: an item with `narrowTo` narrows the same popover (its range is replaced by `/`, so the suggestion stays active with an empty query); any other item deletes the `/prefix` range and hands control to the source's `onSelect`.
+- The code names of two sheet rows differ from the sheet: `SlashDispatcher` is the `slash_commands` extension, `OutlineExtension` is `heading_actions`. Kept (rename has no observable effect).
+- `@` / `PageRefNode` gate: third layer `RootEditorProps.pageLinks` (kind `pages`), gating `mention_extension`, `page_ref` and `mentions`; the read-only `buildMarkdownIt({ context })` installs page-ref rules only where `page_ref` is mounted. The `artifact` context keeps `@`.
+- Composer submit: `PageRefNode` option `serializeAs` (`'at'` in `chat-input`, configured by the `page_ref` registration) — every page ref leaves the composer as `@path.md`.
+- Chat step 0: `isChipTag` = assigned render whose attributes are all chip-carriable (dev-0301) OR a default target; entity target now needs `type` with `slug`/`slugs`.
+- `chat-input` whitelist left at `/section`: the `spec-skills` source and `skill_ref` node are u09's (deferred); the seam is the whitelist itself (a source id joins `slashCommands`).
+
+## u03-editor-command-sources / p1-l5-l13 (implementer, rev-0001)
+
+- Narrowing picked with an empty query: `SlashCommands` now re-lists the open popover itself (`refreshPopover`, set by `render()`): reads the suggestion plugin state, awaits `currentSession().items(query)` and pushes the result through the kept renderer with a command bound to the current range. Only when the typed prefix was empty — with a prefix the query change makes `@tiptap/suggestion` re-list on its own, and a second update could race it with a stale range. A listing that resolves after the popover closed or moved is dropped.
+- Covered by src/client/tiptap/extensions/SlashCommands.narrow.test.ts (happy-dom, real Editor + extension, `ReactRenderer` replaced by a props recorder): empty-query pick and typed-prefix pick.

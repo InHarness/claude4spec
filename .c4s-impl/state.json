@@ -1,5 +1,5 @@
 {
-  "iteration": 2,
+  "iteration": 3,
   "conventions": [
     {
       "label": "L3 (Spec Operations)",
@@ -539,15 +539,44 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "u03-editor-command-sources/p1-l5-l13",
+          "layers": [
+            "L5",
+            "L8",
+            "L13"
+          ],
+          "slugs": [
+            "editor-context-spec",
+            "wklad-do-edytora-m05",
+            "wklad-do-edytora-m20",
+            "ac-chat-input-minimalna-instancja-tiptap",
+            "m14-composer-pageref-serializacja-at",
+            "m20-composer-slash-popover",
+            "m20-zrodlo-komend-blad-odczytu",
+            "m20-zrodlo-komend-kolizja-hint",
+            "m20-zrodlo-komend-poza-whitelista",
+            "m20-zrodlo-komend-pull-przy-otwarciu",
+            "m05-znacznik-slug-bez-type-bez-renderu"
+          ],
+          "status": "implemented",
+          "rounds": 2,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "12e3bc9623104d29e8fc7a732fadb00aa4819946",
+      "baseCommit": "31c9c041c70a9deeb72dbe28c65b253d84ad6699",
       "rounds": {
         "review": 0,
-        "unit": 0
-      }
+        "unit": 2
+      },
+      "lastUncovered": 0,
+      "lastBlocking": 1
     },
     {
       "id": "u04-skill-registry-sources",

@@ -49,7 +49,9 @@ export function buildMarkdownIt(options: BuildMarkdownItOptions = {}): MarkdownI
   setupRawJsxRules(md, rawTagPredicate(mounted)); // raw mdx JSX + gated / malformed tags — base
   setupXmlMarkdownRules(md); // every registered XML tag (M51)
   if (!mounted || mounted.includes('anchor_marker')) setupAnchorMarkerRule(md); // anchors (kind's anchor layer)
-  setupPageRefRules(md); // @path.md links — base
+  // @path.md links — where the context mounts the page-ref node (2.1.9: a
+  // context without it keeps `@path.md` as prose).
+  if (!mounted || mounted.includes('page_ref')) setupPageRefRules(md);
   if (options.pagesIndex) {
     (md as unknown as { __c4sPagesIndex: ReadonlyMap<string, FileMeta> }).__c4sPagesIndex =
       options.pagesIndex;

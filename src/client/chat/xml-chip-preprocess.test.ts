@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import '../xml-markup/host-renders.js';
 import { chipTargetOf, decodePayload, isChipTag, preprocessXmlChips, CHIP_HREF_PREFIX } from './xml-chip-preprocess.js';
 import { registerXmlTag } from '../../shared/xml-markup/registry.js';
+import { assignTagRender } from '../xml-markup/renders.js';
 
 function chips(text: string): Array<{ kind: string; attrs: Record<string, string> }> {
   const out = preprocessXmlChips(text);
@@ -24,6 +25,25 @@ describe('chat: chip picked from the registry by target (M51)', () => {
     expect(chips('<scratch_pick type="dto" slug="user"/>')).toEqual([
       { kind: 'scratch_pick', attrs: { type: 'dto', slug: 'user' } },
     ]);
+  });
+
+  it('[ac:m05-znacznik-slug-bez-type-bez-renderu] a tag with `slug` but no `type` and no assigned render stays text, as written — no chip, no broken chip', () => {
+    registerXmlTag({ name: 'scratch_slug_only', attrOrder: ['slug'], form: 'inline' });
+    expect(chipTargetOf({ attrOrder: ['slug'] })).toBeNull();
+    expect(chipTargetOf({ attrOrder: ['slugs'] })).toBeNull();
+    expect(isChipTag('scratch_slug_only')).toBe(false);
+    const text = 'see <scratch_slug_only slug="my-skill"/> here';
+    expect(chips(text)).toEqual([]);
+    expect(preprocessXmlChips(text)).toBe(text);
+  });
+
+  it('step 0: a tag its owner assigned a render to is shown by that render whatever its attributes; one whose content the chip cannot carry stays text', () => {
+    registerXmlTag({ name: 'scratch_rendered', attrOrder: ['slug'], form: 'inline' });
+    assignTagRender('scratch_rendered', () => null);
+    expect(isChipTag('scratch_rendered')).toBe(true);
+    expect(chips('<scratch_rendered slug="my-skill"/>')).toEqual([{ kind: 'scratch_rendered', attrs: { slug: 'my-skill' } }]);
+    // `todo` has a render too, but its content is its `comment`, which no chip carries.
+    expect(isChipTag('todo')).toBe(false);
   });
 
   it('sanitizes by attribute name: slug / tags / anchor by pattern; an unknown type survives (host broken chip)', () => {

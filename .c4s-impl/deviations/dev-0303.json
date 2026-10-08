@@ -1,0 +1,13 @@
+{
+  "id": "dev-0303",
+  "kind": "clarification",
+  "blocking": false,
+  "address": "u03-editor-command-sources/m20l13rt",
+  "slugs": [],
+  "text": "M20 `m20l13rt` gated behaviour (3) mounts `@` + `PageRefNode` on a root of kind `pages` and mounts neither on 'a root of a kind other than `pages` that did not select `m06-anchor-injection`'. A kind other than `pages` that DOES select `m06-anchor-injection` (today `plans`) is covered by neither clause. Assumed: the positive rule decides — `@` and `PageRefNode` only on `pages` roots (`pageLinks = kind === pages`). No such kind opens a page editor today (plans use the static `plan` context, which keeps `@`), so nothing observable changes; the clause should drop 'that did not select m06-anchor-injection' or say what such a kind gets.",
+  "assumption": "ASSUMPTION:dev-0303 — pageLinks layer = kind is `pages` (src/client/tiptap/contextSpec.ts, rootEditorPropsForKind)",
+  "unit": "u03-editor-command-sources",
+  "portion": "u03-editor-command-sources/p1-l5-l13",
+  "sent": true,
+  "patchPath": "2-1-8-to-2-1-9-workflow-3-u03-editor-command-sources-m20l13rt-m20-m20l13rt-gated-behaviour-3-mounts-pagere.md"
+}

@@ -140,8 +140,22 @@ export function setupPageRefRules(md: any): void {
   });
 }
 
-export const PageRefNode = Node.create({
+export interface PageRefNodeOptions {
+  /**
+   * Write every page reference in this one syntax, whatever variant it was
+   * inserted with. `null` (default) — the variant the node came from, so the
+   * page editor round-trips all three forms. The chat composer sets `'at'`:
+   * its submit always serializes `@path.md` (M14 `km8w7ab1`), the cleanest
+   * form for the agent.
+   */
+  serializeAs: PageRefSyntax | null;
+}
+
+export const PageRefNode = Node.create<PageRefNodeOptions>({
   name: 'page_ref',
+  addOptions() {
+    return { serializeAs: null };
+  },
   group: 'inline',
   inline: true,
   atom: true,
@@ -174,10 +188,11 @@ export const PageRefNode = Node.create({
     return ReactNodeViewRenderer(PageRefView);
   },
   addStorage() {
+    const forced = this?.options?.serializeAs ?? null;
     return {
       markdown: {
         serialize(state: any, node: any) {
-          const syntax = (node.attrs.syntax as PageRefSyntax) || 'at';
+          const syntax = forced ?? ((node.attrs.syntax as PageRefSyntax) || 'at');
           const path = String(node.attrs.path ?? '');
           const anchor = String(node.attrs.anchor ?? '');
           const label = String(node.attrs.label ?? '');

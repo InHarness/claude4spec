@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useState } from 'react';
 import type { SuggestionProps } from '@tiptap/suggestion';
+import type { SlashPaletteItem } from '../slashPalette.js';
 
 export interface SlashCommand {
   /**
@@ -29,7 +30,12 @@ export interface SlashMenuHandle {
   onKeyDown: (event: KeyboardEvent) => boolean;
 }
 
-export const SlashMenu = forwardRef<SlashMenuHandle, SuggestionProps<SlashCommand>>(
+/**
+ * The slash popover: fixed commands and command-source items (2.1.9). A source
+ * item carrying an origin marker shows it beside its label — in the full view
+ * and in a view narrowed to its source alike.
+ */
+export const SlashMenu = forwardRef<SlashMenuHandle, SuggestionProps<SlashPaletteItem>>(
   function SlashMenu(props, ref) {
     const [selected, setSelected] = useState(0);
 
@@ -97,7 +103,7 @@ export const SlashMenu = forwardRef<SlashMenuHandle, SuggestionProps<SlashComman
           const active = i === selected;
           return (
             <button
-              key={item.id}
+              key={item.key}
               onClick={() => run(i)}
             // Keep focus in the editor: a mousedown on the row would blur it
             // BEFORE the command runs, and an editor that saves on blur would
@@ -112,6 +118,15 @@ export const SlashMenu = forwardRef<SlashMenuHandle, SuggestionProps<SlashComman
             >
               <span className="font-mono text-[12.5px]" style={{ minWidth: 110 }}>
                 {item.label}
+                {item.origin ? (
+                  <span
+                    data-slash-origin=""
+                    className="ml-1.5 rounded px-1 text-[10px] font-sans"
+                    style={{ color: 'var(--c-subtle)', border: '1px solid var(--c-hair)' }}
+                  >
+                    {item.origin}
+                  </span>
+                ) : null}
               </span>
               <span className="flex-1 text-[12px]" style={{ color: 'var(--c-muted)' }}>
                 {item.description}

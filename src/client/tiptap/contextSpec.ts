@@ -18,32 +18,43 @@
  * `section_ref`, `AnchorMarker` or entity nodes. It replaced the synthetic
  * property bag (`MINIMAL_ROOT_EDITOR_PROPS`) those surfaces used to fake.
  */
-import { KIND_DECLARATIONS, kindSelects, type RootKind } from '../../shared/root-kinds.js';
+import { KIND_DECLARATIONS, PAGES_KIND, kindSelects, type RootKind } from '../../shared/root-kinds.js';
 
 export type EditorContextId = 'page' | 'artifact' | 'description' | 'plan' | 'chat-input';
 
 export const ALL_EDITOR_CONTEXTS: EditorContextId[] = ['page', 'artifact', 'description', 'plan', 'chat-input'];
 
 /**
- * The three independent layers of a page editor (M20), each decided by the
- * page root's kind. Threaded through `RegistryContext` by EditorFactory.
+ * The independent layers of a page editor (M20 `m20l13rt`), each decided by
+ * the page root's kind. Threaded through `RegistryContext` by EditorFactory.
  */
 export interface RootEditorProps {
   /** Anchors + `section_ref` + heading outline — the kind selects `m06-anchor-injection`. */
   sectionIndexed: boolean;
   /** Entity nodes + their validation — the kind's `references` flag. */
   referenceValidated: boolean;
+  /**
+   * 2.1.9 (M20 `m20l13rt` gated behaviour 3, M14 `m14l13rt` item 5): the `@`
+   * autocomplete (`MentionExtension` with the `files` source) and the
+   * `PageRefNode` — mounted on a root of kind `pages` only. A file of any other
+   * kind gets neither: `@path.md` written there stays prose.
+   */
+  pageLinks: boolean;
 }
 
 /**
- * The editor layers a root of `kind` gets. The `@` scope is not a layer: it is
- * every `kind: pages` root, resolved server-side by the link indexer (source
- * root → builtin → `roots[]` order).
+ * The editor layers a root of `kind` gets. The `@` SCOPE (which pages the
+ * autocomplete suggests) is not a layer: it is every `kind: pages` root,
+ * resolved server-side by the link indexer (source root → builtin → `roots[]`
+ * order). Whether `@` is mounted at all is — `pageLinks`, decided by the kind.
  */
 export function rootEditorPropsForKind(kind: RootKind): RootEditorProps {
   return {
     sectionIndexed: kindSelects(kind, 'm06-anchor-injection'),
     referenceValidated: KIND_DECLARATIONS[kind].flags.references,
+    // ASSUMPTION:dev-0303 — a kind other than `pages` gets no `@` even if it
+    // selects `m06-anchor-injection` (no such kind has a page editor today).
+    pageLinks: kind === PAGES_KIND,
   };
 }
 
@@ -58,6 +69,7 @@ export const FULL_ROOT_EDITOR_PROPS: RootEditorProps = rootEditorPropsForKind('p
 const ARTIFACT_LAYERS: RootEditorProps = {
   sectionIndexed: false,
   referenceValidated: false,
+  pageLinks: true,
 };
 
 export type EditorSavePolicy =
@@ -69,7 +81,11 @@ export interface EditorContextSpec {
   id: EditorContextId;
   /** Whitelist of registry extension names. Names absent here are NOT mounted at all. */
   extensions: string[];
-  /** Whitelist of `SlashCommand.id`; `[]` = no slash framework. */
+  /**
+   * Whitelist of `SlashCommand.id` AND of command-source ids (2.1.9, M20
+   * `lxdrxdm2`); `[]` = no slash framework. A source's ITEMS are never listed
+   * here — they are read from the source each time the popover opens.
+   */
   slashCommands: string[];
   /** Whitelist of decorations mounted in this instance (declarative; see below). */
   decorations: string[];
@@ -88,6 +104,7 @@ export interface EditorContextSpec {
  */
 export interface ContextRegistryView {
   extensionNames(): string[];
+  /** Fixed slash commands plus the command sources that stand in `page` (2.1.9). */
   slashCommandIds(): string[];
 }
 
@@ -106,7 +123,7 @@ export const AUTOSAVE_DEBOUNCE_MS = 1000;
  * GOLDEN RULE: gating keys on a layer the root's KIND decides, never on
  * `rootId === 'pages'`.
  */
-const ROOT_PROP_GATES: Record<string, keyof Pick<RootEditorProps, 'sectionIndexed' | 'referenceValidated'>> = {
+const ROOT_PROP_GATES: Record<string, keyof RootEditorProps> = {
   // sectionIndexed ⇒ Anchor / SectionRef / heading-outline actions.
   anchor_marker: 'sectionIndexed',
   section_ref: 'sectionIndexed',
@@ -118,6 +135,9 @@ const ROOT_PROP_GATES: Record<string, keyof Pick<RootEditorProps, 'sectionIndexe
   element_list: 'referenceValidated',
   tagged_list: 'referenceValidated',
   tagged_list_mixed: 'referenceValidated',
+  // pageLinks ⇒ `@` autocomplete + the page-ref node (2.1.9, `m20l13rt` (3)).
+  mention_extension: 'pageLinks',
+  page_ref: 'pageLinks',
 };
 
 /**
@@ -129,7 +149,7 @@ const ROOT_PROP_GATES: Record<string, keyof Pick<RootEditorProps, 'sectionIndexe
  * absent here is a plugin command (M33 `contributes.commands`): its popover
  * inserts an entity embed, so it takes the reference gate.
  */
-const SLASH_COMMAND_GATES: Record<string, keyof Pick<RootEditorProps, 'sectionIndexed' | 'referenceValidated'> | null> = {
+const SLASH_COMMAND_GATES: Record<string, keyof RootEditorProps | null> = {
   mention: 'referenceValidated',
   element: 'referenceValidated',
   list: 'referenceValidated',
@@ -172,7 +192,11 @@ const M19_NODES = ['inline_mention', 'single_element', 'element_list', 'tagged_l
  *
  * `chat-input`: minimal — `Document`/`Paragraph`/`Text` (core) +
  * `MentionExtension` + `PageRefNode` + the `section_ref` tag node (allowed
- * exception: the chip most often pasted into chat) + `/section`.
+ * exception: the chip most often pasted into chat) + the slash framework
+ * (`SlashDispatcher` = `slash_commands`) with `/section`. The 2.1.9 row also
+ * names the `spec-skills` command source and the `skill_ref` tag node; both are
+ * contributed by M52 and join this whitelist when that module lands (the
+ * source by its id in `slashCommands`, the node by its tag name).
  */
 const STATIC_SPECS: Record<Exclude<EditorContextId, 'page' | 'artifact'>, EditorContextSpec> = {
   description: {
@@ -246,7 +270,8 @@ export function resolveContextSpec(
     decorations: rootProps.referenceValidated ? ['annotations', 'broken_refs'] : ['annotations'],
     // Scope = every `pages` root (M14, 2.1.8); the editor's root rides along
     // as the precedence's first step (`MentionExtension` option `rootId`).
-    mentions: ['files'],
+    // 2.1.9: no `@` at all on a root whose kind is not `pages`.
+    mentions: rootProps.pageLinks ? ['files'] : [],
     save: { mode: 'debounce', debounceMs: AUTOSAVE_DEBOUNCE_MS },
   };
 }

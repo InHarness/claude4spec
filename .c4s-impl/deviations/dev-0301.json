@@ -1,0 +1,15 @@
+{
+  "id": "dev-0301",
+  "kind": "incorrect",
+  "blocking": false,
+  "address": "u03-editor-command-sources/rehyxchp",
+  "slugs": [
+    "m05-znacznik-slug-bez-type-bez-renderu"
+  ],
+  "text": "M05 `rehyxchp` (2.1.9) puts a 'step 0' first: a tag its owner assigned a render to is shown with that component whatever its attributes. The same section keeps `todo` as the example of a tag that 'carries its own content and stays text as written'. But `todo` HAS an assigned render (M08 TodoChip, M51 `urs8n775`: editor and chat read the same assigned component), so applying step 0 literally turns every `<todo comment=…/>` in chat into a chip — and an empty one, because chat sanitization carries only `type/slug/slugs/tags/filter/anchor` (`comment` is dropped). Assumed (bounded rule, no names): step 0 applies to a tag with an assigned render whose declared attributes are all ones the chip carries; a tag whose content lives in another attribute (`todo`) stays text as the default render leaves it. The spec should say which: either step 0 is limited like this, or `todo` is shown by its render in chat (and then sanitization must carry `comment`).",
+  "assumption": "ASSUMPTION:dev-0301 — chat step 0 (assigned render) only for tags whose attributes are all chip-carriable (src/client/chat/xml-chip-preprocess.ts, rendersInChat); `todo` stays text",
+  "unit": "u03-editor-command-sources",
+  "portion": "u03-editor-command-sources/p1-l5-l13",
+  "sent": true,
+  "patchPath": "2-1-8-to-2-1-9-workflow-3-u03-editor-command-sources-rehyxchp-m05-rehyxchp-2-1-9-puts-a-step-0-first-a-tag.md"
+}

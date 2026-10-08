@@ -170,6 +170,11 @@ export function unregisterEditorExtensionsByPrefix(prefix: string): void {
   if (touchedSchema) bumpSchemaVersion();
 }
 
+/** The registration under `name`, if any (read-only view for tests and diagnostics). */
+export function getEditorExtensionRegistration(name: string): Readonly<EditorExtensionRegistration> | undefined {
+  return REGISTRY.find((r) => r.name === name);
+}
+
 const registryView = {
   // Schema extensions plus every registered XML tag — a tag's node is mounted
   // by name like any extension, but comes from the M51 registry.
@@ -177,7 +182,12 @@ const registryView = {
     ...REGISTRY.filter((r) => r.extension).map((r) => r.name),
     ...listXmlTags().map((t) => t.name),
   ],
-  slashCommandIds: () => REGISTRY.filter((r) => r.slashCommand).map((r) => r.slashCommand!.id),
+  // The derived `page` context admits every registered command and every
+  // command source that stands in `page` (2.1.9) — by id, like a command.
+  slashCommandIds: () => [
+    ...REGISTRY.filter((r) => r.slashCommand).map((r) => r.slashCommand!.id),
+    ...COMMAND_SOURCES.filter((s) => s.context === 'page').map((s) => s.id),
+  ],
 };
 
 /**
@@ -256,7 +266,11 @@ export function provideXmlTagNodes(builder: (names: readonly string[]) => AnyExt
   xmlTagNodesFor = builder;
 }
 
-/** Registry ∩ `spec.slashCommands` (by `SlashCommand.id`). Read live so plugin commands that arrive later show up. */
+/**
+ * Registry ∩ `spec.slashCommands` (by `SlashCommand.id`) — the FIXED commands.
+ * Read live so plugin commands that arrive later show up. Command sources
+ * admitted by the same whitelist come from `getSlashCommandSourcesForContext`.
+ */
 export function getRegisteredSlashCommandsForContext(
   contextId: EditorContextId,
   rootProps: RootEditorProps = FULL_ROOT_EDITOR_PROPS,
@@ -265,6 +279,83 @@ export function getRegisteredSlashCommandsForContext(
   return REGISTRY.filter((r) => r.slashCommand && allowed.has(r.slashCommand.id)).map(
     (r) => r.slashCommand!,
   );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Command sources (2.1.9, M20 `lxdrxdm2` — L8 contribution kind `źródło komend`)
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * One item of a command source's list (L8 `7l0puqrn`): `id` unique within the
+ * source, `label` shown, `description`, and `hint` — the VISIBLE trigger the
+ * typed `/prefix` is matched against and the measure of a collision with a
+ * fixed command. `origin` — the optional origin marker shown beside the label.
+ */
+export interface SlashCommandSourceItem {
+  id: string;
+  label: string;
+  description: string;
+  hint: string;
+  origin?: string;
+  /**
+   * Picking this item narrows the same slash popover to the items of the
+   * command source with this id: the popover stays open, the typed prefix is
+   * cleared and only that source's items are listed. The source's `onSelect`
+   * is not called for such an item.
+   */
+  narrowTo?: string;
+}
+
+/**
+ * A command source — a list of slash items whose composition depends on the
+ * project state. Registered DIRECTLY from a module's front-end bootstrap (never
+ * through the plugin host, so no axis-A/B auto-deactivation: it stays while the
+ * module is in the build).
+ */
+export interface SlashCommandSource<T extends SlashCommandSourceItem = SlashCommandSourceItem> {
+  /** Stable id — what a context's `EditorContextSpec.slashCommands` whitelists. */
+  id: string;
+  /**
+   * The context the source stands in (column 3 of the contributor's sheet). A
+   * declaration: the context's whitelist decides whether the source mounts.
+   */
+  context: EditorContextId;
+  /** Read the current items. Called on EVERY popover open; nothing is cached between opens. */
+  list: () => Promise<T[]> | T[];
+  /**
+   * The pick: control passes to the source. The `/prefix` range has already
+   * been deleted; the source inserts at the caret in one transaction, or opens
+   * a window through `openPopover` (never `window.prompt`).
+   */
+  onSelect: (item: T, editor: Editor) => void | Promise<void>;
+}
+
+const COMMAND_SOURCES: SlashCommandSource[] = [];
+
+/** Register (or replace, by `id`) a command source. */
+export function registerSlashCommandSource<T extends SlashCommandSourceItem>(source: SlashCommandSource<T>): void {
+  const existing = COMMAND_SOURCES.findIndex((s) => s.id === source.id);
+  if (existing >= 0) COMMAND_SOURCES[existing] = source as unknown as SlashCommandSource;
+  else COMMAND_SOURCES.push(source as unknown as SlashCommandSource);
+}
+
+/** Remove a command source by id (a module leaving the build; tests). */
+export function unregisterSlashCommandSource(id: string): void {
+  const i = COMMAND_SOURCES.findIndex((s) => s.id === id);
+  if (i >= 0) COMMAND_SOURCES.splice(i, 1);
+}
+
+/**
+ * The command sources an instance of `contextId` admits: those whose `id`
+ * stands in the context's `EditorContextSpec.slashCommands`. A source outside
+ * the whitelist contributes nothing to that context's popover.
+ */
+export function getSlashCommandSourcesForContext(
+  contextId: EditorContextId,
+  rootProps: RootEditorProps = FULL_ROOT_EDITOR_PROPS,
+): SlashCommandSource[] {
+  const allowed = new Set(getContextSpec(contextId, rootProps).slashCommands);
+  return COMMAND_SOURCES.filter((s) => allowed.has(s.id));
 }
 
 // ────────────────────────────────────────────────────────────────────────────

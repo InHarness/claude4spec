@@ -5,11 +5,17 @@
  * malformed tags fall through and react-markdown drops them).
  *
  * 2.1.2 (M51) — WHICH tags become chips is a rule over the registry, not a
- * list of names: every registered tag whose target is an entity (a single one,
- * or entities picked by tags) or a section. A tag with another target, or none
- * (`todo` carries its own content), stays text. A tag added to the registry
- * with such a target shows up in chat with no change here. Tags are read with
- * the shared server parser.
+ * list of names. 2.1.9 (M05 `rehyxchp`) — resolved in this order:
+ *  0. a tag its owning module assigned a render to (M51 `urs8n775`) is shown
+ *     with that component, whatever its attributes (see `rendersInChat`);
+ *  1. otherwise the default render, the target read off the attribute names:
+ *     `anchor` → section; `type` TOGETHER WITH `slug` / `slugs` → entity;
+ *     `tags` → entities picked by tags; none of them → the tag carries its own
+ *     content (like `todo`) and stays text as written. A `slug` without `type`
+ *     is no entity target: such a tag without an assigned render stays text —
+ *     never a broken chip.
+ * A tag added to the registry with such a target shows up in chat with no
+ * change here. Tags are read with the shared server parser.
  *
  * Sanitization (regex, by ATTRIBUTE name) runs here, before placeholders are
  * emitted: `slug` / `slugs` / `tags` as `^[a-z0-9-]+$`, `anchor` as
@@ -32,6 +38,7 @@
 import { findXmlTagCandidates, parseXmlTags, type XmlTag } from '../../shared/xml-tags.js';
 import { findInlineCodeSpans, maskTagAttributeValues, scanFences } from '../../shared/code-ranges.js';
 import { getXmlTag, type XmlTagDefinition } from '../../shared/xml-markup/registry.js';
+import { getTagRender } from '../xml-markup/renders.js';
 
 export const CHIP_HREF_PREFIX = '#__c4s_chip__';
 
@@ -49,21 +56,37 @@ export type ChipTarget = 'entity' | 'entities-by-tags' | 'section';
 
 /**
  * The target of a registered tag, read from its attribute vocabulary: an
- * `anchor` points at a section, a `slug` / `slugs` at entities, `tags` at
- * entities picked by tags. `null` — the tag points at nothing a chip can show.
+ * `anchor` points at a section, a `type` together with a `slug` / `slugs` at
+ * entities, `tags` at entities picked by tags. `null` — the tag points at
+ * nothing the default render can show (a `slug` alone included: without a
+ * `type` there is no entity type to resolve it in).
  */
 export function chipTargetOf(def: Pick<XmlTagDefinition, 'attrOrder'>): ChipTarget | null {
   const attrs = new Set(def.attrOrder);
   if (attrs.has('anchor')) return 'section';
-  if (attrs.has('slug') || attrs.has('slugs')) return 'entity';
+  if (attrs.has('type') && (attrs.has('slug') || attrs.has('slugs'))) return 'entity';
   if (attrs.has('tags')) return 'entities-by-tags';
   return null;
 }
 
-/** True for a registered tag the chat renders as a chip. */
+/** The attribute names sanitization knows how to check — the only ones a chip carries. */
+const CHIP_ATTRS = new Set(['type', 'slug', 'slugs', 'tags', 'filter', 'anchor']);
+
+/**
+ * Step 0 — the tag has a render assigned by its owner, and that render can be
+ * handed the tag's content. Sanitization carries only the attributes it checks
+ * (`CHIP_ATTRS`), so a tag whose content lives in another attribute (`todo`'s
+ * `comment`) would reach its render emptied; such a tag stays text as written,
+ * as the default render leaves it. ASSUMPTION:dev-0301.
+ */
+function rendersInChat(def: Pick<XmlTagDefinition, 'name' | 'attrOrder'>): boolean {
+  return !!getTagRender(def.name) && def.attrOrder.every((a) => CHIP_ATTRS.has(a));
+}
+
+/** True for a registered tag the chat shows as a component (assigned render or chip). */
 export function isChipTag(kind: string): boolean {
   const def = getXmlTag(kind);
-  return !!def && chipTargetOf(def) !== null;
+  return !!def && (rendersInChat(def) || chipTargetOf(def) !== null);
 }
 
 export function preprocessXmlChips(text: string): string {
