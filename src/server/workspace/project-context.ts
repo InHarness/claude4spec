@@ -120,6 +120,7 @@ import { createPageToolsServer } from '../mcp/page-tools.js';
 import type { SectionWriteDeps } from '../services/page-write.js';
 import { createEntityToolsServer } from '../mcp/entity-tools.js';
 import { SkillRegistry, SkillResolver, findSkillsRoots } from '../services/skill-registry.js';
+import { registerProjectRootedSkills } from '../services/project-rooted-skills.js';
 import { checkWritingStyleAtStart } from '../services/writing-style-start.js';
 import { fanPluginSkills, loadOverlayLayer } from './project-skills.js';
 import { chatRouter } from '../routes/chat.js';
@@ -320,6 +321,11 @@ async function buildInner(
   // each at its fixed `.claude4spec/<kind>`. No directory is read from a config key.
   registerCoreReactions();
   const rootRegistry = new RootRegistry(effectiveRoots);
+  // 2.1.9 (M52 `1v62dbhb`): the `project-rooted` skill source — per context
+  // instance, over the root of kind `skills`, registered before anything reads
+  // the registry (the writing-style check at start included: a project-rooted
+  // style ranks first in its chain).
+  registerProjectRootedSkills(skillRegistry, rootRegistry, cwd);
   const briefsRootDir = rootRegistry.system('briefs').dir;
   const patchesRootDir = rootRegistry.system('patches').dir;
   const entitiesRootDir = rootRegistry.system('entities').dir;
@@ -942,6 +948,7 @@ async function buildInner(
     host: pluginHost,
     serialization: serializationEngine,
     roots: effectiveRoots,
+    referenceRoots: rootRegistry.referenceOnly(),
     projectDir: cwd,
     packageVersion: readPackageVersion(),
     projectionStatus,
@@ -969,6 +976,7 @@ async function buildInner(
       host: pluginHost,
       serialization: serializationEngine,
       roots: overriddenRoots,
+      referenceRoots: rootRegistry.referenceOnly(),
       unindexedRootIds,
       projectDir: cwd,
       packageVersion: readPackageVersion(),

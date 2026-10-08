@@ -71,6 +71,8 @@ function coreCtx(events: WsEvent[]): CoreReactionContext {
     versionCapture: NOOP,
     entityIndexer: NOOP,
     releaseIndexer: NOOP,
+    // 2.1.9 — the `skills` kind (M52) declares a reducer, so every full-registry binding binds `m02-sidebar-reducer`.
+    sidebarReducer: NOOP,
   };
 }
 
@@ -107,8 +109,8 @@ describe('2.1.8 — root-registry runtime per ProjectContext (M02 m02multidir, L
     const mounted = await mountRegistryRoots({ cwd, registry, userRoots: USER_ROOTS, w });
 
     // N facades — exactly the roots of kinds with `sidebar` ≠ `hidden` (today: the
-    // `pages` roots), each its own PagesService.
-    expect(registry.facades().map((root) => root.id)).toEqual(['pages', 'adr']);
+    // `pages` roots and, 2.1.9, the `skills` root of M52), each its own PagesService.
+    expect(registry.facades().map((root) => root.id)).toEqual(['pages', 'adr', 'skills']);
     for (const root of registry.list()) {
       expect(registry.facades().includes(root), root.id).toBe(KIND_DECLARATIONS[root.kind].sidebar !== 'hidden');
     }
@@ -123,7 +125,7 @@ describe('2.1.8 — root-registry runtime per ProjectContext (M02 m02multidir, L
     await withSidebar('plans', 'accordion', async () => {
       const wPlans = runtime().scoped('context:p1-plans#1');
       const withPlans = await mountRegistryRoots({ cwd, registry, userRoots: USER_ROOTS, w: wPlans });
-      expect(withPlans.rootRuntimes.map((rt) => rt.root.id)).toEqual(['pages', 'adr', 'plans']);
+      expect(withPlans.rootRuntimes.map((rt) => rt.root.id)).toEqual(['pages', 'adr', 'plans', 'skills']);
       const plansFacade = withPlans.rootRuntimes.find((rt) => rt.root.id === 'plans')!;
       expect(plansFacade.kind).toBe('plans');
       expect(plansFacade.pages).toBeInstanceOf(PagesService);
@@ -197,7 +199,7 @@ describe('2.1.8 — root-registry runtime per ProjectContext (M02 m02multidir, L
     const w2 = r.scoped('context:p1#2');
     const registry2 = new RootRegistry(nextRoots);
     const remounted = await mountRegistryRoots({ cwd, registry: registry2, userRoots: nextRoots, w: w2 });
-    expect(remounted.rootRuntimes.map((rt) => rt.root.id)).toEqual(['pages', 'adr', 'specs']);
+    expect(remounted.rootRuntimes.map((rt) => rt.root.id)).toEqual(['pages', 'adr', 'specs', 'skills']);
     for (const source of remounted.sourceByRootId.values()) expect(w2.isMounted(source)).toBe(true);
     expect(() =>
       bindRegistryReactions(registry2, remounted.sourceByRootId, new ReactionBinder(w2, coreCtx(events))),
@@ -226,7 +228,8 @@ describe('2.1.8 — root-registry runtime per ProjectContext (M02 m02multidir, L
     // on the entry change nothing — `adr` is indexed, validated and captured.
     expect(registry.get('adr')).toEqual({ id: 'adr', name: 'ADRs', dir: 'docs/adr', kind: 'pages', builtin: false });
     expect(registry.selecting('m06-section-indexer').map((r) => r.id)).toEqual(['pages', 'adr']);
-    expect(registry.withFlag('references').map((r) => r.id)).toEqual(['pages', 'adr']);
+    // 2.1.9 — `skills` (M52) is in the reference graph by its kind's flag, not indexed.
+    expect(registry.withFlag('references').map((r) => r.id)).toEqual(['pages', 'adr', 'skills']);
     expect(registry.selecting('m17-capture').map((r) => r.id)).toEqual(
       expect.arrayContaining(['pages', 'adr', 'plans', 'briefs', 'patches']),
     );
@@ -295,7 +298,7 @@ describe('2.1.8 — root-registry runtime per ProjectContext (M02 m02multidir, L
     const mounted = await mountRegistryRoots({ cwd, registry, userRoots: USER_ROOTS, w });
     // Markdown store: every kind whose file map has a markdown entry (pages + plans/briefs/patches),
     // and it is the bare PRIMITIVE — never a facade, whatever the root's kind.
-    expect([...mounted.storeByRootId.keys()].sort()).toEqual(['adr', 'briefs', 'pages', 'patches', 'plans']);
+    expect([...mounted.storeByRootId.keys()].sort()).toEqual(['adr', 'briefs', 'pages', 'patches', 'plans', 'skills']);
     for (const [rootId, store] of mounted.storeByRootId) {
       expect(store, rootId).toBeInstanceOf(MarkdownFileStore);
       expect(store, rootId).not.toBeInstanceOf(PagesService);
@@ -313,7 +316,7 @@ describe('2.1.8 — root-registry runtime per ProjectContext (M02 m02multidir, L
     expect(mounted.rootRuntimes.map((rt) => rt.root.id)).toEqual(
       registry.list().filter((r) => kindDeclaration(r.kind).sidebar !== 'hidden').map((r) => r.id),
     );
-    expect(mounted.rootRuntimes.map((rt) => rt.root.id)).toEqual(['pages', 'adr']);
+    expect(mounted.rootRuntimes.map((rt) => rt.root.id)).toEqual(['pages', 'adr', 'skills']);
     for (const rt of mounted.rootRuntimes) {
       expect(kindDeclaration(registry.get(rt.root.id)!.kind).sidebar).not.toBe('hidden');
       expect(rt.kind).toBe(registry.get(rt.root.id)!.kind);
@@ -338,7 +341,12 @@ describe('2.1.8 — root-registry runtime per ProjectContext (M02 m02multidir, L
     bindRegistryReactions(registry, mounted.sourceByRootId, recorder);
     for (const root of registry.list()) {
       const ids = calls.filter(([rootId]) => rootId === root.id).map(([, id]) => id);
-      expect(ids, root.id).toEqual([...kindDeclaration(root.kind).reactions, 'm02-file-changed']);
+      expect(ids, root.id).toEqual([
+        ...kindDeclaration(root.kind).reactions,
+        'm02-file-changed',
+        // 2.1.9 — `skills` (M52) declares a reducer: step 5 binds it there.
+        ...(root.kind === 'skills' ? [SIDEBAR_REDUCER_ID] : []),
+      ]);
       for (const [rootId, , source] of calls) if (rootId === root.id) expect(source).toBe(mounted.sourceByRootId.get(root.id));
     }
     // The source names: `pages:<id>` for the configuration source, the kind's
@@ -351,11 +359,12 @@ describe('2.1.8 — root-registry runtime per ProjectContext (M02 m02multidir, L
       patches: 'artifacts:patch',
       entities: 'entities',
       releases: 'releases',
+      skills: 'skills',
     });
     // Step 5: a kind whose `sidebar` declares a reducer gets `m02-sidebar-reducer`
     // bound on its roots' sources, after its own reactions and the base one;
     // `hidden` / `accordion` kinds never do.
-    expect(calls.some(([, id]) => id === SIDEBAR_REDUCER_ID)).toBe(false);
+    expect(calls.filter(([, id]) => id === SIDEBAR_REDUCER_ID).map(([rootId]) => rootId)).toEqual(['skills']);
     calls.length = 0;
     await withSidebar('pages', { glob: '*/index.md', reduce: () => [] }, async () => {
       bindRegistryReactions(registry, mounted.sourceByRootId, recorder);
@@ -363,7 +372,7 @@ describe('2.1.8 — root-registry runtime per ProjectContext (M02 m02multidir, L
     for (const root of registry.list()) {
       const ids = calls.filter(([rootId]) => rootId === root.id).map(([, id]) => id);
       expect(ids, root.id).toEqual(
-        root.kind === 'pages'
+        root.kind === 'pages' || root.kind === 'skills'
           ? [...kindDeclaration(root.kind).reactions, 'm02-file-changed', SIDEBAR_REDUCER_ID]
           : [...kindDeclaration(root.kind).reactions, 'm02-file-changed'],
       );

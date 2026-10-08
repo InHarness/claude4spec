@@ -420,6 +420,17 @@ describe('GET/PATCH /config — one root registry with kinds (2.1.8)', () => {
     expect(res.body.error.message).toMatch(/reserved for a system root/);
   });
 
+  it('[ac:ac-zapis-konfiguracji-z-wpisem-roots-o-i] PATCH roots with id skills → 400 reserved identifier (M52: `skills` is the id of the code-source root of kind `skills`), config.json untouched', async () => {
+    const before = fs.readFileSync(configPath(dir), 'utf8');
+    const res = await request(app())
+      .patch('/config')
+      .send({ roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }, { id: 'skills', name: 'Skills', dir: 'my-skills', builtin: false }] });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+    expect(res.body.error.message).toMatch(/root id 'skills' is reserved for a system root/);
+    expect(fs.readFileSync(configPath(dir), 'utf8')).toBe(before);
+  });
+
   it('PATCH carrying a legacy dir key ignores it — 200, nothing persisted', async () => {
     const res = await request(app()).patch('/config').send({ plansDir: '.claude4spec/roadmap', entitiesDir: 'pages' });
     expect(res.status).toBe(200);

@@ -39,6 +39,8 @@ describe('RootRegistry', () => {
       ['patches', 'patches', '.claude4spec/patches'],
       ['entities', 'entities', '.claude4spec/entities'],
       ['releases', 'releases', '.claude4spec/releases'],
+      // 2.1.9 — M52's `skills` kind (source `code`), registered after the core kinds.
+      ['skills', 'skills', '.claude4spec/skills'],
     ]);
     expect(reg.builtin().id).toBe('pages');
     expect(reg.pages().map((r) => r.id)).toEqual(['pages', 'adr']);
@@ -47,14 +49,22 @@ describe('RootRegistry', () => {
   it('gates behaviour by the kind: release roots, reference roots, roots selecting a reaction', () => {
     const reg = new RootRegistry(user);
     expect(reg.withFlag('release').map((r) => r.id)).toEqual(['pages', 'adr', 'entities']);
-    expect(reg.withFlag('references').map((r) => r.id)).toEqual(['pages', 'adr']);
+    expect(reg.withFlag('references').map((r) => r.id)).toEqual(['pages', 'adr', 'skills']);
     expect(reg.withFlag('gitignore').map((r) => r.id)).toEqual(['plans', 'briefs', 'patches', 'releases']);
     expect(reg.selecting('m06-anchor-injection').map((r) => r.id)).toEqual(['pages', 'adr', 'plans']);
     expect(reg.selecting('m06-section-indexer').map((r) => r.id)).toEqual(['pages', 'adr']);
   });
 
   it('the agent deny-set is the dir of every root whose kind has agentDirectFs = false', () => {
-    expect(agentDeniedDirs(user)).toEqual(SYSTEM_ROOTS.map((r) => r.dir));
+    expect(agentDeniedDirs(user)).toEqual([
+      '.claude4spec/plans',
+      '.claude4spec/briefs',
+      '.claude4spec/patches',
+      '.claude4spec/entities',
+      '.claude4spec/releases',
+    ]);
+    // 2.1.9 — the `skills` system root keeps agentDirectFs = yes (M52): not denied.
+    expect(SYSTEM_ROOTS.map((r) => r.dir)).toContain('.claude4spec/skills');
   });
 
   it('[ac:ac-przy-config-json-z-kluczem-dir-dla-pl] a legacy plansDir pointing elsewhere warns, and plans still resolve ONLY to .claude4spec/plans', () => {
@@ -209,5 +219,62 @@ describe('root kinds', () => {
       expect(Object.keys(decl.flags).sort()).toEqual(['agentDirectFs', 'gitignore', 'references', 'release']);
       expect(decl.source).toBe(decl.kind === 'pages' ? 'config' : 'code');
     }
+  });
+});
+
+describe('2.1.9 — M52 i5frb6it: the `skills` kind declaration', () => {
+  it('one root from code: id `skills` (reserved), fixed .claude4spec/skills, references + agentDirectFs, only m17-capture, a sidebar reducer', () => {
+    const decl = KIND_DECLARATIONS.skills;
+    expect(decl.source).toBe('code');
+    expect(decl.flags).toEqual({ release: false, references: true, gitignore: false, agentDirectFs: true });
+    expect(decl.reactions).toEqual(['m17-capture']);
+    expect(typeof decl.sidebar).toBe('object');
+    const renamed = new RootRegistry([{ id: 'docs', name: 'Docs', dir: '.', builtin: true }]);
+    expect(renamed.system('skills')).toEqual({ id: 'skills', name: 'Skills', dir: '.claude4spec/skills', kind: 'skills', builtin: false });
+    expect(isSystemRootId('skills')).toBe(true);
+    expect(namespacesOverlap('.', '.claude4spec/skills')).toBe(false);
+    // In the reference graph beside the page roots, never addressable by discovery.
+    expect(renamed.referenceOnly()).toEqual([
+      { root: { id: 'skills', name: 'Skills', dir: '.claude4spec/skills', builtin: false }, kind: 'skills' },
+    ]);
+    expect(renamed.pages().some((r) => r.kind === 'skills')).toBe(false);
+  });
+
+  it('file map, first match wins: */SKILL.md markdown with the skill-registry header (all fields mutable), other package markdown versioned, everything else raw and unversioned', () => {
+    expect(fileMapEntryOf('skills', 'pkg/SKILL.md')).toMatchObject({ format: 'markdown', track: 'file_version' });
+    expect(fileMapEntryOf('skills', 'pkg/SKILL.md')?.header?.mutable).toEqual(
+      expect.arrayContaining(['title', 'description', 'version', 'language', 'scope', 'contextTypes']),
+    );
+    expect(fileMapEntryOf('skills', 'pkg/SKILL.md')?.header?.immutable).toEqual([]);
+    expect(fileMapEntryOf('skills', 'pkg/workflows/brief.md')).toMatchObject({ format: 'markdown', track: 'file_version' });
+    expect(fileMapEntryOf('skills', 'pkg/notes.mdx')?.header).toBeUndefined();
+    expect(fileMapEntryOf('skills', 'pkg/img/diagram.png')).toMatchObject({ format: 'raw', track: 'none' });
+    expect(fileMapEntryOf('skills', 'loose.md')).toMatchObject({ format: 'raw', track: 'none' });
+    // The M40 filters merge the entries (a brace pattern is expanded into the alternation).
+    const versioned = fileMapFilter('skills', ['markdown', 'json', 'raw'], ['file_version'])!;
+    expect(versioned).toBe('{*/SKILL.md,*/**/*.md,*/**/*.mdx}');
+    const re = globToRegExp(versioned);
+    expect(['a/SKILL.md', 'a/w/brief.md', 'a/x.mdx'].every((p) => re.test(p))).toBe(true);
+    expect(['loose.md', 'a/img.png'].some((p) => re.test(p))).toBe(false);
+    const all = globToRegExp(fileMapFilter('skills', ['markdown', 'json', 'raw'])!);
+    expect(['a/SKILL.md', 'a/img.png', 'loose.md', 'a/b/c.txt'].every((p) => all.test(p))).toBe(true);
+  });
+
+  it('the reducer: one accordion per first-level directory holding any file, key = path = the directory, label = SKILL.md title else the directory, alphabetical by label; a loose file adds none', () => {
+    const reducer = KIND_DECLARATIONS.skills.sidebar;
+    if (typeof reducer !== 'object') throw new Error('skills declares a reducer');
+    expect(reducer.glob).toBe('*/SKILL.md');
+    const out = reducer.reduce({
+      paths: ['zeta/SKILL.md', 'alpha/SKILL.md', 'alpha/workflows/brief.md', 'no-entry/notes.md', 'loose.md'],
+      frontmatter: new Map<string, Record<string, unknown>>([
+        ['zeta/SKILL.md', { title: 'Authoring guide' }],
+        ['alpha/SKILL.md', {}],
+      ]),
+    });
+    expect(out).toEqual([
+      { key: 'alpha', label: 'alpha', path: 'alpha' },
+      { key: 'zeta', label: 'Authoring guide', path: 'zeta' },
+      { key: 'no-entry', label: 'no-entry', path: 'no-entry' },
+    ]);
   });
 });

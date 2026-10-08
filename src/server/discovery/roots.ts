@@ -22,15 +22,29 @@
  */
 
 import type { Root } from '../../shared/types.js';
-import { KIND_DECLARATIONS, PAGES_KIND, kindSelects } from '../../shared/root-kinds.js';
+import { KIND_DECLARATIONS, PAGES_KIND, kindSelects, type RootKind } from '../../shared/root-kinds.js';
 import { invalidArgument } from './errors.js';
 
 export class RootSet {
   private readonly byId: Map<string, Root>;
 
-  /** `all` — the `kind: pages` roots, in `roots[]` order. */
-  constructor(readonly all: readonly Root[]) {
+  /**
+   * `all` — the `kind: pages` roots, in `roots[]` order.
+   * `referenceOnly` — 2.1.9: registry roots of other kinds that the reference
+   * graph sweeps (`references = yes`, e.g. `skills`, M52 `i5frb6it`). They never
+   * become addressable: `require`/`get`/`ids` see only `all`; the gates below
+   * read each one's KIND.
+   */
+  constructor(
+    readonly all: readonly Root[],
+    private readonly referenceOnly: ReadonlyArray<{ root: Root; kind: RootKind }> = [],
+  ) {
     this.byId = new Map(all.map((r) => [r.id, r]));
+  }
+
+  /** The reference-only roots whose kind satisfies `test`. */
+  private extra(test: (kind: RootKind) => boolean): Root[] {
+    return this.referenceOnly.filter((e) => test(e.kind)).map((e) => e.root);
   }
 
   ids(): string[] {
@@ -76,7 +90,10 @@ export class RootSet {
 
   /** Roots that carry a section index — every page root, by its kind. */
   sectionIndexed(): Root[] {
-    return kindSelects(PAGES_KIND, 'm06-section-indexer') ? [...this.all] : [];
+    return [
+      ...(kindSelects(PAGES_KIND, 'm06-section-indexer') ? this.all : []),
+      ...this.extra((k) => kindSelects(k, 'm06-section-indexer')),
+    ];
   }
 
   /**
@@ -84,11 +101,20 @@ export class RootSet {
    * without an anchor gets one on the next pass (M06 `9cf6zu0f`).
    */
   anchorInjected(): Root[] {
-    return kindSelects(PAGES_KIND, 'm06-anchor-injection') ? [...this.all] : [];
+    return [
+      ...(kindSelects(PAGES_KIND, 'm06-anchor-injection') ? this.all : []),
+      ...this.extra((k) => kindSelects(k, 'm06-anchor-injection')),
+    ];
   }
 
-  /** Roots in the reference graph — every page root, by its kind's `references` flag. */
+  /**
+   * Roots in the reference graph — every page root, by its kind's `references`
+   * flag, then (2.1.9) the reference-only roots whose kind carries it.
+   */
   referenceValidated(): Root[] {
-    return KIND_DECLARATIONS[PAGES_KIND].flags.references ? [...this.all] : [];
+    return [
+      ...(KIND_DECLARATIONS[PAGES_KIND].flags.references ? this.all : []),
+      ...this.extra((k) => KIND_DECLARATIONS[k].flags.references),
+    ];
   }
 }

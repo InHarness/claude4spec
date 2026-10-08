@@ -117,14 +117,16 @@ describe('tags.json lives in the `entities` root of the project', () => {
       '',
     ].join('\n');
     const stores = new Map<string, MarkdownFileStore>();
+    // 2.1.9: in the `skills` root (M52) a markdown file is a package file — `<package>/<file>`.
+    const docOf = (kind: string): string => (kind === 'skills' ? 'pkg/doc.md' : 'doc.md');
     for (const root of registry.list().filter((r) => r.kind !== 'entities' && r.kind !== 'releases')) {
-      fs.mkdirSync(path.join(cwd, root.dir), { recursive: true });
-      fs.writeFileSync(path.join(cwd, root.dir, 'doc.md'), page);
-      stores.set(root.id, new MarkdownFileStore({ cwd, rootId: root.id, dir: root.dir }));
+      fs.mkdirSync(path.join(cwd, root.dir, path.dirname(docOf(root.kind))), { recursive: true });
+      fs.writeFileSync(path.join(cwd, root.dir, docOf(root.kind)), page);
+      stores.set(root.id, new MarkdownFileStore({ cwd, rootId: root.id, dir: root.dir, kind: root.kind }));
     }
     // The propagation's root set, built as `buildProjectContext` builds it: the `references` flag.
     const referenceRoots = registry.withFlag('references');
-    expect(referenceRoots.map((r) => r.kind)).toEqual(['pages', 'pages']);
+    expect(referenceRoots.map((r) => r.kind)).toEqual(['pages', 'pages', 'skills']);
     const references = new ReferencesService(
       new Map(referenceRoots.map((r) => [r.id, stores.get(r.id)!])),
       new Map(),
@@ -143,9 +145,9 @@ describe('tags.json lives in the `entities` root of the project', () => {
     expect(entityFile.tags).toEqual(['invoicing']);
     expect(fileMapEntryOf('entities', 'endpoint/get-invoice.json')?.track).toBe('entity_version');
     // 3. tags="…" in the `references` roots only; a fenced tag is left as written.
-    expect(changed).toEqual(['doc.md', 'doc.md']);
+    expect(changed).toEqual(['doc.md', 'doc.md', 'pkg/doc.md']);
     for (const root of referenceRoots) {
-      const body = fs.readFileSync(path.join(cwd, root.dir, 'doc.md'), 'utf8');
+      const body = fs.readFileSync(path.join(cwd, root.dir, docOf(root.kind)), 'utf8');
       expect(body, root.id).toContain('<tagged_list type="endpoint" tags="invoicing,auth"/>');
       expect(body, root.id).toContain('```\n<tagged_list type="endpoint" tags="billing"/>\n```');
     }

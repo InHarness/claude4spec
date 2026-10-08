@@ -1,4 +1,4 @@
-import { systemRootKindOf } from '../../shared/root-kinds.js';
+import { kindHasFacade, systemRootKindOf } from '../../shared/root-kinds.js';
 import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { WsEvent } from '../../shared/types.js';
@@ -54,7 +54,10 @@ export function useFileWatcher() {
       ws.onmessage = (e) => {
         try {
           const data = JSON.parse(e.data) as WsEvent;
-          const systemKind = data.kind === 'file:changed' ? systemRootKindOf(data.rootId) : undefined;
+          // 2.1.9: a system root WITH A FACADE (`skills`, M52) is a page tree like
+          // any user root — it takes the page branch below, keyed by its rootId.
+          const systemRootKind = data.kind === 'file:changed' ? systemRootKindOf(data.rootId) : undefined;
+          const systemKind = systemRootKind && !kindHasFacade(systemRootKind) ? systemRootKind : undefined;
           if (data.kind === 'file:changed' && systemKind) {
             // 2.1.8: the base `file:changed` fires for EVERY registry root. A
             // system root is routed by its KIND (asked of the registry), never

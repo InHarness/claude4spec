@@ -11,10 +11,15 @@ import { errorHandler } from './errors.js';
  * (`SidebarAccordionsService.listAccordions`). Lives behind the project prefix:
  * `/api/projects/:id/sidebar-accordions`.
  */
-export function sidebarAccordionsRouter(source: { listAccordions(): SidebarAccordion[] }): Router {
+export function sidebarAccordionsRouter(source: {
+  listAccordions(): SidebarAccordion[];
+  /** Computes the reducer roots not computed yet (`SidebarAccordionsService.settle`). */
+  settle?(): Promise<void>;
+}): Router {
   const router = Router();
-  router.get('/', (_req, res, next) => {
+  router.get('/', async (_req, res, next) => {
     try {
+      await source.settle?.();
       res.json({ data: source.listAccordions() });
     } catch (err) {
       next(err);

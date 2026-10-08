@@ -108,6 +108,16 @@ export class SidebarAccordionsService implements ReactionHandler {
   }
 
   /**
+   * Computes every reducer root not computed yet (2.1.9, M52). The route awaits
+   * it before reading, so a request racing the context build's fire-and-forget
+   * `rebuildAll()` is served the reducer's result rather than the `accordion`
+   * fallback — the fallback stays the answer of a reducer that throws.
+   */
+  async settle(): Promise<void> {
+    for (const root of this.reducerRoots()) if (!this.cache.has(root.id)) await this.recompute(root.id);
+  }
+
+  /**
    * Full rebuild at context build: computes every reducer root. Never blocks the
    * project — a root still being computed is served the `accordion` fallback.
    */

@@ -1,0 +1,10 @@
+{
+  "role": "reviewer",
+  "scope": {
+    "kind": "unit",
+    "id": "u05-skills-root",
+    "base": "9b80b4a42641a00eead2a747b3d1e89ac6a1fd4a"
+  },
+  "findings": [],
+  "deviations": []
+}

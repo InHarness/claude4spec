@@ -20,10 +20,10 @@ import { sidebarAccordionsRouter } from './sidebar-accordions.js';
  * (`m02l13001` „Reduktory sidebar”, `x6avfb5q` `m02-sidebar-reducer`) and their
  * delivery, `GET /api/sidebar-accordions` (DTO `sidebar-accordion`).
  *
- * No kind declares a reducer today, so the reducer cases put one on a kind for
- * the duration of a test (`withSidebar`) — the implementor reads the kind's
- * declaration at call time, which is exactly the seam the `skills` kind (M52)
- * plugs into.
+ * The generic reducer cases put a reducer on a kind for the duration of a test
+ * (`withSidebar`) — the implementor reads the kind's declaration at call time.
+ * 2.1.9: the `skills` kind (M52 `i5frb6it`) declares a real one; its cases are
+ * at the end of the file.
  */
 
 const USER_ROOTS: Root[] = [
@@ -142,7 +142,10 @@ describe('2.1.9 — sidebar reducers: call, recompute, fallback, delivery (M02 m
   it('orders the array: `pages` roots in registry order first, then the other kinds in registration order; within a root, the reducer\'s order', async () => {
     const cwd = tmp();
     await withSidebar({ releases: 'accordion', plans: 'accordion' }, async () => {
-      expect(service(cwd).listAccordions().map((a) => a.rootId)).toEqual(['pages', 'adr', 'plans', 'releases']);
+      const svc = service(cwd);
+      // (2.1.9: the `skills` reducer root, computed over its empty dir, adds nothing.)
+      await svc.rebuildAll();
+      expect(svc.listAccordions().map((a) => a.rootId)).toEqual(['pages', 'adr', 'plans', 'releases']);
     });
   });
 
@@ -267,5 +270,94 @@ describe('2.1.9 — sidebar reducers: call, recompute, fallback, delivery (M02 m
     // `adr` is a `pages` root too, empty here.
     expect(seen[0]).toEqual({ paths: ['api/index.md'], fm: [['api/index.md', { title: 'Indexed' }]] });
     expect(JSON.stringify(seen)).not.toContain('body text');
+  });
+});
+
+describe('2.1.9 — the `skills` root in the sidebar (M52 i5frb6it, M02 m02l13001)', () => {
+  const skill = (cwd: string, rel: string, content: string) => put(path.join(cwd, '.claude4spec', 'skills', rel), content);
+  const app = (svc: SidebarAccordionsService) => express().use('/api/sidebar-accordions', sidebarAccordionsRouter(svc));
+
+  it('[ac:ac-akordeony-korzeni-rodzaju-pages-stoja] GET /api/sidebar-accordions lists the accordions of the `pages` roots before those of the other kinds\' roots (`skills`)', async () => {
+    const cwd = tmp();
+    skill(cwd, 'writer/SKILL.md', '---\ntitle: Writer\n---\n# W\n');
+    skill(cwd, 'reviewer/SKILL.md', '---\ntitle: Reviewer\n---\n# R\n');
+    const res = await request(app(service(cwd))).get('/api/sidebar-accordions');
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual([
+      { rootId: 'pages', key: 'pages', label: 'Pages', path: '' },
+      { rootId: 'adr', key: 'adr', label: 'ADRs', path: '' },
+      // One accordion per package directory, alphabetical by label — after every `pages` root.
+      { rootId: 'skills', key: 'reviewer', label: 'Reviewer', path: 'reviewer' },
+      { rootId: 'skills', key: 'writer', label: 'Writer', path: 'writer' },
+    ]);
+    const kinds = (res.body.data as Array<{ rootId: string }>).map((a) => (a.rootId === 'skills' ? 'other' : 'pages'));
+    expect(kinds.lastIndexOf('pages')).toBeLessThan(kinds.indexOf('other'));
+  });
+
+  it('[ac:ac-dodanie-pliku-w-korzeniu-z-reduktorem] adding a file to the `skills` root emits `sidebar:accordions-changed` with `rootId: skills` when the reducer result changes — and not when it does not', async () => {
+    const cwd = tmp();
+    const events: WsEvent[] = [];
+    const changed = () => events.filter((e) => e.kind === 'sidebar:accordions-changed');
+    skill(cwd, 'writer/SKILL.md', '---\ntitle: Writer\n---\n');
+    const svc = service(cwd, events);
+    await svc.rebuildAll();
+    expect(changed()).toEqual([]);
+    const input = { rootId: 'skills' };
+
+    // A new package directory → a new accordion → the event, carrying the root's id.
+    skill(cwd, 'reviewer/notes.md', '# notes\n');
+    await svc.onChange(SCOPE, 'skills', 'reviewer/notes.md', 'external', input);
+    expect(changed()).toEqual([{ kind: 'sidebar:accordions-changed', rootId: 'skills' }]);
+    expect(svc.listAccordions().filter((a) => a.rootId === 'skills').map((a) => a.key)).toEqual(['reviewer', 'writer']);
+
+    // A further file inside an existing package: recomputed, same result, no event.
+    skill(cwd, 'writer/workflows/brief.md', '# brief\n');
+    await svc.onChange(SCOPE, 'skills', 'writer/workflows/brief.md', 'external', input);
+    expect(changed()).toHaveLength(1);
+  });
+
+  it('[ac:ac-element-wyniku-reduktora-sidebar-z-pa] an element of a reducer result whose `path` lies outside the root is skipped; the rest of the accordion array stays', async () => {
+    const cwd = tmp();
+    const warnings: string[] = [];
+    const escaping: SidebarReducer = {
+      glob: '*/SKILL.md',
+      reduce: () => [
+        { key: 'a', label: 'A', path: 'a' },
+        { key: 'out', label: 'Out', path: '../../pages' },
+        { key: 'abs', label: 'Abs', path: '/etc' },
+        { key: 'b', label: 'B', path: 'b' },
+      ],
+    };
+    await withSidebar({ skills: escaping }, async () => {
+      const res = await request(app(service(cwd, [], { warnings }))).get('/api/sidebar-accordions');
+      expect(res.status).toBe(200);
+      expect((res.body.data as Array<{ rootId: string }>).filter((a) => a.rootId === 'skills')).toEqual([
+        { rootId: 'skills', key: 'a', label: 'A', path: 'a' },
+        { rootId: 'skills', key: 'b', label: 'B', path: 'b' },
+      ]);
+      // The other roots' accordions are untouched.
+      expect(res.body.data[0]).toEqual({ rootId: 'pages', key: 'pages', label: 'Pages', path: '' });
+      expect(warnings.filter((w) => w.startsWith("root 'skills'") && w.includes('outside the root'))).toHaveLength(2);
+    });
+  });
+
+  it('[ac:ac-reduktor-sidebar-zglaszajacy-blad-daj] a `sidebar` reducer that throws gives its root exactly one accordion { key: id, label: name, path: \'\' }', async () => {
+    const cwd = tmp();
+    skill(cwd, 'writer/SKILL.md', '---\ntitle: Writer\n---\n');
+    const warnings: string[] = [];
+    const failing: SidebarReducer = {
+      glob: '*/SKILL.md',
+      reduce: () => {
+        throw new Error('reducer exploded');
+      },
+    };
+    await withSidebar({ skills: failing }, async () => {
+      const res = await request(app(service(cwd, [], { warnings }))).get('/api/sidebar-accordions');
+      expect(res.status).toBe(200);
+      expect((res.body.data as Array<{ rootId: string }>).filter((a) => a.rootId === 'skills')).toEqual([
+        { rootId: 'skills', key: 'skills', label: 'Skills', path: '' },
+      ]);
+      expect(warnings.some((w) => w.includes("root 'skills'") && w.includes('reducer exploded'))).toBe(true);
+    });
   });
 });

@@ -88,6 +88,23 @@ export class RootRegistry {
     return this.roots.filter((r) => KIND_DECLARATIONS[r.kind].flags[flag] === value);
   }
 
+  /**
+   * 2.1.9 — the roots of kinds other than `pages` that belong to the reference
+   * graph (`references = yes`, markdown entries) — what agent discovery's
+   * reference sweeps (`find_references`, `check_consistency`) read beside the
+   * page roots, without making them addressable. Today: `skills` (M52).
+   */
+  referenceOnly(): Array<{ root: Root; kind: RootKind }> {
+    return this.roots
+      .filter(
+        (r) =>
+          r.kind !== PAGES_KIND &&
+          KIND_DECLARATIONS[r.kind].flags.references &&
+          KIND_DECLARATIONS[r.kind].fileMap.some((e) => e.format === 'markdown'),
+      )
+      .map((r) => ({ root: { id: r.id, name: r.name, dir: r.dir, builtin: r.builtin }, kind: r.kind }));
+  }
+
   /** Roots whose kind selects the reaction. */
   selecting(reactionId: string): RegistryRoot[] {
     return this.roots.filter((r) => KIND_DECLARATIONS[r.kind].reactions.includes(reactionId));

@@ -106,7 +106,8 @@ describe('2.1.9 — page-tools address the roots with a facade (M02 o01s9mwl, gj
     const refused = await call('create_page', { rootId: 'briefs', path: 'b.md', content: '# B\n' });
     expect(refused.isError).toBe(true);
     expect(refused.body.code).toBe('ROOT_NOT_FOUND');
-    expect(refused.body.hint).toBe('active roots: [pages, adr]');
+    // (2.1.9: `skills`, M52, is a root with a facade too.)
+    expect(refused.body.hint).toBe('active roots: [pages, adr, skills]');
     expect(fs.existsSync(abs('briefs', 'b.md'))).toBe(false);
   });
 

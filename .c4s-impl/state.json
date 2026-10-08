@@ -1,5 +1,5 @@
 {
-  "iteration": 4,
+  "iteration": 5,
   "conventions": [
     {
       "label": "L3 (Spec Operations)",
@@ -55,7 +55,7 @@
         "u05-skills-root",
         "u06-c4s-resolve-ask"
       ],
-      "startCommit": null
+      "startCommit": "db627da604f750cfe5e554647991834a475d7051"
     },
     {
       "n": 3,
@@ -1055,15 +1055,54 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "u05-skills-root/p1-l2-l16",
+          "layers": [
+            "L2",
+            "L10",
+            "L13",
+            "L14",
+            "L15",
+            "L16"
+          ],
+          "slugs": [
+            "ac-akordeony-korzeni-rodzaju-pages-stoja",
+            "ac-dodanie-pliku-w-korzeniu-z-reduktorem",
+            "ac-element-wyniku-reduktora-sidebar-z-pa",
+            "ac-korzen-rodzaju-z-sidebar-innym-niz-hi",
+            "ac-reduktor-sidebar-zglaszajacy-blad-daj",
+            "ac-projekt-ktorego-roots-zawiera-wpis-o",
+            "ac-zapis-konfiguracji-z-wpisem-roots-o-i",
+            "ac-put-api-pages-skills-pakiet-skill-md",
+            "ac-trafienie-find-references-w-korzeniu",
+            "ac-skill-scope-contextual-z-korzenia-ski",
+            "ac-load-skill-file-slug-dla-skilla-proje",
+            "ac-load-skill-file-na-slug-ktorego-rejes",
+            "ac-roota-user-claude-skills-projekt-g",
+            "m52-invalid-frontmatter-package-not-listed",
+            "m52-invalid-package-loads-marked-invalid",
+            "m52-new-package-listed-next-thread",
+            "m52-edge-renamed-dir-old-slug-unlisted",
+            "m52-skill-files-not-in-search-pages"
+          ],
+          "status": "implemented",
+          "rounds": 2,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "9b80b4a42641a00eead2a747b3d1e89ac6a1fd4a",
+      "baseCommit": "db627da604f750cfe5e554647991834a475d7051",
       "rounds": {
         "review": 0,
-        "unit": 0
-      }
+        "unit": 2
+      },
+      "lastUncovered": 0,
+      "lastBlocking": 1
     },
     {
       "id": "u06-c4s-resolve-ask",

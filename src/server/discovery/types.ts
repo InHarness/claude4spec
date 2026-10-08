@@ -21,6 +21,7 @@ import type { ProjectionStatusRegistry } from '../services/projection-status.js'
 
 import type { Database } from 'better-sqlite3';
 import type { Root } from '../../shared/types.js';
+import type { RootKind } from '../../shared/root-kinds.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import type { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
 import type { RawEntityReader } from './raw-entity-reader.js';
@@ -75,6 +76,14 @@ export interface DiscoveryDeps {
    * `--pages` re-pointed builtin root): their reference hits carry no anchor.
    */
   unindexedRootIds?: ReadonlySet<string>;
+  /**
+   * 2.1.9 — registry roots of kinds other than `pages` whose markdown entries
+   * belong to the reference graph (`references = yes`; today `skills`, M52).
+   * `find_references` and `check_consistency` sweep them; no page operation
+   * (`list_pages`, `get_page`, `search_pages`, `overview`) addresses them.
+   * Absent ⇒ none.
+   */
+  referenceRoots?: ReadonlyArray<{ root: Root; kind: RootKind }>;
 }
 
 // ── Meta ────────────────────────────────────────────────────────────────────

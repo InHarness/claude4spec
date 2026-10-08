@@ -13,7 +13,7 @@ import crypto from 'node:crypto';
 import matter from 'gray-matter';
 import { pageStructure } from '../../shared/section-parser.js';
 import type { Root } from '../../shared/types.js';
-import { PAGES_KIND } from '../../shared/root-kinds.js';
+import { PAGES_KIND, type RootKind } from '../../shared/root-kinds.js';
 import { MarkdownFileStore, PagesService } from '../services/pages.js';
 import { invalidArgument, pageNotFound } from './errors.js';
 
@@ -27,13 +27,26 @@ export interface PageFile {
 
 export class PageSource {
   private readonly services = new Map<string, PagesService>();
+  /** The page roots — the only ids a refusal names (a reference-only root is never addressable). */
+  private readonly pageRootIds: string[];
 
+  /**
+   * @param roots the `kind: pages` roots
+   * @param referenceOnly 2.1.9 — registry roots of other kinds that belong to the
+   *   reference graph (`references = yes`, e.g. `skills`): read by the reference
+   *   sweeps over their kind's markdown entries, never addressed by a page read
+   */
   constructor(
     readonly projectDir: string,
     roots: readonly Root[],
+    referenceOnly: ReadonlyArray<{ root: Root; kind: RootKind }> = [],
   ) {
     for (const root of roots) {
       this.services.set(root.id, new PagesService({ root, store: new MarkdownFileStore({ cwd: projectDir, rootId: root.id, dir: root.dir, kind: PAGES_KIND }) }));
+    }
+    this.pageRootIds = roots.map((r) => r.id);
+    for (const { root, kind } of referenceOnly) {
+      this.services.set(root.id, new PagesService({ root, store: new MarkdownFileStore({ cwd: projectDir, rootId: root.id, dir: root.dir, kind }) }));
     }
   }
 
@@ -45,7 +58,7 @@ export class PageSource {
     if (!svc)
       throw invalidArgument(
         `unknown rootId '${rootId}'`,
-        `roots in this project: ${[...this.services.keys()].join(', ') || 'none'}`,
+        `roots in this project: ${this.pageRootIds.join(', ') || 'none'}`,
       );
     return svc;
   }
@@ -86,7 +99,7 @@ export class PageSource {
   async read(rootId: string, relPath: string): Promise<string> {
     // 2.1.8: only markdown entries of a root are addressable — a `.html` file is
     // a raw preview entry of the kind's file map, never a page.
-    if (!isMarkdownPath(relPath)) throw pageNotFound(rootId, relPath, [...this.services.keys()]);
+    if (!isMarkdownPath(relPath)) throw pageNotFound(rootId, relPath, this.pageRootIds);
     return await this.guard(rootId, relPath, () => this.service(rootId).readRaw(relPath));
   }
 
@@ -169,7 +182,7 @@ export class PageSource {
       return await read();
     } catch (err) {
       if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'ENOENT') {
-        throw pageNotFound(rootId, relPath, [...this.services.keys()]);
+        throw pageNotFound(rootId, relPath, this.pageRootIds);
       }
       /**
        * `PagesService` refuses a path that escapes its root — the barrier that

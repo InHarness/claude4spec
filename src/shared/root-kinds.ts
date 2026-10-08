@@ -26,8 +26,11 @@ import {
 } from './entities.js';
 import { hasDotSegment } from './page-files.js';
 
-/** Kinds contributed by the core modules: M02 (pages), M10 (plans), M21 (briefs), M23 (patches), M29 (entities), M17 (releases). */
-export type RootKind = 'pages' | 'plans' | 'briefs' | 'patches' | 'entities' | 'releases';
+/**
+ * Kinds contributed by the modules: M02 (pages), M10 (plans), M21 (briefs), M23
+ * (patches), M29 (entities), M17 (releases), M52 (skills — 2.1.9, `i5frb6it`).
+ */
+export type RootKind = 'pages' | 'plans' | 'briefs' | 'patches' | 'entities' | 'releases' | 'skills';
 
 /** The kind every `config.roots[]` entry has. */
 export const PAGES_KIND = 'pages' as const;
@@ -49,8 +52,12 @@ export interface RegistryRoot {
 
 /** Header contract of a markdown file-map entry (the artifact frontmatter guard reads it). */
 export interface HeaderContract {
-  /** `frontmatter.type` that identifies the file. */
-  type: string;
+  /**
+   * `frontmatter.type` that identifies the file. Absent for a contract whose
+   * files are not identified by a `type` key (2.1.9: the skill-registry header of
+   * the `skills` kind's `SKILL.md`).
+   */
+  type?: string;
   /** Keys set by the file's creator; never mutated by the app. */
   immutable: readonly string[];
   /** Keys mutable through `PATCH /api/artifacts/:kind/:path/frontmatter`. */
@@ -157,6 +164,43 @@ export const PATCH_HEADER: HeaderContract = {
   mutable: ['applied'],
 };
 
+/**
+ * 2.1.9 (M52 `i5frb6it`) — the change contract of a skill package's `SKILL.md`:
+ * the header contract of the skill registry (M37 `2k3yrou1`), every field
+ * mutable. A contract, not a write gate: a `SKILL.md` breaking it still saves —
+ * validity gates only the package's presence in the registry.
+ */
+export const SKILL_HEADER: HeaderContract = {
+  immutable: [],
+  mutable: ['title', 'description', 'version', 'language', 'scope', 'contextTypes'],
+};
+
+/**
+ * 2.1.9 (M52 `i5frb6it`) — the `skills` kind's sidebar reducer: one accordion
+ * per first-level subdirectory of the root that holds any file; `key` = `path` =
+ * the directory name; `label` = the `title` of that directory's `SKILL.md`
+ * frontmatter, else the directory name; ordered alphabetically by `label`. A
+ * file lying loose in the root is outside every package and gets no accordion.
+ * The rule computes its result from its input alone.
+ */
+export const SKILLS_SIDEBAR_REDUCER: SidebarReducer = {
+  glob: '*/SKILL.md',
+  reduce: ({ paths, frontmatter }) => {
+    const dirs = new Set<string>();
+    for (const p of paths) {
+      const slash = p.indexOf('/');
+      if (slash > 0) dirs.add(p.slice(0, slash));
+    }
+    return [...dirs]
+      .map((dir) => {
+        const title = frontmatter.get(`${dir}/SKILL.md`)?.title;
+        const label = typeof title === 'string' && title.trim() !== '' ? title : dir;
+        return { key: dir, label, path: dir };
+      })
+      .sort((a, b) => a.label.localeCompare(b.label) || a.key.localeCompare(b.key));
+  },
+};
+
 export const KIND_DECLARATIONS: Readonly<Record<RootKind, KindDeclaration>> = {
   // M02
   pages: {
@@ -243,6 +287,26 @@ export const KIND_DECLARATIONS: Readonly<Record<RootKind, KindDeclaration>> = {
     fileMap: [{ pattern: '*.json', format: 'json', track: 'none' }],
     flags: { release: false, references: false, gitignore: true, agentDirectFs: false },
     reactions: ['m29-release-cache'],
+  },
+  // M52 (i5frb6it) — one root, reserved id `skills`, fixed dir
+  // `.claude4spec/skills` (no config key). A skill package is a first-level
+  // subdirectory; its `SKILL.md` carries the skill-registry header contract
+  // (all fields mutable), other markdown is versioned without a contract,
+  // anything else is raw and unversioned — including a file loose in the root.
+  // Only `m17-capture`: no `m06-*`, so package files get no anchors and no
+  // section index; `references` puts the root in the reference graph.
+  skills: {
+    kind: 'skills',
+    source: 'code',
+    sidebar: SKILLS_SIDEBAR_REDUCER,
+    fileMap: [
+      { pattern: '*/SKILL.md', format: 'markdown', track: 'file_version', header: SKILL_HEADER },
+      { pattern: '*/**/*.{md,mdx}', format: 'markdown', track: 'file_version' },
+      { pattern: '*/**/*', format: 'raw', track: 'none' },
+      { pattern: '*', format: 'raw', track: 'none' },
+    ],
+    flags: { release: false, references: true, gitignore: false, agentDirectFs: true },
+    reactions: ['m17-capture'],
   },
 };
 
@@ -507,10 +571,23 @@ export function fileMapFilter(
     const exts = shapes.flatMap((m) => (m![2] ? m![2].split(',') : [m![3]!]));
     return `${shapes[0]![1] !== undefined ? '**/' : ''}*.{${exts.join(',')}}`;
   }
-  if (entries.some((e) => /[{}]/.test(e.pattern))) {
+  // A brace pattern cannot be nested in the alternation, so it is first expanded
+  // into its alternatives (2.1.9: the `skills` kind's `*/**/*.{md,mdx}`) — the
+  // union matches exactly the paths the entries match.
+  const alternatives = entries.flatMap((e) => expandBraces(e.pattern));
+  if (alternatives.some((p) => /[{}]/.test(p))) {
     throw new Error(`root kind '${kind}': file-map patterns cannot be merged into one filter`);
   }
-  return `{${entries.map((e) => e.pattern).join(',')}}`;
+  return `{${alternatives.join(',')}}`;
+}
+
+/** `a{x,y}b` → `['axb', 'ayb']`, every group expanded; no nesting (a nested group is left in place). */
+function expandBraces(pattern: string): string[] {
+  const m = /\{([^{}]*)\}/.exec(pattern);
+  if (!m) return [pattern];
+  const head = pattern.slice(0, m.index);
+  const tail = pattern.slice(m.index + m[0].length);
+  return m[1]!.split(',').flatMap((alt) => expandBraces(`${head}${alt}${tail}`));
 }
 
 /**

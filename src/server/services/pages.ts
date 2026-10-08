@@ -156,6 +156,8 @@ export class PagesService {
         items.push({ node: { type: 'file', name: entry.name, path: rel, fileType: 'markdown' }, order });
       } else if (mapEntry?.format === 'raw') {
         // M30: raw entries are read-only previews served via /api/static/*.
+        // ASSUMPTION:dev-0501 — a raw entry that is not `.html` (2.1.9: a file
+        // inside a `skills` package, or loose in that root) is listed the same way.
         items.push({ node: { type: 'file', name: entry.name, path: rel, fileType: 'html' }, order: Infinity });
       }
     }

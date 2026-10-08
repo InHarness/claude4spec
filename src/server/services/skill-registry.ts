@@ -15,8 +15,9 @@ export type SkillScope = 'writing-style' | 'contextual';
  * sharing the one value `user`.
  *
  * `project-rooted` and `project-exposed` are declared by M52, not by this module —
- * the registry only names them. Until a module registers such a source nothing
- * carries those values.
+ * the registry only names them. `project-rooted` is registered per project
+ * context by M52 (`project-rooted-skills.ts`); until a module registers
+ * `project-exposed`, nothing carries that value.
  */
 export type SkillSource = 'user' | 'plugin' | 'project-rooted' | 'project-exposed';
 
@@ -161,6 +162,26 @@ export interface SkillFileRead {
 }
 
 /**
+ * 2.1.9 (M37 `7pj9yx9k`, M52 `q6jr8zoj`) — an INVALID package a source still
+ * serves: found by the source, outside the registry (validity gates only the
+ * entry), readable under a slug no source resolves. Whatever of the header could
+ * be read travels along; `content` is absent when the package has no `SKILL.md`.
+ */
+export interface InvalidSkillRead {
+  slug: string;
+  /** The `source` value of the registration that serves it. */
+  source: SkillSource;
+  /** Why the package is not a registry entry (the header's broken field, a missing `SKILL.md`, …). */
+  invalidReason: string;
+  title?: string;
+  description?: string;
+  scope?: SkillScope;
+  content?: string;
+  files: Record<string, SkillPackageFile>;
+  hash?: string;
+}
+
+/**
  * M37 `zscui1qz` — the contract every skill source registers under. The registry
  * knows no carrier; it knows only this declaration and these operations.
  */
@@ -185,6 +206,12 @@ export interface SkillSourceRegistration {
   read(metadata: SkillMetadata): SkillFileRead;
   /** Slugs the source knows but does not deliver, each with its reason. */
   unresolved(): UnresolvedSkillSlug[];
+  /**
+   * Optional — an invalid package of this source under `slug`, served by the
+   * registry only when no source resolves the slug (M37 `7pj9yx9k`). A source
+   * that serves no invalid packages omits it.
+   */
+  readInvalid?(slug: string): InvalidSkillRead | undefined;
 }
 
 /**
@@ -205,7 +232,9 @@ export interface SkillListingEntry {
   project?: string;
 }
 
-const SUPPORTED_VERSION = 1;
+/** The highest skill `version` this app reads; a higher one is skipped (forward compat). */
+export const SUPPORTED_SKILL_VERSION = 1;
+const SUPPORTED_VERSION = SUPPORTED_SKILL_VERSION;
 // 0.1.87: FS roots re-scan on demand so a style dropped into `.claude/skills` while the
 // server runs is visible from the next query — no restart. A short window coalesces the
 // burst of registry calls one query makes (PATCH validate, GET list, agent-turn
@@ -501,6 +530,21 @@ export class SkillRegistry {
     return this.winners.get(slug)?.reg.manifestLimit;
   }
 
+  /**
+   * M37 `7pj9yx9k` — the invalid package lying under `slug`, served ONLY when no
+   * source resolves the slug (a resolvable slug serves the chain's winner, never a
+   * shadowed invalid file). The first registered source that has one answers.
+   */
+  resolveInvalid(slug: string): InvalidSkillRead | undefined {
+    this.ensureFresh();
+    if (this.winners.has(slug)) return undefined;
+    for (const reg of this.sources) {
+      const invalid = reg.readInvalid?.(slug);
+      if (invalid) return { ...invalid, source: reg.source };
+    }
+    return undefined;
+  }
+
   /** Lazy read of the precedence WINNER through its source's file read. Throws if `!has(slug)`. */
   resolve(slug: string): ResolvedSkill {
     this.ensureFresh();
@@ -789,6 +833,21 @@ function scanRoot(dir: string): SkillSourceScan {
   return out;
 }
 
+/**
+ * The skill-registry header contract (M37 `2k3yrou1`) checked on a parsed
+ * frontmatter: throws with the broken field named. Shared by every source that
+ * reads `SKILL.md` from disk. `contextTypes` is NOT read here — only a source
+ * that admits `contextual` and takes its reach from the frontmatter reads it.
+ */
+export function parseSkillFrontmatter(
+  slug: string,
+  skillPath: string,
+  source: SkillSource,
+  data: Record<string, unknown>,
+): SkillMetadata {
+  return parseFrontmatter(slug, skillPath, source, data);
+}
+
 function parseFrontmatter(slug: string, skillPath: string, source: SkillSource, data: Record<string, unknown>): SkillMetadata {
   const title = data.title;
   const description = data.description;
@@ -825,7 +884,7 @@ function parseFrontmatter(slug: string, skillPath: string, source: SkillSource, 
  */
 const MAX_SKILL_FILE_BYTES = 256 * 1024;
 const SKIPPED_DIRS = new Set(['node_modules']);
-function loadSkillFiles(skillDir: string): Record<string, SkillPackageFile> {
+export function loadSkillFiles(skillDir: string): Record<string, SkillPackageFile> {
   const out: Record<string, SkillPackageFile> = {};
   if (!fs.existsSync(skillDir)) return out;
   walkDir(skillDir, '', out);

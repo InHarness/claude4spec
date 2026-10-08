@@ -81,8 +81,9 @@ function expectRootNotFound(res: request.Response, rootId: string): void {
   expect(res.status).toBe(404);
   expect(res.body.error.code).toBe('ROOT_NOT_FOUND');
   expect(res.body.error.message).toContain(`'${rootId}'`);
-  // The navigation lists the roots WITH A FACADE — never a root without one.
-  expect(res.body.error.hint).toBe('roots in this project: pages, adr');
+  // The navigation lists the roots WITH A FACADE — never a root without one
+  // (2.1.9: `skills`, M52, is one — a system kind whose `sidebar` is a reducer).
+  expect(res.body.error.hint).toBe('roots in this project: pages, adr, skills');
 }
 
 async function withSidebar<T>(kind: RootKind, sidebar: SidebarDeclaration, fn: () => Promise<T>): Promise<T> {
@@ -247,7 +248,7 @@ describe('2.1.9 — /api/pages/:rootId addresses only roots with a facade (M02 l
   it('a root of a non-`pages` kind whose `sidebar` is not `hidden` gets a facade, and the same routes then address it', async () => {
     await withSidebar('plans', 'accordion', async () => {
       const { app, abs, mounted } = await rig();
-      expect(mounted.rootRuntimes.map((rt) => rt.root.id)).toEqual(['pages', 'adr', 'plans']);
+      expect(mounted.rootRuntimes.map((rt) => rt.root.id)).toEqual(['pages', 'adr', 'plans', 'skills']);
       put(abs('plans', 'p.md'), '---\ntype: plan\n---\n# P\n');
       const tree = await request(app).get('/api/pages/plans');
       expect(tree.status).toBe(200);
@@ -258,7 +259,45 @@ describe('2.1.9 — /api/pages/:rootId addresses only roots with a facade (M02 l
       // `briefs` stays hidden → still no facade.
       const refused = await request(app).get('/api/pages/briefs');
       expect(refused.status).toBe(404);
-      expect(refused.body.error.hint).toBe('roots in this project: pages, adr, plans');
+      expect(refused.body.error.hint).toBe('roots in this project: pages, adr, plans, skills');
     });
+  });
+});
+
+describe('2.1.9 — the `skills` root has a facade (M52 i5frb6it, M02 m02multidir)', () => {
+  it('[ac:ac-korzen-rodzaju-z-sidebar-innym-niz-hi] the `skills` root (kind sidebar = a reducer, not `hidden`) has a facade: GET /api/pages/skills returns its tree', async () => {
+    expect(typeof KIND_DECLARATIONS.skills.sidebar).toBe('object');
+    const { app, abs, mounted } = await rig();
+    expect(mounted.rootRuntimes.find((rt) => rt.root.id === 'skills')?.kind).toBe('skills');
+    put(abs('skills', 'writer/SKILL.md'), '---\ntitle: Writer\n---\n# Writer\n');
+    put(abs('skills', 'writer/workflows/brief.md'), '# Brief\n');
+    const res = await request(app).get('/api/pages/skills');
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.tree)).toBe(true);
+    const flat = JSON.stringify(res.body.tree);
+    expect(flat).toContain('"path":"writer/SKILL.md"');
+    expect(flat).toContain('"path":"writer/workflows/brief.md"');
+    // … and a package file is read through the same facade.
+    const read = await request(app).get('/api/pages/skills/writer/SKILL.md');
+    expect(read.status).toBe(200);
+    expect(read.body.rootId).toBe('skills');
+    expect(read.body.frontmatter).toEqual({ title: 'Writer' });
+  });
+
+  it('[ac:ac-put-api-pages-skills-pakiet-skill-md] PUT /api/pages/skills/<package>/SKILL.md with no `description` in the frontmatter saves the file — validity gates only the registry, never the write', async () => {
+    const { app, abs } = await rig();
+    const before = '---\ntitle: Writer\ndescription: Writes things.\nversion: 1\nlanguage: en\n---\n# Writer\n';
+    put(abs('skills', 'writer/SKILL.md'), before);
+    const res = await request(app)
+      .put('/api/pages/skills/writer/SKILL.md')
+      .send({ frontmatter: { title: 'Writer', version: 1, language: 'en' }, body: '# Writer\n\nNo description yet.\n', expectedHash: sha(before) });
+    expect(res.status).toBe(200);
+    const onDisk = fs.readFileSync(abs('skills', 'writer/SKILL.md'), 'utf8');
+    expect(res.body.hash).toBe(sha(onDisk));
+    expect(onDisk).toContain('No description yet.');
+    expect(onDisk).toContain('title: Writer');
+    expect(onDisk).not.toContain('description:');
+    // No anchors are injected into a package file (the kind selects no `m06-*`).
+    expect(onDisk).not.toContain('<!-- anchor:');
   });
 });

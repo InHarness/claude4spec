@@ -1,0 +1,31 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.9",
+  "unit": "u05-skills-root",
+  "portion": "u05-skills-root/p1-l2-l16",
+  "claimed": [
+    "ac-akordeony-korzeni-rodzaju-pages-stoja",
+    "ac-dodanie-pliku-w-korzeniu-z-reduktorem",
+    "ac-element-wyniku-reduktora-sidebar-z-pa",
+    "ac-korzen-rodzaju-z-sidebar-innym-niz-hi",
+    "ac-reduktor-sidebar-zglaszajacy-blad-daj",
+    "ac-projekt-ktorego-roots-zawiera-wpis-o",
+    "ac-zapis-konfiguracji-z-wpisem-roots-o-i",
+    "ac-put-api-pages-skills-pakiet-skill-md",
+    "ac-trafienie-find-references-w-korzeniu",
+    "ac-skill-scope-contextual-z-korzenia-ski",
+    "ac-load-skill-file-slug-dla-skilla-proje",
+    "ac-load-skill-file-na-slug-ktorego-rejes",
+    "ac-roota-user-claude-skills-projekt-g",
+    "m52-invalid-frontmatter-package-not-listed",
+    "m52-invalid-package-loads-marked-invalid",
+    "m52-new-package-listed-next-thread",
+    "m52-edge-renamed-dir-old-slug-unlisted",
+    "m52-skill-files-not-in-search-pages"
+  ],
+  "deviations": ["dev-0501", "dev-0502"],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

@@ -162,8 +162,8 @@ function gated(deps: DiscoveryDeps, core: DiscoveryCore): DiscoveryCore {
 }
 
 export function createDiscoveryCore(deps: DiscoveryDeps): DiscoveryCore {
-  const roots = new RootSet(deps.roots);
-  const pages = new PageSource(deps.projectDir, deps.roots);
+  const roots = new RootSet(deps.roots, deps.referenceRoots);
+  const pages = new PageSource(deps.projectDir, deps.roots, deps.referenceRoots);
 
   return gated(deps, {
     overview: () => overview(deps, pages, roots),

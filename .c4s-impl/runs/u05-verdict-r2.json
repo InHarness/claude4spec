@@ -1,0 +1,147 @@
+{
+  "role": "verifier",
+  "scope": {
+    "kind": "unit",
+    "id": "u05-skills-root"
+  },
+  "release": "2.1.9",
+  "rows": [
+    {
+      "slug": "ac-akordeony-korzeni-rodzaju-pages-stoja",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/routes/sidebar-accordions.route.test.ts:280 — expect(kinds.lastIndexOf('pages')).toBeLessThan(kinds.indexOf('other')); order from SidebarAccordionsService.listAccordions rank (pages=-1) src/server/services/sidebar-accordions.ts:88"
+    },
+    {
+      "slug": "ac-dodanie-pliku-w-korzeniu-z-reduktorem",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/routes/sidebar-accordions.route.test.ts:297 — expect(changed()).toEqual([{ kind: 'sidebar:accordions-changed', rootId: 'skills' }]) then toHaveLength(1) on unchanged result; recompute() compares LAST_ARRAY, sidebar-accordions.ts:150"
+    },
+    {
+      "slug": "ac-element-wyniku-reduktora-sidebar-z-pa",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/routes/sidebar-accordions.route.test.ts:319 — skills accordions toEqual [a, b] (../../pages and /etc skipped), pages accordion untouched, 2 'outside the root' warnings"
+    },
+    {
+      "slug": "ac-korzen-rodzaju-z-sidebar-innym-niz-hi",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/routes/pages-facade-roots.route.test.ts:268 — GET /api/pages/skills status 200, tree contains writer/SKILL.md and writer/workflows/brief.md; facade from mountRegistryRoots (sidebar=reducer)"
+    },
+    {
+      "slug": "ac-reduktor-sidebar-zglaszajacy-blad-daj",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/routes/sidebar-accordions.route.test.ts:344 — skills accordions toEqual [{ rootId:'skills', key:'skills', label:'Skills', path:'' }] when reducer throws; catch → accordionCase(root,'accordion') sidebar-accordions.ts:143"
+    },
+    {
+      "slug": "ac-projekt-ktorego-roots-zawiera-wpis-o",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/config.test.ts:491 — expect(() => readConfig(dir)).toThrow(/root id 'skills' is reserved for a system root/); isSystemRootId check src/server/config.ts:599 (SYSTEM_ROOTS derived from code-source kinds incl. skills)"
+    },
+    {
+      "slug": "ac-zapis-konfiguracji-z-wpisem-roots-o-i",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/routes/config.route.test.ts:423 — PATCH roots with id skills: expect(res.status).toBe(400), message /root id 'skills' is reserved for a system root/, config.json unchanged"
+    },
+    {
+      "slug": "ac-put-api-pages-skills-pakiet-skill-md",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/routes/pages-facade-roots.route.test.ts:287 — PUT /api/pages/skills/writer/SKILL.md without description → 200, onDisk contains body, not 'description:', no anchor injected"
+    },
+    {
+      "slug": "ac-trafienie-find-references-w-korzeniu",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:3256 — expect(inSkills).not.toHaveProperty('anchor'); pages hit keeps anchor 'aaaaaa11'; gate roots.anchorInjected() by kind, src/server/discovery/ops/references.ts:71"
+    },
+    {
+      "slug": "ac-skill-scope-contextual-z-korzenia-ski",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/services/project-rooted-skills.test.ts:161 — <available_skills> block toContain('<skill slug=\"reviewer\" description=\"Reviews a module page.\" origin=\"project-rooted\"/>') for contextType chat"
+    },
+    {
+      "slug": "ac-load-skill-file-slug-dla-skilla-proje",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/services/project-rooted-skills.test.ts:194 — expect(res.hash).toBe(sha(raw)) and tracks edits; ProjectRootedSkillSource.read returns sha256 of raw SKILL.md, src/server/services/project-rooted-skills.ts:94"
+    },
+    {
+      "slug": "ac-load-skill-file-na-slug-ktorego-rejes",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/services/project-rooted-skills.test.ts:245 — toMatchObject({ invalid: true, invalidReason: 'missing SKILL.md', source: 'project-rooted' }); SKILL_NOT_FOUND only without a package; resolvable slug serves winner. skill-operations.ts:111 resolveInvalid branch"
+    },
+    {
+      "slug": "ac-roota-user-claude-skills-projekt-g",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/services/project-rooted-skills.test.ts:91 — new packages in .claude/skills (project, global) and skills root appear at next registry.list() without restart; project-rooted scan='on-demand'"
+    },
+    {
+      "slug": "m52-invalid-frontmatter-package-not-listed",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/services/project-rooted-skills.test.ts:137 — nextThreadListing/listSkills/registry.list toEqual(['good']) with no-desc, empty-desc, bad-ct, broken-yaml, no-entry siblings"
+    },
+    {
+      "slug": "m52-invalid-package-loads-marked-invalid",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/services/project-rooted-skills.test.ts:212,231 — expect(res.invalid).toBe(true); invalidReason /description/ and /frontmatter does not parse/; content+hash of raw file"
+    },
+    {
+      "slug": "m52-new-package-listed-next-thread",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/services/project-rooted-skills.test.ts:109 — earlier listing unchanged; nextThreadListing() toEqual([{ slug:'reviewer', description:'Reviews a module page.', origin:'project-rooted' }])"
+    },
+    {
+      "slug": "m52-edge-renamed-dir-old-slug-unlisted",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/services/project-rooted-skills.test.ts:124 — after fs.renameSync listing not.toContain('reviewer'), toEqual(['page-reviewer']), registry.has('reviewer') false"
+    },
+    {
+      "slug": "m52-skill-files-not-in-search-pages",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:3271 — search_pages hits toEqual(['pages:spec.md']); searchPages/listPages rootId 'skills' rejects INVALID_ARGUMENT (PageSource.pageRootIds, RootSet.require sees only pages roots)"
+    },
+    {
+      "slug": "goal:u05-skills-root",
+      "level": 2,
+      "status": "covered",
+      "evidence": "kind skills (source code, id skills reserved, dir .claude4spec/skills, reducer one accordion per package dir, file map */SKILL.md file_version + header contract, references yes, only m17-capture → no anchors) src/shared/root-kinds.ts:291-310; reserved id src/server/config.ts:599; facade/page routes via mountRegistryRoots (root-registry-runtime.test.ts facades ['pages','adr','skills']); reducer reaction bound for skills; reference graph via RootRegistry.referenceOnly src/server/roots/registry.ts:97 + discovery RootSet/PageSource; search_pages excluded; ProjectRootedSkillSource (writing-style+contextual, raw content + hash, invalid served marked, on-demand scan) src/server/services/project-rooted-skills.ts registered per context src/server/workspace/project-context.ts:328; deferred parts (update_skill_file, forkedFrom, project-exposed, chip edge cases, current_skill) not built"
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "typecheck passed across all workspaces (no error TS); tests not run per ## This build — static read of affected tests (registry, root-registry-runtime, sidebar-accordions, pages-facade-roots, page-tools.facade-roots, config, discovery, threads deny-set, gitignore) consistent with the diff"
+  }
+}
