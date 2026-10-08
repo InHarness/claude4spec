@@ -9,26 +9,26 @@
  *    wrong answer. There is no default `rootId` in this module and no
  *    `if (rootId === 'pages')` branch — an architecture test enforces both.
  *
- * 2. **Behaviour follows root PROPERTIES, not root identity.** Sections exist
- *    only where `sectionIndexed`; reference/consistency sweeps run only where
- *    `referenceValidated`. A root without a property is not an error, it is a
- *    root that degrades: `search_pages` still searches it and simply returns
- *    `(rootId, path, line)` hits instead of anchors.
+ * 2. **Behaviour follows the root's KIND, not its identity.** 2.1.8: only roots
+ *    of kind `pages` are addressable, and every one of them has a section index
+ *    (the kind selects `m06-section-indexer`) and belongs to the reference graph
+ *    (the kind's `references` flag). There is no "root without a section index"
+ *    mode any more.
  *
- * Addressability is the third rule, and it is enforced by omission: the core
- * only ever sees `config.roots[]`. Briefs, patches, plans and the entity
- * catalogue are separate artifact mounts, so no parameter of any operation can
- * name them. That is a construction, not a prompt rule.
+ * Addressability is the third rule, and it is enforced by construction: the core
+ * only ever sees the `kind: pages` roots (`config.roots[]`). The system roots —
+ * plans, briefs, patches, entities, releases — are not in this set, so naming
+ * one (`rootId: 'plans'`) is the same INVALID_ARGUMENT as an unknown id.
  */
 
 import type { Root } from '../../shared/types.js';
-import { invalidArgument, pageNotFound } from './errors.js';
-
-export type RootProperty = 'sectionIndexed' | 'referenceValidated' | 'releasable';
+import { KIND_DECLARATIONS, PAGES_KIND, kindSelects } from '../../shared/root-kinds.js';
+import { invalidArgument } from './errors.js';
 
 export class RootSet {
   private readonly byId: Map<string, Root>;
 
+  /** `all` — the `kind: pages` roots, in `roots[]` order. */
   constructor(readonly all: readonly Root[]) {
     this.byId = new Map(all.map((r) => [r.id, r]));
   }
@@ -37,31 +37,29 @@ export class RootSet {
     return this.all.map((r) => r.id);
   }
 
-  with(property: RootProperty): Root[] {
-    return this.all.filter((r) => r[property]);
-  }
-
   get(rootId: string): Root | undefined {
     return this.byId.get(rootId);
   }
 
+  /** The list every refusal carries — the page roots of this project. */
+  private pageRootsList(): string {
+    return this.ids().length ? `page roots in this project: ${this.ids().join(', ')}` : 'this project declares no page roots';
+  }
+
   /**
    * Resolves a caller-supplied `rootId`. A missing one is an INVALID_ARGUMENT
-   * carrying the list of roots — never a fallback to the built-in root, which
-   * is what made `resolve_page({ path })` answer confidently from the wrong
-   * directory.
+   * carrying the list of page roots — never a fallback to the built-in root,
+   * which is what made `resolve_page({ path })` answer confidently from the
+   * wrong directory. An id that is not a `kind: pages` root — unknown, or a
+   * system root such as `plans` — is the same INVALID_ARGUMENT.
    */
   require(rootId: string | undefined, operation: string): Root {
     if (!rootId) {
-      // The correction names a root that ACTUALLY EXISTS in this project. The
-      // old page API filled the gap with the built-in root's name, which is how
-      // a missing argument turned into a confident answer from the wrong
-      // directory — so an example is only offered when there is a real one.
       const example = this.ids()[0];
       throw invalidArgument(
-        `${operation} requires rootId — a page path alone is ambiguous across roots`,
+        `${operation} requires rootId — a page path alone is ambiguous across roots (${this.pageRootsList()})`,
         example
-          ? `${operation}({ rootId: "${example}", … }); roots in this project: ${this.ids().join(', ')}`
+          ? `${operation}({ rootId: "${example}", … }); ${this.pageRootsList()}`
           : `${operation} needs a rootId, but this project declares no page roots`,
       );
     }
@@ -69,45 +67,28 @@ export class RootSet {
     if (!root) {
       /**
        * 0.2.6 — an unknown ROOT is a bad argument, not a missing page.
-       *
-       * `PAGE_NOT_FOUND` is reserved for "the root exists, that path does not",
-       * which is the answer that authorizes a caller to stop looking. A typo in
-       * `rootId` is a different situation with a different remedy — pick one of
-       * these roots — and reporting it as a missing page sent callers hunting
-       * for a file when the directory they named never existed.
+       * `PAGE_NOT_FOUND` is reserved for "the root exists, that path does not".
        */
-      throw invalidArgument(
-        `unknown rootId '${rootId}'`,
-        this.ids().length
-          ? `roots in this project: ${this.ids().join(', ')}`
-          : 'this project declares no page roots',
-      );
+      throw invalidArgument(`unknown rootId '${rootId}' (${this.pageRootsList()})`, this.pageRootsList());
     }
     return root;
+  }
+
+  /** Roots that carry a section index — every page root, by its kind. */
+  sectionIndexed(): Root[] {
+    return kindSelects(PAGES_KIND, 'm06-section-indexer') ? [...this.all] : [];
   }
 
   /**
-   * The roots a section-addressed operation may touch. A root with no section
-   * index has no anchors to list, so iterating it would be a guaranteed miss.
+   * Roots whose kind selects `m06-anchor-injection` — the roots where a heading
+   * without an anchor gets one on the next pass (M06 `9cf6zu0f`).
    */
-  sectionIndexed(): Root[] {
-    return this.with('sectionIndexed');
+  anchorInjected(): Root[] {
+    return kindSelects(PAGES_KIND, 'm06-anchor-injection') ? [...this.all] : [];
   }
 
+  /** Roots in the reference graph — every page root, by its kind's `references` flag. */
   referenceValidated(): Root[] {
-    return this.with('referenceValidated');
-  }
-
-  requireSectionIndexed(rootId: string, operation: string): Root {
-    const root = this.require(rootId, operation);
-    if (!root.sectionIndexed) {
-      throw invalidArgument(
-        `root '${rootId}' is not section-indexed, so it has no anchors`,
-        `use get_page({ rootId: "${rootId}", path }) to read this root's pages; section-indexed roots: ${this.sectionIndexed()
-          .map((r) => r.id)
-          .join(', ') || 'none'}`,
-      );
-    }
-    return root;
+    return KIND_DECLARATIONS[PAGES_KIND].flags.references ? [...this.all] : [];
   }
 }

@@ -7,14 +7,14 @@ import { createTestDb } from '../../helpers/test-db.js';
 import { PlanService } from '../../../src/server/services/plan.js';
 import { injectArtifactAnchors as injectAnchors } from '../../../src/server/services/anchor-injection.js';
 import { ChatService } from '../../../src/server/services/chat.js';
-import { PagesService } from '../../../src/server/services/pages.js';
+import { MarkdownFileStore } from '../../../src/server/services/pages.js';
 import { FileWatchRuntime, type WatchSubscriber } from '../../../src/server/fs/watcher.js';
 import { artifactSource, boundWriter } from '../../../src/server/fs/sources.js';
 import { FileSerializer } from '../../../src/server/services/file-serializer.js';
 import { FileVersionService } from '../../../src/server/services/file-version.js';
 import { PagesFrontmatterIndexer } from '../../../src/server/services/pages-frontmatter-indexer.js';
 import { ANCHOR_PATTERN_SOURCE } from '../../../src/shared/anchor-pattern.js';
-import { PLAN_ROOT_MARKER } from '../../../src/shared/types.js';
+import { systemRootId } from '../../../src/shared/root-kinds.js';
 import type { WsEmitter } from '../../../src/server/ws/project-emitter.js';
 
 const noopWs: WsEmitter = { broadcast: () => {} };
@@ -29,7 +29,7 @@ interface Harness {
   cwd: string;
   db: Database.Database;
   service: PlanService;
-  plansPages: PagesService;
+  plansPages: MarkdownFileStore;
   frontmatterIndexer: PagesFrontmatterIndexer;
   watch: ReturnType<FileWatchRuntime['scoped']>;
 }
@@ -39,7 +39,7 @@ interface Harness {
 async function setup(ws: WsEmitter = noopWs): Promise<Harness> {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-plans-test-'));
   const db = createTestDb();
-  const plansPages = new PagesService(cwd, 'plans', PLAN_ROOT_MARKER);
+  const plansPages = new MarkdownFileStore({ cwd, dir: 'plans', rootId: systemRootId('plans'), kind: 'plans' });
   await plansPages.ensureRoot();
   const watchRuntime = new FileWatchRuntime({ fsEvents: false });
   watchRuntime.mountSource({ source: artifactSource('plan'), dir: plansPages.root, scope: 'context:test' });
@@ -48,7 +48,7 @@ async function setup(ws: WsEmitter = noopWs): Promise<Harness> {
   const plansSerializer = new FileSerializer(plansPages);
   const pageVersions = new FileVersionService(db, plansSerializer);
   const frontmatterIndexer = new PagesFrontmatterIndexer(
-    new Map([[PLAN_ROOT_MARKER, plansPages]]),
+    new Map([[systemRootId('plans'), plansPages]]),
     noopWs,
   );
   const chatService = new ChatService(db);
@@ -675,7 +675,7 @@ describe('PlanService — the `applied` flag (0.2.14)', () => {
         `---\ntype: plan\ntitle: Legacy plan\ncreated_at: 2026-01-01T00:00:00.000Z\ncreated_by: user\n---\n\nbody\n`,
         'utf-8',
       );
-      await h.frontmatterIndexer.indexPage(PLAN_ROOT_MARKER, 'legacy.md');
+      await h.frontmatterIndexer.indexPage(systemRootId('plans'), 'legacy.md');
 
       const before = await h.service.getByPath('legacy.md');
       expect(before.frontmatter.applied).toBeUndefined();

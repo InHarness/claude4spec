@@ -11,11 +11,11 @@ import {
   appendTransition,
   clearRenameJournal,
   readRootRenames,
-  relinkRoots,
   resolveCurrentRootId,
   retiredRootIds,
   writeRenameJournal,
 } from '../root-renames.js';
+import { isSystemRootId } from '../../shared/root-kinds.js';
 
 /**
  * 0.2.101 — `POST /api/config/roots/:rootId/rename` (M01).
@@ -61,8 +61,6 @@ export interface RenameRootResponse {
   name: string;
   /** Unchanged — the base root stays the base root under its new id. */
   builtin: boolean;
-  /** Roots whose `linkTargets` pointed at the old id and were relinked in the SAME write. */
-  relinkedRoots: string[];
   /** True when this request replays a rename that already completed. */
   alreadyApplied: boolean;
   /** sha256 of the config after the write — the token for the next operation. */
@@ -124,6 +122,23 @@ export interface RootRenameDeps {
  */
 const inProgress = new Set<string>();
 
+/**
+ * The per-project guard above, as a handle: `acquire` reports whether the slot
+ * was free. The route is its only production user; a caller holding the slot
+ * (a test standing in for a rename still running) makes every other rename of
+ * that project answer `409 RENAME_IN_PROGRESS`.
+ */
+export const rootRenameLock = {
+  acquire(cwd: string): boolean {
+    if (inProgress.has(cwd)) return false;
+    inProgress.add(cwd);
+    return true;
+  },
+  release(cwd: string): void {
+    inProgress.delete(cwd);
+  },
+};
+
 export function rootRenameRouter(deps: RootRenameDeps): Router {
   const { cwd } = deps;
   const router = Router({ mergeParams: true });
@@ -136,13 +151,12 @@ export function rootRenameRouter(deps: RootRenameDeps): Router {
       res.status(STATUS[code]).json({ error, code, ...extra } satisfies RenameRootError);
     };
 
-    if (inProgress.has(cwd)) {
+    if (!rootRenameLock.acquire(cwd)) {
       return fail('RENAME_IN_PROGRESS', 'another root rename is running in this project — retry once it finishes', {
         rootId,
       });
     }
 
-    inProgress.add(cwd);
     try {
       const newId = body.newId;
       const expectedConfigHash = body.expectedConfigHash;
@@ -163,9 +177,6 @@ export function rootRenameRouter(deps: RootRenameDeps): Router {
               dir: root.dir,
               name: root.name,
               builtin: root.builtin,
-              // The relink happened in the original commit; replay reports the
-              // outcome, it does not redo the write.
-              relinkedRoots: config.roots.filter((r) => r.linkTargets.includes(newId)).map((r) => r.id),
               alreadyApplied: true,
               configHash: configHash(cwd),
             } satisfies RenameRootResponse);
@@ -191,6 +202,15 @@ export function rootRenameRouter(deps: RootRenameDeps): Router {
         return fail(
           'VALIDATION',
           `root id '${newId}' is reserved — it names a route under /api/pages/, so a root using it would be unreachable there`,
+          { rootId, newId },
+        );
+      }
+      // 2.1.8: a system root's identifier is never a user root's to take — it
+      // would be a second root under one address.
+      if (isSystemRootId(newId)) {
+        return fail(
+          'VALIDATION',
+          `root id '${newId}' is reserved for a system root`,
           { rootId, newId },
         );
       }
@@ -231,18 +251,16 @@ export function rootRenameRouter(deps: RootRenameDeps): Router {
       // operation interrupted between the two writes below.
       writeRenameJournal(cwd, { from: rootId, to: newId, startedAt: new Date().toISOString() });
 
-      const renamed = config.roots.map((r) => (r.id === rootId ? { ...r, id: newId } : r));
-      // Every `linkTargets` entry across every root moves in the SAME write —
-      // there is no instant at which the config on disk points at an id that no
-      // root answers to.
-      const { roots, relinked } = relinkRoots(renamed, rootId, newId);
+      // 2.1.8: no list to relink — `linkTargets` is gone and the link maps are
+      // rebuilt in full by the successor context.
+      const roots = config.roots.map((r) => (r.id === rootId ? { ...r, id: newId } : r));
       const updated = writeConfig(cwd, { roots });
       appendTransition(cwd, rootId, newId);
       clearRenameJournal(cwd);
 
       deps.onRootRenamed?.(rootId, newId);
       // The durable log is `root-renames.json`; this line is the operator's.
-      console.log(`[config] root renamed '${rootId}' → '${newId}' (relinked: ${relinked.join(', ') || 'none'})`);
+      console.log(`[config] root renamed '${rootId}' → '${newId}'`);
 
       const after = updated.roots.find((r) => r.id === newId) ?? builtinRoot(updated.roots);
       return void res.json({
@@ -251,7 +269,6 @@ export function rootRenameRouter(deps: RootRenameDeps): Router {
         dir: after.dir,
         name: after.name,
         builtin: after.builtin,
-        relinkedRoots: relinked,
         alreadyApplied: false,
         configHash: configHash(cwd),
       } satisfies RenameRootResponse);
@@ -260,7 +277,7 @@ export function rootRenameRouter(deps: RootRenameDeps): Router {
       // startup replays it rather than guessing here, mid-request.
       return fail('VALIDATION', (err as Error).message, { rootId });
     } finally {
-      inProgress.delete(cwd);
+      rootRenameLock.release(cwd);
     }
   });
 

@@ -9,13 +9,13 @@ import { SERVER_DELEGATING_CODES, type CliCommandContribution } from '../registr
 /**
  *   c4s get-brief <brief-path> [--range <from>:<to>] [--format json|text]
  *
- * `<brief-path>` is relative to `briefsDir` — parity with the `--brief` argument
+ * `<brief-path>` is relative to the `briefs` root's dir — parity with the `--brief` argument
  * elsewhere.
  *
  * 0.2.13 — `server-delegating`, over `GET /api/artifacts/brief/<path>`.
  *
- * 0.2.40 — `--range` is the artifact read family's window, spelled exactly as
- * `c4s get-page --range`. It is unconditionally available: a brief never enters
+ * 0.2.40 — `--range` is the artifact read family's window (2.1.8: `c4s get-page`
+ * no longer has one — page reads resume through the outline). It is unconditionally available: a brief never enters
  * `section_index`, so a line window is the only way to read a large one through,
  * and there is no root kind for it to be gated on.
  */

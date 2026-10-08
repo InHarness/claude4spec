@@ -108,6 +108,27 @@ describe('workspace project registration routes', () => {
     expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'boom' } });
   });
 
+  it('purge (M31 `7fgfpqzf`) deletes the db slot and leaves config.json and every registry root dir in cwd untouched', async () => {
+    const cwd = path.join(tmp, 'project');
+    const slot = path.join(tmp, 'slot');
+    // A user root (`kind: pages`) and the code-declared system roots.
+    const rootDirs = ['pages', 'docs', ...['plans', 'briefs', 'patches', 'entities', 'releases'].map((k) => `.claude4spec/${k}`)];
+    for (const d of rootDirs) {
+      fs.mkdirSync(path.join(cwd, d), { recursive: true });
+      fs.writeFileSync(path.join(cwd, d, 'keep.md'), '# keep');
+    }
+    fs.writeFileSync(path.join(cwd, '.claude4spec', 'config.json'), '{}');
+    fs.mkdirSync(slot, { recursive: true });
+    fs.writeFileSync(path.join(slot, 'c4s.db'), 'db');
+    workspace.projects = [{ id: 'proj-1', cwd, name: 'p' } as ProjectRecord];
+
+    const res = await request(app()).delete('/api/workspace/projects/proj-1?purgeData=true');
+    expect(res.status).toBe(200);
+    expect(fs.existsSync(slot)).toBe(false);
+    expect(fs.existsSync(path.join(cwd, '.claude4spec', 'config.json'))).toBe(true);
+    for (const d of rootDirs) expect(fs.existsSync(path.join(cwd, d, 'keep.md'))).toBe(true);
+  });
+
   it('a DELETE whose dispose throws answers the envelope instead of hanging', async () => {
     workspace.projects = [{ id: 'proj-1', cwd: tmp, name: 'p' } as ProjectRecord];
     retire = async () => {

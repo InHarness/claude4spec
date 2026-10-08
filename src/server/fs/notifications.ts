@@ -1,80 +1,70 @@
 import type { WatchSubscriber, WatchScope, WatchOrigin } from './watcher.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
-import { requireRootId } from './sources.js';
+import type { ReactionInput } from './reactions.js';
+import { reactionRootId } from './sources.js';
 
 /**
  * `notification`-phase subscribers.
  *
  * M40 provides the broadcast MECHANISM only — the event catalog belongs to the
- * owners. Each source owner registers its own subscription here and emits the
- * event it declares, which is why there is one per source family rather than a
- * single collapsed `file:changed` discriminated after the fact.
+ * owners.
  */
 
 /**
- * M02 — owner of `file:changed` for every `pages:<rootId>` source.
+ * `m02-file-changed` — the BASE reaction. The root-registry implementor (M02)
+ * binds it on every registry root and no kind can opt out, so it has one owner
+ * (before 2.1.8 M02 emitted it for pages and M36 its own events for artifacts).
+ * The payload names the registry root — also `entities`, `releases`, `briefs`…
  *
  * `origin` drives the client's behaviour: `'server'` is a silent content reload
- * with no dialog, `'external'` raises "File changed externally, reload?". Before
- * 0.2.10 the server-origin path was unreachable (nothing ever emitted it), so a
- * UI save produced no event at all.
+ * with no dialog, `'external'` raises "File changed externally, reload?". An
+ * open `.html` preview (M30) reloads on this same event, narrowed client-side to
+ * `**\/*.html` — M30 has no reaction of its own.
  */
-export function pageChangedNotifier(ws: WsEmitter): WatchSubscriber {
-  const emit = (source: string, relPath: string, event: 'change' | 'unlink', origin: WatchOrigin): void => {
-    ws.broadcast({ kind: 'file:changed', event, path: relPath, rootId: requireRootId(source), origin });
+export function fileChangedNotifier(ws: WsEmitter): {
+  onChange(scope: WatchScope, source: string, relPath: string, origin: WatchOrigin, input?: ReactionInput): void;
+  onUnlink(scope: WatchScope, source: string, relPath: string, origin: WatchOrigin, input?: ReactionInput): void;
+} {
+  // `rootId` comes from the binding's input, like every other registry reaction
+  // (reactionRootId) — the source-name suffix is only the direct-call fallback.
+  const emit = (
+    source: string,
+    relPath: string,
+    event: 'change' | 'unlink',
+    origin: WatchOrigin,
+    input?: ReactionInput,
+  ): void => {
+    ws.broadcast({ kind: 'file:changed', event, path: relPath, rootId: reactionRootId(source, input), origin });
   };
   return {
-    onChange: (_scope, source, relPath, origin) => emit(source, relPath, 'change', origin),
-    onUnlink: (_scope, source, relPath, origin) => emit(source, relPath, 'unlink', origin),
+    onChange: (_scope, source, relPath, origin, input) => emit(source, relPath, 'change', origin, input),
+    onUnlink: (_scope, source, relPath, origin, input) => emit(source, relPath, 'unlink', origin, input),
   };
 }
 
 /**
- * M30 — read-only `.html` preview. Registered with the mechanical filter
- * `**\/*.html`, so it is the only reaction `.html` files get: no anchors (M06),
- * no XML references (M19), no `file_version` capture (M17). It just tells the
- * open `HtmlViewer` iframe for `(rootId, relPath)` to refresh.
+ * `m10-plan-updated` — M10's notification, trigger `primitive` only (m10ws000):
+ * the WATCHER never fires it. An edit of a plan file made outside the app is
+ * announced by the base `file:changed { rootId: 'plans' }` (the client refetches
+ * the plan list, detail and versions on it), because the payload of this
+ * reaction names the author and provenance of a write, which an event from the
+ * observed directory does not know.
  *
- * Before 0.2.10 this refresh was an incidental side effect of someone else's
- * event; now it is a declared reaction.
+ * ASSUMPTION:dev-0010 — the `plan:updated { planPath, threadId, version,
+ * changedBy }` broadcast itself is made by `PlanService` at the end of its own
+ * write chain, after its own capture: the service writes with `chain: false`
+ * (its `file_version` row carries a `change_summary` the capture phase cannot
+ * receive), and M40's `notification` phase runs before `capture`, so a bound
+ * handler could not see the version. An in-band chain run by any other writer of
+ * a plan file still refreshes the list (`plans:changed`).
  */
-export function htmlPreviewNotifier(ws: WsEmitter): WatchSubscriber {
-  const emit = (source: string, relPath: string, event: 'change' | 'unlink', origin: WatchOrigin): void => {
-    ws.broadcast({ kind: 'file:changed', event, path: relPath, rootId: requireRootId(source), origin });
+export function planUpdatedNotifier(ws: WsEmitter): WatchSubscriber {
+  const emit = (relPath: string, origin: WatchOrigin): void => {
+    if (origin === 'external') return;
+    ws.broadcast({ kind: 'plans:changed', path: relPath });
   };
   return {
-    onChange: (_scope, source, relPath, origin) => emit(source, relPath, 'change', origin),
-    onUnlink: (_scope, source, relPath, origin) => emit(source, relPath, 'unlink', origin),
+    onChange: (_s: WatchScope, _src: string, relPath: string, origin: WatchOrigin) => emit(relPath, origin),
+    onUnlink: (_s: WatchScope, _src: string, relPath: string, origin: WatchOrigin) => emit(relPath, origin),
   };
-}
-
-/**
- * M36 — one owner per artifact source, each emitting the event it declares.
- *
- * `briefs:changed` carries `origin` because BriefEditor has the same
- * reload-or-confirm flow Pages does. `plans:changed` does not — PlanPage just
- * refetches. Patches have no open-editor equivalent, so they emit nothing here
- * and rely on the frontmatter projection's `patches:changed`.
- */
-export function artifactChangedNotifier(
-  ws: WsEmitter,
-  kind: 'brief' | 'patch' | 'plan',
-): WatchSubscriber | null {
-  if (kind === 'brief') {
-    return {
-      onChange: (_s: WatchScope, _src: string, relPath: string, origin: WatchOrigin) =>
-        ws.broadcast({ kind: 'briefs:changed', path: relPath, origin }),
-      onUnlink: (_s: WatchScope, _src: string, relPath: string) =>
-        ws.broadcast({ kind: 'briefs:changed', path: relPath, origin: 'external' }),
-    };
-  }
-  if (kind === 'plan') {
-    return {
-      onChange: (_s: WatchScope, _src: string, relPath: string) =>
-        ws.broadcast({ kind: 'plans:changed', path: relPath }),
-      onUnlink: (_s: WatchScope, _src: string, relPath: string) =>
-        ws.broadcast({ kind: 'plans:changed', path: relPath }),
-    };
-  }
-  return null;
 }

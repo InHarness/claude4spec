@@ -1,20 +1,25 @@
-import { BRIEF_ROOT_MARKER, PATCH_ROOT_MARKER, PLAN_ROOT_MARKER } from '../../shared/types.js';
+import { systemRootId, type RegistryRoot } from '../../shared/root-kinds.js';
+import type { ReactionInput } from './reactions.js';
 
 /**
  * Source-name conventions (M40, 0.2.10).
  *
  * `source` is OPAQUE to M40 — it is just a string unique within a scope. The
  * discriminator lives in the name because `rootId` is not an M40 concept: the
- * mount owner encodes it in the suffix, and subscribers derive their own
- * projection keys `(rootId, relPath)` and WS payloads back out of it.
+ * mounting party (2.1.8: the root-registry implementor for every registry root,
+ * M33 for `plugins:*`) encodes it in the suffix. Reactions bound on a registry
+ * root take `rootId` from their input (the binding passes the registry entry's
+ * id, {@link reactionRootId}) — the base `m02-file-changed` notification and
+ * `m02-frontmatter-indexer` included; the suffix serves readers outside a
+ * binding (the projection staleness scope) and direct calls.
  */
 
-/** M02 — one source per page root, mounted in the `roots[]` loop. Builtin root is `pages:pages`. */
+/** One source per `pages` root, mounted by the root-registry implementor (L13) from the registry. Builtin root is `pages:pages`. */
 export function pageSource(rootId: string): string {
   return `pages:${rootId}`;
 }
 
-/** M36 — one source per artifact registry entry, over `briefsDir` / `patchesDir` / `plansDir`. */
+/** One source per artifact system root, over `.claude4spec/briefs` / `patches` / `plans`. */
 export function artifactSource(kind: 'brief' | 'patch' | 'plan'): string {
   return `artifacts:${kind}`;
 }
@@ -28,26 +33,58 @@ export const PLUGINS_BASE_SOURCE = 'plugins:base';
 /** M33 — `<cwd>/.claude4spec/plugins/`, mounted only behind `trustProjectPlugins`. */
 export const PLUGINS_OVERLAY_SOURCE = 'plugins:overlay';
 
+/**
+ * 2.1.8 — the source name of a registry root. The implementor of the root
+ * registry (M02) mounts exactly one source per root under this name:
+ * `pages:<id>` | `artifacts:plan|brief|patch` | `entities` | `releases`.
+ */
+export function sourceNameFor(root: Pick<RegistryRoot, 'id' | 'kind'>): string {
+  switch (root.kind) {
+    case 'pages':
+      return pageSource(root.id);
+    case 'plans':
+      return artifactSource('plan');
+    case 'briefs':
+      return artifactSource('brief');
+    case 'patches':
+      return artifactSource('patch');
+    case 'entities':
+      return ENTITIES_SOURCE;
+    case 'releases':
+      return RELEASES_SOURCE;
+  }
+}
+
+/** `artifacts:<kind>` → the id of the system root of that root kind, looked up BY KIND. */
 const ARTIFACT_ROOT_ID: Record<string, string> = {
-  brief: BRIEF_ROOT_MARKER,
-  patch: PATCH_ROOT_MARKER,
-  plan: PLAN_ROOT_MARKER,
+  brief: systemRootId('briefs'),
+  patch: systemRootId('patches'),
+  plan: systemRootId('plans'),
 };
 
 /**
- * Derive the `rootId` a subscriber should key its projection by, from the source
- * suffix. For `pages:<rootId>` that is the root's own id; for `artifacts:<kind>`
- * it is the marker literal (`'brief'` / `'patch'` / `'plan'`) — a writing
- * convention shared by M17 and M36 for the `rootId` column, not a contract of the
- * mechanism.
+ * Derive the `rootId` of the registry root a source was mounted for. For
+ * `pages:<rootId>` that is the root's own id; for `artifacts:<kind>` it is the
+ * system root's id (`'briefs'` / `'patches'` / `'plans'`, 2.1.8 — the value
+ * `file_version.rootId` carries); `entities` and `releases` are their own ids.
  *
- * Returns null for sources that carry no rootId at all (`entities`, `releases`,
- * `plugins:*`), so a caller that needs one fails loudly rather than inventing it.
+ * Returns null for sources outside the registry (`plugins:*`), so a caller that
+ * needs one fails loudly rather than inventing it.
  */
 export function rootIdFromSource(source: string): string | null {
   if (source.startsWith('pages:')) return source.slice('pages:'.length) || null;
   if (source.startsWith('artifacts:')) return ARTIFACT_ROOT_ID[source.slice('artifacts:'.length)] ?? null;
+  if (source === ENTITIES_SOURCE || source === RELEASES_SOURCE) return source;
   return null;
+}
+
+/**
+ * 2.1.8 — the `rootId` a reaction keys its state on: the registry entry's id the
+ * root-registry implementor passed at binding ({@link ReactionInput}). Only a
+ * handler invoked outside a binding (a direct call) falls back to the source name.
+ */
+export function reactionRootId(source: string, input?: ReactionInput): string {
+  return input?.rootId ?? requireRootId(source);
 }
 
 /** `rootIdFromSource` for callers that cannot proceed without one. */
@@ -128,7 +165,5 @@ export const NULL_WRITER: SelfWriteMarker = {
   unsuppress: () => {},
 };
 
-/** Mechanical filters. Markdown drives indexing; `.html` is preview-only (M30). */
-export const MARKDOWN_FILTER = '**/*.{md,mdx}';
-export const HTML_FILTER = '**/*.html';
-export const JSON_FILTER = '**/*.json';
+// 2.1.8: the mechanical filters are derived from each kind's file map
+// (`fileMapFilter` in `src/shared/root-kinds.ts`), per reaction binding.

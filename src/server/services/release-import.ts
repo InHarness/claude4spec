@@ -276,11 +276,26 @@ export function rollbackClone(
   cwd: string,
   opts: {
     /**
-     * 0.1.96: dirs (relative to `cwd`) of every releasable root the restore
-     * created — was the single `pagesDir` scalar. Each is wholly a restore
-     * mutation of this run (ensureBootstrap is skipped for clone).
+     * 0.1.96: dirs (relative to `cwd`) of every page root the restore created —
+     * was the single `pagesDir` scalar. Each is wholly a restore mutation of
+     * this run (ensureBootstrap is skipped for clone).
      */
     rootDirs: string[];
+    /**
+     * 2.1.8: dirs (relative to `cwd`) of the SYSTEM roots this run created —
+     * `entities` (its files and `tags.json` are restored by the clone) and the
+     * others mkdir'ed by the context build. Removed even when `.claude4spec/`
+     * existed before the clone, which used to leave restored entity files behind.
+     */
+    systemRootDirs?: string[];
+    /**
+     * 2.1.8 (M27 64bmqf81): the system roots whose dir EXISTED before this run,
+     * each with the files it held then ({@link snapshotRootFiles}). Their dir is
+     * kept, but every file restored into it in this run (entity files,
+     * `tags.json`) is removed — the gap when `.claude4spec/` pre-existed the
+     * clone and is not removed wholesale. Files present before are untouched.
+     */
+    preexistingSystemRoots?: Array<{ dir: string; filesBefore: readonly string[] }>;
     configCreated: boolean;
     claudeDirCreated: boolean;
     gitignoreCreated: boolean;
@@ -296,8 +311,13 @@ export function rollbackClone(
   for (const dir of [claudeDir, ...(opts.dbSlotDir ? [opts.dbSlotDir] : [])]) {
     for (const f of ['db.sqlite', 'db.sqlite-wal', 'db.sqlite-shm']) rm(path.join(dir, f));
   }
-  // Each releasable root's dir + restored files.
+  // Each page root's dir + restored files, and the system roots created here.
   for (const dir of opts.rootDirs) rm(path.join(cwd, dir));
+  for (const dir of opts.systemRootDirs ?? []) rm(path.join(cwd, dir));
+  for (const { dir, filesBefore } of opts.preexistingSystemRoots ?? []) {
+    const before = new Set(filesBefore);
+    for (const rel of snapshotRootFiles(cwd, dir)) if (!before.has(rel)) rm(path.join(cwd, dir, rel));
+  }
   // Run-created scaffolding only — a pre-existing config.json / .claude4spec/ /
   // .gitignore (we'd have only appended to the last) is left untouched.
   if (opts.configCreated) rm(path.join(claudeDir, 'config.json')); // M01 step 5
@@ -306,9 +326,32 @@ export function rollbackClone(
 }
 
 /**
- * Resolve the releasable roots to persist into a cloned project's config. A v2
- * bundle carries `roots[]` directly; a v1 bundle carries only the legacy
- * `pagesDir` scalar → map it to the built-in 'pages' root (the v3→v4 path).
+ * 2.1.8: the files under a root's `dir` (relative to that dir, `/`-separated),
+ * recursively; `[]` when the dir does not exist. The clone takes this snapshot of
+ * every pre-existing system root before restoring, so {@link rollbackClone} can
+ * remove exactly the files the run added.
+ */
+export function snapshotRootFiles(cwd: string, dir: string): string[] {
+  const abs = path.join(cwd, dir);
+  if (!fs.existsSync(abs)) return [];
+  const out: string[] = [];
+  const walk = (rel: string): void => {
+    for (const e of fs.readdirSync(path.join(abs, rel), { withFileTypes: true })) {
+      const child = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) walk(child);
+      else out.push(child);
+    }
+  };
+  walk('');
+  return out;
+}
+
+/**
+ * Resolve the page roots to persist into a cloned project's config. A v2+
+ * bundle carries `roots[]` directly (written in four fields; any legacy per-root
+ * field is dropped by the config writer); a v1 bundle carries only the legacy
+ * `pagesDir` scalar → map it to the built-in root. Artifact directory keys a
+ * v1 bundle may carry are ignored — the system roots are fixed in code.
  */
 function resolveBundleRoots(bundleConfig: BundleConfig | null): Root[] | undefined {
   if (!bundleConfig) return undefined;
@@ -358,7 +401,7 @@ export function buildClonePatch(
     agentPatch.disableDirectFilesystemAccess = bundleConfig.agent.disableDirectFilesystemAccess;
   }
   if (Object.keys(agentPatch).length > 0) patch.agent = agentPatch;
-  // 0.1.96: migrate the bundle's releasable roots into the new cwd. A v1
+  // 0.1.96: migrate the bundle's `pages` roots into the new cwd. A v1
   // bundle carries `pagesDir` (no `roots[]`) → map it to the built-in 'pages'
   // root via the v3→v4 path so the cloned project is v4-shaped.
   const restoredRoots = resolveBundleRoots(bundleConfig);

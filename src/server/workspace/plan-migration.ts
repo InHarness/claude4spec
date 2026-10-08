@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3';
 import { slugify } from '../services/slug.js';
-import type { PagesService } from '../services/pages.js';
+import type { MarkdownFileStore } from '../services/markdown-file-store.js';
 
 interface LegacyPlanRow {
   id: number;
@@ -18,13 +18,13 @@ interface LegacyPlanRow {
  * same point the write-side loop would use as its target), since every
  * existing candidate up to that point has already been searched.
  *
- * Body comparison trims trailing whitespace — `PagesService.write()` (via
+ * Body comparison trims trailing whitespace — `MarkdownFileStore.write()` (via
  * gray-matter's `matter.stringify`) always appends a trailing newline, so a
  * strict `===` against the raw DB `content` (which carries none) would never
  * match even for a genuine round-trip of the exact same write.
  */
 async function findExistingMigratedFile(
-  plansPages: PagesService,
+  plansPages: MarkdownFileStore,
   base: string,
   title: string,
   content: string,
@@ -42,7 +42,7 @@ async function findExistingMigratedFile(
 
 /**
  * 0.1.127 (brief 0-1-126-to-0-1-127): one-time boot cutover of the Plan
- * artifact from SQLite (`plan`/`plan_version`) to `plansDir/<slug>.md` files.
+ * artifact from SQLite (`plan`/`plan_version`) to `.claude4spec/plans/<slug>.md` files (the `plans` system root).
  * Guarded on the `plan` table still existing — a no-op on every subsequent
  * boot (including a brand-new project, where migrations 014→047 still create
  * an empty `plan` table from scratch before this drops it once).
@@ -69,7 +69,7 @@ async function findExistingMigratedFile(
  */
 export async function backfillPlansToFilesystem(params: {
   db: Database.Database;
-  plansPages: PagesService;
+  plansPages: MarkdownFileStore;
   backupDb: () => void;
 }): Promise<void> {
   const { db, plansPages, backupDb } = params;
@@ -198,5 +198,5 @@ export async function backfillPlansToFilesystem(params: {
     if (fkWasOn) db.pragma('foreign_keys = ON');
   }
 
-  console.log(`[plan-migration] migrated ${rows.length} plan(s) to filesystem storage under plansDir`);
+  console.log(`[plan-migration] migrated ${rows.length} plan(s) to filesystem storage under .claude4spec/plans`);
 }

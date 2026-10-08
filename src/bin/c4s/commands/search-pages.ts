@@ -13,9 +13,9 @@ import type { CliCommandContribution } from '../registry.js';
  *                    [--mode count|map|hits] [--path-include <re>] [--path-exclude <re>]
  *                    [--anchors <a1,a2>] [--context <n>] [--limit <n>] [--offset <n>]
  *
- * A hit on a section-indexed root carries an `anchor`, which is what makes
- * `get-sections` reachable from a phrase — a hit carries the anchor outright. On a
- * root without a section index it collapses per PAGE and carries no anchor.
+ * A hit carries an `anchor`, which is what makes `get-sections` reachable from a
+ * phrase (2.1.8: every page root has a section index). Only a match outside every
+ * section collapses per PAGE and carries no anchor.
  *
  * 0.2.40 — `--mode pages` is GONE and the default is `map`, not `hits`. A
  * script that relied on the old default now gets identity rows instead of prose

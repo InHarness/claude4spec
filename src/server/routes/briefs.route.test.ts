@@ -6,7 +6,7 @@ import express from 'express';
 import request from 'supertest';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { runMigrations } from '../db/migrate.js';
-import { PagesService } from '../services/pages.js';
+import { MarkdownFileStore } from '../services/pages.js';
 import { FileWatchRuntime } from '../fs/watcher.js';
 import { artifactSource, boundWriter } from '../fs/sources.js';
 import { FileSerializer } from '../services/file-serializer.js';
@@ -16,7 +16,7 @@ import { ChatService } from '../services/chat.js';
 import { BriefService } from '../services/brief.js';
 import { briefsRouter } from './briefs.js';
 import { errorHandler } from './errors.js';
-import { BRIEF_ROOT_MARKER } from '../../shared/types.js';
+import { systemRootId } from '../../shared/root-kinds.js';
 import type { ReleaseService } from '../services/release.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 
@@ -38,7 +38,7 @@ describe('briefsRouter — POST /api/briefs', () => {
     db = new Database(':memory:');
     runMigrations(db);
 
-    const briefsPages = new PagesService(cwd, 'briefs', BRIEF_ROOT_MARKER);
+    const briefsPages = new MarkdownFileStore({ cwd, dir: 'briefs', rootId: systemRootId('briefs'), kind: 'briefs' });
     await briefsPages.ensureRoot();
     const watchRuntime = new FileWatchRuntime({ fsEvents: false });
     const scoped = watchRuntime.scoped('context:test');
@@ -46,7 +46,7 @@ describe('briefsRouter — POST /api/briefs', () => {
     const briefsSerializer = new FileSerializer(briefsPages);
     const pageVersions = new FileVersionService(db, briefsSerializer);
     const frontmatterIndexer = new PagesFrontmatterIndexer(
-      new Map([[BRIEF_ROOT_MARKER, briefsPages]]),
+      new Map([[systemRootId('briefs'), briefsPages]]),
       fakeWs,
     );
     const chatService = new ChatService(db);

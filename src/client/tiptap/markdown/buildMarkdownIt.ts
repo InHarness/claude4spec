@@ -3,7 +3,7 @@ import { setupXmlMarkdownRules } from '../extensions/xmlNodes.js';
 import { setupAnchorMarkerRule } from '../extensions/AnchorMarker.js';
 import { setupPageRefRules } from '../extensions/PageRefNode.js';
 import { rawTagPredicate, setupRawJsxRules } from '../extensions/RawJsxNode.js';
-import { getContextSpec } from '../registry.js';
+import { getContextSpec, type EditorContextId } from '../registry.js';
 import type { FileMeta } from '../../../shared/page-links.js';
 
 export interface BuildMarkdownItOptions {
@@ -14,13 +14,14 @@ export interface BuildMarkdownItOptions {
   breaks?: boolean;
   linkify?: boolean;
   /**
-   * 0.1.96: per-root behaviour gates (subset of the shared `Root` flags). When
-   * omitted, all rule setups run (full `pages`-root behaviour) for backward
-   * compatibility. When provided, reference and section rules are gated so a
-   * minimal root round-trips its raw `<…/>` tags as text rather than promoting
-   * them to nodes with no matching editor schema.
+   * 2.1.8: the editor context to parse as (`page` = a `kind: pages` root's
+   * layers, `artifact` = brief / patch). When omitted, all rule setups run
+   * (read-only rendering). When provided, the rules follow the context's
+   * whitelist: a tag the context mounts no node for round-trips as raw text
+   * rather than being promoted to a node with no matching editor schema, and
+   * anchor comments become markers only where `anchor_marker` is mounted.
    */
-  root?: { sectionIndexed?: boolean; referenceValidated?: boolean };
+  context?: EditorContextId;
 }
 
 /**
@@ -38,25 +39,17 @@ export function buildMarkdownIt(options: BuildMarkdownItOptions = {}): MarkdownI
     breaks: options.breaks ?? false,
     linkify: options.linkify ?? false,
   });
-  // Gate rule setups on the root's properties. Defaults preserve full behaviour
-  // so unmigrated callers (and non-root consumers) keep every rule. The XML tag
-  // rules recognise every registered name (M51); a tag the root gates out (an
-  // entity tag in a non-reference-validated root, `section_ref` in a root with
-  // no section index) is routed to the raw node by the raw-JSX rules, which
-  // run first — it round-trips as text instead of becoming a node with no
+  // Gate rule setups on the context's whitelist. No context = every rule
+  // (read-only rendering). The XML tag rules recognise every registered name
+  // (M51); a tag the context gates out (an entity tag or `section_ref` in
+  // `artifact`) is routed to the raw node by the raw-JSX rules, which run
+  // first — it round-trips as text instead of becoming a node with no
   // matching editor schema.
-  const sectionIndexed = options.root?.sectionIndexed ?? true;
-  const mounted = options.root
-    ? getContextSpec('page', {
-        sectionIndexed,
-        referenceValidated: options.root.referenceValidated ?? true,
-        linkTargets: [],
-      }).extensions
-    : null;
+  const mounted = options.context ? getContextSpec(options.context).extensions : null;
   setupRawJsxRules(md, rawTagPredicate(mounted)); // raw mdx JSX + gated / malformed tags — base
   setupXmlMarkdownRules(md); // every registered XML tag (M51)
-  if (sectionIndexed) setupAnchorMarkerRule(md); // anchors (sectionIndexed)
-  setupPageRefRules(md); // @path.md links — base (scoped by linkTargets)
+  if (!mounted || mounted.includes('anchor_marker')) setupAnchorMarkerRule(md); // anchors (kind's anchor layer)
+  setupPageRefRules(md); // @path.md links — base
   if (options.pagesIndex) {
     (md as unknown as { __c4sPagesIndex: ReadonlyMap<string, FileMeta> }).__c4sPagesIndex =
       options.pagesIndex;

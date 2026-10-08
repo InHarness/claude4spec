@@ -66,7 +66,7 @@ export function CreateBriefDialog({ toReleaseName, onClose }: Props) {
   const [fromReleaseName, setFromReleaseName] = useState('');
   const [suffix, setSuffix] = useState('');
   const [additionalPrompt, setAdditionalPrompt] = useState(loadLastAdditionalPrompt);
-  // M21/L13 brief scope — whole-release (default) vs a selected briefTarget-root subset.
+  // M21/L13 brief scope — whole-release (default) vs a selected subset of the page roots.
   const [scope, setScope] = useState<BriefScope>({ kind: 'whole-release' });
   const [error, setError] = useState<string | null>(null);
 

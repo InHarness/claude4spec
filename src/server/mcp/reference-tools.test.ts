@@ -14,6 +14,8 @@ import { createDiscoveryCore } from '../discovery/index.js';
 import { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
 import { builtinPagesRoot } from '../config.js';
+import { createC4sReaderServer } from './c4s-reader.js';
+import { GET_PAGE_OUTLINE_RETURN } from './tool-contract-text.js';
 
 /**
  * Rule 12 — broken-reference detection for a HIDDEN entity type.
@@ -428,20 +430,18 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
       expect(body.hint).toContain('pages');
     });
 
-    it('get_page refuses a line range on a section-indexed root and points at the better window', async () => {
+    it('get_page refuses a system root id exactly like an unknown one — only page roots are addressable', async () => {
       await pagesService.write('page.md', { body: '<!-- anchor: aaaaaa11 -->\n# Alpha\n\nbody\n' });
       const client = await connectClient(deps());
 
-      const { isError, body } = await call(client, 'get_page', {
-        rootId: 'pages',
-        path: 'page.md',
-        range: { start: 1, end: 2 },
-      });
+      const plans = await call(client, 'get_page', { rootId: 'plans', path: 'page.md' });
+      const nope = await call(client, 'get_page', { rootId: 'nope', path: 'page.md' });
 
-      expect(isError).toBe(true);
-      expect(body.code).toBe('INVALID_ARGUMENT');
-      expect(body.hint).toContain('get_page_outline');
-      expect(body.hint).toContain('get_sections');
+      expect(plans.isError).toBe(true);
+      expect(plans.body.code).toBe('INVALID_ARGUMENT');
+      expect(plans.body.code).toBe(nope.body.code);
+      expect(plans.body.error).toContain("unknown rootId 'plans' (page roots in this project: pages)");
+      expect(plans.body.hint).toBe(nope.body.hint);
     });
 
     it('get_page returns the page as sections keyed by anchor — an embed stays an embed in the body', async () => {
@@ -463,6 +463,22 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
         },
       ]);
       expect(body.hash).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it('get_page REFUSES a stale `range` — the SDK must not strip it before the core sees it', async () => {
+      await pagesService.write('page.md', { body: '<!-- anchor: aaaaaa11 -->\n# Alpha\n\none\ntwo\n' });
+      const client = await connectClient(deps());
+
+      const { isError, body } = await call(client, 'get_page', {
+        rootId: 'pages',
+        path: 'page.md',
+        range: { start: 1, end: 2 },
+      });
+
+      expect(isError).toBe(true);
+      expect(body.code).toBe('INVALID_ARGUMENT');
+      expect(body.error).toContain('no line window');
+      expect(body.hint).toContain('get_page_outline');
     });
 
     it('get_sections returns each body with its tag intact, and no edges beside it', async () => {
@@ -590,6 +606,107 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
       ).run();
       const co = await call(client, 'list_tags', { coOccurringWith: 'auth' });
       expect(co.body.items).toEqual([]);
+    });
+  });
+
+  /**
+   * 2.1.8 — the page tools as this server DECLARES them: name, parameter set and
+   * the description sentences the window changed (only page roots are
+   * addressable, each with a section index; `get_page` has no line window).
+   */
+  describe('the page tools as declared (2.1.8)', () => {
+    type ListedTool = Awaited<ReturnType<Client['listTools']>>['tools'][number];
+    const params = (tool: ListedTool) => Object.keys(tool.inputSchema.properties ?? {}).sort();
+    async function declared(name: string): Promise<ListedTool> {
+      const { tools } = await (await connectClient(deps())).listTools();
+      const tool = tools.find((t) => t.name === name);
+      expect(tool, `tool ${name}`).toBeDefined();
+      return tool!;
+    }
+
+    it('[entity:reference-tools-get-page-outline] get_page_outline takes the page key alone, both parts required', async () => {
+      const tool = await declared('get_page_outline');
+      expect(params(tool)).toEqual(['path', 'rootId']);
+      expect(tool.inputSchema.required ?? []).toEqual(expect.arrayContaining(['rootId', 'path']));
+      expect(tool.description).toContain('not a page root');
+      expect(tool.description).not.toMatch(/by line range|without (a|one) section index/i);
+    });
+
+    it('[entity:reference-tools-get-page] get_page takes rootId and path — no range', async () => {
+      const tool = await declared('get_page');
+      expect(params(tool)).toEqual(['path', 'rootId']);
+      expect(tool.description).not.toContain('`range`');
+      expect(tool.description).toContain('There is no line window');
+      expect(tool.description).toContain('a system root such as `plans` is refused like an unknown one');
+    });
+
+    it('[entity:reference-tools-get-sections] get_sections takes anchors and includeSubtree, with only the unknown-anchor item error', async () => {
+      const tool = await declared('get_sections');
+      expect(params(tool)).toEqual(['anchors', 'includeSubtree']);
+      expect(tool.inputSchema.required ?? []).toContain('anchors');
+      expect(tool.description).toContain('SECTION_NOT_FOUND');
+      expect(tool.description).not.toMatch(/no section index|root without/i);
+    });
+
+    it('[entity:reference-tools-list-pages] list_pages takes rootId (required), prefix, sort and paging', async () => {
+      const tool = await declared('list_pages');
+      expect(params(tool)).toEqual(['limit', 'offset', 'prefix', 'rootId', 'sort']);
+      expect(tool.inputSchema.required ?? []).toEqual(['rootId']);
+      expect((tool.inputSchema.properties!.sort as { enum?: string[] }).enum).toEqual(['path', 'modified']);
+      expect(tool.description).toContain('The root list holds page roots only');
+    });
+
+    it('[entity:reference-tools-search-pages] search_pages takes query|regex, the three valves, the mode ladder and paging', async () => {
+      const tool = await declared('search_pages');
+      expect(params(tool)).toEqual(
+        ['anchors', 'context', 'limit', 'mode', 'offset', 'pathExclude', 'pathInclude', 'query', 'regex', 'rootId'].sort(),
+      );
+      expect(tool.inputSchema.required ?? []).toEqual([]);
+      expect((tool.inputSchema.properties!.mode as { enum?: string[] }).enum).toEqual(['count', 'map', 'hits']);
+      expect(tool.description).toContain('only when the match falls outside every section');
+      expect(tool.description).not.toMatch(/root without (a|an) (section )?index/i);
+    });
+
+    /**
+     * Both `mcp-tool` records rendering `get_page_outline` declare one return: the
+     * envelope `hash`, `children` omitted on a leaf, and none of `heading_path`,
+     * `content_hash`, `total`, `hasMore`, `limit`, `offset`. The parity is
+     * structural — both servers paste one contract string — and is checked on the
+     * two declarations side by side, without calling either tool.
+     */
+    it('[ac:ac-obie-encje-mcp-tool-renderujace-get-p] reference-tools and c4s-reader declare the same get_page_outline return', async () => {
+      const reference = await declared('get_page_outline');
+      const { server } = createC4sReaderServer({
+        reader: null,
+        discovery: null,
+        db: null,
+        projectDir: null,
+        packageVersion: 'test',
+      });
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      const readerClient = new Client({ name: 'test-client', version: '0.0.0' });
+      await server.connect(serverTransport);
+      await readerClient.connect(clientTransport);
+      const reader = (await readerClient.listTools()).tools.find((t) => t.name === 'get_page_outline')!;
+
+      // The same contract sentence, pasted by both.
+      expect(reader.description).toContain(GET_PAGE_OUTLINE_RETURN);
+      expect(reference.description).toContain(GET_PAGE_OUTLINE_RETURN);
+      expect(params(reader)).toEqual(params(reference));
+
+      // What that sentence declares: hash on the envelope, `children` omitted on a leaf…
+      expect(GET_PAGE_OUTLINE_RETURN).toContain(
+        'The response is `{ rootId, path, hash, frontmatter?, preamble?, sections[], truncated?, message? }`',
+      );
+      expect(GET_PAGE_OUTLINE_RETURN).toContain('`hash` is on the ENVELOPE, never on a node');
+      expect(GET_PAGE_OUTLINE_RETURN).toContain('a leaf OMITS the key rather than sending `[]`');
+      // …and none of the fields of a paginated listing or of a hashed node.
+      expect(GET_PAGE_OUTLINE_RETURN).toContain('A node carries NO `content_hash`');
+      expect(GET_PAGE_OUTLINE_RETURN).toContain('NO `heading_path`');
+      expect(GET_PAGE_OUTLINE_RETURN).toContain('The envelope carries no `total`, `hasMore`, `limit` or `offset`');
+      for (const tool of [reader, reference]) {
+        for (const key of ['limit', 'offset']) expect(params(tool)).not.toContain(key);
+      }
     });
   });
 });

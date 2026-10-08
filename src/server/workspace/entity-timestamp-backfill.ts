@@ -94,7 +94,7 @@ function repoRoot(cwd: string): string | null {
  * fabricates a different one. That is the exact outcome this module exists to
  * prevent, so the key is derived from the repo root the same way git derives it.
  */
-function gitDatesByPath(cwd: string, entitiesDir: string): Map<string, { first: string; last: string }> {
+function gitDatesByPath(cwd: string, entitiesRootDir: string): Map<string, { first: string; last: string }> {
   const out = new Map<string, { first: string; last: string }>();
   let stdout: string;
   try {
@@ -109,7 +109,7 @@ function gitDatesByPath(cwd: string, entitiesDir: string): Map<string, { first: 
        * order yield `first > last` — and the clamp at the end of the backfill
        * then collapses both timestamps onto the wrong one.
        */
-      ['log', `--format=${COMMIT_MARK}%cI`, '--name-status', '--diff-filter=AMR', '--', entitiesDir],
+      ['log', `--format=${COMMIT_MARK}%cI`, '--name-status', '--diff-filter=AMR', '--', entitiesRootDir],
       { cwd, encoding: 'utf-8', timeout: 30_000, maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] },
     );
   } catch {
@@ -159,7 +159,7 @@ export function backfillEntityTimestamps(
   db: Database.Database,
   store: EntityStore,
   cwd: string,
-  entitiesDir: string,
+  entitiesRootDir: string,
 ): BackfillReport {
   const report: BackfillReport = {
     scanned: 0,
@@ -216,7 +216,7 @@ export function backfillEntityTimestamps(
   );
 
   const realCwd = realpathOr(cwd);
-  const gitDates = gitDatesByPath(realCwd, entitiesDir);
+  const gitDates = gitDatesByPath(realCwd, entitiesRootDir);
   const placeholder = placeholderStamp();
   let failedWrites = 0;
   // git prints repo-root-relative paths; build the lookup key the same way.
@@ -229,7 +229,7 @@ export function backfillEntityTimestamps(
   // nothing: every entity silently falls to the `mtime` rung, and the guard at
   // the end does NOT warn, because `gitDates` is non-empty — it is the lookup
   // that failed, not the collection.
-  const storeRoot = path.resolve(realCwd, entitiesDir);
+  const storeRoot = path.resolve(realCwd, entitiesRootDir);
   const root = repoRoot(realCwd) ?? realCwd;
   const gitKeyFor = (relPath: string): string =>
     path.relative(root, path.join(storeRoot, relPath)).replaceAll(path.sep, '/');

@@ -188,7 +188,12 @@ registerEditorExtension({
   priority: 1100,
   availableIn: ['page', 'plan', 'chat-input'],
   extension: (ctx) =>
-    MentionExtension.configure({ contextId: ctx.contextId ?? 'page', rootProps: ctx.rootProps }),
+    MentionExtension.configure({
+      contextId: ctx.contextId ?? 'page',
+      rootProps: ctx.rootProps,
+      // 2.1.8: the page's root — the first step of the `@path.md` precedence.
+      rootId: ctx.rootId ?? null,
+    }),
 });
 
 registerEditorExtension({
@@ -212,8 +217,11 @@ registerMentionSource<{ path: string; title: string; matchScore: number }>({
   trigger: '@',
   availableIn: ['page', 'plan', 'chat-input'],
   minQueryLength: 0,
-  search: async (query, limit = 10) => {
-    const res = await pageLinksApi.autocomplete(query, limit);
+  search: async (query, limit = 10, ctx) => {
+    // 2.1.8: suggestions span every `pages` root; a path present in several is
+    // offered from the root the inserted `@path.md` resolves to — so the server
+    // needs the source page's root.
+    const res = await pageLinksApi.autocomplete(query, limit, ctx?.rootId ?? null);
     return res.suggestions;
   },
   getItemKey: (item) => item.path,

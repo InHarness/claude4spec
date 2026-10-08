@@ -198,7 +198,7 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
 
   const overview = op(
     'overview',
-    'ENTRY POINT. One call that says what this specification contains: page roots with their properties (sectionIndexed / referenceValidated / pageCount), the active entity types with a row count and payload version each, the tag count, and the claude4spec version. Root properties are part of the payload because they decide how a hit is addressed — a section-indexed root answers with an `anchor`, a plain one with (rootId, path, line). Cheap: no schemas, no views; call describe_types for those.',
+    'ENTRY POINT. One call that says what this specification contains: the page roots (`{ id, name, dir, builtin, pageCount }` each — only roots of kind `pages` are addressable, and every one of them has a section index, so a search hit inside a section always carries an `anchor`), the active entity types with a row count and payload version each, the tag count, and the claude4spec version. Cheap: no schemas, no views; call describe_types for those.',
     {},
     (discovery) => discovery.overview(),
   );
@@ -238,7 +238,7 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
 
   const getPageOutline = op(
     'get_page_outline',
-    "One page's headings as a TREE in document order — a table of contents, and the cheap step between locating a page and paying for any of its text. Takes the page key and NOTHING else: no `by` discriminator, no anchor variant, no fuzzy heading search (a heading substring is not an identity — to find a section by text, call search_pages, whose hit ALREADY carries the anchor), no limit/offset, no depth cap. Every node carries its section's anchor and the `size` of its body, so you can measure a page and pick exactly the anchors worth fetching with get_sections before spending anything on prose. It emits no content. It refuses as a WHOLE, not per item, because it is keyed by ONE page: an unknown path on a known root is PAGE_NOT_FOUND, and a root with no section index is refused with a pointer at get_page. " +
+    "One page's headings as a TREE in document order — a table of contents, and the cheap step between locating a page and paying for any of its text. Takes the page key and NOTHING else: no `by` discriminator, no anchor variant, no fuzzy heading search (a heading substring is not an identity — to find a section by text, call search_pages, whose hit ALREADY carries the anchor), no limit/offset, no depth cap. Every node carries its section's anchor and the `size` of its body, so you can measure a page and pick exactly the anchors worth fetching with get_sections before spending anything on prose. It emits no content. It refuses as a WHOLE, not per item, because it is keyed by ONE page: an unknown path on a known page root is PAGE_NOT_FOUND, and an unknown root — or one that is not a page root — is INVALID_ARGUMENT listing the page roots. " +
       GET_PAGE_OUTLINE_RETURN,
     {
       rootId: z.string().describe('Which page root. Required — the same relative path can exist in several roots.'),
@@ -250,7 +250,7 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
 
   const getSections = op(
     'get_sections',
-    `Read sections BY ANCHOR — pass every anchor you need in ONE call; one anchor is simply a list of one. Search hits, a reference sweep and a page outline all hand you a LIST of anchors, and fetching them one per call is the cost this operation exists to remove. Each section comes back as its own item carrying its identity, the heading and the body as authored — XML tags left untouched, because a tag is an edge and expanding it would paste the payload in and destroy the edge; to follow an embed, call get_entities with the slug it carries. An anchor that is not addressable comes back as \`{ anchor, error, code: "SECTION_NOT_FOUND" }\` in its own slot rather than failing the batch, and that happens two ways with two different remedies: the anchor is unknown (the message points at search_pages / get_page_outline), or it resolves onto a root that carries no section index (the message points at get_page). ${GET_SECTIONS_RETURN} An anchor names exactly ONE section. If a duplicate anchor slips into the pages anyway, the read is still deterministic rather than a coin flip on directory order: the occurrence with the lowest (rootId, page_path) owns the anchor, and within one page the first (lowest line) occurrence wins. \`check_consistency\` rule 13 reports the collision with every location so it gets fixed.`,
+    `Read sections BY ANCHOR — pass every anchor you need in ONE call; one anchor is simply a list of one. Search hits, a reference sweep and a page outline all hand you a LIST of anchors, and fetching them one per call is the cost this operation exists to remove. Each section comes back as its own item carrying its identity, the heading and the body as authored — XML tags left untouched, because a tag is an edge and expanding it would paste the payload in and destroy the edge; to follow an embed, call get_entities with the slug it carries. An unknown anchor comes back as \`{ anchor, error, code: "SECTION_NOT_FOUND" }\` in its own slot rather than failing the batch; the message points at search_pages / get_page_outline. ${GET_SECTIONS_RETURN} An anchor names exactly ONE section. If a duplicate anchor slips into the pages anyway, the read is still deterministic rather than a coin flip on directory order: the occurrence with the lowest (rootId, page_path) owns the anchor, and within one page the first (lowest line) occurrence wins. \`check_consistency\` rule 13 reports the collision with every location so it gets fixed.`,
     {
       anchors: z
         .array(z.string())
@@ -273,19 +273,19 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
   const getPage = op(
     'get_page',
     C4S_READER_GET_PAGE_DESCRIPTION + ' ' + GET_PAGE_RETURN,
-    {
-      rootId: z.string().optional().describe('Which page root — required; see overview().roots'),
-      path: z.string().optional().describe('Page path relative to the root'),
-      range: z
-        .object({ start: z.number().int().positive(), end: z.number().int().positive() })
-        .optional()
-        .describe('1-based inclusive line window; only on roots without a section index'),
-    },
+    // A LOOSE object, not a bare shape: the SDK strips unknown keys from a bare
+    // shape, so a stale `range` would vanish before the core could refuse it.
+    z
+      .object({
+        rootId: z.string().optional().describe('Which page root — required; see overview().roots'),
+        path: z.string().optional().describe('Page path relative to the root'),
+      })
+      .loose() as unknown as Record<string, unknown>, // the SDK takes a ZodObject; the adapters type says raw shape
     (discovery, args) =>
       discovery.getPage({
         rootId: optionalString(args.rootId),
         path: optionalString(args.path),
-        range: args.range as { start: number; end: number } | undefined,
+        ...(args.range !== undefined ? { range: args.range } : {}),
       } as Parameters<DiscoveryCore['getPage']>[0]),
   );
 
@@ -293,7 +293,7 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
 
   const searchPages = op(
     'search_pages',
-    'Search the prose of the pages, by phrase (`query`) or by regex (`regex`) — the replacement for grepping the specification, and the one search the entity graph cannot stand in for, because it looks for exactly what fell OUT of the graph (a bare HTTP path, a DTO name mentioned in running text). THREE MODES, a ladder of cost: "count" returns only the totals; "map" (DEFAULT) returns identity rows `{ rootId, path, anchor, heading, headingPath, matchCount }` with no prose; "hits" adds `hunks[]` + `omittedChars`. There is no fourth rung and no "pages" mode — to read a section, take the `anchor` from a map row and call get_sections. A HIT IS A SECTION, a MATCH is a line: several matches in one section collapse into ONE hit carrying `matchCount`, and no two hits share an `anchor`. A hit carries an `anchor` IF AND ONLY IF `kind` is "section"; a `kind: "page"` hit has none, which happens on a root with no section index AND on an indexed root when the match falls outside every section (the frontmatter, text above the first heading, or under a heading without an anchor) — such a hit is `rootId` and `path` with the match count, WITHOUT an anchor and WITHOUT a line number; read it with get_page (the frontmatter and the preamble are fields of its envelope; a heading without an anchor is an item without `anchor`). Branch on `kind`, never on the root. Results enumerate in `(rootId, path, line_start)` order with a declared tie-break, so paging with `limit`/`offset` returns every hit exactly once. There is no `score` and no line number. THREE COST VALVES, coarse to sharp: `rootId`, then `pathInclude`/`pathExclude` (regexes over the page path, applied BEFORE the file is opened), then `anchors` (scan only these sections). A `regex` that could only match across a line boundary (`\\n`, `[\\s\\S]`, an inline flag group) is refused with INVALID_ARGUMENT rather than answered with zero hits — a silent false negative is worse than an error; within-line idioms are fine, `[^\\n]` included. An over-long `regex` is refused with INVALID_ARGUMENT naming the ceiling, and a run that exhausts the core time budget answers SEARCH_BUDGET_EXCEEDED — not INVALID_ARGUMENT, because the pattern was valid; its message names the valves (`rootId`, `pathInclude`), and the same pattern then completes over the narrower scope.',
+    'Search the prose of the pages, by phrase (`query`) or by regex (`regex`) — the replacement for grepping the specification, and the one search the entity graph cannot stand in for, because it looks for exactly what fell OUT of the graph (a bare HTTP path, a DTO name mentioned in running text). THREE MODES, a ladder of cost: "count" returns only the totals; "map" (DEFAULT) returns identity rows `{ rootId, path, anchor, heading, headingPath, matchCount }` with no prose; "hits" adds `hunks[]` + `omittedChars`. There is no fourth rung and no "pages" mode — to read a section, take the `anchor` from a map row and call get_sections. A HIT IS A SECTION, a MATCH is a line: several matches in one section collapse into ONE hit carrying `matchCount`, and no two hits share an `anchor`. A hit carries an `anchor` IF AND ONLY IF `kind` is "section"; a `kind: "page"` hit has none, which happens only when the match falls outside every section (the frontmatter, text above the first heading, or under a heading without an anchor yet) — such a hit is `rootId` and `path` with the match count, WITHOUT an anchor and WITHOUT a line number; read it with get_page (the frontmatter and the preamble are fields of its envelope; a heading without an anchor is an item without `anchor`). Branch on `kind`. Results enumerate in `(rootId, path, line_start)` order with a declared tie-break, so paging with `limit`/`offset` returns every hit exactly once. There is no `score` and no line number. THREE COST VALVES, coarse to sharp: `rootId`, then `pathInclude`/`pathExclude` (regexes over the page path, applied BEFORE the file is opened), then `anchors` (scan only these sections). A `regex` that could only match across a line boundary (`\\n`, `[\\s\\S]`, an inline flag group) is refused with INVALID_ARGUMENT rather than answered with zero hits — a silent false negative is worse than an error; within-line idioms are fine, `[^\\n]` included. An over-long `regex` is refused with INVALID_ARGUMENT naming the ceiling, and a run that exhausts the core time budget answers SEARCH_BUDGET_EXCEEDED — not INVALID_ARGUMENT, because the pattern was valid; its message names the valves (`rootId`, `pathInclude`), and the same pattern then completes over the narrower scope.',
     {
       query: z.string().optional().describe('Phrase to look for; case-insensitive substring, matches inside words too. A UI-grade instrument — prefer `regex` for precision.'),
       regex: z.string().optional().describe('Regular expression; the DEFAULT instrument here, not a fallback. Matched per line, case-insensitively.'),

@@ -1,6 +1,6 @@
 /**
- * M21 BriefService — thin wrapper over the second `PagesService` instance
- * mounted on `briefsDir`. Briefs are markdown files with mandatory YAML
+ * M21 BriefService — thin wrapper over the `MarkdownFileStore` primitive
+ * of the system root `briefs` (no `PagesService` facade). Briefs are markdown files with mandatory YAML
  * frontmatter (`type: brief`, `from_release`, `to_release`, ...). The file
  * itself is the source of truth (consumed both by humans in UI and by coding
  * agents in terminal). DB participation is limited to:
@@ -20,8 +20,7 @@ import { parseSections } from '../../shared/section-parser.js';
 import matter from 'gray-matter';
 import type { Brief, BriefChangedBy, BriefFrontmatter } from '../../shared/entities.js';
 import { BRIEF_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
-import { BRIEF_ROOT_MARKER } from '../../shared/types.js';
-import type { PagesService } from './pages.js';
+import type { MarkdownFileStore } from './markdown-file-store.js';
 import { hashContent } from './artifact-content.js';
 import type { RecordStore } from '../fs/record-store.js';
 import type { MarkdownRecord } from '../fs/record-adapters.js';
@@ -38,7 +37,7 @@ import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 import { compareBriefsByReleaseAxis } from '../../core/briefs/release-axis.js';
 
 export interface BriefServiceDeps {
-  briefsPages: PagesService;
+  briefsPages: MarkdownFileStore;
   briefsWatcher: SelfWriteMarker;
   /**
    * 0.2.76 — the M42 record store for this artifact source.
@@ -89,9 +88,9 @@ export interface BriefCreateOpts {
   content?: string;
   suffix?: string;
   /**
-   * 0.1.96: brief scope — releasable root ids this brief covers. Written verbatim
+   * 0.1.96: brief scope — `pages` root ids this brief covers. Written verbatim
    * to immutable `roots` frontmatter and added as a slug segment. Omitted or empty
-   * ⇒ whole-release scope (all releasable roots) — no `roots` frontmatter key and
+   * ⇒ whole-release scope (all `pages` roots) — no `roots` frontmatter key and
    * no slug segment.
    */
   roots?: string[];
@@ -177,6 +176,16 @@ function generatedAtIso(value: unknown): string {
 export class BriefService {
   constructor(private deps: BriefServiceDeps) {}
 
+  /**
+   * 2.1.8 — the id of the root this service writes: the `briefs` system root,
+   * whose store the context took from the registry BY KIND. It keys the
+   * `file_version` rows (`rootId = 'briefs'`) and the frontmatter records; the
+   * service never spells the id itself.
+   */
+  get rootId(): string {
+    return this.deps.briefsPages.rootId;
+  }
+
   // ─── Reads ───────────────────────────────────────────────────────────────
 
   /**
@@ -209,7 +218,7 @@ export class BriefService {
        * the command onto this service dropped that: the caller got a bare
        * "brief 'x' not found", which is the least useful thing to say to
        * someone who has just proved they do not know the filename. The usual
-       * miss is a nearly-right slug or a `briefsDir`-relative path written with
+       * miss is a nearly-right slug or a briefs-root-relative path written with
        * a directory prefix, both of which the list answers instantly.
        *
        * It matters most for the agent that is not allowed to look. The
@@ -275,11 +284,11 @@ export class BriefService {
   /** Up to ten real brief paths, for the `NOT_FOUND` repair hint. */
   private availableBriefsHint(): string {
     const paths = this.deps.frontmatterIndexer
-      .findByFrontmatterType('brief', { rootId: BRIEF_ROOT_MARKER })
+      .findByFrontmatterType('brief', { rootId: this.rootId })
       .map((r) => r.path);
     return paths.length > 0
       ? `available briefs: ${paths.slice(0, 10).join(', ')}${paths.length > 10 ? `, … (${paths.length} total)` : ''}`
-      : 'no briefs found in briefsDir';
+      : 'no briefs found in the briefs root (.claude4spec/briefs)';
   }
 
   /**
@@ -297,13 +306,13 @@ export class BriefService {
    * version lookup, content hash and thread count.
    */
   listBriefs(opts: BriefListOpts = {}): BriefListItem[] {
-    const records = this.deps.frontmatterIndexer.findByFrontmatterType('brief', { rootId: BRIEF_ROOT_MARKER });
+    const records = this.deps.frontmatterIndexer.findByFrontmatterType('brief', { rootId: this.rootId });
     const out: BriefListItem[] = [];
     for (const rec of records) {
       const fm = rec.frontmatter as BriefFrontmatter;
       const implemented = fm.implemented === true;
       if (opts.implemented !== undefined && opts.implemented !== implemented) continue;
-      const lastVersion = this.deps.pageVersions.getLatestForPath(rec.path);
+      const lastVersion = this.deps.pageVersions.getLatestForPath(rec.path, undefined, this.rootId);
       out.push({
         path: rec.path,
         title: typeof fm.title === 'string' ? (fm.title as string) : null,
@@ -467,11 +476,11 @@ export class BriefService {
       'user',
       undefined,
       this.deps.briefsSerializer,
-      'brief',
+      this.rootId,
     );
     // Re-sync indexer immediately (faster than waiting for watcher debounce —
     // the new brief should appear in `/briefs` list right after POST returns).
-    await this.deps.frontmatterIndexer.indexPage(BRIEF_ROOT_MARKER, briefPath);
+    await this.deps.frontmatterIndexer.indexPage(this.rootId, briefPath);
 
     return { briefPath, hash, fromReleaseName: fromName, toReleaseName: toName };
   }
@@ -509,12 +518,12 @@ export class BriefService {
 
   /** 0.2.86 — `list_brief_versions`: the shared file_version log, newest first. */
   listVersions(briefPath: string) {
-    return this.deps.pageVersions.listVersions(briefPath, BRIEF_ROOT_MARKER);
+    return this.deps.pageVersions.listVersions(briefPath, this.rootId);
   }
 
   /** 0.2.86 — `get_brief_version`: one snapshot with content, or null. */
   getVersion(briefPath: string, version: number) {
-    return this.deps.pageVersions.getVersion(briefPath, version, BRIEF_ROOT_MARKER);
+    return this.deps.pageVersions.getVersion(briefPath, version, this.rootId);
   }
 
   async updateContent(opts: BriefUpdateContentOpts): Promise<{ newHash: string }> {
@@ -555,10 +564,10 @@ export class BriefService {
       opts.changedBy,
       undefined,
       this.deps.briefsSerializer,
-      'brief',
+      this.rootId,
       opts.changeSummary,
     );
-    await this.deps.frontmatterIndexer.indexPage(BRIEF_ROOT_MARKER, opts.path);
+    await this.deps.frontmatterIndexer.indexPage(this.rootId, opts.path);
     // The indexer only broadcasts `briefs:changed` when *frontmatter* changes; a
     // body-only edit (the common agent case) emits nothing, and the chokidar event
     // is suppressed above. Broadcast explicitly so open BriefEditors refresh.
@@ -588,10 +597,10 @@ export class BriefService {
       opts.changedBy,
       undefined,
       this.deps.briefsSerializer,
-      'brief',
+      this.rootId,
       summaries.length > 0 ? summaries.join('; ') : null,
     );
-    await this.deps.frontmatterIndexer.indexPage(BRIEF_ROOT_MARKER, opts.path);
+    await this.deps.frontmatterIndexer.indexPage(this.rootId, opts.path);
     return this.getBrief(opts.path);
   }
 

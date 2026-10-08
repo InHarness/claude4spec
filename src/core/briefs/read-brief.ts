@@ -1,14 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import matter from 'gray-matter';
-import { collectBriefFiles } from './list-briefs.js';
+import { collectBriefFiles, isBriefEntry } from './list-briefs.js';
 import { BriefFsError } from './types.js';
 import type { BriefReadResult } from './types.js';
 
-/** Rejects an absolute path or one that escapes briefsDir via `..`. */
+/** Rejects an absolute path or one that escapes the `briefs` root via `..`. */
 export function assertSafeRelPath(rel: string): void {
   if (path.isAbsolute(rel)) {
-    throw new BriefFsError('INVALID_ARGS', `path must be relative to briefsDir, got absolute path '${rel}'`);
+    throw new BriefFsError('INVALID_ARGS', `path must be relative to the briefs root, got absolute path '${rel}'`);
   }
   const normalized = path.normalize(rel);
   if (
@@ -16,21 +16,25 @@ export function assertSafeRelPath(rel: string): void {
     normalized.startsWith(`..${path.sep}`) ||
     normalized.includes(`${path.sep}..${path.sep}`)
   ) {
-    throw new BriefFsError('INVALID_ARGS', `path '${rel}' escapes briefsDir`);
+    throw new BriefFsError('INVALID_ARGS', `path '${rel}' escapes the briefs root`);
   }
 }
 
-/** Throws BRIEF_NOT_FOUND (with a hint listing available briefs) if `relPath` doesn't exist. */
+/**
+ * Throws BRIEF_NOT_FOUND (with a hint listing available briefs) if `relPath`
+ * doesn't exist — or is not an entry of the `briefs` file map (a nested or
+ * `.mdx` file), which the server does not serve as a brief either.
+ */
 export function assertBriefExists(briefsDirAbs: string, relPath: string): void {
   assertSafeRelPath(relPath);
-  if (!fs.existsSync(path.join(briefsDirAbs, relPath))) {
+  if (!isBriefEntry(relPath) || !fs.existsSync(path.join(briefsDirAbs, relPath))) {
     // Cheap directory-listing only — no need to read+parse every file's
     // frontmatter just to build a "here's what exists" hint.
     const available = collectBriefFiles(briefsDirAbs).slice(0, 10);
     throw new BriefFsError(
       'BRIEF_NOT_FOUND',
       `brief '${relPath}' not found`,
-      available.length > 0 ? `available briefs: ${available.join(', ')}` : 'no briefs found in briefsDir',
+      available.length > 0 ? `available briefs: ${available.join(', ')}` : 'no briefs found in the briefs root',
     );
   }
 }

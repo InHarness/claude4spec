@@ -1,30 +1,60 @@
 /**
- * M36 — artifactRegistry: single source of truth for chat artifacts stored as
- * markdown-with-frontmatter files outside the Root Registry (briefs, patches,
- * and — as of 0.1.127 — plans). Each entry declares how its kind mounts
- * (dirConfigKey/rootId), what frontmatter mutation is allowed, how it binds to
- * chat threads, and cross-cutting policy (dangling/git/anchor/section).
+ * M36 — artifactRegistry: chat artifacts (briefs, patches, plans).
  *
- * `artifactRegistry` is declared as a keyed `Record`, not standalone consts
- * per kind, precisely so that widening `ArtifactKind` is a one-line type
- * change plus one new map entry — not a restructure of every consumer.
+ * 2.1.8: briefs, patches and plans are SYSTEM ROOTS of the root registry. Their
+ * directory, frontmatter type and field contract, git policy and anchor
+ * injection moved to the kind declaration (`src/shared/root-kinds.ts`). What is
+ * left here is keyed by root kind and carries only the link to a chat thread:
+ * `binding` and `danglingPolicy`. M36 mounts no source and defines no reaction.
+ *
+ * `ArtifactKind` (`brief` | `patch` | `plan`) stays the vocabulary of the REST
+ * family (`/api/artifacts/:kind`) and of chat contexts; {@link ARTIFACT_ROOT_KIND}
+ * maps it onto the root kind.
  */
 
-import {
-  BRIEF_IMMUTABLE_FRONTMATTER_KEYS,
-  PATCH_IMMUTABLE_FRONTMATTER_KEYS,
-  PLAN_IMMUTABLE_FRONTMATTER_KEYS,
-} from '../../shared/entities.js';
-import { BRIEF_ROOT_MARKER, PATCH_ROOT_MARKER, PLAN_ROOT_MARKER } from '../../shared/types.js';
+import { headerContractOf, type HeaderContract } from '../../shared/root-kinds.js';
 
 export type ArtifactKind = 'brief' | 'patch' | 'plan';
+export type ArtifactRootKind = 'briefs' | 'patches' | 'plans';
 
-export interface ArtifactFrontmatterContract {
-  /** Keys the artifact's own creator sets; the claude4spec side never mutates them. */
-  immutable: readonly string[];
-  /** Keys mutable via `PATCH /api/artifacts/:kind/:path/frontmatter`. */
-  mutable: readonly string[];
+export const ARTIFACT_ROOT_KIND: Readonly<Record<ArtifactKind, ArtifactRootKind>> = {
+  brief: 'briefs',
+  patch: 'patches',
+  plan: 'plans',
+};
+
+export const ARTIFACT_KIND_OF_ROOT_KIND: Readonly<Record<ArtifactRootKind, ArtifactKind>> = {
+  briefs: 'brief',
+  patches: 'patch',
+  plans: 'plan',
+};
+
+/**
+ * The domain event the frontmatter projection broadcasts when an artifact's
+ * frontmatter changes (the list views refetch on it). The file-level event is
+ * the base `file:changed` every registry root emits.
+ */
+export const ARTIFACT_CHANGED_EVENT: Readonly<
+  Record<ArtifactKind, 'briefs:changed' | 'patches:changed' | 'plans:changed'>
+> = {
+  brief: 'briefs:changed',
+  patch: 'patches:changed',
+  plan: 'plans:changed',
+};
+
+/** The id of the system root an artifact kind lives in (= its root kind). */
+export function artifactRootId(kind: ArtifactKind): ArtifactRootKind {
+  return ARTIFACT_ROOT_KIND[kind];
 }
+
+/** The header contract of an artifact kind — read from its root kind's file map. */
+export function artifactHeaderContract(kind: ArtifactKind): HeaderContract {
+  const contract = headerContractOf(ARTIFACT_ROOT_KIND[kind]);
+  if (!contract) throw new Error(`root kind '${ARTIFACT_ROOT_KIND[kind]}' declares no header contract`);
+  return contract;
+}
+
+export type ArtifactFrontmatterContract = Pick<HeaderContract, 'immutable' | 'mutable'>;
 
 export interface ArtifactBinding {
   /** anchor = one required thread pointer set at create-time; attach = N:1, optional, mutable. */
@@ -49,9 +79,9 @@ export interface ArtifactBinding {
  * suite), not dispatch data. Nothing branches on them.
  */
 export interface ArtifactReadFamily {
-  /** Paginated listing, filtered by the execution flag in `frontmatterContract`. */
+  /** Paginated listing, filtered by the execution flag of the root kind's header contract. */
   list: string;
-  /** Content + frontmatter + hash, plus a `range` line window with NO `sectionIndexed` gate. */
+  /** Content + frontmatter + hash, plus a `range` line window that is always allowed. */
   getWithWindow: string;
   /** Content search; a hit's identity is `(rootId, path, line)`, with no anchor. */
   search: string;
@@ -60,105 +90,56 @@ export interface ArtifactReadFamily {
 }
 
 export interface ArtifactRegistryEntry {
-  kind: ArtifactKind;
-  /** BootConfig key holding this artifact's directory. */
-  dirConfigKey: 'briefsDir' | 'patchesDir' | 'plansDir';
-  /** file_version rootId marker for this kind (also the PagesService/PagesWatcher rootId). */
-  rootId: string;
-  /** frontmatter.type value that identifies this kind to PagesFrontmatterIndexer. */
-  frontmatterType: string;
-  frontmatterContract: ArtifactFrontmatterContract;
   binding: ArtifactBinding;
   danglingPolicy: 'invariant-banner' | 'graceful-degrade';
-  gitPolicy: 'committed-by-default';
-  /** Whether a file write of this kind gets anchors (plan only). The injection itself lives in M06 (`anchor-injection.ts`). */
-  anchorInjection: boolean;
-  sectionIndexed: false;
-  /** WS event kind broadcast on a change to this artifact's mount (see PagesFrontmatterIndexer.broadcastRootChange). */
-  changedEvent: 'briefs:changed' | 'patches:changed' | 'plans:changed';
-  /** 0.2.40 — the four positions of the read family. Every kind declares all four. */
-  readFamily: ArtifactReadFamily;
 }
 
-export const artifactRegistry: Record<ArtifactKind, ArtifactRegistryEntry> = {
-  brief: {
-    kind: 'brief',
-    dirConfigKey: 'briefsDir',
-    rootId: BRIEF_ROOT_MARKER,
-    frontmatterType: 'brief',
-    frontmatterContract: {
-      immutable: BRIEF_IMMUTABLE_FRONTMATTER_KEYS,
-      mutable: ['implemented'],
-    },
+export const artifactRegistry: Readonly<Record<ArtifactRootKind, ArtifactRegistryEntry>> = {
+  briefs: {
     binding: { mode: 'anchor', contextType: 'brief', threadColumn: 'brief_path' },
     danglingPolicy: 'invariant-banner',
-    gitPolicy: 'committed-by-default',
-    anchorInjection: false,
-    sectionIndexed: false,
-    changedEvent: 'briefs:changed',
-    readFamily: {
-      list: 'c4s list-briefs (cli) + GET /api/artifacts/brief (rest), filtered by frontmatter.implemented',
-      getWithWindow: 'get_brief({ path?, range? }) — line window, no sectionIndexed gate',
-      search:
-        'n/a — no search operation exists for briefs in any channel; a named GAP, not a decision. ' +
-        'search_briefs and list_briefs coverage on the agent channels (internal/mcp) are an open <todo> for a separate plan.',
-      responseBudget: 'truncated: true per item + truncationHint pointing unconditionally at range',
-    },
   },
-  patch: {
-    kind: 'patch',
-    dirConfigKey: 'patchesDir',
-    rootId: PATCH_ROOT_MARKER,
-    frontmatterType: 'patch',
-    frontmatterContract: {
-      immutable: PATCH_IMMUTABLE_FRONTMATTER_KEYS,
-      // 0.2.14: `status` (awaiting|completed) -> `applied` (boolean), the same
-      // flag and semantics the plan carries.
-      mutable: ['applied'],
-    },
+  patches: {
     binding: { mode: 'anchor', contextType: 'patch', threadColumn: 'patch_path' },
     danglingPolicy: 'invariant-banner',
-    gitPolicy: 'committed-by-default',
-    anchorInjection: false,
-    sectionIndexed: false,
-    changedEvent: 'patches:changed',
-    readFamily: {
-      list: 'GET /api/artifacts/patch (rest), filtered by frontmatter.applied',
-      getWithWindow: 'GET /api/artifacts/patch/<path> (rest) and get_patch (patch-tools, patch threads only, path defaults to the thread\'s patch) — the same range window',
-      search: 'n/a — no search operation exists for patches in any channel; same gap as brief.',
-      responseBudget: 'truncated: true per item + truncationHint pointing unconditionally at range',
-    },
   },
-  // 0.1.127 (brief 0-1-126-to-0-1-127): plan diverges from brief/patch on two
-  // axes — binding is `attach` (N threads -> 1 plan file, optional, no fixed
-  // contextType: any thread kind can carry a plan_mode session) instead of
-  // `anchor`, and danglingPolicy is `graceful-degrade` (deleting the file
-  // leaves `chat_thread.plan_path` pointing nowhere; the UI shows a banner
-  // instead of the invariant briefs/patches enforce). `anchorInjection: true`
-  // is the one thing plan shares uniquely with nothing else in this registry —
-  // `<!-- anchor --> ` markers are injected into plan headings for
-  // insert_after_section targeting and annotations, without full section
-  // indexing (`sectionIndexed: false`, same as brief/patch).
-  plan: {
-    kind: 'plan',
-    dirConfigKey: 'plansDir',
-    rootId: PLAN_ROOT_MARKER,
-    frontmatterType: 'plan',
-    frontmatterContract: {
-      immutable: PLAN_IMMUTABLE_FRONTMATTER_KEYS,
-      mutable: ['title', 'applied'],
-    },
+  // 0.1.127: plan binds `attach` (N threads → 1 plan file, optional, any context
+  // carrying a plan_mode session) and degrades gracefully when its file is gone.
+  plans: {
     binding: { mode: 'attach', threadColumn: 'plan_path' },
     danglingPolicy: 'graceful-degrade',
-    gitPolicy: 'committed-by-default',
-    anchorInjection: true,
-    sectionIndexed: false,
-    changedEvent: 'plans:changed',
-    readFamily: {
-      list: 'list_plans (mcp) + GET /api/artifacts/plan (rest), filtered by frontmatter.applied',
-      getWithWindow: 'get_plan({ range? }) (mcp) + GET /api/artifacts/plan/<path> (rest) — the same range window',
-      search: 'n/a — no search operation exists for plans in any channel; same gap as brief.',
-      responseBudget: 'truncated: true per item + truncationHint pointing unconditionally at range',
-    },
+  },
+};
+
+/** The registry entry of an artifact kind (`brief` → `briefs`). */
+export function artifactEntry(kind: ArtifactKind): ArtifactRegistryEntry {
+  return artifactRegistry[ARTIFACT_ROOT_KIND[kind]];
+}
+
+/**
+ * 0.2.40 — the four positions of the artifact read family, per kind. Documentation
+ * with a test behind it; nothing branches on these strings.
+ */
+export const ARTIFACT_READ_FAMILY: Readonly<Record<ArtifactKind, ArtifactReadFamily>> = {
+  brief: {
+    list: 'c4s list-briefs (cli) + GET /api/artifacts/brief (rest), filtered by frontmatter.implemented',
+    getWithWindow: 'get_brief({ path?, range? }) — line window, always allowed (an artifact has no section index)',
+    search:
+      'n/a — no search operation exists for briefs in any channel; a named GAP, not a decision. ' +
+      'search_briefs and list_briefs coverage on the agent channels (internal/mcp) are an open <todo> for a separate plan.',
+    responseBudget: 'truncated: true per item + truncationHint pointing unconditionally at range',
+  },
+  patch: {
+    list: 'GET /api/artifacts/patch (rest), filtered by frontmatter.applied',
+    getWithWindow:
+      "GET /api/artifacts/patch/<path> (rest) and get_patch (patch-tools, patch threads only, path defaults to the thread's patch) — the same range window",
+    search: 'n/a — no search operation exists for patches in any channel; same gap as brief.',
+    responseBudget: 'truncated: true per item + truncationHint pointing unconditionally at range',
+  },
+  plan: {
+    list: 'list_plans (mcp) + GET /api/artifacts/plan (rest), filtered by frontmatter.applied',
+    getWithWindow: 'get_plan({ range? }) (mcp) + GET /api/artifacts/plan/<path> (rest) — the same range window',
+    search: 'n/a — no search operation exists for plans in any channel; same gap as brief.',
+    responseBudget: 'truncated: true per item + truncationHint pointing unconditionally at range',
   },
 };

@@ -24,6 +24,7 @@ import { C4S_VERSION } from '../services/release-bundle.js';
 import type { SkillRegistry } from '../services/skill-registry.js';
 import type { PluginSettingsSection } from '../../shared/plugin-host/manifest.js';
 import { resolveAgentPathScope } from '../services/agent-path-scope.js';
+import { RootRegistry } from '../roots/registry.js';
 import {
   probePathScope,
   probeToolGating,
@@ -41,7 +42,7 @@ export interface ConfigRouterDeps {
    * The roots the RUNNING context was built from — `config.roots[]` with the built-in
    * `pages` dir replaced by the `--pages` CLI override, when one was given. Overlap
    * validation must use these, not the raw config: under `c4s --pages docs` the config
-   * may still say 'pages', so validating against the file would bless an `entitiesDir`
+   * may still say 'pages', so validating against the file would bless a root `dir`
    * that the next boot then rejects, leaving the project unopenable. Optional so tests
    * and any other caller can fall back to the on-disk roots.
    */
@@ -93,8 +94,8 @@ function configResponse(c: NormalizedConfig, cwd: string, skillRegistry: SkillRe
   // host-capability + current-config probe (what a turn run right now WOULD
   // get), not a specific past turn's actual adapter_ready event.
   const pathScopeRequested = agentAllowedPaths.length > 0 || agentDisallowedPaths.length > 0;
-  // 0.1.130: the resolver now also folds in the implicit artifact deny-set (it requires the
-  // 5 dir params). The strength badge deliberately still reflects only the USER's configured
+  // 0.1.130: the resolver also folds in the implicit artifact deny-set (2.1.8: derived from
+  // the root registry). The strength badge deliberately still reflects only the USER's configured
   // scope (`pathScopeRequested`) — the always-on artifact deny is a separate, unshowable
   // hard-lock, so 'none' here means "no user scope", not "no enforcement".
   const pathScopeStrength: PathScopeStrength = pathScopeRequested
@@ -102,14 +103,9 @@ function configResponse(c: NormalizedConfig, cwd: string, skillRegistry: SkillRe
         cwd,
         ...resolveAgentPathScope({
           cwd,
-          roots: c.roots,
+          roots: new RootRegistry(c.roots).list(),
           allowedPaths: agentAllowedPaths,
           disallowedPaths: agentDisallowedPaths,
-          plansDir: c.plansDir,
-          briefsDir: c.briefsDir,
-          patchesDir: c.patchesDir,
-          entitiesDir: c.entitiesDir,
-          releasesDir: c.releasesDir,
         }),
         architectureConfig: { claude_sandbox: { enabled: true } },
       }).strength
@@ -153,11 +149,6 @@ function configResponse(c: NormalizedConfig, cwd: string, skillRegistry: SkillRe
     language: c.language,
     description: c.description,
     onboarding: { completed: c.onboardingCompleted },
-    briefsDir: c.briefsDir,
-    patchesDir: c.patchesDir,
-    plansDir: c.plansDir,
-    entitiesDir: c.entitiesDir,
-    releasesDir: c.releasesDir,
     entities: c.entities,
     agent: {
       claudeUsePreset: c.agent.claudeUsePreset,
@@ -319,15 +310,13 @@ export function configRouter(deps: ConfigRouterDeps): Router {
       for (const d of present) setPath(patch, fieldPath(d), values.get(d.key));
 
       const updated = writeConfig(cwd, patch as Partial<Config>);
-      // 0.1.118: re-sync .gitignore whenever a field it depends on changes —
-      // best-effort (never fail the PATCH over a gitignore write hiccup).
-      if ('git' in patch || 'briefsDir' in patch || 'patchesDir' in patch || 'plansDir' in patch || 'releasesDir' in patch) {
+      // 0.1.118: re-sync .gitignore when the `git` branch changes — the only
+      // field the managed block depends on (2.1.8: a `roots[]` save never
+      // changes it). Best-effort (never fail the PATCH over a gitignore hiccup).
+      if ('git' in patch) {
         try {
           ensureGitignore(cwd, {
-            briefsDir: updated.briefsDir,
-            patchesDir: updated.patchesDir,
-            plansDir: updated.plansDir,
-            releasesDir: updated.releasesDir,
+            roots: new RootRegistry(updated.roots).list(),
             gitEnabled: updated.git.enabled,
           });
         } catch (err) {

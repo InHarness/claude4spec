@@ -5,8 +5,8 @@
  * a missing repo, or a failed command never throws to the caller — it resolves
  * to a non-throwing result shape.
  *
- * `detect()` answers "is any releasable root inside a worktree, and what does it
- * look like". `commit()` / `push()` perform the two sync actions. `commitOnRelease()`
+ * `detect()` answers "is any root of kind `pages` inside a worktree, and what does
+ * it look like". `commit()` / `push()` perform the two sync actions. `commitOnRelease()`
  * / `pushOnPush()` are the gated entry points the hooks call: they read the
  * (hot-reloaded) config flag, detect the repo, and either act or return `null`
  * (flag off OR no repo). `commitPull()` is the 0.1.124 sibling of
@@ -19,6 +19,7 @@
  * error recovery).
  */
 
+import { SYSTEM_ROOTS } from '../../shared/root-kinds.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import fs from 'node:fs';
@@ -65,14 +66,15 @@ const NOT_DETECTED: GitStatusResponse = {
 };
 
 export class GitService {
-  /** Releasable root dirs resolved to absolute paths (probe locations). */
-  private readonly releasableRootDirs: string[];
+  /** Dirs of the roots of kind `pages` resolved to absolute paths — `detect()`'s probe locations, and the user part of the staging set. */
+  private readonly pageRootDirs: string[];
 
   /**
    * @param cwd                project root (holds `.claude4spec/config.json`).
-   * @param releasableRootDirs dirs of the releasable roots (absolute or
-   *                           cwd-relative) — the probe locations for repo
-   *                           detection (a release may live in a sub-worktree).
+   * @param pageRootDirs       2.1.8: dirs of the roots of KIND `pages` (absolute
+   *                           or cwd-relative) — the probe locations for repo
+   *                           detection (a page root may live in a sub-worktree)
+   *                           and, with the system roots, the staging set.
    * @param hasInFlightTurn    0.1.123: reports whether an agent turn is
    *                           currently mutating disk — `checkout()` hard-blocks
    *                           on this (a branch switch would race live writes).
@@ -81,10 +83,10 @@ export class GitService {
    */
   constructor(
     private cwd: string,
-    releasableRootDirs: string[],
+    pageRootDirs: string[],
     private hasInFlightTurn: () => boolean = () => false,
   ) {
-    this.releasableRootDirs = releasableRootDirs.map((d) => path.resolve(cwd, d));
+    this.pageRootDirs = pageRootDirs.map((d) => path.resolve(cwd, d));
   }
 
   /**
@@ -102,15 +104,15 @@ export class GitService {
   }
 
   /**
-   * Probe the releasable roots for a git worktree root path. Detected when ANY
-   * releasable root is inside a worktree; the first such root wins. Never
+   * Probe the roots of kind `pages` for a git worktree root path. Detected when ANY
+   * page root is inside a worktree; the first such root wins. Never
    * throws — git missing (ENOENT), no repo, or a root outside any worktree
    * (exit 128) all resolve to `null`. Shared by `detect()` and every
    * lighter-weight caller (`listBranches()`, `checkout()`) that only needs the
    * root, not the full `remote get-url`/`status --porcelain` probe.
    */
   private async probeRoot(): Promise<string | null> {
-    for (const dir of this.releasableRootDirs) {
+    for (const dir of this.pageRootDirs) {
       let real: string;
       try {
         real = fs.realpathSync(dir);
@@ -161,7 +163,7 @@ export class GitService {
   }
 
   /**
-   * Probe the releasable roots for a git worktree. Never throws — git
+   * Probe the roots of kind `pages` for a git worktree. Never throws — git
    * missing, no repo, or a root outside any worktree all map to
    * `detected: false`.
    */
@@ -185,43 +187,35 @@ export class GitService {
 
   /**
    * Canonicalize the staging targets shared by `commit()` and `commitPull()`:
-   * every releasable root dir + `config.json` + entitiesDir/releasesDir/
-   * briefsDir/patchesDir/plansDir, realpath'd and filtered to those actually
+   * the dir of every registry root + `config.json`, realpath'd and filtered to those actually
    * inside `root`. Root dirs / configPath may be reached through a symlink
    * (e.g. `.claude/skills/specyfikacja` → another repo's worktree). `git add`
    * matches pathspecs lexically against the real worktree root, so an
    * unresolved symlink path reads as "outside repository" — resolve to real
    * paths first.
    *
-   * M29: also stages the committed entity store (<entitiesDir> contains the
-   * entity JSON files + tags.json — the source of truth). db.sqlite is
-   * gitignored, so the whole dir can be staged safely. 0.1.118: also stages
-   * releasesDir so a new release's identity file lands in the same commit as
-   * its marker (for `resolveReleaseCommit` later) — and, when the git master
-   * switch is on, briefsDir/patchesDir/plansDir too: `ensureGitignore`
-   * un-gitignores them specifically so they "become committed and shared with
-   * the team" (see its own doc comment) — that promise is empty unless
-   * staging actually includes them. When the switch is off they're still
-   * gitignored, so staging them here is a harmless no-op (`git add` on an
-   * ignored path adds nothing).
+   * 2.1.8 (M28 aqys9dje): the staging set IS the root registry — the dir of every
+   * root, whatever its kind: the `pages` roots, `entities` (entity files +
+   * `tags.json`), `releases` (so a new release's identity file lands in the same
+   * commit as its marker, for `resolveReleaseCommit` later), `plans`, `briefs`
+   * and `patches`. Roots of a kind without the `release` flag ride along in the
+   * commit, outside the `release_diff` dimension. While the git master switch is
+   * off the `gitignore`-flagged roots are still ignored, so staging them is a
+   * harmless no-op (`git add` on an ignored path adds nothing).
    */
   private resolveStagingTargets(root: string): string[] {
-    const bootConfig = readConfig(this.cwd);
-    const entitiesPath = path.resolve(this.cwd, bootConfig.entitiesDir);
-    const releasesPath = path.resolve(this.cwd, bootConfig.releasesDir);
-    const briefsPath = path.resolve(this.cwd, bootConfig.briefsDir);
-    const patchesPath = path.resolve(this.cwd, bootConfig.patchesDir);
-    const plansPath = path.resolve(this.cwd, bootConfig.plansDir);
+    // 2.1.8: the staging set is derived from the ROOT REGISTRY — the dir of
+    // EVERY root (all `pages` roots, `entities` with `tags.json`, `releases`,
+    // `plans`/`briefs`/`patches`) plus `config.json`. No user root is skipped,
+    // whatever a legacy `releasable: false` once said. The page roots are the
+    // EFFECTIVE ones this service was built with (`--pages` override applied);
+    // the system roots come from code.
     const targets: string[] = [];
-    for (const p of [
-      ...this.releasableRootDirs,
+    for (const p of new Set([
+      ...this.pageRootDirs,
+      ...SYSTEM_ROOTS.map((r) => path.resolve(this.cwd, r.dir)),
       configPath(this.cwd),
-      entitiesPath,
-      releasesPath,
-      briefsPath,
-      patchesPath,
-      plansPath,
-    ]) {
+    ])) {
       let real: string;
       try {
         real = fs.realpathSync(p);
@@ -230,6 +224,7 @@ export class GitService {
       }
       const rel = path.relative(root, real);
       if (!rel.startsWith('..') && !path.isAbsolute(rel)) targets.push(real);
+      else console.warn(`[git] ${p} lies outside the repository at ${root} — not staged`);
     }
     return targets;
   }
@@ -253,7 +248,7 @@ export class GitService {
     if (targets.length === 0) {
       return {
         status: 'skipped',
-        message: 'releasable roots / config.json are outside the detected repository',
+        message: 'page roots / config.json are outside the detected repository',
       };
     }
 
@@ -280,7 +275,7 @@ export class GitService {
   }
 
   /**
-   * Stage every releasable root dir + `config.json` and commit with a
+   * Stage every registry root dir + `config.json` and commit with a
    * `name`/`description`-derived message. Assumes a repo is detected
    * (callers gate via `commitOnRelease`). Returns `'skipped'` on detached
    * HEAD, `'nothing-to-commit'` when nothing is staged, `'error'` on any git
@@ -303,6 +298,7 @@ export class GitService {
    */
   async commit(opts: { name: string; description: string }): Promise<GitCommitResult> {
     const status = await this.detect();
+    // ASSUMPTION:dev-0013 — no `Release ` prefix (pre-window message format kept).
     const message = opts.description ? `${opts.name}\n\n${opts.description}` : opts.name;
     const config = readConfig(this.cwd);
     const commitTarget: NormalizedGitCommitTargetConfig = config.git.commitTarget;
@@ -480,7 +476,7 @@ export class GitService {
     if (targets.length === 0) {
       return {
         status: 'skipped',
-        message: 'releasable roots / config.json are outside the detected repository',
+        message: 'page roots / config.json are outside the detected repository',
       };
     }
     const relTargets = targets.map((abs) => path.relative(root, abs).split(path.sep).join('/'));
@@ -497,7 +493,7 @@ export class GitService {
     try {
       await this.git(['read-tree', parentSha], root, env);
       for (const rel of relTargets) {
-        // rel === '' (a releasable root configured as the repo root itself)
+        // rel === '' (a registry root's dir configured as the repo root itself)
         // means the capture's ENTIRE tree is in scope — `ls-tree -r <tree>`
         // with no pathspec lists everything; `-- ''` would be a malformed
         // empty pathspec, so omit `--`/the pathspec entirely in that case.
@@ -627,9 +623,9 @@ export class GitService {
    * 0.1.124: best-effort commit of the working tree when pulling unreleased
    * changes into the latest release (`releaseService.updateRelease({
    * assignUnreleased: true })`). Same staging scope as `commit()` — no
-   * exclusion of `releasesDir` is needed: this method is never called
+   * exclusion of the `releases` root is needed: this method is never called
    * alongside a NEW release-identity-file write, so no new marker file ever
-   * lands in this commit; staging `releasesDir` here is harmless. Gate:
+   * lands in this commit; staging the `releases` root here is harmless. Gate:
    * `config.git.enabled` + a detected repo with a branch (mirrors
    * `commitOnRelease`/`pushOnPush`) — on gate failure returns `{ status:
    * 'skipped' }` rather than `null` (unlike the other two hooks, this method
@@ -931,7 +927,7 @@ export class GitService {
    * generally, two git revision expressions — a bare SHA, `HEAD`, or a
    * relative form like `<sha>~1`, all valid here), scoped to `pathspecs` —
    * what goes to `git diff` after `--`, where a directory and a file are one
-   * category (releasable roots + entitiesDir + releasesDir, or single page
+   * category (release-flag root dirs + the `releases` root, or single page
    * files, per the caller). Uses
    * `--name-status` (not the brief's literal `git diff <a>..<b>`, which
    * alone does not produce a parseable `{path, status}` shape). Never throws

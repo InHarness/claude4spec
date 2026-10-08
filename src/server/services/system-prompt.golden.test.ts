@@ -5,7 +5,7 @@ import type { Annotation, Brief, Plan } from '../../shared/entities.js';
 import type { PatchDetail } from './patch.js';
 import { diagramSystemPrompt } from '../entities/diagram/system-prompt.js';
 import { INTERACTION_RULES } from './interaction-rules.js';
-import { DEFAULT_PAGES_ROOT_PROPS, type Root } from '../../shared/types.js';
+import type { Root } from '../../shared/types.js';
 
 /**
  * 0.2.97 — the GOLDEN prompt, byte for byte.
@@ -24,8 +24,8 @@ import { DEFAULT_PAGES_ROOT_PROPS, type Root } from '../../shared/types.js';
  * deliberately.
  */
 
-function rootAt(dir: string, id = 'pages', sectionIndexed = true): Root {
-  return { id, name: id, dir, builtin: id === 'pages', ...DEFAULT_PAGES_ROOT_PROPS, sectionIndexed, linkTargets: [] };
+function rootAt(dir: string, id = 'pages'): Root {
+  return { id, name: id, dir, builtin: id === 'pages' };
 }
 
 const emptyHost = { listEntities: () => [] } as unknown as ProjectPluginHost;
@@ -143,7 +143,14 @@ function patch(kind?: string): PatchDetail {
 const PATH_SCOPE = {
   allowedPaths: ['/extra/allowed'],
   disallowedPaths: ['/tmp/my-spec/secret'],
-  artifactDenyDirs: ['/tmp/my-spec/.claude4spec/plans', '/tmp/my-spec/.claude4spec/briefs'],
+  // 2.1.8: the roots whose kind has `agentDirectFs = false` — the five system roots.
+  artifactDenyDirs: [
+    '/tmp/my-spec/.claude4spec/plans',
+    '/tmp/my-spec/.claude4spec/briefs',
+    '/tmp/my-spec/.claude4spec/patches',
+    '/tmp/my-spec/.claude4spec/entities',
+    '/tmp/my-spec/.claude4spec/releases',
+  ],
   pageRootDirs: ['/tmp/my-spec/pages', '/outside/adr'],
 };
 
@@ -152,7 +159,7 @@ function base(over: Partial<SystemPromptInput> = {}): SystemPromptInput {
     host: emptyHost,
     projectName: 'My Spec',
     cwd: '/tmp/my-spec',
-    roots: [rootAt('pages'), rootAt('/outside/adr', 'adr', false)],
+    roots: [rootAt('pages'), rootAt('/outside/adr', 'adr')],
     currentPagePath: null,
     currentPageBody: null,
     ...over,
@@ -214,7 +221,7 @@ const SCENARIOS: Record<string, SystemPromptInput> = {
   'chat page unavailable': full('chat', { currentPageBody: null }),
   'chat page empty': full('chat', { currentPageBody: '  \n ' }),
   'chat page short': full('chat', { currentPageBody: SHORT_BODY }),
-  'chat page long unindexed root': full('chat', {
+  'chat page long user root': full('chat', {
     currentPagePath: 'decisions/0001.md',
     currentPageRootId: 'adr',
   }),

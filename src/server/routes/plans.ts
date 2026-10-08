@@ -18,7 +18,7 @@ import { DomainError } from '../services/tags.js';
  *
  * 0.2.13: the path parameter of `last-thread`/`create-thread` is spelled
  * `:planId` again. It is NOT the old integer id — the VALUE is unchanged, still
- * the plan file's path relative to `plansDir`. Only the parameter's NAME
+ * the plan file's path relative to the `plans` root. Only the parameter's NAME
  * changed, so no URL and no caller moved; `:planId` is simply what L4 calls a
  * plan's identifier now that "the id of a plan" means its path, and the two
  * routes had been the last places still calling it `:slug`.

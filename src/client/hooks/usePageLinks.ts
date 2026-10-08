@@ -21,10 +21,11 @@ export function usePageLinksCounts() {
   });
 }
 
-export function usePageAutocomplete(q: string, limit = 10) {
+/** `root` — the source page's root (see `pageLinksApi.autocomplete`); null outside a page. */
+export function usePageAutocomplete(q: string, limit = 10, root: string | null = null) {
   return useQuery({
-    queryKey: ['pageLinks', 'autocomplete', q, limit],
-    queryFn: () => pageLinksApi.autocomplete(q, limit),
+    queryKey: ['pageLinks', 'autocomplete', q, limit, root],
+    queryFn: () => pageLinksApi.autocomplete(q, limit, root),
     staleTime: 30_000,
   });
 }

@@ -98,6 +98,61 @@ describe('c4s-brief-implementer loop (0.2.96 verbs)', () => {
   });
 });
 
+describe('c4s-spec-reader body (2.1.8 — get-page has no line window)', () => {
+  const body = renderSpecReaderSkill(FIXTURE_CTX);
+
+  it('[ac:ac-body-c4s-spec-reader-skill-md-zawiera] carries the tag↔CLI mapping, resolve, page/section navigation, discovery and c4s ask — CLI-only', () => {
+    // tag ↔ CLI mapping: exactly five rows, one per tag
+    const mappingRows = body.split('\n').filter((l) => /^\| `<[a-z_]+ .*\/>` \| `c4s [a-z_]+ /.test(l));
+    expect(mappingRows).toHaveLength(5);
+    for (const tag of ['inline_mention', 'single_element', 'element_list', 'tagged_list', 'tagged_list_mixed']) {
+      expect(mappingRows.some((r) => r.startsWith(`| \`<${tag} `) && r.includes(`c4s ${tag} --`)), tag).toBe(true);
+    }
+    // c4s resolve
+    expect(body).toContain(`c4s resolve some-page.md ${IDENTITY}`);
+    // navigation section: search-pages → anchor → batched get-sections, outline, list-pages, get-page
+    expect(body).toContain('## Navigating pages and sections');
+    expect(body).toMatch(/c4s search-pages --query "<phrase>" .*# hits carry an anchor/);
+    expect(body).toContain(`c4s get-sections --anchors a,b,c ${IDENTITY}`);
+    expect(body).toContain(`c4s get-page-outline --root-id pages --path some/page.md ${IDENTITY}`);
+    expect(body).toContain(`c4s list-pages --root-id pages`);
+    expect(body).toContain(`c4s get-page --root-id pages --path some/page.md ${IDENTITY}`);
+    // the get-page guard is gone (2.1.8): no `--range` anywhere in the skill
+    expect(body).not.toContain('--range');
+    // discovery section and the c4s ask mention
+    expect(body).toContain('## Discovery');
+    expect(body).toContain(`c4s catalog ${IDENTITY}`);
+    expect(body).toContain(`c4s ask "<question>" ${IDENTITY}`);
+    // CLI-only: no MCP setup section
+    expect(body).not.toMatch(/^#+ .*MCP setup/im);
+    expect(body).not.toContain('mcp.json');
+    expect(body).toContain('CLI-only');
+  });
+
+  it('[ac:ac-body-c4s-spec-reader-skill-md-zawiera-2] search → anchor → batched get-sections, outline as a document-order tree, get-page as anchor-keyed sections whose cut read resumes via outline + sections', () => {
+    // search hit already carries the anchor, then ONE batched get-sections
+    expect(body).toContain('a search hit already carries the anchor');
+    expect(body).toContain(`c4s get-sections --anchors a,b,c ${IDENTITY}`);
+    expect(body).toContain('Fetch sections in **batches**');
+    expect(body).toContain('Asking anchor-by-anchor costs one command per section');
+    // outline: a tree in document order
+    expect(body).toContain('comes back as a tree in document order');
+    // get-page: sections keyed by anchor, frontmatter and preamble, XML tags untouched
+    expect(body).toContain('The page comes back as **structure**');
+    expect(body).toContain('{ rootId, path, hash, frontmatter?, preamble?, results[] }');
+    expect(body).toContain('Each item of `results` is one section');
+    expect(body).toContain('The anchor is a field');
+    expect(body).toContain('`frontmatter.raw` is the frontmatter verbatim');
+    expect(body).toContain('`preamble` is the text above the first heading');
+    expect(body).toContain('XML tags in `body` are left untouched');
+    // a cut read resumes through get-page-outline + get-sections — never a line window
+    expect(body).toContain(
+      'There is no line window on `get-page`: to continue a cut read, go through `get-page-outline` and `get-sections`.',
+    );
+    expect(body).not.toMatch(/--range|non-section-indexed|indexed root/);
+  });
+});
+
 describe('buildExternalSkillContext', () => {
   const project: ProjectRecord = {
     cwd: '/abs/my-spec-project',

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createTestApp, type TestApp } from '../../helpers/test-app.js';
 import { fixtureModule } from '../../helpers/fixture-module.js';
-import { PLAN_ROOT_MARKER } from '../../../src/shared/types.js';
+import { systemRootId } from '../../../src/shared/root-kinds.js';
 
 /**
  * 0.2.79 — "mutation" means a change of CONTENT. A write of identical content
@@ -75,21 +75,21 @@ describe('a write that changes no content writes no version row', () => {
     const content = '# No-op page\n\nSome body text.\n';
     fs.writeFileSync(abs, content, 'utf-8');
 
-    await t.pageVersions.recordVersion(relPath, 'create', 'user', undefined, t.plansSerializer, PLAN_ROOT_MARKER);
-    const before = t.pageVersions.listVersions(relPath, PLAN_ROOT_MARKER);
+    await t.pageVersions.recordVersion(relPath, 'create', 'user', undefined, t.plansSerializer, systemRootId('plans'));
+    const before = t.pageVersions.listVersions(relPath, systemRootId('plans'));
     expect(before.length).toBeGreaterThan(0);
 
     // Rewrite the SAME bytes and capture again — no new version.
     fs.writeFileSync(abs, content, 'utf-8');
-    await t.pageVersions.recordVersion(relPath, 'update', 'user', undefined, t.plansSerializer, PLAN_ROOT_MARKER);
+    await t.pageVersions.recordVersion(relPath, 'update', 'user', undefined, t.plansSerializer, systemRootId('plans'));
 
-    const after = t.pageVersions.listVersions(relPath, PLAN_ROOT_MARKER);
+    const after = t.pageVersions.listVersions(relPath, systemRootId('plans'));
     expect(after).toHaveLength(before.length);
 
     // A real edit still records.
     fs.writeFileSync(abs, content + '\nAnd a new line.\n', 'utf-8');
-    await t.pageVersions.recordVersion(relPath, 'update', 'user', undefined, t.plansSerializer, PLAN_ROOT_MARKER);
-    expect(t.pageVersions.listVersions(relPath, PLAN_ROOT_MARKER)).toHaveLength(before.length + 1);
+    await t.pageVersions.recordVersion(relPath, 'update', 'user', undefined, t.plansSerializer, systemRootId('plans'));
+    expect(t.pageVersions.listVersions(relPath, systemRootId('plans'))).toHaveLength(before.length + 1);
   });
 
   /**
@@ -108,18 +108,18 @@ describe('a write that changes no content writes no version row', () => {
     const content = '# Resurrected\n\nOriginal body.\n';
 
     fs.writeFileSync(abs, content, 'utf-8');
-    await t.pageVersions.recordVersion(relPath, 'create', 'user', undefined, t.plansSerializer, PLAN_ROOT_MARKER);
+    await t.pageVersions.recordVersion(relPath, 'create', 'user', undefined, t.plansSerializer, systemRootId('plans'));
     fs.rmSync(abs);
-    await t.pageVersions.recordVersion(relPath, 'delete', 'user', undefined, t.plansSerializer, PLAN_ROOT_MARKER);
-    const afterDelete = t.pageVersions.listVersions(relPath, PLAN_ROOT_MARKER).length;
+    await t.pageVersions.recordVersion(relPath, 'delete', 'user', undefined, t.plansSerializer, systemRootId('plans'));
+    const afterDelete = t.pageVersions.listVersions(relPath, systemRootId('plans')).length;
 
     // The path was captured once, so the capture service classifies this as an
     // `update` — there is no second `create` for a path the log has ever seen.
     fs.writeFileSync(abs, content, 'utf-8');
-    await t.pageVersions.recordVersion(relPath, 'update', 'user', undefined, t.plansSerializer, PLAN_ROOT_MARKER);
+    await t.pageVersions.recordVersion(relPath, 'update', 'user', undefined, t.plansSerializer, systemRootId('plans'));
 
-    expect(t.pageVersions.listVersions(relPath, PLAN_ROOT_MARKER)).toHaveLength(afterDelete + 1);
-    expect(t.pageVersions.getLatestForPath(relPath, undefined, PLAN_ROOT_MARKER)?.op).toBe('update');
+    expect(t.pageVersions.listVersions(relPath, systemRootId('plans'))).toHaveLength(afterDelete + 1);
+    expect(t.pageVersions.getLatestForPath(relPath, undefined, systemRootId('plans'))?.op).toBe('update');
   });
 
   it('records a row when an entity is renamed back onto a deleted slug', async () => {

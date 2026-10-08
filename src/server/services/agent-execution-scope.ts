@@ -1,3 +1,4 @@
+import { RootRegistry } from '../roots/registry.js';
 import { readConfig } from '../config.js';
 import { resolveAgentPathScope } from './agent-path-scope.js';
 import { resolveAgentToolGroups } from './agent-tool-posture.js';
@@ -102,14 +103,10 @@ export function resolveAgentExecutionScope(
   const userDisallowedPaths = cfg.agent?.disallowedPaths ?? [];
   const scope = resolveAgentPathScope({
     cwd: input.cwd,
-    roots: input.roots,
+    // 2.1.8: the root registry — user roots (kind `pages`) plus the system roots.
+    roots: new RootRegistry(input.roots).list(),
     allowedPaths: userAllowedPaths,
     disallowedPaths: userDisallowedPaths,
-    plansDir: cfg.plansDir,
-    briefsDir: cfg.briefsDir,
-    patchesDir: cfg.patchesDir,
-    entitiesDir: cfg.entitiesDir,
-    releasesDir: cfg.releasesDir,
   });
   return {
     ...scope,

@@ -1,6 +1,6 @@
 /**
- * M23 PatchService — thin wrapper over the third `PagesService` instance
- * mounted on `patchesDir`. Patches are markdown files with mandatory YAML
+ * M23 PatchService — thin wrapper over the `MarkdownFileStore` primitive
+ * of the system root `patches` (no `PagesService` facade). Patches are markdown files with mandatory YAML
  * frontmatter (`type: patch`, `brief`, `patch_kind`, `created_at`,
  * `created_by`, `applied`). They are authored by coding agents in *other*
  * terminals during brief implementation — claude4spec only reads them, lets
@@ -23,8 +23,8 @@ import path from 'node:path';
 import matter from 'gray-matter';
 import type { PatchFrontmatter, PatchKind } from '../../shared/entities.js';
 import { PATCH_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
-import { BRIEF_ROOT_MARKER, PATCH_ROOT_MARKER } from '../../shared/types.js';
-import type { PagesService } from './pages.js';
+import { systemRootId } from '../../shared/root-kinds.js';
+import type { MarkdownFileStore } from './markdown-file-store.js';
 import type { RecordStore } from '../fs/record-store.js';
 import type { MarkdownRecord } from '../fs/record-adapters.js';
 import type { SelfWriteMarker } from '../fs/sources.js';
@@ -39,7 +39,7 @@ import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 import { ConflictError } from './brief.js';
 
 export interface PatchServiceDeps {
-  patchesPages: PagesService;
+  patchesPages: MarkdownFileStore;
   patchesWatcher: SelfWriteMarker;
   /**
    * 0.2.76 — the M42 record store for this artifact source.
@@ -66,7 +66,7 @@ export interface PatchServiceDeps {
 }
 
 export interface PatchListOpts {
-  /** Filter to a single brief (its briefsDir-relative path). */
+  /** Filter to a single brief (its path relative to the `briefs` root). */
   brief?: string;
   /** 0.2.14: narrow to applied (`true`) or pending (`false`). Omit for all. */
   applied?: boolean;
@@ -102,7 +102,7 @@ export interface PatchUpdateFrontmatterOpts {
  * `ArtifactResponse` at the REST boundary.
  */
 export interface PatchDetail {
-  /** Path relative to patchesDir. */
+  /** Path relative to the `patches` root. */
   path: string;
   title: string;
   frontmatter: PatchFrontmatter;
@@ -221,7 +221,7 @@ export class PatchService {
   listPatches(opts: PatchListOpts = {}): PatchListItem[] {
     const briefPaths = this.knownBriefPaths();
     const records = this.deps.frontmatterIndexer.findByFrontmatterType('patch', {
-      rootId: PATCH_ROOT_MARKER,
+      rootId: this.deps.patchesPages.rootId,
     });
     const out: PatchListItem[] = [];
     for (const rec of records) {
@@ -232,7 +232,7 @@ export class PatchService {
       const briefPath = this.resolveBriefPath(rec.path, fm, briefPaths);
       if (opts.brief !== undefined && opts.brief !== briefPath) continue;
       if (opts.applied !== undefined && opts.applied !== applied) continue;
-      const lastVersion = this.deps.pageVersions.getLatestForPath(rec.path, undefined, 'patch');
+      const lastVersion = this.deps.pageVersions.getLatestForPath(rec.path, undefined, this.deps.patchesPages.rootId);
       const createdAt = toIso(fm.created_at);
       out.push({
         path: rec.path,
@@ -304,9 +304,9 @@ export class PatchService {
       'user',
       undefined,
       this.deps.patchesSerializer,
-      'patch',
+      this.deps.patchesPages.rootId,
     );
-    await this.deps.frontmatterIndexer.indexPage(PATCH_ROOT_MARKER, opts.path);
+    await this.deps.frontmatterIndexer.indexPage(this.deps.patchesPages.rootId, opts.path);
     return this.getPatch(opts.path);
   }
 
@@ -329,10 +329,10 @@ export class PatchService {
       changedBy,
       undefined,
       this.deps.patchesSerializer,
-      'patch',
+      this.deps.patchesPages.rootId,
       `set applied=${applied}`,
     );
-    await this.deps.frontmatterIndexer.indexPage(PATCH_ROOT_MARKER, current.path);
+    await this.deps.frontmatterIndexer.indexPage(this.deps.patchesPages.rootId, current.path);
   }
 
   /**
@@ -384,7 +384,7 @@ export class PatchService {
 
   private knownBriefPaths(): string[] {
     return this.deps.frontmatterIndexer
-      .findByFrontmatterType('brief', { rootId: BRIEF_ROOT_MARKER })
+      .findByFrontmatterType('brief', { rootId: systemRootId('briefs') })
       .map((r) => r.path);
   }
 

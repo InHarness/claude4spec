@@ -87,67 +87,31 @@ export async function getPage(
       `get_page({ rootId: "${root.id}", path: "<relative path>" }) — use list_pages({ rootId: "${root.id}" }) to see them`,
     );
   }
-
-  /**
-   * ONE predicate, two consumers: the refusal below and the cut message
-   * further down. They used to be independent `if`s, which is how a page on an
-   * indexed root came back cut with an instruction to re-read it via `range` —
-   * the very argument the refusal rejects. An agent following that hint looped:
-   * get_page → hint → range → INVALID_ARGUMENT → get_page.
-   *
-   * The rule this encodes: a hint never proposes a call the same operation
-   * would refuse. Keep the two gated by this single value, not by two
-   * conditions that happen to agree today.
-   */
-  const lineWindowsRefused = root.sectionIndexed;
-
-  /**
-   * `range` on a section-indexed root is refused rather than served. Line
-   * windows are the tool of last resort — on a root that HAS anchors, a section
-   * is a better window in every way (it is semantic, it is measurable up front,
-   * and it carries its own edges), and quietly serving lines would teach an
-   * agent to keep asking for the worse thing.
-   */
-  if (input.range && lineWindowsRefused) {
+  // 2.1.8 — refused here, once, for every channel (MCP, REST, in-process).
+  // ASSUMPTION:dev-0006 — a stale `range` is refused, never silently ignored.
+  if (input.range !== undefined) {
     throw invalidArgument(
-      `root '${root.id}' is section-indexed, so a line range is the wrong window onto it`,
-      `use get_page_outline({ rootId: "${root.id}", path: "${input.path}" }) then get_sections({ anchors })`,
+      'get_page has no line window (range was removed in 2.1.8)',
+      `get_page_outline({ rootId: "${root.id}", path: "${input.path}" }), then get_sections({ anchors: [...] })`,
     );
   }
 
-  let content = await pages.read(root.id, input.path);
   /**
-   * Hashed HERE — before `range` narrows it and before the budget truncates it.
-   * `expectedHash` is compared against the whole file on disk, so a hash of a
-   * window would fail every write that used it, and a caller cannot tell from
-   * the value which of the two it holds.
+   * Hashed over the whole file — `expectedHash` is compared against the file on
+   * disk. 2.1.8: there is no line window on `get_page`; every page root has a
+   * section index, so a cut read resumes through `get_page_outline` +
+   * `get_sections` alone.
    */
+  const content = await pages.read(root.id, input.path);
   const hash = sha256(content);
-
-  let fromTop = true;
-  if (input.range) {
-    const { start, end } = input.range;
-    if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < start) {
-      throw invalidArgument(
-        `invalid range { start: ${String(start)}, end: ${String(end)} }`,
-        'range is 1-based and inclusive: { start: 1, end: 200 }',
-      );
-    }
-    content = content.split('\n').slice(start - 1, end).join('\n');
-    // A window that does not open on line 1 has no frontmatter: its leading
-    // `---` is a thematic break.
-    fromTop = start === 1;
-  }
 
   /**
    * 2.1.6 — the page as STRUCTURE, parsed from the text just read (never from
-   * `section_index`, so no freshness gate). On a root without a section index
-   * there are no anchors to hand out, so no item carries one — an anchor-shaped
-   * comment there is just text.
+   * `section_index`, so no freshness gate).
    */
-  const page = pageStructure(content, { frontmatter: fromTop });
+  const page = pageStructure(content, { frontmatter: true });
   const items: PageSectionItem[] = page.sections.map((s) => ({
-    ...(s.anchor !== null && root.sectionIndexed ? { anchor: s.anchor } : {}),
+    ...(s.anchor !== null ? { anchor: s.anchor } : {}),
     heading_text: s.heading,
     heading_level: s.level,
     body: s.body,
@@ -228,16 +192,7 @@ export async function getPage(
       `The preamble was cut by the response budget: ${preambleCut.kept} of its ${preambleCut.total} characters came back.`,
     );
   }
-  if (cut.length) {
-    messages.push(
-      lineWindowsRefused ? indexedCutMessage(cut) : `${plural(cut.length)} cut by the response budget.`,
-    );
-  }
-  if ((preambleCut || cut.length) && !lineWindowsRefused) {
-    messages.push(
-      `Re-read a window with get_page({ rootId: "${root.id}", path: "${input.path}", range: { start, end } }).`,
-    );
-  }
+  if (cut.length) messages.push(indexedCutMessage(cut));
 
   return {
     rootId: root.id,
@@ -252,7 +207,7 @@ export async function getPage(
 
 /**
  * What the cut message costs beyond the anchors it names: its fixed prose (the
- * preamble notice, the `get_sections` / `range` instruction, the untagged note)
+ * preamble notice, the `get_sections` instruction, the untagged note)
  * plus the envelope keys around it. Reserved whether or not a cut happens.
  */
 const MESSAGE_RESERVE_CHARS = 600;
@@ -282,8 +237,8 @@ function plural(n: number): string {
 }
 
 /**
- * On a section-indexed root the way on is ALWAYS `get_sections` — never `range`,
- * which this operation refuses there. The message names every cut anchor; the
+ * The way on is ALWAYS `get_sections` (2.1.8: every page root is section-indexed
+ * and `get_page` has no line window). The message names every cut anchor; the
  * call it proposes carries at most one batch of them, the most `get_sections`
  * accepts. The write it names closes the loop: `hash` arms `expectedHash`.
  */

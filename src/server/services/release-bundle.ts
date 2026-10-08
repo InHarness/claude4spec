@@ -77,7 +77,7 @@ export const BUNDLE_LEGACY_ENTITY_LAYOUT_MAX = 3 as const;
 /** `entities/tags.json` — the one file allowed at the top of `entities/`. */
 export const BUNDLE_TAGS_FILE = 'tags.json';
 
-/** One releasable page root as carried by the bundle manifest (id/name/dir only). */
+/** One page root as carried by the bundle manifest (id/name/dir only). */
 export interface BundleRoot {
   id: string;
   name: string;
@@ -104,7 +104,8 @@ export interface BundleConfig {
   $schemaVersion: number;
   name: string;
   /**
-   * v2 (0.1.96): releasable page roots (was the `pagesDir` scalar in v1). v1
+   * v2 (0.1.96): page roots (was the `pagesDir` scalar in v1); 2.1.8: every
+   * user root (`kind: pages`) as `{ id, name, dir, builtin }`. v1
    * bundles carry `pagesDir` instead — the read direction maps it to a single
    * built-in `pages` root via the v3→v4 config path.
    */
@@ -125,7 +126,8 @@ export interface BundleManifest {
    */
   bundleSchemaVersion: number;
   /**
-   * v2 (0.1.96): releasable roots present in the bundle (id/name/dir only). The
+   * v2 (0.1.96): page roots present in the bundle (id/name/dir only; 2.1.8:
+   * every root of kind `pages`, the system roots never). The
    * pages tree is laid out under `<rootId>/…`. Absent on v1 bundles (flat `pages/`).
    */
   roots: BundleRoot[];
@@ -231,16 +233,10 @@ export const C4S_VERSION = readC4sVersion();
  * consciously decides to keep it here. No allow-list entry → no leak.
  */
 export function sanitizeConfigForBundle(config: NormalizedConfig): BundleConfig {
-  // 0.1.96: only releasable roots enter the bundle (their pages are the only
-  // ones snapshotted); non-releasable / brief / patch roots fall out here. Any
-  // `linkTargets` pointing at a dropped root must also be pruned, else clone/
-  // import would fail parseRootsArray with a "dangling link scope" error.
-  const releasable = config.roots.filter((r) => r.releasable);
-  const keptIds = new Set(releasable.map((r) => r.id));
-  const roots = releasable.map((r) => ({
-    ...r,
-    linkTargets: r.linkTargets.filter((id) => keptIds.has(id)),
-  }));
+  // 2.1.8: every user root (`kind: pages`) is published, in exactly the four
+  // fields of a `roots[]` entry — a retired per-root field never leaves the
+  // machine. The system roots are not configured, so they never appear here.
+  const roots = config.roots.map((r) => ({ id: r.id, name: r.name, dir: r.dir, builtin: r.builtin }));
   return {
     $schemaVersion: config.$schemaVersion,
     name: config.name,
@@ -359,9 +355,10 @@ export async function buildBundleArchive(
 ): Promise<BuildBundleResult> {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-bundle-'));
   try {
-    // 0.1.96: only releasable roots are carried (manifest + layout dirs).
-    const releasableRoots: BundleRoot[] = config.roots
-      .filter((r) => r.releasable)
+    // 2.1.8: every `pages` root is carried (manifest + layout dirs); the system
+    // roots' files (plans, briefs, patches, releases) are not — entities travel
+    // separately under `entities/`.
+    const pageRoots: BundleRoot[] = config.roots
       .map((r) => {
         const formerIds = rootFormerIds[r.id] ?? [];
         return {
@@ -375,7 +372,7 @@ export async function buildBundleArchive(
     // 1. manifest.json
     const manifest: BundleManifest = {
       bundleSchemaVersion: BUNDLE_SCHEMA_VERSION,
-      roots: releasableRoots,
+      roots: pageRoots,
       release: {
         id: release.id,
         name: release.name,

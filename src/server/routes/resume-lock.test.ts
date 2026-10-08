@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -128,11 +128,6 @@ describe('checkResumeConfigLock — declared locked fields (0.2.113)', () => {
     'agent.allowedPaths': [],
     'agent.disallowedPaths': [],
     'agent.disableDirectFilesystemAccess': true,
-    plansDir: '.claude4spec/plans',
-    briefsDir: '.claude4spec/briefs',
-    patchesDir: '.claude4spec/patches',
-    entitiesDir: '.claude4spec/entities',
-    releasesDir: '.claude4spec/releases',
   };
   const check = (lockedConfig: Record<string, unknown> = locked) =>
     checkResumeConfigLock({
@@ -168,13 +163,30 @@ describe('checkResumeConfigLock — declared locked fields (0.2.113)', () => {
     expect(check()?.error.code).toBe('RESUME_CONFIG_LOCKED');
   });
 
-  it('refuses a resume after an artifact directory moved', () => {
-    writeConfig({ plansDir: 'plans-elsewhere' });
-    expect(check()?.error.violations.map((v) => v.path)).toEqual(['plansDir']);
+  // 2.1.8: the `*Dir` fields no longer exist, so they are not resume-locked —
+  // not even for a snapshot taken before 2.1.8 that still recorded them.
+  it('does not refuse a resume after a legacy artifact *Dir key changed', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      writeConfig({ plansDir: 'plans-elsewhere', entitiesDir: 'ents' });
+      expect(check()).toBeNull();
+      expect(
+        check({
+          ...locked,
+          plansDir: '.claude4spec/plans',
+          briefsDir: '.claude4spec/briefs',
+          patchesDir: '.claude4spec/patches',
+          entitiesDir: '.claude4spec/entities',
+          releasesDir: '.claude4spec/releases',
+        }),
+      ).toBeNull();
+    } finally {
+      warn.mockRestore();
+    }
   });
 
-  it('does not refuse a reorder of the same paths, nor a trailing slash', () => {
-    writeConfig({ agent: { allowedPaths: ['/b', '/a'] }, plansDir: '.claude4spec/plans/' });
+  it('does not refuse a reorder of the same paths', () => {
+    writeConfig({ agent: { allowedPaths: ['/b', '/a'] } });
     expect(check({ ...locked, 'agent.allowedPaths': ['/a', '/b'] })).toBeNull();
   });
 

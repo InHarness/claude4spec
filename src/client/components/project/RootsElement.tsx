@@ -3,10 +3,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRenameRoot } from '../../hooks/useConfig.js';
 import { ApiError } from '../../lib/api.js';
 import { toast } from '../../ui/events.js';
-import { DEFAULT_USER_ROOT_PROPS, type Root } from '../../../shared/types.js';
+import type { Root } from '../../../shared/types.js';
+import { isSystemRootId } from '../../../shared/root-kinds.js';
 import { ElementField, Feedback, PathControl, inputStyle } from '../settings/controls.js';
 import type { ElementContext, SettingsElementDecl } from '../settings/registry.js';
-import { RESERVED_WRITE_TARGETS, isPathSafeRelative, rootOverlapsDir, rootsOverlap } from './dirOverlap.js';
+import { FIXED_TARGETS, isPathSafeRelative, rootsOverlap } from './dirOverlap.js';
 
 const ROOTS = ['roots'] as const;
 
@@ -21,23 +22,19 @@ export function slugify(s: string): string {
 
 /**
  * Why a root's `dir` is refused before saving, or `null`: path safety, and a
- * collision with a directory the app WRITES to (another root, entitiesDir,
- * releasesDir, the plugin dir). An overlap with briefs/patches/plans is only a
- * warning on the server and is not raised here.
+ * namespace overlap (2.1.8) with another root, a system root (plans, briefs,
+ * patches, entities, releases — fixed under `.claude4spec/`) or the plugin dir.
+ * A root at `.` passes: its namespace never reaches `.claude4spec/`.
  */
-function dirError(root: Root, roots: Root[], draft: ElementContext['draft']): string | null {
+function dirError(root: Root, roots: Root[]): string | null {
   if (!isPathSafeRelative(root.dir)) return 'Must be a relative path inside the project.';
   for (const other of roots) {
     if (other !== root && isPathSafeRelative(other.dir) && rootsOverlap(root.dir, other.dir)) {
       return `Overlaps the root '${other.id}'.`;
     }
   }
-  for (const [label, dir] of [
-    ['entitiesDir', String(draft.get(['entitiesDir']) ?? '')],
-    ['releasesDir', String(draft.get(['releasesDir']) ?? '')],
-    ...RESERVED_WRITE_TARGETS.map((d) => ['the plugin directory', d]),
-  ] as const) {
-    if (dir && rootOverlapsDir(root.dir, dir)) return `Overlaps ${label}.`;
+  for (const t of FIXED_TARGETS) {
+    if (rootsOverlap(root.dir, t.dir)) return `Overlaps ${t.label}.`;
   }
   return null;
 }
@@ -47,10 +44,10 @@ function dirError(root: Root, roots: Root[], draft: ElementContext['draft']): st
  *
  * Each row — the base root (`builtin`) included — edits two things: the label
  * (`name`) and the directory (`dir`, chosen with the `directory-browse` picker,
- * not typed). Neither ever changes `id`. The remaining fields of a root
- * (`releasable`, `sectionIndexed`, `referenceValidated`, `linkTargets`,
- * `sidebar`, `briefTarget`, `builtin`) have no controls: the row sends them back
- * unchanged, because a root record is complete or it is invalid.
+ * not typed). Neither ever changes `id`. `builtin` has no control: the row sends
+ * it back unchanged — a root record is exactly `{ id, name, dir, builtin }`, and
+ * it is complete or it is invalid. The system roots are not listed: they are
+ * fixed in code and have no configuration.
  *
  * "Change root ID" is NOT part of the card's save: it is an action on its own
  * route, carrying the config's state token, and it holds the card's [Save] while
@@ -73,7 +70,7 @@ export function RootsElement({ config, draft }: ElementContext & { decl: Setting
   // collision it already carries must not hold a save of another field.
   const rootsEdited = draft.isDirty(ROOTS);
   const firstDirError = rootsEdited
-    ? (roots.map((r) => dirError(r, roots, draft)).find((e) => e !== null) ?? null)
+    ? (roots.map((r) => dirError(r, roots)).find((e) => e !== null) ?? null)
     : null;
   useEffect(() => {
     draft.setLiveError(ROOTS, firstDirError);
@@ -83,13 +80,7 @@ export function RootsElement({ config, draft }: ElementContext & { decl: Setting
     setRoots(roots.map((r) => (r.id === id ? { ...r, ...patch } : r)));
 
   function removeRoot(id: string) {
-    setRoots(
-      roots
-        .filter((r) => r.id !== id)
-        // Drop the removed id from every other root's link scope — a dangling
-        // link target would be refused by the server.
-        .map((r) => ({ ...r, linkTargets: r.linkTargets.filter((t) => t !== id) })),
-    );
+    setRoots(roots.filter((r) => r.id !== id));
     setConfirmRemoveId(null);
   }
 
@@ -99,17 +90,13 @@ export function RootsElement({ config, draft }: ElementContext & { decl: Setting
     const errors: { name?: string; dir?: string } = {};
     if (!id) errors.name = 'Enter a label with at least one letter or digit.';
     else if (roots.some((r) => r.id === id)) errors.name = `A root with the id '${id}' already exists.`;
+    else if (isSystemRootId(id)) errors.name = `The id '${id}' is reserved for a system root.`;
     const dir = newDir.trim() || id;
-    const candidate: Root = {
-      id,
-      name,
-      dir,
-      builtin: false,
-      ...DEFAULT_USER_ROOT_PROPS,
-      linkTargets: [...DEFAULT_USER_ROOT_PROPS.linkTargets],
-    };
+    // 2.1.8: a new root is `builtin: false` and nothing else — it gets the full
+    // lifecycle of kind `pages` (releases, section index, references, anchors).
+    const candidate: Root = { id, name, dir, builtin: false };
     if (!errors.name) {
-      const e = dirError(candidate, [...roots, candidate], draft);
+      const e = dirError(candidate, [...roots, candidate]);
       if (e) errors.dir = e;
     }
     setAddError(errors);
@@ -263,7 +250,7 @@ export function RootsElement({ config, draft }: ElementContext & { decl: Setting
                 style={inputStyle}
               />
             </ElementField>
-            <ElementField label="Directory" error={dirError(root, roots, draft)}>
+            <ElementField label="Directory" error={dirError(root, roots)}>
               <PathControl
                 value={root.dir}
                 set={(v) => updateRoot(root.id, { dir: v })}

@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { WsEvent } from '../../shared/types.js';
 import { makeWatchIgnore } from './watch-ignore.js';
+import { globToRegExp } from '../../shared/root-kinds.js';
 
 /**
  * M40 — File Watch Runtime (0.2.10).
@@ -14,13 +15,16 @@ import { makeWatchIgnore } from './watch-ignore.js';
  * debounce, each recognized its own writes, and reaction order was an accident
  * of registration order inside `buildProjectContext`.
  *
- * Now: directory owners `mountSource(...)`, reacting modules `subscribe(...)`
- * with a declared phase and `after: [...]`, and this runtime enforces order,
- * self-write handling and dispatch.
+ * Now: whoever is responsible for a source `mountSource(...)`s it, and reactions
+ * are bound to it (2.1.8: `defineReaction` once per process + `bindReaction` per
+ * context, see `reactions.ts`; underneath, `subscribe(...)` with a declared phase
+ * and `after: [...]`), and this runtime enforces order, self-write handling and
+ * dispatch.
  *
  * The runtime is purely mechanical — it does not know what any source MEANS,
  * does not parse content, does not evaluate gates and holds no projections.
- * `source` is an OPAQUE string, unique within a `scope`; the mount owner encodes
+ * `source` is an OPAQUE string, unique within a `scope`; whoever mounts it (the
+ * root-registry implementor for registry roots, M33 for `plugins:*`) encodes
  * whatever discriminator it needs in the name (`pages:<rootId>`, `artifacts:brief`)
  * and subscribers derive their projection keys from the suffix.
  *
@@ -309,46 +313,8 @@ function writeKey(scope: WatchScope, source: string, relPath: string): string {
   return `${scope}${SEP}${source}${SEP}${relPath}`;
 }
 
-/**
- * Minimal glob → RegExp: supports `**`, `*`, `?` and `{a,b}` alternation. Enough
- * for the three filters this runtime actually uses (`**\/*.{md,mdx}`,
- * `**\/*.html`, `*.json`). Deliberately not a general glob engine — the filter is
- * mechanical path matching, not a query language.
- */
-function globToRegExp(glob: string): RegExp {
-  let out = '';
-  for (let i = 0; i < glob.length; i++) {
-    const c = glob[i]!;
-    if (c === '{') {
-      const close = glob.indexOf('}', i);
-      if (close !== -1) {
-        const alts = glob.slice(i + 1, close).split(',');
-        out += `(?:${alts.map((a) => a.replace(/[.+^${}()|[\]\\*?]/g, '\\$&')).join('|')})`;
-        i = close;
-        continue;
-      }
-      out += '\\{';
-    } else if (c === '*') {
-      if (glob[i + 1] === '*') {
-        if (glob[i + 2] === '/') {
-          // `**/` matches zero or more leading segments.
-          out += '(?:[^/]*/)*';
-          i += 2;
-        } else {
-          out += '.*';
-          i += 1;
-        }
-      } else {
-        out += '[^/]*';
-      }
-    } else if (c === '?') {
-      out += '[^/]';
-    } else {
-      out += c.replace(/[.+^${}()|[\]\\]/g, '\\$&');
-    }
-  }
-  return new RegExp(`^${out}$`);
-}
+// The mechanical filter glob (`**\/*.{md,mdx}`, `*.json`, `{tags.json,*\/*.json}`, …)
+// is compiled by the same matcher the kinds' file maps use (`src/shared/root-kinds.ts`).
 
 export class FileWatchRuntime {
   private readonly mounts = new Map<string, Mount>();
@@ -458,7 +424,8 @@ export class FileWatchRuntime {
   /**
    * Register a reaction. Validation is FAIL-FAST at registration, never queued:
    * subscribing to an unmounted source throws. That is why "no predecessor" at
-   * dispatch is always the consequence of an owner's gate, never a registration race.
+   * dispatch is always the consequence of a definition not bound on that source,
+   * never a registration race.
    */
   subscribe(source: string, handler: WatchSubscriber, opts: SubscribeOptions & { scope: WatchScope }): void {
     const { scope, id, phase, after = [], filter } = opts;
@@ -816,8 +783,8 @@ export class FileWatchRuntime {
    * `after` is resolved PER SOURCE, AT DISPATCH TIME — not at registration — so
    * dispatch never depends on build-hook ordering. A predecessor missing at
    * dispatch is NOT an error: the dependency counts as satisfied and the
-   * subscriber runs on its own (that is how a root without `sectionIndexed`
-   * leaves M14 with no M06 to wait for).
+   * subscriber runs on its own (that is how a root whose kind does not select
+   * `m06-section-indexer` leaves M14 with no M06 to wait for).
    */
   private dispatch(
     mount: Mount,

@@ -59,6 +59,27 @@ describe('readBriefFs', () => {
     }
   });
 
+  it('a nested or .mdx file in the briefs dir is not a brief (outside the `*.md` file map): BRIEF_NOT_FOUND, absent from the hint', () => {
+    fs.mkdirSync(path.join(dir, 'nested'), { recursive: true });
+    const brief = matter.stringify('# Brief\n', { type: 'brief', to_release: '0.2', implemented: false });
+    fs.writeFileSync(path.join(dir, 'nested', 'deep.md'), brief, 'utf8');
+    fs.writeFileSync(path.join(dir, 'other.mdx'), brief, 'utf8');
+
+    for (const rel of ['nested/deep.md', 'other.mdx']) {
+      const err = (() => {
+        try {
+          readBriefFs(dir, rel);
+        } catch (e) {
+          return e;
+        }
+        return undefined;
+      })();
+      expect(err).toBeInstanceOf(BriefFsError);
+      expect((err as BriefFsError).code).toBe('BRIEF_NOT_FOUND');
+      expect((err as BriefFsError).hint).toBe('available briefs: v0-1-to-v0-2.md');
+    }
+  });
+
   it('assertSafeRelPath accepts a plain relative path and nested subdirs', () => {
     expect(() => assertSafeRelPath('v0-1-to-v0-2.md')).not.toThrow();
     expect(() => assertSafeRelPath('scoped/pages-to-v0-2.md')).not.toThrow();

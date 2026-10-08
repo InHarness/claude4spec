@@ -86,7 +86,7 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
       fakeRawReader,
       fakeTagsService,
       fakePagesService,
-      null,
+      () => null,
       dir,
       ['pages'],
       [pagesDir],
@@ -114,7 +114,7 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
       fakeRawReader,
       fakeTagsService,
       fakePagesService,
-      null,
+      () => null,
       dir,
       rootIds,
       rootDirs,
@@ -182,6 +182,50 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
     expect(bChange?.added_sections[0]?.content).toBe('B v1');
 
     expect(delta.entities).toEqual([]);
+  });
+
+  it('m17reldiff: pathspecs are the dirs of the release-flag roots plus the `releases` root — never a non-release root', async () => {
+    const pagesDir = path.join(dir, 'pages');
+    const entitiesDir = path.join(dir, '.claude4spec', 'entities');
+    const plansDir = path.join(dir, '.claude4spec', 'plans');
+    for (const d of [pagesDir, entitiesDir, plansDir]) fs.mkdirSync(d, { recursive: true });
+    const { releaseService, releaseStore, gitService } = buildReleaseService(pagesDir);
+    // The registry's `release`-flagged roots: the `pages` root and the `entities` root.
+    releaseService.setReleaseFlagRootDirs([pagesDir, entitiesDir]);
+    const diffRefs = vi.spyOn(gitService, 'diffRefs');
+
+    fs.writeFileSync(path.join(pagesDir, 'a.md'), 'A v1');
+    fs.writeFileSync(path.join(plansDir, 'p.md'), 'plan v1');
+    const v1Id = Number(
+      db
+        .prepare(`INSERT INTO spec_release (name, slug, description, created_by, created_at) VALUES (?, ?, ?, ?, ?)`)
+        .run('v1', 'v1', 'First', 'user', new Date(0).toISOString()).lastInsertRowid,
+    );
+    releaseStore.write('v1', { name: 'v1', slug: 'v1', description: 'First', createdAt: new Date(0).toISOString(), createdBy: 'user', roots: ['pages'] });
+    await git(['add', '.'], dir);
+    await git(['commit', '-m', 'v1'], dir);
+
+    fs.writeFileSync(path.join(pagesDir, 'a.md'), 'A v2');
+    fs.writeFileSync(path.join(plansDir, 'p.md'), 'plan v2');
+    const v2Id = Number(
+      db
+        .prepare(`INSERT INTO spec_release (name, slug, description, created_by, created_at) VALUES (?, ?, ?, ?, ?)`)
+        .run('v2', 'v2', 'Second', 'user', new Date(1).toISOString()).lastInsertRowid,
+    );
+    releaseStore.write('v2', { name: 'v2', slug: 'v2', description: 'Second', createdAt: new Date(1).toISOString(), createdBy: 'user', roots: ['pages'] });
+    await git(['add', '.'], dir);
+    await git(['commit', '-m', 'v2'], dir);
+
+    const delta = await releaseService.getReleaseDiff(v1Id, v2Id);
+
+    expect(diffRefs).toHaveBeenCalledTimes(1);
+    expect(diffRefs.mock.calls[0]![2]).toEqual([
+      fs.realpathSync(pagesDir),
+      fs.realpathSync(entitiesDir),
+      fs.realpathSync(releaseStore.root),
+    ]);
+    // The plans root carries no `release` flag: its change never reaches the diff.
+    expect(delta.pages.map((p) => p.path)).toEqual(['a.md']);
   });
 
   it('resolves a renamed page (diffRefs-flattened D+A pair) to clean deleted/created entries, not modified', async () => {
@@ -706,11 +750,10 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
     });
   });
 
-  // code-review fix (0-1-123-to-next): readConfig() only type-checks briefsDir/patchesDir as
-  // strings — an empty string (e.g. a careless hand-edit of config.json) must not resolve
-  // briefsAbs/patchesAbs to cwd itself, which would make isInside() match every file and
-  // silently empty the whole diff.
-  it('does not silently drop every page when briefsDir is an empty string', async () => {
+  // code-review fix (0-1-123-to-next), kept for 2.1.8: a legacy `briefsDir` key (here the
+  // degenerate empty string that once resolved briefsAbs to cwd itself and silently emptied
+  // the whole diff) is ignored now — the briefs system root sits at its fixed dir.
+  it('does not silently drop every page when config carries a legacy empty briefsDir', async () => {
     const pagesDir = path.join(dir, 'pages');
     fs.mkdirSync(pagesDir, { recursive: true });
     fs.writeFileSync(

@@ -1,5 +1,5 @@
 import type { ParsedArgs } from '../args.js';
-import { optionalString, requireString } from '../args.js';
+import { requireString } from '../args.js';
 import { delegateGet } from '../delegate.js';
 import { writeOutput } from '../output.js';
 import { serializePageStructure } from '../../../shared/section-parser.js';
@@ -9,7 +9,7 @@ import type { CliCommandContribution } from '../registry.js';
 /**
  * 0.2.6 — `get_page` on the CLI: the whole page, when you really want all of it.
  *
- *   c4s get-page --root-id <id> --path <p> [--range <from:to>] [--format text]
+ *   c4s get-page --root-id <id> --path <p> [--format text]
  *
  * 2.1.6 — the JSON output (pretty or `--compact`) is the core's envelope 1:1:
  * `{ rootId, path, hash, frontmatter?, preamble?, results[], truncated?, message? }`.
@@ -17,10 +17,10 @@ import type { CliCommandContribution } from '../registry.js';
  * formatting for a human, not a second shape of the read. XML tags stay untouched
  * in either: a tag is the edge to another entity.
  *
- * `--range` is accepted only on a root WITHOUT a section index. The refusal
- * lives in the core (which owns root properties) and this command inherits it
- * rather than re-deciding it: on an indexed root a section is a better window in
- * every way, and two guards could disagree.
+ * 2.1.8 — there is no line window: every page root has a section index, so a
+ * cut read resumes through `get-page-outline` + `get-sections`. A leftover
+ * `--range` is refused rather than ignored — ignoring it would hand back the
+ * whole page to a caller who believes it asked for twenty lines.
  *
  * 0.2.13 — `server-delegating`, over `GET /api/pages/:rootId/get?path=`. The
  * path travels as a QUERY parameter: it contains slashes, and the operation's
@@ -29,12 +29,15 @@ import type { CliCommandContribution } from '../registry.js';
 export async function runGetPage(args: ParsedArgs): Promise<void> {
   const rootId = requireString(args, 'root-id');
   const pagePath = requireString(args, 'path');
-  const range = parseRange(optionalString(args, 'range'));
+  if (args.flags.has('range')) {
+    throw new CliError(
+      'INVALID_ARGS',
+      'get-page has no line window (--range was removed in 2.1.8)',
+      `c4s get-page-outline --root-id ${rootId} --path ${pagePath}, then c4s get-sections --anchors <a,b>`,
+    );
+  }
 
-  const page = await delegateGet(args, `/pages/${encodeURIComponent(rootId)}/get`, {
-    path: pagePath,
-    ...(range ? { range: `${range.start}:${range.end}` } : {}),
-  });
+  const page = await delegateGet(args, `/pages/${encodeURIComponent(rootId)}/get`, { path: pagePath });
   if (args.format === 'text') {
     process.stdout.write(renderPageText(page as PageEnvelope));
     // The cut notice goes to stderr so stdout stays the page, pipeable as markdown.
@@ -59,20 +62,6 @@ export function renderPageText(page: PageEnvelope): string {
     preamble: page.preamble ?? null,
     sections: page.results.map((i) => ({ anchor: i.anchor, level: i.heading_level, heading: i.heading_text, body: i.body })),
   });
-}
-
-/** `--range 1:200` → `{ start: 1, end: 200 }`. 1-based and inclusive, like the core's. */
-function parseRange(raw: string | undefined): { start: number; end: number } | undefined {
-  if (raw === undefined) return undefined;
-  const m = /^(\d+):(\d+)$/.exec(raw);
-  if (!m) {
-    throw new CliError(
-      'INVALID_ARGS',
-      `--range must be '<from>:<to>', got '${raw}'`,
-      '--range 1:200 — 1-based and inclusive',
-    );
-  }
-  return { start: Number(m[1]), end: Number(m[2]) };
 }
 
 export const getPageCommand: CliCommandContribution = {

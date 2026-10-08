@@ -39,27 +39,24 @@ describe('bootstrapProject — config migrations run before the validating load'
 
   const readConfigFile = () => JSON.parse(fs.readFileSync(configPath(cwd), 'utf8'));
 
-  it('opens a project whose roots[] predates briefTarget/linkTargets', () => {
-    writeConfigFile({
-      $schemaVersion: 4,
-      name: 'Legacy',
-      roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true, releasable: true, sectionIndexed: true, referenceValidated: true, sidebar: 'accordion' }],
-    });
+  // 2.1.8: legacy per-root flags are unknown fields — the project opens, the
+  // parsed roots carry exactly four fields, and the file is not rewritten.
+  it('opens a project whose roots[] carries the pre-2.1.8 per-root flags', () => {
+    const legacyRoot = { id: 'pages', name: 'Pages', dir: 'pages', builtin: true, releasable: true, sectionIndexed: true, referenceValidated: true, sidebar: 'accordion' };
+    writeConfigFile({ $schemaVersion: 4, name: 'Legacy', roots: [legacyRoot] });
 
-    expect(() => boot()).not.toThrow();
-
-    const root = readConfigFile().roots[0];
-    expect(root.briefTarget).toBe(true);
-    expect(root.linkTargets).toEqual([]);
-    // The fields it DID carry are preserved, not reset to defaults.
-    expect(root.dir).toBe('pages');
+    let result!: ReturnType<typeof boot>;
+    expect(() => { result = boot(); }).not.toThrow();
+    expect(result.config.roots).toEqual([{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }]);
+    // Not materialized, not stripped — left in the file as it was.
+    expect(readConfigFile().roots[0]).toEqual(legacyRoot);
   });
 
   it('carries a legacy git.syncCommitOnRelease through a real bootstrap', () => {
     writeConfigFile({
       $schemaVersion: 4,
       name: 'Legacy',
-      roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true, releasable: true, sectionIndexed: true, referenceValidated: true, linkTargets: [], sidebar: 'accordion', briefTarget: true }],
+      roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }],
       git: { syncCommitOnRelease: true },
     });
 

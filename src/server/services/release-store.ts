@@ -2,7 +2,7 @@
  * 0.1.118 Release Store — the file layer that makes release identity
  * git-committed text, mirroring `EntityStore` (M29).
  *
- * Each release = one JSON file `<releasesDir>/<slug>.json`, IDENTITY ONLY
+ * Each release = one JSON file `<slug>.json` in the `releases` root, IDENTITY ONLY
  * (`name`, `slug`, `description`, `createdAt`, `createdBy`, `roots`) — no
  * version content, no tree, no gitSha. `spec_release` (SQLite) is a derived
  * cache rebuilt from these files (see `ReleaseIndexerService`); release→version
@@ -33,12 +33,14 @@ export interface ReleaseFileData {
   description: string;
   createdAt: string;
   createdBy: string;
+  // ASSUMPTION:dev-0005 — the release metadata file carries `roots` as root ids
+  // (the `pages`-kind roots), not `{id,name,dir}` objects.
   roots: string[];
 }
 
 /**
  * Maps a `spec_release` DB row (or row-shaped object) + a slug + the current
- * releasable roots into the on-disk identity shape. Single source of truth
+ * `pages` roots into the on-disk identity shape. Single source of truth
  * for this mapping — `ReleaseService.createRelease()`/`updateRelease()` and
  * the 0.1.119 Migration C boot backfill all call this rather than hand-rolling
  * the same object literal, so a field added/renamed here can't silently drift
@@ -66,10 +68,10 @@ export class ReleaseFileStore {
 
   constructor(
     cwd: string,
-    releasesDir: string,
+    releasesRootDir: string,
     private watcher: SelfWriteSuppressor,
   ) {
-    this.root = path.resolve(cwd, releasesDir);
+    this.root = path.resolve(cwd, releasesRootDir);
   }
 
   ensureRoot(): void {

@@ -262,6 +262,7 @@ if (createProject) {
     configCreated: boot.configCreated,
     claudeDirCreated: boot.claudeDirCreated,
     gitignoreCreated: boot.gitignoreCreated,
+    systemRootDirsCreated: boot.systemRootDirsCreated,
   })
     .then((handle) => {
       // `handle.url` is the LOCAL address (loopback or a concrete bindHost) —

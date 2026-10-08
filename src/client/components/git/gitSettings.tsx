@@ -102,7 +102,9 @@ function GitIntegrationElement({ config, draft }: ElementContext) {
       ) : isLoading ? (
         <EmptyText>Loading…</EmptyText>
       ) : !status?.detected ? (
-        <EmptyText>No git repository detected.</EmptyText>
+        <EmptyText>
+          No git repository detected. Git sync options are available only when your pages live inside a git repository.
+        </EmptyText>
       ) : (
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">

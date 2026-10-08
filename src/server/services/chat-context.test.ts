@@ -15,14 +15,14 @@ import { DEFAULT_SUBAGENT_TURNS } from './plugin-subagents.js';
 import type { PluginSubagentContribution } from '../../shared/plugin-host/manifest.js';
 import { acFixtureSystemPrompt as acSystemPrompt } from '../../../tests/helpers/ac-fixture.js';
 import { diagramSystemPrompt } from '../entities/diagram/system-prompt.js';
-import { DEFAULT_PAGES_ROOT_PROPS, type Root } from '../../shared/types.js';
+import type { Root } from '../../shared/types.js';
 import { PROMPT_BLOCKS } from './system-prompt/registry.js';
 import { DEFAULT_COMPOSITION } from './system-prompt/compositions/default.js';
 import { BRIEF_COMPOSITION } from './system-prompt/compositions/brief.js';
 
 /** Minimal Root at `dir` for prompt tests. */
 function rootAt(dir: string, id = 'pages'): Root {
-  return { id, name: id, dir, builtin: id === 'pages', ...DEFAULT_PAGES_ROOT_PROPS, linkTargets: [] };
+  return { id, name: id, dir, builtin: id === 'pages' };
 }
 
 // buildSystemPrompt only calls host.listEntities() (no active plugins needed for
@@ -1075,7 +1075,7 @@ describe('buildSystemPrompt — <agent_path_scope> (0.1.90 / 0.1.130)', () => {
     expect(build({})).not.toContain('<agent_path_scope>');
   });
 
-  it('emits the block in the chat frame with cwd, allowed, disallowed and ALWAYS-DISALLOWED lines', () => {
+  it('[entity:szablon-agent-path-scope] emits the block in the chat frame with cwd, allowed, disallowed and ALWAYS-DISALLOWED lines', () => {
     const out = build({ contextType: 'chat', agentPathScope: scope });
     expect(out).toContain('<agent_path_scope>');
     // cwd is always listed; configured allow/deny entries appear verbatim.

@@ -21,8 +21,8 @@
  *   3. That the CLI's OWN guards still refuse before a request is made — a flag
  *      the command does not accept must not reach the server at all.
  *
- * Guards that used to be asserted here and are not any more — `--range` on a
- * section-indexed root, an empty `--anchors`, an unknown `--root-id` — belong to
+ * Guards that used to be asserted here and are not any more — an empty
+ * `--anchors`, an unknown `--root-id` (2.1.8: also a system root id) — belong to
  * the core, which raises them with the repair path attached. They are asserted
  * in `src/server/discovery/discovery.test.ts`; asserting them again through a
  * stub would only prove the stub.
@@ -55,12 +55,17 @@ import { runInlineMention } from './inline-mention.js';
 import { runSingleElement } from './single-element.js';
 import { runDetail } from './detail.js';
 import { runElementList } from './element-list.js';
+import express from 'express';
+import { CliError } from '../errors.js';
+import { RootRegistry } from '../../../server/roots/registry.js';
+import { pagesRouter, type PageRootRuntime } from '../../../server/routes/pages.js';
+import { PagesService } from '../../../server/services/pages.js';
+import type { DiscoveryCore } from '../../../server/discovery/types.js';
 
 /** The shape `healthCheck` demands of `GET /api/projects/:id/config`. */
 const CONFIG = {
   name: 'test-project',
   roots: [{ id: 'pages', dir: 'pages' }],
-  entitiesDir: 'entities',
   writingStyle: null,
   onboarding: {},
 };
@@ -75,6 +80,8 @@ describe('discovery commands on the CLI', () => {
   let seen: Array<{ method: string; url: string }>;
   /** What the next non-config request answers with. */
   let reply: unknown;
+  /** When set, non-config requests go to this real handler instead of `reply`. */
+  let passThrough: http.RequestListener | null;
 
   beforeEach(async () => {
     registryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-disc-cmd-registry-'));
@@ -84,6 +91,7 @@ describe('discovery commands on the CLI', () => {
 
     seen = [];
     reply = { ok: true };
+    passThrough = null;
     server = http.createServer((req, res) => {
       const url = req.url ?? '';
       if (url.endsWith('/config')) {
@@ -91,6 +99,7 @@ describe('discovery commands on the CLI', () => {
         return res.end(JSON.stringify(CONFIG));
       }
       seen.push({ method: req.method ?? 'GET', url });
+      if (passThrough) return passThrough(req, res);
       res.setHeader('content-type', 'application/json');
       res.end(JSON.stringify(reply));
     });
@@ -508,6 +517,13 @@ describe('discovery commands on the CLI', () => {
   });
 
   describe('the guards the transport owns — refused before any request', () => {
+    it('get-page --range is refused before any request — 2.1.8 removed the line window', async () => {
+      await expect(
+        runGetPage(args('get-page', '--root-id', 'pages', '--path', 'budget.md', '--range', '1:20')),
+      ).rejects.toMatchObject({ code: 'INVALID_ARGS' });
+      expect(seen).toEqual([]);
+    });
+
     it('page commands require --root-id and do not fall back to the built-in root', async () => {
       await expect(runListPages(args('list-pages'))).rejects.toMatchObject({ code: 'INVALID_ARGS' });
       await expect(runGetPage(args('get-page', '--path', 'budget.md'))).rejects.toMatchObject({
@@ -618,6 +634,58 @@ describe('discovery commands on the CLI', () => {
         runFindReferences(args('find-references', '--type', 'ac', '--slug', 'x', '--limit', '5')),
       ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
       expect(seen).toEqual([]);
+    });
+  });
+
+  /**
+   * 2.1.8 — a system root has no address in discovery. The CLI defines no rule
+   * of its own for it: the request reaches the server's page router (the real
+   * one, resolving over the `kind: pages` roots of a real root registry, as the
+   * project context wires it), and what comes back for `plans` is exactly what
+   * comes back for an id nobody declared.
+   */
+  describe('a system root id on a page command', () => {
+    it('[ac:ac-c4s-get-page-root-id-id-path-p] c4s get-page --root-id plans --path <p> ends with the same error as an unknown --root-id', async () => {
+      const registry = new RootRegistry([{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }]);
+      // `plans` IS a registered root of this project — just not one of kind `pages`.
+      expect(registry.get('plans')?.kind).toBe('plans');
+      fs.mkdirSync(path.join(projectDir, 'pages'), { recursive: true });
+      fs.writeFileSync(path.join(projectDir, 'pages', 'a.md'), '# A\n');
+      const runtimes = new Map<string, PageRootRuntime>(
+        registry.pages().map((r) => [r.id, { root: r, pages: new PagesService(projectDir, r.dir, r.id), writer: null }]),
+      );
+      const core = {
+        getPage: (input: { rootId: string; path: string }) =>
+          Promise.resolve({ rootId: input.rootId, path: input.path, hash: 'h', results: [] }),
+      } as unknown as DiscoveryCore;
+      const app = express();
+      app.use(
+        '/api/projects/:projectId/pages/:rootId',
+        pagesRouter((id) => runtimes.get(id), null, core, () => [...runtimes.keys()]),
+      );
+      passThrough = app;
+
+      const refusal = async (rootId: string): Promise<CliError> => {
+        try {
+          await runGetPage(args('get-page', '--root-id', rootId, '--path', 'a.md'));
+        } catch (e) {
+          return e as CliError;
+        }
+        throw new Error(`c4s get-page --root-id ${rootId} did not refuse`);
+      };
+      const plans = await refusal('plans');
+      const unknown = await refusal('nope');
+
+      expect(plans).toBeInstanceOf(CliError);
+      expect(plans.code).toBe(unknown.code);
+      expect(plans.message.replace("'plans'", "'<id>'")).toBe(unknown.message.replace("'nope'", "'<id>'"));
+      expect(plans.hint).toBe(unknown.hint);
+      // The list it offers is the page roots — never the system root that was asked for.
+      expect(plans.hint).toContain('pages');
+      expect(plans.hint).not.toContain('plans');
+      // The page root itself still answers — the refusal is about the id, not the path.
+      await runGetPage(args('get-page', '--root-id', 'pages', '--path', 'a.md', '--compact'));
+      expect(JSON.parse(stdout)).toMatchObject({ rootId: 'pages', path: 'a.md' });
     });
   });
 

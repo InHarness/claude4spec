@@ -10,21 +10,19 @@
  * kinds is a specification error exactly when it is UNWRITTEN — so `n/a` with a
  * reason is a legal, sufficient answer, and silence is not.
  *
- * The one substantive difference from `get_page`'s window: there is NO
- * `sectionIndexed` gate here, and there cannot be one. On pages the core has two
- * ways to resume a read, chosen by the root: an indexed root resumes through
- * `get_page_outline` + `get_sections`, a non-indexed one through `range`. Artifacts
- * NEVER enter `section_index` (every `artifactRegistry` entry is
- * `sectionIndexed: false`), so only `range` exists — which makes `range`
- * unconditionally allowed and `truncationHint` unconditionally point at it,
- * where `get_page` has to branch.
+ * The one substantive difference from `get_page`: an artifact has a line window
+ * and `get_page` has none. 2.1.8: every page root is section-indexed, so a cut
+ * page read resumes only through `get_page_outline` + `get_sections`. Artifacts
+ * (briefs, patches, plans) NEVER enter `section_index` — their kinds do not
+ * select `m06-section-indexer` — so `range` is their only resume path: it is
+ * always allowed and `truncationHint` always points at it.
  */
 
 import { DEFAULT_BUDGET_CHARS, truncateText } from '../discovery/budget.js';
-import { artifactRegistry, type ArtifactKind } from './artifact-registry.js';
+import { ARTIFACT_READ_FAMILY, type ArtifactKind, type ArtifactReadFamily } from './artifact-registry.js';
 import { DomainError } from './tags.js';
 
-/** A 1-based inclusive line window — deliberately the same shape as `get_page.range`. */
+/** A 1-based inclusive line window, 1-based and inclusive at both ends. */
 export interface ArtifactRange {
   start: number;
   end: number;
@@ -121,8 +119,8 @@ export function readArtifactWindow(
 }
 
 /** Every kind in the registry answers this — `n/a` with a reason included. */
-export function artifactReadFamily(kind: ArtifactKind): (typeof artifactRegistry)[ArtifactKind]['readFamily'] {
-  return artifactRegistry[kind].readFamily;
+export function artifactReadFamily(kind: ArtifactKind): ArtifactReadFamily {
+  return ARTIFACT_READ_FAMILY[kind];
 }
 
 /**

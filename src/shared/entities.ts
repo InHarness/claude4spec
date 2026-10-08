@@ -581,10 +581,10 @@ export type ChatRole =
  * thread runs with no file or shell built-ins at all, and work outside the
  * specification requires unchecking that flag first.
  * 'brief' = brief editorial thread (whitelisted tools, brief-detail chrome,
- * brief_path points to FS file under briefsDir).
+ * brief_path points to a file in the `briefs` root).
  * M23 'patch' = patch resolution thread — applies a patch's findings to the
- * spec. Full spec-editing toolset; patch_path points to FS file under
- * patchesDir; the patch content is injected into the system prompt.
+ * spec. Full spec-editing toolset; patch_path points to a file in the
+ * `patches` root; the patch content is injected into the system prompt.
  * 0.1.79 'ask' = read-only peer-consult thread. Forced plan-mode every turn
  * (the 'file-write' + 'shell' deny-groups); answers without ever mutating its own spec. No
  * brief_path/patch_path; created via POST /api/threads with context_type='ask'.
@@ -621,12 +621,12 @@ export interface ChatThread {
   planMode: boolean;
   usage: UsageStats | null;
   contextSize: number | null;
-  /** 0.1.127: N:1 attach — path relative to plansDir, no FK (dangling = graceful-degrade). */
+  /** 0.1.127: N:1 attach — path relative to the `plans` root, no FK (dangling = graceful-degrade). */
   planPath: string | null;
   hasSystemPrompt: boolean;
   contextType: ChatContextType;
   briefPath: string | null;
-  /** M23: FS path (relative to patchesDir) — set iff contextType='patch'. */
+  /** M23: FS path (relative to the `patches` root) — set iff contextType='patch'. */
   patchPath: string | null;
   /**
    * 0.1.69 Transagents: parent thread id. NULL = top-level thread (appears in
@@ -819,7 +819,7 @@ export interface PlanFrontmatter {
 }
 
 export interface Plan {
-  /** Path relative to plansDir, e.g. "add-dark-mode.md" (slug = slugify(title), immutable once created). */
+  /** Path relative to the `plans` root, e.g. "add-dark-mode.md" (slug = slugify(title), immutable once created). */
   path: string;
   frontmatter: PlanFrontmatter;
   body: string;
@@ -833,7 +833,7 @@ export interface Plan {
    */
   truncated?: true;
   truncationHint?: string;
-  /** Derived from `file_version` (MAX(version) for this path under rootId='plan'), not a stored column. */
+  /** Derived from `file_version` (MAX(version) for this path under rootId='plans'), not a stored column. */
   currentVersion: number;
   createdAt: string;
   updatedAt: string;
@@ -934,8 +934,8 @@ export const BRIEF_IMMUTABLE_FRONTMATTER_KEYS = [
   'from_release',
   'to_release',
   'generated_at',
-  // 0.1.96: brief scope — the releasable roots this brief covers. Absent/omitted
-  // = whole-release scope (every releasable root). Immutable once written.
+  // 0.1.96: brief scope — the `pages` roots this brief covers. Absent/omitted
+  // = whole-release scope (every `pages` root). Immutable once written.
   'roots',
 ] as const;
 
@@ -955,8 +955,8 @@ export interface BriefFrontmatter {
   generated_at: string;
   implemented?: boolean;
   /**
-   * 0.1.96: brief scope — the releasable root ids this brief covers (verbatim).
-   * Absent/omitted = whole-release scope (all releasable roots). Immutable
+   * 0.1.96: brief scope — the `pages` root ids this brief covers (verbatim).
+   * Absent/omitted = whole-release scope (all `pages` roots). Immutable
    * (see BRIEF_IMMUTABLE_FRONTMATTER_KEYS).
    */
   roots?: string[];
@@ -964,7 +964,7 @@ export interface BriefFrontmatter {
 }
 
 export interface Brief {
-  /** Path relative to briefsDir, e.g. "v0-3-to-v0-4.md". */
+  /** Path relative to the `briefs` root, e.g. "v0-3-to-v0-4.md". */
   path: string;
   frontmatter: BriefFrontmatter;
   body: string;
@@ -1013,8 +1013,8 @@ export interface BriefCreateRequest {
   additionalPrompt?: string;
   suffix?: string;
   /**
-   * 0.1.96: brief scope — releasable root ids to cover. Omitted/empty =
-   * whole-release scope (all releasable roots). Not allowed when the window's
+   * 0.1.96: brief scope — `pages` root ids to cover. Omitted/empty =
+   * whole-release scope (all `pages` roots). Not allowed when the window's
    * `to` end is open (dead field once `toReleaseName = null`).
    */
   roots?: string[];
@@ -1048,7 +1048,7 @@ export const PATCH_IMMUTABLE_FRONTMATTER_KEYS = [
 
 export interface PatchFrontmatter {
   type: 'patch';
-  /** Path of the associated brief (relative to briefsDir). Absent ⇒ resolve by filename prefix. */
+  /** Path of the associated brief (relative to the `briefs` root). Absent ⇒ resolve by filename prefix. */
   brief?: string;
   patch_kind: PatchKind;
   created_at: string;
@@ -1115,7 +1115,7 @@ export interface ArtifactContentUpdateRequest {
   expectedHash: string;
 }
 
-/** Partial map of fields mutable per the kind's `frontmatterContract.mutable` (artifact-registry.ts). */
+/** Partial map of fields mutable per the root kind's header contract (`headerContractOf`, root-kinds.ts). */
 export interface ArtifactFrontmatterUpdateRequest {
   frontmatter: Record<string, unknown>;
 }

@@ -60,6 +60,9 @@ describe('section auto-linking — <tagged_list/> filter default', () => {
 
   async function linkedSlugs(tagMarkup: string): Promise<string[]> {
     await pages.write('doc.md', { body: `# Top\n\n${tagMarkup}\n` });
+    // 2.1.8 — the indexer injects nothing: `m06-anchor-injection` (write-back)
+    // anchors the heading first, as it does in the chain.
+    await indexer.mintAnchors('pages', 'pages:pages', 'doc.md', () => {});
     await indexer.indexPage('pages', 'doc.md');
     const rows = db
       .prepare('SELECT DISTINCT entity_slug FROM section_entity_link ORDER BY entity_slug')

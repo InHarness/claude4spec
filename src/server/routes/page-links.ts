@@ -31,7 +31,10 @@ export function pageLinksRouter(indexer: PagesLinkIndexerService): Router {
       const q = typeof req.query.q === 'string' ? req.query.q : '';
       const limitRaw = typeof req.query.limit === 'string' ? Number(req.query.limit) : NaN;
       const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 50) : 10;
-      res.json({ suggestions: indexer.autocomplete(q, limit) });
+      // 2.1.8: optional source root — the precedence's first step for a path
+      // present in several `pages` roots.
+      const root = typeof req.query.root === 'string' && req.query.root ? req.query.root : null;
+      res.json({ suggestions: indexer.autocomplete(q, limit, root) });
     } catch (err) {
       next(err);
     }

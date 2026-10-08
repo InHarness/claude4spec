@@ -12,7 +12,7 @@ interface FileEventsState {
   notifyExternalChange(rootId: string, path: string): void;
   clearExternalChange(): void;
   /** Separate channel for briefs — brief paths live in a different namespace
-   * (briefsDir) than page paths, so they must not collide on `externalChange`. */
+   * (the `briefs` system root) than page paths, so they must not collide on `externalChange`. */
   briefExternalChange: ExternalChangeEvent | null;
   notifyBriefExternalChange(path: string): void;
   clearBriefExternalChange(): void;
@@ -28,8 +28,8 @@ export const useFileEventsStore = create<FileEventsState>((set) => ({
   },
   briefExternalChange: null,
   notifyBriefExternalChange(path) {
-    // Briefs live in their own single-namespace channel; tag with the 'brief' marker.
-    set({ briefExternalChange: { rootId: 'brief', path, ts: Date.now() } });
+    // Briefs live in their own single-namespace channel; tagged with the system root's id.
+    set({ briefExternalChange: { rootId: 'briefs', path, ts: Date.now() } });
   },
   clearBriefExternalChange() {
     set({ briefExternalChange: null });

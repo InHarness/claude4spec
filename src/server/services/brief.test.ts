@@ -4,7 +4,12 @@ import path from 'node:path';
 import matter from 'gray-matter';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BriefService, composeBriefBody, type BriefServiceDeps } from './brief.js';
-import { PagesService } from './pages.js';
+import { DomainError } from './tags.js';
+import { toolFailure } from '../operations/envelope.js';
+import { BRIEF_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
+import { BRIEF_HEADER } from '../../shared/root-kinds.js';
+import { M21_PROMPT_BLOCKS } from './system-prompt/blocks/m21-brief.js';
+import { MarkdownFileStore } from './pages.js';
 import { hashContent } from './artifact-content.js';
 import type { SelfWriteMarker } from '../fs/sources.js';
 
@@ -25,7 +30,7 @@ describe('BriefService.updateContent — the suppress token and a failed write',
   const BODY = ['---', 'type: brief', 'implemented: false', '---', '# Brief', ''].join('\n');
 
   function makeService(overrides: Partial<BriefServiceDeps> = {}): BriefService {
-    const briefsPages = new PagesService(cwd, 'briefs', 'briefs');
+    const briefsPages = new MarkdownFileStore({ cwd, dir: 'briefs', rootId: 'briefs', kind: 'briefs' });
     const writer: SelfWriteMarker = {
       markOrigin: () => {},
       flush: async () => {},
@@ -128,7 +133,7 @@ describe('BriefService.createBrief — the window is the provenance', () => {
     } as unknown as BriefServiceDeps['releaseService'],
   ): BriefService {
     return new BriefService({
-      briefsPages: new PagesService(cwd, 'briefs', 'briefs'),
+      briefsPages: new MarkdownFileStore({ cwd, dir: 'briefs', rootId: 'briefs', kind: 'briefs' }),
       briefsWatcher: {
         markOrigin: () => {},
         flush: async () => {},
@@ -330,7 +335,7 @@ describe('BriefService — legacy briefs carrying source / generator_version', (
 
   function makeService(): BriefService {
     return new BriefService({
-      briefsPages: new PagesService(cwd, 'briefs', 'briefs'),
+      briefsPages: new MarkdownFileStore({ cwd, dir: 'briefs', rootId: 'briefs', kind: 'briefs' }),
       briefsWatcher: {
         markOrigin: () => {},
         flush: async () => {},
@@ -387,18 +392,131 @@ describe('BriefService — legacy briefs carrying source / generator_version', (
     ).resolves.toBeTruthy();
   });
 
-  it('[ac:ac-update-brief-odrzuca-probe-zmiany-kto] still refuses a change to an end of the window', async () => {
+  it('[ac:ac-update-brief-odrzuca-probe-zmiany-kto] refuses content whose frontmatter changes any of the five immutable fields, with IMMUTABLE_FIELD, before writing', async () => {
     const service = makeService();
     const current = await service.getBrief('legacy.md');
+    const changes: Array<[string, string]> = [
+      ['type', current.content.replace('type: brief', 'type: plan')],
+      ['from_release', current.content.replace('from_release: r1', 'from_release: r2')],
+      ['to_release', current.content.replace('to_release: null', 'to_release: r9')],
+      ['roots', current.content.replace('implemented: false', 'implemented: false\nroots:\n  - docs')],
+      ['generated_at', current.content.replace('2026-01-01T00:00:00.000Z', '2027-01-01T00:00:00.000Z')],
+    ];
+    expect(changes.map(([field]) => field).sort()).toEqual([...BRIEF_IMMUTABLE_FRONTMATTER_KEYS].sort());
 
-    await expect(
-      service.updateContent({
-        path: 'legacy.md',
-        content: current.content.replace('from_release: r1', 'from_release: r2'),
-        expectedHash: current.hash,
-        changedBy: 'agent',
-      }),
-    ).rejects.toThrow(/from_release/);
+    for (const [field, content] of changes) {
+      expect(content, field).not.toBe(current.content);
+      const err = await service
+        .updateContent({ path: 'legacy.md', content, expectedHash: current.hash, changedBy: 'agent' })
+        .then(() => null, (e: unknown) => e);
+      expect(err, field).toBeInstanceOf(DomainError);
+      expect((err as DomainError).code, field).toBe('IMMUTABLE_FIELD');
+      expect((err as Error).message, field).toContain(field);
+      // Validated BEFORE the write: the file on disk is untouched.
+      expect(await fs.readFile(path.join(cwd, 'briefs', 'legacy.md'), 'utf-8'), field).toBe(LEGACY);
+      // The agent channel renders it as the tool_result's code.
+      const envelope = toolFailure(err);
+      expect(envelope.isError, field).toBe(true);
+      expect(JSON.parse(envelope.content[0]!.text).code, field).toBe('IMMUTABLE_FIELD');
+    }
+  });
+
+  it('[ac:ac-update-brief-blokuje-zmiane-implement] refuses an `implemented` change smuggled in the content when the agent writes; PATCH frontmatter is the way to the field', async () => {
+    const service = makeService();
+    const current = await service.getBrief('legacy.md');
+    const flipped = current.content.replace('implemented: false', 'implemented: true');
+
+    const err = await service
+      .updateContent({ path: 'legacy.md', content: flipped, expectedHash: current.hash, changedBy: 'agent' })
+      .then(() => null, (e: unknown) => e);
+    expect((err as DomainError).code).toBe('IMMUTABLE_FIELD');
+    expect((err as Error).message).toContain('implemented');
+    expect(await fs.readFile(path.join(cwd, 'briefs', 'legacy.md'), 'utf-8')).toBe(LEGACY);
+
+    // The field's own route — the generic PATCH frontmatter (`updateFrontmatter`) — sets it.
+    const after = await service.updateFrontmatter({ path: 'legacy.md', patch: { implemented: true }, changedBy: 'user' });
+    expect(after.frontmatter.implemented).toBe(true);
+    // And `implemented` is the one mutable field of the brief header contract.
+    expect(BRIEF_HEADER.mutable).toEqual(['implemented']);
+  });
+});
+
+/**
+ * M21 `m21fmtct` — `roots` is immutable identity: written verbatim at creation,
+ * omitted for the whole release, part of the slug, and protected on every agent
+ * write exactly like the two ends of the window.
+ */
+describe('BriefService — the `roots` scope frontmatter', () => {
+  let cwd: string;
+
+  function makeService(): BriefService {
+    return new BriefService({
+      briefsPages: new MarkdownFileStore({ cwd, dir: 'briefs', rootId: 'briefs', kind: 'briefs' }),
+      briefsWatcher: { markOrigin: () => {}, flush: async () => {}, suppress: () => {}, unsuppress: () => {} } as SelfWriteMarker,
+      briefsSerializer: {} as BriefServiceDeps['briefsSerializer'],
+      pageVersions: { recordVersion: async () => {} } as unknown as BriefServiceDeps['pageVersions'],
+      chatService: {} as BriefServiceDeps['chatService'],
+      releaseService: {
+        getLatestReleaseName: () => 'v1',
+        getRelease: () => ({ name: 'v1' }),
+      } as unknown as BriefServiceDeps['releaseService'],
+      frontmatterIndexer: { indexPage: async () => {} } as unknown as BriefServiceDeps['frontmatterIndexer'],
+      ws: { broadcast: () => {} } as unknown as BriefServiceDeps['ws'],
+    });
+  }
+
+  beforeEach(async () => {
+    cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-brief-roots-'));
+  });
+  afterEach(async () => {
+    await fs.rm(cwd, { recursive: true, force: true });
+  });
+
+  it('[ac:ac-frontmatter-roots-string-jest-immutab] `roots` is immutable on update_brief like the window ends; absent or `[]` means the whole release; the stored value is what release_diff gets', async () => {
+    const service = makeService();
+
+    // Absent and `[]` are the same scope: the whole release — no key, no slug segment.
+    const whole = await service.createBrief({ fromReleaseName: 'v1', toReleaseName: 'v2' });
+    const empty = await service.createBrief({ fromReleaseName: 'v1', toReleaseName: 'v2', roots: [] });
+    expect(whole.briefPath).toBe('v1-to-v2.md');
+    expect(empty.briefPath).toBe('v1-to-v2-2.md');
+    for (const p of [whole.briefPath, empty.briefPath]) {
+      const fm = (await service.getBrief(p)).frontmatter as Record<string, unknown>;
+      expect(fm).not.toHaveProperty('roots');
+    }
+
+    // A scoped brief stores the array verbatim, and it is part of the slug.
+    const scoped = await service.createBrief({ fromReleaseName: 'v1', toReleaseName: 'v2', roots: ['docs', 'skills'] });
+    expect(scoped.briefPath).toBe('v1-to-v2-docs-skills.md');
+    const brief = await service.getBrief(scoped.briefPath);
+    expect(brief.frontmatter.roots).toEqual(['docs', 'skills']);
+
+    // Immutable for the agent, like `from_release` / `to_release`.
+    for (const content of [
+      brief.content.replace('  - skills\n', ''),
+      brief.content.replace(/roots:\n  - docs\n  - skills\n/, ''),
+      brief.content.replace('from_release: v1', 'from_release: v0'),
+    ]) {
+      expect(content).not.toBe(brief.content);
+      await expect(
+        service.updateContent({ path: scoped.briefPath, content, expectedHash: brief.hash, changedBy: 'agent' }),
+      ).rejects.toMatchObject({ code: 'IMMUTABLE_FIELD' });
+    }
+    expect((await service.getBrief(scoped.briefPath)).frontmatter.roots).toEqual(['docs', 'skills']);
+
+    // Reproducible: the brief thread is told to pass exactly the stored array to
+    // every release_diff call, so the page input does not depend on HEAD.
+    const scopeBlock = M21_PROMPT_BLOCKS.find((b) => b.name === 'brief_scope')!;
+    const rendered = scopeBlock.render({
+      brief,
+      roots: [{ id: 'docs', name: 'Docs', dir: 'docs', builtin: true }],
+    } as unknown as Parameters<typeof scopeBlock.render>[0]);
+    expect(rendered).toContain('pass `roots: ["docs","skills"]` to EVERY release_diff call');
+    const wholeBlock = scopeBlock.render({
+      brief: await service.getBrief(whole.briefPath),
+      roots: [],
+    } as unknown as Parameters<typeof scopeBlock.render>[0]);
+    expect(wholeBlock).toBeNull();
   });
 });
 
@@ -417,7 +535,7 @@ describe('BriefService.getBrief — `full` is the writer’s read', () => {
 
   function makeService(): BriefService {
     return new BriefService({
-      briefsPages: new PagesService(cwd, 'briefs', 'briefs'),
+      briefsPages: new MarkdownFileStore({ cwd, dir: 'briefs', rootId: 'briefs', kind: 'briefs' }),
       briefsWatcher: {
         markOrigin: () => {},
         flush: async () => {},

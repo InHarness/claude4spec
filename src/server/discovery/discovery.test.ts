@@ -26,13 +26,13 @@ import {
 } from './index.js';
 import { DEFAULT_BUDGET_CHARS, MAX_HUNK_CHARS, MAX_PATTERN_CHARS } from './budget.js';
 import { RawEntityReader } from './raw-entity-reader.js';
+import { PagesService } from '../services/pages.js';
 import { PROJECTION_IDS, ProjectionStatusRegistry } from '../services/projection-status.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
 import { serializeSection } from '../serialization/serializers/section.js';
 import type { DiscoveryCore, SectionResultItem } from './types.js';
 import type { BackendModule, ProjectPluginHost } from '../core/plugin-host/types.js';
 import type { Root } from '../../shared/types.js';
-import { DEFAULT_PAGES_ROOT_PROPS, DEFAULT_USER_ROOT_PROPS } from '../../shared/types.js';
 import { acFixtureModule as acBackendModule } from '../../../tests/helpers/ac-fixture.js';
 import { z } from 'zod';
 import matter from 'gray-matter';
@@ -105,17 +105,18 @@ const pagesRoot = (dir = 'pages'): Root => ({
   name: 'Pages',
   dir,
   builtin: true,
-  ...DEFAULT_PAGES_ROOT_PROPS,
 });
 
-/** A root WITHOUT a section index — the degraded identity regime. */
-const flatRoot = (): Root => ({
+/**
+ * A second, non-builtin page root. 2.1.8: every user root is of kind `pages`,
+ * so it carries a section index and sits in the reference graph like the
+ * built-in one — there is no degraded "flat" regime left to model.
+ */
+const notesRoot = (): Root => ({
   id: 'notes',
   name: 'Notes',
   dir: 'notes',
   builtin: false,
-  ...DEFAULT_USER_ROOT_PROPS,
-  sectionIndexed: false,
 });
 
 describe('discovery core', () => {
@@ -251,29 +252,6 @@ describe('discovery core', () => {
       });
     });
 
-    it('with a range on a section-indexed root, points at get_page_outline + get_sections', async () => {
-      await writePage('pages', 'a.md', '# A\n\nbody\n');
-      const c = core([pagesRoot()]);
-      await expect(
-        c.getPage({ rootId: 'pages', path: 'a.md', range: { start: 1, end: 2 } }),
-      ).rejects.toMatchObject({
-        code: 'INVALID_ARGUMENT',
-        hint: expect.stringMatching(/get_page_outline.*get_sections/),
-      });
-    });
-
-    it('allows a range on a root with no section index — the degraded regime is not a gate', async () => {
-      await writePage('notes', 'n.md', 'one\ntwo\nthree\n');
-      const c = core([pagesRoot(), flatRoot()]);
-      const page = await c.getPage({ rootId: 'notes', path: 'n.md', range: { start: 2, end: 2 } });
-      expect(page.preamble).toBe('two');
-      expect(page.results).toEqual([]);
-      // No `total`, no `hasMore`: `results` is the whole page and the budget
-      // degrades items instead of dropping them.
-      expect(page).not.toHaveProperty('total');
-      expect(page).not.toHaveProperty('hasMore');
-    });
-
     it('a cut item on an indexed root names get_sections and the write, never the range get_page refuses', async () => {
       await writePage(
         'pages',
@@ -293,8 +271,11 @@ describe('discovery core', () => {
     /**
      * The hash is of the FILE, not of the payload that fit. A hash of the returned
      * prefix would look identical and arm a guard that can never pass.
+     *
+     * ASSUMPTION:dev-0008 — the criterion's `{ content, truncationHint }` wording
+     * predates the 2.1.6 envelope; only its hash clause is asserted here.
      */
-    it('a truncated page still carries the hash of the whole file', async () => {
+    it('[ac:ac-get-page-zwraca-hash-liczony-z-pelneg] a truncated page still carries the hash of the whole file', async () => {
       const body = `# H\n\n${'x'.repeat(DEFAULT_BUDGET_CHARS + 1000)}\n`;
       await writePage('pages', 'big.md', body);
       const c = core([pagesRoot()]);
@@ -304,13 +285,25 @@ describe('discovery core', () => {
       expect(page.hash).toBe(createHash('sha256').update(body, 'utf-8').digest('hex'));
     });
 
-    it('the cut message on a root without a section index still proposes range', async () => {
-      await writePage('notes', 'big.md', `# H\n\nshort\n## Big\n\n${'x'.repeat(DEFAULT_BUDGET_CHARS + 1000)}\n`);
-      const c = core([pagesRoot(), flatRoot()]);
+    /**
+     * 2.1.8 — one cut message, on every page root. A non-builtin root used to be
+     * able to lack a section index and got a `range` variant; that regime is
+     * gone, so `notes` gets exactly the message `pages` gets.
+     */
+    it('the cut message on a non-builtin page root is the same single variant — no range', async () => {
+      await writePage(
+        'notes',
+        'big.md',
+        `<!-- anchor: aaaa0001 -->\n# H\n\nshort\n<!-- anchor: aaaa0002 -->\n## Big\n\n${'x'.repeat(DEFAULT_BUDGET_CHARS + 1000)}\n`,
+      );
+      const c = core([pagesRoot(), notesRoot()]);
       const page = await c.getPage({ rootId: 'notes', path: 'big.md' });
       expect(page.truncated).toBe(true);
-      expect(page.message).toMatch(/range/);
-      expect(page.message).not.toMatch(/get_sections/);
+      expect(page.message).toMatch(/aaaa0002/);
+      expect(page.message).toMatch(/get_sections/);
+      expect(page.message).toMatch(/update_sections/);
+      expect(page.message).toMatch(/expectedHash/);
+      expect(page.message).not.toMatch(/range/);
     });
   });
 
@@ -321,7 +314,7 @@ describe('discovery core', () => {
       '<!-- anchor: m17top001 -->\n## Cel\n\nAutor zamraża <single_element type="diagram" slug="flow"/>\n\n' +
       '### Untagged\n\nno anchor yet\n';
 
-    it('one item per section in document order, keyed by anchor; body without the anchor and heading lines', async () => {
+    it('[ac:ac-get-page-na-roocie-indeksowanym-zwrac] [ac:ac-body-itemu-get-page-nie-zawiera-linii] [ac:ac-naglowek-ktoremu-indekser-nie-wstrzyk] one item per section in document order, keyed by anchor; body without the anchor and heading lines', async () => {
       await writePage('pages', 'm.md', PAGE);
       const page = await core([pagesRoot()]).getPage({ rootId: 'pages', path: 'm.md' });
       expect(page.results.map((i) => [i.anchor, i.heading_text, i.heading_level])).toEqual([
@@ -340,7 +333,7 @@ describe('discovery core', () => {
       expect(page).not.toHaveProperty('content');
     });
 
-    it('frontmatter is { raw, fields } with raw verbatim; preamble is the text above the first heading', async () => {
+    it('[ac:ac-frontmatter-raw-w-odpowiedzi-get-page] frontmatter is { raw, fields } with raw verbatim; preamble is the text above the first heading', async () => {
       await writePage('pages', 'm.md', PAGE);
       const page = await core([pagesRoot()]).getPage({ rootId: 'pages', path: 'm.md' });
       expect(page.frontmatter).toEqual({
@@ -350,28 +343,28 @@ describe('discovery core', () => {
       expect(page.preamble).toBe('Intro line.\n\n');
     });
 
-    it('a page with no text before its first heading carries no preamble', async () => {
+    it('[ac:ac-odpowiedz-get-page-dla-strony-bez-tek] a page with no text before its first heading carries no preamble', async () => {
       await writePage('pages', 'p.md', '# A\n\nbody\n');
       const page = await core([pagesRoot()]).getPage({ rootId: 'pages', path: 'p.md' });
       expect(page).not.toHaveProperty('preamble');
       expect(page).not.toHaveProperty('frontmatter');
     });
 
-    it('a page with no heading comes back as results: [] with everything in the preamble', async () => {
+    it('[ac:ac-strona-bez-zadnego-naglowka-wraca-z-g] a page with no heading comes back as results: [] with everything in the preamble', async () => {
       await writePage('pages', 'p.md', '---\na: 1\n---\njust prose\nmore\n');
       const page = await core([pagesRoot()]).getPage({ rootId: 'pages', path: 'p.md' });
       expect(page.results).toEqual([]);
       expect(page.preamble).toBe('just prose\nmore\n');
     });
 
-    it('a YAML syntax error drops fields, never the read — raw is there to repair it', async () => {
+    it('[ac:ac-przy-bledzie-skladni-yaml-frontmatter] a YAML syntax error drops fields, never the read — raw is there to repair it', async () => {
       await writePage('pages', 'p.md', '---\ntitle: [unclosed\n---\n# A\n');
       const page = await core([pagesRoot()]).getPage({ rootId: 'pages', path: 'p.md' });
       expect(page.frontmatter).toEqual({ raw: '---\ntitle: [unclosed\n---\n' });
       expect(page.results).toHaveLength(1);
     });
 
-    it('an over-budget item keeps anchor and heading, loses body, and message names EVERY cut anchor', async () => {
+    it('[ac:ac-get-page-po-przekroczeniu-budzetu-zwra] [ac:ac-message-odpowiedzi-get-page-ucietej-b] an over-budget item keeps anchor and heading, loses body, and message names EVERY cut anchor', async () => {
       const big = 'x'.repeat(DEFAULT_BUDGET_CHARS);
       await writePage(
         'pages',
@@ -418,23 +411,33 @@ describe('discovery core', () => {
       expect(JSON.stringify(page).length).toBeLessThanOrEqual(DEFAULT_BUDGET_CHARS + 1000);
     });
 
-    it('an over-budget preamble comes back as a prefix, and message says the preamble was cut', async () => {
+    it('[ac:ac-preambula-wieksza-niz-budzet-odpowied] [ac:ac-message-odpowiedzi-get-page-z-preambu] [ac:ac-odpowiedz-get-page-z-preambula-ucieta] an over-budget preamble comes back as a prefix, and message says the preamble was cut', async () => {
       const pre = 'p'.repeat(DEFAULT_BUDGET_CHARS + 500);
       await writePage('pages', 'big.md', `${pre}\n# A\n\nbody\n`);
       const page = await core([pagesRoot()]).getPage({ rootId: 'pages', path: 'big.md' });
       expect(page.truncated).toBe(true);
       expect(pre.startsWith(page.preamble!)).toBe(true);
       expect(page.preamble!.length).toBeLessThan(pre.length);
-      expect(page.message).toMatch(/preamble/);
+      expect(page.message).toMatch(/preamble was cut/);
     });
 
-    it('on a root without a section index no item carries an anchor, with or without range', async () => {
-      await writePage('notes', 'n.md', '<!-- anchor: aaaa0001 -->\n# A\n\nbody\n');
-      const c = core([pagesRoot(), flatRoot()]);
+    it('on every page root — non-builtin included — an item carries its anchor when present', async () => {
+      await writePage('notes', 'n.md', '<!-- anchor: aaaa0001 -->\n# A\n\nbody\n## B\n\nno anchor yet\n');
+      const c = core([pagesRoot(), notesRoot()]);
       const whole = await c.getPage({ rootId: 'notes', path: 'n.md' });
-      expect(whole.results).toEqual([{ heading_text: 'A', heading_level: 1, body: '\nbody\n' }]);
-      const windowed = await c.getPage({ rootId: 'notes', path: 'n.md', range: { start: 1, end: 3 } });
-      expect(windowed.results[0]).not.toHaveProperty('anchor');
+      expect(whole.results[0]).toMatchObject({ anchor: 'aaaa0001', heading_text: 'A', heading_level: 1 });
+      expect(whole.results[1]).toMatchObject({ heading_text: 'B' });
+      expect(whole.results[1]).not.toHaveProperty('anchor');
+    });
+
+    it('get_page takes no line window — a stale `range` is REFUSED, never ignored', async () => {
+      await writePage('pages', 'a.md', '<!-- anchor: aaaa0001 -->\n# A\n\none\ntwo\n');
+      const c = core([pagesRoot()]);
+      // Ignoring it would hand the whole page to a caller who believes it narrowed.
+      await expect(c.getPage({ rootId: 'pages', path: 'a.md', range: { start: 4, end: 4 } })).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+        message: expect.stringContaining('no line window'),
+      });
     });
 
     it('a missing page is PAGE_NOT_FOUND', async () => {
@@ -1314,7 +1317,7 @@ describe('discovery core', () => {
      * section is not expanded (the subtree ends at the next same-or-shallower
      * heading).
      */
-    it('[ac:ac-get-sections-z-includesubtree-true-zw] a subtree comes back as separate items, one per section, in document order behind its parent', async () => {
+    it('[ac:ac-get-sections-z-includesubtree-true-zw] [ac:ac-item-sekcji-nadrzednej-przy-includesu] [ac:ac-item-pochodzacy-z-rozwiniecia-poddrze] a subtree comes back as separate items, one per section, in document order behind its parent', async () => {
       await writePage(
         'pages',
         'tree.md',
@@ -1450,7 +1453,7 @@ describe('discovery core', () => {
      * to the caller, so "retry with fewer" would name a call that returns the
      * same thing.
      */
-    it('[ac:ac-rozwiniecie-dajace-wiecej-niz-50-item] an expansion past the ceiling comes back as the first 50 items in output order, with the ceiling named', async () => {
+    it('[ac:ac-rozwiniecie-dajace-wiecej-niz-50-item] [ac:ac-przy-ucieciu-sufitem-liczby-itemow-ko] [ac:ac-message-przy-ucieciu-sufitem-liczby-i] an expansion past the ceiling comes back as the first 50 items in output order, with the ceiling named', async () => {
       const lines = ['# Top', '', '<!-- anchor: aaaaaa11 -->', '## Parent', '', 'P', ''];
       for (let i = 1; i <= 60; i++) {
         const anchor = `child${String(i).padStart(3, '0')}`;
@@ -1677,18 +1680,20 @@ describe('discovery core', () => {
     });
 
     /**
-     * A root that lost its section index takes its whole page down together:
-     * every anchor on it is an error item, and there is no subtree to expand.
+     * Rows left behind by a root that is no longer registered take their whole
+     * page down together: every anchor on it is an error item, and there is no
+     * subtree to expand. (2.1.8: every registered page root is indexed, so the
+     * only way to lose a page's index is to lose its root.)
      */
-    it('a de-indexed root produces per-item errors, and nothing to expand', async () => {
+    it('rows of a root no longer registered produce per-item errors, and nothing to expand', async () => {
       await writePage(
         'pages',
         'gone.md',
         ['# Top', '', '<!-- anchor: aaaaaa11 -->', '## Parent', '', 'P', '', '<!-- anchor: bbbbbb22 -->', '### Child', '', 'C', ''].join('\n'),
       );
       await indexPageLikeTheIndexer('pages', 'pages', 'gone.md');
-      // Same rows, but the root no longer declares a section index.
-      const c = core([flatRoot()]);
+      // Same rows, but `pages` is no longer a registered root.
+      const c = core([notesRoot()]);
 
       const result = await c.getSections({ anchors: ['aaaaaa11'], includeSubtree: true });
 
@@ -1767,7 +1772,7 @@ describe('discovery core', () => {
   });
 
   describe('get_page_outline — frontmatter and preamble on the envelope (2.1.6)', () => {
-    it('carries ALL parsed frontmatter keys with the block size, and the preamble size', async () => {
+    it('[ac:ac-frontmatter-fields-w-odpowiedzi-get-p] [ac:ac-get-page-outline-dla-strony-z-preambu] carries ALL parsed frontmatter keys with the block size, and the preamble size', async () => {
       const fm = '---\ntitle: Snapshots\nstatus: draft\nowners: [a, b]\n---\n';
       await writePage('pages', 'm.md', `${fm}Intro.\n\n<!-- anchor: abcdef12 -->\n## S\n\nbody\n`);
       await indexPageLikeTheIndexer('pages', 'pages', 'm.md');
@@ -1780,7 +1785,7 @@ describe('discovery core', () => {
       expect(outline.sections.map((n) => n.anchor)).toEqual(['abcdef12']);
     });
 
-    it('a YAML syntax error leaves size without fields — the outline still answers', async () => {
+    it('[ac:ac-przy-bledzie-skladni-yaml-frontmatter-2] a YAML syntax error leaves size without fields — the outline still answers', async () => {
       const fm = '---\ntitle: [unclosed\n---\n';
       await writePage('pages', 'm.md', `${fm}<!-- anchor: abcdef12 -->\n## S\n\nbody\n`);
       indexSection({ rootId: 'pages', anchor: 'abcdef12', page: 'm.md', heading: 'S', start: 1, end: 4 });
@@ -1790,7 +1795,7 @@ describe('discovery core', () => {
       expect(outline.sections).toHaveLength(1);
     });
 
-    it('the frontmatter is never cut: a cut tree still ships every key', async () => {
+    it('[ac:ac-przy-cieciu-budzetowym-drzewa-get-pag] the frontmatter is never cut: a cut tree still ships every key', async () => {
       const keys = Object.fromEntries(Array.from({ length: 50 }, (_, i) => [`k${i}`, `v${i}`]));
       const fm = `---\n${Object.entries(keys).map(([k, v]) => `${k}: ${v}`).join('\n')}\n---\n`;
       const count = Math.ceil(DEFAULT_BUDGET_CHARS / 40) + 50;
@@ -1804,7 +1809,64 @@ describe('discovery core', () => {
       expect(outline.frontmatter!.fields).toEqual(keys);
     });
 
-    it('a frontmatter over the budget alone ships whole, with sections: [] and a message pointing at get_page', async () => {
+    it('[ac:ac-uciety-outline-jest-prefiksem-drzewa] a cut outline is a PREFIX of the tree — no node without its parent — and its message offers no smaller retry', async () => {
+      const lines: string[] = [];
+      const count = Math.ceil(DEFAULT_BUDGET_CHARS / 60);
+      for (let i = 0; i < count; i++) {
+        lines.push(`<!-- anchor: p${String(i).padStart(7, '0')} -->`, `## Parent ${i}`, '', 'p', '');
+        lines.push(`<!-- anchor: c${String(i).padStart(7, '0')} -->`, `### Child ${i}`, '', 'c', '');
+      }
+      const content = lines.join('\n');
+      await writePage('pages', 'tree.md', content);
+      // Indexed WITH parents, the way the indexer records them.
+      const all = content.split('\n');
+      const stack: Array<{ anchor: string; level: number }> = [];
+      const documentOrder: string[] = [];
+      for (const sec of parseSections(content, { frontmatter: false }).sections) {
+        if (!sec.anchor) continue;
+        while (stack.length && stack[stack.length - 1]!.level >= sec.level) stack.pop();
+        indexSection({
+          rootId: 'pages',
+          anchor: sec.anchor,
+          page: 'tree.md',
+          heading: sec.heading,
+          start: sec.startLine,
+          end: sec.ownEndLine,
+          level: sec.level,
+          body: ownBodyOf(all, sec),
+          parent: stack[stack.length - 1]?.anchor ?? null,
+        });
+        stack.push({ anchor: sec.anchor, level: sec.level });
+        documentOrder.push(sec.anchor);
+      }
+
+      const outline = await core([pagesRoot()]).getPageOutline({ rootId: 'pages', path: 'tree.md' });
+
+      expect(outline.truncated).toBe(true);
+      // Every top-level node is a real top-level section: no child was promoted
+      // to a root because its parent fell outside the answer.
+      expect(outline.sections.every((n) => n.level === 2)).toBe(true);
+      const preOrder: string[] = [];
+      const walk = (nodes: typeof outline.sections) => {
+        for (const n of nodes) {
+          preOrder.push(n.anchor);
+          for (const child of n.children ?? []) expect(child.anchor.slice(1)).toBe(n.anchor.slice(1));
+          walk(n.children ?? []);
+        }
+      };
+      walk(outline.sections);
+      // A PREFIX of the document-order tree, not a sample of it.
+      expect(preOrder.length).toBeLessThan(documentOrder.length);
+      expect(preOrder).toEqual(documentOrder.slice(0, preOrder.length));
+      expect(outline.message).toMatch(/PREFIX/);
+      expect(outline.message).toMatch(/complete in itself/);
+      expect(outline.message).toMatch(/get_sections/);
+      // No smaller call is proposed: the operation has no narrowing parameter.
+      expect(outline.message).not.toMatch(/get_page_outline\(/);
+      expect(outline.message).not.toMatch(/(limit|offset|depth)\s*:/);
+    });
+
+    it('[ac:ac-get-page-outline-dla-strony-ktorej-fr] [ac:ac-get-page-outline-dla-strony-ktorej-fr-2] [ac:ac-odpowiedz-get-page-outline-dla-strony] [ac:ac-message-odpowiedzi-get-page-outline-d] a frontmatter over the budget alone ships whole, with sections: [] and a message pointing at get_page', async () => {
       const big = 'x'.repeat(DEFAULT_BUDGET_CHARS + 100);
       await writePage('pages', 'm.md', `---\nblob: ${big}\n---\n<!-- anchor: abcdef12 -->\n## S\n\nbody\n`);
       indexSection({ rootId: 'pages', anchor: 'abcdef12', page: 'm.md', heading: 'S', start: 1, end: 4 });
@@ -1821,7 +1883,7 @@ describe('discovery core', () => {
    * and DOCUMENT ORDER is the contract — not the anchor sort the flat listing used,
    * which shuffled a page into alphabetical nonsense.
    */
-  it('nests by parent_anchor and emits in document order', async () => {
+  it('[ac:ac-get-page-outline-zwraca-drzewo-naglow] nests by parent_anchor and emits in document order', async () => {
     await writePage(
       'pages',
       'tree.md',
@@ -1842,6 +1904,10 @@ describe('discovery core', () => {
     // `mbeta001`, so an anchor sort would have inverted them.
     expect(top.children!.map((n) => n.heading)).toEqual(['Alpha', 'Beta']);
     expect(top.children![0]!.children!.map((n) => n.heading)).toEqual(['Deep']);
+    // A node is { anchor, heading, level, size } plus `children` only when it has any.
+    expect(Object.keys(top).sort()).toEqual(['anchor', 'children', 'heading', 'level', 'size']);
+    expect(Object.keys(top.children![1]!).sort()).toEqual(['anchor', 'heading', 'level', 'size']);
+    expect(top.children![1]).toMatchObject({ anchor: 'mbeta001', heading: 'Beta', level: 2 });
   });
 
   /**
@@ -1885,7 +1951,7 @@ describe('discovery core', () => {
    * against. Frontmatter included: hashing the gray-matter body instead would arm a
    * guard that fails on every page that has any.
    */
-  it('carries the page file hash on the envelope', async () => {
+  it('[ac:ac-get-page-outline-niesie-hash-strony-w] carries the page file hash on the envelope', async () => {
     const body = ['---', 'title: M', '---', '# Top', '', '<!-- anchor: abcdef12 -->', '## S', '', 'body', ''].join('\n');
     await writePage('pages', 'm.md', body);
     indexSection({ rootId: 'pages', anchor: 'abcdef12', page: 'm.md', heading: 'S', start: 3, end: 7 });
@@ -1894,6 +1960,9 @@ describe('discovery core', () => {
     const outline = await c.getPageOutline({ rootId: 'pages', path: 'm.md' });
 
     expect(outline.hash).toBe(createHash('sha256').update(body, 'utf-8').digest('hex'));
+    // On the ENVELOPE, beside the constant key — never on a node.
+    expect(outline).toMatchObject({ rootId: 'pages', path: 'm.md' });
+    expect(outline.sections[0]).not.toHaveProperty('hash');
     // One value, one name, across both channels — so it can be copied between them.
     expect(outline.hash).toBe((await c.getPage({ rootId: 'pages', path: 'm.md' })).hash);
   });
@@ -1921,7 +1990,7 @@ describe('discovery core', () => {
    * with — which it is not. It stays in the table, for M06's REST surface. Same for
    * `heading_path`: the hierarchy is the node's POSITION now.
    */
-  it('a node carries no section hash of any spelling, and no headingPath', async () => {
+  it('[ac:ac-wezel-get-page-outline-nie-niesie-con] a node carries no section hash of any spelling, and no headingPath', async () => {
     await writePage('pages', 'm.md', ['# Top', '', '<!-- anchor: abcdef12 -->', '## S', '', 'body', ''].join('\n'));
     indexSection({ rootId: 'pages', anchor: 'abcdef12', page: 'm.md', heading: 'S', start: 3, end: 7 });
     const c = core([pagesRoot()]);
@@ -1952,14 +2021,22 @@ describe('discovery core', () => {
     });
   });
 
-  /** No section index, no anchors — refused as a whole, with `get_page` named as the way through. */
-  it('refuses a root that carries no section index, pointing at get_page', async () => {
-    await writePage('notes', 'n.md', '# Note\n\nbody\n');
-    const c = core([pagesRoot(), flatRoot()]); // `notes` has sectionIndexed: false
+  /**
+   * 2.1.8 — `get_page_outline` gates on `require`, like every page op: a
+   * non-builtin page root answers (it is indexed by its kind), and a system
+   * root id is the same refusal as an unknown one.
+   */
+  it('answers on a non-builtin page root, and refuses a system root id like an unknown one', async () => {
+    await writePage('notes', 'n.md', ['# Top', '', '<!-- anchor: abcdef12 -->', '## S', '', 'body', ''].join('\n'));
+    await indexPageLikeTheIndexer('notes', 'notes', 'n.md');
+    const c = core([pagesRoot(), notesRoot()]);
 
-    await expect(c.getPageOutline({ rootId: 'notes', path: 'n.md' })).rejects.toMatchObject({
+    const outline = await c.getPageOutline({ rootId: 'notes', path: 'n.md' });
+    expect(JSON.stringify(outline)).toContain('abcdef12');
+
+    await expect(c.getPageOutline({ rootId: 'plans', path: 'n.md' })).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
-      hint: expect.stringContaining('get_page'),
+      message: expect.stringContaining("unknown rootId 'plans' (page roots in this project: pages, notes)"),
     });
   });
 
@@ -2256,6 +2333,57 @@ describe('discovery core', () => {
   });
 
   /**
+   * 2.1.8 — the system roots are not addressable by the page core. Naming one
+   * is not a special refusal: it is the SAME code and message shape as a typo.
+   */
+  it('[ac:ac-list-pages-z-rootid-plans-konczy-sie] list_pages({ rootId: "plans" }) is refused exactly like an unknown rootId', async () => {
+    const c = core([pagesRoot(), notesRoot()]);
+    const refusal = async (rootId: string) => {
+      try {
+        await c.listPages({ rootId });
+      } catch (e) {
+        return e as { code: string; message: string; hint?: string };
+      }
+      throw new Error(`list_pages({ rootId: '${rootId}' }) did not refuse`);
+    };
+    const plans = await refusal('plans');
+    const nope = await refusal('nope');
+
+    expect(plans.code).toBe('INVALID_ARGUMENT');
+    expect(plans.code).toBe(nope.code);
+    expect(plans.message).toBe("unknown rootId 'plans' (page roots in this project: pages, notes)");
+    expect(nope.message).toBe("unknown rootId 'nope' (page roots in this project: pages, notes)");
+    expect(plans.message.replace("'plans'", "'<id>'")).toBe(nope.message.replace("'nope'", "'<id>'"));
+    expect(plans.hint).toBe(nope.hint);
+  });
+
+  /**
+   * 2.1.8 — a `.html` file is a raw preview entry of the pages kind's file map,
+   * never a page: it is not listed and not readable through `get_page`.
+   */
+  it('[ac:ac-plik-html-lezacy-w-korzeniu-stron-jes] a .html file in a page root is visible in that root\'s tree, but absent from list_pages (and get_page on it is PAGE_NOT_FOUND)', async () => {
+    await writePage('pages', 'a.md', '# A\n');
+    await writePage('pages', 'mock.html', '<html><body>preview</body></html>\n');
+    const c = core([pagesRoot(), notesRoot()]);
+
+    // Visible in the tree of THIS root (the sidebar's `GET /api/pages/:rootId`
+    // walk) as the raw `html` entry of the pages kind's file map.
+    const tree = await new PagesService(cwd, 'pages', 'pages').listTree();
+    expect(tree).toContainEqual({ type: 'file', name: 'mock.html', path: 'mock.html', fileType: 'html' });
+    expect(tree).toContainEqual(expect.objectContaining({ path: 'a.md', fileType: 'markdown' }));
+
+    const listed = await c.listPages({ rootId: 'pages' });
+    const paths = JSON.stringify(listed);
+    expect(paths).toContain('a.md');
+    expect(paths).not.toContain('mock.html');
+
+    await expect(c.getPage({ rootId: 'pages', path: 'mock.html' })).rejects.toMatchObject({
+      code: 'PAGE_NOT_FOUND',
+      message: "no page 'mock.html' in root 'pages' (page roots: pages, notes)",
+    });
+  });
+
+  /**
    * Regressions from a code review of this branch. Each one is a place where
    * routing a previously UNBOUNDED read through a bounded core op changed an
    * answer, which is the failure mode of the whole rewiring.
@@ -2318,7 +2446,7 @@ describe('discovery core', () => {
     await writePage('pages', 'modules/m16-onboarding.md', '# M16\n');
     await writePage('notes', 'modules/m99-not-a-module.md', '# Not one\n');
 
-    const c = core([pagesRoot(), flatRoot()], [widgetModule(), acBackendModule]);
+    const c = core([pagesRoot(), notesRoot()], [widgetModule(), acBackendModule]);
     const report = await c.checkConsistency({});
     const flagged = (report.modulesWithoutAc as Array<{ module: string }>).map((r) => r.module);
 
@@ -2474,18 +2602,18 @@ describe('discovery core', () => {
     expect(rows.every((r) => r.severity === 'error')).toBe(true);
   });
 
-  it('overview declares each root identity regime up front', async () => {
+  it('overview lists each page root as { id, name, dir, builtin, pageCount } — no regime flags', async () => {
     await writePage('pages', 'a.md', '# A\n');
     await writePage('notes', 'n.md', 'plain\n');
-    const c = core([pagesRoot(), flatRoot()]);
+    const c = core([pagesRoot(), notesRoot()]);
 
     const result = await c.overview();
 
-    // The agent has to know BEFORE searching whether hits from a root arrive as
-    // an anchor or as (rootId, path, line).
+    // 2.1.8: every page root is indexed and in the reference graph, so there
+    // is no per-root regime to declare up front.
     expect(result.roots).toEqual([
-      expect.objectContaining({ id: 'pages', sectionIndexed: true, pageCount: 1 }),
-      expect.objectContaining({ id: 'notes', sectionIndexed: false, pageCount: 1 }),
+      { id: 'pages', name: 'Pages', dir: 'pages', builtin: true, pageCount: 1 },
+      { id: 'notes', name: 'Notes', dir: 'notes', builtin: false, pageCount: 1 },
     ]);
     expect(result.claude4spec).toBe('test');
   });
@@ -2734,21 +2862,20 @@ describe('discovery core', () => {
     });
   });
 
-  it('search_pages degrades hit identity on a root with no section index', async () => {
+  it('search_pages: a match on a non-builtin root outside every section is a page-level hit', async () => {
     await writePage('pages', 'a.md', ['<!-- anchor: abcdef12 -->', '# T', 'needle', ''].join('\n'));
     await writePage('notes', 'n.md', 'needle\n');
     indexSection({ rootId: 'pages', anchor: 'abcdef12', page: 'a.md', heading: 'T', start: 1, end: 4 });
-    const c = core([pagesRoot(), flatRoot()]);
+    const c = core([pagesRoot(), notesRoot()]);
 
     const result = await c.searchPages({ query: 'needle', mode: 'hits' });
     if (result.mode !== 'hits') throw new Error('expected hit mode');
 
     expect(result.items.find((h) => h.rootId === 'pages')).toMatchObject({ kind: 'section', anchor: 'abcdef12' });
     /*
-     * 0.2.40 — the unindexed root collapses per PAGE, not per line, and carries
-     * no anchor at all. Before, its hit was `(rootId, path, line)` — effectively
-     * one hit per matching line, which made a common term on a flat root drown
-     * out every section hit beside it.
+     * 2.1.8 — `notes` is indexed like every page root; `n.md` has no section,
+     * so its match sits outside every section and collapses per PAGE, with no
+     * anchor.
      */
     const flat = result.items.find((h) => h.rootId === 'notes')!;
     expect(flat).toMatchObject({ kind: 'page', path: 'n.md', matchCount: 1 });
@@ -2757,7 +2884,8 @@ describe('discovery core', () => {
 });
 
 /**
- * 0.2.13 — `--pages <dir>` / `?pages=<dir>`, against the REAL core.
+ * 0.2.13 — `--pages <dir>` / `?pages=<dir>`, against the REAL core (2.1.8: it
+ * re-points only the builtin root's `dir`).
  *
  * The unit test for `applyPagesOverride` asserts the root it returns, and the
  * route test stubs `findReferences` entirely. Between them they left the only
@@ -2803,49 +2931,48 @@ describe('applyPagesOverride, through the core that consumes it', () => {
 
   const CITES = '# Notes\n\n<inline_mention type="widget" slug="flow"/>\n';
 
-  it('an UNDECLARED directory is still swept — the flag is not a silent no-op', async () => {
-    await write('scratch', 'draft.md', CITES);
-    const configured = [pagesRoot()];
+  const overridden = (roots: Root[], dir: string): DiscoveryCore => {
+    const { roots: rs, unindexedRootIds } = applyPagesOverride(roots, dir, cwd);
+    const pluginHost = host([widgetModule()]);
+    return createDiscoveryCore({
+      reader: new RawEntityReader(db, pluginHost),
+      db,
+      host: pluginHost,
+      serialization: new SerializationEngine(pluginHost),
+      roots: rs,
+      unindexedRootIds,
+      projectDir: cwd,
+      packageVersion: 'test',
+    });
+  };
 
-    // The whole point of the flag: `scratch` is not a configured root.
-    const narrowed = build(applyPagesOverride(configured, 'scratch', cwd));
-    const found = await narrowed.findReferences({ target: 'entity', type: 'widget', slug: 'flow' });
+  it('an UNDECLARED directory is swept under the builtin root\'s id — the flag is not a silent no-op', async () => {
+    await write('scratch', 'draft.md', CITES);
+    const found = await overridden([pagesRoot()], 'scratch').findReferences({ target: 'entity', type: 'widget', slug: 'flow' });
     expect(found.total).toBe(1);
-    expect(found.references[0]!.pagePath).toBe('draft.md');
+    expect(found.references[0]).toMatchObject({ rootId: 'pages', pagePath: 'draft.md' });
   });
 
-  it('and the narrowing is real — the configured roots are NOT swept alongside it', async () => {
+  it('2.1.8: the other page roots are still swept alongside the re-pointed builtin one', async () => {
     await write('pages', 'configured.md', CITES);
     await write('scratch', 'draft.md', CITES);
+    await write('docs', 'guide.md', CITES);
+    const docs: Root = { id: 'docs', name: 'Docs', dir: 'docs', builtin: false };
 
-    const wide = build([pagesRoot()]);
-    expect((await wide.findReferences({ target: 'entity', type: 'widget', slug: 'flow' })).total).toBe(1);
-
-    const narrowed = build(applyPagesOverride([pagesRoot()], 'scratch', cwd));
-    const found = await narrowed.findReferences({ target: 'entity', type: 'widget', slug: 'flow' });
-    // One hit, and it is the SCRATCH one — not the configured page, and not both.
-    expect(found.total).toBe(1);
-    expect(found.references[0]!.pagePath).toBe('draft.md');
+    const found = await overridden([pagesRoot(), docs], 'scratch').findReferences({ target: 'entity', type: 'widget', slug: 'flow' });
+    // `pages/configured.md` is out (its root now points at `scratch/`); `docs` stays.
+    expect(found.references.map((h) => [h.rootId, h.pagePath])).toEqual([
+      ['docs', 'guide.md'],
+      ['pages', 'draft.md'],
+    ]);
   });
 
-  it('a directory a configured root already claims is answered by that root, id intact', async () => {
-    await write('pages', 'configured.md', CITES);
-    const narrowed = build(applyPagesOverride([pagesRoot()], 'pages', cwd));
-    const found = await narrowed.findReferences({ target: 'entity', type: 'widget', slug: 'flow' });
-    expect(found.total).toBe(1);
-    expect(found.references[0]!.rootId).toBe('pages');
-  });
-
-  it('a hit from an ad-hoc root carries NO anchor, even when a real page shares its name', async () => {
+  it('a hit from the re-pointed root carries NO anchor, even when a real page shares its name', async () => {
     /**
-     * The failure this pins: the ad-hoc root used to keep the built-in root's
-     * id, and `anchorFor` matches `section_index` on `(rootId, pagePath, line)`
-     * alone — so a hit in `drafts/notes.md` was decorated with the anchor of
-     * `pages/notes.md`. `c4s get-sections --anchors <that>` then read a section
-     * of a completely different file and nothing in the answer said so.
-     *
-     * The row is inserted by hand rather than indexed, because what is under
-     * test is the JOIN, not the indexer.
+     * `anchorFor` matches `section_index` on `(rootId, pagePath, line)` alone,
+     * and the re-pointed root keeps its id — so a hit in `drafts/notes.md` would
+     * borrow the anchor of `pages/notes.md`. The row is inserted by hand: what
+     * is under test is the JOIN, not the indexer.
      */
     await write('pages', 'notes.md', CITES);
     await write('drafts', 'notes.md', CITES);
@@ -2856,14 +2983,14 @@ describe('applyPagesOverride, through the core that consumes it', () => {
        VALUES ('pages', 'aaaa1111', 'notes.md', NULL, 1, 'Notes', 'h', '', 1, 9, 1)`,
     ).run();
 
-    // The configured root DOES get the anchor — the control that gives the
-    // assertion below its meaning.
-    const wide = build([pagesRoot()]);
-    const wideHit = (await wide.findReferences({ target: 'entity', type: 'widget', slug: 'flow' })).references[0]!;
+    // The configured root DOES get the anchor — the control.
+    const wideHit = (await build([pagesRoot()]).findReferences({ target: 'entity', type: 'widget', slug: 'flow' })).references[0]!;
     expect(wideHit.anchor).toBe('aaaa1111');
+    // An override naming the configured dir changes nothing.
+    const same = (await overridden([pagesRoot()], './pages').findReferences({ target: 'entity', type: 'widget', slug: 'flow' })).references[0]!;
+    expect(same.anchor).toBe('aaaa1111');
 
-    const narrowed = build(applyPagesOverride([pagesRoot()], 'drafts', cwd));
-    const hit = (await narrowed.findReferences({ target: 'entity', type: 'widget', slug: 'flow' })).references[0]!;
+    const hit = (await overridden([pagesRoot()], 'drafts').findReferences({ target: 'entity', type: 'widget', slug: 'flow' })).references[0]!;
     expect(hit.pagePath).toBe('notes.md');
     expect(hit.anchor).toBeUndefined();
   });
@@ -2905,7 +3032,7 @@ describe('the fail-closed read gate', () => {
           id: 'pages',
           name: 'Pages',
           dir: 'pages',
-          ...DEFAULT_PAGES_ROOT_PROPS,
+          builtin: true,
         } as Root,
       ],
       projectDir: cwd,

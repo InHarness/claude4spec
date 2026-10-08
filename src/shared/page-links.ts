@@ -9,6 +9,12 @@ export type PageLinkSyntax = 'at' | 'backticks' | 'link';
 export interface PageLink {
   syntax: PageLinkSyntax;
   rawToken: string;
+  /**
+   * 2.1.8: the page root the link resolved in — `@path.md` resolves across every
+   * `kind: pages` root (source root → builtin → `roots[]` order). A chip
+   * navigates to `/space/<targetRootId>/<targetPath>`.
+   */
+  targetRootId?: string;
   targetPath: string;
   anchor?: string;
   line: number;
@@ -27,6 +33,12 @@ export interface PageLinkAutocompleteItem {
   path: string;
   title: string;
   matchScore: number;
+  /**
+   * 2.1.8: the page root the suggestion comes from. The same path in several
+   * `kind: pages` roots is suggested once — from the root `@path.md` resolves
+   * to (source root → builtin → `roots[]` order).
+   */
+  rootId?: string;
 }
 
 export interface PageLinksCounts {

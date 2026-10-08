@@ -11,16 +11,10 @@ import { recordRootRename } from '../state/rootRenames.js';
  * "Restart required" (M26) is gone: nothing needs a process restart anymore.
  */
 const CONTEXT_DEFINING_FIELDS = [
+  // Must mirror the server's `context-rebuild` fields (the field registry's
+  // `contextRebuildKeys()`, `src/server/settings/registry.ts`). 2.1.8: the
+  // `*Dir` keys are gone — the system roots are fixed in code.
   'roots',
-  'briefsDir',
-  'patchesDir',
-  'plansDir',
-  'entitiesDir',
-  // Must mirror the server's `context-rebuild` fields (0.2.113: the field
-  // registry's `contextRebuildKeys()`, `src/server/settings/registry.ts`). Missing
-  // here, a `releasesDir`-only write rebuilt the context server-side while the
-  // client kept serving every cached query against the old one.
-  'releasesDir',
   'entities',
 ] as const satisfies readonly (keyof ConfigPatch)[];
 

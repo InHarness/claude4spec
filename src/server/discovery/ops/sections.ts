@@ -23,7 +23,7 @@
  * in bulk, or a per-item `SECTION_NOT_FOUND` from `get_sections` as an existence
  * test — which narrows `SECTION_NOT_FOUND` to a single emitter.
  *
- * Sections exist only on roots with `sectionIndexed`, so both operations iterate
+ * Sections exist only on roots whose kind selects the section indexer, so both operations iterate
  * that subset. There is no `rootId === 'pages'` branch anywhere here.
  */
 
@@ -61,7 +61,7 @@ export async function getPageOutline(
   input: GetPageOutlineInput,
   budgetChars = DEFAULT_BUDGET_CHARS,
 ): Promise<GetPageOutlineResult> {
-  const root = roots.requireSectionIndexed(input.rootId, 'get_page_outline');
+  const root = roots.require(input.rootId, 'get_page_outline');
   /**
    * A missing `path` is refused rather than answered. `page_path = NULL` matches no
    * row, so without this the call would come back "that page has no sections" for a
@@ -315,30 +315,15 @@ export async function getSections(
    */
   const edgesByAnchor = new Map<string, SectionEdges>();
   for (const { anchor, section } of kept) {
-    if (!section) {
-      items.push({ anchor, ...itemError(sectionNotFound(anchor, nearbyAnchors(db))) });
-      continue;
-    }
     /**
-     * The de-indexed root, demoted from a throw to a per-item error. In a batch
-     * a throw would let one de-indexed root suppress every other section the
-     * caller asked for, which contradicts the rule that makes this operation
-     * worth having.
-     *
-     * The remedy travels WITH the error. Both tool descriptions promise that
-     * this variant "points at get_page", and a promise kept only in the
-     * description is not kept: the caller reads the item, not the manual. The
-     * pointer is followable by construction — the root has no section index, so
-     * get_page is exactly the operation that serves it (with `range`, even).
+     * 2.1.8: ONE failure mode — an unknown anchor. Every page root has a section
+     * index, so the former "anchor on a root without an index → use get_page"
+     * variant is gone; a row left behind by a root that is no longer a page
+     * root is, to the caller, an anchor that does not exist. Refused per item,
+     * never by failing the batch.
      */
-    if (!indexed.has(section.rootId)) {
-      items.push({
-        anchor,
-        error:
-          `section '${anchor}' is on root '${section.rootId}', which has no section index — ` +
-          `read it with get_page({ rootId: "${section.rootId}", path: "${section.pagePath}" })`,
-        code: 'SECTION_NOT_FOUND',
-      });
+    if (!section || !indexed.has(section.rootId)) {
+      items.push({ anchor, ...itemError(sectionNotFound(anchor, nearbyAnchors(db))) });
       continue;
     }
     /**
@@ -398,7 +383,7 @@ interface Slot {
  * one item each, and for `[child, parent]` the parent's expansion skips the
  * child and everything under it, so its subtree is not contiguous.
  *
- * An unresolvable anchor (unknown, or on a root without a section index) stays
+ * An unresolvable anchor (2.1.8: only ever an unknown one) stays
  * a slot of its own — it becomes an error item and counts toward the ceiling —
  * it just has nothing to expand. The walk is over `section_index` rows, not
  * page text: the rows are what the batch is keyed from, so an index-derived

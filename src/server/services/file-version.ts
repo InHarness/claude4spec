@@ -20,7 +20,11 @@ export interface FileVersionListItem {
   releaseId: number | null;
   serializerVersion: string;
   createdAt: string;
-  /** 0.1.96: which root this version belongs to ('pages' | user slug | 'brief' | 'patch'). */
+  /**
+   * Which root-registry entry this version belongs to: a `pages`-kind root id
+   * (`pages` or a user root) or a system root id (`briefs` | `patches` | `plans`,
+   * 2.1.8 — migration 057 remapped the old `brief`/`patch`/`plan` markers).
+   */
   rootId: string;
   /** Human-readable opis zmiany. Null = brak (filesystem watcher, legacy). */
   changeSummary: string | null;
@@ -77,7 +81,7 @@ export class FileVersionService {
     return chain.length > 0 ? [...chain] : [rootId];
   }
 
-  /** Expands each releasable root to its chain, de-duplicated. */
+  /** Expands each `pages` root to its chain, de-duplicated. */
   private expandRoots(rootIds: readonly string[]): string[] {
     const out = new Set<string>();
     for (const id of rootIds) for (const link of this.chainOf(id)) out.add(link);
@@ -96,11 +100,12 @@ export class FileVersionService {
    *
    * M21 (m02multidir): caller can pass an alternative `serializer` so this
    * single shared `FileVersionService` can capture files from any root. Each
-   * `FileSerializer` is bound to a specific `PagesService` (= a root dir) at
+   * `FileSerializer` is bound to a specific `MarkdownFileStore` (= a root dir) at
    * construction time; the `file_version` table is keyed by `(rootId, path)`.
    *
-   * 0.1.96: `rootId` is a dynamic string — a page-root identifier or one of the
-   * fixed `'brief'`/`'patch'` markers. 0.2.101: it is the identifier the space
+   * 0.1.96: `rootId` is a dynamic string — the id of a registry root: a page
+   * root, or one of the system roots `briefs`/`patches`/`plans` (2.1.8, after
+   * migration 057; never the old `'brief'`/`'patch'`/`'plan'` markers). 0.2.101: it is the identifier the space
    * carried AT THE MOMENT OF THE WRITE, not necessarily its current one — a
    * rename never re-stamps existing rows, so reads follow the identifier CHAIN.
    */
@@ -275,40 +280,41 @@ export class FileVersionService {
 
   /**
    * Count file captures with `release_id IS NULL` (waiting to be picked up by
-   * next release), restricted to the given releasable root ids. Briefs/patches
-   * (markers 'brief'/'patch') fall out structurally — they are never releasable.
+   * next release), restricted to the given roots — the roots of kind `pages`
+   * (2.1.8). System roots (`briefs`/`patches`/`plans`) fall out structurally.
    */
-  countUnreleased(releasableRootIds: string[]): number {
-    if (releasableRootIds.length === 0) return 0;
-    // 0.2.101: each releasable root brings its retired identifiers along —
+  countUnreleased(pagesKindRootIds: string[]): number {
+    if (pagesKindRootIds.length === 0) return 0;
+    // 0.2.101: each `pages` root brings its retired identifiers along —
     // otherwise versions written before a rename would silently fall out of the
     // next release's scope.
-    releasableRootIds = this.expandRoots(releasableRootIds);
-    const placeholders = releasableRootIds.map(() => '?').join(', ');
+    pagesKindRootIds = this.expandRoots(pagesKindRootIds);
+    const placeholders = pagesKindRootIds.map(() => '?').join(', ');
     const row = this.db
       .prepare(
         `SELECT COUNT(*) AS n FROM file_version
           WHERE release_id IS NULL AND rootId IN (${placeholders})`
       )
-      .get(...releasableRootIds) as { n: number };
+      .get(...pagesKindRootIds) as { n: number };
     return row.n;
   }
 
   /**
-   * Atomic: assign all unreleased file_version rows in the given releasable roots
-   * to a release. Returns the count of rows updated. Briefs/patches never enter a
-   * release — they carry non-releasable rootId markers and fall out structurally.
+   * Atomic: assign all unreleased file_version rows in the given roots — the
+   * roots of kind `pages` (2.1.8, M17 L1 `rootId IN (korzenie kind: pages)`) — to
+   * a release. Returns the count of rows updated. Rows of the system roots
+   * `briefs`/`patches`/`plans` never enter a release and stay `release_id = NULL`.
    */
-  assignToRelease(releaseId: number, releasableRootIds: string[]): number {
-    if (releasableRootIds.length === 0) return 0;
-    releasableRootIds = this.expandRoots(releasableRootIds);
-    const placeholders = releasableRootIds.map(() => '?').join(', ');
+  assignToRelease(releaseId: number, pagesKindRootIds: string[]): number {
+    if (pagesKindRootIds.length === 0) return 0;
+    pagesKindRootIds = this.expandRoots(pagesKindRootIds);
+    const placeholders = pagesKindRootIds.map(() => '?').join(', ');
     const info = this.db
       .prepare(
         `UPDATE file_version SET release_id = ?
           WHERE release_id IS NULL AND rootId IN (${placeholders})`
       )
-      .run(releaseId, ...releasableRootIds);
+      .run(releaseId, ...pagesKindRootIds);
     return Number(info.changes);
   }
 

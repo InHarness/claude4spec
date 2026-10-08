@@ -38,11 +38,11 @@ export type PatchesRouterDeps = PatchWriteDeps;
 /**
  * The wire shape of `POST /api/patches`.
  *
- * `brief` is a path RELATIVE to `briefsDir`, mirroring how briefs are addressed
+ * `brief` is a path RELATIVE to the `briefs` root, mirroring how briefs are addressed
  * everywhere else — portable across machines, unlike an absolute path.
  */
 export interface PatchCreateRequest {
-  /** Brief path relative to `briefsDir`. Must name a real file → else 404 BRIEF_NOT_FOUND. */
+  /** Brief path relative to the `briefs` root. Must name a real file → else 404 BRIEF_NOT_FOUND. */
   brief: string;
   /** Concise description of the drift. Drives the file slug and the body heading. Empty → 400. */
   desc: string;
@@ -73,7 +73,7 @@ export function patchesRouter(deps: PatchesRouterDeps): Router {
        */
       const result = await createPatch(deps, body, 'rest');
 
-      /** 201 with the path relative to `patchesDir` — never the patch's own text. */
+      /** 201 with the path relative to the `patches` root — never the patch's own text. */
       res.status(201).json({ data: { path: result.path } });
     } catch (err) {
       next(err);

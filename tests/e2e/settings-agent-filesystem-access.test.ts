@@ -98,8 +98,10 @@ describe.skipIf(!BASE)('settings — Agent: block direct file access (0.2.53)', 
   const blockRow = () => section().locator('label', { hasText: 'Block direct file access' }).first();
   const blockCheckbox = () => blockRow().locator('input[type="checkbox"]').first();
   const allowedPathsField = () =>
-    // Anchored: "Disallowed paths" (always shown since 0.2.113) contains the phrase too.
+    // Anchored: "Disallowed paths" contains the phrase too.
     section().locator('label', { hasText: /^Allowed paths/ }).locator('textarea').first();
+  const disallowedPathsField = () =>
+    section().locator('label', { hasText: /^Disallowed paths/ }).locator('textarea').first();
 
   it('[ac:ac-checkbox-zablokuj-bezposredni-dostep] renders the checkbox checked by default', async () => {
     await expect.poll(() => blockCheckbox().count(), { timeout: 15_000 }).toBeGreaterThan(0);
@@ -125,8 +127,10 @@ describe.skipIf(!BASE)('settings — Agent: block direct file access (0.2.53)', 
   });
 
   /** Hidden, not cleared — the config keeps the values while the control goes away. */
-  it('hides the path-scope fields while checked, without clearing them', async () => {
+  it('[ac:ac-textarea-allowed-disallowed-paths-sekcj] hides the path-scope fields while checked, without clearing them', async () => {
     await expect.poll(() => allowedPathsField().count()).toBe(0);
+    // Both textareas — the M05 settings table gates Disallowed paths on the same flag.
+    await expect.poll(() => disallowedPathsField().count()).toBe(0);
     const cfg = await readConfig(project.id);
     expect(agentBranch(cfg).allowedPaths).toEqual(['/tmp/e2e-scope-probe']);
   });
@@ -143,6 +147,7 @@ describe.skipIf(!BASE)('settings — Agent: block direct file access (0.2.53)', 
       })
       .toBe(false);
     await expect.poll(() => allowedPathsField().count(), { timeout: 10_000 }).toBeGreaterThan(0);
+    await expect.poll(() => disallowedPathsField().count(), { timeout: 10_000 }).toBeGreaterThan(0);
     await expect.poll(() => allowedPathsField().inputValue()).toContain('/tmp/e2e-scope-probe');
   });
 

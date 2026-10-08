@@ -1,6 +1,6 @@
 /**
  * 0.1.118 ReleaseIndexerService — rebuilds the `spec_release` derived cache
- * from `<releasesDir>/<slug>.json` files, mirroring `EntityIndexerService`
+ * from the `releases` root's `<slug>.json` files, mirroring `EntityIndexerService`
  * (M29) — with one critical divergence, spelled out below.
  *
  * `spec_release.id` is an AUTOINCREMENT surrogate key referenced by a loose
@@ -35,7 +35,7 @@ import { CURRENT_RELEASE_NAME } from '../../shared/entities.js';
  * 0.2.2: `roots` joins the rebuilt columns (migration 049).
  *
  * It was the one field of `ReleaseFileData` the rebuild dropped on the floor, so a
- * database rebuilt from disk came back with releases whose releasable-root set was
+ * database rebuilt from disk came back with releases whose page-root set was
  * gone and diffs silently fell back to the project's CURRENT roots. Stored as the
  * JSON array from the file; `id` is still never referenced, so SQLite preserves the
  * surrogate key that `entity_version.release_id` / `file_version.release_id` point at.
@@ -147,7 +147,7 @@ export class ReleaseIndexerService implements WatchSubscriber {
       data.createdBy,
       data.createdAt,
       // NULL rather than '[]' when the file records no roots: NULL means "not
-      // recorded, fall back to the current releasable roots", which is different
+      // recorded, fall back to the current `pages` roots", which is different
       // from "this release deliberately covered zero roots".
       data.roots ? JSON.stringify(data.roots) : null,
     );

@@ -48,20 +48,6 @@ export interface PageRootRuntime {
  * `count`/`map`/`hits` ladder, the three cost valves, paging, and an anchor on
  * every hit that falls inside an indexed section.
  */
-/**
- * `?range=1:200` → `{ start: 1, end: 200 }`, 1-based and inclusive.
- *
- * A malformed value is REFUSED rather than dropped. `range` narrows what comes
- * back, and a narrowing quietly ignored answers with the whole page while the
- * caller believes it asked for twenty lines.
- */
-function parseRange(raw: unknown): { start: number; end: number } | undefined {
-  if (typeof raw !== 'string' || raw === '') return undefined;
-  const m = /^(\d+):(\d+)$/.exec(raw);
-  if (!m) throw new DomainError('VALIDATION', `range must be '<from>:<to>', got '${raw}'`);
-  return { start: Number(m[1]), end: Number(m[2]) };
-}
-
 export function crossRootPagesRouter(discovery: DiscoveryCore): Router {
   const router = Router();
 
@@ -145,6 +131,11 @@ export function pagesRouter(
        * answered a bare message — turning a one-keystroke mistake into a dead
        * end on the surface whose whole job is to be navigable. The catalog's own
        * contract says a NOT_FOUND carries its alternatives.
+       *
+       * 2.1.8 — only `kind: pages` runtimes resolve here, so a system root id
+       * (`plans`) gets this very refusal, and the list never names one.
+       * ASSUMPTION:dev-0009 — REST/CLI keep ROOT_NOT_FOUND (list in `hint`) where
+       * M11 L14 names the core's INVALID_ARGUMENT (list in `message`).
        */
       const known = rootIds();
       res.status(404).json({
@@ -206,11 +197,9 @@ export function pagesRouter(
    *
    * The read wildcard below is not it, and the difference is not cosmetic. That
    * one answers `PagesService.read` — the editor's payload — with a bare
-   * `{ error: 'not found' }` for a missing page and no notion of `range`. This
-   * answers the core: the page AS AUTHORED with its XML tags untouched, a
-   * `PAGE_NOT_FOUND` carrying the repair path, and `range` — which the core
-   * accepts only on a root WITHOUT a section index, a refusal it owns because it
-   * owns root properties.
+   * `{ error: 'not found' }` for a missing page. This answers the core: the page
+   * as structure, and a `PAGE_NOT_FOUND` carrying the repair path. 2.1.8: no
+   * line window — a cut read resumes through outline + sections.
    *
    * The path is a QUERY parameter, not a wildcard segment. A page path contains
    * slashes and may collide with any static segment this router adds later; put
@@ -223,9 +212,14 @@ export function pagesRouter(
       if (!rt) return;
       const pagePath = typeof req.query.path === 'string' ? req.query.path : '';
       if (!pagePath) throw new DomainError('VALIDATION', 'path query param required');
-      const range = parseRange(req.query.range);
+      // 2.1.8: a leftover `?range=` is forwarded so the core refuses it — the
+      // same refusal MCP and in-process callers get (and `c4s get-page --range`).
       res.json(
-        await discovery.getPage({ rootId: rt.root.id, path: pagePath, ...(range ? { range } : {}) }),
+        await discovery.getPage({
+          rootId: rt.root.id,
+          path: pagePath,
+          ...(req.query.range !== undefined ? { range: req.query.range } : {}),
+        }),
       );
     } catch (err) {
       next(err);
@@ -427,12 +421,11 @@ export function pagesRouter(
           },
           'user',
           /**
-           * 2.1.6 — the root's flag only: the editor's save stays report-only
-           * (no referent lookup, so it cannot answer ANCHOR_LOSS), but on a root
-           * without a section index the guard must not run at all — `droppedAnchors`
-           * is absent there by contract.
+           * 2.1.6 — the editor's save stays report-only: no referent lookup, so
+           * it cannot answer ANCHOR_LOSS, but it does report `droppedAnchors`
+           * (2.1.8: on every page root — each one has a section index).
            */
-          { sectionIndexed: rt.root.sectionIndexed },
+          {},
         ),
       );
     } catch (err) {
@@ -470,10 +463,7 @@ export function pagesRouter(
        * body nor textEdits" branch, leaving an empty PATCH to be refused for the
        * shape of its array instead of for what it forgot to say.
        */
-      const diffDeps: PageDiffDeps = {
-        ...(writeDeps ?? {}),
-        sectionIndexed: rt.root.sectionIndexed,
-      };
+      const diffDeps: PageDiffDeps = { ...(writeDeps ?? {}) };
       res.json(
         await updatePage(
           rt,

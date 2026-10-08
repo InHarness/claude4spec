@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import type { BriefService } from '../services/brief.js';
 import type { ChatService, ArtifactThreadColumn } from '../services/chat.js';
-import { artifactRegistry } from '../services/artifact-registry.js';
+import { artifactEntry } from '../services/artifact-registry.js';
 import { DomainError } from '../services/tags.js';
 
 /**
@@ -108,7 +108,7 @@ export function briefsRouter(briefs: BriefService, chat: ChatService): Router {
       // pole na id watku nie istnieje.
       const brief = await briefs.getBrief(briefPath);
       const listed = chat.listThreadsByArtifact({
-        threadColumn: artifactRegistry.brief.binding.threadColumn as ArtifactThreadColumn,
+        threadColumn: artifactEntry('brief').binding.threadColumn as ArtifactThreadColumn,
         path: briefPath,
         limit: 20,
         offset: 0,

@@ -17,6 +17,7 @@ import {
   type PageWriteTarget,
 } from './page-write.js';
 import { DomainError } from './tags.js';
+import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 
 /**
  * 0.2.15 — `expectedHash` is REQUIRED, including on the create-through-update
@@ -78,7 +79,6 @@ import { createDiscoveryCore, findReferencesAll } from '../discovery/index.js';
 import type { DiscoveryCore } from '../discovery/types.js';
 import { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
-import { DEFAULT_PAGES_ROOT_PROPS } from '../../shared/types.js';
 
 /**
  * 0.2.13 item 28 — the page write path as ONE primitive, shared by REST and by
@@ -309,7 +309,7 @@ describe('the page write primitive', () => {
         db,
         host,
         serialization: new SerializationEngine(host),
-        roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true, ...DEFAULT_PAGES_ROOT_PROPS }],
+        roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }],
         projectDir: dir,
         packageVersion: 'test',
       });
@@ -443,7 +443,7 @@ describe('update_sections over a real section index', () => {
       db,
       host,
       serialization: new SerializationEngine(host),
-      roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true, ...DEFAULT_PAGES_ROOT_PROPS }],
+      roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }],
       projectDir: cwd,
       packageVersion: 'test',
     });
@@ -1404,7 +1404,7 @@ describe('update_sections — the anchor-loss guard', () => {
       db,
       host,
       serialization: new SerializationEngine(host),
-      roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true, ...DEFAULT_PAGES_ROOT_PROPS }],
+      roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }],
       projectDir: cwd,
       packageVersion: 'test',
     });
@@ -1519,8 +1519,11 @@ describe('update_sections — the anchor-loss guard', () => {
    * that a call did not happen passes just as well when the code path quietly
    * changed underneath it.
    */
-  it('edits a page armed only by the get_page_outline hash — no get_page anywhere in the chain', async () => {
-    await index('doc.md', nested);
+  it('[ac:ac-redakcja-strony-przekraczajacej-budze] [ac:ac-get-page-outline-niesie-hash-strony-w] edits an over-budget page armed only by the get_page_outline hash — no get_page anywhere in the chain', async () => {
+    // Over the response budget: Sibling's body alone is larger than any answer
+    // may be, so the page could not come back whole from get_page.
+    await index('doc.md', nested.replace('SIBLING BODY', `SIBLING BODY\n${'s'.repeat(DEFAULT_BUDGET_CHARS + 1000)}`));
+    expect((await pages.read('doc.md')).body.length).toBeGreaterThan(DEFAULT_BUDGET_CHARS);
     const noWholePageReads = {
       ...core,
       getPage: () => {
@@ -1532,8 +1535,11 @@ describe('update_sections — the anchor-loss guard', () => {
     const flat = (nodes: typeof outline.sections): typeof outline.sections =>
       nodes.flatMap((n) => [n, ...flat(n.children ?? [])]);
     const parent = flat(outline.sections).find((i) => i.heading === 'Parent')!;
+    // The outline issues the sizes the choice of anchors is made from.
+    expect(parent.size).toBeGreaterThan(0);
     const read = await noWholePageReads.getSections({ anchors: [parent.anchor] });
     expect(read.results[0]).toMatchObject({ anchor: parent.anchor });
+    expect((read.results[0] as { body?: string }).body).toContain('PARENT BODY');
 
     const res = await updateSections(
       deps(),
@@ -2458,7 +2464,7 @@ describe('differential writes — textEdits', () => {
       db,
       host,
       serialization: new SerializationEngine(host),
-      roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true, ...DEFAULT_PAGES_ROOT_PROPS }],
+      roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }],
       projectDir: cwd,
       packageVersion: 'test',
     });
@@ -2533,7 +2539,7 @@ describe('differential writes — textEdits', () => {
 
   // ── update_page, the disjunction ────────────────────────────────────────
 
-  it('refuses body and textEdits together — exactly one describes the new content', async () => {
+  it('[ac:ac-update-page-z-content-i-textedits-pod] refuses body and textEdits together — exactly one describes the new content', async () => {
     await index('doc.md', nested);
     const err = await updatePage(
       target,
@@ -2544,7 +2550,7 @@ describe('differential writes — textEdits', () => {
     expect(err.message).toMatch(/mutually exclusive/);
   });
 
-  it('refuses neither of them — a write with no content description is a mistake, not a no-op', async () => {
+  it('[ac:ac-update-page-bez-content-i-bez-textedi] refuses neither of them — a write with no content description is a mistake, not a no-op', async () => {
     await index('doc.md', nested);
     const before = (await pages.read('doc.md')).body;
     const err = await updatePage(target, { path: 'doc.md', expectedHash: await hashOfPage() }, 'agent').catch(
@@ -2657,6 +2663,71 @@ describe('differential writes — textEdits', () => {
     expect((await pages.read('doc.md')).frontmatter.title).toBe('New Title');
   });
 
+  it('[ac:ac-update-page-z-textedits-podmienia-wys] substitutes over the FULL file — frontmatter and the preamble before the first heading included', async () => {
+    const withPreamble = ['Preamble line: teh intro', '', nested].join('\n');
+    await index('doc.md', withPreamble, { title: 'teh title' });
+    const res = await updatePage(
+      target,
+      {
+        path: 'doc.md',
+        textEdits: [{ find: 'teh', replaceWith: 'the', expectedMatches: 'all' }],
+        expectedHash: await hashOfPage(),
+      },
+      'agent',
+      diffDeps(),
+    );
+    // Frontmatter (1) + preamble (1) + two section bodies (2).
+    expect(res.replacements).toBe(4);
+    const page = await pages.read('doc.md');
+    expect(page.frontmatter.title).toBe('the title');
+    expect(page.body.slice(0, page.body.indexOf('# Doc'))).toContain('Preamble line: the intro');
+    const raw = await fs.readFile(path.join(pages.root, 'doc.md'), 'utf-8');
+    expect(raw).not.toContain('teh');
+  });
+
+  it('[ac:ac-content-i-textedits-w-update-page-sa] exactly one of body/textEdits describes the content, and expectedHash is required in BOTH modes', async () => {
+    await index('doc.md', nested);
+    const before = await fs.readFile(path.join(pages.root, 'doc.md'), 'utf-8');
+
+    // Disjoint: both, or neither, is refused.
+    const both = await updatePage(
+      target,
+      { path: 'doc.md', body: 'x', textEdits: [{ find: 'teh', replaceWith: 'the', expectedMatches: 'all' }], expectedHash: await hashOfPage() },
+      'agent',
+      diffDeps(),
+    ).catch((e) => e);
+    expect(both.code).toBe('INVALID_ARGUMENT');
+    const neither = await updatePage(target, { path: 'doc.md', expectedHash: await hashOfPage() }, 'agent', diffDeps()).catch(
+      (e) => e,
+    );
+    expect(neither.code).toBe('INVALID_ARGUMENT');
+
+    // expectedHash missing → refused in the literal mode…
+    const literalNoHash = await updatePage(target, { path: 'doc.md', body: 'x' }, 'agent', diffDeps()).catch((e) => e);
+    expect(literalNoHash.code).toBe('INVALID_ARGUMENT');
+    expect(literalNoHash.message).toMatch(/expectedHash/);
+    // …and in the differential mode.
+    const diffNoHash = await updatePage(
+      target,
+      { path: 'doc.md', textEdits: [{ find: 'teh', replaceWith: 'the', expectedMatches: 'all' }] },
+      'agent',
+      diffDeps(),
+    ).catch((e) => e);
+    expect(diffNoHash.code).toBe('INVALID_ARGUMENT');
+    expect(diffNoHash.message).toMatch(/expectedHash/);
+
+    expect(await fs.readFile(path.join(pages.root, 'doc.md'), 'utf-8')).toBe(before);
+
+    // Exactly one mode with a hash goes through.
+    const ok = await updatePage(
+      target,
+      { path: 'doc.md', textEdits: [{ find: 'teh', replaceWith: 'the', expectedMatches: 'all' }], expectedHash: await hashOfPage() },
+      'agent',
+      diffDeps(),
+    );
+    expect(ok.replacements).toBe(2);
+  });
+
   it('is not idempotent — a replay with a refreshed hash answers FIND_NOT_FOUND', async () => {
     await index('doc.md', nested);
     const edits = [{ find: 'SIBLING BODY', replaceWith: 'SIBLING TEXT' }];
@@ -2686,7 +2757,7 @@ describe('differential writes — textEdits', () => {
 
   // ── update_page, the inherited guard ────────────────────────────────────
 
-  it('refuses with ANCHOR_LOSS when a find swallows a CITED anchor comment', async () => {
+  it('[ac:ac-textedits-gubiacy-anchor-majacy-refer] refuses with ANCHOR_LOSS when a find swallows a CITED anchor comment', async () => {
     await index('doc.md', nested);
     const childOne = anchorOf('Child one');
     await citeWithTag(childOne);
@@ -2746,26 +2817,6 @@ describe('differential writes — textEdits', () => {
     expect(err.message).toMatch(/matched fragments/);
   });
 
-  /**
-   * Without a section index there is no set of anchors to measure a loss
-   * against, so the guard is skipped OUTRIGHT rather than run against nothing.
-   */
-  it('skips the guard entirely on a root with sectionIndexed = false', async () => {
-    await index('doc.md', nested);
-    const childOne = anchorOf('Child one');
-    await citeWithTag(childOne);
-    const body = (await pages.read('doc.md')).body;
-    const swallow = body.slice(body.indexOf(`<!-- anchor: ${childOne} -->`), body.indexOf('CHILD ONE BODY'));
-
-    const res = await updatePage(
-      target,
-      { path: 'doc.md', textEdits: [{ find: swallow, replaceWith: '' }], expectedHash: await hashOfPage() },
-      'agent',
-      { ...diffDeps(), sectionIndexed: false },
-    );
-    expect(res.replacements).toBe(1);
-  });
-
   // ── update_page, LITERAL (`body`) mode — the same guard, whole-page scope (2.1.6) ──
 
   /** The page's body with one section's anchor line and heading cut out — a wholesale rewrite that loses it. */
@@ -2792,17 +2843,18 @@ describe('differential writes — textEdits', () => {
     expect((await pages.read('doc.md')).body).toBe(body);
   });
 
-  it('literal mode: the same write passes once the anchor is in dropAnchors, and reports it', async () => {
+  it('[ac:ac-update-page-w-trybie-content-ktorego] literal mode: the same write passes once the anchor is in dropAnchors, and reports it', async () => {
     await index('doc.md', nested);
     const childOne = anchorOf('Child one');
     await citeWithTag(childOne);
     const body = (await pages.read('doc.md')).body;
+    const newBody = withoutSection(body, childOne, 'Child one');
 
     const res = await updatePage(
       target,
       {
         path: 'doc.md',
-        body: withoutSection(body, childOne, 'Child one'),
+        body: newBody,
         dropAnchors: [childOne],
         expectedHash: await hashOfPage(),
       },
@@ -2810,6 +2862,12 @@ describe('differential writes — textEdits', () => {
       diffDeps(),
     );
     expect(res.droppedAnchors).toEqual([childOne]);
+    // The page IS written: the cited anchor and its heading are gone from disk.
+    const written = (await pages.read('doc.md')).body;
+    expect(written).not.toContain(`<!-- anchor: ${childOne} -->`);
+    expect(written).not.toMatch(/^### Child one$/m);
+    expect(written).toContain('CHILD TWO BODY');
+    expect(res.hash).toBe(await hashOfPage());
   });
 
   it('literal mode: an uncited anchor lost passes and is listed informationally', async () => {
@@ -2861,21 +2919,6 @@ describe('differential writes — textEdits', () => {
     ).catch((e) => e);
     expect(err.code).toBe('INVALID_ARGUMENT');
     expect(err.message).toMatch(/does not have/);
-  });
-
-  it('literal mode: no guard on a root with sectionIndexed = false — a body without the anchor lines passes', async () => {
-    await index('doc.md', nested);
-    const childOne = anchorOf('Child one');
-    await citeWithTag(childOne);
-    const body = (await pages.read('doc.md')).body;
-
-    const res = await updatePage(
-      target,
-      { path: 'doc.md', body: body.replace(/<!-- anchor: [^>]+ -->\n/g, ''), expectedHash: await hashOfPage() },
-      'agent',
-      { ...diffDeps(), sectionIndexed: false },
-    );
-    expect(res).not.toHaveProperty('droppedAnchors');
   });
 
   // ── update_sections, the `edit` action ──────────────────────────────────

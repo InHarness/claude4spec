@@ -1,8 +1,9 @@
 import { customAlphabet } from 'nanoid';
 import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
 import { insertAnchorLines, parseSections } from '../../shared/section-parser.js';
-import { artifactRegistry, type ArtifactKind } from './artifact-registry.js';
-import type { PagesService } from './pages.js';
+import { ARTIFACT_ROOT_KIND, type ArtifactKind } from './artifact-registry.js';
+import { kindSelects } from '../../shared/root-kinds.js';
+import type { MarkdownFileStore } from './markdown-file-store.js';
 import type { WatchSubscriber } from '../fs/watcher.js';
 
 /**
@@ -16,15 +17,20 @@ import type { WatchSubscriber } from '../fs/watcher.js';
  * multi-line comment, where its `-->` used to close the outer comment early and
  * expose the rest as page content.
  *
- * The artifact registry only DECLARES who gets anchors (`anchorInjection`):
- * today plans alone. Briefs and patches never do. No artifact kind enters
- * `section_index` — artifact anchors are unique within their file only.
+ * Who gets anchors is the ROOT KIND's choice (2.1.8): a kind selecting
+ * `m06-anchor-injection` without `m06-section-indexer` — today `plans` alone.
+ * Briefs and patches select neither. No artifact kind enters `section_index` —
+ * artifact anchors are unique within their file only.
  */
 
 // Generator stays strict 8 (M06 `15u7sazr` — auto-inject contract).
 const nanoid8 = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8);
 
-/** Plans anchor `##`–`####`: `#` is the plan title, deeper levels are detail. */
+/**
+ * Plans anchor `##`–`####`: `#` is the plan title, deeper levels are detail.
+ * ASSUMPTION:dev-0014 — the range M10 names; M06 says plans get anchors "by the
+ * same definition as a page", which anchors every level.
+ */
 const MIN_LEVEL = 2;
 const MAX_LEVEL = 4;
 
@@ -60,14 +66,17 @@ export function injectArtifactAnchors(body: string): string {
   return insertAnchorLines(body, missing, missing.map(() => mintFileAnchor(taken)));
 }
 
-/** Whether a file write of this artifact kind gets anchors — the registry's declaration. */
+/**
+ * Whether a file write of this artifact kind gets anchors — 2.1.8: its root
+ * kind selects `m06-anchor-injection` (plans do; briefs and patches do not).
+ */
 export function injectsAnchors(kind: ArtifactKind): boolean {
-  return artifactRegistry[kind].anchorInjection;
+  return kindSelects(ARTIFACT_ROOT_KIND[kind], 'm06-anchor-injection');
 }
 
 /**
- * The injection for one artifact write: anchors for kinds that declare
- * `anchorInjection`, the body untouched for every other kind.
+ * The injection for one artifact write: anchors for kinds whose root kind
+ * selects `m06-anchor-injection`, the body untouched for every other kind.
  */
 export function injectAnchorsFor(kind: ArtifactKind, body: string): string {
   return injectsAnchors(kind) ? injectArtifactAnchors(body) : body;
@@ -82,7 +91,7 @@ export function injectAnchorsFor(kind: ArtifactKind, body: string): string {
  */
 export function artifactAnchorInjectionSubscriber(
   kind: ArtifactKind,
-  mount: { pages: PagesService },
+  mount: { store: MarkdownFileStore },
   suppress: (source: string, relPath: string) => void,
 ): WatchSubscriber {
   return {
@@ -90,14 +99,14 @@ export function artifactAnchorInjectionSubscriber(
       if (!injectsAnchors(kind)) return;
       let page;
       try {
-        page = await mount.pages.read(relPath);
+        page = await mount.store.read(relPath);
       } catch {
         return; // already gone — skip idempotently
       }
       const injected = injectArtifactAnchors(page.body);
       if (injected === page.body) return;
       suppress(source, relPath);
-      await mount.pages.write(relPath, { frontmatter: page.frontmatter, body: injected });
+      await mount.store.write(relPath, { frontmatter: page.frontmatter, body: injected });
     },
     onUnlink: () => {},
   };

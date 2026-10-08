@@ -147,3 +147,189 @@ describe('rename-sync', () => {
     expect(fs.readFileSync(path.join(pages.root, 'two.md'), 'utf-8')).toBe(before.two);
   });
 });
+
+/**
+ * 2.1.8 — `@path.md` resolves across EVERY page root in scope, with precedence
+ * source root → builtin root → the rest in `roots[]` (Map) order. A resolved
+ * link records where it landed (`targetRootId`), and the reverse index is keyed
+ * by that TARGET root.
+ */
+describe('cross-root resolution (2.1.8)', () => {
+  let cwd: string;
+  let runtime: FileWatchRuntime;
+  let services: Map<string, PagesService>;
+  let indexer: PagesLinkIndexerService;
+
+  /**
+   * Map order is deliberately a, b, c, pages — the builtin root LAST — so that
+   * "builtin before the rest" is distinguishable from plain Map order.
+   */
+  const ROOT_IDS = ['a', 'b', 'c', 'pages'] as const;
+  const SCOPE: WatchScope = 'context:cross-root-rig';
+
+  beforeEach(async () => {
+    cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-cross-root-'));
+    runtime = new FileWatchRuntime({ fsEvents: false });
+    services = new Map();
+    for (const id of ROOT_IDS) {
+      const svc = new PagesService(cwd, id, id);
+      await svc.ensureRoot();
+      runtime.mountSource({ source: `pages:${id}`, dir: svc.root, scope: SCOPE });
+      svc.records = new RecordStore<MarkdownRecord>({
+        registrar: runtime.scoped(SCOPE),
+        source: `pages:${id}`,
+        dir: svc.root,
+        adapter: markdownAdapter,
+      });
+      services.set(id, svc);
+    }
+    indexer = new PagesLinkIndexerService(services, { broadcast: () => {} } as never, undefined, {
+      builtinRootId: 'pages',
+      rootDirs: new Map(ROOT_IDS.map((id) => [id, id])),
+    });
+  });
+
+  afterEach(async () => {
+    await runtime.close();
+    fs.rmSync(cwd, { recursive: true, force: true });
+  });
+
+  function write(rootId: string, rel: string, body: string): void {
+    fs.writeFileSync(path.join(services.get(rootId)!.root, rel), body, 'utf-8');
+  }
+
+  it('@x.md from root A resolves into root B when A lacks it, and the link carries targetRootId', async () => {
+    write('a', 'src.md', '# Src\n\nsee @x.md here\n');
+    write('b', 'x.md', '# X\n');
+    await indexer.indexAll();
+
+    expect(indexer.resolve('x.md', 'src.md', 'a')).toEqual({ rootId: 'b', path: 'x.md', anchor: undefined });
+    const links = indexer.getLinks('a', 'src.md');
+    expect(links).toHaveLength(1);
+    expect(links[0]).toMatchObject({ targetRootId: 'b', targetPath: 'x.md', syntax: 'at' });
+    expect(indexer.getUnresolved('a', 'src.md')).toEqual([]);
+    // The reverse index is keyed by the TARGET root.
+    expect(indexer.getReverseLinks('b', 'x.md')).toEqual(['a:src.md']);
+    expect(indexer.getReverseLinks('a', 'x.md')).toEqual([]);
+  });
+
+  it('a target in a root that comes BEFORE the source in map order resolves too', async () => {
+    write('c', 'src.md', '# Src\n\nsee @y.md#kkz1e7d6\n');
+    write('a', 'y.md', '# Y\n');
+    await indexer.indexAll();
+
+    expect(indexer.getLinks('c', 'src.md')[0]).toMatchObject({ targetRootId: 'a', targetPath: 'y.md', anchor: 'kkz1e7d6' });
+  });
+
+  it('[ac:ac-resolve-i-autocomplete-path-md-sa-ogran] precedence: the source root wins, then the builtin root, then map order', async () => {
+    for (const id of ROOT_IDS) write(id, 'x.md', `# X in ${id}\n`);
+    await indexer.indexAll();
+
+    // Source root first — every root has it, `c` keeps its own.
+    expect(indexer.resolve('x.md', 'src.md', 'c')?.rootId).toBe('c');
+    // Root `a` lacks it below: the builtin `pages` beats `b`, though `b` is earlier in the map.
+    fs.rmSync(path.join(services.get('a')!.root, 'x.md'));
+    indexer.handleUnlink('a', 'x.md');
+    expect(indexer.resolve('x.md', 'src.md', 'a')?.rootId).toBe('pages');
+    // Without the builtin, map order decides: `b` before `c`.
+    fs.rmSync(path.join(services.get('pages')!.root, 'x.md'));
+    indexer.handleUnlink('pages', 'x.md');
+    expect(indexer.resolve('x.md', 'src.md', 'a')?.rootId).toBe('b');
+    // A source outside every root (an artifact) starts at the builtin root.
+    write('pages', 'x.md', '# X back\n');
+    await indexer.onChange(SCOPE, 'pages:pages', 'x.md');
+    expect(indexer.resolve('x.md', 'plan.md', null)?.rootId).toBe('pages');
+
+    // Autocomplete spans every page root, and a path present in several roots is
+    // offered once — from the root the same precedence picks.
+    write('a', 'x.md', '# X in a\n');
+    await indexer.onChange(SCOPE, 'pages:a', 'x.md');
+    write('b', 'only-b.md', '# Only b\n');
+    await indexer.onChange(SCOPE, 'pages:b', 'only-b.md');
+    write('c', 'only-c.md', '# Only c\n');
+    await indexer.onChange(SCOPE, 'pages:c', 'only-c.md');
+    const all = indexer.autocomplete('', 50, 'c');
+    expect(all.map((s) => s.path).sort()).toEqual(['only-b.md', 'only-c.md', 'x.md']);
+    expect(all.find((s) => s.path === 'only-b.md')?.rootId).toBe('b');
+    expect(indexer.autocomplete('x', 50, 'c').filter((s) => s.path === 'x.md')).toEqual([
+      expect.objectContaining({ rootId: 'c', title: 'X in c' }),
+    ]);
+    expect(indexer.autocomplete('x', 50, 'b').find((s) => s.path === 'x.md')).toMatchObject({ rootId: 'b', title: 'X in b' });
+    // No source root: the builtin `pages` beats `a`, though `a` is first in the map.
+    expect(indexer.autocomplete('x', 50, null).find((s) => s.path === 'x.md')).toMatchObject({ rootId: 'pages', title: 'X back' });
+  });
+
+  it('an anchor that points at no section stays unresolved as state, not an error — in any root, no per-root gate', async () => {
+    // 2.1.8 (M14 "Uwagi do katalogu"): no `sectionIndexed` special case — the
+    // rule is "the anchor names no section", whichever root the target lives in.
+    write('a', 'src.md', '# Src\n\n@x.md#zz9nosect and @x.md#kkz1e7d6\n');
+    write('b', 'x.md', '# X <!-- anchor: kkz1e7d6 -->\n');
+    await indexer.indexAll();
+
+    const links = indexer.getLinks('a', 'src.md');
+    expect(links.map((l) => [l.targetRootId, l.targetPath, l.anchor]).sort()).toEqual([
+      ['b', 'x.md', 'kkz1e7d6'],
+      ['b', 'x.md', 'zz9nosect'],
+    ]);
+    // The page resolved, so it is no unresolved mention and no broken link…
+    expect(indexer.getUnresolved('a', 'src.md')).toEqual([]);
+    expect(indexer.counts()).toMatchObject({ brokenLinkCount: 0, unresolvedMentionCount: 0 });
+    // …and the anchor's state is readable from the target's meta: the dangling one is absent.
+    const anchors = indexer.getFileMeta('b', 'x.md')!.anchors;
+    expect(anchors).toContain('kkz1e7d6');
+    expect(anchors).not.toContain('zz9nosect');
+  });
+
+  it('the resolved link of an indexed page follows the same precedence', async () => {
+    write('a', 'src.md', '# Src\n\n@x.md\n');
+    write('b', 'x.md', '# X in b\n');
+    write('pages', 'x.md', '# X in pages\n');
+    await indexer.indexAll();
+
+    expect(indexer.getLinks('a', 'src.md')[0]).toMatchObject({ targetRootId: 'pages', targetPath: 'x.md' });
+  });
+
+  it('a CWD-relative spelling resolves through that root’s own dir', () => {
+    write('b', 'z.md', '# Z\n');
+    return indexer.indexAll().then(() => {
+      expect(indexer.resolve('b/z.md', 'src.md', 'a')).toMatchObject({ rootId: 'b', path: 'z.md' });
+    });
+  });
+
+  it('a root-relative hit in any root beats a dir-prefixed (CWD-relative) hit in an earlier root', async () => {
+    // Source root `a` holds `x.md` (reachable as `a/x.md` only via its dir strip);
+    // the builtin root holds `a/x.md` literally — root-relative wins across scope.
+    write('a', 'x.md', '# X in a\n');
+    fs.mkdirSync(path.join(services.get('pages')!.root, 'a'), { recursive: true });
+    write('pages', 'a/x.md', '# a/x in pages\n');
+    await indexer.indexAll();
+
+    expect(indexer.resolve('a/x.md', 'src.md', 'a')).toMatchObject({ rootId: 'pages', path: 'a/x.md' });
+    // Without the root-relative hit, the dir-prefixed form lands in `a`.
+    fs.rmSync(path.join(services.get('pages')!.root, 'a', 'x.md'));
+    indexer.handleUnlink('pages', 'a/x.md');
+    expect(indexer.resolve('a/x.md', 'src.md', 'a')).toMatchObject({ rootId: 'a', path: 'x.md' });
+  });
+
+  it('an extensionless candidate falls back to `.md`, then `.mdx`, across the scope', async () => {
+    write('b', 'only-mdx.mdx', '# Only mdx\n');
+    write('c', 'both.md', '# Both md\n');
+    write('c', 'both.mdx', '# Both mdx\n');
+    await indexer.indexAll();
+
+    expect(indexer.resolve('only-mdx', 'src.md', 'a')).toMatchObject({ rootId: 'b', path: 'only-mdx.mdx' });
+    expect(indexer.resolve('both', 'src.md', 'a')).toMatchObject({ rootId: 'c', path: 'both.md' });
+  });
+
+  it('renameSync rewrites a citing page that lives in ANOTHER root', async () => {
+    write('c', 'src.md', '# Src\n\nsee @x.md here\n');
+    write('a', 'x.md', '# X\n');
+    await indexer.indexAll();
+
+    fs.renameSync(path.join(services.get('a')!.root, 'x.md'), path.join(services.get('a')!.root, 'x2.md'));
+    const rewritten = await indexer.renameSync('a', 'x.md', 'x2.md');
+
+    expect(rewritten).toEqual(['src.md']);
+    expect(fs.readFileSync(path.join(services.get('c')!.root, 'src.md'), 'utf-8')).toContain('@x2.md');
+  });
+});

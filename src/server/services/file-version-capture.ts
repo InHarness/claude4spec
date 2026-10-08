@@ -1,15 +1,18 @@
 import type { FileVersionService, FileChangedBy } from './file-version.js';
 import type { FileSerializer } from './file-serializer.js';
 import type { WatchSubscriber, WatchScope, WatchOrigin, WatchActor } from '../fs/watcher.js';
-import { requireRootId } from '../fs/sources.js';
+import { reactionRootId } from '../fs/sources.js';
+import type { ReactionInput } from '../fs/reactions.js';
 
 /**
  * M17 — `m17-capture`, the `capture`-phase subscriber.
  *
- * ONE subscription, registered on every `pages:<rootId>` source (releasable or
- * not) and every `artifacts:*` source, with `after: ['write-back']`. Capture has
- * no gate: it covers every observed file, and the `releasable` filter only
- * applies later, at `assignToRelease()`.
+ * 2.1.8 — ONE definition, `m17-capture` (`after: ['write-back']`), selected by
+ * root kinds and bound by the root-registry implementor (L13) to the sources of
+ * their roots; M17 mounts nothing. Its acceptance contract: file-map entries
+ * whose version track is `file_version`, in any format — entries of another
+ * track (e.g. `.html` in a pages root) never reach it. It covers every accepted
+ * entry; narrowing to `pages`-kind roots happens only at `assignToRelease()`.
  *
  * It is the SOLE author of `file_version` for pages. Services and routes do not
  * record their own rows — they write through the M42 primitive, which runs the
@@ -49,8 +52,13 @@ export class FileVersionCapture implements WatchSubscriber {
     return this.peekActor(scope, source, relPath) ?? 'user';
   }
 
-  async onChange(scope: WatchScope, source: string, relPath: string, origin: WatchOrigin): Promise<void> {
-    const rootId = requireRootId(source);
+  /**
+   * The row's `rootId` is the registry entry's id the root-registry implementor
+   * passed when binding `m17-capture` to the source (a user root's id, or for a
+   * system root the id equal to its kind).
+   */
+  async onChange(scope: WatchScope, source: string, relPath: string, origin: WatchOrigin, input?: ReactionInput): Promise<void> {
+    const rootId = reactionRootId(source, input);
     const serializer = this.serializers.get(rootId);
     if (!serializer) return;
     // `add` may be a genuinely new file (op=create) or a re-detection of one we
@@ -78,8 +86,8 @@ export class FileVersionCapture implements WatchSubscriber {
    * tombstones. The content is synthesized from the previous version, since the
    * file itself is already gone.
    */
-  async onUnlink(scope: WatchScope, source: string, relPath: string, origin: WatchOrigin): Promise<void> {
-    const rootId = requireRootId(source);
+  async onUnlink(scope: WatchScope, source: string, relPath: string, origin: WatchOrigin, input?: ReactionInput): Promise<void> {
+    const rootId = reactionRootId(source, input);
     const serializer = this.serializers.get(rootId);
     if (!serializer) return;
     try {

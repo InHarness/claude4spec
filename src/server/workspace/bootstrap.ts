@@ -1,3 +1,5 @@
+import { RootRegistry } from '../roots/registry.js';
+import { PAGES_KIND } from '../../shared/root-kinds.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadOrCreateConfig, migrateConfigToV3, migrateConfigToV4, readConfig, type Config } from '../config.js';
@@ -25,6 +27,12 @@ export interface BootstrapResult {
   configCreated: boolean;
   claudeDirCreated: boolean;
   gitignoreCreated: boolean;
+  /**
+   * 2.1.8: cwd-relative dirs of the SYSTEM roots this run created. Captured here,
+   * not in the context build — this function mkdirs them first, so by the time
+   * the build looks they always exist.
+   */
+  systemRootDirsCreated: string[];
 }
 
 /**
@@ -55,8 +63,9 @@ export function ensureWelcomePage(cwd: string, pagesDir: string): void {
  * existing project changes nothing.
  *
  * Sequence: mkdir cwd → config (create or load) → config v3 migration (carry
- * port/mode to the registry, first-wins) → .gitignore → entitiesDir →
- * registry registration (creates the DB slot) → legacy DB relocation.
+ * port/mode to the registry, first-wins) → .gitignore → mkdir of every root in
+ * the root registry → registry registration (creates the DB slot) → legacy DB
+ * relocation.
  * (0.2.93: no integration artifact for external agents lands on disk at all —
  * neither a skill nor an MCP config entry; the latter is served on demand by
  * `GET /api/projects/:id/_meta/mcp-config`.) (0.1.56: welcome page no longer created here —
@@ -88,12 +97,11 @@ export function bootstrapProject(
   // absence, not just a version number.
   //
   // 0.1.96 config v4: map the legacy `pagesDir` scalar to the built-in `pages`
-  // root (config.roots[]); 0.2.8 also materializes absent root fields and
-  // carries a legacy `git.syncCommitOnRelease`. Idempotent.
+  // root (config.roots[]); 0.2.8 also carries a legacy `git.syncCommitOnRelease`.
+  // Idempotent.
   // 0.2.101: a root rename commits the config and the transition registry as two
   // writes. If the process died between them, this replays the journal — finishing
-  // the rename or undoing it entirely — BEFORE anything reads `roots[]`, so the
-  // project never starts with half-relinked `linkTargets`.
+  // the rename or undoing it entirely — BEFORE anything reads `roots[]`.
   recoverPendingRootRename(cwd);
   migrateConfigToV4(cwd);
   // M31 config v3: physically remove pre-v3 port/mode; harvested values seed
@@ -111,22 +119,22 @@ export function bootstrapProject(
   const config = readConfig(cwd);
 
   const gitignoreExisted = fs.existsSync(path.join(cwd, '.gitignore'));
-  ensureGitignore(cwd, {
-    briefsDir: config.briefsDir,
-    patchesDir: config.patchesDir,
-    plansDir: config.plansDir,
-    releasesDir: config.releasesDir,
-    gitEnabled: config.git.enabled,
-  });
+  const rootRegistry = new RootRegistry(config.roots);
+  ensureGitignore(cwd, { roots: rootRegistry.list(), gitEnabled: config.git.enabled });
   // 0.1.56: welcome page deferred to onboarding close — see ensureWelcomePage.
-  fs.mkdirSync(path.resolve(cwd, config.entitiesDir), {
-    recursive: true,
-  });
-  // 0.1.118: releasesDir — same forward-compat default as entitiesDir, so a
-  // fresh project has the dir before the ReleasesWatcher roots there.
-  fs.mkdirSync(path.resolve(cwd, config.releasesDir), {
-    recursive: true,
-  });
+  // 2.1.8 (M31 bootstrap): activation creates the directory of EVERY registry
+  // root — the user roots (`kind: pages`) and the system roots (plans, briefs,
+  // patches, entities, releases), none of the latter written to `config.json`.
+  // The CLI `--pages` override names the base root's directory for this run, so
+  // that is the one created. The context build mkdirs again (idempotent) for
+  // roots added later without a re-activation. `tags.json` stays lazy.
+  const systemRootDirsCreated: string[] = [];
+  for (const root of rootRegistry.list()) {
+    const dir = root.kind === PAGES_KIND && root.builtin && opts.pagesDir ? opts.pagesDir : root.dir;
+    const abs = path.resolve(cwd, dir);
+    if (root.kind !== PAGES_KIND && !fs.existsSync(abs)) systemRootDirsCreated.push(root.dir);
+    fs.mkdirSync(abs, { recursive: true });
+  }
   const project = registry.registerProject(workspace, cwd);
   migrateLegacyDbIfNeeded(registry, workspace, cwd, project.id);
 
@@ -137,5 +145,6 @@ export function bootstrapProject(
     configCreated,
     claudeDirCreated: !claudeDirExisted,
     gitignoreCreated: !gitignoreExisted,
+    systemRootDirsCreated,
   };
 }

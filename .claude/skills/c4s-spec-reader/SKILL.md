@@ -62,7 +62,7 @@ not three — a search hit already carries the anchor, so there is nothing to lo
 up in between:
 
 ```sh
-c4s search-pages --query "<phrase>" --project 'app-spec' --workspace 'default'   # hits carry an anchor (indexed root)
+c4s search-pages --query "<phrase>" --project 'app-spec' --workspace 'default'   # hits carry an anchor
 c4s get-sections --anchors a,b,c --project 'app-spec' --workspace 'default'      # bodies of several sections in ONE call
 ```
 
@@ -88,7 +88,8 @@ c4s get-page --root-id pages --path some/page.md --project 'app-spec' --workspac
 ```
 
 The page comes back as **structure**, not as one text: `{ rootId, path, hash, frontmatter?, preamble?, results[] }`. Each item of `results` is one section — `anchor`, `heading_text`, `heading_level`, `body` — in document order. The anchor is a field, so you pass it straight to `get-sections`; `body` holds neither the anchor line nor the heading line. `frontmatter.raw` is the frontmatter verbatim and `frontmatter.fields` its parsed keys (absent when the YAML does not parse); `preamble` is the text above the first heading. `hash` is what a write expects. Add `--format text` to get the page assembled back into markdown for reading.
-XML tags in `body` are left untouched — the tag is the edge to another entity, so expanding it would replace a link with a payload. Resolve the tags you care about with the commands above. On a page over the response budget, some items come back with `truncated: true` and no `body`, and `message` names their anchors — fetch those with `get-sections`. `--range <from:to>` is only accepted on a non-section-indexed root; on an indexed one the command refuses and tells you to use `get-page-outline` + `get-sections` instead.
+
+XML tags in `body` are left untouched — the tag is the edge to another entity, so expanding it would replace a link with a payload. Resolve the tags you care about with the commands above. On a page over the response budget, some items come back with `truncated: true` and no `body`, and `message` names their anchors — fetch those with `get-sections`. There is no line window on `get-page`: to continue a cut read, go through `get-page-outline` and `get-sections`.
 
 ## Discovery
 

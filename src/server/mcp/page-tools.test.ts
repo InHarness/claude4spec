@@ -306,6 +306,27 @@ describe('page-tools', () => {
     expect(await fs.readFile(path.join(pages.root, 'dup.md'), 'utf-8')).toBe('original');
   });
 
+  it('[entity:page-tools-update-page] update_page is on page-tools with its parameter set and an always-on anchor guard', async () => {
+    const { tools } = await client.listTools();
+    const tool = tools.find((t) => t.name === 'update_page')!;
+    expect(tool).toBeDefined();
+    const props = tool.inputSchema.properties!;
+    /**
+     * ASSUMPTION:dev-0002 — the literal mode's field is `body` (+ `frontmatter`)
+     * on every channel; the entity names it `content`. See the deviation.
+     */
+    expect(Object.keys(props).sort()).toEqual(
+      ['body', 'dropAnchors', 'expectedHash', 'frontmatter', 'path', 'rootId', 'textEdits'].sort(),
+    );
+    expect(tool.inputSchema.required ?? []).toEqual(expect.arrayContaining(['rootId', 'path', 'expectedHash']));
+    expect(tool.inputSchema.required ?? []).not.toContain('textEdits');
+    expect(tool.inputSchema.required ?? []).not.toContain('body');
+    // 2.1.8 — no root-dependent exemption from the guard is advertised any more.
+    expect(tool.description).toContain('ANCHOR LOSS, IN BOTH MODES');
+    expect(tool.description).not.toMatch(/guard does not run/i);
+    expect((props.dropAnchors as { description?: string }).description).toContain('runs on every page root');
+  });
+
   it('0.2.100 — update_sections declares the sixth action and a heading field, update_page declares neither', async () => {
     const { tools } = await client.listTools();
 

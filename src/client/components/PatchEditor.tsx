@@ -5,8 +5,7 @@ import { usePatch, useUpdatePatchContent } from '../hooks/usePatches.js';
 import '../tiptap/registrations.js';
 import { EditorFactory } from '../tiptap/EditorFactory.js';
 import { invokeSlash } from '../tiptap/slashInvoke.js';
-import { assertSaveMode, getContextSpec, artefactRootEditorProps } from '../tiptap/registry.js';
-import { useBaseRootId } from '../hooks/useConfig.js';
+import { assertSaveMode, getContextSpec } from '../tiptap/registry.js';
 import {
   useEditorCarry,
   useEditorCarryApply,
@@ -21,8 +20,8 @@ interface Props {
 }
 
 /**
- * M23 patch artifact panel. Mirror of `BriefEditor` — Tiptap `'page'` factory
- * (patches render the same XML refs / mentions), storage through patches-api
+ * M23 patch artifact panel. Mirror of `BriefEditor` — Tiptap `'artifact'` context
+ * (prose and `@` links; entity tags pass through verbatim), storage through patches-api
  * with `expectedHash` sha256 optimistic concurrency. Only the BODY is fed to
  * Tiptap; on save the (immutable) frontmatter is recomposed via gray-matter.
  */
@@ -37,16 +36,12 @@ export function PatchEditor({ patchPath }: Props) {
   const [conflict, setConflict] = useState<boolean>(false);
 
   const schemaVersion = useEditorSchemaVersion();
-  // 0.2.101: `@path.md` here reaches the BASE page root, found by its flag —
-  // the identifier is no longer guaranteed to be `pages`.
-  const baseRootId = useBaseRootId();
-  const rootProps = useMemo(() => artefactRootEditorProps(baseRootId), [baseRootId]);
   const extensions = useMemo(
     () =>
-      // A patch has no context of its own: `page` with the artefact property
-      // bag (M23 `m23l13rt`) — see BriefEditor.
+      // 2.1.8: a patch mounts the fixed `artifact` context by its id — no
+      // property bag of its own (see BriefEditor).
       EditorFactory.buildExtensions(
-        'page',
+        'artifact',
         {
           qc,
           currentPath: patchPath,
@@ -54,12 +49,10 @@ export function PatchEditor({ patchPath }: Props) {
             void invokeSlash(editor, command, { qc, currentPath: patchPath }),
           getAnnotations: () => [],
         },
-        {},
-        rootProps,
       ),
-    [qc, patchPath, schemaVersion, rootProps],
+    [qc, patchPath, schemaVersion],
   );
-  const save = assertSaveMode(getContextSpec('page', rootProps), 'debounce');
+  const save = assertSaveMode(getContextSpec('artifact'), 'debounce');
   const carry = useEditorCarry(extensions);
 
   const editor = useEditor(

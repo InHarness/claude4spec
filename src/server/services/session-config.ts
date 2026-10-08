@@ -10,8 +10,9 @@ import { fieldPath, getPath } from '../settings/field-registry.js';
  * model, the reasoning config and the RESOLVED path scope. Two things join it:
  *
  *  - `lockedConfig` — the value of every field its declarant marked `resumeLock`
- *    (`agent.allowedPaths`, `agent.disallowedPaths`, the filesystem posture, the five
- *    artifact dirs), recorded as CONFIG, not as resolved paths. Resuming a thread
+ *    (`agent.allowedPaths`, `agent.disallowedPaths`, the filesystem posture), recorded
+ *    as CONFIG, not as resolved paths. 2.1.8: the artifact dirs are fixed system roots,
+ *    no longer config — their deny-set changes only with the app version. Resuming a thread
  *    founded under another value of any of them is refused. Comparing declarations
  *    rather than the resolved lists is what keeps a change of `roots[]` — which moves
  *    the implicit base of the scope, but is not a locked field — from locking a thread.

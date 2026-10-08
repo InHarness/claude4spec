@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { KIND_DECLARATIONS, SYSTEM_ROOTS, type RegistryRoot } from '../shared/root-kinds.js';
 
 type PatternSpec = {
   canonical: string;
@@ -7,18 +8,16 @@ type PatternSpec = {
 };
 
 export interface EnsureGitignoreOpts {
-  /** Default `.claude4spec/briefs`. */
-  briefsDir?: string;
-  /** Default `.claude4spec/patches`. */
-  patchesDir?: string;
-  /** 0.1.127: default `.claude4spec/plans`. */
-  plansDir?: string;
-  /** Default `.claude4spec/releases`. */
-  releasesDir?: string;
   /**
-   * 0.1.118: the git master switch. `false` (default) ⇒ briefs/patches/plans/
-   * releases stay local-only (gitignored). `true` ⇒ `ensureGitignore` OMITS
-   * those entries so they become committed and shared with the team.
+   * 2.1.8: the root registry. The managed block lists the dir of every root
+   * whose kind carries the `gitignore` flag. Default: the system roots (user
+   * roots are of kind `pages`, which never carries the flag).
+   */
+  roots?: readonly RegistryRoot[];
+  /**
+   * 0.1.118: the git master switch. `false` (default) ⇒ the `gitignore`-flagged
+   * roots stay local-only (ignored). `true` ⇒ `ensureGitignore` OMITS them, so
+   * they are committed and shared with the team.
    */
   gitEnabled?: boolean;
 }
@@ -45,30 +44,23 @@ function dirPatternSpec(dir: string): PatternSpec {
   return {
     canonical: withSlash,
     // A broad existing ignore of the whole `.claude4spec/` dir already covers
-    // a default-location briefsDir/patchesDir/releasesDir — never append a
+    // the system roots under `.claude4spec/` (briefs, patches, releases, ...) — never append a
     // redundant line.
     equivalents: [withSlash, dir, '.claude4spec/', '.claude4spec'],
   };
 }
 
 /**
- * 0.1.118: briefs/patches/plans/releases are gitignored ONLY when the git master
- * switch is off (the default) — local-only, per-solo-dev. When on, they
- * become committed and shared with the team (see `GitService.commit()`'s
- * staging scope, which stages them all the same way), so this returns []
- * and the managed block simply omits them. `releasesDir` is included here to
- * match its own doc comment in `config.ts` ("committed to git when
- * git.enabled, local-only otherwise") — briefsDir/patchesDir/plansDir alone
- * would silently contradict that.
+ * 0.1.118 / 2.1.8: the dirs of the registry roots whose kind carries the
+ * `gitignore` flag (plans, briefs, patches, releases) are ignored ONLY when the
+ * git master switch is off (the default) — local-only, per-solo-dev. When on,
+ * they are committed and shared with the team (see `GitService`'s staging
+ * scope), so this returns [] and the managed block omits them. The entities
+ * root never carries the flag: it is always committed.
  */
 function dynamicPatterns(opts: Required<EnsureGitignoreOpts>): PatternSpec[] {
   if (opts.gitEnabled) return [];
-  return [
-    dirPatternSpec(opts.briefsDir),
-    dirPatternSpec(opts.patchesDir),
-    dirPatternSpec(opts.plansDir),
-    dirPatternSpec(opts.releasesDir),
-  ];
+  return opts.roots.filter((r) => KIND_DECLARATIONS[r.kind].flags.gitignore).map((r) => dirPatternSpec(r.dir));
 }
 
 /** Trim leading AND trailing blank lines from a line array, in place semantics via slice. */
@@ -91,7 +83,7 @@ function trimBlankEdges(lines: string[]): string[] {
  * (postamble) is preserved verbatim across regeneration — the end marker
  * exists specifically so a user's own rules appended below our block (a
  * natural place to add new ignores) survive every `PATCH /api/config` that
- * touches `git`/`briefsDir`/`patchesDir`/`releasesDir`. A file written before
+ * touches `git`. A file written before
  * this end-marker existed has no postamble to recover on its first rewrite
  * under this version (nothing to disambiguate it from), but every rewrite
  * from here on carries the marker forward and stays lossless. A pattern
@@ -100,16 +92,13 @@ function trimBlankEdges(lines: string[]): string[] {
  * "already covered" — it's wholesale replaced every call.
  *
  * Called once at bootstrap AND (0.1.118) again whenever `PATCH /api/config`
- * touches the fields above, so an existing project's `.gitignore` stays in
+ * touches the `git` branch (2.1.8: a `roots[]` save never changes the block), so an existing project's `.gitignore` stays in
  * sync without a restart. Best-effort by convention — callers should not let
  * a write failure here fail the caller's own request.
  */
 export function ensureGitignore(cwd: string, opts: EnsureGitignoreOpts = {}): void {
   const resolved: Required<EnsureGitignoreOpts> = {
-    briefsDir: opts.briefsDir ?? '.claude4spec/briefs',
-    patchesDir: opts.patchesDir ?? '.claude4spec/patches',
-    plansDir: opts.plansDir ?? '.claude4spec/plans',
-    releasesDir: opts.releasesDir ?? '.claude4spec/releases',
+    roots: opts.roots ?? SYSTEM_ROOTS,
     gitEnabled: opts.gitEnabled ?? false,
   };
 
@@ -127,7 +116,7 @@ export function ensureGitignore(cwd: string, opts: EnsureGitignoreOpts = {}): vo
     if (endIdx !== -1) postambleLines = trimBlankEdges(rawLines.slice(endIdx + 1));
   }
 
-  const allPatterns = [...STATIC_PATTERNS, ...dynamicPatterns(resolved)];
+  const allPatterns = [...dynamicPatterns(resolved), ...STATIC_PATTERNS];
   const desired = allPatterns
     .filter((spec) => !spec.equivalents.some((p) => preambleLineSet.has(p)))
     .map((spec) => spec.canonical);

@@ -5,7 +5,7 @@ import { assembleSettings, type AssembledCard, type SettingsContribution } from 
 import { SETTINGS_MODULE_CARDS } from './cards/settingsModuleCards.js';
 import { REMOTE_ACCOUNT_SETTINGS } from '../account/UserCardElement.js';
 import { APPEARANCE_SETTINGS } from '../shell/AppearanceElement.js';
-import { PROJECT_SETTINGS, ARTIFACT_DIR_ELEMENTS } from '../project/projectSettings.js';
+import { PROJECT_SETTINGS } from '../project/projectSettings.js';
 import { WRITING_STYLE_SETTINGS } from '../writing-styles/writingStyleSettings.js';
 import { RELEASE_PUSH_SETTINGS } from '../release/RemoteProjectElement.js';
 import { GIT_SETTINGS } from '../git/gitSettings.js';
@@ -22,7 +22,6 @@ export const STATIC_SETTINGS_CONTRIBUTIONS: SettingsContribution[] = [
   REMOTE_ACCOUNT_SETTINGS,
   APPEARANCE_SETTINGS,
   PROJECT_SETTINGS,
-  ARTIFACT_DIR_ELEMENTS,
   WRITING_STYLE_SETTINGS,
   RELEASE_PUSH_SETTINGS,
   GIT_SETTINGS,

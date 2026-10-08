@@ -37,8 +37,9 @@ export async function findReferences(
   roots: RootSet,
   input: FindReferencesInput,
 ): Promise<FindReferencesResult> {
-  // Reference sweeps run only over roots that declare `referenceValidated` —
-  // a root nobody validates has no reference semantics to report on.
+  // Reference sweeps run over the markdown entries of the roots whose kind
+  // carries `references = yes` (2.1.8) — the entities root is not in the page
+  // reference graph; its cross-entity rename phase is a separate mechanism.
   const scanned = roots.referenceValidated();
   const anchors = anchorIndex(deps.db);
 
@@ -61,6 +62,7 @@ export async function findReferences(
   }
 
   for (const hit of hits) {
+    if (deps.unindexedRootIds?.has(hit.rootId)) continue;
     const anchor = anchorFor(anchors, hit.rootId, hit.pagePath, hit.line);
     if (anchor) hit.anchor = anchor;
   }

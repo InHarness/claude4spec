@@ -8,6 +8,7 @@
  * `m17dom001`, `m17dcre01`).
  */
 
+import { systemRootDir } from '../../shared/root-kinds.js';
 import nodeFs from 'node:fs';
 import nodeOs from 'node:os';
 import nodePath from 'node:path';
@@ -166,7 +167,7 @@ interface ReleaseRow {
  * 0.2.112 — write-side guard for an already-trimmed description. The description
  * is a short statement of intent: the release list, the git commit message and
  * the bundle manifest all copy it verbatim. Counted in Unicode code points (not
- * UTF-16 units). Reads, the cache rebuild from `releasesDir` and bundle restore
+ * UTF-16 units). Reads, the cache rebuild from the `releases` root and bundle restore
  * deliberately do NOT call this — a longer description saved before the limit
  * stays readable, untruncated.
  */
@@ -184,7 +185,7 @@ function assertReleaseDescription(description: string): void {
 /**
  * 2.1.4 (M17): the release AXIS — releases ordered by `created_at` ascending,
  * ties broken by `id` ascending. `id` is a technical key only: after a rebuild of
- * `spec_release` from `<releasesDir>/*.json` it follows directory order
+ * `spec_release` from the `releases` root (`*.json`) it follows directory order
  * (alphabetical by slug), and a file pulled in through git gets a fresh, higher
  * one. Newest-first listings use the reverse; "the latest release" is the first
  * row of `LATEST_FIRST`.
@@ -226,10 +227,10 @@ interface EntityVersionRow {
 /**
  * 0.2.102: the two page filters of `getReleaseDiff`/`getUnreleasedDiff`. Both
  * narrow the PAGES dimension only, before the source (git or SQLite) is chosen;
- * entities are never affected. `roots` — whole releasable roots; `paths` — FULL
+ * entities are never affected. `roots` — whole `kind: pages` roots; `paths` — FULL
  * page keys `<rootId>/<relPath>`, each addressing exactly one page file. The
  * caller (`release_diff`) validates both and never passes them together; the
- * engine only drops what is not releasable.
+ * engine only drops what is not a `pages` root.
  */
 export interface PageScopeOpts {
   roots?: string[];
@@ -363,20 +364,20 @@ export class ReleaseService {
     private writerFor: (rootId: string) => SelfWriteMarker | null = () => null,
     private cwd: string = process.cwd(),
     /**
-     * 0.1.96: ids of the releasable roots (config.roots filtered by `releasable`).
-     * Only these roots' `file_version` rows enter releases/bundles/diffs; brief/
-     * patch markers and non-releasable user roots fall out structurally.
+     * 0.1.96 / 2.1.8: ids of the roots of kind `pages` (every user root — the
+     * `releasable` flag is gone). Only these roots' `file_version` rows enter
+     * releases/bundles/diffs; plan/brief/patch rows fall out structurally.
      */
     // 0.2.101: no `['pages']` default — the base root's identifier is the
     // project author's to choose, so a default here would quietly release the
     // wrong space (or none at all) in a project that renamed it.
-    private releasableRootIds: string[] = [],
+    private pagesKindRootIds: string[] = [],
     /**
-     * 0.1.118: absolute dirs of the releasable roots, same order/index as
-     * `releasableRootIds` — needed to map a git-diff path back to a rootId in
+     * 0.1.118: absolute dirs of the `pages` roots, same order/index as
+     * `pagesKindRootIds` — needed to map a git-diff path back to a rootId in
      * the git-anchored `getReleaseDiff` branch.
      */
-    private releasableRootDirs: string[] = [],
+    private pagesKindRootDirs: string[] = [],
     /**
      * 0.2.76 — the M42 record store of a root, when it has a mount. LAST in the
      * list on purpose: every existing positional construction keeps working.
@@ -432,13 +433,35 @@ export class ReleaseService {
   }
 
   /**
-   * 0.1.118: writes the on-disk release-identity file (`<releasesDir>/<slug>.json`)
+   * 0.1.118: writes the on-disk release-identity file (`<releases root>/<slug>.json`)
    * on create/update. Wired post-construction (the store is built later in boot,
    * same reasoning as `setEntityStore`).
    */
   private releaseStore: ReleaseFileStore | null = null;
   setReleaseStore(store: ReleaseFileStore): void {
     this.releaseStore = store;
+  }
+
+  /**
+   * 2.1.8 (M17 m17reldiff): absolute dirs of every registry root whose KIND
+   * carries the `release` flag (the `pages` roots and the `entities` root
+   * today). The git-anchored diff takes its pathspecs from this list plus the
+   * `releases` root — gated by the flag, never by a hard-coded directory.
+   * `null` (a rig that never wires it) ⇒ the page roots + the entity store root.
+   */
+  private releaseFlagRootDirs: string[] | null = null;
+
+  setReleaseFlagRootDirs(dirs: readonly string[]): void {
+    this.releaseFlagRootDirs = [...dirs];
+  }
+
+  /**
+   * 2.1.8 (M17 m17errtx1): the ids the page filters (`roots`/`paths`) accept —
+   * the roots of kind `pages`. A system root (`entities`, `releases`, plans,
+   * briefs, patches) is not one; channels refuse it instead of skipping it.
+   */
+  pageRootIds(): readonly string[] {
+    return this.pagesKindRootIds;
   }
 
   /**
@@ -511,7 +534,7 @@ export class ReleaseService {
     const row = this.db
       .prepare(`SELECT COUNT(*) AS n FROM entity_version WHERE release_id IS NULL`)
       .get() as { n: number };
-    return row.n + this.pageVersions.countUnreleased(this.releasableRootIds);
+    return row.n + this.pageVersions.countUnreleased(this.pagesKindRootIds);
   }
 
   // ─── Mutations ───────────────────────────────────────────────────────────
@@ -541,7 +564,7 @@ export class ReleaseService {
         .get(name);
       if (conflict) throw new DomainError('RELEASE_NAME_CONFLICT', `release name '${name}' already exists`);
       // 0.1.118: two different names can slugify to the same string, which
-      // would collide on disk (`<releasesDir>/<slug>.json`) even though the
+      // would collide on disk (`<slug>.json` in the `releases` root) even though the
       // DB-unique `name` differs. Reject before insert, same posture as the
       // name-uniqueness check above.
       const slugConflict = this.db
@@ -565,7 +588,7 @@ export class ReleaseService {
       this.db
         .prepare(`UPDATE entity_version SET release_id = ? WHERE release_id IS NULL`)
         .run(releaseId);
-      this.pageVersions.assignToRelease(releaseId, this.releasableRootIds);
+      this.pageVersions.assignToRelease(releaseId, this.pagesKindRootIds);
 
       const row = this.db
         .prepare(`SELECT * FROM spec_release WHERE id = ?`)
@@ -579,7 +602,7 @@ export class ReleaseService {
     // "never block a committed mutation on a secondary side-effect" posture).
     if (this.releaseStore) {
       try {
-        this.releaseStore.write(slug, toReleaseFileData(releaseRow, slug, this.releasableRootIds));
+        this.releaseStore.write(slug, toReleaseFileData(releaseRow, slug, this.pagesKindRootIds));
       } catch (err) {
         console.error(`[release] failed to write release file for '${name}':`, err);
       }
@@ -614,7 +637,7 @@ export class ReleaseService {
    * 1. The on-disk release-identity file is synced (renamed/rewritten) right
    *    after the FIRST transaction, before `commitPull()` runs — not after
    *    the assignment, like `createRelease` does. `commitPull()` stages
-   *    `releasesDir` as part of its working-tree commit; syncing the file
+   *    the `releases` root as part of its working-tree commit; syncing the file
    *    first ensures a combined rename+`assignUnreleased` request actually
    *    captures the rename in that commit, instead of leaving it as a stray
    *    uncommitted change that silently rides into some later, unrelated
@@ -708,7 +731,7 @@ export class ReleaseService {
     //
     // Runs BEFORE commitPull() below (code-review fix, 2026-07-14): a
     // combined rename+assignUnreleased request must have the renamed
-    // identity file on disk before commitPull() stages/commits releasesDir,
+    // identity file on disk before commitPull() stages/commits the `releases` root,
     // or the rename is left uncommitted while the response still claims
     // gitSync.status: 'committed'.
     if (this.releaseStore && editedRow.slug) {
@@ -718,7 +741,7 @@ export class ReleaseService {
         }
         this.releaseStore.write(
           editedRow.slug,
-          toReleaseFileData(editedRow, editedRow.slug, this.releasableRootIds),
+          toReleaseFileData(editedRow, editedRow.slug, this.pagesKindRootIds),
         );
       } catch (err) {
         console.error(`[release] failed to sync release file for '${editedRow.name}':`, err);
@@ -748,7 +771,7 @@ export class ReleaseService {
         this.db
           .prepare(`UPDATE entity_version SET release_id = ? WHERE release_id IS NULL`)
           .run(releaseId);
-        this.pageVersions.assignToRelease(releaseId, this.releasableRootIds);
+        this.pageVersions.assignToRelease(releaseId, this.pagesKindRootIds);
       })();
     }
 
@@ -939,11 +962,7 @@ export class ReleaseService {
     if (refA === refB) return null;
 
     const scope = this.resolveGitDiffScope(config, opts);
-    const gitDiff = await gitService.diffRefs(refA, refB, [
-      ...scope.pagePathspecs,
-      scope.entitiesAbs,
-      scope.releasesAbs,
-    ]);
+    const gitDiff = await gitService.diffRefs(refA, refB, scope.pathspecs);
     if (!gitDiff) return null;
 
     const { entities, entityPaths, pageCandidates } = this.classifyGitDiffFiles(gitDiff, scope);
@@ -1005,11 +1024,7 @@ export class ReleaseService {
     // every entity file modified, so a few hundred entities would fan out into
     // over a thousand concurrent `git` processes on one `GET /diff/current`.
     const gitStatus = await gitService.detect();
-    const gitDiff = await gitService.diffRefToWorkingTree(refA, [
-      ...scope.pagePathspecs,
-      scope.entitiesAbs,
-      scope.releasesAbs,
-    ]);
+    const gitDiff = await gitService.diffRefToWorkingTree(refA, scope.pathspecs);
     if (!gitDiff) return null;
 
     const { entities, entityPaths, pageCandidates } = this.classifyGitDiffFiles(gitDiff, scope);
@@ -1045,12 +1060,12 @@ export class ReleaseService {
    * Shared path-scoping for the git-anchored diff branches
    * (`tryGitAnchoredDiff`/`tryGitAnchoredUnreleasedDiff`): realpath'd
    * entities/releases/briefs/patches dirs plus the (optionally
-   * `opts.roots`-narrowed) releasable root dirs, keyed by rootId.
+   * `opts.roots`-narrowed) `kind: pages` root dirs, keyed by rootId.
    *
    * 0.2.102: the page filter becomes a list of `pathspecs` for `diffRefs` —
    * a root in `opts.roots` → its `dir`, an element of `opts.paths` →
-   * `<dir>/<relPath>`; no filter → every releasable root. `dir` comes from the
-   * CURRENT configuration, not the one of the `from` release — a root whose
+   * `<dir>/<relPath>`; no filter → every `kind: pages` root. `dir` comes from the
+   * CURRENT root registry, not the configuration of the `from` release — a root whose
    * `dir` moved between releases falls out of scope here while the SQLite track
    * (rootId pinned in the history row) keeps it. `pageKeys` narrows
    * classification to exactly the requested pages.
@@ -1077,6 +1092,8 @@ export class ReleaseService {
     rootIds: string[];
     rootDirsById: Map<string, string>;
     pagePathspecs: string[];
+    /** Everything handed to `diffRefs` after `--`: page pathspecs, the other release-flag roots, the `releases` root. */
+    pathspecs: string[];
     pageKeys: Set<string> | null;
   } {
     const realOrSelf = (p: string): string => {
@@ -1086,37 +1103,48 @@ export class ReleaseService {
         return p;
       }
     };
-    const entitiesAbs = realOrSelf(this.entityStore?.root ?? nodePath.resolve(this.cwd, config.entitiesDir));
+    const entitiesAbs = realOrSelf(this.entityStore?.root ?? nodePath.resolve(this.cwd, systemRootDir('entities')));
     const releasesAbs = realOrSelf(this.releaseStore!.root);
-    // `readConfig` only type-checks briefsDir/patchesDir as strings (unlike the stricter
-    // PATCH /api/config route) — a hand-edited config.json with `briefsDir: ''` (or '.')
-    // would otherwise resolve briefsAbs to cwd itself, making isInside(briefsAbs, ...) match
-    // every file in the diff. Guard against that degenerate case explicitly.
+    // 2.1.8: the briefs/patches system roots sit at fixed dirs — the only way
+    // their files reach a git diff is a stray pathspec, and they are excluded.
     const cwdAbs = realOrSelf(this.cwd);
-    const briefsAbs = realOrSelf(nodePath.resolve(this.cwd, config.briefsDir));
-    const patchesAbs = realOrSelf(nodePath.resolve(this.cwd, config.patchesDir));
+    const briefsAbs = realOrSelf(nodePath.resolve(this.cwd, systemRootDir('briefs')));
+    const patchesAbs = realOrSelf(nodePath.resolve(this.cwd, systemRootDir('patches')));
     const rootDirsById = new Map(
-      this.releasableRootIds.map((id, i) => [id, realOrSelf(this.releasableRootDirs[i]!)]),
+      this.pagesKindRootIds.map((id, i) => [id, realOrSelf(this.pagesKindRootDirs[i]!)]),
     );
-    const pageFilter = this.releasablePageKeys(opts?.paths);
+    // The release-flag roots that are NOT page roots (the `entities` root): the
+    // `roots`/`paths` filters narrow pages only, so these always go in whole.
+    const pageDirs = new Set(this.pagesKindRootDirs.map((d) => nodePath.resolve(d)));
+    const otherReleaseDirs = this.releaseFlagRootDirs
+      ? this.releaseFlagRootDirs.filter((d) => !pageDirs.has(nodePath.resolve(d))).map(realOrSelf)
+      : [entitiesAbs];
+    const withFixed = (pagePathspecs: string[]): string[] => [...pagePathspecs, ...otherReleaseDirs, releasesAbs];
+    const pageFilter = this.pagesKindPageKeys(opts?.paths);
     if (pageFilter) {
       const rootIds = [...new Set(pageFilter.map((k) => k.rootId))];
       const pagePathspecs = pageFilter.map((k) => nodePath.join(rootDirsById.get(k.rootId)!, k.relPath));
       const pageKeys = new Set(pageFilter.map((k) => pageIdentityKey(k.rootId, k.relPath)));
-      return { entitiesAbs, releasesAbs, briefsAbs, patchesAbs, cwdAbs, rootIds, rootDirsById, pagePathspecs, pageKeys };
+      return {
+        entitiesAbs, releasesAbs, briefsAbs, patchesAbs, cwdAbs, rootIds, rootDirsById, pagePathspecs,
+        pathspecs: withFixed(pagePathspecs), pageKeys,
+      };
     }
-    const rootIds = (opts?.roots ?? this.releasableRootIds).filter((r) =>
-      this.releasableRootIds.includes(r),
+    const rootIds = (opts?.roots ?? this.pagesKindRootIds).filter((r) =>
+      this.pagesKindRootIds.includes(r),
     );
     const pagePathspecs = rootIds.map((id) => rootDirsById.get(id)!).filter(Boolean);
-    return { entitiesAbs, releasesAbs, briefsAbs, patchesAbs, cwdAbs, rootIds, rootDirsById, pagePathspecs, pageKeys: null };
+    return {
+      entitiesAbs, releasesAbs, briefsAbs, patchesAbs, cwdAbs, rootIds, rootDirsById, pagePathspecs,
+      pathspecs: withFixed(pagePathspecs), pageKeys: null,
+    };
   }
 
   /**
    * Shared `GitRefDiff.files` classification for the git-anchored diff
    * branches: splits into entity changes (no content diffing needed — just
    * `{type, slug, op}`, same as the SQL path's entity handling elsewhere)
-   * and page candidates (path attributed to a releasable root, content
+   * and page candidates (path attributed to a `pages` root, content
    * diffed separately by the caller). Release-identity files and
    * briefs/patches are never surfaced as spec content.
    */
@@ -1142,7 +1170,7 @@ export class ReleaseService {
     for (const file of gitDiff.files) {
       // Release-identity files are metadata, not spec content — never surfaced.
       if (isInside(releasesAbs, file.path)) continue;
-      // Briefs/patches are never releasable page content (ac-korze-tar-bundle-a-zawiera-wy-cznie-ma).
+      // Briefs/patches are never page-kind release content (ac-korze-tar-bundle-a-zawiera-wy-cznie-ma).
       if (
         (briefsAbs !== cwdAbs && isInside(briefsAbs, file.path)) ||
         (patchesAbs !== cwdAbs && isInside(patchesAbs, file.path))
@@ -1365,7 +1393,7 @@ export class ReleaseService {
 
     const toSnap = this.buildSnapshot(this.toRelease(toRow), toRow.id, false);
     // 0.1.96: pages are correlated by (rootId, path), narrowed by opts.roots
-    // (default: all releasable roots) via latestPageRowsAtOrBefore, which carries
+    // (default: all `pages` roots) via latestPageRowsAtOrBefore, which carries
     // rootId. Entities are unaffected by the roots narrowing.
     const toPageRows = this.latestPageRowsAtOrBefore(toRow.id, opts);
     const { fromSnap, fromMeta, fromPageRows } = this.resolveFromSide(fromIdOrName, toSnap, opts);
@@ -1944,7 +1972,7 @@ export class ReleaseService {
     const release = this.getRelease(releaseId);
     // 0.1.96: resolve rootId per page straight from file_version (the snapshot's
     // page rows don't carry it) so the bundle can lay pages out as <rootId>/<path>.md
-    // across every releasable root.
+    // across every `pages` root.
     const pageRows: BundlePageInput[] = this.latestPageRowsAtOrBefore(release.id).map((p) => ({
       // 0.2.101: the archive prefix is the identifier the space carries AT BUILD
       // TIME, even when the source row still names a retired one. One space,
@@ -2303,9 +2331,9 @@ export class ReleaseService {
       entityCounts[r.entity_type] = r.n;
       entityTotal += r.n;
     }
-    // 0.2.101: over the whole identifier chain of every releasable space, so a
+    // 0.2.101: over the whole identifier chain of every `pages` space, so a
     // release's page count does not shrink the moment a root is renamed.
-    const pageRootIds = this.expandRootChains(this.releasableRootIds);
+    const pageRootIds = this.expandRootChains(this.pagesKindRootIds);
     const pagePlaceholders = pageRootIds.map(() => '?').join(', ');
     const pageRow = pageRootIds.length === 0
       ? { n: 0 }
@@ -2371,7 +2399,7 @@ export class ReleaseService {
 
   /**
    * 0.1.96: latest file_version rows per `(rootId, path)` at-or-before a release,
-   * restricted to releasable roots (optionally narrowed further by `roots` or `paths`). The
+   * restricted to `pages` roots (optionally narrowed further by `roots` or `paths`). The
    * correlated subquery matches on both rootId and path so the same relative path
    * in different roots has an independent timeline. `releaseId === null` (0.1.122)
    * drops the upper bound — "latest per (rootId, path), right now", including
@@ -2379,10 +2407,10 @@ export class ReleaseService {
    * `getCurrentSnapshot` (unbounded).
    */
   private latestPageRowsAtOrBefore(releaseId: number | null, scope?: PageScopeOpts): FileVersionRow[] {
-    const pageFilter = this.releasablePageKeys(scope?.paths);
+    const pageFilter = this.pagesKindPageKeys(scope?.paths);
     const rootIds = pageFilter
       ? [...new Set(pageFilter.map((k) => k.rootId))]
-      : (scope?.roots ?? this.releasableRootIds).filter((r) => this.releasableRootIds.includes(r));
+      : (scope?.roots ?? this.pagesKindRootIds).filter((r) => this.pagesKindRootIds.includes(r));
     if (rootIds.length === 0) return [];
     // 0.2.101: the scope is every identifier of every requested SPACE — its
     // current one plus the ones it retired — or versions written before a rename
@@ -2444,16 +2472,16 @@ export class ReleaseService {
 
   /**
    * 0.2.102: `opts.paths` parsed into `(rootId, relPath)` pairs, keeping only
-   * well-formed keys of releasable roots (the tool has already refused anything
+   * well-formed keys of `pages` roots (the tool has already refused anything
    * else — this is the engine's own backstop, never a silent widening). `null`
    * when no `paths` filter was given.
    */
-  private releasablePageKeys(paths: string[] | undefined): Array<{ rootId: string; relPath: string }> | null {
+  private pagesKindPageKeys(paths: string[] | undefined): Array<{ rootId: string; relPath: string }> | null {
     if (paths === undefined) return null;
     return paths
       .map(splitPageKey)
       .filter((k): k is { rootId: string; relPath: string } =>
-        k !== null && this.releasableRootIds.includes(k.rootId),
+        k !== null && this.pagesKindRootIds.includes(k.rootId),
       );
   }
 

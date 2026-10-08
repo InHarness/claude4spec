@@ -8,7 +8,7 @@ import type { PatchKind } from './types.js';
 export interface WritePatchOpts {
   briefsDirAbs: string;
   patchesDirAbs: string;
-  /** Relative to briefsDir — validated to exist before any write. */
+  /** Relative to the `briefs` root — validated to exist before any write. */
   briefRelPath: string;
   desc: string;
   kind: PatchKind;
@@ -27,7 +27,7 @@ export interface WritePatchOpts {
 }
 
 export interface WritePatchResult {
-  /** Relative to patchesDir — portable across machines, mirrors brief addressing. */
+  /** Relative to the `patches` root — portable across machines, mirrors brief addressing. */
   path: string;
 }
 
@@ -75,10 +75,10 @@ function uniqueFilename(dirAbs: string, stem: string): string {
 export async function writePatchFs(opts: WritePatchOpts): Promise<WritePatchResult> {
   assertBriefExists(opts.briefsDirAbs, opts.briefRelPath);
 
-  // Slugify the whole relative path (not just its basename) so briefs that
-  // share a filename in different subdirectories (e.g. `scoped-a/foo.md` vs
-  // `scoped-b/foo.md`) don't collide on the same patch filename and silently
-  // overwrite each other — slugify collapses the path separator into `-`.
+  // Slugify the whole relative path (not just its basename). 2.1.8: the `briefs`
+  // file map is flat (`*.md`, `assertBriefExists` refuses anything else), so
+  // today this is the filename stem; the separator-collapsing slugify stays as
+  // the guard against two same-named briefs colliding should the map widen.
   const briefExt = path.extname(opts.briefRelPath);
   const briefStem = opts.briefRelPath.slice(0, opts.briefRelPath.length - briefExt.length);
   const briefSlug = slugify(briefStem);

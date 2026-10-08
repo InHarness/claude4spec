@@ -33,11 +33,11 @@ import type {
 export interface ReleaseOperationDeps {
   releaseService: ReleaseService;
   /**
-   * The project's page roots — all of them, not just the releasable ones:
-   * `release_diff` has to tell an UNKNOWN root id from a NON-RELEASABLE one when
-   * it refuses a `roots`/`paths` filter.
+   * 2.1.8: the project's PAGE roots (`kind: pages`) — the only roots a
+   * `roots`/`paths` filter may name. Any other id (unknown, or a system root
+   * such as `plans`/`entities`) is refused with this list.
    */
-  roots: () => ReadonlyArray<Pick<Root, 'id' | 'releasable'>>;
+  roots: () => ReadonlyArray<Pick<Root, 'id'>>;
 }
 
 /**
@@ -249,29 +249,41 @@ interface DiffFilters {
 }
 
 /**
+ * 2.1.8 (M17 m17errtx1): the `roots` filter refusal, shared by every channel of
+ * `release_diff` (MCP, REST `view=operation`, `c4s release-diff`) and by the raw
+ * REST release diff (`GET /api/releases/:from/diff/:to?roots=`), so they all
+ * answer with one contract: an unknown id or a root of a kind other than `pages`
+ * is `INVALID_ROOTS_FILTER`, never silently skipped, and the message and hint
+ * list the `kind: pages` roots.
+ */
+export function refuseNonPageRoots(roots: readonly string[], pageRootIds: readonly string[]): void {
+  const notPage = roots.find((r) => !pageRootIds.includes(r));
+  if (notPage === undefined) return;
+  const available = `page roots: [${pageRootIds.join(', ')}]`;
+  throw new DomainError('INVALID_ROOTS_FILTER', `roots: '${notPage}' is not a page root (${available})`, available);
+}
+
+/**
  * `release_diff`'s filter validation. 2.1.11 order: EVERY single-filter refusal
  * (`INVALID_*_FILTER`, root and path checks included) before ANY combination
  * refusal (`CONFLICTING_FILTERS`) — a caller told its filters conflict fixes the
  * combination and then trips over the filter that was malformed all along.
- * `roots` and `paths` REFUSE an unknown or non-releasable root instead of
- * silently skipping it, and the refusal names the releasable roots.
+ * `roots` and `paths` REFUSE an id that is not a page root (2.1.8: unknown, or a
+ * system root) instead of silently skipping it, and the refusal names the page
+ * roots.
  */
 function validateDiffFilters(
   { include, entityTypes, slugs, roots, paths }: DiffFilters,
-  allRoots: ReadonlyArray<Pick<Root, 'id' | 'releasable'>>,
+  pageRoots: ReadonlyArray<Pick<Root, 'id'>>,
   sectionWindow: boolean,
 ): void {
-  const releasable = allRoots.filter((r) => r.releasable).map((r) => r.id);
-  const available = `releasable roots: [${releasable.join(', ')}]`;
+  const pageRootIds = pageRoots.map((r) => r.id);
+  const available = `page roots: [${pageRootIds.join(', ')}]`;
   const refuse = (code: string, message: string): never => {
     throw new DomainError(code, `${message} (${available})`, available);
   };
-  const rootProblem = (id: string): string | null => {
-    const root = allRoots.find((r) => r.id === id);
-    if (!root) return `unknown root '${id}'`;
-    if (!root.releasable) return `root '${id}' is not releasable`;
-    return null;
-  };
+  const rootProblem = (id: string): string | null =>
+    pageRootIds.includes(id) ? null : `'${id}' is not a page root`;
 
   // 1. Single filters.
   if (include !== undefined && include.length === 0) {
@@ -287,10 +299,7 @@ function validateDiffFilters(
     );
   }
   if (roots !== undefined && roots.length === 0) refuse('INVALID_ROOTS_FILTER', 'roots must not be an empty array');
-  for (const id of roots ?? []) {
-    const problem = rootProblem(id);
-    if (problem) refuse('INVALID_ROOTS_FILTER', `roots: ${problem}`);
-  }
+  refuseNonPageRoots(roots ?? [], pageRootIds);
   if (paths !== undefined && paths.length === 0) refuse('INVALID_PATHS_FILTER', 'paths must not be an empty array');
   for (const key of paths ?? []) {
     const parsed = splitPageKey(key);

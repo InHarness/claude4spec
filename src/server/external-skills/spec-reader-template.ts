@@ -7,6 +7,7 @@ description: Read claude4spec specification entities (endpoints, DTOs, tables, A
 ---
 `;
 
+// ASSUMPTION:dev-0007 — carries the 2.1.8 sentences of the spec page; older wording differences stay.
 export function specReaderBody(ctx: ExternalSkillContext): string {
   // 2.1.0: `--server <publicUrl> --project <id>` in every command.
   const identity = skillIdentity(ctx);
@@ -65,7 +66,7 @@ not three — a search hit already carries the anchor, so there is nothing to lo
 up in between:
 
 \`\`\`sh
-c4s search-pages --query "<phrase>" ${identity}   # hits carry an anchor (indexed root)
+c4s search-pages --query "<phrase>" ${identity}   # hits carry an anchor
 c4s get-sections --anchors a,b,c ${identity}      # bodies of several sections in ONE call
 \`\`\`
 
@@ -91,11 +92,12 @@ c4s get-page --root-id pages --path some/page.md ${identity}
 \`\`\`
 
 The page comes back as **structure**, not as one text: \`{ rootId, path, hash, frontmatter?, preamble?, results[] }\`. Each item of \`results\` is one section — \`anchor\`, \`heading_text\`, \`heading_level\`, \`body\` — in document order. The anchor is a field, so you pass it straight to \`get-sections\`; \`body\` holds neither the anchor line nor the heading line. \`frontmatter.raw\` is the frontmatter verbatim and \`frontmatter.fields\` its parsed keys (absent when the YAML does not parse); \`preamble\` is the text above the first heading. \`hash\` is what a write expects. Add \`--format text\` to get the page assembled back into markdown for reading.
-XML tags in \`body\` are left untouched — the tag is the edge to another entity, so expanding it would replace a link with a payload. Resolve the tags you care about with the commands above. On a page over the response budget, some items come back with \`truncated: true\` and no \`body\`, and \`message\` names their anchors — fetch those with \`get-sections\`. \`--range <from:to>\` is only accepted on a non-section-indexed root; on an indexed one the command refuses and tells you to use \`get-page-outline\` + \`get-sections\` instead.
+
+XML tags in \`body\` are left untouched — the tag is the edge to another entity, so expanding it would replace a link with a payload. Resolve the tags you care about with the commands above. On a page over the response budget, some items come back with \`truncated: true\` and no \`body\`, and \`message\` names their anchors — fetch those with \`get-sections\`. There is no line window on \`get-page\`: to continue a cut read, go through \`get-page-outline\` and \`get-sections\`.
 
 ## Discovery
 
-- \`c4s catalog ${identity}\` — the ENTRY POINT: page roots with their properties, active entity types with counts + version + description + roleNoun + mcpToolsLine per type, tag count. Start here; it is cheap and it tells you what else is worth asking.
+- \`c4s catalog ${identity}\` — the ENTRY POINT: page roots (\`id\`, \`name\`, \`dir\`, \`builtin\`, \`pageCount\`), active entity types with counts + version + description + roleNoun + mcpToolsLine per type, tag count. Start here; it is cheap and it tells you what else is worth asking.
 - \`c4s describe --type <t> ${identity}\` — what a type IS: JSON Schemas, the value \`constraints\` a write must satisfy, \`selectableFields\` (the names \`--select\` accepts), \`contentFields\` (fields no generic read carries, each with the operation that issues them) and \`searchableFields\`. Worth calling before a READ, not just before a write.
 - \`c4s list-tags [--with-counts] [--min-count <n>] [--co-occurring-with <slug>] ${identity}\` — the project tags. Counts are OFF by default (they are a product of tags by types); \`--co-occurring-with\` returns the tags sharing entities with one you name, which is how you discover a taxonomy without already knowing it.
 - \`c4s list-entities --type endpoint [--tags auth] [--tag-filter and|or] [--sort createdAt|title|slug] [--dir asc|desc] [--mode items|count] ${identity}\` — full paginated traversal of one type. Rows are \`{ slug, title }\`: discovery answers with keys, and you follow up with \`get-entities\` for content. \`--mode count\` answers "how many" without listing. Only the default \`createdAt\` order has a write-stable offset window.

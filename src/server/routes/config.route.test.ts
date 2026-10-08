@@ -4,7 +4,9 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
-import { configPath, type Config } from '../config.js';
+import { configPath, loadOrCreateConfig, type Config } from '../config.js';
+import { resolveAgentPathScope } from '../services/agent-path-scope.js';
+import { RootRegistry } from '../roots/registry.js';
 import { configRouter } from './config.js';
 import type { SkillRegistry } from '../services/skill-registry.js';
 
@@ -50,7 +52,7 @@ describe('PATCH /config — name accepts full Unicode, rejects control chars (0.
     expect(res.body.agent.claudeUsePreset).toBe(false);
   });
 
-  it('0.2.112: onboarding [Continue] PATCH { agent: { conversationalLanguage } } keeps an explicit true', async () => {
+  it('[ac:ac-continue-z-agent-conversationallangua] 0.2.112: onboarding [Continue] PATCH { agent: { conversationalLanguage } } keeps an explicit true', async () => {
     await request(app()).patch('/config').send({ agent: { claudeUsePreset: true } });
     const res = await request(app()).patch('/config').send({ agent: { conversationalLanguage: 'Polski' } });
     expect(res.status).toBe(200);
@@ -352,15 +354,16 @@ describe('PATCH /config — git.commitTarget (0.1.125)', () => {
   });
 });
 
-// 0.2.8 (C17): `plansDir` gained a control in Settings → Directories. The
-// screen sends a DIFF-ONLY payload, so the artifact-dir collision guard has to
-// fire on a PATCH that carries no `roots` — which is exactly the shape it used
-// to skip (the collision then surfaced only as a boot-time failure).
-describe('PATCH /config — plansDir is editable and collision-checked (C17, 0.2.8)', () => {
+// 2.1.8: the artifact directory keys (`plansDir`, `briefsDir`, `patchesDir`,
+// `entitiesDir`, `releasesDir`) are gone from the API — the system roots live at
+// fixed `.claude4spec/<kind>` dirs registered in code. `roots[]` entries carry
+// exactly four fields.
+describe('GET/PATCH /config — one root registry with kinds (2.1.8)', () => {
   let dir: string;
+  const DIR_KEYS = ['plansDir', 'briefsDir', 'patchesDir', 'entitiesDir', 'releasesDir'];
 
   beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-cfg-plans-'));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-cfg-kinds-'));
     const file = configPath(dir);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, JSON.stringify({ $schemaVersion: 4, name: 'test' }));
@@ -374,67 +377,349 @@ describe('PATCH /config — plansDir is editable and collision-checked (C17, 0.2
     return express().use(express.json()).use(router);
   };
 
-  it('accepts and persists a plansDir change on its own', async () => {
-    const res = await request(app()).patch('/config').send({ plansDir: '.claude4spec/roadmap' });
-    expect(res.status).toBe(200);
-    expect((res.body as Config).plansDir).toBe('.claude4spec/roadmap');
-    const onDisk = JSON.parse(fs.readFileSync(configPath(dir), 'utf8')) as Config;
-    expect(onDisk.plansDir).toBe('.claude4spec/roadmap');
-  });
-
-  it('rejects plansDir equal to briefsDir even without roots in the body', async () => {
-    const res = await request(app()).patch('/config').send({ plansDir: '.claude4spec/briefs' });
-    expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('VALIDATION');
-    expect(res.body.error.message).toMatch(/briefsDir and plansDir must differ/);
-  });
-
-  it('rejects plansDir equal to patchesDir even without roots in the body', async () => {
-    const res = await request(app()).patch('/config').send({ plansDir: '.claude4spec/patches' });
-    expect(res.status).toBe(400);
-    expect(res.body.error.message).toMatch(/patchesDir and plansDir must differ/);
-  });
-
-  it('rejects a plansDir escaping the project root', async () => {
-    const res = await request(app()).patch('/config').send({ plansDir: '../outside' });
-    expect(res.status).toBe(400);
-    expect(res.body.error.message).toMatch(/plansDir must not escape project root/);
-  });
-
-  // A config.json that already collides is reachable — boot only warns about it
-  // (project-context.ts). If the guard fired on every PATCH, such a project could
-  // never be repaired: even closing the onboarding wizard would 400.
-  it('does not block an unrelated PATCH on a project whose dirs already collide', async () => {
+  it('GET /config has none of the 5 dir keys and roots entries have exactly 4 fields', async () => {
     fs.writeFileSync(
       configPath(dir),
-      JSON.stringify({ $schemaVersion: 4, name: 'test', briefsDir: 'same', patchesDir: 'same' }),
+      JSON.stringify({
+        $schemaVersion: 4,
+        name: 'test',
+        // Legacy keys and legacy per-root flags in the file are unknown fields.
+        plansDir: '.claude4spec/plans',
+        entitiesDir: '.claude4spec/entities',
+        roots: [
+          { id: 'pages', name: 'Pages', dir: 'pages', builtin: true, releasable: true, sidebar: 'accordion' },
+          { id: 'docs', name: 'Docs', dir: 'docs', builtin: false, linkTargets: [] },
+        ],
+      }),
     );
-    const res = await request(app()).patch('/config').send({ onboardingCompleted: true });
+    const res = await request(app()).get('/config');
     expect(res.status).toBe(200);
+    for (const k of DIR_KEYS) expect(k in res.body).toBe(false);
+    expect(res.body.roots).toEqual([
+      { id: 'pages', name: 'Pages', dir: 'pages', builtin: true },
+      { id: 'docs', name: 'Docs', dir: 'docs', builtin: false },
+    ]);
+    for (const r of res.body.roots) expect(Object.keys(r).sort()).toEqual(['builtin', 'dir', 'id', 'name']);
   });
 
-  it('still blocks a dir PATCH that would create the collision, normalizing the paths first', async () => {
-    const res = await request(app()).patch('/config').send({ plansDir: './.claude4spec/briefs/' });
-    expect(res.status).toBe(400);
-    expect(res.body.error.message).toMatch(/briefsDir and plansDir must differ/);
-  });
-
-  it('accepts a briefs/patches/plans triple moved together', async () => {
+  it('PATCH with roots missing builtin on an entry → 400', async () => {
     const res = await request(app())
       .patch('/config')
-      .send({ briefsDir: 'spec/briefs', patchesDir: 'spec/patches', plansDir: 'spec/plans' });
+      .send({ roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }, { id: 'docs', name: 'Docs', dir: 'docs' }] });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+    expect(res.body.error.message).toMatch(/builtin/);
+  });
+
+  it('PATCH roots with id plans → 400', async () => {
+    const res = await request(app())
+      .patch('/config')
+      .send({ roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }, { id: 'plans', name: 'Plans', dir: 'my-plans', builtin: false }] });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+    expect(res.body.error.message).toMatch(/reserved for a system root/);
+  });
+
+  it('PATCH carrying a legacy dir key ignores it — 200, nothing persisted', async () => {
+    const res = await request(app()).patch('/config').send({ plansDir: '.claude4spec/roadmap', entitiesDir: 'pages' });
     expect(res.status).toBe(200);
-    expect((res.body as Config).plansDir).toBe('spec/plans');
+    for (const k of DIR_KEYS) expect(k in res.body).toBe(false);
+    const onDisk = JSON.parse(fs.readFileSync(configPath(dir), 'utf8')) as Record<string, unknown>;
+    for (const k of DIR_KEYS) expect(k in onDisk).toBe(false);
+  });
+
+  it('PATCH roots strips unknown per-root fields before persisting', async () => {
+    const res = await request(app())
+      .patch('/config')
+      .send({ roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true, releasable: false, foo: 1 }] });
+    expect(res.status).toBe(200);
+    const onDisk = JSON.parse(fs.readFileSync(configPath(dir), 'utf8')) as Config;
+    expect(onDisk.roots).toEqual([{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }]);
   });
 });
 
 /**
- * D4 (0.2.9): write-target overlap is checked PAIRWISE and BIDIRECTIONALLY on the
- * post-merge effective state, and fires on any PATCH touching `roots[]` OR a storage
- * dir. The Settings payload is diff-only, so gating on `'roots' in body` (as before)
- * let a dir moved onto another write target through untouched.
+ * 2.1.8 (u11) — the wire shapes of `GET`/`PATCH /config` and the onboarding /
+ * settings criteria that live on them.
  */
-describe('PATCH /config — D4 write-target overlap (0.2.9)', () => {
+describe('GET/PATCH /config — wire shapes and the onboarding/settings criteria', () => {
+  let dir: string;
+  let rebuilds: number;
+  let welcomes: string[];
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-cfg-wire-'));
+    rebuilds = 0;
+    welcomes = [];
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const writeFile = (cfg: Record<string, unknown>) => {
+    const file = configPath(dir);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(cfg));
+  };
+  const onDisk = () => JSON.parse(fs.readFileSync(configPath(dir), 'utf8')) as Record<string, unknown>;
+  const app = () => {
+    const router = configRouter({
+      cwd: dir,
+      // `writingStyle: null` never consults the registry; a slug would.
+      skillRegistry: { isSelectable: () => true, unselectableReason: () => '' } as unknown as SkillRegistry,
+      onContextConfigChanged: () => {
+        rebuilds++;
+      },
+      onOnboardingCompleted: (pagesDir) => {
+        welcomes.push(pagesDir);
+      },
+      pluginSettingsSections: () => [
+        { name: 'c4s-plugin-x', version: '1', fields: [{ key: 'flag', label: 'Flag', control: 'toggle', kind: 'hot-reload', default: false }] },
+      ],
+    });
+    return express().use(express.json()).use(router);
+  };
+  const base = { id: 'pages', name: 'Pages', dir: 'pages', builtin: true };
+  const adr = { id: 'adr', name: 'ADRs', dir: 'docs/adr', builtin: false };
+
+  it('[entity:app-config-response] GET /config carries the AppConfigResponse fields — and no system-root keys, no consistency', async () => {
+    writeFile({
+      $schemaVersion: 4,
+      name: 'demo',
+      description: 'pitch',
+      roots: [base, adr],
+      entities: ['endpoint'],
+      consistency: { requireAcCoverage: 'warn' },
+    });
+    const res = await request(app()).get('/config');
+    expect(res.status).toBe(200);
+    const body = res.body as Record<string, unknown>;
+    expect(body.name).toBe('demo');
+    expect(body.description).toBe('pitch');
+    expect(body.roots).toEqual([base, adr]);
+    expect(body.configHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(body.writingStyle).toBeNull();
+    expect(body.writingStyleUnavailable).toBeNull();
+    expect(body.language).toBeNull();
+    expect(body.entities).toEqual(['endpoint']);
+    expect(body.plugins).toEqual({});
+    expect(body.agent).toMatchObject({
+      claudeUsePreset: false,
+      conversationalLanguage: null,
+      allowedPaths: [],
+      disallowedPaths: [],
+      disableDirectFilesystemAccess: true,
+      pathScopeStrength: 'none',
+    });
+    expect(body.remoteProjectId).toBeNull();
+    expect(body.remoteApiUrl).toBeNull();
+    expect(body.git).toEqual({
+      enabled: false,
+      syncPushOnPush: false,
+      commitTarget: { mode: 'current', branch: null, template: null, base: null },
+      switchAfterRelease: false,
+    });
+    expect(body.onboarding).toEqual({ completed: true });
+    expect(body.$schemaVersion).toBe(4);
+    for (const k of ['plansDir', 'briefsDir', 'patchesDir', 'entitiesDir', 'releasesDir', 'consistency']) {
+      expect(k in body, k).toBe(false);
+    }
+  });
+
+  it('[entity:patch-config-request] PATCH /config takes the PatchConfigRequest fields; system-root keys and response-only fields are dropped silently', async () => {
+    writeFile({ $schemaVersion: 4, name: 'demo', roots: [base] });
+    const res = await request(app())
+      .patch('/config')
+      .send({
+        name: 'Renamed',
+        description: 'short pitch',
+        roots: [base, adr],
+        entities: ['endpoint'],
+        plugins: { 'c4s-plugin-x': { flag: true } },
+        writingStyle: null,
+        language: 'English',
+        agent: { claudeUsePreset: true, conversationalLanguage: 'Polski', allowedPaths: ['/opt/x'], disallowedPaths: ['/opt/y'], disableDirectFilesystemAccess: false },
+        git: { enabled: true },
+        remoteProjectId: '11111111-2222-3333-4444-555555555555',
+        onboardingCompleted: true,
+        // Not writable here: fixed system roots, response-only fields.
+        plansDir: 'docs/plans',
+        releasesDir: 'rel',
+        configHash: 'x',
+        writingStyleUnavailable: { reason: 'x' },
+      });
+    expect(res.status).toBe(200);
+    const file = onDisk();
+    expect(file).toMatchObject({
+      name: 'Renamed',
+      description: 'short pitch',
+      roots: [base, adr],
+      entities: ['endpoint'],
+      plugins: { 'c4s-plugin-x': { flag: true } },
+      writingStyle: null,
+      language: 'English',
+      agent: { claudeUsePreset: true, conversationalLanguage: 'Polski', allowedPaths: ['/opt/x'], disallowedPaths: ['/opt/y'], disableDirectFilesystemAccess: false },
+      git: { enabled: true },
+      remoteProjectId: '11111111-2222-3333-4444-555555555555',
+      onboardingCompleted: true,
+    });
+    for (const k of ['plansDir', 'releasesDir', 'configHash', 'writingStyleUnavailable']) expect(k in file, k).toBe(false);
+    // A roots[] entry missing one of its four fields is refused.
+    const partial = await request(app()).patch('/config').send({ roots: [{ id: 'pages', name: 'Pages', dir: 'pages' }] });
+    expect(partial.status).toBe(400);
+  });
+
+  it('[ac:ac-odczyt-konfiguracji-po-swiezym-bootst] a read after a fresh bootstrap returns onboarding.completed === false', async () => {
+    loadOrCreateConfig(dir, {});
+    const res = await request(app()).get('/config');
+    expect(res.status).toBe(200);
+    expect(res.body.onboarding).toEqual({ completed: false });
+  });
+
+  it('[ac:ac-po-domknieciu-onboardingu-odczyt-konf] after onboarding closes, a read returns onboarding.completed === true', async () => {
+    loadOrCreateConfig(dir, {});
+    await request(app()).patch('/config').send({ onboardingCompleted: true }).expect(200);
+    const res = await request(app()).get('/config');
+    expect(res.body.onboarding).toEqual({ completed: true });
+  });
+
+  it('[ac:ac-projekt-sprzed-m16-ktorego-config-nie] a config file without onboardingCompleted reads as completed — no redirect to onboarding', async () => {
+    writeFile({ $schemaVersion: 4, name: 'old', roots: [base] });
+    const res = await request(app()).get('/config');
+    expect(res.body.onboarding).toEqual({ completed: true });
+    // The key is not written back by the read.
+    expect('onboardingCompleted' in onDisk()).toBe(false);
+  });
+
+  it('[ac:ac-continue-z-waznym-formularzem-wysyla] the [Continue] body persists name, writingStyle, language, agent.conversationalLanguage, roots and onboardingCompleted in one write', async () => {
+    loadOrCreateConfig(dir, {});
+    const res = await request(app())
+      .patch('/config')
+      .send({
+        name: 'My spec',
+        writingStyle: null,
+        language: 'English',
+        agent: { conversationalLanguage: 'Polski' },
+        roots: [{ ...base, dir: 'spec' }],
+        onboardingCompleted: true,
+      });
+    expect(res.status).toBe(200);
+    expect(onDisk()).toMatchObject({
+      name: 'My spec',
+      writingStyle: null,
+      language: 'English',
+      agent: { conversationalLanguage: 'Polski' },
+      roots: [{ ...base, dir: 'spec' }],
+      onboardingCompleted: true,
+    });
+    // The welcome step runs on the effective, post-write base root dir.
+    expect(welcomes).toEqual(['spec']);
+  });
+
+  it('[ac:ac-continue-ze-zmienionym-dir-builtin-ro] a roots[] with only the builtin entry\'s dir swapped is persisted and rebuilds the ProjectContext; a body without roots does not', async () => {
+    writeFile({ $schemaVersion: 4, name: 'demo', roots: [base, adr], onboardingCompleted: false });
+    await request(app())
+      .patch('/config')
+      .send({ roots: [{ ...base, dir: 'spec' }, adr], onboardingCompleted: true })
+      .expect(200);
+    expect(onDisk().roots).toEqual([{ ...base, dir: 'spec' }, adr]);
+    expect(rebuilds).toBe(1);
+
+    await request(app()).patch('/config').send({ name: 'n', onboardingCompleted: true }).expect(200);
+    expect(rebuilds).toBe(1);
+  });
+
+  it('[ac:ac-skip-nie-wysyla-roots-dir-builtin-roo] the [Skip] body leaves the base root at its bootstrap dir and identifier, with no rename recorded', async () => {
+    loadOrCreateConfig(dir, {});
+    await request(app()).patch('/config').send({ onboardingCompleted: true }).expect(200);
+    expect(onDisk().roots).toEqual([base]);
+    expect(fs.existsSync(path.join(dir, '.claude4spec', 'root-renames.json'))).toBe(false);
+    expect(rebuilds).toBe(0);
+  });
+
+  it('[ac:ac-skip-otwiera-confirmmodal-a-po-potwie] the [Skip] body ({ onboardingCompleted: true } alone) leaves both languages null', async () => {
+    loadOrCreateConfig(dir, {});
+    const res = await request(app()).patch('/config').send({ onboardingCompleted: true });
+    expect(res.status).toBe(200);
+    expect(res.body.language).toBeNull();
+    expect(res.body.agent.conversationalLanguage).toBeNull();
+    expect(res.body.onboarding).toEqual({ completed: true });
+  });
+
+  it('[ac:ac-m26-sekcja-agent-settings-zawiera-d] PATCH { agent: { conversationalLanguage } } deep-merges — the other agent fields survive — and a language off the list is a 400 on that field', async () => {
+    writeFile({
+      $schemaVersion: 4,
+      name: 'demo',
+      roots: [base],
+      agent: { claudeUsePreset: true, allowedPaths: ['/opt/a'], disallowedPaths: ['/opt/b'], disableDirectFilesystemAccess: false },
+    });
+    const res = await request(app()).patch('/config').send({ agent: { conversationalLanguage: 'Deutsch' } });
+    expect(res.status).toBe(200);
+    expect(onDisk().agent).toEqual({
+      claudeUsePreset: true,
+      allowedPaths: ['/opt/a'],
+      disallowedPaths: ['/opt/b'],
+      disableDirectFilesystemAccess: false,
+      conversationalLanguage: 'Deutsch',
+    });
+
+    const bad = await request(app()).patch('/config').send({ agent: { conversationalLanguage: 'Klingon' } });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error.code).toBe('VALIDATION');
+    expect(bad.body.error.details.field).toMatch(/conversationalLanguage/);
+    expect((onDisk().agent as Record<string, unknown>).conversationalLanguage).toBe('Deutsch');
+  });
+
+  it('[ac:ac-m26-sekcja-project-settings-zawiera-2] PATCH { language } persists a listed language or null; one off the list is a 400 on `language`', async () => {
+    writeFile({ $schemaVersion: 4, name: 'demo', roots: [base] });
+    await request(app()).patch('/config').send({ language: 'Français' }).expect(200);
+    expect(onDisk().language).toBe('Français');
+    await request(app()).patch('/config').send({ language: null }).expect(200);
+    expect(onDisk().language).toBeNull();
+    const bad = await request(app()).patch('/config').send({ language: 'Klingon' });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error.details.field).toBe('language');
+    expect(onDisk().language).toBeNull();
+  });
+
+  it('[ac:ac-textarea-allowed-disallowed-paths-sekcj] saving the parsed path list deep-merges onto agent: the array replaces, the other fields stay', async () => {
+    writeFile({
+      $schemaVersion: 4,
+      name: 'demo',
+      roots: [base],
+      agent: { allowedPaths: ['/old'], disallowedPaths: ['/keep'], disableDirectFilesystemAccess: false },
+    });
+    const res = await request(app()).patch('/config').send({ agent: { allowedPaths: ['/a', '/b'] } });
+    expect(res.status).toBe(200);
+    expect(res.body.agent.allowedPaths).toEqual(['/a', '/b']);
+    expect(res.body.agent.disallowedPaths).toEqual(['/keep']);
+    expect(res.body.agent.disableDirectFilesystemAccess).toBe(false);
+  });
+
+  it('[ac:ac-pola-agent-allowedpaths-agent-disallowed] the path lists are additive — absent reads as [], no $schemaVersion bump, and [] keeps the agent in the implicit base', async () => {
+    writeFile({ $schemaVersion: 4, name: 'demo', roots: [base] });
+    const res = await request(app()).get('/config');
+    expect(res.body.agent.allowedPaths).toEqual([]);
+    expect(res.body.agent.disallowedPaths).toEqual([]);
+    expect(res.body.agent.pathScopeStrength).toBe('none');
+
+    await request(app()).patch('/config').send({ agent: { allowedPaths: ['/opt/x'] } }).expect(200);
+    expect(onDisk().$schemaVersion).toBe(4);
+
+    // Empty lists: nothing beyond the implicit base (cwd + page roots, none outside cwd here),
+    // and nothing denied but the always-excluded system roots.
+    const scope = resolveAgentPathScope({ cwd: dir, roots: new RootRegistry([base]).list(), allowedPaths: [], disallowedPaths: [] });
+    expect(scope.allowedPaths).toEqual([]);
+    expect(scope.disallowedPaths.every((p) => p.startsWith(path.join(dir, '.claude4spec')))).toBe(true);
+  });
+});
+
+/**
+ * D4 (2.1.8): overlap is computed on NAMESPACES of each user root vs the other
+ * user roots, the 5 system roots and `.claude4spec/plugins`. Only a PATCH that
+ * carries `roots` can introduce an overlap, so only such a PATCH is judged.
+ */
+describe('PATCH /config — D4 root namespace overlap (2.1.8)', () => {
   let dir: string;
 
   beforeEach(() => {
@@ -451,43 +736,45 @@ describe('PATCH /config — D4 write-target overlap (0.2.9)', () => {
     const router = configRouter({ cwd: dir, skillRegistry: {} as unknown as SkillRegistry });
     return express().use(express.json()).use(router);
   };
+  const base = { id: 'pages', name: 'Pages', dir: 'pages', builtin: true };
 
-  it('rejects entitiesDir moved onto releasesDir — neither side is a root, and no roots[] is sent', async () => {
+  it('rejects a root moved onto a system root dir', async () => {
     const res = await request(app())
       .patch('/config')
-      .send({ entitiesDir: '.claude4spec/releases' });
+      .send({ roots: [base, { id: 'rel', name: 'Rel', dir: '.claude4spec/releases', builtin: false }] });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION');
-    // Symmetric message — no "root '<id>' dir" framing, since no root is involved.
-    expect(res.body.error.message).toMatch(
-      /config\.json: '(entitiesDir|releasesDir)' overlaps write-target '(entitiesDir|releasesDir)'/,
-    );
+    expect(res.body.error.message).toBe("config.json: 'rel' overlaps write-target 'releases'");
   });
 
-  it('rejects entitiesDir moved onto the reserved .claude4spec/plugins target', async () => {
+  it('rejects a root under a system root dir', async () => {
     const res = await request(app())
       .patch('/config')
-      .send({ entitiesDir: '.claude4spec/plugins' });
+      .send({ roots: [base, { id: 'x', name: 'X', dir: '.claude4spec/plans/x', builtin: false }] });
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toMatch(/overlaps write-target 'plans'/);
+  });
+
+  it('rejects a root moved onto the reserved .claude4spec/plugins target', async () => {
+    const res = await request(app())
+      .patch('/config')
+      .send({ roots: [base, { id: 'gen', name: 'Gen', dir: '.claude4spec/plugins', builtin: false }] });
     expect(res.status).toBe(400);
     expect(res.body.error.message).toMatch(/overlaps write-target/);
   });
 
-  it('rejects entitiesDir moved onto an existing page root, with no roots[] in the body', async () => {
-    const res = await request(app()).patch('/config').send({ entitiesDir: 'pages' });
+  it('rejects two user roots on overlapping dirs', async () => {
+    const res = await request(app())
+      .patch('/config')
+      .send({ roots: [base, { id: 'sub', name: 'Sub', dir: 'pages/sub', builtin: false }] });
     expect(res.status).toBe(400);
     expect(res.body.error.message).toMatch(/overlaps write-target/);
   });
 
-  it('warns but does NOT reject briefsDir overlapping a page root (rule 3a), without roots[]', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    try {
-      const res = await request(app()).patch('/config').send({ briefsDir: 'pages' });
-      expect(res.status).toBe(200);
-      expect((res.body as Config).briefsDir).toBe('pages');
-      expect(warn.mock.calls.flat().join('\n')).toMatch(/overlaps briefsDir/);
-    } finally {
-      warn.mockRestore();
-    }
+  it('accepts a base root at "."', async () => {
+    const res = await request(app()).patch('/config').send({ roots: [{ ...base, dir: '.' }] });
+    expect(res.status).toBe(200);
+    expect((res.body as Config).roots[0]!.dir).toBe('.');
   });
 
   it('leaves an unrelated PATCH alone even when the stored config already overlaps', async () => {
@@ -496,59 +783,13 @@ describe('PATCH /config — D4 write-target overlap (0.2.9)', () => {
       JSON.stringify({
         $schemaVersion: 4,
         name: 'test',
-        entitiesDir: 'shared',
-        releasesDir: 'shared',
+        roots: [base, { id: 'ent', name: 'Ent', dir: '.claude4spec/entities', builtin: false }],
       }),
     );
-    // An already-broken project must stay repairable: only a PATCH that touches roots
-    // or a storage dir is judged, so closing the onboarding wizard still works.
+    // An already-broken project must stay repairable: only a PATCH that carries
+    // roots is judged, so closing the onboarding wizard still works.
     const res = await request(app()).patch('/config').send({ onboardingCompleted: true });
     expect(res.status).toBe(200);
-  });
-
-  it('accepts a storage-dir PATCH that overlaps nothing', async () => {
-    const res = await request(app()).patch('/config').send({ entitiesDir: 'spec/entities' });
-    expect(res.status).toBe(200);
-    expect((res.body as Config).entitiesDir).toBe('spec/entities');
-  });
-
-  it('does NOT reject a plansDir-only save because of a pre-existing entitiesDir collision', async () => {
-    // Regression: gating the hard sweep on briefs/patches/plans meant a `{ plansDir }`
-    // save could 400 with a message naming `entitiesDir` and a root — fields the request
-    // never carried — and silently lose the edit. Those three fields only ever produce
-    // rule-3a warnings, so they must not gate the hard check.
-    fs.writeFileSync(
-      configPath(dir),
-      JSON.stringify({ $schemaVersion: 4, name: 'test', entitiesDir: 'pages' }),
-    );
-    const res = await request(app()).patch('/config').send({ plansDir: 'spec/plans' });
-    expect(res.status).toBe(200);
-    expect((res.body as Config).plansDir).toBe('spec/plans');
-  });
-
-  it('still rejects a PATCH that moves entitiesDir onto a root, even on a config already broken elsewhere', async () => {
-    fs.writeFileSync(
-      configPath(dir),
-      JSON.stringify({ $schemaVersion: 4, name: 'test', releasesDir: 'shared', entitiesDir: 'shared' }),
-    );
-    const res = await request(app()).patch('/config').send({ entitiesDir: 'pages' });
-    expect(res.status).toBe(400);
-  });
-
-  it('uses the running context roots (--pages override) rather than the ones on disk', async () => {
-    // Without this the route validates against config.json's 'pages' while boot uses the
-    // override, so it can bless an entitiesDir the next startup refuses to open.
-    const router = configRouter({
-      cwd: dir,
-      skillRegistry: {} as unknown as SkillRegistry,
-      effectiveRoots: [
-        { id: 'pages', name: 'Pages', dir: 'docs', builtin: true, releasable: true, sectionIndexed: true, referenceValidated: true, linkTargets: [], sidebar: 'accordion', briefTarget: true },
-      ],
-    });
-    const overridden = express().use(express.json()).use(router);
-    const res = await request(overridden).patch('/config').send({ entitiesDir: 'docs/entities' });
-    expect(res.status).toBe(400);
-    expect(res.body.error.message).toMatch(/overlaps write-target/);
   });
 });
 

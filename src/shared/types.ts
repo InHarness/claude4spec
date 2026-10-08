@@ -193,71 +193,23 @@ export type WsEvent =
   // project-local overlay reload.
   | { kind: 'plugin:reloaded'; name: string; version: string; tier: 'base' | 'overlay' };
 
-/**
- * 0.1.96 multiroot: a page is keyed by `(rootId, path)`. `rootId` is a DYNAMIC
- * string — the built-in `'pages'` root, user-defined root slugs, plus the three
- * fixed markers below for briefs/patches/plans (which are NOT roots but reuse the
- * same PagesService/PagesWatcher primitive and carry these literal rootId markers
- * on their `file_version` rows).
- */
-export const BRIEF_ROOT_MARKER = 'brief';
-export const PATCH_ROOT_MARKER = 'patch';
-/** 0.1.127 M10: plan artifact, filesystem-backed as of the plan → file migration. */
-export const PLAN_ROOT_MARKER = 'plan';
-
-/** 0.1.96: how a root's page tree is surfaced in the sidebar. */
-export type RootSidebar = 'accordion' | 'hidden';
+// 0.1.96 multiroot: a file is keyed by `(rootId, path)`. 2.1.8: `rootId` is
+// always the id of a ROOT REGISTRY entry — a user root (`kind: pages`) or one of
+// the five system roots, whose id is `systemRootId(kind)` (root-kinds.ts). There
+// are no per-artifact root-id literals: ask `systemRootId` or the store's rootId.
 
 /**
- * 0.1.96: a named page root. `dir` is a cwd-relative path (validated path-safe).
- * `builtin` is true only for the mandatory `'pages'` root. The remaining flags
- * are per-root behaviour gates — every per-directory behaviour is gated on one of
- * these properties, never on `if (rootId === 'pages')`.
+ * A user root from `config.json` → `roots[]` (2.1.8: always of kind `pages`).
+ * Exactly four fields: `dir` is a cwd-relative path (validated path-safe) and
+ * `builtin` marks the single base root. Behaviour comes from the root's KIND
+ * (`src/shared/root-kinds.ts`), never from per-root flags — those were removed.
  */
 export interface Root {
   id: string;
   name: string;
   dir: string;
   builtin: boolean;
-  /** Included in release bundles + git commits + release diffs. */
-  releasable: boolean;
-  /** Section-indexed (anchors, `/space/:rootId/$` navigation, SectionRef nodes). */
-  sectionIndexed: boolean;
-  /** Reference-validated (5 reference nodes, broken-ref decorations, propagation). */
-  referenceValidated: boolean;
-  /** Root ids whose pages are valid `@`-autocomplete / link targets from this root (in addition to self). */
-  linkTargets: string[];
-  /** How the root's tree appears in the sidebar. */
-  sidebar: RootSidebar;
-  /** Selectable as a brief scope target in the brief-scope modal. */
-  briefTarget: boolean;
 }
-
-/**
- * 0.1.97: per-root behaviour flags for a freshly-added user root. A page root is
- * "just another page directory sharing the `pages` lifecycle", so a new root
- * defaults to the FULL pages lifecycle — identical to `DEFAULT_PAGES_ROOT_PROPS`
- * below minus the `builtin` marker. Advanced gates stay on the `Root` model/API
- * (edge/programmatic use) but are no longer user-selectable in Settings.
- */
-export const DEFAULT_USER_ROOT_PROPS = {
-  releasable: true,
-  sectionIndexed: true,
-  referenceValidated: true,
-  linkTargets: [] as string[],
-  sidebar: 'accordion' as RootSidebar,
-  briefTarget: true,
-} as const;
-
-/** 0.1.96: per-root behaviour flags for the built-in `pages` root (full behaviour). */
-export const DEFAULT_PAGES_ROOT_PROPS = {
-  releasable: true,
-  sectionIndexed: true,
-  referenceValidated: true,
-  linkTargets: [] as string[],
-  sidebar: 'accordion' as RootSidebar,
-  briefTarget: true,
-} as const;
 
 export interface TodoHit {
   /** 0.1.96: which root this page belongs to. */

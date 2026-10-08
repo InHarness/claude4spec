@@ -249,11 +249,10 @@ export function registerCoreOperations(): void {
   {
     const getPage = coreRead(
       'get_page',
-      'One WHOLE page addressed by (rootId, path), as a collection of sections: frontmatter and preamble are envelope fields, each section an item keyed by its anchor. Computed from the file, not the index, so it never answers INDEX_STALE. Replaced `resolve_page({ path })` — the same relPath in several roots was ambiguous.',
+      'One WHOLE page addressed by (rootId, path), as a collection of sections: frontmatter and preamble are envelope fields, each section an item keyed by its anchor. Computed from the file, not the index, so it never answers INDEX_STALE. No line window (2.1.8): a cut read resumes through get_page_outline + get_sections. Replaced `resolve_page({ path })` — the same relPath in several roots was ambiguous.',
       {
         rootId: z.string(),
         path: z.string(),
-        range: z.object({ start: z.number(), end: z.number() }).optional(),
       },
       ['PAGE_NOT_FOUND', 'ROOT_NOT_FOUND', 'AMBIGUOUS_PAGE'],
     );
@@ -276,7 +275,7 @@ export function registerCoreOperations(): void {
   CATALOG.register(
     coreRead(
       'search_pages',
-      'Search the prose of the pages by phrase (`query`) or regex (`regex`) — cross-root by default; `rootId` only NARROWS. A hit is a SECTION (a page, on a root with no section index — then `rootId` + `path` with the match count, no anchor and no line number, readable through `get_page`), carrying `matchCount`; matches are lines. Modes are a cost ladder: `count` (totals), `map` (identity rows, the DEFAULT), `hits` (adds `hunks[]` + `omittedChars`). Enumeration order is `(rootId, path, line_start)` with a declared tie-break, so a full `limit`/`offset` traversal returns each hit exactly once.',
+      'Search the prose of the pages by phrase (`query`) or regex (`regex`) — cross-root by default; `rootId` only NARROWS. A hit is a SECTION (a page only when the match falls outside every section — then `rootId` + `path` with the match count, no anchor and no line number, readable through `get_page`), carrying `matchCount`; matches are lines. Modes are a cost ladder: `count` (totals), `map` (identity rows, the DEFAULT), `hits` (adds `hunks[]` + `omittedChars`). Enumeration order is `(rootId, path, line_start)` with a declared tie-break, so a full `limit`/`offset` traversal returns each hit exactly once.',
       {
         rootId: z.string().optional(),
         query: z.string().optional(),
@@ -473,7 +472,7 @@ export function registerCoreOperations(): void {
     mediation: 'direct',
     opClass: 'brief',
     inputSchema: {
-      brief: z.string().describe('Brief path relative to briefsDir. Must name a real file.'),
+      brief: z.string().describe('Brief path relative to the briefs root (.claude4spec/briefs). Must name a real file.'),
       desc: z.string().min(1).describe('Short description of the drift. Drives the file slug and the body heading.'),
       patchKind: z.enum(['drift', 'missing', 'incorrect', 'clarification']).optional().describe('Default `drift`.'),
       body: z.string().describe('The patch body — what drifted and what the spec author should consider.'),
@@ -517,7 +516,7 @@ export function registerCoreOperations(): void {
     mediation: 'direct',
     opClass: 'read',
     inputSchema: {
-      path: z.string().optional().describe('Patch path relative to patchesDir. Defaulted from the thread only in the `internal` channel.'),
+      path: z.string().optional().describe('Patch path relative to the patches root (.claude4spec/patches). Defaulted from the thread only in the `internal` channel.'),
       range: z
         .object({ start: z.number().int().positive(), end: z.number().int().positive() })
         .optional()
@@ -550,7 +549,7 @@ export function registerCoreOperations(): void {
     opClass: 'write',
     inputSchema: {
       applied: z.boolean().describe('Only true is accepted from the agent channel.'),
-      path: z.string().optional().describe('Patch path relative to patchesDir. Defaulted from the thread only in the `internal` channel.'),
+      path: z.string().optional().describe('Patch path relative to the patches root (.claude4spec/patches). Defaulted from the thread only in the `internal` channel.'),
     },
     errorCodes: ['PATCH_NOT_FOUND', 'INVALID_ARGUMENT'],
     sideEffects: ['file', 'db', 'ui-notify'],
@@ -939,7 +938,7 @@ export function registerCoreOperations(): void {
     mediation: 'direct',
     opClass: 'plan',
     inputSchema: {
-      path: z.string().optional().describe('Plan path relative to plansDir. Defaulted from the thread only in the `internal` channel.'),
+      path: z.string().optional().describe('Plan path relative to the plans root (.claude4spec/plans). Defaulted from the thread only in the `internal` channel.'),
       range: z
         .object({ start: z.number().int().positive(), end: z.number().int().positive() })
         .optional()
@@ -1056,7 +1055,7 @@ export function registerCoreOperations(): void {
     mediation: 'direct',
     opClass: 'plan',
     inputSchema: {
-      path: z.string().optional().describe('Plan path relative to plansDir. Defaulted from the thread only in the `internal` channel.'),
+      path: z.string().optional().describe('Plan path relative to the plans root (.claude4spec/plans). Defaulted from the thread only in the `internal` channel.'),
       applied: z.boolean().describe('Must be true from a non-user channel.'),
     },
     /**
@@ -1137,7 +1136,7 @@ export function registerCoreOperations(): void {
         .array()
         .optional()
         .describe(
-          "Releasable root ids to scope the brief to. Not allowed when the window's `to` end is open.",
+          "Page root ids to scope the brief to. Not allowed when the window's `to` end is open.",
         ),
       suffix: z.string().optional().describe('Appended to the generated file slug; settles a collision.'),
     },
@@ -1209,7 +1208,7 @@ export function registerCoreOperations(): void {
     // connection has no ambient brief, and silently defaulting to "the" brief is
     // how a patch gets filed against the wrong one.
     inputSchema: {
-      path: z.string().optional().describe('Brief path relative to briefsDir. Required on an external connection.'),
+      path: z.string().optional().describe('Brief path relative to the briefs root (.claude4spec/briefs). Required on an external connection.'),
       range: z
         .object({ start: z.number().int().positive(), end: z.number().int().positive() })
         .optional()
@@ -1276,7 +1275,7 @@ export function registerCoreOperations(): void {
     mediation: 'direct',
     opClass: 'brief',
     inputSchema: {
-      path: z.string().optional().describe('Brief path relative to briefsDir. Required on an external connection.'),
+      path: z.string().optional().describe('Brief path relative to the briefs root (.claude4spec/briefs). Required on an external connection.'),
       ...paging,
     },
     errorCodes: ['NOT_FOUND', 'VALIDATION'],
@@ -1297,7 +1296,7 @@ export function registerCoreOperations(): void {
     mediation: 'direct',
     opClass: 'brief',
     inputSchema: {
-      path: z.string().optional().describe('Brief path relative to briefsDir. Required on an external connection.'),
+      path: z.string().optional().describe('Brief path relative to the briefs root (.claude4spec/briefs). Required on an external connection.'),
       version: z.number().int().positive(),
     },
     errorCodes: ['NOT_FOUND', 'VERSION_NOT_FOUND', 'VALIDATION'],
@@ -1652,7 +1651,7 @@ export function registerCoreOperations(): void {
    * codes, which taught a reader of the catalog a call no channel accepts.
    * `roots` narrows the PAGES dimension only — asymmetric by design.
    * 0.2.102: `paths` (full page keys `<rootId>/<relPath>`) narrows it to single
-   * pages; both filters refuse unknown/non-releasable roots, and the page
+   * pages; both filters refuse ids that are not page roots, and the page
    * entries carry `rootId` next to `path`.
    * 2.1.5: the sections of ONE page are addressed positionally by the section
    * window `sectionOffset` / `sectionLimit`, not by anchor — legal only with

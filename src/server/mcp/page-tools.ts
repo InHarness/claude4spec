@@ -50,16 +50,6 @@ import {
 export interface PageToolsDeps extends SectionWriteDeps {
   /** Root ids the caller may address, for the error that lists them. */
   rootIds: () => string[];
-  /**
-   * 0.2.37 — whether a root keeps a section index, for `update_page`'s
-   * differential branch. On a root without one the `ANCHOR_LOSS` guard is
-   * skipped outright rather than run against nothing.
-   *
-   * Optional so existing rigs keep compiling; absent reads as "indexed", which
-   * is the conservative half of the choice — the guard then still needs a
-   * referent lookup before it can refuse anything.
-   */
-  isSectionIndexed?: (rootId: string) => boolean;
 }
 
 export function createPageToolsServer(
@@ -97,11 +87,10 @@ export function createPageToolsServer(
    * `SectionWriteDeps`, so the guard `update_sections` runs and the guard
    * `update_page` runs are literally the same lookup.
    */
-  const diffDeps = (rootId: string): PageDiffDeps => ({
+  const diffDeps: PageDiffDeps = {
     sections: deps.sections,
     ...(deps.findSectionReferents ? { findSectionReferents: deps.findSectionReferents } : {}),
-    ...(deps.isSectionIndexed ? { sectionIndexed: deps.isSectionIndexed(rootId) } : {}),
-  });
+  };
 
   const rootIdParam = z
     .string()
@@ -201,12 +190,13 @@ export function createPageToolsServer(
       'The batch is a SET, not a sequence: every `find` is matched against the file as it stands BEFORE the call, so substitutions never cascade and order never matters. Matches may not overlap or contain one another (INVALID_ARGUMENT).',
       'NOT IDEMPOTENT in differential mode. Repeating a successful call with a refreshed expectedHash answers FIND_NOT_FOUND, because the text you looked for is gone — treat it like `delete`, not like `replace`. Literal `body` mode stays idempotent.',
       'Changing a heading\'s TEXT is no longer a reason to come here: `update_sections` carries a `rename` action that rewrites the heading line and keeps the anchor, whereas a `find` swallowing the anchor comment destroys it and needs `dropAnchors`.',
-      'ANCHOR LOSS, IN BOTH MODES: if the write removes an `<!-- anchor: … -->` comment that something cites, it is refused with ANCHOR_LOSS (400) naming each anchor and who cites it. Name those anchors in `dropAnchors` to go ahead. In differential mode the touched scope is the matched fragments, so every entry must lie inside one; in literal `body` mode it is the whole page, so every entry must be an anchor this page has now (otherwise INVALID_ARGUMENT). To rewrite a page wholesale, assemble the body from get_page: preamble, then per item its anchor line, heading line and body — an anchor you leave out is a loss. The guard does not run on a root without a section index.',
+      'ANCHOR LOSS, IN BOTH MODES: if the write removes an `<!-- anchor: … -->` comment that something cites, it is refused with ANCHOR_LOSS (400) naming each anchor and who cites it. Name those anchors in `dropAnchors` to go ahead. In differential mode the touched scope is the matched fragments, so every entry must lie inside one; in literal `body` mode it is the whole page, so every entry must be an anchor this page has now (otherwise INVALID_ARGUMENT). To rewrite a page wholesale, assemble the body from get_page: preamble, then per item its anchor line, heading line and body — an anchor you leave out is a loss. The guard runs on every page root.',
       'Returns { hash, version, changedAnchors }, plus `replacements` in differential mode and `droppedAnchors` when the write removed any anchor. The page is NOT returned. The write-back phase injects `<!-- anchor: … -->` comments for headings you introduced, so the bytes on disk are NOT the bytes you sent: if you need them — e.g. to write the whole page again without stripping those anchors — re-read it with `get_page`. Treat a literal write as having changed the text you hold whenever your body adds headings or omits existing anchor comments — re-read before the next whole-page write or a `find` that spans a heading line. `changedAnchors` lists sections that changed relative to the page BEFORE this write, not relative to what you sent: an empty list does NOT mean the file equals your body.',
     ].join('\n'),
     {
       rootId: rootIdParam,
       path: pathParam,
+      // ASSUMPTION:dev-0002 — the literal mode's field is `body` (+ `frontmatter`) on every channel; the entity names it `content`.
       body: z
         .string()
         .optional()
@@ -231,7 +221,7 @@ export function createPageToolsServer(
             'cites what. In DIFFERENTIAL mode every entry must sit inside a MATCHED fragment, not merely somewhere on ' +
             'the page. In LITERAL (`body`) mode the touched scope is the whole page, so every entry must be an anchor ' +
             'this page has now; an anchor you leave out of the new content and do not name here is refused if anything ' +
-            'cites it. On a root with no section index the guard has no subject and this parameter is meaningless.',
+            'cites it. The guard runs on every page root — each one has a section index.',
         ),
       expectedHash: expectedHashParam,
     },
@@ -252,7 +242,7 @@ export function createPageToolsServer(
               ...(args.expectedHash !== undefined ? { expectedHash: String(args.expectedHash) } : {}),
             },
             'agent',
-            diffDeps(rootId),
+            diffDeps,
           ),
           'update_page',
         );

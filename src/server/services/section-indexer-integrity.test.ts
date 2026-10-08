@@ -144,6 +144,43 @@ describe('section index integrity', () => {
     expect(roots.map((r) => r.rootId)).toEqual(['docs']);
   });
 
+  /**
+   * 2.1.8 (M06 `s2r014vw`) — the indexer is an 8-step pass with no injection
+   * step: a heading without an anchor is neither written to disk nor indexed by
+   * it. `m06-anchor-injection` (write-back) gives it one; the next indexer pass
+   * then indexes it. The full rebuild runs the two in that order per file.
+   */
+  it('section indexer injects no anchor — m06-anchor-injection does, before the pass (s2r014vw)', async () => {
+    const body = ['<!-- anchor: aaaaaa11 -->', '# Top', '', '## New', 'text', ''].join('\n');
+    await pages.write('doc.md', { body });
+
+    await indexer.indexPage('pages', 'doc.md');
+    expect((await pages.read('doc.md')).body).toBe(body);
+    const indexed = () =>
+      (db.prepare('SELECT heading_text FROM section_index ORDER BY line_start').all() as Array<{ heading_text: string }>).map(
+        (r) => r.heading_text,
+      );
+    expect(indexed()).toEqual(['Top']);
+
+    expect(await indexer.mintAnchors('pages', 'pages:pages', 'doc.md', () => {})).toBe(true);
+    const anchored = parseSections((await pages.read('doc.md')).body, { frontmatter: false }).sections;
+    expect(anchored.map((s) => s.anchor)).toEqual(['aaaaaa11', expect.stringMatching(/^[a-z0-9]{8}$/)]);
+    await indexer.indexPage('pages', 'doc.md');
+    expect(indexed()).toEqual(['Top', 'New']);
+  });
+
+  it('full rebuild with suppress runs m06-anchor-injection before indexing each file (s2r014vw)', async () => {
+    await pages.write('doc.md', { body: ['# Top', '', 'text', ''].join('\n') });
+    const suppressed: string[] = [];
+    await indexer.indexAll((source, relPath) => suppressed.push(`${source}|${relPath}`));
+    expect(suppressed).toEqual(['pages:pages|doc.md']);
+    const row = db.prepare('SELECT anchor FROM section_index WHERE heading_text = ?').get('Top') as
+      | { anchor: string }
+      | undefined;
+    expect(row?.anchor).toMatch(/^[a-z0-9]{8}$/);
+    expect((await pages.read('doc.md')).body).toContain(`<!-- anchor: ${row!.anchor} -->`);
+  });
+
   it('does not treat a # line inside a fenced code block as a heading', () => {
     const { sections } = parseSections(
       ['<!-- anchor: aaaaaa11 -->', '# Top', '', '```sh', '# not a heading', '```', '', '## Real', ''].join('\n'),

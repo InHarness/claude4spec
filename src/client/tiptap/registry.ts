@@ -18,8 +18,7 @@ export {
   ALL_EDITOR_CONTEXTS,
   assertSaveMode,
   FULL_ROOT_EDITOR_PROPS,
-  MINIMAL_ROOT_EDITOR_PROPS,
-  artefactRootEditorProps,
+  rootEditorPropsForKind,
   type EditorContextId,
   type EditorContextSpec,
   type EditorSavePolicy,
@@ -39,9 +38,7 @@ export interface RegistryContext {
   /** Context in which the extension is being instantiated. Set by EditorFactory. */
   contextId?: EditorContextId;
   /**
-   * 0.1.96: per-root behaviour props of the page's root. Set by EditorFactory.
-   * Factory extensions (e.g. the `@` mention framework) may read
-   * `rootProps.linkTargets` to scope their link/autocomplete targets.
+   * 2.1.8: the editor layers of the page root's kind. Set by EditorFactory.
    */
   rootProps?: RootEditorProps;
   /**
@@ -198,7 +195,10 @@ export function getContextSpec(
 const hintWarned = new Set<string>();
 
 function warnHintMismatch(reg: EditorExtensionRegistration, contextId: EditorContextId): void {
-  if (!reg.availableIn || reg.availableIn.includes(contextId)) return;
+  // The `artifact` context is a narrowed page (2.1.8): a registration that
+  // declares `page` is not mis-declared for it.
+  const hintContext = contextId === 'artifact' ? 'page' : contextId;
+  if (!reg.availableIn || reg.availableIn.includes(hintContext)) return;
   const key = `${reg.name}@${contextId}`;
   if (hintWarned.has(key)) return;
   hintWarned.add(key);
@@ -271,6 +271,16 @@ export function getRegisteredSlashCommandsForContext(
 // Mention framework (L8 MentionExtension generic sources)
 // ────────────────────────────────────────────────────────────────────────────
 
+/**
+ * 2.1.8 — what a mention source knows about the editor it searches for. `rootId`
+ * is the root of the page being edited (null outside a page: plan, brief, chat
+ * input); M14's `files` source passes it on so `@path.md` suggestions follow the
+ * same precedence as resolution (source root → `builtin` → `roots[]` order).
+ */
+export interface MentionSearchContext {
+  rootId: string | null;
+}
+
 export interface MentionSource<T = unknown> {
   /** Stable source id, e.g. 'files' for M14 page references. */
   id: string;
@@ -278,8 +288,8 @@ export interface MentionSource<T = unknown> {
   trigger: string;
   /** HINT per context; the context's `EditorContextSpec.mentions` whitelist is authoritative. */
   availableIn?: EditorContextId[];
-  /** Async or sync search. Returns up to `limit` items for `query`. */
-  search: (query: string, limit?: number) => Promise<T[]> | T[];
+  /** Async or sync search. Returns up to `limit` items for `query`, for the editor in `ctx`. */
+  search: (query: string, limit?: number, ctx?: MentionSearchContext) => Promise<T[]> | T[];
   /** Render one item row in the popup. */
   renderItem: (item: T, active: boolean) => ReactElement;
   /** Handle item selection. Receives editor + insertion range via callback args. */

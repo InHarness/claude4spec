@@ -9,13 +9,13 @@ import { createTestDb } from '../../../tests/helpers/test-db.js';
 import { buildPatchToolsServer, PATCH_THREAD_TOOL_NAMES } from './patch-tools.js';
 import { PatchService } from '../services/patch.js';
 import { ChatService } from '../services/chat.js';
-import { PagesService } from '../services/pages.js';
+import { MarkdownFileStore } from '../services/pages.js';
 import { FileSerializer } from '../services/file-serializer.js';
 import { FileVersionService } from '../services/file-version.js';
 import { PagesFrontmatterIndexer } from '../services/pages-frontmatter-indexer.js';
 import { FileWatchRuntime } from '../fs/watcher.js';
 import { artifactSource, boundWriter } from '../fs/sources.js';
-import { PATCH_ROOT_MARKER } from '../../shared/types.js';
+import { systemRootId } from '../../shared/root-kinds.js';
 import { CATALOG } from '../operations/catalog.js';
 import { registerCoreOperations } from '../operations/core-operations.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
@@ -48,7 +48,7 @@ describe('patch-tools (thread-bound)', () => {
   beforeEach(async () => {
     cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-patch-tools-'));
     db = createTestDb();
-    const patchesPages = new PagesService(cwd, 'patches', PATCH_ROOT_MARKER);
+    const patchesPages = new MarkdownFileStore({ cwd, dir: 'patches', rootId: systemRootId('patches'), kind: 'patches' });
     await patchesPages.ensureRoot();
     const runtime = new FileWatchRuntime({ fsEvents: false });
     runtime.mountSource({ source: artifactSource('patch'), dir: patchesPages.root, scope: 'context:test' });
@@ -63,9 +63,9 @@ describe('patch-tools (thread-bound)', () => {
       pageVersions: new FileVersionService(db, patchesSerializer),
       chatService: new ChatService(db),
       frontmatterIndexer: new PagesFrontmatterIndexer(
-        new Map([[PATCH_ROOT_MARKER, patchesPages]]),
+        new Map([[systemRootId('patches'), patchesPages]]),
         ws,
-        new Map([[PATCH_ROOT_MARKER, 'patches:changed']]),
+        new Map([[systemRootId('patches'), 'patches:changed']]),
       ),
     } as ConstructorParameters<typeof PatchService>[0]);
     await fs.writeFile(path.join(patchesPages.root, 'p.md'), patchFile(false, '# Patch\n\nline A\nline B'), 'utf-8');

@@ -4,7 +4,7 @@ import { parseXmlTags, serializeXmlTag } from '../../shared/xml-tags.js';
 import { scanFences } from '../../shared/code-ranges.js';
 import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
 import { slugifyHeading } from '../../shared/section-parser.js';
-import type { PagesService } from './pages.js';
+import type { MarkdownFileStore } from './markdown-file-store.js';
 import type { SelfWriteMarker } from '../fs/sources.js';
 
 /**
@@ -97,7 +97,7 @@ export interface SectionsListQuery {
 /** 0.1.96: one section-indexed root — its PagesService plus the watcher whose
  * captures we suppress when rewriting section_ref anchors. */
 export interface SectionsRootWriteDeps {
-  pages: PagesService;
+  pages: MarkdownFileStore;
   watcher: SelfWriteMarker;
 }
 
@@ -172,7 +172,10 @@ export class SectionsService {
 
   /**
    * Rewrite all `<section_ref anchor="oldAnchor"/>` occurrences to newAnchor across
-   * EVERY section-indexed root (0.1.96). Atomic per-file with rollback on error.
+   * the roots of EVERY kind that selects the section indexer (0.1.96; 2.1.8 —
+   * plan anchors are file-local and never propagated: `plans` does not select
+   * `m06-section-indexer`, so its root is not in `writeDeps`). Atomic per-file
+   * with rollback on error.
    * Emits file:changed via watcher suppress on each write. `changed` entries are
    * `${rootId}:${relPath}` so a path present in two roots stays disambiguated.
    *

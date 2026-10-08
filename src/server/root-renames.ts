@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { atomicWrite, configPath, parseRootsArray } from './config.js';
+import { atomicWrite, configPath } from './config.js';
 import type { Root } from '../shared/types.js';
 
 /**
@@ -32,7 +32,7 @@ import type { Root } from '../shared/types.js';
  * single-file atomic write can cover. A journal written BEFORE either of them
  * names the intent; `recoverPendingRootRename` replays it on the next project
  * activation and either finishes the operation or rolls it fully back. The
- * system therefore never starts with half-relinked `linkTargets`.
+ * system therefore never starts with a config and a registry that disagree.
  */
 
 export interface RootRenameTransition {
@@ -194,16 +194,6 @@ export function appendTransition(cwd: string, from: string, to: string): RootRen
   return next;
 }
 
-/** Rewrites every `linkTargets` entry pointing at `from` so it points at `to`. */
-export function relinkRoots(roots: readonly Root[], from: string, to: string): { roots: Root[]; relinked: string[] } {
-  const relinked: string[] = [];
-  const next = roots.map((r) => {
-    if (!r.linkTargets.includes(from)) return { ...r, linkTargets: [...r.linkTargets] };
-    relinked.push(r.id === from ? to : r.id);
-    return { ...r, linkTargets: r.linkTargets.map((t) => (t === from ? to : t)) };
-  });
-  return { roots: next, relinked };
-}
 
 export function readRenameJournal(cwd: string): RootRenameJournal | null {
   const file = rootRenameJournalPath(cwd);
@@ -234,17 +224,16 @@ export function clearRenameJournal(cwd: string): void {
 /**
  * Crash recovery, run at project activation BEFORE anything reads `roots[]`.
  *
- * The rename's commit is: journal → config (new `id` + relinked `linkTargets`)
- * → transition record → journal cleared. A crash can therefore leave the
+ * The rename's commit is: journal → config (new `id`) → transition record →
+ * journal cleared. A crash can therefore leave the
  * journal beside a config that has (a) already moved to the new id, or (b) not
  * moved at all.
  *
- * - (a) → finish: make sure the transition record and the relink are both there.
+ * - (a) → finish: make sure the transition record is there.
  * - (b) → roll back: nothing was written, so dropping the journal IS the
  *   rollback.
  *
- * Never leaves the project half-relinked, which is the state the specification
- * rules out by name.
+ * Never leaves the project with a config and a registry that disagree.
  */
 export function recoverPendingRootRename(cwd: string): 'none' | 'completed' | 'rolled-back' {
   const journal = readRenameJournal(cwd);
@@ -255,26 +244,12 @@ export function recoverPendingRootRename(cwd: string): 'none' | 'completed' | 'r
   }
   let outcome: 'completed' | 'rolled-back' = 'rolled-back';
   try {
-    /**
-     * The RAW file, deliberately — not `readConfig`. The exact state this
-     * recovers from is a config whose `roots[]` already carries the new id while
-     * some `linkTargets` still names the old one, and that shape fails the
-     * dangling-link-scope rule: a validating read would throw on the very file
-     * it has been called to repair.
-     */
+    // The RAW file, deliberately — not `readConfig`: recovery must not depend
+    // on the rest of the config validating.
     const raw = JSON.parse(fs.readFileSync(configPath(cwd), 'utf8')) as Record<string, unknown>;
     const roots = Array.isArray(raw.roots) ? (raw.roots as Root[]) : [];
     const moved = roots.some((r) => r?.id === journal.to);
     if (moved) {
-      const { roots: relinkedRoots, relinked } = relinkRoots(roots, journal.from, journal.to);
-      if (relinked.length > 0) {
-        // Same shape as `migrateConfigToV4`: repair the raw object, validate the
-        // REPAIRED roots, then write atomically. `writeConfig` is no use here —
-        // it re-reads (and validates) the current, broken file before merging.
-        parseRootsArray(relinkedRoots, { reservedIds: 'warn', idShape: 'warn' });
-        raw.roots = relinkedRoots;
-        atomicWrite(configPath(cwd), JSON.stringify(raw, null, 2) + '\n');
-      }
       if (!readRootRenames(cwd).transitions.some((t) => t.from === journal.from)) {
         appendTransition(cwd, journal.from, journal.to);
       }

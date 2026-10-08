@@ -7,7 +7,7 @@ import express from 'express';
 import request from 'supertest';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { runMigrations } from '../db/migrate.js';
-import { PagesService } from '../services/pages.js';
+import { MarkdownFileStore } from '../services/pages.js';
 import { FileWatchRuntime } from '../fs/watcher.js';
 import { artifactSource, boundWriter } from '../fs/sources.js';
 import { FileSerializer } from '../services/file-serializer.js';
@@ -19,7 +19,7 @@ import { PatchService } from '../services/patch.js';
 import { PlanService } from '../services/plan.js';
 import { artifactsRouter } from './artifacts.js';
 import { errorHandler } from './errors.js';
-import { BRIEF_ROOT_MARKER, PATCH_ROOT_MARKER, PLAN_ROOT_MARKER } from '../../shared/types.js';
+import { systemRootId } from '../../shared/root-kinds.js';
 import type { ReleaseService } from '../services/release.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 
@@ -50,7 +50,7 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
     body: string,
   ): Promise<void> {
     const dir = kind === 'brief' ? briefsDir : patchesDir;
-    const rootId = kind === 'brief' ? BRIEF_ROOT_MARKER : PATCH_ROOT_MARKER;
+    const rootId = kind === 'brief' ? systemRootId('briefs') : systemRootId('patches');
     const serializer = kind === 'brief' ? briefsSerializer : patchesSerializer;
     const abs = path.join(cwd, dir, relPath);
     await fs.mkdir(path.dirname(abs), { recursive: true });
@@ -65,11 +65,11 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
     db = new Database(':memory:');
     runMigrations(db);
 
-    const briefsPages = new PagesService(cwd, briefsDir, BRIEF_ROOT_MARKER);
+    const briefsPages = new MarkdownFileStore({ cwd, dir: briefsDir, rootId: systemRootId('briefs'), kind: 'briefs' });
     await briefsPages.ensureRoot();
-    const patchesPages = new PagesService(cwd, patchesDir, PATCH_ROOT_MARKER);
+    const patchesPages = new MarkdownFileStore({ cwd, dir: patchesDir, rootId: systemRootId('patches'), kind: 'patches' });
     await patchesPages.ensureRoot();
-    const plansPages = new PagesService(cwd, plansDir, PLAN_ROOT_MARKER);
+    const plansPages = new MarkdownFileStore({ cwd, dir: plansDir, rootId: systemRootId('plans'), kind: 'plans' });
     await plansPages.ensureRoot();
     const watchRuntime = new FileWatchRuntime({ fsEvents: false });
     const scoped = watchRuntime.scoped('context:test');
@@ -84,9 +84,9 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
     const plansSerializer = new FileSerializer(plansPages);
     pageVersions = new FileVersionService(db, briefsSerializer);
     const frontmatterRoots = new Map([
-      [BRIEF_ROOT_MARKER, briefsPages],
-      [PATCH_ROOT_MARKER, patchesPages],
-      [PLAN_ROOT_MARKER, plansPages],
+      [systemRootId('briefs'), briefsPages],
+      [systemRootId('patches'), patchesPages],
+      [systemRootId('plans'), plansPages],
     ]);
     frontmatterIndexer = new PagesFrontmatterIndexer(frontmatterRoots, fakeWs);
     const chatService = new ChatService(db);
@@ -137,6 +137,50 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
     const res = await request(app).get('/api/artifacts/bogus');
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe('UNKNOWN_ARTIFACT_KIND');
+  });
+
+  it('[ac:ac-przy-odrzuconej-zmianie-immutable-pol] a refused immutable-field change names the field in the message; the code is the shared IMMUTABLE_FIELD for every kind', async () => {
+    await writeArtifact(
+      'brief',
+      'v1-to-v2.md',
+      { type: 'brief', from_release: 'v1', to_release: 'v2', generated_at: '2026-01-01T00:00:00.000Z', implemented: false },
+      '# Brief\n',
+    );
+    await writeArtifact(
+      'patch',
+      'v1-to-v2-drift.md',
+      { type: 'patch', brief: 'v1-to-v2.md', patch_kind: 'drift', created_at: '2026-01-02T00:00:00.000Z', created_by: 'implementer', applied: false },
+      '# Patch — drift\n',
+    );
+
+    const briefRoots = await request(app)
+      .patch('/api/artifacts/brief/v1-to-v2.md/frontmatter')
+      .send({ frontmatter: { roots: ['docs'] } });
+    const patchBrief = await request(app)
+      .patch('/api/artifacts/patch/v1-to-v2-drift.md/frontmatter')
+      .send({ frontmatter: { brief: 'other.md' } });
+    const detail = await request(app).get('/api/artifacts/brief/v1-to-v2.md');
+    const briefContent = await request(app)
+      .put('/api/artifacts/brief/v1-to-v2.md/content')
+      .send({
+        content: detail.body.data.content.replace('to_release: v2', 'to_release: v3'),
+        expectedHash: detail.body.data.hash,
+      });
+
+    const refusals = [
+      [briefRoots, 'roots'],
+      [patchBrief, 'brief'],
+      [briefContent, 'to_release'],
+    ] as const;
+    for (const [res, field] of refusals) {
+      expect(res.status, field).toBe(400);
+      // One code for every kind — no BRIEF_… / PATCH_… variant …
+      expect(res.body.error.code, field).toBe('IMMUTABLE_FIELD');
+      // … the refused field is told by the message.
+      expect(res.body.error.message, field).toContain(field);
+    }
+    expect(briefRoots.body.error.message).not.toContain('to_release');
+    expect(briefContent.body.error.message).not.toContain('roots');
   });
 
   describe('brief', () => {

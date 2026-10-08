@@ -25,7 +25,6 @@ import { PagesService } from '../services/pages.js';
 import { createDiscoveryCore } from './index.js';
 import { RawEntityReader } from './raw-entity-reader.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
-import { DEFAULT_PAGES_ROOT_PROPS } from '../../shared/types.js';
 import type { Root } from '../../shared/types.js';
 import type { DiscoveryCore, GetSectionsResult, SectionResultItem } from './types.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
@@ -41,7 +40,7 @@ const host = {
   getEntityService: () => null,
 } as unknown as ProjectPluginHost;
 
-const pagesRoot: Root = { id: 'pages', name: 'Pages', dir: 'pages', builtin: true, ...DEFAULT_PAGES_ROOT_PROPS };
+const pagesRoot: Root = { id: 'pages', name: 'Pages', dir: 'pages', builtin: true };
 
 /**
  * Unwraps a single-anchor `get_sections` call, asserting the item IS a section.

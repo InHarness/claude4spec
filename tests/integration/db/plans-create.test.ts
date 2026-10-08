@@ -7,14 +7,14 @@ import type Database from 'better-sqlite3';
 import { createTestDb } from '../../helpers/test-db.js';
 import { PlanService } from '../../../src/server/services/plan.js';
 import { ChatService } from '../../../src/server/services/chat.js';
-import { PagesService } from '../../../src/server/services/pages.js';
+import { MarkdownFileStore } from '../../../src/server/services/pages.js';
 import { FileWatchRuntime } from '../../../src/server/fs/watcher.js';
 import { artifactSource, boundWriter } from '../../../src/server/fs/sources.js';
 import { FileSerializer } from '../../../src/server/services/file-serializer.js';
 import { FileVersionService } from '../../../src/server/services/file-version.js';
 import { PagesFrontmatterIndexer } from '../../../src/server/services/pages-frontmatter-indexer.js';
 import { hashContent } from '../../../src/server/services/artifact-content.js';
-import { PLAN_ROOT_MARKER } from '../../../src/shared/types.js';
+import { systemRootId } from '../../../src/shared/root-kinds.js';
 import type { WsEmitter } from '../../../src/server/ws/project-emitter.js';
 
 /**
@@ -26,7 +26,7 @@ interface Harness {
   cwd: string;
   db: Database.Database;
   service: PlanService;
-  plansPages: PagesService;
+  plansPages: MarkdownFileStore;
   pageVersions: FileVersionService;
   chatService: ChatService;
   events: unknown[];
@@ -35,7 +35,7 @@ interface Harness {
 async function setup(): Promise<Harness> {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-plans-create-'));
   const db = createTestDb();
-  const plansPages = new PagesService(cwd, 'plans', PLAN_ROOT_MARKER);
+  const plansPages = new MarkdownFileStore({ cwd, dir: 'plans', rootId: systemRootId('plans'), kind: 'plans' });
   await plansPages.ensureRoot();
   const watchRuntime = new FileWatchRuntime({ fsEvents: false });
   watchRuntime.mountSource({ source: artifactSource('plan'), dir: plansPages.root, scope: 'context:test' });
@@ -43,7 +43,7 @@ async function setup(): Promise<Harness> {
   const plansSerializer = new FileSerializer(plansPages);
   const pageVersions = new FileVersionService(db, plansSerializer);
   const noopWs: WsEmitter = { broadcast: () => {} };
-  const frontmatterIndexer = new PagesFrontmatterIndexer(new Map([[PLAN_ROOT_MARKER, plansPages]]), noopWs);
+  const frontmatterIndexer = new PagesFrontmatterIndexer(new Map([[systemRootId('plans'), plansPages]]), noopWs);
   const chatService = new ChatService(db);
   const events: unknown[] = [];
   const service = new PlanService({
@@ -87,7 +87,7 @@ describe('PlanService.create (0.2.98 create_plan)', () => {
     expect(raw).toContain('## Step one');
     expect(raw).toMatch(/applied: false/);
 
-    expect(h.pageVersions.listVersions(res.planPath, PLAN_ROOT_MARKER)).toHaveLength(1);
+    expect(h.pageVersions.listVersions(res.planPath, systemRootId('plans'))).toHaveLength(1);
 
     const threads = threadRows(h.db);
     expect(threads).toEqual([
@@ -125,7 +125,7 @@ describe('PlanService.create (0.2.98 create_plan)', () => {
     expect(await h.plansPages.listMarkdownFiles()).toEqual(['same-title.md']);
     expect(await fs.readFile(path.join(h.plansPages.root, first.planPath), 'utf-8')).toBe(before);
     expect(threadRows(h.db)).toHaveLength(1);
-    expect(h.pageVersions.listVersions(first.planPath, PLAN_ROOT_MARKER)).toHaveLength(1);
+    expect(h.pageVersions.listVersions(first.planPath, systemRootId('plans'))).toHaveLength(1);
   });
 
   it.each([
@@ -156,7 +156,7 @@ describe('PlanService.create (0.2.98 create_plan)', () => {
     spy.mockRestore();
 
     expect(await h.plansPages.listMarkdownFiles()).toEqual([]);
-    expect(h.pageVersions.listVersions('doomed.md', PLAN_ROOT_MARKER)).toEqual([]);
+    expect(h.pageVersions.listVersions('doomed.md', systemRootId('plans'))).toEqual([]);
     expect(threadRows(h.db)).toEqual([]);
     expect(h.events).toEqual([]);
 
@@ -194,7 +194,7 @@ describe('PlanService.create (0.2.98 create_plan)', () => {
     expect(records.remove).not.toHaveBeenCalled();
     expect(records.removeSync).toHaveBeenCalledWith('doomed.md');
     expect(await h.plansPages.listMarkdownFiles()).toEqual([]);
-    expect(h.pageVersions.listVersions('doomed.md', PLAN_ROOT_MARKER)).toEqual([]);
+    expect(h.pageVersions.listVersions('doomed.md', systemRootId('plans'))).toEqual([]);
     expect(threadRows(h.db)).toEqual([]);
   });
 

@@ -40,18 +40,22 @@ import type { EntityTypeFilter, IncludeFilter, MCPReleaseDiff, MCPSpecSnapshot }
 
 // 2.1.11 — the window helpers moved with the operations; re-exported for callers
 // that still import them from here.
-export { resolvePagination, resolveSectionWindow } from '../../services/release-operations.js';
+export {
+  refuseNonPageRoots,
+  resolvePagination,
+  resolveSectionWindow,
+} from '../../services/release-operations.js';
 
 export interface ReleaseToolsDeps {
   releaseService: ReleaseService;
   gitService: GitService;
   ws: WsEmitter;
   /**
-   * 0.2.102: the project's page roots (all of them, not just the releasable
-   * ones) — `release_diff` needs both to tell an UNKNOWN root id from a
-   * NON-RELEASABLE one when it refuses a `roots`/`paths` filter.
+   * 2.1.8: the project's PAGE roots (`kind: pages`) — the only roots a
+   * `roots`/`paths` filter may name. Any other id (unknown, or a system root
+   * such as `plans`/`entities`) is refused with this list.
    */
-  roots: () => ReadonlyArray<Pick<Root, 'id' | 'releasable'>>;
+  roots: () => ReadonlyArray<Pick<Root, 'id'>>;
 }
 
 /*
@@ -224,13 +228,13 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
         .array(z.string())
         .optional()
         .describe(
-          'Narrow the PAGES dimension to these page root ids (file_version.rootId). Default: all releasable roots. Does not affect the entities dimension. Empty array, an unknown root id, or a non-releasable root → 400 INVALID_ROOTS_FILTER (never silently skipped; the refusal lists the releasable roots). Mutually exclusive with `paths`.',
+          'Narrow the PAGES dimension to these page root ids (file_version.rootId). Default: every page root. Does not affect the entities dimension. Empty array, an unknown root id, or an id that is not a page root (e.g. plans, briefs, patches, entities, releases) → 400 INVALID_ROOTS_FILTER (never silently skipped; the refusal lists the page roots). Mutually exclusive with `paths`.',
         ),
       paths: z
         .array(z.string())
         .optional()
         .describe(
-          "Narrow the PAGES dimension to single pages. Each element is a page's FULL key `<rootId>/<relPath>` and addresses exactly one page file — a directory prefix is not accepted. Mutually exclusive with `roots`, and rejected when `include` does not carry 'pages'. An empty array, an element without a root prefix, an unknown root id, or a non-releasable root is rejected. Does not affect the entities dimension. A well-formed key unchanged (or absent) on both sides is NOT an error — it yields no page entry and `total.pages: 0`. Errors: 400 INVALID_PATHS_FILTER, 400 CONFLICTING_FILTERS. Exactly one element enables the section window and, in light mode, the section map.",
+          "Narrow the PAGES dimension to single pages. Each element is a page's FULL key `<rootId>/<relPath>` and addresses exactly one page file — a directory prefix is not accepted. Mutually exclusive with `roots`, and rejected when `include` does not carry 'pages'. An empty array, an element without a root prefix, an unknown root id, or a root that is not a page root is rejected. Does not affect the entities dimension. A well-formed key unchanged (or absent) on both sides is NOT an error — it yields no page entry and `total.pages: 0`. Errors: 400 INVALID_PATHS_FILTER, 400 CONFLICTING_FILTERS. Exactly one element enables the section window and, in light mode, the section map.",
         ),
       limit: z
         .number()

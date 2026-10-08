@@ -1,3 +1,4 @@
+import { agentDeniedDirs } from '../../../shared/root-kinds.js';
 import { useState } from 'react';
 import {
   useAgentCredentials,
@@ -140,6 +141,10 @@ export const AGENT_SETTINGS: SettingsContribution = {
       // Resume-locked on the server: a saved change ends resumption of every existing
       // conversation, and the toast has to say so.
       effectMessage: EFFECT.resumeBreak,
+      // Hidden with `Allowed paths` while the built-ins are blocked (M05 settings
+      // table: visible when `agent.disableDirectFilesystemAccess` is off) — hidden,
+      // not cleared: the values stay in the file and come back when unticked.
+      visible: (ctx) => !blockDirectFs(ctx),
     },
     {
       id: 'anthropic-api-key',
@@ -194,10 +199,12 @@ function FileAccessEnforcement(ctx: ElementContext) {
 /**
  * The artifact directories — never reachable through the agent's own file tools,
  * editable only through its MCP tools. Read-only, and not part of
- * `agent.disallowedPaths`: it cannot be switched off.
+ * `agent.disallowedPaths`: it cannot be switched off. 2.1.8: derived from the
+ * root registry — the `dir` of every root whose kind has `agentDirectFs = false`,
+ * relative to the project directory.
  */
 function AlwaysExcluded({ config }: ElementContext) {
-  const dirs = [config.plansDir, config.briefsDir, config.patchesDir, config.entitiesDir, config.releasesDir];
+  const dirs = agentDeniedDirs(config.roots);
   return (
     <div
       className="flex flex-col gap-1.5 rounded-md px-3 py-2"
@@ -215,7 +222,8 @@ function AlwaysExcluded({ config }: ElementContext) {
         ))}
       </ul>
       <span className="text-[11px]" style={{ color: 'var(--c-subtle)' }}>
-        Artifacts are edited only through the agent&apos;s MCP tools. This cannot be disabled.
+        {/* M05 8lk6hpxp: the spec sentence split as heading ("Always excluded", above) + this caption. */}
+        Artifacts are edited only through the agent&apos;s tools (not by hand). This cannot be turned off.
       </span>
     </div>
   );

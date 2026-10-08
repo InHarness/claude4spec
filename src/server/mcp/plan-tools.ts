@@ -4,7 +4,6 @@ import type { PlanService } from '../services/plan.js';
 import type { PlanSectionEdit } from '../services/plan-write.js';
 import type { TextEdit } from '../services/text-edits.js';
 import type { FileVersionService } from '../services/file-version.js';
-import { PLAN_ROOT_MARKER } from '../../shared/types.js';
 import { toolFailure, toolSuccess } from '../operations/envelope.js';
 import { DomainError } from '../services/tags.js';
 
@@ -34,7 +33,7 @@ export interface PlanToolsContext {
   target?: 'thread' | 'explicit';
   planService: PlanService;
   /** 0.1.127: list_plan_versions/get_plan_version now read the shared M17
-   *  file_version log (keyed rootId='plan') instead of the dropped
+   *  file_version log (keyed rootId='plans') instead of the dropped
    *  `plan_version` table. */
   pageVersions: FileVersionService;
 }
@@ -48,7 +47,7 @@ export function buildPlanToolsServer(
   const explicit = ctx.target === 'explicit';
   /** `path` is required exactly when there is no thread to default it from. */
   const pathParam = explicit
-    ? { path: z.string().describe('Plan path relative to plansDir, from list_plans.') }
+    ? { path: z.string().describe('Plan path relative to the plans root (.claude4spec/plans), from list_plans.') }
     : {};
   /**
    * 0.2.40 — the artifact read family's window, identical in shape to
@@ -351,7 +350,7 @@ export function buildPlanToolsServer(
         // oldest-first here so this tool's offset/limit contract (offset 0 =
         // version 1, increasing offset walks forward in time) stays what it
         // was under the old plan_version-table-backed implementation.
-        const all = [...pageVersions.listVersions(plan.path, PLAN_ROOT_MARKER)].reverse();
+        const all = [...pageVersions.listVersions(plan.path, planService.rootId)].reverse();
         const offset = typeof args.offset === 'number' ? args.offset : 0;
         const limit = typeof args.limit === 'number' ? args.limit : all.length;
         return ok({ versions: all.slice(offset, offset + limit), total: all.length }, 'list_plan_versions');
@@ -377,7 +376,7 @@ export function buildPlanToolsServer(
         if (!plan) {
           return fail(new DomainError('VERSION_NOT_FOUND', 'thread has no plan'));
         }
-        const v = pageVersions.getVersion(plan.path, Number(args.version), PLAN_ROOT_MARKER);
+        const v = pageVersions.getVersion(plan.path, Number(args.version), planService.rootId);
         if (!v) return fail(new DomainError('VERSION_NOT_FOUND', `version ${args.version} not found`));
         return ok(v, 'get_plan_version');
       } catch (err) {

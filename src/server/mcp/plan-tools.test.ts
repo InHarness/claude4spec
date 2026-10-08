@@ -9,13 +9,13 @@ import { createTestDb } from '../../../tests/helpers/test-db.js';
 import { buildPlanToolsServer } from './plan-tools.js';
 import { PlanService } from '../services/plan.js';
 import { ChatService } from '../services/chat.js';
-import { PagesService } from '../services/pages.js';
+import { MarkdownFileStore } from '../services/pages.js';
 import { FileSerializer } from '../services/file-serializer.js';
 import { FileVersionService } from '../services/file-version.js';
 import { PagesFrontmatterIndexer } from '../services/pages-frontmatter-indexer.js';
 import { FileWatchRuntime } from '../fs/watcher.js';
 import { artifactSource, boundWriter } from '../fs/sources.js';
-import { PLAN_ROOT_MARKER } from '../../shared/types.js';
+import { systemRootId } from '../../shared/root-kinds.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 
 /**
@@ -39,7 +39,7 @@ describe('plan-tools — update_plan', () => {
   beforeEach(async () => {
     cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-plan-tools-'));
     db = createTestDb();
-    const plansPages = new PagesService(cwd, 'plans', PLAN_ROOT_MARKER);
+    const plansPages = new MarkdownFileStore({ cwd, dir: 'plans', rootId: systemRootId('plans'), kind: 'plans' });
     await plansPages.ensureRoot();
     const runtime = new FileWatchRuntime({ fsEvents: false });
     runtime.mountSource({ source: artifactSource('plan'), dir: plansPages.root, scope: 'context:test' });
@@ -53,7 +53,7 @@ describe('plan-tools — update_plan', () => {
       plansSerializer,
       pageVersions,
       chatService,
-      frontmatterIndexer: new PagesFrontmatterIndexer(new Map([[PLAN_ROOT_MARKER, plansPages]]), noopWs),
+      frontmatterIndexer: new PagesFrontmatterIndexer(new Map([[systemRootId('plans'), plansPages]]), noopWs),
       ws: noopWs,
     });
     db.prepare(`INSERT INTO chat_thread (id) VALUES (?)`).run('t-1');

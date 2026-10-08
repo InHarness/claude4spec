@@ -9,62 +9,56 @@
  * mount and hands it a read-only view of what is registered, which only the
  * derived `page` context consults.
  *
- * Four contexts (M20 `ctxregst`): `page`, `description`, `plan` and the
- * auxiliary `chat-input`. Briefs and patches have no context of their own —
- * they mount `page` with a synthetic property bag (`MINIMAL_ROOT_EDITOR_PROPS`
- * plus `linkTargets: [<id of the builtin root>]`, M21 `m21l13rt` / M23 `m23l13rt`).
+ * Five contexts (M20 `ctxregst`): `page`, `artifact`, `description`, `plan`
+ * and the auxiliary `chat-input`.
+ *
+ * 2.1.8: `page` is derived from the page root's KIND — never from per-root
+ * flags (there are none) and never from its id. Briefs and patches mount the
+ * NAMED context `artifact`: prose with `@` links over the `pages` roots, without
+ * `section_ref`, `AnchorMarker` or entity nodes. It replaced the synthetic
+ * property bag (`MINIMAL_ROOT_EDITOR_PROPS`) those surfaces used to fake.
  */
+import { KIND_DECLARATIONS, kindSelects, type RootKind } from '../../shared/root-kinds.js';
 
-export type EditorContextId = 'page' | 'description' | 'plan' | 'chat-input';
+export type EditorContextId = 'page' | 'artifact' | 'description' | 'plan' | 'chat-input';
 
-export const ALL_EDITOR_CONTEXTS: EditorContextId[] = ['page', 'description', 'plan', 'chat-input'];
+export const ALL_EDITOR_CONTEXTS: EditorContextId[] = ['page', 'artifact', 'description', 'plan', 'chat-input'];
 
 /**
- * 0.1.96: the subset of a `Root`'s behaviour flags that gate which editor
- * extensions mount. Mirrors the three gating fields of the shared `Root` type
- * (kept structurally local so this client module doesn't depend on server-side
- * config types). Threaded through `RegistryContext` by EditorFactory.
+ * The three independent layers of a page editor (M20), each decided by the
+ * page root's kind. Threaded through `RegistryContext` by EditorFactory.
  */
 export interface RootEditorProps {
-  /** Section-indexed ⇒ Anchor / SectionRef / heading-outline extensions. */
+  /** Anchors + `section_ref` + heading outline — the kind selects `m06-anchor-injection`. */
   sectionIndexed: boolean;
-  /** Reference-validated ⇒ the 5 reference nodes + broken-ref decorations. */
+  /** Entity nodes + their validation — the kind's `references` flag. */
   referenceValidated: boolean;
-  /** Root ids whose pages are valid `@`-autocomplete / link targets (in addition to self). */
-  linkTargets: string[];
 }
-
-/** Full-behaviour props — the base page root's editor. */
-export const FULL_ROOT_EDITOR_PROPS: RootEditorProps = {
-  sectionIndexed: true,
-  referenceValidated: true,
-  linkTargets: [],
-};
-
-/** Minimal-behaviour props — a root with all three properties set to `false` by hand. Briefs and patches add the base root as a link target. */
-export const MINIMAL_ROOT_EDITOR_PROPS: RootEditorProps = {
-  sectionIndexed: false,
-  referenceValidated: false,
-  linkTargets: [],
-};
 
 /**
- * The synthetic property bag of the two artefact surfaces (brief, patch).
- *
- * 0.2.101: a factory rather than a constant. `@path.md` inside a brief or a
- * patch resolves into the BASE page root — the entry carrying `builtin: true` —
- * and that root's identifier is the project author's to change, so the target
- * cannot be the frozen literal `['pages']` it used to be. Callers pass the id
- * they read from the config; while it is still loading, `null` yields no link
- * target at all, which fails closed (no autocomplete) rather than pointing `@`
- * at a space that may not exist.
+ * The editor layers a root of `kind` gets. The `@` scope is not a layer: it is
+ * every `kind: pages` root, resolved server-side by the link indexer (source
+ * root → builtin → `roots[]` order).
  */
-export function artefactRootEditorProps(baseRootId: string | null): RootEditorProps {
+export function rootEditorPropsForKind(kind: RootKind): RootEditorProps {
   return {
-    ...MINIMAL_ROOT_EDITOR_PROPS,
-    linkTargets: baseRootId ? [baseRootId] : [],
+    sectionIndexed: kindSelects(kind, 'm06-anchor-injection'),
+    referenceValidated: KIND_DECLARATIONS[kind].flags.references,
   };
 }
+
+/** A `pages` root's editor — the kind's layers. */
+export const FULL_ROOT_EDITOR_PROPS: RootEditorProps = rootEditorPropsForKind('pages');
+
+/**
+ * The layers of the FIXED `artifact` context (briefs, patches): prose and `@`
+ * links only. Owned by the context — a mounting component names `artifact`
+ * and never hands in a layer set of its own.
+ */
+const ARTIFACT_LAYERS: RootEditorProps = {
+  sectionIndexed: false,
+  referenceValidated: false,
+};
 
 export type EditorSavePolicy =
   | { mode: 'debounce'; debounceMs: number } // save after idle
@@ -88,8 +82,8 @@ export interface EditorContextSpec {
 
 /**
  * The `page` context is not an enum member with a fixed list — it is DERIVED
- * from the page root's properties (L13). The whitelist for a page is therefore
- * "everything registered, gated by the root property each name depends on".
+ * from the page root's KIND (L13). The whitelist for a page is therefore
+ * "everything registered, gated by the layer of the kind each name depends on".
  * The registry hands this view in; the spec module never imports the registry.
  */
 export interface ContextRegistryView {
@@ -101,17 +95,16 @@ export interface ContextRegistryView {
  * L8 `page` save policy: 1000 ms after the last keystroke (M02
  * `autoSaveDebounceMs`). One number on purpose — the M20 race analysis
  * (`m20edge0`) pairs it with the 500 ms WS invalidation batch — and one
- * constant for the page, the brief and the patch, which all mount `page`.
+ * constant for the page (`page`) and the brief and patch (`artifact`).
  */
 export const AUTOSAVE_DEBOUNCE_MS = 1000;
 
 /**
- * 0.1.96: root-property gates keyed by registration name, applied only to the
- * derived `page` context. Extensions absent from this map mount in every page
- * root (the "minimal" base editor: user roots / briefs / patches).
+ * Layer gates keyed by registration name, applied to the derived `page` and
+ * `artifact` contexts. Extensions absent from this map mount in both.
  *
- * GOLDEN RULE: gating keys on a Root property (sectionIndexed / referenceValidated),
- * never on `rootId === 'pages'`.
+ * GOLDEN RULE: gating keys on a layer the root's KIND decides, never on
+ * `rootId === 'pages'`.
  */
 const ROOT_PROP_GATES: Record<string, keyof Pick<RootEditorProps, 'sectionIndexed' | 'referenceValidated'>> = {
   // sectionIndexed ⇒ Anchor / SectionRef / heading-outline actions.
@@ -181,7 +174,7 @@ const M19_NODES = ['inline_mention', 'single_element', 'element_list', 'tagged_l
  * `MentionExtension` + `PageRefNode` + the `section_ref` tag node (allowed
  * exception: the chip most often pasted into chat) + `/section`.
  */
-const STATIC_SPECS: Record<Exclude<EditorContextId, 'page'>, EditorContextSpec> = {
+const STATIC_SPECS: Record<Exclude<EditorContextId, 'page' | 'artifact'>, EditorContextSpec> = {
   description: {
     id: 'description',
     extensions: ['anchor_marker', 'task_list', 'task_item', 'inline_mention', ...RAW_NODES, 'slash_commands'],
@@ -222,14 +215,23 @@ const STATIC_SPECS: Record<Exclude<EditorContextId, 'page'>, EditorContextSpec> 
 
 /**
  * Materialize the `EditorContextSpec` for a context. `page` is derived from
- * `rootProps` and from what is currently registered (plugins contribute both
- * schema extensions and slash commands to pages); the other three are static.
+ * `rootProps` — the layers of the page root's kind (`rootEditorPropsForKind`)
+ * — and from what is currently registered (plugins contribute both schema
+ * extensions and slash commands to pages). `artifact` is fixed: the same
+ * derivation over its own layers, whatever `rootProps` says. The other three
+ * are static.
  */
 export function resolveContextSpec(
   contextId: EditorContextId,
   rootProps: RootEditorProps,
   registry: ContextRegistryView,
 ): EditorContextSpec {
+  if (contextId === 'artifact') {
+    // Fixed: the page derivation over the artifact layers, never the caller's
+    // — no anchors, no section refs, no entity nodes; prose and `@` links over
+    // every `kind: pages` root.
+    return { ...resolveContextSpec('page', ARTIFACT_LAYERS, registry), id: 'artifact' };
+  }
   if (contextId !== 'page') return STATIC_SPECS[contextId];
   return {
     id: 'page',
@@ -242,8 +244,8 @@ export function resolveContextSpec(
       return gate ? rootProps[gate] : true;
     }),
     decorations: rootProps.referenceValidated ? ['annotations', 'broken_refs'] : ['annotations'],
-    // Scope = the edited page's `linkTargets` (M14); the autocomplete API does
-    // not take a scope parameter yet, so the id list is the binding part.
+    // Scope = every `pages` root (M14, 2.1.8); the editor's root rides along
+    // as the precedence's first step (`MentionExtension` option `rootId`).
     mentions: ['files'],
     save: { mode: 'debounce', debounceMs: AUTOSAVE_DEBOUNCE_MS },
   };

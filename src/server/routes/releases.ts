@@ -19,7 +19,12 @@ export function releasesRouter(
   releases: ReleaseService,
   ws?: WsEmitter,
   gitService?: GitService,
-  roots: () => ReadonlyArray<Pick<Root, 'id' | 'releasable'>> = () => [],
+  /**
+   * 2.1.8: the project's PAGE roots (`kind: pages`) — what a `roots`/`paths`
+   * filter of `view=operation` may name. Defaults to the release service's own
+   * page-root ids, so a rig that wires no registry still refuses a system root.
+   */
+  roots: () => ReadonlyArray<Pick<Root, 'id'>> = () => releases.pageRootIds().map((id) => ({ id })),
 ): Router {
   const router = Router();
   const opDeps: ReleaseOperationDeps = { releaseService: releases, roots };

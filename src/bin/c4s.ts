@@ -200,14 +200,14 @@ Pages and sections (a page is (rootId, path); an anchor is globally unique):
                                     the anchors in input order and, with --include-subtree, each
                                     one's subtree behind it in document order; an unknown anchor
                                     errors inside its own item and the exit code stays 0
-  get-page --root-id <id> --path <p> [--range <from:to>]
+  get-page --root-id <id> --path <p>
                                     the page as sections keyed by anchor, with frontmatter and
                                     preamble as fields, XML tags untouched; --format text
-                                    assembles markdown; --range is accepted only on a root
-                                    without a section index
+                                    assembles markdown; no line window — a cut read resumes
+                                    through get-page-outline + get-sections
   search-pages (--query <q> | --regex <r>) [--root-id <id>] [--mode count|map|hits]
                [--path-include <re>] [--path-exclude <re>] [--anchors <a1,a2>] [--context <n>]
-                                    hits on an indexed root carry an anchor
+                                    hits carry an anchor
 
 Pagination (every list command above):
   --limit <n> / --offset <m>        output carries total + hasMore under a stable sort.
@@ -255,10 +255,10 @@ Brief/patch (M11 — server-delegating, like every read above):
                                     and --roots are refused. Prints briefPath + hash
   list-briefs [--limit N] [--offset M] [--status implemented|pending]
   get-brief <brief-path> [--range <from>:<to>]
-                                    <brief-path> relative to briefsDir; --range is a 1-based inclusive line window
+                                    <brief-path> relative to the briefs root (.claude4spec/briefs); --range is a 1-based inclusive line window
   create-patch --brief <brief-path> --desc <s> [--kind drift|missing|incorrect|clarification]
              [--body-file <f>]      body from --body-file or stdin; the SERVER writes the
-                                    file under patchesDir and mints its slug
+                                    file under the patches root and mints its slug
   mark-brief-implemented <brief-path> [--project <id>]
                                      wraps PATCH /api/artifacts/brief/:path/frontmatter
                                      ('implemented' is the only mutable frontmatter key)

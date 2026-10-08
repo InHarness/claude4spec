@@ -15,7 +15,7 @@
  *
  * INVARIANT OF PROJECTION (inherited from `./composition.ts`): every non-surrogate
  * column of every generated table must be reproducible from the entity files.
- * Dropping the index and rebuilding from `entitiesDir` yields value-identical
+ * Dropping the index and rebuilding from the `entities` root yields value-identical
  * rows. A field that cannot satisfy that is `localSurrogate` and is excluded
  * from both the snapshot and the rebuild comparison.
  */

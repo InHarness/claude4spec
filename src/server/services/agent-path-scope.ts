@@ -1,22 +1,22 @@
 import path from 'node:path';
-import type { Root } from '../../shared/types.js';
+import { KIND_DECLARATIONS, PAGES_KIND, type RegistryRoot } from '../../shared/root-kinds.js';
 
 /**
  * 0.1.90 (M05): resolve the chat agent's effective filesystem path scope for a turn.
  *
- * The implicit base — `cwd` ∪ (each `roots[].dir` that lies outside `cwd`) — is what the
+ * The implicit base — `cwd` ∪ (each `kind: pages` root's dir that lies outside `cwd`) — is what the
  * agent already sees by default. `cwd` itself is NOT returned in `allowedPaths`: the
  * agent-adapters library adds the base (`cwd`) on its own, so doubling it here would be
  * redundant. We DO add each root dir that sits outside `cwd`, because the library's base
  * is only `cwd`.
  *
- * 0.1.130: unconditional **implicit deny-set** over the C4S artifact dirs
- * (`plansDir`/`briefsDir`/`patchesDir`/`entitiesDir`/`releasesDir`, read from config, NOT
- * hardcoded — custom user locations are respected). These are folded into `disallowedPaths`
+ * 0.1.130: unconditional **implicit deny-set** over the C4S artifact dirs. 2.1.8: derived
+ * from the ROOT REGISTRY — the dir of every root whose kind has `agentDirectFs = false`
+ * (today the five `.claude4spec/<kind>` system roots), never from config keys. These are folded into `disallowedPaths`
  * so the built-in FS channel (Read/Write/Edit/Glob/Grep + spawned Bash) can never hand-edit
  * artifacts; the only write path stays the in-process MCP CRUD servers, which run outside
  * the sandbox. There is no opt-out: precedence (deny > allow > base, enforced downstream)
- * means the artifact deny wins even over `config.agent.allowedPaths`. The same 5 dirs are
+ * means the artifact deny wins even over `config.agent.allowedPaths`. The same dirs are
  * also returned verbatim as `artifactDenyDirs` so the prompt can list them on their own
  * ALWAYS-DISALLOWED line, distinct from the user's configured `disallowedPaths`.
  *
@@ -28,16 +28,13 @@ import type { Root } from '../../shared/types.js';
  */
 export interface ResolveAgentPathScopeInput {
   cwd: string;
-  /** 0.1.96 multiroot: every configured page root; each `dir` folds into the base allow-list. */
-  roots: Root[];
+  /**
+   * 2.1.8: the root registry. `kind: pages` roots fold into the base allow-list; roots
+   * whose kind has `agentDirectFs = false` form the implicit deny-set.
+   */
+  roots: readonly RegistryRoot[];
   allowedPaths: string[];
   disallowedPaths: string[];
-  // 0.1.130: the C4S artifact dirs (config-relative), folded into the implicit deny-set.
-  plansDir: string;
-  briefsDir: string;
-  patchesDir: string;
-  entitiesDir: string;
-  releasesDir: string;
 }
 
 export interface ResolvedAgentPathScope {
@@ -82,21 +79,20 @@ export function resolveAgentPathScope(input: ResolveAgentPathScopeInput): Resolv
 
   // Base extras: each root dir only when it falls outside cwd (inside-cwd is already
   // covered by the library's implicit `cwd` base). cwd itself is intentionally NOT added.
-  const baseExtras = input.roots
+  const pageRoots = input.roots.filter((r) => r.kind === PAGES_KIND);
+  const baseExtras = pageRoots
     .map((r) => toAbs(cwdAbs, r.dir))
     .filter((rootAbs) => !isInside(cwdAbs, rootAbs));
 
-  // 0.1.130: implicit deny-set over the C4S artifact dirs, normalized absolute vs cwd.
+  // Implicit deny-set: every registry root whose kind has `agentDirectFs = false`.
   const artifactDenyDirs = dedupe(
-    [input.plansDir, input.briefsDir, input.patchesDir, input.entitiesDir, input.releasesDir].map(
-      (p) => toAbs(cwdAbs, p),
-    ),
+    input.roots.filter((r) => !KIND_DECLARATIONS[r.kind].flags.agentDirectFs).map((r) => toAbs(cwdAbs, r.dir)),
   );
 
   // 0.2.13 item 28: EVERY page root, whether or not it falls inside cwd — unlike
   // `baseExtras`, which only needs the ones outside. A root under cwd is the common case
   // and is precisely the one the write block has to name, since cwd itself is writable.
-  const pageRootDirs = dedupe(input.roots.map((r) => toAbs(cwdAbs, r.dir)));
+  const pageRootDirs = dedupe(pageRoots.map((r) => toAbs(cwdAbs, r.dir)));
 
   const allowedPaths = dedupe([...baseExtras, ...input.allowedPaths.map((p) => toAbs(cwdAbs, p))]);
   // Deny = implicit artifact deny-set ∪ user disallowedPaths. Precedence (deny > allow) is

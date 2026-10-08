@@ -5,8 +5,7 @@ import { useBrief, useUpdateBriefContent } from '../hooks/useBriefs.js';
 import '../tiptap/registrations.js';
 import { EditorFactory } from '../tiptap/EditorFactory.js';
 import { invokeSlash } from '../tiptap/slashInvoke.js';
-import { assertSaveMode, getContextSpec, artefactRootEditorProps } from '../tiptap/registry.js';
-import { useBaseRootId } from '../hooks/useConfig.js';
+import { assertSaveMode, getContextSpec } from '../tiptap/registry.js';
 import {
   useEditorCarry,
   useEditorCarryApply,
@@ -23,8 +22,9 @@ interface Props {
 }
 
 /**
- * M21 brief artifact panel. Reuse Tiptap factory + extensions z M02 (page
- * context — brief renderuje wszystkie te same XML refs / mentions / diagrams),
+ * M21 brief artifact panel. Reuse Tiptap factory, stały kontekst `artifact`
+ * (2.1.8 — proza i `@` po korzeniach `kind: pages`, bez `section_ref`,
+ * `AnchorMarker` i węzłów encji),
  * ale storage przez briefs-api (osobny endpoint, optimistic concurrency
  * przez expectedHash sha256). Save: debounced `AUTOSAVE_DEBOUNCE_MS` — ta sama
  * polityka co Editor.tsx dla pages (spec M21: brief dziedziczy politykę zapisu
@@ -48,18 +48,14 @@ export function BriefEditor({ briefPath }: Props) {
   const clearBriefExternalChange = useFileEventsStore((s) => s.clearBriefExternalChange);
 
   const schemaVersion = useEditorSchemaVersion();
-  // 0.2.101: `@path.md` here reaches the BASE page root, found by its flag —
-  // the identifier is no longer guaranteed to be `pages`.
-  const baseRootId = useBaseRootId();
-  const rootProps = useMemo(() => artefactRootEditorProps(baseRootId), [baseRootId]);
   const extensions = useMemo(
     () =>
-      // A brief has no context of its own: it mounts `page` with the artefact
-      // property bag (M21 `m21l13rt`) — no section index, no reference
-      // validation, `@` reaching the `pages` root. Entity tags in the body
-      // survive the autosave verbatim through the raw node (rule 6).
+      // 2.1.8: a brief mounts the named `artifact` context — prose and `@`
+      // links over the page roots, no section refs, anchors or entity nodes.
+      // Entity tags in the body survive the autosave verbatim (raw node, rule 6).
+      // The component names the context; it hands in no layer set of its own.
       EditorFactory.buildExtensions(
-        'page',
+        'artifact',
         {
           qc,
           currentPath: briefPath,
@@ -67,12 +63,10 @@ export function BriefEditor({ briefPath }: Props) {
             void invokeSlash(editor, command, { qc, currentPath: briefPath }),
           getAnnotations: () => [],
         },
-        {},
-        rootProps,
       ),
-    [qc, briefPath, schemaVersion, rootProps],
+    [qc, briefPath, schemaVersion],
   );
-  const save = assertSaveMode(getContextSpec('page', rootProps), 'debounce');
+  const save = assertSaveMode(getContextSpec('artifact'), 'debounce');
   const carry = useEditorCarry(extensions);
 
   const editor = useEditor(

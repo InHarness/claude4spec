@@ -351,9 +351,8 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
     [onOpenEntity, onOpenSection]
   );
 
-  // 2.1.1 — the outline is a section-index feature: a root with
-  // `sectionIndexed: false` has no anchors to navigate, so it gets no gutter at
-  // all, whatever the (global, persisted) open flag says.
+  // 2.1.1 — the outline is a section-index feature, mounted where the root's
+  // kind gives the editor its anchor layer (2.1.8: every page root).
   const outlineOpen = useOutlineStore((s) => s.outlineOpen) && hasOutline;
 
   return (

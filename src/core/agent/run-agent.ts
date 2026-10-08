@@ -95,7 +95,7 @@ export interface AgentParams {
   fromReleaseName?: string;
   /** Koniec okna. Pominiete → okno otwarte do stanu biezacego (`to = null`). */
   toReleaseName?: string;
-  /** Zakres briefu (releasable root ids). Zabroniony przy otwartym `to`. */
+  /** Zakres briefu (`pages` root ids). Zabroniony przy otwartym `to`. */
   roots?: string[];
   suffix?: string;
   /**
