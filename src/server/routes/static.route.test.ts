@@ -8,7 +8,10 @@ import { staticRouter } from './static.js';
 import { FileWatchRuntime } from '../fs/watcher.js';
 import { RootRegistry } from '../roots/registry.js';
 import { mountRegistryRoots } from '../workspace/root-registry-runtime.js';
+import { registerCoreReactions } from '../workspace/core-reactions.js';
 import type { Root } from '../../shared/types.js';
+
+registerCoreReactions();
 
 /**
  * 2.1.8 — M30 as a consumer of L13 (`m30l13rt`). The `.html` preview has no

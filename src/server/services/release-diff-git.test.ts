@@ -199,9 +199,9 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
     const v1Id = Number(
       db
         .prepare(`INSERT INTO spec_release (name, slug, description, created_by, created_at) VALUES (?, ?, ?, ?, ?)`)
-        .run('v1', 'v1', '', 'user', new Date(0).toISOString()).lastInsertRowid,
+        .run('v1', 'v1', 'First', 'user', new Date(0).toISOString()).lastInsertRowid,
     );
-    releaseStore.write('v1', { name: 'v1', slug: 'v1', description: '', createdAt: new Date(0).toISOString(), createdBy: 'user', roots: ['pages'] });
+    releaseStore.write('v1', { name: 'v1', slug: 'v1', description: 'First', createdAt: new Date(0).toISOString(), createdBy: 'user', roots: ['pages'] });
     await git(['add', '.'], dir);
     await git(['commit', '-m', 'v1'], dir);
 
@@ -210,9 +210,9 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
     const v2Id = Number(
       db
         .prepare(`INSERT INTO spec_release (name, slug, description, created_by, created_at) VALUES (?, ?, ?, ?, ?)`)
-        .run('v2', 'v2', '', 'user', new Date(1).toISOString()).lastInsertRowid,
+        .run('v2', 'v2', 'Second', 'user', new Date(1).toISOString()).lastInsertRowid,
     );
-    releaseStore.write('v2', { name: 'v2', slug: 'v2', description: '', createdAt: new Date(1).toISOString(), createdBy: 'user', roots: ['pages'] });
+    releaseStore.write('v2', { name: 'v2', slug: 'v2', description: 'Second', createdAt: new Date(1).toISOString(), createdBy: 'user', roots: ['pages'] });
     await git(['add', '.'], dir);
     await git(['commit', '-m', 'v2'], dir);
 

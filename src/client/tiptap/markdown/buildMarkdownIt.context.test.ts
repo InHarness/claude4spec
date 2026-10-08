@@ -32,7 +32,7 @@ const CONTENT = [
   '<!-- anchor: abcd1234 -->',
   '## Login',
   '',
-  `The form posts ${MENTION} — see @modules/m01-auth.md for the flow.`,
+  `The form posts ${MENTION} — see @modules/m01-auth for the flow.`,
   '',
 ].join('\n');
 
@@ -74,7 +74,7 @@ describe('page context from the root kind, fixed `artifact` context for briefs a
     expect(html).toContain('<anchor_marker id="abcd1234"></anchor_marker>');
     // `@` link.
     expect(html).toContain('data-page-ref="true"');
-    expect(html).toContain('data-path="modules/m01-auth.md"');
+    expect(html).toContain('data-path="modules/m01-auth"');
     expect(rawPayloads(html)).toEqual([]);
   });
 
@@ -106,6 +106,6 @@ describe('page context from the root kind, fixed `artifact` context for briefs a
     expect(html).not.toContain('<anchor_marker');
     // The `@` link still renders.
     expect(html).toContain('data-page-ref="true"');
-    expect(html).toContain('data-path="modules/m01-auth.md"');
+    expect(html).toContain('data-path="modules/m01-auth"');
   });
 });

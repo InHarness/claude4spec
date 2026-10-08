@@ -170,7 +170,7 @@ describe('M21 / M23 — the `briefs` and `patches` root kinds (2.1.8)', () => {
     });
     expect(BRIEF_HEADER).toEqual({
       type: 'brief',
-      immutable: ['type', 'from_release', 'to_release', 'roots', 'generated_at'],
+      immutable: ['type', 'from_release', 'to_release', 'generated_at', 'roots'],
       mutable: ['implemented'],
     });
 
