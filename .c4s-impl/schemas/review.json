@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "review",
+  "description": "Output of the reviewer (unit or wave scope). Blocking findings reopen their portion; non-blocking ones go to the human at the gate.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "role",
+    "scope",
+    "findings"
+  ],
+  "properties": {
+    "role": {
+      "const": "reviewer"
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "base"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "unit",
+            "wave"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "base": {
+          "type": "string",
+          "description": "the start commit the diff was taken from"
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "file",
+          "line",
+          "blocking",
+          "reason",
+          "portion"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^rev-[0-9]{4}$"
+          },
+          "file": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer"
+          },
+          "blocking": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "portion": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "deviations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}
