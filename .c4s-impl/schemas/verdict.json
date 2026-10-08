@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "verdict",
-  "description": "Output of the verifier (portion, unit or system scope). One row per slug the verifier derived from the specification; nothing else.",
+  "description": "Output of the verifier (unit or system scope). One row per slug the verifier derived from the specification; nothing else.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -28,14 +28,13 @@
       "properties": {
         "kind": {
           "enum": [
-            "portion",
             "unit",
             "system"
           ]
         },
         "id": {
           "type": "string",
-          "description": "portion name (m05/p2-l2), unit id (m05) or 'system'"
+          "description": "unit id (m05) or 'system'"
         }
       }
     },

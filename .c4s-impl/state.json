@@ -1,5 +1,5 @@
 {
-  "iteration": 75,
+  "iteration": 105,
   "conventions": [
     {
       "label": "L7 (File Change Reactions)",
@@ -20,21 +20,21 @@
       "units": [
         "u01-reaction-definitions"
       ],
-      "startCommit": "085f80704f66a9cededc730957c9ad20f5ec5864"
+      "startCommit": "517a2031814e6d0b4e364018edd50ffac7758653"
     },
     {
       "n": 2,
       "units": [
         "u02-page-reactions"
       ],
-      "startCommit": "01d40fe751d13ab43f82cc03c147bce5ca7abb00"
+      "startCommit": "81c822d42fa11312d790537bd3d4ddd8324d477f"
     },
     {
       "n": 3,
       "units": [
         "u03-root-registry"
       ],
-      "startCommit": "9722d03a0bb94f802267d7e88915c0bfc180d55b"
+      "startCommit": "082cbb6b5f8634615982b400277ec395fe56533c"
     },
     {
       "n": 4,
@@ -42,7 +42,7 @@
         "u04-entities-root",
         "u07-editor-contexts"
       ],
-      "startCommit": "693e82d495ae26861eb719d387e3162054707cd4"
+      "startCommit": "921f0cb7b4b32ee9f9732b23d5985fc2e8a09e10"
     },
     {
       "n": 5,
@@ -50,7 +50,7 @@
         "u05-releases-root",
         "u06-discovery-references"
       ],
-      "startCommit": null
+      "startCommit": "0ce5a061b2b0c389f75b446713b8bda0bc95ab75"
     },
     {
       "n": 6,
@@ -128,17 +128,19 @@
           "slugs": [
             "ac-after-wskazujacy-definicje-reakcji-ni"
           ],
-          "status": "verified",
+          "status": "implemented",
           "rounds": 1,
           "uncovered": [],
-          "only": []
+          "only": [],
+          "partial": 0
         }
       ],
-      "startCommit": "085f80704f66a9cededc730957c9ad20f5ec5864",
+      "startCommit": "517a2031814e6d0b4e364018edd50ffac7758653",
       "rounds": {
         "review": 0,
         "unit": 1
-      }
+      },
+      "baseCommit": "517a2031814e6d0b4e364018edd50ffac7758653"
     },
     {
       "id": "u02-page-reactions",
@@ -273,10 +275,11 @@
           "slugs": [
             "section:efn44e96"
           ],
-          "status": "verified",
+          "status": "implemented",
           "rounds": 1,
           "uncovered": [],
-          "only": []
+          "only": [],
+          "partial": 0
         },
         {
           "name": "u02-page-reactions/p2-l2",
@@ -298,11 +301,12 @@
             "section:m06srref",
             "section:9cf6zu0f"
           ],
-          "status": "verified",
+          "status": "implemented",
           "rounds": 1,
           "uncovered": [],
           "only": [],
-          "criteriaGroup": "m06 anchors & section indexer (domain)"
+          "criteriaGroup": "m06 anchors & section indexer (domain)",
+          "partial": 0
         },
         {
           "name": "u02-page-reactions/p3-l2-b",
@@ -312,11 +316,12 @@
           "slugs": [
             "section:owfnskxa"
           ],
-          "status": "verified",
+          "status": "implemented",
           "rounds": 1,
           "uncovered": [],
           "only": [],
-          "criteriaGroup": "m14 path resolution (domain)"
+          "criteriaGroup": "m14 path resolution (domain)",
+          "partial": 0
         },
         {
           "name": "u02-page-reactions/p4-l3",
@@ -326,10 +331,11 @@
           "slugs": [
             "section:m14op0004"
           ],
-          "status": "verified",
+          "status": "implemented",
           "rounds": 1,
           "uncovered": [],
-          "only": []
+          "only": [],
+          "partial": 0
         },
         {
           "name": "u02-page-reactions/p5-l6",
@@ -339,10 +345,11 @@
           "slugs": [
             "section:m14ref01"
           ],
-          "status": "verified",
+          "status": "implemented",
           "rounds": 1,
           "uncovered": [],
-          "only": []
+          "only": [],
+          "partial": 0
         },
         {
           "name": "u02-page-reactions/p6-l7",
@@ -354,11 +361,12 @@
             "section:v9zrytp8",
             "section:1139tm2r"
           ],
-          "status": "verified",
+          "status": "implemented",
           "rounds": 1,
           "uncovered": [],
           "only": [],
-          "criteriaGroup": "m06 reactions: m06-anchor-injection, m06-section-indexer"
+          "criteriaGroup": "m06 reactions: m06-anchor-injection, m06-section-indexer",
+          "partial": 0
         },
         {
           "name": "u02-page-reactions/p7-l7-b",
@@ -370,11 +378,12 @@
             "section:j5vqicfm",
             "section:yg8keaew"
           ],
-          "status": "verified",
+          "status": "implemented",
           "rounds": 1,
           "uncovered": [],
           "only": [],
-          "criteriaGroup": "m14/m08/m17 reactions: m14-link-indexer, m14-rename-sync, m08-todos-indexer, m17-capture"
+          "criteriaGroup": "m14/m08/m17 reactions: m14-link-indexer, m14-rename-sync, m08-todos-indexer, m17-capture",
+          "partial": 0
         },
         {
           "name": "u02-page-reactions/p8-l10",
@@ -385,10 +394,11 @@
             "section:v28uyhqc",
             "section:b5oplmdp"
           ],
-          "status": "verified",
+          "status": "implemented",
           "rounds": 1,
           "uncovered": [],
-          "only": []
+          "only": [],
+          "partial": 0
         },
         {
           "name": "u02-page-reactions/p9-l13",
@@ -401,17 +411,19 @@
             "section:m14l13rt",
             "section:m08l13rt"
           ],
-          "status": "verified",
+          "status": "implemented",
           "rounds": 2,
           "uncovered": [],
-          "only": []
+          "only": [],
+          "partial": 0
         }
       ],
-      "startCommit": "ff6472e0c1263ee6891b096e1d4ecf07914125e8",
+      "startCommit": "082cbb6b5f8634615982b400277ec395fe56533c",
       "rounds": {
         "review": 0,
         "unit": 2
-      }
+      },
+      "baseCommit": "082cbb6b5f8634615982b400277ec395fe56533c"
     },
     {
       "id": "u03-root-registry",
@@ -685,10 +697,11 @@
             "section:ic35jwy6",
             "section:7fgfpqzf"
           ],
-          "status": "verified",
+          "status": "implemented",
           "rounds": 1,
           "uncovered": [],
-          "only": []
+          "only": [],
+          "partial": 0
         },
         {
           "name": "u03-root-registry/p2-l3",
@@ -706,11 +719,12 @@
             "ac-zapis-strony-wprowadzajacy-nowy-naglo",
             "page-tools-update-page"
           ],
-          "status": "verified",
+          "status": "implemented",
           "rounds": 1,
           "uncovered": [],
           "only": [],
-          "criteriaGroup": "mcp-tool page-tools-update-page"
+          "criteriaGroup": "mcp-tool page-tools-update-page",
+          "partial": 0
         },
         {
           "name": "u03-root-registry/p3-l5",
@@ -720,10 +734,11 @@
           "slugs": [
             "section:8ya40xzg"
           ],
-          "status": "verified",
+          "status": "implemented",
           "rounds": 1,
           "uncovered": [],
-          "only": []
+          "only": [],
+          "partial": 0
         },
         {
           "name": "u03-root-registry/p4-l7",
@@ -738,11 +753,12 @@
             "section:814g9r4w",
             "section:uti7rq52"
           ],
-          "status": "verified",
+          "status": "implemented",
           "rounds": 1,
           "uncovered": [],
           "only": [],
-          "criteriaGroup": "owners: M02 mounts/base reaction m02-file-changed, M40 broadcast+wire-up, M30 own reaction removed"
+          "criteriaGroup": "owners: M02 mounts/base reaction m02-file-changed, M40 broadcast+wire-up, M30 own reaction removed",
+          "partial": 0
         },
         {
           "name": "u03-root-registry/p5-l7-b",
@@ -755,11 +771,12 @@
             "section:j5vqicfm",
             "section:yg8keaew"
           ],
-          "status": "verified",
+          "status": "implemented",
           "rounds": 1,
           "uncovered": [],
           "only": [],
-          "criteriaGroup": "consumers bound by kind: M06, M14, M08, M17"
+          "criteriaGroup": "consumers bound by kind: M06, M14, M08, M17",
+          "partial": 0
         },
         {
           "name": "u03-root-registry/p6-l10",
@@ -772,10 +789,11 @@
             "section:m31boot01",
             "section:m31edge01"
           ],
-          "status": "verified",
+          "status": "implemented",
           "rounds": 1,
           "uncovered": [],
-          "only": []
+          "only": [],
+          "partial": 0
         },
         {
           "name": "u03-root-registry/p7-l13",
@@ -789,11 +807,12 @@
             "section:m02l13001",
             "section:l13model0"
           ],
-          "status": "verified",
+          "status": "implemented",
           "rounds": 1,
           "uncovered": [],
           "only": [],
-          "criteriaGroup": "M02 as L13 implementor: root model, kinds, pages-kind declaration, requirement validation"
+          "criteriaGroup": "M02 as L13 implementor: root model, kinds, pages-kind declaration, requirement validation",
+          "partial": 0
         },
         {
           "name": "u03-root-registry/p8-l13-b",
@@ -806,11 +825,12 @@
             "section:m02multidir",
             "section:69xfq39v"
           ],
-          "status": "verified",
+          "status": "implemented",
           "rounds": 2,
           "uncovered": [],
           "only": [],
-          "criteriaGroup": "root registry runtime: PagesService per pages root, mount+bind per registry root"
+          "criteriaGroup": "root registry runtime: PagesService per pages root, mount+bind per registry root",
+          "partial": 0
         },
         {
           "name": "u03-root-registry/p9-l13-c",
@@ -827,18 +847,20 @@
             "section:m14l13rt",
             "section:m08l13rt"
           ],
-          "status": "verified",
+          "status": "implemented",
           "rounds": 1,
           "uncovered": [],
           "only": [],
-          "criteriaGroup": "L13 consumers (M31/M30/M06/M14/M08): kind-gated behaviour, .html raw entry"
+          "criteriaGroup": "L13 consumers (M31/M30/M06/M14/M08): kind-gated behaviour, .html raw entry",
+          "partial": 0
         }
       ],
-      "startCommit": "9722d03a0bb94f802267d7e88915c0bfc180d55b",
+      "startCommit": "082cbb6b5f8634615982b400277ec395fe56533c",
       "rounds": {
         "review": 0,
         "unit": 1
-      }
+      },
+      "baseCommit": "082cbb6b5f8634615982b400277ec395fe56533c"
     },
     {
       "id": "u04-entities-root",
@@ -920,11 +942,12 @@
             "section:m29mig001",
             "section:m29edge1"
           ],
-          "status": "verified",
+          "status": "implemented",
           "rounds": 1,
           "uncovered": [],
           "only": [],
-          "criteriaGroup": "M29 domain + layout: write-path, bundle restore, spec_release cache and DB→text/backfill migrations address the `entities`/`releases` roots instead of entitiesDir/releasesDir"
+          "criteriaGroup": "M29 domain + layout: write-path, bundle restore, spec_release cache and DB→text/backfill migrations address the `entities`/`releases` roots instead of entitiesDir/releasesDir",
+          "partial": 0
         },
         {
           "name": "u04-entities-root/p2-l7",
@@ -934,11 +957,12 @@
           "slugs": [
             "section:m29idx001"
           ],
-          "status": "verified",
+          "status": "implemented",
           "rounds": 1,
           "uncovered": [],
           "only": [],
-          "criteriaGroup": "M29 reactions m29-entity-indexer / m29-release-cache: no own mounts, bound by kind (release-cache binding deferred to u05)"
+          "criteriaGroup": "M29 reactions m29-entity-indexer / m29-release-cache: no own mounts, bound by kind (release-cache binding deferred to u05)",
+          "partial": 0
         },
         {
           "name": "u04-entities-root/p3-l10",
@@ -949,11 +973,12 @@
             "section:m29l10001",
             "section:9pvs31cv"
           ],
-          "status": "verified",
+          "status": "implemented",
           "rounds": 1,
           "uncovered": [],
           "only": [],
-          "criteriaGroup": "M29/M18 scoping: writes and tags.json go to the project's `entities` root; mounting owned by L13 implementor"
+          "criteriaGroup": "M29/M18 scoping: writes and tags.json go to the project's `entities` root; mounting owned by L13 implementor",
+          "partial": 0
         },
         {
           "name": "u04-entities-root/p4-l13",
@@ -965,11 +990,12 @@
             "section:l13model0",
             "section:m02multidir"
           ],
-          "status": "verified",
+          "status": "implemented",
           "rounds": 1,
           "uncovered": [],
           "only": [],
-          "criteriaGroup": "M02 as L13 implementor: completes the `entities` system root registration (id=kind, fixed dir, hidden, mount+bind)"
+          "criteriaGroup": "M02 as L13 implementor: completes the `entities` system root registration (id=kind, fixed dir, hidden, mount+bind)",
+          "partial": 0
         },
         {
           "name": "u04-entities-root/p5-l13-b",
@@ -984,11 +1010,12 @@
             "section:m29krit1",
             "section:m18acc00"
           ],
-          "status": "verified",
+          "status": "implemented",
           "rounds": 1,
           "uncovered": [],
           "only": [],
-          "criteriaGroup": "`entities` kind declaration (M29) and its consumers: M18 locates tags.json via the `entities` kind root; acceptance lists M29/M18"
+          "criteriaGroup": "`entities` kind declaration (M29) and its consumers: M18 locates tags.json via the `entities` kind root; acceptance lists M29/M18",
+          "partial": 0
         },
         {
           "name": "u04-entities-root/p6-l17",
@@ -1001,18 +1028,20 @@
             "section:4kz0wvoy",
             "section:6yrmfkv3"
           ],
-          "status": "verified",
+          "status": "implemented",
           "rounds": 1,
           "uncovered": [],
           "only": [],
-          "criteriaGroup": "removals: entitiesDir config key, 'Entities directory' settings element, directory relocation handling"
+          "criteriaGroup": "removals: entitiesDir config key, 'Entities directory' settings element, directory relocation handling",
+          "partial": 0
         }
       ],
-      "startCommit": "693e82d495ae26861eb719d387e3162054707cd4",
+      "startCommit": "921f0cb7b4b32ee9f9732b23d5985fc2e8a09e10",
       "rounds": {
         "review": 0,
         "unit": 1
-      }
+      },
+      "baseCommit": "921f0cb7b4b32ee9f9732b23d5985fc2e8a09e10"
     },
     {
       "id": "u07-editor-contexts",
@@ -1062,18 +1091,20 @@
             "section:c03ijrki",
             "section:m20l13rt"
           ],
-          "status": "verified",
+          "status": "implemented",
           "rounds": 1,
           "uncovered": [],
           "only": [],
-          "criteriaGroup": "M20 EditorFactory: page context from root kind (anchors via m06-anchor-injection, entity nodes via references flag, @ over all kind:pages roots with M14 precedence) + fixed `artifact` context for brief/patch; removes minimal root context and synthetic brief/patch property set"
+          "criteriaGroup": "M20 EditorFactory: page context from root kind (anchors via m06-anchor-injection, entity nodes via references flag, @ over all kind:pages roots with M14 precedence) + fixed `artifact` context for brief/patch; removes minimal root context and synthetic brief/patch property set",
+          "partial": 0
         }
       ],
-      "startCommit": "38cb3724c2a98058fe691bbed9151f070504a8fa",
+      "startCommit": "2d9f51445edcb4d3adb334594052363702bfd2aa",
       "rounds": {
         "review": 0,
         "unit": 1
-      }
+      },
+      "baseCommit": "2d9f51445edcb4d3adb334594052363702bfd2aa"
     },
     {
       "id": "u05-releases-root",
@@ -1198,12 +1229,211 @@
         }
       ],
       "wave": 5,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u05-releases-root/p1-l1",
+          "layers": [
+            "L1"
+          ],
+          "slugs": [
+            "ac-file-version-z-rootid-brief-po-migracji",
+            "section:m17db001",
+            "section:7yko4pyq",
+            "section:av75xfue",
+            "section:dbm17pv001",
+            "section:6kg83we6",
+            "section:m17l1ret1"
+          ],
+          "status": "implemented",
+          "rounds": 2,
+          "uncovered": [],
+          "only": [],
+          "criteriaGroup": "L1: file_version rootId axis — one-off idempotent migration brief→briefs/patch→patches/plan→plans; spec_release rebuilt from the `releases` root",
+          "partial": 0
+        },
+        {
+          "name": "u05-releases-root/p2-l2",
+          "layers": [
+            "L2"
+          ],
+          "slugs": [
+            "ac-korzen-uzytkownika-z-releasable-false-w",
+            "section:m27h3z7a",
+            "section:hybasevj"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "uncovered": [],
+          "only": [],
+          "criteriaGroup": "L2 createRelease/assignToRelease + snapshot/unreleased diff: pin file_version of kind-`pages` roots only; a user root with releasable:false is released (flag gone)",
+          "partial": 0
+        },
+        {
+          "name": "u05-releases-root/p3-l2-b",
+          "layers": [
+            "L2"
+          ],
+          "slugs": [
+            "section:m17bndal1",
+            "section:m17reldisk",
+            "section:m17reldiff"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "uncovered": [],
+          "only": [],
+          "criteriaGroup": "L2 releases on disk (`releases` root, .claude4spec/releases/<slug>.json), git pathspecs = `release`-flag kinds + `releases` root, bundle algorithm per kind `pages`",
+          "partial": 0
+        },
+        {
+          "name": "u05-releases-root/p4-l2-c",
+          "layers": [
+            "L2"
+          ],
+          "slugs": [
+            "ac-config-json-w-bundle-u-zawiera-tylko-pol",
+            "section:m17trtr01",
+            "section:m17bndly1",
+            "section:m17bndcf1",
+            "section:m17bndpg1",
+            "section:tihks0cb",
+            "section:m17bndiv1",
+            "section:m17bndrd1"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "uncovered": [],
+          "only": [],
+          "criteriaGroup": "L2 bundle archive format: layout per kind-`pages` root, config.json whitelist publishes roots[] as {id,name,dir,builtin}",
+          "partial": 0
+        },
+        {
+          "name": "u05-releases-root/p5-l2-d",
+          "layers": [
+            "L2"
+          ],
+          "slugs": [
+            "section:m17ergo01",
+            "section:m17errtx1",
+            "section:d8871ce9"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "uncovered": [],
+          "only": [],
+          "criteriaGroup": "L2 release read API: roots/paths filters default to and reject rootId outside kind `pages` (INVALID_ROOTS_FILTER / INVALID_PATHS_FILTER), edge cases",
+          "partial": 0
+        },
+        {
+          "name": "u05-releases-root/p6-l2-e",
+          "layers": [
+            "L2"
+          ],
+          "slugs": [
+            "section:feel2dvz",
+            "section:m17open01"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "uncovered": [],
+          "only": [],
+          "criteriaGroup": "L2 architecture: file_version shared with system roots briefs/patches/plans; open questions",
+          "partial": 0
+        },
+        {
+          "name": "u05-releases-root/p7-l7",
+          "layers": [
+            "L7"
+          ],
+          "slugs": [
+            "section:m29idx001"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "uncovered": [],
+          "only": [],
+          "criteriaGroup": "L7: completes binding of m29-release-cache to the `releases` root source (from u04)",
+          "partial": 0
+        },
+        {
+          "name": "u05-releases-root/p8-l10",
+          "layers": [
+            "L10"
+          ],
+          "slugs": [
+            "section:ic73uiw3"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "uncovered": [],
+          "only": [],
+          "criteriaGroup": "L10: releaseService built lazily over the project's `releases` root instead of releasesDir",
+          "partial": 0
+        },
+        {
+          "name": "u05-releases-root/p9-l13",
+          "layers": [
+            "L13"
+          ],
+          "slugs": [
+            "ac-zrodla-zdarzen-korzeni-entities-i-rel",
+            "ac-zmiana-pliku-w-dowolnym-korzeniu-reje",
+            "section:m02l13001",
+            "section:l13model0",
+            "section:m02multidir"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "uncovered": [],
+          "only": [],
+          "criteriaGroup": "M02 as L13 implementor: completes registration of the `releases` system root (mounted by L13, file:changed with its rootId)",
+          "partial": 0
+        },
+        {
+          "name": "u05-releases-root/p10-l13-b",
+          "layers": [
+            "L13"
+          ],
+          "slugs": [
+            "section:1dufnk2n",
+            "section:9vwvitnu",
+            "section:m17l13rt"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "uncovered": [],
+          "only": [],
+          "criteriaGroup": "M17 declares kind `releases` (fixed dir, *.json map, no version track, gitignore, m29-release-cache) and its consumer fields (release flag, kind `pages`)",
+          "partial": 0
+        },
+        {
+          "name": "u05-releases-root/p11-l17",
+          "layers": [
+            "L17"
+          ],
+          "slugs": [
+            "section:fpvyd29b",
+            "section:3696lnd3",
+            "section:c6jzief9",
+            "section:jkmeauua"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "uncovered": [],
+          "only": [],
+          "criteriaGroup": "removals: releasesDir config key, 'Releases directory' settings element, release-directory relocation handling",
+          "partial": 0
+        }
+      ],
+      "startCommit": "fa17a3b39160da08ba49ee25adb5dd4071eb5e09",
       "rounds": {
-        "review": 0
-      }
+        "review": 0,
+        "unit": 2
+      },
+      "baseCommit": "0ce5a061b2b0c389f75b446713b8bda0bc95ab75",
+      "lastUncovered": 0,
+      "lastBlocking": 1
     },
     {
       "id": "u06-discovery-references",
@@ -1367,7 +1597,8 @@
       "startCommit": null,
       "rounds": {
         "review": 0
-      }
+      },
+      "baseCommit": null
     },
     {
       "id": "u09-plans-artifact-registry",
@@ -1486,7 +1717,8 @@
       "startCommit": null,
       "rounds": {
         "review": 0
-      }
+      },
+      "baseCommit": null
     },
     {
       "id": "u10-briefs-patches-roots",
@@ -1661,7 +1893,8 @@
       "startCommit": null,
       "rounds": {
         "review": 0
-      }
+      },
+      "baseCommit": null
     },
     {
       "id": "u08-agent-path-scope",
@@ -1763,7 +1996,8 @@
       "startCommit": null,
       "rounds": {
         "review": 0
-      }
+      },
+      "baseCommit": null
     },
     {
       "id": "u11-config-settings",
@@ -1912,7 +2146,8 @@
       "startCommit": null,
       "rounds": {
         "review": 0
-      }
+      },
+      "baseCommit": null
     },
     {
       "id": "u12-git-clone",
@@ -1992,7 +2227,8 @@
       "startCommit": null,
       "rounds": {
         "review": 0
-      }
+      },
+      "baseCommit": null
     }
   ],
   "entityTypes": [

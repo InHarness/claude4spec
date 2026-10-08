@@ -1,0 +1,18 @@
+{
+  "role": "reviewer",
+  "scope": {
+    "kind": "unit",
+    "id": "u05-releases-root",
+    "base": "fa17a3b39160da08ba49ee25adb5dd4071eb5e09"
+  },
+  "findings": [
+    {
+      "id": "rev-0013",
+      "file": "src/server/services/file-version-root-markers.test.ts",
+      "line": 81,
+      "blocking": false,
+      "reason": "rev-0009 is resolved. All five writers (brief.ts:470/558/591, patch.ts:307/332) now pass BRIEF_ROOT_MARKER/PATCH_ROOT_MARKER, no other recordVersion caller uses an old literal, and the recordVersion doc (rev-0010) is reworded. One weak spot remains in the new test. `expect(service.listBriefs().find((b) => b.path === 'b.md')?.hash).not.toBe('')` passes vacuously when `find` returns undefined, for example when the frontmatter indexer did not pick up the brief. So it does not actually pin the 'lastVersion missing from the list' symptom that rev-0009 named. Assert that the item exists first (or compare the hash to `hashContent` of the file on disk).",
+      "portion": "u05-releases-root/p1-l1"
+    }
+  ]
+}

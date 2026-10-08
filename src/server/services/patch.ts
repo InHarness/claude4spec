@@ -304,7 +304,7 @@ export class PatchService {
       'user',
       undefined,
       this.deps.patchesSerializer,
-      'patch',
+      PATCH_ROOT_MARKER,
     );
     await this.deps.frontmatterIndexer.indexPage(PATCH_ROOT_MARKER, opts.path);
     return this.getPatch(opts.path);
@@ -329,7 +329,7 @@ export class PatchService {
       changedBy,
       undefined,
       this.deps.patchesSerializer,
-      'patch',
+      PATCH_ROOT_MARKER,
       `set applied=${applied}`,
     );
     await this.deps.frontmatterIndexer.indexPage(PATCH_ROOT_MARKER, current.path);

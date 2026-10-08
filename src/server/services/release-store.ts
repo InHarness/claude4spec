@@ -33,12 +33,14 @@ export interface ReleaseFileData {
   description: string;
   createdAt: string;
   createdBy: string;
+  // ASSUMPTION:dev-0005 — the release metadata file carries `roots` as root ids
+  // (the `pages`-kind roots), not `{id,name,dir}` objects.
   roots: string[];
 }
 
 /**
  * Maps a `spec_release` DB row (or row-shaped object) + a slug + the current
- * releasable roots into the on-disk identity shape. Single source of truth
+ * `pages` roots into the on-disk identity shape. Single source of truth
  * for this mapping — `ReleaseService.createRelease()`/`updateRelease()` and
  * the 0.1.119 Migration C boot backfill all call this rather than hand-rolling
  * the same object literal, so a field added/renamed here can't silently drift

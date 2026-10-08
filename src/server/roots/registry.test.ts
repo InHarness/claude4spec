@@ -15,19 +15,20 @@ import {
   namespacesOverlap,
 } from '../../shared/root-kinds.js';
 
+// Shared by both describe blocks (the kind-declaration tests build registries and temp projects too).
+const dirs: string[] = [];
+afterEach(() => {
+  for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
+  vi.restoreAllMocks();
+});
+
+const user = [
+  { id: 'pages', name: 'Pages', dir: 'pages', builtin: true },
+  { id: 'adr', name: 'ADRs', dir: 'docs/adr', builtin: false },
+];
+
 /** 2.1.8 — the root registry: user roots (kind `pages`) + five system roots in code. */
 describe('RootRegistry', () => {
-  const dirs: string[] = [];
-  afterEach(() => {
-    for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
-    vi.restoreAllMocks();
-  });
-
-  const user = [
-    { id: 'pages', name: 'Pages', dir: 'pages', builtin: true },
-    { id: 'adr', name: 'ADRs', dir: 'docs/adr', builtin: false },
-  ];
-
   it('lists the user roots (kind pages, roots[] order) followed by the five system roots', () => {
     const reg = new RootRegistry(user);
     expect(reg.list().map((r) => [r.id, r.kind, r.dir])).toEqual([
@@ -152,6 +153,55 @@ describe('root kinds', () => {
     expect(reg.withFlag('gitignore').some((r) => r.kind === 'entities')).toBe(false);
     expect(reg.withFlag('agentDirectFs', false).map((r) => r.id)).toContain('entities');
     expect(reg.selecting('m29-entity-indexer').map((r) => r.id)).toEqual(['entities']);
+  });
+
+  it('M17 1dufnk2n: the `releases` kind declaration — one root from code at .claude4spec/releases, *.json on track none, only `gitignore` = yes, reaction m29-release-cache', () => {
+    expect(KIND_DECLARATIONS.releases).toEqual({
+      kind: 'releases',
+      source: 'code',
+      sidebar: 'hidden',
+      fileMap: [{ pattern: '*.json', format: 'json', track: 'none' }],
+      flags: { release: false, references: false, gitignore: true, agentDirectFs: false },
+      reactions: ['m29-release-cache'],
+    });
+    // Exactly one root, reserved id, fixed dir — found by kind even under a renamed base root at `.`.
+    const renamed = new RootRegistry([{ id: 'docs', name: 'Docs', dir: '.', builtin: true }]);
+    expect(renamed.system('releases')).toEqual({ id: 'releases', name: 'Releases', dir: '.claude4spec/releases', kind: 'releases', builtin: false });
+    expect(SYSTEM_ROOTS.filter((r) => r.kind === 'releases')).toHaveLength(1);
+    expect(isSystemRootId('releases')).toBe(true);
+    // A legacy `releasesDir` key does not move it.
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-releases-root-'));
+    dirs.push(cwd);
+    fs.mkdirSync(path.join(cwd, '.claude4spec'), { recursive: true });
+    fs.writeFileSync(
+      path.join(cwd, '.claude4spec', 'config.json'),
+      JSON.stringify({ $schemaVersion: 4, name: 'x', roots: [user[0]], releasesDir: 'elsewhere' }),
+    );
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const cfg = readConfig(cwd);
+    expect(cfg).not.toHaveProperty('releasesDir');
+    expect(new RootRegistry(cfg.roots).system('releases').dir).toBe('.claude4spec/releases');
+    // The release metadata record is the root's only entry; anything else is not a file of the kind.
+    expect(fileMapEntryOf('releases', 'v1-0.json')).toMatchObject({ format: 'json', track: 'none' });
+    expect(fileMapEntryOf('releases', 'nested/v1-0.json')).toBeUndefined();
+    expect(fileMapEntryOf('releases', 'notes.md')).toBeUndefined();
+    // Not in the release-flag set (git pathspecs add it separately, m17reldiff); gitignored; release cache bound on it only.
+    const reg = new RootRegistry(user);
+    expect(reg.withFlag('release').some((r) => r.kind === 'releases')).toBe(false);
+    expect(reg.withFlag('gitignore').map((r) => r.id)).toContain('releases');
+    expect(reg.selecting('m29-release-cache').map((r) => r.id)).toEqual(['releases']);
+  });
+
+  it('M17 9vwvitnu: the two iterations — release-flag roots (git pathspecs) are the `pages` roots plus `entities`; the `pages`-kind roots (file_version track, filters, bundle) leave out every system root', () => {
+    const reg = new RootRegistry(user);
+    expect(reg.pages().map((r) => r.id)).toEqual(['pages', 'adr']);
+    expect(reg.withFlag('release').map((r) => r.id)).toEqual(['pages', 'adr', 'entities']);
+    // plans/briefs/patches carry file_version rows but are not of kind `pages` — out of the release by construction.
+    for (const kind of ['plans', 'briefs', 'patches'] as const) {
+      expect(KIND_DECLARATIONS[kind].fileMap.some((e) => e.track === 'file_version')).toBe(true);
+      expect(reg.pages().some((r) => r.kind === kind)).toBe(false);
+      expect(reg.withFlag('release').some((r) => r.kind === kind)).toBe(false);
+    }
   });
 
   it('every kind carries the four policy flags and only system kinds come from code', () => {

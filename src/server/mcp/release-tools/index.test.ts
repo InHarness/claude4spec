@@ -327,6 +327,10 @@ describe('release_diff — `paths` / `roots` validation', () => {
   it.each([
     ['an unknown root', ['nope']],
     ['a system root id', ['plans']],
+    // 2.1.8: the `entities` root is served by the entity axis, not by `roots`;
+    // `releases` carries release metadata — neither is a `kind: pages` root.
+    ['the entities system root', ['entities']],
+    ['the releases system root', ['releases']],
   ])('`roots` with %s is INVALID_ROOTS_FILTER naming the page roots', async (_label, roots) => {
     const { calls, call } = harness();
     const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', roots });
@@ -360,6 +364,8 @@ describe('release_diff — `paths` / `roots` validation', () => {
     ['an empty array', []],
     ['an unknown root id', ['nope/a.md']],
     ['a system root id', ['plans/a.md']],
+    ['the entities system root', ['entities/endpoint/x.json']],
+    ['the releases system root', ['releases/v1.json']],
   ])('`paths` with %s is INVALID_PATHS_FILTER', async (_label, paths) => {
     const { call } = harness();
     const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths });

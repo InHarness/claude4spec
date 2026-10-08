@@ -63,7 +63,7 @@
     },
     "stoppedEarly": {
       "type": "boolean",
-      "description": "true when the run stopped before finishing scope because of the run limit"
+      "description": "true when the run stopped before finishing its portion (run limit): the portion stays in-progress and the next iteration runs the implementer on it again"
     },
     "gate": {
       "type": "string",

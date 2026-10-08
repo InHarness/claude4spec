@@ -1,0 +1,14 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "portion", "id": "u05-releases-root/p8-l10" },
+  "release": "2.1.8",
+  "rows": [
+    {
+      "slug": "section:ic73uiw3",
+      "level": 2,
+      "status": "covered",
+      "evidence": "releaseService built lazily per project context over db.handle and the `releases` root: src/server/workspace/project-context.ts:327 (releasesRootDir = rootRegistry.system('releases').dir), :645 (ReleaseFileStore(cwd, releasesRootDir, ...)), :1040-1059 (new ReleaseService(db.handle, ...) + setReleaseStore(releaseFileStore)); no `releasesDir` in non-test, non-migration source (only the legacy-key strip map src/server/config.ts:961); uncommitted comment edits src/bin/gitignore.ts:47, src/server/services/git.ts:627,931 drop the last `releasesDir` mentions. M17 mounts no source: file capture is `m17-capture` selected by root kinds (src/shared/root-kinds.ts:127,137,146; src/server/workspace/project-context.ts:1434-1440 rootRegistry.selecting('m17-capture')), bound via bindRegistryReactions :1487. Test: src/server/workspace/root-registry-runtime.test.ts:373 asserts root 'releases' kind 'releases', dir '.claude4spec/releases', mounted source. npm run typecheck clean."
+    }
+  ],
+  "suite": { "command": "npm run typecheck", "exitCode": 0, "summary": "tsc --noEmit — no errors" }
+}

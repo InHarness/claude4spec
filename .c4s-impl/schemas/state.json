@@ -344,7 +344,15 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "HEAD the next review reads from; moved to HEAD at every reopen"
+          },
+          "baseCommit": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "HEAD when the unit started; never moved. verify(u) squashes baseCommit..HEAD into one unit commit"
           },
           "portions": {
             "type": "array",
@@ -378,11 +386,17 @@
                   "enum": [
                     "pending",
                     "in-progress",
-                    "verified"
-                  ]
+                    "implemented"
+                  ],
+                  "description": "in-progress: an implementer run on it started and did not finish; implemented: a run finished it. Only the unit-scope verifier checks it"
                 },
                 "rounds": {
-                  "type": "integer"
+                  "type": "integer",
+                  "description": "implementer runs that finished the portion"
+                },
+                "partial": {
+                  "type": "integer",
+                  "description": "consecutive implementer runs that stopped early on the portion; reset when one finishes"
                 },
                 "uncovered": {
                   "type": "array",
@@ -403,7 +417,7 @@
                         "type": "string"
                       }
                     },
-                    "description": "one open item: { slug } from a verifier row, or { finding } — a blocking review finding id"
+                    "description": "one open item: { slug } from a unit-verifier row, or { finding } — a blocking review finding id"
                   }
                 },
                 "criteriaGroup": {
@@ -425,7 +439,7 @@
                   "type": "string"
                 }
               },
-              "description": "one open item: { slug } from a verifier row, or { finding } — a blocking review finding id"
+              "description": "one open item: { slug } from a unit-verifier row, or { finding } — a blocking review finding id"
             },
             "description": "unit-scope items a reopen carries"
           },
@@ -444,6 +458,10 @@
           "lastBlocking": {
             "type": "integer",
             "description": "blocking findings in the last review round — the 'did not shrink' test"
+          },
+          "lastUncovered": {
+            "type": "integer",
+            "description": "failed rows in the last unit-verifier round — the 'did not shrink' test for stuck"
           }
         }
       }

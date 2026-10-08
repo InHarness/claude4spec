@@ -3,6 +3,7 @@ import type { ReleaseService } from '../services/release.js';
 import type { GitService } from '../services/git.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import { CURRENT_RELEASE_NAME } from '../../shared/entities.js';
+import { DomainError } from '../services/tags.js';
 
 export function releasesRouter(
   releases: ReleaseService,
@@ -100,12 +101,25 @@ export function releasesRouter(
         req.params.from === '__INITIAL__' ? null : decodeIdOrName(req.params.from);
       // 0.1.96 (L13): narrow the pages dimension to the requested root(s). Express
       // gives a string for `?roots=pages` and an array for `?roots=pages&roots=skills`;
-      // normalize both to `string[]`. Absent/empty ⇒ undefined ⇒ all releasable roots
-      // (unchanged behaviour for the release-detail diff view). Backs the brief-scope
-      // picker's per-root changed-page count probe.
+      // normalize both to `string[]`. Absent/empty ⇒ undefined ⇒ every `kind: pages`
+      // root (unchanged behaviour for the release-detail diff view). Backs the
+      // brief-scope picker's per-root changed-page count probe.
       const rawRoots = req.query.roots;
       const roots = (Array.isArray(rawRoots) ? rawRoots : rawRoots === undefined ? [] : [rawRoots])
         .filter((r): r is string => typeof r === 'string');
+      // 2.1.8 (M17 m17errtx1): same refusal as `release_diff` — an unknown id or a
+      // root of a kind other than `pages` (a system root) is 400, never silently
+      // skipped, and the message lists the `kind: pages` roots.
+      const pageRootIds = releases.pageRootIds();
+      const notPage = roots.find((r) => !pageRootIds.includes(r));
+      if (notPage !== undefined) {
+        const available = `page roots: [${pageRootIds.join(', ')}]`;
+        throw new DomainError(
+          'INVALID_ROOTS_FILTER',
+          `roots: '${notPage}' is not a page root (${available})`,
+          available,
+        );
+      }
       // 0.1.122: reserved literal `:to === 'current'` resolved BEFORE the
       // nameOrId lookup — diff `:from` against the live/unreleased spec state.
       if (req.params.to === CURRENT_RELEASE_NAME) {

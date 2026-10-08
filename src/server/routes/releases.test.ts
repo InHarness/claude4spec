@@ -83,3 +83,46 @@ describe('GET /api/releases/:from/diff/:to — "current" sentinel (0.1.122)', ()
     expect(res.body.error.code).toBe('RELEASE_NAME_RESERVED');
   });
 });
+
+describe('GET /api/releases/:from/diff/:to — `roots` refusal (2.1.8, M17 m17errtx1)', () => {
+  let db: Database.Database;
+  let app: express.Express;
+
+  beforeEach(() => {
+    db = new Database(':memory:');
+    runMigrations(db);
+    const releases = new ReleaseService(
+      db,
+      fakeHost,
+      fakeVersions,
+      fakeFileVersions,
+      fakeFileSerializer,
+      fakeRawReader,
+      fakeTagsService,
+      fakePagesService,
+      () => null,
+      process.cwd(),
+      // The roots of kind `pages` — the only ids the page filter accepts.
+      ['pages', 'plugins'],
+      [],
+    );
+    app = express().use(express.json()).use('/api/releases', releasesRouter(releases)).use(errorHandler);
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it.each([
+    ['an unknown root id', 'nope', '__INITIAL__/diff/current'],
+    ['the `entities` system root', 'entities', '__INITIAL__/diff/current'],
+    ['the `releases` system root', 'releases', '__INITIAL__/diff/current'],
+    ['the `plans` system root', 'plans', 'v1/diff/v2'],
+  ])('refuses %s with 400 INVALID_ROOTS_FILTER listing the `kind: pages` roots', async (_label, root, route) => {
+    const res = await request(app).get(`/api/releases/${route}?roots=pages&roots=${root}`);
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('INVALID_ROOTS_FILTER');
+    expect(res.body.error.message).toBe(`roots: '${root}' is not a page root (page roots: [pages, plugins])`);
+    expect(res.body.error.hint).toBe('page roots: [pages, plugins]');
+  });
+});

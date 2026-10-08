@@ -1027,15 +1027,15 @@ async function buildInner(
   // M17: ReleaseService + cross-cutting `release-tools` MCP. Like
   // reference-tools, owned by the host (not a plugin) — release semantics
   // are dual-track (entities + pages), neither side is a plugin owner.
-  // 0.1.96: releasable roots drive releases/bundles/diffs and git staging.
+  // 0.1.96: the `pages` roots drive releases/bundles/diffs; the release-flag roots drive git staging and pathspecs.
   // 2.1.8: every `pages` root takes part — no user root is left out, whatever
   // a legacy `releasable` once said. M02 m02l13001: consumers that must see PAGES only (the `assignToRelease`
   // filter, the `file_version` path filter, bundle `roots` sanitisation) iterate
   // the roots of KIND `pages`, not the `release` flag — entities are released
   // too, and these lists do not cover them. Git staging/pathspecs read the flag.
   const releasePageRoots = rootRegistry.pages();
-  const releasableRootIds = releasePageRoots.map((r) => r.id);
-  const releasableRootDirs = releasePageRoots.map((r) => rootDirAbs(cwd, r));
+  const pagesKindRootIds = releasePageRoots.map((r) => r.id);
+  const pagesKindRootDirs = releasePageRoots.map((r) => rootDirAbs(cwd, r));
   const releaseFlagRootDirs = rootRegistry.withFlag('release').map((r) => rootDirAbs(cwd, r));
   const releaseService = new ReleaseService(
     db.handle,
@@ -1048,8 +1048,8 @@ async function buildInner(
     pages,
     (rootId) => rootById.get(rootId)?.writer ?? null,
     cwd,
-    releasableRootIds,
-    releasableRootDirs,
+    pagesKindRootIds,
+    pagesKindRootDirs,
     (rootId) => rootById.get(rootId)?.pages.records ?? null,
     renameTransitions,
   );
@@ -1057,8 +1057,10 @@ async function buildInner(
   releaseService.setEntityStore(entityStore);
   // 0.1.118: release create/update writes the on-disk identity file.
   releaseService.setReleaseStore(releaseFileStore);
+  // M17 m17reldiff: the git-anchored diff's pathspecs = release-flag roots + `releases`.
+  releaseService.setReleaseFlagRootDirs(releaseFlagRootDirs);
   // M28 Git Sync — best-effort mirroring of release create/push into the user's
-  // git repo. Probes the releasable roots for a worktree; reads config per-action.
+  // git repo. Probes the release-flag roots for a worktree; reads config per-action.
   // 0.1.123: `checkout()` hard-blocks while a turn is live, so it shares the
   // same `activeAdapters` predicate as `ProjectContext.hasInFlightTurn` below.
   const gitService = new GitService(cwd, releaseFlagRootDirs, () => activeAdapters.size > 0);
@@ -1721,7 +1723,7 @@ async function buildInner(
   // MUST run before releaseIndexer.indexAll() just below, so a backfilled row
   // is picked up as a normal file-backed release on first rebuild rather than
   // treated as a DB row with no file. `roots` isn't a spec_release column —
-  // reuse the CURRENT releasableRootIds as a best-effort snapshot, there is no
+  // reuse the CURRENT pagesKindRootIds as a best-effort snapshot, there is no
   // historical source. Per-row try/catch so one bad row can't block the rest
   // or the release-indexer rebuild that follows.
   try {
@@ -1758,7 +1760,7 @@ async function buildInner(
             slug = `${baseSlug}-${attempt}`;
           }
           if (!releaseFileStore.exists(slug)) {
-            releaseFileStore.write(slug, toReleaseFileData(row, slug, releasableRootIds));
+            releaseFileStore.write(slug, toReleaseFileData(row, slug, pagesKindRootIds));
           }
           setSlug.run(slug, row.id);
         } catch (err) {

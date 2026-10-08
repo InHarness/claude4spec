@@ -15,7 +15,7 @@
       "path": ".worktrees/2-1-7-to-2-1-8"
     },
     "budget": {
-      "packetKB": 40,
+      "packetKB": 200,
       "implementer": 60,
       "verifier": 40,
       "reviewer": 30

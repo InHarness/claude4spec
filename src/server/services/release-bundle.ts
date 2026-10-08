@@ -104,7 +104,8 @@ export interface BundleConfig {
   $schemaVersion: number;
   name: string;
   /**
-   * v2 (0.1.96): releasable page roots (was the `pagesDir` scalar in v1). v1
+   * v2 (0.1.96): page roots (was the `pagesDir` scalar in v1); 2.1.8: every
+   * user root (`kind: pages`) as `{ id, name, dir, builtin }`. v1
    * bundles carry `pagesDir` instead — the read direction maps it to a single
    * built-in `pages` root via the v3→v4 config path.
    */
@@ -125,7 +126,8 @@ export interface BundleManifest {
    */
   bundleSchemaVersion: number;
   /**
-   * v2 (0.1.96): releasable roots present in the bundle (id/name/dir only). The
+   * v2 (0.1.96): page roots present in the bundle (id/name/dir only; 2.1.8:
+   * every root of kind `pages`, the system roots never). The
    * pages tree is laid out under `<rootId>/…`. Absent on v1 bundles (flat `pages/`).
    */
   roots: BundleRoot[];
@@ -356,7 +358,7 @@ export async function buildBundleArchive(
     // 2.1.8: every `pages` root is carried (manifest + layout dirs); the system
     // roots' files (plans, briefs, patches, releases) are not — entities travel
     // separately under `entities/`.
-    const releasableRoots: BundleRoot[] = config.roots
+    const pageRoots: BundleRoot[] = config.roots
       .map((r) => {
         const formerIds = rootFormerIds[r.id] ?? [];
         return {
@@ -370,7 +372,7 @@ export async function buildBundleArchive(
     // 1. manifest.json
     const manifest: BundleManifest = {
       bundleSchemaVersion: BUNDLE_SCHEMA_VERSION,
-      roots: releasableRoots,
+      roots: pageRoots,
       release: {
         id: release.id,
         name: release.name,

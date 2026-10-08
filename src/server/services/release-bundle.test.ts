@@ -425,4 +425,64 @@ describe('buildBundleArchive — sanitized config', () => {
       cleanup();
     }
   });
+
+  /**
+   * 2.1.8 (M17 m17bndcf1): the allow-list is fail-closed against a project file
+   * that still CARRIES the retired artifact-directory keys and `remoteApiUrl` —
+   * they are present on input and absent from the archive, and every user root
+   * is published as exactly `{ id, name, dir, builtin }`.
+   */
+  it("[ac:ac-config-json-w-bundle-u-zawiera-tylko-pol] config.json in the bundle holds only allow-listed keys, roots as { id, name, dir, builtin }, and drops remoteApiUrl and the legacy artifact-dir keys present in the project file", async () => {
+    const legacyKeys = ['briefsDir', 'patchesDir', 'plansDir', 'entitiesDir', 'releasesDir'];
+    const projectConfig = {
+      ...(CONFIG as unknown as Record<string, unknown>),
+      roots: [
+        { id: 'pages', name: 'Pages', dir: 'pages', builtin: true, releasable: true, sidebar: 'accordion', linkTargets: [] },
+        { id: 'notes', name: 'Notes', dir: 'notes', builtin: false, releasable: false, sectionIndexed: false, linkTargets: ['pages'] },
+      ],
+      briefsDir: '.claude4spec/briefs',
+      patchesDir: '.claude4spec/patches',
+      plansDir: '.claude4spec/plans',
+      entitiesDir: '.claude4spec/entities',
+      releasesDir: '.claude4spec/releases',
+      remoteApiUrl: 'http://localhost:3000',
+      remoteProjectId: 'proj-123',
+    } as unknown as NormalizedConfig;
+    // Precondition: the keys the criterion names really are in the project file.
+    for (const k of [...legacyKeys, 'remoteApiUrl']) expect(projectConfig).toHaveProperty(k);
+
+    const result = await buildBundleArchive(snapshotWith(), RELEASE, projectConfig, [], [], null);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-bundle-test-'));
+    try {
+      await extractBundleStream(fs.createReadStream(result.tarGzPath), dir);
+      const config = JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf8'));
+      // Only the allow-listed keys.
+      expect(Object.keys(config).sort()).toEqual([
+        '$schemaVersion',
+        'agent',
+        'entities',
+        'name',
+        'onboardingCompleted',
+        'roots',
+        'writingStyle',
+      ]);
+      expect(config.$schemaVersion).toBe(4);
+      expect(config.name).toBe('demo');
+      expect(config.writingStyle).toBeNull();
+      expect(config.onboardingCompleted).toBe(true);
+      expect(config.entities).toEqual(['endpoint', 'design-system', 'diagram']);
+      expect(config.agent.claudeUsePreset).toBe(false);
+      // Every user root, in exactly the four fields — a root whose entry says
+      // `releasable: false` is published too, and no retired per-root field leaks.
+      expect(config.roots).toEqual([
+        { id: 'pages', name: 'Pages', dir: 'pages', builtin: true },
+        { id: 'notes', name: 'Notes', dir: 'notes', builtin: false },
+      ]);
+      // remoteApiUrl and the legacy artifact-directory keys do not reach the archive.
+      for (const k of [...legacyKeys, 'remoteApiUrl', 'remoteProjectId']) expect(config).not.toHaveProperty(k);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(result.tarGzPath, { force: true });
+    }
+  });
 });

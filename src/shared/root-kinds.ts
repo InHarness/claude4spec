@@ -23,7 +23,7 @@ import {
 } from './entities.js';
 import { hasDotSegment } from './page-files.js';
 
-/** Kinds contributed by the core modules: M02 (pages), M10, M21, M23, M29. */
+/** Kinds contributed by the core modules: M02 (pages), M10 (plans), M21 (briefs), M23 (patches), M29 (entities), M17 (releases). */
 export type RootKind = 'pages' | 'plans' | 'briefs' | 'patches' | 'entities' | 'releases';
 
 /** The five kinds whose single root is registered in code, in a fixed order. */
@@ -171,7 +171,13 @@ export const KIND_DECLARATIONS: Readonly<Record<RootKind, KindDeclaration>> = {
     flags: { release: true, references: false, gitignore: false, agentDirectFs: false },
     reactions: ['m29-entity-indexer'],
   },
-  // M29
+  // M17 (1dufnk2n) — exactly one root, reserved id `releases`, fixed dir
+  // `.claude4spec/releases` (no config key). One entry: `*.json` — the release
+  // metadata record (`name`, `slug`, `description`, `createdAt`, `createdBy`,
+  // `roots`), immutable once created except for an edit of the latest release;
+  // track `none`. Flags: only `gitignore`. Reaction: `m29-release-cache`. The
+  // root is not in the `release` flag set, but the git-anchored release diff
+  // always adds it to its pathspecs beside the release-flag roots (m17reldiff).
   releases: {
     kind: 'releases',
     source: 'code',

@@ -1,0 +1,46 @@
+{
+  "role": "reviewer",
+  "scope": {
+    "kind": "unit",
+    "id": "u05-releases-root",
+    "base": "0ce5a061b2b0c389f75b446713b8bda0bc95ab75"
+  },
+  "findings": [
+    {
+      "id": "rev-0009",
+      "file": "src/server/services/brief.ts",
+      "line": 470,
+      "blocking": true,
+      "reason": "The goal's migration (057) remaps `file_version.rootId` 'brief'→'briefs' and 'patch'→'patches' so every value names a registry entry, and every reader already uses the new ids (`BRIEF_ROOT_MARKER = 'briefs'`, `PATCH_ROOT_MARKER = 'patches'`: `listVersions`/`getVersion`/`getLatestForPath` at brief.ts:306/512/517, patch.ts:235). The writers still pass the old literals: `recordVersion(..., 'brief')` at brief.ts:470, 558 and 591, and `recordVersion(..., 'patch')` at patch.ts:307 and 332. Every brief or patch written after the one-time migration lands under a marker that no reader queries. Its history is invisible, its `lastVersion` is missing from the list, and `nextVersionNumber`/no-op suppression run against a different chain than the one the migrated rows sit on. The migration's invariant breaks on the next write. The migration test passes because it only seeds rows by hand. Pass `BRIEF_ROOT_MARKER`/`PATCH_ROOT_MARKER` (as plan.ts already does with `PLAN_ROOT_MARKER`), and add a test that writes a brief/patch through its service and reads the history back."
+      ,
+      "portion": "u05-releases-root/p1-l1"
+    },
+    {
+      "id": "rev-0010",
+      "file": "src/server/services/file-version.ts",
+      "line": 107,
+      "blocking": false,
+      "reason": "The diff rewrote the `FileVersionListItem.rootId` doc to say the system roots use `briefs`/`patches`/`plans` after migration 057. The `recordVersion` doc a few lines below in the same file still says `rootId` is 'a page-root identifier or one of the fixed 'brief'/'patch' markers'. That stale wording is exactly the contract the writers in rev-0009 still follow. Reword it to say the system root ids."
+      ,
+      "portion": "u05-releases-root/p1-l1"
+    },
+    {
+      "id": "rev-0011",
+      "file": "src/server/routes/releases.ts",
+      "line": 115,
+      "blocking": false,
+      "reason": "The new `roots` refusal in `GET /:from/diff/:to` copies the root check, message format ('roots: '<id>' is not a page root (page roots: [...])') and hint of `validateDiffFilters` in src/server/mcp/release-tools/index.ts:426 by hand. That function is the documented single place for the `release_diff` filter rules, and the comment here says 'same refusal as `release_diff`'. Two copies of one error contract drift the first time either is touched (e.g. the empty-array or unknown-prefix wording). Export the root check (or a small `refuseNonPageRoots(roots, pageRoots)` helper) from where `validateDiffFilters` lives and call it from both channels."
+      ,
+      "portion": "u05-releases-root/p5-l2-d"
+    },
+    {
+      "id": "rev-0012",
+      "file": "src/server/workspace/root-registry-runtime.test.ts",
+      "line": 434,
+      "blocking": false,
+      "reason": "This makes rev-0003/rev-0005 worse (still unanswered in decisions.md). The new [ac:ac-zrodla-zdarzen-korzeni-entities-i-rel] test repeats, almost verbatim, the raw-text scans of the u04 m29idx001 test just above it. It reads entity-store.ts, entity-indexer.ts, release-store.ts and release-indexer.ts against `/mountSource\\(/` and `/chokidar|fs\\.watch\\(/`, and project-context.ts against a `mountSource({ source: ... })` regex plus `toContain('await mountRegistryRoots(')`. The file now holds two copies of the same brittle scan, and a helper-extracted or renamed mount silently passes both. The behavioural half (registry hook mounts `entities` and `releases` at their fixed dirs, nothing mounted before it) already pins the criterion. Drop the scans here, or move one shared copy to tests/integration/architecture/."
+      ,
+      "portion": "u05-releases-root/p9-l13"
+    }
+  ]
+}

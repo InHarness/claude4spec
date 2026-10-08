@@ -61,7 +61,7 @@ This branch already carries an implementation of the whole window, made in one p
 **Never run tests in this build**: no `vitest`, no `npm test`, no `npm run test:*`, no Playwright, no e2e — not filtered, not single files. The whole suite runs once, at system verification, in an env-runner environment ordered by the orchestrator.
 
 - Implementer: write and update tests, but do not run them. After code changes run `npm run typecheck` (allowed — it is a compile check, not a test) and leave it clean.
-- Verifier (portion and unit scope): verification is **static**. Find the test by slug, read its body, judge the assertion: `covered` (found, asserts what the title names), `uncovered` (no test carries the slug), `test-not-verifying` (found, asserts something else or nothing — quote it). Use `test-fails` only when the test, read against the current code, cannot pass (cite the code path that contradicts it). Instead of the full suite at unit scope: run `npm run typecheck`; a failure is `test-fails` against `regression` with its output tail as evidence.
+- Verifier (unit scope): verification is **static**. Find the test by slug, read its body, judge the assertion: `covered` (found, asserts what the title names), `uncovered` (no test carries the slug), `test-not-verifying` (found, asserts something else or nothing — quote it). Use `test-fails` only when the test, read against the current code, cannot pass (cite the code path that contradicts it). Instead of the full suite at unit scope: run `npm run typecheck`; a failure is `test-fails` against `regression` with its output tail as evidence.
 - `release.json` → `build.tests` carries no runnable command on purpose.
 
 ### Repo rules

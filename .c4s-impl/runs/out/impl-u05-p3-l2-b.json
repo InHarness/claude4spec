@@ -1,0 +1,12 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.8",
+  "unit": "u05-releases-root",
+  "portion": "u05-releases-root/p3-l2-b",
+  "claimed": ["section:m17bndal1", "section:m17reldisk", "section:m17reldiff"],
+  "deviations": ["dev-0005"],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

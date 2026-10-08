@@ -20,6 +20,7 @@ import type { ProjectContext } from './project-context.js';
 import type { ProjectRecord } from './types.js';
 import { bindRegistryReactions, mountRegistryRoots } from './root-registry-runtime.js';
 import { RootSet } from '../discovery/roots.js';
+import { ReleaseFileStore } from '../services/release-store.js';
 
 /**
  * 2.1.8 — the build hook of the L13 implementor (M02), run while M31 builds a
@@ -367,5 +368,103 @@ describe('2.1.8 — root-registry runtime per ProjectContext (M02 m02multidir, L
     }
     const build = fs.readFileSync(path.join(import.meta.dirname, 'project-context.ts'), 'utf8');
     expect(build).not.toMatch(/mountSource\(\{\s*source:\s*(ENTITIES_SOURCE|RELEASES_SOURCE)/);
+  });
+
+  it('M29 m29idx001: the L13 implementor mounts the `releases` root (fixed `.claude4spec/releases`) and binds m29-release-cache there because the `releases` kind selects it — json `<slug>.json` only, input rootId `releases`, cache key = slug from the path', async () => {
+    const cwd = tmp();
+    const w = runtime().scoped('context:m29-releases');
+    const registry = new RootRegistry(USER_ROOTS);
+    const root = registry.get('releases')!;
+    expect(root.kind).toBe('releases');
+    expect(root.dir).toBe('.claude4spec/releases');
+    expect(KIND_DECLARATIONS.releases.reactions).toContain('m29-release-cache');
+    const mounted = await mountRegistryRoots({ cwd, registry, userRoots: USER_ROOTS, w });
+    const releasesSource = mounted.sourceByRootId.get('releases')!;
+    expect(w.isMounted(releasesSource)).toBe(true);
+
+    const seen: Array<[string, string]> = [];
+    const releaseIndexer: ReactionHandler = {
+      onChange: (_s, _src, rel, _o, input) => void seen.push([input.rootId, rel]),
+      onUnlink: () => {},
+    };
+    const binder = new ReactionBinder(w, {
+      ...coreCtx([]),
+      releaseIndexer: releaseIndexer as unknown as WatchSubscriber,
+    } as CoreReactionContext);
+    bindRegistryReactions(registry, mounted.sourceByRootId, binder);
+    expect(binder.isBound('m29-release-cache', releasesSource)).toBe(true);
+    for (const r of registry.list()) {
+      if (r.id === 'releases') continue;
+      expect(binder.isBound('m29-release-cache', mounted.sourceByRootId.get(r.id)!), r.id).toBe(false);
+    }
+
+    // A release metadata record reaches the cache; other files of the source are skipped.
+    const dir = path.join(cwd, root.dir);
+    fs.writeFileSync(path.join(dir, '2-1-8.json'), '{}');
+    fs.writeFileSync(path.join(dir, 'notes.md'), '# not a release\n');
+    for (const rel of ['2-1-8.json', 'notes.md']) await w.flush(releasesSource, rel);
+    expect(seen).toEqual([['releases', '2-1-8.json']]);
+    // The cache keys on the slug derived from the path.
+    const store = new ReleaseFileStore(cwd, root.dir, { suppress: () => {} });
+    expect(store.parseRelPath('2-1-8.json')).toBe('2-1-8');
+    expect(store.parseRelPath('notes.md')).toBeNull();
+  });
+});
+
+describe('2.1.8 — event sources of the `entities` and `releases` roots (M02 m02l13001, L13)', () => {
+  it('[ac:ac-zrodla-zdarzen-korzeni-entities-i-rel] the L13 implementor mounts the `entities` and `releases` sources (through the registry build hook), and no entity-projection module mounts one', async () => {
+    const cwd = tmp();
+    const w = runtime().scoped('context:sources');
+    const registry = new RootRegistry(USER_ROOTS);
+    // Nothing is mounted before the implementor's build hook runs.
+    expect(w.isMounted('entities')).toBe(false);
+    expect(w.isMounted('releases')).toBe(false);
+    const mounted = await mountRegistryRoots({ cwd, registry, userRoots: USER_ROOTS, w });
+    // Both are registry roots of their own kind, at the fixed dirs, and the hook mounted their sources.
+    for (const id of ['entities', 'releases'] as const) {
+      const root = registry.get(id)!;
+      expect(root.kind).toBe(id);
+      expect(root.dir).toBe(`.claude4spec/${id}`);
+      expect(mounted.sourceByRootId.get(id)).toBe(id);
+      expect(w.isMounted(id)).toBe(true);
+      expect(fs.existsSync(path.join(cwd, root.dir))).toBe(true);
+    }
+    // The entity-projection modules (M29 store/indexers) never mount or watch a source themselves …
+    for (const file of ['entity-store.ts', 'entity-indexer.ts', 'release-store.ts', 'release-indexer.ts']) {
+      const src = fs.readFileSync(path.join(import.meta.dirname, '..', 'services', file), 'utf8');
+      expect(src, file).not.toMatch(/mountSource\(/);
+      expect(src, file).not.toMatch(/\bchokidar\b|fs\.watch\(/);
+    }
+    // … and the context build has no hand-made mount of either source: its only
+    // registry mounts are the implementor's hook.
+    const build = fs.readFileSync(path.join(import.meta.dirname, 'project-context.ts'), 'utf8');
+    expect(build).not.toMatch(/mountSource\(\{\s*source:\s*(ENTITIES_SOURCE|RELEASES_SOURCE|'entities'|'releases')/);
+    expect(build).toContain('await mountRegistryRoots(');
+  });
+
+  it('[ac:ac-zmiana-pliku-w-dowolnym-korzeniu-reje] a file change in ANY registry root — entities and releases included — emits file:changed carrying that root\'s id', async () => {
+    const cwd = tmp();
+    const w = runtime().scoped('context:file-changed');
+    const registry = new RootRegistry(USER_ROOTS);
+    const mounted = await mountRegistryRoots({ cwd, registry, userRoots: USER_ROOTS, w });
+    const events: WsEvent[] = [];
+    bindRegistryReactions(registry, mounted.sourceByRootId, new ReactionBinder(w, coreCtx(events)));
+
+    // One file per registry root, each matching an entry of its kind's file map.
+    const fileFor = (kind: string): string =>
+      kind === 'entities' ? 'endpoint/e.json' : kind === 'releases' ? '2-1-8.json' : 'doc.md';
+    const expected: Array<[string, string]> = [];
+    for (const root of registry.list()) {
+      const rel = fileFor(root.kind);
+      const abs = path.join(cwd, root.dir, rel);
+      fs.mkdirSync(path.dirname(abs), { recursive: true });
+      fs.writeFileSync(abs, rel.endsWith('.json') ? '{}' : '# Doc\n');
+      await w.flush(mounted.sourceByRootId.get(root.id)!, rel);
+      expected.push([root.id, rel]);
+    }
+    expect(registry.list().map((r) => r.id)).toEqual(
+      expect.arrayContaining(['pages', 'adr', 'plans', 'briefs', 'patches', 'entities', 'releases']),
+    );
+    expect(fileChanged(events)).toEqual(expected);
   });
 });

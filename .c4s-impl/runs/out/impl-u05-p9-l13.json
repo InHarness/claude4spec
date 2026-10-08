@@ -1,0 +1,11 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.8",
+  "unit": "u05-releases-root",
+  "portion": "u05-releases-root/p9-l13",
+  "claimed": ["ac-zrodla-zdarzen-korzeni-entities-i-rel", "ac-zmiana-pliku-w-dowolnym-korzeniu-reje", "section:m02l13001", "section:l13model0", "section:m02multidir"],
+  "deviations": [],
+  "stubsOpened": [],
+  "stubsClosed": []
+}

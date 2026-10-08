@@ -1,0 +1,18 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "portion", "id": "u05-releases-root/p7-l7" },
+  "release": "2.1.8",
+  "rows": [
+    {
+      "slug": "section:m29idx001",
+      "level": 2,
+      "status": "covered",
+      "evidence": "M29 mounts no source: project-context.ts:476 mountRegistryRoots mounts every registry root (root-registry-runtime.ts:121-130, sourceNameFor releases->RELEASES_SOURCE sources.ts:53-54); project-context.ts:653 only constructs ReleaseIndexerService (no mountSource on ENTITIES/RELEASES_SOURCE, guarded by root-registry-runtime.test.ts:368-370). Binding chosen by kind: root-kinds.ts:174-182 releases {fileMap '*.json' json, reactions ['m29-release-cache']}; bindRegistryReactions root-registry-runtime.ts:168-179 binds with input {rootId}; ReactionBinder filters by kind file map (fs/reactions.ts:130-145). Contract: core-reactions.ts:166-175 id m29-release-cache, phase projection, accepts ['json'], no requires/gate; cache key slug from path release-store.ts:86-90, indexer release-indexer.ts:93-112. Projection mapping project-context.ts:581. Test root-registry-runtime.test.ts:373-411 asserts kind dir '.claude4spec/releases', KIND_DECLARATIONS.releases.reactions contains 'm29-release-cache', binder.isBound only on releases source, `expect(seen).toEqual([['releases', '2-1-8.json']])` (notes.md skipped, rootId input 'releases'), parseRelPath('2-1-8.json')==='2-1-8'; consistent with current code. Remaining `releasesDir` mentions are legacy-config migration (config.ts:961) and comments only. npm run typecheck clean."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "> tsc --noEmit (no errors)"
+  }
+}

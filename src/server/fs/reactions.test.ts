@@ -316,7 +316,7 @@ describe('2.1.8 — page reactions as named definitions (M08 j5vqicfm, M14 1z265
 });
 
 describe('2.1.8 — the base reaction m02-file-changed', () => {
-  it('[ac:ac-zmiana-pliku-w-dowolnym-korzeniu-reje] a change in ANY registry root — entities and releases included — emits file:changed with that root id', async () => {
+  it('a change on any source bound with m02-file-changed — entities and releases included — emits file:changed with the binding\'s root id', async () => {
     const r = runtime();
     const w = r.scoped('context:p1');
     const events: WsEvent[] = [];

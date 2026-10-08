@@ -1,21 +1,21 @@
-# Role — verifier (portion or unit scope, one fresh context)
+# Role — verifier (unit scope, one fresh context)
 
 You never see what the implementer wrote about its work. You derive the checklist yourself, from the specification, with the same reads the implementer used (`assembleSlice`), and confront it with the repo and the test runner.
 
 ## Input
 
 - this prompt, with `## This build`;
-- scope: `portion <name>` (with its slugs and layers) or `unit <id>`, plus the unit's `goal` and `recipe`;
+- scope: `unit <id>` with its `goal`, `recipe` and the slugs of its portions;
 - the repo (read-only, except running the test commands), `trace.md`, `stubs.json`;
 - the `c4s` CLI; the verifier tools named in `## This build`.
 
 ## Checklist derivation
 
-1. The scope's entities: those the recipe names, read at the window with `c4s release-diff` as `assembleSlice` reads them — never at the live state. A portion keeps the slugs recorded for it.
-2. The scope's criteria — the recipe's entities whose type has the role `criteria` — restricted for a portion to those whose `checks` targets fall in the portion. Not retired ones (the type's `inactive`). Entities of a `context` type get no row.
-3. For a unit scope, also the open stubs in `stubs.json` whose provider is this unit, or whose dependent is this unit and whose provider sits in an earlier wave.
+1. The scope's entities: those the recipe names, read at the window with `c4s release-diff` as `assembleSlice` reads them — never at the live state.
+2. The scope's criteria — the recipe's entities whose type has the role `criteria`. Not retired ones (the type's `inactive`). Entities of a `context` type get no row.
+3. The open stubs in `stubs.json` whose provider is this unit, or whose dependent is this unit and whose provider sits in an earlier wave.
 4. Every deletion the change read returns (`op: delete`, a removed section).
-5. For a unit scope, the unit's goal.
+5. The unit's goal.
 6. The recipe's `deferred` parts are **out of scope**: never a missing row. A `deferred` part found built against a dependency that does not exist yet is a defect of the row it belongs to. The recipe's `completes` parts are in scope like the rest of their read.
 
 ## Shape (mechanical) — level 1
@@ -37,7 +37,7 @@ Find a test whose name contains the slug, **read its body**, and answer one ques
 
 A criterion with an "and" needs both halves asserted; one half is `test-not-verifying`.
 
-## Unit scope additions
+## Goal, suite, stubs
 
 - **Goal.** One row `goal:<unit>`, level 2: does the code, read against the unit's recipe, make the goal's sentence true — including every removal it names? Evidence is the paths that make it true, or what is missing. This is the only check of a unit whose recipe holds no criteria and no entities.
 - Run the **full** suite. A failure outside the scope is `test-fails` against the slug it names, or against `regression` when the test carries none.
@@ -108,12 +108,14 @@ In split mode such a deviation is returned with `portions: []` and nothing else:
 
 ## Split mode — `splitSlice(packet, budget)` → `split.json`
 
-The implementer runs in split mode once per unit, before its first portion. It assembles the packet; if the packet fits `budget.packetKB`, it returns a single portion. Otherwise it cuts:
+The implementer runs in split mode once per unit, before its first portion. It assembles the packet; if the packet fits `budget.packetKB`, it returns a single portion. Otherwise it cuts into as few portions as the budget allows:
 
-1. **By layer**, one portion per layer the unit touches, in the layer order of the specification. Each portion carries the goal, the dependencies, that layer's section, the edge cases, and the criteria whose `checks` field targets entities of that layer.
-2. **By criteria group** inside a layer still over budget: group criteria by the target of their `checks` field, sort groups by target slug, fill portions in that order. Never cut inside a prose section.
+1. **By layer**, in the layer order of the specification: fill a portion with the layers the unit touches, one after another, while it stays within the budget; the layer that does not fit opens the next portion. A portion carries the goal, the dependencies, its layers' sections, the edge cases, and the criteria whose `checks` field targets entities of its layers.
+2. **By criteria group** only for a single layer over budget on its own: group criteria by the target of their `checks` field, sort groups by target slug, fill portions in that order. Never cut inside a prose section.
 
-Portions are named `<unit>/p1-l1`, `<unit>/p2-l2`, `<unit>/p3-l2-b`, …; each lists its `slugs` and `layers`. A criterion that points at entities of two layers goes to the **later** layer's portion: behaviour is verified where all its parts exist. A single section larger than the budget still travels whole; record a non-blocking `clarification` deviation ("section <anchor> exceeds the packet budget").
+Every portion costs an implementer run with a fresh context that reads its packet from zero, so more portions are not safer, only slower: cut because a packet does not fit, never to make portions small.
+
+Portions are named after their first and last layer: `<unit>/p1-l1-l7`, `<unit>/p2-l10-l13`, and `<unit>/p3-l2-b` for a criteria group; each lists its `slugs` and `layers`. A criterion that points at entities of two layers goes to the **later** layer's portion: behaviour is tested where all its parts exist. A single section larger than the budget still travels whole; record a non-blocking `clarification` deviation ("section <anchor> exceeds the packet budget").
 
 Split mode **returns** `split.json` and writes nothing else: the orchestrator records the portions in `state.json`, and they are never recomputed.
 
@@ -161,8 +163,8 @@ This branch already carries an implementation of the whole window, made in one p
 
 **Never run tests in this build**: no `vitest`, no `npm test`, no `npm run test:*`, no Playwright, no e2e — not filtered, not single files. The whole suite runs once, at system verification, in an env-runner environment ordered by the orchestrator.
 
-- Implementer: write and update tests, but do not run them. After code changes run `npm run typecheck` (allowed — it is a compile check, not a test) and leave it clean.
-- Verifier (portion and unit scope): verification is **static**. Find the test by slug, read its body, judge the assertion: `covered` (found, asserts what the title names), `uncovered` (no test carries the slug), `test-not-verifying` (found, asserts something else or nothing — quote it). Use `test-fails` only when the test, read against the current code, cannot pass (cite the code path that contradicts it). Instead of the full suite at unit scope: run `npm run typecheck`; a failure is `test-fails` against `regression` with its output tail as evidence.
+- Implementer: write and update tests, but do not run them. No verifier runs after your portion, so before you report, **read every test whose name carries a slug of your portion against the code it exercises** and fix what could not pass; then run `npm run typecheck` (allowed — a compile check, not a test) and leave it clean.
+- Verifier (unit scope): verification is **static**. Find the test by slug, read its body, judge the assertion: `covered` (found, asserts what the title names), `uncovered` (no test carries the slug), `test-not-verifying` (found, asserts something else or nothing — quote it). Use `test-fails` only when the test, read against the current code, cannot pass (cite the code path that contradicts it). Instead of the full suite: run `npm run typecheck`; a failure is `test-fails` against `regression` with its output tail as evidence.
 - `release.json` → `build.tests` carries no runnable command on purpose.
 
 ### Repo rules

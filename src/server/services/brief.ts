@@ -89,9 +89,9 @@ export interface BriefCreateOpts {
   content?: string;
   suffix?: string;
   /**
-   * 0.1.96: brief scope — releasable root ids this brief covers. Written verbatim
+   * 0.1.96: brief scope — `pages` root ids this brief covers. Written verbatim
    * to immutable `roots` frontmatter and added as a slug segment. Omitted or empty
-   * ⇒ whole-release scope (all releasable roots) — no `roots` frontmatter key and
+   * ⇒ whole-release scope (all `pages` roots) — no `roots` frontmatter key and
    * no slug segment.
    */
   roots?: string[];
@@ -467,7 +467,7 @@ export class BriefService {
       'user',
       undefined,
       this.deps.briefsSerializer,
-      'brief',
+      BRIEF_ROOT_MARKER,
     );
     // Re-sync indexer immediately (faster than waiting for watcher debounce —
     // the new brief should appear in `/briefs` list right after POST returns).
@@ -555,7 +555,7 @@ export class BriefService {
       opts.changedBy,
       undefined,
       this.deps.briefsSerializer,
-      'brief',
+      BRIEF_ROOT_MARKER,
       opts.changeSummary,
     );
     await this.deps.frontmatterIndexer.indexPage(BRIEF_ROOT_MARKER, opts.path);
@@ -588,7 +588,7 @@ export class BriefService {
       opts.changedBy,
       undefined,
       this.deps.briefsSerializer,
-      'brief',
+      BRIEF_ROOT_MARKER,
       summaries.length > 0 ? summaries.join('; ') : null,
     );
     await this.deps.frontmatterIndexer.indexPage(BRIEF_ROOT_MARKER, opts.path);

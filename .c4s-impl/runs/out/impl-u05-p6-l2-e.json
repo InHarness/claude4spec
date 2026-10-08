@@ -1,0 +1,12 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.8",
+  "unit": "u05-releases-root",
+  "portion": "u05-releases-root/p6-l2-e",
+  "claimed": ["section:feel2dvz", "section:m17open01"],
+  "deviations": [],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

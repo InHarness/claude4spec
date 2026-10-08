@@ -154,12 +154,12 @@ describe('ensureGitignore — 0.1.118 git.enabled bidirectional toggle', () => {
   // 0.1.118 code-review fix: releasesDir was previously never added to the
   // managed pattern set at all, contradicting config.ts's own doc comment
   // ("committed to git when git.enabled, local-only otherwise").
-  it('gitEnabled=false also gitignores the default releasesDir', () => {
+  it('gitEnabled=false also gitignores the `releases` root', () => {
     ensureGitignore(dir, { gitEnabled: false });
     expect(read()).toContain('.claude4spec/releases/');
   });
 
-  it('gitEnabled=true OMITS releasesDir too', () => {
+  it('gitEnabled=true OMITS the `releases` root too', () => {
     ensureGitignore(dir, { gitEnabled: true });
     expect(read()).not.toContain('.claude4spec/releases');
   });

@@ -90,7 +90,7 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
       fakeRawReader,
       fakeTagsService,
       fakePagesService,
-      // 0.2.101: `releasableRootIds` lost its `['pages']` default — the base
+      // 0.2.101: `pagesKindRootIds` lost its `['pages']` default — the base
       // root's identifier is the project's to choose, so the scope is passed in.
       () => null,
       process.cwd(),

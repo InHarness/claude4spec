@@ -184,6 +184,50 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
     expect(delta.entities).toEqual([]);
   });
 
+  it('m17reldiff: pathspecs are the dirs of the release-flag roots plus the `releases` root — never a non-release root', async () => {
+    const pagesDir = path.join(dir, 'pages');
+    const entitiesDir = path.join(dir, '.claude4spec', 'entities');
+    const plansDir = path.join(dir, '.claude4spec', 'plans');
+    for (const d of [pagesDir, entitiesDir, plansDir]) fs.mkdirSync(d, { recursive: true });
+    const { releaseService, releaseStore, gitService } = buildReleaseService(pagesDir);
+    // The registry's `release`-flagged roots: the `pages` root and the `entities` root.
+    releaseService.setReleaseFlagRootDirs([pagesDir, entitiesDir]);
+    const diffRefs = vi.spyOn(gitService, 'diffRefs');
+
+    fs.writeFileSync(path.join(pagesDir, 'a.md'), 'A v1');
+    fs.writeFileSync(path.join(plansDir, 'p.md'), 'plan v1');
+    const v1Id = Number(
+      db
+        .prepare(`INSERT INTO spec_release (name, slug, description, created_by, created_at) VALUES (?, ?, ?, ?, ?)`)
+        .run('v1', 'v1', '', 'user', new Date(0).toISOString()).lastInsertRowid,
+    );
+    releaseStore.write('v1', { name: 'v1', slug: 'v1', description: '', createdAt: new Date(0).toISOString(), createdBy: 'user', roots: ['pages'] });
+    await git(['add', '.'], dir);
+    await git(['commit', '-m', 'v1'], dir);
+
+    fs.writeFileSync(path.join(pagesDir, 'a.md'), 'A v2');
+    fs.writeFileSync(path.join(plansDir, 'p.md'), 'plan v2');
+    const v2Id = Number(
+      db
+        .prepare(`INSERT INTO spec_release (name, slug, description, created_by, created_at) VALUES (?, ?, ?, ?, ?)`)
+        .run('v2', 'v2', '', 'user', new Date(1).toISOString()).lastInsertRowid,
+    );
+    releaseStore.write('v2', { name: 'v2', slug: 'v2', description: '', createdAt: new Date(1).toISOString(), createdBy: 'user', roots: ['pages'] });
+    await git(['add', '.'], dir);
+    await git(['commit', '-m', 'v2'], dir);
+
+    const delta = await releaseService.getReleaseDiff(v1Id, v2Id);
+
+    expect(diffRefs).toHaveBeenCalledTimes(1);
+    expect(diffRefs.mock.calls[0]![2]).toEqual([
+      fs.realpathSync(pagesDir),
+      fs.realpathSync(entitiesDir),
+      fs.realpathSync(releaseStore.root),
+    ]);
+    // The plans root carries no `release` flag: its change never reaches the diff.
+    expect(delta.pages.map((p) => p.path)).toEqual(['a.md']);
+  });
+
   it('resolves a renamed page (diffRefs-flattened D+A pair) to clean deleted/created entries, not modified', async () => {
     const pagesDir = path.join(dir, 'pages');
     fs.mkdirSync(pagesDir, { recursive: true });

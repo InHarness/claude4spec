@@ -1,0 +1,31 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "portion", "id": "u05-releases-root/p2-l2" },
+  "release": "2.1.8",
+  "rows": [
+    {
+      "slug": "ac-korzen-uzytkownika-z-releasable-false-w",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/services/release-unreleased-diff.test.ts:526 '[ac:ac-korzen-uzytkownika-z-releasable-false-w] assigns the pages of a root whose config entry carries `releasable: false` to the new release' — config.json with { id:'notes', builtin:false, releasable:false }, release scope built as project-context does (RootRegistry(readConfig(cwd).roots).pages(), expect ['pages','notes']), createRelease, then expect(rows).toEqual([{rootId:'briefs',release_id:null},{rootId:'notes',release_id:rel.id},{rootId:'pages',release_id:rel.id}]). Production path matches: src/server/workspace/project-context.ts:1036-1037 (releasableRootIds = rootRegistry.pages()), src/server/services/release.ts:564 → src/server/services/file-version.ts:307-316 (UPDATE ... WHERE release_id IS NULL AND rootId IN (<pages roots>)); src/server/roots/registry.ts:49 pages() = byKind('pages'), no per-root flag. Typecheck clean."
+    },
+    {
+      "slug": "section:m27h3z7a",
+      "level": 2,
+      "status": "covered",
+      "evidence": "Window change is wording only ('net-new capability' → 'nowej operacji w L2'); behaviour unchanged and present: getCurrentSnapshot() src/server/services/release.ts:774 (unbounded release_id, version-tables-latest), getUnreleasedDiff(from, opts) src/server/services/release.ts:1391-1408 (git-anchored fast path tryGitAnchoredUnreleasedDiff, SQL fallback diff(release snapshot, current) via computeDelta returning RawDelta)."
+    },
+    {
+      "slug": "section:hybasevj",
+      "level": 2,
+      "status": "covered",
+      "evidence": "Step 3: src/server/services/release.ts:564 assignToRelease(releaseId, releasableRootIds) where releasableRootIds = rootRegistry.pages() ids (src/server/workspace/project-context.ts:1036-1037) → file-version.ts:313-316; plans/briefs/patches rows stay NULL (asserted at release-unreleased-diff.test.ts:526 for 'briefs'). Step 4: computeCountBreakdown release.ts:~2302-2316 counts file_version over the pages-kind roots. Metadata file `<slug>.json` in the `releases` root: release.ts:576-578 → ReleaseFileStore (root = rootRegistry.system('releases').dir, project-context.ts:327,645) writing through RecordStore JSON adapter writeSync with self-write suppression (release-store.ts:110-114, record-store.ts:443); spec_release row INSERTed in the transaction before the file write, so the cache is current before createRelease returns. Git staging derived from the root registry: git.ts resolveStagingTargets (~207-230) = every pages root dir + SYSTEM_ROOTS dirs (entities, releases, plans, briefs, patches) + config.json, no releasable filter. Validation (trim, RELEASE_NAME_RESERVED, RELEASE_DESCRIPTION_TOO_LONG) unchanged at release.ts:527-530,169-178. Only leftover `releasesDir` mentions are code comments (release.ts:165,183,431,613,707; git.ts:627-629) — no `releasesDir` key in use."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "> @inharness-ai/c4s-plugin-ac@0.2.80 typecheck\n> tsc --noEmit (all workspaces clean)"
+  }
+}

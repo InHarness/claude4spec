@@ -44,7 +44,7 @@ function dirPatternSpec(dir: string): PatternSpec {
   return {
     canonical: withSlash,
     // A broad existing ignore of the whole `.claude4spec/` dir already covers
-    // a default-location briefsDir/patchesDir/releasesDir — never append a
+    // the system roots under `.claude4spec/` (briefs, patches, releases, ...) — never append a
     // redundant line.
     equivalents: [withSlash, dir, '.claude4spec/', '.claude4spec'],
   };

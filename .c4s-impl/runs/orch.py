@@ -4,9 +4,10 @@
 #   orch.py start-unit <unit>            -> in-progress, startCommit=HEAD (+ wave startCommit)
 #   orch.py split <unit> <split.json>    -> record portions
 #   orch.py start-portion <portion>      -> portion in-progress, write build scope; prints scope path
-#   orch.py verdict <portion> <verdict.json>  -> apply a portion verdict
+#   orch.py implemented <portion> <status.json> -> apply an implementer run (implemented | partial | blocked)
 #   orch.py unit-verdict <unit> <verdict.json> -> apply unit-scope verdict (reopen or ok)
-#   orch.py review <unit> <review.json>  -> apply review (verify or reopen)
+#   orch.py review <unit> <review.json>  -> apply review (VERIFIED -> unit-commit.sh squashes, or reopen)
+# protocol 2026-10-08: no portion verifier; one commit per unit (baseCommit..HEAD squashed at verify)
 import json, subprocess, sys, os
 
 P = '.c4s-impl/state.json'
@@ -78,14 +79,14 @@ if cmd == 'next':
     if not u['portions']:
         print('SPLIT', u['id']); sys.exit()
     for p in u['portions']:
-        if p['status'] != 'verified':
+        if p['status'] != 'implemented':
             print('PORTION', p['name'], p['status'], json.dumps(p.get('only', []))); sys.exit()
     print('UNIT-VERIFY', u['id'])
     sys.exit()
 
 if cmd == 'start-unit':
     u = unit(s, sys.argv[2]); h = head()
-    u['status'] = 'in-progress'; u['startCommit'] = h
+    u['status'] = 'in-progress'; u['startCommit'] = h; u['baseCommit'] = h
     w = next(w for w in s['waves'] if w['n'] == u['wave'])
     if not w.get('startCommit'):
         w['startCommit'] = h
@@ -93,13 +94,13 @@ if cmd == 'start-unit':
 
 elif cmd == 'split':
     u = unit(s, sys.argv[2]); sp = json.load(open(sys.argv[3]))
-    u['portions'] = [{'name': p['name'], 'layers': p.get('layers', []), 'slugs': p['slugs'], 'status': 'pending', 'rounds': 0, 'uncovered': [], 'only': [], **({'criteriaGroup': p['criteriaGroup']} if p.get('criteriaGroup') else {})} for p in sp['portions']]
+    u['portions'] = [{'name': p['name'], 'layers': p.get('layers', []), 'slugs': p['slugs'], 'status': 'pending', 'rounds': 0, 'partial': 0, 'uncovered': [], 'only': [], **({'criteriaGroup': p['criteriaGroup']} if p.get('criteriaGroup') else {})} for p in sp['portions']]
     save(s); print(len(u['portions']), 'portions')
 
 elif cmd == 'start-portion':
     u, p = portion(s, sys.argv[2])
     if p['status'] == 'in-progress':
-        print('ALREADY-IN-PROGRESS: verify next')
+        print('RESUMING an in-progress portion (a previous run stopped early)')
     p['status'] = 'in-progress'
     save(s)
     slug = u['id']
@@ -107,34 +108,38 @@ elif cmd == 'start-portion':
     if not os.path.exists(pk):
         pk = f".c4s-impl/packets/{slug}.md"
     print(scope(s, 'build', u, {'portion': {'name': p['name'], 'layers': p.get('layers', []), 'slugs': p['slugs'], 'packet': pk}, 'only': p.get('only', [])}))
-    print(scope(s, 'verify-portion', u, {'portion': {'name': p['name'], 'layers': p.get('layers', []), 'slugs': p['slugs']}, 'only': p.get('only', [])}))
 
-elif cmd == 'verdict':
-    u, p = portion(s, sys.argv[2]); v = json.load(open(sys.argv[3]))
-    prev = len(p.get('uncovered', [])) if p['rounds'] else None
-    b = bad(v['rows'])
-    p['uncovered'] = [r['slug'] for r in b]
-    p['only'] = [{'slug': r['slug']} for r in b]
-    p['rounds'] += 1
-    if not b:
-        p['status'] = 'verified'
-    else:
-        p['status'] = 'pending'
-        if p['rounds'] >= STUCK and prev is not None and len(b) >= prev:
+elif cmd == 'implemented':
+    u, p = portion(s, sys.argv[2])
+    st = json.load(open(sys.argv[3])) if len(sys.argv) > 3 and os.path.exists(sys.argv[3]) else None
+    if st and st.get('status') == 'waiting':
+        u['status'] = 'blocked'; u['blockedBy'] = (st.get('deviations') or ['waiting'])[0]
+        save(s); print('BLOCKED', u['blockedBy']); sys.exit()
+    if st is None or st.get('stoppedEarly') or st.get('status') == 'error':
+        p['partial'] = p.get('partial', 0) + 1
+        if p['partial'] >= STUCK:
             u['status'] = 'blocked'; u['blockedBy'] = 'stuck'
-            open('.c4s-impl/gate', 'w').write(f'stuck: {p["name"]}\n')
-    save(s); print(p['status'], f"{len(v['rows']) - len(b)}/{len(v['rows'])}", [r['slug'] for r in b])
+            open('.c4s-impl/gate', 'w').write(f'stuck: {p["name"]} stopped early {p["partial"]} times\n')
+        save(s); print('PARTIAL', p['partial']); sys.exit()
+    p['status'] = 'implemented'; p['rounds'] += 1; p['partial'] = 0; p['only'] = []
+    save(s); print(f"round {p['rounds']}")
 
 elif cmd == 'unit-verdict':
     u = unit(s, sys.argv[2]); v = json.load(open(sys.argv[3]))
     b = bad(v['rows'])
     u.setdefault('rounds', {}); u['rounds']['unit'] = u['rounds'].get('unit', 0) + 1
+    prev = u.get('lastUncovered'); u['lastUncovered'] = len(b)
     if not b:
-        save(s); print('OK', f"{len(v['rows'])}/{len(v['rows'])}"); sys.exit()
+        cov = sum(1 for r in v['rows'] if r['status'] == 'covered')
+        save(s); print('OK', f"{cov}/{len(v['rows'])}" + (f" + {len(v['rows']) - cov} accepted by deviation" if cov < len(v['rows']) else '')); sys.exit()
+    if u['rounds']['unit'] >= STUCK and prev is not None and len(b) >= prev:
+        u['status'] = 'blocked'; u['blockedBy'] = 'stuck'
+        open('.c4s-impl/gate', 'w').write(f'stuck: {u["id"]} unit verify did not shrink ({len(b)} open)\n')
+        save(s); print('STUCK', [r['slug'] for r in b]); sys.exit()
     # reopen the portions owning the failed slugs; goal/regression/stub rows go to the last portion
     for r in b:
         own = next((p for p in u['portions'] if r['slug'] in p['slugs']), u['portions'][-1])
-        own['status'] = 'pending'; own.setdefault('only', []).append({'slug': r['slug']})
+        own['status'] = 'pending'; own.setdefault('only', []).append({'slug': r['slug']}); own.setdefault('uncovered', []).append(r['slug'])
     u['startCommit'] = head()
     save(s); print('REOPEN', [r['slug'] for r in b])
 

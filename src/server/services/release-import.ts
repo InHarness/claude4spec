@@ -368,7 +368,7 @@ export function buildClonePatch(
     agentPatch.disableDirectFilesystemAccess = bundleConfig.agent.disableDirectFilesystemAccess;
   }
   if (Object.keys(agentPatch).length > 0) patch.agent = agentPatch;
-  // 0.1.96: migrate the bundle's releasable roots into the new cwd. A v1
+  // 0.1.96: migrate the bundle's `pages` roots into the new cwd. A v1
   // bundle carries `pagesDir` (no `roots[]`) → map it to the built-in 'pages'
   // root via the v3→v4 path so the cloned project is v4-shaped.
   const restoredRoots = resolveBundleRoots(bundleConfig);

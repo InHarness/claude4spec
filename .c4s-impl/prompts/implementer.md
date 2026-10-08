@@ -13,7 +13,7 @@ Scope: `unit <id>`, `mode: split`. Assemble the unit's packet (`assembleSlice` b
 - this prompt, with `## This build`;
 - the scope: unit `id`, `goal`, `recipe`; the portion name, its slugs and layers; `only`; the state dir;
 - the portion packet at `.c4s-impl/packets/<unit>-<portion>.md` — assemble it first if absent (`assembleSlice`);
-- `only` — the items the previous round left open: `{ slug }` (a verifier row) or `{ finding }` (a blocking review finding, its text in `.c4s-impl/review/<unit>.json`). Empty means the whole portion;
+- `only` — the items the previous round left open: `{ slug }` (a unit-verifier row) or `{ finding }` (a blocking review finding, its text in `.c4s-impl/review/<unit>.json`). Empty means the whole portion;
 - `trace.md`, `stubs.json`, `decisions.md` — read, then append;
 - the `c4s` CLI: `c4s release-diff` at the window for anything the packet did not carry; `c4s ask` for a question the specification might answer — its answer describes the live state, so a difference from the window is a deviation, not an instruction.
 
@@ -32,6 +32,8 @@ Make every slug in scope hold in code, and the unit's goal true, so that a verif
 
 Order inside the portion: data structures before the code that uses them; handlers before their tests; contract tests before behaviour tests.
 
+No verifier runs after you: the unit verifier reads the whole unit once all its portions are implemented. So before you report, run the filtered test command for every criterion slug in scope and read each failing one through. A portion may also have been started by a run that stopped early — read the repo first and finish what is missing, rather than building it a second time.
+
 ### Prohibitions
 
 - Never edit outside the repo. Never edit the specification, the brief, `release.json`, `state.json`, or anything under `.c4s-impl/prompts/` or `.c4s-impl/schemas/`.
@@ -43,7 +45,7 @@ Order inside the portion: data structures before the code that uses them; handle
 
 ### Output
 
-JSON per `iteration-status.json` with `role: implementer`: the slugs you believe covered (`claimed`), deviations written, stubs opened and closed, and `status` (`progressed`; `waiting` on a blocking deviation; `error` on a broken toolchain). The claim list is informational — the verifier derives its own.
+JSON per `iteration-status.json` with `role: implementer`: the slugs you believe covered (`claimed`), deviations written, stubs opened and closed, and `status` (`progressed`; `waiting` on a blocking deviation; `error` on a broken toolchain); `stoppedEarly: true` when you stopped before finishing the portion. The claim list is informational — the verifier derives its own.
 
 # Reading the specification — the unit's recipe, `assembleSlice` and the split
 
@@ -106,12 +108,14 @@ In split mode such a deviation is returned with `portions: []` and nothing else:
 
 ## Split mode — `splitSlice(packet, budget)` → `split.json`
 
-The implementer runs in split mode once per unit, before its first portion. It assembles the packet; if the packet fits `budget.packetKB`, it returns a single portion. Otherwise it cuts:
+The implementer runs in split mode once per unit, before its first portion. It assembles the packet; if the packet fits `budget.packetKB`, it returns a single portion. Otherwise it cuts into as few portions as the budget allows:
 
-1. **By layer**, one portion per layer the unit touches, in the layer order of the specification. Each portion carries the goal, the dependencies, that layer's section, the edge cases, and the criteria whose `checks` field targets entities of that layer.
-2. **By criteria group** inside a layer still over budget: group criteria by the target of their `checks` field, sort groups by target slug, fill portions in that order. Never cut inside a prose section.
+1. **By layer**, in the layer order of the specification: fill a portion with the layers the unit touches, one after another, while it stays within the budget; the layer that does not fit opens the next portion. A portion carries the goal, the dependencies, its layers' sections, the edge cases, and the criteria whose `checks` field targets entities of its layers.
+2. **By criteria group** only for a single layer over budget on its own: group criteria by the target of their `checks` field, sort groups by target slug, fill portions in that order. Never cut inside a prose section.
 
-Portions are named `<unit>/p1-l1`, `<unit>/p2-l2`, `<unit>/p3-l2-b`, …; each lists its `slugs` and `layers`. A criterion that points at entities of two layers goes to the **later** layer's portion: behaviour is verified where all its parts exist. A single section larger than the budget still travels whole; record a non-blocking `clarification` deviation ("section <anchor> exceeds the packet budget").
+Every portion costs an implementer run with a fresh context that reads its packet from zero, so more portions are not safer, only slower: cut because a packet does not fit, never to make portions small.
+
+Portions are named after their first and last layer: `<unit>/p1-l1-l7`, `<unit>/p2-l10-l13`, and `<unit>/p3-l2-b` for a criteria group; each lists its `slugs` and `layers`. A criterion that points at entities of two layers goes to the **later** layer's portion: behaviour is tested where all its parts exist. A single section larger than the budget still travels whole; record a non-blocking `clarification` deviation ("section <anchor> exceeds the packet budget").
 
 Split mode **returns** `split.json` and writes nothing else: the orchestrator records the portions in `state.json`, and they are never recomputed.
 
@@ -159,8 +163,8 @@ This branch already carries an implementation of the whole window, made in one p
 
 **Never run tests in this build**: no `vitest`, no `npm test`, no `npm run test:*`, no Playwright, no e2e — not filtered, not single files. The whole suite runs once, at system verification, in an env-runner environment ordered by the orchestrator.
 
-- Implementer: write and update tests, but do not run them. After code changes run `npm run typecheck` (allowed — it is a compile check, not a test) and leave it clean.
-- Verifier (portion and unit scope): verification is **static**. Find the test by slug, read its body, judge the assertion: `covered` (found, asserts what the title names), `uncovered` (no test carries the slug), `test-not-verifying` (found, asserts something else or nothing — quote it). Use `test-fails` only when the test, read against the current code, cannot pass (cite the code path that contradicts it). Instead of the full suite at unit scope: run `npm run typecheck`; a failure is `test-fails` against `regression` with its output tail as evidence.
+- Implementer: write and update tests, but do not run them. No verifier runs after your portion, so before you report, **read every test whose name carries a slug of your portion against the code it exercises** and fix what could not pass; then run `npm run typecheck` (allowed — a compile check, not a test) and leave it clean.
+- Verifier (unit scope): verification is **static**. Find the test by slug, read its body, judge the assertion: `covered` (found, asserts what the title names), `uncovered` (no test carries the slug), `test-not-verifying` (found, asserts something else or nothing — quote it). Use `test-fails` only when the test, read against the current code, cannot pass (cite the code path that contradicts it). Instead of the full suite: run `npm run typecheck`; a failure is `test-fails` against `regression` with its output tail as evidence.
 - `release.json` → `build.tests` carries no runnable command on purpose.
 
 ### Repo rules
