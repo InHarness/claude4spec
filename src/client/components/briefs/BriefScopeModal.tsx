@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Layers, X } from 'lucide-react';
 import type { Root } from '../../../shared/types.js';
 import type { RawDelta } from '../../../shared/entities.js';
+import { PAGES_KIND, registryList, type RegistryRoot } from '../../../shared/root-kinds.js';
 import { apiFetch, handle } from '../../lib/api-core.js';
 
 /**
@@ -15,14 +16,26 @@ export type BriefScope =
 
 type Count = number | null | 'loading';
 
+/**
+ * 2.1.8 (M21 `6e16sj44` / `m21m17ax`) — the scope positions of the modal: every
+ * root of kind `pages` in the root registry, the same set in mode (a) and (b).
+ * Asked of the registry BY KIND — no per-root flag, no id literal; a system root
+ * (`plans`, `briefs`, …) is never a scope target.
+ */
+export function briefScopeTargets(userRoots: readonly Root[]): RegistryRoot[] {
+  return registryList(userRoots).filter((r) => r.kind === PAGES_KIND);
+}
+
 interface FieldsProps {
   /** `null` = initial brief (no predecessor). Only used to probe changed-page counts. */
   fromReleaseName: string | null;
   toReleaseName: string;
-  /** `config.roots` — every page root is a scope target (2.1.8). */
+  /** `config.roots` — the user roots; the scope targets are the registry's `pages` roots ({@link briefScopeTargets}). */
   roots: Root[];
   /** Reports the current scope up on every mode/selection change. */
   onChange: (scope: BriefScope) => void;
+  /** Mode shown first — default `whole-release` (mode a). */
+  initialMode?: 'whole-release' | 'roots';
   /**
    * Override the per-root changed-page count probe. Defaults to a
    * `release_diff({ summaryOnly: true, roots: [id] })` REST call.
@@ -49,11 +62,12 @@ export function BriefScopeFields({
   roots,
   onChange,
   fetchChangedCount,
+  initialMode = 'whole-release',
 }: FieldsProps) {
-  // 2.1.8: every page root is a scope target (kind `pages`), with its own count.
-  const targets = roots;
+  // 2.1.8: every root of kind `pages` is a scope target, with its own count.
+  const targets = briefScopeTargets(roots);
 
-  const [mode, setMode] = useState<'whole-release' | 'roots'>('whole-release');
+  const [mode, setMode] = useState<'whole-release' | 'roots'>(initialMode);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [counts, setCounts] = useState<Record<string, Count>>({});
   // Entity changes are root-agnostic: every probe answers the same number, so it
@@ -70,7 +84,7 @@ export function BriefScopeFields({
     const probe =
       fetchChangedCount ??
       ((rootId: string) =>
-        defaultChangedCount(fromReleaseName, toReleaseName, rootId, (n) => {
+        probeChangedCount(fromReleaseName, toReleaseName, rootId, (n) => {
           entitiesReported = true;
           if (!cancelled) setEntityCount(n);
         }));
@@ -301,9 +315,10 @@ export function BriefScopeModal({
 /**
  * Default probe — `release_diff({ summaryOnly: true, roots: [rootId] })` via REST.
  * Returns the changed-page count for `rootId` between `from → to`, or `null` when
- * the diff cannot be computed.
+ * the diff cannot be computed. The entity changes (root-agnostic) are reported
+ * through `onEntities` — the same number for every root.
  */
-async function defaultChangedCount(
+export async function probeChangedCount(
   fromReleaseName: string | null,
   toReleaseName: string,
   rootId: string,

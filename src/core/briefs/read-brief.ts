@@ -5,7 +5,7 @@ import { collectBriefFiles } from './list-briefs.js';
 import { BriefFsError } from './types.js';
 import type { BriefReadResult } from './types.js';
 
-/** Rejects an absolute path or one that escapes briefsDir via `..`. */
+/** Rejects an absolute path or one that escapes the `briefs` root via `..`. */
 export function assertSafeRelPath(rel: string): void {
   if (path.isAbsolute(rel)) {
     throw new BriefFsError('INVALID_ARGS', `path must be relative to the briefs root, got absolute path '${rel}'`);

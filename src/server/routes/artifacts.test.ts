@@ -139,6 +139,50 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
     expect(res.body.error.code).toBe('UNKNOWN_ARTIFACT_KIND');
   });
 
+  it('[ac:ac-przy-odrzuconej-zmianie-immutable-pol] a refused immutable-field change names the field in the message; the code is the shared IMMUTABLE_FIELD for every kind', async () => {
+    await writeArtifact(
+      'brief',
+      'v1-to-v2.md',
+      { type: 'brief', from_release: 'v1', to_release: 'v2', generated_at: '2026-01-01T00:00:00.000Z', implemented: false },
+      '# Brief\n',
+    );
+    await writeArtifact(
+      'patch',
+      'v1-to-v2-drift.md',
+      { type: 'patch', brief: 'v1-to-v2.md', patch_kind: 'drift', created_at: '2026-01-02T00:00:00.000Z', created_by: 'implementer', applied: false },
+      '# Patch — drift\n',
+    );
+
+    const briefRoots = await request(app)
+      .patch('/api/artifacts/brief/v1-to-v2.md/frontmatter')
+      .send({ frontmatter: { roots: ['docs'] } });
+    const patchBrief = await request(app)
+      .patch('/api/artifacts/patch/v1-to-v2-drift.md/frontmatter')
+      .send({ frontmatter: { brief: 'other.md' } });
+    const detail = await request(app).get('/api/artifacts/brief/v1-to-v2.md');
+    const briefContent = await request(app)
+      .put('/api/artifacts/brief/v1-to-v2.md/content')
+      .send({
+        content: detail.body.data.content.replace('to_release: v2', 'to_release: v3'),
+        expectedHash: detail.body.data.hash,
+      });
+
+    const refusals = [
+      [briefRoots, 'roots'],
+      [patchBrief, 'brief'],
+      [briefContent, 'to_release'],
+    ] as const;
+    for (const [res, field] of refusals) {
+      expect(res.status, field).toBe(400);
+      // One code for every kind — no BRIEF_… / PATCH_… variant …
+      expect(res.body.error.code, field).toBe('IMMUTABLE_FIELD');
+      // … the refused field is told by the message.
+      expect(res.body.error.message, field).toContain(field);
+    }
+    expect(briefRoots.body.error.message).not.toContain('to_release');
+    expect(briefContent.body.error.message).not.toContain('roots');
+  });
+
   describe('brief', () => {
     beforeEach(async () => {
       await writeArtifact(

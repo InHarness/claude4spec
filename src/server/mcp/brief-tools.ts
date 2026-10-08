@@ -67,7 +67,7 @@ const EXPLICIT_BRIEF_ARG = {
   path: z
     .string()
     .describe(
-      'Path of the brief relative to `briefsDir`, e.g. `0-2-12-to-0-2-13.md`. Required: this connection has no thread, so there is no default brief. List the candidates with the brief artifact read operations.',
+      'Path of the brief relative to the briefs root (.claude4spec/briefs), e.g. `0-2-12-to-0-2-13.md`. Required: this connection has no thread, so there is no default brief. List the candidates with the brief artifact read operations.',
     ),
 };
 
@@ -118,7 +118,7 @@ export function buildBriefToolsServer(
    * In `explicit` mode the zod schema already marks `path` required, so a
    * client that omits it is rejected before the handler runs. This guard is for
    * what the schema cannot express — a present-but-empty string — and it fails
-   * the same way, naming the field, rather than resolving to `briefsDir` itself.
+   * the same way, naming the field, rather than resolving to the briefs root's directory itself.
    */
   const resolveBrief = (args: Record<string, unknown>): string => {
     if (!explicit) return ambientBriefPath!;
@@ -145,7 +145,7 @@ export function buildBriefToolsServer(
       'always allowed (a brief has no section index, so a window is the only way to',
       'resume). A brief over the response budget read WITHOUT `range` comes back',
       '`truncated: true` with a `truncationHint` naming the range to use.',
-      'Brief lives on disk under `briefsDir`; you do NOT have filesystem access',
+      'Brief lives on disk in the briefs root (.claude4spec/briefs); you do NOT have filesystem access',
       '(no Read/Write/Edit) — this tool is the only way to read brief content.',
       ...(explicit
         ? []
@@ -193,6 +193,12 @@ export function buildBriefToolsServer(
     )
     .min(1);
 
+  /**
+   * ASSUMPTION:dev-0011 — beside the entity's parameters (`action`, `content`,
+   * `anchor`, `heading`, `expectedHash`, `path`) the rendering keeps the
+   * differential `textEdits` shape and `changeSummary`, so `action`/`content` are
+   * optional; `path` is closed over in thread mode and required externally.
+   */
   const updateBrief = mcpTool(
     'update_brief',
     [

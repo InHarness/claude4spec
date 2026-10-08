@@ -23,7 +23,7 @@ import path from 'node:path';
 import matter from 'gray-matter';
 import type { PatchFrontmatter, PatchKind } from '../../shared/entities.js';
 import { PATCH_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
-import { BRIEF_ROOT_MARKER, PATCH_ROOT_MARKER } from '../../shared/types.js';
+import { systemRootId } from '../../shared/root-kinds.js';
 import type { MarkdownFileStore } from './markdown-file-store.js';
 import type { RecordStore } from '../fs/record-store.js';
 import type { MarkdownRecord } from '../fs/record-adapters.js';
@@ -66,7 +66,7 @@ export interface PatchServiceDeps {
 }
 
 export interface PatchListOpts {
-  /** Filter to a single brief (its briefsDir-relative path). */
+  /** Filter to a single brief (its path relative to the `briefs` root). */
   brief?: string;
   /** 0.2.14: narrow to applied (`true`) or pending (`false`). Omit for all. */
   applied?: boolean;
@@ -102,7 +102,7 @@ export interface PatchUpdateFrontmatterOpts {
  * `ArtifactResponse` at the REST boundary.
  */
 export interface PatchDetail {
-  /** Path relative to patchesDir. */
+  /** Path relative to the `patches` root. */
   path: string;
   title: string;
   frontmatter: PatchFrontmatter;
@@ -221,7 +221,7 @@ export class PatchService {
   listPatches(opts: PatchListOpts = {}): PatchListItem[] {
     const briefPaths = this.knownBriefPaths();
     const records = this.deps.frontmatterIndexer.findByFrontmatterType('patch', {
-      rootId: PATCH_ROOT_MARKER,
+      rootId: this.deps.patchesPages.rootId,
     });
     const out: PatchListItem[] = [];
     for (const rec of records) {
@@ -232,7 +232,7 @@ export class PatchService {
       const briefPath = this.resolveBriefPath(rec.path, fm, briefPaths);
       if (opts.brief !== undefined && opts.brief !== briefPath) continue;
       if (opts.applied !== undefined && opts.applied !== applied) continue;
-      const lastVersion = this.deps.pageVersions.getLatestForPath(rec.path, undefined, PATCH_ROOT_MARKER);
+      const lastVersion = this.deps.pageVersions.getLatestForPath(rec.path, undefined, this.deps.patchesPages.rootId);
       const createdAt = toIso(fm.created_at);
       out.push({
         path: rec.path,
@@ -304,9 +304,9 @@ export class PatchService {
       'user',
       undefined,
       this.deps.patchesSerializer,
-      PATCH_ROOT_MARKER,
+      this.deps.patchesPages.rootId,
     );
-    await this.deps.frontmatterIndexer.indexPage(PATCH_ROOT_MARKER, opts.path);
+    await this.deps.frontmatterIndexer.indexPage(this.deps.patchesPages.rootId, opts.path);
     return this.getPatch(opts.path);
   }
 
@@ -329,10 +329,10 @@ export class PatchService {
       changedBy,
       undefined,
       this.deps.patchesSerializer,
-      PATCH_ROOT_MARKER,
+      this.deps.patchesPages.rootId,
       `set applied=${applied}`,
     );
-    await this.deps.frontmatterIndexer.indexPage(PATCH_ROOT_MARKER, current.path);
+    await this.deps.frontmatterIndexer.indexPage(this.deps.patchesPages.rootId, current.path);
   }
 
   /**
@@ -384,7 +384,7 @@ export class PatchService {
 
   private knownBriefPaths(): string[] {
     return this.deps.frontmatterIndexer
-      .findByFrontmatterType('brief', { rootId: BRIEF_ROOT_MARKER })
+      .findByFrontmatterType('brief', { rootId: systemRootId('briefs') })
       .map((r) => r.path);
   }
 

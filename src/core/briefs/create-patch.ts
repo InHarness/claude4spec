@@ -8,7 +8,7 @@ import type { PatchKind } from './types.js';
 export interface WritePatchOpts {
   briefsDirAbs: string;
   patchesDirAbs: string;
-  /** Relative to briefsDir — validated to exist before any write. */
+  /** Relative to the `briefs` root — validated to exist before any write. */
   briefRelPath: string;
   desc: string;
   kind: PatchKind;
@@ -27,7 +27,7 @@ export interface WritePatchOpts {
 }
 
 export interface WritePatchResult {
-  /** Relative to patchesDir — portable across machines, mirrors brief addressing. */
+  /** Relative to the `patches` root — portable across machines, mirrors brief addressing. */
   path: string;
 }
 

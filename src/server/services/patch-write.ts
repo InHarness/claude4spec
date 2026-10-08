@@ -36,7 +36,7 @@ export interface PatchWriteDeps {
   writePatchRecord?: (relPath: string, content: string) => Promise<void>;
 }
 
-/** The operation's input, channel-independent. `brief` is relative to `briefsDir`. */
+/** The operation's input, channel-independent. `brief` is relative to the `briefs` root. */
 export interface CreatePatchInput {
   brief?: unknown;
   desc?: unknown;
@@ -64,7 +64,7 @@ export async function createPatch(
   fallbackActor: string,
 ): Promise<CreatePatchResult> {
   if (typeof input.brief !== 'string' || input.brief.trim() === '') {
-    throw new DomainError('VALIDATION', 'brief is required (path relative to briefsDir)');
+    throw new DomainError('VALIDATION', 'brief is required (path relative to the briefs root, .claude4spec/briefs)');
   }
   if (typeof input.desc !== 'string' || input.desc.trim() === '') {
     throw new DomainError('VALIDATION', 'desc is required and must not be empty');
@@ -90,11 +90,11 @@ export async function createPatch(
    * The same core writer the CLI has always used, unchanged: it asserts the brief
    * exists (→ BRIEF_NOT_FOUND), slugifies the WHOLE relative brief path so two
    * briefs sharing a filename in different subdirectories cannot collide, creates
-   * `patchesDir` lazily, and writes the frontmatter (`type: patch`, `brief`,
+   * the `patches` root's directory when it is missing, and writes the frontmatter (`type: patch`, `brief`,
    * `patch_kind`, `created_at`, `created_by`, `applied: false`) under a
    * `# Patch — <desc>` heading.
    *
-   * No explicit indexing call: `patchesDir` is mounted as an `artifacts:patch`
+   * No explicit indexing call: the `patches` root is mounted as the `artifacts:patch`
    * filesystem source, so the watcher indexes the new file and captures it in
    * `file_version` by the same reaction that handles a hand-written one.
    */

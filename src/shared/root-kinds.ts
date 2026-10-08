@@ -136,21 +136,28 @@ export const KIND_DECLARATIONS: Readonly<Record<RootKind, KindDeclaration>> = {
     flags: { release: false, references: false, gitignore: true, agentDirectFs: false },
     reactions: ['m06-anchor-injection', 'm02-frontmatter-indexer', 'm17-capture', 'm10-plan-updated'],
   },
-  // M21
+  // M21 (bcpvtk7p) — one root, reserved id `briefs`, fixed dir `.claude4spec/briefs`
+  // (no config key). Map `*.md` → markdown with the brief header contract
+  // (immutable type/from_release/to_release/roots/generated_at, mutable
+  // `implemented`), track `file_version`. Neither `m06-anchor-injection` nor
+  // `m06-section-indexer`: a brief has no injected anchors and no section index.
   briefs: {
     kind: 'briefs',
     source: 'code',
     sidebar: 'hidden',
-    fileMap: [{ pattern: '**/*.{md,mdx}', format: 'markdown', track: 'file_version', header: BRIEF_HEADER }],
+    fileMap: [{ pattern: '*.md', format: 'markdown', track: 'file_version', header: BRIEF_HEADER }],
     flags: { release: false, references: false, gitignore: true, agentDirectFs: false },
     reactions: ['m02-frontmatter-indexer', 'm17-capture'],
   },
-  // M23
+  // M23 (yp20j51v) — one root, reserved id `patches`, fixed dir
+  // `.claude4spec/patches` (no config key). Map `*.md` → markdown with the patch
+  // header contract (immutable type/brief/patch_kind/created_at/created_by,
+  // mutable `applied`), track `file_version`. No anchors, no section index.
   patches: {
     kind: 'patches',
     source: 'code',
     sidebar: 'hidden',
-    fileMap: [{ pattern: '**/*.{md,mdx}', format: 'markdown', track: 'file_version', header: PATCH_HEADER }],
+    fileMap: [{ pattern: '*.md', format: 'markdown', track: 'file_version', header: PATCH_HEADER }],
     flags: { release: false, references: false, gitignore: true, agentDirectFs: false },
     reactions: ['m02-frontmatter-indexer', 'm17-capture'],
   },
@@ -237,6 +244,15 @@ export function agentDeniedDirs(userRoots: ReadonlyArray<{ id: string; name: str
  * mirror. 0.1.104: `.claude4spec/skills` dropped — nothing writes there anymore.
  */
 export const RESERVED_WRITE_TARGETS = ['.claude4spec/plugins'] as const;
+
+/**
+ * The id of the single system root of `kind` — looked up BY KIND in the code
+ * source of the registry. Consumers that address a system root (the briefs root
+ * a patch resolves its `brief:` against, …) ask this, never spell the id.
+ */
+export function systemRootId(kind: SystemRootKind): string {
+  return SYSTEM_ROOTS.find((r) => r.kind === kind)!.id;
+}
 
 /** Identifiers a user root may never take — each would be a second root under one address. */
 export function isSystemRootId(id: string): boolean {

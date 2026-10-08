@@ -581,10 +581,10 @@ export type ChatRole =
  * thread runs with no file or shell built-ins at all, and work outside the
  * specification requires unchecking that flag first.
  * 'brief' = brief editorial thread (whitelisted tools, brief-detail chrome,
- * brief_path points to FS file under briefsDir).
+ * brief_path points to a file in the `briefs` root).
  * M23 'patch' = patch resolution thread — applies a patch's findings to the
- * spec. Full spec-editing toolset; patch_path points to FS file under
- * patchesDir; the patch content is injected into the system prompt.
+ * spec. Full spec-editing toolset; patch_path points to a file in the
+ * `patches` root; the patch content is injected into the system prompt.
  * 0.1.79 'ask' = read-only peer-consult thread. Forced plan-mode every turn
  * (the 'file-write' + 'shell' deny-groups); answers without ever mutating its own spec. No
  * brief_path/patch_path; created via POST /api/threads with context_type='ask'.
@@ -626,7 +626,7 @@ export interface ChatThread {
   hasSystemPrompt: boolean;
   contextType: ChatContextType;
   briefPath: string | null;
-  /** M23: FS path (relative to patchesDir) — set iff contextType='patch'. */
+  /** M23: FS path (relative to the `patches` root) — set iff contextType='patch'. */
   patchPath: string | null;
   /**
    * 0.1.69 Transagents: parent thread id. NULL = top-level thread (appears in
@@ -964,7 +964,7 @@ export interface BriefFrontmatter {
 }
 
 export interface Brief {
-  /** Path relative to briefsDir, e.g. "v0-3-to-v0-4.md". */
+  /** Path relative to the `briefs` root, e.g. "v0-3-to-v0-4.md". */
   path: string;
   frontmatter: BriefFrontmatter;
   body: string;
@@ -1048,7 +1048,7 @@ export const PATCH_IMMUTABLE_FRONTMATTER_KEYS = [
 
 export interface PatchFrontmatter {
   type: 'patch';
-  /** Path of the associated brief (relative to briefsDir). Absent ⇒ resolve by filename prefix. */
+  /** Path of the associated brief (relative to the `briefs` root). Absent ⇒ resolve by filename prefix. */
   brief?: string;
   patch_kind: PatchKind;
   created_at: string;

@@ -18,9 +18,9 @@ const PATCH_KINDS: PatchKind[] = ['drift', 'missing', 'incorrect', 'clarificatio
  *   c4s create-patch --brief <brief-path> --desc <s> --body-file <f>
  *
  * 0.2.13 — `server-delegating`, over `POST /api/patches`. The file is written by
- * the SERVER: `mkdir -p` on `patchesDir` is lazy there, the slug is minted
+ * the SERVER: the missing `patches` root dir is created there, the slug is minted
  * there, and `PATCH_WRITE_FAILED` comes from there. This process no longer knows
- * where `patchesDir` is, which is the point — it had a dedicated write path into
+ * where the `patches` root is, which is the point — it had a dedicated write path into
  * the specification that nothing else used.
  *
  * The body still comes off the CALLER'S stdin or `--body-file`: that is the
@@ -36,7 +36,7 @@ export async function runCreatePatch(args: ParsedArgs): Promise<void> {
    * 0.2.96 — the traversal guard runs HERE, before the server is called, the
    * same one `get-brief` uses. `assertBriefExists` refuses `../` server-side
    * too, but the spec puts the refusal on the CLI: an argument that escapes
-   * `briefsDir` is `INVALID_ARGS` locally, and never becomes a request.
+   * the `briefs` root is `INVALID_ARGS` locally, and never becomes a request.
    * `BRIEF_NOT_FOUND` (with the server's hint) stays the server's answer.
    */
   try {

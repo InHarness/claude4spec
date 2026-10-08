@@ -4,6 +4,10 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { buildBriefToolsServer } from './brief-tools.js';
 import { ConflictError, type BriefService } from '../services/brief.js';
 import { DomainError } from '../services/tags.js';
+import { CATALOG } from '../operations/catalog.js';
+import { registerCoreOperations } from '../operations/core-operations.js';
+import { mcpServerSetForProfile } from '../operations/profiles.js';
+import { CONTEXT_TYPE_REGISTRY } from '../services/chat-context.js';
 
 /**
  * The concurrency guard on `update_brief`, which the tool declared and did not
@@ -476,5 +480,226 @@ describe('update_brief composes from the whole brief, and checks the hash first'
     // fragment verbatim") is advice for a caller that is not the problem.
     expect(res.body.code).toBe('BRIEF_CONFLICT');
     expect(written).toEqual([]);
+  });
+});
+
+/**
+ * 2.1.8 — `update_brief` as the mcp-tool entity records it, and the
+ * `insert_after_section` addressing edge cases (M21 `m21srvct`, `01ytpznn`).
+ * The service is stubbed: what is under test is the body the tool composes and
+ * the answer it gives, both of which the adapter owns.
+ */
+describe('update_brief — entity shape and insert_after_section addressing', () => {
+  const HASH = '9'.repeat(64);
+  const BODY = [
+    '# Brief',
+    '',
+    '## Target',
+    '',
+    'first target',
+    '',
+    '## Other',
+    '',
+    'other body',
+    '',
+    '## Target',
+    '',
+    'second target',
+    '',
+  ].join('\n');
+  const CODE_BODY = [
+    '# Brief',
+    '',
+    'Example:',
+    '',
+    '```md',
+    '## Only in code',
+    '```',
+    '',
+    '## Real',
+    '',
+    'real body',
+    '',
+  ].join('\n');
+
+  async function connect(body: string, mode: 'thread' | 'explicit' = 'explicit') {
+    const written: string[] = [];
+    const briefService = {
+      getBrief: async () => ({
+        path: 'b.md',
+        frontmatter: { type: 'brief' },
+        body,
+        content: `---\ntype: brief\n---\n${body}`,
+        hash: HASH,
+      }),
+      updateContent: async (opts: { content: string }) => {
+        written.push(opts.content);
+        return { newHash: '8'.repeat(64) };
+      },
+    } as unknown as BriefService;
+    const { server } = buildBriefToolsServer(
+      mode === 'explicit' ? { briefService, target: 'explicit' } : { threadId: 't1', briefPath: 'b.md', briefService },
+    );
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: 'test-client', version: '0.0.0' });
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    const update = async (args: Record<string, unknown>) => {
+      const res = await client.callTool({
+        name: 'update_brief',
+        arguments: { ...(mode === 'explicit' ? { path: 'b.md' } : {}), expectedHash: HASH, ...args },
+      });
+      const text = (res.content as Array<{ type: string; text?: string }>)[0]?.text ?? '{}';
+      return { isError: res.isError === true, body: JSON.parse(text) as Record<string, any> };
+    };
+    return { client, update, written };
+  }
+
+  /** The body part of what was written (the frontmatter block stripped). */
+  const bodyOf = (file: string) => file.replace(/^---\n[\s\S]*?\n---\n/, '');
+
+  it('[entity:brief-tools-update-brief] update_brief is on brief-tools with action/content/anchor/heading/expectedHash/path', async () => {
+    const explicit = await connect(BODY, 'explicit');
+    const thread = await connect(BODY, 'thread');
+    const tool = async (client: Client) => (await client.listTools()).tools.find((t) => t.name === 'update_brief')!;
+
+    const ext = await tool(explicit.client);
+    const int = await tool(thread.client);
+    expect(ext).toBeDefined();
+    expect(int).toBeDefined();
+    const entityParams = ['action', 'content', 'anchor', 'heading', 'expectedHash', 'path'];
+    /**
+     * ASSUMPTION:dev-0011 — the rendering carries the entity's six parameters
+     * (in the `internal` channel `path` is the thread's brief, closed over, so it
+     * is absent from the schema) plus the differential `textEdits` and
+     * `changeSummary`; `action`/`content` are optional because `textEdits` is
+     * the alternative shape. See the deviation.
+     */
+    expect(Object.keys(ext.inputSchema.properties!).sort()).toEqual(
+      [...entityParams, 'textEdits', 'changeSummary'].sort(),
+    );
+    expect(Object.keys(int.inputSchema.properties!).sort()).toEqual(
+      [...entityParams.filter((p) => p !== 'path'), 'textEdits', 'changeSummary'].sort(),
+    );
+    expect((ext.inputSchema.properties!.action as { enum?: string[] }).enum).toEqual([
+      'replace',
+      'append',
+      'insert_after_section',
+    ]);
+    expect(ext.inputSchema.required ?? []).toEqual(expect.arrayContaining(['expectedHash', 'path']));
+    expect(int.inputSchema.required ?? []).toEqual(['expectedHash']);
+    // `path` is addressed relative to the `briefs` root, not to a config key.
+    expect((ext.inputSchema.properties!.path as { description?: string }).description).toContain(
+      'relative to the briefs root (.claude4spec/briefs)',
+    );
+    expect(ext.description).toContain('expectedHash');
+    expect(ext.description).toContain('IMMUTABLE_FIELD');
+
+    // The answer is `{ newHash }` — never the brief.
+    const res = await explicit.update({ action: 'replace', content: '# New\n' });
+    expect(res.body).toEqual({ newHash: '8'.repeat(64) });
+  });
+
+  it('[ac:ac-insert-after-section-z-heading-pasuja] a heading that matches only a line inside a code block appends the content at the END', async () => {
+    const { update, written } = await connect(CODE_BODY);
+    const res = await update({ action: 'insert_after_section', heading: 'Only in code', content: 'NEW FRAGMENT' });
+
+    expect(res.isError).toBe(false);
+    const body = bodyOf(written[0]!);
+    // The code block is untouched and the fragment is the last thing in the brief.
+    expect(body).toContain('```md\n## Only in code\n```');
+    expect(body.trimEnd().endsWith('NEW FRAGMENT')).toBe(true);
+    expect(body.indexOf('NEW FRAGMENT')).toBeGreaterThan(body.indexOf('real body'));
+  });
+
+  it('[ac:ac-insert-after-section-z-heading-pasuja-2] a heading that matches only a line inside a code block answers with a warning in the result', async () => {
+    const { update } = await connect(CODE_BODY);
+    const res = await update({ action: 'insert_after_section', heading: 'Only in code', content: 'NEW FRAGMENT' });
+
+    expect(res.isError).toBe(false);
+    expect(res.body.newHash).toBe('8'.repeat(64));
+    expect(res.body.warning).toMatch(/heading 'Only in code' matches no section/);
+    expect(res.body.warning).toMatch(/appended at the END/);
+  });
+
+  it('[ac:ac-insert-after-section-z-heading-pasuja-3] a heading matching two headings of the brief inserts after the FIRST of them', async () => {
+    const { update, written } = await connect(BODY);
+    const res = await update({ action: 'insert_after_section', heading: 'Target', content: 'INSERTED' });
+
+    expect(res.isError).toBe(false);
+    const body = bodyOf(written[0]!);
+    const at = body.indexOf('INSERTED');
+    expect(at).toBeGreaterThan(body.indexOf('first target'));
+    expect(at).toBeLessThan(body.indexOf('## Other'));
+    expect(at).toBeLessThan(body.indexOf('second target'));
+    expect(body.match(/INSERTED/g)).toHaveLength(1);
+  });
+
+  it('[ac:ac-insert-after-section-z-heading-pasuja-4] a heading matching two headings of the brief answers with an ambiguity warning in the result', async () => {
+    const { update } = await connect(BODY);
+    const res = await update({ action: 'insert_after_section', heading: 'Target', content: 'INSERTED' });
+
+    expect(res.isError).toBe(false);
+    expect(res.body.warning).toMatch(/heading 'Target' matches 2 sections/);
+    expect(res.body.warning).toMatch(/after the FIRST/);
+  });
+
+  it('[ac:ac-update-brief-action-insert-after-sect] an anchor that does not exist falls back to append-at-end with a warning, not an error', async () => {
+    const { update, written } = await connect(BODY);
+    const res = await update({ action: 'insert_after_section', anchor: 'zzzzzzzz', content: 'TAIL FRAGMENT' });
+
+    expect(res.isError).toBe(false);
+    expect(res.body.code).toBeUndefined();
+    expect(res.body.warning).toMatch(/anchor 'zzzzzzzz' matches no section/);
+    const body = bodyOf(written[0]!);
+    expect(body.trimEnd().endsWith('TAIL FRAGMENT')).toBe(true);
+    expect(body).toContain('second target');
+  });
+});
+
+/**
+ * M21 `01ytpznn` — the `internal` rendering of the brief operations is the
+ * `brief-tools` server, mounted only on `context_type='brief'` threads, with
+ * exactly as many tools as there are `mcp-tool` entities recording it.
+ */
+describe('brief-tools — one tool per internal brief operation', () => {
+  /** The four `mcp-tool` entities with `server: brief-tools` (M21). */
+  const BRIEF_TOOL_ENTITIES = [
+    'brief-tools-get-brief',
+    'brief-tools-update-brief',
+    'brief-tools-list-brief-versions',
+    'brief-tools-get-brief-version',
+  ];
+
+  it('[ac:ac-kazda-operacja-briefu-renderowana-w-k] every brief operation rendered in `internal` is a brief-tools tool, and their count equals the tools mounted on a brief thread', async () => {
+    registerCoreOperations();
+    const internalBriefOps = CATALOG.listForChannel('internal')
+      .filter((op) => op.opClass === 'brief')
+      .map((op) => op.name)
+      .sort();
+
+    // What a `context_type='brief'` thread mounts: brief-tools in thread mode.
+    expect(CONTEXT_TYPE_REGISTRY.brief.mcp.briefTools).toBe(true);
+    expect(mcpServerSetForProfile('brief').briefTools).toBe(true);
+    const { server } = buildBriefToolsServer({
+      threadId: 't1',
+      briefPath: 'b.md',
+      briefService: {} as unknown as BriefService,
+    });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: 'test-client', version: '0.0.0' });
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    const mounted = (await client.listTools()).tools.map((t) => t.name).sort();
+
+    expect(mounted).toEqual(internalBriefOps);
+    expect(mounted).toEqual(['get_brief', 'get_brief_version', 'list_brief_versions', 'update_brief']);
+    // One entity per mounted tool — slug `brief-tools-<tool name>`.
+    expect(BRIEF_TOOL_ENTITIES.length).toBe(mounted.length);
+    expect(BRIEF_TOOL_ENTITIES.map((slug) => slug.replace(/^brief-tools-/, '').replace(/-/g, '_')).sort()).toEqual(mounted);
+    // The other context types do not mount it.
+    for (const ct of ['chat', 'patch', 'ask'] as const) {
+      expect(CONTEXT_TYPE_REGISTRY[ct].mcp.briefTools, ct).toBe(false);
+    }
   });
 });

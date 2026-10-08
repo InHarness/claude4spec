@@ -321,8 +321,8 @@ async function buildInner(
   // each at its fixed `.claude4spec/<kind>`. No directory is read from a config key.
   registerCoreReactions();
   const rootRegistry = new RootRegistry(effectiveRoots);
-  const briefsDir = rootRegistry.system('briefs').dir;
-  const patchesDir = rootRegistry.system('patches').dir;
+  const briefsRootDir = rootRegistry.system('briefs').dir;
+  const patchesRootDir = rootRegistry.system('patches').dir;
   const entitiesRootDir = rootRegistry.system('entities').dir;
   const releasesRootDir = rootRegistry.system('releases').dir;
 
@@ -1256,8 +1256,8 @@ async function buildInner(
    * the specification.
    */
   const patchWriteDeps = {
-    briefsDirAbs: path.resolve(cwd, briefsDir),
-    patchesDirAbs: path.resolve(cwd, patchesDir),
+    briefsDirAbs: path.resolve(cwd, briefsRootDir),
+    patchesDirAbs: path.resolve(cwd, patchesRootDir),
     ...(patchesMount.store.records
       ? {
           writePatchRecord: async (relPath: string, content: string): Promise<void> => {

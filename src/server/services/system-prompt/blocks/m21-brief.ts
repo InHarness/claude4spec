@@ -21,6 +21,7 @@ brief-tools is scoped automatically to this brief — there is no path parameter
   - update_brief — edits the body through EXACTLY ONE of two shapes:
       * \`textEdits\` — literal { find, replaceWith, expectedMatches? } substitutions over the whole body (omitted expectedMatches = exactly 1; overlapping matches refused). Prefer it for punctual changes.
       * \`action\` (replace | append | insert_after_section) + \`content\` — rewrites, appends, section inserts.
+      * initial generation — the first write of a fresh brief (only its heading so far) is ONE update_brief({ action: 'replace', content }) carrying the whole narrative; for a closed window, the narrative you built from release_diff.
       * the answer is { newHash, replacements?, warning? } — never your content back.
       * frontmatter is IMMUTABLE for you (type, from_release, to_release, roots, generated_at).
       * expectedHash is REQUIRED: pass the hash get_brief returned (stale → BRIEF_CONFLICT, missing → VALIDATION).

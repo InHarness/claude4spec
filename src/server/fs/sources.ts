@@ -1,5 +1,4 @@
-import { BRIEF_ROOT_MARKER, PATCH_ROOT_MARKER, PLAN_ROOT_MARKER } from '../../shared/types.js';
-import type { RegistryRoot } from '../../shared/root-kinds.js';
+import { systemRootId, type RegistryRoot } from '../../shared/root-kinds.js';
 import type { ReactionInput } from './reactions.js';
 
 /**
@@ -55,10 +54,11 @@ export function sourceNameFor(root: Pick<RegistryRoot, 'id' | 'kind'>): string {
   }
 }
 
+/** `artifacts:<kind>` → the id of the system root of that root kind, looked up BY KIND. */
 const ARTIFACT_ROOT_ID: Record<string, string> = {
-  brief: BRIEF_ROOT_MARKER,
-  patch: PATCH_ROOT_MARKER,
-  plan: PLAN_ROOT_MARKER,
+  brief: systemRootId('briefs'),
+  patch: systemRootId('patches'),
+  plan: systemRootId('plans'),
 };
 
 /**

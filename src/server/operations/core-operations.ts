@@ -472,7 +472,7 @@ export function registerCoreOperations(): void {
     mediation: 'direct',
     opClass: 'brief',
     inputSchema: {
-      brief: z.string().describe('Brief path relative to briefsDir. Must name a real file.'),
+      brief: z.string().describe('Brief path relative to the briefs root (.claude4spec/briefs). Must name a real file.'),
       desc: z.string().min(1).describe('Short description of the drift. Drives the file slug and the body heading.'),
       patchKind: z.enum(['drift', 'missing', 'incorrect', 'clarification']).optional().describe('Default `drift`.'),
       body: z.string().describe('The patch body — what drifted and what the spec author should consider.'),
@@ -516,7 +516,7 @@ export function registerCoreOperations(): void {
     mediation: 'direct',
     opClass: 'read',
     inputSchema: {
-      path: z.string().optional().describe('Patch path relative to patchesDir. Defaulted from the thread only in the `internal` channel.'),
+      path: z.string().optional().describe('Patch path relative to the patches root (.claude4spec/patches). Defaulted from the thread only in the `internal` channel.'),
       range: z
         .object({ start: z.number().int().positive(), end: z.number().int().positive() })
         .optional()
@@ -549,7 +549,7 @@ export function registerCoreOperations(): void {
     opClass: 'write',
     inputSchema: {
       applied: z.boolean().describe('Only true is accepted from the agent channel.'),
-      path: z.string().optional().describe('Patch path relative to patchesDir. Defaulted from the thread only in the `internal` channel.'),
+      path: z.string().optional().describe('Patch path relative to the patches root (.claude4spec/patches). Defaulted from the thread only in the `internal` channel.'),
     },
     errorCodes: ['PATCH_NOT_FOUND', 'INVALID_ARGUMENT'],
     sideEffects: ['file', 'db', 'ui-notify'],
@@ -1208,7 +1208,7 @@ export function registerCoreOperations(): void {
     // connection has no ambient brief, and silently defaulting to "the" brief is
     // how a patch gets filed against the wrong one.
     inputSchema: {
-      path: z.string().optional().describe('Brief path relative to briefsDir. Required on an external connection.'),
+      path: z.string().optional().describe('Brief path relative to the briefs root (.claude4spec/briefs). Required on an external connection.'),
       range: z
         .object({ start: z.number().int().positive(), end: z.number().int().positive() })
         .optional()
@@ -1275,7 +1275,7 @@ export function registerCoreOperations(): void {
     mediation: 'direct',
     opClass: 'brief',
     inputSchema: {
-      path: z.string().optional().describe('Brief path relative to briefsDir. Required on an external connection.'),
+      path: z.string().optional().describe('Brief path relative to the briefs root (.claude4spec/briefs). Required on an external connection.'),
       ...paging,
     },
     errorCodes: ['NOT_FOUND', 'VALIDATION'],
@@ -1296,7 +1296,7 @@ export function registerCoreOperations(): void {
     mediation: 'direct',
     opClass: 'brief',
     inputSchema: {
-      path: z.string().optional().describe('Brief path relative to briefsDir. Required on an external connection.'),
+      path: z.string().optional().describe('Brief path relative to the briefs root (.claude4spec/briefs). Required on an external connection.'),
       version: z.number().int().positive(),
     },
     errorCodes: ['NOT_FOUND', 'VERSION_NOT_FOUND', 'VALIDATION'],

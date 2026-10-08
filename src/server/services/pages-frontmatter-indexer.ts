@@ -20,8 +20,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { MarkdownFileStore } from './markdown-file-store.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
-import type { WatchSubscriber, WatchScope } from '../fs/watcher.js';
-import { requireRootId } from '../fs/sources.js';
+import type { WatchOrigin, WatchSubscriber, WatchScope } from '../fs/watcher.js';
+import { reactionRootId } from '../fs/sources.js';
+import type { ReactionInput } from '../fs/reactions.js';
 
 export interface FrontmatterRecord {
   rootId: string;
@@ -75,12 +76,24 @@ export class PagesFrontmatterIndexer implements WatchSubscriber {
     return `${rootId}:${relPath}`;
   }
 
-  async onChange(_scope: WatchScope, source: string, relPath: string): Promise<void> {
-    await this.indexPage(requireRootId(source), relPath);
+  /**
+   * The record's `rootId` is the registry entry's id the L13 implementor passed
+   * when binding `m02-frontmatter-indexer` to the root's source (`briefs`,
+   * `patches`, `plans`, or a pages root's id) — the same value `file_version`
+   * carries for the file.
+   */
+  async onChange(
+    _scope: WatchScope,
+    source: string,
+    relPath: string,
+    _origin?: WatchOrigin,
+    input?: ReactionInput,
+  ): Promise<void> {
+    await this.indexPage(reactionRootId(source, input), relPath);
   }
 
-  onUnlink(_scope: WatchScope, source: string, relPath: string): void {
-    this.handleUnlink(requireRootId(source), relPath);
+  onUnlink(_scope: WatchScope, source: string, relPath: string, _origin?: WatchOrigin, input?: ReactionInput): void {
+    this.handleUnlink(reactionRootId(source, input), relPath);
   }
 
   handleUnlink(rootId: string, relPath: string): void {
