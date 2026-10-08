@@ -60,7 +60,8 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
+  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.
+  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.
 </workspace_projects>
 
 <agent_path_scope>
@@ -1476,7 +1477,8 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
+  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.
+  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.
 </workspace_projects>
 
 <agent_path_scope>
@@ -1682,7 +1684,8 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
+  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.
+  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.
 </workspace_projects>
 
 <agent_path_scope>
@@ -1889,7 +1892,8 @@ You do not know its conventions yet, and this block does not summarise them.
   <peer id="spec" name="Spec"/>
   <peer id="spec-2" name="Spec"/>
   <peer id="broken"/>
-  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
+  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.
+  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.
 </workspace_projects>
 
 <agent_path_scope>
@@ -2101,7 +2105,8 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
+  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.
+  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.
 </workspace_projects>
 
 <agent_path_scope>
@@ -2309,7 +2314,8 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
+  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.
+  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.
 </workspace_projects>
 
 <agent_path_scope>
@@ -2518,7 +2524,8 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
+  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.
+  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.
 </workspace_projects>
 
 <agent_path_scope>
@@ -2719,7 +2726,8 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
+  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.
+  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.
 </workspace_projects>
 
 <agent_path_scope>
@@ -3049,7 +3057,8 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
+  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.
+  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.
 </workspace_projects>
 
 <agent_path_scope>
@@ -3245,7 +3254,8 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
+  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.
+  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.
 </workspace_projects>
 
 <agent_path_scope>
@@ -3446,7 +3456,8 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
+  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.
+  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.
 </workspace_projects>
 
 <agent_path_scope>
@@ -3657,7 +3668,8 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
+  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.
+  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.
 </workspace_projects>
 
 <agent_path_scope>
@@ -3868,7 +3880,8 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
+  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.
+  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.
 </workspace_projects>
 
 <agent_filesystem_access enabled="false">
@@ -4267,7 +4280,8 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
+  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.
+  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.
 </workspace_projects>
 
 <agent_path_scope>
@@ -4479,7 +4493,8 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
+  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.
+  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.
 </workspace_projects>
 
 <agent_path_scope>
@@ -4691,7 +4706,8 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
+  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.
+  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.
 </workspace_projects>
 
 <agent_path_scope>
@@ -4903,7 +4919,8 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
+  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.
+  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.
 </workspace_projects>
 
 <agent_path_scope>
@@ -5115,7 +5132,8 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
+  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.
+  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.
 </workspace_projects>
 
 <agent_path_scope>
@@ -5327,7 +5345,8 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
+  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.
+  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.
 </workspace_projects>
 
 <agent_path_scope>
@@ -5539,7 +5558,8 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
+  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.
+  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.
 </workspace_projects>
 
 <agent_path_scope>
@@ -5751,7 +5771,8 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
+  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.
+  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.
 </workspace_projects>
 
 <agent_path_scope>
@@ -6168,7 +6189,8 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects >
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
+  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.
+  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.
 </workspace_projects>
 
 <agent_path_scope>
@@ -6380,7 +6402,8 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
+  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.
+  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.
 </workspace_projects>
 
 <agent_path_scope>
@@ -6592,7 +6615,8 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
+  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.
+  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.
 </workspace_projects>
 
 <agent_path_scope>
@@ -6788,7 +6812,8 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
+  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.
+  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.
 </workspace_projects>
 
 <agent_path_scope>
@@ -6996,7 +7021,8 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
+  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.
+  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.
 </workspace_projects>
 
 <agent_path_scope>
@@ -7360,7 +7386,8 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
+  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.
+  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.
 </workspace_projects>
 
 <agent_path_scope>
@@ -7712,7 +7739,8 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
+  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.
+  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.
 </workspace_projects>
 
 <agent_path_scope>
@@ -7938,7 +7966,8 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
+  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.
+  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.
 </workspace_projects>
 
 <agent_path_scope>
@@ -8159,7 +8188,8 @@ You do not know its conventions yet, and this block does not summarise them.
 <workspace_projects workspace="default">
   <peer id="billing" name="Billing API" description="Money &quot;in&quot; &amp; out."/>
   <peer id="auth" name="Auth"/>
-  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.
+  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.
+  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.
 </workspace_projects>
 
 <agent_path_scope>

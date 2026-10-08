@@ -226,7 +226,7 @@ describe('buildSystemPrompt — <workspace_projects> (0.1.58)', () => {
     const out = withC4s({ workspaceProjects: PEERS });
     expect(out).toContain('<peer id="billing" name="Billing API" description="Money in, money out."/>');
     expect(out).not.toMatch(/<peer [^>]*path=/);
-    expect(out).toContain("`id` is the project's only address — pass it as the `project` argument of `ask`");
+    expect(out).toContain("Pass a peer's `id` as the `project` argument of `ask` — it is the only address of a project.");
   });
 
   it('drops an empty description, keeping the addressable id', () => {

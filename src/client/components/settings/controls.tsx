@@ -47,6 +47,7 @@ export function GeneratedElement({ decl, config, draft }: ElementContext & { dec
   return (
     <ElementField
       label={decl.label}
+      tooltip={decl.tooltip}
       help={decl.help}
       error={error}
       warning={live?.warning}
@@ -287,6 +288,7 @@ function Counter({ value, max }: { value: unknown; max?: number }) {
 /** Label + control + help/error, the layout every generated non-toggle element uses. */
 export function ElementField({
   label,
+  tooltip,
   help,
   error,
   warning,
@@ -294,6 +296,8 @@ export function ElementField({
   children,
 }: {
   label?: string;
+  /** Shown on hover over the label. */
+  tooltip?: string;
   help?: ReactNode;
   error?: string | null;
   warning?: string;
@@ -305,7 +309,11 @@ export function ElementField({
   return (
     <Wrapper className="flex flex-col gap-1.5">
       {label ? (
-        <span className="text-[11.5px] font-medium uppercase tracking-wide" style={{ color: 'var(--c-muted)' }}>
+        <span
+          className="text-[11.5px] font-medium uppercase tracking-wide"
+          style={{ color: 'var(--c-muted)' }}
+          title={tooltip}
+        >
           {label}
         </span>
       ) : null}

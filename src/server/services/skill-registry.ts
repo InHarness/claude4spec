@@ -15,9 +15,8 @@ export type SkillScope = 'writing-style' | 'contextual';
  * sharing the one value `user`.
  *
  * `project-rooted` and `project-exposed` are declared by M52, not by this module —
- * the registry only names them. `project-rooted` is registered per project
- * context by M52 (`project-rooted-skills.ts`); until a module registers
- * `project-exposed`, nothing carries that value.
+ * the registry only names them. Both are registered per project context by M52
+ * (`project-rooted-skills.ts`, `project-exposed-skills.ts`).
  */
 export type SkillSource = 'user' | 'plugin' | 'project-rooted' | 'project-exposed';
 
@@ -47,11 +46,12 @@ export type SkillScanCadence = 'on-demand' | 'push' | 'live';
  *   after its manifest was read) or of a single entry rejected by the loader's
  *   contribution check. The detail (which package, what value) stays in the
  *   loader's warning and in `detail`.
- *
- * The third reason of the specification ("dostawca podpięcia nieosiągalny") is
- * reported by the `project-exposed` source, which is not registered yet.
+ * - `provider-unreachable` — "dostawca podpięcia nieosiągalny": reported by the
+ *   `project-exposed` source (M52) for an attachment that resolves to no provider
+ *   (dangling — none exposes the name — or ambiguous — several do). Unlike the
+ *   other two it does not stop the start (M01 `7yzu5k8u`).
  */
-export type SkillUnresolvedReason = 'outside-registry' | 'envelope-not-loaded';
+export type SkillUnresolvedReason = 'outside-registry' | 'envelope-not-loaded' | 'provider-unreachable';
 
 /** A slug a source knows but does not deliver — always with a reason. */
 export interface UnresolvedSkillSlug {
@@ -87,6 +87,11 @@ export interface SkillMetadata {
   contextTypes?: ChatContextType[];
   /** Absolute package dir; `''` for an in-memory (pushed) entry. */
   path: string;
+  /**
+   * 2.1.9 (M37 `ixkjxpua`) — the provider's project id, set ONLY by the
+   * `project-exposed` source; it becomes the listing row's `project`. Never a path.
+   */
+  project?: string;
 }
 
 /**
@@ -202,8 +207,13 @@ export interface SkillSourceRegistration {
   readonly manifestLimit?: number;
   /** Current entries of the source. */
   list(): SkillSourceScan;
-  /** "Odczyt pliku" — the content in the form a thread may write back, plus an optional `hash`. */
-  read(metadata: SkillMetadata): SkillFileRead;
+  /**
+   * "Odczyt pliku" — the content in the form a thread may write back, plus an
+   * optional `hash`. A source that reads live through something asynchronous
+   * (`project-exposed`: the provider's context) returns a promise; such an entry
+   * is read with {@link SkillRegistry.resolveLive}.
+   */
+  read(metadata: SkillMetadata): SkillFileRead | Promise<SkillFileRead>;
   /** Slugs the source knows but does not deliver, each with its reason. */
   unresolved(): UnresolvedSkillSlug[];
   /**
@@ -226,8 +236,9 @@ export interface SkillListingEntry {
   origin: SkillSource;
   /**
    * The provider's registry `id` — ONLY when `origin` is `project-exposed` (the
-   * address of `ask({ project })`, M31 #13). A seam: no registered source sets it
-   * yet; the `project-exposed` source (M52) does. Never a path (M31 #16).
+   * address of `ask({ project })`, M31 #13), taken from the winner's
+   * `SkillMetadata.project` set by the `project-exposed` source (M52). Never a
+   * path (M31 #16).
    */
   project?: string;
 }
@@ -514,6 +525,9 @@ export class SkillRegistry {
     if (unresolved?.reason === 'envelope-not-loaded') {
       return `is contributed by a plugin package that did not load${unresolved.detail ? ` (${unresolved.detail})` : ''} — fix or reinstall the package, or pick another style`;
     }
+    if (unresolved?.reason === 'provider-unreachable') {
+      return `comes from an attached skill project whose provider is unreachable${unresolved.detail ? ` (${unresolved.detail})` : ''} — it is treated as absent until the provider resolves again`;
+    }
     const skip = this.skips.get(slug);
     if (skip !== undefined) return `was found on disk but skipped: ${skip}`;
     const available = this.listSelectable().map((s) => s.slug).join(', ') || '(none)';
@@ -545,19 +559,50 @@ export class SkillRegistry {
     return undefined;
   }
 
-  /** Lazy read of the precedence WINNER through its source's file read. Throws if `!has(slug)`. */
+  /** The metadata of the slug's precedence winner (no read), or `undefined` when no source resolves it. */
+  winnerOf(slug: string): SkillMetadata | undefined {
+    this.ensureFresh();
+    return this.winners.get(slug)?.meta;
+  }
+
+  /**
+   * Lazy read of the precedence WINNER through its source's file read. Throws if
+   * `!has(slug)`, and for a winner whose source reads asynchronously — that one is
+   * read with {@link resolveLive}.
+   */
   resolve(slug: string): ResolvedSkill {
     this.ensureFresh();
     const winner = this.winners.get(slug);
     if (!winner) throw new Error(`SkillRegistry.resolve: unknown slug "${slug}"`);
     const read = winner.reg.read(winner.meta);
-    return {
-      metadata: winner.meta,
-      content: read.content,
-      files: read.files,
-      ...(read.hash !== undefined ? { hash: read.hash } : {}),
-    };
+    if (read instanceof Promise) {
+      // Swallow the rejection of the promise nobody awaits; the caller is told to use resolveLive.
+      read.catch(() => {});
+      throw new Error(`SkillRegistry.resolve: "${slug}" is read live by source "${winner.reg.name}" — use resolveLive()`);
+    }
+    return toResolved(winner.meta, read);
   }
+
+  /**
+   * The same read for every source, synchronous or not — what the channels of
+   * `load_skill_file` call. A `project-exposed` winner is read in its provider's
+   * context at this moment: the content is live, the listing is not.
+   */
+  async resolveLive(slug: string): Promise<ResolvedSkill> {
+    this.ensureFresh();
+    const winner = this.winners.get(slug);
+    if (!winner) throw new Error(`SkillRegistry.resolve: unknown slug "${slug}"`);
+    return toResolved(winner.meta, await winner.reg.read(winner.meta));
+  }
+}
+
+function toResolved(metadata: SkillMetadata, read: SkillFileRead): ResolvedSkill {
+  return {
+    metadata,
+    content: read.content,
+    files: read.files,
+    ...(read.hash !== undefined ? { hash: read.hash } : {}),
+  };
 }
 
 /**
@@ -735,7 +780,13 @@ export class SkillResolver {
     )) {
       if (meta.slug === styleSlug) continue;
       const winner = winnerOf(all, meta.slug) ?? meta;
-      listing.push({ slug: winner.slug, description: winner.description, origin: winner.source });
+      listing.push({
+        slug: winner.slug,
+        description: winner.description,
+        origin: winner.source,
+        // M37 `ixkjxpua`: the provider's id, only beside origin `project-exposed`.
+        ...(winner.source === 'project-exposed' && winner.project ? { project: winner.project } : {}),
+      });
     }
 
     return {

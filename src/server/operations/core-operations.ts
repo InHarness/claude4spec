@@ -518,9 +518,10 @@ export function registerCoreOperations(): void {
    * WITHOUT `operation-only-write` (a write by the built-in file tools into the
    * `skills` root is accepted and versioned).
    *
-   * `SKILL_READ_ONLY` is listed because the row lists it; the refusal itself
-   * (a slug the registry resolves to an exposed project) arrives with the
-   * `project-exposed` source.
+   * `SKILL_READ_ONLY`: a slug outside the project's `skills` root that the
+   * registry resolves to an exposed project (`project-exposed` winner) is refused
+   * as read-only, pointing at `ask` on the provider (`SkillWriteDeps.readOnlyReason`,
+   * wired in the project context).
    */
   CATALOG.register({
     name: 'update_skill_file',
@@ -539,6 +540,36 @@ export function registerCoreOperations(): void {
       cli: na('writing skills from outside is out of v1'),
       mcp: na('writing skills from outside is out of v1'),
       rest: na("a person writes through the page write routes over the `skills` root's facade"),
+    },
+  });
+
+  /**
+   * 2.1.9 — `list_exposed_projects`, sheet `katalog-operacji-m52` row 4: the
+   * projects of the workspace exposed as a skill, with the status of the current
+   * project's attachments (`ok` / `unavailable` / `ambiguous`). Workspace-scoped
+   * (its subject is the workspace's projects), addressed by the current project
+   * (whose `skill.uses` it reports). It feeds only the `#skills` settings card,
+   * so it is rendered on `rest` alone. Read: no guard, no error code of its own
+   * (`n/d`), `echo-free`, `error-code-once`; single-target — the workspace list
+   * is one answer, no paging: it is short by nature, and an incomplete one would
+   * be useless for choosing attachments.
+   */
+  CATALOG.register({
+    name: 'list_exposed_projects',
+    summary:
+      'Projects of the workspace exposed as a skill, seen from the current project: one row per skill name with the provider\'s description and project id, whether the current project attaches it (`uses`), and the attachment status — ok, unavailable (no project exposes the name) or ambiguous (several do). The current project has no row.',
+    scope: 'workspace',
+    mediation: 'direct',
+    opClass: 'read',
+    inputSchema: {},
+    errorCodes: [],
+    sideEffects: ['none'],
+    idempotent: true,
+    channels: {
+      internal: na('feeds only the #skills settings card'),
+      cli: na('feeds only the #skills settings card'),
+      mcp: na('feeds only the #skills settings card'),
+      rest: direct(),
     },
   });
 

@@ -177,6 +177,19 @@ export interface ConfigResponse {
    */
   roots: Root[];
   writingStyle: string | null;
+  /**
+   * 2.1.9 (M52): `skill.*` as the file holds it (absent keys stay absent — the
+   * settings elements carry the defaults as their baselines).
+   */
+  skill?: {
+    exposed?: boolean;
+    name?: string | null;
+    description?: string | null;
+    entry?: string | null;
+    scope?: 'writing-style' | 'contextual';
+    contextTypes?: string[];
+    uses?: string[];
+  };
   /** Non-fatal degraded-state signal: `writingStyle` was skipped this session because it no longer resolves. */
   writingStyleUnavailable: { reason: string } | null;
   /** 0.1.51: spec-authoring language (display name from SUPPORTED_LANGUAGES) or null. */

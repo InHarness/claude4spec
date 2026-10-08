@@ -19,6 +19,7 @@ import { formatLegalContextTypes, isKnownContextType } from './chat-context.js';
 import type {
   ContextSkills,
   InvalidSkillRead,
+  ResolvedSkill,
   SkillPackageFile,
   SkillRegistry,
   SkillResolver,
@@ -107,6 +108,31 @@ export function listSkills(resolver: SkillResolver, contextType?: string): Skill
  * The listing is a suggestion of what is worth opening, not a permission boundary.
  */
 export function loadSkillFile(registry: SkillRegistry, slug: string, file?: string): SkillPackageResponse {
+  const unresolved = answerUnresolved(registry, slug, file);
+  if (unresolved) return unresolved;
+  // Resolution — and the disk read — happen HERE, in the server process.
+  // The registry hands back the precedence winner, read by ITS source in the form
+  // that source serves; the path it resolved does not enter the payload below.
+  return packageAnswer(registry, slug, registry.resolve(slug), file);
+}
+
+/**
+ * The same operation for every source — the one the channels (internal and
+ * external MCP, REST, and through it `c4s`) call. A `project-exposed` winner is
+ * read live in its provider's context (M52 `ybbal0vf`), which is asynchronous;
+ * every other source answers exactly as {@link loadSkillFile} does.
+ */
+export async function loadSkillFileLive(registry: SkillRegistry, slug: string, file?: string): Promise<SkillPackageResponse> {
+  const unresolved = answerUnresolved(registry, slug, file);
+  if (unresolved) return unresolved;
+  return packageAnswer(registry, slug, await registry.resolveLive(slug), file);
+}
+
+/**
+ * A slug no source resolves: the invalid package lying under it, or the
+ * `SKILL_NOT_FOUND` refusal with its reason. `null` for a resolvable slug.
+ */
+function answerUnresolved(registry: SkillRegistry, slug: string, file: string | undefined): SkillPackageResponse | null {
   if (!registry.has(slug)) {
     // M37 `7pj9yx9k` / M52 `q6jr8zoj`: a slug no source resolves, under which an
     // invalid package lies, is SERVED — marked invalid, with its reason — rather
@@ -124,10 +150,11 @@ export function loadSkillFile(registry: SkillRegistry, slug: string, file?: stri
       `closest slugs: ${nearestSlugs(slug, known).join(', ') || '(the registry is empty)'}`,
     );
   }
-  // Resolution — and the disk read — happen HERE, in the server process.
-  // The registry hands back the precedence winner, read by ITS source in the form
-  // that source serves; the path it resolved does not enter the payload below.
-  const resolved = registry.resolve(slug);
+  return null;
+}
+
+/** The answer for a resolved winner: the package (manifest cut to the source's limit) or one subfile. */
+function packageAnswer(registry: SkillRegistry, slug: string, resolved: ResolvedSkill, file: string | undefined): SkillPackageResponse {
   const { metadata } = resolved;
 
   if (file === undefined) {
@@ -243,6 +270,8 @@ function describeUnresolved(reason: SkillUnresolvedReason, detail?: string): str
       return `known but unresolved: the plugin package contributing it did not load${detail ? ` (${detail})` : ''}`;
     case 'outside-registry':
       return 'outside the registry: no source of this project delivers it';
+    case 'provider-unreachable':
+      return `known but unresolved: the provider of this skill attachment is unreachable${detail ? ` (${detail})` : ''}`;
   }
 }
 

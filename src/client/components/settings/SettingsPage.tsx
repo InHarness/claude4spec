@@ -12,6 +12,7 @@ import { GIT_SETTINGS } from '../git/gitSettings.js';
 import { EXTERNAL_INTEGRATIONS_SETTINGS } from '../external-integrations/ExternalIntegrationsElements.js';
 import { WORKSPACE_SETTINGS } from '../workspace/DangerZoneElement.js';
 import { AGENT_SETTINGS } from '../../chat/settings/agentSettings.js';
+import { SPEC_SKILLS_SETTINGS } from '../spec-skills/specSkillsSettings.js';
 import { PLUGIN_HOST_SETTINGS, usePluginSettingsContribution } from '../../core/plugin-host/pluginSettings.js';
 
 /**
@@ -28,6 +29,7 @@ export const STATIC_SETTINGS_CONTRIBUTIONS: SettingsContribution[] = [
   PLUGIN_HOST_SETTINGS,
   EXTERNAL_INTEGRATIONS_SETTINGS,
   AGENT_SETTINGS,
+  SPEC_SKILLS_SETTINGS,
   SETTINGS_MODULE_CARDS,
   WORKSPACE_SETTINGS,
 ];

@@ -193,6 +193,8 @@ export const STATUS_FOR_CODE: Record<string, number> = {
   SKILL_NOT_FOUND: 404,
   SKILL_FILE_NOT_FOUND: 404,
   NOT_TEXT: 415,
+  // M52 Spec Skills (2.1.9) — a skill of an exposed project is read-only here.
+  SKILL_READ_ONLY: 403,
 };
 
 /**

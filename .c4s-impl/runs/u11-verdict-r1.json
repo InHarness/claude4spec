@@ -1,0 +1,175 @@
+{
+  "role": "verifier",
+  "scope": {
+    "kind": "unit",
+    "id": "u11-exposed-projects"
+  },
+  "release": "2.1.9",
+  "rows": [
+    {
+      "slug": "get-api-spec-skills-exposed-projects",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/routes/spec-skills.route.test.ts:60 — expect(res.status).toBe(200); Object.keys(body)==['data']; POST → 404; route src/server/routes/spec-skills.ts:26 mounted at /spec-skills in src/server/workspace/project-context.ts:1506",
+      "type": "endpoint"
+    },
+    {
+      "slug": "exposed-project-row",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/routes/spec-skills.route.test.ts:73 — rows toEqual name/description?/projectId?/uses/status(ok|unavailable|ambiguous); type src/shared/spec-skills.ts:16 matches all 5 DTO fields",
+      "type": "dto"
+    },
+    {
+      "slug": "spec-skill-tools-update-skill-file",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/spec-skill-tools.test.ts:84 — tool name, inputs (slug, expectedHash required; file, content, textEdits), description verbatim, {slug,file,hash}; src/server/mcp/spec-skill-tools.test.ts:226 SKILL_READ_ONLY refusal wired via readOnlyReason (src/server/workspace/project-context.ts:1397, src/server/services/skill-write.ts:178)",
+      "type": "mcp-tool"
+    },
+    {
+      "slug": "katalog-operacji-m52#list_exposed_projects",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/routes/spec-skills.route.test.ts:106 — scope 'workspace', mediation direct, opClass read, errorCodes [], sideEffects ['none'], idempotent, rest direct, internal/cli/mcp na with reason; src/server/operations/core-operations.ts:557",
+      "type": "spreadsheet"
+    },
+    {
+      "slug": "szablon-workspace-projects",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/services/system-prompt/blocks/m31-workspace.test.ts:32 — exact block lines incl. skill=\"exposed\" and the new 'A peer marked skill=\"exposed\"…' line; skillExposed set from listExposedProjects in project-context.ts:1366; golden snapshot updated consistently",
+      "type": "code-snippet"
+    },
+    {
+      "slug": "ac-pozycja-available-skills-projektu-wys",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/services/project-exposed-skills.test.ts:188 — listing toEqual [{slug:'billing-rules',…,origin:'project-exposed',project:'billing'}] and block contains project=\"billing\"; skill-registry.ts:788",
+      "type": "ac"
+    },
+    {
+      "slug": "ac-otwarcie-projektu-wystawionego-o-mani",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/services/project-exposed-skills.test.ts:301 — expect(open.truncated).toBe(true); files length == EXPOSED_SKILL_MANIFEST_LIMIT; left-out page loads by (slug,file)",
+      "type": "ac"
+    },
+    {
+      "slug": "ac-slug-z-nieosiagalnego-dostawcy-podpie",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/services/project-exposed-skills.test.ts:318 — registry.unresolvedReason(slug).reason 'provider-unreachable' for dangling and ambiguous; load → SKILL_NOT_FOUND with reason text",
+      "type": "ac"
+    },
+    {
+      "slug": "ac-skill-contextual-projektu-wystawioneg",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/services/project-exposed-skills.test.ts:199 — winnerOf → 'plugin'; listing origin 'plugin'; load content 'PLUGIN BODY'; provider never read (SKILL_PRECEDENCE.contextual plugin > project-rooted > project-exposed)",
+      "type": "ac"
+    },
+    {
+      "slug": "ac-styl-source-plugin-przeslania-bundl",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/services/project-exposed-skills.test.ts:221 — successive winners project-rooted → user-project → project-exposed → user-global → plugin; skill-registry.ts:32",
+      "type": "ac"
+    },
+    {
+      "slug": "ac-w-projekcie-bez-zaladowanych-pluginow",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/services/project-exposed-skills.test.ts:268 — expect(listing).toEqual([]); block has no '<skill '",
+      "type": "ac"
+    },
+    {
+      "slug": "ac-zadna-tura-agenta-nie-przekazuje-pola",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/services/project-exposed-skills.test.ts:360 — provider and consumer file trees unchanged after loads; no disk path in payload",
+      "type": "ac"
+    },
+    {
+      "slug": "ac-config-writingstyle-na-styl-podpieteg",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/services/project-exposed-skills.test.ts:387 — checkWritingStyleAtStart(...).ok true with warning /provider is unreachable/; project-context.ts:429-432 throws only on !ok",
+      "type": "ac"
+    },
+    {
+      "slug": "ac-config-writingstyle-na-styl-podpieteg-2",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/services/project-exposed-skills.test.ts:401 — resolveForContext writingStyle null; prompt not.toContain('<project_writing_skill')",
+      "type": "ac"
+    },
+    {
+      "slug": "ac-config-writingstyle-wskazujacy-styl-p",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/services/project-exposed-skills.test.ts:393 — toMatchObject({ok:true}); unknown slug still ok:false outside-registry",
+      "type": "ac"
+    },
+    {
+      "slug": "ac-gdy-config-writingstyle-wskazuje-styl-2",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/services/project-exposed-skills.test.ts:408 — first-turn prompt lacks <project_writing_skill; once provider resolves it contains it",
+      "type": "ac"
+    },
+    {
+      "slug": "m52-dangling-attachment-marked-unavailable",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/routes/spec-skills.route.test.ts:94 — ghost row toEqual {status:'unavailable'}, unexposed provider → unavailable; src/client/components/spec-skills/specSkillsSettings.test.ts:34 — data-marker=\"Unavailable\" rendered, no 'disabled'",
+      "type": "ac"
+    },
+    {
+      "slug": "m52-edge-renamed-provider-unavailable",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/services/project-exposed-skills.test.ts:441 — after writeConfig skill.name 'billing-v2', row {name:'billing-rules',uses:true,status:'unavailable'}; registry reason provider-unreachable",
+      "type": "ac"
+    },
+    {
+      "slug": "m52-edge-self-attachment-not-listed",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/services/project-exposed-skills.test.ts:287 — registry.has('my-skill') false, listing [], warning 'attaching oneself is ignored', rows exclude own name",
+      "type": "ac"
+    },
+    {
+      "slug": "m52-exposed-project-not-in-consumer-sidebar",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/services/project-exposed-skills.test.ts:459 — GET /api/sidebar-accordions rows only consumer's own roots, no /billing/i, identical with uses []",
+      "type": "ac"
+    },
+    {
+      "slug": "m52-provider-change-visible-next-load",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/services/project-exposed-skills.test.ts:334 — after rewriting provider pages, next loadSkillFileLive contains 'Billing rules v2' and 'refunded'",
+      "type": "ac"
+    },
+    {
+      "slug": "m52-update-skill-file-refuses-exposed",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/mcp/spec-skill-tools.test.ts:226 — res.body.code 'SKILL_READ_ONLY', error contains 'read-only' and 'ask({ project: \"billing\" })'; nothing written; own project-rooted package writable",
+      "type": "ac"
+    },
+    {
+      "slug": "goal:u11-exposed-projects",
+      "level": 2,
+      "status": "covered",
+      "evidence": "skill.* config (src/server/config.ts SkillConfig/normalizeSkillConfig, settings fields src/server/services/spec-skills-settings-fields.ts + SKILL_EXPOSURE_RULE); project-exposed source live read in provider context (src/server/services/project-exposed-skills.ts, project-context.ts:355-377,1411-1423, index.ts providerContext); SKILL_READ_ONLY (project-context.ts:1397); dangling/ambiguous = warning (writing-style-start.ts, source unresolved()); GET /api/spec-skills/exposed-projects; #skills card with Used skill projects (src/client/components/spec-skills/specSkillsSettings.tsx, SettingsPage.tsx); skill=\"exposed\" in <workspace_projects>; mcp listing in both postures via ctx.mcpSurfaceDeps → skill-tools on the project registry (routes/mcp.ts:50,113; skill-tools.ts uses loadSkillFileLive). Deferred style-forks route/fork element not built (correct). m37 removed section 2ury2bsa is a relocation (content reappears as l1xl6074) — no code counterpart to remove."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "tsc server/client/types + all envelope plugin typechecks passed (exit 0); tests read statically: changed chat-context.test.ts, golden snapshot, settings catalog.test.ts updated consistently with the diff"
+  }
+}

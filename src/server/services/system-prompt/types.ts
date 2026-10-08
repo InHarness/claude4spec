@@ -24,6 +24,13 @@ export interface PeerProject {
   /** Display name from the peer's own `config.json`. A label, never an address. */
   name?: string;
   description?: string;
+  /**
+   * 2.1.9 (M31 `qtqqqwfp`): the peer is exposed as a skill — taken from the M52
+   * list of exposed projects, never from reading the peer's `config.json` here.
+   * Renders `skill="exposed"`; it addresses nothing (the skill's address is its
+   * name, the project's is `id`).
+   */
+  skillExposed?: boolean;
 }
 
 /**

@@ -148,6 +148,8 @@ function configResponse(c: NormalizedConfig, cwd: string, skillRegistry: SkillRe
       : null,
     language: c.language,
     description: c.description,
+    // 2.1.9 (M52): `skill.*` as the file holds it; absent ⇒ `{}`.
+    skill: c.skill ?? {},
     onboarding: { completed: c.onboardingCompleted },
     entities: c.entities,
     agent: {

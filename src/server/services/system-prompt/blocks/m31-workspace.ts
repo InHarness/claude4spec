@@ -15,14 +15,25 @@ import type { PeerProject, PromptBlock } from '../types.js';
  * `name` is the peer's own label and never a selector. The `path` attribute and
  * the path-based disambiguation of peers sharing a name are gone: ids cannot
  * collide inside a workspace, and a directory must never reach the agent.
+ *
+ * 2.1.9 (template `szablon-workspace-projects`): a peer exposed as a skill
+ * carries `skill="exposed"` (from the M52 list of exposed projects), and one
+ * line says it can be attached in project settings by its skill name, which is
+ * not its id.
  */
 function buildWorkspaceProjects(workspaceName: string, peers: PeerProject[]): string {
   const lines = [`<workspace_projects ${attrs({ workspace: workspaceName })}>`];
   for (const p of peers) {
-    lines.push(`  ${selfClose('peer', attrs({ id: p.id, name: p.name, description: p.description }))}`);
+    lines.push(
+      `  ${selfClose(
+        'peer',
+        attrs({ id: p.id, name: p.name, description: p.description, skill: p.skillExposed ? 'exposed' : undefined }),
+      )}`,
+    );
   }
   lines.push(
-    `  \`id\` is the project's only address — pass it as the \`project\` argument of \`ask\`, exactly as shown. \`name\` is the peer's own label for itself and is NOT an address.`,
+    `  Pass a peer's \`id\` as the \`project\` argument of \`ask\` — it is the only address of a project. \`name\` is the peer's own label for itself and is NOT an address.`,
+    `  A peer marked skill="exposed" can also be connected as a skill in project settings; its skill name is not its id.`,
     `</workspace_projects>`,
   );
   return lines.join('\n');

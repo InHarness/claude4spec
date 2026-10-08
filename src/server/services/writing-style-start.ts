@@ -12,14 +12,18 @@
  *   (gate-skipped package, or an entry the loader rejected): the carrier is
  *   missing, not the style.
  *
- * The third reason of M37 (provider of a project link unreachable — start with a
- * warning) is reported by the `project-exposed` source, which does not exist yet.
+ * The third reason does NOT stop the start (2.1.9, M01 `7yzu5k8u`): a slug the
+ * registry reports known but unresolved because the provider of a skill
+ * attachment is unreachable (`provider-unreachable`, reported by the M52
+ * `project-exposed` source) starts with a warning, and the style is treated as
+ * absent — the resolver skips a slug the registry does not resolve, so no turn
+ * gets a `<project_writing_skill/>` block until the provider resolves again.
  */
 
 import type { SkillRegistry, SkillUnresolvedReason } from './skill-registry.js';
 
 export type WritingStyleStartVerdict =
-  | { ok: true }
+  | { ok: true; warning?: string }
   | { ok: false; reason: SkillUnresolvedReason; message: string };
 
 export function checkWritingStyleAtStart(
@@ -31,6 +35,12 @@ export function checkWritingStyleAtStart(
   // rejected exactly like an unknown one.
   const reason: SkillUnresolvedReason = registry.unresolvedReason(slug)?.reason ?? 'outside-registry';
   const lead = `config.json: writingStyle "${slug}"`;
+  if (reason === 'provider-unreachable') {
+    return {
+      ok: true,
+      warning: `${lead} ${registry.unselectableReason(slug)}. The project starts without a writing style.`,
+    };
+  }
   const message =
     reason === 'envelope-not-loaded'
       ? `${lead} cannot be resolved — its plugin package did not load. ${lead} ${registry.unselectableReason(slug)}.`

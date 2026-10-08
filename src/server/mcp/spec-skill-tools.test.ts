@@ -19,6 +19,10 @@ import {
   UPDATE_SKILL_FILE_DESCRIPTION,
   buildSpecSkillToolsServer,
 } from './spec-skill-tools.js';
+import type { SkillWriteDeps } from '../services/skill-write.js';
+import { SkillRegistry, toPackageFiles } from '../services/skill-registry.js';
+import { registerProjectRootedSkills } from '../services/project-rooted-skills.js';
+import { ProjectExposedSkillSource, exposedReadOnlyReason } from '../services/project-exposed-skills.js';
 
 /**
  * 2.1.9 (M52) — `spec-skill-tools` · `update_skill_file`, the write channel of
@@ -41,7 +45,7 @@ const sha = (s: string): string => crypto.createHash('sha256').update(s).digest(
 
 const SKILL_MD = ['---', 'title: Release notes', 'description: How to write a release note.', 'version: 1', 'language: en', '---', '', '# Release notes', ''].join('\n');
 
-async function rig() {
+async function rig(extra: Partial<SkillWriteDeps> = {}) {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-spec-skill-tools-'));
   cleanups.push(() => fs.rmSync(cwd, { recursive: true, force: true }));
   const runtime = new FileWatchRuntime({ fsEvents: false });
@@ -55,7 +59,7 @@ async function rig() {
   });
   const skills = mounted.rootRuntimes.find((rt) => rt.root.id === 'skills');
   expect(skills, 'the skills root has a facade').toBeDefined();
-  const server = buildSpecSkillToolsServer({ skillsRoot: () => ({ pages: skills!.pages }) }, 'p1');
+  const server = buildSpecSkillToolsServer({ skillsRoot: () => ({ pages: skills!.pages }), ...extra }, 'p1');
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'test-client', version: '0.0.0' });
   await server.server.connect(serverTransport);
@@ -73,7 +77,7 @@ async function rig() {
     return { isError: res.isError === true, body };
   };
   const abs = (rel: string): string => path.join(cwd, '.claude4spec/skills', rel);
-  return { client, call, abs };
+  return { client, call, abs, cwd, roots: registry };
 }
 
 describe('spec-skill-tools · update_skill_file (M52, 2.1.9)', () => {
@@ -217,6 +221,50 @@ describe('spec-skill-tools · update_skill_file (M52, 2.1.9)', () => {
     expect(stale.isError).toBe(true);
     expect(stale.body.code).toBe('PAGE_CONFLICT');
     expect(fs.readFileSync(abs('s/a.md'), 'utf-8')).toBe('v2\n');
+  });
+
+  it('[ac:m52-update-skill-file-refuses-exposed] [entity:spec-skill-tools-update-skill-file] update_skill_file refuses to write a skill of an exposed project with SKILL_READ_ONLY — and writes nothing; a package of the project\'s own `skills` root under that slug outranks it and is writable', async () => {
+    // The registry the project context wires in: the project's own `skills` root
+    // (project-rooted) and one attachment, `billing-rules`, exposed by `billing`.
+    const skillRegistry = SkillRegistry.load([], { rescanTtlMs: 0 });
+    // As the project context wires it: the winner, and whether the project's own root holds the package.
+    let absOf: (rel: string) => string = () => '';
+    const readOnlyReason = (slug: string) => exposedReadOnlyReason(skillRegistry.winnerOf(slug), fs.existsSync(absOf(slug)));
+    const { call, abs, cwd, roots } = await rig({ readOnlyReason });
+    absOf = abs;
+    registerProjectRootedSkills(skillRegistry, roots, cwd);
+    skillRegistry.registerSource(
+      new ProjectExposedSkillSource('p1', {
+        uses: () => ['billing-rules'],
+        listExposed: () => [
+          { projectId: 'billing', name: 'billing-rules', description: 'How billing works.', entry: 'index.md', scope: 'contextual', contextTypes: undefined },
+        ],
+        readProvider: async () => ({ entry: 'index.md', content: '# Billing\n', files: toPackageFiles({}) }),
+      }),
+    );
+    expect(skillRegistry.winnerOf('billing-rules')?.source).toBe('project-exposed');
+
+    for (const args of [
+      { slug: 'billing-rules', content: SKILL_MD, expectedHash: '' },
+      { slug: 'billing-rules', file: 'notes.md', content: 'x\n', expectedHash: '' },
+    ]) {
+      const res = await call(args);
+      expect(res.isError).toBe(true);
+      expect(res.body.code).toBe('SKILL_READ_ONLY');
+      expect(String(res.body.error)).toContain('read-only');
+      expect(String(res.body.error)).toContain('ask({ project: "billing" })');
+    }
+    expect(fs.existsSync(abs('billing-rules'))).toBe(false);
+
+    // A slug the registry does not resolve to an exposed project is written as before.
+    expect((await call({ slug: 'release-notes', content: SKILL_MD, expectedHash: '' })).isError).toBe(false);
+    // An own package under the same slug (here written by hand, `contextual` like the exposed one)
+    // outranks it in the chain and lies in the project's own root: writable again.
+    fs.mkdirSync(abs('billing-rules'), { recursive: true });
+    fs.writeFileSync(abs('billing-rules/SKILL.md'), SKILL_MD.replace('language: en', 'language: en\nscope: contextual'));
+    expect(skillRegistry.winnerOf('billing-rules')?.source).toBe('project-rooted');
+    const own = await call({ slug: 'billing-rules', file: 'notes.md', content: 'x\n', expectedHash: '' });
+    expect(own.isError).toBe(false);
   });
 
   it('the context-scoped element hands out a fresh server per call and none after the context disposes it (M52 L10)', () => {

@@ -77,6 +77,8 @@ export interface SettingsElementDecl {
   keys?: readonly ConfigKeyPath[];
   label?: string;
   help?: ReactNode;
+  /** A short hint on the element's label (shown on hover), apart from `help`. */
+  tooltip?: string;
   /**
    * When a saved change starts to act, in the user's words — shown in the toast
    * after [Save]. Never names an effect class. Absent ⇒ the element adds nothing

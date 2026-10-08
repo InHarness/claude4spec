@@ -24,6 +24,7 @@ describe('/settings card catalog (0.2.113 §1.6)', () => {
       'external-integrations',
       'plugin-pool',
       'agent',
+      'skills',
       'about',
       'index-status',
       'danger-zone',
@@ -56,12 +57,22 @@ describe('/settings card catalog (0.2.113 §1.6)', () => {
       'anthropic-api-key',
     ]);
     expect(byAnchor.get('external-integrations')!.elements.map((e) => e.id)).toEqual(['agent-skills', 'mcp-connection']);
+    // 2.1.9 (M52 `1osy2o5r`): the `#skills` card — "Fork writing style locally" (80) is not built yet.
+    expect(byAnchor.get('skills')!.elements.map((e) => [e.id, e.kind, e.weight])).toEqual([
+      ['skill-exposed', 'toggle', 10],
+      ['skill-name', 'text', 20],
+      ['skill-description', 'textarea', 30],
+      ['skill-entry', 'text', 40],
+      ['skill-scope', 'select', 50],
+      ['skill-context-types', 'multiselect', 60],
+      ['used-skill-projects', 'custom', 70],
+    ]);
   });
 
   it('only file-backed cards get a [Save] — External Integrations never does', () => {
     const fileBacked = (anchor: string) =>
       byAnchor.get(anchor)!.elements.some((e) => e.configKey !== undefined || (e.keys?.length ?? 0) > 0);
-    expect(['project', 'directories', 'git', 'entities', 'agent'].every(fileBacked)).toBe(true);
+    expect(['project', 'directories', 'git', 'entities', 'agent', 'skills'].every(fileBacked)).toBe(true);
     expect(
       ['user-section', 'appearance', 'remote-project', 'external-integrations', 'plugin-pool', 'about', 'index-status', 'danger-zone'].some(
         fileBacked,

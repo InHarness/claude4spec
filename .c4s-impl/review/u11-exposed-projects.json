@@ -1,0 +1,43 @@
+{
+  "role": "reviewer",
+  "scope": {
+    "kind": "unit",
+    "id": "u11-exposed-projects",
+    "base": "fcf0fa1fcae9aaa6834971898810ceeb44964ea1"
+  },
+  "findings": [
+    {
+      "id": "rev-0001",
+      "file": "src/server/services/project-exposed-skills.ts",
+      "line": 232,
+      "blocking": false,
+      "reason": "readExposedPackage reads and M19-expands every page of the provider's base root on every load_skill_file call. That includes a call for a single subfile (`file=`), and pages beyond EXPOSED_SKILL_MANIFEST_LIMIT that the manifest then drops. On a large spec, each load does O(pages) expansions in the provider context. Consider expanding only the entry page, or only the requested file, and listing the other paths for the manifest without expanding them.",
+      "portion": "u11-exposed-projects/p1-l2-l17"
+    },
+    {
+      "id": "rev-0002",
+      "file": "src/server/services/project-exposed-skills.ts",
+      "line": 98,
+      "blocking": false,
+      "reason": "`warned` deduplicates warnings for the whole life of the consumer context. Take an attachment that goes dangling, gets fixed, then goes dangling again (for example a provider renamed twice). It never warns a second time, so the later breakage is silent in the logs. Consider clearing a message's entry once its attachment resolves again.",
+      "portion": "u11-exposed-projects/p1-l2-l17"
+    },
+    {
+      "id": "rev-0003",
+      "file": "src/server/services/skill-operations.ts",
+      "line": 110,
+      "blocking": false,
+      "reason": "The synchronous loadSkillFile (and SkillRegistry.resolve) no longer has a production caller: every channel now calls loadSkillFileLive / resolveLive, and only tests still use it. It is now a second entry point that throws for a project-exposed winner. Consider moving the tests to loadSkillFileLive and dropping the sync variant, so a future caller cannot pick the one that fails on exposed skills.",
+      "portion": "u11-exposed-projects/p1-l2-l17"
+    },
+    {
+      "id": "rev-0004",
+      "file": "src/client/components/spec-skills/specSkillsSettings.tsx",
+      "line": 86,
+      "blocking": false,
+      "reason": "The Unavailable/Ambiguous marker uses a hard-coded colour '#a86a1a', while the surrounding settings code styles with theme tokens (var(--c-muted), var(--c-hair), var(--c-subtle)). This is the only literal of that colour in src/client. Use a theme token so dark mode and the palette stay consistent.",
+      "portion": "u11-exposed-projects/p1-l2-l17"
+    }
+  ],
+  "deviations": []
+}

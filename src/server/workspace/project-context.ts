@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
-import { builtinRoot, migrateConfigToV4, readConfig, validateRootDirs } from '../config.js';
+import { builtinRoot, migrateConfigToV4, normalizeSkillConfig, readConfig, validateRootDirs } from '../config.js';
 import { recoverPendingRootRename, rootIdChain, readRootRenames } from '../root-renames.js';
 import type { Root } from '../../shared/types.js';
 import { resolveAgentTurnScope } from '../services/agent-execution-scope.js';
@@ -123,6 +123,14 @@ import { createEntityToolsServer } from '../mcp/entity-tools.js';
 import { SkillRegistry, SkillResolver, findSkillsRoots } from '../services/skill-registry.js';
 import { registerProjectRootedSkills, SKILLS_ROOT_KIND } from '../services/project-rooted-skills.js';
 import { SpecSkillTools } from '../mcp/spec-skill-tools.js';
+import {
+  ProjectExposedSkillSource,
+  exposedReadOnlyReason,
+  readExposedPackage,
+  type ExposedSkillPackage,
+} from '../services/project-exposed-skills.js';
+import { listExposedProjectRows, listExposedProjects } from '../services/exposed-projects.js';
+import { specSkillsRouter } from '../routes/spec-skills.js';
 import { checkWritingStyleAtStart } from '../services/writing-style-start.js';
 import { fanPluginSkills, loadOverlayLayer } from './project-skills.js';
 import { chatRouter } from '../routes/chat.js';
@@ -204,6 +212,14 @@ export interface ProjectContextDeps {
   onTurnFinished?: () => void;
   /** M31: PATCH /config touched a context-defining field → cache.invalidate(projectId). */
   onContextConfigChanged?: () => void;
+  /**
+   * 2.1.9 (M52 `1v62dbhb`): the layer's implementor hands out ANOTHER project's
+   * context on request (the M31 cache — lazily built, its lifetime and eviction
+   * are the cache's). The `project-exposed` source asks for its provider's
+   * context on every read and keeps no handle. Absent ⇒ no provider is readable
+   * (attachments still list; their reads refuse as unreachable).
+   */
+  providerContext?: (projectId: string) => Promise<ProjectContext>;
   /** M27: bootstrap-time clone — runs inside build, before mounts dispatch. */
   clone?: {
     slug: string;
@@ -247,6 +263,14 @@ export interface ProjectContext {
    * does not touch `hasInFlightTurn` or pin the context.
    */
   mcpSurfaceDeps: (profile: ChatContextType) => ExternalSurfaceDeps;
+  /**
+   * 2.1.9 (M52 `ybbal0vf`) — this project as a skill package, read NOW in this
+   * context: the `skill.entry` page as content, the other pages of the base root
+   * as subfiles, without frontmatter and anchor lines, expanded inline by the M19
+   * core here. Called by a CONSUMER's `project-exposed` source; refuses when this
+   * project is not exposed (any more). Writes nothing.
+   */
+  readExposedSkill: () => Promise<ExposedSkillPackage>;
   dispose: () => Promise<void>;
 }
 
@@ -328,6 +352,29 @@ async function buildInner(
   // the registry (the writing-style check at start included: a project-rooted
   // style ranks first in its chain).
   registerProjectRootedSkills(skillRegistry, rootRegistry, cwd);
+  // 2.1.9 (M52 `ybbal0vf`, `1v62dbhb`): the `project-exposed` source — this
+  // project's attachments (`skill.uses`) resolved live against the projects of
+  // the workspace exposed as a skill. It keeps no provider context: it asks the
+  // M31 cache (`deps.providerContext`) for one on every read.
+  const workspaceProjects = () => registry.getWorkspace(workspace.name)?.projects ?? [];
+  const readOwnSkillConfig = () => {
+    try {
+      return normalizeSkillConfig(readConfig(cwd));
+    } catch {
+      return normalizeSkillConfig({});
+    }
+  };
+  skillRegistry.registerSource(
+    new ProjectExposedSkillSource(projectId, {
+      uses: () => readOwnSkillConfig().uses,
+      listExposed: () => listExposedProjects(workspaceProjects()),
+      readProvider: async (providerId) => {
+        if (!deps.providerContext) throw new Error('no provider context is reachable from this process');
+        const provider = await deps.providerContext(providerId);
+        return provider.readExposedSkill();
+      },
+    }),
+  );
   const briefsRootDir = rootRegistry.system('briefs').dir;
   const patchesRootDir = rootRegistry.system('patches').dir;
   const entitiesRootDir = rootRegistry.system('entities').dir;
@@ -380,6 +427,9 @@ async function buildInner(
   const initialWritingStyle = bootConfig.writingStyle;
   const styleVerdict = checkWritingStyleAtStart(skillRegistry, initialWritingStyle);
   if (!styleVerdict.ok) throw new Error(styleVerdict.message);
+  // 2.1.9: a style of an attached project whose provider is unreachable starts
+  // with a warning and is treated as absent (no `<project_writing_skill/>`).
+  if (styleVerdict.warning) console.warn(`[skill] ${styleVerdict.warning}`);
   // 0.1.51: fail fast on a hand-edited language value outside SUPPORTED_LANGUAGES so
   // a bogus display name never reaches the system prompt. PATCH /config enforces
   // the same membership at runtime.
@@ -1311,6 +1361,9 @@ async function buildInner(
   const listWorkspacePeers = (): PeerProject[] => {
     const ws = registry.getWorkspace(workspace.name);
     if (!ws) return [];
+    // 2.1.9 (M31 `qtqqqwfp`): `skill="exposed"` comes from the M52 list of
+    // exposed projects (edge m31-requires-m52), not from reading `skill.*` here.
+    const exposedIds = new Set(listExposedProjects(ws.projects).map((e) => e.projectId));
     return ws.projects
       .filter((p) => p.id !== projectId)
       .map((p) => {
@@ -1320,6 +1373,7 @@ async function buildInner(
         const { name, description } = readPeerConfigSummary(p.cwd);
         if (name) peer.name = name;
         if (description) peer.description = description;
+        if (exposedIds.has(p.id)) peer.skillExposed = true;
         return peer;
       });
   };
@@ -1337,9 +1391,36 @@ async function buildInner(
         const rt = root ? rootById.get(root.id) : undefined;
         return rt ? { pages: rt.pages } : undefined;
       },
+      // 2.1.9 (M52): a slug outside this project's `skills` root that the
+      // registry resolves to an exposed project is read-only here — a
+      // `project-rooted` package of that slug outranks it and is writable.
+      readOnlyReason: (slug) => {
+        const root = rootRegistry.byKind(SKILLS_ROOT_KIND)[0];
+        const own = root ? fs.existsSync(path.join(rootDirAbs(cwd, root), slug)) : false;
+        return exposedReadOnlyReason(skillRegistry.winnerOf(slug), own);
+      },
     },
     projectId,
   );
+
+  /**
+   * 2.1.9 (M52 `ybbal0vf`) — this project read as an exposed skill, in THIS
+   * context (pages of the base root, M19 expansion over this project's
+   * discovery core, section index and page links).
+   */
+  const readExposedSkill = async (): Promise<ExposedSkillPackage> => {
+    const own = readOwnSkillConfig();
+    if (!own.exposed || own.name === null) throw new Error(`project "${projectId}" is not exposed as a skill`);
+    return readExposedPackage(
+      {
+        listPages: () => pages.listMarkdownFilesReadonly(),
+        readRaw: (rel) => pages.readRaw(rel),
+        rootId: baseRoot.id,
+        expansion: createExpansionContext({ discovery, sections: sectionsService, links: pagesLinkIndexer }),
+      },
+      own.entry,
+    );
+  };
 
   // Wspolne deps tury agenta — `threadsRouter` (POST /:id/ask) i `chatRouter`
   // (POST /chat, SSE) dziela ten sam runtime i rejestr `activeAdapters`.
@@ -1421,6 +1502,14 @@ async function buildInner(
   // M37 (0.2.99) — `list_skills` / `load_skill_file`, the same core functions the
   // turn's and the external surface's `skill-tools` call.
   router.use('/skills', skillsRouter({ skillRegistry, skillResolver }));
+  // 2.1.9 (M52 L4): own router — `GET /spec-skills/exposed-projects`.
+  router.use(
+    '/spec-skills',
+    specSkillsRouter({
+      listExposedProjects: () =>
+        listExposedProjectRows(projectId, readOwnSkillConfig().uses, listExposedProjects(workspaceProjects())),
+    }),
+  );
   router.use('/releases', releasesRouter(releaseService, ws, gitService, () => rootRegistry.pages()));
   router.use('/release-pushes', releasePushesRouter(releasePushService));
   // 0.1.123: on a successful checkout, reuse the same invalidate path as a
@@ -1834,9 +1923,12 @@ async function buildInner(
   // `suppress()` primitive, which is what keeps a bulk rebuild from re-entering
   // its own indexer.
 
-  const writingStyle = initialWritingStyle
-    ? { slug: initialWritingStyle, title: skillRegistry.resolve(initialWritingStyle).metadata.title }
-    : null;
+  // Metadata only — no source read (a `project-exposed` style is read live, and an
+  // unreachable one is absent: no title, no style).
+  const initialStyleMeta = initialWritingStyle
+    ? skillRegistry.listSelectable().find((m) => m.slug === initialWritingStyle)
+    : undefined;
+  const writingStyle = initialStyleMeta ? { slug: initialStyleMeta.slug, title: initialStyleMeta.title } : null;
 
   return {
     projectId,
@@ -1852,6 +1944,7 @@ async function buildInner(
     writingStyle,
     hasInFlightTurn: () => activeAdapters.size > 0,
     mcpSurfaceDeps,
+    readExposedSkill,
     // M31 dispose sequence: turn registries → this scope's mounts → MCP
     // factories → room → db handle.
     dispose: async () => {

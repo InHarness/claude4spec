@@ -52,7 +52,7 @@
 
 import { createMcpServer, mcpTool, z, type CapturedMcpServer } from '../plugin-runtime/index.js';
 import { toolFailure, toolSuccess } from '../operations/envelope.js';
-import { DEFAULT_SKILL_FILE, listSkills, loadSkillFile } from '../services/skill-operations.js';
+import { DEFAULT_SKILL_FILE, listSkills, loadSkillFileLive } from '../services/skill-operations.js';
 import { KNOWN_CONTEXT_TYPES } from '../services/chat-context.js';
 import type { SkillRegistry, SkillResolver } from '../services/skill-registry.js';
 
@@ -109,7 +109,7 @@ export function buildSkillToolsServer(
     },
     async (args) => {
       try {
-        const data = loadSkillFile(
+        const data = await loadSkillFileLive(
           registry,
           String(args.slug ?? ''),
           args.file === undefined ? undefined : String(args.file),
