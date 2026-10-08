@@ -4,7 +4,8 @@
  * It used to live inside `reference-tools`, which made a rule set the property
  * of one transport and bound the sweep to a SINGLE page root — the built-in
  * one, because that is the `PagesService` that server happened to hold. Here it
- * iterates every `referenceValidated` root, and the section rules are gated per
+ * iterates the markdown entries of every root whose kind carries
+ * `references = yes` (2.1.8), and the section rules are gated per
  * root on what the root's KIND selects rather than on any root's identity.
  *
  * This is also the right home for "what does the disk say that the index does

@@ -1,0 +1,16 @@
+{
+  "id": "dev-0007",
+  "kind": "drift",
+  "blocking": false,
+  "address": "u06-discovery-references/m22dread",
+  "slugs": [
+    "section:m22dread",
+    "section:dw3xlkgn"
+  ],
+  "text": "M22 `m22dread` says the exact body of `c4s-spec-reader/SKILL.md` is the page `modules/m22-external-skills/c4s-spec-reader.md`, emitted by `renderSpecReaderSkill()` 1:1. The window's changes to that page (dw3xlkgn: no `(indexed root)` comment on search-pages, no `--range` guard, resumption via `get-page-outline` + `get-sections`) are in the renderer (src/server/external-skills/spec-reader-template.ts). But outside the window the renderer already differs from the page in sections the window did not touch: the intro (the page's 'resolves entities from ... another repository' block vs. the template's 'bound to one claude4spec specification project' + shared SERVER_REQUIRED / stale-address blocks), the Discovery list (the template's longer per-command descriptions, an extra CLI-command→operation table and `--tag-filter`), the frontmatter `description` wording, and the c4s ask section. This predates 2.1.7→2.1.8, so the build keeps the template's wording and changed only the window's sentences.",
+  "assumption": "ASSUMPTION:dev-0007 — only the 2.1.8 sentences of c4s-spec-reader.md are carried into the renderer; the pre-existing wording differences elsewhere in the skill stay.",
+  "unit": "u06-discovery-references",
+  "portion": "u06-discovery-references/p1-l2",
+  "sent": true,
+  "patchPath": "2-1-7-to-2-1-8-workflow-test-u06-discovery-references-m22dread-m22-m22dread-says-the-exact-body-of-c4s-spec-r.md"
+}

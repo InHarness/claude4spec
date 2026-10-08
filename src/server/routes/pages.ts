@@ -131,6 +131,11 @@ export function pagesRouter(
        * answered a bare message — turning a one-keystroke mistake into a dead
        * end on the surface whose whole job is to be navigable. The catalog's own
        * contract says a NOT_FOUND carries its alternatives.
+       *
+       * 2.1.8 — only `kind: pages` runtimes resolve here, so a system root id
+       * (`plans`) gets this very refusal, and the list never names one.
+       * ASSUMPTION:dev-0009 — REST/CLI keep ROOT_NOT_FOUND (list in `hint`) where
+       * M11 L14 names the core's INVALID_ARGUMENT (list in `message`).
        */
       const known = rootIds();
       res.status(404).json({

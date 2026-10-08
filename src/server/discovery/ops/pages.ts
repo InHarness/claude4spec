@@ -88,6 +88,7 @@ export async function getPage(
     );
   }
   // 2.1.8 — refused here, once, for every channel (MCP, REST, in-process).
+  // ASSUMPTION:dev-0006 — a stale `range` is refused, never silently ignored.
   if (input.range !== undefined) {
     throw invalidArgument(
       'get_page has no line window (range was removed in 2.1.8)',

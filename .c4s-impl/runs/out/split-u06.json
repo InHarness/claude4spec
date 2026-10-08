@@ -1,0 +1,117 @@
+{
+  "role": "implementer",
+  "unit": "u06-discovery-references",
+  "packetBytes": 275773,
+  "portions": [
+    {
+      "name": "u06-discovery-references/p1-l2",
+      "layers": [
+        "L2"
+      ],
+      "slugs": [
+        "ac-body-c4s-spec-reader-skill-md-zawiera",
+        "ac-body-c4s-spec-reader-skill-md-zawiera-2",
+        "section:ymfwq0vb",
+        "section:spl4aia8",
+        "section:vaa90g0i",
+        "section:hs2h1ley",
+        "section:idlv3394",
+        "section:p6dqecsk",
+        "section:llrqdo0o",
+        "section:s8c7lww7",
+        "section:984v8437",
+        "section:avzm9pa5",
+        "section:7dad4wt0",
+        "section:m22dread",
+        "section:m22dimpl",
+        "section:m22dortg",
+        "section:dw3xlkgn",
+        "section:8n46mdrz",
+        "section:m19xentrn",
+        "section:q91m4kgl",
+        "section:m19disco"
+      ],
+      "criteriaGroup": "M39 L2 domain: single-resource response rule/cost, overview meta {id,name,dir,builtin,pageCount}, get_page_outline absent fields, get_sections addressing (only unknown-anchor error), get_page item/frontmatter/preamble, resume via outline→get_sections (range removed), budget truncation message, error taxonomy; M22 c4s-spec-reader/brief-implementer skill text + c4s-spec-reader navigation page; M19 domain: slug rename sync + cross-entity propagation, consistency checks, find_references over markdown entries of references=tak roots"
+    },
+    {
+      "name": "u06-discovery-references/p2-l3",
+      "layers": [
+        "L3"
+      ],
+      "slugs": [
+        "c4s-reader-get-page-outline",
+        "c4s-reader-get-page",
+        "c4s-reader-get-sections",
+        "c4s-reader-overview",
+        "c4s-reader-search-pages",
+        "reference-tools-get-page-outline",
+        "reference-tools-get-page",
+        "reference-tools-get-sections",
+        "reference-tools-list-pages",
+        "reference-tools-search-pages",
+        "ac-anchor-pochloniety-rozwinieciem-inneg",
+        "ac-anchor-rodzica-i-anchor-jego-dziecka",
+        "ac-body-itemu-get-page-nie-zawiera-linii",
+        "ac-edges-ucietego-itemu-sa-liczone-z-pel",
+        "ac-frontmatter-fields-w-odpowiedzi-get-p",
+        "ac-frontmatter-raw-w-odpowiedzi-get-page",
+        "ac-get-page-na-roocie-indeksowanym-zwrac",
+        "ac-get-page-outline-dla-strony-ktorej-fr",
+        "ac-get-page-outline-dla-strony-ktorej-fr-2",
+        "ac-get-page-outline-dla-strony-z-preambu",
+        "ac-get-page-outline-niesie-hash-strony-w",
+        "ac-get-page-outline-zwraca-drzewo-naglow",
+        "ac-get-page-po-przekroczeniu-budzetu-zwra",
+        "ac-get-page-zwraca-hash-liczony-z-pelneg",
+        "ac-get-sections-z-includesubtree-true-zw",
+        "ac-item-pochodzacy-z-rozwiniecia-poddrze",
+        "ac-item-sekcji-nadrzednej-przy-includesu",
+        "ac-message-odpowiedzi-get-page-outline-d",
+        "ac-message-odpowiedzi-get-page-ucietej-b",
+        "ac-message-odpowiedzi-get-page-z-preambu",
+        "ac-message-przy-ucieciu-sufitem-liczby-i",
+        "ac-naglowek-ktoremu-indekser-nie-wstrzyk",
+        "ac-obie-encje-mcp-tool-renderujace-get-p",
+        "ac-odpowiedz-get-page-dla-strony-bez-tek",
+        "ac-odpowiedz-get-page-outline-dla-strony",
+        "ac-odpowiedz-get-page-z-preambula-ucieta",
+        "ac-preambula-wieksza-niz-budzet-odpowied",
+        "ac-przebieg-wyszukiwania-ktory-wyczerpie",
+        "ac-przy-bledzie-skladni-yaml-frontmatter",
+        "ac-przy-bledzie-skladni-yaml-frontmatter-2",
+        "ac-przy-cieciu-budzetowym-drzewa-get-pag",
+        "ac-przy-ucieciu-sufitem-liczby-itemow-ko",
+        "ac-redakcja-strony-przekraczajacej-budze",
+        "ac-rozwiniecie-dajace-wiecej-niz-50-item",
+        "ac-strona-bez-zadnego-naglowka-wraca-z-g",
+        "ac-uciety-outline-jest-prefiksem-drzewa",
+        "ac-wezel-get-page-outline-nie-niesie-con",
+        "ac-wzorzec-regex-dluzszy-niz-limit-dlugo"
+      ],
+      "criteriaGroup": "mcp-tool surface (c4s-reader + reference-tools: get_page_outline, get_page without range, get_sections, overview, list_pages, search_pages) and the criteria that check them"
+    },
+    {
+      "name": "u06-discovery-references/p3-l13-l14",
+      "layers": [
+        "L13",
+        "L14"
+      ],
+      "slugs": [
+        "ac-c4s-get-page-root-id-id-path-p",
+        "ac-list-pages-z-rootid-plans-konczy-sie",
+        "section:03u16u7g",
+        "section:q9yb61z5",
+        "section:m12open0",
+        "section:m12edge0",
+        "section:m11l13rt",
+        "section:m11dcmds",
+        "section:m22l13rt",
+        "section:m22krit0",
+        "section:m19l13rt",
+        "section:cg6rwi6s",
+        "section:7dlbor3x"
+      ],
+      "criteriaGroup": "L13 roots/kinds: discovery addresses only `pages`-kind roots (system root id = unknown error, .html not a page) in M39/M12/M11/M22/M19 (references=tak markdown entries, cross-entity phase by `entities` kind root); L14 CLI: c4s get-page loses --range, M19 CLI; edge cases; M22 acceptance"
+    }
+  ]
+}

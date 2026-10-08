@@ -1,0 +1,161 @@
+{
+  "unit": {
+    "id": "u06-discovery-references",
+    "goal": "Odkrywanie (rdzeń M39 i jego transporty M12, M11, M22) adresuje wyłącznie korzenie rodzaju `pages`. Identyfikator korzenia systemowego, np. `plans`, daje ten sam błąd co nieznany.\n  - `overview` zwraca `{id,name,dir,builtin,pageCount}`.\n  - `get_page` traci parametr `range` (także `c4s get-page --range` i tekst skilla `c4s-spec-reader`). Wznowienie odczytu idzie przez `get_page_outline` → `get_sections`.\n  - `get_sections` ma tylko błąd nieznanej kotwicy.\n  - Trafienie `search_pages` bez kotwicy oznacza dopasowanie poza sekcjami.\n  - `.html` nie jest stroną.\n  - Graf referencji M19 (walidacja, `find_references`, `check_consistency`, propagacja slugów) iteruje wpisy markdown korzeni z `references = tak`. Faza cross-entity działa osobno, po korzeniu rodzaju `entities`.",
+    "recipe": {
+      "pages": [
+        {
+          "key": "pages/modules/m39-discovery-core/m39-discovery-core.md",
+          "change": "all",
+          "context": {
+            "offset": 1,
+            "limit": 3,
+            "anchors": [
+              "xmxv4lpo",
+              "yx7z9ivl",
+              "p7vq8lkf"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m39-discovery-core/L2-domain.md",
+          "change": "all",
+          "context": null
+        },
+        {
+          "key": "pages/modules/m12-external-mcp.md",
+          "change": "all",
+          "context": {
+            "offset": 1,
+            "limit": 3,
+            "anchors": [
+              "m12cel00",
+              "m12dep00",
+              "m12dom00"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m11-c4s/L13-page-roots.md",
+          "change": "all",
+          "context": null
+        },
+        {
+          "key": "pages/modules/m11-c4s/L14-cli-commands.md",
+          "change": "all",
+          "context": null
+        },
+        {
+          "key": "pages/modules/m22-external-skills/m22-external-skills.md",
+          "change": "all",
+          "context": {
+            "offset": 1,
+            "limit": 2,
+            "anchors": [
+              "m22cel00",
+              "m22dep00"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m22-external-skills/c4s-spec-reader.md",
+          "change": "all",
+          "context": null
+        },
+        {
+          "key": "pages/modules/m19-references.md",
+          "change": "all",
+          "context": {
+            "offset": 1,
+            "limit": 3,
+            "anchors": [
+              "m19cel00",
+              "m19dep00",
+              "eja05viu"
+            ]
+          }
+        }
+      ],
+      "entities": [
+        {
+          "type": "mcp-tool",
+          "slugs": [
+            "c4s-reader-get-page-outline",
+            "c4s-reader-get-page",
+            "c4s-reader-get-sections",
+            "c4s-reader-overview",
+            "c4s-reader-search-pages",
+            "reference-tools-get-page-outline",
+            "reference-tools-get-page",
+            "reference-tools-get-sections",
+            "reference-tools-list-pages",
+            "reference-tools-search-pages"
+          ]
+        },
+        {
+          "type": "ac",
+          "slugs": [
+            "ac-anchors-na-roocie-bez-indeksu-sekcji",
+            "ac-get-page-z-parametrem-range-na-rooci",
+            "ac-wywolanie-get-page-z-range-na-roocie",
+            "ac-list-pages-z-rootid-plans-konczy-sie",
+            "ac-c4s-get-page-root-id-id-path-p",
+            "ac-body-c4s-spec-reader-skill-md-zawiera",
+            "ac-body-c4s-spec-reader-skill-md-zawiera-2",
+            "ac-truncationhint-z-get-page-na-roocie-s",
+            "ac-anchor-pochloniety-rozwinieciem-inneg",
+            "ac-anchor-rodzica-i-anchor-jego-dziecka",
+            "ac-body-itemu-get-page-nie-zawiera-linii",
+            "ac-edges-ucietego-itemu-sa-liczone-z-pel",
+            "ac-frontmatter-fields-w-odpowiedzi-get-p",
+            "ac-frontmatter-raw-w-odpowiedzi-get-page",
+            "ac-get-page-na-roocie-indeksowanym-zwrac",
+            "ac-get-page-outline-dla-strony-ktorej-fr",
+            "ac-get-page-outline-dla-strony-ktorej-fr-2",
+            "ac-get-page-outline-dla-strony-z-preambu",
+            "ac-get-page-outline-niesie-hash-strony-w",
+            "ac-get-page-outline-zwraca-drzewo-naglow",
+            "ac-get-page-po-przekroczeniu-budzetu-zwra",
+            "ac-get-page-zwraca-hash-liczony-z-pelneg",
+            "ac-get-sections-z-includesubtree-true-zw",
+            "ac-item-pochodzacy-z-rozwiniecia-poddrze",
+            "ac-item-sekcji-nadrzednej-przy-includesu",
+            "ac-message-odpowiedzi-get-page-outline-d",
+            "ac-message-odpowiedzi-get-page-ucietej-b",
+            "ac-message-odpowiedzi-get-page-z-preambu",
+            "ac-message-przy-ucieciu-sufitem-liczby-i",
+            "ac-naglowek-ktoremu-indekser-nie-wstrzyk",
+            "ac-obie-encje-mcp-tool-renderujace-get-p",
+            "ac-odpowiedz-get-page-dla-strony-bez-tek",
+            "ac-odpowiedz-get-page-outline-dla-strony",
+            "ac-odpowiedz-get-page-z-preambula-ucieta",
+            "ac-preambula-wieksza-niz-budzet-odpowied",
+            "ac-przebieg-wyszukiwania-ktory-wyczerpie",
+            "ac-przy-bledzie-skladni-yaml-frontmatter",
+            "ac-przy-bledzie-skladni-yaml-frontmatter-2",
+            "ac-przy-cieciu-budzetowym-drzewa-get-pag",
+            "ac-przy-ucieciu-sufitem-liczby-itemow-ko",
+            "ac-redakcja-strony-przekraczajacej-budze",
+            "ac-rozwiniecie-dajace-wiecej-niz-50-item",
+            "ac-strona-bez-zadnego-naglowka-wraca-z-g",
+            "ac-uciety-outline-jest-prefiksem-drzewa",
+            "ac-wezel-get-page-outline-nie-niesie-con",
+            "ac-wzorzec-regex-dluzszy-niz-limit-dlugo"
+          ]
+        }
+      ]
+    },
+    "dependsOn": [
+      {
+        "unit": "u03-root-registry",
+        "why": "rodzaje i flaga `references`"
+      },
+      {
+        "unit": "u04-entities-root",
+        "why": "korzeń `entities` rozpoznawany po rodzaju w fazie cross-entity M19"
+      }
+    ]
+  },
+  "stateDir": ".c4s-impl/",
+  "mode": "split"
+}

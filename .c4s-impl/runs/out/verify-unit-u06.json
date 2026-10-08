@@ -1,0 +1,571 @@
+{
+  "role": "verifier",
+  "scope": {
+    "kind": "unit",
+    "id": "u06-discovery-references"
+  },
+  "release": "2.1.8",
+  "rows": [
+    {
+      "slug": "section:ymfwq0vb",
+      "level": 2,
+      "status": "covered",
+      "evidence": "get_page/get_page_outline take no narrowing param: c4s-reader.ts:244-245,279-282; reference-tools.ts:329-330,461-464"
+    },
+    {
+      "slug": "section:spl4aia8",
+      "level": 2,
+      "status": "covered",
+      "evidence": "no line window on get_page: ops/pages.ts:91 refuses range; message names cut anchors -> get_sections (src/server/discovery/discovery.test.ts:367)"
+    },
+    {
+      "slug": "section:vaa90g0i",
+      "level": 2,
+      "status": "covered",
+      "evidence": "overview roots {id,name,dir,builtin,pageCount}, kind:pages only: src/server/discovery/ops/meta.ts:27-45; src/server/discovery/discovery.test.ts:2605"
+    },
+    {
+      "slug": "section:hs2h1ley",
+      "level": 2,
+      "status": "covered",
+      "evidence": "items carry no line_start/line_end (src/server/discovery/discovery.test.ts:1389); get_page has no range param (c4s-reader.test.ts:78)"
+    },
+    {
+      "slug": "section:idlv3394",
+      "level": 2,
+      "status": "covered",
+      "evidence": "get_page has no line window: tool-contract-text.ts:89,93 'There is no line window'; ops/pages.ts:91"
+    },
+    {
+      "slug": "section:p6dqecsk",
+      "level": 2,
+      "status": "covered",
+      "evidence": "single item failure SECTION_NOT_FOUND, per item: ops/sections.ts:320-327; errors.ts:70-77 points to search_pages/get_page_outline"
+    },
+    {
+      "slug": "section:llrqdo0o",
+      "level": 2,
+      "status": "covered",
+      "evidence": "get_page (rootId,path): c4s-reader.ts:276-290, reference-tools.ts:455-478; stale range refused (dev-0006)"
+    },
+    {
+      "slug": "section:s8c7lww7",
+      "level": 2,
+      "status": "covered",
+      "evidence": "anchor omitted only under untagged heading: src/server/discovery/discovery.test.ts:317 ('expect(page.results[2]).not.toHaveProperty(\"anchor\")'); non-builtin root items carry anchors src/server/discovery/discovery.test.ts:424"
+    },
+    {
+      "slug": "section:984v8437",
+      "level": 2,
+      "status": "covered",
+      "evidence": "no line window, resumption get_page_outline->get_sections: ops/pages.ts:91; tool-contract-text.ts:89,93; skill spec-reader-template.ts:96"
+    },
+    {
+      "slug": "section:avzm9pa5",
+      "level": 2,
+      "status": "covered",
+      "evidence": "single message variant naming cut anchors + get_sections/update_sections/expectedHash, no range: src/server/discovery/discovery.test.ts:291-306,367; preamble cut message ops/pages.ts ('preamble was cut')"
+    },
+    {
+      "slug": "section:7dad4wt0",
+      "level": 2,
+      "status": "covered",
+      "evidence": "SECTION_NOT_FOUND unknown only (errors.ts:70-77); PAGE_NOT_FOUND lists page roots (errors.ts:80-88); no ROOT_NOT_SECTION_INDEXED code"
+    },
+    {
+      "slug": "section:m22dread",
+      "level": 2,
+      "status": "covered",
+      "evidence": "spec-reader body: no --range, get-page listed: external-skills-service.test.ts:104 ('expect(body).not.toContain(\"--range\")'); older wording diffs recorded dev-0007"
+    },
+    {
+      "slug": "section:m22dimpl",
+      "level": 2,
+      "status": "covered",
+      "evidence": "brief-implementer template carries no 'patchesDir' wording (grep src/server/external-skills/*.ts empty)"
+    },
+    {
+      "slug": "section:m22dortg",
+      "level": 2,
+      "status": "covered",
+      "evidence": "wording-only change (capabilities->umiejętności) in spec prose; no code counterpart"
+    },
+    {
+      "slug": "section:dw3xlkgn",
+      "level": 2,
+      "status": "covered",
+      "evidence": "spec-reader-template.ts: search-pages comment '# hits carry an anchor', line ~96 'There is no line window on `get-page`...'; asserted external-skills-service.test.ts:104,132"
+    },
+    {
+      "slug": "section:8n46mdrz",
+      "level": 2,
+      "status": "covered",
+      "evidence": "slug rename walks markdown entries of roots with references flag: project-context.ts:662,669 (rootRegistry.withFlag('references')); services/references.ts:23,109,254 listMarkdownFiles (md only, dev-0004)"
+    },
+    {
+      "slug": "section:m19xentrn",
+      "level": 2,
+      "status": "covered",
+      "evidence": "cross-entity phase over entities root by kind, not gated by references: project-context.ts:326 (rootRegistry.system('entities')), 540 EntityStore; references.ts:66 setPluginHost fan-out"
+    },
+    {
+      "slug": "section:q91m4kgl",
+      "level": 2,
+      "status": "covered",
+      "evidence": "check_consistency single pass over references-flag roots: src/server/discovery/ops/consistency.ts:230 (roots.referenceValidated() = kind flag, roots.ts:91-93)"
+    },
+    {
+      "slug": "section:m19disco",
+      "level": 2,
+      "status": "covered",
+      "evidence": "find_references tag-grep over references-flag roots: src/server/discovery/ops/references.ts:43"
+    },
+    {
+      "slug": "section:03u16u7g",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/roots.ts:58-75 (system/unknown rootId same INVALID_ARGUMENT, list of kind:pages roots); RootSet built over config.roots only (project-context.ts:316,971); sectionIndexed()/referenceValidated() by kind (roots.ts:78-93); no range: ops/pages.ts:91 refuses (dev-0006); search page-hit only outside sections page-search.ts:139"
+    },
+    {
+      "slug": "section:q9yb61z5",
+      "level": 2,
+      "status": "covered",
+      "evidence": "range-guard edge removed: ac-get-page-z-parametrem-range-na-rooci/ac-wywolanie... deprecated at 2.1.8, no test names them; ac-list-pages-z-rootid-plans-konczy-sie covered src/server/discovery/discovery.test.ts:2339"
+    },
+    {
+      "slug": "section:m12open0",
+      "level": 2,
+      "status": "covered",
+      "evidence": "MCP passes rootId to core; non-pages root -> same INVALID_ARGUMENT as tool_result.error (roots.ts:58-75); get_page has no range param (c4s-reader.ts:276-290, reference-tools.ts:455-478; dev-0006 stale range refused); overview without flags (meta.ts:27-45)"
+    },
+    {
+      "slug": "section:m12edge0",
+      "level": 2,
+      "status": "covered",
+      "evidence": "range edge-case ACs deprecated at 2.1.8; only missing-rootId refusal remains (roots.ts:58-66)"
+    },
+    {
+      "slug": "section:m11l13rt",
+      "level": 2,
+      "status": "covered",
+      "evidence": "CLI page commands are server-delegating; system root id refused like unknown via REST router routes/pages.ts:134-145 (ROOT_NOT_FOUND, dev-0009); find-references over references-flag roots (ops/references.ts:43)"
+    },
+    {
+      "slug": "section:m11dcmds",
+      "level": 2,
+      "status": "covered",
+      "evidence": "c4s get-page has no --range (src/bin/c4s/commands/get-page.ts:32 refuses it, dev-0006); --root-id plans same error as unknown (discovery-commands.test.ts ac-c4s-get-page-root-id-id-path-p; ROOT_NOT_FOUND vs INVALID_ARGUMENT recorded dev-0009)"
+    },
+    {
+      "slug": "section:m22l13rt",
+      "level": 2,
+      "status": "covered",
+      "evidence": "heading/wording-only change; M22 reads no root registry (no code counterpart)"
+    },
+    {
+      "slug": "section:m22krit0",
+      "level": 2,
+      "status": "covered",
+      "evidence": "spec-reader AC body without --range guard: external-skills-service.test.ts:104"
+    },
+    {
+      "slug": "section:m19l13rt",
+      "level": 2,
+      "status": "covered",
+      "evidence": "references flag gating by kind: project-context.ts:662 withFlag('references'); roots.ts:91-93; rule 11 by builtin consistency.ts:440; rule 7 by anchorInjected consistency.ts:245; markdown entries only (listMarkdownFiles)"
+    },
+    {
+      "slug": "section:cg6rwi6s",
+      "level": 2,
+      "status": "covered",
+      "evidence": "c4s find-references server-delegating, set of pages decided by core over references-flag roots (ops/references.ts:43); --pages overrides builtin dir only (project-context.ts:316-318)"
+    },
+    {
+      "slug": "section:7dlbor3x",
+      "level": 2,
+      "status": "covered",
+      "evidence": "entity rename rewrites other entity files in entities root: project-context.ts:326,540; references.ts:66-80"
+    },
+    {
+      "slug": "c4s-reader-overview",
+      "type": "mcp-tool",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/c4s-reader.test.ts:50 ('params(tool)).toEqual([])', desc names {id,name,dir,builtin,pageCount}, no sectionIndexed); trace.md:3"
+    },
+    {
+      "slug": "c4s-reader-get-page-outline",
+      "type": "mcp-tool",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/c4s-reader.test.ts:58 (params ['path','rootId'], required both, 'not a page root'); trace.md:4"
+    },
+    {
+      "slug": "c4s-reader-get-sections",
+      "type": "mcp-tool",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/c4s-reader.test.ts:69 (params ['anchors','includeSubtree'], only SECTION_NOT_FOUND); trace.md:5"
+    },
+    {
+      "slug": "c4s-reader-get-page",
+      "type": "mcp-tool",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/c4s-reader.test.ts:78 (params ['path','rootId'], no range); schema keeps rootId/path optional so the core refuses with the root list as logic says (c4s-reader.ts:279-282); trace.md:6"
+    },
+    {
+      "slug": "c4s-reader-search-pages",
+      "type": "mcp-tool",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/c4s-reader.test.ts:87 (10 params, mode enum, anchorless hit = outside every section); trace.md:7"
+    },
+    {
+      "slug": "reference-tools-get-page-outline",
+      "type": "mcp-tool",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/reference-tools.test.ts:627 (params ['path','rootId'], 'not a page root', no line-range wording); trace.md:8"
+    },
+    {
+      "slug": "reference-tools-get-page",
+      "type": "mcp-tool",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/reference-tools.test.ts:635 (params ['path','rootId'], 'a system root such as `plans` is refused like an unknown one'); trace.md:9"
+    },
+    {
+      "slug": "reference-tools-get-sections",
+      "type": "mcp-tool",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/reference-tools.test.ts:643 (params ['anchors','includeSubtree'], only unknown-anchor error); trace.md:10"
+    },
+    {
+      "slug": "reference-tools-list-pages",
+      "type": "mcp-tool",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/reference-tools.test.ts:651 (params limit/offset/prefix/rootId/sort, required ['rootId'], 'page roots only'); trace.md:11"
+    },
+    {
+      "slug": "reference-tools-search-pages",
+      "type": "mcp-tool",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/server/mcp/reference-tools.test.ts:659 (10 params, anchorless hit outside sections); trace.md:12"
+    },
+    {
+      "slug": "ac-list-pages-z-rootid-plans-konczy-sie",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:2339 ('expect(plans.code).toBe(nope.code)', identical message shape/hint)"
+    },
+    {
+      "slug": "ac-c4s-get-page-root-id-id-path-p",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/bin/c4s/commands/discovery-commands.test.ts:653 ('expect(plans.code).toBe(unknown.code)', message+hint equal, real pagesRouter over RootRegistry; code ROOT_NOT_FOUND per dev-0009)"
+    },
+    {
+      "slug": "ac-body-c4s-spec-reader-skill-md-zawiera",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/external-skills/external-skills-service.test.ts:104 (5 mapping rows, resolve, navigation incl. list-pages/get-page, 'not.toContain(\"--range\")', discovery, c4s ask, CLI-only)"
+    },
+    {
+      "slug": "ac-body-c4s-spec-reader-skill-md-zawiera-2",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/external-skills/external-skills-service.test.ts:132 (anchor hit, batched get-sections, document-order tree, structure envelope, resumption via get-page-outline + get-sections)"
+    },
+    {
+      "slug": "ac-anchor-pochloniety-rozwinieciem-inneg",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:1433 (toEqual(['bbbbbb22','aaaaaa11','cccccc33']))"
+    },
+    {
+      "slug": "ac-anchor-rodzica-i-anchor-jego-dziecka",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:1414 (exactly one item each: toEqual(['aaaaaa11','cccccc33','bbbbbb22']))"
+    },
+    {
+      "slug": "ac-body-itemu-get-page-nie-zawiera-linii",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:317 ('expect(item.body).not.toMatch(/<!-- anchor:/)' and not.toMatch(/^#/m))"
+    },
+    {
+      "slug": "ac-edges-ucietego-itemu-sa-liczone-z-pel",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:1603 (cut parent: entityEmbeds ['mine'] only, child ['theirs'])"
+    },
+    {
+      "slug": "ac-frontmatter-fields-w-odpowiedzi-get-p",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:1775 (fields equals all keys {title,status,owners})"
+    },
+    {
+      "slug": "ac-frontmatter-raw-w-odpowiedzi-get-page",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:336 (raw === '---\\ntitle: Snapshots\\ntags: [a, b]\\n---\\n')"
+    },
+    {
+      "slug": "ac-get-page-na-roocie-indeksowanym-zwrac",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:317 (results map to [anchor,heading,level] in document order)"
+    },
+    {
+      "slug": "ac-get-page-outline-dla-strony-ktorej-fr",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:1869 ('expect(outline.frontmatter!.fields).toEqual({ blob: big })')"
+    },
+    {
+      "slug": "ac-get-page-outline-dla-strony-ktorej-fr-2",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:1869 ('expect(outline.sections).toEqual([])')"
+    },
+    {
+      "slug": "ac-get-page-outline-dla-strony-z-preambu",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:1775 ('expect(outline.preamble).toEqual({ size: ... })')"
+    },
+    {
+      "slug": "ac-get-page-outline-niesie-hash-strony-w",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:1954 (envelope hash = sha256 of file, not on node) + src/server/services/page-write.test.ts:1522 (outline.hash used as expectedHash for update_sections, passes)"
+    },
+    {
+      "slug": "ac-get-page-outline-zwraca-drzewo-naglow",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:1886 (tree by parent_anchor in document order, node keys [anchor,children?,heading,level,size]); no-query-mode half asserted by schema tests reference-tools.test.ts:627"
+    },
+    {
+      "slug": "ac-get-page-po-przekroczeniu-budzetu-zwra",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:367 (toEqual({anchor:'aaaa0002',heading_text:'Two',heading_level:2,truncated:true}))"
+    },
+    {
+      "slug": "ac-get-page-zwraca-hash-liczony-z-pelneg",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:278 (truncated page hash = sha256 of whole file); envelope clause {content,truncationHint} contradicts mcp-tool entities, recorded dev-0008"
+    },
+    {
+      "slug": "ac-get-sections-z-includesubtree-true-zw",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:1320 (results anchors ['aaaaaa11','bbbbbb22','dddddd44'], parent body excludes child)"
+    },
+    {
+      "slug": "ac-item-pochodzacy-z-rozwiniecia-poddrze",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:1320 (child toMatchObject anchor/heading_text/heading_level, same keys as parent) + :1389"
+    },
+    {
+      "slug": "ac-item-sekcji-nadrzednej-przy-includesu",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:1320 ('expect(parent!.body).not.toContain(\"CHILD BODY\")')"
+    },
+    {
+      "slug": "ac-message-odpowiedzi-get-page-outline-d",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:1869 ('expect(outline.message).toMatch(/get_page\\(/)')"
+    },
+    {
+      "slug": "ac-message-odpowiedzi-get-page-ucietej-b",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:367 (message contains 'aaaa0002' and 'aaaa0003')"
+    },
+    {
+      "slug": "ac-message-odpowiedzi-get-page-z-preambu",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:414 ('expect(page.message).toMatch(/preamble was cut/)')"
+    },
+    {
+      "slug": "ac-message-przy-ucieciu-sufitem-liczby-i",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:1456 (message contains '50' and 'get_page_outline', not 'smaller subset')"
+    },
+    {
+      "slug": "ac-naglowek-ktoremu-indekser-nie-wstrzyk",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:317 ('expect(page.results[2]).not.toHaveProperty(\"anchor\")')"
+    },
+    {
+      "slug": "ac-obie-encje-mcp-tool-renderujace-get-p",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/mcp/reference-tools.test.ts:677 (both declarations contain GET_PAGE_OUTLINE_RETURN; envelope hash, leaf omits children, no heading_path/content_hash/total/hasMore/limit/offset)"
+    },
+    {
+      "slug": "ac-odpowiedz-get-page-dla-strony-bez-tek",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:346 ('expect(page).not.toHaveProperty(\"preamble\")')"
+    },
+    {
+      "slug": "ac-odpowiedz-get-page-outline-dla-strony",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:1869 ('expect(outline.truncated).toBe(true)')"
+    },
+    {
+      "slug": "ac-odpowiedz-get-page-z-preambula-ucieta",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:414 ('expect(page.truncated).toBe(true)')"
+    },
+    {
+      "slug": "ac-preambula-wieksza-niz-budzet-odpowied",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:414 ('expect(pre.startsWith(page.preamble!)).toBe(true)', shorter)"
+    },
+    {
+      "slug": "ac-przebieg-wyszukiwania-ktory-wyczerpie",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:694 (SEARCH_BUDGET_EXCEEDED, not INVALID_ARGUMENT; same pattern completes) + src/server/discovery/search/guards.test.ts:63,74"
+    },
+    {
+      "slug": "ac-przy-bledzie-skladni-yaml-frontmatter",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:360 (frontmatter toEqual({ raw }) without fields)"
+    },
+    {
+      "slug": "ac-przy-bledzie-skladni-yaml-frontmatter-2",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:1788 (frontmatter toEqual({ size }) without fields)"
+    },
+    {
+      "slug": "ac-przy-cieciu-budzetowym-drzewa-get-pag",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:1798 (truncated tree, 'expect(outline.frontmatter!.fields).toEqual(keys)')"
+    },
+    {
+      "slug": "ac-przy-ucieciu-sufitem-liczby-itemow-ko",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:1456 ('expect(result.truncated).toBe(true)')"
+    },
+    {
+      "slug": "ac-redakcja-strony-przekraczajacej-budze",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/services/page-write.test.ts:1522 (over-budget page; getPage stubbed to throw; outline hash -> get_sections -> update_sections passes)"
+    },
+    {
+      "slug": "ac-rozwiniecie-dajace-wiecej-niz-50-item",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:1456 (toHaveLength(50), prefix in output order)"
+    },
+    {
+      "slug": "ac-strona-bez-zadnego-naglowka-wraca-z-g",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:353 (results toEqual([]), preamble 'just prose\\nmore\\n')"
+    },
+    {
+      "slug": "ac-uciety-outline-jest-prefiksem-drzewa",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:1812 (preOrder equals documentOrder prefix, no orphan nodes, message /PREFIX/ /complete in itself/ /get_sections/, no smaller retry)"
+    },
+    {
+      "slug": "ac-wezel-get-page-outline-nie-niesie-con",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:1993 (node lacks content_hash/contentHash/headingPath/heading_path)"
+    },
+    {
+      "slug": "ac-wzorzec-regex-dluzszy-niz-limit-dlugo",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:674 (both ops INVALID_ARGUMENT) + src/server/discovery/search/guards.test.ts:27,39 (boundary in message for search_pages and search_entities)"
+    },
+    {
+      "slug": "goal:u06-discovery-references",
+      "level": 2,
+      "status": "covered",
+      "evidence": "kind:pages-only addressing + plans=unknown: discovery/roots.ts:58-75, project-context.ts:316,971; overview {id,name,dir,builtin,pageCount}: ops/meta.ts:27-45; get_page range gone on MCP/CLI/skill (refused, dev-0006): c4s-reader.ts:276-290, reference-tools.ts:455-478, ops/pages.ts:91, bin/c4s/commands/get-page.ts:32, spec-reader-template.ts:~96; get_sections only unknown-anchor error: ops/sections.ts:320-327; anchorless search hit = outside sections: search/page-search.ts:139; .html not a page: discovery.test.ts:2364 (dev-0004); M19 graph over references-flag roots' markdown entries: project-context.ts:662,669, ops/references.ts:43, ops/consistency.ts:230; cross-entity phase over entities root by kind: project-context.ts:326,540"
+    },
+    {
+      "slug": "regression",
+      "level": 2,
+      "status": "covered",
+      "evidence": "npm run typecheck exit 0; tests changed since 141fa97c (discovery.test.ts, c4s-reader.test.ts, reference-tools.test.ts, external-skills-service.test.ts, discovery-commands.test.ts, page-write.test.ts) read against code: asserted strings/shapes present (tool-contract-text.ts:89,93; ops/pages.ts 'preamble was cut'; ops/sections.ts PREFIX/'complete in itself')"
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "tsc server/client/types + 9 plugin typechecks clean; EXIT 0"
+  }
+}

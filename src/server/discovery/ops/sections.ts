@@ -383,7 +383,7 @@ interface Slot {
  * one item each, and for `[child, parent]` the parent's expansion skips the
  * child and everything under it, so its subtree is not contiguous.
  *
- * An unresolvable anchor (unknown, or on a root without a section index) stays
+ * An unresolvable anchor (2.1.8: only ever an unknown one) stays
  * a slot of its own — it becomes an error item and counts toward the ceiling —
  * it just has nothing to expand. The walk is over `section_index` rows, not
  * page text: the rows are what the batch is keyed from, so an index-derived

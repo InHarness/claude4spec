@@ -36,8 +36,9 @@ export function pagesServiceSource(pages: MarkdownFileStore): PagesSource {
 
 export class ReferencesService {
   /**
-   * 0.1.96 multiroot: the service is bound to the REFERENCE-VALIDATED page roots
-   * (config.roots filtered by `referenceValidated`), keyed by `rootId`. Every
+   * 0.1.96 multiroot: the service is bound to the roots in the reference graph
+   * (2.1.8: the roots whose KIND carries `references = yes` — their markdown
+   * entries, `.md`/`.mdx`), keyed by `rootId`. Every
    * walk/propagate iterates that subset keyed `(rootId, path)`; writes go through
    * the matching root's `PagesService` + M40 write handle (markOrigin before write).
    * Entity-file propagation (setPluginHost) is root-agnostic and unchanged.

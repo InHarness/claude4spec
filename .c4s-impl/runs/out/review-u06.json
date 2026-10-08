@@ -1,0 +1,18 @@
+{
+  "role": "reviewer",
+  "scope": {
+    "kind": "unit",
+    "id": "u06-discovery-references",
+    "base": "141fa97c35541ec0bf2b7459063aa4af5d560ab0"
+  },
+  "findings": [
+    {
+      "id": "rev-0014",
+      "file": "src/bin/c4s/commands/discovery-commands.test.ts",
+      "line": 640,
+      "blocking": false,
+      "reason": "The new `describe('a system root id on a page command')` block and its JSDoc were inserted between the existing JSDoc for `describe('no server')` (\"Item 24 and the exit-code remap…\") and that describe. That comment now documents the wrong block: two back-to-back /** */ comments sit above the new describe, and `no server` has none. Move the new block above the orphaned comment (or below the `no server` describe).",
+      "portion": "u06-discovery-references/p3-l13-l14"
+    }
+  ]
+}

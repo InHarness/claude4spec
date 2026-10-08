@@ -7,6 +7,7 @@ description: Read claude4spec specification entities (endpoints, DTOs, tables, A
 ---
 `;
 
+// ASSUMPTION:dev-0007 — carries the 2.1.8 sentences of the spec page; older wording differences stay.
 export function specReaderBody(ctx: ExternalSkillContext): string {
   // 2.1.0: `--server <publicUrl> --project <id>` in every command.
   const identity = skillIdentity(ctx);
@@ -91,6 +92,7 @@ c4s get-page --root-id pages --path some/page.md ${identity}
 \`\`\`
 
 The page comes back as **structure**, not as one text: \`{ rootId, path, hash, frontmatter?, preamble?, results[] }\`. Each item of \`results\` is one section — \`anchor\`, \`heading_text\`, \`heading_level\`, \`body\` — in document order. The anchor is a field, so you pass it straight to \`get-sections\`; \`body\` holds neither the anchor line nor the heading line. \`frontmatter.raw\` is the frontmatter verbatim and \`frontmatter.fields\` its parsed keys (absent when the YAML does not parse); \`preamble\` is the text above the first heading. \`hash\` is what a write expects. Add \`--format text\` to get the page assembled back into markdown for reading.
+
 XML tags in \`body\` are left untouched — the tag is the edge to another entity, so expanding it would replace a link with a payload. Resolve the tags you care about with the commands above. On a page over the response budget, some items come back with \`truncated: true\` and no \`body\`, and \`message\` names their anchors — fetch those with \`get-sections\`. There is no line window on \`get-page\`: to continue a cut read, go through \`get-page-outline\` and \`get-sections\`.
 
 ## Discovery

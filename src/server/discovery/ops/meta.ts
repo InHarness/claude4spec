@@ -4,8 +4,8 @@
  * `overview` is the ENTRY POINT. The session that motivated this module spent
  * thirteen turns guessing at file paths because nothing answered "what is here
  * and how do I address it". So root properties are a mandatory part of the
- * payload, not a detail: an agent has to know up front whether hits from a root
- * arrive as an `anchor` or as `(rootId, path, line)`.
+ * payload, not a detail. 2.1.8: only `kind: pages` roots are listed, as
+ * `{ id, name, dir, builtin, pageCount }` — a system root has no address.
  *
  * `overview` failing must not push an agent back to guessing, which is why it
  * touches as little as possible — only pure-data manifest slots, never a

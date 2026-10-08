@@ -271,8 +271,11 @@ describe('discovery core', () => {
     /**
      * The hash is of the FILE, not of the payload that fit. A hash of the returned
      * prefix would look identical and arm a guard that can never pass.
+     *
+     * ASSUMPTION:dev-0008 — the criterion's `{ content, truncationHint }` wording
+     * predates the 2.1.6 envelope; only its hash clause is asserted here.
      */
-    it('a truncated page still carries the hash of the whole file', async () => {
+    it('[ac:ac-get-page-zwraca-hash-liczony-z-pelneg] a truncated page still carries the hash of the whole file', async () => {
       const body = `# H\n\n${'x'.repeat(DEFAULT_BUDGET_CHARS + 1000)}\n`;
       await writePage('pages', 'big.md', body);
       const c = core([pagesRoot()]);
@@ -311,7 +314,7 @@ describe('discovery core', () => {
       '<!-- anchor: m17top001 -->\n## Cel\n\nAutor zamraża <single_element type="diagram" slug="flow"/>\n\n' +
       '### Untagged\n\nno anchor yet\n';
 
-    it('one item per section in document order, keyed by anchor; body without the anchor and heading lines', async () => {
+    it('[ac:ac-get-page-na-roocie-indeksowanym-zwrac] [ac:ac-body-itemu-get-page-nie-zawiera-linii] [ac:ac-naglowek-ktoremu-indekser-nie-wstrzyk] one item per section in document order, keyed by anchor; body without the anchor and heading lines', async () => {
       await writePage('pages', 'm.md', PAGE);
       const page = await core([pagesRoot()]).getPage({ rootId: 'pages', path: 'm.md' });
       expect(page.results.map((i) => [i.anchor, i.heading_text, i.heading_level])).toEqual([
@@ -330,7 +333,7 @@ describe('discovery core', () => {
       expect(page).not.toHaveProperty('content');
     });
 
-    it('frontmatter is { raw, fields } with raw verbatim; preamble is the text above the first heading', async () => {
+    it('[ac:ac-frontmatter-raw-w-odpowiedzi-get-page] frontmatter is { raw, fields } with raw verbatim; preamble is the text above the first heading', async () => {
       await writePage('pages', 'm.md', PAGE);
       const page = await core([pagesRoot()]).getPage({ rootId: 'pages', path: 'm.md' });
       expect(page.frontmatter).toEqual({
@@ -340,28 +343,28 @@ describe('discovery core', () => {
       expect(page.preamble).toBe('Intro line.\n\n');
     });
 
-    it('a page with no text before its first heading carries no preamble', async () => {
+    it('[ac:ac-odpowiedz-get-page-dla-strony-bez-tek] a page with no text before its first heading carries no preamble', async () => {
       await writePage('pages', 'p.md', '# A\n\nbody\n');
       const page = await core([pagesRoot()]).getPage({ rootId: 'pages', path: 'p.md' });
       expect(page).not.toHaveProperty('preamble');
       expect(page).not.toHaveProperty('frontmatter');
     });
 
-    it('a page with no heading comes back as results: [] with everything in the preamble', async () => {
+    it('[ac:ac-strona-bez-zadnego-naglowka-wraca-z-g] a page with no heading comes back as results: [] with everything in the preamble', async () => {
       await writePage('pages', 'p.md', '---\na: 1\n---\njust prose\nmore\n');
       const page = await core([pagesRoot()]).getPage({ rootId: 'pages', path: 'p.md' });
       expect(page.results).toEqual([]);
       expect(page.preamble).toBe('just prose\nmore\n');
     });
 
-    it('a YAML syntax error drops fields, never the read — raw is there to repair it', async () => {
+    it('[ac:ac-przy-bledzie-skladni-yaml-frontmatter] a YAML syntax error drops fields, never the read — raw is there to repair it', async () => {
       await writePage('pages', 'p.md', '---\ntitle: [unclosed\n---\n# A\n');
       const page = await core([pagesRoot()]).getPage({ rootId: 'pages', path: 'p.md' });
       expect(page.frontmatter).toEqual({ raw: '---\ntitle: [unclosed\n---\n' });
       expect(page.results).toHaveLength(1);
     });
 
-    it('an over-budget item keeps anchor and heading, loses body, and message names EVERY cut anchor', async () => {
+    it('[ac:ac-get-page-po-przekroczeniu-budzetu-zwra] [ac:ac-message-odpowiedzi-get-page-ucietej-b] an over-budget item keeps anchor and heading, loses body, and message names EVERY cut anchor', async () => {
       const big = 'x'.repeat(DEFAULT_BUDGET_CHARS);
       await writePage(
         'pages',
@@ -408,14 +411,14 @@ describe('discovery core', () => {
       expect(JSON.stringify(page).length).toBeLessThanOrEqual(DEFAULT_BUDGET_CHARS + 1000);
     });
 
-    it('an over-budget preamble comes back as a prefix, and message says the preamble was cut', async () => {
+    it('[ac:ac-preambula-wieksza-niz-budzet-odpowied] [ac:ac-message-odpowiedzi-get-page-z-preambu] [ac:ac-odpowiedz-get-page-z-preambula-ucieta] an over-budget preamble comes back as a prefix, and message says the preamble was cut', async () => {
       const pre = 'p'.repeat(DEFAULT_BUDGET_CHARS + 500);
       await writePage('pages', 'big.md', `${pre}\n# A\n\nbody\n`);
       const page = await core([pagesRoot()]).getPage({ rootId: 'pages', path: 'big.md' });
       expect(page.truncated).toBe(true);
       expect(pre.startsWith(page.preamble!)).toBe(true);
       expect(page.preamble!.length).toBeLessThan(pre.length);
-      expect(page.message).toMatch(/preamble/);
+      expect(page.message).toMatch(/preamble was cut/);
     });
 
     it('on every page root — non-builtin included — an item carries its anchor when present', async () => {
@@ -1314,7 +1317,7 @@ describe('discovery core', () => {
      * section is not expanded (the subtree ends at the next same-or-shallower
      * heading).
      */
-    it('[ac:ac-get-sections-z-includesubtree-true-zw] a subtree comes back as separate items, one per section, in document order behind its parent', async () => {
+    it('[ac:ac-get-sections-z-includesubtree-true-zw] [ac:ac-item-sekcji-nadrzednej-przy-includesu] [ac:ac-item-pochodzacy-z-rozwiniecia-poddrze] a subtree comes back as separate items, one per section, in document order behind its parent', async () => {
       await writePage(
         'pages',
         'tree.md',
@@ -1450,7 +1453,7 @@ describe('discovery core', () => {
      * to the caller, so "retry with fewer" would name a call that returns the
      * same thing.
      */
-    it('[ac:ac-rozwiniecie-dajace-wiecej-niz-50-item] an expansion past the ceiling comes back as the first 50 items in output order, with the ceiling named', async () => {
+    it('[ac:ac-rozwiniecie-dajace-wiecej-niz-50-item] [ac:ac-przy-ucieciu-sufitem-liczby-itemow-ko] [ac:ac-message-przy-ucieciu-sufitem-liczby-i] an expansion past the ceiling comes back as the first 50 items in output order, with the ceiling named', async () => {
       const lines = ['# Top', '', '<!-- anchor: aaaaaa11 -->', '## Parent', '', 'P', ''];
       for (let i = 1; i <= 60; i++) {
         const anchor = `child${String(i).padStart(3, '0')}`;
@@ -1769,7 +1772,7 @@ describe('discovery core', () => {
   });
 
   describe('get_page_outline — frontmatter and preamble on the envelope (2.1.6)', () => {
-    it('carries ALL parsed frontmatter keys with the block size, and the preamble size', async () => {
+    it('[ac:ac-frontmatter-fields-w-odpowiedzi-get-p] [ac:ac-get-page-outline-dla-strony-z-preambu] carries ALL parsed frontmatter keys with the block size, and the preamble size', async () => {
       const fm = '---\ntitle: Snapshots\nstatus: draft\nowners: [a, b]\n---\n';
       await writePage('pages', 'm.md', `${fm}Intro.\n\n<!-- anchor: abcdef12 -->\n## S\n\nbody\n`);
       await indexPageLikeTheIndexer('pages', 'pages', 'm.md');
@@ -1782,7 +1785,7 @@ describe('discovery core', () => {
       expect(outline.sections.map((n) => n.anchor)).toEqual(['abcdef12']);
     });
 
-    it('a YAML syntax error leaves size without fields — the outline still answers', async () => {
+    it('[ac:ac-przy-bledzie-skladni-yaml-frontmatter-2] a YAML syntax error leaves size without fields — the outline still answers', async () => {
       const fm = '---\ntitle: [unclosed\n---\n';
       await writePage('pages', 'm.md', `${fm}<!-- anchor: abcdef12 -->\n## S\n\nbody\n`);
       indexSection({ rootId: 'pages', anchor: 'abcdef12', page: 'm.md', heading: 'S', start: 1, end: 4 });
@@ -1792,7 +1795,7 @@ describe('discovery core', () => {
       expect(outline.sections).toHaveLength(1);
     });
 
-    it('the frontmatter is never cut: a cut tree still ships every key', async () => {
+    it('[ac:ac-przy-cieciu-budzetowym-drzewa-get-pag] the frontmatter is never cut: a cut tree still ships every key', async () => {
       const keys = Object.fromEntries(Array.from({ length: 50 }, (_, i) => [`k${i}`, `v${i}`]));
       const fm = `---\n${Object.entries(keys).map(([k, v]) => `${k}: ${v}`).join('\n')}\n---\n`;
       const count = Math.ceil(DEFAULT_BUDGET_CHARS / 40) + 50;
@@ -1806,7 +1809,64 @@ describe('discovery core', () => {
       expect(outline.frontmatter!.fields).toEqual(keys);
     });
 
-    it('a frontmatter over the budget alone ships whole, with sections: [] and a message pointing at get_page', async () => {
+    it('[ac:ac-uciety-outline-jest-prefiksem-drzewa] a cut outline is a PREFIX of the tree — no node without its parent — and its message offers no smaller retry', async () => {
+      const lines: string[] = [];
+      const count = Math.ceil(DEFAULT_BUDGET_CHARS / 60);
+      for (let i = 0; i < count; i++) {
+        lines.push(`<!-- anchor: p${String(i).padStart(7, '0')} -->`, `## Parent ${i}`, '', 'p', '');
+        lines.push(`<!-- anchor: c${String(i).padStart(7, '0')} -->`, `### Child ${i}`, '', 'c', '');
+      }
+      const content = lines.join('\n');
+      await writePage('pages', 'tree.md', content);
+      // Indexed WITH parents, the way the indexer records them.
+      const all = content.split('\n');
+      const stack: Array<{ anchor: string; level: number }> = [];
+      const documentOrder: string[] = [];
+      for (const sec of parseSections(content, { frontmatter: false }).sections) {
+        if (!sec.anchor) continue;
+        while (stack.length && stack[stack.length - 1]!.level >= sec.level) stack.pop();
+        indexSection({
+          rootId: 'pages',
+          anchor: sec.anchor,
+          page: 'tree.md',
+          heading: sec.heading,
+          start: sec.startLine,
+          end: sec.ownEndLine,
+          level: sec.level,
+          body: ownBodyOf(all, sec),
+          parent: stack[stack.length - 1]?.anchor ?? null,
+        });
+        stack.push({ anchor: sec.anchor, level: sec.level });
+        documentOrder.push(sec.anchor);
+      }
+
+      const outline = await core([pagesRoot()]).getPageOutline({ rootId: 'pages', path: 'tree.md' });
+
+      expect(outline.truncated).toBe(true);
+      // Every top-level node is a real top-level section: no child was promoted
+      // to a root because its parent fell outside the answer.
+      expect(outline.sections.every((n) => n.level === 2)).toBe(true);
+      const preOrder: string[] = [];
+      const walk = (nodes: typeof outline.sections) => {
+        for (const n of nodes) {
+          preOrder.push(n.anchor);
+          for (const child of n.children ?? []) expect(child.anchor.slice(1)).toBe(n.anchor.slice(1));
+          walk(n.children ?? []);
+        }
+      };
+      walk(outline.sections);
+      // A PREFIX of the document-order tree, not a sample of it.
+      expect(preOrder.length).toBeLessThan(documentOrder.length);
+      expect(preOrder).toEqual(documentOrder.slice(0, preOrder.length));
+      expect(outline.message).toMatch(/PREFIX/);
+      expect(outline.message).toMatch(/complete in itself/);
+      expect(outline.message).toMatch(/get_sections/);
+      // No smaller call is proposed: the operation has no narrowing parameter.
+      expect(outline.message).not.toMatch(/get_page_outline\(/);
+      expect(outline.message).not.toMatch(/(limit|offset|depth)\s*:/);
+    });
+
+    it('[ac:ac-get-page-outline-dla-strony-ktorej-fr] [ac:ac-get-page-outline-dla-strony-ktorej-fr-2] [ac:ac-odpowiedz-get-page-outline-dla-strony] [ac:ac-message-odpowiedzi-get-page-outline-d] a frontmatter over the budget alone ships whole, with sections: [] and a message pointing at get_page', async () => {
       const big = 'x'.repeat(DEFAULT_BUDGET_CHARS + 100);
       await writePage('pages', 'm.md', `---\nblob: ${big}\n---\n<!-- anchor: abcdef12 -->\n## S\n\nbody\n`);
       indexSection({ rootId: 'pages', anchor: 'abcdef12', page: 'm.md', heading: 'S', start: 1, end: 4 });
@@ -1823,7 +1883,7 @@ describe('discovery core', () => {
    * and DOCUMENT ORDER is the contract — not the anchor sort the flat listing used,
    * which shuffled a page into alphabetical nonsense.
    */
-  it('nests by parent_anchor and emits in document order', async () => {
+  it('[ac:ac-get-page-outline-zwraca-drzewo-naglow] nests by parent_anchor and emits in document order', async () => {
     await writePage(
       'pages',
       'tree.md',
@@ -1844,6 +1904,10 @@ describe('discovery core', () => {
     // `mbeta001`, so an anchor sort would have inverted them.
     expect(top.children!.map((n) => n.heading)).toEqual(['Alpha', 'Beta']);
     expect(top.children![0]!.children!.map((n) => n.heading)).toEqual(['Deep']);
+    // A node is { anchor, heading, level, size } plus `children` only when it has any.
+    expect(Object.keys(top).sort()).toEqual(['anchor', 'children', 'heading', 'level', 'size']);
+    expect(Object.keys(top.children![1]!).sort()).toEqual(['anchor', 'heading', 'level', 'size']);
+    expect(top.children![1]).toMatchObject({ anchor: 'mbeta001', heading: 'Beta', level: 2 });
   });
 
   /**
@@ -1887,7 +1951,7 @@ describe('discovery core', () => {
    * against. Frontmatter included: hashing the gray-matter body instead would arm a
    * guard that fails on every page that has any.
    */
-  it('carries the page file hash on the envelope', async () => {
+  it('[ac:ac-get-page-outline-niesie-hash-strony-w] carries the page file hash on the envelope', async () => {
     const body = ['---', 'title: M', '---', '# Top', '', '<!-- anchor: abcdef12 -->', '## S', '', 'body', ''].join('\n');
     await writePage('pages', 'm.md', body);
     indexSection({ rootId: 'pages', anchor: 'abcdef12', page: 'm.md', heading: 'S', start: 3, end: 7 });
@@ -1896,6 +1960,9 @@ describe('discovery core', () => {
     const outline = await c.getPageOutline({ rootId: 'pages', path: 'm.md' });
 
     expect(outline.hash).toBe(createHash('sha256').update(body, 'utf-8').digest('hex'));
+    // On the ENVELOPE, beside the constant key — never on a node.
+    expect(outline).toMatchObject({ rootId: 'pages', path: 'm.md' });
+    expect(outline.sections[0]).not.toHaveProperty('hash');
     // One value, one name, across both channels — so it can be copied between them.
     expect(outline.hash).toBe((await c.getPage({ rootId: 'pages', path: 'm.md' })).hash);
   });
@@ -1923,7 +1990,7 @@ describe('discovery core', () => {
    * with — which it is not. It stays in the table, for M06's REST surface. Same for
    * `heading_path`: the hierarchy is the node's POSITION now.
    */
-  it('a node carries no section hash of any spelling, and no headingPath', async () => {
+  it('[ac:ac-wezel-get-page-outline-nie-niesie-con] a node carries no section hash of any spelling, and no headingPath', async () => {
     await writePage('pages', 'm.md', ['# Top', '', '<!-- anchor: abcdef12 -->', '## S', '', 'body', ''].join('\n'));
     indexSection({ rootId: 'pages', anchor: 'abcdef12', page: 'm.md', heading: 'S', start: 3, end: 7 });
     const c = core([pagesRoot()]);

@@ -17,6 +17,7 @@ import {
   type PageWriteTarget,
 } from './page-write.js';
 import { DomainError } from './tags.js';
+import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 
 /**
  * 0.2.15 — `expectedHash` is REQUIRED, including on the create-through-update
@@ -1518,8 +1519,11 @@ describe('update_sections — the anchor-loss guard', () => {
    * that a call did not happen passes just as well when the code path quietly
    * changed underneath it.
    */
-  it('edits a page armed only by the get_page_outline hash — no get_page anywhere in the chain', async () => {
-    await index('doc.md', nested);
+  it('[ac:ac-redakcja-strony-przekraczajacej-budze] [ac:ac-get-page-outline-niesie-hash-strony-w] edits an over-budget page armed only by the get_page_outline hash — no get_page anywhere in the chain', async () => {
+    // Over the response budget: Sibling's body alone is larger than any answer
+    // may be, so the page could not come back whole from get_page.
+    await index('doc.md', nested.replace('SIBLING BODY', `SIBLING BODY\n${'s'.repeat(DEFAULT_BUDGET_CHARS + 1000)}`));
+    expect((await pages.read('doc.md')).body.length).toBeGreaterThan(DEFAULT_BUDGET_CHARS);
     const noWholePageReads = {
       ...core,
       getPage: () => {
@@ -1531,8 +1535,11 @@ describe('update_sections — the anchor-loss guard', () => {
     const flat = (nodes: typeof outline.sections): typeof outline.sections =>
       nodes.flatMap((n) => [n, ...flat(n.children ?? [])]);
     const parent = flat(outline.sections).find((i) => i.heading === 'Parent')!;
+    // The outline issues the sizes the choice of anchors is made from.
+    expect(parent.size).toBeGreaterThan(0);
     const read = await noWholePageReads.getSections({ anchors: [parent.anchor] });
     expect(read.results[0]).toMatchObject({ anchor: parent.anchor });
+    expect((read.results[0] as { body?: string }).body).toContain('PARENT BODY');
 
     const res = await updateSections(
       deps(),
