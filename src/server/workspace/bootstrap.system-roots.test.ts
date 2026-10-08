@@ -40,6 +40,33 @@ describe('bootstrapProject — system roots', () => {
     expect(fs.existsSync(path.join(cwd, '.claude4spec', 'entities', 'tags.json'))).toBe(false);
   });
 
+  it('activation creates the directory of every registry root — user roots of kind pages included (M31 bootstrap)', () => {
+    fs.mkdirSync(path.join(cwd, '.claude4spec'), { recursive: true });
+    fs.writeFileSync(
+      path.join(cwd, '.claude4spec', 'config.json'),
+      JSON.stringify({
+        $schemaVersion: 4,
+        name: 'p',
+        roots: [
+          { id: 'pages', name: 'Pages', dir: 'pages', builtin: true },
+          { id: 'adr', name: 'ADRs', dir: 'docs/adr', builtin: false },
+        ],
+      }),
+    );
+    const result = boot();
+    for (const dir of ['pages', 'docs/adr']) expect(fs.statSync(path.join(cwd, dir)).isDirectory()).toBe(true);
+    // Only system roots are reported for the clone rollback; user roots are rolled back by their own list.
+    expect(result.systemRootDirsCreated).not.toContain('pages');
+    expect(result.systemRootDirsCreated).not.toContain('docs/adr');
+  });
+
+  it('the CLI --pages override names the base root dir the activation creates', () => {
+    const registry = new WorkspaceRegistry(dir);
+    const ws = registry.selectOrCreate({ name: 'default' });
+    bootstrapProject(registry, ws, cwd, { pagesDir: 'spec' });
+    expect(fs.statSync(path.join(cwd, 'spec')).isDirectory()).toBe(true);
+  });
+
   it('[ac:ac-bootstrap-tworzy-aktualizuje-gitignore] with git disabled the managed .gitignore block lists the gitignore-flagged roots, then *.deprecated', () => {
     boot();
     const text = fs.readFileSync(path.join(cwd, '.gitignore'), 'utf8');

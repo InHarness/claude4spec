@@ -3,7 +3,7 @@ import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
 import { insertAnchorLines, parseSections } from '../../shared/section-parser.js';
 import { ARTIFACT_ROOT_KIND, type ArtifactKind } from './artifact-registry.js';
 import { kindSelects } from '../../shared/root-kinds.js';
-import type { PagesService } from './pages.js';
+import type { MarkdownFileStore } from './markdown-file-store.js';
 import type { WatchSubscriber } from '../fs/watcher.js';
 
 /**
@@ -86,7 +86,7 @@ export function injectAnchorsFor(kind: ArtifactKind, body: string): string {
  */
 export function artifactAnchorInjectionSubscriber(
   kind: ArtifactKind,
-  mount: { pages: PagesService },
+  mount: { store: MarkdownFileStore },
   suppress: (source: string, relPath: string) => void,
 ): WatchSubscriber {
   return {
@@ -94,14 +94,14 @@ export function artifactAnchorInjectionSubscriber(
       if (!injectsAnchors(kind)) return;
       let page;
       try {
-        page = await mount.pages.read(relPath);
+        page = await mount.store.read(relPath);
       } catch {
         return; // already gone — skip idempotently
       }
       const injected = injectArtifactAnchors(page.body);
       if (injected === page.body) return;
       suppress(source, relPath);
-      await mount.pages.write(relPath, { frontmatter: page.frontmatter, body: injected });
+      await mount.store.write(relPath, { frontmatter: page.frontmatter, body: injected });
     },
     onUnlink: () => {},
   };

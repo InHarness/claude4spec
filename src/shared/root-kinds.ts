@@ -230,6 +230,16 @@ export function isSystemRootId(id: string): boolean {
   return (SYSTEM_ROOT_KINDS as readonly string[]).includes(id);
 }
 
+/**
+ * The kind of the system root registered under `rootId`, or `undefined` for any
+ * other id (a user root, kind `pages`). Consumers that react per system root —
+ * e.g. the client's `file:changed` routing — branch on this KIND, never on the
+ * identifier itself.
+ */
+export function systemRootKindOf(rootId: string): SystemRootKind | undefined {
+  return SYSTEM_ROOTS.find((r) => r.id === rootId)?.kind as SystemRootKind | undefined;
+}
+
 export function kindDeclaration(kind: RootKind): KindDeclaration {
   return KIND_DECLARATIONS[kind];
 }
@@ -247,6 +257,24 @@ export function kindHasMarkdown(kind: RootKind): boolean {
 /** Does the kind select the given reaction id? */
 export function kindSelects(kind: RootKind, reactionId: string): boolean {
   return KIND_DECLARATIONS[kind].reactions.includes(reactionId);
+}
+
+/**
+ * The kind's file-map entry a root-relative path falls under — first match wins,
+ * as the map is ordered. `undefined` = the path is not an entry of the kind (the
+ * root's tree does not show it). Understands the same pattern shapes as
+ * {@link fileMapFilter}: `**\/*.{a,b}`, `**\/*.x`, `*.x`.
+ */
+export function fileMapEntryOf(kind: RootKind, relPath: string): FileMapEntry | undefined {
+  const p = relPath.replace(/\\/g, '/');
+  for (const e of KIND_DECLARATIONS[kind].fileMap) {
+    const m = /^(\*\*\/)?\*\.(?:\{([^}]+)\}|([A-Za-z0-9]+))$/.exec(e.pattern);
+    if (!m) continue;
+    if (m[1] === undefined && p.includes('/')) continue;
+    const exts = m[2] ? m[2].split(',') : [m[3]!];
+    if (exts.some((ext) => p.endsWith(`.${ext}`))) return e;
+  }
+  return undefined;
 }
 
 /**

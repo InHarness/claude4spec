@@ -26,6 +26,7 @@ import {
 } from './index.js';
 import { DEFAULT_BUDGET_CHARS, MAX_HUNK_CHARS, MAX_PATTERN_CHARS } from './budget.js';
 import { RawEntityReader } from './raw-entity-reader.js';
+import { PagesService } from '../services/pages.js';
 import { PROJECTION_IDS, ProjectionStatusRegistry } from '../services/projection-status.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
 import { serializeSection } from '../serialization/serializers/section.js';
@@ -2293,10 +2294,16 @@ describe('discovery core', () => {
    * 2.1.8 — a `.html` file is a raw preview entry of the pages kind's file map,
    * never a page: it is not listed and not readable through `get_page`.
    */
-  it('[ac:ac-plik-html-lezacy-w-korzeniu-stron-jes] a .html file in a page root is absent from list_pages, and get_page on it is PAGE_NOT_FOUND', async () => {
+  it('[ac:ac-plik-html-lezacy-w-korzeniu-stron-jes] a .html file in a page root is visible in that root\'s tree, but absent from list_pages (and get_page on it is PAGE_NOT_FOUND)', async () => {
     await writePage('pages', 'a.md', '# A\n');
     await writePage('pages', 'mock.html', '<html><body>preview</body></html>\n');
     const c = core([pagesRoot(), notesRoot()]);
+
+    // Visible in the tree of THIS root (the sidebar's `GET /api/pages/:rootId`
+    // walk) as the raw `html` entry of the pages kind's file map.
+    const tree = await new PagesService(cwd, 'pages', 'pages').listTree();
+    expect(tree).toContainEqual({ type: 'file', name: 'mock.html', path: 'mock.html', fileType: 'html' });
+    expect(tree).toContainEqual(expect.objectContaining({ path: 'a.md', fileType: 'markdown' }));
 
     const listed = await c.listPages({ rootId: 'pages' });
     const paths = JSON.stringify(listed);

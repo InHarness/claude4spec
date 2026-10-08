@@ -1,0 +1,63 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "portion", "id": "u03-root-registry/p9-l13-c" },
+  "release": "2.1.8",
+  "rows": [
+    {
+      "slug": "ac-section-indexer-walidacja-referencji-i",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/workspace/root-registry-runtime.test.ts:176 [ac:…]: a user entry carrying sectionIndexed/releasable/referenceValidated=false is reduced to {id,name,dir,kind,builtin} (registryList, src/shared/root-kinds.ts:206); selecting('m06-section-indexer')/withFlag('references') -> ['pages','adr'], RootSet.sectionIndexed()/referenceValidated() same (kind-derived, src/server/discovery/roots.ts:80-93); runtime via mountRegistryRoots+bindRegistryReactions: `expect(ran).toContain('index@adr:doc.md')`, `capture@adr`, adr file anchored; briefs/patches `capture@` but `not.toContain('index@…')` and file `toBe(body)` (no anchor). Code: consumers built from rootRegistry.selecting/withFlag at src/server/workspace/project-context.ts:656-669; per-kind binding src/server/workspace/root-registry-runtime.ts:177; client gates derived from kind src/client/tiptap/contextSpec.ts:45-46. Test signatures match current code (ReactionBinder.bindReaction(id,source,kind,input) src/server/fs/reactions.ts:130; m06-anchor-injection factory calls anchorInjectionFor(source) src/server/workspace/core-reactions.ts:77-81)."
+    },
+    {
+      "slug": "ac-plik-html-lezacy-w-korzeniu-stron-jes",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/discovery/discovery.test.ts:2297: `expect(tree).toContainEqual({ type: 'file', name: 'mock.html', path: 'mock.html', fileType: 'html' })` on PagesService.listTree of that root, and `expect(paths).not.toContain('mock.html')` on listPages({rootId:'pages'}) (+ get_page PAGE_NOT_FOUND). Code: tree emits raw map entry as fileType 'html' src/server/services/pages.ts:144-150; list reads markdown-only listMarkdownFiles (src/server/services/markdown-file-store.ts:61, isMarkdownPath at :231; dev-0004 records the listMarkdownFiles wording drift)."
+    },
+    {
+      "slug": "ac-plik-html-w-korzeniu-stron-bez-file-version",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/fs/reactions.test.ts:239 [ac:…]: real FileVersionCapture over a migrated in-memory DB, m17-capture bound on 'pages:pages' as kind 'pages'; .html add/change/unlink + .md add -> `expect(rows).toEqual([{ rootId: 'pages', path: 'a.md', op: 'create' }])` and zero rows LIKE '%.html'. Code: m17-capture `acceptsTracks: ['file_version']` src/server/workspace/core-reactions.ts:132-137; filter built from kind file map + track src/server/fs/reactions.ts:138 / src/shared/root-kinds.ts:288-296 (.html entry track 'none' falls out)."
+    },
+    {
+      "slug": "section:m31l13rt",
+      "level": 2,
+      "status": "covered",
+      "evidence": "build calls the L13 implementor hook: mountRegistryRoots src/server/workspace/project-context.ts:476 and bindRegistryReactions :1485 (src/server/workspace/root-registry-runtime.ts:105-180: source per registry root, PagesService facade only for kind pages :142-151); invalidate on roots[] = effect 'context-rebuild' src/server/workspace/project-settings-fields.ts:83, rebuild re-runs the hook + indexAll (project-context.ts:1545-1582); dispose w.dispose() :459 takes all registry sources/bindings, plugins:overlay mounted in same scope :1495; system roots by kind rootRegistry.system(kind) :324-327 (src/server/roots/registry.ts:54), base root by builtin :481; no dir config keys. Test: root-registry-runtime.test.ts (N facades, mount/bind/dispose, roots PATCH rebuild)."
+    },
+    {
+      "slug": "section:m30l13rt",
+      "level": 2,
+      "status": "covered",
+      "evidence": "resolver only over pages-kind facades: src/server/workspace/project-context.ts:1222 `rootById.get(rootId)?.staticHtml` (staticHtml built per pages root in root-registry-runtime.ts:147), route src/server/routes/static.ts:31-35 -> 404 ROOT_NOT_FOUND, traversal guard vs root dir src/server/services/static-html.ts:33-41; mounted at project-context.ts:1279; client /space/:rootId/$ renders HtmlViewer for .html src/client/router.tsx:473-477, tree fileType from pages file map src/server/services/pages.ts:144-150; no reaction of M30, .html track 'none' excluded from M06 (accepts markdown, core-reactions.ts:76) and M17 (acceptsTracks file_version). Test src/server/routes/static.route.test.ts (two roots same relPath, plans/briefs/nope -> ROOT_NOT_FOUND, traversal 403) consistent with code."
+    },
+    {
+      "slug": "section:m06l13rt",
+      "level": 2,
+      "status": "covered",
+      "evidence": "indexer + full rebuild over rootRegistry.selecting('m06-section-indexer') src/server/workspace/project-context.ts:658-660,682; both reactions accept markdown only and are bound by kind (src/server/workspace/core-reactions.ts:74-95, requires injection + references flag), validated at mount (root-registry-runtime.ts:123); rule 7 over references roots gated on anchorInjected (src/server/discovery/ops/consistency.ts:229,244,660-665; RootSet.anchorInjected kind-derived src/server/discovery/roots.ts:84); no per-entry sectionIndexed read left on the server (grep)."
+    },
+    {
+      "slug": "section:m14l13rt",
+      "level": 2,
+      "status": "covered",
+      "evidence": "link index over rootRegistry.selecting('m14-link-indexer'), resolution scope rootRegistry.pages() with builtinRootId src/server/workspace/project-context.ts:667,686-689; precedence source -> builtin -> roots[] in resolutionOrder src/server/services/pages-link-indexer.ts:322, used by resolve :345-363 and autocomplete :462-466; m14-link-indexer accepts markdown, bound by kind (core-reactions.ts:108-111); linkTargets gone (only legacy-ignore comments, src/server/config.ts:662)."
+    },
+    {
+      "slug": "section:m08l13rt",
+      "level": 2,
+      "status": "covered",
+      "evidence": "todos roots = rootRegistry.selecting('m08-todos-indexer') src/server/workspace/project-context.ts:666,683; m08-todos-indexer accepts markdown only (src/server/workspace/core-reactions.ts:100-102); rootId from the binding input reactionRootId(source,input) src/server/services/todos-indexer.ts:33-39, WS todos:changed {rootId,pagePath} :39,65,99; no flag read in the indexer."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "tsc -p tsconfig.server.json/client/types + typecheck:envelopes — EXIT 0 (static verification; no tests run per build rules)"
+  }
+}

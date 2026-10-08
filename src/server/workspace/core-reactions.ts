@@ -1,4 +1,4 @@
-import { defineReaction } from '../fs/reactions.js';
+import { defineReaction, type ReactionHandler } from '../fs/reactions.js';
 import type { WatchSubscriber } from '../fs/watcher.js';
 import { fileChangedNotifier, planChangedNotifier } from '../fs/notifications.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
@@ -14,22 +14,24 @@ import { BASE_REACTION_ID } from '../../shared/root-kinds.js';
  * builds the handler from a project's {@link CoreReactionContext}. The owner of
  * each reaction is named in its id (`m06-…` is the sections module, M06).
  * Binding them to sources is the root-registry implementor's job, in the
- * context build; nothing here mounts or subscribes.
+ * context build; nothing here mounts or subscribes. The page reactions (M06,
+ * M08, M14, M17) take `rootId` from the binding's input, never from the source
+ * name.
  */
 export interface CoreReactionContext {
   ws: WsEmitter;
   /** M02 */
   frontmatterIndexer: WatchSubscriber;
   /** M06 — the write-back for a source: roots whose kind also selects the section indexer mint against `section_index` (project-wide), the others per file. */
-  anchorInjectionFor(source: string): WatchSubscriber;
+  anchorInjectionFor(source: string): ReactionHandler;
   /** M06 */
-  sectionIndexer: WatchSubscriber;
+  sectionIndexer: ReactionHandler;
   /** M08 */
-  todosIndexer: WatchSubscriber;
+  todosIndexer: ReactionHandler;
   /** M14 */
-  linkIndexer: WatchSubscriber;
+  linkIndexer: ReactionHandler;
   /** M17 */
-  versionCapture: WatchSubscriber;
+  versionCapture: ReactionHandler;
   /** M29 */
   entityIndexer: WatchSubscriber;
   /** M29 */
@@ -73,8 +75,10 @@ export function registerCoreReactions(): void {
     phase: 'write-back',
     accepts: ['markdown'],
     factory: (ctx) => ({
-      onChange: (scope, source, relPath, origin) => ctx.anchorInjectionFor(source).onChange(scope, source, relPath, origin),
-      onUnlink: (scope, source, relPath, origin) => ctx.anchorInjectionFor(source).onUnlink(scope, source, relPath, origin),
+      onChange: (scope, source, relPath, origin, input) =>
+        ctx.anchorInjectionFor(source).onChange(scope, source, relPath, origin, input),
+      onUnlink: (scope, source, relPath, origin, input) =>
+        ctx.anchorInjectionFor(source).onUnlink(scope, source, relPath, origin, input),
     }),
   });
 

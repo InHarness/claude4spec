@@ -1,16 +1,20 @@
 import { BRIEF_ROOT_MARKER, PATCH_ROOT_MARKER, PLAN_ROOT_MARKER } from '../../shared/types.js';
 import type { RegistryRoot } from '../../shared/root-kinds.js';
+import type { ReactionInput } from './reactions.js';
 
 /**
  * Source-name conventions (M40, 0.2.10).
  *
  * `source` is OPAQUE to M40 — it is just a string unique within a scope. The
  * discriminator lives in the name because `rootId` is not an M40 concept: the
- * mount owner encodes it in the suffix, and subscribers derive their own
- * projection keys `(rootId, relPath)` and WS payloads back out of it.
+ * mounting party (2.1.8: the root-registry implementor for every registry root,
+ * M33 for `plugins:*`) encodes it in the suffix. Reactions bound on a registry
+ * root take `rootId` from their input (the binding passes the registry entry's
+ * id, {@link reactionRootId}); the suffix serves readers outside a binding (the
+ * projection staleness scope, the base notification).
  */
 
-/** M02 — one source per page root, mounted in the `roots[]` loop. Builtin root is `pages:pages`. */
+/** One source per `pages` root, mounted by the root-registry implementor (L13) from the registry. Builtin root is `pages:pages`. */
 export function pageSource(rootId: string): string {
   return `pages:${rootId}`;
 }
@@ -71,6 +75,15 @@ export function rootIdFromSource(source: string): string | null {
   if (source.startsWith('artifacts:')) return ARTIFACT_ROOT_ID[source.slice('artifacts:'.length)] ?? null;
   if (source === ENTITIES_SOURCE || source === RELEASES_SOURCE) return source;
   return null;
+}
+
+/**
+ * 2.1.8 — the `rootId` a reaction keys its state on: the registry entry's id the
+ * root-registry implementor passed at binding ({@link ReactionInput}). Only a
+ * handler invoked outside a binding (a direct call) falls back to the source name.
+ */
+export function reactionRootId(source: string, input?: ReactionInput): string {
+  return input?.rootId ?? requireRootId(source);
 }
 
 /** `rootIdFromSource` for callers that cannot proceed without one. */

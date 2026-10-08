@@ -1,0 +1,12 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.8",
+  "unit": "u03-root-registry",
+  "portion": "u03-root-registry/p8-l13-b",
+  "claimed": ["ac-projectcontext-montuje-n-par-pagesservic", "page-root-runtime-construction", "section:m02multidir", "section:69xfq39v"],
+  "deviations": [],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

@@ -1,6 +1,6 @@
 import { scanFences } from '../../shared/code-ranges.js';
 import path from 'node:path';
-import type { PagesService } from './pages.js';
+import type { MarkdownFileStore } from './markdown-file-store.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import type {
   FileMeta,
@@ -10,8 +10,9 @@ import type {
   UnresolvedMention,
 } from '../../shared/page-links.js';
 import { ANCHOR_ID_SOURCE, ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
-import type { WatchSubscriber, WatchScope, WatchActor } from '../fs/watcher.js';
-import { requireRootId } from '../fs/sources.js';
+import type { WatchSubscriber, WatchScope, WatchActor, WatchOrigin } from '../fs/watcher.js';
+import { reactionRootId } from '../fs/sources.js';
+import type { ReactionInput } from '../fs/reactions.js';
 import { PROJECTION_IDS, type ProjectionStatusRegistry } from './projection-status.js';
 
 // 0.2.89 — the `#anchor` suffix is the canonical anchor id (`[a-z0-9]{6,12}`), the
@@ -60,7 +61,7 @@ export class PagesLinkIndexerService implements WatchSubscriber {
 
   constructor(
     /** The roots in scope, in `roots[]` order (Map insertion order). */
-    private roots: Map<string, PagesService>,
+    private roots: Map<string, MarkdownFileStore>,
     private ws: WsEmitter,
     /**
      * 0.2.77 — the fail-closed guard's source of truth. Optional: a rig with no
@@ -162,12 +163,13 @@ export class PagesLinkIndexerService implements WatchSubscriber {
     );
   }
 
-  async onChange(_scope: WatchScope, source: string, relPath: string): Promise<void> {
-    await this.indexPage(requireRootId(source), relPath);
+  /** `rootId` comes from the reaction's input — the registry entry's id passed at binding. */
+  async onChange(_scope: WatchScope, source: string, relPath: string, _origin?: WatchOrigin, input?: ReactionInput): Promise<void> {
+    await this.indexPage(reactionRootId(source, input), relPath);
   }
 
-  onUnlink(_scope: WatchScope, source: string, relPath: string): void {
-    this.handleUnlink(requireRootId(source), relPath);
+  onUnlink(_scope: WatchScope, source: string, relPath: string, _origin?: WatchOrigin, input?: ReactionInput): void {
+    this.handleUnlink(reactionRootId(source, input), relPath);
   }
 
   handleUnlink(rootId: string, relPath: string): void {

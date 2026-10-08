@@ -1,7 +1,8 @@
 import type { FileVersionService, FileChangedBy } from './file-version.js';
 import type { FileSerializer } from './file-serializer.js';
 import type { WatchSubscriber, WatchScope, WatchOrigin, WatchActor } from '../fs/watcher.js';
-import { requireRootId } from '../fs/sources.js';
+import { reactionRootId } from '../fs/sources.js';
+import type { ReactionInput } from '../fs/reactions.js';
 
 /**
  * M17 — `m17-capture`, the `capture`-phase subscriber.
@@ -51,8 +52,13 @@ export class FileVersionCapture implements WatchSubscriber {
     return this.peekActor(scope, source, relPath) ?? 'user';
   }
 
-  async onChange(scope: WatchScope, source: string, relPath: string, origin: WatchOrigin): Promise<void> {
-    const rootId = requireRootId(source);
+  /**
+   * The row's `rootId` is the registry entry's id the root-registry implementor
+   * passed when binding `m17-capture` to the source (a user root's id, or for a
+   * system root the id equal to its kind).
+   */
+  async onChange(scope: WatchScope, source: string, relPath: string, origin: WatchOrigin, input?: ReactionInput): Promise<void> {
+    const rootId = reactionRootId(source, input);
     const serializer = this.serializers.get(rootId);
     if (!serializer) return;
     // `add` may be a genuinely new file (op=create) or a re-detection of one we
@@ -80,8 +86,8 @@ export class FileVersionCapture implements WatchSubscriber {
    * tombstones. The content is synthesized from the previous version, since the
    * file itself is already gone.
    */
-  async onUnlink(scope: WatchScope, source: string, relPath: string, origin: WatchOrigin): Promise<void> {
-    const rootId = requireRootId(source);
+  async onUnlink(scope: WatchScope, source: string, relPath: string, origin: WatchOrigin, input?: ReactionInput): Promise<void> {
+    const rootId = reactionRootId(source, input);
     const serializer = this.serializers.get(rootId);
     if (!serializer) return;
     try {

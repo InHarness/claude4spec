@@ -1,0 +1,75 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "portion", "id": "u03-root-registry/p2-l3" },
+  "release": "2.1.8",
+  "rows": [
+    {
+      "slug": "page-tools-update-page",
+      "type": "mcp-tool",
+      "level": 1,
+      "status": "uncovered",
+      "evidence": "Window delta holds: the logic sentence 'Na roocie sectionIndexed=false guard nie odpala' was removed at 2.1.8. The code matches that, since page-write.ts:700 (literal) and :774 (textEdits) run the guard with no root gate, and the MCP description says 'The guard runs on every page root' (page-tools.ts:193, :226). The trace.md:1 line is present. The shape test [entity:page-tools-update-page] is at page-tools.test.ts:309. FIELD MISMATCH vs entity at 2.1.8: the entity params are {rootId, path, content, textEdits, expectedHash, dropAnchors}, but the code (page-tools.ts:196-227, core-operations.ts:803-816, REST PUT pages.ts:401) has no `content` and instead has `body` + `frontmatter`. The entity says 'Write an EXISTING page' while the code is create-or-replace (page-tools.ts:185). The shape test asserts the drifted set: `expect(Object.keys(props).sort()).toEqual(['body','dropAnchors','expectedHash','frontmatter','path','rootId','textEdits'].sort())`. This drift predates the window and is recorded as non-blocking deviation dev-0002 (ASSUMPTION marker at page-tools.ts:199)."
+    },
+    {
+      "slug": "ac-content-i-textedits-w-update-page-sa",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "page-write.test.ts:2681. Both and neither are rejected with INVALID_ARGUMENT, and a missing expectedHash is rejected in the literal mode and in the textEdits mode: `expect(diffNoHash.code).toBe('INVALID_ARGUMENT'); expect(diffNoHash.message).toMatch(/expectedHash/)` (:2709). The file stays unchanged, and one mode with a hash goes through. Code: page-write.ts:644, :651, :673 (assertUnchanged, which runs before either branch). Reached via MCP (page-tools.ts:232, with expectedHash required in the schema), REST PUT/PATCH (pages.ts:409, :463) and the catalog row core-operations.ts:803."
+    },
+    {
+      "slug": "ac-kazdy-wiersz-katalogu-l3-opisujacy-op",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "catalog.test.ts:58. Every op with sideEffects 'file' must declare a value: `expect(['literal','diff','literal+diff','n/a'], op.name).toContain(op.contentInput)`. update_page and update_sections must be 'literal+diff'. Enforced at registration in catalog.ts:264 (it throws when contentInput is undefined). The rows are declared at core-operations.ts:816 (update_page) and :894 (update_sections)."
+    },
+    {
+      "slug": "ac-textedits-gubiacy-anchor-majacy-refer",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "page-write.test.ts:2753. A find swallowing a cited anchor comment, with no dropAnchors, is refused: `expect(err.code).toBe('ANCHOR_LOSS')` (:2767), with details naming the anchor and cites.md, and the file stays untouched. Code: page-write.ts:774 calls assertNoUndeclaredAnchorLoss (:1227-1273). MCP passes findSectionReferents (page-tools.ts:90-93). REST PATCH passes writeDeps (pages.ts:461), wired from project-context.ts:1009 and :1358."
+    },
+    {
+      "slug": "ac-update-page-bez-content-i-bez-textedi",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "page-write.test.ts:2546: `expect(err.code).toBe('INVALID_ARGUMENT'); expect((await pages.read('doc.md')).body).toBe(before)`. Code: page-write.ts:651. REST PUT forwards `body: undefined` when the body is absent, so it reaches the same branch (pages.ts:409-413). PATCH forwards textEdits verbatim (pages.ts:463-468)."
+    },
+    {
+      "slug": "ac-update-page-w-trybie-content-ktorego",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "page-write.test.ts:2839. In a literal write that loses a cited anchor named in dropAnchors, `expect(res.droppedAnchors).toEqual([childOne])`, `expect(written).not.toContain(`<!-- anchor: ${childOne} -->`)`, the heading is gone, sibling content is kept, and `expect(res.hash).toBe(await hashOfPage())`. The same write without dropAnchors gets ANCHOR_LOSS (:2819). Code: page-write.ts:700-716. MCP passes dropAnchors (page-tools.ts:239). REST PUT is report-only with {} deps (pages.ts:415-420), so it always writes, which is consistent with the criterion."
+    },
+    {
+      "slug": "ac-update-page-z-content-i-textedits-pod",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "page-write.test.ts:2535: `expect(err.code).toBe('INVALID_ARGUMENT'); expect(err.message).toMatch(/mutually exclusive/)`. Code: page-write.ts:644-650, which throws 'body and textEdits are mutually exclusive'. MCP forwards both fields when both are given (page-tools.ts:235-238)."
+    },
+    {
+      "slug": "ac-update-page-z-textedits-podmienia-wys",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "page-write.test.ts:2659. The page has 'teh' in its frontmatter title, in the preamble before '# Doc' and twice in the body. The test asserts `expect(res.replacements).toBe(4)` (:2673), `expect(page.frontmatter.title).toBe('the title')`, that the preamble text before the first heading contains 'Preamble line: the intro', and that the raw file has no 'teh'. Code: page-write.ts:745-747 calls applyTextEdits over fullBefore, the whole file including frontmatter."
+    },
+    {
+      "slug": "ac-zapis-strony-wprowadzajacy-nowy-naglo",
+      "type": "ac",
+      "level": 2,
+      "status": "test-not-verifying",
+      "evidence": "The criterion title says the returned hash is computed BEFORE anchor injection, so the next write armed with it ends in PAGE_CONFLICT. The tagged describe at page-write.test.ts:1883 asserts the opposite: `expect(second).not.toBeInstanceOf(Error);` (:1930 for update_sections, :1947 for update_page), i.e. the next write succeeds. The code returns the settled hash (page-write.ts:465-473, commit re-reads after flush). This contradiction is recorded as non-blocking deviation dev-0003 (incorrect criterion)."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "> @inharness-ai/c4s-plugin-ac@0.2.80 typecheck\n> tsc --noEmit\n(clean, exit 0; tests not run per build rules - static verification)"
+  }
+}

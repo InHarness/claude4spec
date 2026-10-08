@@ -1,0 +1,48 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "portion", "id": "u03-root-registry/p4-l7" },
+  "release": "2.1.8",
+  "rows": [
+    {
+      "slug": "section:x6avfb5q",
+      "level": 2,
+      "status": "covered",
+      "evidence": "M02 L7 at 2.1.8 holds: the L13 implementor mounts one source per registry entry (src/server/workspace/project-context.ts:532-537, validateKindRequirements at :533) and binds the reactions each kind selects plus the base m02-file-changed on every root (project-context.ts:1564-1567); M02 owns only m02-frontmatter-indexer (src/server/workspace/core-reactions.ts:58-63, accepts markdown) and the base reaction (core-reactions.ts:49-54 -> src/server/fs/notifications.ts:23-25 broadcasts file:changed {rootId,path,origin} to the room). Both paths reach it: in-band runChain from the record store (src/server/fs/record-store.ts:321,486) and the watcher dispatch over the same subscriptions (ReactionBinder.bindReaction -> registrar.subscribe, src/server/fs/reactions.ts:106-121). Removed: the per-module 'subscribe' model and the hidden-tree filter consumer of the frontmatter indexer (no listTree caller of findByFrontmatterType; remaining callers src/server/services/brief.ts:278, patch.ts:223, plan.ts:414 are artifact listings). Test: src/server/fs/reactions.test.ts:223-251 asserts file:changed per root id over pages/entities/releases/briefs sources."
+    },
+    {
+      "slug": "section:m02fmidx",
+      "level": 2,
+      "status": "covered",
+      "evidence": "Kinds pages/plans/briefs/patches select m02-frontmatter-indexer (src/shared/root-kinds.ts:120-128,137,146,155); the indexer is bound to every root of those kinds through the registry loop (src/server/workspace/project-context.ts:788-793, 1564-1567); record rootId = registry entry id via requireRootId (src/server/services/pages-frontmatter-indexer.ts:78-83 -> src/server/fs/sources.ts:70 maps artifacts:* to 'plans'/'briefs'/'patches', BRIEF/PATCH/PLAN_ROOT_MARKER = 'briefs'/'patches'/'plans' at src/shared/types.ts:202-205). Markdown-only acceptance excludes the raw .html entry (core-reactions.ts:61 accepts ['markdown'] -> fileMapFilter at reactions.ts:114). Hidden-tree listTree consumer removed (no findByFrontmatterType in src/server/services/pages.ts). .html preview refreshes on base file:changed (src/client/hooks/useFileWatcher.ts:77-85). Parts for system roots plans/briefs/patches are deferred (u09/u10) and only exercised through existing kind declarations."
+    },
+    {
+      "slug": "section:59j33wvj",
+      "level": 2,
+      "status": "covered",
+      "evidence": "The pages kind selects both m06-section-indexer and m06-anchor-injection (src/shared/root-kinds.ts:120-122); m06-section-indexer requires m06-anchor-injection and flag references (src/server/workspace/core-reactions.ts:85-92), checked at mount by validateKindRequirements (src/server/fs/reactions.ts:71-83, called at project-context.ts:533). The section-index root map is every root whose kind selects the indexer, no per-root sectionIndexed gate (src/server/workspace/project-context.ts:743-745 -> SectionIndexerService at :767, indexAll at src/server/services/section-indexer.ts:330); discovery's sectionIndexed() derives from the kind (src/server/discovery/roots.ts:77-80). No sectionIndexed config property remains in the server's root model."
+    },
+    {
+      "slug": "section:kc23agex",
+      "level": 2,
+      "status": "covered",
+      "evidence": "file:changed has one owner: the only server emitter is the base reaction m02-file-changed (src/server/fs/notifications.ts:23-25, defined at src/server/workspace/core-reactions.ts:49-54); grep for 'file:changed' in src/server finds no other broadcast (the former M36 artifacts emitter is gone). Bound by the L13 implementor on every registry root (src/server/workspace/project-context.ts:1567). Client consumes it for system roots and page roots (src/client/hooks/useFileWatcher.ts:57-90). Test src/server/fs/reactions.test.ts:224 asserts file:changed for pages, entities, releases and briefs roots."
+    },
+    {
+      "slug": "section:814g9r4w",
+      "level": 2,
+      "status": "covered",
+      "evidence": "Mount and bind are two separate acts: mount loop over rootRegistry.list() with one source per entry named by sourceNameFor (src/server/workspace/project-context.ts:532-537; src/server/fs/sources.ts:38-53 maps pages:<id>, artifacts:brief|patch|plan, entities, releases), then the bind loop binding kind reactions + base m02-file-changed (project-context.ts:1564-1567); bindReaction fails fast on unknown id / unmounted source (src/server/fs/reactions.ts:106-121; test src/server/fs/reactions.test.ts:100). Out-of-registry sources keep their owner and gate: plugins:overlay mounted only behind trust (project-context.ts:621) with its own subscribe (:1600), plugins:base process mount (src/server/index.ts:451). The sectionIndexed subscription gate is gone (roots.ts:77-80 derives from kind). entities/releases/artifacts rows are deferred parts (u04/u05/u09/u10); they are mounted through the same registry loop against kind declarations that exist in code (src/shared/root-kinds.ts:130-175), not against a missing dependency."
+    },
+    {
+      "slug": "section:uti7rq52",
+      "level": 2,
+      "status": "covered",
+      "evidence": "M30 declares no reaction: no static-html/.html subscriber remains in the server (only subscribe sites are project-context.ts:1600 plugins overlay and index.ts:451 plugins base; core-reactions.ts defines none for M30). The base m02-file-changed accepts raw entries, so for the pages kind its filter covers **/*.html (core-reactions.ts:52 accepts ['markdown','json','raw'] -> fileMapFilter, src/shared/root-kinds.ts:278-301). Client: useFileWatcher narrows file:changed to the raw **/*.html entry (src/client/hooks/useFileWatcher.ts:79-85 via isHtmlPreviewPath, src/client/state/htmlViewer.ts:28-31) and bumps a revision that re-keys the iframe (src/client/components/HtmlViewer.tsx:30,42). Test src/client/state/htmlViewer.test.ts:15-35 asserts the narrowing (mock.html true, .md/.mdx/.htm/.json false) and per-(rootId,path) revision bump."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "tsc --noEmit clean across workspaces (last: @inharness-ai/c4s-plugin-ac typecheck > tsc --noEmit)"
+  }
+}

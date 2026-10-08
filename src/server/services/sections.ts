@@ -4,7 +4,7 @@ import { parseXmlTags, serializeXmlTag } from '../../shared/xml-tags.js';
 import { scanFences } from '../../shared/code-ranges.js';
 import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
 import { slugifyHeading } from '../../shared/section-parser.js';
-import type { PagesService } from './pages.js';
+import type { MarkdownFileStore } from './markdown-file-store.js';
 import type { SelfWriteMarker } from '../fs/sources.js';
 
 /**
@@ -97,7 +97,7 @@ export interface SectionsListQuery {
 /** 0.1.96: one section-indexed root — its PagesService plus the watcher whose
  * captures we suppress when rewriting section_ref anchors. */
 export interface SectionsRootWriteDeps {
-  pages: PagesService;
+  pages: MarkdownFileStore;
   watcher: SelfWriteMarker;
 }
 

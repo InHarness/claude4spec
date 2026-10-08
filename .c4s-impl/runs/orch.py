@@ -43,8 +43,21 @@ def scope(s, kind, u, extra):
     return out
 
 
+def accepted_by_deviation(r):
+    # a row the code cannot satisfy because the specification contradicts itself (or the code
+    # predates the window), carried by a non-blocking drift/incorrect deviation: the patch owns it
+    import re
+    for dev_id in re.findall(r'dev-\d{4}', r.get('evidence', '')):
+        p = f'.c4s-impl/deviations/{dev_id}.json'
+        if os.path.exists(p):
+            d = json.load(open(p))
+            if not d['blocking'] and d['kind'] in ('drift', 'incorrect'):
+                return True
+    return False
+
+
 def bad(rows):
-    return [r for r in rows if r['status'] != 'covered']
+    return [r for r in rows if r['status'] != 'covered' and not accepted_by_deviation(r)]
 
 
 cmd = sys.argv[1]

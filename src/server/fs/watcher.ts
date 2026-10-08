@@ -22,7 +22,8 @@ import { makeWatchIgnore } from './watch-ignore.js';
  *
  * The runtime is purely mechanical — it does not know what any source MEANS,
  * does not parse content, does not evaluate gates and holds no projections.
- * `source` is an OPAQUE string, unique within a `scope`; the mount owner encodes
+ * `source` is an OPAQUE string, unique within a `scope`; whoever mounts it (the
+ * root-registry implementor for registry roots, M33 for `plugins:*`) encodes
  * whatever discriminator it needs in the name (`pages:<rootId>`, `artifacts:brief`)
  * and subscribers derive their projection keys from the suffix.
  *
@@ -819,8 +820,8 @@ export class FileWatchRuntime {
    * `after` is resolved PER SOURCE, AT DISPATCH TIME — not at registration — so
    * dispatch never depends on build-hook ordering. A predecessor missing at
    * dispatch is NOT an error: the dependency counts as satisfied and the
-   * subscriber runs on its own (that is how a root without `sectionIndexed`
-   * leaves M14 with no M06 to wait for).
+   * subscriber runs on its own (that is how a root whose kind does not select
+   * `m06-section-indexer` leaves M14 with no M06 to wait for).
    */
   private dispatch(
     mount: Mount,

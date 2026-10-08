@@ -1,6 +1,6 @@
 /**
- * M23 PatchService — thin wrapper over the third `PagesService` instance
- * mounted on `patchesDir`. Patches are markdown files with mandatory YAML
+ * M23 PatchService — thin wrapper over the `MarkdownFileStore` primitive
+ * of the system root `patches` (no `PagesService` facade). Patches are markdown files with mandatory YAML
  * frontmatter (`type: patch`, `brief`, `patch_kind`, `created_at`,
  * `created_by`, `applied`). They are authored by coding agents in *other*
  * terminals during brief implementation — claude4spec only reads them, lets
@@ -24,7 +24,7 @@ import matter from 'gray-matter';
 import type { PatchFrontmatter, PatchKind } from '../../shared/entities.js';
 import { PATCH_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
 import { BRIEF_ROOT_MARKER, PATCH_ROOT_MARKER } from '../../shared/types.js';
-import type { PagesService } from './pages.js';
+import type { MarkdownFileStore } from './markdown-file-store.js';
 import type { RecordStore } from '../fs/record-store.js';
 import type { MarkdownRecord } from '../fs/record-adapters.js';
 import type { SelfWriteMarker } from '../fs/sources.js';
@@ -39,7 +39,7 @@ import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 import { ConflictError } from './brief.js';
 
 export interface PatchServiceDeps {
-  patchesPages: PagesService;
+  patchesPages: MarkdownFileStore;
   patchesWatcher: SelfWriteMarker;
   /**
    * 0.2.76 — the M42 record store for this artifact source.

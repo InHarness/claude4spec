@@ -1,4 +1,4 @@
-import type { ScopedWatchRegistrar, WatchPhase, WatchSubscriber } from './watcher.js';
+import type { ScopedWatchRegistrar, WatchOrigin, WatchPhase, WatchScope, WatchSubscriber } from './watcher.js';
 import {
   fileMapFilter,
   type FileFormat,
@@ -15,18 +15,40 @@ import {
  * registered once per process by the owning module, at process start.
  * `factory(ctx)` builds the handler in a project's context.
  *
- * BINDING — `bindReaction(id, source, kind)` on a context's {@link ReactionBinder},
+ * BINDING — `bindReaction(id, source, kind, input)` on a context's {@link ReactionBinder},
  * done by the root-registry implementor (M02) for every root whose kind selected
  * the reaction. Underneath it is `subscribe(source, handler, { id, phase, after,
  * filter })`; the binding inherits the binder's scope. One definition is bound to N
  * sources. There are no wildcards: the implementor iterates the registry. Sources
  * outside the registry (`plugins:*`) are bound by their owner (M33).
  *
- * The handler contract is unchanged: `onChange/onUnlink(scope, source, relPath,
- * origin)`. `after: [id]` names a definition and is resolved PER SOURCE by the
+ * The handler contract is `onChange/onUnlink(scope, source, relPath, origin,
+ * input)`: `input` is what the binding party passed — for a registry root, the
+ * entry's `rootId` ({@link ReactionInput}). M40 carries it opaquely and knows
+ * nothing about roots; reactions key their state `(rootId, path)` from it, not
+ * from the source name. `after: [id]` names a definition and is resolved PER SOURCE by the
  * runtime: a definition not bound on a source satisfies the dependency, so the
  * reaction then runs on its own.
  */
+
+/**
+ * The reaction's input from its binding (L13): the id of the root-registry entry
+ * the source was mounted for — a user root's id, or for a system root the id
+ * equal to its kind (`plans`, `briefs`, `patches`, `entities`, `releases`).
+ */
+export interface ReactionInput {
+  rootId: string;
+}
+
+/**
+ * A bound reaction's handler: the watch subscriber contract plus the binding's
+ * {@link ReactionInput}. A plain {@link WatchSubscriber} (which ignores the
+ * input) is one too.
+ */
+export interface ReactionHandler {
+  onChange(scope: WatchScope, source: string, relPath: string, origin: WatchOrigin, input: ReactionInput): void | Promise<void>;
+  onUnlink(scope: WatchScope, source: string, relPath: string, origin: WatchOrigin, input: ReactionInput): void | Promise<void>;
+}
 
 /** The acceptance contract every reaction on registry roots declares. */
 export interface ReactionDefinition<C> {
@@ -49,7 +71,7 @@ export interface ReactionDefinition<C> {
   requires?: readonly string[];
   /** Kind flags that must be `true` on the kind selecting this reaction (L13: requirements are reactions and flags). */
   requiresFlags?: readonly (keyof KindFlags)[];
-  factory: (ctx: C) => WatchSubscriber;
+  factory: (ctx: C) => ReactionHandler;
 }
 
 const PHASES: ReadonlySet<string> = new Set(['projection', 'notification', 'reload', 'write-back', 'capture']);
@@ -90,7 +112,7 @@ export function validateKindRequirements(decl: KindDeclaration): void {
  * build their handlers in. A factory runs at most once per context.
  */
 export class ReactionBinder<C> {
-  private readonly handlers = new Map<string, WatchSubscriber>();
+  private readonly handlers = new Map<string, ReactionHandler>();
   /** `reactionId → sources` this context bound it on. */
   private readonly bound = new Map<string, Set<string>>();
 
@@ -101,9 +123,11 @@ export class ReactionBinder<C> {
 
   /**
    * Fail-fast: an unknown definition id, or a source that is not mounted in this
-   * scope (the runtime's own `subscribe` check), throws.
+   * scope (the runtime's own `subscribe` check), throws. `input` is handed to the
+   * handler on every event of this binding — the root-registry implementor passes
+   * the registry entry's `rootId` here.
    */
-  bindReaction(id: string, source: string, kind: RootKind): void {
+  bindReaction(id: string, source: string, kind: RootKind, input: ReactionInput): void {
     const def = DEFINITIONS.get(id) as ReactionDefinition<C> | undefined;
     if (!def) throw new Error(`[m40] cannot bind unknown reaction '${id}' to source '${source}'`);
     let handler = this.handlers.get(id);
@@ -115,7 +139,12 @@ export class ReactionBinder<C> {
     if (filter === undefined) {
       throw new Error(`[m40] reaction '${id}' accepts none of root kind '${kind}''s file-map entries`);
     }
-    this.registrar.subscribe(source, handler, { id, phase: def.phase, after: [...(def.after ?? [])], filter });
+    const h = handler;
+    const bound: WatchSubscriber = {
+      onChange: (scope, src, relPath, origin) => h.onChange(scope, src, relPath, origin, input),
+      onUnlink: (scope, src, relPath, origin) => h.onUnlink(scope, src, relPath, origin, input),
+    };
+    this.registrar.subscribe(source, bound, { id, phase: def.phase, after: [...(def.after ?? [])], filter });
     const set = this.bound.get(id) ?? new Set<string>();
     set.add(source);
     this.bound.set(id, set);

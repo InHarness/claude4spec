@@ -38,7 +38,7 @@ import { PLAN_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
 import { PLAN_ROOT_MARKER } from '../../shared/types.js';
 import { slugify } from './slug.js';
 import { injectAnchorsFor } from './anchor-injection.js';
-import type { PagesService } from './pages.js';
+import type { MarkdownFileStore } from './markdown-file-store.js';
 import type { RecordStore } from '../fs/record-store.js';
 import type { MarkdownRecord } from '../fs/record-adapters.js';
 import type { SelfWriteMarker } from '../fs/sources.js';
@@ -65,7 +65,7 @@ import { applyTextEdits, type TextEdit } from './text-edits.js';
 import { bodyPositionResolver } from './section-text.js';
 
 export interface PlanServiceDeps {
-  plansPages: PagesService;
+  plansPages: MarkdownFileStore;
   plansWatcher: SelfWriteMarker;
   /**
    * 0.2.76 — the M42 record store for this artifact source.

@@ -1,0 +1,36 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "portion", "id": "u03-root-registry/p5-l7-b" },
+  "release": "2.1.8",
+  "rows": [
+    {
+      "slug": "section:o8crf4hk",
+      "level": 2,
+      "status": "covered",
+      "evidence": "M06 declares two definitions: src/server/workspace/core-reactions.ts:73-83 (m06-anchor-injection, write-back, markdown, no requirements) and :89-96 (m06-section-indexer, projection, requires ['m06-anchor-injection'] + requiresFlags ['references']); selected by kind src/shared/root-kinds.ts:120-128 (pages) and :137 (plans: injection only, no indexer); requirements checked at build src/server/workspace/project-context.ts:533 via src/server/fs/reactions.ts:93-108; bound per root by the L13 implementor with input {rootId: root.id} project-context.ts:1565-1571; rootId taken from input src/server/services/section-indexer.ts:103-108,117-120 via src/server/fs/sources.ts:86-88; sectionIndexed gate gone (indexed roots = rootRegistry.selecting('m06-section-indexer') project-context.ts:743-745). Tests: src/server/fs/reactions.test.ts:58 and :66 (expect(() => validateKindRequirements(broken)).toThrow(/m06-section-indexer.*requires flag 'references'/)), :136 (html skipped, ran == ['a.md']), :214 (seen == ids.map(id => `${id}:adr-entry`)). npm run typecheck clean."
+    },
+    {
+      "slug": "section:1z2653we",
+      "level": 2,
+      "status": "covered",
+      "evidence": "M14 declares m14-link-indexer (projection, after ['m06-section-indexer'], markdown) src/server/workspace/core-reactions.ts:107-113 and m14-rename-sync (write-back, markdown) :118-123, both selected by kind pages src/shared/root-kinds.ts:125-126; unbound predecessor satisfies `after` per source (src/server/fs/reactions.test.ts:112 expect(ran).toEqual(['m14@pages:pages'])); rename-sync admitted only where bound project-context.ts:1028-1031; indexAll over roots selecting m14-link-indexer project-context.ts:755,772-775; rootId from binding input src/server/services/pages-link-indexer.ts:166-173. Tests: reactions.test.ts:157 (no requirements, both bind by id, isBound true), :214 (m14-link-indexer:adr-entry); 'Bramka' row removed (no gate in definitions)."
+    },
+    {
+      "slug": "section:j5vqicfm",
+      "level": 2,
+      "status": "covered",
+      "evidence": "M08 declares m08-todos-indexer (projection, markdown, no requirements) src/server/workspace/core-reactions.ts:99-104, selected by pages kind src/shared/root-kinds.ts:124, roots = rootRegistry.selecting('m08-todos-indexer') project-context.ts:754; rootId from reaction input, not the source name src/server/services/todos-indexer.ts:32-41; todos:changed {rootId, pagePath}. Tests: src/server/fs/reactions.test.ts:176 (validateKindRequirements with all flags off .not.toThrow(); ran == ['a.md'], html skipped), src/server/services/todos-indexer.test.ts:116 (onChange('pages:pages', …, {rootId:'drafts'}) → listByPath('drafts','a.md') == ['in drafts'], listByPath('pages','a.md') == [], last event {kind:'todos:changed', rootId:'drafts', pagePath:'a.md'})."
+    },
+    {
+      "slug": "section:yg8keaew",
+      "level": 2,
+      "status": "covered",
+      "evidence": "M17 defines one m17-capture (capture, after ['write-back'], accepts any format, acceptsTracks ['file_version']) src/server/workspace/core-reactions.ts:131-138, selected by kinds pages/plans/briefs/patches src/shared/root-kinds.ts:127,137,146,155 and bound by the L13 implementor project-context.ts:1565-1571; rootId = registry entry id from input src/server/services/file-version-capture.ts:55-61,89-90 (system roots id === kind, markers 'plans'/'briefs'/'patches' src/shared/types.ts:202-205); narrowing to pages only at release time via rootRegistry.withFlag('release') project-context.ts:1118-1120. Tests: src/server/fs/reactions.test.ts:196 (captured == ['a.md','b.mdx'], c.html skipped), :214 (m17-capture:adr-entry), :247 (cannot bind on entities kind). Releases-root registration is deferred to u05 per recipe."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "tsc --noEmit clean across root and all workspaces (0 'error TS'); tests not run (static verification per build rules)"
+  }
+}

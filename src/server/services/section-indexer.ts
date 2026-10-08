@@ -13,9 +13,10 @@ import {
   parseSections,
   type ParsedSection,
 } from '../../shared/section-parser.js';
-import type { PagesService } from './pages.js';
-import type { WatchSubscriber, WatchScope } from '../fs/watcher.js';
-import { requireRootId, pageSource } from '../fs/sources.js';
+import type { MarkdownFileStore } from './markdown-file-store.js';
+import type { WatchSubscriber, WatchScope, WatchOrigin } from '../fs/watcher.js';
+import { reactionRootId, pageSource } from '../fs/sources.js';
+import type { ReactionHandler, ReactionInput } from '../fs/reactions.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 
@@ -50,7 +51,7 @@ interface SectionInfo {
 /** 0.1.96: one section-indexed root. 0.2.10: the watcher handle is gone — the
  * anchor write-back suppresses through M40, by source name. */
 export interface SectionIndexRoot {
-  pages: PagesService;
+  pages: MarkdownFileStore;
 }
 
 /**
@@ -99,12 +100,12 @@ export class SectionIndexerService implements WatchSubscriber {
 
   // ─── `m06-section-indexer` (projection) ───────────────────────────────────
 
-  async onChange(_scope: WatchScope, source: string, relPath: string): Promise<void> {
-    await this.indexPage(requireRootId(source), relPath);
+  async onChange(_scope: WatchScope, source: string, relPath: string, _origin?: WatchOrigin, input?: ReactionInput): Promise<void> {
+    await this.indexPage(reactionRootId(source, input), relPath);
   }
 
-  onUnlink(_scope: WatchScope, source: string, relPath: string): Promise<void> {
-    return this.handleUnlink(requireRootId(source), relPath);
+  onUnlink(_scope: WatchScope, source: string, relPath: string, _origin?: WatchOrigin, input?: ReactionInput): Promise<void> {
+    return this.handleUnlink(reactionRootId(source, input), relPath);
   }
 
   /**
@@ -113,10 +114,10 @@ export class SectionIndexerService implements WatchSubscriber {
    * resulting event is swallowed entirely and no phase (in particular `capture`)
    * runs a second time for it.
    */
-  anchorInjectionSubscriber(suppress: (source: string, relPath: string) => void): WatchSubscriber {
+  anchorInjectionSubscriber(suppress: (source: string, relPath: string) => void): ReactionHandler {
     return {
-      onChange: async (_scope, source, relPath) => {
-        await this.mintAnchors(requireRootId(source), source, relPath, suppress);
+      onChange: async (_scope, source, relPath, _origin, input) => {
+        await this.mintAnchors(reactionRootId(source, input), source, relPath, suppress);
       },
       onUnlink: () => {},
     };

@@ -1,9 +1,10 @@
 import { parseXmlTags } from '../../shared/xml-tags.js';
 import type { TodoHit } from '../../shared/types.js';
-import type { PagesService } from './pages.js';
+import type { MarkdownFileStore } from './markdown-file-store.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
-import type { WatchSubscriber, WatchScope } from '../fs/watcher.js';
-import { requireRootId } from '../fs/sources.js';
+import type { WatchSubscriber, WatchScope, WatchOrigin } from '../fs/watcher.js';
+import { reactionRootId } from '../fs/sources.js';
+import type { ReactionInput } from '../fs/reactions.js';
 
 /**
  * 0.1.96: indexes `<todo/>` tags across every root it is bound on.
@@ -15,24 +16,25 @@ import { requireRootId } from '../fs/sources.js';
  * `onUnlink`, nothing more. 2.1.8: it is the `m08-todos-indexer` definition
  * (projection, markdown, no requirements), bound by the root-registry
  * implementor on every root whose kind selects it; events from all of them merge
- * into this one map. It derives `rootId` from the source name. It is read-only
+ * into this one map. It takes `rootId` from the reaction's input — the registry
+ * entry's id the implementor passed at binding. It is read-only
  * and never calls `suppress()`. Debounce is gone: it belongs to the mount now.
  */
 export class TodosIndexerService implements WatchSubscriber {
   private byKey = new Map<string, TodoHit[]>();
 
-  constructor(private roots: Map<string, PagesService>, private ws: WsEmitter) {}
+  constructor(private roots: Map<string, MarkdownFileStore>, private ws: WsEmitter) {}
 
   private key(rootId: string, relPath: string): string {
     return `${rootId}:${relPath}`;
   }
 
-  async onChange(_scope: WatchScope, source: string, relPath: string): Promise<void> {
-    await this.indexPage(requireRootId(source), relPath);
+  async onChange(_scope: WatchScope, source: string, relPath: string, _origin?: WatchOrigin, input?: ReactionInput): Promise<void> {
+    await this.indexPage(reactionRootId(source, input), relPath);
   }
 
-  onUnlink(_scope: WatchScope, source: string, relPath: string): void {
-    const rootId = requireRootId(source);
+  onUnlink(_scope: WatchScope, source: string, relPath: string, _origin?: WatchOrigin, input?: ReactionInput): void {
+    const rootId = reactionRootId(source, input);
     if (this.byKey.delete(this.key(rootId, relPath))) {
       this.ws.broadcast({ kind: 'todos:changed', rootId, pagePath: relPath });
     }

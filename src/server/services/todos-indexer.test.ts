@@ -112,4 +112,15 @@ describe('TodosIndexerService', () => {
     await indexer.onChange(scope, 'pages:pages', 'a.md');
     expect(indexer.listByPath('pages', 'a.md').map((h) => h.comment)).toEqual(['me']);
   });
+
+  it('2.1.8 (M08 j5vqicfm) — takes rootId from the reaction input (the registry entry id), not from the source name', async () => {
+    draftsFiles['a.md'] = '<todo comment="in drafts"/>';
+    // A source name that encodes another root: the binding's input wins.
+    await indexer.onChange(scope, 'pages:pages', 'a.md', 'external', { rootId: 'drafts' });
+    expect(indexer.listByPath('drafts', 'a.md').map((h) => h.comment)).toEqual(['in drafts']);
+    expect(indexer.listByPath('pages', 'a.md')).toEqual([]);
+    indexer.onUnlink(scope, 'pages:pages', 'a.md', 'external', { rootId: 'drafts' });
+    expect(indexer.listByPath('drafts', 'a.md')).toEqual([]);
+    expect(events.at(-1)).toEqual({ kind: 'todos:changed', rootId: 'drafts', pagePath: 'a.md' });
+  });
 });

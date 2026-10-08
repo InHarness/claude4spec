@@ -1,6 +1,6 @@
 /**
- * M21 BriefService — thin wrapper over the second `PagesService` instance
- * mounted on `briefsDir`. Briefs are markdown files with mandatory YAML
+ * M21 BriefService — thin wrapper over the `MarkdownFileStore` primitive
+ * of the system root `briefs` (no `PagesService` facade). Briefs are markdown files with mandatory YAML
  * frontmatter (`type: brief`, `from_release`, `to_release`, ...). The file
  * itself is the source of truth (consumed both by humans in UI and by coding
  * agents in terminal). DB participation is limited to:
@@ -21,7 +21,7 @@ import matter from 'gray-matter';
 import type { Brief, BriefChangedBy, BriefFrontmatter } from '../../shared/entities.js';
 import { BRIEF_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
 import { BRIEF_ROOT_MARKER } from '../../shared/types.js';
-import type { PagesService } from './pages.js';
+import type { MarkdownFileStore } from './markdown-file-store.js';
 import { hashContent } from './artifact-content.js';
 import type { RecordStore } from '../fs/record-store.js';
 import type { MarkdownRecord } from '../fs/record-adapters.js';
@@ -38,7 +38,7 @@ import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 import { compareBriefsByReleaseAxis } from '../../core/briefs/release-axis.js';
 
 export interface BriefServiceDeps {
-  briefsPages: PagesService;
+  briefsPages: MarkdownFileStore;
   briefsWatcher: SelfWriteMarker;
   /**
    * 0.2.76 — the M42 record store for this artifact source.

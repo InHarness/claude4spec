@@ -5,8 +5,9 @@
  *   - `briefService.listBriefs()` (find by `frontmatter.type === 'brief'`)
  *   - any future module that wants to discover pages by frontmatter type
  *
- * 0.1.96: keyed by a dynamic `rootId` (built-in 'pages' root, user root slugs,
- * and the artifact markers) instead of the fixed pages/briefs/patches triple.
+ * 0.1.96: keyed by a dynamic `rootId` instead of the fixed pages/briefs/patches
+ * triple; 2.1.8: that `rootId` is the registry entry's id (a pages root, or the
+ * system roots `plans`/`briefs`/`patches`).
  * M36: the artifact-specific WS broadcast (briefs:changed/patches:changed) is
  * driven by a caller-supplied rootId → event map (`artifactRegistry`-derived),
  * not a hardcoded per-kind if/else — see `broadcastRootChange`.
@@ -17,7 +18,7 @@
 import matter from 'gray-matter';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { PagesService } from './pages.js';
+import type { MarkdownFileStore } from './markdown-file-store.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import type { WatchSubscriber, WatchScope } from '../fs/watcher.js';
 import { requireRootId } from '../fs/sources.js';
@@ -34,10 +35,12 @@ export interface FrontmatterFindOptions {
 /**
  * M02 frontmatter projection.
  *
- * 0.2.10 (M40): registered as `{ id: 'm02-frontmatter-indexer', phase: 'projection' }`
- * on every `pages:<rootId>` source AND on all three `artifacts:*` sources — the
- * build hook iterates them explicitly, because M40 has no wildcards. Its own
- * 200 ms debounce is gone; the mount owns it.
+ * 2.1.8 (m02fmidx): the definition `m02-frontmatter-indexer` (projection,
+ * markdown only — a raw `.html` entry is skipped) is selected by the `pages`,
+ * `plans`, `briefs` and `patches` kinds, so the root-registry implementor binds
+ * it to the source of every root of those kinds — iterating the registry
+ * explicitly, because M40 has no wildcards. A record's `rootId` is always the
+ * registry entry's id. Its own 200 ms debounce is gone; the mount owns it.
  */
 export class PagesFrontmatterIndexer implements WatchSubscriber {
   /** Composite key `${rootId}:${path}` so the same path can exist in multiple
@@ -45,20 +48,20 @@ export class PagesFrontmatterIndexer implements WatchSubscriber {
   private byKey = new Map<string, FrontmatterRecord>();
 
   /**
-   * @param roots resolver from rootId → PagesService, covering every page root
-   *   plus the artifact (brief/patch/...) marker instances.
+   * @param roots resolver from rootId → MarkdownFileStore, covering every registry
+   *   root whose kind selects `m02-frontmatter-indexer`.
    * @param artifactEvents M36: rootId → WS event kind to broadcast on change,
    *   built by the caller from `artifactRegistry` (`e.rootId -> e.changedEvent`).
    *   A rootId absent from this map (e.g. an ordinary page root) broadcasts
    *   nothing extra here — only the shared `pages:frontmatter-changed` event.
    */
   constructor(
-    private roots: Map<string, PagesService>,
+    private roots: Map<string, MarkdownFileStore>,
     private ws: WsEmitter,
     private artifactEvents: Map<string, 'briefs:changed' | 'patches:changed' | 'plans:changed'> = new Map(),
   ) {}
 
-  private rootFor(rootId: string): PagesService | undefined {
+  private rootFor(rootId: string): MarkdownFileStore | undefined {
     return this.roots.get(rootId);
   }
 

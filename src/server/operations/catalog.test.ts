@@ -55,14 +55,17 @@ describe('operation catalog — declaration rules', () => {
     expect(() => cat.register(decl({ sideEffects: ['db'] }))).not.toThrow();
   });
 
-  it('every registered file-writing operation declares one', () => {
+  it('[ac:ac-kazdy-wiersz-katalogu-l3-opisujacy-op] every registered file-writing operation declares one', () => {
     const writesFiles = CATALOG.list().filter((op) => op.sideEffects.includes('file'));
     // A guard against the guard: if this ever comes back empty the assertion
     // below would pass while proving nothing.
     expect(writesFiles.length).toBeGreaterThan(5);
     for (const op of writesFiles) {
-      expect(op.contentInput, op.name).toBeDefined();
+      expect(['literal', 'diff', 'literal+diff', 'n/a'], op.name).toContain(op.contentInput);
     }
+    // The two page-content writes the criterion names say "both" explicitly.
+    expect(CATALOG.require('update_page').contentInput).toBe('literal+diff');
+    expect(CATALOG.require('update_sections').contentInput).toBe('literal+diff');
   });
 
   it('the three operations that got a differential mode declare it, and the three that did not say so', () => {

@@ -1,0 +1,12 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.8",
+  "unit": "u03-root-registry",
+  "portion": "u03-root-registry/p5-l7-b",
+  "claimed": ["section:o8crf4hk", "section:1z2653we", "section:j5vqicfm", "section:yg8keaew"],
+  "deviations": [],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

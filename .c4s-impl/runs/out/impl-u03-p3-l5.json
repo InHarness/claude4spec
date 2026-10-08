@@ -1,0 +1,12 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.8",
+  "unit": "u03-root-registry",
+  "portion": "u03-root-registry/p3-l5",
+  "claimed": ["section:8ya40xzg"],
+  "deviations": [],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { PAGES_KIND, fileMapEntryOf } from '../../shared/root-kinds.js';
 
 /**
  * M30: expand/collapse state for the HTML preview iframe. This is UI state kept OUTSIDE
@@ -16,6 +17,17 @@ interface HtmlViewerState {
    */
   revisions: Record<string, number>;
   notifyChanged(rootId: string, path: string): void;
+}
+
+/**
+ * 2.1.8 (M30): does a `file:changed` path reach the open `.html` preview? Only a
+ * path that is the raw `**\/*.html` entry of the `pages` kind's file map — the
+ * narrowing comes from the kind declaration, not from an extension check of our
+ * own, so the preview follows whatever the map calls a raw HTML entry.
+ */
+export function isHtmlPreviewPath(path: string): boolean {
+  const entry = fileMapEntryOf(PAGES_KIND, path);
+  return entry !== undefined && entry.format === 'raw' && entry.pattern === '**/*.html';
 }
 
 export const htmlRevisionKey = (rootId: string, path: string): string => `${rootId}:${path}`;

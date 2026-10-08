@@ -63,8 +63,9 @@ export function ensureWelcomePage(cwd: string, pagesDir: string): void {
  * existing project changes nothing.
  *
  * Sequence: mkdir cwd → config (create or load) → config v3 migration (carry
- * port/mode to the registry, first-wins) → .gitignore → entitiesDir →
- * registry registration (creates the DB slot) → legacy DB relocation.
+ * port/mode to the registry, first-wins) → .gitignore → mkdir of every root in
+ * the root registry → registry registration (creates the DB slot) → legacy DB
+ * relocation.
  * (0.2.93: no integration artifact for external agents lands on disk at all —
  * neither a skill nor an MCP config entry; the latter is served on demand by
  * `GET /api/projects/:id/_meta/mcp-config`.) (0.1.56: welcome page no longer created here —
@@ -121,14 +122,17 @@ export function bootstrapProject(
   const rootRegistry = new RootRegistry(config.roots);
   ensureGitignore(cwd, { roots: rootRegistry.list(), gitEnabled: config.git.enabled });
   // 0.1.56: welcome page deferred to onboarding close — see ensureWelcomePage.
-  // 2.1.8: activation creates the dir of every SYSTEM root (plans, briefs,
-  // patches, entities, releases) — none of them is written to `config.json`.
-  // User roots' dirs are created by the context build. `tags.json` stays lazy.
+  // 2.1.8 (M31 bootstrap): activation creates the directory of EVERY registry
+  // root — the user roots (`kind: pages`) and the system roots (plans, briefs,
+  // patches, entities, releases), none of the latter written to `config.json`.
+  // The CLI `--pages` override names the base root's directory for this run, so
+  // that is the one created. The context build mkdirs again (idempotent) for
+  // roots added later without a re-activation. `tags.json` stays lazy.
   const systemRootDirsCreated: string[] = [];
   for (const root of rootRegistry.list()) {
-    if (root.kind === PAGES_KIND) continue;
-    const abs = path.resolve(cwd, root.dir);
-    if (!fs.existsSync(abs)) systemRootDirsCreated.push(root.dir);
+    const dir = root.kind === PAGES_KIND && root.builtin && opts.pagesDir ? opts.pagesDir : root.dir;
+    const abs = path.resolve(cwd, dir);
+    if (root.kind !== PAGES_KIND && !fs.existsSync(abs)) systemRootDirsCreated.push(root.dir);
     fs.mkdirSync(abs, { recursive: true });
   }
   const project = registry.registerProject(workspace, cwd);

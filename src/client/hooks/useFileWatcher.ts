@@ -1,11 +1,11 @@
-import { isSystemRootId } from '../../shared/root-kinds.js';
+import { systemRootKindOf } from '../../shared/root-kinds.js';
 import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { WsEvent } from '../../shared/types.js';
 import { createInvalidationBatcher } from '../lib/wsBatcher.js';
 import { PROJECT_ID } from '../lib/api-core.js';
 import { useFileEventsStore } from '../state/fileEvents.js';
-import { useHtmlViewerStore } from '../state/htmlViewer.js';
+import { isHtmlPreviewPath, useHtmlViewerStore } from '../state/htmlViewer.js';
 import { artifactVersionsKey } from './useArtifactVersions.js';
 import { reloadFrontendPlugins } from '../runtime/boot-plugins.js';
 import { clientPluginHost } from '../core/plugin-host/host.js';
@@ -54,32 +54,36 @@ export function useFileWatcher() {
       ws.onmessage = (e) => {
         try {
           const data = JSON.parse(e.data) as WsEvent;
-          if (data.kind === 'file:changed' && isSystemRootId(data.rootId)) {
-            // 2.1.8: the base `file:changed` fires for EVERY registry root — a
-            // system root's id is its kind. Briefs keep their reload-or-confirm
-            // flow; plans and patches refetch; entities and releases have their
-            // own projection events (`entity:indexed`, release cache).
-            if (data.rootId === 'briefs') {
+          const systemKind = data.kind === 'file:changed' ? systemRootKindOf(data.rootId) : undefined;
+          if (data.kind === 'file:changed' && systemKind) {
+            // 2.1.8: the base `file:changed` fires for EVERY registry root. A
+            // system root is routed by its KIND (asked of the registry), never
+            // by its id. Briefs keep their reload-or-confirm flow; plans and
+            // patches refetch; entities and releases have their own projection
+            // events (`entity:indexed`, release cache).
+            if (systemKind === 'briefs') {
               batcher.queue(['briefs', 'list']);
               batcher.queue(['briefs', 'versions', data.path]);
               if (data.origin === 'external') useFileEventsStore.getState().notifyBriefExternalChange(data.path);
               else batcher.queue(['briefs', 'detail', data.path]);
-            } else if (data.rootId === 'plans') {
+            } else if (systemKind === 'plans') {
               batcher.queue(['plans-list']);
               batcher.queue(['plan', 'detail', data.path]);
               batcher.queue(artifactVersionsKey('plan', data.path));
-            } else if (data.rootId === 'patches') {
+            } else if (systemKind === 'patches') {
               batcher.queue(['patches', 'list']);
               batcher.queue(['patches', 'detail', data.path]);
-            } else if (data.rootId === 'releases') {
+            } else if (systemKind === 'releases') {
               batcher.queue(['releases']);
             }
           } else if (data.kind === 'file:changed') {
             // 0.1.96 multiroot: page trees + documents are keyed by rootId.
             batcher.queue(['pages', data.rootId]);
-            if (data.path.toLowerCase().endsWith('.html')) {
+            if (isHtmlPreviewPath(data.path)) {
               // M30: `.html` is a read-only preview — no editor, no reload
-              // dialog; the open iframe just reloads.
+              // dialog; the open iframe just reloads. 2.1.8: on the base
+              // `file:changed` (M30 has no reaction of its own), narrowed to the
+              // raw `**/*.html` entry of the `pages` kind's file map.
               useHtmlViewerStore.getState().notifyChanged(data.rootId, data.path);
             } else if (data.origin === 'external') {
               useFileEventsStore.getState().notifyExternalChange(data.rootId, data.path);

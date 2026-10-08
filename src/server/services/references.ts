@@ -5,7 +5,7 @@ import {
   serializeXmlTag,
   type XmlTag,
 } from '../../shared/xml-tags.js';
-import type { PagesService } from './pages.js';
+import type { MarkdownFileStore } from './markdown-file-store.js';
 import type { SelfWriteMarker } from '../fs/sources.js';
 import type { EntityStore } from './entity-store.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
@@ -17,7 +17,7 @@ import type { PagesSource, ReferencePage } from '../../core/references/index.js'
  * Adapt a server-side PagesService into the serverless `PagesSource` the
  * references core (M19) consumes. The core never imports PagesService directly.
  */
-export function pagesServiceSource(pages: PagesService): PagesSource {
+export function pagesServiceSource(pages: MarkdownFileStore): PagesSource {
   return {
     async listPages(): Promise<ReferencePage[]> {
       const files = await pages.listMarkdownFiles();
@@ -43,7 +43,7 @@ export class ReferencesService {
    * Entity-file propagation (setPluginHost) is root-agnostic and unchanged.
    */
   constructor(
-    private roots: Map<string, PagesService>,
+    private roots: Map<string, MarkdownFileStore>,
     private watchers: Map<string, SelfWriteMarker>,
   ) {}
 

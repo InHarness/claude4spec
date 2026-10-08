@@ -1,0 +1,175 @@
+{
+ "role": "verifier",
+ "scope": {
+  "kind": "unit",
+  "id": "u03-root-registry"
+ },
+ "release": "2.1.8",
+ "rows": [
+  {
+   "slug": "ac-deklaracja-rodzaju-korzenia-wybieraja",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/fs/reactions.test.ts:64: `expect(() => validateKindRequirements(broken)).toThrow(/m06-section-indexer.*requires 'm06-anchor-injection'/)`. The test also pins that the check is the first statement of the registry loop, before `w.mountSource(` (root-registry-runtime.ts:123-129), that project-context.ts calls `await mountRegistryRoots(` before `bindRegistryReactions(rootRegistry,`, and that `buildInner` rethrows (`throw err`). The code matches all of it: root-registry-runtime.ts:120-125 and project-context.ts:476/1485. Empty verifies is dev-0001.",
+   "type": "ac"
+  },
+  {
+   "slug": "ac-plik-html-lezacy-w-korzeniu-stron-jes",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/discovery/discovery.test.ts:2297: `expect(tree).toContainEqual({ type: 'file', name: 'mock.html', path: 'mock.html', fileType: 'html' })` on that root's `listTree`, plus `expect(paths).not.toContain('mock.html')` on `listPages({rootId:'pages'})`, plus get_page on it giving PAGE_NOT_FOUND. The code matches: pages.ts walk takes fileType from fileMapEntryOf('pages', …), and markdown-file-store.ts:223-236 collectMarkdown keeps isMarkdownPath only. Empty verifies is dev-0001.",
+   "type": "ac"
+  },
+  {
+   "slug": "ac-plik-html-w-korzeniu-stron-bez-file-version",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/fs/reactions.test.ts:239 uses a real FileVersionCapture over a migrated DB, with m17-capture bound as the pages-kind loop binds it. It runs add/change/unlink on mock.html and writes a.md, then asserts `expect(rows).toEqual([{ rootId: 'pages', path: 'a.md', op: 'create' }])` and `COUNT(*) … LIKE '%.html'` = 0. The code matches: m17-capture has acceptsTracks ['file_version'], and .html has track 'none' (root-kinds.ts pages fileMap).",
+   "type": "ac"
+  },
+  {
+   "slug": "ac-section-indexer-walidacja-referencji-i",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/workspace/root-registry-runtime.test.ts:176. A user entry with sectionIndexed/releasable/referenceValidated=false is still in `registry.selecting('m06-section-indexer')`, `withFlag('references')`, `selecting('m17-capture')` and RootSet.sectionIndexed()/referenceValidated(). After the real mountRegistryRoots + bindRegistryReactions, the adr file carries the anchor and is indexed and captured. briefs/patches are captured but not indexed, and `expect(fs.readFileSync(...)).toBe(body)` holds (no anchor). The code matches: RootSet.sectionIndexed() reads the kind (discovery/roots.ts:78), and bindRegistryReactions binds only kindDeclaration(root.kind).reactions. Empty verifies is dev-0001.",
+   "type": "ac"
+  },
+  {
+   "slug": "ac-projectcontext-montuje-n-par-pagesservic",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/workspace/root-registry-runtime.test.ts:82 covers both halves of the title end to end. (1) N facades: `rootRuntimes` ids ['pages','adr'], each `toBeInstanceOf(PagesService)` and distinct. (2) Every registry root mounted: `[...sourceByRootId.keys()]` equals `registry.list()` ids incl. plans/briefs/patches/entities/releases, and `w.isMounted` is true. (3) Bound: file:changed for adr and entities. (4) Dispose: every source `isMounted` is false, and a re-mount dispatches nothing. (5) A roots PATCH calls onContextConfigChanged, then cache.invalidate rebuilds and disposes the old context, the hook runs again with N+1 facades, and in project-context.ts `.indexAll(` comes after the bind call. The code matches: root-registry-runtime.ts:105-180, project-context.ts:476/1485. Empty verifies is dev-0001.",
+   "type": "ac"
+  },
+  {
+   "slug": "ac-kazde-zachowanie-per-katalog-jest-bramko",
+   "level": 2,
+   "status": "covered",
+   "evidence": "tests/integration/architecture/root-kind-gating.test.ts:62. `expect(shape(renamed)).toEqual(shape(conventional))` checks base, pages, release/references/gitignore/agentDirectFs flags, selecting(indexer/capture). Each flag equals `KIND_DECLARATIONS[root.kind].flags[flag]`, system roots resolve by kind via systemRootKindOf, and the source scan `expect(offenders).toEqual([])` passes. I re-ran the scan's regexes over src with grep: no `rootId|id|dir ===/!== '<root literal>'` lines and no `.plansDir/.entitiesDir/…` reads, so the scan passes against the current code. Empty verifies is dev-0001.",
+   "type": "ac"
+  },
+  {
+   "slug": "ac-content-i-textedits-w-update-page-sa",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/page-write.test.ts:2681. Both and neither give `INVALID_ARGUMENT`. A missing expectedHash gives INVALID_ARGUMENT with /expectedHash/ in the literal mode and in the textEdits mode. The file is unchanged, and the one valid mode passes (`expect(ok.replacements).toBe(2)`). The literal field is `body` per dev-0002.",
+   "type": "ac"
+  },
+  {
+   "slug": "ac-kazdy-wiersz-katalogu-l3-opisujacy-op",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/operations/catalog.test.ts:58 asserts `expect(['literal','diff','literal+diff','n/a'], op.name).toContain(op.contentInput)` for every CATALOG op with a 'file' side effect, with a guard of length > 5. update_page and update_sections are 'literal+diff'. Registration also refuses a missing contentInput (catalog.test.ts:47).",
+   "type": "ac"
+  },
+  {
+   "slug": "ac-textedits-gubiacy-anchor-majacy-refer",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/page-write.test.ts:2753. A find that swallows a cited anchor comment, with no dropAnchors, gives `expect(err.code).toBe('ANCHOR_LOSS')`, with details naming the anchor and cites.md, and the file is untouched. The guard has no root/sectionIndexed gate (page-write.ts differential branch assertNoUndeclaredAnchorLoss).",
+   "type": "ac"
+  },
+  {
+   "slug": "ac-update-page-bez-content-i-bez-textedi",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/page-write.test.ts:2546: `expect(err.code).toBe('INVALID_ARGUMENT'); expect((await pages.read('doc.md')).body).toBe(before)`.",
+   "type": "ac"
+  },
+  {
+   "slug": "ac-update-page-w-trybie-content-ktorego",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/page-write.test.ts:2839. A literal write that loses a cited anchor named in dropAnchors gives `expect(res.droppedAnchors).toEqual([childOne])`, `expect(written).not.toContain('<!-- anchor: ${childOne} -->')`, and the returned hash equals the on-disk hash, so the page is written. The literal field is `body` per dev-0002.",
+   "type": "ac"
+  },
+  {
+   "slug": "ac-update-page-z-content-i-textedits-pod",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/page-write.test.ts:2535: `expect(err.code).toBe('INVALID_ARGUMENT'); expect(err.message).toMatch(/mutually exclusive/)`. The literal field is `body` per dev-0002.",
+   "type": "ac"
+  },
+  {
+   "slug": "ac-update-page-z-textedits-podmienia-wys",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/page-write.test.ts:2659. 'teh' appears in the frontmatter title, in the preamble and in 2 bodies. The test asserts `expect(res.replacements).toBe(4)`, `frontmatter.title` 'the title', the preamble rewritten, and that the raw file no longer contains 'teh'.",
+   "type": "ac"
+  },
+  {
+   "slug": "ac-zapis-strony-wprowadzajacy-nowy-naglo",
+   "level": 2,
+   "status": "test-not-verifying",
+   "evidence": "Accepted by deviation dev-0003 (sent, non-blocking, 'incorrect'). The title says the hash returned after a new heading is computed BEFORE injection, so the next write gives PAGE_CONFLICT. The tagged describe at src/server/services/page-write.test.ts:1883 asserts the opposite, the settled rule `expect(second).not.toBeInstanceOf(Error)` for update_sections and update_page. That follows page-tools-update-page.logic and put-api-pages at 2.1.8 ('hash i version … są stanem po osiadnięciu').",
+   "type": "ac"
+  },
+  {
+   "slug": "page-root-runtime-construction",
+   "level": 1,
+   "status": "covered",
+   "evidence": "The trace.md:2 line is present and its paths exist. The counterpart src/server/workspace/root-registry-runtime.ts:120-179 matches the snippet step by step. It loops over `registry.list()`. It calls `validateKindRequirements(kindDeclaration(root.kind))`; the snippet puts this check after mount, the code before it, and the snippet's 'błąd zatrzymuje build' still holds. It calls `sourceNameFor(root)` and `w.mountSource({source, dir})`. When `kindHasMarkdown` holds it builds `new MarkdownFileStore({cwd, rootId, dir})` into storeByRootId, and only for `root.kind === PAGES_KIND` the facade `new PagesService({ root, store })`. bindRegistryReactions binds each id of `kindDeclaration(root.kind).reactions`, then `BASE_REACTION_ID` ('m02-file-changed'). plugins:* sit outside the registry (project-context.ts:1495, after bind :1485). The shape test is root-registry-runtime.test.ts:258 [entity:page-root-runtime-construction]: the store is the primitive and never a facade; the facade exists only for kind pages over that root's store; entities/releases get a source and no store; per root the binding order is `[...kind.reactions, 'm02-file-changed']`.",
+   "type": "code-snippet"
+  },
+  {
+   "slug": "page-tools-update-page",
+   "level": 1,
+   "status": "uncovered",
+   "evidence": "Accepted by deviation dev-0002 (sent, non-blocking drift). The entity at 2.1.8 names the literal param `content`; the tool registered in src/server/mcp/page-tools.ts (server page-tools) exposes `body` + `frontmatter`, and the code predates the window. Everything else matches. The window delta, which drops the sectionIndexed=false exemption from logic, holds: page-write.ts runs assertNoUndeclaredAnchorLoss in both modes with no root gate. trace.md:1 is present. The shape test src/server/mcp/page-tools.test.ts:309 [entity:page-tools-update-page] asserts the props `['body','dropAnchors','expectedHash','frontmatter','path','rootId','textEdits']`, required ⊇ rootId/path/expectedHash, and a description with 'ANCHOR LOSS, IN BOTH MODES' and not /guard does not run/.",
+   "type": "mcp-tool"
+  },
+  {
+   "slug": "goal:u03-root-registry",
+   "level": 2,
+   "status": "covered",
+   "evidence": "Every sentence holds. (1) Registry entries `{id,name,dir,kind,builtin}` come from config.roots[] (kind pages) plus system kinds in code (src/shared/root-kinds.ts registryList; src/server/roots/registry.ts). The system-root registrations are deferred to u04/u05/u09/u10; they were found on the branch already, built against KIND_DECLARATIONS that exist, and left as found. (2) The file type comes from the kind's file map: `fileMapEntryOf` in pages.ts walk; `.html` is raw/track none, shown in the tree as fileType 'html' and not a page (discovery.test.ts:2297). (3) The ProjectContext build runs the per-root loop in root-registry-runtime.ts:120-179, called from project-context.ts:476 and :1485: requirement validation throws out of the build, then mount, store/facade, the kind reactions bound by id, and base `m02-file-changed` (core-reactions.ts:52). The base reaction is the only emitter of `file:changed {event,path,rootId,origin}` (src/server/fs/notifications.ts:25; nothing else in src/server broadcasts it). (4) Dot-segment subtrees are skipped: markdown-file-store.ts:227 and pages.ts:136 `hasDotSegment`, watch-ignore.ts:30. (5) Removals: no hidden-tree filter left in src (grep); `ROOT_NOT_WRITABLE` appears nowhere in src; the anchor guard in page-write.ts has no sectionIndexed branch and the tool description says it runs on every page root; the deprecated sectionIndexed=false criteria have no tests left. Remaining `sectionIndexed` identifiers are kind-derived (discovery/roots.ts:78 `kindSelects(PAGES_KIND,'m06-section-indexer')`, client contextSpec `kindSelects(kind,…)`) or comments. M30 has no reaction: StaticHtmlService watches nothing, no m30 id in core-reactions, and the `.html` preview reloads on the base `file:changed` via useFileWatcher.ts:82-88 `isHtmlPreviewPath` → `useHtmlViewerStore.notifyChanged` (htmlViewer.test.ts). The only 'm30-html-preview' string left is a synthetic subscription id in the generic runtime filter test at src/server/fs/watcher.test.ts:302, not a production reaction."
+  },
+  {
+   "slug": "completes:u01-reaction-definitions:m40-mounts-and-base-reaction",
+   "level": 2,
+   "status": "covered",
+   "evidence": "M40 kc23agex: registry-root sources are mounted only by the L13 implementor hook. The only production mountSource calls are root-registry-runtime.ts:129, plus plugins:overlay in project-context.ts:1495 and the process-scope plugins base in index.ts:407, both outside the registry and owned by M33. `file:changed` is broadcast only by the base reaction (src/server/fs/notifications.ts:25), bound on every root by bindRegistryReactions (root-registry-runtime.ts:177). Tested in root-registry-runtime.test.ts:82 (file:changed for adr and entities)."
+  },
+  {
+   "slug": "completes:u02-page-reactions:m06-binding-by-pages-kind",
+   "level": 2,
+   "status": "covered",
+   "evidence": "M06 o8crf4hk: m06-anchor-injection and m06-section-indexer are selected by KIND_DECLARATIONS.pages.reactions (root-kinds.ts:120-128) and bound by bindRegistryReactions. Requirements (`requires` m06-anchor-injection, `requiresFlags` ['references']) are checked by validateKindRequirements as the first statement of the mount loop. Tests: reactions.test.ts:64 and the 'requires flag references' test, root-registry-runtime.test.ts:258 binding order."
+  },
+  {
+   "slug": "completes:u02-page-reactions:m14-binding-by-kind",
+   "level": 2,
+   "status": "covered",
+   "evidence": "m14-link-indexer and m14-rename-sync are in KIND_DECLARATIONS.pages.reactions and bound per root by bindRegistryReactions with input {rootId}. Test: reactions.test.ts ('the binding hands M06, M08, M14 and M17 the registry entry id', 1z2653we)."
+  },
+  {
+   "slug": "completes:u02-page-reactions:m08-binding-by-kind",
+   "level": 2,
+   "status": "covered",
+   "evidence": "m08-todos-indexer is in KIND_DECLARATIONS.pages.reactions and bound by the registry loop; rootId comes from the binding input (reactionRootId, sources.ts:86). Tests: reactions.test.ts binding-input test, todos-indexer.test.ts (input wins over the source name)."
+  },
+  {
+   "slug": "completes:u02-page-reactions:m17-capture-binding-by-kinds",
+   "level": 2,
+   "status": "covered",
+   "evidence": "m17-capture is selected by the pages/plans/briefs/patches kinds (root-kinds.ts:127,137,146,…) and bound per root by bindRegistryReactions. acceptsTracks ['file_version'] skips .html (track none). Tests: reactions.test.ts:239 and root-registry-runtime.test.ts:176 (`registry.selecting('m17-capture')` ⊇ pages/adr/plans/briefs/patches; briefs/patches captured)."
+  },
+  {
+   "slug": "stub:u03-root-registry",
+   "level": 3,
+   "status": "covered",
+   "evidence": ".c4s-impl/stubs.json is `{\"stubs\":[]}`: this unit provides no open stubs and depends on none."
+  },
+  {
+   "slug": "regression",
+   "level": 2,
+   "status": "covered",
+   "evidence": "`npm run typecheck` exited 0 (tsc --noEmit clean in every workspace; last line `@inharness-ai/c4s-plugin-ac@0.2.80 typecheck > tsc --noEmit`). I read the tests changed since 37cb4b9 (19 files, incl. root-registry-runtime.test.ts, reactions.test.ts, root-kind-gating.test.ts, page-write.test.ts, page-tools.test.ts, discovery.test.ts, static.route.test.ts, pages.mdx.test.ts, bootstrap.system-roots.test.ts, workspace-projects.test.ts) against the current code. They are consistent and none is contradicted by a code path. Construction refactor: the PagesService facade forwards every MarkdownFileStore member (ensureRoot, listMarkdownFiles(+Readonly), read, readDetail, readRaw, stat, write, remove, search, exists, records get/set, root, rootId). It keeps the positional (cwd, dir, rootId) form, so unchanged rigs passing a PagesService where a MarkdownFileStore is now expected still work at runtime. No test spies on PagesService internals or reads artifactMount `.pages`; artifactMounts/storeByRootId are used only in root-registry-runtime.test.ts and static.route.test.ts. Advisory, not counted: `tsc -p tsconfig.test.json` (not part of typecheck, with about 250 errors that predate this unit across plugins/entity-tools etc.) reports type-only `ReactionHandler` vs `WatchSubscriber` mismatches in section-indexing.test.ts:107 and page-write.test.ts (145, 492, 854, 1008, 1436, 1902, 2494). Vitest strips types, and those call sites pass four args, which reactionRootId handles by falling back to the source name (sources.ts:86), so they do not affect runtime."
+  }
+ ],
+ "suite": {
+  "command": "npm run typecheck",
+  "exitCode": 0,
+  "summary": "> @inharness-ai/c4s-plugin-writing-style-author@0.2.66 typecheck > tsc --noEmit; > @inharness-ai/c4s-plugin-ac@0.2.80 typecheck > tsc --noEmit; EXIT 0 (static verification; tests not run per build rules)"
+ }
+}

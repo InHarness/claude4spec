@@ -346,8 +346,8 @@ export interface UpdatePageResult {
    * 2.1.6 — anchors this write removed from the page, reported on SUCCESS: the
    * ones nothing cited (they pass silently past the guard) and the ones the
    * caller named in `dropAnchors`. Absent — the key missing — when the write
-   * cost no anchor, or on a root without a section index, where the guard has
-   * nothing to measure.
+   * cost no anchor. 2.1.8: the guard runs on every page root (each has a
+   * section index), so there is no root where it has nothing to measure.
    */
   droppedAnchors?: string[];
 }
@@ -605,8 +605,8 @@ export async function createPage(
 
 /**
  * What the DIFFERENTIAL branch of `update_page` needs and the literal one does
- * not: a way to find out who cites an anchor, and whether this root has a
- * section index at all.
+ * not: a way to find out who cites an anchor (2.1.8: every page root has a
+ * section index, so there is no per-root switch to consult).
  *
  * A separate, optional parameter rather than fields on {@link PageWriteTarget}
  * because `update_page` has always been answerable with nothing but a target —

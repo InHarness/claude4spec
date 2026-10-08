@@ -9,7 +9,7 @@ import type { PageRootRuntime } from '../routes/pages.js';
 import type { SectionIndexRoot } from '../services/section-indexer.js';
 import { openDb, type Db } from '../db/index.js';
 import { applyProjection } from '../db/projection.js';
-import { PagesService } from '../services/pages.js';
+import type { MarkdownFileStore } from '../services/markdown-file-store.js';
 import { crossRootPagesRouter, pagesRouter } from '../routes/pages.js';
 import { StaticHtmlService } from '../services/static-html.js';
 import { staticRouter } from '../routes/static.js';
@@ -70,7 +70,6 @@ import { FileVersionService } from '../services/file-version.js';
 import {
   ARTIFACT_CHANGED_EVENT,
   ARTIFACT_KIND_OF_ROOT_KIND,
-  type ArtifactKind,
   type ArtifactRootKind,
 } from '../services/artifact-registry.js';
 import { RawEntityReader } from '../discovery/raw-entity-reader.js';
@@ -92,31 +91,25 @@ import { gitRouter } from '../routes/git.js';
 import type { WsGateway } from '../ws/gateway.js';
 import type { WatchScope, WatchSubscriber, FileWatchRuntime } from '../fs/watcher.js';
 import {
-  sourceNameFor,
   boundSuppress,
-  boundWriter,
   ENTITIES_SOURCE,
   RELEASES_SOURCE,
   PLUGINS_OVERLAY_SOURCE,
-  type SelfWriteMarker,
   rootIdFromSource,
 } from '../fs/sources.js';
-import { ReactionBinder, validateKindRequirements } from '../fs/reactions.js';
+import { ReactionBinder, type ReactionHandler } from '../fs/reactions.js';
 import { registerCoreReactions, type CoreReactionContext } from './core-reactions.js';
+import { mountRegistryRoots, bindRegistryReactions } from './root-registry-runtime.js';
 import { RootRegistry, rootDirAbs } from '../roots/registry.js';
-import { BASE_REACTION_ID, PAGES_KIND, kindDeclaration, kindHasMarkdown, kindSelects, type RegistryRoot } from '../../shared/root-kinds.js';
+import { PAGES_KIND, kindSelects, type RegistryRoot } from '../../shared/root-kinds.js';
 import { FileVersionCapture } from '../services/file-version-capture.js';
 import { EntityStore } from '../services/entity-store.js';
 import { EntityIndexerService } from '../services/entity-indexer.js';
 import { ReleaseFileStore, toReleaseFileData, type ReleaseFileData } from '../services/release-store.js';
-import { RecordStore, RecordPathError } from '../fs/record-store.js';
+import { RecordStore } from '../fs/record-store.js';
 import type { SnapshotData } from '../serialization/types.js';
-import type { ScopedWatchRegistrar } from '../fs/watcher.js';
-import { isMarkdownPath } from '../../shared/page-files.js';
 import {
-  markdownAdapter,
   jsonAdapter,
-  type MarkdownRecord,
   type RecordFormatAdapter,
 } from '../fs/record-adapters.js';
 import { ReleaseIndexerService } from '../services/release-indexer.js';
@@ -266,33 +259,6 @@ export interface ProjectContext {
 let contextInstanceSeq = 0;
 function nextContextInstance(): number {
   return ++contextInstanceSeq;
-}
-
-/**
- * One M42 record store per markdown mount.
- *
- * The store is bound to `(scope, source)` — the scope comes from the registrar
- * the mount owner already holds — so its path mutex and its suppression tokens
- * are per project, and two projects sharing a `relPath` never mask each other.
- *
- * The path rule is the source's, not the primitive's: only `.md` / `.mdx` are
- * records here, and anything else is refused in step 1 as an addressing error
- * rather than serialized and written.
- */
-function markdownRecordStore(
-  registrar: ScopedWatchRegistrar,
-  source: string,
-  dir: string,
-): RecordStore<MarkdownRecord> {
-  return new RecordStore<MarkdownRecord>({
-    registrar,
-    source,
-    dir,
-    adapter: markdownAdapter,
-    validatePath: (relPath) => {
-      if (!isMarkdownPath(relPath)) throw new RecordPathError(`only .md / .mdx paths allowed: ${relPath}`);
-    },
-  });
 }
 
 export async function buildProjectContext(deps: ProjectContextDeps): Promise<ProjectContext> {
@@ -476,9 +442,11 @@ async function buildInner(
   writeSlotMarker(dbSlotDir, cwd);
 
   // ── M40 phase A: MOUNTS ────────────────────────────────────────────────────
-  // Mount → subscribe is a contract, not a preference: `subscribe` to an
-  // unmounted source throws, so every directory owner claims its source here and
-  // every subscription is registered further down, after the services exist.
+  // Mount → bind is a contract per source, not a preference: binding a reaction
+  // to an unmounted source throws. The root-registry build hook (M02 as the L13
+  // implementor) mounts every registry root's source here and binds its
+  // reactions further down, after the services exist; M33's `plugins:overlay`
+  // follows it.
   // Scope is this context: dispose unmounts exactly these, and leaves
   // `scope: 'process'` mounts (the base plugin pool) alone.
   // Scope is per CONTEXT INSTANCE, not per project. A retired-but-not-yet-disposed
@@ -491,74 +459,21 @@ async function buildInner(
   cleanup.push(() => w.dispose());
 
   // ── 2.1.8: the root-registry loop (M02 is its implementor) ─────────────────
-  // ONE loop over every registry root — user roots and system roots alike:
-  //   1. create the directory and mount its source (chokidar silently swallows
-  //      ENOENT on a missing dir, so the mount must come after the mkdir);
-  //   2. a markdown file store for every kind whose file map has a markdown
-  //      entry; the `PagesService` FACADE (tree, static html, editor) only for
-  //      kind `pages`;
-  //   3. the kind's acceptance requirements — a violation stops the build.
-  // Reactions are bound further down (step 4), once the services exist: mount →
-  // bind is a contract per source.
-  interface RootRuntime {
-    root: Root;
-    pages: PagesService;
-    staticHtml: StaticHtmlService;
-    source: string;
-    writer: SelfWriteMarker;
-    serializer: FileSerializer;
-  }
-  /** A system root of kind plans/briefs/patches — markdown store, no facade. */
-  interface ArtifactMount {
-    kind: ArtifactKind;
-    rootId: string;
-    pages: PagesService;
-    source: string;
-    writer: SelfWriteMarker;
-    serializer: FileSerializer;
-  }
-  const rootRuntimes: RootRuntime[] = [];
-  const artifactMounts = new Map<ArtifactKind, ArtifactMount>();
-  const sourceByRootId = new Map<string, string>();
-  const storeByRootId = new Map<string, PagesService>();
-  const writerByRootId = new Map<string, SelfWriteMarker>();
-  const serializerByRootId = new Map<string, FileSerializer>();
+  // ONE loop over every registry root — user roots and system roots alike
+  // (`root-registry-runtime.ts`): the kind's acceptance requirements (a
+  // violation stops the build), the dir + its source mount, a `MarkdownFileStore`
+  // primitive for every kind whose file map has a markdown entry, and the
+  // `PagesService` FACADE over it (tree, static html, editor) only for kind `pages`.
+  // Reactions are bound further down (`bindRegistryReactions`), once the
+  // services exist: mount → bind is a contract per source.
   // Which root dirs this build CREATES — a failed clone rolls back exactly those
   // (the system roots included), even when `.claude4spec/` existed before it.
   const rootDirsCreatedHere = rootRegistry
     .list()
     .filter((r) => !fs.existsSync(rootDirAbs(cwd, r)))
     .map((r) => r.dir);
-  for (const root of rootRegistry.list()) {
-    validateKindRequirements(kindDeclaration(root.kind));
-    const source = sourceNameFor(root);
-    const abs = rootDirAbs(cwd, root);
-    await fs.promises.mkdir(abs, { recursive: true });
-    w.mountSource({ source, dir: abs });
-    sourceByRootId.set(root.id, source);
-    if (!kindHasMarkdown(root.kind)) continue;
-    const store = new PagesService(cwd, root.dir, root.id);
-    store.records = markdownRecordStore(w, source, store.root);
-    const writer = boundWriter(w, source);
-    const serializer = new FileSerializer(store);
-    storeByRootId.set(root.id, store);
-    writerByRootId.set(root.id, writer);
-    serializerByRootId.set(root.id, serializer);
-    if (root.kind === PAGES_KIND) {
-      const userRoot = effectiveRoots.find((r) => r.id === root.id)!;
-      rootRuntimes.push({
-        root: userRoot,
-        pages: store,
-        staticHtml: new StaticHtmlService(cwd, root.dir),
-        source,
-        writer,
-        serializer,
-      });
-    } else {
-      const kind = ARTIFACT_KIND_OF_ROOT_KIND[root.kind as ArtifactRootKind];
-      artifactMounts.set(kind, { kind, rootId: root.id, pages: store, source, writer, serializer });
-    }
-  }
+  const { rootRuntimes, artifactMounts, sourceByRootId, storeByRootId, writerByRootId, serializerByRootId } =
+    await mountRegistryRoots({ cwd, registry: rootRegistry, userRoots: effectiveRoots, w });
   const rootById = new Map(rootRuntimes.map((rt) => [rt.root.id, rt]));
   // The BASE root's runtime backs the many single-root consumers that still take
   // one PagesService/FileSerializer (release restore, entity reference-tools,
@@ -577,7 +492,7 @@ async function buildInner(
   // PlanService is constructed since it reads exclusively through plansMount now.
   await backfillPlansToFilesystem({
     db: db.handle,
-    plansPages: plansMount.pages,
+    plansPages: plansMount.store,
     backupDb: () => backupDbBeforeMigration(dbSlotDir),
   });
 
@@ -616,9 +531,9 @@ async function buildInner(
   // the source does not exist at all, so an untrusted repo can never reload
   // project-committed plugin code. (Contrast the section indexer, which a root's
   // KIND selects — that decides only whether the reaction is bound on an
-  // always-mounted source, never whether the source exists.)
+  // always-mounted source, never whether the source exists.) The source itself is
+  // mounted further down, after the root-registry build hook (M31: L13 first, then M33).
   const overlayMounted = trust === true;
-  if (overlayMounted) w.mountSource({ source: PLUGINS_OVERLAY_SOURCE, dir: projectPluginsDir(cwd) });
   const overlayVersionByPkg = new Map(
     overlayRecords.filter((r) => r.manifestVersion).map((r) => [r.package, r.manifestVersion!]),
   );
@@ -738,7 +653,7 @@ async function buildInner(
   const releaseIndexer = new ReleaseIndexerService(db.handle, releaseFileStore, boundSuppress(w, RELEASES_SOURCE));
   // 2.1.8: per-behaviour root maps, gated on the root's KIND — the reactions it
   // selects and the flags it carries — never on an id or a per-root property.
-  const storesOf = (roots: readonly RegistryRoot[]): Map<string, PagesService> =>
+  const storesOf = (roots: readonly RegistryRoot[]): Map<string, MarkdownFileStore> =>
     new Map(roots.filter((r) => storeByRootId.has(r.id)).map((r) => [r.id, storeByRootId.get(r.id)!]));
   const sectionIndexedRoots = new Map<string, SectionIndexRoot>(
     [...storesOf(rootRegistry.selecting('m06-section-indexer'))].map(([id, svc]) => [id, { pages: svc }]),
@@ -1113,11 +1028,15 @@ async function buildInner(
   // reference-tools, owned by the host (not a plugin) — release semantics
   // are dual-track (entities + pages), neither side is a plugin owner.
   // 0.1.96: releasable roots drive releases/bundles/diffs and git staging.
-  // 2.1.8: pages enter a release by their KIND (`release` flag) — every `pages`
-  // root; no user root is left out, whatever a legacy `releasable` once said.
-  const releaseRoots = rootRegistry.withFlag('release');
-  const releasableRootIds = releaseRoots.map((r) => r.id);
-  const releasableRootDirs = releaseRoots.map((r) => rootDirAbs(cwd, r));
+  // 2.1.8: every `pages` root takes part — no user root is left out, whatever
+  // a legacy `releasable` once said. M02 m02l13001: consumers that must see PAGES only (the `assignToRelease`
+  // filter, the `file_version` path filter, bundle `roots` sanitisation) iterate
+  // the roots of KIND `pages`, not the `release` flag — entities are released
+  // too, and these lists do not cover them. Git staging/pathspecs read the flag.
+  const releasePageRoots = rootRegistry.pages();
+  const releasableRootIds = releasePageRoots.map((r) => r.id);
+  const releasableRootDirs = releasePageRoots.map((r) => rootDirAbs(cwd, r));
+  const releaseFlagRootDirs = rootRegistry.withFlag('release').map((r) => rootDirAbs(cwd, r));
   const releaseService = new ReleaseService(
     db.handle,
     pluginHost,
@@ -1142,7 +1061,7 @@ async function buildInner(
   // git repo. Probes the releasable roots for a worktree; reads config per-action.
   // 0.1.123: `checkout()` hard-blocks while a turn is live, so it shares the
   // same `activeAdapters` predicate as `ProjectContext.hasInFlightTurn` below.
-  const gitService = new GitService(cwd, releasableRootDirs, () => activeAdapters.size > 0);
+  const gitService = new GitService(cwd, releaseFlagRootDirs, () => activeAdapters.size > 0);
   // 0.1.118: needed for the git-anchored getReleaseDiff branch.
   releaseService.setGitService(gitService);
   // M25 Release Push — coordinates M17 bundle build + M24 transport; owns release_push.
@@ -1206,9 +1125,9 @@ async function buildInner(
   // M21: BriefService — top-level (nie plugin), wzorzec analogiczny do
   // PlanService. Mountowany router /briefs poniżej.
   const briefService = new BriefService({
-    briefsPages: briefsMount.pages,
+    briefsPages: briefsMount.store,
     briefsWatcher: briefsMount.writer,
-    briefsRecords: briefsMount.pages.records,
+    briefsRecords: briefsMount.store.records,
     briefsSerializer: briefsMount.serializer,
     pageVersions,
     chatService,
@@ -1220,9 +1139,9 @@ async function buildInner(
   // M23: PatchService — top-level (nie plugin), wzorzec analogiczny do
   // BriefService. Mountowany router /patches poniżej.
   const patchService = new PatchService({
-    patchesPages: patchesMount.pages,
+    patchesPages: patchesMount.store,
     patchesWatcher: patchesMount.writer,
-    patchesRecords: patchesMount.pages.records,
+    patchesRecords: patchesMount.store.records,
     patchesSerializer: patchesMount.serializer,
     pageVersions,
     chatService,
@@ -1233,9 +1152,9 @@ async function buildInner(
   // migration (brief 0-1-126-to-0-1-127), same top-level/consumer-slice
   // pattern as BriefService/PatchService above.
   const planService = new PlanService({
-    plansPages: plansMount.pages,
+    plansPages: plansMount.store,
     plansWatcher: plansMount.writer,
-    plansRecords: plansMount.pages.records,
+    plansRecords: plansMount.store.records,
     plansSerializer: plansMount.serializer,
     pageVersions,
     chatService,
@@ -1337,10 +1256,10 @@ async function buildInner(
   const patchWriteDeps = {
     briefsDirAbs: path.resolve(cwd, briefsDir),
     patchesDirAbs: path.resolve(cwd, patchesDir),
-    ...(patchesMount.pages.records
+    ...(patchesMount.store.records
       ? {
           writePatchRecord: async (relPath: string, content: string): Promise<void> => {
-            await patchesMount.pages.records!.write(relPath, { raw: content }, { actor: 'agent' });
+            await patchesMount.store.records!.write(relPath, { raw: content }, { actor: 'agent' });
           },
         }
       : {}),
@@ -1504,12 +1423,12 @@ async function buildInner(
   router.use('/chat', chatRouter(agentDeps));
   router.use(errorHandler);
 
-  // ── M40 phase B: SUBSCRIPTIONS ────────────────────────────────────────────
-  // Every mount above is claimed; now each module registers its reactions with a
-  // declared phase and, where it matters, an `after`. Order is enforced by the
-  // runtime at dispatch time, not by the order of these lines. There are no
-  // wildcards on `source`, so a subscriber of many sources iterates them here
-  // explicitly.
+  // ── M40 phase B: BINDINGS ─────────────────────────────────────────────────
+  // Every registry source above is mounted; now the build hook binds the
+  // reactions each root's kind selected (definitions carry their phase and,
+  // where it matters, an `after`). Order is enforced by the runtime at dispatch
+  // time, not by the order of these lines. There are no wildcards on `source`,
+  // so the registry is iterated here explicitly.
   // M17 capture — a serializer for every root selecting `m17-capture`.
   const captureSerializers = new Map<string, FileSerializer>(
     rootRegistry
@@ -1528,7 +1447,7 @@ async function buildInner(
   // build here rather than the first file event at dispatch.
   const suppressFn = (source: string, relPath: string): void => w.suppress(source, relPath);
   const pageAnchorInjection = sectionIndexer.anchorInjectionSubscriber(suppressFn);
-  const anchorInjectionBySource = new Map<string, WatchSubscriber>();
+  const anchorInjectionBySource = new Map<string, ReactionHandler>();
   for (const root of rootRegistry.selecting('m06-anchor-injection')) {
     const source = sourceByRootId.get(root.id)!;
     if (kindSelects(root.kind, 'm06-section-indexer')) {
@@ -1561,18 +1480,19 @@ async function buildInner(
     entityIndexer,
     releaseIndexer,
   });
-  for (const root of rootRegistry.list()) {
-    const source = sourceByRootId.get(root.id)!;
-    for (const id of kindDeclaration(root.kind).reactions) reactionBinder.bindReaction(id, source, root.kind);
-    reactionBinder.bindReaction(BASE_REACTION_ID, source, root.kind);
-  }
+  // Each binding carries the registry entry's id as the reaction's input — the
+  // `rootId` the reactions key their state `(rootId, path)` on.
+  bindRegistryReactions(rootRegistry, sourceByRootId, reactionBinder);
 
-  // M33 phase 3: overlay reload. Only registered when the trust gate let the
-  // mount exist at all. Invalidating THIS context retires it and the rebuilt
-  // context mounts its own source, so a retired-but-not-yet-disposed context
-  // (in-flight turn) cannot keep re-invalidating the projectId the new context
-  // now owns — dispose unmounts this source.
+  // M33 phase 3: overlay mount + reload, AFTER the root-registry build hook
+  // (M31 build order: the L13 implementor's mounts and bindings, then M33).
+  // Only when the trust gate lets the mount exist at all. Invalidating THIS
+  // context retires it and the rebuilt context mounts its own source, so a
+  // retired-but-not-yet-disposed context (in-flight turn) cannot keep
+  // re-invalidating the projectId the new context now owns — dispose unmounts
+  // this source.
   if (overlayMounted) {
+    w.mountSource({ source: PLUGINS_OVERLAY_SOURCE, dir: projectPluginsDir(cwd) });
     let overlayFired = false;
     const onOverlayChange = (relPath: string): void => {
       // Fire ONCE. Invalidating this context retires it, and the rebuilt context
@@ -1688,7 +1608,7 @@ async function buildInner(
   (async () => {
     for (const m of artifactMounts.values()) {
       try {
-        const files = await m.pages.listMarkdownFiles();
+        const files = await m.store.listMarkdownFiles();
         for (const relPath of files) {
           if (pageVersions.hasAny(relPath, m.rootId)) continue;
           await pageVersions.recordVersion(relPath, 'create', 'filesystem', undefined, m.serializer, m.rootId);

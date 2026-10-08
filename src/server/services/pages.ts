@@ -1,11 +1,14 @@
-import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import matter from 'gray-matter';
 import type { PageContent, PageDetail, PageNode, PageWriteInput, PageSearchHit } from '../../shared/types.js';
-import { hasDotSegment, isMarkdownPath } from '../../shared/page-files.js';
+import { hasDotSegment } from '../../shared/page-files.js';
+import { PAGES_KIND, fileMapEntryOf } from '../../shared/root-kinds.js';
 import type { RecordStore } from '../fs/record-store.js';
 import type { MarkdownRecord } from '../fs/record-adapters.js';
+import { MarkdownFileStore } from './markdown-file-store.js';
+
+export { MarkdownFileStore } from './markdown-file-store.js';
 
 /**
  * 2.1.6 — M02's frontmatter parser for readers that must not fail on a broken
@@ -24,238 +27,110 @@ export function parseFrontmatterFields(block: string): Record<string, unknown> |
   }
 }
 
+/** The root a facade serves — a registry entry of kind `pages` (or a user-root record). */
+export interface PagesRootRef {
+  id: string;
+  dir: string;
+}
+
+/**
+ * 2.1.8 — M02's pages-only FACADE (D9) over the `MarkdownFileStore` primitive,
+ * `new PagesService({ root, store })`. Built by the registry loop ONLY for roots
+ * of kind `pages` (`root-registry-runtime.ts`): there is no `PagesService`
+ * outside them — the system roots `plans` / `briefs` / `patches` get the bare
+ * store. The facade adds the tree resolution (`listTree`, `fileType` from the
+ * `pages` kind's file map) on top of the store's CRUD + frontmatter + sha256,
+ * which it forwards unchanged.
+ *
+ * The positional `(cwd, dir, rootId)` form builds its own store — kept for the
+ * hand-rolled rigs (tests, the serverless discovery reader) that have no
+ * registry loop.
+ */
 export class PagesService {
+  readonly store: MarkdownFileStore;
+  /** Absolute directory of the root (the store's). */
   readonly root: string;
-  /**
-   * 0.2.76 — the M42 record store this root writes through.
-   *
-   * `PagesService` is now a FAÇADE: the tree and L13
-   * ownership stay here, the markdown adapter sits below it and the primitive
-   * below that — three links, not two. Set after construction because the mount
-   * this store is bound to is claimed later in `buildProjectContext`.
-   *
-   * `null` for the hand-rolled rigs that have no watcher at all; those keep the
-   * plain write, which is exactly as atomic as it ever was.
-   */
-  records: RecordStore<MarkdownRecord> | null = null;
-  /**
-   * 0.1.96: which root this service serves — a page-root identifier (0.2.101:
-   * any kebab slug the project author chose, including the base root's) or one
-   * of the fixed `'brief'`/`'patch'` artifact markers.
-   */
+  /** Registry id of the `kind: pages` root this facade serves. */
   readonly rootId: string;
 
-  // 0.2.101: no `'pages'` defaults — a service constructed without an explicit
-  // root would serve whatever directory that literal happens to name today,
-  // which in a project that renamed its base root is nothing at all.
-  constructor(cwd: string, pagesDir: string, rootId: string) {
-    this.root = path.join(cwd, pagesDir);
-    this.rootId = rootId;
+  constructor(opts: { root: PagesRootRef; store: MarkdownFileStore });
+  constructor(cwd: string, pagesDir: string, rootId: string);
+  constructor(a: string | { root: PagesRootRef; store: MarkdownFileStore }, pagesDir?: string, rootId?: string) {
+    // 0.2.101: no `'pages'` defaults — a service constructed without an explicit
+    // root would serve whatever directory that literal happens to name today.
+    if (typeof a === 'string') {
+      this.store = new MarkdownFileStore({ cwd: a, dir: pagesDir!, rootId: rootId! });
+    } else {
+      if (a.store.rootId !== a.root.id) {
+        throw new Error(`[m02] facade for root '${a.root.id}' over the store of '${a.store.rootId}'`);
+      }
+      this.store = a.store;
+    }
+    this.root = this.store.root;
+    this.rootId = this.store.rootId;
   }
 
-  async ensureRoot(): Promise<void> {
-    await fs.mkdir(this.root, { recursive: true });
+  /** The M42 record store the primitive writes through (see `MarkdownFileStore.records`). */
+  get records(): RecordStore<MarkdownRecord> | null {
+    return this.store.records;
   }
+  set records(records: RecordStore<MarkdownRecord> | null) {
+    this.store.records = records;
+  }
+
+  // ── tree resolution (the facade's own) ─────────────────────────────────────
 
   async listTree(): Promise<PageNode[]> {
     await this.ensureRoot();
     return await this.walk(this.root, '');
   }
 
-  async listMarkdownFiles(): Promise<string[]> {
-    await this.ensureRoot();
-    return this.collectMd(this.root, '');
-  }
+  // ── forwarded to the primitive ─────────────────────────────────────────────
 
-  /**
-   * The same listing, WITHOUT creating the root — for readers that must not write.
-   *
-   * `listMarkdownFiles` calls `ensureRoot()`, which makes every caller a writer.
-   * That is tolerable for the server's own indexers, which run after bootstrap
-   * has created the roots anyway. It is not tolerable on the read path the
-   * `readonly-reader` CLI commands travel: `c4s find-references` in a project
-   * whose config names a root nobody has created yet would silently mkdir into
-   * the user's working tree, and on a read-only checkout would fail outright
-   * where the honest answer is "that root holds no pages".
-   *
-   * Kept as a separate method rather than by dropping `ensureRoot()` from the
-   * shared one: a dozen server-side indexers call that, and changing what they
-   * do to the filesystem is a much wider blast radius than the fix needs.
-   */
-  async listMarkdownFilesReadonly(): Promise<string[]> {
-    try {
-      return await this.collectMd(this.root, '');
-    } catch (err) {
-      if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'ENOENT') return [];
-      throw err;
-    }
+  ensureRoot(): Promise<void> {
+    return this.store.ensureRoot();
   }
-
-  async read(relPath: string): Promise<PageContent> {
-    return this.parseRead(relPath, await this.readRaw(relPath));
+  listMarkdownFiles(): Promise<string[]> {
+    return this.store.listMarkdownFiles();
   }
-
-  /** `read()`'s split of bytes already read — shared with `readDetail` so both answer from ONE read. */
-  private parseRead(relPath: string, raw: string): PageContent {
-    const parsed = matter(raw);
-    return {
-      path: relPath,
-      frontmatter: (parsed.data ?? {}) as Record<string, unknown>,
-      body: parsed.content,
-      // 0.2.15 — over the RAW bytes, not the parsed body: this is the value
-      // `update_page` compares `expectedHash` against, and that comparison is
-      // against the file. Hashing `parsed.content` would make every page with
-      // frontmatter fail its own guard.
-      hash: crypto.createHash('sha256').update(raw, 'utf-8').digest('hex'),
-    };
+  listMarkdownFilesReadonly(): Promise<string[]> {
+    return this.store.listMarkdownFilesReadonly();
   }
-
-  /**
-   * 2.1.6 — the `page-detail` record for the editor: the raw file and its hash
-   * from ONE read (two reads could hand back a hash of a different file than the
-   * content beside it), plus the editor's frontmatter/body split of it.
-   */
-  async readDetail(relPath: string): Promise<PageDetail> {
-    const raw = await this.readRaw(relPath);
-    return { rootId: this.rootId, ...this.parseRead(relPath, raw), content: raw };
+  read(relPath: string): Promise<PageContent> {
+    return this.store.read(relPath);
   }
-
-  /**
-   * The file exactly as authored — frontmatter included, XML tags untouched.
-   *
-   * M39 `get_page` returns a page as-authored because a tag IS an edge: expanding
-   * it pastes a payload in and destroys the edge the agent was going to follow.
-   * `read()` cannot serve that: it splits frontmatter off through gray-matter,
-   * which is right for the editor and wrong for a verbatim read. Both go through
-   * the same `resolveSafe`, so the path guarantees are shared rather than copied.
-   */
-  async readRaw(relPath: string): Promise<string> {
-    return await fs.readFile(this.resolveSafe(relPath), 'utf-8');
+  readDetail(relPath: string): Promise<PageDetail> {
+    return this.store.readDetail(relPath);
   }
-
-  /** Size + mtime without reading the file — `list_pages` measures before fetching. */
-  async stat(relPath: string): Promise<{ size: number; mtimeMs: number }> {
-    const st = await fs.stat(this.resolveSafe(relPath));
-    return { size: st.size, mtimeMs: st.mtimeMs };
+  readRaw(relPath: string): Promise<string> {
+    return this.store.readRaw(relPath);
   }
-
-  async write(relPath: string, input: PageWriteInput): Promise<PageContent> {
-    const written = await this.writeBytes(relPath, input);
-    return {
-      path: relPath,
-      frontmatter: input.frontmatter ?? {},
-      body: input.body,
-      // Of the bytes actually written — same basis as `read`.
-      // Note this is NOT the hash callers should hold: `page-write.commit` reads
-      // the SETTLED state, after the write-back phase has injected anchors this
-      // string predates. See its own comment.
-      hash: crypto.createHash('sha256').update(written, 'utf-8').digest('hex'),
-    };
+  stat(relPath: string): Promise<{ size: number; mtimeMs: number }> {
+    return this.store.stat(relPath);
   }
-
-  /** The bytes that landed. Through the primitive when this root has one. */
-  private async writeBytes(relPath: string, input: PageWriteInput): Promise<string> {
-    if (this.records) {
-      const res = await this.records.write(relPath, {
-        body: input.body,
-        ...(input.frontmatter !== undefined ? { frontmatter: input.frontmatter } : {}),
-      });
-      return res.content;
-    }
-    const abs = this.resolveSafe(relPath);
-    await fs.mkdir(path.dirname(abs), { recursive: true });
-    const hasFrontmatter = input.frontmatter && Object.keys(input.frontmatter).length > 0;
-    const serialized = hasFrontmatter
-      ? matter.stringify(input.body, input.frontmatter as Record<string, unknown>)
-      : input.body;
-    await fs.writeFile(abs, serialized, 'utf-8');
-    return serialized;
+  write(relPath: string, input: PageWriteInput): Promise<PageContent> {
+    return this.store.write(relPath, input);
   }
-
-  async remove(relPath: string): Promise<void> {
-    const abs = this.resolveSafe(relPath);
-    await fs.unlink(abs);
+  remove(relPath: string): Promise<void> {
+    return this.store.remove(relPath);
   }
-
-  async search(query: string, limit = 50): Promise<PageSearchHit[]> {
-    const q = query.trim();
-    if (!q) return [];
-    const lower = q.toLowerCase();
-    const files = await this.listMarkdownFiles();
-    const hits: PageSearchHit[] = [];
-    for (const rel of files) {
-      if (hits.length >= limit) break;
-      const pathHit = rel.toLowerCase().includes(lower);
-      const abs = this.resolveSafe(rel);
-      let snippet: string | null = null;
-      let line = 0;
-      try {
-        const raw = await fs.readFile(abs, 'utf-8');
-        const lines = raw.split('\n');
-        for (let i = 0; i < lines.length; i++) {
-          const text = lines[i] ?? '';
-          if (text.toLowerCase().includes(lower)) {
-            snippet = text.trim().slice(0, 160);
-            line = i + 1;
-            break;
-          }
-        }
-      } catch {
-        /* ignore unreadable file */
-      }
-      if (pathHit || snippet) {
-        hits.push({
-          path: rel,
-          line,
-          snippet: snippet ?? '',
-          matchesPath: pathHit,
-        });
-      }
-    }
-    return hits;
+  search(query: string, limit = 50): Promise<PageSearchHit[]> {
+    return this.store.search(query, limit);
   }
-
-  async exists(relPath: string): Promise<boolean> {
-    try {
-      const abs = this.resolveSafe(relPath);
-      await fs.access(abs);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  private resolveSafe(relPath: string): string {
-    if (!relPath || relPath.includes('\0')) throw new Error('invalid path');
-    if (!isMarkdownPath(relPath)) throw new Error('only .md / .mdx paths allowed');
-    const abs = path.resolve(this.root, relPath);
-    const rel = path.relative(this.root, abs);
-    if (rel.startsWith('..') || path.isAbsolute(rel)) {
-      throw new Error(`path escapes pages root: ${relPath}`);
-    }
-    return abs;
-  }
-
-  private async collectMd(dir: string, prefix: string): Promise<string[]> {
-    const entries = await fs.readdir(dir, { withFileTypes: true });
-    const out: string[] = [];
-    for (const entry of entries) {
-      if (hasDotSegment(entry.name)) continue;
-      const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
-      if (entry.isDirectory()) {
-        out.push(...(await this.collectMd(path.join(dir, entry.name), rel)));
-      } else if (entry.isFile() && isMarkdownPath(entry.name)) {
-        out.push(rel);
-      }
-    }
-    return out;
+  exists(relPath: string): Promise<boolean> {
+    return this.store.exists(relPath);
   }
 
   private async walk(dir: string, relPrefix: string): Promise<PageNode[]> {
     const entries = await fs.readdir(dir, { withFileTypes: true });
     // Children sort by frontmatter `order` ascending, then alphabetically by name.
-    // Folders and .html files carry no order (Infinity) — there is no folder-ordering
-    // mechanism and .html files are excluded from indexing.
+    // Folders and raw (.html) entries carry no order (Infinity) — there is no
+    // folder-ordering mechanism and a raw entry has no frontmatter.
+    //
+    // 2.1.8 (M02 `e16qvg1n`): a file's `fileType` follows the `pages` kind's file
+    // map, not a hard-coded extension list — a markdown entry is
+    // `fileType='markdown'`, the raw entry (`.html`, track `none`) is
+    // `fileType='html'`: shown in the tree, previewed by M30, never a page.
     const items: { node: PageNode; order: number }[] = [];
     for (const entry of entries) {
       if (hasDotSegment(entry.name)) continue;
@@ -263,11 +138,15 @@ export class PagesService {
       if (entry.isDirectory()) {
         const children = await this.walk(path.join(dir, entry.name), rel);
         items.push({ node: { type: 'folder', name: entry.name, path: rel, children }, order: Infinity });
-      } else if (entry.isFile() && isMarkdownPath(entry.name)) {
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const mapEntry = fileMapEntryOf(PAGES_KIND, rel);
+      if (mapEntry?.format === 'markdown') {
         const order = await this.readOrder(path.join(dir, entry.name));
         items.push({ node: { type: 'file', name: entry.name, path: rel, fileType: 'markdown' }, order });
-      } else if (entry.isFile() && entry.name.endsWith('.html')) {
-        // M30: .html files are read-only previews served via /api/static/*.
+      } else if (mapEntry?.format === 'raw') {
+        // M30: raw entries are read-only previews served via /api/static/*.
         items.push({ node: { type: 'file', name: entry.name, path: rel, fileType: 'html' }, order: Infinity });
       }
     }

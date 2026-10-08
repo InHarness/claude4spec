@@ -13,7 +13,7 @@ import crypto from 'node:crypto';
 import matter from 'gray-matter';
 import { pageStructure } from '../../shared/section-parser.js';
 import type { Root } from '../../shared/types.js';
-import { PagesService } from '../services/pages.js';
+import { MarkdownFileStore, PagesService } from '../services/pages.js';
 import { invalidArgument, pageNotFound } from './errors.js';
 
 export interface PageFile {
@@ -32,7 +32,7 @@ export class PageSource {
     roots: readonly Root[],
   ) {
     for (const root of roots) {
-      this.services.set(root.id, new PagesService(projectDir, root.dir, root.id));
+      this.services.set(root.id, new PagesService({ root, store: new MarkdownFileStore({ cwd: projectDir, rootId: root.id, dir: root.dir }) }));
     }
   }
 

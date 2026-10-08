@@ -1,0 +1,12 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.8",
+  "unit": "u03-root-registry",
+  "portion": "u03-root-registry/p7-l13",
+  "claimed": ["ac-deklaracja-rodzaju-korzenia-wybieraja", "ac-kazde-zachowanie-per-katalog-jest-bramko", "section:fjkog8wx", "section:m02l13001", "section:l13model0"],
+  "deviations": [],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

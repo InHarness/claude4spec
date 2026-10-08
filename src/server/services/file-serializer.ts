@@ -39,7 +39,7 @@ import {
   PREAMBLE_KEY,
   sliceLines,
 } from '../../shared/section-parser.js';
-import type { PagesService } from './pages.js';
+import type { MarkdownFileStore } from './markdown-file-store.js';
 import type {
   FileDiff,
   FileDiffModifiedSection,
@@ -241,7 +241,7 @@ function lcs(a: readonly string[], b: readonly string[]): Set<string> {
 export class FileSerializer {
   readonly version = FILE_SERIALIZER_VERSION;
 
-  constructor(private pages: PagesService) {}
+  constructor(private pages: MarkdownFileStore) {}
 
   /**
    * Read the file from disk and produce a deterministic, byte-faithful

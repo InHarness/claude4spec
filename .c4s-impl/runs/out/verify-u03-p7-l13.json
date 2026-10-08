@@ -1,0 +1,44 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "portion", "id": "u03-root-registry/p7-l13" },
+  "release": "2.1.8",
+  "rows": [
+    {
+      "slug": "ac-deklaracja-rodzaju-korzenia-wybieraja",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/fs/reactions.test.ts:58 [ac:...] asserts validateKindRequirements(pages minus m06-anchor-injection) toThrow(/m06-section-indexer.*requires 'm06-anchor-injection'/) and that the check sits inside the registry loop before the first bindReaction, with buildProjectContext rethrowing after cleanup. Holds against code: src/server/workspace/core-reactions.ts:93 (requires ['m06-anchor-injection']), src/server/fs/reactions.ts:93-108 (throws), src/server/workspace/project-context.ts:534-535 (check per root in the registry loop), :1572-1576 (first bindReaction after), :303-313 (catch → cleanup → throw err). Empty verifies already recorded as dev-0001."
+    },
+    {
+      "slug": "ac-kazde-zachowanie-per-katalog-jest-bramko",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tests/integration/architecture/root-kind-gating.test.ts:62 [ac:...] asserts expect(shape(renamed)).toEqual(shape(conventional)) for a base root renamed to id 'docs' dir 'manual' (builtin, pages(), withFlag(release/references/gitignore/agentDirectFs), selecting(m06-section-indexer/m17-capture)), system roots found by kind (systemRootKindOf), file type from the kind's file map, and a source scan expect(offenders).toEqual([]) for `rootId|id|dir ===/!== '<root literal>'` and legacy `.xxxDir` keys. Would pass: registry gates by kind/flag only (src/server/roots/registry.ts:44-75), client routes system file:changed by kind (src/client/hooks/useFileWatcher.ts:57-78), pages-only release lists iterate kind pages (src/server/workspace/project-context.ts:1123-1126); a grep of src production code for both patterns returns no code lines. Empty verifies recorded as dev-0001."
+    },
+    {
+      "slug": "section:fjkog8wx",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/shared/root-kinds.ts:110-130 KIND_DECLARATIONS.pages matches the 2.1.8 declaration field by field: kind 'pages', source 'config' (dir from config.roots[] via registryList :202-207), sidebar 'accordion', fileMap ordered [ '**/*.{md,mdx}' markdown file_version (no header = no immutable fields), '**/*.html' raw track none ], flags { release:true, references:true, gitignore:false, agentDirectFs:true }, reactions [m06-anchor-injection, m06-section-indexer, m02-frontmatter-indexer, m08-todos-indexer, m14-link-indexer, m14-rename-sync, m17-capture]; first-match resolution fileMapEntryOf :265-276; tree uses it src/server/services/pages.ts:268-276."
+    },
+    {
+      "slug": "section:m02l13001",
+      "level": 2,
+      "status": "covered",
+      "evidence": "Registry {id,name,dir,kind,builtin} from config.roots[] (kind pages) + code system roots id=kind: src/shared/root-kinds.ts:183-207, src/server/roots/registry.ts:25-76. File type by kind's file map: root-kinds.ts:265-276. Flags constant per kind, read on demand: registry.ts:68-70; gitignore src/bin/gitignore.ts:63; agentDirectFs deny-set root-kinds.ts:215-219. Pages-only consumers iterate kind pages: project-context.ts:1123-1125 (assignToRelease/file_version/bundle), :776, :1163; discovery src/server/discovery/roots.ts:28-94; git staging by release flag :1126. Mount→store→PagesService for pages→validate requirements→bind kind reactions + base m02-file-changed: project-context.ts:534-560, :1572-1576. Namespace dot-subtree exclusion and D4 overlap: root-kinds.ts:333-353, src/server/config.ts:478-494. Removed property table/ROOT_NOT_WRITABLE-era props gone: Root type src/shared/types.ts:213-218 has four fields. No-hardcode: base by builtin (registry.ts:61-65), system by kind (registry.ts:54-58); no id/dir literal gates in src production code."
+    },
+    {
+      "slug": "section:l13model0",
+      "level": 2,
+      "status": "covered",
+      "evidence": "Entry {id,name,dir,kind,builtin}, two sources: src/shared/root-kinds.ts:37-43, :202-207. config.roots[] always kind pages with four fields; extra fields dropped by registryList mapping (:204) and Root type src/shared/types.ts:213-218. System roots plans/briefs/patches/entities/releases in code, id=kind, dir .claude4spec/<kind>, sidebar hidden: root-kinds.ts:175-191; ids reserved: src/server/config.ts:596-602. Base root by builtin flag: src/server/roots/registry.ts:61-65. Namespace excludes dot-segment subtrees: walker src/server/services/pages.ts:244,:267; overlap rule root-kinds.ts:333-353 + src/server/config.ts:478-494 (root '.' coexists with .claude4spec/<kind>). .html is a raw entry, shown in tree, not a page: root-kinds.ts:116, pages.ts:276-; discovery only addresses kind pages markdown (src/server/discovery/roots.ts:55-75); preview refresh on base file:changed src/client/hooks/useFileWatcher.ts:79-87."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "tsc server/client/types + typecheck:envelopes (9 plugins) all clean; last: '> @inharness-ai/c4s-plugin-ac@0.2.80 typecheck > tsc --noEmit'"
+  }
+}

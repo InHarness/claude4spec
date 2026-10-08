@@ -1,0 +1,38 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "portion", "id": "u03-root-registry/p8-l13-b" },
+  "release": "2.1.8",
+  "rows": [
+    {
+      "slug": "ac-projectcontext-montuje-n-par-pagesservic",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/workspace/root-registry-runtime.test.ts:81 '[ac:ac-projectcontext-montuje-n-par-pagesservic]'. N facades: `expect(mounted.rootRuntimes.map((rt) => rt.root.id)).toEqual(['pages', 'adr'])` + toBeInstanceOf(PagesService) (:89-91). System roots plans/briefs/patches are artifactMounts with no facade (:93). Every registry root is mounted: `expect(w.isMounted(source)).toBe(true)` (:96-99). Bound file:changed for adr/entities, dispose unmounts and drops bindings, roots[] PATCH /config triggers invalidate + rebuild, and the hook re-runs to give 3 facades. Build order mount → bind → indexAll is checked (:100-173). Read statically against the refactored root-registry-runtime.ts:105-180, nothing contradicts the test. The only API it uses on mounts is rootRuntimes, artifactMounts, sourceByRootId and rt.pages, which all still exist."
+    },
+    {
+      "slug": "page-root-runtime-construction",
+      "type": "code-snippet",
+      "level": 1,
+      "status": "covered",
+      "evidence": "trace.md:2 line present and accurate. The counterpart at src/server/workspace/root-registry-runtime.ts:120-179 matches the 2.1.8 snippet shape: `for (const root of registry.list())` (:120); validateKindRequirements(kindDeclaration(root.kind)) throws out of the build (:123, before the mount, same effect); `const source = sourceNameFor(root)` + `w.mountSource({ source, dir: abs })` (:125-129); `if (kindHasMarkdown(root.kind)) { const store = new MarkdownFileStore({ cwd, rootId: root.id, dir: root.dir }); ... storeByRootId.set(...)` (:134-139); `if (root.kind === PAGES_KIND) ... new PagesService({ root: userRoot, store })` (:142-146), else a bare store in ArtifactMount (:152-154, the interface has `store`, no `pages`, :53-60). Kind reactions + base `binder.bindReaction(BASE_REACTION_ID, ...)` (:177-178). The primitive is a separate class (src/server/services/markdown-file-store.ts:34). The facade constructor `{ root, store }` refuses a store of another root (src/server/services/pages.ts:56-67). The shape test at root-registry-runtime.test.ts:175 would catch the previous mismatch: `expect(store, rootId).not.toBeInstanceOf(PagesService)` over every storeByRootId entry (:183-188), `expect(m).not.toHaveProperty('pages')` for artifact mounts (:190-194), and `rt.pages.store` is that root's store (:197-202). Callers are consistent. project-context.ts uses plansMount/briefsMount/patchesMount `.store` (:495, :1128-1158, :1259-1262, :1611). Services take MarkdownFileStore (brief.ts:41, patch.ts:42, plan.ts:68, file-serializer.ts:244, pages-frontmatter-indexer.ts:59, anchor-injection.ts:89, section-indexer, sections, todos/link indexers, references, plan-migration). The discovery reader builds facades only over config roots (page-source.ts:35). No test references the removed `ArtifactMount.pages`. Tests that pass `new PagesService(cwd, dir, id)` still type-structurally fit MarkdownFileStore, because the facade forwards root/rootId/records (getter+setter)/every method (pages.ts:47-122). The moved method bodies match HEAD. npm run typecheck exit 0."
+    },
+    {
+      "slug": "section:m02multidir",
+      "level": 2,
+      "status": "covered",
+      "evidence": "Registry {id,name,dir,kind,builtin} comes from config roots + system roots (src/shared/root-kinds.ts:37-43; src/server/roots/registry.ts:29-41). PagesService facade is built per kind:pages root only (root-registry-runtime.ts:142-151). plans/briefs/patches get a bare MarkdownFileStore primitive with no facade (:152-154), consumed by the M36 read family: BriefServiceDeps.briefsPages: MarkdownFileStore (brief.ts:41), PatchServiceDeps (patch.ts:42), PlanServiceDeps (plan.ts:68), wired at project-context.ts:1128-1158. The implementor mounts every root's source (root-registry-runtime.ts:120-130). listTree has no artifact filter: no includeArtifacts or hidden-tree code in src, and the walk is at pages.ts:124-156. file_version rootId is the registry id: BRIEF/PATCH/PLAN_ROOT_MARKER = 'briefs'/'patches'/'plans' (src/shared/types.ts:202-205), and the initial sync uses m.rootId (project-context.ts:1611-1614). assignToRelease is fed only kind:pages roots: `const releasePageRoots = rootRegistry.pages()` (project-context.ts:1036-1037). Rename covers user roots only (src/server/routes/config-rename.ts:171-197). The (rootId, relPath) identity is kept by the per-root walk (markdown-file-store.ts:61-64, 232-246). The one remaining difference: listMarkdownFiles lists only *.md/*.mdx and not the raw *.html entry (markdown-file-store.ts:55-64 'ASSUMPTION:dev-0004'; collectMarkdown :236-246). The code deliberately keeps this pre-window behaviour, and sent deviation dev-0004 (sent: true) records it."
+    },
+    {
+      "slug": "section:69xfq39v",
+      "level": 1,
+      "status": "covered",
+      "evidence": "The 2.1.7→2.1.8 change only rewords the intro sentence of the L13 criteria list. The rest of the section is unchanged <tagged_list> embeds. It states no code behaviour and removes nothing the code would have to drop. This round's refactor does not touch it."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "tsc -p tsconfig.server.json/client/types --noEmit + typecheck:envelopes and the plugin typechecks: clean, no error TS lines"
+  }
+}
