@@ -1743,7 +1743,7 @@ export async function updateSections(
     const duplicates: AnchorDuplicate[] = [];
     for (const anchor of broughtInAll) {
       /**
-       * GLOBAL, across every `sectionIndexed` root: `getByAnchor` is keyed on the
+       * GLOBAL, across the roots of every kind with the section indexer: `getByAnchor` is keyed on the
        * anchor alone. An anchor is an identity for the whole project — a
        * `page.md#anchor` link does not say which root it meant — so a value taken
        * on another page is just as taken.

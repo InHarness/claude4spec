@@ -33,6 +33,12 @@ export interface PageLinkAutocompleteItem {
   path: string;
   title: string;
   matchScore: number;
+  /**
+   * 2.1.8: the page root the suggestion comes from. The same path in several
+   * `kind: pages` roots is suggested once — from the root `@path.md` resolves
+   * to (source root → builtin → `roots[]` order).
+   */
+  rootId?: string;
 }
 
 export interface PageLinksCounts {

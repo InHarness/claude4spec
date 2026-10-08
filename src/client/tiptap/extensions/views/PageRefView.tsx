@@ -82,6 +82,10 @@ export function PageRefView(props: NodeViewProps) {
       path,
       anchor,
       label,
+      // The document's own root, not the base-root fallback: outside a page
+      // (plan, brief) suggestions start at `builtin`, like resolution.
+      rootId:
+        ((props.editor.storage as Record<string, unknown>).pageRefRootId as string | undefined) ?? null,
       onRemove: () => props.deleteNode(),
     }).then((attrs) => {
       if (attrs) props.updateAttributes(attrs);

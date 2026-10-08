@@ -6,15 +6,17 @@ import type { WatchSubscriber, WatchScope } from '../fs/watcher.js';
 import { requireRootId } from '../fs/sources.js';
 
 /**
- * 0.1.96: indexes `<todo/>` tags across every root that has a sidebar tree.
+ * 0.1.96: indexes `<todo/>` tags across every root it is bound on.
  * Keyed by `${rootId}:${relPath}`; `TodoHit`/`countByPath` carry the rootId so
  * the sidebar can attribute indicators to the right root.
  *
  * 0.2.10 (M40): the whole substance of this module is its reaction to a file
  * change, so it implements the subscriber contract directly — `onChange` /
- * `onUnlink`, nothing more. It merges events from every `pages:<rootId>` source
- * and derives `rootId` from the source-name suffix. It is read-only and never
- * calls `suppress()`. Debounce is gone: it belongs to the mount now.
+ * `onUnlink`, nothing more. 2.1.8: it is the `m08-todos-indexer` definition
+ * (projection, markdown, no requirements), bound by the root-registry
+ * implementor on every root whose kind selects it; events from all of them merge
+ * into this one map. It derives `rootId` from the source name. It is read-only
+ * and never calls `suppress()`. Debounce is gone: it belongs to the mount now.
  */
 export class TodosIndexerService implements WatchSubscriber {
   private byKey = new Map<string, TodoHit[]>();

@@ -54,39 +54,24 @@ export interface SectionIndexRoot {
 }
 
 /**
- * A minted-but-not-yet-written anchor injection, handed from projection to write-back.
+ * M06 — section index + anchor injection on the roots of kinds that select
+ * the section indexer.
  *
- * `sourceBody` is the body the injection was computed FROM. The write-back
- * re-reads the file and applies the injection only if the page still looks like
- * that — otherwise the stash is stale (the page was edited or replaced between
- * the two phases) and writing it would revert the newer content.
- */
-interface PendingInjection {
-  frontmatter: Record<string, unknown>;
-  body: string;
-  sourceBody: string;
-}
-
-/**
- * M06 — section index + anchor injection.
+ * 2.1.8: two reactions, and the indexer no longer injects anything.
  *
- * 0.2.10 (M40): this is TWO registrations, not one.
+ *  - `m06-anchor-injection` (`write-back`, before `projection` and `capture`) —
+ *    mints the missing anchors and writes them to disk, `suppress()`-ing
+ *    immediately before the write ({@link mintAnchors}).
+ *  - `m06-section-indexer` (`projection`) — the 8-step pass of M06 `s2r014vw`
+ *    over a file the injection has already anchored: parse, headings, anchors,
+ *    boundaries, `content_hash`, upsert `section_index`, auto-link
+ *    `section_entity_link`. A heading still without an anchor is not indexed;
+ *    the next injection pass gives it one.
  *
- *  - `m06-section-indexer` (`projection`) — parses the page, mints any missing
- *    anchors and writes `section_index` / `section-entity-link`.
- *  - `m06-anchor-injection` (`write-back`) — persists those minted anchors to
- *    disk, `suppress()`-ing immediately before the write.
- *
- * The split is deliberately compute-here / persist-there rather than
- * parse-twice: the projection needs the minted anchors to build its sections, so
- * moving the whole injection into the later phase would index headings whose
- * anchors do not exist yet, and the suppressed write-back would never re-trigger
- * a reindex to fix it. Persisting in `write-back` is what makes `capture` (which
- * runs after it) see the injected file — AC `m40-capture-after-writeback`.
+ * Persisting in `write-back` is what makes `capture` (which runs after it) see
+ * the injected file — AC `m40-capture-after-writeback`.
  */
 export class SectionIndexerService implements WatchSubscriber {
-  /** Injections minted by the projection, awaiting the write-back phase. Keyed `${rootId}:${relPath}`. */
-  private pendingInjections = new Map<string, PendingInjection>();
   /**
    * anchor → pages that wanted it but lost the duplicate tie-break. A loser
    * writes no row, so when the WINNER later drops the anchor (the author fixing
@@ -101,8 +86,8 @@ export class SectionIndexerService implements WatchSubscriber {
 
   constructor(
     private db: Database.Database,
-    /** rootId → {pages, watcher} for every SECTION-INDEXED root (filter
-     * config.roots by `sectionIndexed`, always includes the built-in 'pages'). */
+    /** rootId → {pages} for every root whose kind selects
+     * `m06-section-indexer` (2.1.8: every `kind: pages` root, built-in included). */
     private roots: Map<string, SectionIndexRoot>,
     private ws: WsEmitter,
     private host: ProjectPluginHost,
@@ -123,8 +108,8 @@ export class SectionIndexerService implements WatchSubscriber {
   }
 
   /**
-   * `m06-anchor-injection` (write-back) — persists anchors the projection minted
-   * for this file, if any. `suppress()` runs immediately before the write so the
+   * `m06-anchor-injection` (write-back) — mints and writes the missing anchors
+   * of this file ({@link mintAnchors}). `suppress()` runs immediately before the write so the
    * resulting event is swallowed entirely and no phase (in particular `capture`)
    * runs a second time for it.
    */
@@ -133,22 +118,15 @@ export class SectionIndexerService implements WatchSubscriber {
       onChange: async (_scope, source, relPath) => {
         await this.mintAnchors(requireRootId(source), source, relPath, suppress);
       },
-      onUnlink: (_scope, source, relPath) => {
-        this.pendingInjections.delete(this.key(requireRootId(source), relPath));
-      },
+      onUnlink: () => {},
     };
   }
 
   /**
-   * Mint every missing anchor for one file and write them, all in this call.
+   * `m06-anchor-injection` for one file: mint every missing anchor and write
+   * them, all in this call (M06 `v9zrytp8`).
    *
-   * 0.2.76 — `write-back` now runs BEFORE `projection`, so this can no longer be
-   * the second half of a hand-off. Until 0.2.75 the projection (`indexPage`)
-   * minted the anchors and stashed them in `pendingInjections`, and this
-   * subscriber only drained the stash; under the new order that stash is always
-   * empty at write-back time and anchors would silently stop reaching disk.
-   *
-   * So the write-back reads the FILE and does the minting itself, which is what
+   * The write-back reads the FILE and does the minting itself, which is what
    * the phase is for — and `indexPage` then indexes an already-anchored file, so
    * its line ranges describe the bytes that will still be there at the end of
    * the chain rather than ones shifted by a later injection.
@@ -181,9 +159,7 @@ export class SectionIndexerService implements WatchSubscriber {
   /**
    * The minting itself: every heading without an anchor gets a fresh one.
    *
-   * Returns the new body, or `null` when nothing was missing. Shared by the
-   * write-back above and by `indexPage`, which still needs it on the boot sweep
-   * where no chain runs at all.
+   * Returns the new body, or `null` when nothing was missing.
    *
    * Uniqueness is checked PROJECT-WIDE through `freshAnchor`, grown as we mint so
    * two headings in one pass cannot collide with each other, and seeded with what
@@ -207,62 +183,7 @@ export class SectionIndexerService implements WatchSubscriber {
     return insertAnchorLines(body, missing, minted);
   }
 
-  /**
-   * Write a stashed injection, unless the page moved on underneath it.
-   *
-   * Re-reading is the whole point: between the projection that minted these
-   * anchors and this write, the file may have been edited, replaced by a
-   * `git checkout`, or deleted. Writing a stale stash would silently revert the
-   * newer content — and because the write is suppressed, neither the UI nor the
-   * version log would show it happening.
-   */
-  private async persistInjection(
-    root: SectionIndexRoot,
-    source: string,
-    relPath: string,
-    injection: PendingInjection,
-    suppress: (source: string, relPath: string) => void,
-  ): Promise<void> {
-    let current;
-    try {
-      current = await root.pages.read(relPath);
-    } catch {
-      return; // gone — nothing to inject into
-    }
-    if (current.body !== injection.sourceBody) return; // moved on; a later pass will re-mint
-    suppress(source, relPath);
-    await root.pages.write(relPath, { frontmatter: injection.frontmatter, body: injection.body });
-  }
-
-  /**
-   * Persist every anchor `indexAll()` minted.
-   *
-   * `indexAll()` calls `indexPage` directly, so nothing dispatches for those files
-   * and the `write-back` phase never runs for them. Without this the anchors would
-   * exist in `section_index` — and be handed to the UI, to `@page#anchor`
-   * autocomplete and to `<section_ref/>` insertion — while the files on disk still
-   * had none, so every reference made against one would point at text that does
-   * not exist and would break the moment the page was next edited.
-   */
-  async flushPendingInjections(suppress: (source: string, relPath: string) => void): Promise<void> {
-    const entries = [...this.pendingInjections.entries()];
-    this.pendingInjections.clear();
-    for (const [k, injection] of entries) {
-      const sep = k.indexOf(':');
-      const rootId = k.slice(0, sep);
-      const relPath = k.slice(sep + 1);
-      const root = this.roots.get(rootId);
-      if (!root) continue;
-      try {
-        await this.persistInjection(root, pageSource(rootId), relPath, injection, suppress);
-      } catch (err) {
-        console.error(`[section-indexer] anchor injection for ${rootId}:${relPath}:`, err);
-      }
-    }
-  }
-
   async handleUnlink(rootId: string, relPath: string): Promise<void> {
-    this.pendingInjections.delete(this.key(rootId, relPath));
     const existing = this.db
       .prepare('SELECT anchor FROM section_index WHERE rootId = ? AND page_path = ?')
       .all(rootId, relPath) as Array<{ anchor: string }>;
@@ -397,10 +318,26 @@ export class SectionIndexerService implements WatchSubscriber {
     this.db.prepare('DELETE FROM section_index WHERE anchor = ?').run(anchor);
   }
 
-  async indexAll(): Promise<void> {
+  /**
+   * The full rebuild (boot, branch checkout, root rename, the manual rebuild).
+   *
+   * No reaction chain runs for these files, so with `suppress` given each file
+   * first goes through `m06-anchor-injection` ({@link mintAnchors}) and only then
+   * through the indexer — the same order as a chain, file by file, so every
+   * minted anchor is checked against the rows the files before it produced.
+   * Without `suppress` it indexes what is on disk and writes nothing.
+   */
+  async indexAll(suppress?: (source: string, relPath: string) => void): Promise<void> {
     for (const [rootId, { pages }] of this.roots) {
       const files = await pages.listMarkdownFiles();
       for (const rel of files) {
+        if (suppress) {
+          try {
+            await this.mintAnchors(rootId, pageSource(rootId), rel, suppress);
+          } catch (err) {
+            console.error(`[section-indexer] anchor injection for ${rootId}:${rel}:`, err);
+          }
+        }
         await this.indexPage(rootId, rel);
       }
     }
@@ -444,32 +381,10 @@ export class SectionIndexerService implements WatchSubscriber {
     } catch {
       return;
     }
-    let body = page.body;
-
-    /**
-     * 0.2.76 — on the chain path this normally finds NOTHING to mint: the
-     * `write-back` phase now runs first and has already put every anchor on
-     * disk, so this pass indexes an already-anchored file and its line ranges
-     * describe the bytes that survive to the end of the chain.
-     *
-     * The minting below is still reachable, and still needed, on the boot sweep
-     * (`indexAll`), which calls this directly with no chain to run a write-back
-     * in. There the anchors go to `pendingInjections` and are written by
-     * `flushPendingInjections` once the sweep is over.
-     */
-    const minted = this.mintInto(body);
-    if (minted !== null) {
-      this.pendingInjections.set(this.key(rootId, relPath), {
-        frontmatter: page.frontmatter,
-        body: minted,
-        sourceBody: page.body,
-      });
-      body = minted;
-    } else {
-      // Nothing to inject THIS pass — drop any older stash for this page, or the
-      // write-back would later apply it on top of newer content.
-      this.pendingInjections.delete(this.key(rootId, relPath));
-    }
+    // 2.1.8 — no injection step: `m06-anchor-injection` ran in the earlier
+    // `write-back` phase (or, on a full rebuild, just before this call), so the
+    // file is indexed as it is on disk.
+    const body = page.body;
 
     const sections = buildSections(body);
 

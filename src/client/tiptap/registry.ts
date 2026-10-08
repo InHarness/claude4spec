@@ -271,6 +271,16 @@ export function getRegisteredSlashCommandsForContext(
 // Mention framework (L8 MentionExtension generic sources)
 // ────────────────────────────────────────────────────────────────────────────
 
+/**
+ * 2.1.8 — what a mention source knows about the editor it searches for. `rootId`
+ * is the root of the page being edited (null outside a page: plan, brief, chat
+ * input); M14's `files` source passes it on so `@path.md` suggestions follow the
+ * same precedence as resolution (source root → `builtin` → `roots[]` order).
+ */
+export interface MentionSearchContext {
+  rootId: string | null;
+}
+
 export interface MentionSource<T = unknown> {
   /** Stable source id, e.g. 'files' for M14 page references. */
   id: string;
@@ -278,8 +288,8 @@ export interface MentionSource<T = unknown> {
   trigger: string;
   /** HINT per context; the context's `EditorContextSpec.mentions` whitelist is authoritative. */
   availableIn?: EditorContextId[];
-  /** Async or sync search. Returns up to `limit` items for `query`. */
-  search: (query: string, limit?: number) => Promise<T[]> | T[];
+  /** Async or sync search. Returns up to `limit` items for `query`, for the editor in `ctx`. */
+  search: (query: string, limit?: number, ctx?: MentionSearchContext) => Promise<T[]> | T[];
   /** Render one item row in the popup. */
   renderItem: (item: T, active: boolean) => ReactElement;
   /** Handle item selection. Receives editor + insertion range via callback args. */

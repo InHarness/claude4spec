@@ -33,7 +33,8 @@ export function PageRefPopoverForm({ request, onClose }: PopoverFormProps<'page-
   const [error, setError] = useState<string | null>(null);
   const firstRef = useRef<HTMLInputElement>(null);
 
-  const autocomplete = usePageAutocomplete(path, 8);
+  // 2.1.8: suggest from the chip's own root first, as the chip resolves.
+  const autocomplete = usePageAutocomplete(path, 8, props.rootId ?? null);
   const suggestions = autocomplete.data?.suggestions ?? [];
 
   // Anchor list is not yet exposed through /api/page-links — free-form input only.

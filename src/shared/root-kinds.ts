@@ -250,14 +250,21 @@ export function kindSelects(kind: RootKind, reactionId: string): boolean {
 }
 
 /**
- * The single glob that matches a kind's file-map entries of the given formats.
- * Patterns of the shape `**\/*.{a,b}` / `**\/*.x` / `*.x` are merged by their
+ * The single glob that matches a kind's file-map entries of the given formats —
+ * and, when `tracks` is given, of those version tracks only (M17's `m17-capture`
+ * accepts `file_version` entries in any format). Patterns of the shape `**\/*.{a,b}` / `**\/*.x` / `*.x` are merged by their
  * extensions; the runtime filter understands exactly those shapes. Entries of
  * different depths (`*.x` next to `**\/*.y`) cannot be merged without widening
  * the shallow one, so that combination is refused rather than silently widened.
  */
-export function fileMapFilter(kind: RootKind, formats: readonly FileFormat[]): string | undefined {
-  const entries = KIND_DECLARATIONS[kind].fileMap.filter((e) => formats.includes(e.format));
+export function fileMapFilter(
+  kind: RootKind,
+  formats: readonly FileFormat[],
+  tracks?: readonly VersionTrack[],
+): string | undefined {
+  const entries = KIND_DECLARATIONS[kind].fileMap.filter(
+    (e) => formats.includes(e.format) && (tracks === undefined || tracks.includes(e.track)),
+  );
   if (entries.length === 0) return undefined;
   if (entries.length === 1) return entries[0]!.pattern;
   const exts: string[] = [];

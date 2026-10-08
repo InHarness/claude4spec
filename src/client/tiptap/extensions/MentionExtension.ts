@@ -6,6 +6,7 @@ import { setSuggestionPopupOpen } from '../suggestionState.js';
 import {
   getRegisteredMentionSources,
   type EditorContextId,
+  type MentionSearchContext,
   type MentionSource,
   type RootEditorProps,
 } from '../registry.js';
@@ -16,6 +17,8 @@ export interface MentionExtensionOptions {
   contextId: EditorContextId;
   /** The page root's props — the derived `page` spec depends on them. */
   rootProps?: RootEditorProps;
+  /** 2.1.8: the root of the page being edited; null outside a page. Handed to every source's `search`. */
+  rootId?: string | null;
 }
 
 /**
@@ -26,16 +29,35 @@ export interface MentionExtensionOptions {
 export const MentionExtension = Extension.create<MentionExtensionOptions>({
   name: 'mention_extension',
   addOptions() {
-    return { contextId: 'page', rootProps: undefined };
+    return { contextId: 'page', rootProps: undefined, rootId: null };
   },
   addProseMirrorPlugins() {
     const contextId = this.options.contextId;
     const sources = getRegisteredMentionSources(contextId, this.options.rootProps);
-    return sources.map((source) => buildSuggestionPlugin(this.editor, source));
+    const searchCtx: MentionSearchContext = { rootId: this.options.rootId ?? null };
+    return sources.map((source) => buildSuggestionPlugin(this.editor, source, searchCtx));
   },
 });
 
-function buildSuggestionPlugin(editor: import('@tiptap/core').Editor, source: MentionSource<unknown>) {
+/**
+ * The suggestion `items` of one source: honours `minQueryLength`, asks for 20
+ * items and hands the source the editor's search context (2.1.8: its root).
+ */
+export async function mentionItems(
+  source: MentionSource<unknown>,
+  query: string,
+  ctx: MentionSearchContext,
+): Promise<unknown[]> {
+  if (source.minQueryLength && query.length < source.minQueryLength) return [];
+  const result = await Promise.resolve(source.search(query, 20, ctx));
+  return Array.isArray(result) ? result : [];
+}
+
+function buildSuggestionPlugin(
+  editor: import('@tiptap/core').Editor,
+  source: MentionSource<unknown>,
+  ctx: MentionSearchContext,
+) {
   const popupKey = `mention:${source.id}`;
   const suggestionOptions: Omit<SuggestionOptions<unknown>, 'editor'> = {
     char: source.trigger,
@@ -43,11 +65,7 @@ function buildSuggestionPlugin(editor: import('@tiptap/core').Editor, source: Me
     startOfLine: false,
     decorationTag: 'span',
     decorationClass: 'mention-suggestion',
-    items: async ({ query }) => {
-      if (source.minQueryLength && query.length < source.minQueryLength) return [];
-      const result = await Promise.resolve(source.search(query, 20));
-      return Array.isArray(result) ? result : [];
-    },
+    items: ({ query }) => mentionItems(source, query, ctx),
     command: ({ editor, range, props }) => {
       editor.chain().focus().deleteRange(range).run();
       source.onSelect(props, editor);

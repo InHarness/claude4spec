@@ -1,0 +1,37 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "portion", "id": "u02-page-reactions/p9-l13" },
+  "release": "2.1.8",
+  "rows": [
+    {
+      "slug": "ac-resolve-i-autocomplete-path-md-sa-ogran",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/services/pages-link-indexer.test.ts:224 '[ac:ac-resolve-i-autocomplete-path-md-sa-ogran] precedence…' — resolve: expect(indexer.resolve('x.md','src.md','c')?.rootId).toBe('c'); …('a') → 'pages' (builtin before earlier-in-map b); without builtin → 'b'; artifact (null) → 'pages'. Autocomplete (uncommitted, :243-259): spans all roots (paths ['only-b.md','only-c.md','x.md']), same path offered once from the precedence winner (c→'X in c', b→'X in b', null→'X back' from builtin). Code: resolutionOrder src/server/services/pages-link-indexer.ts:320-330, resolve :343-385, autocomplete :460-476 (uncommitted), route ?root= src/server/routes/page-links.ts:34-37; scope = roots selecting m14-link-indexer, builtinRootId=baseRoot.id src/server/workspace/project-context.ts:752,772-775. Test is consistent with current code. Note: client never sends ?root= (src/client/lib/api.ts:486, src/client/tiptap/registrations.ts:216), so the editor's suggestion list always starts at builtin; the inserted @path.md still resolves source-root-first server-side."
+    },
+    {
+      "slug": "section:m06l13rt",
+      "level": 2,
+      "status": "covered",
+      "evidence": "Section indexer over roots selecting m06-section-indexer src/server/workspace/project-context.ts:743-744; anchor injection bound per root selecting m06-anchor-injection, page injection where kind also selects the indexer, artifact (file-local) injection otherwise, fail-fast on neither :1530-1543; rule 7 scoped to anchor-injected roots among the references roots src/server/discovery/ops/consistency.ts:241-253; no sectionIndexed flag read (config.ts:662-666 drops legacy keys). Kind-declaration binding/requirement check is deferred to u03 — built on the existing rootRegistry, not against a missing dependency."
+    },
+    {
+      "slug": "section:m14l13rt",
+      "level": 2,
+      "status": "covered",
+      "evidence": "Maps (byPath/linkIndex/reverseIndex/unresolved) keyed `${rootId}:${relPath}` over roots selecting m14-link-indexer src/server/workspace/project-context.ts:752,772; resolve across all of them source→builtin(flag via builtinRoot())→roots[] order src/server/services/pages-link-indexer.ts:320-385; CWD-relative dir strip step 3b :374-382; autocomplete over same scope :460-476; rename-sync rewrites only reverseIndex sources (cross-root) :120-138; linkTargets removed — only legacy-key fixtures remain (config.test.ts:328,507 assert it is dropped), config-rename has no relink (src/server/routes/config-rename.ts:238); no id==='pages' in the indexer. Tests: pages-link-indexer.test.ts:208-290."
+    },
+    {
+      "slug": "section:m08l13rt",
+      "level": 2,
+      "status": "covered",
+      "evidence": "TodosIndexerService over roots selecting m08-todos-indexer src/server/workspace/project-context.ts:751,767; one Map keyed `${rootId}:${relPath}`, todos:changed carries rootId, indexAll via listMarkdownFiles per root src/server/services/todos-indexer.ts:21-50; reaction declared markdown-only/no requirements src/server/workspace/core-reactions.ts:96, test src/server/fs/reactions.test.ts:176-193; no flag read, no id hardcode. rootId-from-reaction-input/kind binding deferred to u03."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "> @inharness-ai/c4s-plugin-ac@0.2.80 typecheck\n> tsc --noEmit (clean, all workspaces)"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "portion", "id": "u02-page-reactions/p1-l1" },
+  "release": "2.1.8",
+  "rows": [
+    {
+      "slug": "section:efn44e96",
+      "level": 2,
+      "status": "covered",
+      "evidence": "M06 DB (L1) at 2.1.8 — both changes hold. (1) Anchor lookup is global and its domain is roots of every kind that has the section indexer: src/server/discovery/roots.ts:78-79 `sectionIndexed()` returns roots by `kindSelects(PAGES_KIND, 'm06-section-indexer')`; global lookup in src/server/services/page-write.ts:1746 (`getByAnchor` keyed on anchor alone); upsert `ON CONFLICT(anchor)` in src/server/services/section-indexer.ts (indexPage upsert). (2) section_entity_link is rebuilt in the indexer's final step from tags in each section's own body: src/server/services/section-indexer.ts:574-600 (delete by owned anchors, then INSERT OR IGNORE from parseXmlTags filtered to heading..lineEnd). Schema unchanged and matches: anchor FK ON DELETE CASCADE, polymorphic entity key without FK (src/server/db/migrations/044_section_index_root_id.sql:60-64), subtree_line_end NOT NULL DEFAULT 0 (054_section_index_own_body.sql:45). Note: renumbering to 'step 8' only holds once the in-pass minting (section-indexer.ts:466 mintInto) leaves the indexer; that change is owned by section:s2r014vw in portion p2-l2, not this row. Kind-based binding is deferred to u03-root-registry. No src changes since 01d40fe; trace.md empty (no built entities in this portion)."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "> tsc --noEmit (clean)"
+  }
+}

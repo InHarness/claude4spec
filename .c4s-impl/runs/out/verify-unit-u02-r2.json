@@ -1,0 +1,31 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "unit", "id": "u02-page-reactions" },
+  "release": "2.1.8",
+  "rows": [
+    {
+      "slug": "ac-resolve-i-autocomplete-path-md-sa-ogran",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "End to end, five [ac:] tests consistent with current code. Server/indexer: src/server/services/pages-link-indexer.test.ts:224 asserts resolve precedence source→builtin→map order (rootId 'c' / 'pages' / 'b'; null source → 'pages') and autocomplete spanning every root with a duplicated x.md offered once from the precedence winner (autocomplete('x',50,'c') → [{rootId:'c', title:'X in c'}]; null → 'pages'). Code: resolutionOrder pages-link-indexer.ts:320-330, resolve :344-385, autocomplete :460-476. Route: src/server/routes/page-links.route.test.ts asserts GET /autocomplete?q=x&root=b → x.md exactly once {rootId:'b', title:'X in b'}, and without ?root= → paths ['only-b.md','x.md'] with x.md from builtin 'pages' though 'a','b' precede it in map order; route reads ?root= and passes it (page-links.ts:34-37). Client/editor: src/client/tiptap/mentionFiles.root.test.ts asserts the page editor's mention_extension gets options.rootId 'a' (registrations.ts:186-196), the '@' files source sends root=a (registrations.ts:220-225 → api.ts:491-494 sets 'root') and offers {rootId:'a', title:'X in a'}; in a plan no root is sent and the builtin entry is offered. Real path: Editor.tsx:89 puts rootId in the page ctx → getEditorExtensionsForContext → MentionExtension searchCtx {rootId} (MentionExtension.ts:37) → mentionItems → source.search(query,20,ctx)."
+    },
+    {
+      "slug": "goal:u02-page-reactions",
+      "level": 2,
+      "status": "covered",
+      "evidence": "All clauses hold. Named reactions in src/server/workspace/core-reactions.ts: m06-anchor-injection :72, m06-section-indexer :86 (requires ['m06-anchor-injection'] :89, requiresFlags ['references'] :90; enforced validateKindRequirements, reactions.test.ts), m08-todos-indexer :96, m14-link-indexer :104, m14-rename-sync :115, m17-capture :128 (acceptsTracks ['file_version'] :132; filter applied src/server/fs/reactions.ts:114 via fileMapFilter, registry.test.ts). Section indexer has no injection step, 8-step pass (section-indexer.ts:65,384; section-indexer-integrity.test.ts). No separate plan-anchor reaction remains in src (plans anchored by m06-anchor-injection write-back, project-context.ts:1530-1543; only the client plan-by-anchor lookup API remains, which is not a reaction). linkTargets removed from runtime/shared/client: remaining hits are legacy-key test fixtures (config.test.ts:328,507, config.route.test.ts:389, release-bundle.test.ts:43) and a comment pages-link-indexer.ts:49. @path.md resolve and autocomplete span every pages root with source → builtin → roots[] precedence, including the editor's '@' suggestions (closed since unit round 1: Editor.tsx:89 → registrations.ts:191-196,220-225 → api.ts:491-494 → page-links.ts:34-37). Deferred parts (kind-declaration binding → u03, plans source binding → u09) not built against missing dependencies."
+    },
+    {
+      "slug": "regression",
+      "level": 2,
+      "status": "covered",
+      "evidence": "npm run typecheck exited 0 (tsc --noEmit clean in every workspace, last @inharness-ai/c4s-plugin-ac@0.2.80). Tests changed since 01d40fe (mentionFiles.root.test.ts, reactions.test.ts, registry.test.ts, page-links.route.test.ts, pages-link-indexer.test.ts, section-indexer-integrity.test.ts, section-indexer-tagged-list.test.ts) read as passing against current code: APIs they call exist with the asserted shapes (fileMapFilter third arg reactions.ts:114, mintAnchors, autocomplete(q,limit,root), mentionItems, getMentionSourceByTrigger registry.ts:321). Stubs: stubs.json is {\"stubs\":[]} — none provided by or pending on u02-page-reactions."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "> @inharness-ai/c4s-plugin-ac@0.2.80 typecheck\n> tsc --noEmit\nEXIT 0"
+  }
+}

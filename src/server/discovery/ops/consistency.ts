@@ -5,7 +5,7 @@
  * of one transport and bound the sweep to a SINGLE page root — the built-in
  * one, because that is the `PagesService` that server happened to hold. Here it
  * iterates every `referenceValidated` root, and the section rules are gated per
- * root on `sectionIndexed` rather than on any root's identity.
+ * root on what the root's KIND selects rather than on any root's identity.
  *
  * This is also the right home for "what does the disk say that the index does
  * not" — that question is a consistency rule, not a mode hidden in a listing
@@ -238,13 +238,20 @@ export async function checkConsistency(
    * numbers — so the answer is to read once, not to skip when filtered.
    */
   const sectionIndexedIds = new Set(roots.sectionIndexed().map((r) => r.id));
+  // 2.1.8 — rule 7 reads the KIND's choice of `m06-anchor-injection` (on the
+  // `references` roots this sweep scans): a heading without an anchor is only a
+  // finding where the injection will repair it on the next pass.
+  const anchorInjectedIds = new Set(roots.anchorInjected().map((r) => r.id));
   const anchorOccurrences = new Map<string, AnchorOccurrence[]>();
   const structure: StructureRows = { unanchoredHeadings: [], anchorLinesInCode: [], unclosedCodeBlocks: [] };
 
   for (const root of scanned) {
     for (const page of await pages.readAll([root])) {
       allPagePaths.push({ rootId: root.id, path: page.path });
-      collectStructure(structure, anchorOccurrences, root.id, sectionIndexedIds.has(root.id), page);
+      collectStructure(structure, anchorOccurrences, root.id, {
+        sectionIndexed: sectionIndexedIds.has(root.id),
+        anchorInjected: anchorInjectedIds.has(root.id),
+      }, page);
       for (const tag of parseXmlTags(page.body)) {
         // 0.2.15 — the entity type comes from `type=` and nowhere else. The
         // branch that derived it from a registered extension tag's name is
@@ -483,7 +490,8 @@ export async function checkConsistency(
   for (const root of roots.sectionIndexed()) {
     if (scanned.some((r) => r.id === root.id)) continue;
     for (const page of await pages.readAll([root])) {
-      collectStructure(structure, anchorOccurrences, root.id, true, page);
+      // Outside the `references` sweep: rule 13 only — rule 7 needs `references = tak`.
+      collectStructure(structure, anchorOccurrences, root.id, { sectionIndexed: true, anchorInjected: false }, page);
     }
   }
 
@@ -623,9 +631,11 @@ interface StructureRows {
  * a defect. A heading-shaped or anchor-shaped line inside a code block is code:
  * it produces no rule 7 row and never counts toward rule 13.
  *
- * Rule 7 (headings without an anchor) and rule 13 (one anchor, two headings)
- * only mean something where anchors are minted, so they run on section-indexed
- * roots. Rule 13's evidence comes from the PAGE TEXT, not `section_index`:
+ * Rule 7 (headings without an anchor) only means something where anchors are
+ * minted, so it runs on roots of the `references` sweep whose kind selects
+ * `m06-anchor-injection` (2.1.8 — the kind's choice, not `sectionIndexed`).
+ * Rule 13 (one anchor, two headings) runs on roots whose kind selects the
+ * section indexer — the global anchor scope. Rule 13's evidence comes from the PAGE TEXT, not `section_index`:
  * `anchor` is UNIQUE there, so the index is the one place a collision is
  * guaranteed to be invisible.
  *
@@ -642,17 +652,20 @@ function collectStructure(
   rows: StructureRows,
   anchors: Map<string, AnchorOccurrence[]>,
   rootId: string,
-  sectionIndexed: boolean,
+  gates: { sectionIndexed: boolean; anchorInjected: boolean },
   page: { path: string; body: string },
 ): void {
   const lines = page.body.split('\n');
   const parsed = parseSections(page.body, { frontmatter: false });
-  if (sectionIndexed) {
+  if (gates.anchorInjected || gates.sectionIndexed) {
     for (const sec of parsed.sections) {
       if (sec.anchor === null) {
-        rows.unanchoredHeadings.push({ rootId, pagePath: page.path, line: sec.headingLine, heading: sec.heading });
+        if (gates.anchorInjected) {
+          rows.unanchoredHeadings.push({ rootId, pagePath: page.path, line: sec.headingLine, heading: sec.heading });
+        }
         continue;
       }
+      if (!gates.sectionIndexed) continue;
       const list = anchors.get(sec.anchor) ?? [];
       list.push({
         rootId,

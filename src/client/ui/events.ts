@@ -181,7 +181,19 @@ export type PopoverMap = {
   tagged: { props: NoProps; result: TaggedResult };
   'tagged-mixed': { props: NoProps; result: TaggedMixedResult };
   'page-ref': {
-    props: { syntax: PageRefSyntax; path: string; anchor?: string; label?: string; onRemove: () => void };
+    /**
+     * `rootId` — 2.1.8: the root of the document the chip lives in (null outside
+     * a page: a plan, a brief). It is the first step of the suggestions'
+     * precedence, as it is of the chip's own resolution.
+     */
+    props: {
+      syntax: PageRefSyntax;
+      path: string;
+      anchor?: string;
+      label?: string;
+      rootId?: string | null;
+      onRemove: () => void;
+    };
     result: { syntax: PageRefSyntax; path: string; anchor: string; label: string };
   };
   'page-ref-broken': {

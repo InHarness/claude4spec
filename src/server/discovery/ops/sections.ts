@@ -23,7 +23,7 @@
  * in bulk, or a per-item `SECTION_NOT_FOUND` from `get_sections` as an existence
  * test — which narrows `SECTION_NOT_FOUND` to a single emitter.
  *
- * Sections exist only on roots with `sectionIndexed`, so both operations iterate
+ * Sections exist only on roots whose kind selects the section indexer, so both operations iterate
  * that subset. There is no `rootId === 'pages'` branch anywhere here.
  */
 

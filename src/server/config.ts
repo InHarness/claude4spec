@@ -1199,7 +1199,7 @@ export function migrateConfigToV4(cwd: string): { config: NormalizedConfig; migr
   }
   raw.$schemaVersion = 4;
   // Validate BEFORE writing. A file this migration cannot fully repair (missing
-  // `id`, dangling `linkTargets`, …) fails to load either way — but it must fail
+  // `id`, a duplicate root `id`, …) fails to load either way — but it must fail
   // with the user's file untouched, not half-rewritten. In a git-tracked spec
   // repo a partial rewrite is a dirty tree the next auto-commit would sweep up.
   validate(raw);

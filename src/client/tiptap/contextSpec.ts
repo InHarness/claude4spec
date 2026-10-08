@@ -236,8 +236,8 @@ export function resolveContextSpec(
       return gate ? rootProps[gate] : true;
     }),
     decorations: rootProps.referenceValidated ? ['annotations', 'broken_refs'] : ['annotations'],
-    // Scope = every `pages` root (M14, 2.1.8); the autocomplete API does not
-    // take a scope parameter yet, so the id list is the binding part.
+    // Scope = every `pages` root (M14, 2.1.8); the editor's root rides along
+    // as the precedence's first step (`MentionExtension` option `rootId`).
     mentions: ['files'],
     save: { mode: 'debounce', debounceMs: AUTOSAVE_DEBOUNCE_MS },
   };

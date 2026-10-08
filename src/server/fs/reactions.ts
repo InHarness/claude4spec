@@ -3,7 +3,9 @@ import {
   fileMapFilter,
   type FileFormat,
   type KindDeclaration,
+  type KindFlags,
   type RootKind,
+  type VersionTrack,
 } from '../../shared/root-kinds.js';
 
 /**
@@ -38,8 +40,15 @@ export interface ReactionDefinition<C> {
    * of the source is skipped.
    */
   accepts: readonly FileFormat[];
+  /**
+   * Version tracks this reaction runs on, on top of `accepts`: only file-map
+   * entries of these tracks pass the binding's filter. Omitted = any track.
+   */
+  acceptsTracks?: readonly VersionTrack[];
   /** Other reactions that must be selected on the SAME kind. Validated at context build. */
   requires?: readonly string[];
+  /** Kind flags that must be `true` on the kind selecting this reaction (L13: requirements are reactions and flags). */
+  requiresFlags?: readonly (keyof KindFlags)[];
   factory: (ctx: C) => WatchSubscriber;
 }
 
@@ -56,8 +65,8 @@ export function defineReaction<C>(def: ReactionDefinition<C>): void {
 
 /**
  * The requirements of every reaction a kind selects, checked at context build.
- * A kind that selects `m06-section-indexer` without `m06-anchor-injection` stops
- * the build of the project context with an error.
+ * A kind that selects `m06-section-indexer` without `m06-anchor-injection`, or
+ * without `references = true`, stops the build of the project context with an error.
  */
 export function validateKindRequirements(decl: KindDeclaration): void {
   for (const id of decl.reactions) {
@@ -66,6 +75,11 @@ export function validateKindRequirements(decl: KindDeclaration): void {
     for (const req of def.requires ?? []) {
       if (!decl.reactions.includes(req)) {
         throw new Error(`root kind '${decl.kind}': reaction '${id}' requires '${req}' on the same kind`);
+      }
+    }
+    for (const flag of def.requiresFlags ?? []) {
+      if (!decl.flags[flag]) {
+        throw new Error(`root kind '${decl.kind}': reaction '${id}' requires flag '${flag}' = true on the same kind`);
       }
     }
   }
@@ -97,9 +111,9 @@ export class ReactionBinder<C> {
       handler = def.factory(this.ctx);
       this.handlers.set(id, handler);
     }
-    const filter = fileMapFilter(kind, def.accepts);
+    const filter = fileMapFilter(kind, def.accepts, def.acceptsTracks);
     if (filter === undefined) {
-      throw new Error(`[m40] reaction '${id}' accepts none of root kind '${kind}''s file-map formats`);
+      throw new Error(`[m40] reaction '${id}' accepts none of root kind '${kind}''s file-map entries`);
     }
     this.registrar.subscribe(source, handler, { id, phase: def.phase, after: [...(def.after ?? [])], filter });
     const set = this.bound.get(id) ?? new Set<string>();

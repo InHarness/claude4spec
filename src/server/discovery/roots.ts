@@ -79,6 +79,14 @@ export class RootSet {
     return kindSelects(PAGES_KIND, 'm06-section-indexer') ? [...this.all] : [];
   }
 
+  /**
+   * Roots whose kind selects `m06-anchor-injection` — the roots where a heading
+   * without an anchor gets one on the next pass (M06 `9cf6zu0f`).
+   */
+  anchorInjected(): Root[] {
+    return kindSelects(PAGES_KIND, 'm06-anchor-injection') ? [...this.all] : [];
+  }
+
   /** Roots in the reference graph — every page root, by its kind's `references` flag. */
   referenceValidated(): Root[] {
     return KIND_DECLARATIONS[PAGES_KIND].flags.references ? [...this.all] : [];

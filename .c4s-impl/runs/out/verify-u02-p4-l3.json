@@ -1,0 +1,14 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "portion", "id": "u02-page-reactions/p4-l3" },
+  "release": "2.1.8",
+  "rows": [
+    {
+      "slug": "section:m14op0004",
+      "level": 2,
+      "status": "covered",
+      "evidence": "At 2.1.8 the section drops the 'root without sectionIndexed' special case: an anchor that names no section stays unresolved and comes back as state, not as an error. Code: src/server/services/pages-link-indexer.ts:236-258 keeps a link whose page resolves with its anchor unchecked (no throw, no per-root gate), and :210 records the target's anchors in FileMeta. No sectionIndexed branch is left in pages-link-indexer.ts, routes/page-links.ts, discovery/ops/references.ts or discovery/section-hydrator.ts (grep). find_references({target:'section'}) with an unknown anchor returns an empty success list (src/server/discovery/ops/references.ts:148-183, 66-68). Test (uncommitted) src/server/services/pages-link-indexer.test.ts:244-263 'an anchor that points at no section stays unresolved as state, not an error — in any root, no per-root gate' asserts links contain ['b','x.md','zz9nosect'], getUnresolved -> [], counts {brokenLinkCount:0, unresolvedMentionCount:0}, getFileMeta('b','x.md').anchors toContain 'kkz1e7d6' and not.toContain 'zz9nosect'. Read against the current code it passes: ANCHOR_ID_SOURCE [a-z0-9]{6,12} matches 'zz9nosect', and extractAnchors (:500) only sees '<!-- anchor: kkz1e7d6 -->'. Non-blocking: the comment at src/server/discovery/section-hydrator.ts:114-117 still says 'unless the root declares link targets' (linkTargets is removed); it is outside this section."
+    }
+  ],
+  "suite": { "command": "npm run typecheck", "exitCode": 0, "summary": "> tsc --noEmit (no errors)" }
+}

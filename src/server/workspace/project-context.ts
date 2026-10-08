@@ -614,8 +614,9 @@ async function buildInner(
   // M33 phase 3: the project-local plugin overlay (axis B — pool composition).
   // The trust gate blocks the MOUNT, not just the subscription: without consent
   // the source does not exist at all, so an untrusted repo can never reload
-  // project-committed plugin code. (Contrast `sectionIndexed`, which gates only
-  // whether M02 registers M06's subscription on an always-mounted source.)
+  // project-committed plugin code. (Contrast the section indexer, which a root's
+  // KIND selects — that decides only whether the reaction is bound on an
+  // always-mounted source, never whether the source exists.)
   const overlayMounted = trust === true;
   if (overlayMounted) w.mountSource({ source: PLUGINS_OVERLAY_SOURCE, dir: projectPluginsDir(cwd) });
   const overlayVersionByPkg = new Map(
@@ -1520,7 +1521,7 @@ async function buildInner(
     deps.watchRuntime.peekActor(scope, source, relPath),
   );
   // M06 write-back per source: a root whose kind also selects the section
-  // indexer mints through that indexer (whose stash the projection reads); any
+  // indexer mints through that indexer (global scope, checked in `section_index`); any
   // other kind selecting the reaction (plans) gets the artifact injection —
   // anchors for `edits[]` addressing, unique per file, never indexed. Decided by
   // what the KIND selects, never by an id; a kind with neither path fails the
@@ -1604,9 +1605,9 @@ async function buildInner(
   }
 
 
-  // The boot rebuild mints anchors but nothing dispatches for those files, so the
-  // `write-back` phase never runs — drain the stash explicitly or the anchors
-  // would live only in `section_index` and never reach the .md files.
+  // The boot rebuild dispatches no reaction chain for these files, so the
+  // `write-back` phase never runs — `indexAll(suppress)` runs `m06-anchor-injection`
+  // before the indexer, file by file, or the anchors would never reach the .md files.
   /**
    * 2.0.0 — an EMPTY `section_index` at boot is not a fresh one. Migration 054
    * empties the table (every row was computed under the old boundaries), and a
@@ -1621,8 +1622,7 @@ async function buildInner(
   if (indexedRows === 0) projectionStatus.markStale(PROJECTION_IDS.sections);
   const sectionsBootPass = projectionStatus.beginRebuild();
   sectionIndexer
-    .indexAll()
-    .then(() => sectionIndexer.flushPendingInjections((source, relPath) => w.suppress(source, relPath)))
+    .indexAll((source, relPath) => w.suppress(source, relPath))
     /**
      * `finishRebuild`, not `markFresh` — the boot rebuild is slow and mounts are
      * already live, so a reaction can fail on some page while it runs. Clearing
@@ -1865,8 +1865,7 @@ async function buildInner(
    * this is the only place that holds all six owners at once.
    */
   projectionStatus.registerRebuild(PROJECTION_IDS.sections, async () => {
-    await sectionIndexer.indexAll();
-    await sectionIndexer.flushPendingInjections((source, relPath) => w.suppress(source, relPath));
+    await sectionIndexer.indexAll((source, relPath) => w.suppress(source, relPath));
   });
   projectionStatus.registerRebuild(PROJECTION_IDS.todos, () => todosIndexer.indexAll());
   projectionStatus.registerRebuild(PROJECTION_IDS.pageLinks, () => pagesLinkIndexer.indexAll());

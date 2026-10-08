@@ -1,0 +1,148 @@
+{
+  "unit": {
+    "id": "u02-page-reactions",
+    "goal": "Reakcje działające na plikach stron stają się nazwanymi definicjami z kontraktem przyjęcia:\n  - `m06-anchor-injection` zostaje wydzielona z indeksera sekcji. Indekser traci krok wstrzykiwania kotwic i ma teraz 8 kroków. Osobna reakcja kotwiczenia planów zostaje usunięta.\n  - Dochodzą `m06-section-indexer` (wymaga `m06-anchor-injection` i `references = tak` na tym samym rodzaju), `m14-link-indexer`, `m14-rename-sync`, `m08-todos-indexer` i `m17-capture` (przyjmuje wyłącznie wpisy z torem `file_version`).\n  - Rozwiązywanie `@path.md` obejmuje wszystkie korzenie rodzaju `pages` z precedencją: korzeń źródłowy, potem `builtin`, potem kolejność w `roots[]`. Właściwość `linkTargets` zostaje usunięta.",
+    "recipe": {
+      "pages": [
+        {
+          "key": "pages/modules/m06-sections.md",
+          "change": "all",
+          "context": {
+            "offset": 1,
+            "limit": 3,
+            "anchors": [
+              "1aq60bj4",
+              "ko9x8zqw",
+              "pb7v6bmz"
+            ]
+          },
+          "deferred": [
+            {
+              "what": "wiązanie reakcji przez deklarację rodzaju `pages` i sprawdzanie wymagań przy montażu",
+              "to": "u03-root-registry",
+              "why": "do tego czasu reakcje wiąże po `id` dotychczasowy montujący"
+            },
+            {
+              "what": "związanie `m06-anchor-injection` ze źródłem korzenia `plans`",
+              "to": "u09-plans-artifact-registry",
+              "why": "rodzaj `plans` powstaje dopiero tam"
+            }
+          ]
+        },
+        {
+          "key": "pages/modules/m14-page-links.md",
+          "change": "all",
+          "context": {
+            "offset": 1,
+            "limit": 2,
+            "anchors": [
+              "m14cel01",
+              "m14dep01"
+            ]
+          },
+          "deferred": [
+            {
+              "what": "wiązanie `m14-link-indexer` / `m14-rename-sync` przez deklarację rodzaju",
+              "to": "u03-root-registry",
+              "why": "rejestr jeszcze nie istnieje"
+            }
+          ]
+        },
+        {
+          "key": "pages/modules/m14-page-links.md",
+          "change": null,
+          "context": {
+            "offset": 4,
+            "limit": 1,
+            "anchors": [
+              "m14dom01"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m08-todos.md",
+          "change": "all",
+          "context": {
+            "offset": 1,
+            "limit": 3,
+            "anchors": [
+              "5n5li2kx",
+              "htyo2j01",
+              "t9y889ve"
+            ]
+          },
+          "deferred": [
+            {
+              "what": "wiązanie `m08-todos-indexer` przez deklarację rodzaju i `rootId` z wejścia reakcji",
+              "to": "u03-root-registry",
+              "why": "rejestr jeszcze nie istnieje"
+            }
+          ]
+        },
+        {
+          "key": "pages/modules/m17-snapshots-releases/m17-snapshots-releases.md",
+          "change": {
+            "offset": 12,
+            "limit": 1,
+            "anchors": [
+              "yg8keaew"
+            ]
+          },
+          "context": {
+            "offset": 1,
+            "limit": 3,
+            "anchors": [
+              "xkpt256d",
+              "m17zal001",
+              "y7fdm1jc"
+            ]
+          },
+          "deferred": [
+            {
+              "what": "wiązanie `m17-capture` przez rodzaje (L13)",
+              "to": "u03-root-registry",
+              "why": "rejestr jeszcze nie istnieje"
+            }
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "type": "ac",
+          "slugs": [
+            "ac-resolve-i-autocomplete-path-md-sa-ogran"
+          ]
+        }
+      ]
+    },
+    "dependsOn": [
+      {
+        "unit": "u01-reaction-definitions",
+        "why": "definicje i `bindReaction` muszą istnieć"
+      }
+    ]
+  },
+  "stateDir": ".c4s-impl/",
+  "mode": "build",
+  "portion": {
+    "name": "u02-page-reactions/p9-l13",
+    "layers": [
+      "L13"
+    ],
+    "slugs": [
+      "ac-resolve-i-autocomplete-path-md-sa-ogran",
+      "section:m06l13rt",
+      "section:m14l13rt",
+      "section:m08l13rt"
+    ],
+    "packet": ".c4s-impl/packets/u02-page-reactions-p9-l13.md"
+  },
+  "only": [
+    {
+      "slug": "ac-resolve-i-autocomplete-path-md-sa-ogran"
+    },
+    {
+      "slug": "goal:u02-page-reactions"
+    }
+  ]
+}

@@ -6,10 +6,12 @@ import { requireRootId } from '../fs/sources.js';
 /**
  * M17 — `m17-capture`, the `capture`-phase subscriber.
  *
- * ONE subscription, registered on every `pages:<rootId>` source (releasable or
- * not) and every `artifacts:*` source, with `after: ['write-back']`. Capture has
- * no gate: it covers every observed file, and the `releasable` filter only
- * applies later, at `assignToRelease()`.
+ * 2.1.8 — ONE definition, `m17-capture` (`after: ['write-back']`), selected by
+ * root kinds and bound by the root-registry implementor (L13) to the sources of
+ * their roots; M17 mounts nothing. Its acceptance contract: file-map entries
+ * whose version track is `file_version`, in any format — entries of another
+ * track (e.g. `.html` in a pages root) never reach it. It covers every accepted
+ * entry; narrowing to `pages`-kind roots happens only at `assignToRelease()`.
  *
  * It is the SOLE author of `file_version` for pages. Services and routes do not
  * record their own rows — they write through the M42 primitive, which runs the

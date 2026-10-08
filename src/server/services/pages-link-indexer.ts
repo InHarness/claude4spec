@@ -329,10 +329,14 @@ export class PagesLinkIndexerService implements WatchSubscriber {
   }
 
   /**
-   * Resolve a candidate path across the roots in scope (2.1.8). Per root, in
-   * precedence order: relative to the source page (source root only), then the
-   * path as a root-relative one, then — for a CWD-relative spelling — with that
-   * root's own `dir` stripped. First hit wins.
+   * Resolve a candidate path across the roots in scope (2.1.8). Step by step,
+   * each step over every root in precedence order (first hit wins):
+   *   0. relative to the source page (source root only);
+   *   2. the path as a root-relative one, exact;
+   *   3. the same without an extension — `.md`, then `.mdx`;
+   *   3b. a CWD-relative spelling with each root's own `dir` stripped, exact and
+   *       then `.md`/`.mdx` — only after 2–3 missed in every root, so a
+   *       root-relative hit anywhere in scope beats a dir-prefixed one.
    *
    * `sourceRootId: null` resolves for an artifact (from the `builtin` root on).
    */
@@ -348,30 +352,42 @@ export class PagesLinkIndexerService implements WatchSubscriber {
     const stripped = rawPath.replace(/^\/+/, '');
     if (!stripped) return null;
     const normalized = path.posix.normalize(stripped);
+    const order = this.resolutionOrder(sourceRootId);
 
-    for (const rootId of this.resolutionOrder(sourceRootId)) {
-      const hit = (p: string): { rootId: string; path: string; anchor?: string } | null => {
-        if (this.byPath.has(this.key(rootId, p))) return { rootId, path: p, anchor };
-        if (this.byPath.has(this.key(rootId, p + '.md'))) return { rootId, path: p + '.md', anchor };
-        return null;
-      };
-      if (sourcePath && rootId === sourceRootId) {
-        const dir = path.posix.dirname(sourcePath);
-        const joined = path.posix.normalize(path.posix.join(dir, stripped));
-        if (!joined.startsWith('..') && !joined.startsWith('/')) {
-          const found = hit(joined);
-          if (found) return found;
-        }
+    const exact = (rootId: string, p: string) =>
+      this.byPath.has(this.key(rootId, p)) ? { rootId, path: p, anchor } : null;
+    const noExt = (rootId: string, p: string) => {
+      for (const ext of ['.md', '.mdx']) {
+        if (this.byPath.has(this.key(rootId, p + ext))) return { rootId, path: p + ext, anchor };
       }
-      if (normalized.startsWith('..') || normalized.startsWith('/')) continue;
-      const direct = hit(normalized);
-      if (direct) return direct;
-      const rootDir = this.scope.rootDirs?.get(rootId);
-      const prefix = rootDir ? path.posix.normalize(rootDir.replace(/\\/g, '/')).replace(/\/+$/, '') : '';
-      if (prefix && prefix !== '.' && normalized.startsWith(prefix + '/')) {
-        const found = hit(normalized.slice(prefix.length + 1));
+      return null;
+    };
+
+    if (sourcePath && sourceRootId && order.includes(sourceRootId)) {
+      const dir = path.posix.dirname(sourcePath);
+      const joined = path.posix.normalize(path.posix.join(dir, stripped));
+      if (!joined.startsWith('..') && !joined.startsWith('/')) {
+        const found = exact(sourceRootId, joined) ?? noExt(sourceRootId, joined);
         if (found) return found;
       }
+    }
+    if (normalized.startsWith('..') || normalized.startsWith('/')) return null;
+
+    for (const rootId of order) {
+      const found = exact(rootId, normalized);
+      if (found) return found;
+    }
+    for (const rootId of order) {
+      const found = noExt(rootId, normalized);
+      if (found) return found;
+    }
+    for (const rootId of order) {
+      const rootDir = this.scope.rootDirs?.get(rootId);
+      const prefix = rootDir ? path.posix.normalize(rootDir.replace(/\\/g, '/')).replace(/\/+$/, '') : '';
+      if (!prefix || prefix === '.' || !normalized.startsWith(prefix + '/')) continue;
+      const rel = normalized.slice(prefix.length + 1);
+      const found = exact(rootId, rel) ?? noExt(rootId, rel);
+      if (found) return found;
     }
     return null;
   }
@@ -434,25 +450,29 @@ export class PagesLinkIndexerService implements WatchSubscriber {
     };
   }
 
-  autocomplete(query: string, limit = 10): PageLinkAutocompleteItem[] {
+  /**
+   * 2.1.8 — suggestions span every root in scope (all `kind: pages` roots). The
+   * same path in several roots is offered once, from the root the inserted
+   * `@path.md` would resolve to: the source page's root, then `builtin`, then
+   * `roots[]` order — the precedence of `resolve`. `sourceRootId: null` (an
+   * artifact, or a caller that does not know its root) starts at `builtin`.
+   */
+  autocomplete(query: string, limit = 10, sourceRootId: string | null = null): PageLinkAutocompleteItem[] {
     const q = query.trim().toLowerCase();
-    if (!q) {
-      const items: PageLinkAutocompleteItem[] = [];
-      for (const meta of this.byPath.values()) {
-        items.push({ path: meta.path, title: meta.title, matchScore: 0 });
-      }
-      items.sort((a, b) => a.path.localeCompare(b.path));
-      return items.slice(0, limit);
-    }
-    const hits: PageLinkAutocompleteItem[] = [];
-    for (const meta of this.byPath.values()) {
-      const score = fuzzyScore(q, meta.path, meta.title);
-      if (score > 0) {
-        hits.push({ path: meta.path, title: meta.title, matchScore: score });
+    const seen = new Set<string>();
+    const items: PageLinkAutocompleteItem[] = [];
+    for (const rootId of this.resolutionOrder(sourceRootId)) {
+      const prefix = `${rootId}:`;
+      for (const [k, meta] of this.byPath) {
+        if (!k.startsWith(prefix) || seen.has(meta.path)) continue;
+        const score = q ? fuzzyScore(q, meta.path, meta.title) : 0;
+        if (q && score <= 0) continue;
+        seen.add(meta.path);
+        items.push({ path: meta.path, title: meta.title, matchScore: score, rootId });
       }
     }
-    hits.sort((a, b) => b.matchScore - a.matchScore || a.path.localeCompare(b.path));
-    return hits.slice(0, limit);
+    items.sort((a, b) => b.matchScore - a.matchScore || a.path.localeCompare(b.path));
+    return items.slice(0, limit);
   }
 
   private totalLinksCount(): number {

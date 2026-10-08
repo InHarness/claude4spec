@@ -1,0 +1,2 @@
+- verifier note (p6-l7): plan anchor injection (anchor-injection.ts:28-30,55) anchors only H2-H4 while the page path anchors every heading — diverges from 'the same definition as a page'; predates the window, drift candidate
+- verifier note (p9-l13): client never sends ?root= to the autocomplete route (src/client/lib/api.ts:486, tiptap/registrations.ts:216) — the editor's @ suggestion list always ranks from the builtin root, not the source root

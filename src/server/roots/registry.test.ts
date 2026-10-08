@@ -71,6 +71,16 @@ describe('root kinds', () => {
     expect(fileMapFilter('releases', ['json'])).toBe('*.json');
   });
 
+  it('narrows the filter by version track: only `file_version` entries, in any format (M17 yg8keaew)', () => {
+    const all = ['markdown', 'json', 'raw'] as const;
+    // pages: `.html` is track `none`, so it falls out.
+    expect(fileMapFilter('pages', all, ['file_version'])).toBe('**/*.{md,mdx}');
+    expect(fileMapFilter('plans', all, ['file_version'])).toBe('*.md');
+    // entities (`entity_version`) and releases (`none`) carry no `file_version` entry.
+    expect(fileMapFilter('entities', all, ['file_version'])).toBeUndefined();
+    expect(fileMapFilter('releases', all, ['file_version'])).toBeUndefined();
+  });
+
   it('namespaces exclude dot-segment subtrees, both ways', () => {
     expect(namespacesOverlap('.', '.claude4spec/plans')).toBe(false);
     expect(namespacesOverlap('.claude4spec', '.claude4spec/plans')).toBe(true);

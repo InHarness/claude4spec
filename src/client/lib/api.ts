@@ -482,9 +482,16 @@ export const pageLinksApi = {
   async counts(): Promise<PageLinksCounts> {
     return handle<PageLinksCounts>(await apiFetch('/api/page-links/counts'));
   },
-  async autocomplete(q: string, limit = 10): Promise<PageLinksAutocompleteResponse> {
+  /**
+   * 2.1.8: `root` — the root of the page being edited, the first step of the
+   * precedence (source root → `builtin` → `roots[]` order) that picks which root
+   * a path present in several page roots is suggested from. Omitted outside a
+   * page (a plan, a brief, the chat): suggestions then start at `builtin`.
+   */
+  async autocomplete(q: string, limit = 10, root?: string | null): Promise<PageLinksAutocompleteResponse> {
     const params = new URLSearchParams({ q });
     if (limit !== 10) params.set('limit', String(limit));
+    if (root) params.set('root', root);
     return handle<PageLinksAutocompleteResponse>(
       await apiFetch(`/api/page-links/autocomplete?${params.toString()}`)
     );
