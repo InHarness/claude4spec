@@ -6,7 +6,6 @@ import '../tiptap/registrations.js';
 import { EditorFactory } from '../tiptap/EditorFactory.js';
 import { invokeSlash } from '../tiptap/slashInvoke.js';
 import { assertSaveMode, getContextSpec } from '../tiptap/registry.js';
-import { ARTIFACT_EDITOR_PROPS } from '../hooks/useRootEditorProps.js';
 import {
   useEditorCarry,
   useEditorCarryApply,
@@ -22,7 +21,7 @@ interface Props {
 
 /**
  * M23 patch artifact panel. Mirror of `BriefEditor` — Tiptap `'artifact'` context
- * (patches render the same XML refs / mentions), storage through patches-api
+ * (prose and `@` links; entity tags pass through verbatim), storage through patches-api
  * with `expectedHash` sha256 optimistic concurrency. Only the BODY is fed to
  * Tiptap; on save the (immutable) frontmatter is recomposed via gray-matter.
  */
@@ -37,12 +36,10 @@ export function PatchEditor({ patchPath }: Props) {
   const [conflict, setConflict] = useState<boolean>(false);
 
   const schemaVersion = useEditorSchemaVersion();
-  // 2.1.8: the named `artifact` context — prose and `@` links over the page roots.
-  const rootProps = ARTIFACT_EDITOR_PROPS;
   const extensions = useMemo(
     () =>
-      // A patch has no context of its own: `page` with the artefact property
-      // bag (M23 `m23l13rt`) — see BriefEditor.
+      // 2.1.8: a patch mounts the fixed `artifact` context by its id — no
+      // property bag of its own (see BriefEditor).
       EditorFactory.buildExtensions(
         'artifact',
         {
@@ -52,12 +49,10 @@ export function PatchEditor({ patchPath }: Props) {
             void invokeSlash(editor, command, { qc, currentPath: patchPath }),
           getAnnotations: () => [],
         },
-        {},
-        rootProps,
       ),
-    [qc, patchPath, schemaVersion, rootProps],
+    [qc, patchPath, schemaVersion],
   );
-  const save = assertSaveMode(getContextSpec('artifact', rootProps), 'debounce');
+  const save = assertSaveMode(getContextSpec('artifact'), 'debounce');
   const carry = useEditorCarry(extensions);
 
   const editor = useEditor(

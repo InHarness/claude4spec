@@ -1,5 +1,5 @@
 {
-  "iteration": 69,
+  "iteration": 75,
   "conventions": [
     {
       "label": "L7 (File Change Reactions)",
@@ -1049,11 +1049,30 @@
         }
       ],
       "wave": 4,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u07-editor-contexts/p1-l13",
+          "layers": [
+            "L8",
+            "L13"
+          ],
+          "slugs": [
+            "ac-editorfactory-buduje-editorcontextspec-d",
+            "section:c03ijrki",
+            "section:m20l13rt"
+          ],
+          "status": "verified",
+          "rounds": 1,
+          "uncovered": [],
+          "only": [],
+          "criteriaGroup": "M20 EditorFactory: page context from root kind (anchors via m06-anchor-injection, entity nodes via references flag, @ over all kind:pages roots with M14 precedence) + fixed `artifact` context for brief/patch; removes minimal root context and synthetic brief/patch property set"
+        }
+      ],
+      "startCommit": "38cb3724c2a98058fe691bbed9151f070504a8fa",
       "rounds": {
-        "review": 0
+        "review": 0,
+        "unit": 1
       }
     },
     {

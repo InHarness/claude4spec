@@ -38,8 +38,9 @@ export interface EditorFactoryOptions {
  *
  * `rootProps` gate the page-root extension set (2.1.8): derived from the root's
  * KIND (`rootEditorPropsForKind`) — the factory branches on the kind's layers,
- * never on a root id. Briefs and patches build the named `artifact` context.
- * It is ignored for the static contexts (plan / description / chat-input).
+ * never on a root id. Briefs and patches build the fixed `artifact` context by
+ * its id alone. It is ignored for `artifact` and for the static contexts
+ * (plan / description / chat-input).
  */
 export const EditorFactory = {
   buildExtensions(

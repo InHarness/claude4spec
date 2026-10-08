@@ -50,8 +50,12 @@ export function rootEditorPropsForKind(kind: RootKind): RootEditorProps {
 /** A `pages` root's editor — the kind's layers. */
 export const FULL_ROOT_EDITOR_PROPS: RootEditorProps = rootEditorPropsForKind('pages');
 
-/** The props the brief / patch surfaces mount the `artifact` context with: prose and `@` links only. */
-export const ARTIFACT_EDITOR_PROPS: RootEditorProps = {
+/**
+ * The layers of the FIXED `artifact` context (briefs, patches): prose and `@`
+ * links only. Owned by the context — a mounting component names `artifact`
+ * and never hands in a layer set of its own.
+ */
+const ARTIFACT_LAYERS: RootEditorProps = {
   sectionIndexed: false,
   referenceValidated: false,
 };
@@ -78,8 +82,8 @@ export interface EditorContextSpec {
 
 /**
  * The `page` context is not an enum member with a fixed list — it is DERIVED
- * from the page root's properties (L13). The whitelist for a page is therefore
- * "everything registered, gated by the root property each name depends on".
+ * from the page root's KIND (L13). The whitelist for a page is therefore
+ * "everything registered, gated by the layer of the kind each name depends on".
  * The registry hands this view in; the spec module never imports the registry.
  */
 export interface ContextRegistryView {
@@ -91,7 +95,7 @@ export interface ContextRegistryView {
  * L8 `page` save policy: 1000 ms after the last keystroke (M02
  * `autoSaveDebounceMs`). One number on purpose — the M20 race analysis
  * (`m20edge0`) pairs it with the 500 ms WS invalidation batch — and one
- * constant for the page, the brief and the patch, which all mount `page`.
+ * constant for the page (`page`) and the brief and patch (`artifact`).
  */
 export const AUTOSAVE_DEBOUNCE_MS = 1000;
 
@@ -211,8 +215,11 @@ const STATIC_SPECS: Record<Exclude<EditorContextId, 'page' | 'artifact'>, Editor
 
 /**
  * Materialize the `EditorContextSpec` for a context. `page` is derived from
- * `rootProps` and from what is currently registered (plugins contribute both
- * schema extensions and slash commands to pages); the other three are static.
+ * `rootProps` — the layers of the page root's kind (`rootEditorPropsForKind`)
+ * — and from what is currently registered (plugins contribute both schema
+ * extensions and slash commands to pages). `artifact` is fixed: the same
+ * derivation over its own layers, whatever `rootProps` says. The other three
+ * are static.
  */
 export function resolveContextSpec(
   contextId: EditorContextId,
@@ -220,9 +227,10 @@ export function resolveContextSpec(
   registry: ContextRegistryView,
 ): EditorContextSpec {
   if (contextId === 'artifact') {
-    // Same derivation as a page, over the artifact layers: no anchors, no
-    // section refs, no entity nodes — prose and `@` links over the page roots.
-    return { ...resolveContextSpec('page', { ...rootProps, ...ARTIFACT_EDITOR_PROPS }, registry), id: 'artifact' };
+    // Fixed: the page derivation over the artifact layers, never the caller's
+    // — no anchors, no section refs, no entity nodes; prose and `@` links over
+    // every `kind: pages` root.
+    return { ...resolveContextSpec('page', ARTIFACT_LAYERS, registry), id: 'artifact' };
   }
   if (contextId !== 'page') return STATIC_SPECS[contextId];
   return {

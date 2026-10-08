@@ -1,6 +1,14 @@
 import { useMemo } from 'react';
-import { FULL_ROOT_EDITOR_PROPS, getContextSpec, type RootEditorProps } from '../tiptap/registry.js';
-import { ARTIFACT_EDITOR_PROPS } from '../tiptap/contextSpec.js';
+import { getContextSpec, type RootEditorProps } from '../tiptap/registry.js';
+import { rootEditorPropsForKind } from '../tiptap/contextSpec.js';
+import { PAGES_KIND } from '../../shared/root-kinds.js';
+
+/**
+ * Every page editor opens a page of a `config.roots[]` entry, and every such
+ * entry is of kind `pages` (system roots have no page editor). One object for
+ * all of them — see the identity note below.
+ */
+const PAGE_ROOT_LAYERS: RootEditorProps = rootEditorPropsForKind(PAGES_KIND);
 
 /**
  * L13 / 2.1.8: the `page` context is derived from the page root's KIND, not
@@ -15,15 +23,8 @@ import { ARTIFACT_EDITOR_PROPS } from '../tiptap/contextSpec.js';
  * selection and an open `/` popup lost).
  */
 export function useRootEditorProps(_rootId: string): RootEditorProps {
-  return FULL_ROOT_EDITOR_PROPS;
+  return PAGE_ROOT_LAYERS;
 }
-
-/**
- * 2.1.8 — the layers of the named `artifact` context (briefs, patches): prose
- * and `@` links over the `pages` roots (from the builtin root on), without
- * `section_ref`, `AnchorMarker` or entity nodes. Defined next to the context.
- */
-export { ARTIFACT_EDITOR_PROPS };
 
 /**
  * 2.1.1 — whether a page in `rootId` has an outline. Read off the resolved

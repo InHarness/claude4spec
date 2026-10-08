@@ -38,7 +38,7 @@ export interface RegistryContext {
   /** Context in which the extension is being instantiated. Set by EditorFactory. */
   contextId?: EditorContextId;
   /**
-   * 0.1.96: per-root behaviour props of the page's root. Set by EditorFactory.
+   * 2.1.8: the editor layers of the page root's kind. Set by EditorFactory.
    */
   rootProps?: RootEditorProps;
   /**
