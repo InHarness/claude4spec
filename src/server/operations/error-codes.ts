@@ -195,6 +195,8 @@ export const STATUS_FOR_CODE: Record<string, number> = {
   NOT_TEXT: 415,
   // M52 Spec Skills (2.1.9) — a skill of an exposed project is read-only here.
   SKILL_READ_ONLY: 403,
+  // M52 (2.1.9) — `fork_writing_style` refuses a slug the `skills` root already holds.
+  SKILL_ALREADY_EXISTS: 409,
 };
 
 /**

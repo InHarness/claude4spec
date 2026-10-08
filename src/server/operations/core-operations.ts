@@ -544,6 +544,43 @@ export function registerCoreOperations(): void {
   });
 
   /**
+   * 2.1.9 — `fork_writing_style`, sheet `katalog-operacji-m52` row 3: a local copy
+   * of the active writing style when it comes from a plugin. Human-mediated — an
+   * action of the `#skills` settings card ("Fork writing style locally"), so it is
+   * rendered on `rest` alone (`POST /api/spec-skills/style-forks`).
+   *
+   * The sheet's columns without a field here, honoured by the implementation
+   * (`services/style-fork.ts`): addressing by the style's slug; content
+   * description `n/d` (nothing is sent — the package is copied); guard `n/d` — an
+   * existing package of that slug is a refusal (`SKILL_ALREADY_EXISTS`), never an
+   * overwrite; single-target (the active style is one); rules `echo-free` (the
+   * answer is the copy's address, never its content), `error-code-once`.
+   * `INVALID_ARGUMENT` also covers a style that does not come from a plugin.
+   * `config.writingStyle` is never changed.
+   */
+  CATALOG.register({
+    name: 'fork_writing_style',
+    summary:
+      'Copy the package of the active writing style, when it comes from a plugin, into a package of the same slug in the project\'s `skills` root; the copy records its origin in the `forkedFrom` field of its SKILL.md frontmatter and `config.writingStyle` stays unchanged. An existing package of that slug is refused, never overwritten. Answers { slug, path }.',
+    scope: 'project',
+    mediation: 'human-mediated',
+    opClass: 'write',
+    inputSchema: {
+      slug: z.string().describe('Slug of the active writing style to copy; the local package gets the same slug.'),
+    },
+    errorCodes: ['SKILL_NOT_FOUND', 'SKILL_ALREADY_EXISTS', 'INVALID_ARGUMENT'],
+    sideEffects: ['file', 'ui-notify'],
+    contentInput: 'n/a',
+    idempotent: false,
+    channels: {
+      internal: na('an action of the settings card'),
+      cli: na('an action of the settings card'),
+      mcp: na('an action of the settings card'),
+      rest: direct(),
+    },
+  });
+
+  /**
    * 2.1.9 — `list_exposed_projects`, sheet `katalog-operacji-m52` row 4: the
    * projects of the workspace exposed as a skill, with the status of the current
    * project's attachments (`ok` / `unavailable` / `ambiguous`). Workspace-scoped

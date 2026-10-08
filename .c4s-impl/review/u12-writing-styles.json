@@ -1,0 +1,26 @@
+{
+  "role": "reviewer",
+  "scope": {
+    "kind": "unit",
+    "id": "u12-writing-styles",
+    "base": "5faa53a4d81fddfbbcc507014c6cf5882e9ad527"
+  },
+  "findings": [
+    {
+      "id": "rev-0001",
+      "file": "src/server/services/style-fork.ts",
+      "line": 321,
+      "blocking": false,
+      "reason": "The fork is not atomic. It writes the package files one by one and SKILL.md last. If any write fails part-way (I/O error, or a concurrent create that makes records.write throw RecordConflictError, which errorHandler does not map, so the client gets a 500), the skills root keeps a `<slug>/` directory with no SKILL.md. From then on the existsSync guard on line 99 refuses every retry with SKILL_ALREADY_EXISTS, and the card shows 'A skill with this name already exists in this project.' for a package that never became valid. The UI offers no way to recover. Consider removing the files this call wrote when a later write fails, or limiting the guard to an existing SKILL.md, and mapping RecordConflictError to SKILL_ALREADY_EXISTS.",
+      "portion": "u12-writing-styles/p1-l2-l17"
+    },
+    {
+      "id": "rev-0002",
+      "file": "src/server/services/style-fork.ts",
+      "line": 253,
+      "blocking": false,
+      "reason": "assertSlug is a near-copy of the private assertSlug in services/skill-write.ts. The copy lacks the hint text and the explicit '.'/'..' cases, though startsWith('.') covers both. The plugin file paths (`file.path`) also go to records.write without the normalizeFile check that update_skill_file applies to the same root. Consider exporting both helpers from skill-write.ts and reusing them here, so the two writers of the skills root share one validation.",
+      "portion": "u12-writing-styles/p1-l2-l17"
+    }
+  ]
+}

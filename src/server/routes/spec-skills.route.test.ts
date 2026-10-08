@@ -125,3 +125,192 @@ describe('GET /api/spec-skills/exposed-projects (M52 L4, 2.1.9)', () => {
     expect(b.body).toEqual(a.body);
   });
 });
+
+/**
+ * 2.1.9 — M52 L4: `POST /api/spec-skills/style-forks` (endpoint
+ * `post-api-spec-skills-style-forks`, DTOs `fork-writing-style-request` /
+ * `fork-writing-style-response`), the `rest` rendering of `fork_writing_style`
+ * (sheet `katalog-operacji-m52`, row 3).
+ *
+ * The rig is a project as `project-context.ts` builds it: the registry roots
+ * mounted (the `skills` root with its facade), the project registry with the
+ * `.claude/skills` root, the `project-rooted` source and the builtin envelopes
+ * pushed by the real loader — the reference style `layered-vertical-slices`
+ * comes from a plugin, with its `workflows/` and `templates/` files.
+ */
+describe('POST /api/spec-skills/style-forks (M52 L4, 2.1.9)', () => {
+  const PLUGIN_STYLE = 'layered-vertical-slices';
+
+  async function forkRig() {
+    const { FileWatchRuntime } = await import('../fs/watcher.js');
+    const { RootRegistry } = await import('../roots/registry.js');
+    const { registerCoreReactions } = await import('../workspace/core-reactions.js');
+    const { mountRegistryRoots } = await import('../workspace/root-registry-runtime.js');
+    const { SkillRegistry } = await import('../services/skill-registry.js');
+    const { registerProjectRootedSkills } = await import('../services/project-rooted-skills.js');
+    const { forkWritingStyle } = await import('../services/style-fork.js');
+    const { PluginRegistryImpl } = await import('../core/plugin-host/registry.js');
+    const { loadBuiltinEnvelopes } = await import('../core/plugin-host/loader.js');
+    const { configRouter } = await import('./config.js');
+    registerCoreReactions();
+
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-style-forks-'));
+    tmpDirs.push(cwd);
+    writeConfig(cwd, { name: 'Shop', writingStyle: PLUGIN_STYLE });
+    const userRoots = [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }];
+    const runtime = new FileWatchRuntime({ fsEvents: false });
+    const roots = new RootRegistry(userRoots);
+    const mounted = await mountRegistryRoots({ cwd, registry: roots, userRoots, w: runtime.scoped('context:style-forks#1') });
+    const skills = mounted.rootRuntimes.find((rt) => rt.root.id === 'skills');
+    expect(skills, 'the skills root has a facade').toBeDefined();
+    const registry = SkillRegistry.load([{ dir: path.join(cwd, '.claude', 'skills'), source: 'user', registration: 'user-project' }], {
+      rescanTtlMs: 0,
+    });
+    registerProjectRootedSkills(registry, roots, cwd);
+    const plugins = new PluginRegistryImpl();
+    await loadBuiltinEnvelopes(plugins);
+    for (const skill of plugins.listSkills()) registry.addPluginSkill(skill);
+
+    const app = express()
+      .use(
+        '/api/spec-skills',
+        specSkillsRouter({
+          listExposedProjects: () => [],
+          forkWritingStyle: (input) => forkWritingStyle({ registry, skillsRoot: () => ({ pages: skills!.pages }) }, input),
+        }),
+      )
+      .use('/api', express.json(), configRouter({ cwd, skillRegistry: registry }));
+    const skillsDir = path.join(cwd, '.claude4spec', 'skills');
+    const configBytes = () => fs.readFileSync(path.join(cwd, '.claude4spec', 'config.json'), 'utf8');
+    return { cwd, app, registry, skillsDir, configBytes, close: () => runtime.close() };
+  }
+
+  it('[entity:post-api-spec-skills-style-forks] POST answers 201 with the copy\'s address and writes the plugin style\'s package into the skills root; refuses a taken slug (409 SKILL_ALREADY_EXISTS), an unknown style (404 SKILL_NOT_FOUND) and a style that does not come from a plugin (400 INVALID_ARGUMENT)', async () => {
+    const r = await forkRig();
+    try {
+      const plugin = r.registry.resolve(PLUGIN_STYLE);
+      const res = await request(r.app).post('/api/spec-skills/style-forks').send({ slug: PLUGIN_STYLE });
+      expect(res.status).toBe(201);
+      expect(res.body).toEqual({ slug: PLUGIN_STYLE, path: `${PLUGIN_STYLE}/SKILL.md` });
+      // The whole package: SKILL.md plus every file the plugin carries.
+      expect(fs.existsSync(path.join(r.skillsDir, PLUGIN_STYLE, 'SKILL.md'))).toBe(true);
+      const fileNames = Object.keys(plugin.files);
+      expect(fileNames.length).toBeGreaterThan(0);
+      for (const f of fileNames) {
+        expect(fs.readFileSync(path.join(r.skillsDir, PLUGIN_STYLE, f), 'utf8'), f).toBe(plugin.files[f]!.content);
+      }
+
+      const again = await request(r.app).post('/api/spec-skills/style-forks').send({ slug: PLUGIN_STYLE });
+      expect(again.status).toBe(409);
+      expect(again.body.error.code).toBe('SKILL_ALREADY_EXISTS');
+
+      const unknown = await request(r.app).post('/api/spec-skills/style-forks').send({ slug: 'no-such-style' });
+      expect(unknown.status).toBe(404);
+      expect(unknown.body.error.code).toBe('SKILL_NOT_FOUND');
+
+      // A style of the `.claude/skills` root is not a plugin's.
+      const userStyle = path.join(r.cwd, '.claude', 'skills', 'team-voice');
+      fs.mkdirSync(userStyle, { recursive: true });
+      fs.writeFileSync(
+        path.join(userStyle, 'SKILL.md'),
+        ['---', 'title: Team Voice', 'description: Ours.', 'version: 1', 'language: en', '---', '', '# Team Voice', ''].join('\n'),
+      );
+      const notPlugin = await request(r.app).post('/api/spec-skills/style-forks').send({ slug: 'team-voice' });
+      expect(notPlugin.status).toBe(400);
+      expect(notPlugin.body.error.code).toBe('INVALID_ARGUMENT');
+      expect(fs.existsSync(path.join(r.skillsDir, 'team-voice'))).toBe(false);
+
+      // POST only.
+      expect((await request(r.app).get('/api/spec-skills/style-forks')).status).toBe(404);
+    } finally {
+      await r.close();
+    }
+  });
+
+  it('[entity:fork-writing-style-request] the body carries `slug`, the style to copy — the local package gets that very slug; a body without it is a 400', async () => {
+    const r = await forkRig();
+    try {
+      const missing = await request(r.app).post('/api/spec-skills/style-forks').send({});
+      expect(missing.status).toBe(400);
+      expect(missing.body.error.code).toBe('INVALID_ARGUMENT');
+      const res = await request(r.app).post('/api/spec-skills/style-forks').send({ slug: PLUGIN_STYLE });
+      expect(res.status).toBe(201);
+      expect(res.body.slug).toBe(PLUGIN_STYLE);
+      expect(fs.existsSync(path.join(r.skillsDir, PLUGIN_STYLE, 'SKILL.md'))).toBe(true);
+    } finally {
+      await r.close();
+    }
+  });
+
+  it('[entity:fork-writing-style-response] the 201 body is exactly { slug, path } — the created package\'s slug and its SKILL.md path relative to the skills root; no content', async () => {
+    const r = await forkRig();
+    try {
+      const res = await request(r.app).post('/api/spec-skills/style-forks').send({ slug: PLUGIN_STYLE });
+      expect(res.status).toBe(201);
+      expect(Object.keys(res.body).sort()).toEqual(['path', 'slug']);
+      expect(res.body.slug).toBe(PLUGIN_STYLE);
+      expect(res.body.path).toBe(`${PLUGIN_STYLE}/SKILL.md`);
+      expect(fs.existsSync(path.join(r.skillsDir, res.body.path as string))).toBe(true);
+      expect(JSON.stringify(res.body)).not.toContain('Layered Vertical Slices');
+    } finally {
+      await r.close();
+    }
+  });
+
+  it('[entity:katalog-operacji-m52#fork_writing_style] the catalog row: project scope, human-mediated, file + ui-notify effects, not idempotent, rest only, the three error codes — and the guard is observable: an existing package of the slug is refused, never overwritten', async () => {
+    const op = CATALOG.require('fork_writing_style');
+    expect(op.scope).toBe('project');
+    expect(op.mediation).toBe('human-mediated');
+    expect(op.sideEffects).toEqual(['file', 'ui-notify']);
+    expect(op.idempotent).toBe(false);
+    expect([...op.errorCodes].sort()).toEqual(['INVALID_ARGUMENT', 'SKILL_ALREADY_EXISTS', 'SKILL_NOT_FOUND']);
+    expect(Object.keys(op.inputSchema)).toEqual(['slug']);
+    expect(op.channels.rest.kind).toBe('direct');
+    for (const ch of ['internal', 'cli', 'mcp'] as const) {
+      const cell = op.channels[ch];
+      expect(cell.kind, ch).toBe('na');
+      expect(cell.kind === 'na' && cell.reason).toContain('settings card');
+    }
+
+    const r = await forkRig();
+    try {
+      // A package of that slug already lies in the skills root (even an invalid one).
+      const own = path.join(r.skillsDir, PLUGIN_STYLE);
+      fs.mkdirSync(own, { recursive: true });
+      fs.writeFileSync(path.join(own, 'notes.md'), 'mine\n');
+      const res = await request(r.app).post('/api/spec-skills/style-forks').send({ slug: PLUGIN_STYLE });
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe('SKILL_ALREADY_EXISTS');
+      expect(fs.readdirSync(own)).toEqual(['notes.md']);
+      expect(fs.readFileSync(path.join(own, 'notes.md'), 'utf8')).toBe('mine\n');
+    } finally {
+      await r.close();
+    }
+  });
+
+  it('[ac:m52-style-fork-keeps-writing-style-config] the fork leaves config.writingStyle unchanged — the active style now resolves to the local copy, which records its origin in forkedFrom', async () => {
+    const r = await forkRig();
+    try {
+      const before = r.configBytes();
+      expect((await request(r.app).get('/api/writing-styles')).body.available.find((s: { slug: string }) => s.slug === PLUGIN_STYLE).source).toBe(
+        'plugin',
+      );
+      const res = await request(r.app).post('/api/spec-skills/style-forks').send({ slug: PLUGIN_STYLE });
+      expect(res.status).toBe(201);
+      expect(r.configBytes()).toBe(before);
+      expect(readConfig(r.cwd).writingStyle).toBe(PLUGIN_STYLE);
+      const styles = (await request(r.app).get('/api/writing-styles')).body;
+      expect(styles.active).toBe(PLUGIN_STYLE);
+      expect(styles.available.find((s: { slug: string }) => s.slug === PLUGIN_STYLE).source).toBe('project-rooted');
+      const matter = (await import('gray-matter')).default;
+      const data = matter(fs.readFileSync(path.join(r.skillsDir, PLUGIN_STYLE, 'SKILL.md'), 'utf8'), {}).data;
+      expect(data).toMatchObject({ scope: 'writing-style', title: 'Layered Vertical Slices' });
+      expect(String(data.forkedFrom)).toContain(PLUGIN_STYLE);
+      // A header the skills root reads (the disk sources skip a version above the supported one).
+      const { SUPPORTED_SKILL_VERSION } = await import('../services/skill-registry.js');
+      expect(data.version).toBeLessThanOrEqual(SUPPORTED_SKILL_VERSION);
+    } finally {
+      await r.close();
+    }
+  });
+});

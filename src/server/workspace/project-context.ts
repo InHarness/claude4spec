@@ -131,6 +131,7 @@ import {
 } from '../services/project-exposed-skills.js';
 import { listExposedProjectRows, listExposedProjects } from '../services/exposed-projects.js';
 import { specSkillsRouter } from '../routes/spec-skills.js';
+import { forkWritingStyle } from '../services/style-fork.js';
 import { checkWritingStyleAtStart } from '../services/writing-style-start.js';
 import { fanPluginSkills, loadOverlayLayer } from './project-skills.js';
 import { chatRouter } from '../routes/chat.js';
@@ -1508,6 +1509,20 @@ async function buildInner(
     specSkillsRouter({
       listExposedProjects: () =>
         listExposedProjectRows(projectId, readOwnSkillConfig().uses, listExposedProjects(workspaceProjects())),
+      // 2.1.9 (M52 row 3): `fork_writing_style` over this context's registry and
+      // the facade of its root of kind `skills`; `config.writingStyle` untouched.
+      forkWritingStyle: (input) =>
+        forkWritingStyle(
+          {
+            registry: skillRegistry,
+            skillsRoot: () => {
+              const root = rootRegistry.byKind(SKILLS_ROOT_KIND)[0];
+              const rt = root ? rootById.get(root.id) : undefined;
+              return rt ? { pages: rt.pages } : undefined;
+            },
+          },
+          input,
+        ),
     }),
   );
   router.use('/releases', releasesRouter(releaseService, ws, gitService, () => rootRegistry.pages()));

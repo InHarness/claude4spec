@@ -858,11 +858,15 @@ describe('GET /writing-styles — where a style comes from (0.2.57)', () => {
    * its consumers is that `source` is one of exactly two values, and a third
    * appearing is the regression, whatever it is called.
    */
-  it('serves every style as either "user" or "plugin" — the bundled class is gone', async () => {
+  it('serves every style with a source from the registry\'s set — the bundled class is gone', async () => {
+    // 2.1.9: the set is the registry's `SkillSource` (project-rooted and
+    // project-exposed joined it); the all-sources rig is writing-styles.route.test.ts.
+    const { SKILL_SOURCES } = await import('../../shared/writing-styles.js');
     const res = await request(app()).get('/writing-styles');
     const sources = (res.body.available as Array<{ source: string }>).map((s) => s.source);
     expect(sources.length).toBeGreaterThan(0);
-    expect([...new Set(sources)].filter((x) => x !== 'user' && x !== 'plugin')).toEqual([]);
+    expect([...new Set(sources)].filter((x) => !(SKILL_SOURCES as readonly string[]).includes(x))).toEqual([]);
+    expect(sources).not.toContain('bundled');
     expect(res.body.active).toBe(STYLE);
   });
 });

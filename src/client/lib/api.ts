@@ -398,28 +398,12 @@ export const agentCredentialsApi = {
   },
 };
 
-export interface WritingStyleItem {
-  slug: string;
-  title: string;
-  description: string;
-  version: number;
-  language: string;
-  /**
-   * `user` = from a `.claude/skills` root (project or global); `plugin` =
-   * contributed by a plugin envelope.
-   *
-   * 0.2.66 dropped the third value, `'bundled'`. The npm package no longer carries
-   * a skills root, so the badge distinction the UI draws is now "yours" against
-   * "came with a package" rather than "yours" against "built in". No field was
-   * added or removed with it — only this union narrowed.
-   */
-  source: 'user' | 'plugin';
-}
-
-export interface WritingStylesResponse {
-  active: string | null;
-  available: WritingStyleItem[];
-}
+/**
+ * 2.1.9: the DTOs live in `shared/writing-styles.ts` (one type for the route and
+ * the UI). `source` is any registry source, not two values.
+ */
+export type { WritingStyleSummary as WritingStyleItem, WritingStylesResponse } from '../../shared/writing-styles.js';
+import type { WritingStylesResponse } from '../../shared/writing-styles.js';
 
 export const writingStylesApi = {
   async get(): Promise<WritingStylesResponse> {

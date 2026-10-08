@@ -1,5 +1,6 @@
 import type { WritingStyleItem } from '../../lib/api.js';
 import { StyleOption } from '../StyleOption.js';
+import { WRITING_STYLE_SOURCE_BADGE } from '../../../shared/writing-styles.js';
 
 const NONE_KEY = '__none__';
 
@@ -40,7 +41,7 @@ export function WritingStyleList({
             title={s.title}
             description={s.description}
             selected={selection === s.slug}
-            badge={s.source === 'user' ? 'yours' : 'plugin'}
+            badge={WRITING_STYLE_SOURCE_BADGE[s.source] ?? s.source}
             onClick={() => onSelect(s.slug)}
             radioName="writing-style"
             radioValue={s.slug}

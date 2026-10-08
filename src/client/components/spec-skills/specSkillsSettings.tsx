@@ -1,6 +1,10 @@
-import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ExposedProjectRow } from '../../../shared/spec-skills.js';
+import type { WritingStylesResponse } from '../../../shared/writing-styles.js';
+import { ApiError } from '../../lib/api-core.js';
 import { EXPOSED_PROJECTS_QUERY_KEY, specSkillsApi } from '../../lib/spec-skills-api.js';
+import { useWritingStyles } from '../../hooks/useWritingStyles.js';
 import { ElementField } from '../settings/controls.js';
 import { EFFECT, type ElementContext, type SettingsContribution, type SettingsElementDecl } from '../settings/registry.js';
 
@@ -8,8 +12,8 @@ import { EFFECT, type ElementContext, type SettingsContribution, type SettingsEl
  * 2.1.9 — what the spec-skills module (M52 L17 `1osy2o5r`) declares on
  * `/settings`: the `#skills` card in the Agent group — the project exposed as a
  * skill of its workspace (toggle + exposure fields) and the skill projects it
- * uses. The element "Fork writing style locally" (weight 80) belongs to the
- * writing-style fork and is not declared here.
+ * uses — and the element "Fork writing style locally" (weight 80, M52
+ * `oqhvnhyf`), an action outside the card's shared save.
  */
 
 const EXPOSED = ['skill', 'exposed'] as const;
@@ -126,6 +130,98 @@ function UsedSkillProjectsElement({ draft, decl }: ElementContext & { decl: Sett
   );
 }
 
+/** Inline messages of "Fork writing style locally" (M52 `oqhvnhyf`). */
+export const FORK_DONE_MESSAGE = "Copied to the project's skills. The local copy now takes precedence over the plugin.";
+export const FORK_CONFLICT_MESSAGE = 'A skill with this name already exists in this project.';
+
+/**
+ * Visibility of "Fork writing style locally": the slug of the active writing
+ * style when its winning entry comes from a plugin (so it is not shadowed by a
+ * package of another source), otherwise `null` — the element is hidden.
+ */
+export function forkableWritingStyle(styles: WritingStylesResponse | undefined): string | null {
+  if (!styles?.active) return null;
+  const active = styles.available.find((s) => s.slug === styles.active);
+  return active?.source === 'plugin' ? active.slug : null;
+}
+
+/** Ready → in progress → done, or a refusal (the conflict has its own message). */
+export type ForkState = { kind: 'ready' } | { kind: 'pending' } | { kind: 'done' } | { kind: 'failed'; message: string };
+
+/** The refusal of a fork, in the words the card shows inline. */
+export function forkFailureMessage(err: unknown): string {
+  if (err instanceof ApiError && err.code === 'SKILL_ALREADY_EXISTS') return FORK_CONFLICT_MESSAGE;
+  return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * The element, presentational: one button, blocked while the fork runs, and the
+ * inline result under it. No dialog, no toast.
+ */
+export function ForkWritingStyleControl({ state, onFork }: { state: ForkState; onFork: () => void }) {
+  return (
+    <div className="flex flex-col gap-1.5" data-testid="fork-writing-style">
+      <div>
+        <button
+          type="button"
+          className="rounded-md px-3 py-1.5 text-[12.5px] font-medium"
+          style={{ border: '1px solid var(--c-hair)', color: 'var(--c-ink)', background: 'var(--c-bg)' }}
+          disabled={state.kind === 'pending'}
+          onClick={onFork}
+        >
+          Fork writing style locally
+        </button>
+      </div>
+      {state.kind === 'done' ? (
+        <span className="text-[12px]" style={{ color: 'var(--c-muted)' }} data-fork-result="done">
+          {FORK_DONE_MESSAGE}
+        </span>
+      ) : null}
+      {state.kind === 'failed' ? (
+        <span className="text-[12px]" style={{ color: '#a8321a' }} data-fork-result="failed">
+          {state.message}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * "Fork writing style locally" (weight 80): calls `POST /api/spec-skills/style-forks`
+ * with the active style's slug. Shown only while the active style comes from a
+ * plugin — a condition on a query, so it lives here rather than in `visible` —
+ * and kept after a fork so its result stays readable. `config.writingStyle` is
+ * not touched; the writing-styles list is refetched (the active style now comes
+ * from the project's skills root), and the new package's accordion arrives with
+ * the sidebar's own `sidebar:accordions-changed`.
+ */
+function ForkWritingStyleElement(_props: ElementContext & { decl: SettingsElementDecl }) {
+  const { data: styles } = useWritingStyles();
+  const queryClient = useQueryClient();
+  const [state, setState] = useState<ForkState>({ kind: 'ready' });
+  const [slug, setSlug] = useState<string | null>(null);
+  const forkable = forkableWritingStyle(styles);
+  const target = slug ?? forkable;
+  if (target === null || (forkable === null && state.kind === 'ready')) return null;
+  const onFork = () => {
+    setSlug(target);
+    setState({ kind: 'pending' });
+    specSkillsApi.forkWritingStyle(target).then(
+      () => {
+        setState({ kind: 'done' });
+        void queryClient.invalidateQueries({ queryKey: ['writing-styles'] });
+      },
+      (err: unknown) => setState({ kind: 'failed', message: forkFailureMessage(err) }),
+    );
+  };
+  return (
+    // The button carries the element's name; the field adds no second label.
+    <ElementField asLabel={false}>
+      <ForkWritingStyleControl state={state} onFork={onFork} />
+    </ElementField>
+  );
+}
+
 export const SPEC_SKILLS_SETTINGS: SettingsContribution = {
   cards: [
     {
@@ -227,6 +323,15 @@ export const SPEC_SKILLS_SETTINGS: SettingsContribution = {
       effectMessage: EFFECT.newThread,
       component: UsedSkillProjectsElement,
       afterSave: ({ queryClient }) => queryClient.invalidateQueries({ queryKey: EXPOSED_PROJECTS_QUERY_KEY }),
+    },
+    {
+      id: 'fork-writing-style',
+      card: 'skills',
+      weight: 80,
+      kind: 'custom',
+      owner: 'spec-skills',
+      label: 'Fork writing style locally',
+      component: ForkWritingStyleElement,
     },
   ],
 };

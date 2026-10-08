@@ -41,6 +41,11 @@ function body(raw: string): string {
  * own frontmatter is now inert (the registry reads these fields, not the file), but
  * it is what an author reads first.
  *
+ * 2.1.9 (M15 `m15wsauth`): the scaffold writes through `update_skill_file` into the
+ * project's skills root (`.claude4spec/skills/<slug>/`), so it works with direct file
+ * access blocked; it does not write in `brief`/`ask` (no `spec-skill-tools` there),
+ * and a request for a non-style package is sent to `skill-author`.
+ *
  * No `files`: this skill has always been a single `SKILL.md`. The instruction it
  * carries tells the AGENT to write a `workflows/` directory into the style it
  * scaffolds — that is the skill's OUTPUT, not part of its own package, and giving
@@ -51,7 +56,7 @@ export const writingStyleAuthorSkill: PluginSkillContribution = {
   slug: 'writing-style-author',
   title: 'Writing Style Author',
   description:
-    "Scaffolds a new writing-style skill from a chat request — e.g. 'create a writing style for our team that writes terse, code-first briefs'. Open it via load_skill_file('writing-style-author') when the user asks to create/define/author a new writing style. Produces a project-local .claude/skills/<slug>/ package — SKILL.md plus a workflows/ directory — selectable from the very next query.",
+    "Scaffolds a new writing-style skill from a chat request — e.g. 'create a writing style for our team that writes terse, code-first briefs'. Open it via load_skill_file('writing-style-author') when the user asks to create/define/author a new writing style. Writes a package into the project's skills root (.claude4spec/skills/<slug>/ — SKILL.md plus a workflows/ directory) with update_skill_file, selectable from the very next query. Writing styles only: any other kind of skill package belongs to the skill-author skill.",
   version: 1,
   language: 'en',
   scope: 'contextual',

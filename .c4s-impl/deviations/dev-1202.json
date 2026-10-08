@@ -1,0 +1,16 @@
+{
+  "id": "dev-1202",
+  "kind": "missing",
+  "blocking": false,
+  "address": "u12-writing-styles/m6ukdbsc",
+  "slugs": [
+    "writing-style-summary",
+    "ac-styl-user-authored-pojawia-sie-w-dropdow"
+  ],
+  "text": "M15 L17 (`m6ukdbsc`) asks the Writing style select to badge options so that every `source` value is told apart (not two), and `ac-styl-user-authored-pojawia-sie-w-dropdow` asks for the `user` style badged by its source distinctly from the others — but no literal badge text is given. Built (shared `WRITING_STYLE_SOURCE_BADGE`, used by the settings select and the onboarding list): `user` → `yours` (unchanged), `plugin` → `plugin` (unchanged), `project-rooted` → `project skill`, `project-exposed` → `attached project`. Please state the literal labels.",
+  "assumption": "ASSUMPTION:dev-1202 — badges `project skill` / `attached project` for the two new sources.",
+  "unit": "u12-writing-styles",
+  "portion": "u12-writing-styles/p1-l2-l17",
+  "sent": true,
+  "patchPath": "2-1-8-to-2-1-9-workflow-3-u12-writing-styles-m6ukdbsc-m15-l17-m6ukdbsc-asks-the-writing-style-select-to-ba.md"
+}

@@ -1,5 +1,5 @@
-import { apiFetch, unwrap } from './api-core.js';
-import type { ExposedProjectRow } from '../../shared/spec-skills.js';
+import { apiFetch, handle, unwrap } from './api-core.js';
+import type { ExposedProjectRow, ForkWritingStyleRequest, ForkWritingStyleResponse } from '../../shared/spec-skills.js';
 
 /**
  * M52 — client for `GET /api/spec-skills/exposed-projects` (operation
@@ -9,6 +9,21 @@ import type { ExposedProjectRow } from '../../shared/spec-skills.js';
 export const specSkillsApi = {
   async exposedProjects(): Promise<ExposedProjectRow[]> {
     return unwrap<ExposedProjectRow[]>(await apiFetch('/api/spec-skills/exposed-projects'));
+  },
+  /**
+   * `POST /api/spec-skills/style-forks` (operation `fork_writing_style`): copy the
+   * active plugin writing style into the project's `skills` root. 201 `{ slug, path }`;
+   * a taken slug rejects with `ApiError` code `SKILL_ALREADY_EXISTS`.
+   */
+  async forkWritingStyle(slug: string): Promise<ForkWritingStyleResponse> {
+    const body: ForkWritingStyleRequest = { slug };
+    return handle<ForkWritingStyleResponse>(
+      await apiFetch('/api/spec-skills/style-forks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+    );
   },
 };
 

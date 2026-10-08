@@ -928,7 +928,10 @@ describe('buildSystemPrompt — <agent_filesystem_access> (0.2.53)', () => {
   it('names the capabilities the posture costs', () => {
     const out = build({ contextType: 'chat', agentFilesystemAccess: { enabled: false } });
     expect(out).toContain('Fix it with Agent');
-    expect(out).toContain('scaffolding a new writing style');
+    expect(out).toContain('the c4s CLI');
+    // 2.1.9: scaffolding a writing style writes through `update_skill_file` now —
+    // the posture no longer costs it, so the block must not name it.
+    expect(out).not.toContain('scaffolding a new writing style');
     // 0.2.64: a brief against the current state reads no repository — it is not
     // on this list, and naming it here would send the user after the wrong setting.
     expect(out).not.toContain('source: analysis');

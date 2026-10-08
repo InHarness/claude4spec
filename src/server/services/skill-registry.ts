@@ -4,6 +4,7 @@ import path from 'node:path';
 import matter from 'gray-matter';
 import type { PluginSkillContribution, WritingStyleContribution } from '../../shared/plugin-host/manifest.js';
 import type { ChatContextType } from '../../shared/entities.js';
+import type { SkillSource } from '../../shared/writing-styles.js';
 import { readConfig } from '../config.js';
 
 export type SkillScope = 'writing-style' | 'contextual';
@@ -18,7 +19,7 @@ export type SkillScope = 'writing-style' | 'contextual';
  * the registry only names them. Both are registered per project context by M52
  * (`project-rooted-skills.ts`, `project-exposed-skills.ts`).
  */
-export type SkillSource = 'user' | 'plugin' | 'project-rooted' | 'project-exposed';
+export type { SkillSource } from '../../shared/writing-styles.js';
 
 /**
  * A rung of the precedence chain (M37 `aw9kcadc`). The chain is the REGISTRY's

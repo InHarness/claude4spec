@@ -1,5 +1,6 @@
 import { useWritingStyles } from '../../hooks/useWritingStyles.js';
 import { EFFECT, type SettingsContribution } from '../settings/registry.js';
+import { writingStyleOptionLabel } from '../../../shared/writing-styles.js';
 
 /**
  * 0.2.113 — the writing-styles module's element on the Project card. The choice
@@ -22,7 +23,8 @@ export const WRITING_STYLE_SETTINGS: SettingsContribution = {
       useOptions: () =>
         useWritingStyles().data?.available.map((s) => ({
           value: s.slug,
-          label: `${s.title}${s.source === 'user' ? ' — yours' : ' — plugin'}`,
+          // 2.1.9 (M15 L17 `m6ukdbsc`): a distinct badge per `source` value, not two.
+          label: writingStyleOptionLabel(s),
         })),
       validate: (_value, { config }) =>
         config.writingStyleUnavailable ? { warning: `The saved style is unavailable: ${config.writingStyleUnavailable.reason}` } : null,

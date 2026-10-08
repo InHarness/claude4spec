@@ -38,3 +38,10 @@ get-api-spec-skills-exposed-projects → src/server/routes/spec-skills.ts (`GET 
 exposed-project-row → src/shared/spec-skills.ts (`ExposedProjectRow`, `ExposedProjectStatus`)
 katalog-operacji-m52#list_exposed_projects → src/server/operations/core-operations.ts (`CATALOG.register({ name: 'list_exposed_projects', … })`; operation function src/server/services/exposed-projects.ts `listExposedProjectRows`)
 szablon-workspace-projects → src/server/services/system-prompt/blocks/m31-workspace.ts (`buildWorkspaceProjects`: `skill="exposed"` from `PeerProject.skillExposed`, set in src/server/workspace/project-context.ts `listWorkspacePeers` from the M52 list `listExposedProjects`)
+post-api-spec-skills-style-forks → src/server/routes/spec-skills.ts (`POST /style-forks`, router `specSkillsRouter`, wired in src/server/workspace/project-context.ts; operation src/server/services/style-fork.ts `forkWritingStyle`)
+fork-writing-style-request → src/shared/spec-skills.ts (`ForkWritingStyleRequest`)
+fork-writing-style-response → src/shared/spec-skills.ts (`ForkWritingStyleResponse`)
+writing-style-summary → src/shared/writing-styles.ts (`WritingStyleSummary`, `source: SkillSource` = `SKILL_SOURCES`; re-exported as `SkillSource` by src/server/services/skill-registry.ts), served by src/server/routes/config.ts `GET /writing-styles`
+katalog-operacji-m52#fork_writing_style → src/server/operations/core-operations.ts (`CATALOG.register({ name: 'fork_writing_style', … })`; `SKILL_ALREADY_EXISTS` 409 in src/server/operations/error-codes.ts)
+szablon-project-writing-skill → src/server/services/system-prompt/blocks/m15-writing-style.ts (`buildProjectWritingSkill`)
+szablon-agent-filesystem-access → src/server/services/system-prompt/blocks/m05-agent-scope.ts (`buildAgentFilesystemAccess`)

@@ -24,3 +24,23 @@ export interface ExposedProjectRow {
   uses: boolean;
   status: ExposedProjectStatus;
 }
+
+/**
+ * DTO `fork-writing-style-request` — `POST /api/spec-skills/style-forks`, the
+ * `rest` rendering of `fork_writing_style` (sheet `katalog-operacji-m52`, row 3).
+ */
+export interface ForkWritingStyleRequest {
+  /** Slug of the active writing style to copy; the local package gets the same slug. */
+  slug: string;
+}
+
+/**
+ * DTO `fork-writing-style-response` — the address of the copy (201). Echo-free:
+ * the copy's content is never carried back.
+ */
+export interface ForkWritingStyleResponse {
+  /** Slug of the package created in the `skills` root. */
+  slug: string;
+  /** Path of the package's `SKILL.md`, relative to the `skills` root. */
+  path: string;
+}
