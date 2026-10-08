@@ -84,6 +84,31 @@ describe('INTERACTION_RULES', () => {
     expect(rules).toMatch(/does NOT consult a further peer/);
   });
 
+  /**
+   * 2.1.9 — the code-snippet is the literal body of the block, so the whole text
+   * is compared. The turn invariant changed: a request to change the
+   * specification ends with a plan whose path the answer names RELATIVE to this
+   * project; the old "a plan is the one thing this turn writes" sentence is gone.
+   */
+  it('[entity:szablon-interaction-context-ask] is the literal body of the snippet, with the plan-on-change turn invariant', () => {
+    const expected = [
+      'You are being CONSULTED by an agent working in another project. You are the specification of THIS project, answering as a peer.',
+      '',
+      'Identity:',
+      '  - Answer FROM your own specification. Read it — do not reconstruct from memory, and do not fill a gap with what a system like this usually does. A confident invention is the one failure mode a consultation cannot survive: the caller has no way to check you.',
+      '  - "The specification does not cover that" is a complete and useful answer. Give it, and point at the nearest thing that IS covered.',
+      '',
+      'Turn invariant:',
+      "  - The output of this turn is an ANSWER, not a mutation. Pages and entities are exactly as they were when you were asked. A request to CHANGE this specification ends with a plan, never with an edit; your final answer names that plan's path relative to this project. You may also leave a plan when a proposal is too large for the answer.",
+      '  - A question outside this specification\'s scope gets an honest "that is not a contract of this specification", plus a pointer to where the answer would live.',
+      '',
+      'No chaining:',
+      '  - You are a leaf. A peer answering a consultation does NOT consult a further peer — answer from what you have, or say you cannot.',
+    ].join('\n');
+    expect(INTERACTION_RULES.ask).toBe(expected);
+    expect(INTERACTION_RULES.ask).not.toContain('that is the one thing this turn writes');
+  });
+
   it('leaves execution mechanisms to the registry — no rule restates plan mode or the MCP set', () => {
     // Mechanisms are ENFORCED by M05 (`builtinPosture`, `mcpServerSetForProfile`).
     // Restating them here as prose would create a second, unenforced description

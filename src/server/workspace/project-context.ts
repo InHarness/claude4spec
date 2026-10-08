@@ -50,6 +50,7 @@ import { BriefService } from '../services/brief.js';
 import { briefsRouter } from '../routes/briefs.js';
 import { patchesRouter } from '../routes/patches.js';
 import { metaRouter } from '../routes/meta.js';
+import { createExpansionContext } from '../discovery/expansion-context.js';
 import { rootRenameRouter } from '../routes/config-rename.js';
 import { mcpConfigRouter } from '../routes/mcp-config.js';
 import { PROJECTION_IDS, ProjectionStatusRegistry, type ProjectionId } from '../services/projection-status.js';
@@ -1229,7 +1230,16 @@ async function buildInner(
    * discovery route and a protocol mount must not be mistaken for each other.
    */
   router.use('/_meta/mcp-config', mcpConfigRouter({ registry, workspace, projectId }));
-  router.use('/_meta', metaRouter(discovery, pluginHost));
+  // 2.1.9 — `POST /_meta/resolve-page` (`c4s resolve`) runs the M19 embed
+  // expansion in THIS project's context: its discovery core, section index and
+  // page-link index.
+  router.use(
+    '/_meta',
+    metaRouter(
+      discovery,
+      createExpansionContext({ discovery, sections: sectionsService, links: pagesLinkIndexer }),
+    ),
+  );
   /**
    * 0.2.13 — `POST /api/patches`. A slice-specific route, deliberately outside
    * the generic `/api/artifacts/:kind/*` family: a patch's provenance is DRIFT

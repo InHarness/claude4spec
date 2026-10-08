@@ -1,0 +1,43 @@
+{
+  "role": "reviewer",
+  "scope": {
+    "kind": "unit",
+    "id": "u06-c4s-resolve-ask",
+    "base": "a590052262c6e8d5ac512a9972c01713a7dc3e7e"
+  },
+  "findings": [
+    {
+      "id": "rev-0001",
+      "file": "src/server/services/ask-answer.ts",
+      "line": 53,
+      "blocking": false,
+      "reason": "'Plans the turn left' is a project-wide before/after diff of listPlans(). Any plan created or changed by another thread (chat UI, another ask) during this ask turn, which can run for minutes up to ASK_TURN_TIMEOUT_MS, is attributed to this turn and its path is appended to the answer sent to the caller. Narrow the set to plans linked to this thread (PlanService already tracks plan→thread links, e.g. findLastThreadIdForPlan / threads on create).",
+      "portion": "u06-c4s-resolve-ask/p1-l3-l16"
+    },
+    {
+      "id": "rev-0002",
+      "file": "src/server/services/ask-answer.ts",
+      "line": 80,
+      "blocking": false,
+      "reason": "The scrub only covers deps.cwd (and its realpath). A peer root whose `dir` lies outside the project directory (deps.roots) still leaks absolute paths into the answer, e.g. a page path the agent quotes from such a root. Consider scrubbing every root dir (rewritten relative to the project) too, so 'no absolute path into the peer project' holds for all of its roots.",
+      "portion": "u06-c4s-resolve-ask/p1-l3-l16"
+    },
+    {
+      "id": "rev-0003",
+      "file": "src/server/services/ask-answer.ts",
+      "line": 98,
+      "blocking": false,
+      "reason": "The `<dir>/rest` → `rest` replacement has no left boundary, so the directory is also stripped when it occurs inside a longer token: `file:///Users/x/proj/a.md` becomes `file://a.md`, `/mnt/backup/Users/x/proj/a` becomes `/mnt/backupa`. Add a left guard (start, whitespace, quote, backtick, paren, or `file://`) so only a path that starts with the directory is rewritten.",
+      "portion": "u06-c4s-resolve-ask/p1-l3-l16"
+    },
+    {
+      "id": "rev-0004",
+      "file": ".claude/skills/c4s-spec-reader/SKILL.md",
+      "line": 42,
+      "blocking": false,
+      "reason": "The tracked, hand-edited copy of the spec-reader skill still documents `--format json` as `{ content, resolved: [...] }`. The wire shape is now `{ format, text, resolved }` with `kind/start/end` entries, and the generated template was updated. The implementer skipped this copy on purpose (it is hand-edited), but agents in this repo read this copy, so a human should decide whether to update it in the same change.",
+      "portion": "u06-c4s-resolve-ask/p1-l3-l16"
+    }
+  ],
+  "deviations": []
+}

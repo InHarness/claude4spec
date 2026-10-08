@@ -4,23 +4,24 @@ import type { ParsedArgs } from '../args.js';
 import { optionalString } from '../args.js';
 import { delegatePost } from '../delegate.js';
 import { CliError } from '../errors.js';
-import type { ResolvedEntry } from '../../../server/serialization/resolve-page.js';
+import type { ExpandEmbedsResult } from '../../../core/references/types.js';
 import type { CliCommandContribution } from '../registry.js';
 
 /**
- * `c4s resolve <file.md>` — expand the XML tags in a local markdown file.
+ * `c4s resolve <file.md>` — a thin shell: read a local file, hand its text to
+ * the M19 embed-expansion core, print what the core returns.
  *
- * A TRANSPORT-SIDE COMPOSITION, not a core operation, and deliberately so: a tag
- * is an EDGE to another entity, and an agent reading the specification wants the
- * edge, not a payload written over it. There is no MCP tool for this and there
- * must not be one.
+ * 2.1.9 (M11 `m11dreso`): the expansion runs on the server, in the context of
+ * the project this invocation resolved — `POST /api/_meta/resolve-page` calls
+ * `expandEmbeds` with that project's context (entity reader = `get_entities`).
+ * The command has no algorithm of its own: it recognises no tags, maps no tag
+ * to a projection and replaces nothing. The result format (`inline` | `json`)
+ * and the fate of a tag with a broken slug are the core's; `--format` only
+ * selects which of the core's formats to ask for.
  *
- * 0.2.13 — `server-delegating`, over `POST /api/_meta/resolve-page`. The file
- * still comes off the CALLER'S disk — that is why the content travels in the
- * body rather than a path in a query string, which would resolve against the
- * server's filesystem whenever the two differ. What moved is the expansion: the
- * CLI used to build a discovery core to look the entities up, and that was the
- * last operation it executed locally.
+ * The file still comes off the CALLER'S disk — that is why the content travels
+ * in the body rather than a path in a query string, which would resolve against
+ * the server's filesystem whenever the two differ.
  */
 export async function runResolve(args: ParsedArgs): Promise<void> {
   const filePath = args.positional[0];
@@ -37,21 +38,16 @@ export async function runResolve(args: ParsedArgs): Promise<void> {
     throw new CliError('INVALID_ARGS', `--format must be 'inline' or 'json', got '${format}'`);
   }
 
-  const md = fs.readFileSync(abs, 'utf8');
-  const result = (await delegatePost(args, '/_meta/resolve-page', { content: md })) as {
-    content: string;
-    inlineContent: string;
-    resolved: ResolvedEntry[];
-  };
+  const content = fs.readFileSync(abs, 'utf8');
+  const result = (await delegatePost(args, '/_meta/resolve-page', { content, format })) as ExpandEmbedsResult;
 
   if (format === 'json') {
-    const sidecar = result.resolved.map(({ inline: _inline, ...rest }) => rest);
-    process.stdout.write(JSON.stringify({ content: result.content, resolved: sidecar }, null, 2) + '\n');
+    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     return;
   }
 
-  process.stdout.write(result.inlineContent);
-  if (!result.inlineContent.endsWith('\n')) process.stdout.write('\n');
+  process.stdout.write(result.text);
+  if (!result.text.endsWith('\n')) process.stdout.write('\n');
 }
 
 export const resolveCommand: CliCommandContribution = {

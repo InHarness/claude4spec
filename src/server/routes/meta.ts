@@ -38,8 +38,8 @@
 
 import { Router } from 'express';
 import type { DiscoveryCore } from '../discovery/types.js';
-import type { ProjectPluginHost } from '../core/plugin-host/types.js';
-import { resolvePageContent } from '../serialization/resolve-page.js';
+import { expandEmbeds } from '../../core/references/index.js';
+import type { ExpansionContext } from '../../core/references/types.js';
 import { DomainError } from '../services/tags.js';
 import { errorHandler } from './errors.js';
 import { commaList, positiveInt } from './query-params.js';
@@ -48,7 +48,7 @@ function optionalString(raw: unknown): string | undefined {
   return typeof raw === 'string' && raw.trim() !== '' ? raw : undefined;
 }
 
-export function metaRouter(discovery: DiscoveryCore, host: ProjectPluginHost): Router {
+export function metaRouter(discovery: DiscoveryCore, expansion: ExpansionContext): Router {
   const router = Router();
 
   /**
@@ -140,37 +140,34 @@ export function metaRouter(discovery: DiscoveryCore, host: ProjectPluginHost): R
   });
 
   /**
-   * 0.2.13 (tier C) — `c4s resolve`, and NOT a catalog operation.
+   * `c4s resolve` — NOT a catalog operation, and not an algorithm of this file.
    *
-   * Everything else in this file renders an operation. This does not, and the
-   * distinction is worth keeping visible: resolving is a TRANSPORT-SIDE
-   * COMPOSITION over `get_entities`/`list_entities` — it reads a markdown file
-   * and pastes the entities its tags name back over the tags. `resolve-page.ts`
-   * says why that must never become a tool: an agent reading a specification
-   * wants the EDGE a tag is, not a payload written over it. Adding it to the
-   * catalog would put that payload in every channel.
+   * 2.1.9 (M11 `m11dreso`): the expansion is the M19 embed-expansion core
+   * (`expandEmbeds`, `src/core/references/expand-embeds.ts`), run in the context
+   * of THIS project — the `ExpansionContext` this router is handed is built from
+   * the project's discovery core (`get_entities` is its entity reader), section
+   * index and page-link index. The route adds nothing but the HTTP envelope: the
+   * result format (`inline` | `json`) and the fate of a tag whose slug is broken
+   * are the core's. The transport-side composition that used to live in
+   * `serialization/resolve-page.ts` (its own tag-to-projection map and its own
+   * `resolved[]` sidecar) is gone.
    *
    * It is a POST with the content in the body because the file is on the
    * CALLER'S disk. `c4s resolve <file.md>` is run against a working copy the
    * server may not be able to see — a path in a query string would resolve
    * against the wrong filesystem, silently, whenever the two differ.
-   *
-   * The composition still executes in the server process, which is the point of
-   * the change: the CLI used to build a discovery core of its own to do this,
-   * and that was the last operation it executed locally.
    */
-  router.post('/resolve-page', (req, res, next) => {
+  router.post('/resolve-page', async (req, res, next) => {
     try {
-      const body = (req.body ?? {}) as { content?: unknown };
+      const body = (req.body ?? {}) as { content?: unknown; format?: unknown };
       if (typeof body.content !== 'string') {
         throw new DomainError('VALIDATION', 'content must be a string (the markdown to resolve)');
       }
-      const { resolved, inlineContent } = resolvePageContent(body.content, {
-        discovery,
-        activeTypes: host.listEntities().map((m) => m.type),
-        availableTypes: host.listAvailable().map((m) => m.type),
-      });
-      res.json({ content: body.content, inlineContent, resolved });
+      const format = body.format ?? 'inline';
+      if (format !== 'inline' && format !== 'json') {
+        throw new DomainError('VALIDATION', `format must be 'inline' or 'json', got '${String(format)}'`);
+      }
+      res.json(await expandEmbeds(body.content, expansion, { format }));
     } catch (err) {
       next(err);
     }

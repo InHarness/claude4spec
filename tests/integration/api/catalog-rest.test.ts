@@ -294,18 +294,38 @@ describe('POST /api/_meta/resolve-page', () => {
   });
   afterEach(() => t.cleanup());
 
-  it('resolves the tags in a markdown body the caller sent, and hands back the sidecar', async () => {
+  // 2.1.9 — the route answers with the M19 expansion core's result, in the
+  // format the caller asked for (`inline` by default).
+  it('expands the tags in a markdown body the caller sent through the M19 core — inline by default', async () => {
     const content = `Intro\n\n<inline_mention type="ac" slug="${alphaSlug}"/>\n`;
     const res = await request(t.app)
       .post('/api/_meta/resolve-page')
       .send({ content })
       .expect(200);
-    expect(res.body.content).toBe(content);
-    expect(Array.isArray(res.body.resolved)).toBe(true);
-    expect(res.body.resolved[0].tag).toBe('inline_mention');
-    // The inline rendering is what `c4s resolve` prints in its default format.
-    expect(typeof res.body.inlineContent).toBe('string');
-    expect(res.body.inlineContent).not.toContain('<inline_mention');
+    expect(res.body.format).toBe('inline');
+    expect(res.body.text).not.toContain('<inline_mention');
+    expect(res.body.text).toContain('alpha');
+    expect(res.body.resolved[0].kind).toBe('inline_mention');
+  });
+
+  it('`format: json` returns the original text plus `resolved[]`', async () => {
+    const content = `Intro\n\n<inline_mention type="ac" slug="${alphaSlug}"/>\n`;
+    const res = await request(t.app)
+      .post('/api/_meta/resolve-page')
+      .send({ content, format: 'json' })
+      .expect(200);
+    expect(res.body.format).toBe('json');
+    expect(res.body.text).toBe(content);
+    expect(res.body.resolved[0].kind).toBe('inline_mention');
+    expect(res.body.resolved[0].error).toBeUndefined();
+  });
+
+  it('refuses a format the core does not define', async () => {
+    const res = await request(t.app)
+      .post('/api/_meta/resolve-page')
+      .send({ content: 'x', format: 'html' })
+      .expect(400);
+    expect(res.body.error.code).toBe('VALIDATION');
   });
 
   it('refuses a body with no content — the markdown is the whole input', async () => {

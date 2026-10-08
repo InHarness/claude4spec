@@ -122,8 +122,9 @@ export interface CliCommandContribution {
  * An agent turn is not a catalog operation — the catalog's subject is
  * specification CONTENT (or a turn OVER that content addressed as one), and
  * these two address the agent runtime itself: they create a thread and run a
- * turn on it. `resolve` is the other kind of exception: it is a composition over
- * `get_entities`/`list_entities` and deliberately has no operation of its own,
+ * turn on it. `resolve` is the other kind of exception: it reads a local file
+ * and delegates its expansion to the M19 embed-expansion core (whose entity
+ * reader is `get_entities`), and deliberately has no operation of its own,
  * because an expanded embed hands the consumer a payload where it had an edge.
  *
  * `plugins` (0.2.13 item 25) is the third kind. Its subject is not

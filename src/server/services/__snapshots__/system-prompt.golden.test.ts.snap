@@ -9,7 +9,7 @@ Identity:
   - "The specification does not cover that" is a complete and useful answer. Give it, and point at the nearest thing that IS covered.
 
 Turn invariant:
-  - The output of this turn is an ANSWER, not a mutation. Pages and entities are exactly as they were when you were asked. You may leave a plan as a durable artifact if a plan is what was asked for; that is the one thing this turn writes.
+  - The output of this turn is an ANSWER, not a mutation. Pages and entities are exactly as they were when you were asked. A request to CHANGE this specification ends with a plan, never with an edit; your final answer names that plan's path relative to this project. You may also leave a plan when a proposal is too large for the answer.
   - A question outside this specification's scope gets an honest "that is not a contract of this specification", plus a pointer to where the answer would live.
 
 No chaining:

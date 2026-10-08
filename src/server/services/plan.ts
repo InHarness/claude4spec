@@ -240,6 +240,15 @@ export class PlanService {
     return this.deps.plansPages.rootId;
   }
 
+  /**
+   * 2.1.9 — the absolute directory of the `plans` root. Read only to turn a
+   * plan path (relative to this root) into a path relative to the PROJECT, for
+   * the `answer` of an `ask` turn (`ask-answer.ts`).
+   */
+  get rootDir(): string {
+    return this.deps.plansPages.root;
+  }
+
   /** Per-key (plan path, or thread while the plan doesn't exist yet) write queue. */
   private locks = new Map<string, Promise<unknown>>();
 

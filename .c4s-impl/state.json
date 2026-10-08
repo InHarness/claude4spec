@@ -1,5 +1,5 @@
 {
-  "iteration": 5,
+  "iteration": 6,
   "conventions": [
     {
       "label": "L3 (Spec Operations)",
@@ -1222,15 +1222,39 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "u06-c4s-resolve-ask/p1-l3-l16",
+          "layers": [
+            "L3",
+            "L14",
+            "L15",
+            "L16"
+          ],
+          "slugs": [
+            "c4s-tools-ask",
+            "szablon-interaction-context-ask",
+            "ac-tura-ask-z-prosba-o-zmiane-specyfikac",
+            "ac-answer-tury-ask-ktora-zostawila-plan",
+            "ac-answer-tury-ask-nie-zawiera-sciezki-b",
+            "ac-kod-binu-c4s-nie-zawiera-algorytmu-ro"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "a590052262c6e8d5ac512a9972c01713a7dc3e7e",
+      "baseCommit": "a590052262c6e8d5ac512a9972c01713a7dc3e7e",
       "rounds": {
         "review": 0,
-        "unit": 0
-      }
+        "unit": 1
+      },
+      "lastUncovered": 0
     },
     {
       "id": "u07-skill-write",

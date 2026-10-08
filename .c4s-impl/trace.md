@@ -28,3 +28,5 @@ skill-tools-load-skill-file → src/server/mcp/skill-tools.ts (`load_skill_file`
 skill-listing-response → src/server/services/skill-operations.ts (`SkillListingResponse` = `ContextSkills`, rows `SkillListingEntry` in src/server/services/skill-registry.ts), served by src/server/routes/skills.ts `GET /`
 skill-package-response → src/server/services/skill-operations.ts (`SkillPackageResponse`), served by src/server/routes/skills.ts `GET /:slug`
 szablon-available-skills → src/server/services/system-prompt/blocks/m37-skills.ts (`buildAvailableSkills`, slot `AVAILABLE_SKILLS_LINES`; row type `AvailableSkillEntry` in src/server/services/system-prompt/types.ts)
+c4s-tools-ask → src/server/mcp/c4s-tools.ts (`ask`, description `ASK_TOOL_DESCRIPTION` = the entity's verbatim; the answer's plan path / directory scrub in src/server/services/ask-answer.ts, applied by src/server/routes/threads.ts `POST /:id/ask`)
+szablon-interaction-context-ask → src/server/services/interaction-rules.ts (`ASK_RULES`, served as `INTERACTION_RULES.ask`)

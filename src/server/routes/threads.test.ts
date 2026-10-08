@@ -557,3 +557,102 @@ describe('unknown context_type is an application error (0.2.87)', () => {
     expect(res.body.data.childThreads).toEqual([{ id: child.id, spawnedByToolUseId: 'tu_1', contextType: 'chat' }]);
   });
 });
+
+/**
+ * 2.1.9 (M11 `m11askrul`) — the `answer` of an `ask` turn, as the peer's
+ * endpoint returns it to every transport (`c4s ask`, `c4s agent --ct ask`, MCP
+ * `c4s-tools.ask`). `runAgentTurn` is mocked; the plans root is a stub whose
+ * listing changes "during" the turn, exactly as a `create_plan` call would.
+ */
+describe('POST /:id/ask — the answer names the plan by its project-relative path (2.1.9)', () => {
+  let dir: string;
+  let thread: ChatThreadMeta;
+  let plans: Array<{ path: string; hash: string }>;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-threads-ask-answer-'));
+    thread = makeThread({ contextType: 'ask' });
+    plans = [{ path: 'older-plan.md', hash: 'h-old' }];
+    runAgentTurnMock.mockClear();
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const app = () => {
+    const deps = {
+      chatService: {
+        getThreadMeta: (id: string) => (id === thread.id ? thread : null),
+        getInitialArchitectureConfig: () => null,
+      },
+      agentCredentialService: { getDecrypted: () => null },
+      activeAdapters: new Map(),
+      cwd: dir,
+      roots: [],
+      planService: {
+        rootDir: path.join(dir, '.claude4spec', 'plans'),
+        listPlans: () => plans.map((p) => ({ ...p })),
+      },
+    } as unknown as AgentTurnDeps;
+    return express().use(express.json()).use('/threads', threadsRouter(deps));
+  };
+
+  /** The mocked turn leaves a plan (as `create_plan` would) and answers `answer`. */
+  const turnLeavesPlan = (answer: string) =>
+    runAgentTurnMock.mockImplementationOnce(async (_deps, input) => {
+      plans.push({ path: 'rename-the-endpoint.md', hash: 'h-new' });
+      return { threadId: input.thread.id, answer, messages: [] };
+    });
+
+  it('[ac:ac-answer-tury-ask-ktora-zostawila-plan] a turn that left a plan answers with that plan\'s path relative to the peer project', async () => {
+    turnLeavesPlan('I cannot edit the specification, so I left a plan for its author.');
+
+    const res = await request(app()).post(`/threads/${thread.id}/ask`).send({ message: 'Please rename the endpoint.' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.answer).toContain('I cannot edit the specification, so I left a plan for its author.');
+    expect(res.body.answer).toContain('.claude4spec/plans/rename-the-endpoint.md');
+    // Only the plan THIS turn left — an untouched older plan is not reported.
+    expect(res.body.answer).not.toContain('older-plan.md');
+  });
+
+  it('[ac:ac-answer-tury-ask-ktora-zostawila-plan] an answer that already names the plan relatively is returned as is — the path is not repeated', async () => {
+    const answer = 'Left a plan: `.claude4spec/plans/rename-the-endpoint.md`.';
+    turnLeavesPlan(answer);
+
+    const res = await request(app()).post(`/threads/${thread.id}/ask`).send({ message: 'Please rename the endpoint.' });
+
+    expect(res.body.answer).toBe(answer);
+  });
+
+  it('[ac:ac-answer-tury-ask-ktora-zostawila-plan] a turn that left no plan gets no plan line', async () => {
+    runAgentTurnMock.mockImplementationOnce(async (_deps, input) => ({
+      threadId: input.thread.id,
+      answer: 'The endpoint returns 404 for an unknown id.',
+      messages: [],
+    }));
+
+    const res = await request(app()).post(`/threads/${thread.id}/ask`).send({ message: 'What does it return?' });
+
+    expect(res.body.answer).toBe('The endpoint returns 404 for an unknown id.');
+  });
+
+  it('[ac:ac-answer-tury-ask-nie-zawiera-sciezki-b] the answer carries neither an absolute path into the peer project nor its directory', async () => {
+    turnLeavesPlan(
+      `I left the plan at ${path.join(dir, '.claude4spec', 'plans', 'rename-the-endpoint.md')}; ` +
+        `the page is ${path.join(dir, 'pages', 'api.md')}. The project lives in ${dir}.`,
+    );
+
+    const res = await request(app()).post(`/threads/${thread.id}/ask`).send({ message: 'Please rename the endpoint.' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.answer).not.toContain(dir);
+    expect(res.body.answer).not.toContain(fs.realpathSync(dir));
+    expect(res.body.answer).toContain('.claude4spec/plans/rename-the-endpoint.md');
+    expect(res.body.answer).toContain('pages/api.md');
+    // Rewritten in place, so the plan is named once — no appended duplicate line.
+    expect(res.body.answer).not.toContain('Plan: `');
+    // No absolute path survives anywhere in the text.
+    expect(res.body.answer).not.toMatch(/(^|[\s`'"(])\/[A-Za-z]/);
+  });
+});
