@@ -16,8 +16,9 @@
  *  - admitted scopes: `writing-style` and `contextual` — the author declares the
  *    reach in the header (`scope`, `contextTypes`), the module adds no filter;
  *  - rank: the `project-rooted` rung of both chains (the registry's order);
- *  - writable: yes (the owner writes — the page routes through the root's facade
- *    today; the agent's `update_skill_file` is another unit's);
+ *  - writable: yes (the owner writes — a person through the page routes over the
+ *    root's facade, the agent through `update_skill_file` on `spec-skill-tools`,
+ *    `services/skill-write.ts`, over the same facade);
  *  - scan: on demand — every registry query re-reads the root, so a new package
  *    reaches the listing of the next thread without a restart;
  *  - file read: the RAW `SKILL.md` (frontmatter and tags included) plus the

@@ -149,6 +149,41 @@ function coreRead(
   };
 }
 
+/**
+ * 2.1.9 (M52, entity `spec-skill-tools-update-skill-file`) — the input of
+ * `update_skill_file`, declared ONCE: the catalog row below and the `internal`
+ * rendering (`mcp/spec-skill-tools.ts`) both take this shape, so the one channel
+ * that renders the operation cannot drift from its row. Parameter descriptions
+ * are the entity's, verbatim.
+ */
+export const UPDATE_SKILL_FILE_INPUT = {
+  slug: z.string().describe('Slug of the skill package to write — the package directory name.'),
+  file: z
+    .string()
+    .optional()
+    .describe('Package-relative POSIX path of the file to write. No absolute path, no `..`.'),
+  content: z
+    .string()
+    .optional()
+    .describe('The whole new content of the file. Pass exactly one of `content` and `textEdits`.'),
+  textEdits: z
+    .array(
+      z.object({
+        find: z.string().min(1),
+        replaceWith: z.string(),
+        expectedMatches: z.union([z.number().int().min(1), z.literal('all')]).optional(),
+      }),
+    )
+    .min(1)
+    .optional()
+    .describe(
+      'Literal substitutions, each { find, replaceWith, expectedMatches }: `find` is matched byte for byte, `expectedMatches` defaults to exactly 1. Pass exactly one of `content` and `textEdits`.',
+    ),
+  expectedHash: z
+    .string()
+    .describe('The file\'s `hash` as you last read it with load_skill_file. Pass "" when the file must not exist yet.'),
+};
+
 let seeded = false;
 
 /**
@@ -461,6 +496,50 @@ export function registerCoreOperations(): void {
     sideEffects: ['none'],
     idempotent: true,
     channels: fullParity(),
+  });
+
+  // ── M52 Spec Skills (2.1.9) ──────────────────────────────────────────────
+
+  /**
+   * 2.1.9 — `update_skill_file`, sheet `katalog-operacji-m52` row 2. Admitted by
+   * the BASIC test of M43 `l3admit0`, not by the instruction exception: its
+   * subject is a file of the project's `skills` root, i.e. specification content
+   * (reading instructions stays under the instruction exception).
+   *
+   * The sheet's columns this declaration has no field for are honoured by the
+   * implementation (`services/skill-write.ts`) and stated here so the row reads
+   * whole: addressing `(slug, file)`; guard REQUIRED (`expectedHash`, `""`
+   * creates a file that must not exist); multiplicity single-target — one
+   * package file, header validation concerns a single `SKILL.md`; rules
+   * `echo-free` (the answer carries the address and the new hash, never the
+   * file), `error-code-once`, `literal-match`, `match-count-declared`,
+   * `edit-set-not-procedure`, `diff-field-names`; WITHOUT
+   * `replacements-returned` (the answer carries no substitution count) and
+   * WITHOUT `operation-only-write` (a write by the built-in file tools into the
+   * `skills` root is accepted and versioned).
+   *
+   * `SKILL_READ_ONLY` is listed because the row lists it; the refusal itself
+   * (a slug the registry resolves to an exposed project) arrives with the
+   * `project-exposed` source.
+   */
+  CATALOG.register({
+    name: 'update_skill_file',
+    summary:
+      'Write one file of a skill package of the current project, addressed by (slug, file) with `file` defaulting to SKILL.md, through the project\'s `skills` root. Exactly one of `content` (the whole new file) and `textEdits` (literal substitutions). `expectedHash` is REQUIRED: the file\'s current hash, or "" to create a file that must not exist yet; any other mismatch is PAGE_CONFLICT. A SKILL.md left without a non-empty `description` in its frontmatter is refused. Answers { slug, file, hash }.',
+    scope: 'project',
+    mediation: 'agent-mediated',
+    opClass: 'write',
+    inputSchema: UPDATE_SKILL_FILE_INPUT,
+    errorCodes: ['SKILL_READ_ONLY', 'INVALID_ARGUMENT', 'PAGE_CONFLICT', 'FIND_NOT_FOUND', 'MATCH_COUNT_MISMATCH'],
+    sideEffects: ['file'],
+    contentInput: 'literal+diff',
+    idempotent: true,
+    channels: {
+      internal: direct(),
+      cli: na('writing skills from outside is out of v1'),
+      mcp: na('writing skills from outside is out of v1'),
+      rest: na("a person writes through the page write routes over the `skills` root's facade"),
+    },
   });
 
   // ── M23 Patches ───────────────────────────────────────────────────────────

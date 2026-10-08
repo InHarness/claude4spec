@@ -95,6 +95,8 @@ import {
   AdapterTimeoutError,
 } from '@inharness-ai/agent-adapters';
 import { abortChildTurns, runAgentTurn, type ActiveAdapter, type AgentTurnDeps, type AgentTurnInput } from './agent-turn.js';
+import { SpecSkillTools } from '../mcp/spec-skill-tools.js';
+import { CONTEXT_TYPE_REGISTRY } from '../services/chat-context.js';
 import {
   BACKGROUND_WAKEUP_GRACE_MS,
   CLAUDE_CODE_TASK_TRACKING_TOOLS,
@@ -2053,6 +2055,66 @@ describe('runAgentTurn — the profile gate covers the inline servers too', () =
     const mounted = await mountedFor('ask');
     expect(mounted).not.toContain('c4s-tools');
     expect(mounted).not.toContain('transagent-tools');
+  });
+});
+
+/**
+ * 2.1.9 (M52 `hdkx97wq`, M44 `3f5ej79s`, M11 `6exnmup9`) — `spec-skill-tools`,
+ * the write channel of the project's skill packages, is mounted in `chat` and
+ * `patch` and never in `brief` or `ask`. The rig hands the turn the same
+ * context-scoped element `project-context.ts` builds.
+ */
+describe('runAgentTurn — spec-skill-tools mounting (M52, 2.1.9)', () => {
+  async function mountedWithSpecSkillTools(
+    contextType: string,
+    element: SpecSkillTools = new SpecSkillTools({ skillsRoot: () => undefined }, 'p1'),
+    patchPath: string | null = null,
+  ): Promise<string[]> {
+    hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    (deps as unknown as { specSkillTools: SpecSkillTools }).specSkillTools = element;
+    const input = makeInput();
+    (input.thread as unknown as { contextType: string }).contextType = contextType;
+    (input.thread as unknown as { patchPath: string | null }).patchPath = patchPath;
+    await runAgentTurn(deps, input);
+    return Object.keys((hoisted.lastExecute?.mcpServers ?? {}) as Record<string, unknown>).sort();
+  }
+
+  it('[ac:ac-serwer-spec-skill-tools-jest-zamontow] spec-skill-tools is mounted in chat and patch turns, with update_skill_file advertised in the tooling inventory', async () => {
+    for (const [contextType, patchPath] of [['chat', null], ['patch', 'p.md']] as const) {
+      const mounted = await mountedWithSpecSkillTools(contextType, undefined, patchPath);
+      expect(mounted, contextType).toContain('spec-skill-tools');
+      expect(String(hoisted.lastExecute?.systemPrompt), contextType).toContain(
+        '<mcp name="spec-skill-tools">update_skill_file</mcp>',
+      );
+    }
+  });
+
+  it('[ac:ac-watek-context-type-ask-nie-ma-zamonto] a context_type=\'ask\' thread has no spec-skill-tools mounted, and update_skill_file is not advertised', async () => {
+    const mounted = await mountedWithSpecSkillTools('ask');
+    expect(mounted).not.toContain('spec-skill-tools');
+    // The read server stays — only the write channel is subtracted.
+    expect(mounted).toContain('skill-tools');
+    expect(String(hoisted.lastExecute?.systemPrompt)).not.toContain('update_skill_file');
+  });
+
+  it('a brief thread has no spec-skill-tools either — the brief bubble writes a release note, not agent instructions', async () => {
+    const mounted = await mountedWithSpecSkillTools('brief');
+    expect(mounted).not.toContain('spec-skill-tools');
+    expect(mounted).toContain('skill-tools');
+  });
+
+  it('the gate is a declared registry column, not inherited: chat and patch name it, brief and ask do not', () => {
+    expect(CONTEXT_TYPE_REGISTRY.chat.mcp.specSkillTools).toBe(true);
+    expect(CONTEXT_TYPE_REGISTRY.patch.mcp.specSkillTools).toBe(true);
+    expect(CONTEXT_TYPE_REGISTRY.brief.mcp.specSkillTools).toBe(false);
+    expect(CONTEXT_TYPE_REGISTRY.ask.mcp.specSkillTools).toBe(false);
+  });
+
+  it('M52 L10: once the context disposed its element, a turn mounts no spec-skill-tools', async () => {
+    const element = new SpecSkillTools({ skillsRoot: () => undefined }, 'p1');
+    element.dispose();
+    expect(await mountedWithSpecSkillTools('chat', element)).not.toContain('spec-skill-tools');
   });
 });
 

@@ -33,6 +33,7 @@ import { buildPatchToolsServer } from '../mcp/patch-tools.js';
 import { buildBriefToolsServer } from '../mcp/brief-tools.js';
 import { buildC4sToolsServer } from '../mcp/c4s-tools.js';
 import { buildWorkspaceToolsServer } from '../mcp/workspace-tools.js';
+import { SPEC_SKILL_TOOLS_SERVER, type SpecSkillTools } from '../mcp/spec-skill-tools.js';
 import type { McpServerFactory } from '../../shared/plugin-host/mcp.js';
 import { gateServers, pluginServerNamesFor } from '../operations/profile-gate.js';
 import { BRIEF_ALLOWED_PLUGIN_MCP } from '../operations/profiles.js';
@@ -137,6 +138,12 @@ export interface AgentTurnDeps {
    * first turn. Absent ⇒ no peers (e.g. single-project workspace).
    */
   listWorkspacePeers?: () => PeerProject[];
+  /**
+   * 2.1.9 (M52): the context-scoped `spec-skill-tools` element — the write channel
+   * of the project's skill packages. Mounted where the registry's `specSkillTools`
+   * column says so (`chat`, `patch`). Absent ⇒ not mounted (hand-built test rigs).
+   */
+  specSkillTools?: Pick<SpecSkillTools, 'build'>;
 }
 
 import { ALLOWED_MODELS, type Model } from './models.js';
@@ -1536,6 +1543,16 @@ export async function runAgentTurn(
         : null;
 
       /**
+       * 2.1.9 (M52 `hdkx97wq`, M44 `3f5ej79s`) spec-skill-tools: `update_skill_file`.
+       * Behind the registry's DECLARED `specSkillTools` column — `chat` and `patch`
+       * only; `brief` and `ask` never (a new context type does not inherit it). A
+       * fresh server per call from the context-scoped element, which builds
+       * nothing once the context disposed it.
+       */
+      const specSkillTools =
+        ctx.mcp.specSkillTools && deps.specSkillTools ? deps.specSkillTools.build() : null;
+
+      /**
        * Two gates, coarse then fine.
        *
        * Registry `pluginServers` picks whole SERVERS: 'all' mounts every
@@ -1596,6 +1613,7 @@ export async function runAgentTurn(
       if (transagentTools)
         inlineEntries.push({ name: 'transagent-tools', server: transagentTools });
       if (workspaceTools) inlineEntries.push({ name: 'workspace-tools', server: workspaceTools });
+      if (specSkillTools) inlineEntries.push({ name: SPEC_SKILL_TOOLS_SERVER, server: specSkillTools });
       inlineEntries.push({ name: 'skill-tools', server: skillTools });
 
       return [...pluginEntries, ...inlineEntries];

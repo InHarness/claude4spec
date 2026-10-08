@@ -1,5 +1,5 @@
 {
-  "iteration": 6,
+  "iteration": 7,
   "conventions": [
     {
       "label": "L3 (Spec Operations)",
@@ -64,7 +64,7 @@
         "u08-skills-sidebar-editor",
         "u09-composer-skill-ref"
       ],
-      "startCommit": null
+      "startCommit": "e077d77e349aab63f4db2d3a06154c1b26ca77c2"
     },
     {
       "n": 4,
@@ -1465,15 +1465,37 @@
         }
       ],
       "wave": 3,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "u07-skill-write/p1-l3-l15",
+          "layers": [
+            "L3",
+            "L10",
+            "L15"
+          ],
+          "slugs": [
+            "spec-skill-tools-update-skill-file",
+            "katalog-operacji-m52#update_skill_file",
+            "ac-serwer-spec-skill-tools-jest-zamontow",
+            "ac-watek-context-type-ask-nie-ma-zamonto",
+            "m52-update-skill-file-requires-description"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "e077d77e349aab63f4db2d3a06154c1b26ca77c2",
+      "baseCommit": "e077d77e349aab63f4db2d3a06154c1b26ca77c2",
       "rounds": {
         "review": 0,
-        "unit": 0
-      }
+        "unit": 1
+      },
+      "lastUncovered": 0
     },
     {
       "id": "u08-skills-sidebar-editor",

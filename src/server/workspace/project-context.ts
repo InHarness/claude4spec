@@ -121,7 +121,8 @@ import { createPageToolsServer } from '../mcp/page-tools.js';
 import type { SectionWriteDeps } from '../services/page-write.js';
 import { createEntityToolsServer } from '../mcp/entity-tools.js';
 import { SkillRegistry, SkillResolver, findSkillsRoots } from '../services/skill-registry.js';
-import { registerProjectRootedSkills } from '../services/project-rooted-skills.js';
+import { registerProjectRootedSkills, SKILLS_ROOT_KIND } from '../services/project-rooted-skills.js';
+import { SpecSkillTools } from '../mcp/spec-skill-tools.js';
 import { checkWritingStyleAtStart } from '../services/writing-style-start.js';
 import { fanPluginSkills, loadOverlayLayer } from './project-skills.js';
 import { chatRouter } from '../routes/chat.js';
@@ -1323,6 +1324,23 @@ async function buildInner(
       });
   };
 
+  /**
+   * 2.1.9 (M52 L10 `1v62dbhb`) — `spec-skill-tools`: one element per context
+   * instance, key `projectId`, built here with the context and released
+   * EXPLICITLY by its dispose (below). It writes through the facade of this
+   * context's root of kind `skills`; the turn asks it for a fresh server per query.
+   */
+  const specSkillTools = new SpecSkillTools(
+    {
+      skillsRoot: () => {
+        const root = rootRegistry.byKind(SKILLS_ROOT_KIND)[0];
+        const rt = root ? rootById.get(root.id) : undefined;
+        return rt ? { pages: rt.pages } : undefined;
+      },
+    },
+    projectId,
+  );
+
   // Wspolne deps tury agenta — `threadsRouter` (POST /:id/ask) i `chatRouter`
   // (POST /chat, SSE) dziela ten sam runtime i rejestr `activeAdapters`.
   const agentDeps = {
@@ -1361,6 +1379,7 @@ async function buildInner(
      * stale, and a captured record would have gone stale the same way.
      */
     listWorkspaceProjects: () => listProjects(registry.getWorkspace(workspace.name) ?? workspace),
+    specSkillTools,
   };
 
   /**
@@ -1867,6 +1886,8 @@ async function buildInner(
       // pre-0.2.10 gap where `releasesWatcher` was never closed on dispose.
       await w.dispose();
       pluginHost.clearMcpFactories();
+      // 2.1.9 (M52 L10): the context-scoped write channel is released explicitly.
+      specSkillTools.dispose();
       // M33 phase 2: drop references to dynamically imported project-local
       // modules (next rebuild re-imports), alongside the MCP factory release.
       overlayResult?.dispose();

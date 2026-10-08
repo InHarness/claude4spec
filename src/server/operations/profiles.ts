@@ -36,12 +36,15 @@ import type { OperationClass, OperationDeclaration } from './catalog.js';
 /**
  * Which built-in MCP servers a profile mounts.
  *
- * Four of the five members are DERIVED from `operationClasses` below — they are
+ * Four of the six members are DERIVED from `operationClasses` below — they are
  * the coarse, server-level shadow of the real per-operation gate, kept because
  * the turn dispatcher still assembles servers rather than tools. `pluginServers`
  * is declared rather than derived: it selects between the full entity/reference
  * pool and the narrow read-only release whitelist, which is a statement about
- * server composition, not about an operation class.
+ * server composition, not about an operation class. `specSkillTools` (2.1.9) is
+ * declared for the same kind of reason: whether a type may write the project's
+ * skill packages is a row of the context-type registry, not a consequence of it
+ * admitting writes.
  */
 /**
  * What `pluginServers: 'release-only'` actually names.
@@ -65,6 +68,13 @@ export interface McpServerSet {
   briefTools: boolean;
   c4sTools: boolean;
   transagentTools: boolean;
+  /**
+   * 2.1.9 (M52 `hdkx97wq`, M44 `3f5ej79s`) — `spec-skill-tools`, the write channel
+   * of the project's own skill packages (`update_skill_file`). DECLARED per
+   * profile, never derived from `write`: a new context type does not inherit it
+   * by admitting writes — it gets it only by an explicit `true` in its row.
+   */
+  specSkillTools: boolean;
 }
 
 export interface ProfileDefinition {
@@ -97,6 +107,15 @@ export interface ProfileDefinition {
    * applied on top by the turn builder; they cannot re-enable what this denies.
    */
   readonly backgroundTasks: 'allowed' | 'disabled';
+  /**
+   * 2.1.9 (M44 `3f5ej79s`) — whether the turn mounts `spec-skill-tools`. An
+   * explicit column rather than a derivation from the admitted classes: the
+   * read server (`skill-tools`) is inherited by every type unconditionally, the
+   * write server by none — `chat` and `patch` name it, `brief` (a release note,
+   * not agent instructions) and `ask` (a consultation answers, it does not
+   * write the project — M11 `6exnmup9`) do not.
+   */
+  readonly specSkillTools: boolean;
 }
 
 const ALL_CLASSES: readonly OperationClass[] = ['read', 'write', 'brief', 'plan', 'turn', 'peer'];
@@ -115,6 +134,7 @@ export const PROFILES: Record<ChatContextType, ProfileDefinition> = {
     builtinPosture: 'follow-thread',
     builtinTools: 'project-setting',
     backgroundTasks: 'allowed',
+    specSkillTools: true,
   },
   brief: {
     operationClasses: new Set<OperationClass>(['read', 'brief']),
@@ -123,6 +143,7 @@ export const PROFILES: Record<ChatContextType, ProfileDefinition> = {
     builtinPosture: 'follow-thread',
     builtinTools: 'none',
     backgroundTasks: 'allowed',
+    specSkillTools: false,
   },
   patch: {
     operationClasses: new Set(CHAT_CLASSES),
@@ -131,6 +152,7 @@ export const PROFILES: Record<ChatContextType, ProfileDefinition> = {
     builtinPosture: 'follow-thread',
     builtinTools: 'project-setting',
     backgroundTasks: 'allowed',
+    specSkillTools: true,
   },
   ask: {
     // A consulted peer reads and may leave a plan. It cannot mutate the spec, and
@@ -142,6 +164,7 @@ export const PROFILES: Record<ChatContextType, ProfileDefinition> = {
     builtinPosture: 'force-plan',
     builtinTools: 'project-setting',
     backgroundTasks: 'disabled',
+    specSkillTools: false,
   },
 };
 
@@ -168,6 +191,8 @@ export function mcpServerSetForProfile(profile: ChatContextType): McpServerSet {
     briefTools: operationClasses.has('brief'),
     c4sTools: operationClasses.has('peer'),
     transagentTools: operationClasses.has('turn'),
+    // Declared, not derived — see `McpServerSet.specSkillTools`.
+    specSkillTools: PROFILES[profile].specSkillTools,
   };
 }
 

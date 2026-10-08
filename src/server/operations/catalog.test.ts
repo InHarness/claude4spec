@@ -327,12 +327,15 @@ describe('context profiles', () => {
   it('the mounted server set is DERIVED from the admitted classes, not written beside them', () => {
     // These four reproduce the pre-0.2.13 hand-written registry rows exactly —
     // the derivation is behaviour-preserving, which is what makes it safe.
+    // 2.1.9: `specSkillTools` is the one member besides `pluginServers` that is
+    // DECLARED per profile rather than derived (M44 `3f5ej79s`).
     expect(mcpServerSetForProfile('chat')).toEqual({
       pluginServers: 'all',
       planTools: true,
       briefTools: false,
       c4sTools: true,
       transagentTools: true,
+      specSkillTools: true,
     });
     expect(mcpServerSetForProfile('brief')).toEqual({
       pluginServers: 'release-only',
@@ -340,6 +343,7 @@ describe('context profiles', () => {
       briefTools: true,
       c4sTools: false,
       transagentTools: false,
+      specSkillTools: false,
     });
     expect(mcpServerSetForProfile('patch')).toEqual(mcpServerSetForProfile('chat'));
     expect(mcpServerSetForProfile('ask')).toEqual({
@@ -348,6 +352,7 @@ describe('context profiles', () => {
       briefTools: false,
       c4sTools: false,
       transagentTools: false,
+      specSkillTools: false,
     });
   });
 
