@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { WsEvent } from '../../shared/types.js';
 import { makeWatchIgnore } from './watch-ignore.js';
+import { globToRegExp } from '../../shared/root-kinds.js';
 
 /**
  * M40 — File Watch Runtime (0.2.10).
@@ -312,46 +313,8 @@ function writeKey(scope: WatchScope, source: string, relPath: string): string {
   return `${scope}${SEP}${source}${SEP}${relPath}`;
 }
 
-/**
- * Minimal glob → RegExp: supports `**`, `*`, `?` and `{a,b}` alternation. Enough
- * for the three filters this runtime actually uses (`**\/*.{md,mdx}`,
- * `**\/*.html`, `*.json`). Deliberately not a general glob engine — the filter is
- * mechanical path matching, not a query language.
- */
-function globToRegExp(glob: string): RegExp {
-  let out = '';
-  for (let i = 0; i < glob.length; i++) {
-    const c = glob[i]!;
-    if (c === '{') {
-      const close = glob.indexOf('}', i);
-      if (close !== -1) {
-        const alts = glob.slice(i + 1, close).split(',');
-        out += `(?:${alts.map((a) => a.replace(/[.+^${}()|[\]\\*?]/g, '\\$&')).join('|')})`;
-        i = close;
-        continue;
-      }
-      out += '\\{';
-    } else if (c === '*') {
-      if (glob[i + 1] === '*') {
-        if (glob[i + 2] === '/') {
-          // `**/` matches zero or more leading segments.
-          out += '(?:[^/]*/)*';
-          i += 2;
-        } else {
-          out += '.*';
-          i += 1;
-        }
-      } else {
-        out += '[^/]*';
-      }
-    } else if (c === '?') {
-      out += '[^/]';
-    } else {
-      out += c.replace(/[.+^${}()|[\]\\]/g, '\\$&');
-    }
-  }
-  return new RegExp(`^${out}$`);
-}
+// The mechanical filter glob (`**\/*.{md,mdx}`, `*.json`, `{tags.json,*\/*.json}`, …)
+// is compiled by the same matcher the kinds' file maps use (`src/shared/root-kinds.ts`).
 
 export class FileWatchRuntime {
   private readonly mounts = new Map<string, Mount>();

@@ -323,8 +323,8 @@ async function buildInner(
   const rootRegistry = new RootRegistry(effectiveRoots);
   const briefsDir = rootRegistry.system('briefs').dir;
   const patchesDir = rootRegistry.system('patches').dir;
-  const entitiesDir = rootRegistry.system('entities').dir;
-  const releasesDir = rootRegistry.system('releases').dir;
+  const entitiesRootDir = rootRegistry.system('entities').dir;
+  const releasesRootDir = rootRegistry.system('releases').dir;
 
   // D4: namespace overlap between a user root and any other registry root (or
   // `.claude4spec/plugins`) aborts the build — mirrors the PATCH /api/config guard.
@@ -537,7 +537,7 @@ async function buildInner(
   const overlayVersionByPkg = new Map(
     overlayRecords.filter((r) => r.manifestVersion).map((r) => [r.package, r.manifestVersion!]),
   );
-  const entityStore = new EntityStore(cwd, entitiesDir, boundSuppress(w, ENTITIES_SOURCE), rawReader, pluginHost);
+  const entityStore = new EntityStore(cwd, entitiesRootDir, boundSuppress(w, ENTITIES_SOURCE), rawReader, pluginHost);
   // 2.1.8: the `entities` source is mounted by the root-registry loop above
   // (after its mkdir); the store only reads and writes inside it.
   entityStore.records = new RecordStore({
@@ -639,10 +639,10 @@ async function buildInner(
     projectionStatus,
   );
   // 0.1.118: sibling triad for the on-disk release-identity store — mirrors
-  // the entities triad above exactly (its own mount, atomic file store,
+  // the entities triad above exactly (its own registry root, atomic file store,
   // upsert-by-slug indexer keeping spec_release.id stable — see
   // ReleaseIndexerService's header comment for why it must NOT delete-all).
-  const releaseFileStore = new ReleaseFileStore(cwd, releasesDir, boundSuppress(w, RELEASES_SOURCE));
+  const releaseFileStore = new ReleaseFileStore(cwd, releasesRootDir, boundSuppress(w, RELEASES_SOURCE));
   releaseFileStore.records = new RecordStore({
     registrar: w,
     source: RELEASES_SOURCE,
@@ -1635,6 +1635,10 @@ async function buildInner(
   // committed files. Awaited BEFORE the context serves — the app is
   // entity-centric, so serving REST/MCP before the index is ready would 404 /
   // return empty.
+  //
+  // 2.1.8: "the `entities` root directory exists" is read as "the root carries
+  // text" (entity files or `tags.json`) — activation mkdirs every registry root
+  // (M31 bootstrap) before this runs, so the bare directory is always there.
   try {
     const fileEntityCount = entityStore.listAll().length;
     const hasTagsFile = entityStore.readTags().length > 0;
@@ -1646,7 +1650,7 @@ async function buildInner(
 
     if (!filesPresent && dbEntityCount > 0) {
       // Pre-M29 project: entities live only in SQLite → export to text once.
-      console.log(`[m29] exporting ${dbEntityCount} entities DB→text into ${entitiesDir} ...`);
+      console.log(`[m29] exporting ${dbEntityCount} entities DB→text into ${entitiesRootDir} ...`);
       backupDbBeforeMigration(dbSlotDir);
       for (const type of rawReader.listTypes()) {
         if (!pluginHost.getEntity(type)) continue;
@@ -1684,7 +1688,7 @@ async function buildInner(
      * walk per boot forever after.
      */
     try {
-      backfillEntityTimestamps(db.handle, entityStore, cwd, entitiesDir);
+      backfillEntityTimestamps(db.handle, entityStore, cwd, entitiesRootDir);
     } catch (err) {
       // A missing timestamp degrades ordering; it does not stop the project
       // from serving. Never let the backfill be the reason boot fails.
@@ -1713,7 +1717,7 @@ async function buildInner(
   referencesService.setPluginHost(pluginHost);
 
   // 0.1.119: Migration C — backfill on-disk release files for pre-slug
-  // spec_release rows (created before 0.1.118 added releasesDir/<slug>.json).
+  // spec_release rows (created before 0.1.118 added `<slug>.json` in the `releases` root).
   // MUST run before releaseIndexer.indexAll() just below, so a backfilled row
   // is picked up as a normal file-backed release on first rebuild rather than
   // treated as a DB row with no file. `roots` isn't a spec_release column —
@@ -1725,7 +1729,7 @@ async function buildInner(
       .prepare(`SELECT * FROM spec_release WHERE slug IS NULL`)
       .all() as Array<{ id: number; name: string; description: string; created_by: string; created_at: string }>;
     if (legacyReleases.length > 0) {
-      console.log(`[m29] backfilling ${legacyReleases.length} release(s) DB→disk into ${releasesDir} ...`);
+      console.log(`[m29] backfilling ${legacyReleases.length} release(s) DB→disk into ${releasesRootDir} ...`);
       backupDbBeforeMigration(dbSlotDir);
       const setSlug = db.handle.prepare(`UPDATE spec_release SET slug = ? WHERE id = ?`);
       for (const row of legacyReleases) {
@@ -1766,7 +1770,7 @@ async function buildInner(
     console.error('[release-backfill] boot migration failed:', err);
   }
 
-  // 0.1.118: boot rebuild of the spec_release derived cache from releasesDir.
+  // 0.1.118: boot rebuild of the spec_release derived cache from the `releases` root.
   // Order relative to the entity rebuild doesn't matter (independent tables).
   try {
     const pass = projectionStatus.beginRebuild();

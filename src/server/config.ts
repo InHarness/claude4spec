@@ -1120,7 +1120,7 @@ export function migrateConfigToV3(cwd: string): MigrateV3Result {
  * 0.1.96 config v4 migration — runs from the project activation hook right after
  * `migrateConfigToV3`. Maps the legacy `pagesDir` scalar to the built-in `pages`
  * root (with default props), deletes `pagesDir`, and bumps `$schemaVersion` to 4.
- * Does NOT touch `briefsDir`/`patchesDir`/`entitiesDir` (they stay scalars).
+ * (2.1.8: the former `briefsDir`/`patchesDir`/`entitiesDir` keys are gone — unknown fields, never touched.)
  *
  * 0.2.8 adds a repair that must run even on an ALREADY-v4 file:
  * `git.syncCommitOnRelease` → `git.enabled`. (2.1.8: `roots[]` entries are no
@@ -1257,8 +1257,8 @@ export function writeConfig(cwd: string, partial: Partial<Config>): NormalizedCo
 }
 
 /**
- * Resolves a `config.json` directory field (`briefsDir`/`patchesDir`/
- * `entitiesDir`/a root's `dir`) to an absolute path, guarding against an
+ * Resolves a `config.json` directory field (a root's `dir`; the system roots'
+ * fixed `.claude4spec/<kind>` dirs go through it too) to an absolute path, guarding against an
  * absolute value or one that escapes `cwd` via `..`. Extracted from the
  * pattern duplicated 3x in `workspace/project-context.ts`'s `buildInner` —
  * also used by M22's `buildExternalSkillContext` to derive the abs-path

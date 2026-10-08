@@ -1,0 +1,18 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "portion", "id": "u04-entities-root/p2-l7" },
+  "release": "2.1.8",
+  "rows": [
+    {
+      "slug": "section:m29idx001",
+      "level": 2,
+      "status": "covered",
+      "evidence": "M29 mounts no source: the only mounts of the `entities`/`releases` sources are the registry loop in src/server/workspace/root-registry-runtime.ts:129 (`w.mountSource({ source, dir: abs })`), called from src/server/workspace/project-context.ts:476. EntityStore/ReleaseFileStore (project-context.ts:540, :645) only read and write inside the mounted roots. Binding goes by kind: src/shared/root-kinds.ts:159-166 (`entities` kind, reactions ['m29-entity-indexer'], fileMap `**/*.json` json) → bindRegistryReactions (root-registry-runtime.ts:168-180) passes input `{ rootId: root.id }` → ReactionBinder.bindReaction filters by fileMapFilter (src/server/fs/reactions.ts:138-147). Acceptance contract on the definition: core-reactions.ts:157-162 (`m29-entity-indexer`, phase projection, accepts ['json'], no requires). The indexer skips other files of the source: entity-store.ts:117-124 parseRelPath returns null for anything other than `<type>/<slug>.json` of a known type, entity-indexer.ts:358-367 handles tags.json and returns otherwise; key (type, slug) derived from the path. The removed 'Bramka' row has no counterpart. Binding `m29-release-cache` to the `releases` root is deferred to u05 (definition core-reactions.ts:169-173 accepts json, no requires). Test src/server/workspace/root-registry-runtime.test.ts:314 'M29 m29idx001: …' asserts `binder.isBound('m29-entity-indexer', entitiesSource)` true and false on every other root, `expect(seen).toEqual([['entities','tags.json'],['entities','endpoint/a.json']])` (notes.md filtered out), validateKindRequirements not throwing for both definitions, and that no M29 service file calls `mountSource(` or a watcher. Read against current code it can pass: `**/*.json` → globToRegExp `(?:[^/]*/)*[^/]*\\.json` matches tags.json. `npm run typecheck` exits 0."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "tsc --noEmit across workspaces: 0 'error TS' lines"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "portion", "id": "u04-entities-root/p6-l17" },
+  "release": "2.1.8",
+  "rows": [
+    {
+      "slug": "section:4qw319iv",
+      "level": 1,
+      "status": "covered",
+      "evidence": "Deletion (lone <before_change>: relocation of entitiesDir/releasesDir). No relocation path remains: M29 locates its dir only via the registry, src/server/workspace/project-context.ts:326 `rootRegistry.system('entities').dir` (fixed `.claude4spec/entities`); the legacy key is never read, only warned about, src/server/config.ts:954-984 (LEGACY_DIR_KEYS incl. ['entitiesDir','entities'], warnLegacyDirKeys: 'is no longer read … files left in … are not visible'); not in the client fingerprint, src/core/agent/http.ts:297-300; no rebuild/resume lock on it, src/server/settings/field-registry.test.ts:49-58 (contextRebuildKeys = {roots, entities, remoteApiUrl}; get('entitiesDir') undefined) and src/server/routes/resume-lock.test.ts:169-186 (legacy entitiesDir change → check() null). Test src/server/services/tags-entities-root.test.ts:37-73: config with `entitiesDir: 'ents'` → tags.json written under `.claude4spec/entities`, `expect(fs.existsSync(path.join(cwd, 'ents'))).toBe(false)`. No trace.md line names it. Production grep for entitiesDir in src: only comments and the warn table (release-bundle.ts/release.ts hits are local temp-dir variables, unrelated)."
+    },
+    {
+      "slug": "section:fpm3uc75",
+      "level": 1,
+      "status": "covered",
+      "evidence": "Deletion of the `entitiesDir` config-file key. Config type has no such field, src/server/config.ts:18-25 (comment: former *Dir keys gone); migrateConfigToV3 no longer materializes it, config.ts:1076-1079. Tests: src/server/routes/config.route.test.ts:378-402 GET with legacy `entitiesDir` in file → `for (const k of DIR_KEYS) expect(k in res.body).toBe(false)`; :421-427 PATCH `{entitiesDir: 'pages'}` → 200, absent from body and from disk; src/server/config.test.ts:743-746 fresh config on disk lacks entitiesDir; src/server/workspace/bootstrap.system-roots.test.ts:35 `expect(raw).not.toHaveProperty(key)`; architecture guard tests/integration/architecture/root-kind-gating.test.ts:58-59 LEGACY_DIR_KEY bans `.entitiesDir` reads, discovery-core.test.ts:151. Remaining `entitiesDir: 'entities'` in some CLI/agent test fixtures (e.g. src/bin/c4s/commands/plugins.test.ts:21) are inert mock config literals, not assertions of the key. npm run typecheck clean."
+    },
+    {
+      "slug": "section:4kz0wvoy",
+      "level": 1,
+      "status": "covered",
+      "evidence": "Deletion of the 'Entities directory' element on #directories. No 'Entities directory' label anywhere in src/ (grep over src/client and src/server/settings returns none); field registry declares no entitiesDir (src/server/settings/field-registry.test.ts:56-58 `expect(STATIC_FIELD_REGISTRY.get(k)).toBeUndefined()`). UI test tests/e2e/settings-directories.test.ts:87-96 `[ac:ac-lista-elementu-roots-na-karcie-direct]` asserts `section().getByText('Entities directory', {exact:true}).count()` toBe(0) and the card text does not contain '.claude4spec/entities'."
+    },
+    {
+      "slug": "section:6yrmfkv3",
+      "level": 2,
+      "status": "covered",
+      "evidence": "At 2.1.8: M29 contributes no config key and no settings element — the entities dir is the fixed system root `entities` (declared by f952122v). Holds: no entitiesDir in Config (src/server/config.ts:18-25), field registry, API response or settings card (see fpm3uc75/4kz0wvoy evidence: config.route.test.ts:378-427, field-registry.test.ts:49-58, settings-directories.test.ts:87-96); the dir comes from the kind declaration, src/shared/root-kinds.ts:157-173 and project-context.ts:326; tags-entities-root.test.ts:47-49 asserts `registry.system('entities')` kind 'entities', dir '.claude4spec/entities'."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "> tsc --noEmit (clean, no errors)"
+  }
+}

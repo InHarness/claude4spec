@@ -4,7 +4,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { RootRegistry } from './registry.js';
 import { readConfig } from '../config.js';
-import { KIND_DECLARATIONS, SYSTEM_ROOTS, agentDeniedDirs, fileMapFilter, namespacesOverlap } from '../../shared/root-kinds.js';
+import {
+  KIND_DECLARATIONS,
+  SYSTEM_ROOTS,
+  agentDeniedDirs,
+  fileMapEntryOf,
+  fileMapFilter,
+  globToRegExp,
+  isSystemRootId,
+  namespacesOverlap,
+} from '../../shared/root-kinds.js';
 
 /** 2.1.8 — the root registry: user roots (kind `pages`) + five system roots in code. */
 describe('RootRegistry', () => {
@@ -36,7 +45,7 @@ describe('RootRegistry', () => {
 
   it('gates behaviour by the kind: release roots, reference roots, roots selecting a reaction', () => {
     const reg = new RootRegistry(user);
-    expect(reg.withFlag('release').map((r) => r.id)).toEqual(['pages', 'adr']);
+    expect(reg.withFlag('release').map((r) => r.id)).toEqual(['pages', 'adr', 'entities']);
     expect(reg.withFlag('references').map((r) => r.id)).toEqual(['pages', 'adr']);
     expect(reg.withFlag('gitignore').map((r) => r.id)).toEqual(['plans', 'briefs', 'patches', 'releases']);
     expect(reg.selecting('m06-anchor-injection').map((r) => r.id)).toEqual(['pages', 'adr', 'plans']);
@@ -91,6 +100,58 @@ describe('root kinds', () => {
     expect(namespacesOverlap('pages/../.claude4spec/plans', '.claude4spec/plans')).toBe(true);
     expect(namespacesOverlap('.claude4spec//plans', '.claude4spec/plans')).toBe(true);
     expect(namespacesOverlap('./.claude4spec/./plans/', '.claude4spec/plans')).toBe(true);
+  });
+
+  it('the `entities` system root is a registry entry from code: id = kind, fixed .claude4spec/entities, hidden, reserved id, found by kind even when the base root is renamed (M02 l13model0)', () => {
+    const renamed = new RootRegistry([{ id: 'docs', name: 'Docs', dir: '.', builtin: true }]);
+    const entities = renamed.system('entities');
+    expect(entities).toEqual({ id: 'entities', name: 'Entities', dir: '.claude4spec/entities', kind: 'entities', builtin: false });
+    expect(SYSTEM_ROOTS.filter((r) => r.kind === 'entities')).toHaveLength(1);
+    expect(KIND_DECLARATIONS.entities.source).toBe('code');
+    expect(KIND_DECLARATIONS.entities.sidebar).toBe('hidden');
+    expect(isSystemRootId('entities')).toBe(true);
+    // A root at `.` coexists with the fixed dir: the dot subtree is outside its namespace (D4).
+    expect(namespacesOverlap('.', entities.dir)).toBe(false);
+  });
+
+  it('M29 f952122v: the `entities` kind declaration — tags.json on HEAD, */*.json on entity_version, only `release` = yes, reaction m29-entity-indexer', () => {
+    const decl = KIND_DECLARATIONS.entities;
+    expect(decl).toEqual({
+      kind: 'entities',
+      source: 'code',
+      sidebar: 'hidden',
+      fileMap: [
+        { pattern: 'tags.json', format: 'json', track: 'HEAD' },
+        { pattern: '*/*.json', format: 'json', track: 'entity_version' },
+      ],
+      flags: { release: true, references: false, gitignore: false, agentDirectFs: false },
+      reactions: ['m29-entity-indexer'],
+    });
+    // First matching entry wins: tag definitions vs one entity snapshot per `<type>/<slug>.json`.
+    expect(fileMapEntryOf('entities', 'tags.json')).toMatchObject({ format: 'json', track: 'HEAD' });
+    expect(fileMapEntryOf('entities', 'endpoint/get-user.json')).toMatchObject({ format: 'json', track: 'entity_version' });
+    expect(fileMapEntryOf('entities', 'endpoint\\get-user.json')?.track).toBe('entity_version');
+    // Anything else in the root is not an entry of the kind.
+    expect(fileMapEntryOf('entities', 'other.json')).toBeUndefined();
+    expect(fileMapEntryOf('entities', 'endpoint/nested/x.json')).toBeUndefined();
+    expect(fileMapEntryOf('entities', 'endpoint/tags.json')?.track).toBe('entity_version');
+    expect(fileMapEntryOf('entities', 'notes.md')).toBeUndefined();
+    // The indexer's binding filter is exactly that map, compiled by the matcher M40 uses.
+    const filter = fileMapFilter('entities', ['json'])!;
+    expect(filter).toBe('{tags.json,*/*.json}');
+    const re = globToRegExp(filter);
+    expect(['tags.json', 'endpoint/a.json', 'dto/b.json'].every((p) => re.test(p))).toBe(true);
+    expect(['other.json', 'a/b/c.json', 'endpoint/a.md', 'xtags.json'].some((p) => re.test(p))).toBe(false);
+    // No file_version entry: m17-capture can never be bound on it; the HEAD entry alone is selectable by track.
+    expect(fileMapFilter('entities', ['json'], ['file_version'])).toBeUndefined();
+    expect(fileMapFilter('entities', ['json'], ['HEAD'])).toBe('tags.json');
+    // Only `release` is set, so the entities root (and only it among system roots) joins the release-flag roots.
+    const reg = new RootRegistry(user);
+    expect(reg.withFlag('release').filter((r) => r.kind !== 'pages').map((r) => r.id)).toEqual(['entities']);
+    expect(reg.withFlag('references').some((r) => r.kind === 'entities')).toBe(false);
+    expect(reg.withFlag('gitignore').some((r) => r.kind === 'entities')).toBe(false);
+    expect(reg.withFlag('agentDirectFs', false).map((r) => r.id)).toContain('entities');
+    expect(reg.selecting('m29-entity-indexer').map((r) => r.id)).toEqual(['entities']);
   });
 
   it('every kind carries the four policy flags and only system kinds come from code', () => {

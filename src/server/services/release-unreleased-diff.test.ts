@@ -525,8 +525,11 @@ describe('ReleaseService — legacy `releasable: false` in config.json (2.1.8)',
 
   it("[ac:ac-korzen-uzytkownika-z-releasable-false-w] assigns the pages of a root whose config entry carries `releasable: false` to the new release", () => {
     const registry = new RootRegistry(readConfig(cwd).roots);
-    const releaseRootIds = registry.withFlag('release').map((r) => r.id);
+    // The page track's release set is the roots of KIND `pages` (as `buildProjectContext`
+    // wires it); the `release` flag also covers `entities`, released on its own track.
+    const releaseRootIds = registry.pages().map((r) => r.id);
     expect(releaseRootIds).toEqual(['pages', 'notes']);
+    expect(registry.withFlag('release').map((r) => r.id)).toEqual(['pages', 'notes', 'entities']);
 
     const insert = db.prepare(
       `INSERT INTO file_version (path, version, data, serializer_version, op, release_id, changed_by, rootId)

@@ -1,0 +1,48 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "portion", "id": "u04-entities-root/p5-l13-b" },
+  "release": "2.1.8",
+  "rows": [
+    {
+      "slug": "section:cqfxh2rs",
+      "level": 2,
+      "status": "covered",
+      "evidence": "M29 mounts nothing: entities/releases sources mounted by the L13 loop src/server/workspace/root-registry-runtime.ts:120-130 (sourceNameFor by kind), reactions bound by kind selection root-registry-runtime.ts:168-179; M29 locates its dirs by kind only: project-context.ts:326-327 `rootRegistry.system('entities'|'releases').dir` (registry.ts:55 finds by `r.kind === kind`); EntityStore uses ENTITIES_SOURCE without mounting (project-context.ts:540-548). Tests: root-registry-runtime.test.ts:314 asserts `binder.isBound('m29-entity-indexer', entitiesSource)` only on the entities root and `expect(src, file).not.toMatch(/mountSource\\(/)` for entity-store/entity-indexer/release-store/release-indexer and project-context; no-hardcode enforced by tests/integration/architecture/root-kind-gating.test.ts:55-58 (ID_OR_DIR_GATE / LEGACY_DIR_KEY scan). `entitiesDir` key only survives as an ignored legacy key with a warning (src/server/config.ts:956-962). Deferred m29-release-cache↔releases binding (u05) not counted."
+    },
+    {
+      "slug": "section:f952122v",
+      "level": 1,
+      "status": "covered",
+      "evidence": "src/shared/root-kinds.ts:157-173 `entities`: source code, sidebar hidden, fileMap [`tags.json` json HEAD, `*/*.json` json entity_version], flags {release:true, references:false, gitignore:false, agentDirectFs:false}, reactions ['m29-entity-indexer']; system root id `entities`, dir `.claude4spec/entities` (asserted tags-entities-root.test.ts:48-49). First-match lookup via shared globToRegExp (root-kinds.ts:277, fileMapEntryOf), indexer filter `{tags.json,*/*.json}` (fileMapFilter) compiled by the same matcher in M40 (src/server/fs/watcher.ts:8). Test src/server/roots/registry.test.ts:117 `expect(decl).toEqual({... fileMap: [{ pattern: 'tags.json', format: 'json', track: 'HEAD' }, { pattern: '*/*.json', ..., track: 'entity_version' }], flags: { release: true, references: false, gitignore: false, agentDirectFs: false }, reactions: ['m29-entity-indexer'] })` plus filter/first-match assertions; release-flag consumers updated (registry.test.ts:48, release-unreleased-diff.test.ts:528-532; page-track lists use registry.pages(), project-context.ts:1036-1039; git staging dedups dirs, git.ts:216). npm run typecheck clean."
+    },
+    {
+      "slug": "section:m18l13rt",
+      "level": 2,
+      "status": "covered",
+      "evidence": "Rename propagation iterates roots whose kind carries `references`: project-context.ts:662 `storesOf(rootRegistry.withFlag('references'))` → ReferencesService (references.ts:222-259 walks only those roots); tags.json located through the `entities` root (EntityStore built on `system('entities').dir`, project-context.ts:540), not a config key. Test src/server/services/tags-entities-root.test.ts:75 asserts `referenceRoots.map((r) => r.kind)).toEqual(['pages', 'pages'])`, the new slug in both references roots and `expect(fs.readFileSync(path.join(cwd, registry.system(kind).dir, 'doc.md'), 'utf8'), kind).toBe(page)` for plans/briefs/patches; no-id/no-config-key gate enforced by root-kind-gating.test.ts:55-58; first test of the file (:36) asserts a legacy `entitiesDir` key is ignored."
+    },
+    {
+      "slug": "section:91vuvf2u",
+      "level": 2,
+      "status": "covered",
+      "evidence": "TagsService.update (src/server/services/tags.ts:147-183) rewrites tags.json via EntityStore.persistTags and re-persists entity files `<type>/<slug>.json` whose tags[] cascaded (persistEntitiesWithTag, tags.ts:124); ReferencesService.propagateTagSlugChange (references.ts:222-247) rewrites tags=\"…\" with the shared tag parser over references-flag roots only; called from routes/tags.ts:126 and mcp/reference-tools.ts:142. Test tags-entities-root.test.ts:75: `expect(onDisk.map((t) => t.slug)).toEqual(['invoicing'])`, `expect(entityFile.tags).toEqual(['invoicing'])`, `toContain('<tagged_list type=\"endpoint\" tags=\"invoicing,auth\"/>')` in references roots, fenced tag left as `tags=\"billing\"`, non-references roots byte-identical."
+    },
+    {
+      "slug": "section:m29krit1",
+      "level": 2,
+      "status": "covered",
+      "evidence": "Changed criteria: (1) sources of `entities`/`releases` mounted by the L13 implementor and M29 reactions bound by kind declarations; dispose drops mounts and bindings — root-registry-runtime.ts:105-179, tests root-registry-runtime.test.ts:82 (`await w.dispose(); for (const source of mounted.sourceByRootId.values()) expect(w.isMounted(source)).toBe(false)` and re-mount dispatches to nobody) and :314; (2) DB→text migration and pre-migration backup keyed on the `entities` root (project-context.ts:1639-1673, entitiesRootDir from system('entities')), reading 'directory exists' as 'root carries text' because activation mkdirs every root (comment at :1639-1641); (3) spec_release rebuild/reindex/backfill on the `releases` root (ReleaseFileStore/ReleaseIndexerService on releasesRootDir, project-context.ts:645-653, :1721-1777)."
+    },
+    {
+      "slug": "section:m18acc00",
+      "level": 2,
+      "status": "covered",
+      "evidence": "Changed inline criteria: tag slug rename over tags.json + entity files of the `entities` root + markdown of all references-flag roots — tags-entities-root.test.ts:75 (see 91vuvf2u); derived tag index with tags.json shared in the `entities` root — tags-entities-root.test.ts:36 asserts `entitiesRoot.dir).toBe('.claude4spec/entities')` and tags.json written at `.claude4spec/entities/tags.json` while legacy `entitiesDir: 'ents'` is never created (`expect(fs.existsSync(path.join(cwd, 'ents'))).toBe(false)`)."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "> tsc --noEmit (all workspaces) — no errors"
+  }
+}

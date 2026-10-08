@@ -5,9 +5,9 @@ import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
 import { FileWatchRuntime, type WatchSubscriber } from '../fs/watcher.js';
-import { ReactionBinder } from '../fs/reactions.js';
+import { ReactionBinder, validateKindRequirements, type ReactionHandler } from '../fs/reactions.js';
 import { RootRegistry } from '../roots/registry.js';
-import { kindDeclaration } from '../../shared/root-kinds.js';
+import { KIND_DECLARATIONS, kindDeclaration } from '../../shared/root-kinds.js';
 import { PagesService } from '../services/pages.js';
 import { MarkdownFileStore } from '../services/markdown-file-store.js';
 import { configPath } from '../config.js';
@@ -309,5 +309,63 @@ describe('2.1.8 — root-registry runtime per ProjectContext (M02 m02multidir, L
     expect(() => bindRegistryReactions(registry, unmounted, new ReactionBinder(w, coreCtx([])))).toThrow(
       /'adr' has no mounted source/,
     );
+  });
+
+  it('M29 m29idx001: M29 mounts no source — the L13 implementor mounts the `entities` root and binds m29-entity-indexer there (json: entity files + tags.json, input rootId `entities`, no requirements); m29-release-cache is a json projection definition with no requirements', async () => {
+    const cwd = tmp();
+    const w = runtime().scoped('context:m29');
+    const registry = new RootRegistry(USER_ROOTS);
+    const mounted = await mountRegistryRoots({ cwd, registry, userRoots: USER_ROOTS, w });
+    const entitiesSource = mounted.sourceByRootId.get('entities')!;
+    expect(w.isMounted(entitiesSource)).toBe(true);
+
+    // The entity indexer receives what the kind selected it for, with the binding's rootId.
+    const seen: Array<[string, string]> = [];
+    // The binder hands the binding's input as the handler's 5th argument.
+    const entityIndexer: ReactionHandler = {
+      onChange: (_s, _src, rel, _o, input) => void seen.push([input.rootId, rel]),
+      onUnlink: () => {},
+    };
+    const binder = new ReactionBinder(w, {
+      ...coreCtx([]),
+      entityIndexer: entityIndexer as unknown as WatchSubscriber,
+    } as CoreReactionContext);
+    bindRegistryReactions(registry, mounted.sourceByRootId, binder);
+    expect(binder.isBound('m29-entity-indexer', entitiesSource)).toBe(true);
+    // Bound nowhere else: the selection is the kind's, not a hand-made mount.
+    for (const root of registry.list()) {
+      if (root.id === 'entities') continue;
+      expect(binder.isBound('m29-entity-indexer', mounted.sourceByRootId.get(root.id)!), root.id).toBe(false);
+    }
+    const dir = path.join(cwd, registry.get('entities')!.dir);
+    fs.mkdirSync(path.join(dir, 'endpoint'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'tags.json'), '{"tags":[]}');
+    fs.writeFileSync(path.join(dir, 'endpoint', 'a.json'), '{}');
+    fs.writeFileSync(path.join(dir, 'notes.md'), '# not json\n');
+    for (const rel of ['tags.json', 'endpoint/a.json', 'notes.md']) await w.flush(entitiesSource, rel);
+    expect(seen).toEqual([
+      ['entities', 'tags.json'],
+      ['entities', 'endpoint/a.json'],
+    ]);
+
+    // Both M29 definitions: no requirement on reactions or flags.
+    for (const id of ['m29-entity-indexer', 'm29-release-cache']) {
+      expect(() =>
+        validateKindRequirements({
+          ...KIND_DECLARATIONS.entities,
+          reactions: [id],
+          flags: { release: false, references: false, gitignore: false, agentDirectFs: false },
+        }),
+      ).not.toThrow();
+    }
+
+    // No M29 module mounts a source of its own; observation goes through M40 via the registry hook.
+    for (const file of ['entity-store.ts', 'entity-indexer.ts', 'release-store.ts', 'release-indexer.ts']) {
+      const src = fs.readFileSync(path.join(import.meta.dirname, '..', 'services', file), 'utf8');
+      expect(src, file).not.toMatch(/mountSource\(/);
+      expect(src, file).not.toMatch(/\bchokidar\b|fs\.watch\(/);
+    }
+    const build = fs.readFileSync(path.join(import.meta.dirname, 'project-context.ts'), 'utf8');
+    expect(build).not.toMatch(/mountSource\(\{\s*source:\s*(ENTITIES_SOURCE|RELEASES_SOURCE)/);
   });
 });

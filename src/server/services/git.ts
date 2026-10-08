@@ -66,7 +66,7 @@ const NOT_DETECTED: GitStatusResponse = {
 };
 
 export class GitService {
-  /** Page root dirs (every `kind: pages` root) resolved to absolute paths — probe locations and staging. */
+  /** Dirs of the roots whose kind carries `release` (every `pages` root, then `entities`) resolved to absolute paths — probe locations and staging. */
   private readonly releasableRootDirs: string[];
 
   /**
@@ -213,11 +213,11 @@ export class GitService {
     // EFFECTIVE ones this service was built with (`--pages` override applied);
     // the system roots come from code.
     const targets: string[] = [];
-    for (const p of [
+    for (const p of new Set([
       ...this.releasableRootDirs,
       ...SYSTEM_ROOTS.map((r) => path.resolve(this.cwd, r.dir)),
       configPath(this.cwd),
-    ]) {
+    ])) {
       let real: string;
       try {
         real = fs.realpathSync(p);

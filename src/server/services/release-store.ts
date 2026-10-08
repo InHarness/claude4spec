@@ -2,7 +2,7 @@
  * 0.1.118 Release Store — the file layer that makes release identity
  * git-committed text, mirroring `EntityStore` (M29).
  *
- * Each release = one JSON file `<releasesDir>/<slug>.json`, IDENTITY ONLY
+ * Each release = one JSON file `<slug>.json` in the `releases` root, IDENTITY ONLY
  * (`name`, `slug`, `description`, `createdAt`, `createdBy`, `roots`) — no
  * version content, no tree, no gitSha. `spec_release` (SQLite) is a derived
  * cache rebuilt from these files (see `ReleaseIndexerService`); release→version
@@ -66,10 +66,10 @@ export class ReleaseFileStore {
 
   constructor(
     cwd: string,
-    releasesDir: string,
+    releasesRootDir: string,
     private watcher: SelfWriteSuppressor,
   ) {
-    this.root = path.resolve(cwd, releasesDir);
+    this.root = path.resolve(cwd, releasesRootDir);
   }
 
   ensureRoot(): void {

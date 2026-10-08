@@ -146,7 +146,15 @@ export function registerCoreReactions(): void {
     factory: (ctx) => planChangedNotifier(ctx.ws),
   });
 
-  // M29 — entity files → incremental reindex.
+  // M29 (m29idx001) — entity files → incremental reindex. M29 mounts no source:
+  // the L13 implementor mounts the `entities` root's source and binds this
+  // definition there because the `entities` kind selects it. Acceptance: json —
+  // both entries of the kind's file map, `tags.json` (track `HEAD`) and entity
+  // files `*/*.json` (`<type>/<slug>.json`, track `entity_version`); the binding's
+  // filter is that map, so no other file of the source reaches the indexer.
+  // No requirements. `rootId` arrives as the binding's input — the kind has one
+  // root, so it is always `entities` — and the projection keys its state as
+  // `(type, slug)` derived from the path.
   defineReaction<CoreReactionContext>({
     id: 'm29-entity-indexer',
     phase: 'projection',
@@ -154,7 +162,11 @@ export function registerCoreReactions(): void {
     factory: (ctx) => ctx.entityIndexer,
   });
 
-  // M29 — rebuilds the `spec_release` cache from the `releases` root's files.
+  // M29 (m29idx001) — rebuilds the `spec_release` cache from the `releases`
+  // root's files. Acceptance: json of a release metadata record (`<slug>.json`);
+  // other files of the source are skipped. No requirements. `rootId` arrives as
+  // the binding's input (`releases`); the cache keys on the `slug` derived from
+  // the path. Which source it is bound to is chosen by the `releases` kind (M17).
   defineReaction<CoreReactionContext>({
     id: 'm29-release-cache',
     phase: 'projection',

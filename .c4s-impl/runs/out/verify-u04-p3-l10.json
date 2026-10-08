@@ -1,0 +1,24 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "portion", "id": "u04-entities-root/p3-l10" },
+  "release": "2.1.8",
+  "rows": [
+    {
+      "slug": "section:m29l10001",
+      "level": 2,
+      "status": "covered",
+      "evidence": "Entity writes land in the project's `entities` root, not a config key: src/server/workspace/project-context.ts:326 `const entitiesRootDir = rootRegistry.system('entities').dir` (registry built from effectiveRoots at :323, no `*Dir` key read) → :540 `new EntityStore(cwd, entitiesRootDir, …)` → src/server/services/entity-store.ts:70 `this.root = path.resolve(cwd, entitiesRootDir)`; writeRel :170-182 writes only under that root. The removed `entitiesDir` key is only a warned-and-ignored legacy field: src/server/config.ts:956-961 LEGACY_DIR_KEYS ['entitiesDir','entities'] + warnLegacyDirKeys (:973). Mounting of the `entities`/`releases` sources belongs to the L13 registry loop, not M29: project-context.ts:476 `mountRegistryRoots(...)` (comment :541-542), EntityStore/ReleaseFileStore (:540, :645) only read/write; no `mountSource(` in non-test src/server/services/*.ts (already verified for m29idx001, root-registry-runtime.test.ts:314). Per-project context capture of the write is unchanged pre-window behaviour (m29wr001). Test src/server/services/tags-entities-root.test.ts:34 'M29 m29l10001 / M18 9pvs31cv: …' builds the store as buildProjectContext does (registry.system('entities').dir with a legacy `entitiesDir: 'ents'` in config.json), asserts `expect(entitiesRoot.dir).toBe('.claude4spec/entities')`, that a mutation writes `.claude4spec/entities/tags.json` with `[['billing','Billing']]`, and `expect(fs.existsSync(path.join(cwd, 'ents'))).toBe(false)`; can pass against current code (TagsService.create → store.persistTags → writeTags → writeRel, entity-store.ts:256-295). Leftover stale comments only (config.ts:1123, src/server/services/git.ts:196,931, src/core/agent/http.ts:300) — no behaviour. `npm run typecheck` exit 0."
+    },
+    {
+      "slug": "section:9pvs31cv",
+      "level": 2,
+      "status": "covered",
+      "evidence": "tags.json is located through the `entities` root: src/server/services/tags.ts:64-66 TagsService gets the EntityStore (wired at src/server/workspace/project-context.ts:1713 `tagsService.setEntityStore(entityStore)`), whose root is `rootRegistry.system('entities').dir` (project-context.ts:326, :540); tags.json read/write at src/server/services/entity-store.ts:245-258 `path.join(this.root, TAGS_FILE)`. No other non-test locator of tags.json via a config key (grep of src for 'tags.json'/entitiesDir: only release-bundle's temp bundle dir and the legacy-key warning list config.ts:960). Tag/entity_tag tables stay derived (indexer). Test src/server/services/tags-entities-root.test.ts:34 asserts `tags.create({ name: 'Billing', … })` produces `<cwd>/.claude4spec/entities/tags.json` with `expect(onDisk.map((t) => [t.slug, t.name])).toEqual([['billing', 'Billing']])`, `expect(store.tagsFileExists()).toBe(true)`, and the legacy `entitiesDir: 'ents'` directory is never created; consistent with current code. `npm run typecheck` exit 0."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "> @inharness-ai/c4s-plugin-ac@0.2.80 typecheck\n> tsc --noEmit\n(exit 0, no errors)"
+  }
+}

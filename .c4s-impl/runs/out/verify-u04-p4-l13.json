@@ -1,0 +1,30 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "portion", "id": "u04-entities-root/p4-l13" },
+  "release": "2.1.8",
+  "rows": [
+    {
+      "slug": "section:m02l13001",
+      "level": 2,
+      "status": "covered",
+      "evidence": "Change read (m02-pages.md change offset 9 limit 3) anchors m02l13001/l13model0/m02multidir match the recipe. Scope of this portion = completing the `entities` system root in the L13 implementor loop. Enum: src/shared/root-kinds.ts:27 RootKind includes 'entities', SYSTEM_ROOT_KINDS :30. Mount+bind: src/server/workspace/root-registry-runtime.ts:120-130 mounts a source for EVERY registry root (sourceNameFor → ENTITIES_SOURCE, src/server/fs/sources.ts:51-52; mkdir before mount), :134 no markdown store for entities (json-only file map); :173-178 binds the kind's reactions (entities → 'm29-entity-indexer', root-kinds.ts:165) plus base 'm02-file-changed' with input { rootId: 'entities' }; wired in buildProjectContext at src/server/workspace/project-context.ts:476 (mount) and :1485 (bind); requirements validated per root first (:123). Dispose = scope dispose. Client routes file:changed of the entities root by kind: src/client/hooks/useFileWatcher.ts:57 systemRootKindOf. Tests: src/server/workspace/root-registry-runtime.test.ts:82 asserts every registry id incl. 'entities' mounted (`expect(allIds).toEqual(expect.arrayContaining([... 'entities', 'releases']))`), base file:changed emitted for the entities root (`['entities', 'endpoint/e.json']`), dispose unmounts every source; :258 asserts per root `ids === [...kindDeclaration(root.kind).reactions, 'm02-file-changed']` and `storeByRootId.has('entities') === false`; :314 asserts `binder.isBound('m29-entity-indexer', entitiesSource)` and bound nowhere else, inputs `['entities','tags.json'],['entities','endpoint/a.json']`, notes.md skipped. All can pass against current code. Flag table `release` row: git diff pathspecs include the entities root dir (src/server/services/release.ts:938-942 / :1004-1008 via resolveGitDiffScope entitiesAbs) and staging includes every SYSTEM_ROOT (src/server/services/git.ts:207-218), so the outcome holds — but note the entities kind declaration carries `release: false` (src/shared/root-kinds.ts:164) and file map `**/*.json` → entity_version only (:163) whereas M29 f952122v at 2.1.8 says `release` tak and `tags.json` → HEAD, `*/*.json` → entity_version; `rootRegistry.withFlag('release')` (project-context.ts:1039, GitService ctor :1064) thus excludes entities — that declaration belongs to portion p5 (section:f952122v), not judged here. `npm run typecheck` exit 0."
+    },
+    {
+      "slug": "section:l13model0",
+      "level": 2,
+      "status": "covered",
+      "evidence": "System root `entities` is a registry entry from code: src/shared/root-kinds.ts:191-197 SYSTEM_ROOTS maps kind → { id: kind, name: 'Entities' (:182), dir: systemRootDir(kind) = `.claude4spec/entities` (:187-189), kind, builtin: false }; registryList appends it after user roots (:203-208); RootRegistry.system('entities') finds it by kind (src/server/roots/registry.ts:54-58), never by id/dir; sidebar 'hidden', source 'code' (root-kinds.ts:159-162). Reserved id: src/server/config.ts:599 rejects a user root with id 'entities' (isSystemRootId), also rename route src/server/routes/config-rename.ts:194 and client form src/client/components/project/RootsElement.tsx:93. Not in config.json / not relocatable: the legacy entitiesDir key is ignored (config.ts LEGACY_DIR_KEYS, verified in p3-l10), EntityStore built from registry.system('entities').dir (project-context.ts:326,540). Dot-subtree namespace rule lets root `.` coexist with `.claude4spec/entities`. Test (uncommitted, part of scope) src/server/roots/registry.test.ts:96 asserts `expect(entities).toEqual({ id: 'entities', name: 'Entities', dir: '.claude4spec/entities', kind: 'entities', builtin: false })` for a registry whose base root is renamed `docs`, exactly one SYSTEM_ROOTS entry of kind entities, `KIND_DECLARATIONS.entities.source === 'code'`, `.sidebar === 'hidden'`, `isSystemRootId('entities') === true`, `namespacesOverlap('.', entities.dir) === false` — all consistent with current code (root-kinds.ts:191-197, :229-231)."
+    },
+    {
+      "slug": "section:m02multidir",
+      "level": 2,
+      "status": "covered",
+      "evidence": "Registry `{ id, name, dir, kind, builtin }` holds user roots + system roots incl. entities (src/shared/root-kinds.ts:37-43, :203-208). PagesService facade only for kind pages and a MarkdownFileStore only for kinds with markdown entries: src/server/workspace/root-registry-runtime.ts:134-155 — the entities root (json file map) gets a mounted M40 source and no store/facade, matching 'Korzenie systemowe są wpisami tego samego rejestru… Źródła zdarzeń wszystkich korzeni montuje implementor'. Entities are not on the file_version track and are excluded from assignToRelease's page-root filter (project-context.ts:1036-1038 rootRegistry.pages()). Test src/server/workspace/root-registry-runtime.test.ts:258 asserts `expect([...mounted.storeByRootId.keys()].sort()).toEqual(['adr','briefs','pages','patches','plans'])`, `expect(mounted.storeByRootId.has('entities')).toBe(false)`, `expect(mounted.sourceByRootId.has('entities')).toBe(true)`, facades only for registry.pages(); :82 asserts the facade set is ['pages','adr'] and every registry source mounted. Other m02multidir parts (listMarkdownFiles *.html) are pre-existing u03 rows (dev-0004)."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "> tsc --noEmit (no errors)"
+  }
+}

@@ -154,14 +154,21 @@ export const KIND_DECLARATIONS: Readonly<Record<RootKind, KindDeclaration>> = {
     flags: { release: false, references: false, gitignore: true, agentDirectFs: false },
     reactions: ['m02-frontmatter-indexer', 'm17-capture'],
   },
-  // M29 — entity files keep their own track (`entity_version`); the release
-  // flag is not what puts them in a release.
+  // M29 (f952122v) — two entries, first match wins: `tags.json` (tag
+  // definitions, M18's semantics) travels on the `HEAD` track — a release
+  // carries the copy from HEAD; `<type>/<slug>.json` entity snapshots on
+  // `entity_version`, written by the entity write primitive. `release` = yes;
+  // `references` = no does not gate slug-rename propagation into entity files
+  // (a separate mechanism over this root, M19).
   entities: {
     kind: 'entities',
     source: 'code',
     sidebar: 'hidden',
-    fileMap: [{ pattern: '**/*.json', format: 'json', track: 'entity_version' }],
-    flags: { release: false, references: false, gitignore: false, agentDirectFs: false },
+    fileMap: [
+      { pattern: 'tags.json', format: 'json', track: 'HEAD' },
+      { pattern: '*/*.json', format: 'json', track: 'entity_version' },
+    ],
+    flags: { release: true, references: false, gitignore: false, agentDirectFs: false },
     reactions: ['m29-entity-indexer'],
   },
   // M29
@@ -260,30 +267,71 @@ export function kindSelects(kind: RootKind, reactionId: string): boolean {
 }
 
 /**
+ * Minimal glob → RegExp over a slash-separated relative path: `**\/` (zero or
+ * more leading segments), `**`, `*` and `?` (within one segment), `{a,b}`
+ * alternation (each alternative is itself a glob, no nesting). Shared by the
+ * file-map lookup below and M40's mechanical subscription filter, so a kind's
+ * entry and the filter derived from it match the same paths. Deliberately not a
+ * general glob engine.
+ */
+export function globToRegExp(glob: string): RegExp {
+  return new RegExp(`^${globBody(glob)}$`);
+}
+
+function globBody(glob: string): string {
+  let out = '';
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i]!;
+    if (c === '{') {
+      const close = glob.indexOf('}', i);
+      if (close !== -1) {
+        const alts = glob.slice(i + 1, close).split(',');
+        out += `(?:${alts.map(globBody).join('|')})`;
+        i = close;
+        continue;
+      }
+      out += '\\{';
+    } else if (c === '*') {
+      if (glob[i + 1] === '*') {
+        if (glob[i + 2] === '/') {
+          out += '(?:[^/]*/)*';
+          i += 2;
+        } else {
+          out += '.*';
+          i += 1;
+        }
+      } else {
+        out += '[^/]*';
+      }
+    } else if (c === '?') {
+      out += '[^/]';
+    } else {
+      out += c.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+    }
+  }
+  return out;
+}
+
+/**
  * The kind's file-map entry a root-relative path falls under — first match wins,
  * as the map is ordered. `undefined` = the path is not an entry of the kind (the
- * root's tree does not show it). Understands the same pattern shapes as
- * {@link fileMapFilter}: `**\/*.{a,b}`, `**\/*.x`, `*.x`.
+ * root's tree does not show it). Patterns are the globs {@link globToRegExp}
+ * understands (`**\/*.{a,b}`, `*.x`, `tags.json`, `*\/*.json`, …).
  */
 export function fileMapEntryOf(kind: RootKind, relPath: string): FileMapEntry | undefined {
   const p = relPath.replace(/\\/g, '/');
-  for (const e of KIND_DECLARATIONS[kind].fileMap) {
-    const m = /^(\*\*\/)?\*\.(?:\{([^}]+)\}|([A-Za-z0-9]+))$/.exec(e.pattern);
-    if (!m) continue;
-    if (m[1] === undefined && p.includes('/')) continue;
-    const exts = m[2] ? m[2].split(',') : [m[3]!];
-    if (exts.some((ext) => p.endsWith(`.${ext}`))) return e;
-  }
-  return undefined;
+  return KIND_DECLARATIONS[kind].fileMap.find((e) => globToRegExp(e.pattern).test(p));
 }
 
 /**
  * The single glob that matches a kind's file-map entries of the given formats —
  * and, when `tracks` is given, of those version tracks only (M17's `m17-capture`
- * accepts `file_version` entries in any format). Patterns of the shape `**\/*.{a,b}` / `**\/*.x` / `*.x` are merged by their
- * extensions; the runtime filter understands exactly those shapes. Entries of
- * different depths (`*.x` next to `**\/*.y`) cannot be merged without widening
- * the shallow one, so that combination is refused rather than silently widened.
+ * accepts `file_version` entries in any format). Extension-shaped patterns
+ * (`**\/*.{a,b}` / `**\/*.x` / `*.x`) of one depth are merged by their
+ * extensions; any other set of entries becomes a `{p1,p2}` alternation of the
+ * patterns themselves (e.g. the `entities` kind: `{tags.json,*\/*.json}`), which
+ * matches exactly the paths the entries match. A brace pattern cannot be nested
+ * in such an alternation, so that combination is refused rather than widened.
  */
 export function fileMapFilter(
   kind: RootKind,
@@ -295,19 +343,16 @@ export function fileMapFilter(
   );
   if (entries.length === 0) return undefined;
   if (entries.length === 1) return entries[0]!.pattern;
-  const exts: string[] = [];
-  let deep: boolean | undefined;
-  for (const e of entries) {
-    const m = /^(\*\*\/)?\*\.(?:\{([^}]+)\}|([A-Za-z0-9]+))$/.exec(e.pattern);
-    if (!m) throw new Error(`root kind '${kind}': file-map pattern '${e.pattern}' cannot be merged into one filter`);
-    const entryDeep = m[1] !== undefined;
-    if (deep !== undefined && deep !== entryDeep) {
-      throw new Error(`root kind '${kind}': file-map patterns of different depths cannot be merged into one filter`);
-    }
-    deep = entryDeep;
-    exts.push(...(m[2] ? m[2].split(',') : [m[3]!]));
+  const shapes = entries.map((e) => /^(\*\*\/)?\*\.(?:\{([^}]+)\}|([A-Za-z0-9]+))$/.exec(e.pattern));
+  const depths = new Set(shapes.map((m) => (m ? m[1] !== undefined : null)));
+  if (shapes.every((m) => m !== null) && depths.size === 1) {
+    const exts = shapes.flatMap((m) => (m![2] ? m![2].split(',') : [m![3]!]));
+    return `${shapes[0]![1] !== undefined ? '**/' : ''}*.{${exts.join(',')}}`;
   }
-  return `${deep ? '**/' : ''}*.{${exts.join(',')}}`;
+  if (entries.some((e) => /[{}]/.test(e.pattern))) {
+    throw new Error(`root kind '${kind}': file-map patterns cannot be merged into one filter`);
+  }
+  return `{${entries.map((e) => e.pattern).join(',')}}`;
 }
 
 /**

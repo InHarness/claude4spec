@@ -15,7 +15,7 @@
  * WHY THIS IS NOT A MIGRATION SYSTEM. A schema change regenerates the
  * projection; it does not migrate it. The entity FILES are authoritative, the
  * index is derivable, so the recovery for any change the generator cannot apply
- * in place is "drop the table and rebuild from `entitiesDir`" — the operation
+ * in place is "drop the table and rebuild from the `entities` root" — the operation
  * `EntityIndexerService.indexAll()` already performs on every boot. That is why
  * this module only ever CREATEs and ADDs COLUMNs: those are the changes worth
  * doing without a rebuild, and every other change is the rebuild's job.

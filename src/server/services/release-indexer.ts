@@ -1,6 +1,6 @@
 /**
  * 0.1.118 ReleaseIndexerService — rebuilds the `spec_release` derived cache
- * from `<releasesDir>/<slug>.json` files, mirroring `EntityIndexerService`
+ * from the `releases` root's `<slug>.json` files, mirroring `EntityIndexerService`
  * (M29) — with one critical divergence, spelled out below.
  *
  * `spec_release.id` is an AUTOINCREMENT surrogate key referenced by a loose

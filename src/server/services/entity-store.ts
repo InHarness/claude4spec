@@ -1,8 +1,8 @@
 /**
  * M29 Entity Store — the file layer that makes entities git-committed text.
  *
- * Each entity = one JSON file `<entitiesDir>/<type>/<slug>.json`; tag
- * definitions = `<entitiesDir>/tags.json`. These files are the SOURCE OF TRUTH;
+ * Each entity = one JSON file `<type>/<slug>.json` in the `entities` root; tag
+ * definitions = `tags.json` in the same root. These files are the SOURCE OF TRUTH;
  * SQLite is a derived index rebuilt from them at boot (see EntityIndexerService).
  *
  * File content = `host.snapshot(row)` run through `canonicalize` so two writes
@@ -62,12 +62,12 @@ export class EntityStore {
 
   constructor(
     cwd: string,
-    entitiesDir: string,
+    entitiesRootDir: string,
     private watcher: SelfWriteSuppressor,
     private reader: RawEntityReader,
     private host: PluginHost,
   ) {
-    this.root = path.resolve(cwd, entitiesDir);
+    this.root = path.resolve(cwd, entitiesRootDir);
   }
 
   // ─── paths ────────────────────────────────────────────────────────────────
