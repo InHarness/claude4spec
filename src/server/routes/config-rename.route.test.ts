@@ -6,7 +6,9 @@ import express from 'express';
 import request from 'supertest';
 import { builtinPagesRoot, configPath, readConfig, type Config } from '../config.js';
 import { configRouter } from './config.js';
-import { rootRenameRouter } from './config-rename.js';
+import { rootRenameRouter, rootRenameLock } from './config-rename.js';
+import { RootRegistry } from '../roots/registry.js';
+import { PagesService } from '../services/pages.js';
 import { readRootRenames, rootRenamesPath } from '../root-renames.js';
 import type { SkillRegistry } from '../services/skill-registry.js';
 import type { Root } from '../../shared/types.js';
@@ -72,7 +74,7 @@ describe('POST /config/roots/:rootId/rename (0.2.101)', () => {
     expect(await currentHash()).not.toBe(before);
   });
 
-  it('renames a user root and keeps dir/name/builtin', async () => {
+  it('[entity:rename-root-response] renames a user root and keeps dir/name/builtin', async () => {
     const res = await request(app())
       .post('/config/roots/adr/rename')
       .send({ newId: 'decisions', expectedConfigHash: await currentHash() });
@@ -86,6 +88,11 @@ describe('POST /config/roots/:rootId/rename (0.2.101)', () => {
       builtin: false,
       alreadyApplied: false,
     });
+    // RenameRootResponse: exactly these seven fields (2.1.8: no `relinkedRoots`).
+    expect(Object.keys(res.body).sort()).toEqual(
+      ['alreadyApplied', 'builtin', 'configHash', 'dir', 'name', 'previousRootId', 'rootId'],
+    );
+    expect(res.body.configHash).toMatch(/^[0-9a-f]{64}$/);
 
     const after = readConfig(dir);
     expect(after.roots.map((r) => r.id)).toEqual(['pages', 'decisions']);
@@ -198,7 +205,7 @@ describe('POST /config/roots/:rootId/rename (0.2.101)', () => {
     expect(res.body.error).not.toMatch(/already used/);
   });
 
-  it('409s a stale expectedConfigHash and writes nothing', async () => {
+  it('[ac:ac-przemianowanie-rootu-zatwierdzone-z-t] 409s a stale expectedConfigHash and writes nothing', async () => {
     const stale = await currentHash();
     await request(app()).patch('/config').send({ name: 'Moved on' }).expect(200);
 
@@ -217,7 +224,7 @@ describe('POST /config/roots/:rootId/rename (0.2.101)', () => {
    * is retired" would otherwise produce — and it must NOT migrate anything a
    * second time.
    */
-  it('replays a completed rename as 200 alreadyApplied, without a second transition', async () => {
+  it('[ac:ac-ponowne-zatwierdzenie-juz-zakonczoneg] replays a completed rename as 200 alreadyApplied, without a second transition', async () => {
     const body = { newId: 'decisions', expectedConfigHash: await currentHash() };
     await request(app()).post('/config/roots/adr/rename').send(body).expect(200);
 
@@ -261,5 +268,102 @@ describe('POST /config/roots/:rootId/rename (0.2.101)', () => {
       .send({ roots: [builtinPagesRoot(), { ...builtinPagesRoot(), id: 'docs', dir: 'docs' }] });
     expect(two.status).toBe(400);
     expect(two.body.error.message).toMatch(/\(found 2\)/);
+  });
+
+  it('[entity:post-api-config-roots-rootid-rename] POST /config/roots/:rootId/rename answers 200, 400 VALIDATION, 404 ROOT_NOT_FOUND and 409 ROOT_ID_TAKEN / CONFIG_CONFLICT / RENAME_IN_PROGRESS', async () => {
+    const hash = await currentHash();
+    // Only POST is mounted on the path.
+    expect((await request(app()).get('/config/roots/adr/rename')).status).toBe(404);
+    expect((await request(app()).post('/config/roots/adr/rename').send({ newId: 'Bad Id', expectedConfigHash: hash })).body.code).toBe('VALIDATION');
+    expect((await request(app()).post('/config/roots/nope/rename').send({ newId: 'x', expectedConfigHash: hash })).status).toBe(404);
+    expect((await request(app()).post('/config/roots/adr/rename').send({ newId: 'pages', expectedConfigHash: hash })).status).toBe(409);
+    expect((await request(app()).post('/config/roots/adr/rename').send({ newId: 'decisions', expectedConfigHash: 'stale' })).body.code).toBe(
+      'CONFIG_CONFLICT',
+    );
+    expect(rootRenameLock.acquire(dir)).toBe(true);
+    try {
+      const busy = await request(app()).post('/config/roots/adr/rename').send({ newId: 'decisions', expectedConfigHash: hash });
+      expect(busy.status).toBe(409);
+      expect(busy.body.code).toBe('RENAME_IN_PROGRESS');
+    } finally {
+      rootRenameLock.release(dir);
+    }
+    const ok = await request(app()).post('/config/roots/adr/rename').send({ newId: 'decisions', expectedConfigHash: hash });
+    expect(ok.status).toBe(200);
+  });
+
+  it('[ac:ac-drugie-przemianowanie-w-tym-samym-pro] a second rename sent while the first has not finished is refused, and changes nothing', async () => {
+    const hash = await currentHash();
+    // The first rename holds the project's slot until it completes.
+    expect(rootRenameLock.acquire(dir)).toBe(true);
+    try {
+      const second = await request(app())
+        .post('/config/roots/pages/rename')
+        .send({ newId: 'docs', expectedConfigHash: hash });
+      expect(second.status).toBe(409);
+      expect(second.body).toMatchObject({ code: 'RENAME_IN_PROGRESS', rootId: 'pages' });
+      expect(readConfig(dir).roots.map((r) => r.id)).toEqual(['pages', 'adr']);
+      expect(fs.existsSync(rootRenamesPath(dir))).toBe(false);
+    } finally {
+      rootRenameLock.release(dir);
+    }
+    // Once the first is done, the same request goes through.
+    await request(app()).post('/config/roots/pages/rename').send({ newId: 'docs', expectedConfigHash: hash }).expect(200);
+  });
+
+  it('[ac:ac-po-przemianowaniu-przestrzeni-podstaw] after renaming the base space its pages answer under the new identifier', async () => {
+    fs.mkdirSync(path.join(dir, 'pages'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'pages', 'hello.md'), '# Hello\n');
+    await request(app())
+      .post('/config/roots/pages/rename')
+      .send({ newId: 'docs', expectedConfigHash: await currentHash() })
+      .expect(200);
+
+    // The registry the next context is built from serves the base space as `docs`.
+    const registry = new RootRegistry(readConfig(dir).roots);
+    const space = registry.pages().find((r) => r.id === 'docs')!;
+    expect(space).toMatchObject({ id: 'docs', dir: 'pages', builtin: true });
+    expect(registry.pages().some((r) => r.id === 'pages')).toBe(false);
+    const pages = new PagesService(dir, space.dir, space.id);
+    expect(pages.rootId).toBe('docs');
+    expect((await pages.read('hello.md')).body).toContain('# Hello');
+  });
+
+  it('[ac:ac-przemianowanie-przestrzeni-zostawia-j] a rename leaves the directory alone — files lie exactly where they lay', async () => {
+    fs.mkdirSync(path.join(dir, 'adr', 'nested'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'adr', 'a.md'), '# A\n');
+    fs.writeFileSync(path.join(dir, 'adr', 'nested', 'b.md'), '# B\n');
+    const list = (root: string): string[] =>
+      (fs.readdirSync(root, { recursive: true }) as string[]).map((p) => p.split(path.sep).join('/')).sort();
+    const before = list(path.join(dir, 'adr'));
+
+    const res = await request(app())
+      .post('/config/roots/adr/rename')
+      .send({ newId: 'decisions', expectedConfigHash: await currentHash() });
+    expect(res.status).toBe(200);
+    expect(res.body.dir).toBe('adr');
+    expect(readConfig(dir).roots.find((r) => r.id === 'decisions')!.dir).toBe('adr');
+    expect(list(path.join(dir, 'adr'))).toEqual(before);
+    expect(fs.readFileSync(path.join(dir, 'adr', 'nested', 'b.md'), 'utf8')).toBe('# B\n');
+    expect(fs.existsSync(path.join(dir, 'decisions'))).toBe(false);
+  });
+
+  it('[ac:ac-w-sekcji-advanced-onboardingu-mozna-z] the base root id alone can change — its directory stays', async () => {
+    const res = await request(app())
+      .post('/config/roots/pages/rename')
+      .send({ newId: 'spec', expectedConfigHash: await currentHash() });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ rootId: 'spec', dir: 'pages', builtin: true });
+    expect(readConfig(dir).roots.find((r) => r.builtin)).toEqual({ ...builtinPagesRoot(), id: 'spec' });
+  });
+
+  it('[ac:ac-odmowa-przemianowania-na-continue-zos] a refused rename leaves onboardingCompleted as it was', async () => {
+    write({ roots: [builtinPagesRoot(), userRoot('adr')], onboardingCompleted: false });
+    const res = await request(app())
+      .post('/config/roots/pages/rename')
+      .send({ newId: 'adr', expectedConfigHash: await currentHash() });
+    expect(res.status).toBe(409);
+    expect(readConfig(dir).onboardingCompleted).toBe(false);
+    expect((await request(app()).get('/config')).body.onboarding).toEqual({ completed: false });
   });
 });

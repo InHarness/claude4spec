@@ -30,6 +30,7 @@ import { BriefsList } from './components/BriefsList.js';
 import { BriefDetail } from './components/BriefDetail.js';
 import { PatchDetail } from './components/PatchDetail.js';
 import { OnboardingPage } from './components/onboarding/OnboardingPage.js';
+import { needsOnboarding } from './components/onboarding/onboardingFlow.js';
 import { WelcomePage } from './components/onboarding/WelcomePage.js';
 import { SettingsPage } from './components/settings/SettingsPage.js';
 import { usePages } from './hooks/usePages.js';
@@ -171,7 +172,7 @@ const onboardingRoute = createRoute({
   path: '/onboarding',
   component: OnboardingPage,
   // M16: a fresh project (onboarding not completed) lands here from any route.
-  staticData: { fullscreen: true, redirectIf: (config) => !config.onboarding.completed },
+  staticData: { fullscreen: true, redirectIf: needsOnboarding },
 });
 
 // Decision #11: project-less route (basepath '/' when no PROJECT_ID is injected).

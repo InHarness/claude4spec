@@ -141,6 +141,10 @@ export const AGENT_SETTINGS: SettingsContribution = {
       // Resume-locked on the server: a saved change ends resumption of every existing
       // conversation, and the toast has to say so.
       effectMessage: EFFECT.resumeBreak,
+      // Hidden with `Allowed paths` while the built-ins are blocked (M05 settings
+      // table: visible when `agent.disableDirectFilesystemAccess` is off) — hidden,
+      // not cleared: the values stay in the file and come back when unticked.
+      visible: (ctx) => !blockDirectFs(ctx),
     },
     {
       id: 'anthropic-api-key',

@@ -122,6 +122,23 @@ export interface RootRenameDeps {
  */
 const inProgress = new Set<string>();
 
+/**
+ * The per-project guard above, as a handle: `acquire` reports whether the slot
+ * was free. The route is its only production user; a caller holding the slot
+ * (a test standing in for a rename still running) makes every other rename of
+ * that project answer `409 RENAME_IN_PROGRESS`.
+ */
+export const rootRenameLock = {
+  acquire(cwd: string): boolean {
+    if (inProgress.has(cwd)) return false;
+    inProgress.add(cwd);
+    return true;
+  },
+  release(cwd: string): void {
+    inProgress.delete(cwd);
+  },
+};
+
 export function rootRenameRouter(deps: RootRenameDeps): Router {
   const { cwd } = deps;
   const router = Router({ mergeParams: true });
@@ -134,13 +151,12 @@ export function rootRenameRouter(deps: RootRenameDeps): Router {
       res.status(STATUS[code]).json({ error, code, ...extra } satisfies RenameRootError);
     };
 
-    if (inProgress.has(cwd)) {
+    if (!rootRenameLock.acquire(cwd)) {
       return fail('RENAME_IN_PROGRESS', 'another root rename is running in this project — retry once it finishes', {
         rootId,
       });
     }
 
-    inProgress.add(cwd);
     try {
       const newId = body.newId;
       const expectedConfigHash = body.expectedConfigHash;
@@ -261,7 +277,7 @@ export function rootRenameRouter(deps: RootRenameDeps): Router {
       // startup replays it rather than guessing here, mid-request.
       return fail('VALIDATION', (err as Error).message, { rootId });
     } finally {
-      inProgress.delete(cwd);
+      rootRenameLock.release(cwd);
     }
   });
 

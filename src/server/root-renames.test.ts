@@ -163,6 +163,33 @@ describe('root-renames — recovery from an interrupted rename (0.2.101)', () =>
     expect(fs.existsSync(rootRenameJournalPath(dir))).toBe(false);
   });
 
+  it('[ac:ac-przemianowanie-przerwane-restartem-pr] a rename interrupted by a restart comes back completed or rolled back in full — never half-applied', () => {
+    const consistent = () => {
+      const ids = readConfig(dir).roots.map((r) => r.id);
+      const transitions = readRootRenames(dir).transitions;
+      // Either the config answers under the new id AND the transition is recorded,
+      // or neither happened — and the journal is gone in both cases.
+      const renamed = ids.includes('docs') && !ids.includes('pages');
+      const recorded = transitions.some((x) => x.from === 'pages' && x.to === 'docs');
+      expect(renamed).toBe(recorded);
+      expect(fs.existsSync(rootRenameJournalPath(dir))).toBe(false);
+      return renamed;
+    };
+
+    // Died after the config write, before the registry write → completed.
+    write({ roots: [{ ...builtinPagesRoot(), id: 'docs' }] });
+    writeRenameJournal(dir, { from: 'pages', to: 'docs', startedAt: '2026-01-01T00:00:00.000Z' });
+    expect(recoverPendingRootRename(dir)).toBe('completed');
+    expect(consistent()).toBe(true);
+
+    // Died before the config write → rolled back.
+    fs.rmSync(path.join(dir, '.claude4spec'), { recursive: true, force: true });
+    write({ roots: [builtinPagesRoot()] });
+    writeRenameJournal(dir, { from: 'pages', to: 'docs', startedAt: '2026-01-01T00:00:00.000Z' });
+    expect(recoverPendingRootRename(dir)).toBe('rolled-back');
+    expect(consistent()).toBe(false);
+  });
+
   it('is idempotent — a replay over an already-recorded transition changes nothing', () => {
     write({ roots: [{ ...builtinPagesRoot(), id: 'docs' }] });
     writeRootRenames(dir, { version: 1, transitions: [t('pages', 'docs')] });

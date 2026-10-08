@@ -26,15 +26,27 @@ describe('bootstrapProject — system roots', () => {
     return bootstrapProject(registry, ws, cwd);
   };
 
-  it('[ac:ac-swiezy-bootstrap-nie-zapisuje-w-confi] a fresh bootstrap creates the five system dirs and writes no system root into config.json', () => {
-    boot();
+  it('[ac:ac-swiezy-bootstrap-tworzy-katalogi-wszy] a fresh bootstrap creates the directories of all five system roots', () => {
+    for (const kind of ['plans', 'briefs', 'patches', 'entities', 'releases']) {
+      expect(fs.existsSync(path.join(cwd, '.claude4spec', kind))).toBe(false);
+    }
+    const result = boot();
     for (const kind of ['plans', 'briefs', 'patches', 'entities', 'releases']) {
       expect(fs.statSync(path.join(cwd, '.claude4spec', kind)).isDirectory()).toBe(true);
     }
+    expect([...result.systemRootDirsCreated].sort()).toEqual(
+      ['.claude4spec/briefs', '.claude4spec/entities', '.claude4spec/patches', '.claude4spec/plans', '.claude4spec/releases'],
+    );
+  });
+
+  it('[ac:ac-swiezy-bootstrap-nie-zapisuje-w-confi] a fresh bootstrap writes no system root into config.json — neither as roots[] entries nor as separate keys', () => {
+    boot();
     const raw = JSON.parse(fs.readFileSync(path.join(cwd, '.claude4spec', 'config.json'), 'utf8')) as Record<string, unknown>;
     for (const key of ['plansDir', 'briefsDir', 'patchesDir', 'entitiesDir', 'releasesDir']) expect(raw).not.toHaveProperty(key);
     const roots = raw.roots as Array<Record<string, unknown>>;
     expect(roots.map((r) => r.id)).toEqual(['pages']);
+    // No value in the file names a system root's fixed directory.
+    expect(JSON.stringify(raw)).not.toContain('.claude4spec/');
     expect(Object.keys(roots[0]!).sort()).toEqual(['builtin', 'dir', 'id', 'name']);
     // `tags.json` stays lazy.
     expect(fs.existsSync(path.join(cwd, '.claude4spec', 'entities', 'tags.json'))).toBe(false);

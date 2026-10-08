@@ -4,7 +4,9 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
-import { configPath, type Config } from '../config.js';
+import { configPath, loadOrCreateConfig, type Config } from '../config.js';
+import { resolveAgentPathScope } from '../services/agent-path-scope.js';
+import { RootRegistry } from '../roots/registry.js';
 import { configRouter } from './config.js';
 import type { SkillRegistry } from '../services/skill-registry.js';
 
@@ -50,7 +52,7 @@ describe('PATCH /config — name accepts full Unicode, rejects control chars (0.
     expect(res.body.agent.claudeUsePreset).toBe(false);
   });
 
-  it('0.2.112: onboarding [Continue] PATCH { agent: { conversationalLanguage } } keeps an explicit true', async () => {
+  it('[ac:ac-continue-z-agent-conversationallangua] 0.2.112: onboarding [Continue] PATCH { agent: { conversationalLanguage } } keeps an explicit true', async () => {
     await request(app()).patch('/config').send({ agent: { claudeUsePreset: true } });
     const res = await request(app()).patch('/config').send({ agent: { conversationalLanguage: 'Polski' } });
     expect(res.status).toBe(200);
@@ -433,6 +435,282 @@ describe('GET/PATCH /config — one root registry with kinds (2.1.8)', () => {
     expect(res.status).toBe(200);
     const onDisk = JSON.parse(fs.readFileSync(configPath(dir), 'utf8')) as Config;
     expect(onDisk.roots).toEqual([{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }]);
+  });
+});
+
+/**
+ * 2.1.8 (u11) — the wire shapes of `GET`/`PATCH /config` and the onboarding /
+ * settings criteria that live on them.
+ */
+describe('GET/PATCH /config — wire shapes and the onboarding/settings criteria', () => {
+  let dir: string;
+  let rebuilds: number;
+  let welcomes: string[];
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-cfg-wire-'));
+    rebuilds = 0;
+    welcomes = [];
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const writeFile = (cfg: Record<string, unknown>) => {
+    const file = configPath(dir);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(cfg));
+  };
+  const onDisk = () => JSON.parse(fs.readFileSync(configPath(dir), 'utf8')) as Record<string, unknown>;
+  const app = () => {
+    const router = configRouter({
+      cwd: dir,
+      // `writingStyle: null` never consults the registry; a slug would.
+      skillRegistry: { isSelectable: () => true, unselectableReason: () => '' } as unknown as SkillRegistry,
+      onContextConfigChanged: () => {
+        rebuilds++;
+      },
+      onOnboardingCompleted: (pagesDir) => {
+        welcomes.push(pagesDir);
+      },
+      pluginSettingsSections: () => [
+        { name: 'c4s-plugin-x', version: '1', fields: [{ key: 'flag', label: 'Flag', control: 'toggle', kind: 'hot-reload', default: false }] },
+      ],
+    });
+    return express().use(express.json()).use(router);
+  };
+  const base = { id: 'pages', name: 'Pages', dir: 'pages', builtin: true };
+  const adr = { id: 'adr', name: 'ADRs', dir: 'docs/adr', builtin: false };
+
+  it('[entity:app-config-response] GET /config carries the AppConfigResponse fields — and no system-root keys, no consistency', async () => {
+    writeFile({
+      $schemaVersion: 4,
+      name: 'demo',
+      description: 'pitch',
+      roots: [base, adr],
+      entities: ['endpoint'],
+      consistency: { requireAcCoverage: 'warn' },
+    });
+    const res = await request(app()).get('/config');
+    expect(res.status).toBe(200);
+    const body = res.body as Record<string, unknown>;
+    expect(body.name).toBe('demo');
+    expect(body.description).toBe('pitch');
+    expect(body.roots).toEqual([base, adr]);
+    expect(body.configHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(body.writingStyle).toBeNull();
+    expect(body.writingStyleUnavailable).toBeNull();
+    expect(body.language).toBeNull();
+    expect(body.entities).toEqual(['endpoint']);
+    expect(body.plugins).toEqual({});
+    expect(body.agent).toMatchObject({
+      claudeUsePreset: false,
+      conversationalLanguage: null,
+      allowedPaths: [],
+      disallowedPaths: [],
+      disableDirectFilesystemAccess: true,
+      pathScopeStrength: 'none',
+    });
+    expect(body.remoteProjectId).toBeNull();
+    expect(body.remoteApiUrl).toBeNull();
+    expect(body.git).toEqual({
+      enabled: false,
+      syncPushOnPush: false,
+      commitTarget: { mode: 'current', branch: null, template: null, base: null },
+      switchAfterRelease: false,
+    });
+    expect(body.onboarding).toEqual({ completed: true });
+    expect(body.$schemaVersion).toBe(4);
+    for (const k of ['plansDir', 'briefsDir', 'patchesDir', 'entitiesDir', 'releasesDir', 'consistency']) {
+      expect(k in body, k).toBe(false);
+    }
+  });
+
+  it('[entity:patch-config-request] PATCH /config takes the PatchConfigRequest fields; system-root keys and response-only fields are dropped silently', async () => {
+    writeFile({ $schemaVersion: 4, name: 'demo', roots: [base] });
+    const res = await request(app())
+      .patch('/config')
+      .send({
+        name: 'Renamed',
+        description: 'short pitch',
+        roots: [base, adr],
+        entities: ['endpoint'],
+        plugins: { 'c4s-plugin-x': { flag: true } },
+        writingStyle: null,
+        language: 'English',
+        agent: { claudeUsePreset: true, conversationalLanguage: 'Polski', allowedPaths: ['/opt/x'], disallowedPaths: ['/opt/y'], disableDirectFilesystemAccess: false },
+        git: { enabled: true },
+        remoteProjectId: '11111111-2222-3333-4444-555555555555',
+        onboardingCompleted: true,
+        // Not writable here: fixed system roots, response-only fields.
+        plansDir: 'docs/plans',
+        releasesDir: 'rel',
+        configHash: 'x',
+        writingStyleUnavailable: { reason: 'x' },
+      });
+    expect(res.status).toBe(200);
+    const file = onDisk();
+    expect(file).toMatchObject({
+      name: 'Renamed',
+      description: 'short pitch',
+      roots: [base, adr],
+      entities: ['endpoint'],
+      plugins: { 'c4s-plugin-x': { flag: true } },
+      writingStyle: null,
+      language: 'English',
+      agent: { claudeUsePreset: true, conversationalLanguage: 'Polski', allowedPaths: ['/opt/x'], disallowedPaths: ['/opt/y'], disableDirectFilesystemAccess: false },
+      git: { enabled: true },
+      remoteProjectId: '11111111-2222-3333-4444-555555555555',
+      onboardingCompleted: true,
+    });
+    for (const k of ['plansDir', 'releasesDir', 'configHash', 'writingStyleUnavailable']) expect(k in file, k).toBe(false);
+    // A roots[] entry missing one of its four fields is refused.
+    const partial = await request(app()).patch('/config').send({ roots: [{ id: 'pages', name: 'Pages', dir: 'pages' }] });
+    expect(partial.status).toBe(400);
+  });
+
+  it('[ac:ac-odczyt-konfiguracji-po-swiezym-bootst] a read after a fresh bootstrap returns onboarding.completed === false', async () => {
+    loadOrCreateConfig(dir, {});
+    const res = await request(app()).get('/config');
+    expect(res.status).toBe(200);
+    expect(res.body.onboarding).toEqual({ completed: false });
+  });
+
+  it('[ac:ac-po-domknieciu-onboardingu-odczyt-konf] after onboarding closes, a read returns onboarding.completed === true', async () => {
+    loadOrCreateConfig(dir, {});
+    await request(app()).patch('/config').send({ onboardingCompleted: true }).expect(200);
+    const res = await request(app()).get('/config');
+    expect(res.body.onboarding).toEqual({ completed: true });
+  });
+
+  it('[ac:ac-projekt-sprzed-m16-ktorego-config-nie] a config file without onboardingCompleted reads as completed — no redirect to onboarding', async () => {
+    writeFile({ $schemaVersion: 4, name: 'old', roots: [base] });
+    const res = await request(app()).get('/config');
+    expect(res.body.onboarding).toEqual({ completed: true });
+    // The key is not written back by the read.
+    expect('onboardingCompleted' in onDisk()).toBe(false);
+  });
+
+  it('[ac:ac-continue-z-waznym-formularzem-wysyla] the [Continue] body persists name, writingStyle, language, agent.conversationalLanguage, roots and onboardingCompleted in one write', async () => {
+    loadOrCreateConfig(dir, {});
+    const res = await request(app())
+      .patch('/config')
+      .send({
+        name: 'My spec',
+        writingStyle: null,
+        language: 'English',
+        agent: { conversationalLanguage: 'Polski' },
+        roots: [{ ...base, dir: 'spec' }],
+        onboardingCompleted: true,
+      });
+    expect(res.status).toBe(200);
+    expect(onDisk()).toMatchObject({
+      name: 'My spec',
+      writingStyle: null,
+      language: 'English',
+      agent: { conversationalLanguage: 'Polski' },
+      roots: [{ ...base, dir: 'spec' }],
+      onboardingCompleted: true,
+    });
+    // The welcome step runs on the effective, post-write base root dir.
+    expect(welcomes).toEqual(['spec']);
+  });
+
+  it('[ac:ac-continue-ze-zmienionym-dir-builtin-ro] a roots[] with only the builtin entry\'s dir swapped is persisted and rebuilds the ProjectContext; a body without roots does not', async () => {
+    writeFile({ $schemaVersion: 4, name: 'demo', roots: [base, adr], onboardingCompleted: false });
+    await request(app())
+      .patch('/config')
+      .send({ roots: [{ ...base, dir: 'spec' }, adr], onboardingCompleted: true })
+      .expect(200);
+    expect(onDisk().roots).toEqual([{ ...base, dir: 'spec' }, adr]);
+    expect(rebuilds).toBe(1);
+
+    await request(app()).patch('/config').send({ name: 'n', onboardingCompleted: true }).expect(200);
+    expect(rebuilds).toBe(1);
+  });
+
+  it('[ac:ac-skip-nie-wysyla-roots-dir-builtin-roo] the [Skip] body leaves the base root at its bootstrap dir and identifier, with no rename recorded', async () => {
+    loadOrCreateConfig(dir, {});
+    await request(app()).patch('/config').send({ onboardingCompleted: true }).expect(200);
+    expect(onDisk().roots).toEqual([base]);
+    expect(fs.existsSync(path.join(dir, '.claude4spec', 'root-renames.json'))).toBe(false);
+    expect(rebuilds).toBe(0);
+  });
+
+  it('[ac:ac-skip-otwiera-confirmmodal-a-po-potwie] the [Skip] body ({ onboardingCompleted: true } alone) leaves both languages null', async () => {
+    loadOrCreateConfig(dir, {});
+    const res = await request(app()).patch('/config').send({ onboardingCompleted: true });
+    expect(res.status).toBe(200);
+    expect(res.body.language).toBeNull();
+    expect(res.body.agent.conversationalLanguage).toBeNull();
+    expect(res.body.onboarding).toEqual({ completed: true });
+  });
+
+  it('[ac:ac-m26-sekcja-agent-settings-zawiera-d] PATCH { agent: { conversationalLanguage } } deep-merges — the other agent fields survive — and a language off the list is a 400 on that field', async () => {
+    writeFile({
+      $schemaVersion: 4,
+      name: 'demo',
+      roots: [base],
+      agent: { claudeUsePreset: true, allowedPaths: ['/opt/a'], disallowedPaths: ['/opt/b'], disableDirectFilesystemAccess: false },
+    });
+    const res = await request(app()).patch('/config').send({ agent: { conversationalLanguage: 'Deutsch' } });
+    expect(res.status).toBe(200);
+    expect(onDisk().agent).toEqual({
+      claudeUsePreset: true,
+      allowedPaths: ['/opt/a'],
+      disallowedPaths: ['/opt/b'],
+      disableDirectFilesystemAccess: false,
+      conversationalLanguage: 'Deutsch',
+    });
+
+    const bad = await request(app()).patch('/config').send({ agent: { conversationalLanguage: 'Klingon' } });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error.code).toBe('VALIDATION');
+    expect(bad.body.error.details.field).toMatch(/conversationalLanguage/);
+    expect((onDisk().agent as Record<string, unknown>).conversationalLanguage).toBe('Deutsch');
+  });
+
+  it('[ac:ac-m26-sekcja-project-settings-zawiera-2] PATCH { language } persists a listed language or null; one off the list is a 400 on `language`', async () => {
+    writeFile({ $schemaVersion: 4, name: 'demo', roots: [base] });
+    await request(app()).patch('/config').send({ language: 'Français' }).expect(200);
+    expect(onDisk().language).toBe('Français');
+    await request(app()).patch('/config').send({ language: null }).expect(200);
+    expect(onDisk().language).toBeNull();
+    const bad = await request(app()).patch('/config').send({ language: 'Klingon' });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error.details.field).toBe('language');
+    expect(onDisk().language).toBeNull();
+  });
+
+  it('[ac:ac-textarea-allowed-disallowed-paths-sekcj] saving the parsed path list deep-merges onto agent: the array replaces, the other fields stay', async () => {
+    writeFile({
+      $schemaVersion: 4,
+      name: 'demo',
+      roots: [base],
+      agent: { allowedPaths: ['/old'], disallowedPaths: ['/keep'], disableDirectFilesystemAccess: false },
+    });
+    const res = await request(app()).patch('/config').send({ agent: { allowedPaths: ['/a', '/b'] } });
+    expect(res.status).toBe(200);
+    expect(res.body.agent.allowedPaths).toEqual(['/a', '/b']);
+    expect(res.body.agent.disallowedPaths).toEqual(['/keep']);
+    expect(res.body.agent.disableDirectFilesystemAccess).toBe(false);
+  });
+
+  it('[ac:ac-pola-agent-allowedpaths-agent-disallowed] the path lists are additive — absent reads as [], no $schemaVersion bump, and [] keeps the agent in the implicit base', async () => {
+    writeFile({ $schemaVersion: 4, name: 'demo', roots: [base] });
+    const res = await request(app()).get('/config');
+    expect(res.body.agent.allowedPaths).toEqual([]);
+    expect(res.body.agent.disallowedPaths).toEqual([]);
+    expect(res.body.agent.pathScopeStrength).toBe('none');
+
+    await request(app()).patch('/config').send({ agent: { allowedPaths: ['/opt/x'] } }).expect(200);
+    expect(onDisk().$schemaVersion).toBe(4);
+
+    // Empty lists: nothing beyond the implicit base (cwd + page roots, none outside cwd here),
+    // and nothing denied but the always-excluded system roots.
+    const scope = resolveAgentPathScope({ cwd: dir, roots: new RootRegistry([base]).list(), allowedPaths: [], disallowedPaths: [] });
+    expect(scope.allowedPaths).toEqual([]);
+    expect(scope.disallowedPaths.every((p) => p.startsWith(path.join(dir, '.claude4spec')))).toBe(true);
   });
 });
 

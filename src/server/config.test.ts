@@ -749,3 +749,79 @@ describe('config — central default normalizer (C23, 0.2.8)', () => {
     }
   });
 });
+
+/**
+ * 2.1.8 — the envelope of `.claude4spec/config.json` (code-snippet
+ * `config-json-shape`): the current version and the top-level keys; `roots[]`
+ * entries are `{ id, name, dir, builtin }`, and the system roots have no keys.
+ */
+describe('config — the config.json envelope (2.1.8)', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-cfg-shape-'));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const ENVELOPE_KEYS = [
+    '$schemaVersion',
+    'name',
+    'description',
+    'language',
+    'writingStyle',
+    'roots',
+    'entities',
+    'agent',
+    'git',
+    'consistency',
+    'onboardingCompleted',
+    'remoteApiUrl',
+    'remoteProjectId',
+    'plugins',
+  ];
+
+  it('[entity:config-json-shape] a fresh file is version 4, uses only envelope keys, roots entries carry four fields and no system-root key exists', () => {
+    loadOrCreateConfig(dir, {});
+    const raw = JSON.parse(fs.readFileSync(configPath(dir), 'utf8')) as Record<string, unknown>;
+    expect(raw.$schemaVersion).toBe(4);
+    for (const key of Object.keys(raw)) expect(ENVELOPE_KEYS, key).toContain(key);
+    for (const key of ['plansDir', 'briefsDir', 'patchesDir', 'entitiesDir', 'releasesDir']) expect(raw).not.toHaveProperty(key);
+    const roots = raw.roots as Array<Record<string, unknown>>;
+    expect(roots).toEqual([{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }]);
+
+    // A full write keeps to the same envelope: every key it persists is one of the snippet's.
+    writeConfig(dir, {
+      description: 'd',
+      language: 'English',
+      entities: ['endpoint'],
+      agent: { claudeUsePreset: true } as never,
+      git: { enabled: true } as never,
+      plugins: { 'c4s-plugin-x': { on: true } },
+    });
+    const after = JSON.parse(fs.readFileSync(configPath(dir), 'utf8')) as Record<string, unknown>;
+    for (const key of Object.keys(after)) expect(ENVELOPE_KEYS, key).toContain(key);
+    expect(after.$schemaVersion).toBe(4);
+  });
+
+  it('a legacy file with *Dir keys and extra per-root fields is not rewritten and stays at version 4', () => {
+    const file = configPath(dir);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const text = JSON.stringify({
+      $schemaVersion: 4,
+      name: 'X',
+      roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true, briefTarget: true }],
+      briefsDir: 'docs/briefs',
+    });
+    fs.writeFileSync(file, text);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      loadOrCreateConfig(dir, {});
+      readConfig(dir);
+    } finally {
+      warn.mockRestore();
+    }
+    expect(fs.readFileSync(file, 'utf8')).toBe(text);
+  });
+});

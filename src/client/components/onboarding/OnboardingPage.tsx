@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useConfig, usePatchConfig, useRenameRoot } from '../../hooks/useConfig.js';
-import type { ConfigPatch } from '../../lib/api.js';
 import { useWritingStyles } from '../../hooks/useWritingStyles.js';
 import { openModal, toast } from '../../ui/events.js';
 import { NameField, validateName } from './NameField.js';
 import { WritingStyleList, type WritingStyleSelection } from './WritingStyleList.js';
 import { SpecLanguageField, ConversationalLanguageField } from './LanguageFields.js';
 import { DirectoriesSection, validatePagesDir, validateRootId } from './DirectoriesSection.js';
+import { skipOnboarding, submitOnboarding } from './onboardingFlow.js';
 
 export function OnboardingPage() {
   const navigate = useNavigate();
@@ -66,25 +66,7 @@ export function OnboardingPage() {
     setNameError(validateName(name));
   }
 
-  /**
-   * [Continue] is TWO steps since 0.2.101, and their ORDER IS THE CONTRACT:
-   * rename first, re-read the config, then PATCH the rest built from what came
-   * back.
-   *
-   * Three consequences follow from that order, and each is deliberate:
-   *
-   * - A REFUSED RENAME ABORTS THE SUBMIT. `onboardingCompleted: true` is never
-   *   sent, the user stays on the form, and the message lands under the Root ID
-   *   field rather than in a generic toast. Since onboarding did not close, no
-   *   welcome `index.md` is written either — the condition is "onboarding closed
-   *   SUCCESSFULLY", not merely "onboarding was attempted".
-   * - A SECOND ATTEMPT READS STATE AFRESH. The refetched config carries a new
-   *   `configHash` and the current id, so pressing [Continue] again cannot bounce
-   *   off a stale token. A rename that actually succeeded but whose response was
-   *   lost comes back `alreadyApplied` and does not migrate anything twice.
-   * - THE DIRECTORY WRITE IS COMPOSED FROM THE REFRESHED CONFIG, so its
-   *   full-array `roots` cannot overwrite the identifier that was just changed.
-   */
+  /** [Continue] — the rename-then-PATCH order lives in `submitOnboarding` (onboardingFlow.ts). */
   async function onContinue() {
     const err = validateName(name);
     if (err) {
@@ -100,55 +82,32 @@ export function OnboardingPage() {
     }
     if (!config) return;
     try {
-      let current = config;
-      const baseRoot = current.roots.find((r) => r.builtin);
-      if (baseRoot && rootId.trim() !== baseRoot.id) {
-        try {
-          await renameRoot.mutateAsync({
-            rootId: baseRoot.id,
-            newId: rootId.trim(),
-            expectedConfigHash: current.configHash,
-          });
-        } catch (e) {
-          setRootIdError((e as Error).message);
-          return;
-        }
-        const refetched = await refetchConfig();
-        if (!refetched.data) return;
-        current = refetched.data;
-      }
-
-      const baseAfter = current.roots.find((r) => r.builtin);
-      const patchBody: ConfigPatch = {
-        name: name.trim(),
-        writingStyle,
-        language,
-        agent: { conversationalLanguage }, // deep-merged server-side; preserves claudeUsePreset
-        onboardingCompleted: true,
-      };
-      // 0.1.96: send `roots` only if the pages dir actually changed — a full-array
-      // replace that swaps the base root's dir (all other roots and props
-      // preserved). A changed dir rebuilds the context and the deferred welcome
-      // lands on the new path.
-      if (baseAfter && pagesDir.trim() !== baseAfter.dir) {
-        patchBody.roots = current.roots.map((r) =>
-          r.builtin ? { ...r, dir: pagesDir.trim() } : r,
-        );
-      }
-      await patchConfig.mutateAsync(patchBody);
-      toast.success('Setup complete');
-      navigate({ to: '/' });
+      const result = await submitOnboarding(
+        { name, writingStyle, language, conversationalLanguage, pagesDir, rootId },
+        {
+          config,
+          renameRoot: (input) => renameRoot.mutateAsync(input),
+          refetchConfig: async () => (await refetchConfig()).data,
+          patchConfig: (body) => patchConfig.mutateAsync(body),
+          navigate: (to) => {
+            toast.success('Setup complete');
+            navigate({ to });
+          },
+        },
+      );
+      if (!result.ok && 'rootIdError' in result) setRootIdError(result.rootIdError);
     } catch (e) {
       toast.error((e as Error).message);
     }
   }
 
   async function onSkip() {
-    const ok = await openModal('onboarding-skip', {});
-    if (!ok) return;
     try {
-      await patchConfig.mutateAsync({ onboardingCompleted: true });
-      navigate({ to: '/' });
+      await skipOnboarding({
+        confirm: async () => (await openModal('onboarding-skip', {})) === true,
+        patchConfig: (body) => patchConfig.mutateAsync(body),
+        navigate: (to) => navigate({ to }),
+      });
     } catch (e) {
       toast.error((e as Error).message);
     }
