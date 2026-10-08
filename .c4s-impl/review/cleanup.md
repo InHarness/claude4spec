@@ -1,1 +1,0 @@
-- rev-0022 tests/integration/architecture/registry-mounts-source.test.ts:36 — fixed by the orchestrator: the projection-module scan carries [ac:ac-zrodla-zdarzen-korzeni-entities-i-rel]
