@@ -55,6 +55,17 @@ export type CliErrorCode =
   | 'VALIDATION'
   | 'BRIEF_SAME_RELEASE'
   | 'RELEASE_NOT_FOUND'
+  // 2.1.11 — `c4s release-list` / `release-show` / `release-diff`. The release
+  // operations' own refusals, passed through 1:1 from the server; no exit code
+  // of their own.
+  | 'INVALID_INCLUDE_FILTER'
+  | 'INVALID_ENTITY_TYPES_FILTER'
+  | 'INVALID_SLUGS_FILTER'
+  | 'INVALID_PATHS_FILTER'
+  | 'INVALID_ROOTS_FILTER'
+  | 'CONFLICTING_FILTERS'
+  | 'INVALID_PAGINATION'
+  | 'INVALID_DIFF_RANGE'
   // 0.2.1 M38 — `c4s create-plugin` (mode `scaffold`). INVALID_TARGET and
   // TARGET_EXISTS are raised before anything is fetched or written;
   // TEMPLATE_FETCH_FAILED rolls back what this run created; INSTALL_FAILED

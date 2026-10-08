@@ -362,6 +362,25 @@ describe('release budget — explicit degradation (0.2.40)', () => {
     for (const e of entities) expect(e).not.toHaveProperty('truncationHint');
   });
 
+  it('2.1.11 — the hint names the one-entity rung, targeted at the first entity that lost its payload', () => {
+    const count = 6;
+    const to = fatSnapshot(count, Math.floor(DEFAULT_BUDGET_CHARS / 3));
+    const out = projectReleaseDiff(fatRaw(count), null, to, ENTITIES_ONLY, { limit: count });
+    const firstCut = (out.entities as MCPEntityDelta[]).find((e) => e.truncated === true)!;
+    expect(out.truncationHint).toContain("(2) one entity — `entityTypes` with its one type plus `slugs`");
+    expect(out.truncationHint).toContain(`entityTypes: ['endpoint'], slugs: ['${firstCut.slug}']`);
+    expect(out.truncationHint).toContain('(5) `summaryOnly: true`');
+  });
+
+  it('2.1.11 — `slugs` narrows the initial diff to one `create` entry whose `after` is the state in `to`', () => {
+    const to = fatSnapshot(3, 10);
+    const out = projectReleaseDiff(fatRaw(3), null, to, { ...ENTITIES_ONLY, entityTypes: ['endpoint'], slugs: ['fat1'] });
+    expect(out.total!.entities).toBe(1);
+    const [only] = out.entities as MCPEntityDelta[];
+    expect(only!.op).toBe('create');
+    expect(only!.after).toEqual(to.entities[1]!.data);
+  });
+
   it('[ac:ac-gwarancja-pierwszej-pozycji-w-release] the first item keeps its payload even when it alone busts the budget', () => {
     // One entity, three times the whole budget: a single-item call is already
     // the smallest possible retry, so degrading it would be a dead end.

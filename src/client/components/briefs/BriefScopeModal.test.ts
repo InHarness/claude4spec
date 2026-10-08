@@ -75,9 +75,11 @@ describe('Generate brief — scope of page spaces', () => {
     expect(selected).toContain('Entities (shared by every root)');
 
     // The per-root count is the page dimension of a diff narrowed to that one
-    // root; the entity count is the same answer's entity dimension.
-    const fetch = vi.fn(async (url: string) =>
-      new Response(JSON.stringify({ pages: [{ path: 'a.md' }, { path: 'b.md' }], entities: [{ slug: 'e' }] }), {
+    // root; the entity count is the same answer's entity dimension. 2.1.11: the
+    // probe reads the `release_diff` operation payload (`view=operation`), whose
+    // `total` carries both dimensions' counts.
+    const fetch = vi.fn(async (_url: string) =>
+      new Response(JSON.stringify({ data: { from: null, to: null, total: { pages: 2, entities: 1 } } }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       }),
@@ -93,5 +95,7 @@ describe('Generate brief — scope of page spaces', () => {
     expect(url).toContain('/releases/v1/diff/v2?');
     expect(new URL(url, 'http://x').searchParams.get('roots')).toBe('skills');
     expect(new URL(url, 'http://x').searchParams.get('summaryOnly')).toBe('true');
+    expect(new URL(url, 'http://x').searchParams.get('view')).toBe('operation');
+    expect(new URL(url, 'http://x').searchParams.getAll('include')).toEqual(['pages', 'entities']);
   });
 });

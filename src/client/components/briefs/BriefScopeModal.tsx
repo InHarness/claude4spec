@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Layers, X } from 'lucide-react';
 import type { Root } from '../../../shared/types.js';
-import type { RawDelta } from '../../../shared/entities.js';
 import { PAGES_KIND, registryList, type RegistryRoot } from '../../../shared/root-kinds.js';
 import { apiFetch, handle } from '../../lib/api-core.js';
 
@@ -313,7 +312,10 @@ export function BriefScopeModal({
 }
 
 /**
- * Default probe — `release_diff({ summaryOnly: true, roots: [rootId] })` via REST.
+ * Default probe — `release_diff({ summaryOnly: true, include: ['pages', 'entities'], roots: [rootId] })`
+ * via REST `view=operation` (2.1.11: the raw diff projection takes no filters).
+ * `roots` narrows only the pages dimension, so `total.entities` is the same for
+ * every root.
  * Returns the changed-page count for `rootId` between `from → to`, or `null` when
  * the diff cannot be computed. The entity changes (root-agnostic) are reported
  * through `onEntities` — the same number for every root.
@@ -324,16 +326,23 @@ export async function probeChangedCount(
   rootId: string,
   onEntities?: (n: number) => void,
 ): Promise<number | null> {
-  const fromSeg = fromReleaseName === null ? '__INITIAL__' : encodeURIComponent(fromReleaseName);
-  const params = new URLSearchParams({ summaryOnly: 'true', roots: rootId });
+  const fromSeg = fromReleaseName === null ? 'initial' : encodeURIComponent(fromReleaseName);
+  // `include` is a list parameter — the key repeated, one value each.
+  const params = new URLSearchParams([
+    ['view', 'operation'],
+    ['summaryOnly', 'true'],
+    ['include', 'pages'],
+    ['include', 'entities'],
+    ['roots', rootId],
+  ]);
   try {
-    const delta = await handle<RawDelta>(
+    const { data } = await handle<{ data: { total?: { pages?: number; entities?: number } } }>(
       await apiFetch(
         `/api/releases/${fromSeg}/diff/${encodeURIComponent(toReleaseName)}?${params.toString()}`,
       ),
     );
-    if (Array.isArray(delta.entities)) onEntities?.(delta.entities.length);
-    return Array.isArray(delta.pages) ? delta.pages.length : 0;
+    if (typeof data.total?.entities === 'number') onEntities?.(data.total.entities);
+    return data.total?.pages ?? 0;
   } catch {
     return null;
   }

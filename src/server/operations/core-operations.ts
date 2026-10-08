@@ -1603,7 +1603,7 @@ export function registerCoreOperations(): void {
       mediation: 'direct',
       opClass,
       inputSchema,
-      errorCodes: ['VALIDATION', 'NOT_FOUND', ...extraCodes],
+      errorCodes: ['VALIDATION', 'RELEASE_NOT_FOUND', ...extraCodes],
       sideEffects,
       /**
        * 0.2.37 — a release write names and freezes a snapshot; the content it
@@ -1614,19 +1614,37 @@ export function registerCoreOperations(): void {
       idempotent: opClass === 'read',
       channels: {
         internal: direct(),
-        // No `c4s release-*` command exists, and this release deliberately does
-        // not add one: M11 became a read client of the specification, and a
-        // shell-invocable release mutation is a different risk profile from one
-        // behind an agent turn or the UI's own button.
-        cli: na('bin `c4s` is a read and diagnostics client; release state is mutated through mcp/rest/internal'),
+        // 2.1.11 — the three READERS render 1:1 as `c4s release-list` /
+        // `release-show` / `release-diff` (server-delegating, through the REST
+        // route's `view=operation`). The writers stay off the CLI: M11 is a read
+        // client of the specification, and a shell-invocable release mutation is
+        // a different risk profile from one behind an agent turn or the UI's own
+        // button.
+        cli:
+          opClass === 'read'
+            ? direct()
+            : na('bin `c4s` is a read and diagnostics client; release state is mutated through mcp/rest/internal'),
         mcp: direct(),
         rest: direct(),
       },
     });
   };
 
-  releaseOp('release_list', 'Releases newest-first, paginated. Answers `{ releases, total }` where `total` precedes limit/offset.', 'read', { ...paging }, ['none']);
-  releaseOp('release_show', 'One release by numeric id or name, with its snapshot counts.', 'read', { idOrName: z.union([z.string(), z.number()]) }, ['none']);
+  releaseOp('release_list', 'Releases newest-first, paginated. Answers `{ releases, total }` where `total` precedes limit/offset.', 'read', { ...paging }, ['none'], ['INVALID_PAGINATION']);
+  releaseOp(
+    'release_show',
+    'One release by numeric id or name: its identification surface (entity slugs and page paths present at the release), windowed per dimension.',
+    'read',
+    {
+      idOrName: z.union([z.string(), z.number()]),
+      include: z.array(z.enum(['pages', 'entities'])).optional(),
+      entityTypes: z.array(z.string()).optional(),
+      limit: z.number().optional(),
+      offset: z.number().optional(),
+    },
+    ['none'],
+    ['INVALID_INCLUDE_FILTER', 'INVALID_ENTITY_TYPES_FILTER', 'CONFLICTING_FILTERS', 'INVALID_PAGINATION'],
+  );
   /**
    * 0.2.86 — the row names the parameters the renderings actually take and the
    * M17 codes they raise. It used to declare `{ from, to }` and two generic
@@ -1648,6 +1666,10 @@ export function registerCoreOperations(): void {
       toIdOrName: z.union([z.string(), z.number()]),
       include: z.array(z.enum(['pages', 'entities'])).optional(),
       entityTypes: z.array(z.string()).optional(),
+      slugs: z
+        .array(z.string())
+        .optional()
+        .describe('2.1.11 — bare slugs of the ONE type in `entityTypes`; narrows the entities dimension (the response, not the computation).'),
       roots: z.array(z.string()).optional().describe('Narrows the pages dimension only; never entities.'),
       paths: z
         .array(z.string())
@@ -1665,6 +1687,7 @@ export function registerCoreOperations(): void {
     [
       'INVALID_INCLUDE_FILTER',
       'INVALID_ENTITY_TYPES_FILTER',
+      'INVALID_SLUGS_FILTER',
       'CONFLICTING_FILTERS',
       'INVALID_PAGINATION',
       'INVALID_DIFF_RANGE',
@@ -1678,6 +1701,7 @@ export function registerCoreOperations(): void {
     'write',
     { name: z.string(), description: z.string() },
     ['db', 'file', 'ui-notify'],
+    ['RELEASE_NAME_CONFLICT', 'RELEASE_NAME_RESERVED'],
   );
   releaseOp(
     'release_update',
@@ -1690,5 +1714,6 @@ export function registerCoreOperations(): void {
       assignUnreleased: z.boolean().optional(),
     },
     ['db', 'ui-notify'],
+    ['RELEASE_FROZEN', 'RELEASE_NAME_CONFLICT', 'RELEASE_NAME_RESERVED'],
   );
 }

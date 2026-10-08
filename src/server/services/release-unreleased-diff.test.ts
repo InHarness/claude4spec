@@ -219,9 +219,9 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
       ]);
     });
 
-    it('throws NOT_FOUND for an unresolvable `from` release', async () => {
+    it('throws RELEASE_NOT_FOUND for an unresolvable `from` release', async () => {
       await expect(releases.getUnreleasedDiff('does-not-exist')).rejects.toMatchObject({
-        code: 'NOT_FOUND',
+        code: 'RELEASE_NOT_FOUND',
       });
     });
   });

@@ -28,8 +28,8 @@
 import type Database from 'better-sqlite3';
 import type { ReleaseFileStore, ReleaseFileData } from './release-store.js';
 import type { SelfWriteSuppressor } from '../fs/sources.js';
-import { isReservedReleaseName } from './release.js';
 import type { WatchSubscriber, WatchScope } from '../fs/watcher.js';
+import { CURRENT_RELEASE_NAME } from '../../shared/entities.js';
 
 /**
  * 0.2.2: `roots` joins the rebuilt columns (migration 049).
@@ -131,7 +131,12 @@ export class ReleaseIndexerService implements WatchSubscriber {
     // guard — without this check, a hand-edited or synced release-identity
     // file named 'current' would silently shadow the diff route's `:to=current`
     // sentinel forever (see isReservedReleaseName's doc comment in release.ts).
-    if (isReservedReleaseName(data.name)) {
+    //
+    // 2.1.11: deliberately `current` ONLY, not every reserved name. `initial` /
+    // `null` became reserved for NEW names; a release that already carries one
+    // stays indexed (skipping it would hide existing data on every rebuild), and
+    // the diff resolves those literals before any name lookup anyway.
+    if (data.name === CURRENT_RELEASE_NAME) {
       console.warn(`[release-indexer] skip ${slug}: release name '${data.name}' is reserved`);
       return false;
     }
