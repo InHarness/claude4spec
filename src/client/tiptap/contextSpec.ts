@@ -222,10 +222,10 @@ const M19_NODES = ['inline_mention', 'single_element', 'element_list', 'tagged_l
  * `chat-input`: minimal — `Document`/`Paragraph`/`Text` (core) +
  * `MentionExtension` + `PageRefNode` + the `section_ref` tag node (allowed
  * exception: the chip most often pasted into chat) + the slash framework
- * (`SlashDispatcher` = `slash_commands`) with `/section`. The 2.1.9 row also
- * names the `spec-skills` command source and the `skill_ref` tag node; both are
- * contributed by M52 and join this whitelist when that module lands (the
- * source by its id in `slashCommands`, the node by its tag name).
+ * (`SlashDispatcher` = `slash_commands`) with `/section`, plus (2.1.9, M52)
+ * the `skill_ref` tag node and the `spec-skills` command source — the source
+ * by its id in `slashCommands`, the node by its tag name. The source's items
+ * (one `/<slug>` per chat skill, and `/skills`) are never listed here.
  */
 const STATIC_SPECS: Record<Exclude<EditorContextId, 'page' | 'artifact'>, EditorContextSpec> = {
   description: {
@@ -258,8 +258,8 @@ const STATIC_SPECS: Record<Exclude<EditorContextId, 'page' | 'artifact'>, Editor
   },
   'chat-input': {
     id: 'chat-input',
-    extensions: ['section_ref', ...RAW_NODES, 'page_ref', 'mention_extension', 'slash_commands'],
-    slashCommands: ['section'],
+    extensions: ['section_ref', 'skill_ref', ...RAW_NODES, 'page_ref', 'mention_extension', 'slash_commands'],
+    slashCommands: ['section', 'spec-skills'],
     decorations: [],
     mentions: ['files'],
     save: { mode: 'explicit' },

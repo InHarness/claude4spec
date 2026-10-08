@@ -7,6 +7,7 @@ import {
 } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { useQueryClient } from "@tanstack/react-query";
+import "../tiptap/registrations.js";
 import { EditorFactory } from "../tiptap/EditorFactory.js";
 import { assertSaveMode, getContextSpec } from "../tiptap/registry.js";
 import { invokeSlash } from "../tiptap/slashInvoke.js";
@@ -87,7 +88,8 @@ export const ChatInputEditor = forwardRef<ChatInputEditorHandle, Props>(
           {
             qc,
             currentPath: null,
-            // `/section` — the one slash command of `chat-input` (M20 `ctxregst`).
+            // `/section` — the one fixed slash command of `chat-input` (M20 `ctxregst`);
+            // the `spec-skills` source (M52) hands its picks to its own `onSelect`.
             onSlashInvoke: (editor, command) =>
               void invokeSlash(editor, command, { qc, currentPath: null }),
             getAnnotations: () => [],

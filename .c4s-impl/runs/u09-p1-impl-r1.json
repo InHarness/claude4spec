@@ -1,0 +1,22 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.9",
+  "unit": "u09-composer-skill-ref",
+  "portion": "u09-composer-skill-ref/p1-l8-l18",
+  "claimed": [
+    "wklad-do-edytora-m52",
+    "znaczniki-xml-m52",
+    "m05-chip-slug-bez-type-przypisany-render",
+    "m05-chip-w-wiadomosci-uzytkownika",
+    "m52-chip-reaches-model-as-skill-ref",
+    "m52-edge-builtin-command-slug-not-in-popover",
+    "m52-edge-missing-skill-chip-broken",
+    "m52-skills-entry-narrows-popover",
+    "m52-skills-entry-shows-origin-marker"
+  ],
+  "deviations": ["dev-0901"],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

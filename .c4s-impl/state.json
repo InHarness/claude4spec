@@ -1,5 +1,5 @@
 {
-  "iteration": 8,
+  "iteration": 9,
   "conventions": [
     {
       "label": "L3 (Spec Operations)",
@@ -1736,15 +1736,40 @@
         }
       ],
       "wave": 3,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "u09-composer-skill-ref/p1-l8-l18",
+          "layers": [
+            "L8",
+            "L18"
+          ],
+          "slugs": [
+            "wklad-do-edytora-m52",
+            "znaczniki-xml-m52",
+            "m05-chip-slug-bez-type-przypisany-render",
+            "m05-chip-w-wiadomosci-uzytkownika",
+            "m52-chip-reaches-model-as-skill-ref",
+            "m52-edge-builtin-command-slug-not-in-popover",
+            "m52-edge-missing-skill-chip-broken",
+            "m52-skills-entry-narrows-popover",
+            "m52-skills-entry-shows-origin-marker"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "e6fd9d21d5c6517490d0f6841518e83a3af7166f",
+      "baseCommit": "e6fd9d21d5c6517490d0f6841518e83a3af7166f",
       "rounds": {
         "review": 0,
-        "unit": 0
-      }
+        "unit": 1
+      },
+      "lastUncovered": 0
     },
     {
       "id": "u10-skill-author-envelope",

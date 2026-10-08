@@ -125,7 +125,11 @@ export function createSlashSession(contextId: EditorContextId, rootProps?: RootE
 
       if (narrowed) {
         const entry = lists.find((l) => l.source.id === narrowed);
-        return entry ? entry.items.filter(matches).map((item) => sourceRow(entry.source, item)) : [];
+        // The narrowed view lists the source's items, not its narrowing entries
+        // (`/skills` would only narrow to where the popover already is).
+        return entry
+          ? entry.items.filter((item) => !item.narrowTo && matches(item)).map((item) => sourceRow(entry.source, item))
+          : [];
       }
 
       const fixed = getRegisteredSlashCommandsForContext(contextId, rootProps);

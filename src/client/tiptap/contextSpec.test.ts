@@ -65,13 +65,13 @@ describe('resolveContextSpec — the four contexts (M20 ctxregst)', () => {
     expect(spec.mentions).toEqual(['files']);
   });
 
-  it('chat-input: mention + page/section refs + /section, explicit (submit)', () => {
+  it('chat-input: mention + page/section/skill refs + /section and the spec-skills source, explicit (submit)', () => {
     const spec = resolveContextSpec('chat-input', FULL_ROOT_EDITOR_PROPS, view);
     expect(spec.extensions).toEqual(
-      expect.arrayContaining(['mention_extension', 'page_ref', 'section_ref', 'slash_commands']),
+      expect.arrayContaining(['mention_extension', 'page_ref', 'section_ref', 'skill_ref', 'slash_commands']),
     );
     expect(spec.extensions).not.toContain('inline_mention');
-    expect(spec.slashCommands).toEqual(['section']);
+    expect(spec.slashCommands).toEqual(['section', 'spec-skills']);
     expect(spec.save).toEqual({ mode: 'explicit' });
   });
 

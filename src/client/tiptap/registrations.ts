@@ -1,4 +1,6 @@
 import '../xml-markup/host-renders.js';
+// M52 front-end bootstrap: the `spec-skills` command source (chat composer).
+import '../skills/specSkillsSource.js';
 import { registerEditorExtension, registerMentionSource, type RegistryContext } from './registry.js';
 import { RawJsxInlineNode, RawJsxBlockNode } from './extensions/RawJsxNode.js';
 import { AnchorMarker } from './extensions/AnchorMarker.js';

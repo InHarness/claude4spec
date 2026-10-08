@@ -1,0 +1,15 @@
+{
+  "role": "reviewer",
+  "scope": { "kind": "unit", "id": "u09-composer-skill-ref", "base": "e6fd9d21d5c6517490d0f6841518e83a3af7166f" },
+  "findings": [
+    {
+      "id": "rev-0001",
+      "file": "src/client/skills/chatSkillListing.ts",
+      "line": 19,
+      "blocking": false,
+      "reason": "The popover and the chip read the `chat` listing from two places that never sync. The `spec-skills` source fetches it fresh on every popover opening (fetchChatSkillListing, which bypasses react-query). The chip reads it from the react-query cache (['skills','listing','chat'], staleTime 30s), and nothing in the client ever invalidates that key, not even the skills-root page create/delete/write paths. So when a chip has already filled the cache (for example from chat history) and the user then creates a skill and picks it in the popover, the new chip shows `[missing skill: <slug>]` for up to 30s. The reverse also happens: a deleted skill's chip still looks live. Fix options: have the source write its fresh listing into the query cache (or invalidate the key when the popover opens), or invalidate ['skills'] when a page under the skills root is written. Another option is to drop staleTime so a newly mounted chip triggers a refetch.",
+      "portion": "u09-composer-skill-ref/p1-l8-l18"
+    }
+  ],
+  "deviations": []
+}

@@ -1,0 +1,81 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "unit", "id": "u09-composer-skill-ref" },
+  "release": "2.1.9",
+  "rows": [
+    {
+      "slug": "wklad-do-edytora-m52#spec-skills",
+      "type": "spreadsheet",
+      "level": 1,
+      "status": "covered",
+      "evidence": "trace.md:35; src/client/skills/specSkillsSource.ts:512-578 (id `spec-skills`, context `chat-input`, list() pulls fetchChatSkillListing per opening, items id=slug/hint=slug/description/origin, fixed `/skills` entry narrowTo spec-skills, onSelect inserts skill_ref node), registered from src/client/tiptap/registrations.ts:2, whitelisted src/client/tiptap/contextSpec.ts:261-262 `slashCommands: ['section', 'spec-skills']`; collision by hint in slashPalette.ts (fixedTrigger/taken), narrowed view drops narrowTo entries. Test src/client/skills/specSkillsSource.test.ts:88 asserts whitelist, context, items toMatchObject {label, description, hint:'review-checklist', origin:'project-rooted'}, `not.toContain('section')` + built-in kept, `/skills` {narrowTo: 'spec-skills'}, hint prefix filter, re-pull on next opening. Note: `label` = `/<slug>` instead of the sheet's `label = tytuł` — non-blocking deviation dev-0901 (listing carries no title), marked ASSUMPTION:dev-0901 at specSkillsSource.ts:541."
+    },
+    {
+      "slug": "znaczniki-xml-m52#skill_ref",
+      "type": "spreadsheet",
+      "level": 1,
+      "status": "covered",
+      "evidence": "trace.md:36; src/shared/xml-markup/tags/skills.ts:13 `registerXmlTag({ name: 'skill_ref', attrOrder: ['slug'], form: 'inline' })` (no validate, no rewriting); render src/client/xml-markup/tags/skills.tsx (SkillRefRender → SkillRefChip, state from chat listing: normal/broken/loading); node mounted in chat-input (contextSpec.ts:261). Test src/client/skills/SkillRefChip.render.test.ts:50 asserts `expect(def).toEqual({ name: 'skill_ref', attrOrder: ['slug'], form: 'inline' })`, serialize/parse round-trip, `getTagRender('skill_ref')).toBe(SkillRefRender)`, live `data-skill-ref-state=\"normal\"`, gone `data-skill-ref-state=\"broken\"` + `[missing skill: vanished]`."
+    },
+    {
+      "slug": "m05-chip-slug-bez-type-przypisany-render",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/client/skills/SkillRefChip.render.test.ts:94 — `expect(chipTargetOf(getXmlTag('skill_ref')!)).toBeNull(); expect(isChipTag('skill_ref')).toBe(true);` ChatMarkdown renders chip with `data-skill-ref-state=\"normal\"`, `not.toContain('[broken:')`, `not.toContain('data-broken-category')`; code path xml-chip-preprocess.ts rendersInChat (step 0) → ChatMarkdown CHIP_HREF_PREFIX → XmlChipDispatcher."
+    },
+    {
+      "slug": "m05-chip-w-wiadomosci-uzytkownika",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/client/skills/SkillRefChip.render.test.ts:105 — renders BlockRenderer side 'user' and 'assistant' for the same text block; `expect(user).toContain('data-skill-ref-state=\"normal\"'); expect(user).toBe(assistant);` (BlockRenderer.tsx:96 UserText/AssistantText both via ChatMarkdown)."
+    },
+    {
+      "slug": "m52-chip-reaches-model-as-skill-ref",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/client/skills/specSkillsSource.test.ts:167 — picks the source row via createSlashSession('chat-input'), calls onSelect, asserts node `{ type: 'skill_ref', attrs: { slug: 'review-checklist' } }` and `expect(markdown).toBe('Please apply <skill_ref slug=\"review-checklist\"/>')` from editor.storage.markdown.getMarkdown() — the same call ChatInputEditor.tsx:165 uses for the submitted text (xmlNodes.ts:201 serializeXmlTag)."
+    },
+    {
+      "slug": "m52-edge-builtin-command-slug-not-in-popover",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/client/skills/specSkillsSource.test.ts:154 — listing has skill `section`; `expect(full.map((r) => r.label)).toEqual(['/section']); expect(full[0]!.command?.id).toBe('section'); expect(sourceRows(full)).toEqual([]);` and narrowed view keeps it `[['section', undefined]]` (slashPalette.ts collision via `taken`, skipped in narrowed branch)."
+    },
+    {
+      "slug": "m52-edge-missing-skill-chip-broken",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/client/skills/SkillRefChip.render.test.ts:81 — ChatMarkdown with `<skill_ref slug=\"vanished\"/>`: `expect(chip).toContain('data-skill-ref-state=\"broken\"'); expect(chip).toContain('[missing skill: vanished]');` and the composer node-view render (getTagRender('skill_ref')) also broken; skills.tsx skillRefState returns 'broken' for slug outside listing."
+    },
+    {
+      "slug": "m52-skills-entry-narrows-popover",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/client/skills/specSkillsSource.test.ts:124 — after picking the `/skills` entry's narrowTo: `expect(session.narrowedTo).toBe('spec-skills')`, every row is a spec-skills source row with no command, `toEqual(['review-checklist', 'house-style', 'section'])`, prefix still filters. Wiring: SlashCommands.ts:53-57 calls narrowTo on a pick carrying `narrowTo`."
+    },
+    {
+      "slug": "m52-skills-entry-shows-origin-marker",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/client/skills/specSkillsSource.test.ts:136 — narrowed rows `[r.label, r.origin]` equal [['/review-checklist','project-rooted'],['/house-style','plugin'],['/section','project-exposed']]; rendered SlashMenu: `expect(html.match(/data-slash-origin=\"\"/g)).toHaveLength(3)` and each origin text present (SlashMenu.tsx:121-127)."
+    },
+    {
+      "slug": "goal:u09-composer-skill-ref",
+      "level": 2,
+      "status": "covered",
+      "evidence": "Source `spec-skills` (src/client/skills/specSkillsSource.ts, registered via src/client/tiptap/registrations.ts, imported by ChatInputEditor.tsx:10) lists `/<slug>` per `chat` listing row (src/client/lib/skills-api.ts → GET /api/skills?contextType=chat, mounted project-context.ts:1423) with origin marker; fixed `/skills` narrows (slashPalette.ts narrowed branch, SlashCommands.ts:53); built-in wins collision (slashPalette.ts `taken`); pick inserts skill_ref node (insertSkillRef) serialized `<skill_ref slug=\"…\"/>` in submitted markdown; SkillRefChip render assigned (xml-markup/tags/skills.tsx) used by composer node view and chat history (ChatMarkdown step 0), broken for unknown slug. chat-input whitelist updated (contextSpec.ts:261-262). No removals named. Only gap: item label is `/<slug>` not the skill title (dev-0901, non-blocking, sent)."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "all workspaces `tsc --noEmit` clean (last: @inharness-ai/c4s-plugin-ac@0.2.80 typecheck). Static read: contextSpec.test.ts and registry.test.ts updated for skill_ref/spec-skills; slashSources.test.ts chat-input tests unaffected (real source fetch rejects in node env → readSource returns [], `/section` still sole match for 'sec'); renders.test.ts 'every host tag has a render' satisfied by assignTagRender('skill_ref')."
+  }
+}

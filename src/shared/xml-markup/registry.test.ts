@@ -4,11 +4,11 @@ import { parseXmlTags, serializeXmlTag } from '../xml-tags.js';
 
 /**
  * M51 — the XML markup registry. One per process, keyed by name; the host
- * modules' seven tags are registered at startup (`host-tags.ts`, imported by the
+ * modules' eight tags are registered at startup (`host-tags.ts`, imported by the
  * test setup as by the server bootstrap and the browser entry).
  */
 describe('XML markup registry (M51)', () => {
-  it('holds the seven host tags, each declared by the module that contributes it', () => {
+  it('holds the eight host tags, each declared by the module that contributes it', () => {
     expect(listXmlTags().map((t) => [t.name, t.form, t.attrOrder])).toEqual([
       ['inline_mention', 'inline', ['type', 'slug']],
       ['single_element', 'block', ['type', 'slug', 'caption']],
@@ -17,6 +17,7 @@ describe('XML markup registry (M51)', () => {
       ['tagged_list_mixed', 'block', ['tags', 'filter']],
       ['section_ref', 'inline', ['anchor']],
       ['todo', 'inline', ['comment']],
+      ['skill_ref', 'inline', ['slug']],
     ]);
     // No host tag carries a project-dependent `validate`.
     expect(listXmlTags().every((t) => t.validate === undefined)).toBe(true);
