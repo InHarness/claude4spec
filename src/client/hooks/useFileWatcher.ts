@@ -93,6 +93,10 @@ export function useFileWatcher() {
             } else {
               batcher.queue(['page', data.rootId, data.path]);
             }
+          } else if (data.kind === 'sidebar:accordions-changed') {
+            // 2.1.9 (M02): a root's accordion array changed (a reducer root
+            // recomputed, or the context rebuilt) — one key, the whole array.
+            batcher.queue(['sidebar-accordions']);
           } else if (data.kind === 'entity:changed') {
             batcher.queue([entityListKey(data.entityType)]);
             batcher.queue([data.entityType, data.slug]);

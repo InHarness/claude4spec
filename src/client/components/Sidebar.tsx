@@ -1,4 +1,3 @@
-import { KIND_DECLARATIONS, PAGES_KIND } from '../../shared/root-kinds.js';
 import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { stripBase } from '../lib/api-core.js';
 import { ProjectSwitcher } from './ProjectSwitcher.js';
@@ -24,9 +23,10 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import type { PageNode, PageSearchHit, Root } from '../../shared/types.js';
+import type { PageNode, PageSearchHit, SidebarAccordion } from '../../shared/types.js';
 import { markdownExtension, countFiles } from '../../shared/page-files.js';
-import { usePages, usePagesSearch } from '../hooks/usePages.js';
+import { usePages, usePagesSearch, useSidebarAccordions } from '../hooks/usePages.js';
+import { accordionCollapseToken, subtreeOf } from '../lib/sidebar-accordions.js';
 import { useMovePage } from '../hooks/usePage.js';
 import { api } from '../lib/api.js';
 import { useRoots } from '../hooks/useConfig.js';
@@ -62,11 +62,11 @@ interface SidebarProps {
 /**
  * 0.1.96 multiroot: per-root open/closed state. Value is the list of COLLAPSED
  * folder paths for that root (default is expanded, matching pre-multiroot UX).
- * The sentinel `''` collapses the whole root accordion. Stale root ids are
- * ignored on read (only current roots are looked up).
+ * 2.1.9: an accordion's own state is keyed `(rootId, key)` — stored under its
+ * root as `accordionCollapseToken(key)`. Entries under a root that no longer
+ * carries an accordion are ignored on read (only the current array is looked up).
  */
 type SidebarOpenState = Record<string, string[]>;
-const ROOT_COLLAPSE_SENTINEL = '';
 
 export function Sidebar({
   width,
@@ -82,9 +82,9 @@ export function Sidebar({
 }: SidebarProps) {
   const navigate = useNavigate();
   const roots = useRoots();
-  // 2.1.8: the sidebar mode is the KIND's — every user root is of kind `pages`
-  // (`sidebar: accordion`); system roots never reach this list.
-  const accordionRoots = KIND_DECLARATIONS[PAGES_KIND].sidebar === 'accordion' ? roots : [];
+  // 2.1.9 (M02): the page-tree slot is fed by `GET /api/sidebar-accordions` —
+  // one accordion per element, in the route's order, whatever the root's kind.
+  const { data: accordions = [], isSuccess: accordionsLoaded } = useSidebarAccordions();
   const pathname = stripBase(useRouterState({ select: (s) => s.location.pathname }));
   // /space/<rootId>/<path…>
   const spaceMatch = /^\/space\/([^/]+)\/(.*)$/.exec(pathname);
@@ -207,19 +207,19 @@ export function Sidebar({
               activePath={activeRootId === baseRootId ? activePagePath : null}
               onClose={() => setQuery('')}
             />
-          ) : accordionRoots.length > 0 ? (
-            accordionRoots.map((root, i) => (
-              <RootAccordion
-                key={root.id}
-                root={root}
+          ) : accordions.length > 0 ? (
+            accordions.map((accordion, i) => (
+              <TreeAccordion
+                key={`${accordion.rootId}\u0000${accordion.key}`}
+                accordion={accordion}
                 first={i === 0}
-                collapsedPaths={collapsed[root.id] ?? []}
-                onToggle={(path) => toggle(root.id, path)}
-                activePagePath={activeRootId === root.id ? activePagePath : null}
+                collapsedPaths={collapsed[accordion.rootId] ?? []}
+                onToggle={(path) => toggle(accordion.rootId, path)}
+                activePagePath={activeRootId === accordion.rootId ? activePagePath : null}
                 todoCountByPath={todoCountByPath}
               />
             ))
-          ) : (
+          ) : !accordionsLoaded ? null : (
             <div
               className="text-[11.5px] px-3 py-2 italic"
               style={{ color: 'var(--c-subtle)' }}
@@ -456,29 +456,36 @@ function SearchResults({
 }
 
 /**
- * 0.1.96 multiroot: one collapsible accordion per `sidebar: 'accordion'` root,
- * labelled by `root.name`. Each self-fetches its own tree keyed by `root.id`.
+ * 2.1.9 (M02 slot „Drzewa stron”) — one collapsible accordion per element of
+ * `GET /api/sidebar-accordions`, labelled `label`, showing the subtree `path`
+ * of root `rootId` cut out of that root's tree (`['pages', rootId]`, shared by
+ * every accordion of the root). Files outside every accordion subtree of the
+ * root have no node. Its open state is keyed `(rootId, key)`.
+ * ASSUMPTION:dev-0802 — the file-row menu stays Rename-only; no New page / New
+ * folder entries exist in the tree yet to be scoped to the accordion's subtree.
  */
-function RootAccordion({
-  root,
+function TreeAccordion({
+  accordion,
   first,
   collapsedPaths,
   onToggle,
   activePagePath,
   todoCountByPath,
 }: {
-  root: Root;
+  accordion: SidebarAccordion;
   first: boolean;
   collapsedPaths: string[];
   onToggle: (path: string) => void;
   activePagePath: string | null;
   todoCountByPath?: Record<string, number>;
 }) {
-  const { data: tree = [] } = usePages(root.id);
-  const rootOpen = !collapsedPaths.includes(ROOT_COLLAPSE_SENTINEL);
-  const fileCount = countFiles(tree);
-  // 0.1.97: visually separate consecutive roots — a ~12px gap plus a faint top
-  // hairline on every root after the first (no line directly under the search box).
+  const { data: tree = [] } = usePages(accordion.rootId);
+  const nodes = subtreeOf(tree, accordion.path);
+  const token = accordionCollapseToken(accordion.key);
+  const open = !collapsedPaths.includes(token);
+  const fileCount = countFiles(nodes);
+  // 0.1.97: visually separate consecutive accordions — a ~12px gap plus a faint
+  // top hairline on every accordion after the first (no line under the search box).
   return (
     <div
       style={
@@ -490,24 +497,24 @@ function RootAccordion({
       <button
         className="w-full flex items-center gap-1.5 px-2 py-[3px] rounded transition"
         style={{ color: 'var(--c-subtle)' }}
-        onClick={() => onToggle(ROOT_COLLAPSE_SENTINEL)}
+        onClick={() => onToggle(token)}
         onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--c-panel)')}
         onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-        title={root.name}
+        title={accordion.label}
       >
-        {rootOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         <span className="flex-1 truncate text-left text-[10px] uppercase tracking-wider font-mono font-semibold">
-          {root.name}
+          {accordion.label}
         </span>
         <span className="font-mono" style={{ fontSize: 10 }}>
           {fileCount}
         </span>
       </button>
-      {rootOpen &&
-        (tree.length > 0 ? (
+      {open &&
+        (nodes.length > 0 ? (
           <PagesTree
-            rootId={root.id}
-            nodes={tree}
+            rootId={accordion.rootId}
+            nodes={nodes}
             activePath={activePagePath}
             todoCountByPath={todoCountByPath}
             collapsedPaths={collapsedPaths}

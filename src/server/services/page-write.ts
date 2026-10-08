@@ -14,6 +14,7 @@ import {
 } from '../fs/record-store.js';
 import { PROJECTION_IDS, type ProjectionStatusRegistry } from './projection-status.js';
 import { DomainError } from './tags.js';
+import { splitMarkdown } from './markdown-file-store.js';
 import { parseSections } from '../../shared/section-parser.js';
 import { attributeDropped, composeSectionBatch } from './section-batch.js';
 import { applyTextEdits, type MatchRange, type PositionResolver, type TextEdit } from './text-edits.js';
@@ -468,7 +469,9 @@ async function commit(
    * for new headings. Those are exactly the anchors the caller could not have
    * predicted, so they have to be read off the settled file.
    */
-  const body = matter(written).content;
+  // 2.1.9: tolerant of a header whose YAML does not parse — such a write is
+  // legal (a broken `SKILL.md` is saved and repaired in the editor, M52).
+  const body = splitMarkdown(written).body;
   return {
     hash: sha256(written),
     content: written,

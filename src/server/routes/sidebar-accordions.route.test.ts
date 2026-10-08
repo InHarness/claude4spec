@@ -360,4 +360,44 @@ describe('2.1.9 — the `skills` root in the sidebar (M52 i5frb6it, M02 m02l1300
       expect(warnings.some((w) => w.includes("root 'skills'") && w.includes('reducer exploded'))).toBe(true);
     });
   });
+
+  it('[ac:m52-package-own-accordion] every skill package (first-level directory of the `skills` root) gets its own accordion, keyed and pathed by its directory — a nested folder or a second file adds none', async () => {
+    const cwd = tmp();
+    skill(cwd, 'writer/SKILL.md', '---\ntitle: Writer\ndescription: Writes.\n---\n# W\n');
+    skill(cwd, 'writer/workflows/brief.md', '# Brief\n');
+    skill(cwd, 'reviewer/SKILL.md', '---\ntitle: Reviewer\ndescription: Reviews.\n---\n# R\n');
+    skill(cwd, 'reviewer/checklist.md', '# Checklist\n');
+    const res = await request(app(service(cwd))).get('/api/sidebar-accordions');
+    expect(res.status).toBe(200);
+    const own = (res.body.data as Array<{ rootId: string; key: string; path: string }>).filter((a) => a.rootId === 'skills');
+    // Exactly one per package, each scoped to its own directory.
+    expect(own.map((a) => ({ key: a.key, path: a.path }))).toEqual([
+      { key: 'reviewer', path: 'reviewer' },
+      { key: 'writer', path: 'writer' },
+    ]);
+    expect(new Set(own.map((a) => a.key)).size).toBe(own.length);
+  });
+
+  it('[ac:m52-accordion-label-from-title] the label of a package accordion is the `title` of its `SKILL.md` frontmatter, not the directory name', async () => {
+    const cwd = tmp();
+    skill(cwd, 'spec-writer/SKILL.md', '---\ntitle: Specification writer\ndescription: Writes specs.\n---\n# W\n');
+    const res = await request(app(service(cwd))).get('/api/sidebar-accordions');
+    expect(res.status).toBe(200);
+    expect((res.body.data as Array<{ rootId: string }>).filter((a) => a.rootId === 'skills')).toEqual([
+      { rootId: 'skills', key: 'spec-writer', label: 'Specification writer', path: 'spec-writer' },
+    ]);
+  });
+
+  it('[ac:m52-edge-dir-without-skill-md-accordion] a package directory without `SKILL.md` still has an accordion, labelled with the directory name', async () => {
+    const cwd = tmp();
+    skill(cwd, 'drafts/notes.md', '---\ntitle: Not the package title\n---\n# Notes\n');
+    skill(cwd, 'writer/SKILL.md', '---\ntitle: Writer\ndescription: Writes.\n---\n# W\n');
+    const res = await request(app(service(cwd))).get('/api/sidebar-accordions');
+    expect(res.status).toBe(200);
+    const own = (res.body.data as Array<{ rootId: string }>).filter((a) => a.rootId === 'skills');
+    expect(own).toContainEqual({ rootId: 'skills', key: 'drafts', label: 'drafts', path: 'drafts' });
+    // The title of another markdown file in the directory is not the package label.
+    expect(JSON.stringify(own)).not.toContain('Not the package title');
+    expect(own).toContainEqual({ rootId: 'skills', key: 'writer', label: 'Writer', path: 'writer' });
+  });
 });

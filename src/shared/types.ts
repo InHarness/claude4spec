@@ -26,6 +26,14 @@ export interface PageContent {
    * to arm the guard with, which is why the guard had been left optional.
    */
   hash: string;
+  /**
+   * 2.1.9 — present only when the file opens with a frontmatter block whose YAML
+   * does not parse: the literal block (fences included). `frontmatter` is then
+   * `{}` and `body` is what follows the block. The page editor writes the block
+   * back verbatim in front of its body, so a broken header (an invalid skill
+   * package, M52) is editable rather than unreadable or silently dropped.
+   */
+  frontmatterRaw?: string;
 }
 
 /**

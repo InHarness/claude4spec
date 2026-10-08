@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
-import { applyPageWriteToCache } from './usePage.js';
+import { applyPageWriteToCache, pageWritePayload } from './usePage.js';
 
 /**
  * What a successful page write leaves in the cache, now that the server answers
@@ -64,5 +64,24 @@ describe('applyPageWriteToCache', () => {
     qc.setQueryData(['pages', 'pages'], []);
     applyPageWriteToCache(qc, { rootId: 'pages', path: 'a.md', body: 'x' });
     expect(qc.getQueryState(['pages', 'pages'])?.isInvalidated).toBe(true);
+  });
+});
+
+describe('pageWritePayload — a page whose header does not parse (2.1.9, M52)', () => {
+  it('[ac:m52-invalid-frontmatter-package-editable] the editor saves a page with a broken header by sending the literal block in front of its body, with no frontmatter object — and the cache keeps the body alone', () => {
+    const block = '---\ntitle: "Reviewer\n---\n';
+    expect(pageWritePayload({ body: '# Reviewer\n\nNew text.\n', frontmatter: {}, frontmatterRaw: block })).toEqual({
+      body: `${block}# Reviewer\n\nNew text.\n`,
+      frontmatter: undefined,
+    });
+    // A page whose header parses is sent as before.
+    expect(pageWritePayload({ body: 'b', frontmatter: { title: 'T' } })).toEqual({ body: 'b', frontmatter: { title: 'T' } });
+
+    const qc = new QueryClient();
+    const KEY = ['page', 'skills', 'reviewer/SKILL.md'];
+    qc.setQueryData(KEY, { path: 'reviewer/SKILL.md', frontmatter: {}, body: 'old', frontmatterRaw: block, hash: 'h0' });
+    applyPageWriteToCache(qc, { rootId: 'skills', path: 'reviewer/SKILL.md', body: 'typed', frontmatter: {}, frontmatterRaw: block });
+    // The editor's echo guard compares against the body it saved, so the block must not leak into it.
+    expect(qc.getQueryData(KEY)).toMatchObject({ body: 'typed', frontmatterRaw: block });
   });
 });

@@ -1,0 +1,16 @@
+{
+  "id": "dev-0801",
+  "kind": "missing",
+  "blocking": false,
+  "address": "u08-skills-sidebar-editor/i5frb6it",
+  "slugs": [
+    "m52-invalid-frontmatter-package-editable",
+    "get-api-pages"
+  ],
+  "text": "M52 says an invalid package — including one with a broken header (`błędny nagłówek`) — stays editable in the page editor, and the AC `m52-invalid-frontmatter-package-editable` requires it to open for editing. The specification does not say what the page read (`GET /api/pages/:rootId/*`, DTO page-detail) answers when the header's YAML does not parse: until now the read failed (500 from gray-matter), so such a SKILL.md could not open at all, and the page editor holds only a body + a frontmatter object, so it had no way to keep an unparsable block. Assumed: the read never fails on a broken header — `frontmatter` is `{}`, `body` is what follows the block, and the literal block travels as a new optional field `frontmatterRaw` (PageContent / page-detail). The page editor's save sends `frontmatterRaw + body` with no `frontmatter` object (the existing literal-write path writes such a body verbatim), so the broken header survives byte for byte until the author repairs it. A header that parses but breaks the skill contract (no description, unknown contextTypes, future version) reads as before. The specification may want to name `frontmatterRaw` on the page-detail DTO, or choose another way to edit an unparsable header.",
+  "assumption": "ASSUMPTION:dev-0801 — the literal block rides on the page read as `frontmatterRaw`.",
+  "unit": "u08-skills-sidebar-editor",
+  "portion": "u08-skills-sidebar-editor/p1-l5-l13",
+  "sent": true,
+  "patchPath": "2-1-8-to-2-1-9-workflow-3-u08-skills-sidebar-editor-i5frb6it-m52-says-an-invalid-package-including-one-wit.md"
+}

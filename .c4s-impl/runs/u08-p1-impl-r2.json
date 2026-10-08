@@ -1,0 +1,12 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.9",
+  "unit": "u08-skills-sidebar-editor",
+  "portion": "u08-skills-sidebar-editor/p1-l5-l13",
+  "claimed": ["m52-invalid-frontmatter-package-editable"],
+  "deviations": [],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

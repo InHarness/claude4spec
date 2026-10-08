@@ -1,24 +1,22 @@
 import { useMemo } from 'react';
 import { getContextSpec, type RootEditorProps } from '../tiptap/registry.js';
-import { FULL_ROOT_EDITOR_PROPS } from '../tiptap/contextSpec.js';
+import { rootEditorPropsForRoot } from '../tiptap/contextSpec.js';
 
 /**
  * L13 / 2.1.8: the `page` context is derived from the page root's KIND, not
- * from per-root flags (there are none) and never from its id. Every user root
- * is of kind `pages`, so every page editor gets the same layers — anchors and
- * `section_ref`, entity nodes, and `@` over every `pages` root (resolved
- * server-side by the link indexer: source root → builtin → `roots[]` order).
+ * from per-root flags (there are none) and never from its id. A user root is of
+ * kind `pages` — anchors and `section_ref`, entity nodes, and `@` over every
+ * `pages` root (resolved server-side by the link indexer: source root → builtin
+ * → `roots[]` order). 2.1.9: the `skills` root (M52) has a page editor too, and
+ * gets its kind's layers — entity nodes, no anchors, no `@`, no page-ref node.
  *
- * The same object for every page root on purpose: the editor instance is keyed
- * by `(rootId, path)`, and props that changed identity when the config query
- * settled would rebuild a just-mounted editor for an identical answer (focus,
- * selection and an open `/` popup lost).
+ * One object per kind on purpose: the editor instance is keyed by
+ * `(rootId, path)`, and props that changed identity when a query settled would
+ * rebuild a just-mounted editor for an identical answer (focus, selection and
+ * an open `/` popup lost).
  */
-export function useRootEditorProps(_rootId: string): RootEditorProps {
-  // Every page editor opens a page of a `config.roots[]` entry, and every such
-  // entry is of kind `pages` (system roots have no page editor): the `pages`
-  // kind's layers, the one constant `EditorFactory` also defaults to.
-  return FULL_ROOT_EDITOR_PROPS;
+export function useRootEditorProps(rootId: string): RootEditorProps {
+  return rootEditorPropsForRoot(rootId);
 }
 
 /**

@@ -1,5 +1,5 @@
 {
-  "iteration": 7,
+  "iteration": 8,
   "conventions": [
     {
       "label": "L3 (Spec Operations)",
@@ -1585,15 +1585,42 @@
         }
       ],
       "wave": 3,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "u08-skills-sidebar-editor/p1-l5-l13",
+          "layers": [
+            "L5",
+            "L8",
+            "L13"
+          ],
+          "slugs": [
+            "ac-plik-lezacy-poza-wszystkimi-poddrzewa",
+            "m52-package-own-accordion",
+            "m52-accordion-label-from-title",
+            "m52-edge-dir-without-skill-md-accordion",
+            "m52-invalid-frontmatter-package-editable",
+            "m52-page-editor-saves-skill-without-description",
+            "m20-rodzaj-bez-kotwic-at-proza",
+            "m20-rodzaj-bez-kotwic-bez-at"
+          ],
+          "status": "implemented",
+          "rounds": 2,
+          "partial": 0,
+          "uncovered": [
+            "m52-invalid-frontmatter-package-editable"
+          ],
+          "only": []
+        }
+      ],
+      "startCommit": "057037285f2a22ce5d09d25af651298cb8241adf",
+      "baseCommit": "057037285f2a22ce5d09d25af651298cb8241adf",
       "rounds": {
         "review": 0,
-        "unit": 0
-      }
+        "unit": 2
+      },
+      "lastUncovered": 0
     },
     {
       "id": "u09-composer-skill-ref",

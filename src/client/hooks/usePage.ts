@@ -42,6 +42,13 @@ export interface PageWriteVars {
   body: string;
   frontmatter?: Record<string, unknown>;
   /**
+   * 2.1.9 — the page's literal frontmatter block when its YAML does not parse
+   * (`PageContent.frontmatterRaw`). Sent in front of `body` with no
+   * `frontmatter` object — the server writes such a body verbatim — so the
+   * broken header survives the save byte for byte. The cache keeps `body` alone.
+   */
+  frontmatterRaw?: string;
+  /**
    * The guard, when the caller read the page OUTSIDE the query cache and so
    * holds a hash this hook cannot find (`PageLinksList` reads with `api.read`
    * to rewrite one token). Omitted, the cached hash is used — which is the
@@ -94,6 +101,19 @@ export function applyPageWriteToCache(qc: QueryClient, vars: PageWriteVars, ack?
 }
 
 /**
+ * 2.1.9 — what a save sends: `body` + `frontmatter`, or — for a page whose
+ * header does not parse — the literal block glued in front of the body and no
+ * `frontmatter` object, which the server's literal write puts on disk as is.
+ */
+export function pageWritePayload(vars: Pick<PageWriteVars, 'body' | 'frontmatter' | 'frontmatterRaw'>): {
+  body: string;
+  frontmatter: Record<string, unknown> | undefined;
+} {
+  if (vars.frontmatterRaw !== undefined) return { body: vars.frontmatterRaw + vars.body, frontmatter: undefined };
+  return { body: vars.body, frontmatter: vars.frontmatter };
+}
+
+/**
  * One save per page at a time, each guarded by the previous one's ACK.
  *
  * The editor debounces, it does not serialize: a save that outlives the debounce
@@ -129,7 +149,8 @@ function writeSerialized(qc: QueryClient, args: PageWriteVars): Promise<PageWrit
      * close is exactly the one such a read would sit inside.
      */
     hash ??= qc.getQueryData<PageContent>(['page', args.rootId, args.path])?.hash ?? '';
-    return api.write(args.rootId, args.path, args.body, args.frontmatter, hash);
+    const payload = pageWritePayload(args);
+    return api.write(args.rootId, args.path, payload.body, payload.frontmatter, hash);
   })();
   inFlightWrites.set(key, run);
   void run.catch(() => undefined).then(() => {

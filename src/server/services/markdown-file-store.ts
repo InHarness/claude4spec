@@ -195,13 +195,46 @@ function sha256(raw: string): string {
   return crypto.createHash('sha256').update(raw, 'utf-8').digest('hex');
 }
 
+/**
+ * 2.1.9 — the frontmatter/body split of a markdown file that never fails on a
+ * broken header. A block whose YAML does not parse is not an error of the read:
+ * `frontmatter` is `{}`, `body` is what follows the block, and the literal
+ * block travels as `frontmatterRaw` — so a page with a broken header (a skill
+ * package with an invalid `SKILL.md`, M52) still opens in the editor, and a
+ * save can put the block back byte for byte for the author to repair.
+ * ASSUMPTION:dev-0801 — the literal block rides on the page read as `frontmatterRaw`.
+ */
+export function splitMarkdown(raw: string): {
+  frontmatter: Record<string, unknown>;
+  body: string;
+  frontmatterRaw?: string;
+} {
+  try {
+    // `matter(raw, {})`, never `matter(raw)`: gray-matter caches a file by its
+    // bytes BEFORE parsing the YAML, so once anything in the app (the skill
+    // registry, the frontmatter indexer) has run `matter(raw)` on a broken
+    // header, the next option-less call on the same bytes does not throw — it
+    // answers `{ data: {}, content: <whole file> }` and the block would land in
+    // `body`. Passing options bypasses the cache (as page-source.ts does).
+    const parsed = matter(raw, {});
+    return { frontmatter: (parsed.data ?? {}) as Record<string, unknown>, body: parsed.content };
+  } catch {
+    // Like gray-matter: the block opens on the first line, and exactly ONE
+    // newline after the closing delimiter belongs to it.
+    const block = /^\uFEFF?---[ \t]*\r?\n(?:[\s\S]*?\r?\n)?---[ \t]*(?:\r?\n|$)/.exec(raw)?.[0];
+    if (block === undefined) return { frontmatter: {}, body: raw };
+    return { frontmatter: {}, body: raw.slice(block.length), frontmatterRaw: block };
+  }
+}
+
 /** `read()`'s split of bytes already read — shared with `readDetail` so both answer from ONE read. */
 function parseRead(relPath: string, raw: string): PageContent {
-  const parsed = matter(raw);
+  const parsed = splitMarkdown(raw);
   return {
     path: relPath,
-    frontmatter: (parsed.data ?? {}) as Record<string, unknown>,
-    body: parsed.content,
+    frontmatter: parsed.frontmatter,
+    body: parsed.body,
+    ...(parsed.frontmatterRaw !== undefined ? { frontmatterRaw: parsed.frontmatterRaw } : {}),
     // 0.2.15 — over the RAW bytes, not the parsed body: this is the value
     // `update_page` compares `expectedHash` against, and that comparison is
     // against the file.

@@ -5,6 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import express from 'express';
 import request from 'supertest';
+import matter from 'gray-matter';
 import { FileWatchRuntime } from '../fs/watcher.js';
 import { RootRegistry } from '../roots/registry.js';
 import { KIND_DECLARATIONS, type RootKind, type SidebarDeclaration } from '../../shared/root-kinds.js';
@@ -299,5 +300,96 @@ describe('2.1.9 — the `skills` root has a facade (M52 i5frb6it, M02 m02multidi
     expect(onDisk).not.toContain('description:');
     // No anchors are injected into a package file (the kind selects no `m06-*`).
     expect(onDisk).not.toContain('<!-- anchor:');
+  });
+
+  it('[ac:m52-invalid-frontmatter-package-editable] a package whose `SKILL.md` header is invalid opens in the page editor: a header off the contract reads as usual, and one whose YAML does not parse reads with the literal block aside and saves it back byte for byte', async () => {
+    const { app, abs } = await rig();
+    // (1) Parses, but breaks the contract: no `description`, an unknown context type, a future version.
+    const offContract = '---\ntitle: Writer\ncontextTypes: [nope]\nversion: 99\n---\n# Writer\n';
+    put(abs('skills', 'writer/SKILL.md'), offContract);
+    const a = await request(app).get('/api/pages/skills/writer/SKILL.md');
+    expect(a.status).toBe(200);
+    expect(a.body.frontmatter).toEqual({ title: 'Writer', contextTypes: ['nope'], version: 99 });
+    expect(a.body.body).toBe('# Writer\n');
+    expect(a.body.hash).toBe(sha(offContract));
+    expect(a.body).not.toHaveProperty('frontmatterRaw');
+
+    // (2) YAML that does not parse: still 200, the block travels literally, the body is what follows it.
+    const block = '---\ntitle: "Reviewer\n---\n';
+    const broken = `${block}# Reviewer\n\nOld text.\n`;
+    put(abs('skills', 'reviewer/SKILL.md'), broken);
+    const b = await request(app).get('/api/pages/skills/reviewer/SKILL.md');
+    expect(b.status).toBe(200);
+    expect(b.body.frontmatter).toEqual({});
+    expect(b.body.frontmatterRaw).toBe(block);
+    expect(b.body.body).toBe('# Reviewer\n\nOld text.\n');
+    expect(b.body.content).toBe(broken);
+    expect(b.body.hash).toBe(sha(broken));
+
+    // The editor's save of such a page (`pageWritePayload`): the block glued in
+    // front of the edited body, no frontmatter object, guarded by the read hash.
+    const saved = await request(app)
+      .put('/api/pages/skills/reviewer/SKILL.md')
+      .send({ body: `${b.body.frontmatterRaw}# Reviewer\n\nNew text.\n`, expectedHash: b.body.hash });
+    expect(saved.status).toBe(200);
+    const onDisk = fs.readFileSync(abs('skills', 'reviewer/SKILL.md'), 'utf8');
+    expect(onDisk).toBe(`${block}# Reviewer\n\nNew text.\n`);
+    expect(saved.body.hash).toBe(sha(onDisk));
+  });
+
+  it('[ac:m52-invalid-frontmatter-package-editable] a package whose `SKILL.md` YAML does not parse reads the same on every read, also after the skill registry / frontmatter indexer have already run gray-matter over the same bytes (a warm gray-matter cache)', async () => {
+    const { app, abs } = await rig();
+    // Bytes unique to this test, so the cache state is the one this test sets up.
+    const block = '---\ntitle: "Auditor\ncontextTypes: [chat]\n---\n';
+    const broken = `${block}# Auditor\n\nWarm-cache text.\n`;
+    put(abs('skills', 'auditor/SKILL.md'), broken);
+
+    // What the running app does before the editor opens the page: the skill
+    // registry and the frontmatter indexer parse the same `SKILL.md` with an
+    // option-less `matter(raw)`. The first call throws — and leaves the
+    // half-parsed file in gray-matter's cache; a second option-less call on the
+    // same bytes then answers without throwing, the broken block inside `content`.
+    expect(() => matter(broken)).toThrow();
+    const cached = matter(broken);
+    expect(cached.data).toEqual({});
+    expect(cached.content).toBe(broken);
+
+    // The page read is not fooled by that cache: twice in a row, each time the
+    // block aside as `frontmatterRaw` and only what follows it in `body`.
+    for (let i = 0; i < 2; i++) {
+      const res = await request(app).get('/api/pages/skills/auditor/SKILL.md');
+      expect(res.status).toBe(200);
+      expect(res.body.frontmatter).toEqual({});
+      expect(res.body.frontmatterRaw).toBe(block);
+      expect(res.body.body).toBe('# Auditor\n\nWarm-cache text.\n');
+      expect(res.body.body).not.toContain('title: "Auditor');
+      expect(res.body.content).toBe(broken);
+      expect(res.body.hash).toBe(sha(broken));
+    }
+  });
+
+  it('[ac:m52-page-editor-saves-skill-without-description] the page editor\'s save of a `SKILL.md` without `description` goes through: read → edit the body → PUT { body, frontmatter, expectedHash } as the editor sends it, twice in a row on the ack\'s hash', async () => {
+    const { app, abs } = await rig();
+    const original = '---\ntitle: Writer\nversion: 1\n---\n# Writer\n';
+    put(abs('skills', 'writer/SKILL.md'), original);
+    // What the editor opens: the page-detail read.
+    const read = await request(app).get('/api/pages/skills/writer/SKILL.md');
+    expect(read.status).toBe(200);
+    expect(read.body.frontmatter).toEqual({ title: 'Writer', version: 1 });
+    // The autosave: the frontmatter as read (no description), the edited body, the read hash.
+    const first = await request(app)
+      .put('/api/pages/skills/writer/SKILL.md')
+      .send({ body: '# Writer\n\nFirst edit.\n', frontmatter: read.body.frontmatter, expectedHash: read.body.hash });
+    expect(first.status).toBe(200);
+    // The next autosave is guarded by the previous ack's hash.
+    const second = await request(app)
+      .put('/api/pages/skills/writer/SKILL.md')
+      .send({ body: '# Writer\n\nSecond edit.\n', frontmatter: read.body.frontmatter, expectedHash: first.body.hash });
+    expect(second.status).toBe(200);
+    const onDisk = fs.readFileSync(abs('skills', 'writer/SKILL.md'), 'utf8');
+    expect(second.body.hash).toBe(sha(onDisk));
+    expect(onDisk).toContain('Second edit.');
+    expect(onDisk).toContain('title: Writer');
+    expect(onDisk).not.toContain('description');
   });
 });

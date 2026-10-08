@@ -18,7 +18,13 @@
  * `section_ref`, `AnchorMarker` or entity nodes. It replaced the synthetic
  * property bag (`MINIMAL_ROOT_EDITOR_PROPS`) those surfaces used to fake.
  */
-import { KIND_DECLARATIONS, PAGES_KIND, kindSelects, type RootKind } from '../../shared/root-kinds.js';
+import {
+  KIND_DECLARATIONS,
+  PAGES_KIND,
+  kindSelects,
+  systemRootKindOf,
+  type RootKind,
+} from '../../shared/root-kinds.js';
 
 export type EditorContextId = 'page' | 'artifact' | 'description' | 'plan' | 'chat-input';
 
@@ -53,13 +59,36 @@ export function rootEditorPropsForKind(kind: RootKind): RootEditorProps {
     sectionIndexed: kindSelects(kind, 'm06-anchor-injection'),
     referenceValidated: KIND_DECLARATIONS[kind].flags.references,
     // ASSUMPTION:dev-0303 — a kind other than `pages` gets no `@` even if it
-    // selects `m06-anchor-injection` (no such kind has a page editor today).
+    // selects `m06-anchor-injection` (the one such kind with a page editor,
+    // `skills`, selects no `m06-*` anyway).
     pageLinks: kind === PAGES_KIND,
   };
 }
 
 /** A `pages` root's editor — the kind's layers. */
 export const FULL_ROOT_EDITOR_PROPS: RootEditorProps = rootEditorPropsForKind('pages');
+
+/** One layer object per kind, so a page editor's props keep their identity across renders. */
+const LAYERS_BY_KIND = new Map<RootKind, RootEditorProps>([[PAGES_KIND, FULL_ROOT_EDITOR_PROPS]]);
+
+/**
+ * 2.1.9 (M20 `m20l13rt`) — the layers of the page editor of a page in
+ * `rootId`: the root's KIND is asked of the registry declaration (a root from
+ * the source `kod` — today `skills`, M52 — carries its kind there; every
+ * `config.roots[]` entry is of kind `pages`), and the gating then branches on
+ * that kind's layers alone, never on the id. A `skills` package file therefore
+ * opens with entity nodes (`references = tak`) but without anchors,
+ * `section_ref`, the `@` autocomplete or the page-ref node.
+ */
+export function rootEditorPropsForRoot(rootId: string): RootEditorProps {
+  const kind: RootKind = systemRootKindOf(rootId) ?? PAGES_KIND;
+  let layers = LAYERS_BY_KIND.get(kind);
+  if (!layers) {
+    layers = rootEditorPropsForKind(kind);
+    LAYERS_BY_KIND.set(kind, layers);
+  }
+  return layers;
+}
 
 /**
  * The layers of the FIXED `artifact` context (briefs, patches): prose and `@`

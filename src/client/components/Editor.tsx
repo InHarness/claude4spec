@@ -126,6 +126,7 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
               path: activePath,
               body: md,
               frontmatter: data?.frontmatter,
+              frontmatterRaw: data?.frontmatterRaw,
               onConflict: (conflict) => onConflictRef.current(activePath, conflict),
             },
             { onSettled: () => void (inflightRef.current -= 1) },
@@ -273,6 +274,7 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
             path: forPath,
             body: md,
             frontmatter: data?.frontmatter,
+            frontmatterRaw: data?.frontmatterRaw,
             expectedHash: conflict.currentHash,
             onConflict: (again) => onConflictRef.current(forPath, again),
           },
@@ -334,8 +336,16 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
         path,
         body: md,
         frontmatter: data?.frontmatter,
+        frontmatterRaw: data?.frontmatterRaw,
         onConflict: (c) =>
-          write.mutate({ rootId, path, body: md, frontmatter: data?.frontmatter, expectedHash: c.currentHash }),
+          write.mutate({
+            rootId,
+            path,
+            body: md,
+            frontmatter: data?.frontmatter,
+            frontmatterRaw: data?.frontmatterRaw,
+            expectedHash: c.currentHash,
+          }),
       });
     });
     return () => {

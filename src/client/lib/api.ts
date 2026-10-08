@@ -5,6 +5,7 @@ import type {
   PageMoveAck,
   PageWriteAck,
   Root,
+  SidebarAccordion,
   TodoCounts,
   TodoHit,
 } from '../../shared/types.js';
@@ -44,7 +45,7 @@ import type {
   AgentCredentialResponse,
   SetAgentCredentialRequest,
 } from '../../shared/agent-credential.js';
-import { ApiError, handle, apiFetch } from './api-core.js';
+import { ApiError, handle, apiFetch, unwrap } from './api-core.js';
 
 export { ApiError, handle };
 
@@ -139,6 +140,14 @@ export const api = {
       body: JSON.stringify({ from, to, expectedHash }),
     });
     return handle<PageMoveAck>(res);
+  },
+
+  /**
+   * 2.1.9 — `GET /api/sidebar-accordions` (M02, DTO `sidebar-accordion`): the
+   * ordered accordion array of every root, in `{ data }`. No `:rootId` segment.
+   */
+  async sidebarAccordions(): Promise<SidebarAccordion[]> {
+    return unwrap<SidebarAccordion[]>(await apiFetch('/api/sidebar-accordions'));
   },
 
   async remove(rootId: string, path: string): Promise<void> {
