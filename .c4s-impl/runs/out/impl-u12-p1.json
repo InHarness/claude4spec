@@ -1,0 +1,30 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.8",
+  "unit": "u12-git-clone",
+  "portion": "u12-git-clone/p1-l13-l17",
+  "claimed": [
+    "ac-bootstrap-tworzy-aktualizuje-gitignore",
+    "ac-clone-restore-odtwarza-wszystkie-releasa",
+    "ac-git-commit-przy-createrelease-obejmuje-w",
+    "ac-katalogi-artefaktow-briefsdir-patche",
+    "ac-przy-w-czonym-config-git-synccommitonre",
+    "section:dj6r1sam",
+    "section:eu1rffp6",
+    "section:mm4bidri",
+    "section:aqys9dje",
+    "section:2qwi21mw",
+    "section:yn1oesly",
+    "section:1svflc6b",
+    "section:m28aug01",
+    "section:m28l13rt",
+    "section:fxcropku",
+    "section:64bmqf81",
+    "section:m27l13rt"
+  ],
+  "deviations": ["dev-0013"],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

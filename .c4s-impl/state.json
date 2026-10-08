@@ -1,5 +1,5 @@
 {
-  "iteration": 139,
+  "iteration": 145,
   "conventions": [
     {
       "label": "L7 (File Change Reactions)",
@@ -2585,13 +2585,47 @@
         }
       ],
       "wave": 8,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u12-git-clone/p1-l13-l17",
+          "layers": [
+            "L13",
+            "L17"
+          ],
+          "slugs": [
+            "ac-bootstrap-tworzy-aktualizuje-gitignore",
+            "ac-clone-restore-odtwarza-wszystkie-releasa",
+            "ac-git-commit-przy-createrelease-obejmuje-w",
+            "ac-katalogi-artefaktow-briefsdir-patche",
+            "ac-przy-w-czonym-config-git-synccommitonre",
+            "section:dj6r1sam",
+            "section:eu1rffp6",
+            "section:mm4bidri",
+            "section:aqys9dje",
+            "section:2qwi21mw",
+            "section:yn1oesly",
+            "section:1svflc6b",
+            "section:m28aug01",
+            "section:m28l13rt",
+            "section:fxcropku",
+            "section:64bmqf81",
+            "section:m27l13rt"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "2bb2c9c24e2ae25cb07123737e0371d6394542b4",
       "rounds": {
-        "review": 0
+        "review": 0,
+        "unit": 1
       },
-      "baseCommit": null
+      "baseCommit": "2bb2c9c24e2ae25cb07123737e0371d6394542b4",
+      "lastUncovered": 0
     }
   ],
   "entityTypes": [

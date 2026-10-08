@@ -288,6 +288,14 @@ export function rollbackClone(
      * existed before the clone, which used to leave restored entity files behind.
      */
     systemRootDirs?: string[];
+    /**
+     * 2.1.8 (M27 64bmqf81): the system roots whose dir EXISTED before this run,
+     * each with the files it held then ({@link snapshotRootFiles}). Their dir is
+     * kept, but every file restored into it in this run (entity files,
+     * `tags.json`) is removed — the gap when `.claude4spec/` pre-existed the
+     * clone and is not removed wholesale. Files present before are untouched.
+     */
+    preexistingSystemRoots?: Array<{ dir: string; filesBefore: readonly string[] }>;
     configCreated: boolean;
     claudeDirCreated: boolean;
     gitignoreCreated: boolean;
@@ -306,11 +314,36 @@ export function rollbackClone(
   // Each page root's dir + restored files, and the system roots created here.
   for (const dir of opts.rootDirs) rm(path.join(cwd, dir));
   for (const dir of opts.systemRootDirs ?? []) rm(path.join(cwd, dir));
+  for (const { dir, filesBefore } of opts.preexistingSystemRoots ?? []) {
+    const before = new Set(filesBefore);
+    for (const rel of snapshotRootFiles(cwd, dir)) if (!before.has(rel)) rm(path.join(cwd, dir, rel));
+  }
   // Run-created scaffolding only — a pre-existing config.json / .claude4spec/ /
   // .gitignore (we'd have only appended to the last) is left untouched.
   if (opts.configCreated) rm(path.join(claudeDir, 'config.json')); // M01 step 5
   if (opts.gitignoreCreated) rm(path.join(cwd, '.gitignore')); // M01 ensureGitignore
   if (opts.claudeDirCreated) rm(claudeDir); // M01 step 3
+}
+
+/**
+ * 2.1.8: the files under a root's `dir` (relative to that dir, `/`-separated),
+ * recursively; `[]` when the dir does not exist. The clone takes this snapshot of
+ * every pre-existing system root before restoring, so {@link rollbackClone} can
+ * remove exactly the files the run added.
+ */
+export function snapshotRootFiles(cwd: string, dir: string): string[] {
+  const abs = path.join(cwd, dir);
+  if (!fs.existsSync(abs)) return [];
+  const out: string[] = [];
+  const walk = (rel: string): void => {
+    for (const e of fs.readdirSync(path.join(abs, rel), { withFileTypes: true })) {
+      const child = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) walk(child);
+      else out.push(child);
+    }
+  };
+  walk('');
+  return out;
 }
 
 /**

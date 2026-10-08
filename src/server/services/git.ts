@@ -66,14 +66,15 @@ const NOT_DETECTED: GitStatusResponse = {
 };
 
 export class GitService {
-  /** Dirs of the roots whose kind carries `release` (every `pages` root, then `entities`) resolved to absolute paths — probe locations and staging. */
-  private readonly releaseFlagRootDirs: string[];
+  /** Dirs of the roots of kind `pages` resolved to absolute paths — `detect()`'s probe locations, and the user part of the staging set. */
+  private readonly pageRootDirs: string[];
 
   /**
    * @param cwd                project root (holds `.claude4spec/config.json`).
-   * @param releaseFlagRootDirs dirs of the release-flag roots (absolute or
-   *                           cwd-relative) — the probe locations for repo
-   *                           detection (a release may live in a sub-worktree).
+   * @param pageRootDirs       2.1.8: dirs of the roots of KIND `pages` (absolute
+   *                           or cwd-relative) — the probe locations for repo
+   *                           detection (a page root may live in a sub-worktree)
+   *                           and, with the system roots, the staging set.
    * @param hasInFlightTurn    0.1.123: reports whether an agent turn is
    *                           currently mutating disk — `checkout()` hard-blocks
    *                           on this (a branch switch would race live writes).
@@ -82,10 +83,10 @@ export class GitService {
    */
   constructor(
     private cwd: string,
-    releaseFlagRootDirs: string[],
+    pageRootDirs: string[],
     private hasInFlightTurn: () => boolean = () => false,
   ) {
-    this.releaseFlagRootDirs = releaseFlagRootDirs.map((d) => path.resolve(cwd, d));
+    this.pageRootDirs = pageRootDirs.map((d) => path.resolve(cwd, d));
   }
 
   /**
@@ -103,15 +104,15 @@ export class GitService {
   }
 
   /**
-   * Probe the release-flag roots for a git worktree root path. Detected when ANY
-   * release-flag root is inside a worktree; the first such root wins. Never
+   * Probe the roots of kind `pages` for a git worktree root path. Detected when ANY
+   * page root is inside a worktree; the first such root wins. Never
    * throws — git missing (ENOENT), no repo, or a root outside any worktree
    * (exit 128) all resolve to `null`. Shared by `detect()` and every
    * lighter-weight caller (`listBranches()`, `checkout()`) that only needs the
    * root, not the full `remote get-url`/`status --porcelain` probe.
    */
   private async probeRoot(): Promise<string | null> {
-    for (const dir of this.releaseFlagRootDirs) {
+    for (const dir of this.pageRootDirs) {
       let real: string;
       try {
         real = fs.realpathSync(dir);
@@ -162,7 +163,7 @@ export class GitService {
   }
 
   /**
-   * Probe the release-flag roots for a git worktree. Never throws — git
+   * Probe the roots of kind `pages` for a git worktree. Never throws — git
    * missing, no repo, or a root outside any worktree all map to
    * `detected: false`.
    */
@@ -193,17 +194,14 @@ export class GitService {
    * unresolved symlink path reads as "outside repository" — resolve to real
    * paths first.
    *
-   * M29: also stages the committed entity store (<entitiesDir> contains the
-   * entity JSON files + tags.json — the source of truth). db.sqlite is
-   * gitignored, so the whole dir can be staged safely. 0.1.118: also stages
-   * the `releases` root so a new release's identity file lands in the same commit as
-   * its marker (for `resolveReleaseCommit` later) — and, when the git master
-   * switch is on, the briefs/patches/plans system roots too: `ensureGitignore`
-   * un-gitignores them specifically so they "become committed and shared with
-   * the team" (see its own doc comment) — that promise is empty unless
-   * staging actually includes them. When the switch is off they're still
-   * gitignored, so staging them here is a harmless no-op (`git add` on an
-   * ignored path adds nothing).
+   * 2.1.8 (M28 aqys9dje): the staging set IS the root registry — the dir of every
+   * root, whatever its kind: the `pages` roots, `entities` (entity files +
+   * `tags.json`), `releases` (so a new release's identity file lands in the same
+   * commit as its marker, for `resolveReleaseCommit` later), `plans`, `briefs`
+   * and `patches`. Roots of a kind without the `release` flag ride along in the
+   * commit, outside the `release_diff` dimension. While the git master switch is
+   * off the `gitignore`-flagged roots are still ignored, so staging them is a
+   * harmless no-op (`git add` on an ignored path adds nothing).
    */
   private resolveStagingTargets(root: string): string[] {
     // 2.1.8: the staging set is derived from the ROOT REGISTRY — the dir of
@@ -214,7 +212,7 @@ export class GitService {
     // the system roots come from code.
     const targets: string[] = [];
     for (const p of new Set([
-      ...this.releaseFlagRootDirs,
+      ...this.pageRootDirs,
       ...SYSTEM_ROOTS.map((r) => path.resolve(this.cwd, r.dir)),
       configPath(this.cwd),
     ])) {
@@ -300,6 +298,7 @@ export class GitService {
    */
   async commit(opts: { name: string; description: string }): Promise<GitCommitResult> {
     const status = await this.detect();
+    // ASSUMPTION:dev-0013 — no `Release ` prefix (pre-window message format kept).
     const message = opts.description ? `${opts.name}\n\n${opts.description}` : opts.name;
     const config = readConfig(this.cwd);
     const commitTarget: NormalizedGitCommitTargetConfig = config.git.commitTarget;

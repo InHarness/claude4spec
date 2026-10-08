@@ -92,5 +92,20 @@ describe('bootstrapProject — system roots', () => {
     ]);
     expect(block).not.toContain('entities');
     expect(block).not.toContain('config.json');
+    expect(text).not.toContain('db.sqlite');
+  });
+
+  it('[ac:ac-bootstrap-tworzy-aktualizuje-gitignore] with git disabled bootstrap updates an existing .gitignore — the user lines stay, the managed block is appended', () => {
+    fs.writeFileSync(path.join(cwd, '.gitignore'), 'node_modules/\n');
+    boot();
+    const text = fs.readFileSync(path.join(cwd, '.gitignore'), 'utf8');
+    expect(text.startsWith('node_modules/\n')).toBe(true);
+    const block = text.slice(text.indexOf('# claude4spec (auto-added)'), text.indexOf('# /claude4spec (auto-added)'));
+    for (const d of ['.claude4spec/plans/', '.claude4spec/briefs/', '.claude4spec/patches/', '.claude4spec/releases/', '*.deprecated']) {
+      expect(block).toContain(d);
+    }
+    expect(block).not.toContain('entities');
+    expect(block).not.toContain('config.json');
+    expect(text).not.toContain('db.sqlite');
   });
 });

@@ -84,7 +84,7 @@ import { ReleaseService } from '../services/release.js';
 import { releasesRouter } from '../routes/releases.js';
 import { ReleasePushService } from '../services/release-push.js';
 import { releasePushesRouter } from '../routes/release-pushes.js';
-import { ReleaseImportService, rollbackClone } from '../services/release-import.js';
+import { ReleaseImportService, rollbackClone, snapshotRootFiles } from '../services/release-import.js';
 import { createReleaseToolsServer } from '../mcp/release-tools/index.js';
 import { GitService } from '../services/git.js';
 import { gitRouter } from '../routes/git.js';
@@ -1060,10 +1060,12 @@ async function buildInner(
   // M17 m17reldiff: the git-anchored diff's pathspecs = release-flag roots + `releases`.
   releaseService.setReleaseFlagRootDirs(releaseFlagRootDirs);
   // M28 Git Sync — best-effort mirroring of release create/push into the user's
-  // git repo. Probes the release-flag roots for a worktree; reads config per-action.
+  // git repo. `detect()` probes the roots of kind `pages` for a worktree; the
+  // staging set is every registry root (those page roots + the system roots) +
+  // config.json. Reads config per-action.
   // 0.1.123: `checkout()` hard-blocks while a turn is live, so it shares the
   // same `activeAdapters` predicate as `ProjectContext.hasInFlightTurn` below.
-  const gitService = new GitService(cwd, releaseFlagRootDirs, () => activeAdapters.size > 0);
+  const gitService = new GitService(cwd, pagesKindRootDirs, () => activeAdapters.size > 0);
   // 0.1.118: needed for the git-anchored getReleaseDiff branch.
   releaseService.setGitService(gitService);
   // M25 Release Push — coordinates M17 bundle build + M24 transport; owns release_push.
@@ -1089,6 +1091,20 @@ async function buildInner(
       cwd,
       skillRegistry,
     );
+    // System roots whose dir pre-existed this run (e.g. a `.claude4spec/` that was
+    // already there): the rollback keeps the dir but removes the files restored
+    // into it — snapshot what each held before the restore.
+    const systemRootDirsCreated = new Set([
+      ...(deps.clone.systemRootDirsCreated ?? []),
+      ...rootRegistry
+        .list()
+        .filter((r) => r.kind !== PAGES_KIND && rootDirsCreatedHere.includes(r.dir))
+        .map((r) => r.dir),
+    ]);
+    const preexistingSystemRoots = rootRegistry
+      .list()
+      .filter((r) => r.kind !== PAGES_KIND && !systemRootDirsCreated.has(r.dir))
+      .map((r) => ({ dir: r.dir, filesBefore: snapshotRootFiles(cwd, r.dir) }));
     try {
       const result = await importService.clone(deps.clone.slug, { nameOverride: deps.clone.nameOverride });
       console.log(
@@ -1106,15 +1122,8 @@ async function buildInner(
         rootDirs: effectiveRoots.map((r) => r.dir),
         // Bootstrap mkdirs the system roots BEFORE this build, so its own record
         // is the one that knows which of them this run created.
-        systemRootDirs: [
-          ...new Set([
-            ...(deps.clone.systemRootDirsCreated ?? []),
-            ...rootRegistry
-              .list()
-              .filter((r) => r.kind !== PAGES_KIND && rootDirsCreatedHere.includes(r.dir))
-              .map((r) => r.dir),
-          ]),
-        ],
+        systemRootDirs: [...systemRootDirsCreated],
+        preexistingSystemRoots,
         configCreated: deps.clone.configCreated,
         claudeDirCreated: deps.clone.claudeDirCreated,
         gitignoreCreated: deps.clone.gitignoreCreated,

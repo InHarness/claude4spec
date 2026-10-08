@@ -406,6 +406,7 @@ describe('GitService — 0.1.118 read-only methods', () => {
         fs.mkdirSync(path.join(dir, '.claude4spec', kind), { recursive: true });
         fs.writeFileSync(path.join(dir, '.claude4spec', kind, 'f.md'), kind);
       }
+      fs.writeFileSync(path.join(dir, '.claude4spec', 'entities', 'tags.json'), '[]');
       // Not under any root — must stay out of the release commit.
       fs.writeFileSync(path.join(dir, 'outside.txt'), 'x');
 
@@ -419,6 +420,7 @@ describe('GitService — 0.1.118 read-only methods', () => {
       for (const kind of ['plans', 'briefs', 'patches', 'entities', 'releases']) {
         expect(tracked).toContain(`.claude4spec/${kind}/f.md`);
       }
+      expect(tracked).toContain('.claude4spec/entities/tags.json');
       expect(tracked).toContain('.claude4spec/config.json');
       expect(tracked).not.toContain('outside.txt');
     });

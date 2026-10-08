@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { ensureGitignore } from './gitignore.js';
-import { SYSTEM_ROOTS, type RegistryRoot } from '../shared/root-kinds.js';
+import { KIND_DECLARATIONS, SYSTEM_ROOTS, type RegistryRoot } from '../shared/root-kinds.js';
 
 describe('ensureGitignore — M33 phase 2 defaults', () => {
   let dir: string;
@@ -116,6 +116,24 @@ describe('ensureGitignore — 0.1.118 git.enabled bidirectional toggle', () => {
   it('gitEnabled=true lists no root dir — only *.deprecated', () => {
     ensureGitignore(dir, { gitEnabled: true });
     expect(read()).toBe('# claude4spec (auto-added)\n*.deprecated\n# /claude4spec (auto-added)\n');
+  });
+
+  it('[ac:ac-katalogi-artefaktow-briefsdir-patche] the dirs of the gitignore-flagged roots are in the managed block only while git is off', () => {
+    const flagged = SYSTEM_ROOTS.filter((r) => KIND_DECLARATIONS[r.kind].flags.gitignore).map((r) => `${r.dir}/`);
+    const unflagged = SYSTEM_ROOTS.filter((r) => !KIND_DECLARATIONS[r.kind].flags.gitignore).map((r) => `${r.dir}/`);
+    expect(flagged.length).toBeGreaterThan(0);
+    const blockLines = (): string[] => {
+      const text = read();
+      return text.slice(text.indexOf('# claude4spec (auto-added)'), text.indexOf('# /claude4spec (auto-added)')).split('\n');
+    };
+
+    ensureGitignore(dir, { gitEnabled: false });
+    for (const d of flagged) expect(blockLines()).toContain(d);
+    for (const d of unflagged) expect(blockLines()).not.toContain(d);
+
+    ensureGitignore(dir, { gitEnabled: true });
+    for (const d of [...flagged, ...unflagged]) expect(blockLines()).not.toContain(d);
+    expect(blockLines()).toContain('*.deprecated');
   });
 
   it('preserves user-authored content above the managed block across a toggle flip', () => {
