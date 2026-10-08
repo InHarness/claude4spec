@@ -16,7 +16,7 @@ import { KIND_DECLARATIONS, PAGES_KIND, type RegistryRoot } from '../../shared/r
  * so the built-in FS channel (Read/Write/Edit/Glob/Grep + spawned Bash) can never hand-edit
  * artifacts; the only write path stays the in-process MCP CRUD servers, which run outside
  * the sandbox. There is no opt-out: precedence (deny > allow > base, enforced downstream)
- * means the artifact deny wins even over `config.agent.allowedPaths`. The same 5 dirs are
+ * means the artifact deny wins even over `config.agent.allowedPaths`. The same dirs are
  * also returned verbatim as `artifactDenyDirs` so the prompt can list them on their own
  * ALWAYS-DISALLOWED line, distinct from the user's configured `disallowedPaths`.
  *

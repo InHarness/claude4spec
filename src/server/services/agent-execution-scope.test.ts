@@ -5,7 +5,9 @@ import path from 'node:path';
 import {
   normalizeResumePathScope,
   resolveAgentExecutionScope,
+  resolveAgentTurnScope,
 } from './agent-execution-scope.js';
+import { DIRECT_FILESYSTEM_DENY_GROUPS } from './agent-tool-posture.js';
 
 /**
  * 0.2.8 (A19/C15): the shared scope builder. The path arithmetic itself is covered by
@@ -78,6 +80,37 @@ describe('resolveAgentExecutionScope', () => {
     });
     expect(scope.pageRootDirs).toEqual([path.join(cwd, 'pages'), path.join(cwd, 'notes')]);
     for (const d of scope.artifactDenyDirs) expect(scope.pageRootDirs).not.toContain(d);
+  });
+
+  it('[ac:ac-wbudowany-write-edit-bash-agenta-na-kata] built-ins present → the agentDirectFs=false root dirs are sandbox-denied even when allowedPaths opens them; flag on → no built-in channel at all', () => {
+    const systemDirs = ['plans', 'briefs', 'patches', 'entities', 'releases'].map((k) =>
+      path.join(cwd, '.claude4spec', k),
+    );
+    // Unchecked `disableDirectFilesystemAccess`: the built-ins stay, and the user tries to
+    // open two artifact dirs through `agent.allowedPaths`.
+    writeConfig({
+      agent: {
+        disableDirectFilesystemAccess: false,
+        allowedPaths: ['.claude4spec/plans', '.claude4spec/entities'],
+      },
+    });
+    const open = resolveAgentTurnScope({ cwd, roots: [] });
+    // The built-in write/shell channel is present (no file/shell group denied)…
+    for (const g of DIRECT_FILESYSTEM_DENY_GROUPS) expect(open.disallowedToolGroups).not.toContain(g);
+    // …and the sandbox still denies read AND write on every such dir: the implicit deny-set
+    // wins over the allow entries (deny > allow > base), with no opt-out.
+    const fsSandbox = open.architectureConfig.claude_sandbox.filesystem;
+    for (const d of systemDirs) {
+      expect(open.disallowedPaths).toContain(d);
+      expect(fsSandbox.denyWrite).toContain(d);
+      expect(fsSandbox.denyRead).toContain(d);
+    }
+    expect(open.allowedPaths).toContain(path.join(cwd, '.claude4spec', 'plans'));
+
+    // Flag on: the built-in file and shell tools are removed from the catalog — nothing to gate.
+    writeConfig({ agent: { disableDirectFilesystemAccess: true } });
+    const closed = resolveAgentTurnScope({ cwd, roots: [] });
+    for (const g of DIRECT_FILESYSTEM_DENY_GROUPS) expect(closed.disallowedToolGroups).toContain(g);
   });
 
   it('derives claude_sandbox from the same resolved lists', () => {

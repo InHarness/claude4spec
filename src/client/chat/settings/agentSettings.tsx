@@ -218,7 +218,8 @@ function AlwaysExcluded({ config }: ElementContext) {
         ))}
       </ul>
       <span className="text-[11px]" style={{ color: 'var(--c-subtle)' }}>
-        Artifacts are edited only through the agent&apos;s MCP tools. This cannot be disabled.
+        {/* M05 8lk6hpxp, verbatim. */}
+        Always excluded — artifacts are edited only through the agent&apos;s tools (not by hand). This cannot be turned off.
       </span>
     </div>
   );

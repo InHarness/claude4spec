@@ -1,0 +1,24 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.8",
+  "unit": "u08-agent-path-scope",
+  "portion": "u08-agent-path-scope/p1-l2-l13",
+  "claimed": [
+    "szablon-agent-path-scope",
+    "ac-puste-allowedpaths-i-disallowedpaths-n",
+    "ac-wbudowany-write-edit-bash-agenta-na-kata",
+    "section:m05l10001",
+    "section:m05l13rt",
+    "section:8lk6hpxp",
+    "section:nn4361ab",
+    "section:z9g82hug",
+    "section:ctuh3exj",
+    "section:da1d88do",
+    "section:q7m4ac0s"
+  ],
+  "deviations": [],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

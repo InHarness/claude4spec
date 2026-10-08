@@ -1,0 +1,122 @@
+{
+  "unit": {
+    "id": "u08-agent-path-scope",
+    "goal": "Zakres plików agenta wynika z rejestru korzeni:\n  - `resolveAgentPathScope({cwd, roots, allowedPaths, disallowedPaths})` traci parametry `*Dir`.\n  - Baza implicit to `cwd` ∪ katalogi korzeni rodzaju `pages`.\n  - Implicit deny-set to katalogi korzeni, których rodzaj ma `agentDirectFs = nie`. Trafia on do `disallowedPaths` i do snapshotu tury 1.\n  - Karta `#agent` „Always excluded” pokazuje te katalogi.\n  - Blok promptu `<agent_path_scope>` i atrybut `roots` w `<project>` biorą pod uwagę tylko rodzaj `pages`.\n  - Audyt `AcAnalysisService` dziedziczy ten sam deny-set.\n  - Usunięte: honorowanie niestandardowych lokalizacji `*Dir` i efekt „relokacja katalogu → `409 RESUME_CONFIG_LOCKED`”.",
+    "recipe": {
+      "pages": [
+        {
+          "key": "pages/modules/m05-chat-agent/m05-chat-agent.md",
+          "change": "all",
+          "context": {
+            "offset": 1,
+            "limit": 3,
+            "anchors": [
+              "iv1lmc33",
+              "t3fsdybv",
+              "qi69o94d"
+            ]
+          }
+        },
+        {
+          "key": "pages/modules/m05-chat-agent/agent-posture.md",
+          "change": "all",
+          "context": null
+        },
+        {
+          "key": "pages/modules/m05-chat-agent/turn-runtime.md",
+          "change": "all",
+          "context": null
+        },
+        {
+          "key": "pages/modules/m48-system-prompt-composition.md",
+          "change": "all",
+          "context": {
+            "offset": 1,
+            "limit": 3,
+            "anchors": [
+              "xdnw931t",
+              "603o6bq9",
+              "kg2e0kqr"
+            ]
+          }
+        },
+        {
+          "key": "plugins/modules/c4s-plugin-ac.md",
+          "change": "all",
+          "context": {
+            "offset": 5,
+            "limit": 2,
+            "anchors": [
+              "5f8l7spw",
+              "205ctsev"
+            ]
+          }
+        }
+      ],
+      "entities": [
+        {
+          "type": "code-snippet",
+          "slugs": [
+            "szablon-agent-path-scope"
+          ]
+        },
+        {
+          "type": "ac",
+          "slugs": [
+            "ac-custom-lokalizacje-dir-ustawione-przez",
+            "ac-puste-allowedpaths-i-disallowedpaths-n",
+            "ac-wbudowany-write-edit-bash-agenta-na-kata",
+            "ac-relokacja-katalogu-artefaktow-plansdir"
+          ]
+        }
+      ]
+    },
+    "dependsOn": [
+      {
+        "unit": "u03-root-registry",
+        "why": "rejestr i flaga `agentDirectFs`"
+      },
+      {
+        "unit": "u04-entities-root",
+        "why": "deny-set jest kompletny dopiero, gdy wszystkie korzenie systemowe są zarejestrowane, a wcześniejsze przełączenie odsłoniłoby agentowi katalogi artefaktów"
+      },
+      {
+        "unit": "u05-releases-root",
+        "why": "deny-set jest kompletny dopiero, gdy wszystkie korzenie systemowe są zarejestrowane, a wcześniejsze przełączenie odsłoniłoby agentowi katalogi artefaktów"
+      },
+      {
+        "unit": "u09-plans-artifact-registry",
+        "why": "deny-set jest kompletny dopiero, gdy wszystkie korzenie systemowe są zarejestrowane, a wcześniejsze przełączenie odsłoniłoby agentowi katalogi artefaktów"
+      },
+      {
+        "unit": "u10-briefs-patches-roots",
+        "why": "deny-set jest kompletny dopiero, gdy wszystkie korzenie systemowe są zarejestrowane, a wcześniejsze przełączenie odsłoniłoby agentowi katalogi artefaktów"
+      }
+    ]
+  },
+  "stateDir": ".c4s-impl/",
+  "mode": "build",
+  "portion": {
+    "name": "u08-agent-path-scope/p1-l2-l13",
+    "layers": [
+      "L2",
+      "L10",
+      "L13"
+    ],
+    "slugs": [
+      "szablon-agent-path-scope",
+      "ac-puste-allowedpaths-i-disallowedpaths-n",
+      "ac-wbudowany-write-edit-bash-agenta-na-kata",
+      "section:m05l10001",
+      "section:m05l13rt",
+      "section:8lk6hpxp",
+      "section:nn4361ab",
+      "section:z9g82hug",
+      "section:ctuh3exj",
+      "section:da1d88do",
+      "section:q7m4ac0s"
+    ],
+    "packet": ".c4s-impl/packets/u08-agent-path-scope.md"
+  },
+  "only": []
+}

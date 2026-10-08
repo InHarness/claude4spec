@@ -52,6 +52,20 @@ describe('resolveAgentPathScope', () => {
     expect(r.artifactDenyDirs).toEqual(artifactAbs());
   });
 
+  it('[ac:ac-puste-allowedpaths-i-disallowedpaths-n] empty user lists → only the implicit base (pages roots outside cwd) minus the agentDirectFs=false root dirs; cwd never appended', () => {
+    const outside = '/var/data/notes';
+    const r = resolve({ roots: [rootAt('pages'), rootAt(outside, 'notes')] });
+    // Base extras: only the `pages`-kind root lying outside cwd; the inside one is covered by cwd.
+    expect(r.allowedPaths).toEqual([outside]);
+    // cwd is NOT appended — the library adds the base itself.
+    expect(r.allowedPaths).not.toContain(CWD);
+    // No system root dir ever enters the allow-list.
+    for (const d of artifactAbs()) expect(r.allowedPaths).not.toContain(d);
+    // Deny = exactly the dirs of the roots whose kind has agentDirectFs = false.
+    expect(r.disallowedPaths).toEqual(artifactAbs());
+    expect(r.artifactDenyDirs).toEqual(artifactAbs());
+  });
+
   it('adds a root dir when it is outside cwd', () => {
     const pagesDir = '/var/data/spec-pages';
     const r = resolve({ roots: [rootAt(pagesDir)] });

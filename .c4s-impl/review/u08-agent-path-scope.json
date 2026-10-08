@@ -1,0 +1,18 @@
+{
+  "role": "reviewer",
+  "scope": {
+    "kind": "unit",
+    "id": "u08-agent-path-scope",
+    "base": "47ac4fc04eac7dbb8f7431abc5f7811c86a03387"
+  },
+  "findings": [
+    {
+      "id": "rev-0018",
+      "file": "src/client/chat/settings/agentSettings.tsx",
+      "line": 222,
+      "blocking": false,
+      "reason": "The card already renders an 'Always excluded' heading (line 211); the new caption starts with 'Always excluded — …' again, so the card shows the phrase twice (heading, dir list, then 'Always excluded — artifacts are …'). If the spec sentence is meant as heading + caption, split it across the existing heading and the caption instead of repeating the heading inside the caption.",
+      "portion": "u08-agent-path-scope/p1-l2-l13"
+    }
+  ]
+}

@@ -1075,7 +1075,7 @@ describe('buildSystemPrompt — <agent_path_scope> (0.1.90 / 0.1.130)', () => {
     expect(build({})).not.toContain('<agent_path_scope>');
   });
 
-  it('emits the block in the chat frame with cwd, allowed, disallowed and ALWAYS-DISALLOWED lines', () => {
+  it('[entity:szablon-agent-path-scope] emits the block in the chat frame with cwd, allowed, disallowed and ALWAYS-DISALLOWED lines', () => {
     const out = build({ contextType: 'chat', agentPathScope: scope });
     expect(out).toContain('<agent_path_scope>');
     // cwd is always listed; configured allow/deny entries appear verbatim.

@@ -1,0 +1,24 @@
+{
+  "role": "implementer",
+  "unit": "u08-agent-path-scope",
+  "packetBytes": 79453,
+  "portions": [
+    {
+      "name": "u08-agent-path-scope/p1-l2-l13",
+      "layers": ["L2", "L10", "L13"],
+      "slugs": [
+        "szablon-agent-path-scope",
+        "ac-puste-allowedpaths-i-disallowedpaths-n",
+        "ac-wbudowany-write-edit-bash-agenta-na-kata",
+        "section:m05l10001",
+        "section:m05l13rt",
+        "section:8lk6hpxp",
+        "section:nn4361ab",
+        "section:z9g82hug",
+        "section:ctuh3exj",
+        "section:da1d88do",
+        "section:q7m4ac0s"
+      ]
+    }
+  ]
+}

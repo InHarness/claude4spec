@@ -1,5 +1,5 @@
 {
-  "iteration": 127,
+  "iteration": 133,
   "conventions": [
     {
       "label": "L7 (File Change Reactions)",
@@ -73,7 +73,7 @@
         "u11-config-settings",
         "u12-git-clone"
       ],
-      "startCommit": null
+      "startCommit": "47ac4fc04eac7dbb8f7431abc5f7811c86a03387"
     }
   ],
   "units": [
@@ -2260,13 +2260,42 @@
         }
       ],
       "wave": 8,
-      "status": "pending",
-      "portions": [],
-      "startCommit": null,
+      "status": "verified",
+      "portions": [
+        {
+          "name": "u08-agent-path-scope/p1-l2-l13",
+          "layers": [
+            "L2",
+            "L10",
+            "L13"
+          ],
+          "slugs": [
+            "szablon-agent-path-scope",
+            "ac-puste-allowedpaths-i-disallowedpaths-n",
+            "ac-wbudowany-write-edit-bash-agenta-na-kata",
+            "section:m05l10001",
+            "section:m05l13rt",
+            "section:8lk6hpxp",
+            "section:nn4361ab",
+            "section:z9g82hug",
+            "section:ctuh3exj",
+            "section:da1d88do",
+            "section:q7m4ac0s"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "47ac4fc04eac7dbb8f7431abc5f7811c86a03387",
       "rounds": {
-        "review": 0
+        "review": 0,
+        "unit": 1
       },
-      "baseCommit": null
+      "baseCommit": "47ac4fc04eac7dbb8f7431abc5f7811c86a03387",
+      "lastUncovered": 0
     },
     {
       "id": "u11-config-settings",
