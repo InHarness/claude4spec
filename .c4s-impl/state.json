@@ -1,5 +1,5 @@
 {
-  "iteration": 4,
+  "iteration": 5,
   "conventions": [
     {
       "label": "L7 (File Change Reactions)",
@@ -27,7 +27,7 @@
       "units": [
         "u02-page-reactions"
       ],
-      "startCommit": null
+      "startCommit": "01d40fe751d13ab43f82cc03c147bce5ca7abb00"
     },
     {
       "n": 3,
@@ -263,9 +263,9 @@
         }
       ],
       "wave": 2,
-      "status": "pending",
+      "status": "in-progress",
       "portions": [],
-      "startCommit": null,
+      "startCommit": "01d40fe751d13ab43f82cc03c147bce5ca7abb00",
       "rounds": {
         "review": 0
       }

@@ -20,9 +20,7 @@
       "verifier": 40,
       "reviewer": 30
     },
-    "gates": [
-      "wave"
-    ],
+    "gates": [],
     "review": "per-unit",
     "reviewer": "same-harness",
     "verifierTools": [],
