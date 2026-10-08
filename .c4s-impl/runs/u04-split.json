@@ -1,0 +1,67 @@
+{
+  "role": "implementer",
+  "unit": "u04-skill-registry-sources",
+  "packetBytes": 284150,
+  "portions": [
+    {
+      "name": "u04-skill-registry-sources/p1-l2-l2",
+      "layers": [
+        "L2"
+      ],
+      "slugs": [
+        "kontrakt-skillregistry-skillmetadata-resolvedskill",
+        "ac-claude-skills-lub-cwd-claude-sk",
+        "ac-config-writingstyle-ustawiony-na-slug",
+        "ac-config-writingstyle-ustawiony-na-slug-2",
+        "ac-katalog-skilli-contextual-zawiera-wyl",
+        "ac-katalog-stylu-dodany-do-claude-skills",
+        "ac-kolizja-slugu-skilla-miedzy-dwoma-plu",
+        "ac-malformed-user-skill-md-brak-frontmat",
+        "ac-niezaufany-plugin-project-local-brak-zg",
+        "ac-skill-scope-contextual-upuszczony-d",
+        "ac-styl-wniesiony-przez-pakiet-pominiety",
+        "ac-ten-sam-slug-w-cwd-claude-skills-i",
+        "ac-user-skill-o-tym-samym-slugu-co-bundled",
+        "ac-available-skill-injection-available",
+        "ac-dla-context-type-brief-rezolwer-m37-za",
+        "ac-gdy-zaleznosc-inharness-ai-agent-adap",
+        "ac-skill-injection-forced-np-brief-aut"
+      ]
+    },
+    {
+      "name": "u04-skill-registry-sources/p2-l3-l16",
+      "layers": [
+        "L3",
+        "L4",
+        "L10",
+        "L14",
+        "L15",
+        "L16"
+      ],
+      "slugs": [
+        "c4s-reader-list-skills",
+        "c4s-reader-load-skill-file",
+        "skill-tools-load-skill-file",
+        "skill-listing-response",
+        "skill-package-response",
+        "szablon-available-skills",
+        "ac-skill-pluginowy-trafia-wylacznie-na-i",
+        "ac-skill-user-authored-o-tym-samym-slugu",
+        "ac-skill-w-claude-skills-ze-scope-contex",
+        "ac-wpis-pluginowy-niewidoczny-na-liscie",
+        "ac-c4s-list-skills-uruchomione-bez-dzial",
+        "ac-odczyt-podpliku-binarnego-odmawia-tym",
+        "ac-file-wskazujacy-podplik-binarny-not-t",
+        "ac-file-zawierajacy-bedacy-sciezka-absol",
+        "ac-komunikat-odmowy-list-skills-przy-con",
+        "ac-list-skills-z-contexttype-spoza-enume",
+        "ac-podplik-przekraczajacy-default-budget",
+        "ac-skill-scope-contextual-upuszczony-prz",
+        "ac-slug-spoza-rejestru-m37-np-skill-z-cl",
+        "ac-wywolanie-load-skill-file-slug-bez-fi",
+        "ac-podplik-przekraczajacy-budzet-wraca-z"
+      ]
+    }
+  ],
+  "deviations": []
+}

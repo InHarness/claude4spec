@@ -21,3 +21,10 @@ wklad-do-edytora-m20#listy zadań GFM → src/client/tiptap/registrations.ts (`t
 wklad-do-edytora-m20#`MentionExtension` → src/client/tiptap/extensions/MentionExtension.ts (registration `mention_extension`, priority 1100)
 wklad-do-edytora-m20#`OutlineExtension` → src/client/tiptap/extensions/HeadingActions/index.ts (registration `heading_actions`)
 wklad-do-edytora-m20#`SlashDispatcher` → src/client/tiptap/extensions/SlashCommands.ts (registration `slash_commands`; listing in src/client/tiptap/slashPalette.ts, sources in src/client/tiptap/registry.ts)
+kontrakt-skillregistry-skillmetadata-resolvedskill → src/server/services/skill-registry.ts (`SkillMetadata`, `ResolvedSkill`, `SkillRegistry` list/listSelectable/has/resolve; `SkillSourceRegistration` contract, `SKILL_PRECEDENCE`)
+c4s-reader-list-skills → src/server/mcp/skill-tools.ts (`list_skills`, registered when a resolver is passed — external surface in src/server/mcp/surface.ts; text `SKILL_TOOL_TEXT.external`)
+c4s-reader-load-skill-file → src/server/mcp/skill-tools.ts (`load_skill_file`, external wording `SKILL_TOOL_TEXT.external`; core src/server/services/skill-operations.ts `loadSkillFile`)
+skill-tools-load-skill-file → src/server/mcp/skill-tools.ts (`load_skill_file`, turn wording `SKILL_TOOL_TEXT.turn`; core src/server/services/skill-operations.ts `loadSkillFile`)
+skill-listing-response → src/server/services/skill-operations.ts (`SkillListingResponse` = `ContextSkills`, rows `SkillListingEntry` in src/server/services/skill-registry.ts), served by src/server/routes/skills.ts `GET /`
+skill-package-response → src/server/services/skill-operations.ts (`SkillPackageResponse`), served by src/server/routes/skills.ts `GET /:slug`
+szablon-available-skills → src/server/services/system-prompt/blocks/m37-skills.ts (`buildAvailableSkills`, slot `AVAILABLE_SKILLS_LINES`; row type `AvailableSkillEntry` in src/server/services/system-prompt/types.ts)

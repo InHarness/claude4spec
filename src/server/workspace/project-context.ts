@@ -120,6 +120,8 @@ import { createPageToolsServer } from '../mcp/page-tools.js';
 import type { SectionWriteDeps } from '../services/page-write.js';
 import { createEntityToolsServer } from '../mcp/entity-tools.js';
 import { SkillRegistry, SkillResolver, findSkillsRoots } from '../services/skill-registry.js';
+import { checkWritingStyleAtStart } from '../services/writing-style-start.js';
+import { fanPluginSkills, loadOverlayLayer } from './project-skills.js';
 import { chatRouter } from '../routes/chat.js';
 import { threadsRouter } from '../routes/threads.js';
 import { sectionsRouter } from '../routes/sections.js';
@@ -132,12 +134,7 @@ import type { PeerProject } from '../services/chat-context.js';
 import type { PluginRegistry, ProjectPluginHost, ProjectPluginOverlay } from '../core/plugin-host/types.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
 import { pluginHostRouter } from '../core/plugin-host/cross-cutting.js';
-import {
-  enumerateOverlayPackages,
-  loadProjectOverlay,
-  projectPluginsDir,
-  type ProjectOverlayResult,
-} from '../core/plugin-host/overlay-loader.js';
+import { projectPluginsDir } from '../core/plugin-host/overlay-loader.js';
 import { buildBasePluginPackages } from '../routes/plugins.js';
 import type { PluginLoadRecord } from '../core/plugin-host/loader.js';
 import type { ActiveAdapter, PendingInput } from '../routes/agent-turn.js';
@@ -344,55 +341,18 @@ async function buildInner(
   const remoteApiUrl = deps.remoteApiUrl ?? bootConfig.remoteApiUrl;
 
   // M33 phase 2: project-local plugin overlay, behind the machine-local
-  // `trustProjectPlugins` gate. Untrusted/undecided ⇒ no overlay is built and no
-  // project-committed code runs; its types stay out of the effective pool and are
-  // reported as `untrusted` in /_meta/plugins. The trust prompt surfaces on the
-  // client when `localPluginsPresent && trust === undefined`.
-  const localPackages = enumerateOverlayPackages(cwd);
-  const localPluginsPresent = localPackages.length > 0;
+  // `trustProjectPlugins` gate (see `loadOverlayLayer`). The trust prompt surfaces
+  // on the client when `localPluginsPresent && trust === undefined`.
   const trust = registry.getProjectTrust(workspace, projectId);
-  let overlay: ProjectPluginOverlay | undefined;
-  let overlayRecords: PluginLoadRecord[] = [];
-  let overlayResult: ProjectOverlayResult | undefined;
-  if (localPluginsPresent && trust === true) {
-    overlayResult = await loadProjectOverlay(cwd);
-    overlay = overlayResult.overlay;
-    overlayRecords = overlayResult.records;
-  } else if (localPluginsPresent) {
-    overlayRecords = localPackages.map((pkg) => ({
-      package: pkg,
-      status: 'skipped' as const,
-      code: 'PLUGIN_PROJECT_UNTRUSTED' as const,
-      reason: 'project plugins not trusted on this machine (trustProjectPlugins)',
-      layer: 'overlay' as const,
-      trust: 'untrusted' as const,
-      origin: path.join('.claude4spec', 'plugins', pkg),
-    }));
-  }
+  const overlayLayer = await loadOverlayLayer(cwd, trust);
+  const { localPluginsPresent, overlayResult } = overlayLayer;
+  const overlay: ProjectPluginOverlay | undefined = overlayResult?.overlay;
+  const overlayRecords: PluginLoadRecord[] = overlayLayer.records;
 
-  // M15 phase 2 / M37: fan plugin-contributed skills into this project's
-  // SkillRegistry as `source: "plugin"` (precedence project > global > plugin —
-  // 0.2.66 removed the rung below). Base (workspace/npm) skills always; overlay skills
-  // only on the trusted path (overlayResult is set only when trust === true),
-  // so an untrusted plugin contributes no skill — exactly as for its entities.
-  //
-  // 0.2.19: a slug claimed by two plugins is a WARNING plus first-wins by
-  // discovery order — never an abort. The loser's whole plugin keeps loading;
-  // only that one skill is dropped. The warning is emitted here rather than in
-  // the registry because this is the layer that knows which two plugins collided
-  // and in what order they were discovered.
-  for (const skill of [
-    ...deps.pluginRegistry.listSkills(),
-    ...(overlayResult?.skills ?? []),
-  ]) {
-    if (skillRegistry.hasPluginSkill(skill.slug)) {
-      console.warn(
-        `[skill] plugin skill slug "${skill.slug}" is contributed more than once; keeping the first by discovery order and skipping this one`,
-      );
-      continue;
-    }
-    skillRegistry.addPluginSkill(skill);
-  }
+  // M15 phase 2 / M37 (+ 2.1.9 M33 → M37): plugin skills — and the slugs of
+  // envelopes that did not load — into this project's SkillRegistry. Overlay
+  // skills only on the trusted path (see `fanPluginSkills`).
+  fanPluginSkills(skillRegistry, deps.pluginRegistry, overlayResult);
 
   const pluginHost: ProjectPluginHost = deps.pluginRegistry.consolidate(
     { entities: bootConfig.entities },
@@ -404,20 +364,14 @@ async function buildInner(
       (hostState.inactive.length ? `, inactive: [${hostState.inactive.join(', ')}]` : '') +
       (hostState.unknown.length ? `, unknown: [${hostState.unknown.join(', ')}]` : ''),
   );
-  // A stale slug/value here (skill deleted, project opened on a machine
-  // without it) must not deadlock the whole per-project build — that would
-  // 500 every route under /api/projects/:id, including the Settings
-  // endpoints the user would need to pick a valid value. Soft-fail instead,
-  // matching the runtime pattern in SkillResolver.resolve(): warn and treat
-  // the value as unavailable for this session. config.json is left untouched
-  // so a later `git pull`/restore just works again with no further action.
-  let initialWritingStyle = bootConfig.writingStyle;
-  if (initialWritingStyle !== null && !skillRegistry.isSelectable(initialWritingStyle)) {
-    console.warn(
-      `config.json: writingStyle "${initialWritingStyle}" ${skillRegistry.unselectableReason(initialWritingStyle)}`,
-    );
-    initialWritingStyle = null;
-  }
+  // 2.1.9 (M01 `7yzu5k8u`): an unresolvable writing style STOPS the start, and
+  // the message tells the cause apart — a slug outside the selectable styles
+  // (typo / nonexistent / a contextual skill) versus a slug known to an envelope
+  // that did not load (missing carrier). ASSUMPTION:dev-0401 — this replaces the
+  // earlier soft-fail (warn + treat as unset), see the deviation.
+  const initialWritingStyle = bootConfig.writingStyle;
+  const styleVerdict = checkWritingStyleAtStart(skillRegistry, initialWritingStyle);
+  if (!styleVerdict.ok) throw new Error(styleVerdict.message);
   // 0.1.51: fail fast on a hand-edited language value outside SUPPORTED_LANGUAGES so
   // a bogus display name never reaches the system prompt. PATCH /config enforces
   // the same membership at runtime.

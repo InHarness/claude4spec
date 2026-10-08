@@ -10,8 +10,11 @@ import { SERVER_DELEGATING_CODES, type CliCommandContribution } from '../registr
  *
  * 0.2.99 M37 — `server-delegating`, over `GET /api/skills/:slug?file=`.
  *
- * Without `--file` it OPENS the skill: the SKILL.md body (no frontmatter) plus
- * the manifest of the package's other files. With `--file` it reads one of them.
+ * Without `--file` it OPENS the skill: SKILL.md in the form its source serves
+ * it, the entry's `source` (and `hash` from a writable source) plus the manifest
+ * of the package's other files — cut, with `truncated`, at a manifest limit the
+ * source declares. With `--file` it reads one of them. The shape is the server's
+ * (`SkillPackageResponse`), printed as it came.
  * `--format text` prints just `content`, so a skill can be piped into a prompt; a
  * truncation hint then goes to stderr, leaving stdout pipeable.
  *

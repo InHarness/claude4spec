@@ -18,6 +18,7 @@ import type {
   ProjectPluginHost,
   ProjectPluginOverlay,
   RegisteredPluginRecord,
+  UnloadedSkillSlug,
 } from './types.js';
 import type {
   PluginCommandContribution,
@@ -44,6 +45,8 @@ import { attachComposition } from './composition-validation.js';
  *  plugin still owns (identity check). */
 interface InternalPluginRecord extends RegisteredPluginRecord {
   skills: PluginSkillContribution[];
+  /** Slugs of `contributes.skills` entries the `contextTypes` check rejected (2.1.9). */
+  rejectedSkills: string[];
   entityModules: BackendModule[];
 }
 
@@ -58,6 +61,8 @@ export class PluginRegistryImpl implements PluginRegistry {
   // of truth for `listSkills` / `listPluginRecords` so a hot-reload that
   // calls `unregisterPlugin` cleanly drops the old version's skills too.
   private plugins = new Map<string, InternalPluginRecord>();
+  // 2.1.9: skill slugs of base packages the loader's gate skipped, by plugin name.
+  private gateSkippedSkills = new Map<string, UnloadedSkillSlug[]>();
 
   registerEntityModule(module: BackendModule): void {
     if (!module.type) {
@@ -144,8 +149,9 @@ export class PluginRegistryImpl implements PluginRegistry {
     // warns-and-skips where the validators throw. A `contextTypes` naming a turn
     // that does not exist is the one skill defect that must not abort its
     // envelope: it is a selector over turns, not part of the skill's identity.
+    const rejectedSkills: string[] = [];
     const skills: PluginSkillContribution[] = [
-      ...admitSkillContextTypes(manifest.name, manifest.contributes.skills ?? []).map(
+      ...admitSkillContextTypes(manifest.name, manifest.contributes.skills ?? [], rejectedSkills).map(
         validateSkillContribution,
       ),
       ...(manifest.contributes.writingStyles ?? []).map(validateWritingStyle),
@@ -177,6 +183,7 @@ export class PluginRegistryImpl implements PluginRegistry {
         commands,
         subagents,
         skills,
+        rejectedSkills,
         entityModules,
         onUnregister,
       },
@@ -202,6 +209,25 @@ export class PluginRegistryImpl implements PluginRegistry {
     // Re-registration (hot-reload) overwrites the prior record; Map keeps the
     // first-seen insertion order, which is what we want for stable section order.
     this.plugins.set(record.name, record);
+    this.gateSkippedSkills.delete(record.name);
+  }
+
+  noteUnloadedSkills(pluginName: string, slugs: string[], detail: string): void {
+    this.gateSkippedSkills.set(
+      pluginName,
+      slugs.map((slug) => ({ slug, plugin: pluginName, detail })),
+    );
+  }
+
+  listUnloadedSkills(): UnloadedSkillSlug[] {
+    const rejected = Array.from(this.plugins.values()).flatMap((r) =>
+      r.rejectedSkills.map((slug) => ({
+        slug,
+        plugin: r.name,
+        detail: `entry "${slug}" of package "${r.name}" was rejected by the loader (contextTypes outside the enum)`,
+      })),
+    );
+    return [...Array.from(this.gateSkippedSkills.values()).flat(), ...rejected];
   }
 
   /**

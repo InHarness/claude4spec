@@ -184,8 +184,8 @@ function full(contextType: SystemPromptInput['contextType'], over: Partial<Syste
     workspaceName: 'default',
     writingStyleSkill: { slug: 'layered-vertical-slices', title: 'Layered "vertical" slices' },
     availableSkills: [
-      { slug: 'layered-vertical-slices', description: 'The style.' },
-      { slug: 'mockup-generator', description: 'Makes <mockups> & more.' },
+      { slug: 'layered-vertical-slices', description: 'The style.', origin: 'plugin' },
+      { slug: 'mockup-generator', description: 'Makes <mockups> & more.', origin: 'plugin' },
     ],
     specLanguage: 'Polski',
     conversationalLanguage: 'Deutsch',

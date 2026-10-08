@@ -713,7 +713,7 @@ describe('runAgentTurn — M37 per-context skill injection', () => {
         const styleSlug = Object.entries(skills).find(([, s]) => s.scope === 'writing-style')?.[0];
         const listing = contextual
           .filter((slug) => slug !== styleSlug)
-          .map((slug) => ({ slug, description: skills[slug]!.description }));
+          .map((slug) => ({ slug, description: skills[slug]!.description, origin: 'plugin' as const }));
         return {
           listing,
           writingStyle: styleSlug ? { slug: styleSlug, title: skills[styleSlug]!.title } : null,
@@ -765,7 +765,7 @@ describe('runAgentTurn — M37 per-context skill injection', () => {
     await runAgentTurn(deps, input);
 
     const prompt = String(hoisted.lastExecute?.systemPrompt);
-    expect(prompt).toContain('<skill slug="writing-style-author" description="authors styles"/>');
+    expect(prompt).toContain('<skill slug="writing-style-author" description="authors styles" origin="plugin"/>');
     expect(prompt).not.toContain('<project_writing_skill slug="writing-style-author"');
     // The listing carries the description and NOTHING of the body: that is the
     // release's budget claim, and the only assertion that can falsify it.

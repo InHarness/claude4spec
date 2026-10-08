@@ -1,0 +1,33 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.9",
+  "unit": "u04-skill-registry-sources",
+  "portion": "u04-skill-registry-sources/p1-l2-l2",
+  "claimed": [
+    "kontrakt-skillregistry-skillmetadata-resolvedskill",
+    "ac-claude-skills-lub-cwd-claude-sk",
+    "ac-config-writingstyle-ustawiony-na-slug",
+    "ac-config-writingstyle-ustawiony-na-slug-2",
+    "ac-katalog-skilli-contextual-zawiera-wyl",
+    "ac-katalog-stylu-dodany-do-claude-skills",
+    "ac-kolizja-slugu-skilla-miedzy-dwoma-plu",
+    "ac-malformed-user-skill-md-brak-frontmat",
+    "ac-niezaufany-plugin-project-local-brak-zg",
+    "ac-skill-scope-contextual-upuszczony-d",
+    "ac-styl-wniesiony-przez-pakiet-pominiety",
+    "ac-ten-sam-slug-w-cwd-claude-skills-i",
+    "ac-user-skill-o-tym-samym-slugu-co-bundled",
+    "ac-available-skill-injection-available",
+    "ac-dla-context-type-brief-rezolwer-m37-za",
+    "ac-gdy-zaleznosc-inharness-ai-agent-adap",
+    "ac-skill-injection-forced-np-brief-aut"
+  ],
+  "deviations": [
+    "dev-0401",
+    "dev-0402"
+  ],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

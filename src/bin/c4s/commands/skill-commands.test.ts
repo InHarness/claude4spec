@@ -14,6 +14,11 @@ import { WorkspaceRegistry } from '../../../server/workspace/registry.js';
 import { __resetDelegateTargets } from '../delegate.js';
 import { runListSkills } from './list-skills.js';
 import { runLoadSkillFile } from './load-skill-file.js';
+import express from 'express';
+import request from 'supertest';
+import { skillsRouter } from '../../../server/routes/skills.js';
+import { buildSkillToolsServer } from '../../../server/mcp/skill-tools.js';
+import { SkillRegistry, SkillResolver } from '../../../server/services/skill-registry.js';
 
 const CONFIG = {
   name: 'test-project',
@@ -178,6 +183,43 @@ describe('c4s skills registry commands (0.2.99)', () => {
         await expect(runLoadSkillFile(args('load-skill-file', 'house-style', '--file', 'x'))).rejects.toMatchObject({ code });
       },
     );
+  });
+
+  describe('one taxonomy in all four channels', () => {
+    it('[ac:ac-odczyt-podpliku-binarnego-odmawia-tym] a binary subfile is refused with NOT_TEXT by internal MCP, external MCP, REST and c4s alike', async () => {
+      const skills = path.join(projectDir, '.claude', 'skills');
+      const dir = path.join(skills, 'house-style');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'SKILL.md'), '---\ntitle: h\ndescription: d\nversion: 1\nlanguage: en\n---\nbody\n');
+      fs.writeFileSync(path.join(dir, 'logo.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x00, 0xff, 0xfe]));
+      const registry = SkillRegistry.load([{ dir: skills, source: 'user' }], { rescanTtlMs: 0 });
+      const resolver = new SkillResolver(registry, projectDir);
+
+      // internal (the turn's server) and external (the c4s-reader surface) MCP
+      for (const server of [buildSkillToolsServer(registry), buildSkillToolsServer(registry, 'p', { resolver })]) {
+        const tool = server.tools.find((t) => t.name === 'load_skill_file')!;
+        const out = (await tool.handler({ slug: 'house-style', file: 'logo.png' }, {})) as {
+          isError?: boolean;
+          content: Array<{ text: string }>;
+        };
+        expect(out.isError).toBe(true);
+        expect(JSON.parse(out.content[0]!.text).code).toBe('NOT_TEXT');
+      }
+
+      // REST
+      const app = express();
+      app.use('/api/skills', skillsRouter({ skillRegistry: registry, skillResolver: resolver }));
+      const rest = await request(app).get('/api/skills/house-style').query({ file: 'logo.png' });
+      expect(rest.body.error.code).toBe('NOT_TEXT');
+
+      // c4s — delegates to the server and surfaces the server's answer verbatim
+      status = rest.status;
+      reply = rest.body;
+      await expect(runLoadSkillFile(args('load-skill-file', 'house-style', '--file', 'logo.png'))).rejects.toMatchObject({
+        code: 'NOT_TEXT',
+      });
+      expect(seen[0]).toMatch(/\/skills\/house-style\?file=logo\.png$/);
+    });
   });
 
   describe('no server', () => {

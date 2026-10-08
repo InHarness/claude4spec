@@ -47,6 +47,19 @@ export interface McpInventoryEntry {
   plugin?: boolean;
 }
 
+/**
+ * One row of `<available_skills>` (template `szablon-available-skills`): a listing
+ * position of the M37 resolver. `origin` is the `source` of the winning entry —
+ * always present on rows from the resolver; optional here only for hand-rolled
+ * inputs. `project` is rendered only beside `origin: 'project-exposed'`.
+ */
+export interface AvailableSkillEntry {
+  slug: string;
+  description: string;
+  origin?: 'user' | 'plugin' | 'project-rooted' | 'project-exposed';
+  project?: string;
+}
+
 export interface SystemPromptInput {
   /** M31: per-project host (was the process singleton). */
   host: ProjectPluginHost;
@@ -110,7 +123,7 @@ export interface SystemPromptInput {
    * A description is all the model gets to decide with, so it is the whole cost of
    * a skill in the prompt — one line, where it used to be a whole `SKILL.md`.
    */
-  availableSkills?: { slug: string; description: string }[];
+  availableSkills?: AvailableSkillEntry[];
   /**
    * 0.2.19: body of the `<interaction_context type="…">` block — the domain rules of
    * this thread's interaction type, owned by the genre's module (M21/M23/M11) and
@@ -175,7 +188,7 @@ export type PromptLayer = 'A' | 'B' | 'C' | 'D' | 'E';
 export interface PromptContext extends SystemPromptInput {
   contextType: ChatContextType;
   annotations: Annotation[];
-  availableSkills: { slug: string; description: string }[];
+  availableSkills: AvailableSkillEntry[];
   mcpInventory: readonly McpInventoryEntry[];
   workspaceProjects: PeerProject[];
   currentPageRootId: string;

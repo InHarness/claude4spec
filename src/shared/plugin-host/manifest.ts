@@ -299,19 +299,19 @@ export type ContextType = 'chat' | 'brief' | 'patch' | 'ask';
  *   - `'contextual'` — listed in `<available_skills>` with no selector entry and
  *     no config opt-in. WHICH turns it is listed in is the package's own call
  *     since 0.2.66, declared through {@link PluginSkillContribution.contextTypes};
- *     omitting the field still means all four. The other brakes are the
- *     `trustProjectPlugins` gate and the fact that a user-authored skill of the
- *     same slug overrides the body.
+ *     omitting the field still means all four. The other brake is the
+ *     `trustProjectPlugins` gate. A slug collision with an entry of another
+ *     source is decided by the registry's precedence chain (M37 `aw9kcadc`):
+ *     in `contextual` the plugin rung is first, in `writing-style` last, and a
+ *     collision across scopes goes to the `contextual` entry.
  *
  * Either way a plugin skill only ever rides the listing — it never earns a
  * `<project_writing_skill>` block, which since 0.2.19 belongs to the
  * writing-style slot alone.
  *
- * 0.2.66: this is the ONLY way a `scope: 'contextual'` skill enters the registry.
- * The FS roots admit writing styles and nothing else, and the in-package
- * `bundled` root that used to carry `writing-style-author` no longer exists — so
- * a contextual skill is a package's contribution by construction, not by
- * convention.
+ * 2.1.9: a `scope: 'contextual'` skill enters the registry only from a source
+ * whose declaration admits that scope — this slot, and the project sources M52
+ * registers. The `.claude/skills` roots admit writing styles and nothing else.
  */
 export interface PluginSkillContribution {
   /** Stable identifier; also the dedup key against user/other-plugin skills. */

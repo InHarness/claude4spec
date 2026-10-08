@@ -1,0 +1,16 @@
+{
+  "id": "dev-0401",
+  "kind": "drift",
+  "blocking": false,
+  "address": "u04-skill-registry-sources/7yzu5k8u",
+  "slugs": [
+    "ac-config-writingstyle-ustawiony-na-slug",
+    "ac-config-writingstyle-ustawiony-na-slug-2"
+  ],
+  "text": "M01 `7yzu5k8u` (and the two ACs) say an unresolvable `config.writingStyle` STOPS the start, with the message telling the cause apart. The code at 2.1.8 deliberately soft-failed in `buildProjectContext` (warn + treat the style as unset) with the stated reason that a thrown per-project build 500s every route of that project, including the Settings endpoints the user needs to pick a valid style. Built per the specification: the project build now throws the verdict's message (`checkWritingStyleAtStart`, src/server/services/writing-style-start.ts). The trade-off the old code recorded (a stale slug after removing a plugin makes the project unopenable until config.json is edited by hand) is not addressed by the specification; if the soft-fail was intended, M01 should say so.",
+  "assumption": "ASSUMPTION:dev-0401 — start-up hard-fail replaces the soft-fail (src/server/workspace/project-context.ts, checkWritingStyleAtStart)",
+  "unit": "u04-skill-registry-sources",
+  "portion": "u04-skill-registry-sources/p1-l2-l2",
+  "sent": true,
+  "patchPath": "2-1-8-to-2-1-9-workflow-3-u04-skill-registry-sources-7yzu5k8u-m01-7yzu5k8u-and-the-two-acs-say-an-unresolv.md"
+}

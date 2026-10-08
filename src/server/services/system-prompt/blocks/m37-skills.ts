@@ -1,5 +1,5 @@
 import { attrs, selfClose } from '../glue.js';
-import type { PromptBlock } from '../types.js';
+import type { PromptBlock, PromptContext } from '../types.js';
 
 /* M37 — Internal Skills Registry: the skill listing and its only channel. */
 
@@ -42,13 +42,35 @@ import type { PromptBlock } from '../types.js';
  * The remaining layer is the `SubagentDefinition.tools` allow-lists, which name
  * no `Skill` and must not start to.
  *
- * The builder knows nothing about where the listing came from or how a package is
- * laid out — it renders slugs, descriptions and a fixed rule.
+ * The builder knows nothing about how a package is laid out — it renders slugs,
+ * descriptions, the winner's origin (and, for a `project-exposed` winner, the
+ * provider's `project` id), the lines other modules contribute, and a fixed rule.
+ *
+ * ## Frame and own body (2.1.9, template `szablon-available-skills`)
+ *
+ * M37 contributes the frame and its own body. The body carries a slot for lines
+ * OTHER modules add to this block with their own prompt contribution
+ * (`AVAILABLE_SKILLS_LINES`); their wording is theirs and is not repeated here.
  */
-function buildAvailableSkills(entries: { slug: string; description: string }[]): string {
+function buildAvailableSkills(ctx: PromptContext): string {
+  const entries = ctx.availableSkills;
   const lines = [`<available_skills>`];
   for (const e of entries) {
-    lines.push(`  ${selfClose('skill', attrs({ slug: e.slug, description: e.description }))}`);
+    lines.push(
+      `  ${selfClose(
+        'skill',
+        attrs({
+          slug: e.slug,
+          description: e.description,
+          origin: e.origin,
+          // M37 `ixkjxpua`: `project` only beside origin `project-exposed`.
+          project: e.origin === 'project-exposed' ? e.project : undefined,
+        }),
+      )}`,
+    );
+  }
+  for (const contribution of AVAILABLE_SKILLS_LINES) {
+    for (const line of contribution.render(ctx) ?? []) lines.push(`  ${line}`);
   }
   lines.push(
     `  Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.`,
@@ -59,6 +81,24 @@ function buildAvailableSkills(entries: { slug: string; description: string }[]):
   return lines.join('\n');
 }
 
+/**
+ * Lines another module contributes to the body of `<available_skills>` — its own
+ * L16 contribution, placed in the frame's slot between the skill rows and the
+ * channel rule. `render` returns the lines (no indentation) or `null` when the
+ * contribution does not apply to this turn.
+ */
+export interface AvailableSkillsLineContribution {
+  /** The contributing module, e.g. `M52`. */
+  module: string;
+  render(ctx: PromptContext): readonly string[] | null;
+}
+
+/**
+ * The slot's contributions, in order. Empty in this release: M52's lines (about
+ * `skill_ref` and about a read-only exposed project) arrive with its sources.
+ */
+export const AVAILABLE_SKILLS_LINES: readonly AvailableSkillsLineContribution[] = [];
+
 export const M37_PROMPT_BLOCKS: readonly PromptBlock[] = [
-  { name: 'available_skills', render: (c) => buildAvailableSkills(c.availableSkills) },
+  { name: 'available_skills', render: (c) => buildAvailableSkills(c) },
 ];

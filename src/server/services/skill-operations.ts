@@ -16,7 +16,14 @@
 import { DomainError } from './tags.js';
 import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 import { formatLegalContextTypes, isKnownContextType } from './chat-context.js';
-import type { ContextSkills, SkillRegistry, SkillResolver, SkillScope } from './skill-registry.js';
+import type {
+  ContextSkills,
+  SkillRegistry,
+  SkillResolver,
+  SkillScope,
+  SkillSource,
+  SkillUnresolvedReason,
+} from './skill-registry.js';
 
 /** The default `file` — opening a skill and reading its body are one operation in two modes. */
 export const DEFAULT_SKILL_FILE = 'SKILL.md';
@@ -26,22 +33,42 @@ export type SkillListingResponse = ContextSkills;
 
 /**
  * `load_skill_file` — two shapes of one structure: opening a package (manifest,
- * no `path`) or reading one subfile (`path`, no manifest).
+ * no `path`) or reading one subfile (`path`, no manifest). DTO
+ * `skill-package-response` (2.1.9).
  */
 export interface SkillPackageResponse {
   slug: string;
-  content: string;
+  /**
+   * Opening: `SKILL.md` in the form the entry's source reads it (`user`/`plugin`:
+   * body without frontmatter). Subfile: that file's text. Optional in the shared
+   * structure only because an invalid `project-rooted` package without `SKILL.md`
+   * opens without it (M52 source, not registered yet).
+   */
+  content?: string;
   /** Opening only. */
   title?: string;
   /** Opening only. */
   description?: string;
   /** Opening only. */
   scope?: SkillScope;
-  /** Opening only — every other file of the package, metrics only. */
+  /** Opening only, always there: the `source` of the entry that won the precedence chain. */
+  source?: SkillSource;
+  /** Opening only, and only when the winner's source returns one (a writable source). Never computed here. */
+  hash?: string;
+  /**
+   * Opening only — every other file of the package, metrics only; cut to the
+   * manifest limit when the winner's source declares one.
+   */
   files?: Array<{ path: string; bytes: number; lines: number; isText: boolean }>;
   /** Subfile read only — POSIX, package-relative, never a disk path. */
   path?: string;
-  /** Present (and `true`) only when the content exceeded the budget. */
+  /**
+   * Seam for the `project-rooted` source (M52): an invalid package served under a
+   * slug the registry does not resolve. Nothing sets it until that source exists.
+   */
+  invalid?: true;
+  invalidReason?: string;
+  /** Present (and `true`) only when something was cut: the content over the budget, or the manifest over the source's limit. */
   truncated?: true;
   truncationHint?: string;
 }
@@ -78,32 +105,51 @@ export function listSkills(resolver: SkillResolver, contextType?: string): Skill
  * The listing is a suggestion of what is worth opening, not a permission boundary.
  */
 export function loadSkillFile(registry: SkillRegistry, slug: string, file?: string): SkillPackageResponse {
-  const known = registry.list();
-  if (!known.some((m) => m.slug === slug)) {
+  if (!registry.has(slug)) {
+    // M37 `vsa4f54s`: a slug no source delivers is refused WITH its reason — the
+    // registry's own (`outside-registry`) or the one a source reported.
+    const unresolved = registry.unresolvedReason(slug) ?? { slug, reason: 'outside-registry' as const };
+    const known = Array.from(new Set(registry.list().map((m) => m.slug)));
     throw new DomainError(
       'SKILL_NOT_FOUND',
-      `no skill "${slug}" in this project's registry`,
-      `closest slugs: ${nearestSlugs(slug, known.map((m) => m.slug)).join(', ') || '(the registry is empty)'}`,
+      `no skill "${slug}" in this project's registry — ${describeUnresolved(unresolved.reason, unresolved.detail)}`,
+      `closest slugs: ${nearestSlugs(slug, known).join(', ') || '(the registry is empty)'}`,
     );
   }
   // Resolution — and the disk read — happen HERE, in the server process.
-  // Precedence (project > global > plugin) is applied by the registry; the path
-  // it resolved does not enter the payload below.
+  // The registry hands back the precedence winner, read by ITS source in the form
+  // that source serves; the path it resolved does not enter the payload below.
   const resolved = registry.resolve(slug);
   const { metadata } = resolved;
 
   if (file === undefined) {
+    // Metrics only — the manifest is what makes a subfile's cost visible before
+    // it is paid, and `isText: false` announces a NOT_TEXT refusal in advance.
+    const manifest = Object.values(resolved.files)
+      .map(({ path, bytes, lines, isText }) => ({ path, bytes, lines, isText }))
+      .sort((a, b) => a.path.localeCompare(b.path));
+    const limit = registry.manifestLimitOf(slug);
+    const files = limit !== undefined && manifest.length > limit ? manifest.slice(0, limit) : manifest;
+    const body = budgeted(resolved.content, slug, DEFAULT_SKILL_FILE);
+    const hints = [
+      ...(body.truncated ? [body.truncationHint!] : []),
+      ...(files.length < manifest.length
+        ? [
+            `The manifest of skill "${slug}" lists ${files.length} of its ${manifest.length} package files — the limit its source declares. ` +
+              'A file left out is still addressable as load_skill_file(slug, file).',
+          ]
+        : []),
+    ];
     return {
       slug: metadata.slug,
       title: metadata.title,
       description: metadata.description,
       scope: metadata.scope,
-      ...budgeted(resolved.content, slug, DEFAULT_SKILL_FILE),
-      // Metrics only — the manifest is what makes a subfile's cost visible before
-      // it is paid, and `isText: false` announces a NOT_TEXT refusal in advance.
-      files: Object.values(resolved.files)
-        .map(({ path, bytes, lines, isText }) => ({ path, bytes, lines, isText }))
-        .sort((a, b) => a.path.localeCompare(b.path)),
+      source: metadata.source,
+      ...(resolved.hash !== undefined ? { hash: resolved.hash } : {}),
+      content: body.content,
+      files,
+      ...(hints.length > 0 ? { truncated: true as const, truncationHint: hints.join(' ') } : {}),
     };
   }
 
@@ -138,6 +184,16 @@ export function loadSkillFile(registry: SkillRegistry, slug: string, file?: stri
   }
 
   return { slug: metadata.slug, path: normalized, ...budgeted(entry.content, slug, normalized) };
+}
+
+/** The reason of a `SKILL_NOT_FOUND`, worded for the message (M37 `vsa4f54s`). */
+function describeUnresolved(reason: SkillUnresolvedReason, detail?: string): string {
+  switch (reason) {
+    case 'envelope-not-loaded':
+      return `known but unresolved: the plugin package contributing it did not load${detail ? ` (${detail})` : ''}`;
+    case 'outside-registry':
+      return 'outside the registry: no source of this project delivers it';
+  }
 }
 
 /**

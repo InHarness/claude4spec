@@ -420,7 +420,7 @@ export function registerCoreOperations(): void {
    */
   CATALOG.register({
     name: 'list_skills',
-    summary: 'Skills of the project registry as { slug, description } rows, plus the active writing style ({ slug, title } or null) reported beside them, never as a row. `contextType` narrows to the resolver set of that conversation type; omitted, it addresses the whole registry.',
+    summary: 'Skills of the project registry as { slug, description, origin, project? } rows (`origin` = the `source` of the winning entry; `project` only for origin project-exposed), plus the active writing style ({ slug, title } or null) reported beside them, never as a row. `contextType` narrows to the resolver set of that conversation type; omitted, it addresses the whole registry.',
     scope: 'project',
     mediation: 'direct',
     opClass: 'read',
@@ -446,7 +446,7 @@ export function registerCoreOperations(): void {
 
   CATALOG.register({
     name: 'load_skill_file',
-    summary: 'Open a skill of the project registry (SKILL.md body without frontmatter + manifest of the package files) or read one package subfile by (slug, file). Serves the whole registry, not a context-filtered subset; never a disk path.',
+    summary: 'Open a skill of the project registry (SKILL.md in the form its source serves it, the entry\'s `source`, `hash` from a writable source, and the manifest of the package files — cut to the source\'s manifest limit if it declares one) or read one package subfile by (slug, file). Serves the precedence winner of the whole registry, not a context-filtered subset; never a disk path. A slug the registry does not resolve is refused with its reason.',
     scope: 'project',
     mediation: 'direct',
     opClass: 'read',

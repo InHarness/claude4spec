@@ -129,24 +129,29 @@ describe('SkillRegistry — plugin writing styles (M15 phase 2)', () => {
     expect(registry.isSelectable('terse')).toBe(false);
   });
 
-  it('leaves an FS-root writing style alone, even against a contextual contribution', () => {
+  /**
+   * 2.1.9 (M37 `aw9kcadc`) reverses the two cases below: a slug collision ACROSS
+   * scopes goes to the `contextual` entry, and the writing style is skipped with a
+   * warning. Before, an FS-root style outranked any plugin push of either scope.
+   */
+  it('a contextual contribution wins a cross-scope collision with an FS-root writing style', () => {
     const fsRoot = writeSkill(path.join(tmp, 'styles'), 'terse', 'user', 'Disk Terse', 'writing-style');
     const registry = SkillRegistry.load([fsRoot]);
     registry.addPluginSkill({ ...style({ title: 'Plugin Terse' }), scope: 'contextual' });
 
-    const meta = registry.list().find((s) => s.slug === 'terse');
-    expect(meta?.source).toBe('user');
-    expect(meta?.scope).toBe('writing-style');
-    expect(registry.isSelectable('terse')).toBe(true);
+    expect(registry.resolve('terse').metadata).toMatchObject({ source: 'plugin', scope: 'contextual' });
+    expect(registry.isSelectable('terse')).toBe(false);
+    expect(registry.listSelectable().map((s) => s.slug)).not.toContain('terse');
+    // `list()` does not deduplicate: both entries are there, differing in `source`.
+    expect(registry.list().filter((s) => s.slug === 'terse').map((s) => s.source)).toEqual(['user', 'plugin']);
   });
 
-  it('a plugin CONTEXTUAL skill never displaces a user-authored skill of the same slug', () => {
+  it('a same-slug user style loses its body to the contextual contribution', () => {
     const userRoot = writeSkill(path.join(tmp, 'user'), 'terse', 'user', 'User Terse');
     const registry = SkillRegistry.load([userRoot]);
-    registry.addPluginSkill({ ...style({ title: 'Plugin Terse' }), scope: 'contextual' });
+    registry.addPluginSkill({ ...style({ title: 'Plugin Terse', content: 'PLUGIN BODY' }), scope: 'contextual' });
 
-    const meta = registry.list().find((s) => s.slug === 'terse');
-    expect(meta?.source).toBe('user');
-    expect(registry.resolve('terse').content).toContain('body from user');
+    expect(registry.resolve('terse').metadata.source).toBe('plugin');
+    expect(registry.resolve('terse').content).toBe('PLUGIN BODY');
   });
 });

@@ -1,0 +1,43 @@
+{
+  "role": "reviewer",
+  "scope": {
+    "kind": "unit",
+    "id": "u04-skill-registry-sources",
+    "base": "b4fabd3bf56e824ec72cd8919617009bda887427"
+  },
+  "findings": [
+    {
+      "id": "rev-0001",
+      "file": "src/server/services/skill-registry.ts",
+      "line": 685,
+      "blocking": false,
+      "reason": "resolveListing filters `contextTypes` per entry BEFORE picking the slug's winner, then renders the row from `winnerOf(all, slug)`. If a losing contextual entry covers the context type and the winning one does not, the slug is still listed, with the winner's description and origin, in a turn its winner opted out of, and load_skill_file then serves that winner. This can't happen yet: plugin pushes are first-wins per slug and no project source is registered. It becomes reachable once u05/u11 register `project-rooted` / `project-exposed`. Filtering on the winner's `contextTypes` would keep the listing and the served body consistent.",
+      "portion": "p1-l2-l2"
+    },
+    {
+      "id": "rev-0002",
+      "file": "src/server/services/skill-registry.ts",
+      "line": 705,
+      "blocking": false,
+      "reason": "`winnerOf` reimplements the contextual-chain winner that `SkillRegistry.rebuild()` already computes (`pickWinner`). It does so by casting a `source` value to a rung (`m.source as SkillRung`), which works only because the contextual rungs happen to share names with the source values. Asking the registry for the slug's winner (for example a `winnerOf(slug)` accessor) would remove the duplicate logic and the cast, and the two can then never disagree.",
+      "portion": "p1-l2-l2"
+    },
+    {
+      "id": "rev-0003",
+      "file": "src/server/services/writing-style-start.ts",
+      "line": 34,
+      "blocking": false,
+      "reason": "The start-up error message says the same thing twice: it prints `config.json: writingStyle \"<slug>\"` twice, and then `unselectableReason` repeats the cause the verdict just stated. Example output: '… is not a selectable writing style (a typo, …) — config.json: writingStyle \"x\" not a selectable writing-style skill. Available: …'. The envelope branch has the same problem ('its plugin package did not load. … is contributed by a plugin package that did not load …'). This text is user-visible and now stops the project build, so it should read once: the lead, then the reason, then the action.",
+      "portion": "p1-l2-l2"
+    },
+    {
+      "id": "rev-0004",
+      "file": "src/server/services/system-prompt/types.ts",
+      "line": 59,
+      "blocking": false,
+      "reason": "`AvailableSkillEntry.origin` writes the `SkillSource` union out by hand instead of importing the type from skill-registry.ts (types.ts already imports from a sibling service, `../patch.js`). If a later unit adds a source value, the prompt row type will silently fall out of step with the resolver's `SkillListingEntry.origin`.",
+      "portion": "p2-l3-l16"
+    }
+  ],
+  "deviations": []
+}
