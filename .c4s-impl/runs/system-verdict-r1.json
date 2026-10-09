@@ -1,0 +1,1399 @@
+{
+ "role": "verifier-system",
+ "scope": {
+  "kind": "system",
+  "id": "system"
+ },
+ "release": "2.1.9",
+ "rows": [
+  {
+   "slug": "get-api-sidebar-accordions",
+   "type": "endpoint",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/routes/sidebar-accordions.route.test.ts:94"
+  },
+  {
+   "slug": "get-api-pages-rootid",
+   "type": "endpoint",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/routes/pages-facade-roots.route.test.ts:121"
+  },
+  {
+   "slug": "get-api-pages",
+   "type": "endpoint",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/routes/pages-facade-roots.route.test.ts:140"
+  },
+  {
+   "slug": "post-api-pages",
+   "type": "endpoint",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/routes/pages-facade-roots.route.test.ts:157"
+  },
+  {
+   "slug": "put-api-pages",
+   "type": "endpoint",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/routes/pages-facade-roots.route.test.ts:173"
+  },
+  {
+   "slug": "delete-api-pages",
+   "type": "endpoint",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/routes/pages-facade-roots.route.test.ts:197"
+  },
+  {
+   "slug": "get-api-pages-rootid-search",
+   "type": "endpoint",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/routes/pages-facade-roots.route.test.ts:210"
+  },
+  {
+   "slug": "post-api-pages-rootid-move",
+   "type": "endpoint",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/routes/pages-facade-roots.route.test.ts:225"
+  },
+  {
+   "slug": "sidebar-accordion",
+   "type": "dto",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/routes/sidebar-accordions.route.test.ts:112"
+  },
+  {
+   "slug": "page-tools-create-page",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/page-tools.facade-roots.test.ts:79"
+  },
+  {
+   "slug": "page-root-runtime-construction",
+   "type": "code-snippet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/workspace/root-registry-runtime.test.ts:294"
+  },
+  {
+   "slug": "ac-get-api-pages-plans-zwraca-404-root-n",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/pages-facade-roots.route.test.ts:110"
+  },
+  {
+   "slug": "ac-projectcontext-montuje-n-par-pagesservic",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/workspace/root-registry-runtime.test.ts:104"
+  },
+  {
+   "slug": "ac-swiezy-bootstrap-tworzy-katalogi-wszy",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/workspace/bootstrap.system-roots.test.ts:31"
+  },
+  {
+   "slug": "ac-zadna-operacja-rdzenia-nie-ma-parametru",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/mcp/page-tools.facade-roots.test.ts:114"
+  },
+  {
+   "slug": "reference-tools-find-references",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/reference-tools.test.ts:754"
+  },
+  {
+   "slug": "reference-tools-check-consistency",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/reference-tools.test.ts:786"
+  },
+  {
+   "slug": "ac-lista-po-etykietach-w-rozwinieciu-daj",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/core/references/expand-embeds.test.ts:99"
+  },
+  {
+   "slug": "ac-rozwiniecie-nie-zmienia-linii-kotwic",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/core/references/expand-embeds.test.ts:126"
+  },
+  {
+   "slug": "ac-rozwiniecie-tekstu-w-kontekscie-proje",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/discovery/expansion-context.test.ts:65"
+  },
+  {
+   "slug": "ac-rozwiniecie-w-formacie-inline-zastepu",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/core/references/expand-embeds.test.ts:46"
+  },
+  {
+   "slug": "ac-rozwiniecie-zastepuje-link-do-strony",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/discovery/expansion-context.test.ts:97"
+  },
+  {
+   "slug": "ac-rozwiniecie-zastepuje-section-ref-tek",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/core/references/expand-embeds.test.ts:87"
+  },
+  {
+   "slug": "ac-rozwiniecie-zostawia-znacznik-z-zerwa",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/core/references/expand-embeds.test.ts:66"
+  },
+  {
+   "slug": "ac-kazdy-wiersz-check-consistency-wskazu",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/discovery/discovery.test.ts:2464"
+  },
+  {
+   "slug": "editor-context-spec",
+   "type": "code-snippet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/tiptap/slashSources.test.ts:158"
+  },
+  {
+   "slug": "ac-chat-input-minimalna-instancja-tiptap",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/tiptap/slashSources.test.ts:169"
+  },
+  {
+   "slug": "m14-composer-pageref-serializacja-at",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/tiptap/slashSources.test.ts:190"
+  },
+  {
+   "slug": "m20-composer-slash-popover",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/tiptap/slashSources.test.ts:180"
+  },
+  {
+   "slug": "m20-zrodlo-komend-blad-odczytu",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/tiptap/slashSources.test.ts:121"
+  },
+  {
+   "slug": "m20-zrodlo-komend-kolizja-hint",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/tiptap/slashSources.test.ts:105"
+  },
+  {
+   "slug": "m20-zrodlo-komend-poza-whitelista",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/tiptap/slashSources.test.ts:93"
+  },
+  {
+   "slug": "m20-zrodlo-komend-pull-przy-otwarciu",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/tiptap/slashSources.test.ts:75"
+  },
+  {
+   "slug": "m05-znacznik-slug-bez-type-bez-renderu",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/chat/xml-chip-preprocess.test.ts:30"
+  },
+  {
+   "slug": "kontrakt-skillregistry-skillmetadata-resolvedskill",
+   "type": "code-snippet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/services/skill-registry.sources.test.ts:128"
+  },
+  {
+   "slug": "szablon-available-skills",
+   "type": "code-snippet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/services/system-prompt/blocks/m37-skills.test.ts:35"
+  },
+  {
+   "slug": "skill-listing-response",
+   "type": "dto",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/routes/skills.route.test.ts:70"
+  },
+  {
+   "slug": "skill-package-response",
+   "type": "dto",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/routes/skills.route.test.ts:110"
+  },
+  {
+   "slug": "c4s-reader-list-skills",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/skill-tools.test.ts:324"
+  },
+  {
+   "slug": "c4s-reader-load-skill-file",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/skill-tools.test.ts:299"
+  },
+  {
+   "slug": "skill-tools-load-skill-file",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/skill-tools.test.ts:270"
+  },
+  {
+   "slug": "ac-available-skill-injection-available",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "op: delete at 2.1.9 — removal; no test/trace/code names the slug"
+  },
+  {
+   "slug": "ac-dla-context-type-brief-rezolwer-m37-za",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "op: delete at 2.1.9 — removal; no test/trace/code names the slug"
+  },
+  {
+   "slug": "ac-gdy-zaleznosc-inharness-ai-agent-adap",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "op: delete at 2.1.9 — removal; no test/trace/code names the slug"
+  },
+  {
+   "slug": "ac-skill-injection-forced-np-brief-aut",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "op: delete at 2.1.9 — removal; no test/trace/code names the slug"
+  },
+  {
+   "slug": "ac-c4s-list-skills-uruchomione-bez-dzial",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/bin/c4s/commands/skill-commands.test.ts:226"
+  },
+  {
+   "slug": "ac-claude-skills-lub-cwd-claude-sk",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/skill-registry.sources.test.ts:283"
+  },
+  {
+   "slug": "ac-config-writingstyle-ustawiony-na-slug",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/skill-registry.sources.test.ts:345"
+  },
+  {
+   "slug": "ac-config-writingstyle-ustawiony-na-slug-2",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/skill-registry.sources.test.ts:363"
+  },
+  {
+   "slug": "ac-file-wskazujacy-podplik-binarny-not-t",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/mcp/skill-tools.test.ts:237"
+  },
+  {
+   "slug": "ac-file-zawierajacy-bedacy-sciezka-absol",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/mcp/skill-tools.test.ts:224"
+  },
+  {
+   "slug": "ac-katalog-skilli-contextual-zawiera-wyl",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/skill-registry.sources.test.ts:298"
+  },
+  {
+   "slug": "ac-katalog-stylu-dodany-do-claude-skills",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/skill-registry.sources.test.ts:327"
+  },
+  {
+   "slug": "ac-kolizja-slugu-skilla-miedzy-dwoma-plu",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/skill-registry.sources.test.ts:374"
+  },
+  {
+   "slug": "ac-komunikat-odmowy-list-skills-przy-con",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/skill-operations.test.ts:100"
+  },
+  {
+   "slug": "ac-list-skills-z-contexttype-spoza-enume",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/skill-operations.test.ts:93"
+  },
+  {
+   "slug": "ac-malformed-user-skill-md-brak-frontmat",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/skill-registry.sources.test.ts:394"
+  },
+  {
+   "slug": "ac-niezaufany-plugin-project-local-brak-zg",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/skill-registry.sources.test.ts:413"
+  },
+  {
+   "slug": "ac-odczyt-podpliku-binarnego-odmawia-tym",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/bin/c4s/commands/skill-commands.test.ts:189"
+  },
+  {
+   "slug": "ac-podplik-przekraczajacy-budzet-wraca-z",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/skills.route.test.ts:147"
+  },
+  {
+   "slug": "ac-podplik-przekraczajacy-default-budget",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/mcp/skill-tools.test.ts:253"
+  },
+  {
+   "slug": "ac-skill-pluginowy-trafia-wylacznie-na-i",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/system-prompt/blocks/m37-skills.test.ts:95"
+  },
+  {
+   "slug": "ac-skill-scope-contextual-upuszczony-d",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/skill-registry.sources.test.ts:444"
+  },
+  {
+   "slug": "ac-skill-scope-contextual-upuszczony-prz",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/skill-operations.test.ts:139"
+  },
+  {
+   "slug": "ac-skill-user-authored-o-tym-samym-slugu",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/skill-operations.test.ts:243"
+  },
+  {
+   "slug": "ac-skill-w-claude-skills-ze-scope-contex",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/system-prompt/blocks/m37-skills.test.ts:127"
+  },
+  {
+   "slug": "ac-slug-spoza-rejestru-m37-np-skill-z-cl",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/mcp/skill-tools.test.ts:171"
+  },
+  {
+   "slug": "ac-styl-wniesiony-przez-pakiet-pominiety",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/skill-registry.sources.test.ts:461"
+  },
+  {
+   "slug": "ac-ten-sam-slug-w-cwd-claude-skills-i",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/skill-registry.sources.test.ts:505"
+  },
+  {
+   "slug": "ac-user-skill-o-tym-samym-slugu-co-bundled",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/skill-registry.sources.test.ts:517"
+  },
+  {
+   "slug": "ac-wpis-pluginowy-niewidoczny-na-liscie",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/mcp/skill-tools.test.ts:101"
+  },
+  {
+   "slug": "ac-wywolanie-load-skill-file-slug-bez-fi",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/skill-operations.test.ts:194"
+  },
+  {
+   "slug": "ac-akordeony-korzeni-rodzaju-pages-stoja",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/sidebar-accordions.route.test.ts:280"
+  },
+  {
+   "slug": "ac-dodanie-pliku-w-korzeniu-z-reduktorem",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/sidebar-accordions.route.test.ts:297"
+  },
+  {
+   "slug": "ac-element-wyniku-reduktora-sidebar-z-pa",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/sidebar-accordions.route.test.ts:319"
+  },
+  {
+   "slug": "ac-korzen-rodzaju-z-sidebar-innym-niz-hi",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/pages-facade-roots.route.test.ts:269"
+  },
+  {
+   "slug": "ac-reduktor-sidebar-zglaszajacy-blad-daj",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/sidebar-accordions.route.test.ts:344"
+  },
+  {
+   "slug": "ac-projekt-ktorego-roots-zawiera-wpis-o",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/config.test.ts:491"
+  },
+  {
+   "slug": "ac-zapis-konfiguracji-z-wpisem-roots-o-i",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/config.route.test.ts:423"
+  },
+  {
+   "slug": "ac-put-api-pages-skills-pakiet-skill-md",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/pages-facade-roots.route.test.ts:288"
+  },
+  {
+   "slug": "ac-trafienie-find-references-w-korzeniu",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/discovery/discovery.test.ts:3256"
+  },
+  {
+   "slug": "ac-skill-scope-contextual-z-korzenia-ski",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/project-rooted-skills.test.ts:161"
+  },
+  {
+   "slug": "ac-load-skill-file-slug-dla-skilla-proje",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/project-rooted-skills.test.ts:194"
+  },
+  {
+   "slug": "ac-load-skill-file-na-slug-ktorego-rejes",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/project-rooted-skills.test.ts:245"
+  },
+  {
+   "slug": "ac-roota-user-claude-skills-projekt-g",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/project-rooted-skills.test.ts:91"
+  },
+  {
+   "slug": "m52-invalid-frontmatter-package-not-listed",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/project-rooted-skills.test.ts:137"
+  },
+  {
+   "slug": "m52-invalid-package-loads-marked-invalid",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/project-rooted-skills.test.ts:212"
+  },
+  {
+   "slug": "m52-new-package-listed-next-thread",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/project-rooted-skills.test.ts:109"
+  },
+  {
+   "slug": "m52-edge-renamed-dir-old-slug-unlisted",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/project-rooted-skills.test.ts:124"
+  },
+  {
+   "slug": "m52-skill-files-not-in-search-pages",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/discovery/discovery.test.ts:3271"
+  },
+  {
+   "slug": "c4s-tools-ask",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/c4s-tools.test.ts:198"
+  },
+  {
+   "slug": "szablon-interaction-context-ask",
+   "type": "code-snippet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/services/interaction-rules.test.ts:93"
+  },
+  {
+   "slug": "ac-tura-ask-z-prosba-o-zmiane-specyfikac",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/mcp/c4s-tools.test.ts:230"
+  },
+  {
+   "slug": "ac-answer-tury-ask-ktora-zostawila-plan",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/threads.test.ts:607"
+  },
+  {
+   "slug": "ac-answer-tury-ask-nie-zawiera-sciezki-b",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/threads.test.ts:640"
+  },
+  {
+   "slug": "ac-kod-binu-c4s-nie-zawiera-algorytmu-ro",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/bin/c4s/commands/resolve.test.ts:120"
+  },
+  {
+   "slug": "spec-skill-tools-update-skill-file",
+   "type": "mcp-tool",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/spec-skill-tools.test.ts:84"
+  },
+  {
+   "slug": "ac-serwer-spec-skill-tools-jest-zamontow",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/agent-turn.test.ts:2150"
+  },
+  {
+   "slug": "ac-watek-context-type-ask-nie-ma-zamonto",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/agent-turn.test.ts:2160"
+  },
+  {
+   "slug": "m52-update-skill-file-requires-description",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/mcp/spec-skill-tools.test.ts:146"
+  },
+  {
+   "slug": "ac-plik-lezacy-poza-wszystkimi-poddrzewa",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/lib/sidebar-accordions.test.ts:41"
+  },
+  {
+   "slug": "m52-package-own-accordion",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/lib/sidebar-accordions.test.ts:59"
+  },
+  {
+   "slug": "m52-accordion-label-from-title",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/sidebar-accordions.route.test.ts:381"
+  },
+  {
+   "slug": "m52-edge-dir-without-skill-md-accordion",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/sidebar-accordions.route.test.ts:391"
+  },
+  {
+   "slug": "m52-invalid-frontmatter-package-editable",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/hooks/usePage.test.ts:71"
+  },
+  {
+   "slug": "m52-page-editor-saves-skill-without-description",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/pages-facade-roots.route.test.ts:371"
+  },
+  {
+   "slug": "m20-rodzaj-bez-kotwic-at-proza",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/tiptap/skillsRoot.editor.test.ts:72"
+  },
+  {
+   "slug": "m20-rodzaj-bez-kotwic-bez-at",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/tiptap/skillsRoot.editor.test.ts:59"
+  },
+  {
+   "slug": "m05-chip-slug-bez-type-przypisany-render",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/skills/SkillRefChip.render.test.ts:94"
+  },
+  {
+   "slug": "m05-chip-w-wiadomosci-uzytkownika",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/skills/SkillRefChip.render.test.ts:105"
+  },
+  {
+   "slug": "m52-chip-reaches-model-as-skill-ref",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/skills/specSkillsSource.test.ts:167"
+  },
+  {
+   "slug": "m52-edge-builtin-command-slug-not-in-popover",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/skills/specSkillsSource.test.ts:154"
+  },
+  {
+   "slug": "m52-edge-missing-skill-chip-broken",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/skills/SkillRefChip.render.test.ts:81"
+  },
+  {
+   "slug": "m52-skills-entry-narrows-popover",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/skills/specSkillsSource.test.ts:124"
+  },
+  {
+   "slug": "m52-skills-entry-shows-origin-marker",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/skills/specSkillsSource.test.ts:136"
+  },
+  {
+   "slug": "pkg-skill-author-listed-in-chat",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "tests/integration/architecture/envelope-delivery-axes.test.ts:571"
+  },
+  {
+   "slug": "pkg-skill-author-listed-in-patch",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "tests/integration/architecture/envelope-delivery-axes.test.ts:575"
+  },
+  {
+   "slug": "pkg-skill-author-not-listed-in-brief",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "tests/integration/architecture/envelope-delivery-axes.test.ts:579"
+  },
+  {
+   "slug": "pkg-skill-author-writes-with-file-access-blocked",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/agent-turn.test.ts:2198"
+  },
+  {
+   "slug": "get-api-spec-skills-exposed-projects",
+   "type": "endpoint",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/routes/spec-skills.route.test.ts:60"
+  },
+  {
+   "slug": "exposed-project-row",
+   "type": "dto",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/routes/spec-skills.route.test.ts:73"
+  },
+  {
+   "slug": "szablon-workspace-projects",
+   "type": "code-snippet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/services/system-prompt/blocks/m31-workspace.test.ts:32"
+  },
+  {
+   "slug": "ac-pozycja-available-skills-projektu-wys",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/project-exposed-skills.test.ts:188"
+  },
+  {
+   "slug": "ac-otwarcie-projektu-wystawionego-o-mani",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/project-exposed-skills.test.ts:301"
+  },
+  {
+   "slug": "ac-slug-z-nieosiagalnego-dostawcy-podpie",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/project-exposed-skills.test.ts:318"
+  },
+  {
+   "slug": "ac-skill-contextual-projektu-wystawioneg",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/project-exposed-skills.test.ts:199"
+  },
+  {
+   "slug": "ac-styl-source-plugin-przeslania-bundl",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/project-exposed-skills.test.ts:221"
+  },
+  {
+   "slug": "ac-w-projekcie-bez-zaladowanych-pluginow",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/project-exposed-skills.test.ts:268"
+  },
+  {
+   "slug": "ac-zadna-tura-agenta-nie-przekazuje-pola",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/project-exposed-skills.test.ts:360"
+  },
+  {
+   "slug": "ac-config-writingstyle-na-styl-podpieteg",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/project-exposed-skills.test.ts:387"
+  },
+  {
+   "slug": "ac-config-writingstyle-na-styl-podpieteg-2",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/project-exposed-skills.test.ts:401"
+  },
+  {
+   "slug": "ac-config-writingstyle-wskazujacy-styl-p",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/project-exposed-skills.test.ts:393"
+  },
+  {
+   "slug": "ac-gdy-config-writingstyle-wskazuje-styl-2",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/project-exposed-skills.test.ts:408"
+  },
+  {
+   "slug": "m52-dangling-attachment-marked-unavailable",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/components/spec-skills/specSkillsSettings.test.ts:46"
+  },
+  {
+   "slug": "m52-edge-renamed-provider-unavailable",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/project-exposed-skills.test.ts:441"
+  },
+  {
+   "slug": "m52-edge-self-attachment-not-listed",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/project-exposed-skills.test.ts:287"
+  },
+  {
+   "slug": "m52-exposed-project-not-in-consumer-sidebar",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/project-exposed-skills.test.ts:459"
+  },
+  {
+   "slug": "m52-provider-change-visible-next-load",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/project-exposed-skills.test.ts:334"
+  },
+  {
+   "slug": "m52-update-skill-file-refuses-exposed",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/mcp/spec-skill-tools.test.ts:226"
+  },
+  {
+   "slug": "post-api-spec-skills-style-forks",
+   "type": "endpoint",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/routes/spec-skills.route.test.ts:188"
+  },
+  {
+   "slug": "fork-writing-style-request",
+   "type": "dto",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/routes/spec-skills.route.test.ts:230"
+  },
+  {
+   "slug": "fork-writing-style-response",
+   "type": "dto",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/routes/spec-skills.route.test.ts:245"
+  },
+  {
+   "slug": "writing-style-summary",
+   "type": "dto",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/routes/writing-styles.route.test.ts:105"
+  },
+  {
+   "slug": "szablon-project-writing-skill",
+   "type": "code-snippet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/services/system-prompt/blocks/writing-style-templates.test.ts:68"
+  },
+  {
+   "slug": "szablon-agent-filesystem-access",
+   "type": "code-snippet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/services/system-prompt/blocks/writing-style-templates.test.ts:84"
+  },
+  {
+   "slug": "ac-blok-project-writing-skill-zawiera-zd",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/system-prompt/blocks/writing-style-templates.test.ts:73"
+  },
+  {
+   "slug": "ac-kazdy-element-available-w-get-api",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/writing-styles.route.test.ts:132"
+  },
+  {
+   "slug": "ac-style-sa-odkrywane-z-wielu-rootow-in-pa",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/writing-styles.route.test.ts:143"
+  },
+  {
+   "slug": "ac-lista-available-w-komunikacie-hard-fa",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/writing-styles.route.test.ts:175"
+  },
+  {
+   "slug": "ac-patch-api-config-writingstyle-na",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/writing-styles.route.test.ts:192"
+  },
+  {
+   "slug": "ac-patch-api-config-writingstyle-unkn",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/writing-styles.route.test.ts:203"
+  },
+  {
+   "slug": "ac-edycja-config-json-null-slug-mie",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/agent-turn.test.ts:2447"
+  },
+  {
+   "slug": "ac-przy-config-writingstyle-null-watek-b",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/services/system-prompt/blocks/writing-style-templates.test.ts:94"
+  },
+  {
+   "slug": "ac-styl-user-authored-pojawia-sie-w-dropdow",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/writing-styles.route.test.ts:215"
+  },
+  {
+   "slug": "ac-styl-user-authored-utworzony-przez-writi",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/writing-styles.route.test.ts:234"
+  },
+  {
+   "slug": "ac-poproszenie-w-chacie-o-utworzenie-nowego",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/agent-turn.test.ts:2393"
+  },
+  {
+   "slug": "ac-scaffold-stylu-przy-aktywnym-agent-di",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/agent-turn.test.ts:2367"
+  },
+  {
+   "slug": "ac-skill-writing-style-author-otwarty-w",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/agent-turn.test.ts:2421"
+  },
+  {
+   "slug": "ac-skill-writing-style-author-poproszony",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "plugins/c4s-plugin-writing-style-author/test/skill-contribution.test.ts:86"
+  },
+  {
+   "slug": "ac-skill-writing-style-author-scope-conte",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/writing-styles.route.test.ts:157"
+  },
+  {
+   "slug": "ac-istniejacy-projekt-bez-pola-agent-dis",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/client/components/settings/catalog.test.ts:130"
+  },
+  {
+   "slug": "m52-style-fork-keeps-writing-style-config",
+   "type": "ac",
+   "level": 2,
+   "status": "covered",
+   "evidence": "src/server/routes/spec-skills.route.test.ts:291"
+  },
+  {
+   "slug": "szablon-available-skills-spec-skills",
+   "type": "code-snippet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/services/system-prompt/blocks/m52-spec-skills.test.ts:81"
+  },
+  {
+   "slug": "szablon-current-skill",
+   "type": "code-snippet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/services/system-prompt/blocks/m52-spec-skills.test.ts:203"
+  },
+  {
+   "slug": "wklad-do-edytora-m05#adnotacje page-bound",
+   "type": "spreadsheet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/tiptap/slashSources.test.ts:310"
+  },
+  {
+   "slug": "wklad-do-edytora-m05#`chat-input`",
+   "type": "spreadsheet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/tiptap/slashSources.test.ts:322"
+  },
+  {
+   "slug": "wklad-do-edytora-m20#węzeł znacznika inline",
+   "type": "spreadsheet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/tiptap/slashSources.test.ts:232"
+  },
+  {
+   "slug": "wklad-do-edytora-m20#węzeł znacznika blokowy",
+   "type": "spreadsheet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/tiptap/slashSources.test.ts:244"
+  },
+  {
+   "slug": "wklad-do-edytora-m20#surowy węzeł kodu JSX",
+   "type": "spreadsheet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/tiptap/slashSources.test.ts:256"
+  },
+  {
+   "slug": "wklad-do-edytora-m20#listy zadań GFM",
+   "type": "spreadsheet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/tiptap/slashSources.test.ts:268"
+  },
+  {
+   "slug": "wklad-do-edytora-m20#`MentionExtension`",
+   "type": "spreadsheet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/tiptap/slashSources.test.ts:282"
+  },
+  {
+   "slug": "wklad-do-edytora-m20#`OutlineExtension`",
+   "type": "spreadsheet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/tiptap/slashSources.test.ts:290"
+  },
+  {
+   "slug": "wklad-do-edytora-m20#`SlashDispatcher`",
+   "type": "spreadsheet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/tiptap/slashSources.test.ts:298"
+  },
+  {
+   "slug": "katalog-operacji-m52#update_skill_file",
+   "type": "spreadsheet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/mcp/spec-skill-tools.test.ts:186"
+  },
+  {
+   "slug": "wklad-do-edytora-m52#spec-skills",
+   "type": "spreadsheet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/skills/specSkillsSource.test.ts:88"
+  },
+  {
+   "slug": "znaczniki-xml-m52#skill_ref",
+   "type": "spreadsheet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/client/skills/SkillRefChip.render.test.ts:50"
+  },
+  {
+   "slug": "katalog-operacji-m52#list_exposed_projects",
+   "type": "spreadsheet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/routes/spec-skills.route.test.ts:106"
+  },
+  {
+   "slug": "katalog-operacji-m52#fork_writing_style",
+   "type": "spreadsheet",
+   "level": 1,
+   "status": "covered",
+   "evidence": "src/server/routes/spec-skills.route.test.ts:260"
+  },
+  {
+   "slug": "deviation:dev-0101",
+   "level": 3,
+   "status": "covered",
+   "evidence": "dev-0101.json: sent=True (unit u01-root-facades)"
+  },
+  {
+   "slug": "deviation:dev-0102",
+   "level": 3,
+   "status": "covered",
+   "evidence": "dev-0102.json: sent=True (unit u01-root-facades)"
+  },
+  {
+   "slug": "deviation:dev-0201",
+   "level": 3,
+   "status": "covered",
+   "evidence": "dev-0201.json: sent=True (unit u02-references-expansion)"
+  },
+  {
+   "slug": "deviation:dev-0301",
+   "level": 3,
+   "status": "covered",
+   "evidence": "dev-0301.json: sent=True (unit u03-editor-command-sources)"
+  },
+  {
+   "slug": "deviation:dev-0302",
+   "level": 3,
+   "status": "covered",
+   "evidence": "dev-0302.json: sent=True (unit u03-editor-command-sources)"
+  },
+  {
+   "slug": "deviation:dev-0303",
+   "level": 3,
+   "status": "covered",
+   "evidence": "dev-0303.json: sent=True (unit u03-editor-command-sources)"
+  },
+  {
+   "slug": "deviation:dev-0401",
+   "level": 3,
+   "status": "covered",
+   "evidence": "dev-0401.json: sent=True (unit u04-skill-registry-sources)"
+  },
+  {
+   "slug": "deviation:dev-0402",
+   "level": 3,
+   "status": "covered",
+   "evidence": "dev-0402.json: sent=True (unit u04-skill-registry-sources)"
+  },
+  {
+   "slug": "deviation:dev-0441",
+   "level": 3,
+   "status": "covered",
+   "evidence": "dev-0441.json: sent=True (unit u04-skill-registry-sources)"
+  },
+  {
+   "slug": "deviation:dev-0442",
+   "level": 3,
+   "status": "covered",
+   "evidence": "dev-0442.json: sent=True (unit u04-skill-registry-sources)"
+  },
+  {
+   "slug": "deviation:dev-0501",
+   "level": 3,
+   "status": "covered",
+   "evidence": "dev-0501.json: sent=True (unit u05-skills-root)"
+  },
+  {
+   "slug": "deviation:dev-0502",
+   "level": 3,
+   "status": "covered",
+   "evidence": "dev-0502.json: sent=True (unit u05-skills-root)"
+  },
+  {
+   "slug": "deviation:dev-0601",
+   "level": 3,
+   "status": "covered",
+   "evidence": "dev-0601.json: sent=True (unit u06-c4s-resolve-ask)"
+  },
+  {
+   "slug": "deviation:dev-0801",
+   "level": 3,
+   "status": "covered",
+   "evidence": "dev-0801.json: sent=True (unit u08-skills-sidebar-editor)"
+  },
+  {
+   "slug": "deviation:dev-0802",
+   "level": 3,
+   "status": "covered",
+   "evidence": "dev-0802.json: sent=True (unit u08-skills-sidebar-editor)"
+  },
+  {
+   "slug": "deviation:dev-0901",
+   "level": 3,
+   "status": "covered",
+   "evidence": "dev-0901.json: sent=True (unit u09-composer-skill-ref)"
+  },
+  {
+   "slug": "deviation:dev-1201",
+   "level": 3,
+   "status": "covered",
+   "evidence": "dev-1201.json: sent=True (unit u12-writing-styles)"
+  },
+  {
+   "slug": "deviation:dev-1202",
+   "level": 3,
+   "status": "covered",
+   "evidence": "dev-1202.json: sent=True (unit u12-writing-styles)"
+  },
+  {
+   "slug": "deviation:dev-1203",
+   "level": 3,
+   "status": "covered",
+   "evidence": "dev-1203.json: sent=True (unit u12-writing-styles)"
+  },
+  {
+   "slug": "deviation:dev-1204",
+   "level": 3,
+   "status": "covered",
+   "evidence": "dev-1204.json: sent=True (unit u12-writing-styles)"
+  },
+  {
+   "slug": "deviation:dev-1301",
+   "level": 3,
+   "status": "covered",
+   "evidence": "dev-1301.json: sent=True (unit u13-prompt-skills)"
+  },
+  {
+   "slug": "deviation:dev-1302",
+   "level": 3,
+   "status": "covered",
+   "evidence": "dev-1302.json: sent=True (unit u13-prompt-skills)"
+  },
+  {
+   "slug": "regression",
+   "level": 3,
+   "status": "covered",
+   "evidence": "npm run typecheck exit 0 (server, client, types, envelopes). Tests are not in any tsconfig, so read statically: exports removed by the diff are gone or re-exported (inline-renderer.ts / resolve-page.ts deleted with no importer left; api.ts WritingStyleItem/WritingStylesResponse and skill-registry SkillSource re-exported from src/shared/writing-styles.ts); the only test naming them (src/bin/c4s/commands/resolve.test.ts:125) asserts their ABSENCE; deleted inline-renderer.test.ts went with its module; system-prompt golden .snap updated in the diff; no data-testid removed from src/client, tests/e2e untouched. Stubs: stubs.json {\"stubs\":[]} — no open row. Trace: every created/updated built entity of 2.1.8→2.1.9 (10 code-snippet, 7 dto, 10 endpoint, 8 mcp-tool, 5 per-entity spreadsheets with built parts) has a trace.md line; no line for a deleted entity; module-dependency (context) and `warstwy` (no parts) need none. User jobs: pages/SKILL.md offset 13 (oq23nb0j) at 2.1.9 embeds spreadsheet `moduly-feature` with columns #/Moduł/Złożoność/Warstwy/Zakres/Plik — no job id or success-sentence column, so no job row names a unit and no job:* row is derivable. Recipe criteria set equals the window entity diff (125 active ac + 4 op:delete)."
+  }
+ ],
+ "suite": {
+  "command": "npm run typecheck (static build; full npm test + npm run test:e2e run afterwards in env-runner)",
+  "exitCode": 0,
+  "summary": "tsc -p tsconfig.server.json / client / types + typecheck:envelopes (all plugins incl. c4s-plugin-skill-author@2.1.9): no \"error TS\", exit 0. No test seen broken by the diff (static read)."
+ }
+}
