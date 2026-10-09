@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, FileText, GitCommit, MoreHorizontal, Plus, RotateCcw } from 'lucide-react';
 import {
   useRelease,
@@ -8,6 +9,7 @@ import {
   useReleaseSnapshot,
   useRestoreSpec,
   useUpdateRelease,
+  forgetReleaseName,
 } from '../hooks/useReleases.js';
 import { useReleasePushes } from '../hooks/useReleasePushes.js';
 import { listReleaseActions } from '../lib/release-actions/registry.js';
@@ -28,6 +30,7 @@ interface Props {
 
 export function ReleaseDetail({ name }: Props) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { data: release, isLoading } = useRelease(name);
   const { data: allReleases = [] } = useReleaseList();
   const restoreSpec = useRestoreSpec();
@@ -108,6 +111,7 @@ export function ReleaseDetail({ name }: Props) {
       // 2.1.11: the open route follows the rename — the old name is no longer an address.
       if (updated.name !== name) {
         await navigate({ to: '/releases/$name', params: { name: updated.name }, replace: true });
+        forgetReleaseName(queryClient, name);
       }
     } catch (err) {
       alert((err as Error).message);

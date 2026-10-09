@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { releasesApi } from '../lib/releases-api.js';
 import { releasesService } from '../runtime/releases-service.js';
 import { releasePushesKey } from './useReleasePushes.js';
@@ -99,20 +99,31 @@ export function useUpdateRelease() {
       qc.invalidateQueries({ queryKey: ['releases'] });
       // A rename moves briefs on the release axis (rank is looked up by name).
       qc.invalidateQueries({ queryKey: ['briefs', 'list'] });
-      // 2.1.11: the screen's queries are keyed by name, so a rename re-keys them:
-      // the new name gets the fresh detail, the old name's entries are dropped —
-      // an address with the old name then behaves like any unknown name.
-      const oldName = params.releaseName;
-      if (updated.name !== oldName) {
-        qc.removeQueries({ queryKey: ['release', oldName], exact: true });
-        qc.removeQueries({ queryKey: ['release-snapshot', oldName], exact: true });
-        qc.removeQueries({ queryKey: releasePushesKey(oldName), exact: true });
-        qc.invalidateQueries({ queryKey: ['release-diff'] });
-      }
+      // 2.1.11: the screen's queries are keyed by name. The new name is seeded
+      // here; the old name's entries are dropped by `forgetReleaseName` AFTER the
+      // route has moved — refetching them while the old route is still mounted
+      // would ask the server about a name that no longer exists.
       qc.setQueryData(['release', updated.name], updated);
-      qc.invalidateQueries({ queryKey: ['release', updated.name] });
-      qc.invalidateQueries({ queryKey: releasePushesKey(updated.name) });
+      if (updated.name === params.releaseName) {
+        qc.invalidateQueries({ queryKey: ['release', updated.name] });
+        qc.invalidateQueries({ queryKey: releasePushesKey(updated.name) });
+      }
     },
+  });
+}
+
+/**
+ * 2.1.11: drop every query keyed by a release name that no longer exists (after
+ * a rename): the detail, the snapshot, the push log and any diff naming it on
+ * either side. A later visit to the old address then fetches afresh and behaves
+ * like any unknown name. Call it once nothing on screen observes the old name.
+ */
+export function forgetReleaseName(qc: QueryClient, oldName: string): void {
+  qc.removeQueries({ queryKey: ['release', oldName], exact: true });
+  qc.removeQueries({ queryKey: ['release-snapshot', oldName], exact: true });
+  qc.removeQueries({ queryKey: releasePushesKey(oldName), exact: true });
+  qc.removeQueries({
+    predicate: (q) => q.queryKey[0] === 'release-diff' && (q.queryKey[1] === oldName || q.queryKey[2] === oldName),
   });
 }
 
