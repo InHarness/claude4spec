@@ -1,0 +1,27 @@
+{
+  "role": "reviewer",
+  "scope": {
+    "kind": "wave",
+    "id": "fix-round-1",
+    "base": "f68484f"
+  },
+  "findings": [
+    {
+      "id": "rev-0001",
+      "file": "src/server/services/skill-registry.ts",
+      "line": 906,
+      "blocking": false,
+      "reason": "The gray-matter cache fix stops at project-rooted-skills.ts and skill-write.ts (markdown-file-store.ts already does it). The user-root scan (`loadUserRoot`, `const { data } = matter(raw)`) still calls bare `matter(raw)` on every rescan. On the second scan of a `.claude/skills/<slug>/SKILL.md` whose YAML does not parse, the cached `{ data: {} }` comes back. The package is then skipped as 'description missing' rather than 'frontmatter does not parse', so the skip reason changes between the first scan and later ones. It is the same defect the round fixes, in a sibling source of the same registry. Use `matter(raw, {})` here too (line 667 `matter(raw).content` has the same exposure if it ever reads a broken file).",
+      "portion": "u05-skills-root/p1-l2-l16"
+    },
+    {
+      "id": "rev-0002",
+      "file": "src/client/tiptap/skillsRoot.editor.test.ts",
+      "line": 85,
+      "blocking": false,
+      "reason": "The control half now pins `data-path=\"guides/intro\"`. This is a quirk of the shared `AT_PAYLOAD_RE` grammar: the lazy path stops before a `.`, so `@guides/intro.md` in a `pages` editor becomes a `guides/intro` chip followed by a literal `.md`. The criterion under test (the `skills` root leaves it as prose) is unaffected, and the change matches the code. But the control now protects behaviour that looks unintended, and any later fix to the `@` grammar will break this test for an unrelated reason. A control source that both grammars agree on (e.g. `Read @guides/intro first.` for the pages half) would keep it independent.",
+      "portion": "u08-skills-sidebar-editor/p1-l5-l13"
+    }
+  ],
+  "deviations": []
+}
