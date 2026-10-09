@@ -37,13 +37,13 @@ function PushToRemoteMenuItem({ release, onClose }: ReleaseActionContext) {
     const firstPush = (config?.remoteProjectId ?? null) === null;
     if (firstPush) {
       const ok = await openModal('release-push', {
-        releaseId: release.id,
+        releaseName: release.name,
         projectName: config?.name ?? '',
       });
       if (!ok) return;
     }
     try {
-      const res = await push.mutateAsync(release.id);
+      const res = await push.mutateAsync(release.name);
       const seq = res.remoteReleaseSequence;
       if (res.deduplicated) toast.info(`Already pushed as release #${seq}`);
       else toast.success(`Pushed as release #${seq}`);

@@ -48,13 +48,6 @@ export interface ReleaseOperationDeps {
 export const INITIAL_RELEASE_LITERAL = 'initial';
 export const NULL_RELEASE_LITERAL = 'null';
 
-/**
- * A release reference as the channels hand it in. The MCP tools still accept a
- * numeric id (name-only addressing of the MCP inputs is a separate change);
- * REST and CLI only ever send strings.
- */
-export type ReleaseRef = string | number;
-
 export const INCLUDE_VALUES = ['pages', 'entities'] as const;
 export const DEFAULT_INCLUDE: IncludeFilter[] = ['pages', 'entities'];
 
@@ -64,7 +57,7 @@ export interface ReleaseListParams {
 }
 
 export interface ReleaseShowParams {
-  releaseName: ReleaseRef;
+  releaseName: string;
   include?: IncludeFilter[];
   entityTypes?: EntityTypeFilter[];
   limit?: number;
@@ -72,8 +65,8 @@ export interface ReleaseShowParams {
 }
 
 export interface ReleaseDiffParams {
-  fromReleaseName: ReleaseRef | null;
-  toReleaseName: ReleaseRef;
+  fromReleaseName: string | null;
+  toReleaseName: string;
   include?: IncludeFilter[];
   entityTypes?: EntityTypeFilter[];
   slugs?: string[];
@@ -102,7 +95,7 @@ export function releaseShowOperation(
   validateFilters(params.include, params.entityTypes);
   const { limit, offset } = resolvePagination(params.limit, params.offset);
   const include = params.include ?? DEFAULT_INCLUDE;
-  const raw = deps.releaseService.getReleaseSnapshot(params.releaseName);
+  const raw = deps.releaseService.getReleaseSnapshot(deps.releaseService.resolveReleaseId(params.releaseName));
   return projectSpecSnapshot(raw, { include, entityTypes: params.entityTypes }, { limit, offset });
 }
 
@@ -138,14 +131,18 @@ export async function releaseDiffOperation(
   // an older database or a hand-written row could still hold — would shadow the
   // literal and silently answer a historical diff to a caller asking about HEAD.
   // Two engines, ONE projection: only `to.id` (null) says which branch answered.
+  // Then each side's name resolves to its id — the right side first, so a
+  // missing name is reported by the side that carries it.
   const isCurrent = to === CURRENT_RELEASE_NAME;
-  const raw = isCurrent
-    ? await deps.releaseService.getUnreleasedDiff(from, { roots, paths })
-    : await deps.releaseService.getReleaseDiff(from, to, { roots, paths });
-  const toSnap = isCurrent
+  const toId = isCurrent ? null : deps.releaseService.resolveReleaseId(to);
+  const fromId = from === null ? null : deps.releaseService.resolveReleaseId(from);
+  const raw = toId === null
+    ? await deps.releaseService.getUnreleasedDiff(fromId, { roots, paths })
+    : await deps.releaseService.getReleaseDiff(fromId, toId, { roots, paths });
+  const toSnap = toId === null
     ? deps.releaseService.getCurrentSnapshot()
-    : deps.releaseService.getReleaseSnapshot(to);
-  const fromSnap = from === null ? null : deps.releaseService.getReleaseSnapshot(from);
+    : deps.releaseService.getReleaseSnapshot(toId);
+  const fromSnap = fromId === null ? null : deps.releaseService.getReleaseSnapshot(fromId);
 
   return projectReleaseDiff(raw, fromSnap, toSnap, { include, entityTypes, slugs }, {
     summaryOnly,
@@ -165,9 +162,9 @@ export async function releaseDiffOperation(
  * The whole current state is `release_show`'s job.
  */
 export function resolveDiffRange(
-  fromReleaseName: ReleaseRef | null,
-  toReleaseName: ReleaseRef,
-): { from: ReleaseRef | null; to: ReleaseRef } {
+  fromReleaseName: string | null,
+  toReleaseName: string,
+): { from: string | null; to: string } {
   const from =
     fromReleaseName === null || fromReleaseName === NULL_RELEASE_LITERAL || fromReleaseName === INITIAL_RELEASE_LITERAL
       ? null

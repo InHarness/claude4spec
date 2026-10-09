@@ -115,9 +115,9 @@ const STATUS_TO_ENTITY_OP: Record<'A' | 'M' | 'D' | 'R', 'created' | 'updated' |
  * a write path the two API-layer methods never see).
  *
  * 0.2.62: the reservation now covers TWO surfaces at once — the same literal is
- * also `release_diff`'s `toIdOrName`, a parameter typed `string | number`. It is
+ * also `release_diff`'s `toReleaseName` (2.1.11; `toIdOrName` before). It is
  * the reservation that makes the literal safe there, not the other way round:
- * without it `toIdOrName: "current"` would have two readings and the choice
+ * without it `toReleaseName: "current"` would have two readings and the choice
  * between them would fall out of the database's contents at call time.
  */
 /*
@@ -273,19 +273,20 @@ interface FileVersionRow {
   rootId: string;
 }
 
+/** 2.1.11: restores take the resolved `id`; the channel resolves the name first. */
 export interface RestoreEntityInput {
   type: RawEntityType;
   slug: string;
-  releaseId: number | string;
+  releaseId: number;
 }
 
 export interface RestorePageInput {
   path: string;
-  releaseId: number | string;
+  releaseId: number;
 }
 
 export interface RestoreSpecInput {
-  releaseId: number | string;
+  releaseId: number;
 }
 
 export interface RestoreEntityResult {
@@ -502,11 +503,34 @@ export class ReleaseService {
     return row?.name ?? null;
   }
 
-  getRelease(idOrName: number | string): ReleaseDetail {
-    const row = this.findReleaseRow(idOrName);
-    if (!row) throw new DomainError('RELEASE_NOT_FOUND', `release '${idOrName}' not found`);
-    const release = this.toRelease(row);
-    return { ...release, countBreakdown: this.computeCountBreakdown(row.id) };
+  getRelease(name: string): ReleaseDetail {
+    return this.toReleaseDetail(this.requireReleaseRow(name));
+  }
+
+  /**
+   * 2.1.11: the channel's name → id step, without `getRelease`'s count
+   * breakdown. A literal or an unknown name is RELEASE_NOT_FOUND. The id-taking
+   * readers below (`getReleaseSnapshot`, `getReleaseDiff`, `getUnreleasedDiff`,
+   * `restore*`, `buildBundleArchive`) are internal — call this first.
+   */
+  resolveReleaseId(name: string): number {
+    return this.requireReleaseRow(name).id;
+  }
+
+  private requireReleaseRow(name: string): ReleaseRow {
+    const row = this.findReleaseRow(name);
+    if (!row) throw new DomainError('RELEASE_NOT_FOUND', `release '${name}' not found`);
+    return row;
+  }
+
+  private getReleaseById(id: number): ReleaseDetail {
+    const row = this.findReleaseRowById(id);
+    if (!row) throw new DomainError('RELEASE_NOT_FOUND', `release #${id} not found`);
+    return this.toReleaseDetail(row);
+  }
+
+  private toReleaseDetail(row: ReleaseRow): ReleaseDetail {
+    return { ...this.toRelease(row), countBreakdown: this.computeCountBreakdown(row.id) };
   }
 
   /**
@@ -520,7 +544,7 @@ export class ReleaseService {
    */
   getReleaseFilePath(releaseId: number): string | null {
     if (!this.releaseStore) return null;
-    const row = this.findReleaseRow(releaseId);
+    const row = this.findReleaseRowById(releaseId);
     if (!row?.slug) return null;
     return nodePath.join(this.releaseStore.root, `${row.slug}.json`);
   }
@@ -657,14 +681,14 @@ export class ReleaseService {
    *    release_id attribution.
    */
   async updateRelease(input: {
-    idOrName: number | string;
+    releaseName: string;
     name?: string;
     description?: string;
     assignUnreleased?: boolean;
   }): Promise<UpdateReleaseResponse> {
     const tx = this.db.transaction(() => {
-      const row = this.findReleaseRow(input.idOrName);
-      if (!row) throw new DomainError('RELEASE_NOT_FOUND', `release '${input.idOrName}' not found`);
+      const row = this.findReleaseRow(input.releaseName);
+      if (!row) throw new DomainError('RELEASE_NOT_FOUND', `release '${input.releaseName}' not found`);
 
       assertLatestMutable(this.db, row);
 
@@ -765,8 +789,8 @@ export class ReleaseService {
       // release that's no longer actually the latest. See the method's doc
       // comment for the full rationale.
       this.db.transaction(() => {
-        const row = this.findReleaseRow(releaseId);
-        if (!row) throw new DomainError('RELEASE_NOT_FOUND', `release '${releaseId}' not found`);
+        const row = this.findReleaseRowById(releaseId);
+        if (!row) throw new DomainError('RELEASE_NOT_FOUND', `release #${releaseId} not found`);
         assertLatestMutable(this.db, row);
         this.db
           .prepare(`UPDATE entity_version SET release_id = ? WHERE release_id IS NULL`)
@@ -775,7 +799,7 @@ export class ReleaseService {
       })();
     }
 
-    return { ...this.getRelease(releaseId), gitSync };
+    return { ...this.getReleaseById(releaseId), gitSync };
   }
 
   // ─── Snapshots & diffs ───────────────────────────────────────────────────
@@ -785,9 +809,9 @@ export class ReleaseService {
    * entity_version row at-or-before `releaseId`. Each row carries
    * `op` + `data` (snapshot) + `serializer_version`.
    */
-  getReleaseSnapshot(idOrName: number | string): SpecSnapshot {
-    const row = this.findReleaseRow(idOrName);
-    if (!row) throw new DomainError('RELEASE_NOT_FOUND', `release '${idOrName}' not found`);
+  getReleaseSnapshot(releaseId: number): SpecSnapshot {
+    const row = this.findReleaseRowById(releaseId);
+    if (!row) throw new DomainError('RELEASE_NOT_FOUND', `release #${releaseId} not found`);
     return this.buildSnapshot(this.toRelease(row), row.id);
   }
 
@@ -1366,27 +1390,27 @@ export class ReleaseService {
    * (entities) or `pageSerializer.diff(...)` (pages). Falls back to
    * default deep-diff when plugin doesn't override `diff`.
    *
-   * `fromIdOrName === null` ⇒ initial brief: synthetic empty `from` snapshot.
+   * `fromId === null` ⇒ initial brief: synthetic empty `from` snapshot.
    * Wszystkie encje/strony w `to` widoczne jako `op: 'create'`. Output
    * `RawDelta.from` jest wtedy `null` (sygnal dla M21 / UI).
    *
    * 0.1.118: when `config.git.enabled` and both releases resolve to commits
    * in git history, sources from `tryGitAnchoredDiff` instead (mutually
    * exclusive with the SQL computation below, never merged — see that
-   * method's doc comment). `fromIdOrName === null` always takes the SQL path
+   * method's doc comment). `fromId === null` always takes the SQL path
    * (no need to synthesize an empty-tree SHA for the initial-brief case).
    */
   async getReleaseDiff(
-    fromIdOrName: number | string | null,
-    toIdOrName: number | string,
+    fromId: number | null,
+    toId: number,
     opts?: PageScopeOpts,
   ): Promise<RawDelta> {
-    const toRow = this.findReleaseRow(toIdOrName);
-    if (!toRow) throw new DomainError('RELEASE_NOT_FOUND', `release '${toIdOrName}' not found`);
+    const toRow = this.findReleaseRowById(toId);
+    if (!toRow) throw new DomainError('RELEASE_NOT_FOUND', `release #${toId} not found`);
 
-    if (fromIdOrName !== null) {
-      const fromRowForGit = this.findReleaseRow(fromIdOrName);
-      if (!fromRowForGit) throw new DomainError('RELEASE_NOT_FOUND', `release '${fromIdOrName}' not found`);
+    if (fromId !== null) {
+      const fromRowForGit = this.findReleaseRowById(fromId);
+      if (!fromRowForGit) throw new DomainError('RELEASE_NOT_FOUND', `release #${fromId} not found`);
       const gitDelta = await this.tryGitAnchoredDiff(fromRowForGit, toRow, opts);
       if (gitDelta) return gitDelta;
     }
@@ -1396,7 +1420,7 @@ export class ReleaseService {
     // (default: all `pages` roots) via latestPageRowsAtOrBefore, which carries
     // rootId. Entities are unaffected by the roots narrowing.
     const toPageRows = this.latestPageRowsAtOrBefore(toRow.id, opts);
-    const { fromSnap, fromMeta, fromPageRows } = this.resolveFromSide(fromIdOrName, toSnap, opts);
+    const { fromSnap, fromMeta, fromPageRows } = this.resolveFromSide(fromId, toSnap, opts);
 
     return this.computeDelta(
       fromSnap,
@@ -1409,26 +1433,26 @@ export class ReleaseService {
   }
 
   /**
-   * 0.1.122: diff a release (or the initial/empty state, for `fromIdOrName
+   * 0.1.122: diff a release (or the initial/empty state, for `fromId
    * === null`) against the *current* unreleased spec state (`getCurrentSnapshot`).
    * Same shape/algorithm as `getReleaseDiff`'s SQL path.
    *
-   * 0.1.124: when `config.git.enabled` and `fromIdOrName` resolves to a
+   * 0.1.124: when `config.git.enabled` and `fromId` resolves to a
    * reign-diffable release, sources from `tryGitAnchoredUnreleasedDiff`
    * instead (mutually exclusive with the SQL computation below, same
    * "never merged" contract as `getReleaseDiff`'s git-anchored branch) — `git
    * diff snapshot(:from)..working-tree`: for the latest release this is just
    * the uncommitted working-tree diff, for an older/frozen release it also
-   * picks up every intermediate reign. `fromIdOrName === null` always takes
+   * picks up every intermediate reign. `fromId === null` always takes
    * the SQL path (no release to resolve a reign boundary from).
    */
   async getUnreleasedDiff(
-    fromIdOrName: number | string | null,
+    fromId: number | null,
     opts?: PageScopeOpts,
   ): Promise<RawDelta> {
-    if (fromIdOrName !== null) {
-      const fromRowForGit = this.findReleaseRow(fromIdOrName);
-      if (!fromRowForGit) throw new DomainError('RELEASE_NOT_FOUND', `release '${fromIdOrName}' not found`);
+    if (fromId !== null) {
+      const fromRowForGit = this.findReleaseRowById(fromId);
+      if (!fromRowForGit) throw new DomainError('RELEASE_NOT_FOUND', `release #${fromId} not found`);
       const gitDelta = await this.tryGitAnchoredUnreleasedDiff(fromRowForGit, opts);
       if (gitDelta) return gitDelta;
     }
@@ -1436,7 +1460,7 @@ export class ReleaseService {
     const toSnap = this.currentSnapshot(false);
     const toPageRows = this.latestPageRowsAtOrBefore(null, opts);
     const toMeta = { id: 0, name: CURRENT_RELEASE_NAME };
-    const { fromSnap, fromMeta, fromPageRows } = this.resolveFromSide(fromIdOrName, toSnap, opts);
+    const { fromSnap, fromMeta, fromPageRows } = this.resolveFromSide(fromId, toSnap, opts);
 
     return this.computeDelta(fromSnap, fromPageRows, toSnap, toPageRows, fromMeta, toMeta);
   }
@@ -1450,11 +1474,11 @@ export class ReleaseService {
    * synthetic-empty case.
    */
   private resolveFromSide(
-    fromIdOrName: number | string | null,
+    fromId: number | null,
     toSnap: SpecSnapshot,
     opts?: PageScopeOpts,
   ): { fromSnap: SpecSnapshot; fromMeta: { id: number; name: string } | null; fromPageRows: FileVersionRow[] } {
-    if (fromIdOrName === null) {
+    if (fromId === null) {
       return {
         fromSnap: {
           release: { id: 0, name: '__initial__', description: '', createdBy: 'user', createdAt: '' },
@@ -1466,8 +1490,8 @@ export class ReleaseService {
         fromPageRows: [],
       };
     }
-    const fromRow = this.findReleaseRow(fromIdOrName);
-    if (!fromRow) throw new DomainError('RELEASE_NOT_FOUND', `release '${fromIdOrName}' not found`);
+    const fromRow = this.findReleaseRowById(fromId);
+    if (!fromRow) throw new DomainError('RELEASE_NOT_FOUND', `release #${fromId} not found`);
     return {
       fromSnap: this.buildSnapshot(this.toRelease(fromRow), fromRow.id, false),
       fromMeta: { id: fromRow.id, name: fromRow.name },
@@ -1609,8 +1633,8 @@ export class ReleaseService {
   }
 
   restoreEntity(input: RestoreEntityInput, actor: ChangedBy = 'user'): RestoreEntityResult {
-    const releaseRow = this.findReleaseRow(input.releaseId);
-    if (!releaseRow) throw new DomainError('RELEASE_NOT_FOUND', `release '${input.releaseId}' not found`);
+    const releaseRow = this.findReleaseRowById(input.releaseId);
+    if (!releaseRow) throw new DomainError('RELEASE_NOT_FOUND', `release #${input.releaseId} not found`);
 
     const targetRow = this.latestEntityRowForSlug(input.type, input.slug, releaseRow.id);
     const writer = new HostEntityWriter(this.host, this.tagsService, {}, {
@@ -1764,8 +1788,8 @@ export class ReleaseService {
    * `changed_by = 'user'`.
    */
   async restorePage(input: RestorePageInput, _actor: ChangedBy = 'user'): Promise<RestorePageResult> {
-    const releaseRow = this.findReleaseRow(input.releaseId);
-    if (!releaseRow) throw new DomainError('RELEASE_NOT_FOUND', `release '${input.releaseId}' not found`);
+    const releaseRow = this.findReleaseRowById(input.releaseId);
+    if (!releaseRow) throw new DomainError('RELEASE_NOT_FOUND', `release #${input.releaseId} not found`);
     const target = this.pageVersions.getLatestForPath(input.path, releaseRow.id);
     if (!target || target.op === 'delete') {
       // Snapshot says page didn't exist — delete current file if present.
@@ -1850,8 +1874,8 @@ export class ReleaseService {
    * problems at once, and picks up plugin-contributed types for free.
    */
   async restoreSpec(input: RestoreSpecInput, actor: ChangedBy = 'user'): Promise<RestoreSpecResult> {
-    const releaseRow = this.findReleaseRow(input.releaseId);
-    if (!releaseRow) throw new DomainError('RELEASE_NOT_FOUND', `release '${input.releaseId}' not found`);
+    const releaseRow = this.findReleaseRowById(input.releaseId);
+    if (!releaseRow) throw new DomainError('RELEASE_NOT_FOUND', `release #${input.releaseId} not found`);
     const releaseId = releaseRow.id;
 
     const entityResults: RestoreEntityResult[] = [];
@@ -1968,8 +1992,11 @@ export class ReleaseService {
    * remote); the internal working dir is cleaned up before returning.
    */
   async buildBundleArchive(releaseId: number): Promise<BuildBundleResult> {
-    const snapshot = this.getReleaseSnapshot(releaseId); // throws NOT_FOUND if missing
-    const release = this.getRelease(releaseId);
+    // 2.1.11: read by the technical key — the public readers take a name.
+    const row = this.findReleaseRowById(releaseId);
+    if (!row) throw new DomainError('RELEASE_NOT_FOUND', `release #${releaseId} not found`);
+    const snapshot = this.getReleaseSnapshot(releaseId);
+    const release = this.toReleaseDetail(row);
     // 0.1.96: resolve rootId per page straight from file_version (the snapshot's
     // page rows don't carry it) so the bundle can lay pages out as <rootId>/<path>.md
     // across every `pages` root.
@@ -2297,16 +2324,20 @@ export class ReleaseService {
 
   // ─── Internals ───────────────────────────────────────────────────────────
 
-  private findReleaseRow(idOrName: number | string): ReleaseRow | null {
-    if (typeof idOrName === 'number') {
-      return this.db.prepare(`SELECT * FROM spec_release WHERE id = ?`).get(idOrName) as ReleaseRow | undefined ?? null;
-    }
-    const asNum = Number(idOrName);
-    if (!Number.isNaN(asNum) && /^\d+$/.test(idOrName)) {
-      const byId = this.db.prepare(`SELECT * FROM spec_release WHERE id = ?`).get(asNum) as ReleaseRow | undefined;
-      if (byId) return byId;
-    }
-    return this.db.prepare(`SELECT * FROM spec_release WHERE name = ?`).get(idOrName) as ReleaseRow | undefined ?? null;
+  /**
+   * 2.1.11: a release is addressed by its `name` alone — a digit string is a
+   * name like any other, never an id. A reserved literal (`current`,
+   * `initial`, `null`) names a state, not a release, so it resolves to nothing
+   * even when a legacy row still carries it.
+   */
+  private findReleaseRow(name: string): ReleaseRow | null {
+    if (isReservedReleaseName(name)) return null;
+    return this.db.prepare(`SELECT * FROM spec_release WHERE name = ?`).get(name) as ReleaseRow | undefined ?? null;
+  }
+
+  /** The technical key — for in-process callers that already hold a resolved `id`. */
+  private findReleaseRowById(id: number): ReleaseRow | null {
+    return this.db.prepare(`SELECT * FROM spec_release WHERE id = ?`).get(id) as ReleaseRow | undefined ?? null;
   }
 
   private toRelease(row: ReleaseRow): Release {

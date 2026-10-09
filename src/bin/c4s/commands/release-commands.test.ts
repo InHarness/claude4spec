@@ -218,7 +218,7 @@ describe('toCliHint (2.1.11)', () => {
       'continue with `--include entities --offset 7` next',
     );
     expect(toCliHint('`summaryOnly: true` and `sectionLimit: 1`')).toBe('`--summary-only` and `--section-limit 1`');
-    expect(toCliHint('pass `toIdOrName` or `fromReleaseName`')).toBe('pass `--to` or `--from`');
+    expect(toCliHint('pass `toReleaseName` or `fromReleaseName`')).toBe('pass `--to` or `--from`');
   });
 
   it('keeps a hinted value one shell word, apostrophes and spaces included', () => {

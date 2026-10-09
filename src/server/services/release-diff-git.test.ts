@@ -1051,7 +1051,7 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
       });
 
       await expect(
-        releaseService.updateRelease({ idOrName: v1.id, assignUnreleased: true }),
+        releaseService.updateRelease({ releaseName: v1.name, assignUnreleased: true }),
       ).rejects.toMatchObject({ code: 'RELEASE_FROZEN' });
 
       // e1 was legitimately swept into v2 by v2's OWN createRelease() (it was
@@ -1080,7 +1080,7 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
       fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A');
 
       const result = await releaseService.updateRelease({
-        idOrName: v1.id,
+        releaseName: v1.name,
         name: 'v1-renamed',
         assignUnreleased: true,
       });

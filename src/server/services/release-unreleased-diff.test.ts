@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { z } from 'zod';
 import { runMigrations } from '../db/migrate.js';
 import { ReleaseService } from './release.js';
 import { createReleaseToolsServer } from '../mcp/release-tools/index.js';
@@ -185,7 +186,7 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
       insertPageVersion({ path: 'a.md', version: 1, data: { content: 'released' }, releaseId: relId });
       insertPageVersion({ path: 'b.md', version: 1, data: { content: 'new unreleased page' }, releaseId: null });
 
-      const delta = await releases.getUnreleasedDiff('v1');
+      const delta = await releases.getUnreleasedDiff(relId);
 
       expect(delta.from).toEqual({ id: relId, name: 'v1' });
       expect(delta.to).toEqual({ id: 0, name: 'current' });
@@ -201,7 +202,7 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
       const relId = insertRelease('v1');
       insertEntityVersion({ slug: 'e1', version: 1, data: { title: 'stable' }, releaseId: relId });
 
-      const delta = await releases.getUnreleasedDiff('v1');
+      const delta = await releases.getUnreleasedDiff(relId);
 
       expect(delta.entities).toEqual([]);
       expect(delta.pages).toEqual([]);
@@ -219,8 +220,8 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
       ]);
     });
 
-    it('throws RELEASE_NOT_FOUND for an unresolvable `from` release', async () => {
-      await expect(releases.getUnreleasedDiff('does-not-exist')).rejects.toMatchObject({
+    it('throws RELEASE_NOT_FOUND for an unresolvable `from` release id', async () => {
+      await expect(releases.getUnreleasedDiff(9999)).rejects.toMatchObject({
         code: 'RELEASE_NOT_FOUND',
       });
     });
@@ -289,7 +290,7 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
     it('[ac:ac-release-diff-z-filtrem-paths-zawieraj] one full key returns exactly that one page', async () => {
       seed();
       const call = diffTool(twoRootService());
-      const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths: ['plugins/a.md'] });
+      const res = await call({ fromReleaseName: 'v1', toReleaseName: 'v2', paths: ['plugins/a.md'] });
       expect(res.isError).toBe(false);
       // `a.md` changed in BOTH roots; only the addressed root's page comes back.
       expect(res.body.pages.map((p: any) => [p.rootId, p.path, p.op])).toEqual([['plugins', 'a.md', 'update']]);
@@ -299,12 +300,12 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
     it('[ac:ac-release-diff-z-filtrem-paths-wskazuja] an unchanged page yields an empty pages[] and total.pages 0, not an error', async () => {
       seed();
       const call = diffTool(twoRootService());
-      const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths: ['pages/same.md'] });
+      const res = await call({ fromReleaseName: 'v1', toReleaseName: 'v2', paths: ['pages/same.md'] });
       expect(res.isError).toBe(false);
       expect(res.body.pages).toEqual([]);
       expect(res.body.total.pages).toBe(0);
       // A well-formed key absent on both sides is the same answer.
-      const absent = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths: ['pages/never.md'] });
+      const absent = await call({ fromReleaseName: 'v1', toReleaseName: 'v2', paths: ['pages/never.md'] });
       expect(absent.isError).toBe(false);
       expect(absent.body.total.pages).toBe(0);
     });
@@ -312,7 +313,7 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
     it('a page deleted between the releases is still addressable — op delete', async () => {
       seed();
       const call = diffTool(twoRootService());
-      const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths: ['pages/b.md'], summaryOnly: true });
+      const res = await call({ fromReleaseName: 'v1', toReleaseName: 'v2', paths: ['pages/b.md'], summaryOnly: true });
       expect(res.body.pages).toEqual([expect.objectContaining({ rootId: 'pages', path: 'b.md', op: 'delete' })]);
       // 2.1.5 — one path: the light row carries the section map, and `total.sections` is set.
       expect(res.body.pages[0]).toHaveProperty('sectionMap');
@@ -322,8 +323,8 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
     it('[ac:ac-kazdy-wpis-pages-w-zwrotce-release-di] every page entry carries rootId, heavy and summaryOnly alike', async () => {
       seed();
       const call = diffTool(twoRootService());
-      const light = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', summaryOnly: true });
-      const heavy = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', limit: 50 });
+      const light = await call({ fromReleaseName: 'v1', toReleaseName: 'v2', summaryOnly: true });
+      const heavy = await call({ fromReleaseName: 'v1', toReleaseName: 'v2', limit: 50 });
       for (const res of [light, heavy]) {
         const keys = (res.body.pages as any[]).map((p) => `${p.rootId}/${p.path}`).sort();
         expect(keys).toEqual(['pages/a.md', 'pages/b.md', 'plugins/a.md']);
@@ -336,14 +337,14 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
       insertEntityVersion({ slug: 'e1', version: 1, data: { title: 'x' }, releaseId: v1 });
       insertEntityVersion({ slug: 'e1', version: 2, data: { title: 'y' }, releaseId: 2, op: 'update' });
       const call = diffTool(twoRootService());
-      const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths: ['pages/a.md'], summaryOnly: true });
+      const res = await call({ fromReleaseName: 'v1', toReleaseName: 'v2', paths: ['pages/a.md'], summaryOnly: true });
       expect(res.body.entities).toContainEqual(expect.objectContaining({ slug: 'e1', op: 'update' }));
     });
 
     it('2.1.8: refuses a system root id in `roots` instead of silently skipping it, listing the page roots', async () => {
       seed();
       const call = diffTool(twoRootService());
-      const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', roots: ['plans'] });
+      const res = await call({ fromReleaseName: 'v1', toReleaseName: 'v2', roots: ['plans'] });
       expect(res.isError).toBe(true);
       expect(res.body.code).toBe('INVALID_ROOTS_FILTER');
       expect(res.body.error).toContain("'plans' is not a page root");
@@ -379,7 +380,7 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
       insertPageVersion({ path: 'b.md', version: 1, data: { content: 'new' }, releaseId: null });
 
       const call = releaseDiffTool();
-      const res = await call({ fromIdOrName: 'v1', toIdOrName: 'current', summaryOnly: true });
+      const res = await call({ fromReleaseName: 'v1', toReleaseName: 'current', summaryOnly: true });
 
       expect(res.isError).toBe(false);
       expect(res.body.from).toEqual({ id: relId, name: 'v1' });
@@ -402,7 +403,7 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
       insertEntityVersion({ slug: 'e1', version: 1, data: { title: 'released' }, releaseId: relId });
       insertEntityVersion({ slug: 'e1', version: 2, data: { title: 'live' }, releaseId: null, op: 'update' });
 
-      const res = await releaseDiffTool()({ fromIdOrName: 'v1', toIdOrName: 'current', summaryOnly: true });
+      const res = await releaseDiffTool()({ fromReleaseName: 'v1', toReleaseName: 'current', summaryOnly: true });
 
       expect(res.body.to).toEqual({ id: null, name: 'current' });
       expect(res.body.entities).toContainEqual(expect.objectContaining({ slug: 'e1', op: 'update' }));
@@ -410,7 +411,7 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
 
     it('refuses from:null with to:"current" as INVALID_DIFF_RANGE', async () => {
       insertEntityVersion({ slug: 'e1', version: 1, data: { title: 'live only' }, releaseId: null });
-      const res = await releaseDiffTool()({ fromIdOrName: null, toIdOrName: 'current' });
+      const res = await releaseDiffTool()({ fromReleaseName: null, toReleaseName: 'current' });
       expect(res.isError).toBe(true);
       expect(res.body.code).toBe('INVALID_DIFF_RANGE');
     });
@@ -425,7 +426,7 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
 
     it('updateRelease rejects renaming the latest release to "current"', async () => {
       releases.createRelease({ name: 'v1', description: 'first' }, 'user');
-      await expect(releases.updateRelease({ idOrName: 'v1', name: 'current' })).rejects.toMatchObject({
+      await expect(releases.updateRelease({ releaseName: 'v1', name: 'current' })).rejects.toMatchObject({
         code: 'RELEASE_NAME_RESERVED',
       });
     });
@@ -457,9 +458,9 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
 
     it('updateRelease trims the new name the same way', async () => {
       releases.createRelease({ name: 'v1', description: 'first' }, 'user');
-      const updated = await releases.updateRelease({ idOrName: 'v1', name: '  v1.1 ' });
+      const updated = await releases.updateRelease({ releaseName: 'v1', name: '  v1.1 ' });
       expect(updated.name).toBe('v1.1');
-      await expect(releases.updateRelease({ idOrName: 'v1.1', name: ' current' })).rejects.toMatchObject({
+      await expect(releases.updateRelease({ releaseName: 'v1.1', name: ' current' })).rejects.toMatchObject({
         code: 'RELEASE_NAME_RESERVED',
       });
     });
@@ -470,23 +471,132 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
       );
     });
 
-    it('updateRelease resubmitting an unchanged legacy "current" name does not throw (0.1.122 code-review fix)', async () => {
-      // createRelease now blocks new 'current' releases, but legacy/pre-
-      // migration data (or a release-identity file synced before the indexer
-      // guard existed) could already hold that name — insert directly to
-      // simulate it, bypassing createRelease's validation.
+    it('[2.1.11] a literal in place of the name is RELEASE_NOT_FOUND — even when a legacy row still carries it', async () => {
+      // createRelease blocks new 'current' releases, but legacy/pre-migration
+      // data (or a release-identity file synced before the indexer guard
+      // existed) could already hold that name — insert directly to simulate it.
+      // Literals name STATES, not releases (2.1.11), so the row is not
+      // addressable by them; the lookup fails before RELEASE_FROZEN.
       db.prepare(`INSERT INTO spec_release (name, slug, description, created_by, created_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`)
         .run('current', 'current', 'legacy', 'user');
 
-      const updated = await releases.updateRelease({ idOrName: 'current', name: 'current', description: 'new desc' });
-      expect(updated.description).toBe('new desc');
+      await expect(
+        releases.updateRelease({ releaseName: 'current', name: 'current', description: 'new desc' }),
+      ).rejects.toMatchObject({ code: 'RELEASE_NOT_FOUND' });
+      expect(() => releases.getRelease('current')).toThrow(expect.objectContaining({ code: 'RELEASE_NOT_FOUND' }));
+    });
+
+    it('[2.1.11] a digit string is a name, never an id', async () => {
+      const first = releases.createRelease({ name: 'v1', description: 'first' }, 'user');
+      const twelve = releases.createRelease({ name: '12', description: 'named twelve' }, 'user');
+      expect(releases.getRelease('12').id).toBe(twelve.id);
+      // `first.id` written as a string is NOT the release `v1`.
+      expect(() => releases.getRelease(String(first.id))).toThrow(expect.objectContaining({ code: 'RELEASE_NOT_FOUND' }));
+      expect(releases.resolveReleaseId('12')).toBe(twelve.id);
+    });
+
+    it('[2.1.11] updateRelease resolves the name before RELEASE_FROZEN', async () => {
+      releases.createRelease({ name: 'v1', description: 'first' }, 'user');
+      releases.createRelease({ name: 'v2', description: 'second' }, 'user');
+      await expect(releases.updateRelease({ releaseName: 'nope', description: 'x' })).rejects.toMatchObject({
+        code: 'RELEASE_NOT_FOUND',
+      });
+      await expect(releases.updateRelease({ releaseName: 'v1', description: 'x' })).rejects.toMatchObject({
+        code: 'RELEASE_FROZEN',
+      });
+    });
+
+    it.each(['initial', 'null'])('[2.1.11] create and rename refuse the reserved literal %s', async (literal) => {
+      expect(() => releases.createRelease({ name: literal, description: 'x' }, 'user')).toThrow(
+        expect.objectContaining({ code: 'RELEASE_NAME_RESERVED' }),
+      );
+      releases.createRelease({ name: 'v1', description: 'first' }, 'user');
+      await expect(releases.updateRelease({ releaseName: 'v1', name: literal })).rejects.toMatchObject({
+        code: 'RELEASE_NAME_RESERVED',
+      });
     });
 
     it('updateRelease still rejects an ACTUAL rename to "current"', async () => {
       releases.createRelease({ name: 'v1', description: 'first' }, 'user');
       await expect(
-        releases.updateRelease({ idOrName: 'v1', name: 'current', description: 'x' }),
+        releases.updateRelease({ releaseName: 'v1', name: 'current', description: 'x' }),
       ).rejects.toMatchObject({ code: 'RELEASE_NAME_RESERVED' });
+    });
+  });
+  /**
+   * 2.1.11 — through the MCP tools, a release is addressed by its NAME alone:
+   * `releaseName` (show/update) and `fromReleaseName`/`toReleaseName` (diff).
+   */
+  describe('release tools addressed by name (2.1.11)', () => {
+    function tools() {
+      const server = createReleaseToolsServer({
+        releaseService: releases,
+        gitService: {} as GitService,
+        ws: { broadcast: () => {} } as unknown as WsEmitter,
+        roots: () => [{ id: 'pages' }],
+      });
+      const byName = (name: string) => server.tools.find((t) => t.name === name)!;
+      const call = async (name: string, args: Record<string, unknown>) => {
+        const res = (await byName(name).handler(args, {} as never)) as {
+          isError?: boolean;
+          content: Array<{ text: string }>;
+        };
+        return { isError: res.isError === true, body: JSON.parse(res.content[0]!.text) as any };
+      };
+      const schema = (name: string) => z.object(byName(name).inputSchema as z.ZodRawShape);
+      return { call, schema };
+    }
+
+    it('a number in releaseName is refused by the input schema of release_show and release_update', () => {
+      const { schema } = tools();
+      expect(schema('release_show').safeParse({ releaseName: 12 }).success).toBe(false);
+      expect(schema('release_update').safeParse({ releaseName: 12 }).success).toBe(false);
+      expect(schema('release_diff').safeParse({ fromReleaseName: 1, toReleaseName: 'v1' }).success).toBe(false);
+      expect(schema('release_diff').safeParse({ fromReleaseName: null, toReleaseName: 2 }).success).toBe(false);
+      expect(schema('release_show').safeParse({ releaseName: 'v1' }).success).toBe(true);
+    });
+
+    it('release_show({ releaseName: "initial" }) and release_update({ releaseName: "current" }) → RELEASE_NOT_FOUND', async () => {
+      releases.createRelease({ name: 'v1', description: 'first' }, 'user');
+      const { call } = tools();
+      const show = await call('release_show', { releaseName: 'initial' });
+      expect(show.isError).toBe(true);
+      expect(show.body.code).toBe('RELEASE_NOT_FOUND');
+      const update = await call('release_update', { releaseName: 'current', description: 'x' });
+      expect(update.isError).toBe(true);
+      expect(update.body.code).toBe('RELEASE_NOT_FOUND');
+    });
+
+    it.each(['initial', 'null'])('release_create / release_update refuse the name %s with RELEASE_NAME_RESERVED', async (literal) => {
+      const { call } = tools();
+      const create = await call('release_create', { name: literal, description: 'x' });
+      expect(create.isError).toBe(true);
+      expect(create.body.code).toBe('RELEASE_NAME_RESERVED');
+      releases.createRelease({ name: 'v1', description: 'first' }, 'user');
+      const rename = await call('release_update', { releaseName: 'v1', name: literal });
+      expect(rename.isError).toBe(true);
+      expect(rename.body.code).toBe('RELEASE_NAME_RESERVED');
+    });
+
+    it('toReleaseName: "12" resolves the release NAMED 12, not the release with id 12', async () => {
+      const v1 = releases.createRelease({ name: 'v1', description: 'first' }, 'user');
+      const twelve = releases.createRelease({ name: '12', description: 'named twelve' }, 'user');
+      const { call } = tools();
+      const res = await call('release_diff', { fromReleaseName: 'v1', toReleaseName: '12', summaryOnly: true });
+      expect(res.isError).toBe(false);
+      expect(res.body.to).toMatchObject({ id: twelve.id, name: '12' });
+      // The id of v1, written as a name, names no release.
+      const byId = await call('release_show', { releaseName: String(v1.id) });
+      expect(byId.isError).toBe(true);
+      expect(byId.body.code).toBe('RELEASE_NOT_FOUND');
+    });
+
+    it('release_show answers by name', async () => {
+      releases.createRelease({ name: 'v1', description: 'first' }, 'user');
+      const { call } = tools();
+      const res = await call('release_show', { releaseName: 'v1' });
+      expect(res.isError).toBe(false);
+      expect(res.body.release.name).toBe('v1');
     });
   });
 });

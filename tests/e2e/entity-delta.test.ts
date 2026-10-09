@@ -312,12 +312,13 @@ describe.skipIf(!BASE)('the host-generated entity delta', () => {
           ],
         }),
       });
-      const { body: head } = await api<{ id: number }>(`/api/projects/${project.id}/releases`, {
+      const { body: head } = await api<{ id: number; name: string }>(`/api/projects/${project.id}/releases`, {
         method: 'POST',
         body: JSON.stringify({ name: `delta-probe-b-${stamp}`, description: 'after the edit' }),
       });
 
-      await page.goto(`${BASE}/p/${project.id}/releases/${head.id}`, { waitUntil: 'networkidle' });
+      // 2.1.11: the detail route is addressed by the release NAME.
+      await page.goto(`${BASE}/p/${project.id}/releases/${encodeURIComponent(head.name)}`, { waitUntil: 'networkidle' });
 
       /**
        * The page opens against "initial state", where every entity is `created`

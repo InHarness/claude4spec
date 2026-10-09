@@ -10,8 +10,8 @@ import type { GitPushStatus, GitSyncField } from './git.js';
 
 /** Body of `POST /api/release-pushes`. */
 export interface ReleasePushRequest {
-  /** FK to `spec_release.id` — the local release to push. */
-  releaseId: number;
+  /** 2.1.11: the local release to push, addressed by its name. */
+  releaseName: string;
 }
 
 /**

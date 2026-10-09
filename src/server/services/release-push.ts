@@ -81,7 +81,7 @@ export class ReleasePushService {
    * cleanup. The bundle's `tarGzPath` is unlinked in `finally` ALWAYS (M17 does
    * not clean it up — the consumer owns it).
    */
-  async push(releaseId: number): Promise<ReleasePushResponse> {
+  async push(releaseName: string): Promise<ReleasePushResponse> {
     // 1. Gate (M24). Snapshot identity here so it survives a 401 mid-push (which
     //    wipes remote_session) — the audit row still records who attempted it.
     const account = this.remoteAuth.getCurrentAccount();
@@ -94,9 +94,10 @@ export class ReleasePushService {
     const accountId = account.remoteAccountId ?? '';
     const accountEmail = account.accountEmail ?? null;
 
-    // 2. Validate the local release exists (frozen releases are allowed) —
-    // `getRelease` refuses a missing one with RELEASE_NOT_FOUND itself (2.1.11).
-    this.releaseService.getRelease(releaseId);
+    // 2. Resolve the name to the local release (frozen releases are allowed) —
+    // `resolveReleaseId` refuses a missing one with RELEASE_NOT_FOUND itself (2.1.11).
+    // From here on the technical id addresses it.
+    const releaseId = this.releaseService.resolveReleaseId(releaseName);
 
     // 3. Build the bundle (M17). All bytes-derived values come from here.
     const bundle = await this.releaseService.buildBundleArchive(releaseId);
@@ -184,8 +185,18 @@ export class ReleasePushService {
     }
   }
 
-  /** Audit log for one release, newest first (uses idx_release_push_release_id). */
-  listForRelease(releaseId: number): ReleasePushResponse[] {
+  /**
+   * Audit log for one release, newest first (uses idx_release_push_release_id).
+   * 2.1.11: addressed by name; an unknown name has no pushes — an empty list.
+   */
+  listForRelease(releaseName: string): ReleasePushResponse[] {
+    let releaseId: number;
+    try {
+      releaseId = this.releaseService.resolveReleaseId(releaseName);
+    } catch (err) {
+      if (err instanceof DomainError && err.code === 'RELEASE_NOT_FOUND') return [];
+      throw err;
+    }
     const rows = this.db
       .prepare(`${SELECT_WITH_RELEASE} WHERE rp.release_id = ? ORDER BY rp.pushed_at DESC, rp.id DESC`)
       .all(releaseId) as ReleasePushRow[];

@@ -22,6 +22,7 @@ import { GitService } from '../services/git.js';
 import { ReleasePushService } from '../services/release-push.js';
 import { releasePushesRouter } from './release-pushes.js';
 import { errorHandler } from './errors.js';
+import { DomainError } from '../services/tags.js';
 import type { ReleaseService } from '../services/release.js';
 import type { RemoteAuthService } from '../services/remote-auth.js';
 import type { ReleasePushResponse } from '../../shared/release-push.js';
@@ -95,7 +96,11 @@ beforeEach(async () => {
     return p;
   };
   const releases = {
-    getRelease: () => ({ id: releaseId, name: 'v1' }),
+    // 2.1.11: the push resolves the release by NAME; only `v1` exists here.
+    resolveReleaseId: (name: string) => {
+      if (name !== 'v1') throw new DomainError('RELEASE_NOT_FOUND', `release '${name}' not found`);
+      return releaseId;
+    },
     buildBundleArchive: async () => ({
       tarGzPath: bundlePath(),
       sizeBytes: 6,
@@ -143,7 +148,7 @@ describe('POST /api/release-pushes — gitSync of the git push hook (M25 + M28)'
     await remoteMovesAhead();
     await commitFile(dir, 'mine.md', 'mine', 'my change');
 
-    const res = await request(app).post('/api/release-pushes').send({ releaseId });
+    const res = await request(app).post('/api/release-pushes').send({ releaseName: 'v1' });
 
     expect(res.status).toBe(201);
     const body = res.body as ReleasePushResponse;
@@ -170,7 +175,7 @@ describe('POST /api/release-pushes — gitSync of the git push hook (M25 + M28)'
     await commitFile(dir, 'mine.md', 'mine', 'my change');
     await git(['fetch', 'origin'], dir);
 
-    const res = await request(app).post('/api/release-pushes').send({ releaseId });
+    const res = await request(app).post('/api/release-pushes').send({ releaseName: 'v1' });
 
     expect(res.status).toBe(201);
     expect(res.body.gitSync?.status).toBe('error');
@@ -182,7 +187,7 @@ describe('POST /api/release-pushes — gitSync of the git push hook (M25 + M28)'
     fs.rmSync(bare, { recursive: true, force: true });
     await commitFile(dir, 'mine.md', 'mine', 'my change');
 
-    const res = await request(app).post('/api/release-pushes').send({ releaseId });
+    const res = await request(app).post('/api/release-pushes').send({ releaseName: 'v1' });
 
     expect(res.status).toBe(201);
     expect(res.body.gitSync?.status).toBe('error');
@@ -193,10 +198,47 @@ describe('POST /api/release-pushes — gitSync of the git push hook (M25 + M28)'
   it('[entity:release-push-response] a push the remote accepts returns gitSync.status "pushed" without recovery', async () => {
     await commitFile(dir, 'mine.md', 'mine', 'my change');
 
-    const res = await request(app).post('/api/release-pushes').send({ releaseId });
+    const res = await request(app).post('/api/release-pushes').send({ releaseName: 'v1' });
 
     expect(res.status).toBe(201);
     expect(res.body.gitSync).toMatchObject({ status: 'pushed', branch: 'main' });
     expect(res.body.gitSync?.recovery).toBeUndefined();
+  });
+});
+
+/**
+ * 2.1.11 — the push and its audit log address the release by name. The numeric
+ * id stays in the response (`releaseId`, `release: { id, name }`) only.
+ */
+describe('/api/release-pushes — release addressed by name (2.1.11)', () => {
+  it('POST { releaseName } pushes that release', async () => {
+    const res = await request(app).post('/api/release-pushes').send({ releaseName: 'v1' });
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({ releaseId, release: { id: releaseId, name: 'v1' }, status: 'success' });
+  });
+
+  it('POST with an unknown name is 404 RELEASE_NOT_FOUND', async () => {
+    const res = await request(app).post('/api/release-pushes').send({ releaseName: 'nope' });
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('RELEASE_NOT_FOUND');
+  });
+
+  it('POST with the pre-2.1.11 { releaseId } body is a 400 VALIDATION', async () => {
+    const res = await request(app).post('/api/release-pushes').send({ releaseId });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+  });
+
+  it('GET ?releaseName= returns only that release\'s pushes; an unknown name answers an empty list', async () => {
+    await request(app).post('/api/release-pushes').send({ releaseName: 'v1' }).expect(201);
+
+    const own = await request(app).get('/api/release-pushes').query({ releaseName: 'v1' });
+    expect(own.status).toBe(200);
+    expect(own.body.items).toHaveLength(1);
+    expect(own.body.items[0]).toMatchObject({ releaseId, release: { name: 'v1' } });
+
+    const unknown = await request(app).get('/api/release-pushes').query({ releaseName: 'nope' });
+    expect(unknown.status).toBe(200);
+    expect(unknown.body.items).toEqual([]);
   });
 });

@@ -15,32 +15,33 @@ export function releasePushesRouter(service: ReleasePushService): Router {
   // POST /api/release-pushes — synchronous push.
   router.post('/', async (req, res, next) => {
     try {
-      const body = (req.body ?? {}) as { releaseId?: unknown };
-      const releaseId = body.releaseId;
-      if (typeof releaseId !== 'number' || !Number.isInteger(releaseId)) {
+      // 2.1.11: the release is addressed by name; an unknown one is a 404.
+      const body = (req.body ?? {}) as { releaseName?: unknown };
+      const releaseName = body.releaseName;
+      if (typeof releaseName !== 'string' || releaseName === '') {
         return res
           .status(400)
-          .json({ error: { code: 'VALIDATION', message: 'releaseId (integer) is required' } });
+          .json({ error: { code: 'VALIDATION', message: 'releaseName (string) is required' } });
       }
-      const result = await service.push(releaseId);
+      const result = await service.push(releaseName);
       res.status(201).json(result);
     } catch (err) {
       next(err);
     }
   });
 
-  // GET /api/release-pushes?releaseId=<n> — audit log, optionally filtered.
+  // GET /api/release-pushes?releaseName=<name> — audit log, optionally filtered;
+  // an unknown name answers an empty list.
   router.get('/', (req, res, next) => {
     try {
-      const raw = req.query.releaseId;
+      const raw = req.query.releaseName;
       if (raw !== undefined) {
-        const releaseId = Number(raw);
-        if (!Number.isInteger(releaseId)) {
+        if (typeof raw !== 'string') {
           return res
             .status(400)
-            .json({ error: { code: 'VALIDATION', message: 'releaseId must be an integer' } });
+            .json({ error: { code: 'VALIDATION', message: 'releaseName must be a single string' } });
         }
-        return res.json({ items: service.listForRelease(releaseId) });
+        return res.json({ items: service.listForRelease(raw) });
       }
       res.json({ items: service.listAll() });
     } catch (err) {
