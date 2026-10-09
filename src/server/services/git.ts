@@ -67,23 +67,15 @@ export class GitRepoLock {
     return this.locked;
   }
 
-  private acquire(): Promise<void> {
-    if (!this.locked) {
-      this.locked = true;
-      return Promise.resolve();
-    }
-    return new Promise((resolve) => this.waiters.push(resolve));
-  }
-
   private release(): void {
+    // Hand-off: a waiter inherits the lock without it ever reading as free.
     const next = this.waiters.shift();
     if (next) next();
     else this.locked = false;
   }
 
-  /** Wait for the lock, run `fn`, release. */
-  async run<T>(fn: () => Promise<T>): Promise<T> {
-    await this.acquire();
+  /** Run `fn` with the lock already held by the caller; release when it settles. */
+  private async runHeld<T>(fn: () => Promise<T>): Promise<T> {
     try {
       return await fn();
     } finally {
@@ -91,17 +83,23 @@ export class GitRepoLock {
     }
   }
 
+  /**
+   * Wait for the lock, run `fn`, release. A free lock is taken and `fn` started
+   * in the same tick (like `tryRun`) — no microtask gap before the holder runs.
+   */
+  run<T>(fn: () => Promise<T>): Promise<T> {
+    if (!this.locked) {
+      this.locked = true;
+      return this.runHeld(fn);
+    }
+    return new Promise<void>((resolve) => this.waiters.push(resolve)).then(() => this.runHeld(fn));
+  }
+
   /** Run `fn` under the lock if it is free right now; `null` (no call) when it is taken. */
   tryRun<T>(fn: () => Promise<T>): Promise<T> | null {
     if (this.locked) return null;
     this.locked = true;
-    return (async () => {
-      try {
-        return await fn();
-      } finally {
-        this.release();
-      }
-    })();
+    return this.runHeld(fn);
   }
 }
 
