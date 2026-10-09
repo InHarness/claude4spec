@@ -1,5 +1,6 @@
 import { attrs, selfClose } from '../glue.js';
 import type { PromptBlock, PromptContext } from '../types.js';
+import { M52_AVAILABLE_SKILLS_LINES } from './m52-spec-skills.js';
 
 /* M37 — Internal Skills Registry: the skill listing and its only channel. */
 
@@ -94,10 +95,11 @@ export interface AvailableSkillsLineContribution {
 }
 
 /**
- * The slot's contributions, in order. Empty in this release: M52's lines (about
- * `skill_ref` and about a read-only exposed project) arrive with its sources.
+ * The slot's contributions, in order. 2.1.9: M52's lines (`skill_ref`, a
+ * read-only exposed project, `update_skill_file`, hits in the `skills` root) —
+ * their wording and their conditions are M52's (`blocks/m52-spec-skills.ts`).
  */
-export const AVAILABLE_SKILLS_LINES: readonly AvailableSkillsLineContribution[] = [];
+export const AVAILABLE_SKILLS_LINES: readonly AvailableSkillsLineContribution[] = [M52_AVAILABLE_SKILLS_LINES];
 
 export const M37_PROMPT_BLOCKS: readonly PromptBlock[] = [
   { name: 'available_skills', render: (c) => buildAvailableSkills(c) },

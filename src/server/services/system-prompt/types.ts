@@ -1,5 +1,6 @@
 import type { Annotation, Brief, ChatContextType, Plan } from '../../../shared/entities.js';
 import type { Root } from '../../../shared/types.js';
+import type { RootKind } from '../../../shared/root-kinds.js';
 import type { ProjectPluginHost } from '../../core/plugin-host/types.js';
 import type { PatchDetail } from '../patch.js';
 
@@ -67,6 +68,19 @@ export interface AvailableSkillEntry {
   project?: string;
 }
 
+/**
+ * 2.1.9 (M52, template `szablon-current-skill`): an open file of the `skills`
+ * root — the package `slug` (its directory) and the `file` path inside the
+ * package. `shadowedBy` is set when the slug resolves to ANOTHER source's skill
+ * (the open package is not what `load_skill_file` returns): the winner's slug
+ * and its `source`.
+ */
+export interface CurrentSkillRef {
+  slug: string;
+  file: string;
+  shadowedBy?: { slug: string; source: string };
+}
+
 export interface SystemPromptInput {
   /** M31: per-project host (was the process singleton). */
   host: ProjectPluginHost;
@@ -78,8 +92,26 @@ export interface SystemPromptInput {
   currentPagePath: string | null;
   /** 0.1.96: which root the current page belongs to — the `root="…"` attr on `<current_page>`. */
   currentPageRootId?: string;
+  /**
+   * 2.1.9 (M02 `cg80qj0e`): the KIND of the root the open file belongs to.
+   * `<current_page>` is emitted only for a root of kind `pages`; an open file of
+   * another kind gives no `<current_page>` (an open skill file is M52's
+   * `<current_skill>`). Absent = `pages` — the hand-rolled rigs carry no kind.
+   */
+  currentPageRootKind?: RootKind;
   /** 0.2.105: read only to count `total_lines` — no line of it reaches the prompt. */
   currentPageBody: string | null;
+  /**
+   * 2.1.9 (M52 `9zio901p`): the file of the `skills` root the user has open in
+   * this turn, or `null`/absent when none is. Sole source of `<current_skill>`.
+   */
+  currentSkill?: CurrentSkillRef | null;
+  /**
+   * 2.1.9 (M52 `6evgp041`): whether the project's `skills` root holds at least
+   * one file — the condition of the hit-translation line M52 adds to
+   * `<available_skills>`. Absent = no.
+   */
+  skillsRootHasFiles?: boolean;
   annotations?: Annotation[];
   planMode?: boolean;
   currentPlan?: Plan | null;

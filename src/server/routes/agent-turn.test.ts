@@ -2059,6 +2059,73 @@ describe('runAgentTurn — the profile gate covers the inline servers too', () =
 });
 
 /**
+ * 2.1.9 (M52 `9zio901p` / `6evgp041`, M02 `cg80qj0e`) — the turn derives the
+ * open file's root KIND from the service it read it from: a `skills`-kind root
+ * gives `<current_skill>` (shadowed when the slug's registry winner is another
+ * source) and no `<current_page>`; the hit-translation line of
+ * `<available_skills>` follows `skillsRootHasFiles`.
+ */
+describe('runAgentTurn — open skill file and skills-root lines (M52, 2.1.9)', () => {
+  async function turnWithOpenFile(opts: {
+    rootKind: 'pages' | 'skills';
+    path: string;
+    winner?: { slug: string; source: string };
+    skillsRootHasFiles?: boolean;
+  }): Promise<string> {
+    hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    const rootId = opts.rootKind === 'skills' ? 'skills' : 'pages';
+    const service = { rootId, kind: opts.rootKind, read: async () => ({ body: 'one\ntwo' }), listTree: async () => [] };
+    const d = deps as unknown as Record<string, unknown>;
+    d.resolvePagesService = (id: string) => (id === rootId ? service : undefined);
+    d.skillRegistry = {
+      has: () => false,
+      resolve: () => {
+        throw new Error('unexpected resolve() call');
+      },
+      winnerOf: () => opts.winner,
+    };
+    d.skillsRootHasFiles = () => opts.skillsRootHasFiles ?? false;
+    const input = makeInput();
+    input.currentPage = opts.path;
+    input.currentPageRootId = rootId;
+    await runAgentTurn(deps, input);
+    return String(hoisted.lastExecute?.systemPrompt);
+  }
+
+  it('[ac:9zio901p] an open file of the skills root yields <current_skill slug file/> and no <current_page>', async () => {
+    const prompt = await turnWithOpenFile({ rootKind: 'skills', path: 'reviewer/workflows/brief.md' });
+    expect(prompt).toContain('<current_skill slug="reviewer" file="workflows/brief.md"/>');
+    expect(prompt).toContain('The user has this skill file open. Read it with load_skill_file(slug, file)');
+    expect(prompt).not.toContain('<current_page ');
+    expect(prompt).not.toContain('<current_page_handling>');
+  });
+
+  it('[ac:rkbsi6ky#13] an open file whose slug another source resolves is reported shadowed, naming the winner and its source', async () => {
+    const prompt = await turnWithOpenFile({
+      rootKind: 'skills',
+      path: 'mockups/SKILL.md',
+      winner: { slug: 'mockups', source: 'plugin' },
+    });
+    expect(prompt).toContain('<current_skill slug="mockups" file="SKILL.md"/>');
+    expect(prompt).toContain('it is shadowed: the slug resolves to the skill "mockups" from source "plugin"');
+    expect(prompt).toContain('You have no way to read this file');
+  });
+
+  it('[ac:cg80qj0e] an open page of a pages-kind root still yields <current_page>, and no <current_skill>', async () => {
+    const prompt = await turnWithOpenFile({ rootKind: 'pages', path: 'guide.md' });
+    expect(prompt).toContain('<current_page path="guide.md" root="pages" total_lines="2"/>');
+    expect(prompt).not.toContain('<current_skill');
+  });
+
+  it('[ac:6evgp041] the hit-translation line follows whether the skills root has a file', async () => {
+    const line = 'A find_references or check_consistency hit in the root "skills" at <slug>/<rest of path>';
+    expect(await turnWithOpenFile({ rootKind: 'pages', path: 'guide.md', skillsRootHasFiles: true })).toContain(line);
+    expect(await turnWithOpenFile({ rootKind: 'pages', path: 'guide.md', skillsRootHasFiles: false })).not.toContain(line);
+  });
+});
+
+/**
  * 2.1.9 (M52 `hdkx97wq`, M44 `3f5ej79s`, M11 `6exnmup9`) — `spec-skill-tools`,
  * the write channel of the project's skill packages, is mounted in `chat` and
  * `patch` and never in `brief` or `ask`. The rig hands the turn the same

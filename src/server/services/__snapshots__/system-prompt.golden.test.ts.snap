@@ -32,6 +32,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -226,6 +227,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 </entities>
 
 <available_skills>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("some-skill", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -396,6 +398,7 @@ Always communicate with the user in Deutsch, regardless of the language they wri
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -510,6 +513,7 @@ Always communicate with the user in Deutsch, regardless of the language they wri
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -624,6 +628,7 @@ Always communicate with the user in Deutsch, regardless of the language they wri
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -683,6 +688,7 @@ brief-tools is scoped automatically to this brief — there is no path parameter
 </brief_tools_usage>
 
 <available_skills>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("some-skill", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -768,6 +774,7 @@ Always communicate with the user in Deutsch, regardless of the language they wri
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -873,6 +880,7 @@ Always communicate with the user in Deutsch, regardless of the language they wri
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -972,6 +980,7 @@ brief-tools is scoped automatically to this brief — there is no path parameter
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -1084,6 +1093,7 @@ Always communicate with the user in Deutsch, regardless of the language they wri
 </conversational_language>
 
 <available_skills>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("some-skill", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -1189,6 +1199,7 @@ Always communicate with the user in Deutsch, regardless of the language they wri
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -1296,6 +1307,7 @@ Always communicate with the user in Deutsch, regardless of the language they wri
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -1410,6 +1422,7 @@ Always communicate with the user in Deutsch, regardless of the language they wri
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -1457,6 +1470,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -1664,6 +1678,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -1872,6 +1887,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -2086,6 +2102,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -2295,6 +2312,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -2505,6 +2523,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -2707,6 +2726,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -2917,6 +2937,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 </entities>
 
 <available_skills>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("some-skill", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -3037,6 +3058,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -3234,6 +3256,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -3436,6 +3459,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -3649,6 +3673,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -3860,6 +3885,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -4064,6 +4090,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -4268,6 +4295,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 </entities>
 
 <available_skills>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("some-skill", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -4472,6 +4500,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -4685,6 +4714,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -4898,6 +4928,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -5111,6 +5142,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -5324,6 +5356,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -5537,6 +5570,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -5750,6 +5784,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -5963,6 +5998,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -6168,6 +6204,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -6381,6 +6418,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -6594,6 +6632,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -6791,6 +6830,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -7000,6 +7040,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -7211,6 +7252,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 </entities>
 
 <available_skills>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("some-skill", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -7363,6 +7405,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -7582,6 +7625,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 </entities>
 
 <available_skills>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("some-skill", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -7715,6 +7759,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -7942,6 +7987,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.
@@ -8164,6 +8210,7 @@ You are a specification writing assistant for project "My Spec". The user is edi
 <available_skills>
   <skill slug="layered-vertical-slices" description="The style." origin="plugin"/>
   <skill slug="mockup-generator" description="Makes <mockups> &amp; more." origin="plugin"/>
+  A <skill_ref slug="x"/> in the user's message means: call load_skill_file("x") first, before anything else.
   Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.
   Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("layered-vertical-slices", "workflows/brief.md").
   Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.

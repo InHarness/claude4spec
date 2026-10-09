@@ -44,13 +44,17 @@ describe('<available_skills> — M37 frame (2.1.9)', () => {
         ],
       }),
     );
-    // No module contributes lines in this release, so the slot is empty.
-    expect(AVAILABLE_SKILLS_LINES).toEqual([]);
+    // 2.1.9: M52 contributes to the slot; with no spec-skill-tools and no files in
+    // the skills root, its unconditional `skill_ref` line and the exposed-project line
+    // (a `project-exposed` row is listed) stand between the rows and the channel rule.
+    expect(AVAILABLE_SKILLS_LINES.map((c) => c.module)).toEqual(['M52']);
     expect(out.split('\n')).toEqual([
       '<available_skills>',
       '  <skill slug="mockups" description="author mockups" origin="plugin"/>',
       '  <skill slug="peer-skill" description="from a peer" origin="project-exposed" project="billing"/>',
       '  <skill slug="local-skill" description="from this project" origin="project-rooted"/>',
+      '  A <skill_ref slug="x"/> in the user\'s message means: call load_skill_file("x") first, before anything else.',
+      '  An entry with origin="project-exposed" is read-only here: to change it, propose the change to that project with ask, using its project attribute as the address.',
       '  Open a skill with load_skill_file(slug) — it returns the skill body plus a manifest of its package files.',
       '  Read a subfile the skill points you to with load_skill_file(slug, file), e.g. load_skill_file("mockups", "workflows/brief.md").',
       '  Never open a skill with the native Skill() tool and never read one with Read — skills are not files you can reach; load_skill_file is the only channel.',

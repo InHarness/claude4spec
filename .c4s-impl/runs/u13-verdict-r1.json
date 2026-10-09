@@ -1,0 +1,74 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "unit", "id": "u13-prompt-skills" },
+  "release": "2.1.9",
+  "rows": [
+    {
+      "slug": "szablon-available-skills-spec-skills",
+      "type": "code-snippet",
+      "level": 1,
+      "status": "covered",
+      "evidence": "trace.md:48 -> src/server/services/system-prompt/blocks/m52-spec-skills.ts:21-44 (M52_AVAILABLE_SKILLS_LINES, the four template lines verbatim, placed in AVAILABLE_SKILLS_LINES m37-skills.ts:102); test m52-spec-skills.test.ts:81 '[entity:szablon-available-skills-spec-skills]' expect(bodyLines(out)).toEqual([row, SKILL_REF_LINE, EXPOSED_LINE, WRITE_LINE, HITS_LINE, ...channel rule]) — line texts match the snippet at 2.1.9 character for character"
+    },
+    {
+      "slug": "szablon-current-skill",
+      "type": "code-snippet",
+      "level": 1,
+      "status": "covered",
+      "evidence": "trace.md:49 -> m52-spec-skills.ts:59-71 buildCurrentSkill (self-close current_skill slug/file + read line, or shadowed line naming winner slug and source), block 'current_skill' in M52_PROMPT_BLOCKS + registry.ts + compositions/default.ts layer E after current_page_handling; test m52-spec-skills.test.ts:203 '[entity:szablon-current-skill]' expect(open).toContain(`<current_skill slug=\"reviewer\" file=\"workflows/brief.md\"/>\\n${CURRENT_SKILL_PROSE}`) and the shadowed variant — both texts equal the snippet's two variants"
+    },
+    {
+      "slug": "6evgp041",
+      "level": 2,
+      "status": "covered",
+      "evidence": "m52-spec-skills.test.ts:102 '[ac:6evgp041]' — skill_ref line in every KNOWN_CONTEXT_TYPES (brief incl.) with the other three absent; EXPOSED_LINE only with a project-exposed entry; WRITE_LINE only with mcpInventory spec-skill-tools; HITS_LINE only with skillsRootHasFiles=true; :137 source.hasAnyFile() false on empty root / empty dir, true after a file; agent-turn.test.ts '[ac:6evgp041]' turn-level wiring via deps.skillsRootHasFiles; code m52-spec-skills.ts:23-41, project-context.ts:1450, agent-turn.ts skillsRootHasFiles"
+    },
+    {
+      "slug": "9zio901p",
+      "level": 2,
+      "status": "covered",
+      "evidence": "m52-spec-skills.test.ts:215 '[ac:9zio901p]' expect(build({contextType:'chat'})).not.toContain('<current_skill'); open page -> <current_page>, no <current_skill>; open skill file -> '<current_skill slug=\"reviewer\" file=\"SKILL.md\"/>' and not '<current_page '; agent-turn.test.ts '[ac:9zio901p]' end-to-end via a skills-kind service (currentRootKind === SKILLS_ROOT_KIND -> currentSkillOf, agent-turn.ts)"
+    },
+    {
+      "slug": "rkbsi6ky#13",
+      "level": 2,
+      "status": "covered",
+      "evidence": "m52-spec-skills.test.ts:241 '[ac:rkbsi6ky#13]' invalid project-rooted 'mockups' + plugin 'mockups' -> currentSkillOf(...registry.winnerOf) toEqual {slug,file,shadowedBy:{slug:'mockups',source:'plugin'}}; prompt contains shadowedProse('mockups','plugin') and 'You have no way to read this file', not CURRENT_SKILL_PROSE, not file content; without rival -> unshadowed ref; agent-turn.test.ts '[ac:rkbsi6ky#13]' same via runAgentTurn"
+    },
+    {
+      "slug": "cg80qj0e",
+      "level": 2,
+      "status": "covered",
+      "evidence": "m52-spec-skills.test.ts:273 '[ac:cg80qj0e]' pages-kind -> '<current_page path=\"guide.md\" root=\"adr\" total_lines=\"2\"/>' + <current_page_handling>; skills-kind -> neither; code m02-current-page.ts hasCurrentPage gated on (currentPageRootKind ?? PAGES_KIND) === PAGES_KIND, agent-turn.ts reads body only for PAGES_KIND; agent-turn.test.ts '[ac:cg80qj0e]'"
+    },
+    {
+      "slug": "da1d88do#available-skills-pochodzenie-pozycji",
+      "level": 2,
+      "status": "covered",
+      "evidence": "m52-spec-skills.test.ts:146 rows toEqual plugin/project-rooted/user without project (even when input project:'x' / ''), project-exposed with project=\"billing\"; expect(out).not.toContain('project=\"\"'); every row matches / origin=\"[^\"]+\"/; code m37-skills.ts:63-71"
+    },
+    {
+      "slug": "da1d88do#available-skills-linie-modulow",
+      "level": 2,
+      "status": "covered",
+      "evidence": "m52-spec-skills.test.ts:169 each M52 line contained indented inside <available_skills> and occurs exactly once in the prompt (out.split(line) length 2), no top-level M52 block; block minus module lines toEqual the bare M37 frame, length diff exactly 4"
+    },
+    {
+      "slug": "goal:u13-prompt-skills",
+      "level": 2,
+      "status": "covered",
+      "evidence": "four conditional M52 lines inside the frame: m52-spec-skills.ts:21-44 + m37-skills.ts:73-75,102; origin on every row, project only for project-exposed: m37-skills.ts:63-71; <current_skill> on an open skills-kind file incl. shadowed invalid package: m52-spec-skills.ts:59-80, project-rooted-skills.ts currentSkillOf, agent-turn.ts carriesCurrentSkill/currentSkill, compositions/default.ts; <current_page> only for pages kind: m02-current-page.ts hasCurrentPage, agent-turn.ts currentRootKind gate. No removals named."
+    },
+    {
+      "slug": "regression",
+      "level": 2,
+      "status": "covered",
+      "evidence": "static read: m37-skills.test.ts updated for the M52 slot (skill_ref + exposed lines); golden snapshot updated with the skill_ref line in every <available_skills> (golden inventories mount no spec-skill-tools, no skillsRootHasFiles -> only skill_ref expected); chat-context.test.ts available_skills assertions use toContain/adjacency only; composition test 'every position names a declared block' holds (current_skill declared in M52_PROMPT_BLOCKS, registered in registry.ts); project-exposed-skills/project-rooted-skills tests assert rows/startsWith only. npm run typecheck exit 0"
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck (stands in for the full suite; tests read statically per ## This build)",
+    "exitCode": 0,
+    "summary": "> @inharness-ai/c4s-plugin-skill-author@2.1.9 typecheck\n> tsc --noEmit  (all workspaces clean)"
+  }
+}

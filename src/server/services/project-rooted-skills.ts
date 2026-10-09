@@ -37,6 +37,7 @@ import matter from 'gray-matter';
 import type { ChatContextType } from '../../shared/entities.js';
 import { rootDirAbs, type RootRegistry } from '../roots/registry.js';
 import { isKnownContextType, formatLegalContextTypes } from './chat-context.js';
+import type { CurrentSkillRef } from './system-prompt/types.js';
 import {
   SUPPORTED_SKILL_VERSION,
   loadSkillFiles,
@@ -98,6 +99,15 @@ export class ProjectRootedSkillSource implements SkillSourceRegistration {
 
   unresolved(): UnresolvedSkillSlug[] {
     return [];
+  }
+
+  /**
+   * 2.1.9 (M52 `6evgp041`): whether the root holds at least one file — packages'
+   * files and loose files alike (dot-entries are outside the root's namespace).
+   * The condition of the hit-translation line in `<available_skills>`.
+   */
+  hasAnyFile(): boolean {
+    return containsFile(this.dir);
   }
 
   /**
@@ -178,6 +188,60 @@ function parseContextTypes(raw: unknown): ChatContextType[] | undefined {
     throw new Error(`frontmatter 'contextTypes' must be a list of context types — ${formatLegalContextTypes()}`);
   }
   return raw as ChatContextType[];
+}
+
+function containsFile(dir: string): boolean {
+  let dirents: fs.Dirent[];
+  try {
+    dirents = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return false;
+  }
+  for (const d of dirents) {
+    if (d.name.startsWith('.')) continue;
+    const abs = path.join(dir, d.name);
+    if (d.isFile()) return true;
+    if (d.isDirectory() || (d.isSymbolicLink() && isDirectory(abs))) {
+      if (containsFile(abs)) return true;
+    } else if (d.isSymbolicLink()) {
+      try {
+        if (fs.statSync(abs).isFile()) return true;
+      } catch {
+        /* dangling link — not a file */
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * 2.1.9 (M52 `9zio901p`, `rkbsi6ky` case 13) — the `<current_skill>` reference for
+ * a file the user has open in the `skills` root, by its root-relative path:
+ * `<slug>/<file in package>`. When the slug's registry winner is NOT this root's
+ * package (`project-rooted`), the open file is shadowed: `load_skill_file`
+ * returns that winner, so the reference names it.
+ *
+ * ASSUMPTION:dev-1301 — a loose file at the root's top level lies outside every
+ * package (case 9): it has no slug, so no `<current_skill>` (`null`).
+ * ASSUMPTION:dev-1302 — a VALID package outranked by another source (the
+ * `contextual` chain puts `plugin` above `project-rooted`) is shadowed the same
+ * way as the invalid one the template names: `load_skill_file` does not return it.
+ */
+export function currentSkillOf(
+  filePath: string,
+  winnerOf: (slug: string) => Pick<SkillMetadata, 'slug' | 'source'> | undefined,
+): CurrentSkillRef | null {
+  const rel = filePath.replace(/\\/g, '/').replace(/^\/+/, '');
+  const at = rel.indexOf('/');
+  if (at <= 0 || at === rel.length - 1) return null;
+  const slug = rel.slice(0, at);
+  const file = rel.slice(at + 1);
+  if (!isPackageName(slug)) return null;
+  const winner = winnerOf(slug);
+  if (winner && winner.source !== 'project-rooted') {
+    return { slug, file, shadowedBy: { slug: winner.slug, source: winner.source } };
+  }
+  return { slug, file };
 }
 
 /** A package directory name: one path segment, not a dot-name. */

@@ -352,7 +352,7 @@ async function buildInner(
   // instance, over the root of kind `skills`, registered before anything reads
   // the registry (the writing-style check at start included: a project-rooted
   // style ranks first in its chain).
-  registerProjectRootedSkills(skillRegistry, rootRegistry, cwd);
+  const projectRootedSkills = registerProjectRootedSkills(skillRegistry, rootRegistry, cwd);
   // 2.1.9 (M52 `ybbal0vf`, `1v62dbhb`): the `project-exposed` source — this
   // project's attachments (`skill.uses`) resolved live against the projects of
   // the workspace exposed as a skill. It keeps no provider context: it asks the
@@ -1446,6 +1446,8 @@ async function buildInner(
     pageVersions,
     skillResolver,
     skillRegistry,
+    // 2.1.9 (M52): read per turn — the hit-translation line of `<available_skills>`.
+    skillsRootHasFiles: () => projectRootedSkills?.hasAnyFile() ?? false,
     ws,
     cwd,
     roots: effectiveRoots,

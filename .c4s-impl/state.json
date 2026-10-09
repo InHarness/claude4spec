@@ -1,5 +1,5 @@
 {
-  "iteration": 12,
+  "iteration": 13,
   "conventions": [
     {
       "label": "L3 (Spec Operations)",
@@ -2693,15 +2693,38 @@
         }
       ],
       "wave": 5,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "u13-prompt-skills/p1-l16-l16",
+          "layers": [
+            "L16"
+          ],
+          "slugs": [
+            "szablon-available-skills-spec-skills",
+            "szablon-current-skill",
+            "da1d88do#available-skills-pochodzenie-pozycji",
+            "da1d88do#available-skills-linie-modulow",
+            "6evgp041",
+            "9zio901p",
+            "rkbsi6ky#13",
+            "cg80qj0e"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "5591416ebfee48e961c2a5ad24b124dc73904649",
+      "baseCommit": "5591416ebfee48e961c2a5ad24b124dc73904649",
       "rounds": {
         "review": 0,
-        "unit": 0
-      }
+        "unit": 1
+      },
+      "lastUncovered": 0
     }
   ],
   "entityTypes": [
