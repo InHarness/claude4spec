@@ -1,4 +1,0 @@
-# Review notes — u08-skills-sidebar-editor (non-blocking)
-
-- **rev-0001** `src/client/lib/sidebar-accordions.ts:45` — Dead/duplicated code: `accordionRootIds` (line 69) has no caller at all, and `accordionViews`/`AccordionView` are used only by the test — `Sidebar.tsx` (TreeAccordion) calls `subtreeOf` directly. The test for ac-plik-lezacy-poza-wszystkimi-poddrzewa therefore exercises a wrapper production code never runs. Either have TreeAccordion go through `accordionViews` or drop the unused helpers and point the test at `subtreeOf`.
-- **rev-0002** `src/client/components/Sidebar.tsx:222` — Silent fallback: when `GET /api/sidebar-accordions` fails, `isSuccess` stays false and the page-tree slot renders `null` — no tree, no 'No page roots configured.' message, no error. Before this diff the slot was fed from the config roots and could not go blank this way. Consider using `isPending` for the null branch and showing an error/empty-state on `isError`.

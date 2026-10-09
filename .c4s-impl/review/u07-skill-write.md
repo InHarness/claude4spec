@@ -1,3 +1,0 @@
-# Review notes — u07-skill-write (non-blocking)
-
-- **rev-0001** `src/server/services/skill-write.ts:715` — The 'non-empty expectedHash against a missing file -> PAGE_CONFLICT' rule is checked only in the unlocked pre-read (line 703). Under the path lock, RecordStore.commit skips the hash check when the file is absent, so if the file is deleted between the pre-read and records.write, a write carrying a stale non-empty hash re-creates the file instead of conflicting. The window is narrow, but the guard the comment at line 735 says the store 're-checks' is weaker than the one documented at the top of the file. Fix: recheck existence inside the write, or pass a create-vs-update intent the store can enforce.

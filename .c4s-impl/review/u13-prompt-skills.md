@@ -1,3 +1,0 @@
-# Review notes — u13-prompt-skills (non-blocking)
-
-- **rev-0001** `src/server/services/project-rooted-skills.ts:203` — containsFile() follows symlinked directories (d.isSymbolicLink() && isDirectory(abs)) with no visited-set/realpath guard, unlike the existing package walker walkDir() in skill-registry.ts, which never descends into symlinks. It runs synchronously on every agent turn (AgentTurnDeps.skillsRootHasFiles, called outside any try in runAgentTurn). A symlink cycle in the skills root with no file reachable before it (e.g. two links back to a parent) makes the walk branch on every level until ELOOP/ENAMETOOLONG stops it, so the cost can blow up exponentially and block the event loop. Either skip symlinks as walkDir does, or track visited realpaths.
