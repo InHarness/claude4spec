@@ -189,9 +189,11 @@ export type WsEvent =
   | { kind: 'sidebar:accordions-changed'; rootId: string }
   /**
    * 2.1.10 (M49 `7xmafzkd`, M28) — after every M28 operation that changes refs
-   * or HEAD: release commit, "pull" commit, push, fetch (sync and checkout:
-   * later). `headChanged` = the current branch's HEAD moved or the branch
-   * switched. The client refetches `GET /api/git/status`.
+   * or HEAD: release commit, "pull" commit, push, fetch, sync, checkout. `headChanged` = the current branch's HEAD
+   * moved or the branch switched (sync `fast-forwarded`/`merged`, checkout
+   * `switched`) — the server has then already invalidated the project's
+   * `ProjectContext` (M31 reload contract). The client refetches
+   * `GET /api/git/status`.
    */
   | { kind: 'git:status-changed'; headChanged: boolean }
   | { kind: 'release:created'; releaseId: number; name: string }

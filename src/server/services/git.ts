@@ -33,6 +33,7 @@ import type {
   GitCommitResult,
   GitErrorRecovery,
   GitFetchResponse,
+  GitSyncResponse,
   GitPushResult,
   GitRefDiff,
   GitRepoInfo,
@@ -43,8 +44,8 @@ import type { WsEmitter } from '../ws/project-emitter.js';
 const pexec = promisify(execFile);
 
 /**
- * 2.1.10 (M28 h8tvjbdd): limit for a network git operation (`fetch`, `push`;
- * `sync` later) — missing credentials, a rejected auth or a hung remote end as
+ * 2.1.10 (M28 h8tvjbdd): limit for a network git operation (`fetch`, `push`,
+ * `sync`) — missing credentials, a rejected auth or a hung remote end as
  * `status: 'error'` instead of a request that never returns.
  */
 export const GIT_NETWORK_TIMEOUT_MS = 60_000;
@@ -52,8 +53,8 @@ export const GIT_NETWORK_TIMEOUT_MS = 60_000;
 /**
  * 2.1.10 (M28 ezudoqef): ONE lock per repository over every operation of this
  * module that writes to `.git` — release commit, "pull" commit, push, checkout,
- * fetch (and sync later). Release-driven operations WAIT (`run`); sidebar
- * operations (`checkout`, `fetch`) REFUSE with `busy` when it is taken
+ * fetch and sync. Release-driven operations WAIT (`run`); sidebar
+ * operations (`checkout`, `fetch`, `sync`) REFUSE with `busy` when it is taken
  * (`tryRun`). Status reads never take it. The hand-off in `release()` keeps
  * the lock held while a waiter exists, so a `tryRun` can never slip in between
  * one holder and the next queued one.
@@ -160,12 +161,18 @@ export class GitService {
    *                           `git:status-changed` goes out through it after every
    *                           operation that changed refs or HEAD. `null` = no
    *                           emission (tests, tools without a room).
+   * @param markHeadChangeOrigin 2.1.10 (M40 j37qjvvh): labels — as caused by the
+   *                           server — every ABSOLUTE path a HEAD change made
+   *                           from the app (checkout, sync) is about to rewrite,
+   *                           on the CURRENT context instance, before HEAD moves.
+   *                           `null` = no labelling (tests, tools without mounts).
    */
   constructor(
     private cwd: string,
     pageRootDirs: string[],
     private hasInFlightTurn: () => boolean = () => false,
     private ws: WsEmitter | null = null,
+    private markHeadChangeOrigin: ((absPaths: string[]) => void) | null = null,
   ) {
     this.pageRootDirs = pageRootDirs.map((d) => path.resolve(cwd, d));
   }
@@ -1393,6 +1400,265 @@ export class GitService {
     return remote && merge ? remote : null;
   }
 
+  /**
+   * 2.1.10 (M28 9j5dmxyp / e5l1zqxa, endpoint `post-api-git-sync`): pull the
+   * upstream's commits into HEAD — by a fast-forward or by a conflict-free
+   * merge commit — or change nothing and say why. Never a rebase, never a
+   * conflict resolution, never an intermediate repository state. Guard chain,
+   * first match wins:
+   *   1. gate (as `fetch()`) → `skipped` (also detached/unborn HEAD);
+   *   2. `no-upstream`;
+   *   3. `busy` — the repository lock is taken;
+   *   4. fetch of the upstream's remote (non-interactive, time-limited) —
+   *      a failure → `error` with git's message;
+   *   5. `behind = 0` → `up-to-date`, also when `ahead > 0` (sending is push's job);
+   *   6. `busy` — an agent turn mutating disk, checked right before HEAD moves;
+   *   7. `ahead = 0` → fast-forward; 8. otherwise → merge on divergence.
+   * After `fast-forwarded`/`merged`: the changed paths are labelled
+   * `origin: 'server'` (M40) BEFORE HEAD moves, then HEAD moves, then
+   * `git:status-changed { headChanged: true }`; the caller then runs the M31
+   * reload contract. Every other result except `skipped` and `no-upstream`
+   * emits `headChanged: false` (the fetch moved remote refs). Never throws.
+   */
+  async sync(): Promise<GitSyncResponse> {
+    const skipped = syncResult('skipped');
+    let config: ReturnType<typeof readConfig>;
+    try {
+      config = readConfig(this.cwd);
+    } catch {
+      return skipped;
+    }
+    if (!config.git.enabled) return skipped;
+    const root = await this.probeRoot();
+    if (!root) return skipped;
+    const branch = await this.currentBranch(root);
+    if (!branch) return skipped;
+
+    const remote = await this.upstreamRemote(root, branch);
+    if (!remote) return syncResult('no-upstream');
+
+    const run = lockForKey(root).tryRun(() => this.syncLocked(root, branch, remote));
+    if (!run) {
+      this.emitStatusChanged(false);
+      return syncResult('busy');
+    }
+    let outcome: { response: GitSyncResponse; headChanged: boolean };
+    try {
+      outcome = await run;
+    } catch (err) {
+      outcome = { response: syncResult('error', { message: errMessage(err) }), headChanged: false };
+    }
+    this.emitStatusChanged(outcome.headChanged);
+    return outcome.response;
+  }
+
+  /** `sync()` from step 4 on, under the repository lock. */
+  private async syncLocked(
+    root: string,
+    branch: string,
+    remote: string,
+  ): Promise<{ response: GitSyncResponse; headChanged: boolean }> {
+    const unchanged = (response: GitSyncResponse) => ({ response, headChanged: false });
+    try {
+      await this.gitNetwork(['fetch', remote], root);
+    } catch (err) {
+      return unchanged(syncResult('error', { message: errMessage(err) }));
+    }
+
+    let headSha: string;
+    let upstreamSha: string;
+    let upstreamName: string;
+    try {
+      headSha = (await this.git(['rev-parse', '--verify', 'HEAD'], root)).stdout.trim();
+      upstreamSha = (await this.git(['rev-parse', '--verify', `${branch}@{upstream}`], root)).stdout.trim();
+      upstreamName = (await this.git(['rev-parse', '--abbrev-ref', `${branch}@{upstream}`], root)).stdout.trim();
+    } catch (err) {
+      return unchanged(syncResult('error', { message: errMessage(err) }));
+    }
+
+    const { ahead, behind } = await this.aheadBehindAt(root, branch);
+    if (ahead === null || behind === null) {
+      return unchanged(syncResult('error', { message: 'Could not compare the branch with its upstream.' }));
+    }
+    if (behind === 0) return unchanged(syncResult('up-to-date'));
+
+    if (this.hasInFlightTurn()) return unchanged(syncResult('busy'));
+
+    if (ahead === 0) return this.syncFastForward(root, headSha, upstreamSha);
+    return this.syncMerge(root, branch, headSha, upstreamSha, upstreamName);
+  }
+
+  /**
+   * M28 hu0spaq8 — no separate dirty-tree block: local changes to files the
+   * incoming commits do not touch stay as they are; only a collision with an
+   * incoming change refuses (a tracked change or an untracked file) →
+   * `dirty-blocked` with those paths, nothing changed.
+   */
+  private async syncFastForward(
+    root: string,
+    headSha: string,
+    upstreamSha: string,
+  ): Promise<{ response: GitSyncResponse; headChanged: boolean }> {
+    const incoming = await this.changedPaths(root, headSha, upstreamSha);
+    const local = new Set([...(await this.trackedChanges(root)), ...(await this.untrackedFiles(root))]);
+    const collisions = incoming.filter((p) => local.has(p));
+    if (collisions.length > 0) {
+      return { response: syncResult('dirty-blocked', { paths: collisions }), headChanged: false };
+    }
+    return this.moveHeadTo(root, upstreamSha, incoming, 'fast-forwarded');
+  }
+
+  /**
+   * M28 5vgl0yhy — merge on divergence, each refusal leaving the repository
+   * untouched: modified tracked files → `dirty-blocked` (a merge commit needs a
+   * clean tree); new files in the `releases` root on both sides since the
+   * merge base → `diverged` / `releases-on-both-sides` (the reign rule only
+   * survives a merge with new release markers on at most one side); a content
+   * conflict → `diverged` / `conflicts` (decided by `git merge-tree` in memory:
+   * no merge in progress, no conflict markers on disk). Otherwise the merge
+   * commit `Merge <upstream> into <branch>` is built off-tree and HEAD is
+   * fast-forwarded onto it → `merged`.
+   */
+  private async syncMerge(
+    root: string,
+    branch: string,
+    headSha: string,
+    upstreamSha: string,
+    upstreamName: string,
+  ): Promise<{ response: GitSyncResponse; headChanged: boolean }> {
+    const unchanged = (response: GitSyncResponse) => ({ response, headChanged: false });
+
+    const tracked = await this.trackedChanges(root);
+    if (tracked.length > 0) return unchanged(syncResult('dirty-blocked', { paths: tracked }));
+
+    let mergeBase: string;
+    try {
+      mergeBase = (await this.git(['merge-base', headSha, upstreamSha], root)).stdout.trim();
+    } catch (err) {
+      return unchanged(syncResult('error', { message: errMessage(err) }));
+    }
+    const releasesSpec = this.releasesPathspec(root);
+    if (releasesSpec !== null) {
+      const [localNew, remoteNew] = await Promise.all([
+        this.changedPaths(root, mergeBase, headSha, ['--diff-filter=A'], releasesSpec),
+        this.changedPaths(root, mergeBase, upstreamSha, ['--diff-filter=A'], releasesSpec),
+      ]);
+      if (localNew.length > 0 && remoteNew.length > 0) {
+        return unchanged(syncResult('diverged', { reason: 'releases-on-both-sides' }));
+      }
+    }
+
+    let tree: string;
+    try {
+      const { stdout } = await this.git(
+        ['merge-tree', '--write-tree', '--name-only', '--no-messages', '-z', headSha, upstreamSha],
+        root,
+      );
+      tree = splitNul(stdout)[0] ?? '';
+    } catch (err) {
+      const e = err as { code?: unknown; stdout?: string };
+      if (e.code === 1 && typeof e.stdout === 'string') {
+        // Exit 1 = conflicts: `<tree>\0<path>\0<path>\0\0` — nothing was written to the worktree.
+        const [, ...rest] = e.stdout.split('\0');
+        const end = rest.indexOf('');
+        const conflicted = [...new Set(end === -1 ? rest : rest.slice(0, end))];
+        return unchanged(syncResult('diverged', { reason: 'conflicts', paths: conflicted }));
+      }
+      return unchanged(syncResult('error', { message: errMessage(err) }));
+    }
+    if (!tree) return unchanged(syncResult('error', { message: 'git merge-tree returned no tree.' }));
+
+    let mergeSha: string;
+    try {
+      const message = `Merge ${upstreamName} into ${branch}`;
+      mergeSha = (
+        await this.git(['commit-tree', tree, '-p', headSha, '-p', upstreamSha, '-m', message], root)
+      ).stdout.trim();
+    } catch (err) {
+      return unchanged(syncResult('error', { message: errMessage(err) }));
+    }
+    const incoming = await this.changedPaths(root, headSha, mergeSha);
+    return this.moveHeadTo(root, mergeSha, incoming, 'merged');
+  }
+
+  /**
+   * The HEAD change of a sync, in the M40 order: label the paths that differ
+   * between the old and the new HEAD (`origin: 'server'`) on the current
+   * context instance → move HEAD (`git merge --ff-only`, which refuses before
+   * touching anything when it would overwrite a local change or an untracked
+   * file — mapped to `dirty-blocked`) → re-label, so the provider's
+   * late-arriving events still find a live label.
+   */
+  private async moveHeadTo(
+    root: string,
+    target: string,
+    changed: string[],
+    okStatus: 'fast-forwarded' | 'merged',
+  ): Promise<{ response: GitSyncResponse; headChanged: boolean }> {
+    this.labelHeadChange(root, changed);
+    try {
+      await this.git(['merge', '--ff-only', '--no-edit', target], root);
+    } catch (err) {
+      const blocked = overwrittenPaths(`${rawStderr(err)}\n${(err as { stdout?: string })?.stdout ?? ''}`);
+      if (blocked.length > 0) {
+        return { response: syncResult('dirty-blocked', { paths: blocked }), headChanged: false };
+      }
+      return { response: syncResult('error', { message: errMessage(err) }), headChanged: false };
+    }
+    this.labelHeadChange(root, changed);
+    return { response: syncResult(okStatus), headChanged: true };
+  }
+
+  /** M40 j37qjvvh: hand the repository-relative `relPaths` to the origin marker as absolute paths. */
+  private labelHeadChange(root: string, relPaths: string[]): void {
+    if (!this.markHeadChangeOrigin || relPaths.length === 0) return;
+    try {
+      this.markHeadChangeOrigin(relPaths.map((p) => path.join(root, p)));
+    } catch (err) {
+      console.warn('[git] origin labelling before a HEAD change failed:', errMessage(err));
+    }
+  }
+
+  /** Repository-relative paths differing between two commits (`git diff --name-only`). Never throws (→ `[]`). */
+  private async changedPaths(
+    root: string,
+    from: string,
+    to: string,
+    extra: string[] = [],
+    pathspec?: string,
+  ): Promise<string[]> {
+    const args = ['diff', '--name-only', '-z', '--no-renames', ...extra, from, to];
+    if (pathspec !== undefined) args.push('--', pathspec);
+    return this.git(args, root)
+      .then((r) => splitNul(r.stdout))
+      .catch(() => []);
+  }
+
+  /** Tracked files modified or staged against HEAD (repository-relative). Never throws. */
+  private async trackedChanges(root: string): Promise<string[]> {
+    return this.git(['--no-optional-locks', 'diff', '--name-only', '-z', '--no-renames', 'HEAD'], root)
+      .then((r) => splitNul(r.stdout))
+      .catch(() => []);
+  }
+
+  /** Untracked, not-ignored files (repository-relative — run at the root). Never throws. */
+  private async untrackedFiles(root: string): Promise<string[]> {
+    return this.git(['ls-files', '--others', '--exclude-standard', '-z'], root)
+      .then((r) => splitNul(r.stdout))
+      .catch(() => []);
+  }
+
+  /** The `releases` root as a repository-relative pathspec; `null` when it lies outside the worktree. */
+  private releasesPathspec(root: string): string | null {
+    const releasesRoot = SYSTEM_ROOTS.find((r) => r.kind === 'releases');
+    if (!releasesRoot) return null;
+    const real = realpathOfNearestAncestor(path.resolve(this.cwd, releasesRoot.dir));
+    if (!real) return null;
+    const rel = path.relative(root, real);
+    if (rel.startsWith('..') || path.isAbsolute(rel)) return null;
+    return rel === '' ? '.' : rel.split(path.sep).join('/');
+  }
+
   /** Local branch names (`git branch --format=%(refname:short)`) at an already-detected `rootPath`. */
   private async listBranchesAt(rootPath: string): Promise<string[]> {
     return this.git(['branch', '--format=%(refname:short)'], rootPath)
@@ -1464,7 +1730,11 @@ export class GitService {
     // `busy`, same result and same hint as an in-flight turn.
     const locked = lockForKey(root).tryRun(() => this.checkoutLocked(root, branch));
     if (!locked) return { status: 'busy', branch: null, message: BUSY_MESSAGE };
-    return locked;
+    const result = await locked;
+    // 2.1.10 (M28 1svflc6b, M49 7xmafzkd): the same sequence as a sync that
+    // moved HEAD — label (inside the lock, before the switch) → switch → event.
+    if (result.status === 'switched') this.emitStatusChanged(true);
+    return result;
   }
 
   private async checkoutLocked(root: string, branch: string): Promise<GitCheckoutResponse> {
@@ -1493,8 +1763,14 @@ export class GitService {
       return { status: 'busy', branch: null, message: BUSY_MESSAGE };
     }
 
+    // 2.1.10 (M40 j37qjvvh): label the paths differing between the current and
+    // the target branch as caused by the server, on the current context
+    // instance, BEFORE HEAD moves — then again right after, for late events.
+    const changed = await this.changedPaths(root, 'HEAD', `refs/heads/${branch}`);
+    this.labelHeadChange(root, changed);
     try {
       await this.git(['checkout', branch], root);
+      this.labelHeadChange(root, changed);
       return { status: 'switched', branch, message: null };
     } catch (err) {
       return { status: 'error', branch: null, message: errMessage(err) };
@@ -1517,6 +1793,42 @@ function cleanupTmpIndex(p: string): void {
   } catch {
     // best-effort cleanup
   }
+}
+
+/** 2.1.10: a `GitSyncResponse` with every field present (`null` unless given). */
+function syncResult(
+  status: GitSyncResponse['status'],
+  extra: Partial<Omit<GitSyncResponse, 'status'>> = {},
+): GitSyncResponse {
+  return { status, paths: null, reason: null, message: null, ...extra };
+}
+
+/** Entries of a `-z` (NUL-terminated) git listing. */
+function splitNul(stdout: string): string[] {
+  return stdout.split('\0').filter((s) => s.length > 0);
+}
+
+/**
+ * The paths git lists when it refuses a merge/checkout because it would
+ * overwrite local changes or untracked files ("…would be overwritten by
+ * merge:" followed by tab-indented paths).
+ */
+function overwrittenPaths(output: string): string[] {
+  const paths: string[] = [];
+  let inList = false;
+  for (const line of output.split('\n')) {
+    if (/would be overwritten by/.test(line)) {
+      inList = true;
+      continue;
+    }
+    if (inList && /^\t/.test(line)) {
+      const p = line.trim();
+      if (p) paths.push(p);
+      continue;
+    }
+    inList = false;
+  }
+  return [...new Set(paths)];
 }
 
 function errMessage(err: unknown): string {

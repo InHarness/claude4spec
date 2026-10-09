@@ -62,7 +62,47 @@ export interface GitFetchResponse {
   message: string | null;
 }
 
-/** `'committed'` = success; `'nothing-to-commit'` = nothing staged (not an error);
+/**
+ * 2.1.10 (M28 `sync()`, dto `git-sync-response`) — result of
+ * `POST /api/git/sync`: pull the upstream's commits into HEAD by a fast-forward
+ * or a conflict-free merge commit, or change nothing and say why. Always a 200
+ * body; every field is present.
+ * `up-to-date` — the upstream has no new commits (also when the branch is ahead);
+ * `fast-forwarded` — HEAD moved to the upstream; `merged` — a merge commit was
+ * created; `dirty-blocked` — local changes block the operation, nothing changed
+ * (`paths`); `diverged` — a divergence sync does not merge, nothing changed
+ * (`reason`, `paths` on `conflicts`); `skipped` — git off, no repo or
+ * detached/unborn HEAD; `no-upstream` — the branch has no upstream; `busy` —
+ * another git operation or an agent turn mutating disk is running; `error` —
+ * git failed, its message in `message`.
+ * After `fast-forwarded`/`merged` the server runs the `ProjectContext` reload
+ * contract (M31), so the response carries no status snapshot.
+ */
+export type GitSyncStatus =
+  | 'up-to-date'
+  | 'fast-forwarded'
+  | 'merged'
+  | 'dirty-blocked'
+  | 'diverged'
+  | 'skipped'
+  | 'no-upstream'
+  | 'busy'
+  | 'error';
+
+export type GitSyncDivergedReason = 'conflicts' | 'releases-on-both-sides';
+
+export interface GitSyncResponse {
+  status: GitSyncStatus;
+  /** Blocking paths on `dirty-blocked`, conflicted files on `diverged`/`conflicts`
+   *  (repository-relative); `null` otherwise, also on `releases-on-both-sides`. */
+  paths: string[] | null;
+  /** Why on `diverged`; `null` for every other status. */
+  reason: GitSyncDivergedReason | null;
+  /** Git's message on `error`; `null` otherwise. */
+  message: string | null;
+}
+
+/** `'committed'` = success;`'nothing-to-commit'` = nothing staged (not an error);
  *  `'skipped'` = repo detected but commit could not run (e.g. detached HEAD);
  *  `'error'` = attempted and failed. */
 export type GitCommitStatus = 'committed' | 'nothing-to-commit' | 'skipped' | 'error';

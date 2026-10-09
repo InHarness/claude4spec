@@ -1,18 +1,29 @@
 import { Router } from 'express';
 import type { GitService } from '../services/git.js';
-import type { GitFetchResponse, GitStatusResponse } from '../../shared/git.js';
+import type { GitFetchResponse, GitStatusResponse, GitSyncResponse } from '../../shared/git.js';
 
 /**
  * M28 — `/api/git/*`. Own prefix (exception to the L4 convention, analogous to
  * `/api/release-pushes/*` and `/api/remote-project/*`). `GET /status` and
- * `GET /branches` are read-only. `POST /checkout` (working tree) and
- * `POST /fetch` (remote-tracking refs) write to `.git` but — like the
+ * `GET /branches` are read-only. `POST /checkout` and `POST /sync` (HEAD and
+ * working tree) and `POST /fetch` (remote-tracking refs) write to `.git` but — like the
  * others — never surface an HTTP error for a domain outcome
  * (dirty tree, unknown branch, busy, git failure): every result rides
  * `status`/`message` in a 200 body. The only non-200 here is a malformed
  * request body.
  */
-export function gitRouter(gitService: GitService, opts: { onSwitched?: () => void } = {}): Router {
+export function gitRouter(
+  gitService: GitService,
+  opts: {
+    /**
+     * 2.1.10 (M31 ic35jwy6): the reload contract after a HEAD change made from
+     * the app — checkout `switched`, sync `fast-forwarded`/`merged`. Invalidates
+     * the cached `ProjectContext`; the next build re-reads `config.json` and
+     * reindexes the new disk content. Called synchronously, before the response.
+     */
+    onHeadChanged?: () => void;
+  } = {},
+): Router {
   const router = Router();
 
   // GET /api/git/status — repo detection for the Settings Git section + the
@@ -49,7 +60,8 @@ export function gitRouter(gitService: GitService, opts: { onSwitched?: () => voi
   });
 
   // POST /api/git/checkout — switch HEAD to an existing local branch. On
-  // `'switched'`, fires the M31 reload (the same `onContextConfigChanged`
+  // `'switched'` (paths labelled and `git:status-changed { headChanged: true }`
+  // already emitted inside gitService), fires the M31 reload (the same `onContextConfigChanged`
   // callback the config-PATCH path already uses to invalidate the cached
   // `ProjectContext`) and returns without a status snapshot — the client
   // reloads the project route and refetches `/status` fresh.
@@ -63,7 +75,7 @@ export function gitRouter(gitService: GitService, opts: { onSwitched?: () => voi
       // names from `git branch`, which are already whitespace-free.
       const branch = rawBranch.trim();
       const result = await gitService.checkout(branch);
-      if (result.status === 'switched') opts.onSwitched?.();
+      if (result.status === 'switched') opts.onHeadChanged?.();
       res.json(result);
     } catch (err) {
       next(err);
@@ -78,6 +90,23 @@ export function gitRouter(gitService: GitService, opts: { onSwitched?: () => voi
   router.post('/fetch', async (_req, res, next) => {
     try {
       const result: GitFetchResponse = await gitService.fetch();
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // POST /api/git/sync — 2.1.10 (endpoint post-api-git-sync, M28 9j5dmxyp).
+  // No body. Pulls the upstream into HEAD by fast-forward or a conflict-free
+  // merge commit, or refuses (`dirty-blocked`, `diverged`, `busy`) without
+  // changing anything. Inside gitService: label changed paths (M40) → move
+  // HEAD → `git:status-changed`. Here, on `fast-forwarded`/`merged`: the M31
+  // reload contract, synchronously, before answering — no status snapshot in
+  // the body. Every outcome rides a 200.
+  router.post('/sync', async (_req, res, next) => {
+    try {
+      const result: GitSyncResponse = await gitService.sync();
+      if (result.status === 'fast-forwarded' || result.status === 'merged') opts.onHeadChanged?.();
       res.json(result);
     } catch (err) {
       next(err);

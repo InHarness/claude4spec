@@ -1,0 +1,31 @@
+{
+ "role": "reviewer",
+ "scope": {
+  "kind": "unit",
+  "id": "u2-git-sync-head-change",
+  "base": "6eaf2bb087eccd96e1fa0cd49965e9e48bf2a849"
+ },
+ "findings": [
+  {
+   "id": "rev-0001",
+   "file": "src/shared/types.ts",
+   "line": 194,
+   "blocking": false,
+   "reason": "WsEvent comment claims ProjectContext is invalidated before git:status-changed{headChanged:true}; real order is event then reload."
+  },
+  {
+   "id": "rev-0002",
+   "file": "src/server/fs/head-change-origin.ts",
+   "line": 66,
+   "blocking": false,
+   "reason": "realpathOfNearestAncestor() duplicates the helper in services/git.ts:1852."
+  },
+  {
+   "id": "rev-0003",
+   "file": "src/server/fs/head-change-origin.ts",
+   "line": 43,
+   "blocking": false,
+   "reason": "comment claims mounts re-read per call; caller passes a frozen array."
+  }
+ ]
+}

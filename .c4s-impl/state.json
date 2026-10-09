@@ -1,5 +1,5 @@
 {
- "iteration": 6,
+ "iteration": 10,
  "conventions": [
   {
    "label": "L4 (API) — implementor M49",
@@ -51,7 +51,7 @@
    "units": [
     "u2-git-sync-head-change"
    ],
-   "startCommit": null
+   "startCommit": "6eaf2bb087eccd96e1fa0cd49965e9e48bf2a849"
   },
   {
    "n": 3,
@@ -521,15 +521,56 @@
     }
    ],
    "wave": 2,
-   "status": "pending",
+   "status": "verified",
    "blockedBy": null,
-   "portions": [],
-   "startCommit": null,
-   "baseCommit": null,
+   "portions": [
+    {
+     "name": "u2-git-sync-head-change/p1-l4-l10",
+     "layers": [
+      "L4",
+      "L7",
+      "L10"
+     ],
+     "slugs": [
+      "post-api-git-sync",
+      "git-sync-response",
+      "ac-post-api-git-sync-przy-ahead-0-i-behi",
+      "ac-post-api-git-sync-przy-behind-0-i-ahe",
+      "ac-post-api-git-sync-przy-rozjezdzie-z-u",
+      "ac-post-api-git-sync-przy-rozjezdzie-z-u-2",
+      "ac-post-api-git-sync-przy-rozjezdzie-z-k",
+      "ac-post-api-git-sync-przy-nowych-wydania",
+      "ac-post-api-git-sync-przy-lokalnej-zmian",
+      "ac-post-api-git-sync-przy-niesledzonym-p",
+      "ac-post-api-git-sync-na-galezi-bez-upstr",
+      "ac-post-api-git-sync-przy-config-git-ena",
+      "ac-post-api-git-sync-w-detached-head-zwr",
+      "ac-post-api-git-sync-w-trakcie-innej-ope",
+      "ac-post-api-git-sync-w-trakcie-tury-agen",
+      "ac-po-post-api-git-sync-z-wynikiem-merge",
+      "ac-po-post-api-git-sync-z-wynikiem-merge-2",
+      "ac-po-post-api-git-sync-z-wynikiem-fast",
+      "ac-po-post-api-git-sync-z-wynikiem-diver",
+      "ac-po-post-api-git-sync-z-wynikiem-diver-2",
+      "ac-lokalna-zmiana-pliku-ktorego-przychod",
+      "ac-zdarzenie-git-status-changed-po-post",
+      "ac-strona-otwarta-w-edytorze-i-zmieniona"
+     ],
+     "status": "implemented",
+     "rounds": 1,
+     "partial": 0,
+     "uncovered": [],
+     "only": []
+    }
+   ],
+   "startCommit": "6eaf2bb087eccd96e1fa0cd49965e9e48bf2a849",
+   "baseCommit": "6eaf2bb087eccd96e1fa0cd49965e9e48bf2a849",
    "rounds": {
     "review": 0,
-    "unit": 0
-   }
+    "unit": 1
+   },
+   "lastUncovered": 0,
+   "lastBlocking": 0
   },
   {
    "id": "u3-header-fetch-sync-ui",
