@@ -1,1 +1,0 @@
-{"role": "implementer", "status": "progressed", "release": "2.1.10", "unit": "u4-push-non-fast-forward-recovery", "portion": "u4-push-non-fast-forward-recovery/p1-l2-l5", "claimed": ["ac-okno-git-sync-recover-dla-recovery-ki", "ac-gdy-gitsync-status-error-operacje"], "deviations": [], "stubsOpened": [], "stubsClosed": [], "stoppedEarly": false}
