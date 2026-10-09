@@ -27,3 +27,4 @@ Implementation-only decisions (no user-observable effect) and set-up choices.
 | endpoint | built | | linkedDtos[].dto | | 3 |
 | dto | built | | | | 2 |
 | module-dependency | context | | | | 1 |
+- Next window: `2-1-10-to-2-1-11.md` already exists; acknowledged in the approved plan — the loop does not stop on it.
