@@ -43,7 +43,7 @@ XML tag names 1:1 — append \`${identity}\` to every command below.
 
 \`\`\`sh
 c4s resolve some-page.md ${identity}                # writes markdown with tags expanded inline
-c4s resolve some-page.md --format json ${identity}   # writes { content, resolved: [...] }
+c4s resolve some-page.md --format json ${identity}   # writes { format, text, resolved: [...] } — the original text plus what each tag resolved to
 \`\`\`
 
 This is a RENDER convenience, and the only surface that still offers it. It

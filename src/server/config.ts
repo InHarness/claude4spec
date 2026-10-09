@@ -5,7 +5,6 @@ import { type Root } from '../shared/types.js';
 import {
   RESERVED_WRITE_TARGETS,
   SYSTEM_ROOTS,
-  SYSTEM_ROOT_KINDS,
   isSystemRootId,
   namespacesOverlap,
   systemRootDir,
@@ -81,6 +80,65 @@ export interface Config {
    * even when the plugin is absent/inactive (user data preserved).
    */
   plugins?: Record<string, Record<string, unknown>>;
+  /**
+   * 2.1.9 (M52 `wqvq1esb`): the project as a skill of its workspace — the
+   * exposure fields (`exposed`, `name`, `description`, `entry`, `scope`,
+   * `contextTypes`) and the attachments of other projects' skills (`uses`).
+   * Additive — no `$schemaVersion` bump; absent ⇒ not exposed, no attachments.
+   * Not in the release bundle's sanitized config (allow-list, M17 `m17bndcf1`).
+   * Read through {@link normalizeSkillConfig}, never field by field with `??`.
+   */
+  skill?: SkillConfig;
+}
+
+/** 2.1.9 (M52) — `skill.*` as the file holds it; every key optional. */
+export interface SkillConfig {
+  exposed?: boolean;
+  /** The skill's address in the workspace (kebab-case); required when `exposed`. */
+  name?: string | null;
+  description?: string | null;
+  /** Path of a page of the base root; absent ⇒ {@link DEFAULT_SKILL_ENTRY}. */
+  entry?: string | null;
+  scope?: 'writing-style' | 'contextual';
+  /** Absent ⇒ all four context types. */
+  contextTypes?: string[];
+  /** Names (`skill.name`) of exposed projects this project attaches. */
+  uses?: string[];
+}
+
+/** 2.1.9 (M52) — `skill.*` with every default applied. */
+export interface NormalizedSkillConfig {
+  exposed: boolean;
+  name: string | null;
+  description: string | null;
+  entry: string;
+  scope: 'writing-style' | 'contextual';
+  /** `undefined` ⇒ all four context types (the same convention as `SkillMetadata.contextTypes`). */
+  contextTypes: string[] | undefined;
+  uses: string[];
+}
+
+/** The default of `skill.entry`: the index page of the base root (M52 `wqvq1esb`). */
+export const DEFAULT_SKILL_ENTRY = 'index.md';
+
+/**
+ * The single place the `skill.*` defaults are applied (`exposed: false`, no
+ * name/description, entry = the base root's index page, scope `contextual`, all
+ * four context types, no attachments). Kept out of {@link defaults} so the
+ * normalized config's existing shape — and every reader of it — stays as it was.
+ */
+export function normalizeSkillConfig(c: Pick<Config, 'skill'>): NormalizedSkillConfig {
+  const s = c.skill ?? {};
+  const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() !== '' ? v.trim() : null);
+  return {
+    exposed: s.exposed === true,
+    name: str(s.name),
+    description: str(s.description),
+    entry: str(s.entry) ?? DEFAULT_SKILL_ENTRY,
+    scope: s.scope === 'writing-style' ? 'writing-style' : 'contextual',
+    contextTypes: Array.isArray(s.contextTypes) ? [...s.contextTypes] : undefined,
+    uses: Array.isArray(s.uses) ? s.uses.filter((u): u is string => typeof u === 'string' && u.trim() !== '').map((u) => u.trim()) : [],
+  };
 }
 
 export interface GitSyncConfig {
@@ -593,12 +651,13 @@ export function parseRootsArray(
       }
     }
     if (seen.has(root.id)) throw new Error(`config.json: duplicate root id '${root.id}'`);
-    // 2.1.8: the five system roots own these identifiers — a user root under one
-    // of them would be a second root at the same address. Refused on read too:
-    // there is no reading under which the project has a sane registry.
+    // 2.1.8: the system roots own these identifiers — a user root under one of
+    // them would be a second root at the same address. Refused on read too:
+    // there is no reading under which the project has a sane registry. 2.1.9:
+    // the reserved set is the registry's roots of kinds with source `code`.
     if (isSystemRootId(root.id)) {
       throw new Error(
-        `config.json: root id '${root.id}' is reserved for a system root (${SYSTEM_ROOT_KINDS.join(', ')})`,
+        `config.json: root id '${root.id}' is reserved for a system root (${SYSTEM_ROOTS.map((r) => r.id).join(', ')})`,
       );
     }
     if (opts.retiredIds?.has(root.id)) {
@@ -900,6 +959,42 @@ function validate(raw: unknown): Partial<Config> {
       plugins[name] = sub as Record<string, unknown>;
     }
     out.plugins = plugins;
+  }
+  // 2.1.9 (M52): `skill.*` — shape only here (this also runs on every boot);
+  // the semantic rules (kebab-case name, required-when-exposed, an existing entry
+  // page, the context-type enumeration) belong to the field declarations, which
+  // the PATCH route applies. A dangling `uses` entry is never a validation error.
+  if ('skill' in r) {
+    const k = r.skill;
+    if (k === null || typeof k !== 'object' || Array.isArray(k)) throw typeError('skill', 'object', k);
+    const kr = k as Record<string, unknown>;
+    const skill: SkillConfig = {};
+    if ('exposed' in kr) {
+      if (typeof kr.exposed !== 'boolean') throw typeError('skill.exposed', 'boolean', kr.exposed);
+      skill.exposed = kr.exposed;
+    }
+    for (const field of ['name', 'description', 'entry'] as const) {
+      if (field in kr) {
+        if (kr[field] !== null && typeof kr[field] !== 'string') throw typeError(`skill.${field}`, 'string | null', kr[field]);
+        skill[field] = kr[field] as string | null;
+      }
+    }
+    if ('scope' in kr) {
+      if (kr.scope !== 'writing-style' && kr.scope !== 'contextual') {
+        throw typeError('skill.scope', "'writing-style' | 'contextual'", kr.scope);
+      }
+      skill.scope = kr.scope;
+    }
+    for (const field of ['contextTypes', 'uses'] as const) {
+      if (field in kr) {
+        if (!Array.isArray(kr[field])) throw typeError(`skill.${field}`, 'string[]', kr[field]);
+        if (!(kr[field] as unknown[]).every((e) => typeof e === 'string')) {
+          throw new Error(`config.json: field 'skill.${field}' expected string[], got non-string element`);
+        }
+        skill[field] = kr[field] as string[];
+      }
+    }
+    out.skill = skill;
   }
   return out;
 }
@@ -1249,6 +1344,11 @@ export function writeConfig(cwd: string, partial: Partial<Config>): NormalizedCo
     for (const [name, fields] of Object.entries(validated.plugins)) {
       merged.plugins[name] = { ...current.plugins?.[name], ...fields };
     }
+  }
+  // 2.1.9 (M52): the same deep-merge for `skill` — saving `uses` alone keeps the
+  // exposure fields, and the reverse.
+  if (validated.skill) {
+    merged.skill = { ...current.skill, ...validated.skill };
   }
   atomicWrite(file, JSON.stringify(merged, null, 2) + '\n');
   // Return the NORMALIZED view of what was just persisted — callers read

@@ -62,7 +62,25 @@ describe('skillsRouter', () => {
       const res = await request(app).get('/api/skills');
       expect(res.status).toBe(200);
       expect(res.body).toEqual({
-        listing: [{ slug: 'mockups', description: 'author mockups' }],
+        listing: [{ slug: 'mockups', description: 'author mockups', origin: 'plugin' }],
+        writingStyle: { slug: 'house-style', title: 'house-style title' },
+      });
+    });
+
+    it('[entity:skill-listing-response] rows carry { slug, description, origin } (no project outside project-exposed) and writingStyle stands beside them', async () => {
+      for (const url of ['/api/skills', '/api/skills?contextType=chat']) {
+        const res = await request(app).get(url);
+        expect(res.status).toBe(200);
+        expect(Object.keys(res.body).sort()).toEqual(['listing', 'writingStyle']);
+        expect(res.body.listing).toHaveLength(1);
+        const row = res.body.listing[0];
+        expect(Object.keys(row).sort()).toEqual(['description', 'origin', 'slug']);
+        expect(row).toEqual({ slug: 'mockups', description: 'author mockups', origin: 'plugin' });
+        expect(res.body.writingStyle).toEqual({ slug: 'house-style', title: 'house-style title' });
+      }
+      // Empty set for a legal value is a true answer, with the style still beside it.
+      expect((await request(app).get('/api/skills?contextType=ask')).body).toEqual({
+        listing: [],
         writingStyle: { slug: 'house-style', title: 'house-style title' },
       });
     });
@@ -87,6 +105,31 @@ describe('skillsRouter', () => {
       expect(res.body).toMatchObject({ slug: 'house-style', scope: 'writing-style', title: 'house-style title' });
       expect(res.body.files.map((f: { path: string }) => f.path)).toEqual(['logo.png', 'workflows/brief.md', 'workflows/huge.md']);
       expect(JSON.stringify(res.body)).not.toContain(tmp);
+    });
+
+    it('[entity:skill-package-response] opening shape: slug, title, description, scope, source, content, files (no hash from a read-only source); subfile shape: slug, path, content', async () => {
+      const opened = await request(app).get('/api/skills/house-style');
+      expect(opened.status).toBe(200);
+      expect(Object.keys(opened.body).sort()).toEqual(['content', 'description', 'files', 'scope', 'slug', 'source', 'title']);
+      expect(opened.body).toMatchObject({
+        slug: 'house-style',
+        title: 'house-style title',
+        description: 'about house-style',
+        scope: 'writing-style',
+        source: 'user',
+      });
+      expect(opened.body.content).toContain('the body');
+      expect(opened.body.content).not.toContain('version: 1');
+      for (const f of opened.body.files) {
+        expect(Object.keys(f).sort()).toEqual(['bytes', 'isText', 'lines', 'path']);
+      }
+      expect((await request(app).get('/api/skills/mockups')).body.source).toBe('plugin');
+
+      const sub = await request(app).get('/api/skills/house-style').query({ file: 'workflows/brief.md' });
+      expect(Object.keys(sub.body).sort()).toEqual(['content', 'path', 'slug']);
+      // Over the budget, the subfile shape adds truncated + truncationHint.
+      const cut = await request(app).get('/api/skills/house-style').query({ file: 'workflows/huge.md' });
+      expect(Object.keys(cut.body).sort()).toEqual(['content', 'path', 'slug', 'truncated', 'truncationHint']);
     });
 
     it('reads a subfile addressed by the ?file= query parameter', async () => {

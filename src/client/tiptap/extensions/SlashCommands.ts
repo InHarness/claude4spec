@@ -1,14 +1,11 @@
 import { Extension, type Editor } from '@tiptap/core';
-import Suggestion, { type SuggestionProps } from '@tiptap/suggestion';
+import Suggestion, { type SuggestionOptions, type SuggestionProps } from '@tiptap/suggestion';
 import { PluginKey } from '@tiptap/pm/state';
 import { ReactRenderer } from '@tiptap/react';
 import { setSuggestionPopupOpen } from '../suggestionState.js';
 import { SlashMenu, type SlashMenuHandle, type SlashCommand } from './SlashMenu.js';
-import {
-  getRegisteredSlashCommandsForContext,
-  type EditorContextId,
-  type RootEditorProps,
-} from '../registry.js';
+import type { EditorContextId, RootEditorProps } from '../registry.js';
+import { createSlashSession, type SlashPaletteItem, type SlashSession } from '../slashPalette.js';
 
 export interface SlashCommandsOptions {
   onInvoke: (editor: Editor, command: SlashCommand) => void;
@@ -29,6 +26,11 @@ export const SLASH_SUGGESTION_KEY = new PluginKey('c4s-suggestion-slash');
 /** Its popup's key in `suggestionState` — what `isSuggestionActive` reads. */
 const SLASH_POPUP = 'slash';
 
+/**
+ * The slash framework — the `SlashDispatcher` of M20's contribution sheet
+ * (trigger `/`, direct registration): aggregates the fixed commands and the
+ * command sources (2.1.9) admitted by the context, through `slashPalette.ts`.
+ */
 export const SlashCommands = Extension.create<SlashCommandsOptions>({
   name: 'slash_commands',
   addOptions() {
@@ -40,21 +42,74 @@ export const SlashCommands = Extension.create<SlashCommandsOptions>({
   },
   addProseMirrorPlugins() {
     const options = this.options;
+    // 2.1.9 (M20 `lxdrxdm2`): one session per opening of the popover — command
+    // sources are pulled at the opening, never cached across openings.
+    let session: SlashSession | null = null;
+    const currentSession = () => (session ??= createSlashSession(options.contextId, options.rootProps));
+    // Re-lists the open popover from the current session — set by `render()`.
+    let refreshPopover: ((editor: Editor) => Promise<void>) | null = null;
+    const command: SuggestionOptions<SlashPaletteItem>['command'] = ({ editor, range, props }) => {
+      const picked = props.source;
+      if (picked?.item.narrowTo) {
+        // Narrow the SAME popover: it stays open, the typed prefix is
+        // cleared (the range keeps only its `/`), and the next listing of
+        // this session shows the target source's items alone.
+        currentSession().narrowTo(picked.item.narrowTo);
+        const typedPrefix = editor.state.doc.textBetween(range.from + 1, range.to);
+        editor.chain().focus().insertContentAt(range, '/').run();
+        // `@tiptap/suggestion` re-fetches `items` only when the query or
+        // the range moved. Picked with an empty query (`/`, then arrows or
+        // a click), `/` → `/` changes neither, so the popover would keep
+        // the full listing: re-list it here. With a typed prefix the query
+        // changes (`skills` → ``) and the plugin re-lists on its own.
+        if (typedPrefix === '') void refreshPopover?.(editor);
+        return;
+      }
+      editor.chain().focus().deleteRange(range).run();
+      if (picked) {
+        // Control passes to the source: it inserts at the caret or opens a window.
+        void Promise.resolve(picked.source.onSelect(picked.item, editor)).catch((err) =>
+          console.warn(`[editor] command source "${picked.source.id}" failed to handle its item`, err),
+        );
+        return;
+      }
+      if (props.command) options.onInvoke(editor, props.command);
+    };
     return [
-      Suggestion<SlashCommand>({
+      Suggestion<SlashPaletteItem>({
         pluginKey: SLASH_SUGGESTION_KEY,
         editor: this.editor,
         char: '/',
         allowSpaces: false,
         startOfLine: false,
-        items: ({ query }) => filterCommands(query, options.contextId, options.rootProps),
-        command: ({ editor, range, props }) => {
-          editor.chain().focus().deleteRange(range).run();
-          options.onInvoke(editor, props);
-        },
+        items: ({ query }) => currentSession().items(query),
+        command,
         render: () => {
           let reactRenderer: ReactRenderer<SlashMenuHandle> | null = null;
           let popup: HTMLDivElement | null = null;
+          let lastProps: SuggestionProps<SlashPaletteItem> | null = null;
+          refreshPopover = async (editor: Editor) => {
+            const state = SLASH_SUGGESTION_KEY.getState(editor.state) as
+              | { active: boolean; range: { from: number; to: number }; query: string; text: string }
+              | undefined;
+            if (!state?.active || !reactRenderer || !lastProps) return;
+            const { range, query, text } = state;
+            const items = await currentSession().items(query);
+            // The popover closed or moved on while the listing was read.
+            if (!reactRenderer || !lastProps) return;
+            const now = SLASH_SUGGESTION_KEY.getState(editor.state) as typeof state;
+            if (!now?.active || now.range.from !== range.from || now.query !== query) return;
+            lastProps = {
+              ...lastProps,
+              range,
+              query,
+              text,
+              items,
+              command: (item: SlashPaletteItem) => command({ editor, range, props: item }),
+            };
+            reactRenderer.updateProps(lastProps);
+            setSuggestionPopupOpen(editor.view, SLASH_POPUP, popup !== null && items.length > 0);
+          };
           const updatePos = (rect: DOMRect | null) => {
             if (!popup || !rect) return;
             const top = rect.bottom + 6 + window.scrollY;
@@ -63,7 +118,8 @@ export const SlashCommands = Extension.create<SlashCommandsOptions>({
             popup.style.left = `${left}px`;
           };
           return {
-            onStart(props: SuggestionProps<SlashCommand>) {
+            onStart(props: SuggestionProps<SlashPaletteItem>) {
+              lastProps = props;
               reactRenderer = new ReactRenderer(SlashMenu, {
                 editor: props.editor,
                 props,
@@ -76,7 +132,8 @@ export const SlashCommands = Extension.create<SlashCommandsOptions>({
               updatePos(props.clientRect?.() ?? null);
               setSuggestionPopupOpen(props.editor.view, SLASH_POPUP, props.items.length > 0);
             },
-            onUpdate(props: SuggestionProps<SlashCommand>) {
+            onUpdate(props: SuggestionProps<SlashPaletteItem>) {
+              lastProps = props;
               reactRenderer?.updateProps(props);
               updatePos(props.clientRect?.() ?? null);
               setSuggestionPopupOpen(props.editor.view, SLASH_POPUP, popup !== null && props.items.length > 0);
@@ -90,7 +147,9 @@ export const SlashCommands = Extension.create<SlashCommandsOptions>({
               }
               return reactRenderer?.ref?.onKeyDown(props.event) ?? false;
             },
-            onExit(props: SuggestionProps<SlashCommand>) {
+            onExit(props: SuggestionProps<SlashPaletteItem>) {
+              session = null;
+              lastProps = null;
               popup?.remove();
               popup = null;
               reactRenderer?.destroy();
@@ -103,14 +162,3 @@ export const SlashCommands = Extension.create<SlashCommandsOptions>({
     ];
   },
 });
-
-function filterCommands(
-  query: string,
-  contextId: EditorContextId,
-  rootProps?: RootEditorProps,
-): SlashCommand[] {
-  const commands = getRegisteredSlashCommandsForContext(contextId, rootProps);
-  const q = query.trim().toLowerCase();
-  if (!q) return commands;
-  return commands.filter((c) => c.id.includes(q) || c.label.toLowerCase().includes(q));
-}

@@ -9,6 +9,7 @@ import { registerAllPlugins } from '../../src/server/core/plugin-host/register-b
 import { loadBuiltinEnvelopes } from '../../src/server/core/plugin-host/loader.js';
 import { entitiesRouter } from '../../src/server/core/plugin-host/entities-router.js';
 import { metaRouter } from '../../src/server/routes/meta.js';
+import { createExpansionContext } from '../../src/server/discovery/expansion-context.js';
 import { patchesRouter } from '../../src/server/routes/patches.js';
 import { tagsRouter } from '../../src/server/routes/tags.js';
 import { referencesRouter } from '../../src/server/routes/references.js';
@@ -297,7 +298,19 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
    * plugin-diagnostic routes that share the prefix in production belong to
    * `pluginHostRouter`, which this harness does not mount.
    */
-  router.use('/_meta', metaRouter(discovery, host));
+  // 2.1.9 — `c4s resolve` expands through the M19 core in this project's
+  // context. The harness has no pages, so no section or page link resolves.
+  router.use(
+    '/_meta',
+    metaRouter(
+      discovery,
+      createExpansionContext({
+        discovery,
+        sections: { getByAnchor: () => null },
+        links: { resolve: () => null, getFileMeta: () => undefined },
+      }),
+    ),
+  );
   router.use('/tags', tagsRouter(tagsService, referencesService, discovery));
   // The harness has no page roots (`roots: []`), so a narrowed root list is the
   // same empty list — the factory is here so the route's shape matches

@@ -149,6 +149,41 @@ function coreRead(
   };
 }
 
+/**
+ * 2.1.9 (M52, entity `spec-skill-tools-update-skill-file`) — the input of
+ * `update_skill_file`, declared ONCE: the catalog row below and the `internal`
+ * rendering (`mcp/spec-skill-tools.ts`) both take this shape, so the one channel
+ * that renders the operation cannot drift from its row. Parameter descriptions
+ * are the entity's, verbatim.
+ */
+export const UPDATE_SKILL_FILE_INPUT = {
+  slug: z.string().describe('Slug of the skill package to write — the package directory name.'),
+  file: z
+    .string()
+    .optional()
+    .describe('Package-relative POSIX path of the file to write. No absolute path, no `..`.'),
+  content: z
+    .string()
+    .optional()
+    .describe('The whole new content of the file. Pass exactly one of `content` and `textEdits`.'),
+  textEdits: z
+    .array(
+      z.object({
+        find: z.string().min(1),
+        replaceWith: z.string(),
+        expectedMatches: z.union([z.number().int().min(1), z.literal('all')]).optional(),
+      }),
+    )
+    .min(1)
+    .optional()
+    .describe(
+      'Literal substitutions, each { find, replaceWith, expectedMatches }: `find` is matched byte for byte, `expectedMatches` defaults to exactly 1. Pass exactly one of `content` and `textEdits`.',
+    ),
+  expectedHash: z
+    .string()
+    .describe('The file\'s `hash` as you last read it with load_skill_file. Pass "" when the file must not exist yet.'),
+};
+
 let seeded = false;
 
 /**
@@ -420,7 +455,7 @@ export function registerCoreOperations(): void {
    */
   CATALOG.register({
     name: 'list_skills',
-    summary: 'Skills of the project registry as { slug, description } rows, plus the active writing style ({ slug, title } or null) reported beside them, never as a row. `contextType` narrows to the resolver set of that conversation type; omitted, it addresses the whole registry.',
+    summary: 'Skills of the project registry as { slug, description, origin, project? } rows (`origin` = the `source` of the winning entry; `project` only for origin project-exposed), plus the active writing style ({ slug, title } or null) reported beside them, never as a row. `contextType` narrows to the resolver set of that conversation type; omitted, it addresses the whole registry.',
     scope: 'project',
     mediation: 'direct',
     opClass: 'read',
@@ -446,7 +481,7 @@ export function registerCoreOperations(): void {
 
   CATALOG.register({
     name: 'load_skill_file',
-    summary: 'Open a skill of the project registry (SKILL.md body without frontmatter + manifest of the package files) or read one package subfile by (slug, file). Serves the whole registry, not a context-filtered subset; never a disk path.',
+    summary: 'Open a skill of the project registry (SKILL.md in the form its source serves it, the entry\'s `source`, `hash` from a writable source, and the manifest of the package files — cut to the source\'s manifest limit if it declares one) or read one package subfile by (slug, file). Serves the precedence winner of the whole registry, not a context-filtered subset; never a disk path. A slug the registry does not resolve is refused with its reason.',
     scope: 'project',
     mediation: 'direct',
     opClass: 'read',
@@ -461,6 +496,118 @@ export function registerCoreOperations(): void {
     sideEffects: ['none'],
     idempotent: true,
     channels: fullParity(),
+  });
+
+  // ── M52 Spec Skills (2.1.9) ──────────────────────────────────────────────
+
+  /**
+   * 2.1.9 — `update_skill_file`, sheet `katalog-operacji-m52` row 2. Admitted by
+   * the BASIC test of M43 `l3admit0`, not by the instruction exception: its
+   * subject is a file of the project's `skills` root, i.e. specification content
+   * (reading instructions stays under the instruction exception).
+   *
+   * The sheet's columns this declaration has no field for are honoured by the
+   * implementation (`services/skill-write.ts`) and stated here so the row reads
+   * whole: addressing `(slug, file)`; guard REQUIRED (`expectedHash`, `""`
+   * creates a file that must not exist); multiplicity single-target — one
+   * package file, header validation concerns a single `SKILL.md`; rules
+   * `echo-free` (the answer carries the address and the new hash, never the
+   * file), `error-code-once`, `literal-match`, `match-count-declared`,
+   * `edit-set-not-procedure`, `diff-field-names`; WITHOUT
+   * `replacements-returned` (the answer carries no substitution count) and
+   * WITHOUT `operation-only-write` (a write by the built-in file tools into the
+   * `skills` root is accepted and versioned).
+   *
+   * `SKILL_READ_ONLY`: a slug outside the project's `skills` root that the
+   * registry resolves to an exposed project (`project-exposed` winner) is refused
+   * as read-only, pointing at `ask` on the provider (`SkillWriteDeps.readOnlyReason`,
+   * wired in the project context).
+   */
+  CATALOG.register({
+    name: 'update_skill_file',
+    summary:
+      'Write one file of a skill package of the current project, addressed by (slug, file) with `file` defaulting to SKILL.md, through the project\'s `skills` root. Exactly one of `content` (the whole new file) and `textEdits` (literal substitutions). `expectedHash` is REQUIRED: the file\'s current hash, or "" to create a file that must not exist yet; any other mismatch is PAGE_CONFLICT. A SKILL.md left without a non-empty `description` in its frontmatter is refused. Answers { slug, file, hash }.',
+    scope: 'project',
+    mediation: 'agent-mediated',
+    opClass: 'write',
+    inputSchema: UPDATE_SKILL_FILE_INPUT,
+    errorCodes: ['SKILL_READ_ONLY', 'INVALID_ARGUMENT', 'PAGE_CONFLICT', 'FIND_NOT_FOUND', 'MATCH_COUNT_MISMATCH'],
+    sideEffects: ['file'],
+    contentInput: 'literal+diff',
+    idempotent: true,
+    channels: {
+      internal: direct(),
+      cli: na('writing skills from outside is out of v1'),
+      mcp: na('writing skills from outside is out of v1'),
+      rest: na("a person writes through the page write routes over the `skills` root's facade"),
+    },
+  });
+
+  /**
+   * 2.1.9 — `fork_writing_style`, sheet `katalog-operacji-m52` row 3: a local copy
+   * of the active writing style when it comes from a plugin. Human-mediated — an
+   * action of the `#skills` settings card ("Fork writing style locally"), so it is
+   * rendered on `rest` alone (`POST /api/spec-skills/style-forks`).
+   *
+   * The sheet's columns without a field here, honoured by the implementation
+   * (`services/style-fork.ts`): addressing by the style's slug; content
+   * description `n/d` (nothing is sent — the package is copied); guard `n/d` — an
+   * existing package of that slug is a refusal (`SKILL_ALREADY_EXISTS`), never an
+   * overwrite; single-target (the active style is one); rules `echo-free` (the
+   * answer is the copy's address, never its content), `error-code-once`.
+   * `INVALID_ARGUMENT` also covers a style that does not come from a plugin.
+   * `config.writingStyle` is never changed.
+   */
+  CATALOG.register({
+    name: 'fork_writing_style',
+    summary:
+      'Copy the package of the active writing style, when it comes from a plugin, into a package of the same slug in the project\'s `skills` root; the copy records its origin in the `forkedFrom` field of its SKILL.md frontmatter and `config.writingStyle` stays unchanged. An existing package of that slug is refused, never overwritten. Answers { slug, path }.',
+    scope: 'project',
+    mediation: 'human-mediated',
+    opClass: 'write',
+    inputSchema: {
+      slug: z.string().describe('Slug of the active writing style to copy; the local package gets the same slug.'),
+    },
+    errorCodes: ['SKILL_NOT_FOUND', 'SKILL_ALREADY_EXISTS', 'INVALID_ARGUMENT'],
+    sideEffects: ['file', 'ui-notify'],
+    contentInput: 'n/a',
+    idempotent: false,
+    channels: {
+      internal: na('an action of the settings card'),
+      cli: na('an action of the settings card'),
+      mcp: na('an action of the settings card'),
+      rest: direct(),
+    },
+  });
+
+  /**
+   * 2.1.9 — `list_exposed_projects`, sheet `katalog-operacji-m52` row 4: the
+   * projects of the workspace exposed as a skill, with the status of the current
+   * project's attachments (`ok` / `unavailable` / `ambiguous`). Workspace-scoped
+   * (its subject is the workspace's projects), addressed by the current project
+   * (whose `skill.uses` it reports). It feeds only the `#skills` settings card,
+   * so it is rendered on `rest` alone. Read: no guard, no error code of its own
+   * (`n/d`), `echo-free`, `error-code-once`; single-target — the workspace list
+   * is one answer, no paging: it is short by nature, and an incomplete one would
+   * be useless for choosing attachments.
+   */
+  CATALOG.register({
+    name: 'list_exposed_projects',
+    summary:
+      'Projects of the workspace exposed as a skill, seen from the current project: one row per skill name with the provider\'s description and project id, whether the current project attaches it (`uses`), and the attachment status — ok, unavailable (no project exposes the name) or ambiguous (several do). The current project has no row.',
+    scope: 'workspace',
+    mediation: 'direct',
+    opClass: 'read',
+    inputSchema: {},
+    errorCodes: [],
+    sideEffects: ['none'],
+    idempotent: true,
+    channels: {
+      internal: na('feeds only the #skills settings card'),
+      cli: na('feeds only the #skills settings card'),
+      mcp: na('feeds only the #skills settings card'),
+      rest: direct(),
+    },
   });
 
   // ── M23 Patches ───────────────────────────────────────────────────────────

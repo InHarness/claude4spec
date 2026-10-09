@@ -27,20 +27,21 @@ export function parseFrontmatterFields(block: string): Record<string, unknown> |
   }
 }
 
-/** The root a facade serves — a registry entry of kind `pages` (or a user-root record). */
+/** The root a facade serves — a registry root with a facade (or a user-root record). */
 export interface PagesRootRef {
   id: string;
   dir: string;
 }
 
 /**
- * 2.1.8 — M02's pages-only FACADE (D9) over the `MarkdownFileStore` primitive,
- * `new PagesService({ root, store })`. Built by the registry loop ONLY for roots
- * of kind `pages` (`root-registry-runtime.ts`): there is no `PagesService`
- * outside them — the system roots `plans` / `briefs` / `patches` get the bare
- * store. The facade adds the tree resolution (`listTree`, `fileType` from the
- * `pages` kind's file map) on top of the store's CRUD + frontmatter + sha256,
- * which it forwards unchanged.
+ * 2.1.8 — M02's FACADE (D9) over the `MarkdownFileStore` primitive,
+ * `new PagesService({ root, store })`. 2.1.9: the facade of the roots with a
+ * tree in the sidebar — built by the registry loop for every root whose kind's
+ * `sidebar` is not `hidden` (`root-registry-runtime.ts`); there is no
+ * `PagesService` outside them — the system roots `plans` / `briefs` / `patches`
+ * (`sidebar: hidden`) get the bare store. The facade adds the tree resolution
+ * (`listTree`, `fileType` from the root kind's file map) on top of the store's
+ * CRUD + frontmatter + sha256, which it forwards unchanged.
  *
  * The positional `(cwd, dir, rootId)` form builds its own store — no production
  * code uses it any more (the discovery reader builds `{ root, store }` too). It
@@ -51,7 +52,7 @@ export class PagesService {
   readonly store: MarkdownFileStore;
   /** Absolute directory of the root (the store's). */
   readonly root: string;
-  /** Registry id of the `kind: pages` root this facade serves. */
+  /** Registry id of the root (with a facade) this facade serves. */
   readonly rootId: string;
 
   constructor(opts: { root: PagesRootRef; store: MarkdownFileStore });
@@ -134,8 +135,9 @@ export class PagesService {
     // Folders and raw (.html) entries carry no order (Infinity) — there is no
     // folder-ordering mechanism and a raw entry has no frontmatter.
     //
-    // 2.1.8 (M02 `e16qvg1n`): a file's `fileType` follows the `pages` kind's file
-    // map, not a hard-coded extension list — a markdown entry is
+    // 2.1.8 (M02 `e16qvg1n`): a file's `fileType` follows the file map of the
+    // root's kind (2.1.9: any kind with a facade; `pages` for the positional test
+    // rigs, which carry no kind), not a hard-coded extension list — a markdown entry is
     // `fileType='markdown'`, the raw entry (`.html`, track `none`) is
     // `fileType='html'`: shown in the tree, previewed by M30, never a page.
     const items: { node: PageNode; order: number }[] = [];
@@ -148,12 +150,14 @@ export class PagesService {
         continue;
       }
       if (!entry.isFile()) continue;
-      const mapEntry = fileMapEntryOf(PAGES_KIND, rel);
+      const mapEntry = fileMapEntryOf(this.store.kind ?? PAGES_KIND, rel);
       if (mapEntry?.format === 'markdown') {
         const order = await this.readOrder(path.join(dir, entry.name));
         items.push({ node: { type: 'file', name: entry.name, path: rel, fileType: 'markdown' }, order });
       } else if (mapEntry?.format === 'raw') {
         // M30: raw entries are read-only previews served via /api/static/*.
+        // ASSUMPTION:dev-0501 — a raw entry that is not `.html` (2.1.9: a file
+        // inside a `skills` package, or loose in that root) is listed the same way.
         items.push({ node: { type: 'file', name: entry.name, path: rel, fileType: 'html' }, order: Infinity });
       }
     }

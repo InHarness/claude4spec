@@ -95,6 +95,8 @@ import {
   AdapterTimeoutError,
 } from '@inharness-ai/agent-adapters';
 import { abortChildTurns, runAgentTurn, type ActiveAdapter, type AgentTurnDeps, type AgentTurnInput } from './agent-turn.js';
+import { SpecSkillTools } from '../mcp/spec-skill-tools.js';
+import { CONTEXT_TYPE_REGISTRY } from '../services/chat-context.js';
 import {
   BACKGROUND_WAKEUP_GRACE_MS,
   CLAUDE_CODE_TASK_TRACKING_TOOLS,
@@ -713,7 +715,7 @@ describe('runAgentTurn — M37 per-context skill injection', () => {
         const styleSlug = Object.entries(skills).find(([, s]) => s.scope === 'writing-style')?.[0];
         const listing = contextual
           .filter((slug) => slug !== styleSlug)
-          .map((slug) => ({ slug, description: skills[slug]!.description }));
+          .map((slug) => ({ slug, description: skills[slug]!.description, origin: 'plugin' as const }));
         return {
           listing,
           writingStyle: styleSlug ? { slug: styleSlug, title: skills[styleSlug]!.title } : null,
@@ -765,7 +767,7 @@ describe('runAgentTurn — M37 per-context skill injection', () => {
     await runAgentTurn(deps, input);
 
     const prompt = String(hoisted.lastExecute?.systemPrompt);
-    expect(prompt).toContain('<skill slug="writing-style-author" description="authors styles"/>');
+    expect(prompt).toContain('<skill slug="writing-style-author" description="authors styles" origin="plugin"/>');
     expect(prompt).not.toContain('<project_writing_skill slug="writing-style-author"');
     // The listing carries the description and NOTHING of the body: that is the
     // release's budget claim, and the only assertion that can falsify it.
@@ -2053,6 +2055,438 @@ describe('runAgentTurn — the profile gate covers the inline servers too', () =
     const mounted = await mountedFor('ask');
     expect(mounted).not.toContain('c4s-tools');
     expect(mounted).not.toContain('transagent-tools');
+  });
+});
+
+/**
+ * 2.1.9 (M52 `9zio901p` / `6evgp041`, M02 `cg80qj0e`) — the turn derives the
+ * open file's root KIND from the service it read it from: a `skills`-kind root
+ * gives `<current_skill>` (shadowed when the slug's registry winner is another
+ * source) and no `<current_page>`; the hit-translation line of
+ * `<available_skills>` follows `skillsRootHasFiles`.
+ */
+describe('runAgentTurn — open skill file and skills-root lines (M52, 2.1.9)', () => {
+  async function turnWithOpenFile(opts: {
+    rootKind: 'pages' | 'skills';
+    path: string;
+    winner?: { slug: string; source: string };
+    skillsRootHasFiles?: boolean;
+  }): Promise<string> {
+    hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    const rootId = opts.rootKind === 'skills' ? 'skills' : 'pages';
+    const service = { rootId, kind: opts.rootKind, read: async () => ({ body: 'one\ntwo' }), listTree: async () => [] };
+    const d = deps as unknown as Record<string, unknown>;
+    d.resolvePagesService = (id: string) => (id === rootId ? service : undefined);
+    d.skillRegistry = {
+      has: () => false,
+      resolve: () => {
+        throw new Error('unexpected resolve() call');
+      },
+      winnerOf: () => opts.winner,
+    };
+    d.skillsRootHasFiles = () => opts.skillsRootHasFiles ?? false;
+    const input = makeInput();
+    input.currentPage = opts.path;
+    input.currentPageRootId = rootId;
+    await runAgentTurn(deps, input);
+    return String(hoisted.lastExecute?.systemPrompt);
+  }
+
+  it('[ac:9zio901p] an open file of the skills root yields <current_skill slug file/> and no <current_page>', async () => {
+    const prompt = await turnWithOpenFile({ rootKind: 'skills', path: 'reviewer/workflows/brief.md' });
+    expect(prompt).toContain('<current_skill slug="reviewer" file="workflows/brief.md"/>');
+    expect(prompt).toContain('The user has this skill file open. Read it with load_skill_file(slug, file)');
+    expect(prompt).not.toContain('<current_page ');
+    expect(prompt).not.toContain('<current_page_handling>');
+  });
+
+  it('[ac:rkbsi6ky#13] an open file whose slug another source resolves is reported shadowed, naming the winner and its source', async () => {
+    const prompt = await turnWithOpenFile({
+      rootKind: 'skills',
+      path: 'mockups/SKILL.md',
+      winner: { slug: 'mockups', source: 'plugin' },
+    });
+    expect(prompt).toContain('<current_skill slug="mockups" file="SKILL.md"/>');
+    expect(prompt).toContain('it is shadowed: the slug resolves to the skill "mockups" from source "plugin"');
+    expect(prompt).toContain('You have no way to read this file');
+  });
+
+  it('[ac:cg80qj0e] an open page of a pages-kind root still yields <current_page>, and no <current_skill>', async () => {
+    const prompt = await turnWithOpenFile({ rootKind: 'pages', path: 'guide.md' });
+    expect(prompt).toContain('<current_page path="guide.md" root="pages" total_lines="2"/>');
+    expect(prompt).not.toContain('<current_skill');
+  });
+
+  it('[ac:6evgp041] the hit-translation line follows whether the skills root has a file', async () => {
+    const line = 'A find_references or check_consistency hit in the root "skills" at <slug>/<rest of path>';
+    expect(await turnWithOpenFile({ rootKind: 'pages', path: 'guide.md', skillsRootHasFiles: true })).toContain(line);
+    expect(await turnWithOpenFile({ rootKind: 'pages', path: 'guide.md', skillsRootHasFiles: false })).not.toContain(line);
+  });
+});
+
+/**
+ * 2.1.9 (M52 `hdkx97wq`, M44 `3f5ej79s`, M11 `6exnmup9`) — `spec-skill-tools`,
+ * the write channel of the project's skill packages, is mounted in `chat` and
+ * `patch` and never in `brief` or `ask`. The rig hands the turn the same
+ * context-scoped element `project-context.ts` builds.
+ */
+describe('runAgentTurn — spec-skill-tools mounting (M52, 2.1.9)', () => {
+  async function mountedWithSpecSkillTools(
+    contextType: string,
+    element: SpecSkillTools = new SpecSkillTools({ skillsRoot: () => undefined }, 'p1'),
+    patchPath: string | null = null,
+  ): Promise<string[]> {
+    hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    (deps as unknown as { specSkillTools: SpecSkillTools }).specSkillTools = element;
+    const input = makeInput();
+    (input.thread as unknown as { contextType: string }).contextType = contextType;
+    (input.thread as unknown as { patchPath: string | null }).patchPath = patchPath;
+    await runAgentTurn(deps, input);
+    return Object.keys((hoisted.lastExecute?.mcpServers ?? {}) as Record<string, unknown>).sort();
+  }
+
+  it('[ac:ac-serwer-spec-skill-tools-jest-zamontow] spec-skill-tools is mounted in chat and patch turns, with update_skill_file advertised in the tooling inventory', async () => {
+    for (const [contextType, patchPath] of [['chat', null], ['patch', 'p.md']] as const) {
+      const mounted = await mountedWithSpecSkillTools(contextType, undefined, patchPath);
+      expect(mounted, contextType).toContain('spec-skill-tools');
+      expect(String(hoisted.lastExecute?.systemPrompt), contextType).toContain(
+        '<mcp name="spec-skill-tools">update_skill_file</mcp>',
+      );
+    }
+  });
+
+  it('[ac:ac-watek-context-type-ask-nie-ma-zamonto] a context_type=\'ask\' thread has no spec-skill-tools mounted, and update_skill_file is not advertised', async () => {
+    const mounted = await mountedWithSpecSkillTools('ask');
+    expect(mounted).not.toContain('spec-skill-tools');
+    // The read server stays — only the write channel is subtracted.
+    expect(mounted).toContain('skill-tools');
+    expect(String(hoisted.lastExecute?.systemPrompt)).not.toContain('update_skill_file');
+  });
+
+  it('a brief thread has no spec-skill-tools either — the brief bubble writes a release note, not agent instructions', async () => {
+    const mounted = await mountedWithSpecSkillTools('brief');
+    expect(mounted).not.toContain('spec-skill-tools');
+    expect(mounted).toContain('skill-tools');
+  });
+
+  it('the gate is a declared registry column, not inherited: chat and patch name it, brief and ask do not', () => {
+    expect(CONTEXT_TYPE_REGISTRY.chat.mcp.specSkillTools).toBe(true);
+    expect(CONTEXT_TYPE_REGISTRY.patch.mcp.specSkillTools).toBe(true);
+    expect(CONTEXT_TYPE_REGISTRY.brief.mcp.specSkillTools).toBe(false);
+    expect(CONTEXT_TYPE_REGISTRY.ask.mcp.specSkillTools).toBe(false);
+  });
+
+  it('M52 L10: once the context disposed its element, a turn mounts no spec-skill-tools', async () => {
+    const element = new SpecSkillTools({ skillsRoot: () => undefined }, 'p1');
+    element.dispose();
+    expect(await mountedWithSpecSkillTools('chat', element)).not.toContain('spec-skill-tools');
+  });
+});
+
+/**
+ * 2.1.9 (`c4s-plugin-skill-author`, M52 `3nbgrss4`) — the `skill-author` skill
+ * writes a package with `update_skill_file` and nothing else, so it works with
+ * `agent.disableDirectFilesystemAccess` on. Asserted on a real chat turn under the
+ * flag: the turn denies every built-in file and shell group, yet mounts
+ * `spec-skill-tools`, and the very server the turn mounted writes the package the
+ * skill describes into the project's `skills` root (mounted as `project-context.ts`
+ * mounts it).
+ */
+describe('runAgentTurn — skill-author under a blocked file system (2.1.9)', () => {
+  it('[ac:pkg-skill-author-writes-with-file-access-blocked] with direct file access blocked, a chat turn still mounts update_skill_file, and skill-author writes a skill package through it', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+    const { InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js');
+    const { FileWatchRuntime } = await import('../fs/watcher.js');
+    const { RootRegistry } = await import('../roots/registry.js');
+    const { registerCoreReactions } = await import('../workspace/core-reactions.js');
+    const { mountRegistryRoots } = await import('../workspace/root-registry-runtime.js');
+    const { skillAuthorSkill } = await import(
+      '../../../plugins/c4s-plugin-skill-author/src/skills/skill-author.js'
+    );
+
+    // The skill names this tool as its ONLY write channel.
+    expect(skillAuthorSkill.contextTypes).toContain('chat');
+    expect(skillAuthorSkill.content).toContain('update_skill_file');
+
+    registerCoreReactions();
+    const userRoots = [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }];
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-skill-author-blocked-'));
+    const runtime = new FileWatchRuntime({ fsEvents: false });
+    try {
+      const mounted = await mountRegistryRoots({
+        cwd,
+        registry: new RootRegistry(userRoots),
+        userRoots,
+        w: runtime.scoped('context:skill-author#1'),
+      });
+      const skillsRoot = mounted.rootRuntimes.find((rt) => rt.root.id === 'skills');
+      expect(skillsRoot, 'the skills root has a facade').toBeDefined();
+      const element = new SpecSkillTools({ skillsRoot: () => ({ pages: skillsRoot!.pages }) }, 'p1');
+      let built = null as ReturnType<SpecSkillTools['build']>;
+
+      hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
+      hoisted.agent = { disableDirectFilesystemAccess: true };
+      const { deps } = makeDeps();
+      (deps as unknown as { specSkillTools: Pick<SpecSkillTools, 'build'> }).specSkillTools = {
+        build: () => (built = element.build()),
+      };
+      await runAgentTurn(deps, makeInput());
+
+      // The block is on: no built-in may read or write a file, no shell.
+      const groups = [...((hoisted.lastExecute?.disallowedToolGroups ?? []) as string[])];
+      expect(groups).toEqual(expect.arrayContaining(['file-read', 'file-write', 'shell']));
+      // …and the write channel is mounted all the same.
+      expect(Object.keys((hoisted.lastExecute?.mcpServers ?? {}) as Record<string, unknown>)).toContain(
+        'spec-skill-tools',
+      );
+      expect(built).not.toBeNull();
+
+      // Write a package the way the skill instructs: SKILL.md with a non-empty
+      // description, `expectedHash: ""` for a file that must not exist yet.
+      const skillMd = [
+        '---',
+        'title: Release notes',
+        'description: Open when writing a release note.',
+        'version: 1',
+        'language: en',
+        'scope: contextual',
+        '---',
+        '',
+        '# Release notes',
+        '',
+      ].join('\n');
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      const client = new Client({ name: 'skill-author-test', version: '0.0.0' });
+      await built!.server.connect(serverTransport);
+      await client.connect(clientTransport);
+      try {
+        const res = await client.callTool({
+          name: 'update_skill_file',
+          arguments: { slug: 'release-notes', content: skillMd, expectedHash: '' },
+        });
+        expect(res.isError).toBeFalsy();
+        const body = JSON.parse((res.content as Array<{ text: string }>)[0]!.text) as Record<string, unknown>;
+        expect(body).toMatchObject({ slug: 'release-notes', file: 'SKILL.md' });
+        expect(fs.readFileSync(path.join(cwd, '.claude4spec/skills/release-notes/SKILL.md'), 'utf-8')).toBe(skillMd);
+      } finally {
+        await client.close();
+      }
+    } finally {
+      await runtime.close();
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
+ * 2.1.9 (M15 `m15wsauth`, `m15edg001`) — `writing-style-author` scaffolds a style
+ * through `update_skill_file` into the project's `skills` root. Asserted on real
+ * turns: the turn mounts (or, in `ask`, does not mount) the write server the
+ * project context hands it, and the very server the turn built writes the package
+ * the skill describes. The skills root is mounted as `project-context.ts` mounts
+ * it, and the project registry reads it through the `project-rooted` source.
+ */
+describe('runAgentTurn — writing-style-author scaffolds through update_skill_file (2.1.9)', () => {
+  async function scaffoldRig() {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+    const { InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js');
+    const { FileWatchRuntime } = await import('../fs/watcher.js');
+    const { RootRegistry } = await import('../roots/registry.js');
+    const { registerCoreReactions } = await import('../workspace/core-reactions.js');
+    const { mountRegistryRoots } = await import('../workspace/root-registry-runtime.js');
+    const { SkillRegistry } = await import('../services/skill-registry.js');
+    const { registerProjectRootedSkills } = await import('../services/project-rooted-skills.js');
+    const { writingStyleAuthorSkill } = await import(
+      '../../../plugins/c4s-plugin-writing-style-author/src/skills/writing-style-author.js'
+    );
+    registerCoreReactions();
+    const userRoots = [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }];
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-style-author-'));
+    const runtime = new FileWatchRuntime({ fsEvents: false });
+    const roots = new RootRegistry(userRoots);
+    const mounted = await mountRegistryRoots({ cwd, registry: roots, userRoots, w: runtime.scoped('context:style-author#1') });
+    const skillsRoot = mounted.rootRuntimes.find((rt) => rt.root.id === 'skills');
+    expect(skillsRoot, 'the skills root has a facade').toBeDefined();
+    const registry = SkillRegistry.load([], { rescanTtlMs: 0 });
+    registerProjectRootedSkills(registry, roots, cwd);
+    const element = new SpecSkillTools({ skillsRoot: () => ({ pages: skillsRoot!.pages }) }, 'p1');
+    const builds: Array<ReturnType<SpecSkillTools['build']>> = [];
+
+    /** One turn of `contextType`, handed the context's write-server element. */
+    const turn = async (contextType: string) => {
+      hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
+      const { deps } = makeDeps();
+      (deps as unknown as { specSkillTools: Pick<SpecSkillTools, 'build'> }).specSkillTools = {
+        build: () => {
+          const b = element.build();
+          builds.push(b);
+          return b;
+        },
+      };
+      const input = makeInput();
+      (input.thread as unknown as { contextType: string }).contextType = contextType;
+      await runAgentTurn(deps, input);
+      return {
+        mounted: Object.keys((hoisted.lastExecute?.mcpServers ?? {}) as Record<string, unknown>),
+        prompt: String(hoisted.lastExecute?.systemPrompt),
+      };
+    };
+
+    /** Call update_skill_file on the server the last turn built. */
+    const write = async (args: Record<string, unknown>) => {
+      const built = builds.at(-1);
+      expect(built, 'the turn built spec-skill-tools').toBeTruthy();
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      const client = new Client({ name: 'style-author-test', version: '0.0.0' });
+      await built!.server.connect(serverTransport);
+      await client.connect(clientTransport);
+      try {
+        const res = await client.callTool({ name: 'update_skill_file', arguments: args });
+        return { isError: res.isError === true, body: JSON.parse((res.content as Array<{ text: string }>)[0]!.text) as Record<string, unknown> };
+      } finally {
+        await client.close();
+      }
+    };
+
+    const styleMd = (title: string) =>
+      ['---', `title: ${title}`, 'description: Terse, code-first specification prose.', 'version: 1', 'language: en', 'scope: writing-style', '---', '', `# ${title}`, ''].join('\n');
+
+    const close = async () => {
+      await runtime.close();
+      fs.rmSync(cwd, { recursive: true, force: true });
+    };
+    return { fs, cwd, registry, builds, turn, write, styleMd, skill: writingStyleAuthorSkill, close };
+  }
+
+  it('[ac:ac-scaffold-stylu-przy-aktywnym-agent-di] with agent.disableDirectFilesystemAccess on, the scaffold still ends with a SKILL.md package in the project\'s skills root', async () => {
+    const r = await scaffoldRig();
+    try {
+      hoisted.agent = { disableDirectFilesystemAccess: true };
+      const { mounted } = await r.turn('chat');
+      // The flag is on: no built-in may read or write a file, no shell…
+      const groups = [...((hoisted.lastExecute?.disallowedToolGroups ?? []) as string[])];
+      expect(groups).toEqual(expect.arrayContaining(['file-read', 'file-write', 'shell']));
+      // …and the write channel the skill uses is mounted all the same.
+      expect(mounted).toContain('spec-skill-tools');
+      expect(r.skill.content).toContain('update_skill_file');
+
+      const res = await r.write({ slug: 'terse-engineering', content: r.styleMd('Terse Engineering'), expectedHash: '' });
+      expect(res.isError).toBe(false);
+      expect(res.body).toMatchObject({ slug: 'terse-engineering', file: 'SKILL.md' });
+      expect(r.fs.readFileSync(path.join(r.cwd, '.claude4spec/skills/terse-engineering/SKILL.md'), 'utf-8')).toBe(
+        r.styleMd('Terse Engineering'),
+      );
+      // A package of the skills root: a selectable style of source project-rooted.
+      const style = r.registry.listSelectable().find((s) => s.slug === 'terse-engineering');
+      expect(style?.source).toBe('project-rooted');
+    } finally {
+      await r.close();
+    }
+  });
+
+  it('[ac:ac-poproszenie-w-chacie-o-utworzenie-nowego] asked in chat for a new style, the model opens writing-style-author (a chat listing row) and writes .claude4spec/skills/<slugify(title)>/SKILL.md with scope writing-style through update_skill_file', async () => {
+    const r = await scaffoldRig();
+    try {
+      const { slugify } = await import('../../shared/slug.js');
+      const matter = (await import('gray-matter')).default;
+      // The skill: listed in chat only, and its instruction is this very write.
+      expect(r.skill.contextTypes).toEqual(['chat']);
+      expect(r.skill.content).toContain('update_skill_file');
+      expect(r.skill.content).toContain('.claude4spec/skills/<slug>/');
+      expect(r.skill.content).toContain('scope: writing-style');
+      expect(r.skill.content).toContain('slug = slugify(title)');
+      expect(r.skill.content).toContain('expectedHash: ""');
+
+      const { mounted } = await r.turn('chat');
+      expect(mounted).toContain('spec-skill-tools');
+      const title = 'Krótki i rzeczowy';
+      const slug = slugify(title);
+      expect(slug).toBe('krotki-i-rzeczowy');
+      expect((await r.write({ slug, content: r.styleMd(title), expectedHash: '' })).isError).toBe(false);
+      expect((await r.write({ slug, file: 'workflows/brief.md', content: '# Brief\n', expectedHash: '' })).isError).toBe(false);
+      const written = r.fs.readFileSync(path.join(r.cwd, `.claude4spec/skills/${slug}/SKILL.md`), 'utf-8');
+      expect(matter(written, {}).data.scope).toBe('writing-style');
+      expect(r.fs.existsSync(path.join(r.cwd, `.claude4spec/skills/${slug}/workflows/brief.md`))).toBe(true);
+    } finally {
+      await r.close();
+    }
+  });
+
+  it('[ac:ac-skill-writing-style-author-otwarty-w] writing-style-author opened in an `ask` turn writes no style package — the turn has no update_skill_file, and the skill says to stop there', async () => {
+    const r = await scaffoldRig();
+    try {
+      const { mounted, prompt } = await r.turn('ask');
+      expect(mounted).not.toContain('spec-skill-tools');
+      expect(r.builds).toHaveLength(0);
+      expect(prompt).not.toContain('update_skill_file');
+      // The read channel stays: the skill can be opened, it just has nothing to write with.
+      expect(mounted).toContain('skill-tools');
+      expect(r.skill.content).toMatch(/If it is not among your tools — a `brief` or `ask` thread — do not scaffold/);
+      expect(r.fs.existsSync(path.join(r.cwd, '.claude4spec/skills'))
+        ? r.fs.readdirSync(path.join(r.cwd, '.claude4spec/skills')).filter((n) => !n.startsWith('.'))
+        : []).toEqual([]);
+      expect(r.registry.listSelectable()).toEqual([]);
+    } finally {
+      await r.close();
+    }
+  });
+});
+
+/**
+ * 2.1.9 (M15 `9fq44253`, edge case "Zmiana config.writingStyle przy uruchomionym
+ * serwerze") — the style is settled on a thread's first turn: a resumed thread
+ * keeps the writing style it started with, a new one takes the current config.
+ */
+describe('runAgentTurn — a thread keeps the writing style of its first turn (M15, 2.1.9)', () => {
+  it('[ac:ac-edycja-config-json-null-slug-mie] after config.writingStyle changes from null to a slug, the next turn of an existing thread still carries no <project_writing_skill/> block', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const { writeConfig } = await import('../config.js');
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-style-frozen-'));
+    try {
+      // The config NOW says house-style…
+      writeConfig(cwd, { writingStyle: 'house-style' });
+      const resolveForContext = vi.fn((_ct: string, cfg: { writingStyle: string | null }) => ({
+        listing: [],
+        writingStyle: cfg.writingStyle ? { slug: cfg.writingStyle, title: 'House Style' } : null,
+      }));
+      // …but the thread's first turn ran under writingStyle: null.
+      hoisted.events = [{ type: 'result', sessionId: 's-prev' }];
+      const { deps, storedSnapshot } = makeDeps();
+      (deps as unknown as { cwd: string }).cwd = cwd;
+      (deps as unknown as { skillResolver: unknown }).skillResolver = { resolveForContext };
+      storedSnapshot.json = JSON.stringify({
+        model: 'claude-opus-5',
+        architectureConfig: {},
+        allowedPaths: [],
+        disallowedPaths: [],
+        pageRootDirs: [path.join(cwd, 'pages')],
+        lockedConfig: { 'agent.allowedPaths': [] },
+        promptConfig: { name: 'Then', language: null, conversationalLanguage: null, writingStyle: null },
+      });
+      const input = makeInput();
+      (input.thread as unknown as { lastSessionId: string }).lastSessionId = 's-prev';
+      await runAgentTurn(deps, input);
+      expect(resolveForContext).toHaveBeenLastCalledWith('chat', { writingStyle: null });
+      expect(String(hoisted.lastExecute?.systemPrompt)).not.toContain('<project_writing_skill');
+
+      // Contrast: a NEW thread under the same config gets the style.
+      hoisted.events = [{ type: 'result', sessionId: 's-new' }];
+      const fresh = makeDeps();
+      (fresh.deps as unknown as { cwd: string }).cwd = cwd;
+      (fresh.deps as unknown as { skillResolver: unknown }).skillResolver = { resolveForContext };
+      await runAgentTurn(fresh.deps, makeInput());
+      expect(resolveForContext).toHaveBeenLastCalledWith('chat', { writingStyle: 'house-style' });
+      expect(String(hoisted.lastExecute?.systemPrompt)).toContain('<project_writing_skill slug="house-style"');
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
   });
 });
 

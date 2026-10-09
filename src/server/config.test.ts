@@ -434,7 +434,8 @@ describe('config — roots[] / v4 migration (0.1.96)', () => {
   it('validateRootDirs allows a root nested under another root inside a dot-directory', () => {
     // Two roots that never see each other's files: the namespace of '.' skips the
     // dot-dir, and the one inside it never climbs out.
-    const skills = userRoot('skills', '.claude4spec/skills');
+    // (2.1.9: not `.claude4spec/skills` — that is the `skills` system root's own dir now.)
+    const skills = userRoot('styles', '.claude/skills');
     expect(validateRootDirs([builtinPagesRoot('.'), skills]).errors).toEqual([]);
     // Order must not change the verdict either.
     expect(validateRootDirs([skills, builtinPagesRoot('.')]).errors).toEqual([]);
@@ -459,8 +460,10 @@ describe('config — roots[] / v4 migration (0.1.96)', () => {
     expect(reversed).toBe(forward);
   });
 
-  it('validateRootDirs allows .claude4spec/skills as a user root (0.1.104: nothing writes there anymore)', () => {
-    expect(validateRootDirs([builtinPagesRoot('pages'), userRoot('gen', '.claude4spec/skills')]).errors).toHaveLength(0);
+  it('validateRootDirs refuses .claude4spec/skills as a user root — 2.1.9: the fixed dir of the `skills` system root (M52), a D4 overlap', () => {
+    expect(validateRootDirs([builtinPagesRoot('pages'), userRoot('gen', '.claude4spec/skills')]).errors).toEqual([
+      "config.json: 'gen' overlaps write-target 'skills'",
+    ]);
   });
 
   it('validateRootDirs allows .claude/skills as a user root (writing styles, M15)', () => {
@@ -483,6 +486,15 @@ describe('config — roots[] / v4 migration (0.1.96)', () => {
     expect(() => writeConfig(dir, { roots: [builtinPagesRoot(), userRoot('plans', 'my-plans')] })).toThrow(
       /reserved for a system root/,
     );
+  });
+
+  it('[ac:ac-projekt-ktorego-roots-zawiera-wpis-o] a project whose roots[] holds an entry with id skills does not start — reading its config fails with the reserved-identifier error', () => {
+    writeRaw({ $schemaVersion: 4, name: 'X', roots: [builtinPagesRoot(), userRoot('skills', 'my-skills')] });
+    expect(() => readConfig(dir)).toThrow(/root id 'skills' is reserved for a system root/);
+    // Even under the lenient read options, the reserved id stays an error.
+    expect(() =>
+      parseRootsArray([builtinPagesRoot(), userRoot('skills', 'my-skills')], { reservedIds: 'warn', idShape: 'warn' }),
+    ).toThrow(/reserved for a system root/);
   });
 
   it('[ac:ac-konfiguracja-ktorej-roots-nie-ma-dokl] config without exactly one builtin is rejected on read and on write', () => {
@@ -558,14 +570,15 @@ describe('config — roots[] / v4 migration (0.1.96)', () => {
    * became nothing but the default a new project starts with.
    */
   it('parseRootsArray requires exactly one builtin root, whatever its id', () => {
-    const skills = userRoot('skills', 'skills');
-    expect(() => parseRootsArray([skills])).toThrow(/exactly one root must have builtin: true \(found 0\)/);
+    // `skills` is a reserved system-root id since 2.1.9 — use an ordinary user id.
+    const notes = userRoot('notes', 'notes');
+    expect(() => parseRootsArray([notes])).toThrow(/exactly one root must have builtin: true \(found 0\)/);
     expect(() =>
       parseRootsArray([builtinPagesRoot(), { ...builtinPagesRoot(), id: 'docs', dir: 'docs' }]),
     ).toThrow(/exactly one root must have builtin: true \(found 2\)/);
     // The BASE root renamed away from `pages`, with no entry of that name left,
     // is a perfectly ordinary config — this is the whole point of 0.2.101.
-    expect(() => parseRootsArray([{ ...builtinPagesRoot(), id: 'docs' }, skills])).not.toThrow();
+    expect(() => parseRootsArray([{ ...builtinPagesRoot(), id: 'docs' }, notes])).not.toThrow();
   });
 
   it('parseRootsArray requires builtin on every entry', () => {

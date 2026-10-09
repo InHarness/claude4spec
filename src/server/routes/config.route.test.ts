@@ -420,6 +420,17 @@ describe('GET/PATCH /config — one root registry with kinds (2.1.8)', () => {
     expect(res.body.error.message).toMatch(/reserved for a system root/);
   });
 
+  it('[ac:ac-zapis-konfiguracji-z-wpisem-roots-o-i] PATCH roots with id skills → 400 reserved identifier (M52: `skills` is the id of the code-source root of kind `skills`), config.json untouched', async () => {
+    const before = fs.readFileSync(configPath(dir), 'utf8');
+    const res = await request(app())
+      .patch('/config')
+      .send({ roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true }, { id: 'skills', name: 'Skills', dir: 'my-skills', builtin: false }] });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+    expect(res.body.error.message).toMatch(/root id 'skills' is reserved for a system root/);
+    expect(fs.readFileSync(configPath(dir), 'utf8')).toBe(before);
+  });
+
   it('PATCH carrying a legacy dir key ignores it — 200, nothing persisted', async () => {
     const res = await request(app()).patch('/config').send({ plansDir: '.claude4spec/roadmap', entitiesDir: 'pages' });
     expect(res.status).toBe(200);
@@ -847,11 +858,15 @@ describe('GET /writing-styles — where a style comes from (0.2.57)', () => {
    * its consumers is that `source` is one of exactly two values, and a third
    * appearing is the regression, whatever it is called.
    */
-  it('serves every style as either "user" or "plugin" — the bundled class is gone', async () => {
+  it('serves every style with a source from the registry\'s set — the bundled class is gone', async () => {
+    // 2.1.9: the set is the registry's `SkillSource` (project-rooted and
+    // project-exposed joined it); the all-sources rig is writing-styles.route.test.ts.
+    const { SKILL_SOURCES } = await import('../../shared/writing-styles.js');
     const res = await request(app()).get('/writing-styles');
     const sources = (res.body.available as Array<{ source: string }>).map((s) => s.source);
     expect(sources.length).toBeGreaterThan(0);
-    expect([...new Set(sources)].filter((x) => x !== 'user' && x !== 'plugin')).toEqual([]);
+    expect([...new Set(sources)].filter((x) => !(SKILL_SOURCES as readonly string[]).includes(x))).toEqual([]);
+    expect(sources).not.toContain('bundled');
     expect(res.body.active).toBe(STYLE);
   });
 });

@@ -26,6 +26,14 @@ export interface PageContent {
    * to arm the guard with, which is why the guard had been left optional.
    */
   hash: string;
+  /**
+   * 2.1.9 — present only when the file opens with a frontmatter block whose YAML
+   * does not parse: the literal block (fences included). `frontmatter` is then
+   * `{}` and `body` is what follows the block. The page editor writes the block
+   * back verbatim in front of its body, so a broken header (an invalid skill
+   * package, M52) is editable rather than unreadable or silently dropped.
+   */
+  frontmatterRaw?: string;
 }
 
 /**
@@ -173,6 +181,12 @@ export type WsEvent =
       version: number;
       changedBy: 'agent' | 'user' | 'system';
     }
+  /**
+   * 2.1.9 (M02 `m02l13001`, M49) — the accordion array of a root whose kind's
+   * `sidebar` declares a reducer changed after a recompute (also after a context
+   * rebuild). The client refetches `GET /api/sidebar-accordions`.
+   */
+  | { kind: 'sidebar:accordions-changed'; rootId: string }
   | { kind: 'release:created'; releaseId: number; name: string }
   | { kind: 'release:updated'; releaseId: number; name: string }
   // M21 Briefs / M02 frontmatter indexer
@@ -209,6 +223,22 @@ export interface Root {
   name: string;
   dir: string;
   builtin: boolean;
+}
+
+/**
+ * 2.1.9 — DTO `sidebar-accordion`: one accordion of the sidebar's page tree, an
+ * element of the ordered array `GET /api/sidebar-accordions` answers (in
+ * `{ data }`). The array's order is the accordions' order in the sidebar.
+ */
+export interface SidebarAccordion {
+  /** The root the accordion comes from; with `key` it keys the UI's expanded state. */
+  rootId: string;
+  /** Stable accordion id, unique within the root's array. */
+  key: string;
+  /** The accordion's label. */
+  label: string;
+  /** Subtree within the root, relative to its `dir`; `''` = the whole root. */
+  path: string;
 }
 
 export interface TodoHit {

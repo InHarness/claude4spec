@@ -19,7 +19,7 @@
  * a context, nor writes the config back.
  */
 
-import { readConfig } from '../config.js';
+import { normalizeSkillConfig, readConfig, type NormalizedSkillConfig } from '../config.js';
 
 export interface PeerConfigSummary {
   /** Display name from the peer's `config.json`. Absent when it cannot be read. */
@@ -47,5 +47,22 @@ export function readPeerConfigSummary(cwd: string): PeerConfigSummary {
     return summary;
   } catch {
     return {};
+  }
+}
+
+/**
+ * 2.1.9 (M52 `ybbal0vf`) — the peer's `skill.*` (exposure fields and
+ * attachments) with defaults applied, or `null` when its config cannot be read:
+ * an unreadable project exposes nothing. The same sanctioned read as
+ * {@link readPeerConfigSummary}, kept in this file so the departure keeps its
+ * single site; M52 builds its list of exposed projects
+ * (`services/exposed-projects.ts`) on top of it and never opens a peer's
+ * `config.json` itself.
+ */
+export function readPeerSkillConfig(cwd: string): NormalizedSkillConfig | null {
+  try {
+    return normalizeSkillConfig(readConfig(cwd));
+  } catch {
+    return null;
   }
 }

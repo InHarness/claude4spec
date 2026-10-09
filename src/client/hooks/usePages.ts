@@ -27,3 +27,15 @@ export function usePagesSearch(query: string, rootId: string | null) {
     staleTime: 5_000,
   });
 }
+
+/**
+ * 2.1.9 (M02) — the sidebar's accordion array, `GET /api/sidebar-accordions`,
+ * under `['sidebar-accordions']`. Invalidated by `sidebar:accordions-changed`
+ * (`useFileWatcher`).
+ */
+export function useSidebarAccordions() {
+  return useQuery({
+    queryKey: ['sidebar-accordions'],
+    queryFn: () => api.sidebarAccordions(),
+  });
+}

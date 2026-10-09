@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { buildSkillToolsServer } from './skill-tools.js';
+import { buildSkillToolsServer, SKILL_TOOL_TEXT } from './skill-tools.js';
 import { SkillRegistry, SkillResolver, type SkillRoot } from '../services/skill-registry.js';
 import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 
@@ -98,7 +98,7 @@ describe('skill-tools — load_skill_file', () => {
       expect(body.files).toEqual([]);
     });
 
-    it('serves a skill the calling context never attached — the listing is not a permission boundary', async () => {
+    it('[ac:ac-wpis-pluginowy-niewidoczny-na-liscie] serves a plugin entry the calling context does not list (its contextTypes leave it out) — the listing narrows discovery, not access', async () => {
       // `resolveForContext` narrows what is WORTH opening; it does not narrow what
       // is reachable. A style is free to point at any skill the project has.
       // 0.2.66: a contextual skill is a package's contribution, and this one declares
@@ -118,7 +118,11 @@ describe('skill-tools — load_skill_file', () => {
       await mount(registry);
       const resolver = new SkillResolver(registry, tmp);
       expect(resolver.resolveForContext('brief').listing).toEqual([]);
-      expect((await call({ slug: 'unattached' })).isError).toBe(false);
+      expect(resolver.resolveForContext('chat').listing.map((s) => s.slug)).toEqual(['unattached']);
+      const opened = await call({ slug: 'unattached' });
+      expect(opened.isError).toBe(false);
+      expect(opened.body).toMatchObject({ slug: 'unattached', source: 'plugin', scope: 'contextual' });
+      expect(opened.body.content).toContain('the body');
     });
   });
 
@@ -164,14 +168,16 @@ describe('skill-tools — load_skill_file', () => {
   });
 
   describe('refusals', () => {
-    it('SKILL_NOT_FOUND names the closest slugs in the registry', async () => {
+    it('[ac:ac-slug-spoza-rejestru-m37-np-skill-z-cl] a slug outside the registry (reason "outside-registry") → SKILL_NOT_FOUND with the closest registry slugs', async () => {
       const root = writeSkill('house-style');
       writeSkill('house-rules');
       await mount(SkillRegistry.load([root]));
 
+      // e.g. a harness skill the SDK discovers natively — no source of the registry delivers it.
       const { isError, body } = await call({ slug: 'house' });
       expect(isError).toBe(true);
       expect(body.code).toBe('SKILL_NOT_FOUND');
+      expect(body.error).toContain('outside the registry');
       expect(body.hint).toContain('house-style');
       expect(body.hint).toContain('house-rules');
     });
@@ -215,7 +221,7 @@ describe('skill-tools — load_skill_file', () => {
       ['a home-relative disk path', '/Users/me/.claude/skills/house-style/workflows/brief.md'],
       ['a Windows drive letter', 'C:\\skills\\x.md'],
       ['the package directory itself', '.'],
-    ])('INVALID_ARGUMENT for %s, with the canonical shape', async (_label, file) => {
+    ])('[ac:ac-file-zawierajacy-bedacy-sciezka-absol] INVALID_ARGUMENT for %s, with the canonical shape — nothing outside the package served', async (_label, file) => {
       // Refused BEFORE existence: the shape is wrong and will stay wrong, where
       // SKILL_FILE_NOT_FOUND would have said "this package merely lacks it".
       await mount(SkillRegistry.load([writeSkill('house-style')]));
@@ -223,9 +229,12 @@ describe('skill-tools — load_skill_file', () => {
       expect(isError).toBe(true);
       expect(body.code).toBe('INVALID_ARGUMENT');
       expect(body.hint).toContain('workflows/brief.md');
+      // A refusal, not a read: no content of any file comes back.
+      expect(body.content).toBeUndefined();
+      expect(JSON.stringify(body)).not.toContain('root:');
     });
 
-    it('NOT_TEXT for a binary subfile the manifest already flagged', async () => {
+    it('[ac:ac-file-wskazujacy-podplik-binarny-not-t] NOT_TEXT for a binary subfile the manifest already flagged isText: false', async () => {
       const root = writeSkill('house-style');
       const dir = path.join(root.dir, 'house-style');
       fs.writeFileSync(path.join(dir, 'diagram.png'), Buffer.from([0x89, 0x50, 0x00, 0x01]));
@@ -241,7 +250,7 @@ describe('skill-tools — load_skill_file', () => {
     });
   });
 
-  it('truncates past the budget, keeping the address unchanged', async () => {
+  it('[ac:ac-podplik-przekraczajacy-default-budget] truncates a subfile past DEFAULT_BUDGET_CHARS with truncated + truncationHint, keeping the address (slug, file) unchanged', async () => {
     const root = writeSkill('house-style');
     const dir = path.join(root.dir, 'house-style');
     fs.mkdirSync(path.join(dir, 'workflows'), { recursive: true });
@@ -255,6 +264,102 @@ describe('skill-tools — load_skill_file', () => {
     expect(body.content.length).toBe(DEFAULT_BUDGET_CHARS);
     expect(body.truncationHint).toContain('workflows/brief.md');
     expect(body.path).toBe('workflows/brief.md');
+    expect(body.slug).toBe('house-style');
+  });
+
+  it('[entity:skill-tools-load-skill-file] contract: name, input fields, description and both response shapes', async () => {
+    const root = writeSkill('house-style');
+    fs.mkdirSync(path.join(root.dir, 'house-style', 'workflows'), { recursive: true });
+    fs.writeFileSync(path.join(root.dir, 'house-style', 'workflows', 'brief.md'), 'm\n');
+    await mount(SkillRegistry.load([root]));
+
+    const { tools } = await client.listTools();
+    expect(tools).toHaveLength(1);
+    const tool = tools[0]!;
+    expect(tool.name).toBe('load_skill_file');
+    expect(tool.description).toBe(SKILL_TOOL_TEXT.turn.loadSkillFile);
+    expect(tool.description).toContain('<available_skills/>');
+    expect(tool.description).toContain('<project_writing_skill>');
+    const schema = tool.inputSchema as { properties: Record<string, { description?: string }>; required?: string[] };
+    expect(Object.keys(schema.properties).sort()).toEqual(['file', 'slug']);
+    expect(schema.required).toEqual(['slug']);
+    expect(schema.properties.slug!.description).toBe(SKILL_TOOL_TEXT.turn.slug);
+    expect(schema.properties.file!.description).toContain('Omit to open the skill itself.');
+
+    // Opening: slug, title, description, scope, source, content, files — `hash` only from a writable source.
+    const opened = await call({ slug: 'house-style' });
+    expect(Object.keys(opened.body).sort()).toEqual(['content', 'description', 'files', 'scope', 'slug', 'source', 'title']);
+    expect(opened.body.source).toBe('user');
+    expect(opened.body.files).toEqual([{ path: 'workflows/brief.md', bytes: 2, lines: 1, isText: true }]);
+    // Subfile: slug, path, content.
+    const sub = await call({ slug: 'house-style', file: 'workflows/brief.md' });
+    expect(Object.keys(sub.body).sort()).toEqual(['content', 'path', 'slug']);
+  });
+
+  it('[entity:c4s-reader-load-skill-file] contract on the external surface: name, input fields, wording that points at list_skills, response shape', async () => {
+    const registry = SkillRegistry.load([writeSkill('house-style')]);
+    const { tools } = buildSkillToolsServer(registry, 'p', { resolver: new SkillResolver(registry, tmp) });
+    const tool = tools.find((t) => t.name === 'load_skill_file')!;
+    expect(tool.description).toBe(SKILL_TOOL_TEXT.external.loadSkillFile);
+    expect(tool.description).toContain('list_skills');
+    expect(tool.description).toContain('invalidReason');
+
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const external = buildSkillToolsServer(registry, 'p', { resolver: new SkillResolver(registry, tmp) });
+    client = new Client({ name: 'test-client', version: '0.0.0' });
+    await external.server.connect(serverTransport);
+    await client.connect(clientTransport);
+    const listed = (await client.listTools()).tools.find((t) => t.name === 'load_skill_file')!;
+    const schema = listed.inputSchema as { properties: Record<string, { description?: string }>; required?: string[] };
+    expect(Object.keys(schema.properties).sort()).toEqual(['file', 'slug']);
+    expect(schema.required).toEqual(['slug']);
+    expect(schema.properties.slug!.description).toBe(SKILL_TOOL_TEXT.external.slug);
+
+    const opened = await call({ slug: 'house-style' });
+    expect(opened.isError).toBe(false);
+    expect(opened.body).toMatchObject({ slug: 'house-style', scope: 'writing-style', source: 'user', files: [] });
+    expect(typeof opened.body.content).toBe('string');
+  });
+
+  it('[entity:c4s-reader-list-skills] contract: name, optional contextType, rows { slug, description, origin } and writingStyle beside them', async () => {
+    const registry = SkillRegistry.load([writeSkill('house-style')]);
+    registry.addPluginSkill({
+      slug: 'ui-view-mockup-generator',
+      title: 'Mockups',
+      description: 'Author the HTML mockup of a ui-view entity from its design system tokens.',
+      version: 1,
+      language: 'en',
+      scope: 'contextual',
+      content: 'body',
+    });
+    fs.mkdirSync(path.join(tmp, '.claude4spec'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.claude4spec', 'config.json'), JSON.stringify({ writingStyle: 'house-style' }));
+    const external = buildSkillToolsServer(registry, 'p', { resolver: new SkillResolver(registry, tmp) });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    client = new Client({ name: 'test-client', version: '0.0.0' });
+    await external.server.connect(serverTransport);
+    await client.connect(clientTransport);
+
+    const tool = (await client.listTools()).tools.find((t) => t.name === 'list_skills')!;
+    expect(tool.description).toBe(SKILL_TOOL_TEXT.external.listSkills);
+    expect(tool.annotations).toMatchObject({ readOnlyHint: true, idempotentHint: true });
+    const schema = tool.inputSchema as { properties: Record<string, { description?: string }>; required?: string[] };
+    expect(Object.keys(schema.properties)).toEqual(['contextType']);
+    expect(schema.required ?? []).toEqual([]);
+    expect(schema.properties.contextType!.description).toContain(SKILL_TOOL_TEXT.external.contextType);
+
+    const res = await client.callTool({ name: 'list_skills', arguments: {} });
+    const body = JSON.parse((res.content as Array<{ text: string }>)[0]!.text);
+    expect(body).toEqual({
+      listing: [
+        {
+          slug: 'ui-view-mockup-generator',
+          description: 'Author the HTML mockup of a ui-view entity from its design system tokens.',
+          origin: 'plugin',
+        },
+      ],
+      writingStyle: { slug: 'house-style', title: 'house-style' },
+    });
   });
 
   it('reads the LIVE registry, so a skill edited mid-thread takes effect on the next call', async () => {

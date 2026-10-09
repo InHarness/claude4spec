@@ -24,6 +24,7 @@ describe('/settings card catalog (0.2.113 §1.6)', () => {
       'external-integrations',
       'plugin-pool',
       'agent',
+      'skills',
       'about',
       'index-status',
       'danger-zone',
@@ -56,12 +57,23 @@ describe('/settings card catalog (0.2.113 §1.6)', () => {
       'anthropic-api-key',
     ]);
     expect(byAnchor.get('external-integrations')!.elements.map((e) => e.id)).toEqual(['agent-skills', 'mcp-connection']);
+    // 2.1.9 (M52 `1osy2o5r`): the `#skills` card, "Fork writing style locally" (80) included.
+    expect(byAnchor.get('skills')!.elements.map((e) => [e.id, e.kind, e.weight])).toEqual([
+      ['skill-exposed', 'toggle', 10],
+      ['skill-name', 'text', 20],
+      ['skill-description', 'textarea', 30],
+      ['skill-entry', 'text', 40],
+      ['skill-scope', 'select', 50],
+      ['skill-context-types', 'multiselect', 60],
+      ['used-skill-projects', 'custom', 70],
+      ['fork-writing-style', 'custom', 80],
+    ]);
   });
 
   it('only file-backed cards get a [Save] — External Integrations never does', () => {
     const fileBacked = (anchor: string) =>
       byAnchor.get(anchor)!.elements.some((e) => e.configKey !== undefined || (e.keys?.length ?? 0) > 0);
-    expect(['project', 'directories', 'git', 'entities', 'agent'].every(fileBacked)).toBe(true);
+    expect(['project', 'directories', 'git', 'entities', 'agent', 'skills'].every(fileBacked)).toBe(true);
     expect(
       ['user-section', 'appearance', 'remote-project', 'external-integrations', 'plugin-pool', 'about', 'index-status', 'danger-zone'].some(
         fileBacked,
@@ -106,6 +118,28 @@ describe('/settings card catalog (0.2.113 §1.6)', () => {
     expect(block.configKey).toEqual(['agent', 'disableDirectFilesystemAccess']);
     expect(block.baseline!({ agent: {} } as unknown as ConfigResponse)).toBe(true);
     expect(block.baseline!({ agent: { disableDirectFilesystemAccess: false } } as unknown as ConfigResponse)).toBe(false);
+  });
+
+  /**
+   * 2.1.9 (M05 L17 `m26agsec`): the regression note of "Block direct file access"
+   * — for a project whose file has no `agent.disableDirectFilesystemAccess`, the
+   * box reads checked, and the note names what that costs: git recovery and the
+   * c4s CLI. Scaffolding a writing style is no longer on it (it writes through
+   * `update_skill_file`, which the flag does not touch).
+   */
+  it('[ac:ac-istniejacy-projekt-bez-pola-agent-dis] a project without agent.disableDirectFilesystemAccess gets the regression note naming git recovery and the c4s CLI — and not the writing-style scaffold', async () => {
+    const block = agentElement('block-direct-file-access');
+    expect(block.baseline!({ agent: {} } as unknown as ConfigResponse)).toBe(true);
+    const { FILE_ACCESS_REGRESSION_NOTE } = await import('../../chat/settings/agentSettings.js');
+    const { renderToStaticMarkup } = await import('react-dom/server');
+    const html = renderToStaticMarkup(block.help as Parameters<typeof renderToStaticMarkup>[0]);
+    expect(html).toContain('data-testid="file-access-regression-note"');
+    const note = /data-testid="file-access-regression-note"[^>]*>([^<]*)</.exec(html)?.[1] ?? '';
+    expect(note).toBe(FILE_ACCESS_REGRESSION_NOTE);
+    expect(note).toContain('git recovery');
+    expect(note).toContain('Fix it with Agent');
+    expect(note).toContain('c4s CLI');
+    expect(note).not.toMatch(/writing style|scaffold/i);
   });
 
   it('[ac:ac-m26-sekcja-project-settings-zawiera-2] the Project card has a language dropdown: SUPPORTED_LANGUAGES plus "None" saving null', () => {

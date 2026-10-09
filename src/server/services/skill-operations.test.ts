@@ -3,7 +3,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { listSkills, loadSkillFile } from './skill-operations.js';
-import { SkillRegistry, SkillResolver, type SkillRoot } from './skill-registry.js';
+import {
+  SkillRegistry,
+  SkillResolver,
+  toPackageFiles,
+  type SkillMetadata,
+  type SkillRoot,
+  type SkillSourceRegistration,
+} from './skill-registry.js';
 import { KNOWN_CONTEXT_TYPES } from './chat-context.js';
 import { DomainError } from './tags.js';
 import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
@@ -75,7 +82,7 @@ describe('M37 core — list_skills / load_skill_file', () => {
 
       const all = listSkills(resolver);
       expect(all.listing.map((s) => s.slug)).toEqual(['everywhere', 'brief-only', 'chat-only']);
-      expect(all.listing[0]).toEqual({ slug: 'everywhere', description: 'from plugin everywhere' });
+      expect(all.listing[0]).toEqual({ slug: 'everywhere', description: 'from plugin everywhere', origin: 'plugin' });
 
       // A context type narrows it to the resolver's set — the same answer the turn's
       // `<available_skills>` block is built from.
@@ -151,6 +158,110 @@ describe('M37 core — list_skills / load_skill_file', () => {
   });
 
   describe('load_skill_file', () => {
+    /**
+     * A registered source standing in for one that declares a manifest limit and a
+     * `hash` (the shape M52's sources take) — the registry only knows the contract.
+     */
+    function limitedSource(opts: { manifestLimit?: number; hash?: string; files: Record<string, string> }): SkillSourceRegistration {
+      const meta: SkillMetadata = {
+        slug: 'exposed-skill',
+        title: 'Exposed skill',
+        description: 'from a source with a manifest limit',
+        version: 1,
+        language: 'en',
+        scope: 'contextual',
+        source: 'project-exposed',
+        path: '',
+      };
+      return {
+        name: 'test-limited',
+        source: 'project-exposed',
+        scopes: ['contextual'],
+        rank: { contextual: 'project-exposed' },
+        writable: opts.hash !== undefined,
+        scan: 'live',
+        ...(opts.manifestLimit !== undefined ? { manifestLimit: opts.manifestLimit } : {}),
+        list: () => ({ entries: [meta], skipped: [] }),
+        read: () => ({
+          content: '# exposed\nbody',
+          files: toPackageFiles(opts.files),
+          ...(opts.hash !== undefined ? { hash: opts.hash } : {}),
+        }),
+        unresolved: () => [],
+      };
+    }
+
+    it('[ac:ac-wywolanie-load-skill-file-slug-bez-fi] opening returns the body with one manifest row { path, bytes, lines, isText } per other file, up to the limit the source declares', () => {
+      // No limit declared (`user` source): every other file of the package is a row.
+      const dir = writeUserSkill('house-style');
+      fs.mkdirSync(path.join(dir, 'workflows'));
+      fs.writeFileSync(path.join(dir, 'workflows', 'brief.md'), 'one\ntwo\n');
+      fs.writeFileSync(path.join(dir, 'NOTES.md'), 'n\n');
+      const registry = SkillRegistry.load([userRoot], { rescanTtlMs: 0 });
+      const open = loadSkillFile(registry, 'house-style');
+      expect(open.content).toContain('the body');
+      expect(open.files).toEqual([
+        { path: 'NOTES.md', bytes: 2, lines: 1, isText: true },
+        { path: 'workflows/brief.md', bytes: 8, lines: 2, isText: true },
+      ]);
+      expect(open.truncated).toBeUndefined();
+
+      // A source declaring a limit of 2: the manifest is cut to it and says so.
+      registry.registerSource(
+        limitedSource({ manifestLimit: 2, files: { 'a.md': 'a\n', 'b.md': 'bb\n', 'c.md': 'ccc\n' } }),
+      );
+      const cut = loadSkillFile(registry, 'exposed-skill');
+      expect(cut.content).toBe('# exposed\nbody');
+      expect(cut.files).toEqual([
+        { path: 'a.md', bytes: 2, lines: 1, isText: true },
+        { path: 'b.md', bytes: 3, lines: 1, isText: true },
+      ]);
+      expect(cut.truncated).toBe(true);
+      expect(cut.truncationHint).toContain('2 of its 3');
+      // A file left out of the cut manifest stays addressable by (slug, file).
+      expect(loadSkillFile(registry, 'exposed-skill', 'c.md')).toEqual({ slug: 'exposed-skill', path: 'c.md', content: 'ccc\n' });
+    });
+
+    it('opening carries the winner\'s `source`, and `hash` only when its source returns one', () => {
+      writeUserSkill('house-style');
+      const registry = SkillRegistry.load([userRoot], { rescanTtlMs: 0 });
+      addPluginContextual(registry, 'mockups');
+      registry.registerSource(limitedSource({ hash: 'sha256:abc', files: {} }));
+
+      const user = loadSkillFile(registry, 'house-style');
+      expect(user.source).toBe('user');
+      expect(user).not.toHaveProperty('hash');
+      const plugin = loadSkillFile(registry, 'mockups');
+      expect(plugin.source).toBe('plugin');
+      expect(plugin).not.toHaveProperty('hash');
+      const exposed = loadSkillFile(registry, 'exposed-skill');
+      expect(exposed).toMatchObject({ source: 'project-exposed', hash: 'sha256:abc' });
+      // A subfile read carries neither — they belong to the opening shape.
+      expect(loadSkillFile(registry, 'house-style', 'SKILL.md')).not.toHaveProperty('source');
+    });
+
+    it('[ac:ac-skill-user-authored-o-tym-samym-slugu] a user writing-style colliding with a plugin contextual slug: load_skill_file serves the plugin entry', () => {
+      writeUserSkill('shared-slug');
+      const registry = SkillRegistry.load([userRoot], { rescanTtlMs: 0 });
+      addPluginContextual(registry, 'shared-slug');
+
+      const res = loadSkillFile(registry, 'shared-slug');
+      expect(res.content).toBe('body of shared-slug');
+      expect(res.content).not.toContain('the body');
+      expect(res).toMatchObject({ source: 'plugin', scope: 'contextual', description: 'from plugin shared-slug' });
+    });
+
+    it('SKILL_NOT_FOUND names the reason a known slug is unresolved: a plugin package that did not load', () => {
+      writeUserSkill('house-style');
+      const registry = SkillRegistry.load([userRoot], { rescanTtlMs: 0 });
+      registry.addUnloadedPluginSkill('lost-style', 'package "c4s-plugin-lost" was skipped: host API mismatch');
+
+      const err = refusal(() => loadSkillFile(registry, 'lost-style'));
+      expect(err.code).toBe('SKILL_NOT_FOUND');
+      expect(err.message).toContain('did not load');
+      expect(err.message).toContain('c4s-plugin-lost');
+    });
+
     it('opens a package: body without frontmatter, metadata, manifest — and no disk path anywhere', () => {
       const dir = writeUserSkill('house-style');
       fs.mkdirSync(path.join(dir, 'workflows'));

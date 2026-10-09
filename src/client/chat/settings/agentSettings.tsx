@@ -17,6 +17,15 @@ const BLOCK_KEY = ['agent', 'disableDirectFilesystemAccess'] as const;
 const blockDirectFs = ({ draft }: ElementContext) => (draft.get(BLOCK_KEY) as boolean | undefined) ?? true;
 
 /**
+ * The regression note of "Block direct file access" (M05 L17 `m26agsec`): what
+ * stops working while the flag is checked. 2.1.9: scaffolding a writing style is
+ * no longer on it — it writes through `update_skill_file`, which the flag does
+ * not touch.
+ */
+export const FILE_ACCESS_REGRESSION_NOTE =
+  'Unavailable while checked: git recovery (“Fix it with Agent” in the git error dialog) and the c4s CLI the agent runs from a shell.';
+
+/**
  * 0.2.113 — the chat-agent module's card. The agent's tool posture has NO control
  * in the chat UI (not by the composer, not in `ModelSettingsPopover`): this card
  * is the one place it changes, because a policy fixed for a whole conversation
@@ -62,9 +71,8 @@ export const AGENT_SETTINGS: SettingsContribution = {
           file or shell tools. Uncheck only if the agent should work on files outside the specification (code,
           implementation artifacts). Changing it ends the ability to resume existing conversations — they will need
           to be started anew.
-          <span className="block mt-1">
-            Unavailable while checked: git recovery (“Fix it with Agent” in the git error dialog), the c4s CLI the agent
-            runs from a shell, and scaffolding a new writing style into .claude/skills/.
+          <span className="block mt-1" data-testid="file-access-regression-note">
+            {FILE_ACCESS_REGRESSION_NOTE}
           </span>
         </>
       ),

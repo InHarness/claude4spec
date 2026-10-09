@@ -13,6 +13,7 @@ import { checkSelectableModel, isAdaptiveAlias } from './models.js';
 import { assertKnownContextType } from '../services/chat-context.js';
 import { ASK_TURN_TIMEOUT_MS } from '../../shared/agent-turn.js';
 import { DEFAULT_MODEL } from '../../core/agent/run-agent.js';
+import { finalizeAskAnswer, plansLeftByTurn, snapshotPlans } from '../services/ask-answer.js';
 import type { ChatThreadDetail } from '../../shared/entities.js';
 
 export function threadsRouter(deps: AgentTurnDeps): Router {
@@ -229,6 +230,12 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
           );
       }
 
+      // 2.1.9 (M11 `m11askrul`): an `ask` turn reports the plan it left by its
+      // project-relative path and never leaks the project directory — see
+      // `ask-answer.ts`. The snapshot is taken before the turn starts writing.
+      const isAsk = thread.contextType === 'ask';
+      const plansBefore = isAsk ? snapshotPlans(deps.planService) : undefined;
+
       const result = await runAgentTurn(deps, {
         thread,
         prompt: message,
@@ -243,6 +250,16 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
         // so this route (unlike interactive POST /api/chat) opts into a timeout.
         timeoutMs: ASK_TURN_TIMEOUT_MS,
       });
+
+      if (isAsk && plansBefore) {
+        const plansAfter = snapshotPlans(deps.planService);
+        result.answer = finalizeAskAnswer({
+          answer: result.answer,
+          projectDir: deps.cwd,
+          plansRootDir: deps.planService?.rootDir,
+          plansLeft: plansLeftByTurn(plansBefore, plansAfter),
+        });
+      }
 
       res.json(result);
     } catch (err) {

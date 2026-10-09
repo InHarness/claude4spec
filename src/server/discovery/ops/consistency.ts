@@ -367,7 +367,12 @@ export async function checkConsistency(
 
   const brokenAcVerifies: Array<{ acSlug: string; verifyType: string; verifySlug: string; category: string }> = [];
   const entitiesWithoutAcCoverage: Array<{ type: string; slug: string; severity: ConsistencySeverity }> = [];
-  const modulesWithoutAc: Array<{ module: string; severity: ConsistencySeverity }> = [];
+  // 2.1.9 — a rule-11 row points at a page (the module's page), so it carries
+  // the page key `(rootId, pagePath)` like every other page-pointing row.
+  // ASSUMPTION:dev-0201 — the bucket and field names stay as shipped
+  // (`module`, `brokenExtensionReferences`); only the page key is added.
+  // The tool record's sample spells them `moduleSlug`/`modulePath`/`brokenSectionRefs`.
+  const modulesWithoutAc: Array<{ module: string; rootId: string; pagePath: string; severity: ConsistencySeverity }> = [];
 
   /**
    * Rules 9-11 are AC rules by definition, so this is the one place the core
@@ -435,15 +440,19 @@ export async function checkConsistency(
      */
     if (requireModuleAc !== 'off') {
       const moduleRe = /modules\/(m\d{2})-[^/]+\.md$/;
-      const modules = new Set<string>();
+      const modules = new Map<string, { rootId: string; path: string }>();
       for (const p of allPagePaths) {
         if (!roots.get(p.rootId)?.builtin) continue;
         const m = moduleRe.exec(p.path);
-        if (m?.[1]) modules.add(m[1]);
+        if (m?.[1] && !modules.has(m[1])) modules.set(m[1], p);
       }
       const tagged = new Set<string>();
       for (const ac of activeAcs) for (const t of ac.tags) if (/^m\d{2}$/.test(t)) tagged.add(t);
-      for (const mod of modules) if (!tagged.has(mod)) modulesWithoutAc.push({ module: mod, severity: requireModuleAc });
+      for (const [mod, page] of modules) {
+        if (!tagged.has(mod)) {
+          modulesWithoutAc.push({ module: mod, rootId: page.rootId, pagePath: page.path, severity: requireModuleAc });
+        }
+      }
     }
   }
 
@@ -617,10 +626,13 @@ interface AnchorOccurrence {
 interface StructureRows {
   /** Rule 7. */
   unanchoredHeadings: Array<{ rootId: string; pagePath: string; line: number; heading: string }>;
-  /** Rule 15. */
-  anchorLinesInCode: Array<{ rootId: string; path: string; line: number; anchor: string }>;
-  /** Rule 16. */
-  unclosedCodeBlocks: Array<{ rootId: string; path: string; line: number }>;
+  /**
+   * Rule 15. 2.1.9 — `pagePath`, not `path`: every row of the report that points
+   * at a page carries the same key `(rootId, pagePath)` (M19 `q91m4kgl`).
+   */
+  anchorLinesInCode: Array<{ rootId: string; pagePath: string; line: number; anchor: string }>;
+  /** Rule 16 — keyed like rule 15. */
+  unclosedCodeBlocks: Array<{ rootId: string; pagePath: string; line: number }>;
 }
 
 /**
@@ -678,10 +690,10 @@ function collectStructure(
     }
   }
   for (const a of parsed.diagnostics.anchorLinesInCode) {
-    if (a.adjacentToHeadingLine) rows.anchorLinesInCode.push({ rootId, path: page.path, line: a.line, anchor: a.anchor });
+    if (a.adjacentToHeadingLine) rows.anchorLinesInCode.push({ rootId, pagePath: page.path, line: a.line, anchor: a.anchor });
   }
   for (const u of parsed.diagnostics.unclosedCodeBlocks) {
-    rows.unclosedCodeBlocks.push({ rootId, path: page.path, line: u.openLine });
+    rows.unclosedCodeBlocks.push({ rootId, pagePath: page.path, line: u.openLine });
   }
 }
 

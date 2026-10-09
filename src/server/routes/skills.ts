@@ -19,7 +19,7 @@
  */
 
 import { Router } from 'express';
-import { listSkills, loadSkillFile } from '../services/skill-operations.js';
+import { listSkills, loadSkillFileLive } from '../services/skill-operations.js';
 import type { SkillRegistry, SkillResolver } from '../services/skill-registry.js';
 import { errorHandler } from './errors.js';
 
@@ -45,9 +45,9 @@ export function skillsRouter(deps: SkillsRouterDeps): Router {
     }
   });
 
-  router.get('/:slug', (req, res, next) => {
+  router.get('/:slug', async (req, res, next) => {
     try {
-      res.json(loadSkillFile(deps.skillRegistry, req.params.slug, queryString(req.query.file)));
+      res.json(await loadSkillFileLive(deps.skillRegistry, req.params.slug, queryString(req.query.file)));
     } catch (err) {
       next(err);
     }

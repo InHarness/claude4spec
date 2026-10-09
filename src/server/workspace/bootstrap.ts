@@ -1,5 +1,5 @@
 import { RootRegistry } from '../roots/registry.js';
-import { PAGES_KIND } from '../../shared/root-kinds.js';
+import { PAGES_KIND, kindDeclaration } from '../../shared/root-kinds.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadOrCreateConfig, migrateConfigToV3, migrateConfigToV4, readConfig, type Config } from '../config.js';
@@ -123,8 +123,10 @@ export function bootstrapProject(
   ensureGitignore(cwd, { roots: rootRegistry.list(), gitEnabled: config.git.enabled });
   // 0.1.56: welcome page deferred to onboarding close — see ensureWelcomePage.
   // 2.1.8 (M31 bootstrap): activation creates the directory of EVERY registry
-  // root — the user roots (`kind: pages`) and the system roots (plans, briefs,
-  // patches, entities, releases), none of the latter written to `config.json`.
+  // root — the user roots (`kind: pages`) and the system roots, none of the
+  // latter written to `config.json`. 2.1.9: which roots are system roots is the
+  // registry's answer — every root of a kind with source `code`, at its fixed
+  // `.claude4spec/<kind>` — not a list kept here.
   // The CLI `--pages` override names the base root's directory for this run, so
   // that is the one created. The context build mkdirs again (idempotent) for
   // roots added later without a re-activation. `tags.json` stays lazy.
@@ -132,7 +134,7 @@ export function bootstrapProject(
   for (const root of rootRegistry.list()) {
     const dir = root.kind === PAGES_KIND && root.builtin && opts.pagesDir ? opts.pagesDir : root.dir;
     const abs = path.resolve(cwd, dir);
-    if (root.kind !== PAGES_KIND && !fs.existsSync(abs)) systemRootDirsCreated.push(root.dir);
+    if (kindDeclaration(root.kind).source === 'code' && !fs.existsSync(abs)) systemRootDirsCreated.push(root.dir);
     fs.mkdirSync(abs, { recursive: true });
   }
   const project = registry.registerProject(workspace, cwd);

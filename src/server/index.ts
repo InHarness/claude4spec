@@ -379,6 +379,13 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       clone,
       onTurnFinished: () => cache.reapIdle(),
       onContextConfigChanged: () => cache.invalidate(project.id),
+      // 2.1.9 (M52 `1v62dbhb`): a provider's context, on request, from this cache
+      // — the `project-exposed` source of a consumer holds no handle of its own.
+      providerContext: async (providerId) => {
+        const record = registry.getWorkspace(workspace.name)?.projects.find((p) => p.id === providerId);
+        if (!record) throw new Error(`project "${providerId}" is not in workspace "${workspace.name}"`);
+        return cache.get(record);
+      },
     });
   });
 

@@ -1,4 +1,4 @@
-import { systemRootId, type RegistryRoot } from '../../shared/root-kinds.js';
+import { isSystemRootId, kindDeclaration, systemRootId, type RegistryRoot } from '../../shared/root-kinds.js';
 import type { ReactionInput } from './reactions.js';
 
 /**
@@ -35,23 +35,23 @@ export const PLUGINS_OVERLAY_SOURCE = 'plugins:overlay';
 
 /**
  * 2.1.8 — the source name of a registry root. The implementor of the root
- * registry (M02) mounts exactly one source per root under this name:
- * `pages:<id>` | `artifacts:plan|brief|patch` | `entities` | `releases`.
+ * registry (M02) mounts exactly one source per root under this name. 2.1.9
+ * (`m02l13001` step 1): `pages:<id>` for a root from the configuration source,
+ * the kind's name for a root from the `code` source (`entities`, `releases`, …),
+ * except `plans` / `briefs` / `patches`, which keep the established
+ * `artifacts:plan|brief|patch`.
  */
 export function sourceNameFor(root: Pick<RegistryRoot, 'id' | 'kind'>): string {
+  if (kindDeclaration(root.kind).source === 'config') return pageSource(root.id);
   switch (root.kind) {
-    case 'pages':
-      return pageSource(root.id);
     case 'plans':
       return artifactSource('plan');
     case 'briefs':
       return artifactSource('brief');
     case 'patches':
       return artifactSource('patch');
-    case 'entities':
-      return ENTITIES_SOURCE;
-    case 'releases':
-      return RELEASES_SOURCE;
+    default:
+      return root.kind;
   }
 }
 
@@ -74,7 +74,8 @@ const ARTIFACT_ROOT_ID: Record<string, string> = {
 export function rootIdFromSource(source: string): string | null {
   if (source.startsWith('pages:')) return source.slice('pages:'.length) || null;
   if (source.startsWith('artifacts:')) return ARTIFACT_ROOT_ID[source.slice('artifacts:'.length)] ?? null;
-  if (source === ENTITIES_SOURCE || source === RELEASES_SOURCE) return source;
+  // A code-source root's source is its kind's name, and its id is that kind.
+  if (isSystemRootId(source)) return source;
   return null;
 }
 

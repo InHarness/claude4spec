@@ -257,6 +257,10 @@ function sourceServers(deps: ExternalSurfaceDeps): Array<{ name: string; server:
    * it for parity". Its dispatcher recurses into `runAgentTurn` and needs
    * `AgentTurnDeps` plus a live parent thread to do so. An external connection
    * is explicitly not a turn and has neither, so there is nothing to build.
+   *
+   * `spec-skill-tools` (2.1.9, M52) is absent by its catalog row: the `mcp` cell
+   * of `update_skill_file` is `n/a` — writing skills from outside is out of v1 —
+   * so `set.specSkillTools` is deliberately not read here.
    */
 
   return servers;

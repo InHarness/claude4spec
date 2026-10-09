@@ -16,7 +16,17 @@
 import { DomainError } from './tags.js';
 import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 import { formatLegalContextTypes, isKnownContextType } from './chat-context.js';
-import type { ContextSkills, SkillRegistry, SkillResolver, SkillScope } from './skill-registry.js';
+import type {
+  ContextSkills,
+  InvalidSkillRead,
+  ResolvedSkill,
+  SkillPackageFile,
+  SkillRegistry,
+  SkillResolver,
+  SkillScope,
+  SkillSource,
+  SkillUnresolvedReason,
+} from './skill-registry.js';
 
 /** The default `file` — opening a skill and reading its body are one operation in two modes. */
 export const DEFAULT_SKILL_FILE = 'SKILL.md';
@@ -26,22 +36,42 @@ export type SkillListingResponse = ContextSkills;
 
 /**
  * `load_skill_file` — two shapes of one structure: opening a package (manifest,
- * no `path`) or reading one subfile (`path`, no manifest).
+ * no `path`) or reading one subfile (`path`, no manifest). DTO
+ * `skill-package-response` (2.1.9).
  */
 export interface SkillPackageResponse {
   slug: string;
-  content: string;
+  /**
+   * Opening: `SKILL.md` in the form the entry's source reads it (`user`/`plugin`:
+   * body without frontmatter; `project-rooted`: the raw file). Subfile: that
+   * file's text. Optional in the shared structure only because an invalid
+   * `project-rooted` package without `SKILL.md` opens without it.
+   */
+  content?: string;
   /** Opening only. */
   title?: string;
   /** Opening only. */
   description?: string;
   /** Opening only. */
   scope?: SkillScope;
-  /** Opening only — every other file of the package, metrics only. */
+  /** Opening only, always there: the `source` of the entry that won the precedence chain. */
+  source?: SkillSource;
+  /** Opening only, and only when the winner's source returns one (a writable source). Never computed here. */
+  hash?: string;
+  /**
+   * Opening only — every other file of the package, metrics only; cut to the
+   * manifest limit when the winner's source declares one.
+   */
   files?: Array<{ path: string; bytes: number; lines: number; isText: boolean }>;
   /** Subfile read only — POSIX, package-relative, never a disk path. */
   path?: string;
-  /** Present (and `true`) only when the content exceeded the budget. */
+  /**
+   * 2.1.9 (M37 `7pj9yx9k`): an invalid `project-rooted` package served under a
+   * slug the registry does not resolve — on both shapes, opening and subfile.
+   */
+  invalid?: true;
+  invalidReason?: string;
+  /** Present (and `true`) only when something was cut: the content over the budget, or the manifest over the source's limit. */
   truncated?: true;
   truncationHint?: string;
 }
@@ -78,32 +108,81 @@ export function listSkills(resolver: SkillResolver, contextType?: string): Skill
  * The listing is a suggestion of what is worth opening, not a permission boundary.
  */
 export function loadSkillFile(registry: SkillRegistry, slug: string, file?: string): SkillPackageResponse {
-  const known = registry.list();
-  if (!known.some((m) => m.slug === slug)) {
+  const unresolved = answerUnresolved(registry, slug, file);
+  if (unresolved) return unresolved;
+  // Resolution — and the disk read — happen HERE, in the server process.
+  // The registry hands back the precedence winner, read by ITS source in the form
+  // that source serves; the path it resolved does not enter the payload below.
+  return packageAnswer(registry, slug, registry.resolve(slug), file);
+}
+
+/**
+ * The same operation for every source — the one the channels (internal and
+ * external MCP, REST, and through it `c4s`) call. A `project-exposed` winner is
+ * read live in its provider's context (M52 `ybbal0vf`), which is asynchronous;
+ * every other source answers exactly as {@link loadSkillFile} does.
+ */
+export async function loadSkillFileLive(registry: SkillRegistry, slug: string, file?: string): Promise<SkillPackageResponse> {
+  const unresolved = answerUnresolved(registry, slug, file);
+  if (unresolved) return unresolved;
+  return packageAnswer(registry, slug, await registry.resolveLive(slug), file);
+}
+
+/**
+ * A slug no source resolves: the invalid package lying under it, or the
+ * `SKILL_NOT_FOUND` refusal with its reason. `null` for a resolvable slug.
+ */
+function answerUnresolved(registry: SkillRegistry, slug: string, file: string | undefined): SkillPackageResponse | null {
+  if (!registry.has(slug)) {
+    // M37 `7pj9yx9k` / M52 `q6jr8zoj`: a slug no source resolves, under which an
+    // invalid package lies, is SERVED — marked invalid, with its reason — rather
+    // than refused. A resolvable slug never reaches this branch: it serves the
+    // chain's winner, never a shadowed invalid file.
+    const invalid = registry.resolveInvalid(slug);
+    if (invalid) return loadInvalidPackage(invalid, file);
+    // M37 `vsa4f54s`: a slug no source delivers is refused WITH its reason — the
+    // registry's own (`outside-registry`) or the one a source reported.
+    const unresolved = registry.unresolvedReason(slug) ?? { slug, reason: 'outside-registry' as const };
+    const known = Array.from(new Set(registry.list().map((m) => m.slug)));
     throw new DomainError(
       'SKILL_NOT_FOUND',
-      `no skill "${slug}" in this project's registry`,
-      `closest slugs: ${nearestSlugs(slug, known.map((m) => m.slug)).join(', ') || '(the registry is empty)'}`,
+      `no skill "${slug}" in this project's registry — ${describeUnresolved(unresolved.reason, unresolved.detail)}`,
+      `closest slugs: ${nearestSlugs(slug, known).join(', ') || '(the registry is empty)'}`,
     );
   }
-  // Resolution — and the disk read — happen HERE, in the server process.
-  // Precedence (project > global > plugin) is applied by the registry; the path
-  // it resolved does not enter the payload below.
-  const resolved = registry.resolve(slug);
+  return null;
+}
+
+/** The answer for a resolved winner: the package (manifest cut to the source's limit) or one subfile. */
+function packageAnswer(registry: SkillRegistry, slug: string, resolved: ResolvedSkill, file: string | undefined): SkillPackageResponse {
   const { metadata } = resolved;
 
   if (file === undefined) {
+    // Metrics only — the manifest is what makes a subfile's cost visible before
+    // it is paid, and `isText: false` announces a NOT_TEXT refusal in advance.
+    const manifest = manifestOf(resolved.files);
+    const limit = registry.manifestLimitOf(slug);
+    const files = limit !== undefined && manifest.length > limit ? manifest.slice(0, limit) : manifest;
+    const body = budgeted(resolved.content, slug, DEFAULT_SKILL_FILE);
+    const hints = [
+      ...(body.truncated ? [body.truncationHint!] : []),
+      ...(files.length < manifest.length
+        ? [
+            `The manifest of skill "${slug}" lists ${files.length} of its ${manifest.length} package files — the limit its source declares. ` +
+              'A file left out is still addressable as load_skill_file(slug, file).',
+          ]
+        : []),
+    ];
     return {
       slug: metadata.slug,
       title: metadata.title,
       description: metadata.description,
       scope: metadata.scope,
-      ...budgeted(resolved.content, slug, DEFAULT_SKILL_FILE),
-      // Metrics only — the manifest is what makes a subfile's cost visible before
-      // it is paid, and `isText: false` announces a NOT_TEXT refusal in advance.
-      files: Object.values(resolved.files)
-        .map(({ path, bytes, lines, isText }) => ({ path, bytes, lines, isText }))
-        .sort((a, b) => a.path.localeCompare(b.path)),
+      source: metadata.source,
+      ...(resolved.hash !== undefined ? { hash: resolved.hash } : {}),
+      content: body.content,
+      files,
+      ...(hints.length > 0 ? { truncated: true as const, truncationHint: hints.join(' ') } : {}),
     };
   }
 
@@ -114,13 +193,58 @@ export function loadSkillFile(registry: SkillRegistry, slug: string, file?: stri
     return { slug: metadata.slug, path: normalized, ...budgeted(resolved.content, slug, normalized) };
   }
 
+  const entry = readPackageFile(slug, resolved.files, normalized);
+  return { slug: metadata.slug, path: normalized, ...budgeted(entry.content, slug, normalized) };
+}
+
+/**
+ * An invalid package's answer: the same two shapes as a registry entry's, plus
+ * `invalid: true` and `invalidReason`. No manifest limit (its source declares
+ * none). A package without `SKILL.md` opens without `content`, and reading
+ * `SKILL.md` from it is `SKILL_FILE_NOT_FOUND`.
+ */
+function loadInvalidPackage(invalid: InvalidSkillRead, file: string | undefined): SkillPackageResponse {
+  const { slug } = invalid;
+  const mark = { invalid: true as const, invalidReason: invalid.invalidReason };
+  if (file === undefined) {
+    const body = invalid.content !== undefined ? budgeted(invalid.content, slug, DEFAULT_SKILL_FILE) : undefined;
+    return {
+      slug,
+      ...(invalid.title !== undefined ? { title: invalid.title } : {}),
+      ...(invalid.description !== undefined ? { description: invalid.description } : {}),
+      ...(invalid.scope !== undefined ? { scope: invalid.scope } : {}),
+      source: invalid.source,
+      ...(invalid.hash !== undefined ? { hash: invalid.hash } : {}),
+      ...(body ? { content: body.content } : {}),
+      files: manifestOf(invalid.files),
+      ...mark,
+      ...(body?.truncated ? { truncated: true as const, truncationHint: body.truncationHint! } : {}),
+    };
+  }
+  const normalized = normalizeFileArg(file);
+  if (normalized === DEFAULT_SKILL_FILE && invalid.content !== undefined) {
+    return { slug, path: normalized, ...budgeted(invalid.content, slug, normalized), ...mark };
+  }
+  const entry = readPackageFile(slug, invalid.files, normalized);
+  return { slug, path: normalized, ...budgeted(entry.content, slug, normalized), ...mark };
+}
+
+/** The manifest of a package: metrics only, sorted by path. */
+function manifestOf(files: Record<string, SkillPackageFile>): Array<{ path: string; bytes: number; lines: number; isText: boolean }> {
+  return Object.values(files)
+    .map(({ path, bytes, lines, isText }) => ({ path, bytes, lines, isText }))
+    .sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/** One subfile of a package, or the `SKILL_FILE_NOT_FOUND` / `NOT_TEXT` refusal. */
+function readPackageFile(slug: string, files: Record<string, SkillPackageFile>, normalized: string): SkillPackageFile {
   // `hasOwn`, not truthiness: a plain object literal inherits
   // `constructor`/`toString`/`valueOf`, so `files['constructor']` would otherwise
   // hand back an inherited function and answer NOT_TEXT for a path the manifest
   // never listed.
-  const entry = Object.hasOwn(resolved.files, normalized) ? resolved.files[normalized] : undefined;
+  const entry = Object.hasOwn(files, normalized) ? files[normalized] : undefined;
   if (!entry) {
-    const paths = Object.keys(resolved.files).sort();
+    const paths = Object.keys(files).sort();
     throw new DomainError(
       'SKILL_FILE_NOT_FOUND',
       `skill "${slug}" has no file "${normalized}"`,
@@ -136,8 +260,19 @@ export function loadSkillFile(registry: SkillRegistry, slug: string, file?: stri
       'the manifest from load_skill_file(slug) marks it `isText: false`; pick a text file from that list',
     );
   }
+  return entry;
+}
 
-  return { slug: metadata.slug, path: normalized, ...budgeted(entry.content, slug, normalized) };
+/** The reason of a `SKILL_NOT_FOUND`, worded for the message (M37 `vsa4f54s`). */
+function describeUnresolved(reason: SkillUnresolvedReason, detail?: string): string {
+  switch (reason) {
+    case 'envelope-not-loaded':
+      return `known but unresolved: the plugin package contributing it did not load${detail ? ` (${detail})` : ''}`;
+    case 'outside-registry':
+      return 'outside the registry: no source of this project delivers it';
+    case 'provider-unreachable':
+      return `known but unresolved: the provider of this skill attachment is unreachable${detail ? ` (${detail})` : ''}`;
+  }
 }
 
 /**

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
-import { builtinRoot, migrateConfigToV4, readConfig, validateRootDirs } from '../config.js';
+import { builtinRoot, migrateConfigToV4, normalizeSkillConfig, readConfig, validateRootDirs } from '../config.js';
 import { recoverPendingRootRename, rootIdChain, readRootRenames } from '../root-renames.js';
 import type { Root } from '../../shared/types.js';
 import { resolveAgentTurnScope } from '../services/agent-execution-scope.js';
@@ -11,6 +11,8 @@ import { openDb, type Db } from '../db/index.js';
 import { applyProjection } from '../db/projection.js';
 import type { MarkdownFileStore } from '../services/markdown-file-store.js';
 import { crossRootPagesRouter, pagesRouter } from '../routes/pages.js';
+import { sidebarAccordionsRouter } from '../routes/sidebar-accordions.js';
+import { SidebarAccordionsService } from '../services/sidebar-accordions.js';
 import { StaticHtmlService } from '../services/static-html.js';
 import { staticRouter } from '../routes/static.js';
 import { tagsRouter } from '../routes/tags.js';
@@ -48,6 +50,7 @@ import { BriefService } from '../services/brief.js';
 import { briefsRouter } from '../routes/briefs.js';
 import { patchesRouter } from '../routes/patches.js';
 import { metaRouter } from '../routes/meta.js';
+import { createExpansionContext } from '../discovery/expansion-context.js';
 import { rootRenameRouter } from '../routes/config-rename.js';
 import { mcpConfigRouter } from '../routes/mcp-config.js';
 import { PROJECTION_IDS, ProjectionStatusRegistry, type ProjectionId } from '../services/projection-status.js';
@@ -101,7 +104,7 @@ import { ReactionBinder, type ReactionHandler } from '../fs/reactions.js';
 import { registerCoreReactions, type CoreReactionContext } from './core-reactions.js';
 import { mountRegistryRoots, bindRegistryReactions } from './root-registry-runtime.js';
 import { RootRegistry, rootDirAbs } from '../roots/registry.js';
-import { PAGES_KIND, kindSelects, type RegistryRoot } from '../../shared/root-kinds.js';
+import { kindDeclaration, kindSelects, type RegistryRoot } from '../../shared/root-kinds.js';
 import { FileVersionCapture } from '../services/file-version-capture.js';
 import { EntityStore } from '../services/entity-store.js';
 import { EntityIndexerService } from '../services/entity-indexer.js';
@@ -118,6 +121,19 @@ import { createPageToolsServer } from '../mcp/page-tools.js';
 import type { SectionWriteDeps } from '../services/page-write.js';
 import { createEntityToolsServer } from '../mcp/entity-tools.js';
 import { SkillRegistry, SkillResolver, findSkillsRoots } from '../services/skill-registry.js';
+import { registerProjectRootedSkills, SKILLS_ROOT_KIND } from '../services/project-rooted-skills.js';
+import { SpecSkillTools } from '../mcp/spec-skill-tools.js';
+import {
+  ProjectExposedSkillSource,
+  exposedReadOnlyReason,
+  readExposedPackage,
+  type ExposedSkillPackage,
+} from '../services/project-exposed-skills.js';
+import { listExposedProjectRows, listExposedProjects } from '../services/exposed-projects.js';
+import { specSkillsRouter } from '../routes/spec-skills.js';
+import { forkWritingStyle } from '../services/style-fork.js';
+import { checkWritingStyleAtStart } from '../services/writing-style-start.js';
+import { fanPluginSkills, loadOverlayLayer } from './project-skills.js';
 import { chatRouter } from '../routes/chat.js';
 import { threadsRouter } from '../routes/threads.js';
 import { sectionsRouter } from '../routes/sections.js';
@@ -130,12 +146,7 @@ import type { PeerProject } from '../services/chat-context.js';
 import type { PluginRegistry, ProjectPluginHost, ProjectPluginOverlay } from '../core/plugin-host/types.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
 import { pluginHostRouter } from '../core/plugin-host/cross-cutting.js';
-import {
-  enumerateOverlayPackages,
-  loadProjectOverlay,
-  projectPluginsDir,
-  type ProjectOverlayResult,
-} from '../core/plugin-host/overlay-loader.js';
+import { projectPluginsDir } from '../core/plugin-host/overlay-loader.js';
 import { buildBasePluginPackages } from '../routes/plugins.js';
 import type { PluginLoadRecord } from '../core/plugin-host/loader.js';
 import type { ActiveAdapter, PendingInput } from '../routes/agent-turn.js';
@@ -202,6 +213,14 @@ export interface ProjectContextDeps {
   onTurnFinished?: () => void;
   /** M31: PATCH /config touched a context-defining field → cache.invalidate(projectId). */
   onContextConfigChanged?: () => void;
+  /**
+   * 2.1.9 (M52 `1v62dbhb`): the layer's implementor hands out ANOTHER project's
+   * context on request (the M31 cache — lazily built, its lifetime and eviction
+   * are the cache's). The `project-exposed` source asks for its provider's
+   * context on every read and keeps no handle. Absent ⇒ no provider is readable
+   * (attachments still list; their reads refuse as unreachable).
+   */
+  providerContext?: (projectId: string) => Promise<ProjectContext>;
   /** M27: bootstrap-time clone — runs inside build, before mounts dispatch. */
   clone?: {
     slug: string;
@@ -245,6 +264,14 @@ export interface ProjectContext {
    * does not touch `hasInFlightTurn` or pin the context.
    */
   mcpSurfaceDeps: (profile: ChatContextType) => ExternalSurfaceDeps;
+  /**
+   * 2.1.9 (M52 `ybbal0vf`) — this project as a skill package, read NOW in this
+   * context: the `skill.entry` page as content, the other pages of the base root
+   * as subfiles, without frontmatter and anchor lines, expanded inline by the M19
+   * core here. Called by a CONSUMER's `project-exposed` source; refuses when this
+   * project is not exposed (any more). Writes nothing.
+   */
+  readExposedSkill: () => Promise<ExposedSkillPackage>;
   dispose: () => Promise<void>;
 }
 
@@ -321,6 +348,34 @@ async function buildInner(
   // each at its fixed `.claude4spec/<kind>`. No directory is read from a config key.
   registerCoreReactions();
   const rootRegistry = new RootRegistry(effectiveRoots);
+  // 2.1.9 (M52 `1v62dbhb`): the `project-rooted` skill source — per context
+  // instance, over the root of kind `skills`, registered before anything reads
+  // the registry (the writing-style check at start included: a project-rooted
+  // style ranks first in its chain).
+  const projectRootedSkills = registerProjectRootedSkills(skillRegistry, rootRegistry, cwd);
+  // 2.1.9 (M52 `ybbal0vf`, `1v62dbhb`): the `project-exposed` source — this
+  // project's attachments (`skill.uses`) resolved live against the projects of
+  // the workspace exposed as a skill. It keeps no provider context: it asks the
+  // M31 cache (`deps.providerContext`) for one on every read.
+  const workspaceProjects = () => registry.getWorkspace(workspace.name)?.projects ?? [];
+  const readOwnSkillConfig = () => {
+    try {
+      return normalizeSkillConfig(readConfig(cwd));
+    } catch {
+      return normalizeSkillConfig({});
+    }
+  };
+  skillRegistry.registerSource(
+    new ProjectExposedSkillSource(projectId, {
+      uses: () => readOwnSkillConfig().uses,
+      listExposed: () => listExposedProjects(workspaceProjects()),
+      readProvider: async (providerId) => {
+        if (!deps.providerContext) throw new Error('no provider context is reachable from this process');
+        const provider = await deps.providerContext(providerId);
+        return provider.readExposedSkill();
+      },
+    }),
+  );
   const briefsRootDir = rootRegistry.system('briefs').dir;
   const patchesRootDir = rootRegistry.system('patches').dir;
   const entitiesRootDir = rootRegistry.system('entities').dir;
@@ -342,55 +397,18 @@ async function buildInner(
   const remoteApiUrl = deps.remoteApiUrl ?? bootConfig.remoteApiUrl;
 
   // M33 phase 2: project-local plugin overlay, behind the machine-local
-  // `trustProjectPlugins` gate. Untrusted/undecided ⇒ no overlay is built and no
-  // project-committed code runs; its types stay out of the effective pool and are
-  // reported as `untrusted` in /_meta/plugins. The trust prompt surfaces on the
-  // client when `localPluginsPresent && trust === undefined`.
-  const localPackages = enumerateOverlayPackages(cwd);
-  const localPluginsPresent = localPackages.length > 0;
+  // `trustProjectPlugins` gate (see `loadOverlayLayer`). The trust prompt surfaces
+  // on the client when `localPluginsPresent && trust === undefined`.
   const trust = registry.getProjectTrust(workspace, projectId);
-  let overlay: ProjectPluginOverlay | undefined;
-  let overlayRecords: PluginLoadRecord[] = [];
-  let overlayResult: ProjectOverlayResult | undefined;
-  if (localPluginsPresent && trust === true) {
-    overlayResult = await loadProjectOverlay(cwd);
-    overlay = overlayResult.overlay;
-    overlayRecords = overlayResult.records;
-  } else if (localPluginsPresent) {
-    overlayRecords = localPackages.map((pkg) => ({
-      package: pkg,
-      status: 'skipped' as const,
-      code: 'PLUGIN_PROJECT_UNTRUSTED' as const,
-      reason: 'project plugins not trusted on this machine (trustProjectPlugins)',
-      layer: 'overlay' as const,
-      trust: 'untrusted' as const,
-      origin: path.join('.claude4spec', 'plugins', pkg),
-    }));
-  }
+  const overlayLayer = await loadOverlayLayer(cwd, trust);
+  const { localPluginsPresent, overlayResult } = overlayLayer;
+  const overlay: ProjectPluginOverlay | undefined = overlayResult?.overlay;
+  const overlayRecords: PluginLoadRecord[] = overlayLayer.records;
 
-  // M15 phase 2 / M37: fan plugin-contributed skills into this project's
-  // SkillRegistry as `source: "plugin"` (precedence project > global > plugin —
-  // 0.2.66 removed the rung below). Base (workspace/npm) skills always; overlay skills
-  // only on the trusted path (overlayResult is set only when trust === true),
-  // so an untrusted plugin contributes no skill — exactly as for its entities.
-  //
-  // 0.2.19: a slug claimed by two plugins is a WARNING plus first-wins by
-  // discovery order — never an abort. The loser's whole plugin keeps loading;
-  // only that one skill is dropped. The warning is emitted here rather than in
-  // the registry because this is the layer that knows which two plugins collided
-  // and in what order they were discovered.
-  for (const skill of [
-    ...deps.pluginRegistry.listSkills(),
-    ...(overlayResult?.skills ?? []),
-  ]) {
-    if (skillRegistry.hasPluginSkill(skill.slug)) {
-      console.warn(
-        `[skill] plugin skill slug "${skill.slug}" is contributed more than once; keeping the first by discovery order and skipping this one`,
-      );
-      continue;
-    }
-    skillRegistry.addPluginSkill(skill);
-  }
+  // M15 phase 2 / M37 (+ 2.1.9 M33 → M37): plugin skills — and the slugs of
+  // envelopes that did not load — into this project's SkillRegistry. Overlay
+  // skills only on the trusted path (see `fanPluginSkills`).
+  fanPluginSkills(skillRegistry, deps.pluginRegistry, overlayResult);
 
   const pluginHost: ProjectPluginHost = deps.pluginRegistry.consolidate(
     { entities: bootConfig.entities },
@@ -402,20 +420,17 @@ async function buildInner(
       (hostState.inactive.length ? `, inactive: [${hostState.inactive.join(', ')}]` : '') +
       (hostState.unknown.length ? `, unknown: [${hostState.unknown.join(', ')}]` : ''),
   );
-  // A stale slug/value here (skill deleted, project opened on a machine
-  // without it) must not deadlock the whole per-project build — that would
-  // 500 every route under /api/projects/:id, including the Settings
-  // endpoints the user would need to pick a valid value. Soft-fail instead,
-  // matching the runtime pattern in SkillResolver.resolve(): warn and treat
-  // the value as unavailable for this session. config.json is left untouched
-  // so a later `git pull`/restore just works again with no further action.
-  let initialWritingStyle = bootConfig.writingStyle;
-  if (initialWritingStyle !== null && !skillRegistry.isSelectable(initialWritingStyle)) {
-    console.warn(
-      `config.json: writingStyle "${initialWritingStyle}" ${skillRegistry.unselectableReason(initialWritingStyle)}`,
-    );
-    initialWritingStyle = null;
-  }
+  // 2.1.9 (M01 `7yzu5k8u`): an unresolvable writing style STOPS the start, and
+  // the message tells the cause apart — a slug outside the selectable styles
+  // (typo / nonexistent / a contextual skill) versus a slug known to an envelope
+  // that did not load (missing carrier). ASSUMPTION:dev-0401 — this replaces the
+  // earlier soft-fail (warn + treat as unset), see the deviation.
+  const initialWritingStyle = bootConfig.writingStyle;
+  const styleVerdict = checkWritingStyleAtStart(skillRegistry, initialWritingStyle);
+  if (!styleVerdict.ok) throw new Error(styleVerdict.message);
+  // 2.1.9: a style of an attached project whose provider is unreachable starts
+  // with a warning and is treated as absent (no `<project_writing_skill/>`).
+  if (styleVerdict.warning) console.warn(`[skill] ${styleVerdict.warning}`);
   // 0.1.51: fail fast on a hand-edited language value outside SUPPORTED_LANGUAGES so
   // a bogus display name never reaches the system prompt. PATCH /config enforces
   // the same membership at runtime.
@@ -463,7 +478,9 @@ async function buildInner(
   // (`root-registry-runtime.ts`): the kind's acceptance requirements (a
   // violation stops the build), the dir + its source mount, a `MarkdownFileStore`
   // primitive for every kind whose file map has a markdown entry, and the
-  // `PagesService` FACADE over it (tree, static html, editor) only for kind `pages`.
+  // `PagesService` FACADE over it (tree, static html, editor) for every kind whose
+  // `sidebar` is not `hidden` (2.1.9 — "roots with a facade"; `rootById` below
+  // holds exactly them, so the page routes and page-tools address only them).
   // Reactions are bound further down (`bindRegistryReactions`), once the
   // services exist: mount → bind is a contract per source.
   // Which root dirs this build CREATES — a failed clone rolls back exactly those
@@ -706,6 +723,16 @@ async function buildInner(
     [...artifactMounts.values()].map((m) => [m.rootId, ARTIFACT_CHANGED_EVENT[m.kind]] as const),
   );
   const pagesFrontmatterIndexer = new PagesFrontmatterIndexer(frontmatterRoots, ws, artifactChangedEvents);
+  // 2.1.9 (M02 `m02l13001`): the sidebar's accordion arrays — `hidden` /
+  // `accordion` straight from the kind's declaration, a reducer root through the
+  // `m02-sidebar-reducer` reaction bound below; served by `GET /sidebar-accordions`.
+  const sidebarAccordions = new SidebarAccordionsService({
+    cwd,
+    registry: rootRegistry,
+    ws,
+    projectKey: projectId,
+    frontmatterOf: (rootId, relPath) => pagesFrontmatterIndexer.getFrontmatter(rootId, relPath),
+  });
 
   /**
    * Host API 2.0.0 — build the entity projection BEFORE anything mounts, reads
@@ -974,6 +1001,7 @@ async function buildInner(
     host: pluginHost,
     serialization: serializationEngine,
     roots: effectiveRoots,
+    referenceRoots: rootRegistry.referenceOnly(),
     projectDir: cwd,
     packageVersion: readPackageVersion(),
     projectionStatus,
@@ -1001,6 +1029,7 @@ async function buildInner(
       host: pluginHost,
       serialization: serializationEngine,
       roots: overriddenRoots,
+      referenceRoots: rootRegistry.referenceOnly(),
       unindexedRootIds,
       projectDir: cwd,
       packageVersion: readPackageVersion(),
@@ -1100,12 +1129,12 @@ async function buildInner(
       ...(deps.clone.systemRootDirsCreated ?? []),
       ...rootRegistry
         .list()
-        .filter((r) => r.kind !== PAGES_KIND && rootDirsCreatedHere.includes(r.dir))
+        .filter((r) => kindDeclaration(r.kind).source === 'code' && rootDirsCreatedHere.includes(r.dir))
         .map((r) => r.dir),
     ]);
     const preexistingSystemRoots = rootRegistry
       .list()
-      .filter((r) => r.kind !== PAGES_KIND && !systemRootDirsCreated.has(r.dir))
+      .filter((r) => kindDeclaration(r.kind).source === 'code' && !systemRootDirsCreated.has(r.dir))
       .map((r) => ({ dir: r.dir, filesBefore: snapshotRootFiles(cwd, r.dir) }));
     try {
       const result = await importService.clone(deps.clone.slug, { nameOverride: deps.clone.nameOverride });
@@ -1253,7 +1282,16 @@ async function buildInner(
    * discovery route and a protocol mount must not be mistaken for each other.
    */
   router.use('/_meta/mcp-config', mcpConfigRouter({ registry, workspace, projectId }));
-  router.use('/_meta', metaRouter(discovery, pluginHost));
+  // 2.1.9 — `POST /_meta/resolve-page` (`c4s resolve`) runs the M19 embed
+  // expansion in THIS project's context: its discovery core, section index and
+  // page-link index.
+  router.use(
+    '/_meta',
+    metaRouter(
+      discovery,
+      createExpansionContext({ discovery, sections: sectionsService, links: pagesLinkIndexer }),
+    ),
+  );
   /**
    * 0.2.13 — `POST /api/patches`. A slice-specific route, deliberately outside
    * the generic `/api/artifacts/:kind/*` family: a patch's provenance is DRIFT
@@ -1290,6 +1328,8 @@ async function buildInner(
     pagesRouter(resolveRoot, pageVersions, discovery, () => [...rootById.keys()], sectionWriteDeps),
   );
   router.use('/static/:rootId', staticRouter(resolveStatic));
+  // 2.1.9 — the sidebar's accordion array of every root; no `:rootId` segment.
+  router.use('/sidebar-accordions', sidebarAccordionsRouter(sidebarAccordions));
   router.use('/tags', tagsRouter(tagsService, referencesService, discovery));
   router.use('/references', referencesRouter(pluginHost, referencesService, discovery, discoveryForRoots));
   router.use('/entities', entitiesRouter(pluginHost, tagsService, versionService, entityStore, rawReader, discovery, ws));
@@ -1322,6 +1362,9 @@ async function buildInner(
   const listWorkspacePeers = (): PeerProject[] => {
     const ws = registry.getWorkspace(workspace.name);
     if (!ws) return [];
+    // 2.1.9 (M31 `qtqqqwfp`): `skill="exposed"` comes from the M52 list of
+    // exposed projects (edge m31-requires-m52), not from reading `skill.*` here.
+    const exposedIds = new Set(listExposedProjects(ws.projects).map((e) => e.projectId));
     return ws.projects
       .filter((p) => p.id !== projectId)
       .map((p) => {
@@ -1331,8 +1374,53 @@ async function buildInner(
         const { name, description } = readPeerConfigSummary(p.cwd);
         if (name) peer.name = name;
         if (description) peer.description = description;
+        if (exposedIds.has(p.id)) peer.skillExposed = true;
         return peer;
       });
+  };
+
+  /**
+   * 2.1.9 (M52 L10 `1v62dbhb`) — `spec-skill-tools`: one element per context
+   * instance, key `projectId`, built here with the context and released
+   * EXPLICITLY by its dispose (below). It writes through the facade of this
+   * context's root of kind `skills`; the turn asks it for a fresh server per query.
+   */
+  const specSkillTools = new SpecSkillTools(
+    {
+      skillsRoot: () => {
+        const root = rootRegistry.byKind(SKILLS_ROOT_KIND)[0];
+        const rt = root ? rootById.get(root.id) : undefined;
+        return rt ? { pages: rt.pages } : undefined;
+      },
+      // 2.1.9 (M52): a slug outside this project's `skills` root that the
+      // registry resolves to an exposed project is read-only here — a
+      // `project-rooted` package of that slug outranks it and is writable.
+      readOnlyReason: (slug) => {
+        const root = rootRegistry.byKind(SKILLS_ROOT_KIND)[0];
+        const own = root ? fs.existsSync(path.join(rootDirAbs(cwd, root), slug)) : false;
+        return exposedReadOnlyReason(skillRegistry.winnerOf(slug), own);
+      },
+    },
+    projectId,
+  );
+
+  /**
+   * 2.1.9 (M52 `ybbal0vf`) — this project read as an exposed skill, in THIS
+   * context (pages of the base root, M19 expansion over this project's
+   * discovery core, section index and page links).
+   */
+  const readExposedSkill = async (): Promise<ExposedSkillPackage> => {
+    const own = readOwnSkillConfig();
+    if (!own.exposed || own.name === null) throw new Error(`project "${projectId}" is not exposed as a skill`);
+    return readExposedPackage(
+      {
+        listPages: () => pages.listMarkdownFilesReadonly(),
+        readRaw: (rel) => pages.readRaw(rel),
+        rootId: baseRoot.id,
+        expansion: createExpansionContext({ discovery, sections: sectionsService, links: pagesLinkIndexer }),
+      },
+      own.entry,
+    );
   };
 
   // Wspolne deps tury agenta — `threadsRouter` (POST /:id/ask) i `chatRouter`
@@ -1358,6 +1446,8 @@ async function buildInner(
     pageVersions,
     skillResolver,
     skillRegistry,
+    // 2.1.9 (M52): read per turn — the hit-translation line of `<available_skills>`.
+    skillsRootHasFiles: () => projectRootedSkills?.hasAnyFile() ?? false,
     ws,
     cwd,
     roots: effectiveRoots,
@@ -1373,6 +1463,7 @@ async function buildInner(
      * stale, and a captured record would have gone stale the same way.
      */
     listWorkspaceProjects: () => listProjects(registry.getWorkspace(workspace.name) ?? workspace),
+    specSkillTools,
   };
 
   /**
@@ -1414,6 +1505,28 @@ async function buildInner(
   // M37 (0.2.99) — `list_skills` / `load_skill_file`, the same core functions the
   // turn's and the external surface's `skill-tools` call.
   router.use('/skills', skillsRouter({ skillRegistry, skillResolver }));
+  // 2.1.9 (M52 L4): own router — `GET /spec-skills/exposed-projects`.
+  router.use(
+    '/spec-skills',
+    specSkillsRouter({
+      listExposedProjects: () =>
+        listExposedProjectRows(projectId, readOwnSkillConfig().uses, listExposedProjects(workspaceProjects())),
+      // 2.1.9 (M52 row 3): `fork_writing_style` over this context's registry and
+      // the facade of its root of kind `skills`; `config.writingStyle` untouched.
+      forkWritingStyle: (input) =>
+        forkWritingStyle(
+          {
+            registry: skillRegistry,
+            skillsRoot: () => {
+              const root = rootRegistry.byKind(SKILLS_ROOT_KIND)[0];
+              const rt = root ? rootById.get(root.id) : undefined;
+              return rt ? { pages: rt.pages } : undefined;
+            },
+          },
+          input,
+        ),
+    }),
+  );
   router.use('/releases', releasesRouter(releaseService, ws, gitService, () => rootRegistry.pages()));
   router.use('/release-pushes', releasePushesRouter(releasePushService));
   // 0.1.123: on a successful checkout, reuse the same invalidate path as a
@@ -1492,10 +1605,18 @@ async function buildInner(
     versionCapture,
     entityIndexer,
     releaseIndexer,
+    sidebarReducer: sidebarAccordions,
   });
   // Each binding carries the registry entry's id as the reaction's input — the
   // `rootId` the reactions key their state `(rootId, path)` on.
   bindRegistryReactions(rootRegistry, sourceByRootId, reactionBinder);
+  // 2.1.9: the reducer roots' full rebuild — "budowa ProjectContext". It does not
+  // block the project: until it lands, a reducer root is served the `accordion`
+  // fallback; a result differing from the predecessor context's array emits
+  // `sidebar:accordions-changed`.
+  void sidebarAccordions.rebuildAll().catch((err) => {
+    console.warn('[m02] sidebar accordions initial build failed:', (err as Error).message);
+  });
 
   // M33 phase 3: overlay mount + reload, AFTER the root-registry build hook
   // (M31 build order: the L13 implementor's mounts and bindings, then M33).
@@ -1603,7 +1724,11 @@ async function buildInner(
   // (server down, `git checkout` between restarts): without this, the phantom
   // `delete` stays the latest row and release diffs show the page as removed.
   (async () => {
+    // 2.1.9: the facades of the roots whose kind captures `file_version` and is
+    // not an artifact kind (those have their own baseline pass just below).
+    const artifactRootIds = new Set([...artifactMounts.values()].map((m) => m.rootId));
     for (const rt of rootRuntimes) {
+      if (!kindSelects(rt.kind, 'm17-capture') || artifactRootIds.has(rt.root.id)) continue;
       try {
         const files = await rt.pages.listMarkdownFiles();
         for (const relPath of files) {
@@ -1815,9 +1940,12 @@ async function buildInner(
   // `suppress()` primitive, which is what keeps a bulk rebuild from re-entering
   // its own indexer.
 
-  const writingStyle = initialWritingStyle
-    ? { slug: initialWritingStyle, title: skillRegistry.resolve(initialWritingStyle).metadata.title }
-    : null;
+  // Metadata only — no source read (a `project-exposed` style is read live, and an
+  // unreachable one is absent: no title, no style).
+  const initialStyleMeta = initialWritingStyle
+    ? skillRegistry.listSelectable().find((m) => m.slug === initialWritingStyle)
+    : undefined;
+  const writingStyle = initialStyleMeta ? { slug: initialStyleMeta.slug, title: initialStyleMeta.title } : null;
 
   return {
     projectId,
@@ -1833,6 +1961,7 @@ async function buildInner(
     writingStyle,
     hasInFlightTurn: () => activeAdapters.size > 0,
     mcpSurfaceDeps,
+    readExposedSkill,
     // M31 dispose sequence: turn registries → this scope's mounts → MCP
     // factories → room → db handle.
     dispose: async () => {
@@ -1867,6 +1996,8 @@ async function buildInner(
       // pre-0.2.10 gap where `releasesWatcher` was never closed on dispose.
       await w.dispose();
       pluginHost.clearMcpFactories();
+      // 2.1.9 (M52 L10): the context-scoped write channel is released explicitly.
+      specSkillTools.dispose();
       // M33 phase 2: drop references to dynamically imported project-local
       // modules (next rebuild re-imports), alongside the MCP factory release.
       overlayResult?.dispose();

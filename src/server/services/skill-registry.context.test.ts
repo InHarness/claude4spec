@@ -178,7 +178,7 @@ describe('SkillResolver.resolveForContext', () => {
     const { listing, writingStyle } = new SkillResolver(registry, tmp).resolveForContext('chat');
 
     expect(spy).not.toHaveBeenCalled();
-    expect(listing).toEqual([{ slug: 'writing-style-author', description: 'from plugin' }]);
+    expect(listing).toEqual([{ slug: 'writing-style-author', description: 'from plugin', origin: 'plugin' }]);
     expect(writingStyle).toEqual({ slug: 'house-style', title: 'house-style' });
   });
 
@@ -291,11 +291,12 @@ describe('SkillResolver.resolveForContext', () => {
     });
 
     /**
-     * Reach is the package's statement about its OWN contribution. A user who
-     * overrides the body has said nothing about which turns the skill belongs in, so
-     * the override changes the description (see the fan-out suite) and not the filter.
+     * Reach is the package's statement about its OWN contribution. 2.1.9: a
+     * same-slug user STYLE no longer overrides a contextual contribution at all —
+     * a collision across scopes goes to the `contextual` entry (M37 `aw9kcadc`) —
+     * so the row, and its reach, stay the contribution's.
      */
-    it('keeps the contribution\'s reach when a user overrides the body', () => {
+    it('keeps the contribution\'s reach and row beside a same-slug user style', () => {
       const userRoot = writeSkill(path.join(tmp, 'user'), 'writing-style-author', 'user', {
         scope: 'writing-style',
       });
@@ -304,7 +305,7 @@ describe('SkillResolver.resolveForContext', () => {
       const resolver = new SkillResolver(registry, tmp);
 
       expect(resolver.resolveForContext('chat').listing).toEqual([
-        { slug: 'writing-style-author', description: 'from user' },
+        { slug: 'writing-style-author', description: 'from plugin writing-style-author', origin: 'plugin' },
       ]);
       expect(resolver.resolveForContext('ask').listing).toEqual([]);
     });
@@ -333,7 +334,7 @@ describe('SkillResolver.resolveForContext', () => {
 
       for (const ct of ['chat', 'brief', 'patch', 'ask'] as const) {
         expect(resolver.resolveForContext(ct).listing).toEqual([
-          { slug: 'house-rules', description: 'always on' },
+          { slug: 'house-rules', description: 'always on', origin: 'plugin' },
         ]);
       }
     });
@@ -372,7 +373,7 @@ describe('SkillResolver.resolveForContext', () => {
       expect(registry.listSelectable().map((s) => s.slug)).toEqual(['plugin-style']);
     });
 
-    it('advertises the WINNING description when a user skill overrides a plugin slug', () => {
+    it('advertises the WINNING description — the contextual entry wins a cross-scope collision (2.1.9)', () => {
       const userRoot = writeSkill(path.join(tmp, 'user'), 'house-rules', 'user', { scope: 'writing-style' });
       const registry = SkillRegistry.load([userRoot]);
       registry.addPluginSkill({
@@ -385,17 +386,19 @@ describe('SkillResolver.resolveForContext', () => {
         content: 'PLUGIN BODY',
       });
 
-      // 0.2.36: the listing is what the model decides from, and `load_skill_file`
-      // resolves the same precedence chain. Advertising the plugin's description
-      // while the operation serves the user's body would describe one document and
-      // hand over another.
+      // The listing is what the model decides from, and `load_skill_file` resolves
+      // the same chain: the row and the body come from ONE entry — here the
+      // contextual contribution, which beats the same-slug user style.
       const { listing } = new SkillResolver(registry, tmp).resolveForContext('brief');
-      expect(listing).toEqual([{ slug: 'house-rules', description: 'from user' }]);
+      expect(listing).toEqual([{ slug: 'house-rules', description: 'from the plugin', origin: 'plugin' }]);
+      expect(registry.resolve('house-rules').content).toBe('PLUGIN BODY');
     });
 
-    it('never lets a contextual attachment shadow the ACTIVE writing style of the same slug', () => {
-      // A style also named by a contextual source must not turn into a listing row:
-      // that would advertise as optional the one skill the project declared binding.
+    it('a contextual entry of the style\'s slug wins it — the style slot stays empty (2.1.9)', () => {
+      // 2.1.9 (M37 `aw9kcadc`): a collision across scopes goes to the contextual
+      // entry and the style is skipped; start-up validation (M01) stops a project
+      // whose config.writingStyle names it. The resolver's defensive path: no
+      // binding block, and the contextual skill is an ordinary listing row.
       const root = writeSkill(path.join(tmp, 'styles'), 'house-style', 'user');
       const registry = SkillRegistry.load([root]);
       registry.addPluginSkill({
@@ -410,22 +413,22 @@ describe('SkillResolver.resolveForContext', () => {
       writeConfig(tmp, 'house-style');
 
       const { listing, writingStyle } = new SkillResolver(registry, tmp).resolveForContext('chat');
-      // Title from the WINNING entry: the FS-root file outranks the plugin push.
-      expect(writingStyle).toEqual({ slug: 'house-style', title: 'house-style' });
-      expect(listing).toEqual([]);
+      expect(writingStyle).toBeNull();
+      expect(listing).toEqual([{ slug: 'house-style', description: 'plugin copy', origin: 'plugin' }]);
     });
 
-    it("a user override of a contribution's slug is a listing row, never the binding style", () => {
-      // A user root may only author `writing-style`-scoped skills, so that IS how an
-      // override of a contributed contextual slug is spelled. It must not thereby claim
-      // the writing-style slot nobody selected it for — and since 0.2.36 it cannot:
-      // that slot is fed by `config.writingStyle` alone, not by a file's scope.
+    it("a same-slug user style is no override of a contribution — the row stays the contribution's", () => {
+      // A user root may only author `writing-style`-scoped skills; 2.1.9 sends a
+      // collision across scopes to the contextual entry, so the user's directory
+      // neither replaces the row nor claims the writing-style slot.
       const userRoot = writeSkill(path.join(tmp, 'user'), 'writing-style-author', 'user', { scope: 'writing-style' });
       const registry = SkillRegistry.load([userRoot]);
       pushContextual(registry, 'writing-style-author');
       const { listing, writingStyle } = new SkillResolver(registry, tmp).resolveForContext('chat'); // no style selected
 
-      expect(listing).toEqual([{ slug: 'writing-style-author', description: 'from user' }]);
+      expect(listing).toEqual([
+        { slug: 'writing-style-author', description: 'from plugin writing-style-author', origin: 'plugin' },
+      ]);
       expect(writingStyle).toBeNull();
     });
 
@@ -435,7 +438,7 @@ describe('SkillResolver.resolveForContext', () => {
       pushContextual(registry, 'writing-style-author', { description: 'second' });
       const { listing } = new SkillResolver(registry, tmp).resolveForContext('chat');
       // First plugin wins at push time; the turn carries the slug exactly once.
-      expect(listing).toEqual([{ slug: 'writing-style-author', description: 'first' }]);
+      expect(listing).toEqual([{ slug: 'writing-style-author', description: 'first', origin: 'plugin' }]);
     });
   });
 });

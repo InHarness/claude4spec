@@ -33,6 +33,7 @@ import { buildPatchToolsServer } from '../mcp/patch-tools.js';
 import { buildBriefToolsServer } from '../mcp/brief-tools.js';
 import { buildC4sToolsServer } from '../mcp/c4s-tools.js';
 import { buildWorkspaceToolsServer } from '../mcp/workspace-tools.js';
+import { SPEC_SKILL_TOOLS_SERVER, type SpecSkillTools } from '../mcp/spec-skill-tools.js';
 import type { McpServerFactory } from '../../shared/plugin-host/mcp.js';
 import { gateServers, pluginServerNamesFor } from '../operations/profile-gate.js';
 import { BRIEF_ALLOWED_PLUGIN_MCP } from '../operations/profiles.js';
@@ -68,6 +69,8 @@ import { TransagentDispatcher } from '../services/transagent-dispatcher.js';
 import { buildTransagentToolsServer, TRANSAGENT_TOOL_FULL_NAME } from '../mcp/transagent-tools.js';
 import type { FileVersionService } from '../services/file-version.js';
 import type { SkillResolver, SkillRegistry } from '../services/skill-registry.js';
+import { SKILLS_ROOT_KIND, currentSkillOf } from '../services/project-rooted-skills.js';
+import { PAGES_KIND } from '../../shared/root-kinds.js';
 import type { Annotation, Brief, ChatMessage, ChatThread, Plan } from '../../shared/entities.js';
 import type { Root } from '../../shared/types.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
@@ -106,6 +109,12 @@ export interface AgentTurnDeps {
   /** 0.2.36: the live registry `skill-tools` reads through. Separate from the resolver
    *  because `load_skill_file` serves the WHOLE registry, not one context's listing. */
   skillRegistry: SkillRegistry;
+  /**
+   * 2.1.9 (M52 `6evgp041`): whether the project's `skills` root holds at least one
+   * file — read per turn for the hit-translation line of `<available_skills>`.
+   * Absent (rigs without a skills root) = no.
+   */
+  skillsRootHasFiles?: () => boolean;
   ws: WsEmitter;
   cwd: string;
   /** 0.1.96 multiroot: every configured page root (was the single `pagesDir` scalar).
@@ -137,6 +146,12 @@ export interface AgentTurnDeps {
    * first turn. Absent ⇒ no peers (e.g. single-project workspace).
    */
   listWorkspacePeers?: () => PeerProject[];
+  /**
+   * 2.1.9 (M52): the context-scoped `spec-skill-tools` element — the write channel
+   * of the project's skill packages. Mounted where the registry's `specSkillTools`
+   * column says so (`chat`, `patch`). Absent ⇒ not mounted (hand-built test rigs).
+   */
+  specSkillTools?: Pick<SpecSkillTools, 'build'>;
 }
 
 import { ALLOWED_MODELS, type Model } from './models.js';
@@ -954,6 +969,7 @@ export async function runAgentTurn(
     // gets the right skips by declaring it.
     const carriesCurrentPage = compositionCarries(thread.contextType, 'current_page');
     const carriesCurrentPlan = compositionCarries(thread.contextType, 'current_plan');
+    const carriesCurrentSkill = compositionCarries(thread.contextType, 'current_skill');
 
     // M21: dla brief context czytamy aktualny snapshot brief'u (frontmatter+body+hash)
     // i wkladamy do system promptu.
@@ -987,8 +1003,12 @@ export async function runAgentTurn(
     // literal to fall back to, because no identifier carries that role anymore.
     const currentPageService =
       (currentPageRootId ? deps.resolvePagesService?.(currentPageRootId) : undefined) ?? deps.pagesService;
+    // 2.1.9 (M02 `cg80qj0e`): `<current_page>` is a page of a root of kind `pages`
+    // only — an open file of another kind is not read for it (`kind` is unset on the
+    // positional rigs' services, which are `pages`).
+    const currentRootKind = currentPageService.kind ?? PAGES_KIND;
     let currentPageBody: string | null = null;
-    if (carriesCurrentPage && currentPage) {
+    if (carriesCurrentPage && currentPage && currentRootKind === PAGES_KIND) {
       try {
         const page = await currentPageService.read(currentPage);
         currentPageBody = page.body;
@@ -1007,6 +1027,13 @@ export async function runAgentTurn(
     // that must not fail the whole turn, so this mirrors the try/catch already
     // used above for patchSnapshot/currentPageBody instead of letting
     // getByThread's NOT_FOUND propagate uncaught.
+    // 2.1.9 (M52 `9zio901p`): an open file of the `skills` root → `<current_skill>`,
+    // shadowed when the slug's registry winner is another source's skill.
+    const currentSkill =
+      carriesCurrentSkill && currentPage && currentRootKind === SKILLS_ROOT_KIND
+        ? currentSkillOf(currentPage, (slug) => deps.skillRegistry.winnerOf(slug))
+        : null;
+
     let currentPlan: Plan | null = null;
     if (carriesCurrentPlan) {
       try {
@@ -1158,7 +1185,10 @@ export async function runAgentTurn(
       // rootId of the service the page was actually read from (viewed root, or the
       // 'pages' fallback) — rendered into the `<current_page root="…">` context.
       currentPageRootId: currentPageService.rootId,
+      currentPageRootKind: currentRootKind,
       currentPageBody,
+      currentSkill,
+      skillsRootHasFiles: deps.skillsRootHasFiles?.() ?? false,
       annotations,
       planMode,
       currentPlan,
@@ -1536,6 +1566,16 @@ export async function runAgentTurn(
         : null;
 
       /**
+       * 2.1.9 (M52 `hdkx97wq`, M44 `3f5ej79s`) spec-skill-tools: `update_skill_file`.
+       * Behind the registry's DECLARED `specSkillTools` column — `chat` and `patch`
+       * only; `brief` and `ask` never (a new context type does not inherit it). A
+       * fresh server per call from the context-scoped element, which builds
+       * nothing once the context disposed it.
+       */
+      const specSkillTools =
+        ctx.mcp.specSkillTools && deps.specSkillTools ? deps.specSkillTools.build() : null;
+
+      /**
        * Two gates, coarse then fine.
        *
        * Registry `pluginServers` picks whole SERVERS: 'all' mounts every
@@ -1596,6 +1636,7 @@ export async function runAgentTurn(
       if (transagentTools)
         inlineEntries.push({ name: 'transagent-tools', server: transagentTools });
       if (workspaceTools) inlineEntries.push({ name: 'workspace-tools', server: workspaceTools });
+      if (specSkillTools) inlineEntries.push({ name: SPEC_SKILL_TOOLS_SERVER, server: specSkillTools });
       inlineEntries.push({ name: 'skill-tools', server: skillTools });
 
       return [...pluginEntries, ...inlineEntries];

@@ -8,3 +8,4 @@
 import './tags/references.js';
 import './tags/sections.js';
 import './tags/todos.js';
+import './tags/skills.js';

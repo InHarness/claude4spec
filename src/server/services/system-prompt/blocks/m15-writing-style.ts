@@ -41,6 +41,10 @@ function buildProjectWritingSkill(ws: { slug: string; title: string }): string {
   return [
     `<project_writing_skill ${attrs({ slug: ws.slug, title: ws.title })}>`,
     `This project has an active writing style, and it is BINDING on everything you produce: pages, plans, entity content, and the structure of your answers all follow it.`,
+    // 2.1.9 (M15 `u7b1qhr1`, M52 `9j9cxrsr`): the style binds the specification,
+    // not instructions for the agent — skill packages are written by the
+    // skill-author methodology, so the block excludes them outright.
+    `Skill packages are outside this binding: when you write or edit one, follow the skill-author skill instead.`,
     ``,
     `You do not know its conventions yet, and this block does not summarise them.`,
     `  1. Before your first tool call in this thread, call load_skill_file("${ws.slug}") and read it.`,

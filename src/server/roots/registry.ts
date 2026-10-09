@@ -1,8 +1,8 @@
 /**
  * 2.1.8 — the root registry (M02 is its implementor).
  *
- * `list()` is `config.roots[]` (kind `pages`) followed by the five system roots
- * registered in code. Every per-file behaviour is gated on a root's KIND or on
+ * `list()` is `config.roots[]` (kind `pages`) followed by the system roots
+ * registered in code (one per kind with source `code`). Every per-file behaviour is gated on a root's KIND or on
  * a flag of that kind — never on a directory and never on an identifier:
  *  - the base root is recognised only by `builtin`;
  *  - a system root only by `kind`;
@@ -13,6 +13,7 @@ import type { Root } from '../../shared/types.js';
 import {
   KIND_DECLARATIONS,
   PAGES_KIND,
+  kindHasFacade,
   registryList,
   type KindFlags,
   type RegistryRoot,
@@ -45,9 +46,27 @@ export class RootRegistry {
     return this.roots.filter((r) => r.kind === kind);
   }
 
-  /** The user roots (`kind: pages`) — the only addressable spaces. */
+  /**
+   * The user roots (`kind: pages`) — the spaces agent discovery addresses
+   * (`list_pages`, `get_page`, `search_pages`, `overview`).
+   */
   pages(): RegistryRoot[] {
     return this.byKind(PAGES_KIND);
+  }
+
+  /**
+   * 2.1.9 — the roots WITH A FACADE: every root whose kind's `sidebar` is not
+   * `hidden` (M02 `m02multidir`), in registry order. These — and only these —
+   * are what the page routes `/api/pages/:rootId/*` and the page write
+   * operations address; agent discovery stays on {@link pages}.
+   */
+  facades(): RegistryRoot[] {
+    return this.roots.filter((r) => kindHasFacade(r.kind));
+  }
+
+  /** 2.1.9 — the roots of kinds with source `code` (the system roots), in registry order. */
+  codeRoots(): RegistryRoot[] {
+    return this.roots.filter((r) => KIND_DECLARATIONS[r.kind].source === 'code');
   }
 
   /** The single root of a system kind. */
@@ -67,6 +86,23 @@ export class RootRegistry {
   /** Roots whose kind carries the given flag value. */
   withFlag(flag: keyof KindFlags, value = true): RegistryRoot[] {
     return this.roots.filter((r) => KIND_DECLARATIONS[r.kind].flags[flag] === value);
+  }
+
+  /**
+   * 2.1.9 — the roots of kinds other than `pages` that belong to the reference
+   * graph (`references = yes`, markdown entries) — what agent discovery's
+   * reference sweeps (`find_references`, `check_consistency`) read beside the
+   * page roots, without making them addressable. Today: `skills` (M52).
+   */
+  referenceOnly(): Array<{ root: Root; kind: RootKind }> {
+    return this.roots
+      .filter(
+        (r) =>
+          r.kind !== PAGES_KIND &&
+          KIND_DECLARATIONS[r.kind].flags.references &&
+          KIND_DECLARATIONS[r.kind].fileMap.some((e) => e.format === 'markdown'),
+      )
+      .map((r) => ({ root: { id: r.id, name: r.name, dir: r.dir, builtin: r.builtin }, kind: r.kind }));
   }
 
   /** Roots whose kind selects the reaction. */

@@ -52,7 +52,7 @@
 
 import { createMcpServer, mcpTool, z, type CapturedMcpServer } from '../plugin-runtime/index.js';
 import { toolFailure, toolSuccess } from '../operations/envelope.js';
-import { DEFAULT_SKILL_FILE, listSkills, loadSkillFile } from '../services/skill-operations.js';
+import { DEFAULT_SKILL_FILE, listSkills, loadSkillFileLive } from '../services/skill-operations.js';
 import { KNOWN_CONTEXT_TYPES } from '../services/chat-context.js';
 import type { SkillRegistry, SkillResolver } from '../services/skill-registry.js';
 
@@ -61,10 +61,35 @@ export { DEFAULT_SKILL_FILE };
 /** Both operations only read the registry; a repeated call answers the same. */
 const READ_ONLY = { readOnlyHint: true, idempotentHint: true } as const;
 
+/**
+ * 2.1.9 — the wire text of each rendering, as the specification states it: the
+ * turn's server (`skill-tools`, entity `skill-tools-load-skill-file`) and the
+ * external surface (`c4s-reader`, entities `c4s-reader-load-skill-file` and
+ * `c4s-reader-list-skills`) describe the same operation to two different callers —
+ * one that has `<available_skills>` in its prompt, one that has `list_skills`.
+ */
+export const SKILL_TOOL_TEXT = {
+  turn: {
+    loadSkillFile:
+      'Load an internal skill from the registry. This is the ONLY channel for reading a skill: skills are not on disk for you — never use Read on a skill path, and never open one with the native Skill() tool. Call it with `slug` alone to OPEN the skill: you get the SKILL.md content plus a manifest of every other file in the package (path, bytes, lines, isText), so you can decide what is worth reading before you pay for it. Call it again with `file` to read one of the manifest paths (e.g. workflows/brief.md) — that is how a skill routes you to its own subfiles. For an editable skill the content is the raw file, and `hash` is the value a write expects. A project skill whose SKILL.md header is not valid yet still opens: the response carries `invalid: true` and `invalidReason`. Available skills, with their descriptions, are listed in <available_skills/>; the active writing style is named in <project_writing_skill>. `file` is POSIX-relative to the package root: no absolute path, no `..`.',
+    slug: 'Skill slug from the registry — the value shown in <available_skills/> or <project_writing_skill>.',
+  },
+  external: {
+    loadSkillFile:
+      "Load a writing-style or contextual skill from this project's internal registry — which also holds read-only skills of workspace projects exposed to this one — the conventions and methodology that govern how content in this specification may be written. Call it with `slug` alone to OPEN the skill: you get the SKILL.md content plus a manifest of every other file in the package (path, bytes, lines, isText), so you can decide what is worth reading before you pay for it. Call it again with `file` to read one of the manifest paths (e.g. workflows/brief.md) — that is how a skill routes you to its own subfiles. You do not read these skills from disk: the registry serves them through this tool and no response carries a disk path, so there is no path to read and no directory to list. A project skill whose SKILL.md header is not valid yet still opens: the response carries `invalid: true` and `invalidReason`. Discover the available slugs with `list_skills`, which also names the project's active writing style. `file` is POSIX-relative to the package root: no absolute path, no `..`.",
+    slug: 'Skill slug from the registry — the value returned by `list_skills`.',
+    listSkills:
+      'List the skills available for a context type in this project, together with the active writing style. Call this before `load_skill_file` — it is how you learn which slugs exist. The active writing style is BINDING on any content you write into this specification: open it with `load_skill_file` and follow it rather than your own conventions. Pass `contextType` to ask what a given kind of turn would see — a briefing or planning methodology typically lives in a subfile of the active style, so ask for the context you are about to work in. Omit it to get the whole registry. Reading a skill is not gated by context type: anything listed for any context can be opened.',
+    contextType: "Context type whose skill set to list. Omit to list the whole registry instead of one context's set.",
+  },
+  file: 'Package-relative POSIX path of a subfile to read, taken from the manifest (e.g. workflows/brief.md). Omit to open the skill itself.',
+} as const;
+
 export interface SkillToolsOptions {
   /**
    * Pass to also register `list_skills`. Only the EXTERNAL surface does: in an
-   * agent turn the listing is the `<available_skills>` prompt block.
+   * agent turn the listing is the `<available_skills>` prompt block. Its presence
+   * also selects the external wording of `load_skill_file`.
    */
   resolver?: SkillResolver;
 }
@@ -74,29 +99,17 @@ export function buildSkillToolsServer(
   projectId: string | null = null,
   opts: SkillToolsOptions = {},
 ): CapturedMcpServer {
+  const text = opts.resolver ? SKILL_TOOL_TEXT.external : SKILL_TOOL_TEXT.turn;
   const loadSkillFileTool = mcpTool(
     'load_skill_file',
-    [
-      'Load a skill from this project\'s skill registry — the ONLY way to read one.',
-      'Two modes, one operation:',
-      '- `slug` alone OPENS the skill: returns its title, description, scope, the body of SKILL.md, and `files` — a manifest of every other file in its package as { path, bytes, lines, isText }. Read the manifest before fetching a subfile; it tells you what the subfile costs.',
-      '- `slug` + `file` READS one package subfile, e.g. load_skill_file("my-style", "workflows/brief.md"). `file` is a POSIX path relative to the package (never absolute, never with ".."); the disk location of a skill is not part of this contract and you never need it.',
-      'Read-only and idempotent — this operation never writes.',
-      'Content over the response budget comes back with `truncated: true` and a `truncationHint`; the address (slug, file) is unchanged.',
-      'Works against the LIVE registry, so a skill added or edited after this thread started is readable immediately, even though the <available_skills> listing in your prompt was frozen on the first turn.',
-    ].join('\n'),
+    text.loadSkillFile,
     {
-      slug: z.string().describe('Skill slug, from the <available_skills> listing in your system prompt or from list_skills.'),
-      file: z
-        .string()
-        .optional()
-        .describe(
-          `Package-relative POSIX path of a subfile, from the \`files\` manifest. Defaults to "${DEFAULT_SKILL_FILE}" (the skill body).`,
-        ),
+      slug: z.string().describe(text.slug),
+      file: z.string().optional().describe(`${SKILL_TOOL_TEXT.file} Defaults to "${DEFAULT_SKILL_FILE}".`),
     },
     async (args) => {
       try {
-        const data = loadSkillFile(
+        const data = await loadSkillFileLive(
           registry,
           String(args.slug ?? ''),
           args.file === undefined ? undefined : String(args.file),
@@ -116,12 +129,7 @@ export function buildSkillToolsServer(
     tools.push(
       mcpTool(
         'list_skills',
-        [
-          'List the skills of this project\'s registry: `listing` of { slug, description } plus `writingStyle` — the active writing style ({ slug, title }) or null.',
-          'The writing style is NOT a listing row: it is the convention every piece of specification content here must obey. Open it with load_skill_file(writingStyle.slug) and follow it before writing.',
-          '`contextType` narrows the listing to what that kind of conversation is offered; omit it for the whole registry. Visibility here is not a permission — load_skill_file opens any slug.',
-          'Read-only and idempotent.',
-        ].join('\n'),
+        SKILL_TOOL_TEXT.external.listSkills,
         {
           /**
            * A string, not `z.enum`: the enum is spelled in the description, but a
@@ -132,9 +140,7 @@ export function buildSkillToolsServer(
           contextType: z
             .string()
             .optional()
-            .describe(
-              `Conversation type whose skill set to list — one of ${KNOWN_CONTEXT_TYPES.join(', ')}. Omit to list the whole registry.`,
-            ),
+            .describe(`${SKILL_TOOL_TEXT.external.contextType} One of: ${KNOWN_CONTEXT_TYPES.join(', ')}.`),
         },
         async (args) => {
           try {

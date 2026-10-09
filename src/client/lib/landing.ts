@@ -1,6 +1,7 @@
 import type { PageNode } from '../../shared/types.js';
 import type { Root } from '../../shared/types.js';
 import { firstLeaf, pathExistsInTree } from '../../shared/page-files.js';
+import { kindHasFacade, registryList } from '../../shared/root-kinds.js';
 
 export { firstLeaf, pathExistsInTree };
 
@@ -32,8 +33,8 @@ export function findRootSkillFile(nodes: PageNode[]): PageNode | null {
 
 /**
  * First-match-wins landing chain: remembered page → index.md/mdx → SKILL.md → first tree file.
- * `null` means an empty tree — caller renders `EmptyState`. A stale remembered page (root gone
- * from `roots`, or path gone from its tree) falls through silently, no error.
+ * `null` means an empty tree — caller renders `EmptyState`. A stale remembered page (its id no
+ * longer names a root with a facade, or path gone from its tree) falls through silently, no error.
  */
 export function resolveLandingTarget(input: {
   lastPage: LastPage | null;
@@ -47,7 +48,10 @@ export function resolveLandingTarget(input: {
     // 0.2.101: a remembered page under an identifier a rename retired fails this
     // check exactly like one under a deleted root — the old id is not an alias of
     // the new one, so the landing falls through to the base root below.
-    const rootExists = roots.some((r) => r.id === lastPage.rootId);
+    // 2.1.9 (M02 `4dcvgivu`): the id must still name a root WITH A FACADE in the
+    // registry (the user roots plus any system root whose kind's `sidebar` is not
+    // `hidden`) — a `hidden` system root (`plans`, …) is never a landing.
+    const rootExists = registryList(roots).some((r) => r.id === lastPage.rootId && kindHasFacade(r.kind));
     if (rootExists && pathExistsInTree(lastPageTree, lastPage.path)) {
       return lastPage;
     }

@@ -4,25 +4,70 @@ import path from 'node:path';
 import matter from 'gray-matter';
 import type { PluginSkillContribution, WritingStyleContribution } from '../../shared/plugin-host/manifest.js';
 import type { ChatContextType } from '../../shared/entities.js';
-import { CONTEXT_TYPE_REGISTRY } from './chat-context.js';
+import type { SkillSource } from '../../shared/writing-styles.js';
 import { readConfig } from '../config.js';
 
 export type SkillScope = 'writing-style' | 'contextual';
 
 /**
- * Where a skill was discovered: a user `.claude/skills` root, or a plugin
- * contribution (M15). Selection precedence is `project > global > plugin` —
- * project/global are both `user` (ordered by root scan), and `plugin` is now LAST
- * in the chain rather than merely above the in-package bundle.
+ * 2.1.9 (M37 `zscui1qz`) — the VALUE a source stamps on every entry it delivers
+ * and on every read answer. It is not the identity of a registration: the two
+ * `.claude/skills` roots are two registrations (`user-project`, `user-global`)
+ * sharing the one value `user`.
  *
- * 0.2.66 retires the third class, `'bundled'`. The npm package no longer carries a
- * skills root at all: the reference writing style left for
- * `c4s-plugin-layered-vertical-slices` in 0.2.57 and `writing-style-author`, its
- * last inhabitant, left for `c4s-plugin-writing-style-author` here. The host has
- * no skill source of its own any more — every skill is either a file the user
- * wrote or a package's contribution.
+ * `project-rooted` and `project-exposed` are declared by M52, not by this module —
+ * the registry only names them. Both are registered per project context by M52
+ * (`project-rooted-skills.ts`, `project-exposed-skills.ts`).
  */
-export type SkillSource = 'user' | 'plugin';
+export type { SkillSource } from '../../shared/writing-styles.js';
+
+/**
+ * A rung of the precedence chain (M37 `aw9kcadc`). The chain is the REGISTRY's
+ * order, one per `scope`; a source's declaration cites its rung per admitted
+ * scope and never repeats the order.
+ */
+export type SkillRung = 'project-rooted' | 'user-project' | 'project-exposed' | 'user-global' | 'plugin';
+
+/** Highest rank first. A rung absent from a scope's chain cannot rank there. */
+export const SKILL_PRECEDENCE: Readonly<Record<SkillScope, readonly SkillRung[]>> = {
+  'writing-style': ['project-rooted', 'user-project', 'project-exposed', 'user-global', 'plugin'],
+  contextual: ['plugin', 'project-rooted', 'project-exposed'],
+};
+
+/** How a source refreshes its metadata (declaration field `skan`). */
+export type SkillScanCadence = 'on-demand' | 'push' | 'live';
+
+/**
+ * Why a slug the registry can name resolves to nothing (M37 `vsa4f54s`).
+ *
+ * - `outside-registry` — "styl spoza rejestru": stated by the registry itself, for
+ *   any slug no source delivers and no source reports.
+ * - `envelope-not-loaded` — "wkład koperty niezaładowany": reported by the `plugin`
+ *   source for the slugs of a package that did not load (skipped by the M33 gate
+ *   after its manifest was read) or of a single entry rejected by the loader's
+ *   contribution check. The detail (which package, what value) stays in the
+ *   loader's warning and in `detail`.
+ * - `provider-unreachable` — "dostawca podpięcia nieosiągalny": reported by the
+ *   `project-exposed` source (M52) for an attachment that resolves to no provider
+ *   (dangling — none exposes the name — or ambiguous — several do). Unlike the
+ *   other two it does not stop the start (M01 `7yzu5k8u`).
+ */
+export type SkillUnresolvedReason = 'outside-registry' | 'envelope-not-loaded' | 'provider-unreachable';
+
+/** A slug a source knows but does not deliver — always with a reason. */
+export interface UnresolvedSkillSlug {
+  slug: string;
+  reason: Exclude<SkillUnresolvedReason, 'outside-registry'>;
+  /** Human detail for messages, e.g. `package "x" was skipped: host API …`. */
+  detail?: string;
+}
+
+/** What `unresolvedReason(slug)` answers for a slug no source delivers. */
+export interface SkillUnresolved {
+  slug: string;
+  reason: SkillUnresolvedReason;
+  detail?: string;
+}
 
 export interface SkillMetadata {
   slug: string;
@@ -31,35 +76,37 @@ export interface SkillMetadata {
   version: number;
   language: 'en' | 'pl';
   scope: SkillScope;
+  /** The `source` value of the registration the entry came from. */
   source: SkillSource;
   /**
-   * 0.2.66 — which context types this skill is LISTED in, as declared by the
-   * package that contributed it. `undefined` means all four, which is also the
-   * only value an FS-scanned entry ever has: the field travels on
-   * `PluginSkillContribution` and there is no frontmatter key for it. A writing
-   * style ignores it entirely — it reaches a turn through `config.writingStyle`
-   * and its own block, not through the listing.
+   * Reach of a `scope: 'contextual'` entry in context types; `undefined` means all
+   * four. Its carrier depends on the source: the envelope declaration (`plugin`),
+   * the package frontmatter (`project-rooted`) or the exposure fields
+   * (`project-exposed`). The `.claude/skills` roots never deliver it — they do not
+   * admit `contextual` at all. Meaningless for a writing style.
    */
   contextTypes?: ChatContextType[];
+  /** Absolute package dir; `''` for an in-memory (pushed) entry. */
   path: string;
+  /**
+   * 2.1.9 (M37 `ixkjxpua`) — the provider's project id, set ONLY by the
+   * `project-exposed` source; it becomes the listing row's `project`. Never a path.
+   */
+  project?: string;
 }
 
 /**
- * A filesystem root scanned by {@link SkillRegistry.load}. Roots are scanned in
- * array order (highest precedence first); on a slug collision the first root wins,
- * so callers pass project before global. See {@link findSkillsRoots}.
+ * A filesystem root scanned by the `user` source. `registration` names which of
+ * the two registrations it is — project (`<cwd>/.claude/skills`) or global
+ * (`~/.claude/skills`); {@link SkillRegistry.load} defaults the first root to
+ * `user-project` and the rest to `user-global`.
  *
- * `source` is the LITERAL `'user'` rather than `SkillSource`: 0.2.66 left exactly
- * one class of root, and the scanner's admission rule (`scope: contextual` is
- * refused) reads that field to decide. Typing it as the wider union would let
- * `{ dir, source: 'plugin' }` type-check, which stamps disk entries as plugin
- * pushes, silently disables that rule, and sends `resolve()` down the plugin
- * branch to throw "has no body" for a skill that is right there on disk. The
- * field stays because it is what `parseFrontmatter` writes onto each entry.
+ * `source` stays the LITERAL `'user'`: a root on disk is never a plugin push.
  */
 export interface SkillRoot {
   dir: string;
   source: 'user';
+  registration?: 'user-project' | 'user-global';
 }
 
 /**
@@ -71,12 +118,9 @@ export interface SkillRoot {
  * see what a subfile COSTS before it pays for it. `bytes`/`lines` are exactly
  * the manifest that operation emits.
  *
- * A non-text file now SURVIVES the scan with `isText: false` instead of being
- * dropped. The two states are not the same fact: a dropped file is
- * indistinguishable from one the author never wrote, while `isText: false` says
- * "it is in the package, and this channel will not serve it" — which is what the
- * `NOT_TEXT` refusal needs to be predictable rather than surprising. Its
- * `content` stays empty; nothing ever serves the bytes of a binary.
+ * A non-text file SURVIVES the scan with `isText: false` instead of being
+ * dropped: "it is in the package, and this channel will not serve it" is what
+ * the `NOT_TEXT` refusal needs to be predictable. Its `content` stays empty.
  */
 export interface SkillPackageFile {
   /** POSIX-relative to the package dir — the `file` argument of `load_skill_file`. */
@@ -89,41 +133,128 @@ export interface SkillPackageFile {
   content: string;
 }
 
+/**
+ * The resolved winner of a slug (contract `kontrakt-skillregistry-skillmetadata-resolvedskill`).
+ *
+ * `files` is the WHOLE package except `SKILL.md` and is a structure internal to
+ * the registry: it never leaves the process in one piece — `load_skill_file`
+ * emits either the manifest (metrics only) or one named subfile.
+ */
 export interface ResolvedSkill {
   metadata: SkillMetadata;
+  /** `SKILL.md` in the form the entry's source reads it (`user`/`plugin`: body without frontmatter). */
   content: string;
-  /**
-   * 0.2.19: the WHOLE skill package except `SKILL.md`, keyed by path relative to
-   * the skill dir. There is no directory whitelist any more — `templates/`,
-   * `examples/` and `workflows/` are examples of what a package may hold, not a
-   * closed set. The host does not know a style's directory layout and injects no
-   * methodology block of its own; it only knows a skill has `content` and
-   * `files`, so anything the style keeps beside `SKILL.md` (notably
-   * `workflows/*.md`, the sole home of genre methodology since 0.2.19) has to
-   * reach the agent through here.
-   *
-   * 0.2.36: this structure NEVER LEAVES THE PROCESS IN ONE PIECE. `load_skill_file`
-   * emits either the manifest (metrics only) or one named subfile; there is no
-   * caller that receives the map. It stopped riding `InlineSkill.files` into a
-   * library tmpdir, which is what made the whole package a prompt-budget item.
-   */
   files: Record<string, SkillPackageFile>;
+  /**
+   * Present only when the source's file read returns one (`project-rooted`). The
+   * registry never computes it. ASSUMPTION:dev-0402 — carried here although the
+   * contract snippet's `ResolvedSkill` has no such field.
+   */
+  hash?: string;
+}
+
+/** What one scan of a source yields: admitted-or-not entries, plus packages it could not parse. */
+export interface SkillSourceScan {
+  entries: SkillMetadata[];
+  /** Packages found but malformed/unsupported — slug + human reason (diagnostics only). */
+  skipped: Array<{ slug: string; reason: string }>;
+}
+
+/** The answer of a source's "odczyt pliku" operation. */
+export interface SkillFileRead {
+  content: string;
+  files: Record<string, SkillPackageFile>;
+  hash?: string;
 }
 
 /**
- * What the prompt is allowed to know about a skill: its name and what it is for.
- *
- * The whole of 0.2.36 in one type. The listing a turn renders is metadata; the
- * BODY is fetched on demand through `load_skill_file`, so a skill costs one line
- * of prompt instead of a whole `SKILL.md` — and the unconditional plugin fan-out
- * stops being a context-budget risk.
+ * 2.1.9 (M37 `7pj9yx9k`, M52 `q6jr8zoj`) — an INVALID package a source still
+ * serves: found by the source, outside the registry (validity gates only the
+ * entry), readable under a slug no source resolves. Whatever of the header could
+ * be read travels along; `content` is absent when the package has no `SKILL.md`.
+ */
+export interface InvalidSkillRead {
+  slug: string;
+  /** The `source` value of the registration that serves it. */
+  source: SkillSource;
+  /** Why the package is not a registry entry (the header's broken field, a missing `SKILL.md`, …). */
+  invalidReason: string;
+  title?: string;
+  description?: string;
+  scope?: SkillScope;
+  content?: string;
+  files: Record<string, SkillPackageFile>;
+  hash?: string;
+}
+
+/**
+ * M37 `zscui1qz` — the contract every skill source registers under. The registry
+ * knows no carrier; it knows only this declaration and these operations.
+ */
+export interface SkillSourceRegistration {
+  /** Identity of the registration (two registrations may share one `source` value). */
+  readonly name: string;
+  /** Stamped on `SkillMetadata.source` of every entry and on every read answer. */
+  readonly source: SkillSource;
+  /** Admission rule: an entry whose `scope` is not listed is ignored with a warning. */
+  readonly scopes: readonly SkillScope[];
+  /** The rung this source occupies in the chain of each admitted scope. */
+  readonly rank: Readonly<Partial<Record<SkillScope, SkillRung>>>;
+  /** Declaration only — the owner of the source writes; the registry writes nothing. */
+  readonly writable: boolean;
+  /** Metadata refresh cadence. */
+  readonly scan: SkillScanCadence;
+  /** Optional manifest limit: over it `files` is cut and the answer carries `truncated` + hint. No declaration, no limit. */
+  readonly manifestLimit?: number;
+  /** Current entries of the source. */
+  list(): SkillSourceScan;
+  /**
+   * "Odczyt pliku" — the content in the form a thread may write back, plus an
+   * optional `hash`. A source that reads live through something asynchronous
+   * (`project-exposed`: the provider's context) returns a promise; such an entry
+   * is read with {@link SkillRegistry.resolveLive}.
+   */
+  read(metadata: SkillMetadata): SkillFileRead | Promise<SkillFileRead>;
+  /** Slugs the source knows but does not deliver, each with its reason. */
+  unresolved(): UnresolvedSkillSlug[];
+  /**
+   * Optional — an invalid package of this source under `slug`, served by the
+   * registry only when no source resolves the slug (M37 `7pj9yx9k`). A source
+   * that serves no invalid packages omits it.
+   */
+  readInvalid?(slug: string): InvalidSkillRead | undefined;
+  /**
+   * Optional — a cheap fingerprint of the source's on-disk state (names, mtimes,
+   * sizes; never content). A source that declares it is re-scanned on the first
+   * query after the fingerprint changes, whatever the coalescing window says: a
+   * write through the source's owner (or by hand) is visible to the very next
+   * read. A source without it is coalesced by the window alone.
+   */
+  changeStamp?(): string;
+}
+
+/**
+ * What the prompt is allowed to know about a skill: its name, what it is for, and
+ * where the winning entry came from (M37 `ixkjxpua`). The BODY is fetched on
+ * demand through `load_skill_file`.
  */
 export interface SkillListingEntry {
   slug: string;
   description: string;
+  /** The `source` value of the entry that won the `contextual` chain. */
+  origin: SkillSource;
+  /**
+   * The provider's registry `id` — ONLY when `origin` is `project-exposed` (the
+   * address of `ask({ project })`, M31 #13), taken from the winner's
+   * `SkillMetadata.project` set by the `project-exposed` source (M52). Never a
+   * path (M31 #16).
+   */
+  project?: string;
 }
 
-const SUPPORTED_VERSION = 1;
+/** The highest skill `version` this app reads; a higher one is skipped (forward compat). */
+export const SUPPORTED_SKILL_VERSION = 1;
+const SUPPORTED_VERSION = SUPPORTED_SKILL_VERSION;
 // 0.1.87: FS roots re-scan on demand so a style dropped into `.claude/skills` while the
 // server runs is visible from the next query — no restart. A short window coalesces the
 // burst of registry calls one query makes (PATCH validate, GET list, agent-turn
@@ -134,134 +265,439 @@ const DEFAULT_USER_RESCAN_TTL_MS = 500;
 /** Options for {@link SkillRegistry.load}. */
 export interface SkillRegistryOptions {
   /**
-   * Coalescing window for the on-demand user-root re-scan, in ms. Within the window
-   * repeated reads reuse the last scan instead of touching disk again. `0` disables
-   * coalescing (every read re-scans) — used by tests to assert pickup deterministically.
+   * Coalescing window for the on-demand re-scan, in ms. `0` disables coalescing
+   * (every read re-scans) — used by tests to assert pickup deterministically.
    */
   rescanTtlMs?: number;
 }
 
-export class SkillRegistry {
-  // Derived merged view (user ∪ plugin), rebuilt by `rebuild()`. FS-root entries are
-  // refreshed from disk on demand; plugin entries are folded in from the cache below.
-  private metadataBySlug = new Map<string, SkillMetadata>();
-  // Slugs found on disk but dropped during scan (version too high, contextual in a
-  // user root, missing/malformed SKILL.md), mapped to a human reason. Lets
-  // `unselectableReason()` explain *why* an authored skill isn't selectable instead
-  // of just listing what is — see the skip branches in `scanRootInto`. Rebuilt with
-  // the merged view.
-  private skips = new Map<string, string>();
+/** One admitted entry, with the registration it came from and its arrival order. */
+interface HeldEntry {
+  meta: SkillMetadata;
+  reg: SkillSourceRegistration;
+  order: number;
+}
 
-  // User roots (`source: 'user'`, project before global), retained so each read can
-  // re-scan them. Bundled (and any other non-user) roots are scanned once at `load()`
-  // into the caches below and never re-read.
-  private userRoots: SkillRoot[] = [];
-  // M15: plugin-contributed skills carry their body inline (no FS path), so `resolve()`
-  // reads them from here instead of disk. `pluginMeta` holds their metadata for the
-  // merge; first plugin wins per slug (a later push for the same slug is ignored).
-  private pluginMeta = new Map<string, SkillMetadata>();
-  private pluginResolved = new Map<string, ResolvedSkill>();
+/** Position of an entry in its scope's chain; Infinity when the source cites no rung there. */
+function rankIndex(entry: HeldEntry): number {
+  const rung = entry.reg.rank[entry.meta.scope];
+  if (rung === undefined) return Number.POSITIVE_INFINITY;
+  const i = SKILL_PRECEDENCE[entry.meta.scope].indexOf(rung);
+  return i < 0 ? Number.POSITIVE_INFINITY : i;
+}
+
+/**
+ * The winner among the admitted entries of ONE slug (M37 `aw9kcadc`):
+ *   1. a collision across scopes goes to the `contextual` entry;
+ *   2. within a scope, the higher rung of that scope's chain wins;
+ *   3. a tie on one rung (plugin ↔ plugin) is first-wins by arrival order.
+ */
+function pickWinner(group: HeldEntry[]): HeldEntry {
+  const contextual = group.filter((e) => e.meta.scope === 'contextual');
+  const pool = contextual.length > 0 ? contextual : group;
+  return [...pool].sort((a, b) => rankIndex(a) - rankIndex(b) || a.order - b.order)[0]!;
+}
+
+export class SkillRegistry {
+  // Registered sources, in registration order.
+  private sources: SkillSourceRegistration[] = [];
+  // Every admitted entry of every source — NOT deduplicated (`list()`).
+  private entries: HeldEntry[] = [];
+  // The winner per slug, by the precedence chain.
+  private winners = new Map<string, HeldEntry>();
+  // Slugs a source found but could not admit/parse, with a human reason — for
+  // `unselectableReason()`. Only for slugs that ended up without a winner.
+  private skips = new Map<string, string>();
+  // Slugs reported "known, unresolved" by a source, for slugs without a winner.
+  private unresolvedBySlug = new Map<string, UnresolvedSkillSlug>();
+  // Warnings already emitted — the scan repeats per query, a warning does not.
+  private warned = new Set<string>();
+
+  /** The registry's own `plugin` registration (push at `registerPlugin`, M33). */
+  private readonly plugin = new PluginSkillSource();
 
   private rescanTtlMs = DEFAULT_USER_RESCAN_TTL_MS;
-  // Epoch (ms) of the last merged-view rebuild; `0` forces a rebuild on next read.
+  // Epoch (ms) of the last rebuild; `0` forces a rebuild on next read.
   private lastScanAt = 0;
+  // The `changeStamp()` of each stamping source, taken right before the last rebuild.
+  private lastStamps = new Map<string, string>();
 
   /**
-   * Build a registry over `roots`. Every root is re-scanned on demand by every read
-   * (`list`/`listSelectable`/`has`/`isSelectable`/`resolve`/`unselectableReason`), with a
-   * short coalescing window — so a style dropped into `.claude/skills` while the server
-   * runs is visible from the next query without a restart. An eager warm scan runs here
-   * too, so malformed-`SKILL.md` warnings still fire at boot.
+   * Build a registry with the registry's own sources: one `user` registration per
+   * root (project `user-project`, global `user-global` — both admit
+   * `writing-style` only, not writable, scanned on demand, read without frontmatter
+   * and without `hash`, no manifest limit) and the `plugin` registration (both
+   * scopes, not writable, push, read from memory).
    *
-   * 0.2.66 — there is no longer a second CADENCE to explain. The in-package root was the
-   * only one scanned once and cached for the process's life, which is what made a shipped
-   * skill need a restart to appear; with it gone, every root on disk is on-demand and only
-   * plugin pushes are held in memory (their cadence being the loader's, not the scan's).
-   *
-   * Merge precedence: project > global > plugin. A missing or unreadable root is treated as
-   * empty (no throw); a malformed `SKILL.md` is skipped with a warning; a `scope: contextual`
-   * skill in an FS root is ignored (contextual skills are package-only).
+   * A missing or unreadable root is treated as empty (no throw); a malformed
+   * `SKILL.md` is skipped with a warning; an entry whose `scope` its source does not
+   * admit is ignored with a warning.
    */
   static load(roots: SkillRoot[], opts: SkillRegistryOptions = {}): SkillRegistry {
     const registry = new SkillRegistry();
     if (opts.rescanTtlMs !== undefined) registry.rescanTtlMs = opts.rescanTtlMs;
-    registry.userRoots.push(...roots);
+    roots.forEach((root, i) => {
+      const rung = root.registration ?? (i === 0 ? 'user-project' : 'user-global');
+      // Registration name = identity; a third root (tests only) gets a suffixed name on the global rung.
+      const name = root.registration ?? (i < 2 ? rung : `${rung}#${i}`);
+      registry.registerSource(new UserRootSkillSource(root.dir, name, rung));
+    });
+    registry.registerSource(registry.plugin);
     registry.rebuild();
     registry.lastScanAt = Date.now();
     return registry;
   }
 
   /**
-   * Re-scan the FS roots if the coalescing window has elapsed, then recompute the merged
-   * view. Called at the top of every read so a freshly added user style is picked up.
+   * Register a source (M37 `zscui1qz`). Other modules (M52: `project-rooted`,
+   * `project-exposed`) register theirs here; the registry only names them.
    */
+  registerSource(source: SkillSourceRegistration): void {
+    if (this.sources.some((s) => s.name === source.name)) {
+      throw new Error(`SkillRegistry: a source named "${source.name}" is already registered`);
+    }
+    for (const scope of source.scopes) {
+      const rung = source.rank[scope];
+      if (rung === undefined || !SKILL_PRECEDENCE[scope].includes(rung)) {
+        throw new Error(
+          `SkillRegistry: source "${source.name}" admits scope "${scope}" but cites no rung of its chain`,
+        );
+      }
+    }
+    this.sources.push(source);
+    this.lastScanAt = 0;
+  }
+
+  /** Drop a registration; its entries leave the registry from the next query. */
+  unregisterSource(name: string): void {
+    this.sources = this.sources.filter((s) => s.name !== name);
+    this.lastScanAt = 0;
+  }
+
+  private warnOnce(message: string): void {
+    if (this.warned.has(message)) return;
+    this.warned.add(message);
+    console.warn(message);
+  }
+
   private ensureFresh(): void {
     const now = Date.now();
-    if (now - this.lastScanAt < this.rescanTtlMs) return;
+    // 2.1.9 (M52 "scan on demand"): the window coalesces a burst of reads, but it
+    // never hides a change a stamping source reports — a read right after a write
+    // through the `skills` root sees the write.
+    if (now - this.lastScanAt < this.rescanTtlMs && !this.stampsChanged()) return;
     this.rebuild();
     this.lastScanAt = now;
   }
 
-  /**
-   * Recompute the merged view from a fresh FS-root scan plus the cached plugin pushes.
-   * Precedence (highest first): project user > global user > plugin — reproduced by
-   * merging the roots first and then plugins over the top, where a plugin never
-   * displaces a user entry.
-   *
-   * 0.2.66 removed the middle step. The chain used to end `… > plugin > bundled`, and
-   * a plugin entry had a class BENEATH it that it could legitimately override; now it
-   * is last, so the only question this loop asks is whether a user already claimed the
-   * slug.
-   */
-  private rebuild(): void {
-    const meta = new Map<string, SkillMetadata>();
-    const skips = new Map<string, string>();
-
-    // 1. FS roots — fresh from disk, project before global (first root wins per slug).
-    for (const root of this.userRoots) scanRootInto(root, meta, skips);
-
-    // 2. Plugins — cached pushes, and now the LAST rung. A plugin never displaces an
-    //    FS-root skill (0.2.19: of either scope — a user-authored skill sharing a slug
-    //    with a plugin CONTEXTUAL skill is meant to override its content, which is
-    //    exactly this branch losing).
-    //
-    //    0.2.66 dropped the scope-reclassification guard that stood beside it. Its job
-    //    was to stop a contextual contribution from taking over a writing-style slug and
-    //    dropping it out of `listSelectable()` — the project losing its style to a plugin
-    //    it merely installed. Two rules now make that unreachable rather than merely
-    //    refused: the FS roots admit `writing-style` only, so any incumbent here is a
-    //    style and loses to the guard above anyway, and `addPluginSkill` is first-wins,
-    //    so two plugins never both reach this map with one slug. A guard whose condition
-    //    can no longer hold is worse than no guard: it reads as a live rule and documents
-    //    a collision the design has since made impossible.
-    for (const [slug, m] of this.pluginMeta) {
-      if (meta.has(slug)) continue;
-      meta.set(slug, m);
-      skips.delete(slug);
+  private takeStamps(): Map<string, string> {
+    const out = new Map<string, string>();
+    for (const reg of this.sources) {
+      if (reg.changeStamp) out.set(reg.name, reg.changeStamp());
     }
+    return out;
+  }
 
-    this.metadataBySlug = meta;
-    this.skips = skips;
+  private stampsChanged(): boolean {
+    for (const reg of this.sources) {
+      if (!reg.changeStamp) continue;
+      if (this.lastStamps.get(reg.name) !== reg.changeStamp()) return true;
+    }
+    return false;
   }
 
   /**
-   * M15/M37: push a plugin-contributed skill of either scope. Precedence
-   * `project > global > plugin` is applied at merge time (`rebuild`): a `user` skill
-   * already claiming this slug wins and the plugin skill's content is dropped. First
-   * plugin wins among plugins — a later push for the same slug is ignored here, and the CALLER (the
-   * loader) is the one that warns about it, because only the loader knows which two
-   * plugins collided. Loading is the caller's trust decision — untrusted project-local
-   * plugins are never pushed here.
-   *
-   * 0.2.19: generalised from `addPluginStyle` when `contributes.skills` arrived. A
-   * contextual plugin skill loses its content to a same-slug user skill exactly like a
-   * style does — but note it does NOT lose its ATTACHMENT: `resolveForContext` selects by
-   * `source === 'plugin' && scope === 'contextual'` off `list()` and then resolves the
-   * slug through the precedence chain, so the user body is what reaches the agent.
+   * Recompute every view from the sources: admission by each declaration, then one
+   * winner per slug by the chain of its scope. A lower entry losing to a higher one
+   * is logged with a warning; so is a writing style losing a cross-scope collision.
+   */
+  private rebuild(): void {
+    // Taken BEFORE the scan: a write landing during it changes the stamp again,
+    // so the next read re-scans rather than keeping a half-seen state.
+    this.lastStamps = this.takeStamps();
+    const entries: HeldEntry[] = [];
+    const skips = new Map<string, string>();
+    const reported = new Map<string, UnresolvedSkillSlug>();
+    let order = 0;
+
+    for (const reg of this.sources) {
+      const scan = reg.list();
+      for (const s of scan.skipped) {
+        this.warnOnce(`[skill] ${s.slug} (${reg.name}): ${s.reason}, skipping`);
+        if (!skips.has(s.slug)) skips.set(s.slug, s.reason);
+      }
+      for (const meta of scan.entries) {
+        if (!reg.scopes.includes(meta.scope)) {
+          const reason = `scope "${meta.scope}" is not admitted by source "${reg.name}" (its declaration admits: ${reg.scopes.join(', ')})`;
+          this.warnOnce(`[skill] ${meta.slug}: ${reason}, ignored`);
+          if (!skips.has(meta.slug)) skips.set(meta.slug, reason);
+          continue;
+        }
+        entries.push({ meta: { ...meta, source: reg.source }, reg, order: order++ });
+      }
+      for (const u of reg.unresolved()) if (!reported.has(u.slug)) reported.set(u.slug, u);
+    }
+
+    const bySlug = new Map<string, HeldEntry[]>();
+    for (const e of entries) {
+      const group = bySlug.get(e.meta.slug);
+      if (group) group.push(e);
+      else bySlug.set(e.meta.slug, [e]);
+    }
+    const winners = new Map<string, HeldEntry>();
+    for (const [slug, group] of bySlug) {
+      const winner = pickWinner(group);
+      winners.set(slug, winner);
+      for (const loser of group) {
+        if (loser === winner) continue;
+        const why =
+          loser.meta.scope !== winner.meta.scope
+            ? `a "${winner.meta.scope}" entry wins a collision across scopes`
+            : rankIndex(loser) === rankIndex(winner)
+              ? `same rung "${winner.reg.rank[winner.meta.scope]}", first registered wins`
+              : `"${winner.reg.name}" ranks higher in the "${winner.meta.scope}" chain`;
+        this.warnOnce(
+          `[skill] ${slug}: ${loser.meta.scope} entry of source "${loser.reg.name}" skipped — ${why} (winner: "${winner.reg.name}")`,
+        );
+      }
+    }
+    for (const slug of winners.keys()) {
+      skips.delete(slug);
+      reported.delete(slug);
+    }
+
+    this.entries = entries;
+    this.winners = winners;
+    this.skips = skips;
+    this.unresolvedBySlug = reported;
+  }
+
+  /**
+   * M15/M37: push a plugin-contributed skill of either scope into the `plugin`
+   * source. First push wins per slug — a later push for the same slug is ignored
+   * here, and the CALLER (the loader) warns, because only it knows which two
+   * plugins collided. Loading is the caller's trust decision — untrusted
+   * project-local plugins are never pushed here.
    */
   addPluginSkill(c: PluginSkillContribution): void {
-    if (this.pluginMeta.has(c.slug)) return; // first plugin wins
-    const metadata: SkillMetadata = {
+    if (this.plugin.push(c)) this.lastScanAt = 0;
+  }
+
+  /** M15 sugar: a `WritingStyleContribution` is a `PluginSkillContribution` with `scope: 'writing-style'`. */
+  addPluginStyle(c: WritingStyleContribution): void {
+    this.addPluginSkill({ ...c, scope: 'writing-style' });
+  }
+
+  /**
+   * M33 → M37: a slug of an envelope that did not load — a package skipped by the
+   * loader's gate after its manifest was read, or a single entry the loader's
+   * contribution check rejected. The `plugin` source reports it "known, unresolved"
+   * with the reason `envelope-not-loaded`, unless some source delivers the slug.
+   */
+  addUnloadedPluginSkill(slug: string, detail?: string): void {
+    if (this.plugin.noteUnloaded(slug, detail)) this.lastScanAt = 0;
+  }
+
+  /** True when this slug was pushed by a plugin (used by the loader's collision warning). */
+  hasPluginSkill(slug: string): boolean {
+    return this.plugin.has(slug);
+  }
+
+  /**
+   * Every admitted entry of every source — NOT deduplicated: one slug present in two
+   * sources appears twice, differing in `source`. A consumer filtering this must
+   * reduce to unique slugs before `resolve()`.
+   */
+  list(): SkillMetadata[] {
+    this.ensureFresh();
+    return this.entries.map((e) => e.meta);
+  }
+
+  /**
+   * Only `scope === 'writing-style'`, deduplicated per slug by precedence: the slugs
+   * whose winner is a writing style. A slug lost to a `contextual` entry across
+   * scopes is not selectable. Sole source for the M15 surfaces and M01 validation.
+   */
+  listSelectable(): SkillMetadata[] {
+    this.ensureFresh();
+    return Array.from(this.winners.values())
+      .filter((w) => w.meta.scope === 'writing-style')
+      .sort((a, b) => a.order - b.order)
+      .map((w) => w.meta);
+  }
+
+  has(slug: string): boolean {
+    this.ensureFresh();
+    return this.winners.has(slug);
+  }
+
+  isSelectable(slug: string): boolean {
+    this.ensureFresh();
+    return this.winners.get(slug)?.meta.scope === 'writing-style';
+  }
+
+  /**
+   * M37 `vsa4f54s` — `null` when a source delivers the slug; otherwise the reason it
+   * is unresolved: the reason a source reported, or `outside-registry`.
+   */
+  unresolvedReason(slug: string): SkillUnresolved | null {
+    this.ensureFresh();
+    if (this.winners.has(slug)) return null;
+    const reported = this.unresolvedBySlug.get(slug);
+    if (reported) return { slug, reason: reported.reason, ...(reported.detail ? { detail: reported.detail } : {}) };
+    return { slug, reason: 'outside-registry' };
+  }
+
+  /**
+   * Explain why `slug` can't be selected as the writing style, for boot/PATCH
+   * validation messages. Returns a fragment meant to follow `writingStyle "<slug>" `.
+   */
+  unselectableReason(slug: string): string {
+    this.ensureFresh();
+    const unresolved = this.unresolvedReason(slug);
+    if (unresolved?.reason === 'envelope-not-loaded') {
+      return `is contributed by a plugin package that did not load${unresolved.detail ? ` (${unresolved.detail})` : ''} — fix or reinstall the package, or pick another style`;
+    }
+    if (unresolved?.reason === 'provider-unreachable') {
+      return `comes from an attached skill project whose provider is unreachable${unresolved.detail ? ` (${unresolved.detail})` : ''} — it is treated as absent until the provider resolves again`;
+    }
+    const skip = this.skips.get(slug);
+    if (skip !== undefined) return `was found on disk but skipped: ${skip}`;
+    const available = this.listSelectable().map((s) => s.slug).join(', ') || '(none)';
+    return `not a selectable writing-style skill. Available: ${available}`;
+  }
+
+  /**
+   * The manifest limit declared by the source of the slug's winner, or `undefined`
+   * when that source declares none (M37 `zscui1qz`, `7pj9yx9k`). Read by
+   * `load_skill_file` to cut `files`; the registry itself cuts nothing.
+   */
+  manifestLimitOf(slug: string): number | undefined {
+    this.ensureFresh();
+    return this.winners.get(slug)?.reg.manifestLimit;
+  }
+
+  /**
+   * M37 `7pj9yx9k` — the invalid package lying under `slug`, served ONLY when no
+   * source resolves the slug (a resolvable slug serves the chain's winner, never a
+   * shadowed invalid file). The first registered source that has one answers.
+   */
+  resolveInvalid(slug: string): InvalidSkillRead | undefined {
+    this.ensureFresh();
+    if (this.winners.has(slug)) return undefined;
+    for (const reg of this.sources) {
+      const invalid = reg.readInvalid?.(slug);
+      if (invalid) return { ...invalid, source: reg.source };
+    }
+    return undefined;
+  }
+
+  /** The metadata of the slug's precedence winner (no read), or `undefined` when no source resolves it. */
+  winnerOf(slug: string): SkillMetadata | undefined {
+    this.ensureFresh();
+    return this.winners.get(slug)?.meta;
+  }
+
+  /**
+   * Lazy read of the precedence WINNER through its source's file read. Throws if
+   * `!has(slug)`, and for a winner whose source reads asynchronously — that one is
+   * read with {@link resolveLive}.
+   */
+  resolve(slug: string): ResolvedSkill {
+    this.ensureFresh();
+    const winner = this.winners.get(slug);
+    if (!winner) throw new Error(`SkillRegistry.resolve: unknown slug "${slug}"`);
+    const read = winner.reg.read(winner.meta);
+    if (read instanceof Promise) {
+      // Swallow the rejection of the promise nobody awaits; the caller is told to use resolveLive.
+      read.catch(() => {});
+      throw new Error(`SkillRegistry.resolve: "${slug}" is read live by source "${winner.reg.name}" — use resolveLive()`);
+    }
+    return toResolved(winner.meta, read);
+  }
+
+  /**
+   * The same read for every source, synchronous or not — what the channels of
+   * `load_skill_file` call. A `project-exposed` winner is read in its provider's
+   * context at this moment: the content is live, the listing is not.
+   */
+  async resolveLive(slug: string): Promise<ResolvedSkill> {
+    this.ensureFresh();
+    const winner = this.winners.get(slug);
+    if (!winner) throw new Error(`SkillRegistry.resolve: unknown slug "${slug}"`);
+    return toResolved(winner.meta, await winner.reg.read(winner.meta));
+  }
+}
+
+function toResolved(metadata: SkillMetadata, read: SkillFileRead): ResolvedSkill {
+  return {
+    metadata,
+    content: read.content,
+    files: read.files,
+    ...(read.hash !== undefined ? { hash: read.hash } : {}),
+  };
+}
+
+/**
+ * The `user` source, one registration per `.claude/skills` root: admits
+ * `writing-style` only, not writable, scanned on demand, read = body without
+ * frontmatter, no `hash`, no manifest limit.
+ */
+class UserRootSkillSource implements SkillSourceRegistration {
+  readonly source = 'user' as const;
+  readonly scopes = ['writing-style'] as const;
+  readonly rank: Readonly<Partial<Record<SkillScope, SkillRung>>>;
+  readonly writable = false;
+  readonly scan = 'on-demand' as const;
+
+  constructor(
+    private readonly dir: string,
+    readonly name: string,
+    rung: 'user-project' | 'user-global',
+  ) {
+    this.rank = { 'writing-style': rung };
+  }
+
+  list(): SkillSourceScan {
+    return scanRoot(this.dir);
+  }
+
+  read(metadata: SkillMetadata): SkillFileRead {
+    const raw = fs.readFileSync(path.join(metadata.path, 'SKILL.md'), 'utf8');
+    const { content } = matter(raw);
+    return { content: content.trimStart(), files: loadSkillFiles(metadata.path) };
+  }
+
+  unresolved(): UnresolvedSkillSlug[] {
+    return [];
+  }
+}
+
+/**
+ * The `plugin` source: both scopes, not writable, push at `registerPlugin` (M33),
+ * read from memory (body without frontmatter, no `hash`, no manifest limit).
+ * Reports `envelope-not-loaded` for the slugs of envelopes that did not load.
+ */
+class PluginSkillSource implements SkillSourceRegistration {
+  readonly name = 'plugin';
+  readonly source = 'plugin' as const;
+  readonly scopes = ['writing-style', 'contextual'] as const;
+  readonly rank = { 'writing-style': 'plugin', contextual: 'plugin' } as const;
+  readonly writable = false;
+  readonly scan = 'push' as const;
+
+  private meta = new Map<string, SkillMetadata>();
+  private bodies = new Map<string, SkillFileRead>();
+  private unloaded = new Map<string, UnresolvedSkillSlug>();
+
+  has(slug: string): boolean {
+    return this.meta.has(slug);
+  }
+
+  /** First push wins; returns whether the push was taken. */
+  push(c: PluginSkillContribution): boolean {
+    if (this.meta.has(c.slug)) return false;
+    this.meta.set(c.slug, {
       slug: c.slug,
       title: c.title,
       description: c.description,
@@ -269,155 +705,45 @@ export class SkillRegistry {
       language: c.language,
       scope: c.scope,
       source: 'plugin',
-      // Carried verbatim, `undefined` included — the resolver reads the absence as
-      // "all four" rather than substituting a list here, so the two states stay
-      // distinguishable for anyone reading a registry dump.
+      // Carried verbatim, `undefined` included — absence means "all four".
       contextTypes: c.contextTypes,
       path: '',
-    };
-    this.pluginMeta.set(c.slug, metadata);
-    // A plugin contributes `Record<path, string>` (the manifest contract, unchanged
-    // — see `PluginSkillContribution`); the registry holds `SkillPackageFile`. A
-    // contributed file is text by construction: it is a string in a JS module, so
-    // there is no binary case to represent here.
-    this.pluginResolved.set(c.slug, {
-      metadata,
-      content: c.content.trimStart(),
-      files: toPackageFiles(c.files ?? {}),
     });
-    this.lastScanAt = 0; // invalidate so the next read rebuilds with this plugin folded in
+    // A contributed file is text by construction: it is a string in a JS module.
+    this.bodies.set(c.slug, { content: c.content.trimStart(), files: toPackageFiles(c.files ?? {}) });
+    return true;
   }
 
-  /**
-   * M15 sugar: a `WritingStyleContribution` is a `PluginSkillContribution` with
-   * `scope: 'writing-style'` and nothing else. Kept so the older slot keeps working
-   * through the identical path — same registry, same entry, same behaviour.
-   */
-  addPluginStyle(c: WritingStyleContribution): void {
-    this.addPluginSkill({ ...c, scope: 'writing-style' });
+  noteUnloaded(slug: string, detail?: string): boolean {
+    if (this.unloaded.has(slug)) return false;
+    this.unloaded.set(slug, { slug, reason: 'envelope-not-loaded', ...(detail ? { detail } : {}) });
+    return true;
   }
 
-  /** True when this slug was contributed by a plugin (used by the loader's collision warning). */
-  hasPluginSkill(slug: string): boolean {
-    return this.pluginMeta.has(slug);
+  list(): SkillSourceScan {
+    return { entries: Array.from(this.meta.values()), skipped: [] };
   }
 
-  /**
-   * The plugin contributions AS CONTRIBUTED, before the merge.
-   *
-   * Deliberately not `list().filter(s => s.source === 'plugin')`: the merged view
-   * reports one winner per slug, so a plugin contextual skill that a same-slug
-   * user skill outranks disappears from it entirely. Attachment and content are
-   * two different questions — a user skill overrides the plugin's BODY, it does
-   * not un-contribute the skill — and only this list can answer the first one.
-   */
-  listPluginContributions(): SkillMetadata[] {
-    return Array.from(this.pluginMeta.values());
+  read(metadata: SkillMetadata): SkillFileRead {
+    const body = this.bodies.get(metadata.slug);
+    if (!body) throw new Error(`SkillRegistry.resolve: plugin skill "${metadata.slug}" has no body`);
+    return body;
   }
 
-  /**
-   * Every known skill, merged view. NOT DEDUPED by slug in the general case: the merged
-   * view is keyed by slug, but callers routinely concatenate results from more than one
-   * registry read (or from more than one root's worth of contributions), so anything
-   * building a skill LIST for a turn must run its own `dedupeBySlug` — see
-   * `SkillResolver.resolveForContext`.
-   */
-  list(): SkillMetadata[] {
-    this.ensureFresh();
-    return Array.from(this.metadataBySlug.values());
-  }
-
-  /**
-   * The writing-style selector's catalogue (M15). Serves the selector and nothing else —
-   * it has no say over which skills are loaded into a thread.
-   *
-   * `scope: 'contextual'` is excluded: a contextual skill is not a choice a user makes.
-   * It reaches a turn through the `<available_skills>` listing, in whichever context types
-   * its package declared. Listing it as "selectable" would offer the user a switch that
-   * controls nothing.
-   *
-   * 0.2.66 — "regardless of `source`" is gone from this sentence because there is only one
-   * source it can have: the FS roots refuse contextual entries, so every contextual skill
-   * in the registry arrived through `contributes.skills[]`.
-   */
-  listSelectable(): SkillMetadata[] {
-    return this.list().filter((m) => m.scope === 'writing-style');
-  }
-
-  /**
-   * Explain why `slug` can't be selected as the writing style, for boot/PATCH
-   * validation messages. If the slug was found on disk but dropped during scan
-   * (version too high, contextual in a user root, malformed), name that reason so
-   * the author can fix the skill; otherwise fall back to listing what *is*
-   * selectable. Returns a fragment meant to follow `writingStyle "<slug>" `.
-   */
-  unselectableReason(slug: string): string {
-    this.ensureFresh();
-    const skip = this.skips.get(slug);
-    if (skip !== undefined) return `was found on disk but skipped: ${skip}`;
-    const available = this.listSelectable().map((s) => s.slug).join(', ') || '(none)';
-    return `not a selectable writing-style skill. Available: ${available}`;
-  }
-
-  has(slug: string): boolean {
-    this.ensureFresh();
-    return this.metadataBySlug.has(slug);
-  }
-
-  isSelectable(slug: string): boolean {
-    this.ensureFresh();
-    const m = this.metadataBySlug.get(slug);
-    return m !== undefined && m.scope === 'writing-style';
-  }
-
-  resolve(slug: string): ResolvedSkill {
-    this.ensureFresh();
-    const metadata = this.metadataBySlug.get(slug);
-    if (!metadata) throw new Error(`SkillRegistry.resolve: unknown slug "${slug}"`);
-    // Plugin styles carry their body inline — no SKILL.md on disk.
-    if (metadata.source === 'plugin') {
-      const resolved = this.pluginResolved.get(slug);
-      if (!resolved) throw new Error(`SkillRegistry.resolve: plugin style "${slug}" has no body`);
-      return resolved;
-    }
-    const skillFile = path.join(metadata.path, 'SKILL.md');
-    const raw = fs.readFileSync(skillFile, 'utf8');
-    const { content } = matter(raw);
-    const files = loadSkillFiles(metadata.path);
-    return { metadata, content: content.trimStart(), files };
+  unresolved(): UnresolvedSkillSlug[] {
+    return Array.from(this.unloaded.values()).filter((u) => !this.meta.has(u.slug));
   }
 }
 
 /**
- * `toInlineSkill` lived here until 0.2.36.
- *
- * It existed to hand the adapter a whole skill package per turn. Nothing does
- * that any more: the prompt names skills (`SkillListingEntry`) and
- * `load_skill_file` serves their content, so there is no `InlineSkill` left to
- * build. Recorded rather than silently deleted because its absence is the
- * release — a re-appearing converter would be the materialization channel coming
- * back.
- */
-
-/**
  * What `resolveForContext` hands a turn: the listing that becomes
  * `<available_skills>`, and the at-most-one writing style that becomes
- * `<project_writing_skill>`.
- *
- * They are separate fields rather than one list with a flag because they answer
- * different questions — "what may I open" versus "what is BINDING here" — and the
- * writing style is deliberately absent from `listing`: it already has a block of
- * its own that says considerably more than a listing row would.
+ * `<project_writing_skill>`. Separate fields: "what may I open" versus "what is
+ * BINDING here".
  */
 export interface ContextSkills {
   listing: SkillListingEntry[];
-  /**
-   * 0.2.50 — slug and title only. `<project_writing_skill>` briefly rendered the
-   * style's own `description`, and no longer does: a description is a blurb that
-   * helps a model DECIDE whether to open a skill, and in that block the decision
-   * is already made. `<available_skills>` keeps its descriptions, because that
-   * is the one place the blurb does its job.
-   */
+  /** Slug and title only — the decision to use it is already made. */
   writingStyle: { slug: string; title: string } | null;
 }
 
@@ -428,18 +754,10 @@ export class SkillResolver {
   ) {}
 
   /**
-   * The active writing style's METADATA, or `null`.
-   *
-   * Resolved per query — `readConfig` reads `.claude4spec/config.json` from disk
-   * each call, so editing config.json between turns takes effect on the next
-   * `POST /api/chat`. Returns `null` when no style is active or the registry
-   * doesn't know the slug (defensive — startup validation should catch the latter).
-   *
-   * 0.2.36: metadata, not content. It used to return `InlineSkill[]` — a
-   * one-element list carrying the whole `SKILL.md` and every package file — for a
-   * caller that read two fields off it. The body now arrives through
-   * `load_skill_file`, so loading it here would be a per-turn disk read nobody
-   * consumes.
+   * The active writing style's METADATA, or `null`. Resolved per query —
+   * `readConfig` reads `.claude4spec/config.json` from disk each call. `null` when
+   * no style is active, or the slug is not a selectable style (start-up
+   * validation stops a project on the latter; this is the defensive path).
    */
   resolveWritingStyle(slugOverride?: string | null): SkillMetadata | null {
     const slug = slugOverride !== undefined ? slugOverride : readConfig(this.cwd).writingStyle;
@@ -448,104 +766,60 @@ export class SkillResolver {
       console.warn(`[skill] config.writingStyle="${slug}" not in registry, skipping`);
       return null;
     }
-    const meta = this.registry.list().find((m) => m.slug === slug);
-    if (!meta) return null;
-    if (meta.scope !== 'writing-style') {
-      console.warn(`[skill] config.writingStyle="${slug}" has scope="${meta.scope}", skipping`);
+    const meta = this.registry.listSelectable().find((m) => m.slug === slug);
+    if (!meta) {
+      console.warn(`[skill] config.writingStyle="${slug}" resolves to a contextual skill, skipping`);
       return null;
     }
     return meta;
   }
 
   /**
-   * M37: per-context-type resolution, called once per agent turn.
+   * M37 `m37attach`: per-context-type resolution, called once per agent turn.
    *
-   * 0.2.66 cut this from three sources to two, and the one it cut was the hardcoded
-   * one. `CONTEXT_TYPE_REGISTRY[contextType].attachInternalSkills` is gone as a
-   * concept: the host no longer holds a map of which skills to pin to which turn.
-   * What remains:
+   *   1. Fan-out of `contextual` skills — the listing. From `list()` take the
+   *      `scope: 'contextual'` entries (only sources admitting `contextual` can
+   *      hold one), keep those whose `contextTypes` covers this type (omitted =
+   *      all four), reduce to unique slugs, and give each slug ONE row taken from
+   *      the winner of the `contextual` chain — `origin` included.
+   *   2. Writing style — the forced slot, outside the listing.
    *
-   *   1. The plugin fan-out — every `source: 'plugin'`, `scope: 'contextual'` skill
-   *      whose OWN `contextTypes` admits this turn. Unconditional in the sense that
-   *      matters (no config entry, no user opt-in), but no longer indiscriminate:
-   *      the package chooses its reach, and omitting the field still means all four.
-   *      This is now the SOLE producer of listing rows, which is why a project with
-   *      no plugins loaded gets `<available_skills>` with nothing in it — an empty
-   *      block, not a fallback.
-   *   2. The active writing style — returned SEPARATELY, and deliberately NOT in
-   *      `listing`: it is the one skill with a `<project_writing_skill>` block of its
-   *      own, and forcing is a property of THAT SLOT rather than of any skill. No
-   *      frontmatter key and no contribution field lets a skill force itself; the
-   *      "at most one" cardinality is just the slot being singular.
-   *
-   * None of this calls `registry.resolve()`. The resolver assembles METADATA —
-   * `{ slug, description }` — and nothing else. The precedence chain
-   * (`project > global > plugin`) still decides which body a slug names, but it
-   * decides it later, inside `load_skill_file`, against the LIVE registry rather than
-   * against a copy frozen into the first turn's prompt. That is why a skill edited
-   * mid-thread takes effect on the next call and not on the next thread.
-   *
-   * The filter here narrows DISCOVERY, not ACCESS: a skill this turn does not list
-   * stays openable by slug through `load_skill_file`, which reads the whole registry.
+   * Metadata only: nothing here calls `registry.resolve()`; the body is served by
+   * `load_skill_file` against the live registry. The filter narrows DISCOVERY,
+   * not ACCESS.
    */
   resolveForContext(contextType: ChatContextType, opts: { writingStyle?: string | null } = {}): ContextSkills {
     return this.resolveListing(contextType, opts.writingStyle);
   }
 
-  /**
-   * 0.2.99 — the same resolution with NO context type: the union of the contextual
-   * fan-out over all four types. This is what `list_skills` answers when the caller
-   * omits `contextType` — not a refusal and not a default value of the discriminator,
-   * but the consequence of access not being gated by context. Writing styles stay
-   * out of `listing` exactly as in `resolveForContext`: the active one is reported
-   * in `writingStyle`, the inactive ones are selection metadata of
-   * `GET /api/writing-styles`, not listing rows.
-   */
+  /** The same resolution with NO context type: the union of the fan-out over all four. */
   resolveAll(): ContextSkills {
     return this.resolveListing(undefined);
   }
 
-  /**
-   * 0.2.113: `writingStyle` pins the style a THREAD settled on its first turn — a
-   * resumed thread keeps its `<project_writing_skill/>` block whatever the config
-   * says now. `undefined` = the current config (a new thread, or `list_skills`).
-   */
+  /** `writingStyle` pins the style a THREAD settled on its first turn; `undefined` = current config. */
   private resolveListing(contextType: ChatContextType | undefined, writingStyle?: string | null): ContextSkills {
     const style = this.resolveWritingStyle(writingStyle);
-    const listing: SkillListingEntry[] = [];
-    // The style is excluded from the fan-out. It has its own block; a duplicate
-    // listing row would advertise the one skill that is not optional as though it
-    // were.
     const styleSlug = style?.slug;
+    const all = this.registry.list();
+    const listing: SkillListingEntry[] = [];
 
     for (const meta of distinctBySlug(
-      this.registry.listPluginContributions().filter((s) => s.scope === 'contextual'),
+      all.filter(
+        (s) =>
+          s.scope === 'contextual' &&
+          (contextType === undefined || s.contextTypes === undefined || s.contextTypes.includes(contextType)),
+      ),
     )) {
       if (meta.slug === styleSlug) continue;
-      if (
-        contextType !== undefined &&
-        meta.contextTypes !== undefined &&
-        !meta.contextTypes.includes(contextType)
-      ) {
-        continue;
-      }
-      /**
-       * The DESCRIPTION comes from the winning entry, not from the contribution.
-       *
-       * `listPluginContributions()` reports what a plugin pushed; `list()` reports
-       * what precedence actually resolved for that slug. Those differ exactly when
-       * a user authored a same-slug override — and since the description is now the
-       * only thing the model has to decide whether to open the skill, advertising
-       * the plugin's while `load_skill_file` serves the user's body would describe
-       * one document and hand over another.
-       *
-       * Note the split: the DESCRIPTION follows precedence, the `contextTypes`
-       * filter above does not. Reach is the package's declaration about its own
-       * contribution, and a user overriding the body has said nothing about which
-       * turns the skill belongs in.
-       */
-      const winning = this.registry.list().find((m) => m.slug === meta.slug) ?? meta;
-      listing.push({ slug: winning.slug, description: winning.description });
+      const winner = winnerOf(all, meta.slug) ?? meta;
+      listing.push({
+        slug: winner.slug,
+        description: winner.description,
+        origin: winner.source,
+        // M37 `ixkjxpua`: the provider's id, only beside origin `project-exposed`.
+        ...(winner.source === 'project-exposed' && winner.project ? { project: winner.project } : {}),
+      });
     }
 
     return {
@@ -555,132 +829,107 @@ export class SkillResolver {
   }
 }
 
+/** The `contextual` chain winner among `list()` entries of one slug. */
+function winnerOf(all: SkillMetadata[], slug: string): SkillMetadata | undefined {
+  const candidates = all.filter((m) => m.slug === slug && m.scope === 'contextual');
+  const chain = SKILL_PRECEDENCE.contextual;
+  const at = (m: SkillMetadata): number => {
+    const i = chain.indexOf(m.source as SkillRung);
+    return i < 0 ? Number.POSITIVE_INFINITY : i;
+  };
+  // Stable sort: equal rungs keep `list()` order (first registered / first pushed wins).
+  return [...candidates].sort((a, b) => at(a) - at(b))[0];
+}
+
 /** First entry per slug, order preserved. Applied to registry metadata before resolution. */
 export function distinctBySlug(skills: SkillMetadata[]): SkillMetadata[] {
   const seen = new Set<string>();
   return skills.filter((s) => (seen.has(s.slug) ? false : (seen.add(s.slug), true)));
 }
 
-/**
- * First entry per slug, order preserved.
- *
- * With `attachInternalSkills` gone there is only one source left to collide with
- * itself, and `distinctBySlug` already guards it upstream — so this is now a belt to
- * that braces. Kept because the invariant it states is the one the prompt depends on:
- * two rows addressing one document ask the model to choose between a skill and
- * itself.
- */
+/** First entry per slug, order preserved — two rows addressing one document would ask the model to choose between a skill and itself. */
 export function dedupeBySlug(skills: SkillListingEntry[]): SkillListingEntry[] {
   const seen = new Set<string>();
   return skills.filter((s) => (seen.has(s.slug) ? false : (seen.add(s.slug), true)));
 }
 
 /**
- * Roots to scan for selectable writing styles, highest precedence first: project
- * `<cwd>/.claude/skills` > global `~/.claude/skills`. Both are user-authored
- * (`source: 'user'`).
- *
- * 0.2.66 — the third root, the one inside the npm package, is gone along with
- * `findSkillsDir()` that located it. Nothing the host ships is a skill on disk any
- * more; what used to live there travels as a plugin envelope's literals. The
- * practical gain is that the two roots left have ONE cadence (on-demand re-scan)
- * instead of two, so "edit a skill, see it next query" is now true of every file the
- * registry reads.
- *
- * These roots admit `scope: 'writing-style'` and nothing else — see `scanRootInto`.
- * A contextual skill reaches the registry only through `contributes.skills[]`.
+ * The two `user` roots, highest precedence first: project `<cwd>/.claude/skills`
+ * (`user-project`) > global `~/.claude/skills` (`user-global`). They admit
+ * `scope: 'writing-style'` and nothing else.
  */
 export function findSkillsRoots(cwd: string): SkillRoot[] {
   return [
-    { dir: path.join(cwd, '.claude', 'skills'), source: 'user' },
-    { dir: path.join(os.homedir(), '.claude', 'skills'), source: 'user' },
+    { dir: path.join(cwd, '.claude', 'skills'), source: 'user', registration: 'user-project' },
+    { dir: path.join(os.homedir(), '.claude', 'skills'), source: 'user', registration: 'user-global' },
   ];
 }
 
-/** Record a skip reason, first reason winning (matches root precedence — roots are scanned highest first). */
-function recordSkip(skips: Map<string, string>, slug: string, reason: string): void {
-  if (!skips.has(slug)) skips.set(slug, reason);
-}
-
 /**
- * Scan one root into the given `meta`/`skips` maps, deduplicated per slug: a slug already
- * in `meta` (claimed by a higher-precedence root) is left untouched. A missing or unreadable
- * root is treated as empty (no throw); a malformed `SKILL.md` is skipped with a warning and a
- * recorded reason; a `scope: contextual` skill in an FS root is ignored (contextual skills are
- * package-only). A valid skill clears any stale skip for its slug.
- *
- * 0.2.66 states that last rule as the ADMISSION RULE OF FS ROOTS rather than a quirk of the
- * `user` class, now that no other class of root exists. Its practical edge is narrower than
- * "an envelope's contextual skill cannot be shadowed": a `writing-style-author` directory
- * declaring `scope: contextual` is ignored, but the SAME directory declaring `scope:
- * writing-style` is admitted and wins the slug in `rebuild()` — an FS root outranks every
- * plugin push. That is the deliberate 0.2.19 override (a user re-authors a plugin skill's
- * content by slug) and it is unchanged here; what it costs is that the override also
- * re-scopes, so the shadowed contextual skill turns up in `listSelectable()`. The rule this
- * comment states is only about which SCOPE an FS root may introduce, not about who wins.
+ * Scan one `.claude/skills` root. A missing or unreadable root is an empty root (no
+ * throw); a malformed `SKILL.md`, a missing one or an unsupported `version` is
+ * reported in `skipped`. Admission by `scope` is the REGISTRY's job, by the
+ * source's declaration — not the scanner's.
  */
-function scanRootInto(root: SkillRoot, meta: Map<string, SkillMetadata>, skips: Map<string, string>): void {
-  let entries: fs.Dirent[];
+function scanRoot(dir: string): SkillSourceScan {
+  const out: SkillSourceScan = { entries: [], skipped: [] };
+  let dirents: fs.Dirent[];
   try {
-    if (!fs.existsSync(root.dir)) return;
-    entries = fs.readdirSync(root.dir, { withFileTypes: true });
+    if (!fs.existsSync(dir)) return out;
+    dirents = fs.readdirSync(dir, { withFileTypes: true });
   } catch (err) {
-    console.warn(`[skill] root "${root.dir}" unreadable: ${(err as Error).message}, treating as empty`);
-    return;
+    console.warn(`[skill] root "${dir}" unreadable: ${(err as Error).message}, treating as empty`);
+    return out;
   }
-  for (const entry of entries) {
-    // A symlink whose target is a directory counts as a directory: a symlinked style dir
-    // dropped into `.claude/skills` must be discoverable exactly like a real dir (it is
-    // already editable via the config content-root path). `entry.isDirectory()` is false
-    // for a symlink even when the target is a dir, so resolve it with `statSync`, guarded
-    // so a broken link is skipped rather than throwing.
+  for (const entry of dirents) {
+    // A symlink whose target is a directory counts as a directory (a broken link is skipped).
     const isDir =
       entry.isDirectory() ||
       (entry.isSymbolicLink() &&
         (() => {
           try {
-            return fs.statSync(path.join(root.dir, entry.name)).isDirectory();
+            return fs.statSync(path.join(dir, entry.name)).isDirectory();
           } catch {
-            return false; // broken symlink → skip
+            return false;
           }
         })());
     if (!isDir) continue;
     const slug = entry.name;
-    // Higher-precedence root already claimed this slug.
-    if (meta.has(slug)) continue;
-    const skillDir = path.join(root.dir, slug);
+    const skillDir = path.join(dir, slug);
     const skillFile = path.join(skillDir, 'SKILL.md');
     if (!fs.existsSync(skillFile)) {
-      console.warn(`[skill] ${slug}: missing SKILL.md, skipping`);
-      recordSkip(skips, slug, 'missing SKILL.md');
+      out.skipped.push({ slug, reason: 'missing SKILL.md' });
       continue;
     }
     try {
       const raw = fs.readFileSync(skillFile, 'utf8');
       const { data } = matter(raw);
-      const metadata = parseFrontmatter(slug, skillDir, root.source, data);
+      const metadata = parseFrontmatter(slug, skillDir, 'user', data);
       if (metadata.version > SUPPORTED_VERSION) {
-        const reason = `version ${metadata.version} > supported ${SUPPORTED_VERSION}`;
-        console.warn(`[skill] ${slug}: ${reason}, skipping`);
-        recordSkip(skips, slug, reason);
+        out.skipped.push({ slug, reason: `version ${metadata.version} > supported ${SUPPORTED_VERSION}` });
         continue;
       }
-      // Contextual skills are package-only: ignore them entirely when dropped
-      // into a user root (not selectable, not used for contextual resolution).
-      if (metadata.scope === 'contextual' && root.source === 'user') {
-        console.warn(`[skill] ${slug}: scope "contextual" in user root, ignored (package-only)`);
-        recordSkip(skips, slug, 'scope "contextual" in a user root (contextual skills are package-only)');
-        continue;
-      }
-      meta.set(slug, metadata);
-      // A later, lower-precedence root supplied a valid skill for a slug an earlier
-      // root had skipped — it's no longer unselectable, so drop the stale reason.
-      skips.delete(slug);
+      out.entries.push(metadata);
     } catch (err) {
-      console.warn(`[skill] ${slug}: ${(err as Error).message}, skipping`);
-      recordSkip(skips, slug, (err as Error).message);
+      out.skipped.push({ slug, reason: (err as Error).message });
     }
   }
+  return out;
+}
+
+/**
+ * The skill-registry header contract (M37 `2k3yrou1`) checked on a parsed
+ * frontmatter: throws with the broken field named. Shared by every source that
+ * reads `SKILL.md` from disk. `contextTypes` is NOT read here — only a source
+ * that admits `contextual` and takes its reach from the frontmatter reads it.
+ */
+export function parseSkillFrontmatter(
+  slug: string,
+  skillPath: string,
+  source: SkillSource,
+  data: Record<string, unknown>,
+): SkillMetadata {
+  return parseFrontmatter(slug, skillPath, source, data);
 }
 
 function parseFrontmatter(slug: string, skillPath: string, source: SkillSource, data: Record<string, unknown>): SkillMetadata {
@@ -690,15 +939,12 @@ function parseFrontmatter(slug: string, skillPath: string, source: SkillSource, 
   const language = data.language;
   const scopeRaw = data.scope ?? 'writing-style';
   if (typeof title !== 'string' || title.length === 0) throw new Error("frontmatter 'title' must be a non-empty string");
-  if (typeof description !== 'string' || description.length === 0) throw new Error("frontmatter 'description' must be a non-empty string");
+  if (typeof description !== 'string' || description.trim().length === 0) throw new Error("frontmatter 'description' must be a non-empty string");
   if (typeof version !== 'number' || !Number.isInteger(version) || version < 1) throw new Error("frontmatter 'version' must be a positive integer");
   if (language !== 'en' && language !== 'pl') throw new Error("frontmatter 'language' must be 'en' or 'pl'");
   if (scopeRaw !== 'writing-style' && scopeRaw !== 'contextual') throw new Error("frontmatter 'scope' must be 'writing-style' or 'contextual'");
-  // 0.2.19: `injection` is gone from the vocabulary — forcing is a property of the
-  // writing-style SLOT, not of a skill. A legacy `injection:` key (any value) is
-  // ignored like any other unknown frontmatter field: it must not throw and must
-  // not cause the skill to be skipped, or upgrading the host would silently
-  // unselect every style authored against the old frontmatter.
+  // An unknown frontmatter key (e.g. the retired `injection`) is ignored: it must
+  // not throw and must not cause the skill to be skipped.
   return { slug, title, description, version, language, scope: scopeRaw, source, path: skillPath };
 }
 
@@ -722,7 +968,7 @@ function parseFrontmatter(slug: string, skillPath: string, source: SkillSource, 
  */
 const MAX_SKILL_FILE_BYTES = 256 * 1024;
 const SKIPPED_DIRS = new Set(['node_modules']);
-function loadSkillFiles(skillDir: string): Record<string, SkillPackageFile> {
+export function loadSkillFiles(skillDir: string): Record<string, SkillPackageFile> {
   const out: Record<string, SkillPackageFile> = {};
   if (!fs.existsSync(skillDir)) return out;
   walkDir(skillDir, '', out);

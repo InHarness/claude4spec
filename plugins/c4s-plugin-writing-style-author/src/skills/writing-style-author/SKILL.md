@@ -1,6 +1,6 @@
 ---
 title: Writing Style Author
-description: "Scaffolds a new writing-style skill from a chat request — e.g. 'create a writing style for our team that writes terse, code-first briefs'. Open it via load_skill_file('writing-style-author') when the user asks to create/define/author a new writing style. Produces a project-local .claude/skills/<slug>/ package — SKILL.md plus a workflows/ directory — selectable from the very next query."
+description: "Scaffolds a new writing-style skill from a chat request — e.g. 'create a writing style for our team that writes terse, code-first briefs'. Open it via load_skill_file('writing-style-author') when the user asks to create/define/author a new writing style. Writes a package into the project's skills root (.claude4spec/skills/<slug>/ — SKILL.md plus a workflows/ directory) with update_skill_file, selectable from the very next query. Writing styles only: any other kind of skill package belongs to the skill-author skill."
 version: 1
 language: en
 scope: contextual
@@ -14,11 +14,15 @@ That last point is the thing to get right. The host injects no methodology of it
 
 You were not told to use this skill — open it only when the user is actually asking to create, define, or edit a writing style (as opposed to just asking a question about styles).
 
+**Writing styles only.** This skill writes packages with `scope: writing-style` and nothing else. If the user asks for a skill package of any other kind — a procedure, a checklist, instructions for the agent (`scope: contextual`) — do not scaffold it here: say that this is the job of the `skill-author` skill and open it with `load_skill_file("skill-author")` instead.
+
+**Where you can write.** Every file of the package is written with the `update_skill_file` tool (server `spec-skill-tools`). It is mounted in `chat` and `patch` threads only. If it is not among your tools — a `brief` or `ask` thread — do not scaffold and do not try another route (no Write, no Bash, no page tools): tell the user that writing a style needs a `chat` or `patch` thread. The "Block direct file access" setting does not matter here — `update_skill_file` is not a file built-in.
+
 ---
 
 ## What you're producing
 
-A directory `<cwd>/.claude/skills/<slug>/` containing `SKILL.md` **and** a `workflows/` subdirectory.
+A package `<slug>/` in the project's skills root (`.claude4spec/skills/<slug>/`) containing `SKILL.md` **and** a `workflows/` subdirectory. You never address it by a disk path: every file is one `update_skill_file` call with `slug: "<slug>"` and `file` relative to the package (`"SKILL.md"`, `"workflows/brief.md"`, …), and a new file is created with `expectedHash: ""`.
 
 `SKILL.md`, with YAML frontmatter:
 
@@ -34,7 +38,7 @@ scope: writing-style
 
 `scope: writing-style` is what makes it **selectable** (`GET /api/writing-styles`, `PATCH /api/config` with `writingStyle: "<slug>"`).
 
-**Required frontmatter fields** (the registry throws on load if missing/malformed, which silently drops the style from selection): `title` (non-empty string), `description` (non-empty string), `version` (positive integer — start at `1`), `language` (`"en"` or `"pl"`, must match the actual language of the body). Get these right or the style won't appear at all — there's no error surfaced to the user beyond a server-log warning. Unknown keys are ignored, so a stray field is harmless; note that `injection` used to be one of these and no longer means anything — don't write it, and don't be alarmed by it in an older style.
+**Required frontmatter fields** (`update_skill_file` refuses a `SKILL.md` without a non-empty `description`; any other missing/malformed field is written, but the registry skips the package, which silently drops the style from selection): `title` (non-empty string), `description` (non-empty string), `version` (positive integer — start at `1`), `language` (`"en"` or `"pl"`, must match the actual language of the body). Get these right or the style won't appear at all — there's no error surfaced to the user beyond a server-log warning. Unknown keys are ignored, so a stray field is harmless; note that `injection` used to be one of these and no longer means anything — don't write it, and don't be alarmed by it in an older style.
 
 Below the frontmatter, write the **body**: the style's actual conventions — tone, structure, terminology, what to prioritize, formatting rules — whatever the user described. This becomes the body of the turn's `<project_writing_skill>` block. The prompt does not claim it is a specification of anything — it renders the style's own `description` and says the style governs how the agent writes. What binds is what you write here.
 
@@ -54,9 +58,10 @@ Every file in the package except `SKILL.md` reaches the agent, whatever you name
 
 ## Workflow
 
-1. Ask (if not already clear from the request) what the style should optimize for, and confirm a title if the user didn't give one outright.
-2. Compute `slug` per the algorithm above. If a directory `.claude/skills/<slug>/` already exists, tell the user and ask whether to overwrite, version-bump, or pick a different title/slug — don't silently clobber an existing style.
-3. Write `.claude/skills/<slug>/SKILL.md` with the frontmatter contract above and a body capturing the user's actual conventions (don't invent conventions they didn't ask for).
+1. Check that this is a style request (otherwise: `skill-author`, see above) and that `update_skill_file` is among your tools (otherwise: say it needs a `chat` or `patch` thread, and stop).
+2. Ask (if not already clear from the request) what the style should optimize for, and confirm a title if the user didn't give one outright.
+3. Compute `slug` per the algorithm above. If `load_skill_file("<slug>")` already answers with a package of this project's skills root — or a write with `expectedHash: ""` comes back `PAGE_CONFLICT` — the package exists: tell the user and ask whether to overwrite, version-bump, or pick a different title/slug. Don't silently clobber an existing style.
+4. Write `SKILL.md` — `update_skill_file({ slug, file: "SKILL.md", content, expectedHash: "" })` — with the frontmatter contract above and a body capturing the user's actual conventions (don't invent conventions they didn't ask for).
 
    **Always include the form clause in the body you write.** Whatever the user's conventions are, the generated style must enumerate the entity form beside prose, table and fence — the first form a style lists reads as its default, so a style silent on entities teaches the agent to reach for a raw fence even in a project that models the thing as an entity type. Write the clause **without the slug of any concrete type**, conditionally, over the type variable; a hardcoded slug costs the style its portability between projects with different `config.entities` catalogues. Emit this block verbatim into the generated `SKILL.md` (adapt the surrounding prose to the style's voice, keep the ordering and the scope sentence):
 
@@ -68,6 +73,6 @@ Every file in the package except `SKILL.md` reaches the agent, whatever you name
    forbids a class of content must state its scope: name what the prohibition does not cover.
    ```
 
-4. Write the `workflows/` files. If the user has said nothing about brief or patch methodology, ask — or write a minimal `workflows/brief.md` and say plainly that it's a starting point, rather than leaving the directory empty and the genre without a method.
-5. Tell the user the style is selectable immediately — no restart needed (the registry rescans the project and global `.claude/skills` roots on demand; since 0.2.66 those are the only roots on disk, so this is true of every style file the registry reads). They can confirm via `GET /api/writing-styles` (should list the new slug) or by setting it as active (`PATCH /api/config` with `writingStyle: "<slug>"`) from the Settings UI.
-6. If they ask you to also make it the active style for this project, you may say so is possible via the config UI, but do not call config-mutation endpoints yourself unless a tool for that is actually available in this thread — this skill only writes the skill files.
+5. Write the `workflows/` files, one `update_skill_file` call each (`file: "workflows/brief.md"`, …, `expectedHash: ""`). If the user has said nothing about brief or patch methodology, ask — or write a minimal `workflows/brief.md` and say plainly that it's a starting point, rather than leaving the directory empty and the genre without a method.
+6. Tell the user the style is selectable from the very next query — no restart needed (the registry re-reads the project's skills root on demand). They can confirm it in Settings → Project → Writing style, where it is badged as a project skill, or via `GET /api/writing-styles`.
+7. If they ask you to also make it the active style for this project, you may say so is possible via the config UI, but do not call config-mutation endpoints yourself unless a tool for that is actually available in this thread — this skill only writes the skill files.

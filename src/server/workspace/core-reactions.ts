@@ -2,7 +2,7 @@ import { defineReaction, type ReactionHandler } from '../fs/reactions.js';
 import type { WatchSubscriber } from '../fs/watcher.js';
 import { fileChangedNotifier, planUpdatedNotifier } from '../fs/notifications.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
-import { BASE_REACTION_ID } from '../../shared/root-kinds.js';
+import { BASE_REACTION_ID, SIDEBAR_REDUCER_ID } from '../../shared/root-kinds.js';
 
 /**
  * 2.1.8 — the definitions of the reactions the core modules own, registered
@@ -36,6 +36,12 @@ export interface CoreReactionContext {
   entityIndexer: WatchSubscriber;
   /** M29 */
   releaseIndexer: WatchSubscriber;
+  /**
+   * M02 (2.1.9, `x6avfb5q`) — the sidebar-reducer projection. Optional because
+   * only a context whose registry has a kind declaring a reducer binds it; a
+   * binding without it fails fast.
+   */
+  sidebarReducer?: ReactionHandler;
 }
 
 const NOOP: WatchSubscriber = { onChange: () => {}, onUnlink: () => {} };
@@ -62,6 +68,24 @@ export function registerCoreReactions(): void {
     phase: 'projection',
     accepts: ['markdown'],
     factory: (ctx) => ctx.frontmatterIndexer,
+  });
+
+  // M02 (2.1.9, `x6avfb5q`) — `m02-sidebar-reducer`: recomputes the accordion
+  // array of a root whose kind declares a reducer in its `sidebar` field. Bound
+  // by the L13 implementor (step 5), not through the kind's reaction list.
+  // Acceptance: every file-map entry (the path set); frontmatter is read only
+  // from markdown entries matching the reducer's glob, which the handler applies
+  // itself. Runs after the frontmatter indexer where that one is bound, so it
+  // reads the fresh record.
+  defineReaction<CoreReactionContext>({
+    id: SIDEBAR_REDUCER_ID,
+    phase: 'projection',
+    after: ['m02-frontmatter-indexer'],
+    accepts: ['markdown', 'json', 'raw'],
+    factory: (ctx) => {
+      if (!ctx.sidebarReducer) throw new Error('[m02] m02-sidebar-reducer bound in a context without a sidebar reducer handler');
+      return ctx.sidebarReducer;
+    },
   });
 
   // M06 — `<!-- anchor: … -->` lines above headings the section parser returned

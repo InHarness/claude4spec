@@ -33,20 +33,20 @@ import { DEFAULT_MODEL } from '../../core/agent/models.js';
  * zwraca terse `{ threadId, answer }`. Parametry `contextType` i `brief` usuniete
  * z wejscia.
  */
+/**
+ * 2.1.9 — the `description` of the `c4s-tools-ask` entity, verbatim: the
+ * entity carries exactly the text that goes into the tool definition. The
+ * change of this release: the peer never edits its pages or entities, and a
+ * request for a change ends as a plan on the peer's side whose path the answer
+ * names — so the tool no longer tells the caller not to ask for one.
+ */
+export const ASK_TOOL_DESCRIPTION =
+  "Consult another claude4spec specification synchronously. Sends `message` to the peer project's agent, blocks until the peer's turn completes, and returns the peer's final answer. Use it when the current task needs context that lives in a different spec — clarifying a cross-spec contract, checking how the other side models something, asking for the peer's domain knowledge. The peer answers read-only: it never edits the peer's pages or entities. To get a change into the peer's specification — including a project you use as a skill — ask for it: the peer leaves a plan on its side and the answer names that plan's path; nothing changes until the peer's author applies it. Do not use it to orchestrate work inside the current specification. Peers available in this workspace are listed in `<workspace_projects/>`. Address the peer with `project` — its `id` exactly as `<workspace_projects/>` lists it — plus `workspace` when that id belongs to more than one workspace. `server` is an explicit peer server URL and is only valid together with `project`: it replaces the address, never the project. Pass `threadId` to continue an earlier conversation with that peer — the id always refers to a thread on the peer side, never to the current thread; omit it to start a fresh peer thread. The answer comes back collapsed: only the last assistant message of the peer's turn is returned, without the intermediate text between the peer's tool calls and without its tool-call history, all of which stays on the peer. Nothing streams — the call returns once, at the end, so a long peer turn is a long block. `model` and `effort` apply to the peer's turn only.";
+
 export function buildC4sToolsServer(callerWorkspace?: string): CapturedMcpServer {
   const ask = mcpTool(
     'ask',
-    [
-      'Consult another claude4spec specification synchronously. Returns { threadId, answer }.',
-      'The peer is READ-ONLY, and by a gate rather than by persuasion: it runs under the `ask` context profile, which admits only read/plan operations, so the write tools of every mounted MCP server are filtered out of its `tools/list` and its file-write and shell built-ins are off.',
-      '`project` is REQUIRED: the peer\'s `id`, exactly as <workspace_projects/> (or `list_projects`) gives it — not a path and not its display name.',
-      '`server` is optional and valid only together with `project`: it replaces the peer\'s ADDRESS, not the project.',
-      '`workspace` is needed only when the `id` is ambiguous across workspaces.',
-      'Continue an existing peer thread by passing its `threadId`.',
-      'Works in plan_mode — that flag gates built-ins only and does not apply to MCP at all, so this works where Bash-shelled `c4s ask` does not.',
-      'Same contract as the `c4s ask` CLI shorthand: same discovery, same errors.',
-      '`model` and `effort` are resume-immutable: continuing a peer thread (via `threadId`) with values different from its first turn → RESUME_CONFIG_LOCKED.',
-    ].join('\n'),
+    ASK_TOOL_DESCRIPTION,
     {
       message: z.string().describe('Question/prompt for the peer spec.'),
       project: z

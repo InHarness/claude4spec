@@ -5,6 +5,7 @@ import type {
   PageMoveAck,
   PageWriteAck,
   Root,
+  SidebarAccordion,
   TodoCounts,
   TodoHit,
 } from '../../shared/types.js';
@@ -44,7 +45,7 @@ import type {
   AgentCredentialResponse,
   SetAgentCredentialRequest,
 } from '../../shared/agent-credential.js';
-import { ApiError, handle, apiFetch } from './api-core.js';
+import { ApiError, handle, apiFetch, unwrap } from './api-core.js';
 
 export { ApiError, handle };
 
@@ -141,6 +142,14 @@ export const api = {
     return handle<PageMoveAck>(res);
   },
 
+  /**
+   * 2.1.9 — `GET /api/sidebar-accordions` (M02, DTO `sidebar-accordion`): the
+   * ordered accordion array of every root, in `{ data }`. No `:rootId` segment.
+   */
+  async sidebarAccordions(): Promise<SidebarAccordion[]> {
+    return unwrap<SidebarAccordion[]>(await apiFetch('/api/sidebar-accordions'));
+  },
+
   async remove(rootId: string, path: string): Promise<void> {
     const res = await apiFetch(`/api/pages/${encodeURIComponent(rootId)}/${encodePath(path)}`, {
       method: 'DELETE',
@@ -168,6 +177,19 @@ export interface ConfigResponse {
    */
   roots: Root[];
   writingStyle: string | null;
+  /**
+   * 2.1.9 (M52): `skill.*` as the file holds it (absent keys stay absent — the
+   * settings elements carry the defaults as their baselines).
+   */
+  skill?: {
+    exposed?: boolean;
+    name?: string | null;
+    description?: string | null;
+    entry?: string | null;
+    scope?: 'writing-style' | 'contextual';
+    contextTypes?: string[];
+    uses?: string[];
+  };
   /** Non-fatal degraded-state signal: `writingStyle` was skipped this session because it no longer resolves. */
   writingStyleUnavailable: { reason: string } | null;
   /** 0.1.51: spec-authoring language (display name from SUPPORTED_LANGUAGES) or null. */
@@ -376,28 +398,12 @@ export const agentCredentialsApi = {
   },
 };
 
-export interface WritingStyleItem {
-  slug: string;
-  title: string;
-  description: string;
-  version: number;
-  language: string;
-  /**
-   * `user` = from a `.claude/skills` root (project or global); `plugin` =
-   * contributed by a plugin envelope.
-   *
-   * 0.2.66 dropped the third value, `'bundled'`. The npm package no longer carries
-   * a skills root, so the badge distinction the UI draws is now "yours" against
-   * "came with a package" rather than "yours" against "built in". No field was
-   * added or removed with it — only this union narrowed.
-   */
-  source: 'user' | 'plugin';
-}
-
-export interface WritingStylesResponse {
-  active: string | null;
-  available: WritingStyleItem[];
-}
+/**
+ * 2.1.9: the DTOs live in `shared/writing-styles.ts` (one type for the route and
+ * the UI). `source` is any registry source, not two values.
+ */
+export type { WritingStyleSummary as WritingStyleItem, WritingStylesResponse } from '../../shared/writing-styles.js';
+import type { WritingStylesResponse } from '../../shared/writing-styles.js';
 
 export const writingStylesApi = {
   async get(): Promise<WritingStylesResponse> {

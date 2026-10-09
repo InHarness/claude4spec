@@ -71,6 +71,9 @@ export const DEFAULT_COMPOSITION: readonly CompositionEntry[] = [
   // at the top of `<claude4spec_identity>`, some seven hundred lines above the
   // thing they described.
   { layer: 'E', block: 'current_page_handling' },
+  // 2.1.9 (M52): the open file of the `skills` root — the other kind of "what the
+  // user is looking at", beside the page; its read rule rides in the block itself.
+  { layer: 'E', block: 'current_skill' },
   { layer: 'E', block: 'annotations' },
   { layer: 'E', block: 'annotation_handling' },
   { layer: 'E', block: 'current_plan' },

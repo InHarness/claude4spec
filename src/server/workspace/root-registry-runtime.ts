@@ -1,6 +1,14 @@
 import fs from 'node:fs';
 import type { Root } from '../../shared/types.js';
-import { BASE_REACTION_ID, PAGES_KIND, kindDeclaration, kindHasMarkdown } from '../../shared/root-kinds.js';
+import {
+  BASE_REACTION_ID,
+  SIDEBAR_REDUCER_ID,
+  kindDeclaration,
+  kindHasFacade,
+  kindHasMarkdown,
+  sidebarReducerOf,
+  type RootKind,
+} from '../../shared/root-kinds.js';
 import { isMarkdownPath } from '../../shared/page-files.js';
 import { PagesService } from '../services/pages.js';
 import { MarkdownFileStore } from '../services/markdown-file-store.js';
@@ -16,7 +24,7 @@ import { validateKindRequirements, type ReactionBinder } from '../fs/reactions.j
 import type { ScopedWatchRegistrar } from '../fs/watcher.js';
 import { RecordStore, RecordPathError } from '../fs/record-store.js';
 import { markdownAdapter, type MarkdownRecord } from '../fs/record-adapters.js';
-import { rootDirAbs, type RootRegistry } from '../roots/registry.js';
+import { rootDirAbs, type RegistryRoot, type RootRegistry } from '../roots/registry.js';
 
 /**
  * 2.1.8 — the build hook of the L13 implementor (M02), run by M31 while a
@@ -29,9 +37,11 @@ import { rootDirAbs, type RootRegistry } from '../roots/registry.js';
  *     stops the build, checked before the root mounts anything), (1) the dir +
  *     its M40 source, (2) the root's file store — a `MarkdownFileStore`
  *     primitive for every kind whose file map has a markdown entry, wrapped by
- *     the `PagesService` facade only for kind `pages`;
+ *     the `PagesService` facade for every kind whose `sidebar` is not `hidden`
+ *     (2.1.9 — a "root with a facade"; before, kind `pages` only);
  *   - `bindRegistryReactions` — per root: the reactions its kind selects, plus
- *     the base `m02-file-changed`.
+ *     the base `m02-file-changed`, plus `m02-sidebar-reducer` where the kind's
+ *     `sidebar` declares a reducer.
  *
  * Every mount and binding lives in the context's watch scope, so the context's
  * dispose (`w.dispose()`) takes the sources and bindings of every registry root
@@ -39,9 +49,15 @@ import { rootDirAbs, type RootRegistry } from '../roots/registry.js';
  * this hook again (then the boot `indexAll()` passes).
  */
 
-/** A root of kind `pages` — the `PagesService` facade over its markdown store. */
+/**
+ * A root WITH A FACADE — any kind whose `sidebar` is not `hidden` — the
+ * `PagesService` facade over its markdown store. These runtimes are what the page
+ * routes and the page write operations resolve `rootId` against.
+ */
 export interface RootRuntime {
+  /** The root's record: the full `config.roots[]` entry for a user root, the registry entry's four fields for a code root. */
   root: Root;
+  kind: RootKind;
   pages: PagesService;
   staticHtml: StaticHtmlService;
   source: string;
@@ -60,7 +76,7 @@ export interface ArtifactMount {
 }
 
 export interface MountedRegistry {
-  /** One per root of kind `pages`, in registry order. */
+  /** One per root with a facade (kind `sidebar` ≠ `hidden`), in registry order. */
   rootRuntimes: RootRuntime[];
   artifactMounts: Map<ArtifactKind, ArtifactMount>;
   /** Every registry root → its mounted M40 source. */
@@ -130,7 +146,8 @@ export async function mountRegistryRoots(opts: {
     out.sourceByRootId.set(root.id, source);
 
     // 2. the root's file store: the primitive for every kind with markdown
-    //    entries; the facade on top of it for kind `pages` only.
+    //    entries; the facade on top of it for every kind whose `sidebar` is not
+    //    `hidden` — gated on the kind's declaration, never on the kind's name.
     if (kindHasMarkdown(root.kind)) {
       const store = new MarkdownFileStore({ cwd, rootId: root.id, dir: root.dir, kind: root.kind });
       store.records = markdownRecordStore(w, source, store.root);
@@ -139,18 +156,20 @@ export async function mountRegistryRoots(opts: {
       out.storeByRootId.set(root.id, store);
       out.writerByRootId.set(root.id, writer);
       out.serializerByRootId.set(root.id, serializer);
-      if (root.kind === PAGES_KIND) {
-        const userRoot = userRoots.find((r) => r.id === root.id)!;
+      if (kindHasFacade(root.kind)) {
+        const record = rootRecordOf(root, userRoots);
         out.rootRuntimes.push({
-          root: userRoot,
-          pages: new PagesService({ root: userRoot, store }),
+          root: record,
+          kind: root.kind,
+          pages: new PagesService({ root: record, store }),
           staticHtml: new StaticHtmlService(cwd, root.dir),
           source,
           writer,
           serializer,
         });
-      } else {
-        const artifactKind = ARTIFACT_KIND_OF_ROOT_KIND[root.kind as ArtifactRootKind];
+      }
+      const artifactKind = ARTIFACT_KIND_OF_ROOT_KIND[root.kind as ArtifactRootKind] as ArtifactKind | undefined;
+      if (artifactKind) {
         out.artifactMounts.set(artifactKind, { kind: artifactKind, rootId: root.id, store, source, writer, serializer });
       }
     }
@@ -159,11 +178,27 @@ export async function mountRegistryRoots(opts: {
 }
 
 /**
+ * The record a facade keeps for its root: the user root's own `config.roots[]`
+ * entry (extra properties included) when the root comes from the configuration,
+ * otherwise the registry entry's four fields.
+ */
+function rootRecordOf(root: RegistryRoot, userRoots: readonly Root[]): Root {
+  if (kindDeclaration(root.kind).source === 'config') {
+    const userRoot = userRoots.find((r) => r.id === root.id);
+    if (userRoot) return userRoot;
+  }
+  return { id: root.id, name: root.name, dir: root.dir, builtin: root.builtin };
+}
+
+/**
  * Step 4: bind the reactions each root's KIND selected, plus the base
- * `m02-file-changed` (bound on every root; no kind opts out). Explicit
- * iteration of the registry — there are no wildcards on `source`. Each binding
- * carries the registry entry's id as the reaction's input. An unknown reaction
- * id or an unmounted source throws (fail-fast).
+ * `m02-file-changed` (bound on every root; no kind opts out). Step 5 (2.1.9):
+ * where the kind's `sidebar` declares a reducer, bind `m02-sidebar-reducer` on
+ * the root's source too — with no glob of its own at M40 (the binding narrows to
+ * the kind's file map like every binding); the reducer's glob is applied by the
+ * reaction itself. Explicit iteration of the registry — there are no wildcards
+ * on `source`. Each binding carries the registry entry's id as the reaction's
+ * input. An unknown reaction id or an unmounted source throws (fail-fast).
  */
 export function bindRegistryReactions<C>(
   registry: RootRegistry,
@@ -176,5 +211,6 @@ export function bindRegistryReactions<C>(
     const input = { rootId: root.id };
     for (const id of kindDeclaration(root.kind).reactions) binder.bindReaction(id, source, root.kind, input);
     binder.bindReaction(BASE_REACTION_ID, source, root.kind, input);
+    if (sidebarReducerOf(root.kind)) binder.bindReaction(SIDEBAR_REDUCER_ID, source, root.kind, input);
   }
 }

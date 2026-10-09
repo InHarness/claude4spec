@@ -32,7 +32,10 @@ vi.mock('../../core/agent/run-agent.js', () => ({
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { buildC4sToolsServer } from './c4s-tools.js';
+import { ASK_TOOL_DESCRIPTION, buildC4sToolsServer } from './c4s-tools.js';
+import { toolAdmittedByProfile } from '../operations/profile-gate.js';
+import { CONTEXT_TYPE_REGISTRY } from '../services/chat-context.js';
+import { INTERACTION_RULES } from '../services/interaction-rules.js';
 
 async function connectClient(callerWorkspace?: string): Promise<Client> {
   const { server } = buildC4sToolsServer(callerWorkspace);
@@ -183,6 +186,55 @@ describe('buildC4sToolsServer — ask description (0.2.97)', () => {
     const client = await connectClient('ws-5555');
     const { tools } = await client.listTools();
     const ask = tools.find((t) => t.name === 'ask');
-    expect(ask?.description).toContain('exactly as <workspace_projects/> (or `list_projects`) gives it');
+    expect(ask?.description).toContain('exactly as `<workspace_projects/>` lists it');
+  });
+});
+
+describe('c4s-tools · ask — contract (2.1.9)', () => {
+  beforeEach(() => {
+    hoisted.calls.length = 0;
+  });
+
+  it('[entity:c4s-tools-ask] name, description verbatim, input fields and the { threadId, answer } response', async () => {
+    const client = await connectClient('ws-5555');
+    const { tools } = await client.listTools();
+    const ask = tools.find((t) => t.name === 'ask');
+    expect(ask).toBeDefined();
+    // The entity's `description` goes into the tool definition word for word.
+    expect(ask!.description).toBe(ASK_TOOL_DESCRIPTION);
+    expect(ask!.description).toContain(
+      "The peer answers read-only: it never edits the peer's pages or entities. To get a change into the peer's specification — including a project you use as a skill — ask for it: the peer leaves a plan on its side and the answer names that plan's path; nothing changes until the peer's author applies it.",
+    );
+    // 2.1.8 told the caller not to ask the peer for any write; 2.1.9 sends a change request there.
+    expect(ask!.description).not.toContain('do not reach for this tool to make the other side write');
+
+    const schema = ask!.inputSchema as { required?: string[]; properties: Record<string, unknown> };
+    expect(Object.keys(schema.properties).sort()).toEqual(
+      ['effort', 'message', 'model', 'project', 'server', 'threadId', 'workspace'].sort(),
+    );
+    expect([...(schema.required ?? [])].sort()).toEqual(['message', 'project']);
+
+    const res = await client.callTool({ name: 'ask', arguments: { message: 'ping', project: 'app-spec' } });
+    expect(res.isError).toBeFalsy();
+    const content = res.content as Array<{ type: string; text: string }>;
+    expect(JSON.parse(content[0].text)).toEqual({ threadId: 'peer-thread', answer: 'pong' });
+  });
+
+  /**
+   * The peer's side of the rule: an `ask` turn may leave a plan (the profile
+   * admits `create_plan` and mounts `plan-tools`) and may not edit pages or
+   * entities (writes are gated out), and its interaction rules tell it that a
+   * change request ENDS with a plan. The plan's path in the answer is pinned by
+   * the endpoint tests in `routes/threads.test.ts`.
+   */
+  it('[ac:ac-tura-ask-z-prosba-o-zmiane-specyfikac] a change request to the peer ends in a plan on its side, never an edit', () => {
+    expect(toolAdmittedByProfile('ask', 'create_plan')).toBe(true);
+    expect(toolAdmittedByProfile('ask', 'update_plan')).toBe(true);
+    expect(CONTEXT_TYPE_REGISTRY.ask.mcp.planTools).toBe(true);
+    for (const write of ['create_page', 'update_page', 'create_tag', 'tag_entity']) {
+      expect(toolAdmittedByProfile('ask', write), write).toBe(false);
+    }
+    expect(INTERACTION_RULES.ask).toContain('A request to CHANGE this specification ends with a plan, never with an edit');
+    expect(ASK_TOOL_DESCRIPTION).toContain('the peer leaves a plan on its side');
   });
 });

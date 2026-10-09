@@ -26,6 +26,7 @@ import {
 } from './index.js';
 import { DEFAULT_BUDGET_CHARS, MAX_HUNK_CHARS, MAX_PATTERN_CHARS } from './budget.js';
 import { RawEntityReader } from './raw-entity-reader.js';
+import { RootRegistry } from '../roots/registry.js';
 import { PagesService } from '../services/pages.js';
 import { PROJECTION_IDS, ProjectionStatusRegistry } from '../services/projection-status.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
@@ -2454,6 +2455,78 @@ describe('discovery core', () => {
     expect(flagged).not.toContain('m99');
   });
 
+  /**
+   * 2.1.9 (M19 `q91m4kgl`) — the report's page key. Every row that points at a
+   * page names it by `(rootId, pagePath)`, whatever rule produced it: the
+   * reference rules, the structure rules 7/13/15/16 (15 and 16 used to say
+   * `path`), and rule 11, whose row names the module's page.
+   */
+  it('[ac:ac-kazdy-wiersz-check-consistency-wskazu] every check_consistency row that points at a page carries rootId', async () => {
+    await fs.mkdir(path.join(cwd, '.claude4spec'), { recursive: true });
+    await fs.writeFile(
+      path.join(cwd, '.claude4spec', 'config.json'),
+      JSON.stringify({ consistency: { requireModuleAc: 'warn' } }),
+      'utf-8',
+    );
+    await writePage(
+      'pages',
+      'refs.md',
+      [
+        '# Refs',
+        '',
+        '<inline_mention type="widget" slug="nope"/>',
+        '',
+        '<tagged_list type="widget" tags="no-such-tag"/>',
+        '',
+        '<section_ref anchor="zzzzzz99"/>',
+        '',
+        '## Loose heading',
+        '',
+        '<!-- anchor: dupdup11 -->',
+        '## First',
+        '',
+        '```md',
+        '<!-- anchor: tracetra -->',
+        '## Example',
+        '```',
+        '',
+      ].join('\n'),
+    );
+    await writePage('pages', 'dup.md', ['<!-- anchor: dupdup11 -->', '# Second', ''].join('\n'));
+    await writePage('pages', 'open.md', ['# Open', '', '```', '## Swallowed', ''].join('\n'));
+    await writePage('pages', 'modules/m16-onboarding.md', '<!-- anchor: m16xxxx1 -->\n# M16\n');
+
+    const report = await core([pagesRoot()], [widgetModule(), acBackendModule]).checkConsistency({});
+
+    const pageRows: Record<string, Array<Record<string, unknown>>> = {
+      brokenReferences: report.brokenReferences as Array<Record<string, unknown>>,
+      invalidTagReferences: report.invalidTagReferences as Array<Record<string, unknown>>,
+      brokenExtensionReferences: report.brokenExtensionReferences as Array<Record<string, unknown>>,
+      unanchoredHeadings: report.unanchoredHeadings as Array<Record<string, unknown>>,
+      anchorLinesInCode: report.anchorLinesInCode as Array<Record<string, unknown>>,
+      unclosedCodeBlocks: report.unclosedCodeBlocks as Array<Record<string, unknown>>,
+      modulesWithoutAc: report.modulesWithoutAc as Array<Record<string, unknown>>,
+      duplicateAnchorOccurrences: (report.duplicateAnchors as Array<{ occurrences: Array<Record<string, unknown>> }>).flatMap(
+        (d) => d.occurrences,
+      ),
+    };
+    for (const [bucket, rows] of Object.entries(pageRows)) {
+      // Each bucket was actually exercised — an empty bucket would pass vacuously.
+      expect(rows.length, bucket).toBeGreaterThan(0);
+      for (const row of rows) {
+        expect(row, bucket).toMatchObject({ rootId: 'pages', pagePath: expect.any(String) });
+        expect(row, bucket).not.toHaveProperty('path');
+      }
+    }
+    expect(pageRows.brokenReferences!.map((r) => r.pagePath)).toEqual(['refs.md']);
+    expect(pageRows.anchorLinesInCode!.map((r) => r.pagePath)).toEqual(['refs.md']);
+    expect(pageRows.unclosedCodeBlocks!.map((r) => r.pagePath)).toEqual(['open.md']);
+    expect(pageRows.modulesWithoutAc).toEqual([
+      expect.objectContaining({ module: 'm16', rootId: 'pages', pagePath: 'modules/m16-onboarding.md' }),
+    ]);
+    expect(pageRows.duplicateAnchorOccurrences!.map((o) => o.pagePath).sort()).toEqual(['dup.md', 'refs.md']);
+  });
+
   it('search_pages: on an indexed root a match outside every section (frontmatter, preamble, unanchored heading) is a page-level hit', async () => {
     await writePage(
       'pages',
@@ -3125,5 +3198,86 @@ describe('the fail-closed read gate', () => {
     const page = await c.getPage({ rootId: 'pages', path: 'a.md' });
     expect(page.results).toEqual([{ heading_text: 'A', heading_level: 1, body: '\nbody\n' }]);
     expect(page.hash).toBe(createHash('sha256').update('# A\n\nbody\n', 'utf-8').digest('hex'));
+  });
+});
+
+/**
+ * 2.1.9 — the `skills` root (M52 `i5frb6it`) in agent discovery: its kind
+ * carries `references`, so the reference sweeps read its package files; it
+ * selects no `m06-*`, so a hit there has no anchor; and `search_pages` (with the
+ * rest of page discovery) iterates only the roots of kind `pages`.
+ */
+describe('the skills root in discovery (M52)', () => {
+  let cwd: string;
+  let db: Database.Database;
+
+  beforeEach(async () => {
+    cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-skills-discovery-'));
+    db = createTestDb();
+    applyProjection(db, [widgetModule()]);
+    db.prepare(`INSERT INTO widget (slug, format, source) VALUES ('flow', 'mermaid', 'graph TD')`).run();
+  });
+  afterEach(async () => {
+    db.close();
+    await fs.rm(cwd, { recursive: true, force: true });
+  });
+
+  /** The core the project context builds: page roots + the registry's reference-only roots. */
+  const build = (): DiscoveryCore => {
+    const pluginHost = host([widgetModule()]);
+    const roots = [pagesRoot()];
+    return createDiscoveryCore({
+      reader: new RawEntityReader(db, pluginHost),
+      db,
+      host: pluginHost,
+      serialization: new SerializationEngine(pluginHost),
+      roots,
+      referenceRoots: new RootRegistry(roots).referenceOnly(),
+      projectDir: cwd,
+      packageVersion: 'test',
+    });
+  };
+
+  const write = async (rel: string, body: string): Promise<void> => {
+    const abs = path.join(cwd, rel);
+    await fs.mkdir(path.dirname(abs), { recursive: true });
+    await fs.writeFile(abs, body, 'utf-8');
+  };
+
+  const indexRow = (rootId: string, anchor: string, page: string, start: number, end: number): void => {
+    db.prepare(
+      `INSERT INTO section_index
+         (rootId, anchor, page_path, parent_anchor, heading_level, heading_text,
+          content_hash, body, line_start, line_end, paragraph_count)
+       VALUES (?, ?, ?, NULL, 1, 'H', 'hash', '', ?, ?, 1)`,
+    ).run(rootId, anchor, page, start, end);
+  };
+
+  it('[ac:ac-trafienie-find-references-w-korzeniu] a find_references hit in a root whose kind did not select anchor injection (`skills`) carries no `anchor` field; a hit in a `pages` root keeps its anchor', async () => {
+    await write('pages/spec.md', '<!-- anchor: aaaaaa11 -->\n# Spec\n\n<inline_mention type="widget" slug="flow"/>\n');
+    indexRow('pages', 'aaaaaa11', 'spec.md', 1, 4);
+    await write('.claude4spec/skills/reviewer/SKILL.md', '---\ntitle: R\n---\n# Reviewer\n\nUse <inline_mention type="widget" slug="flow"/>.\n');
+    // Even a stray index row for the skills file does not give its hit an anchor: the gate is the KIND.
+    indexRow('skills', 'bbbbbb22', 'reviewer/SKILL.md', 1, 3);
+
+    const found = await build().findReferences({ target: 'entity', type: 'widget', slug: 'flow' });
+    expect(found.total).toBe(2);
+    const inSkills = found.references.find((r) => r.rootId === 'skills')!;
+    expect(inSkills).toMatchObject({ rootId: 'skills', pagePath: 'reviewer/SKILL.md', tagType: 'inline_mention', line: 3 });
+    expect(inSkills).not.toHaveProperty('anchor');
+    expect(found.references.find((r) => r.rootId === 'pages')).toMatchObject({ pagePath: 'spec.md', anchor: 'aaaaaa11' });
+  });
+
+  it('[ac:m52-skill-files-not-in-search-pages] a skill package file never appears in search_pages results, and the `skills` root is not a search target', async () => {
+    await write('pages/spec.md', '# Spec\n\nneedle in the spec\n');
+    await write('.claude4spec/skills/reviewer/SKILL.md', '---\ntitle: R\n---\n# Reviewer\n\nneedle in a skill\n');
+    await write('.claude4spec/skills/reviewer/workflows/brief.md', '# Brief\n\nneedle in a subfile\n');
+    const c = build();
+    const res = await c.searchPages({ query: 'needle', mode: 'hits' });
+    if (res.mode !== 'hits') throw new Error('expected hit mode');
+    expect(res.items.map((h) => `${h.rootId}:${h.path}`)).toEqual(['pages:spec.md']);
+    await expect(c.searchPages({ query: 'needle', rootId: 'skills' })).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    // The other page operations do not address it either.
+    await expect(c.listPages({ rootId: 'skills' })).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
   });
 });

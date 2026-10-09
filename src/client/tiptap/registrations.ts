@@ -1,4 +1,6 @@
 import '../xml-markup/host-renders.js';
+// M52 front-end bootstrap: the `spec-skills` command source (chat composer).
+import '../skills/specSkillsSource.js';
 import { registerEditorExtension, registerMentionSource, type RegistryContext } from './registry.js';
 import { RawJsxInlineNode, RawJsxBlockNode } from './extensions/RawJsxNode.js';
 import { AnchorMarker } from './extensions/AnchorMarker.js';
@@ -157,9 +159,12 @@ registerEditorExtension({
   markdownIt: { kind: 'inline', pattern: /^<[A-Z][\w.-]*(\s[^>]*?)?\/?\s*>/ },
 });
 
+// M14 — the page-ref node. In the chat composer (`chat-input`) the submit
+// serializes every page reference as `@path.md`, whatever variant inserted it.
 registerEditorExtension({
   name: 'page_ref',
-  extension: PageRefNode,
+  extension: (ctx) =>
+    ctx.contextId === 'chat-input' ? PageRefNode.configure({ serializeAs: 'at' }) : PageRefNode,
   priority: 700,
   availableIn: ['page', 'plan', 'chat-input'],
   markdownIt: { kind: 'inline', pattern: new RegExp(`(?<![\\w])@[\\w][\\w/.-]*?(?:#${ANCHOR_ID_SOURCE})?`) },

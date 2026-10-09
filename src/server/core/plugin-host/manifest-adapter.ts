@@ -95,6 +95,13 @@ export function skillContextTypesReason(c: PluginSkillContribution): string | nu
 export function admitSkillContextTypes(
   pluginName: string,
   list: PluginSkillContribution[],
+  /**
+   * 2.1.9 (M33 `9734yj2e`) — receives the slug of every SKIPPED entry, so the
+   * caller can report it to the M37 registry as "known, unresolved" with the
+   * reason "wkład koperty niezaładowany". An entry without a usable slug has
+   * nothing to report.
+   */
+  rejected?: string[],
 ): PluginSkillContribution[] {
   return list.filter((c) => {
     const reason = c && typeof c === 'object' ? skillContextTypesReason(c) : null;
@@ -111,6 +118,7 @@ export function admitSkillContextTypes(
     console.warn(
       `[plugin] ${pluginName}: skill "${label}" — ${reason}; skipping this contribution (the rest of the package still loads)`,
     );
+    if (rejected && typeof c.slug === 'string' && c.slug.length > 0) rejected.push(c.slug);
     return false;
   });
 }

@@ -116,6 +116,8 @@ async function boundArtifactRoots() {
     versionCapture: capture,
     entityIndexer: NOOP,
     releaseIndexer: NOOP,
+    // 2.1.9 — the `skills` kind (M52) declares a reducer: a full-registry binding binds `m02-sidebar-reducer`.
+    sidebarReducer: NOOP,
   };
   const binder = new ReactionBinder(w, ctx);
   bindRegistryReactions(registry, mounted.sourceByRootId, binder);

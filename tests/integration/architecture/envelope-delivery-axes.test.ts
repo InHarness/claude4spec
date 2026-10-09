@@ -519,6 +519,81 @@ describe('the single-slot envelope — c4s-plugin-writing-style-author', () => {
 });
 
 /**
+ * 2.1.9 — the second single-slot, capability-class envelope:
+ * `c4s-plugin-skill-author` (M13 registry of built-in envelopes `hevpbnsk`, page
+ * `plugins/modules/c4s-plugin-skill-author.md`). Its one contribution is the
+ * `skill-author` skill, narrowed to `['chat', 'patch']` — the two context types
+ * that mount `spec-skill-tools`, the server of the only tool it writes with.
+ *
+ * Driven through the real loader against the real `plugins/` tree, like every
+ * envelope above: the claim is about discovery and the per-context listing, not
+ * about the manifest literal (the envelope's own suite covers that).
+ */
+describe('the single-slot envelope — c4s-plugin-skill-author', () => {
+  const PKG = 'c4s-plugin-skill-author';
+  const SKILL = 'skill-author';
+
+  function skillRegistryWith(registry: PluginRegistryImpl, cwd: string): SkillRegistry {
+    const skills = SkillRegistry.load(findSkillsRoots(cwd));
+    for (const skill of registry.listSkills()) skills.addPluginSkill(skill);
+    return skills;
+  }
+
+  let registry: PluginRegistryImpl;
+  let tmp: string;
+  const listingIn = (contextType: 'chat' | 'brief' | 'patch' | 'ask'): string[] =>
+    new SkillResolver(skillRegistryWith(registry, tmp), tmp)
+      .resolveForContext(contextType)
+      .listing.map((s) => s.slug);
+
+  beforeAll(async () => {
+    registry = await loadedRegistry();
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-skill-author-envelope-'));
+    fs.mkdirSync(path.join(tmp, '.claude4spec'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.claude4spec', 'config.json'), JSON.stringify({ writingStyle: null }));
+  });
+  afterAll(() => {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('is discovered as a built-in envelope, loads with no trust gate and registers no entity type', () => {
+    const record = registry.listPluginRecords().find((r) => r.name === PKG);
+    expect(record, `${PKG} did not load`).toBeDefined();
+    expect(record!.contributedTypes).toEqual([]);
+
+    const contributed = registry.listSkills().filter((s) => s.slug === SKILL);
+    expect(contributed).toHaveLength(1);
+    expect(contributed[0].scope).toBe('contextual');
+    expect(contributed[0].contextTypes).toEqual(['chat', 'patch']);
+    expect(contributed[0].content).toContain('update_skill_file');
+  });
+
+  it('[ac:pkg-skill-author-listed-in-chat] skill-author is on the listing of a chat turn', () => {
+    expect(listingIn('chat')).toContain(SKILL);
+  });
+
+  it('[ac:pkg-skill-author-listed-in-patch] skill-author is on the listing of a patch turn', () => {
+    expect(listingIn('patch')).toContain(SKILL);
+  });
+
+  it('[ac:pkg-skill-author-not-listed-in-brief] skill-author is not on the listing of a brief turn — and stays loadable there', () => {
+    expect(listingIn('brief')).not.toContain(SKILL);
+    // Same for `ask`: the narrowing is the envelope's, not brief's.
+    expect(listingIn('ask')).not.toContain(SKILL);
+    // The listing narrows discovery, not access (M37 `2ury2bsa`).
+    const skills = skillRegistryWith(registry, tmp);
+    expect(skills.has(SKILL)).toBe(true);
+    expect(skills.resolve(SKILL).content.length).toBeGreaterThan(0);
+  });
+
+  it('is never selectable as a writing style', () => {
+    const skills = skillRegistryWith(registry, tmp);
+    expect(skills.listSelectable().map((x) => x.slug)).not.toContain(SKILL);
+    expect(skills.isSelectable(SKILL)).toBe(false);
+  });
+});
+
+/**
  * 0.2.65 — the FORM CLAUSE, asserted on the bytes the agent actually receives.
  *
  * M15 makes the writing style the owner of *where* a result lands, and the entity

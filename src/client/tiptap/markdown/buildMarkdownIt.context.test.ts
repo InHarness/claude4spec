@@ -54,7 +54,7 @@ describe('page context from the root kind, fixed `artifact` context for briefs a
     // The page editor's layers come from the `pages` kind: anchors (the kind
     // selects `m06-anchor-injection`) and entity nodes (`references = tak`).
     const layers = rootEditorPropsForKind(PAGES_KIND);
-    expect(layers).toEqual({ sectionIndexed: true, referenceValidated: true });
+    expect(layers).toEqual({ sectionIndexed: true, referenceValidated: true, pageLinks: true });
     const extensions = EditorFactory.buildExtensions('page', ctx, {}, layers);
     const schema = names(extensions);
     expect(schema).toEqual(expect.arrayContaining(['inline_mention', 'anchor_marker', 'section_ref', 'page_ref']));

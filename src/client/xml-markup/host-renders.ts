@@ -8,3 +8,4 @@ import '../../shared/xml-markup/host-tags.js';
 import './tags/references/index.js';
 import './tags/sections.js';
 import './tags/todos.js';
+import './tags/skills.js';

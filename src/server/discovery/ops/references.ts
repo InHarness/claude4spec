@@ -61,7 +61,16 @@ export async function findReferences(
       );
   }
 
+  /**
+   * 2.1.9 — a hit carries an `anchor` only in a root whose KIND selects
+   * `m06-anchor-injection`. Elsewhere the files carry no section anchors, so the
+   * hit's address is `(rootId, pagePath)` plus `line`, and nothing more — the
+   * core hands back the address and does not translate it into another module's
+   * read. The gate reads the kind's choice, never the root's or the kind's name.
+   */
+  const anchored = new Set(roots.anchorInjected().map((r) => r.id));
   for (const hit of hits) {
+    if (!anchored.has(hit.rootId)) continue;
     if (deps.unindexedRootIds?.has(hit.rootId)) continue;
     const anchor = anchorFor(anchors, hit.rootId, hit.pagePath, hit.line);
     if (anchor) hit.anchor = anchor;

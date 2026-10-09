@@ -98,6 +98,26 @@ export function isValidManifestShape(manifest: PluginManifest | null): manifest 
   );
 }
 
+/**
+ * 2.1.9 (M33 `m33load01`) — the skill slugs a manifest carries, from both skill
+ * slots (`contributes.skills` and the `contributes.writingStyles` sugar). Read off
+ * a manifest that did not pass the gate, so nothing here is validated: an entry
+ * without a usable slug simply has nothing to report.
+ */
+export function contributedSkillSlugs(manifest: PluginManifest): string[] {
+  const c = (manifest.contributes ?? {}) as PluginManifest['contributes'];
+  const entries: unknown[] = [
+    ...(Array.isArray(c.skills) ? c.skills : []),
+    ...(Array.isArray(c.writingStyles) ? c.writingStyles : []),
+  ];
+  const slugs: string[] = [];
+  for (const e of entries) {
+    const slug = e && typeof e === 'object' ? (e as { slug?: unknown }).slug : undefined;
+    if (typeof slug === 'string' && slug.length > 0 && !slugs.includes(slug)) slugs.push(slug);
+  }
+  return slugs;
+}
+
 /** engines.node satisfied by the running node? Missing constraint = satisfied. */
 function enginesSatisfied(manifest: PluginManifest): boolean {
   const node = manifest.engines?.node;
@@ -191,6 +211,15 @@ export async function loadWorkspacePlugins(
     const gate = gateManifest(manifest);
     if (gate) {
       console.warn(`[plugin-loader] ${gate.code} ${pkg}: ${gate.reason}`);
+      // 2.1.9: the manifest WAS read, so its skill slugs are known — report them to
+      // the skill registry, which then resolves them with "envelope not loaded"
+      // rather than "outside the registry". (A package whose import threw has no
+      // manifest and reports nothing.)
+      registry.noteUnloadedSkills(
+        manifest.name,
+        contributedSkillSlugs(manifest),
+        `package "${manifest.name}" was skipped by the loader: ${gate.code} — ${gate.reason}`,
+      );
       records.push({
         ...base,
         status: gate.status,

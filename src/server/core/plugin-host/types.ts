@@ -497,6 +497,21 @@ export interface ShadowedType {
 }
 
 /**
+ * 2.1.9 (M33 `m33load01` / `9734yj2e`) — a skill slug of an envelope that did not
+ * load: its package was skipped by the compatibility gate after the manifest was
+ * read, or the single entry was rejected by the contribution check. Reported to
+ * the M37 registry, which resolves the slug with the reason "wkład koperty
+ * niezaładowany" instead of "styl spoza rejestru".
+ */
+export interface UnloadedSkillSlug {
+  slug: string;
+  /** `manifest.name` of the package that carried the slug. */
+  plugin: string;
+  /** Human detail: which package / which value — mirrors the loader's warning. */
+  detail: string;
+}
+
+/**
  * M31 split: process-immutable plugin catalog. Populated once at process
  * start via `registerAllPlugins(registry)`; `consolidate` is a PURE factory —
  * it derives a per-project ProjectPluginHost and mutates nothing here.
@@ -557,6 +572,20 @@ export interface PluginRegistry {
    * overlay skills are pushed separately, behind the trust gate).
    */
   listSkills(): PluginSkillContribution[];
+
+  /**
+   * 2.1.9 — record the skill slugs of a base-layer package the loader's gate
+   * skipped after reading its manifest (`contributes.skills` + `writingStyles`).
+   * A later successful `registerPlugin` of the same name clears them.
+   */
+  noteUnloadedSkills(pluginName: string, slugs: string[], detail: string): void;
+
+  /**
+   * 2.1.9 — every base-layer skill slug that did not load: gate-skipped packages
+   * plus single entries the contribution check rejected (`contextTypes` outside
+   * the enum). Pushed into each project's SkillRegistry as "known, unresolved".
+   */
+  listUnloadedSkills(): UnloadedSkillSlug[];
 
   /**
    * Derive a per-project host. The effective pool is `base ∪ overlay`

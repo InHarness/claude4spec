@@ -1,4 +1,5 @@
 import { attrs, selfClose } from '../glue.js';
+import { PAGES_KIND } from '../../../../shared/root-kinds.js';
 import type { PromptBlock } from '../types.js';
 
 /* M02 — Pages: the page the user has open, and how to read it. */
@@ -38,10 +39,20 @@ function buildCurrentPage(path: string, body: string | null, root: string): stri
   return selfClose('current_page', attrs({ path, root, total_lines: totalLines }));
 }
 
-const hasCurrentPage = (c: { contextType: string; currentPagePath: string | null }): boolean =>
+const hasCurrentPage = (c: {
+  contextType: string;
+  currentPagePath: string | null;
+  currentPageRootKind?: string;
+}): boolean =>
   // 0.1.79: `ask` (peer-consult) emits no `<current_*>` page block — it explores
   // the peer's spec headlessly, with no "current page" anchor.
-  c.contextType !== 'ask' && c.currentPagePath !== null && c.currentPagePath !== '';
+  c.contextType !== 'ask' &&
+  c.currentPagePath !== null &&
+  c.currentPagePath !== '' &&
+  // 2.1.9 (`cg80qj0e`): only a page of a root of kind `pages`. An open file of a
+  // root of another kind gives no `<current_page>` (an open skill is M52's
+  // `<current_skill>`). Absent kind = `pages` (rigs without a root registry).
+  (c.currentPageRootKind ?? PAGES_KIND) === PAGES_KIND;
 
 export const M02_PROMPT_BLOCKS: readonly PromptBlock[] = [
   {

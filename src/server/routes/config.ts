@@ -1,3 +1,4 @@
+import type { WritingStyleSummary, WritingStylesResponse } from '../../shared/writing-styles.js';
 import { Router } from 'express';
 import path from 'node:path';
 import {
@@ -148,6 +149,8 @@ function configResponse(c: NormalizedConfig, cwd: string, skillRegistry: SkillRe
       : null,
     language: c.language,
     description: c.description,
+    // 2.1.9 (M52): `skill.*` as the file holds it; absent ⇒ `{}`.
+    skill: c.skill ?? {},
     onboarding: { completed: c.onboardingCompleted },
     entities: c.entities,
     agent: {
@@ -344,11 +347,16 @@ export function configRouter(deps: ConfigRouterDeps): Router {
     }
   });
 
+  /**
+   * M15 L4 `zabga4p4` — the styles of EVERY registry source (2.1.9: the project's
+   * `skills` root and attached exposed projects included), each with its `source`
+   * value. Selection metadata only, never content.
+   */
   router.get('/writing-styles', (_req, res) => {
     const c = readConfig(cwd);
-    res.json({
+    const body: WritingStylesResponse = {
       active: c.writingStyle,
-      available: skillRegistry.listSelectable().map((s) => ({
+      available: skillRegistry.listSelectable().map((s): WritingStyleSummary => ({
         slug: s.slug,
         title: s.title,
         description: s.description,
@@ -356,7 +364,8 @@ export function configRouter(deps: ConfigRouterDeps): Router {
         language: s.language,
         source: s.source,
       })),
-    });
+    };
+    res.json(body);
   });
 
   return router;

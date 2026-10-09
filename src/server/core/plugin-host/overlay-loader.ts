@@ -23,6 +23,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { entryCacheBust } from './cache-bust.js';
 import {
+  contributedSkillSlugs,
   extractManifest,
   gateManifest,
   isValidManifestShape,
@@ -37,7 +38,7 @@ import {
 } from './manifest-adapter.js';
 import { attachComposition } from './composition-validation.js';
 import { installPluginRuntimeResolver } from './plugin-runtime-resolver.js';
-import type { BackendModule, ProjectPluginOverlay } from './types.js';
+import type { BackendModule, ProjectPluginOverlay, UnloadedSkillSlug } from './types.js';
 import type {
   PluginCommandContribution,
   PluginSubagentContribution,
@@ -57,6 +58,12 @@ export interface ProjectOverlayResult {
   /** M15/M37: trusted project-local skills (both manifest slots, lowered to one
    *  shape), pushed into SkillRegistry. */
   skills: PluginSkillContribution[];
+  /**
+   * 2.1.9: skill slugs of trusted project-local packages that did not load — gate
+   * skipped after the manifest was read, or a single entry rejected by the
+   * `contextTypes` check. Reported to the SkillRegistry as "known, unresolved".
+   */
+  unloadedSkills: UnloadedSkillSlug[];
   /** Best-effort detach of imported project-local modules (see dispose note). */
   dispose: () => void;
 }
@@ -151,6 +158,7 @@ export async function loadProjectOverlay(
   const modules = new Map<string, BackendModule>();
   const originByType = new Map<string, string>();
   const skills: PluginSkillContribution[] = [];
+  const unloadedSkills: UnloadedSkillSlug[] = [];
   // M33: non-entity capabilities of trusted project-local plugins. An
   // entity-less plugin (commands/settings only) still produces these.
   const settingsSections: PluginSettingsSection[] = [];
@@ -200,6 +208,8 @@ export async function loadProjectOverlay(
     const gate = gateManifest(manifest);
     if (gate) {
       console.warn(`[overlay-loader] ${gate.code} ${pkg}: ${gate.reason}`);
+      const detail = `project-local package "${manifest.name}" was skipped by the loader: ${gate.code} — ${gate.reason}`;
+      for (const slug of contributedSkillSlugs(manifest)) unloadedSkills.push({ slug, plugin: manifest.name, detail });
       records.push({
         ...base,
         status: gate.status,
@@ -216,6 +226,7 @@ export async function loadProjectOverlay(
     // either fails the whole plugin atomically.
     let lowered: BackendModule[];
     let pkgSkills: PluginSkillContribution[];
+    const rejectedSkills: string[] = [];
     try {
       // M13: synthesizeMount is the same choke point registry.ts's
       // registerEntityModule uses for base-layer plugins — apply it here too,
@@ -243,7 +254,7 @@ export async function loadProjectOverlay(
       // a hand-written manifest, so the layer that must not abort on a typo is
       // this one above all.
       pkgSkills = [
-        ...admitSkillContextTypes(manifest.name, manifest.contributes?.skills ?? []).map(
+        ...admitSkillContextTypes(manifest.name, manifest.contributes?.skills ?? [], rejectedSkills).map(
           validateSkillContribution,
         ),
         ...(manifest.contributes?.writingStyles ?? []).map(validateWritingStyle),
@@ -273,6 +284,13 @@ export async function loadProjectOverlay(
       originByType.set(m.type, origin);
     }
     skills.push(...pkgSkills);
+    for (const slug of rejectedSkills) {
+      unloadedSkills.push({
+        slug,
+        plugin: manifest.name,
+        detail: `entry "${slug}" of project-local package "${manifest.name}" was rejected by the loader (contextTypes outside the enum)`,
+      });
+    }
     // M33: capture non-entity capabilities + teardown of this trusted plugin.
     if ((manifest.contributes?.settings ?? []).length > 0) {
       settingsSections.push({
@@ -329,7 +347,7 @@ export async function loadProjectOverlay(
     commands.length === 0 &&
     subagents.length === 0
   ) {
-    return { overlay: undefined, records, skills, dispose };
+    return { overlay: undefined, records, skills, unloadedSkills, dispose };
   }
 
   const overlay: ProjectPluginOverlay = {
@@ -340,5 +358,5 @@ export async function loadProjectOverlay(
     listSubagents: () => subagents,
   };
 
-  return { overlay, records, skills, dispose };
+  return { overlay, records, skills, unloadedSkills, dispose };
 }

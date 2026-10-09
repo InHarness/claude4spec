@@ -58,7 +58,10 @@ describe('c4s-plugin-writing-style-author — the skill it contributes', () => {
     // The metadata above is the contribution's own; a frontmatter block reaching the
     // body would be rendered to the agent as if it were prose.
     expect(skill.content.startsWith('---')).toBe(false);
-    expect(skill.content).not.toContain('scope: contextual');
+    // Line-anchored: the prose itself names `scope: contextual` (the genre boundary
+    // sends such packages to `skill-author`), so only a frontmatter LINE is a leak.
+    expect(skill.content).not.toMatch(/^scope: contextual$/m);
+    expect(skill.content).not.toMatch(/^title: Writing Style Author$/m);
     expect(skill.content.startsWith('# Writing Style Author')).toBe(true);
     expect(skill.content.length).toBeGreaterThan(1000);
   });
@@ -75,5 +78,32 @@ describe('c4s-plugin-writing-style-author — the skill it contributes', () => {
     // Guarded in full by `tests/integration/architecture/scaffold-form-clause.test.ts`;
     // this is the package-local tripwire for the import having gone empty.
     expect(skill.content).toContain('**Form clause.**');
+  });
+});
+
+/**
+ * 2.1.9 (pkg `c4s-plugin-writing-style-author` `vt1nmnwx`, M15 `m15wsauth`) — the
+ * genre boundary and the write channel, as the skill instructs them.
+ */
+describe('c4s-plugin-writing-style-author — what the scaffold may write (2.1.9)', () => {
+  it('[ac:ac-skill-writing-style-author-poproszony] asked for a skill package that is not a writing style, the skill sends the request to skill-author and does not scaffold', () => {
+    const boundary = /\*\*Writing styles only\.\*\*([^\n]*)/.exec(skill.content)?.[1] ?? '';
+    expect(boundary).toContain('scope: writing-style');
+    expect(boundary).toContain('do not scaffold it here');
+    expect(boundary).toContain('`skill-author` skill');
+    expect(boundary).toContain('load_skill_file("skill-author")');
+    // The first step of the workflow checks the genre before anything is written.
+    expect(skill.content).toMatch(/1\. Check that this is a style request \(otherwise: `skill-author`/);
+    // The listing blurb says so too, so the model picks the right skill before opening this one.
+    expect(skill.description).toContain('Writing styles only');
+    expect(skill.description).toContain('skill-author');
+  });
+
+  it('writes through update_skill_file into the project skills root — no .claude/skills, no file built-ins', () => {
+    expect(skill.content).toContain('update_skill_file');
+    expect(skill.content).toContain('.claude4spec/skills/<slug>/');
+    expect(skill.content).not.toContain('.claude/skills');
+    expect(skill.description).toContain('update_skill_file');
+    expect(skill.description).not.toContain('.claude/skills');
   });
 });

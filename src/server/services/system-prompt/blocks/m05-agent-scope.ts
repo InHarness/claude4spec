@@ -98,9 +98,13 @@ function buildAgentPathScope(
  * `enabled` is the NEGATION of `agent.disableDirectFilesystemAccess`: the config
  * field names what is taken away, the prompt names what the model has.
  *
- * The disabled body names the three capabilities that genuinely stop working, so
+ * The disabled body names the capabilities that genuinely stop working, so
  * a model asked for one of them says which setting is in the way instead of
  * reaching for a tool that is not in its catalog and improvising after it fails.
+ *
+ * 2.1.9 (template `szablon-agent-filesystem-access`): scaffolding a writing style
+ * left the list — it writes through `update_skill_file` (M52) now, which the
+ * flag does not touch. Two capabilities remain.
  */
 function buildAgentFilesystemAccess(access: { enabled: boolean }): string {
   if (!access.enabled) {
@@ -108,18 +112,17 @@ function buildAgentFilesystemAccess(access: { enabled: boolean }): string {
       `<agent_filesystem_access enabled="false">`,
       `This project runs you WITHOUT built-in filesystem or shell tools. Read, Grep, Glob, Edit, Write, NotebookEdit, Bash and Skill are not in your catalog — they are absent, not merely discouraged, so there is nothing to fall back to and no point proposing one.`,
       `The specification is fully reachable anyway, through the MCP servers listed in <tooling>: read with get_page / get_sections / list_pages / search_pages, write with update_sections / update_page. That is the point of the posture, not a workaround for it — a core write carries expectedHash, captures a version and injects anchors, and a built-in write skipped all three.`,
-      `Three things genuinely do not work while this is on. If you are asked for one, say which setting is in the way rather than attempting it:`,
+      `Two things genuinely do not work while this is on. If you are asked for one, say which setting is in the way rather than attempting it:`,
       `  - git recovery ("Fix it with Agent") — it drives git through Bash, and no MCP operation replaces it;`,
-      `  - the c4s CLI — it is a shell program; only its \`ask\` survives, and only where this turn mounted the server that exposes it — check <tooling>;`,
-      `  - scaffolding a new writing style — it writes a skill package under .claude/skills/, which no C4S operation owns.`,
-      `The user can turn all three back on by unchecking \"Block direct file access\" in Settings → Agent. Say that plainly; do not try to work around it.`,
+      `  - the c4s CLI — it is a shell program; only its \`ask\` survives, and only where this turn mounted the server that exposes it — check <tooling>.`,
+      `The user can turn both back on by unchecking \"Block direct file access\" in Settings → Agent. Say that plainly; do not try to work around it.`,
       `One thing that DOES still work, and it is about you rather than the user: the read-only explorer subagents are mounted here as usual. They never held the file built-ins to begin with — they read the specification through the same MCP operations you do — so this posture takes nothing away from them, and delegating a wide sweep is still the way to keep the bulk of what you read out of your own context.`,
       `</agent_filesystem_access>`,
     ].join('\n');
   }
   return [
     `<agent_filesystem_access enabled="true">`,
-    `This project leaves the built-in filesystem and shell tools available to you, so work outside the specification (implementation code, git, the c4s CLI, scaffolding a writing style) is possible here.`,
+    `This project leaves the built-in filesystem and shell tools available to you, so work outside the specification (implementation code, git, the c4s CLI) is possible here.`,
     `That does NOT make them an alternative route into the specification. Pages, entities, plans and briefs are still read and written ONLY through the MCP servers in <tooling>: a built-in write bypasses expectedHash, version capture and anchor injection, so it corrupts the consistency contract while reporting success. Reach for Read/Edit/Write only for files that are not C4S artifacts.`,
     `</agent_filesystem_access>`,
   ].join('\n');
