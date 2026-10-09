@@ -11,21 +11,24 @@
    "file": "src/shared/types.ts",
    "line": 194,
    "blocking": false,
-   "reason": "WsEvent comment claims ProjectContext is invalidated before git:status-changed{headChanged:true}; real order is event then reload."
+   "reason": "WsEvent comment claims ProjectContext is invalidated before git:status-changed{headChanged:true}; real order is event then reload.",
+   "portion": "u2-git-sync-head-change/p1-l4-l10"
   },
   {
    "id": "rev-0002",
    "file": "src/server/fs/head-change-origin.ts",
    "line": 66,
    "blocking": false,
-   "reason": "realpathOfNearestAncestor() duplicates the helper in services/git.ts:1852."
+   "reason": "realpathOfNearestAncestor() duplicates the helper in services/git.ts:1852.",
+   "portion": "u2-git-sync-head-change/p1-l4-l10"
   },
   {
    "id": "rev-0003",
    "file": "src/server/fs/head-change-origin.ts",
    "line": 43,
    "blocking": false,
-   "reason": "comment claims mounts re-read per call; caller passes a frozen array."
+   "reason": "comment claims mounts re-read per call; caller passes a frozen array.",
+   "portion": "u2-git-sync-head-change/p1-l4-l10"
   }
  ]
 }

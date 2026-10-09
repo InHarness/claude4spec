@@ -37,3 +37,13 @@ Implementation-only decisions (no user-observable effect) and set-up choices.
 - **Events on other results.** Literal reading of M28 wyfi1e4o: every sync result except `skipped` and `no-upstream` emits `headChanged: false` (including `busy` on a taken lock — harmless, the client only refetches status).
 - `paths` are repository-relative (git's form), as in the DTO examples. `busy` carries `message: null` (DTO: `message` only on `error`).
 - The "entities match the new HEAD" criteria are proven with the real `ProjectContextCache` and a builder that reads the entity file at build time, plus a source assertion that production wires `onHeadChanged → onContextConfigChanged → cache.invalidate`: a full `buildProjectContext` in a unit test needs the whole workspace/plugin runtime.
+
+## u3-header-fetch-sync-ui (implementer, p1-l5-l10)
+
+- **Own op vs. another client's.** The server order is event → context reload (`project:disposed`) → response, so the initiating tab may be reloaded by `project:disposed` before its response arrives. `state/gitOps.ts` records this client's in-flight git op; the WS handler reloads only when no own sync/checkout is in flight. An own sync's `headChanged` event parks "Updated from the remote" in sessionStorage first, so the toast survives whichever reload comes first. The mark of a HEAD-moving sync/checkout is not cleared (the page reloads).
+- **Focus refetch** is an own listener in `useGitStatus` (window `focus` + `visibilitychange` → `refetchQueries(active, cancelRefetch: false)`), not React Query's `refetchOnWindowFocus`: the app disables it globally and RQ v5 only watches `visibilitychange`, missing an app switch with the tab visible.
+- **Reload = `window.location.reload()`** behind `lib/project-reload.ts` (same as the existing checkout / `project:disposed` path); tests mock that module.
+- **Checkout states aligned with 846dmtbu:** `dirty-blocked` → hint in the branch list ("Commit or stash your changes before switching branches"), `busy` → hint at the entry, `not-found` → warning "Branch no longer exists" (were toasts with the server message).
+- **Frontend tests run in happy-dom** (`// @vitest-environment happy-dom`), the repo's existing DOM environment; jsdom / Testing Library are not installed. Rendering via `react-dom/client` + `act`, as the other client render tests.
+- **Counts pluralised** ("1 new commit on the remote", "1 file") — the spec's `{N} new commits` / `{N} files` read for N ≠ 1.
+- Fixed the `WsEvent` `git:status-changed` comment in `src/shared/types.ts` (u2 review rev-0001): event first, then context reload.

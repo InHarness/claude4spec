@@ -1,0 +1,13 @@
+{
+  "id": "dev-0001",
+  "kind": "missing",
+  "blocking": false,
+  "address": "u3-header-fetch-sync-ui/8i5qf0xx",
+  "slugs": [],
+  "text": "M28 UI (L5) toast table: the sync `fast-forwarded`/`merged` toast is 'pokazywany po reloadzie trasy, stan przenoszony przez reload', but the M28 'Stan' field declares no 'Pamięć lokalna' entry, and L5 says a local-memory namespace must be declared by its owning module in 'Stan'. Also unsettled: which toast (if any) fetch/sync `no-upstream` and `skipped` produce. Assumed: the toast is parked in sessionStorage under `c4s:git:flash-toast::<project>` (envelope {v:1,data}) and shown once after the reload; `no-upstream`/`skipped` show no toast (the refreshed status hides the actions). Suggest adding a 'Pamięć lokalna' row to M28 Stan: `c4s:git:flash-toast` | projekt | 1 | toast przenoszony przez reload trasy po sync zmieniającym HEAD (sessionStorage).",
+  "assumption": "ASSUMPTION:dev-0001 sync's 'Updated from the remote' toast crosses the route reload via sessionStorage key c4s:git:flash-toast; fetch/sync no-upstream and skipped show no toast",
+  "unit": "u3-header-fetch-sync-ui",
+  "portion": "u3-header-fetch-sync-ui/p1-l5-l10",
+  "sent": true,
+  "patchPath": "2-1-9-to-2-1-10-workflow-u3-header-fetch-sync-ui-8i5qf0xx-m28-stan-lacks-local-memory-entry-for-the-sync-.md"
+}

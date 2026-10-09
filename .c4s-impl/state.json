@@ -1,5 +1,5 @@
 {
- "iteration": 10,
+ "iteration": 14,
  "conventions": [
   {
    "label": "L4 (API) — implementor M49",
@@ -58,7 +58,7 @@
    "units": [
     "u3-header-fetch-sync-ui"
    ],
-   "startCommit": null
+   "startCommit": "6e65835cc54628bb7d8eed2fdb34349cb0a48670"
   },
   {
    "n": 4,
@@ -680,15 +680,35 @@
     }
    ],
    "wave": 3,
-   "status": "pending",
+   "status": "verified",
    "blockedBy": null,
-   "portions": [],
-   "startCommit": null,
-   "baseCommit": null,
+   "portions": [
+    {
+     "name": "u3-header-fetch-sync-ui/p1-l5-l10",
+     "layers": [
+      "L5",
+      "L10"
+     ],
+     "slugs": [
+      "ac-klient-po-odebraniu-git-status-change",
+      "ac-klient-po-powrocie-fokusu-okna-pobier",
+      "ac-klient-ktory-nie-inicjowal-operacji-p"
+     ],
+     "status": "implemented",
+     "rounds": 1,
+     "partial": 0,
+     "uncovered": [],
+     "only": []
+    }
+   ],
+   "startCommit": "6e65835cc54628bb7d8eed2fdb34349cb0a48670",
+   "baseCommit": "6e65835cc54628bb7d8eed2fdb34349cb0a48670",
    "rounds": {
     "review": 0,
-    "unit": 0
-   }
+    "unit": 1
+   },
+   "lastUncovered": 0,
+   "lastBlocking": 0
   },
   {
    "id": "u4-push-non-fast-forward-recovery",
