@@ -58,7 +58,10 @@ describe('c4s-plugin-writing-style-author — the skill it contributes', () => {
     // The metadata above is the contribution's own; a frontmatter block reaching the
     // body would be rendered to the agent as if it were prose.
     expect(skill.content.startsWith('---')).toBe(false);
-    expect(skill.content).not.toContain('scope: contextual');
+    // Line-anchored: the prose itself names `scope: contextual` (the genre boundary
+    // sends such packages to `skill-author`), so only a frontmatter LINE is a leak.
+    expect(skill.content).not.toMatch(/^scope: contextual$/m);
+    expect(skill.content).not.toMatch(/^title: Writing Style Author$/m);
     expect(skill.content.startsWith('# Writing Style Author')).toBe(true);
     expect(skill.content.length).toBeGreaterThan(1000);
   });

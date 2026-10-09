@@ -78,9 +78,11 @@ describe('the page editor of a `skills` package file (M20 m20l13rt, M52)', () =>
     const html = editorMarkdownIt(layers).render(source);
     expect(html).not.toContain('data-page-ref');
     expect(html).toContain('Read @guides/intro.md first.');
-    // Control: the same line in a `pages` root's editor becomes the chip.
+    // Control: the same line in a `pages` root's editor becomes the chip. The
+    // editor's `@` grammar (`AT_PAYLOAD_RE`, shared with the chat) stops the path
+    // before a `.`, so the chip carries `guides/intro` and `.md` stays text.
     const pagesHtml = editorMarkdownIt(FULL_ROOT_EDITOR_PROPS).render(source);
     expect(pagesHtml).toContain('data-page-ref="true"');
-    expect(pagesHtml).toContain('data-path="guides/intro.md"');
+    expect(pagesHtml).toContain('data-syntax="at" data-path="guides/intro"');
   });
 });

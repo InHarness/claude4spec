@@ -102,6 +102,9 @@ describe('config.writingStyle === null in a brief thread (M15 edge cases)', () =
     expect(rules).toContain('THE SELF-CONTAINMENT INVARIANT');
     // No methodology: no style to open, so no order to read one.
     expect(out).not.toContain('<project_writing_skill');
-    expect(out).not.toContain('call load_skill_file(');
+    // (Scoped to the style's read order: M52's always-on `skill_ref` line in
+    // <available_skills> also says "call load_skill_file(", and is not methodology.)
+    expect(out).not.toContain('Before your first tool call in this thread, call load_skill_file(');
+    expect(out).not.toContain('This project has an active writing style');
   });
 });

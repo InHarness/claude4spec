@@ -1,0 +1,14 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.8-to-2.1.9",
+  "unit": "u11-exposed-projects",
+  "portion": "u11-exposed-projects/p1-l2-l17",
+  "claimed": [
+    "test:src/client/components/spec-skills/specSkillsSettings.test.ts :: ticking a row adds its name to skill.uses, unticking removes it — the draft, saved with the card"
+  ],
+  "deviations": [],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

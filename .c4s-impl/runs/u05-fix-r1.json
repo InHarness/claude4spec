@@ -1,0 +1,17 @@
+{
+  "role": "implementer",
+  "status": "progressed",
+  "release": "2.1.8..2.1.9",
+  "unit": "u05-skills-root",
+  "portion": "u05-skills-root/p1-l2-l16",
+  "claimed": [
+    "test:src/server/config.test.ts :: parseRootsArray requires exactly one builtin root, whatever its id",
+    "test:src/server/services/project-rooted-skills.test.ts :: [ac:m52-invalid-package-loads-marked-invalid] load_skill_file on a package whose SKILL.md frontmatter is YAML that does not parse returns it marked invalid, with its raw content and hash",
+    "m52-new-package-listed-next-thread",
+    "ac-roota-user-claude-skills-projekt-g"
+  ],
+  "deviations": [],
+  "stubsOpened": [],
+  "stubsClosed": [],
+  "stoppedEarly": false
+}

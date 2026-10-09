@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import matter from 'gray-matter';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -181,6 +182,32 @@ describe('spec-skill-tools · update_skill_file (M52, 2.1.9)', () => {
     // The rule is SKILL.md's alone: a subfile without frontmatter is written.
     const subfile = await call({ slug: 'notes', file: 'workflows/x.md', content: 'no header here\n', expectedHash: '' });
     expect(subfile.isError).toBe(false);
+  });
+
+  it('[ac:m52-update-skill-file-requires-description] the SKILL.md check gives the same verdict on the same bytes parsed twice — gray-matter\'s content cache never turns broken YAML into an empty header, nor hides a valid description', async () => {
+    const { call, abs } = await rig();
+
+    // Broken YAML that still names a description. Prime gray-matter's cache
+    // with a bare parse of the same bytes, as another reader (the registry
+    // scan) would — a cached second parse would answer `{ data: {} }`.
+    const broken = SKILL_MD.replace('version: 1', 'version: [oops');
+    expect(() => matter(broken)).toThrow();
+    for (let i = 0; i < 2; i++) {
+      const r = await call({ slug: 'cached', content: broken, expectedHash: '' });
+      expect(r.isError).toBe(true);
+      expect(r.body.code).toBe('INVALID_ARGUMENT');
+      expect(String(r.body.error)).toContain('does not parse');
+      expect(fs.existsSync(abs('cached/SKILL.md'))).toBe(false);
+    }
+
+    // Valid bytes parsed twice (bare parse first) keep their description: written once,
+    // and a second write of the same bytes against the new hash still passes the check.
+    expect(matter(SKILL_MD).data.description).toBe('How to write a release note.');
+    const first = await call({ slug: 'cached', content: SKILL_MD, expectedHash: '' });
+    expect(first.isError).toBe(false);
+    const second = await call({ slug: 'cached', content: SKILL_MD, expectedHash: first.body.hash });
+    expect(second.isError).toBe(false);
+    expect(fs.readFileSync(abs('cached/SKILL.md'), 'utf-8')).toBe(SKILL_MD);
   });
 
   it('[entity:katalog-operacji-m52#update_skill_file] the L3 catalog row: project scope, agent-mediated, write class, internal direct and n/a with a reason in cli/mcp/rest, the five error codes, file effect, literal+diff, idempotent — and the guard is observable: a stale expectedHash is PAGE_CONFLICT', async () => {

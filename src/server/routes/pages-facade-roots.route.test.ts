@@ -14,6 +14,8 @@ import type { DiscoveryCore } from '../discovery/types.js';
 import { registerCoreReactions } from '../workspace/core-reactions.js';
 import { mountRegistryRoots, type MountedRegistry } from '../workspace/root-registry-runtime.js';
 import { pagesRouter, type PageRootRuntime } from './pages.js';
+import { SkillRegistry, SkillResolver } from '../services/skill-registry.js';
+import { registerProjectRootedSkills } from '../services/project-rooted-skills.js';
 
 /**
  * 2.1.9 — the page routes `/api/pages/:rootId/*` address the roots WITH A
@@ -391,5 +393,68 @@ describe('2.1.9 — the `skills` root has a facade (M52 i5frb6it, M02 m02multidi
     expect(onDisk).toContain('Second edit.');
     expect(onDisk).toContain('title: Writer');
     expect(onDisk).not.toContain('description');
+  });
+});
+
+describe('2.1.9 — a write through the `skills` root facade is visible to the very next registry read (M52 q6jr8zoj "scan on demand")', () => {
+  /**
+   * The registry coalesces a burst of reads into one disk scan (a 500 ms window
+   * by default). That window must never hide a write: the rig below keeps the
+   * DEFAULT window (no `rescanTtlMs` override) and warms it right before the
+   * write, so only the source's change stamp can make the next read see it.
+   */
+  async function skillsRig() {
+    const r = await rig();
+    const registry = SkillRegistry.load([
+      { dir: path.join(r.cwd, '.claude', 'skills'), source: 'user', registration: 'user-project' },
+    ]);
+    registerProjectRootedSkills(registry, r.registry, r.cwd);
+    const resolver = new SkillResolver(registry, r.cwd);
+    const nextThreadListing = () => resolver.resolveForContext('chat', { writingStyle: null }).listing;
+    return { ...r, registry, nextThreadListing };
+  }
+
+  it('[ac:m52-new-package-listed-next-thread] a package created with POST /api/pages/skills is on the chat listing read immediately after the 201, inside the coalescing window', async () => {
+    const { app, registry, nextThreadListing } = await skillsRig();
+    // Warm the window: this read scans, the next ones within 500 ms would not.
+    expect(nextThreadListing().map((e) => e.slug)).not.toContain('reviewer');
+    expect(registry.has('reviewer')).toBe(false);
+
+    const content =
+      '---\ntitle: Reviewer\ndescription: Reviews a module page.\nversion: 1\nlanguage: en\nscope: contextual\n---\n# Reviewer\n';
+    const res = await request(app).post('/api/pages/skills').send({ path: 'reviewer/SKILL.md', content });
+    expect(res.status).toBe(201);
+
+    // No wait: the very next read carries it.
+    expect(nextThreadListing()).toContainEqual({
+      slug: 'reviewer',
+      description: 'Reviews a module page.',
+      origin: 'project-rooted',
+    });
+    expect(registry.has('reviewer')).toBe(true);
+  });
+
+  it('[ac:ac-roota-user-claude-skills-projekt-g] a writing style written into the `skills` root through the facade is selectable with `source: project-rooted` on the very next read, and an edit of its header through PUT is too', async () => {
+    const { app, registry } = await skillsRig();
+    expect(registry.listSelectable().map((s) => s.slug)).not.toContain('house-style');
+
+    const content =
+      '---\ntitle: House style\ndescription: How we write.\nversion: 1\nlanguage: en\nscope: writing-style\n---\n# House style\n';
+    const created = await request(app).post('/api/pages/skills').send({ path: 'house-style/SKILL.md', content });
+    expect(created.status).toBe(201);
+    const style = registry.listSelectable().find((s) => s.slug === 'house-style');
+    expect(style?.source).toBe('project-rooted');
+    expect(style?.description).toBe('How we write.');
+
+    // An edit of the header (same package, no new directory) is seen at once too.
+    const edited = await request(app)
+      .put('/api/pages/skills/house-style/SKILL.md')
+      .send({
+        frontmatter: { title: 'House style', description: 'How we write, revised.', version: 1, language: 'en', scope: 'writing-style' },
+        body: '# House style\n',
+        expectedHash: created.body.hash,
+      });
+    expect(edited.status).toBe(200);
+    expect(registry.listSelectable().find((s) => s.slug === 'house-style')?.description).toBe('How we write, revised.');
   });
 });

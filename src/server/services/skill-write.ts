@@ -115,7 +115,11 @@ function normalizeFile(file: unknown): string {
 function assertSkillDescription(text: string): void {
   let data: Record<string, unknown>;
   try {
-    data = (matter(text).data ?? {}) as Record<string, unknown>;
+    // An options object bypasses gray-matter's content cache: the cache stores
+    // an entry before parsing, so a second bare `matter(text)` of YAML that does
+    // not parse (e.g. after the registry scan read the same bytes) returns
+    // `{ data: {} }` instead of throwing.
+    data = (matter(text, {}).data ?? {}) as Record<string, unknown>;
   } catch (err) {
     throw invalid(
       `SKILL.md frontmatter does not parse: ${(err as Error).message}`,

@@ -570,14 +570,15 @@ describe('config — roots[] / v4 migration (0.1.96)', () => {
    * became nothing but the default a new project starts with.
    */
   it('parseRootsArray requires exactly one builtin root, whatever its id', () => {
-    const skills = userRoot('skills', 'skills');
-    expect(() => parseRootsArray([skills])).toThrow(/exactly one root must have builtin: true \(found 0\)/);
+    // `skills` is a reserved system-root id since 2.1.9 — use an ordinary user id.
+    const notes = userRoot('notes', 'notes');
+    expect(() => parseRootsArray([notes])).toThrow(/exactly one root must have builtin: true \(found 0\)/);
     expect(() =>
       parseRootsArray([builtinPagesRoot(), { ...builtinPagesRoot(), id: 'docs', dir: 'docs' }]),
     ).toThrow(/exactly one root must have builtin: true \(found 2\)/);
     // The BASE root renamed away from `pages`, with no entry of that name left,
     // is a perfectly ordinary config — this is the whole point of 0.2.101.
-    expect(() => parseRootsArray([{ ...builtinPagesRoot(), id: 'docs' }, skills])).not.toThrow();
+    expect(() => parseRootsArray([{ ...builtinPagesRoot(), id: 'docs' }, notes])).not.toThrow();
   });
 
   it('parseRootsArray requires builtin on every entry', () => {

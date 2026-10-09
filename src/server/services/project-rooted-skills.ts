@@ -19,7 +19,8 @@
  *  - writable: yes (the owner writes — a person through the page routes over the
  *    root's facade, the agent through `update_skill_file` on `spec-skill-tools`,
  *    `services/skill-write.ts`, over the same facade);
- *  - scan: on demand — every registry query re-reads the root, so a new package
+ *  - scan: on demand — every registry query re-reads the root (the coalescing
+ *    window yields to `changeStamp()`, so a read right after a write sees it), so a new package
  *    reaches the listing of the next thread without a restart;
  *  - file read: the RAW `SKILL.md` (frontmatter and tags included) plus the
  *    `hash` of the file on disk — the form and the value a write expects;
@@ -111,6 +112,22 @@ export class ProjectRootedSkillSource implements SkillSourceRegistration {
   }
 
   /**
+   * The root's on-disk fingerprint for the registry's re-scan rule: the root's
+   * own mtime (a package added, removed or renamed) and, per package directory,
+   * its mtime (a `SKILL.md` created or deleted in it) and its `SKILL.md`'s mtime
+   * and size (the header edited). One readdir plus a few stats — cheaper than
+   * the scan it gates.
+   */
+  changeStamp(): string {
+    const parts = [statStamp(this.dir)];
+    for (const slug of this.packageDirs()) {
+      const pkgDir = path.join(this.dir, slug);
+      parts.push(`${slug}:${statStamp(pkgDir)}:${statStamp(path.join(pkgDir, ENTRY_FILE))}`);
+    }
+    return parts.join('|');
+  }
+
+  /**
    * The invalid package under `slug`, if there is one (the registry asks only
    * for a slug no source resolves). `undefined` for a valid package, a missing
    * directory or a slug that is not a package directory name.
@@ -163,7 +180,10 @@ export class ProjectRootedSkillSource implements SkillSourceRegistration {
     }
     let data: Record<string, unknown>;
     try {
-      data = matter(raw).data as Record<string, unknown>;
+      // An options object bypasses gray-matter's content cache: the cache stores
+      // the file BEFORE parsing, so a second read of YAML that does not parse
+      // would come back as empty data instead of throwing again.
+      data = matter(raw, {}).data as Record<string, unknown>;
     } catch (err) {
       // YAML that does not parse: the raw content (and its hash) stays readable for the owner to fix.
       return { ok: false, reason: `${ENTRY_FILE} frontmatter does not parse: ${(err as Error).message}`, raw };
@@ -247,6 +267,16 @@ export function currentSkillOf(
 /** A package directory name: one path segment, not a dot-name. */
 function isPackageName(name: string): boolean {
   return name !== '' && !name.startsWith('.') && !name.includes('/') && !name.includes('\\');
+}
+
+/** `mtime/size` of a path, `-` when it does not exist (or cannot be stat-ed). */
+function statStamp(p: string): string {
+  try {
+    const st = fs.statSync(p);
+    return `${st.mtimeMs}/${st.size}`;
+  } catch {
+    return '-';
+  }
 }
 
 function isDirectory(p: string): boolean {

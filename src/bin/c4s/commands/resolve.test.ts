@@ -4,11 +4,10 @@
  *
  * Two halves of one criterion:
  *
- *  1. ABSENCE, read off the source: nothing under `src/bin/c4s` (nor the
- *     `src/bin/c4s.ts` entry) carries an expansion algorithm — no tag
- *     recognition, no tag-to-projection map, no replacing of tags with text, no
- *     `resolved[]` sidecar of its own. Comments are stripped first: the command
- *     is allowed to SAY where the expansion lives.
+ *  1. ABSENCE, read off the source — lives in
+ *     `tests/integration/architecture/c4s-resolve-thin-shell.test.ts`: a test
+ *     that walks directories cannot sit under `src/bin/c4s`, which the M39 guard
+ *     (`discovery-core.test.ts`) keeps free of any directory walk.
  *  2. DELEGATION, observed on the wire: the command reads the local file, posts
  *     its text to the project's `/_meta/resolve-page`, and prints what the M19
  *     core produced there. The server half here is the REAL `metaRouter` with a
@@ -20,7 +19,6 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseArgs } from '../args.js';
@@ -30,26 +28,6 @@ import { metaRouter } from '../../../server/routes/meta.js';
 import type { DiscoveryCore } from '../../../server/discovery/types.js';
 import type { ExpansionContext } from '../../../core/references/types.js';
 import { runResolve } from './resolve.js';
-
-const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
-
-/** Every non-test source of the `c4s` bin, with comments removed. */
-function binSources(): Array<{ file: string; code: string }> {
-  const strip = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
-  const out: Array<{ file: string; code: string }> = [];
-  const walk = (dir: string): void => {
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-      const abs = path.join(dir, e.name);
-      if (e.isDirectory()) walk(abs);
-      else if (e.name.endsWith('.ts') && !e.name.endsWith('.test.ts')) {
-        out.push({ file: path.relative(REPO_ROOT, abs), code: strip(fs.readFileSync(abs, 'utf8')) });
-      }
-    }
-  };
-  walk(path.join(REPO_ROOT, 'src/bin/c4s'));
-  out.push({ file: 'src/bin/c4s.ts', code: strip(fs.readFileSync(path.join(REPO_ROOT, 'src/bin/c4s.ts'), 'utf8')) });
-  return out;
-}
 
 /** The section index and entity reader the server half expands with. */
 const expansion: ExpansionContext = {
@@ -116,32 +94,6 @@ describe('c4s resolve — delegation to the M19 expansion core', () => {
   });
 
   const run = (...argv: string[]) => runResolve(parseArgs([...argv, '--project', projectId, '--workspace', 'default']));
-
-  it('[ac:ac-kod-binu-c4s-nie-zawiera-algorytmu-ro] the bin carries no expansion algorithm (grep-proof)', () => {
-    // Tag recognition (the markup parser, the editor's markdown-it rules), the
-    // core itself run locally, the old transport-side composition and its
-    // renderer, and a sidecar re-shaped on this side.
-    const forbidden =
-      /parseXmlTags|shared\/xml-tags|xml_inline|xml_block|markdown-it|expandEmbeds\s*\(|expand-embeds|resolve-page\.js|inline-renderer|resolvePageContent|resolved\s*\.\s*map|<inline_mention|<single_element|<element_list|<tagged_list|<section_ref/;
-    const sources = binSources();
-    expect(sources.length).toBeGreaterThan(10);
-    for (const { file, code } of sources) {
-      expect(forbidden.exec(code)?.[0], `${file} carries part of the expansion algorithm`).toBeUndefined();
-    }
-
-    // The command itself: it posts the file and prints the answer — it replaces
-    // nothing in the text it read.
-    const resolve = sources.find((s) => s.file === path.join('src', 'bin', 'c4s', 'commands', 'resolve.ts'))!;
-    expect(resolve.code).toContain("delegatePost(args, '/_meta/resolve-page'");
-    expect(resolve.code).not.toMatch(/\.replace\(|\.slice\(|\.splice\(/);
-    expect(resolve.code).not.toMatch(/select\s*:/);
-
-    // …and what it posts to is the M19 core.
-    const route = fs.readFileSync(path.join(REPO_ROOT, 'src/server/routes/meta.ts'), 'utf8');
-    expect(route).toContain("import { expandEmbeds } from '../../core/references/index.js'");
-    expect(route).toMatch(/expandEmbeds\(body\.content, expansion, \{ format \}\)/);
-    expect(fs.existsSync(path.join(REPO_ROOT, 'src/server/serialization/resolve-page.ts'))).toBe(false);
-  });
 
   it('[ac:ac-kod-binu-c4s-nie-zawiera-algorytmu-ro] `c4s resolve` reads the local file and prints what the M19 core expanded on the server', async () => {
     const file = path.join(projectDir, 'notes.md');

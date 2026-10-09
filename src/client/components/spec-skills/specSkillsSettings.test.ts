@@ -63,8 +63,16 @@ describe('#skills — Used skill projects (M52 L17, 2.1.9)', () => {
     expect(toggleUse(['billing-rules'], 'billing-rules', true)).toEqual(['billing-rules']);
     const html = renderToStaticMarkup(createElement(UsedSkillProjectsList, { rows: ROWS, uses: ['billing-rules'], onToggle: () => {} }));
     // Checked by the DRAFT's uses, not by the server's flag.
-    expect(html).toMatch(/data-skill-name="billing-rules"[^>]*><input type="checkbox" checked=""/);
-    expect(html).toMatch(/data-skill-name="ghost"[^>]*><input type="checkbox" class/);
+    // React's SSR writes `checked` after the other input attributes, so match the
+    // row's checkbox tag as a whole, whatever the attribute order.
+    const checkbox = (name: string): string => {
+      const m = html.match(new RegExp(`data-skill-name="${name}"[^>]*>(<input type="checkbox"[^>]*>)`));
+      expect(m, name).not.toBeNull();
+      return m![1]!;
+    };
+    expect(checkbox('billing-rules')).toContain('checked=""');
+    expect(checkbox('ghost')).not.toContain('checked');
+    expect(checkbox('docs')).not.toContain('checked');
   });
 
   it('the card: anchor #skills in the Agent group (weight 20) with its note; exposure fields only while exposed; the tooltip of Skill name', () => {

@@ -223,6 +223,14 @@ export interface SkillSourceRegistration {
    * that serves no invalid packages omits it.
    */
   readInvalid?(slug: string): InvalidSkillRead | undefined;
+  /**
+   * Optional — a cheap fingerprint of the source's on-disk state (names, mtimes,
+   * sizes; never content). A source that declares it is re-scanned on the first
+   * query after the fingerprint changes, whatever the coalescing window says: a
+   * write through the source's owner (or by hand) is visible to the very next
+   * read. A source without it is coalesced by the window alone.
+   */
+  changeStamp?(): string;
 }
 
 /**
@@ -311,6 +319,8 @@ export class SkillRegistry {
   private rescanTtlMs = DEFAULT_USER_RESCAN_TTL_MS;
   // Epoch (ms) of the last rebuild; `0` forces a rebuild on next read.
   private lastScanAt = 0;
+  // The `changeStamp()` of each stamping source, taken right before the last rebuild.
+  private lastStamps = new Map<string, string>();
 
   /**
    * Build a registry with the registry's own sources: one `user` registration per
@@ -372,9 +382,28 @@ export class SkillRegistry {
 
   private ensureFresh(): void {
     const now = Date.now();
-    if (now - this.lastScanAt < this.rescanTtlMs) return;
+    // 2.1.9 (M52 "scan on demand"): the window coalesces a burst of reads, but it
+    // never hides a change a stamping source reports — a read right after a write
+    // through the `skills` root sees the write.
+    if (now - this.lastScanAt < this.rescanTtlMs && !this.stampsChanged()) return;
     this.rebuild();
     this.lastScanAt = now;
+  }
+
+  private takeStamps(): Map<string, string> {
+    const out = new Map<string, string>();
+    for (const reg of this.sources) {
+      if (reg.changeStamp) out.set(reg.name, reg.changeStamp());
+    }
+    return out;
+  }
+
+  private stampsChanged(): boolean {
+    for (const reg of this.sources) {
+      if (!reg.changeStamp) continue;
+      if (this.lastStamps.get(reg.name) !== reg.changeStamp()) return true;
+    }
+    return false;
   }
 
   /**
@@ -383,6 +412,9 @@ export class SkillRegistry {
    * is logged with a warning; so is a writing style losing a cross-scope collision.
    */
   private rebuild(): void {
+    // Taken BEFORE the scan: a write landing during it changes the stamp again,
+    // so the next read re-scans rather than keeping a half-seen state.
+    this.lastStamps = this.takeStamps();
     const entries: HeldEntry[] = [];
     const skips = new Map<string, string>();
     const reported = new Map<string, UnresolvedSkillSlug>();
