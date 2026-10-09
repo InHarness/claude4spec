@@ -131,8 +131,12 @@ export interface GitErrorRecovery {
    * git failures (e.g. a plain commit/push error) predating commit-target
    * support. All kinds still map onto `status: 'error'` — no new status
    * values were introduced.
+   *
+   * 2.1.10 (M28 eu1rffp6/sw1u84nn): `'non-fast-forward'` — operation `push`,
+   * the remote rejected the push because it has commits the local branch
+   * lacks. The `git-sync-recover` window offers `Sync` instead of the agent.
    */
-  kind?: 'branch-missing' | 'base-missing' | 'switch-failed' | 'switch-dirty';
+  kind?: 'branch-missing' | 'base-missing' | 'switch-failed' | 'switch-dirty' | 'non-fast-forward';
 }
 
 export interface GitCommitResult {

@@ -1,0 +1,19 @@
+{
+ "role": "reviewer",
+ "scope": {
+  "kind": "unit",
+  "id": "u4-push-non-fast-forward-recovery",
+  "base": "90a89acc774aedc19d059fae1b6530814660502e"
+ },
+ "findings": [
+  {
+   "id": "rev-0002",
+   "file": "src/client/ui/modals/GitSyncRecover.tsx",
+   "line": 79,
+   "blocking": false,
+   "reason": "rev-0001 fixed; a window replaced mid-flight that gets busy gives no feedback (optional toast fallback).",
+   "portion": "u4-push-non-fast-forward-recovery/p1-l2-l5"
+  }
+ ],
+ "deviations": []
+}

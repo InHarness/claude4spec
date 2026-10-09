@@ -1,0 +1,15 @@
+{
+  "id": "dev-0002",
+  "kind": "missing",
+  "blocking": false,
+  "address": "u4-push-non-fast-forward-recovery/u5vl07ch",
+  "slugs": [
+    "ac-okno-git-sync-recover-dla-recovery-ki"
+  ],
+  "text": "M28 u5vl07ch: the `Sync` action of the `git-sync-recover` window calls POST /api/git/sync and 'its result is handled by the toasts of the Okna field (8i5qf0xx)'. The toast table has no row for sync `busy` (busy is 'a hint at the entry', and the window has no entry), nor for `skipped` / `no-upstream`; it also does not say whether the window closes after Sync. Assumed: the window closes after any Sync result except `busy`; `busy` shows the header's busy hint ('A background task is running — try again in a moment') inside the window, which stays open so Sync can be retried; `skipped` / `no-upstream` close the window with no toast (as dev-0001 for the header). Suggest stating in u5vl07ch: 'Sync zamyka okno; `busy` — podpowiedź w oknie, okno zostaje otwarte'.",
+  "assumption": "ASSUMPTION:dev-0002 the git-sync-recover window closes after a Sync result except busy, which is shown as a hint inside the window (window stays open)",
+  "unit": "u4-push-non-fast-forward-recovery",
+  "portion": "u4-push-non-fast-forward-recovery/p1-l2-l5",
+  "sent": true,
+  "patchPath": "2-1-9-to-2-1-10-workflow-u4-push-non-fast-forward-recovery-u5vl07ch-git-sync-recover-sync-result-handling.md"
+}

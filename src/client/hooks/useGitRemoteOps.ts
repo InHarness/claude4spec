@@ -27,19 +27,34 @@ const headChanged = (r: GitSyncResponse | undefined) =>
   r?.status === 'fast-forwarded' || r?.status === 'merged';
 
 /**
+ * Outcome handlers of one `useGitSync` caller. They run as mutation-level
+ * callbacks, so — unlike callbacks passed to `mutate()`, which TanStack Query
+ * drops once the component unmounts — they still fire when the caller is gone
+ * (a `git-sync-recover` window replaced by another modal while Sync is in
+ * flight): the reload after a HEAD change still happens, and with it the
+ * `pending: 'sync'` mark is consumed instead of lingering.
+ */
+export interface GitSyncHandlers {
+  onSuccess?: (result: GitSyncResponse) => void;
+  onError?: (error: Error) => void;
+}
+
+/**
  * 2.1.10 — `POST /api/git/sync`. After `fast-forwarded`/`merged` the caller
  * reloads the project route (M31 ic35jwy6), and the own-op mark stays until
  * then, so the WS map does not mistake this sync's `headChanged` event for
  * another client's.
  */
-export function useGitSync() {
+export function useGitSync(handlers: GitSyncHandlers = {}) {
   const qc = useQueryClient();
   return useMutation<GitSyncResponse, Error, void>({
     mutationFn: () => gitApi.sync(),
     onMutate: () => useGitOpsStore.getState().begin('sync'),
     onSuccess: (result) => {
       if (!headChanged(result)) void qc.invalidateQueries({ queryKey: GIT_STATUS_KEY });
+      handlers.onSuccess?.(result);
     },
+    onError: (error) => handlers.onError?.(error),
     onSettled: (result) => {
       if (!headChanged(result)) useGitOpsStore.getState().end('sync');
     },

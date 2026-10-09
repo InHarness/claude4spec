@@ -1,0 +1,162 @@
+{
+ "role": "implementer",
+ "unit": {
+  "id": "u4-push-non-fast-forward-recovery",
+  "goal": "Push gałęzi odrzucony przez remote jako non-fast-forward nie jest już ogólnym błędem pusha — zwraca osobny rodzaj recovery, który release push (M25) przekazuje w odpowiedzi, a okno naprawy błędu git proponuje dla niego akcję Sync (wywołującą sync, z wynikiem obsłużonym toastami sync) zamiast naprawy agentem. Nic nie jest usuwane; dla pozostałych rodzajów recovery okno działa jak dotąd.",
+  "recipe": {
+   "pages": [
+    {
+     "key": "pages/modules/m28-git-sync.md",
+     "change": {
+      "offset": 8,
+      "limit": 2,
+      "anchors": [
+       "eu1rffp6",
+       "sw1u84nn"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m28-git-sync.md",
+     "change": {
+      "offset": 14,
+      "limit": 1,
+      "anchors": [
+       "8i5qf0xx"
+      ]
+     },
+     "completes": [
+      {
+       "what": "zestaw akcji okna `git-sync-recover` dla rodzaju recovery `non-fast-forward` w sekcji 14",
+       "from": "u3-header-fetch-sync-ui"
+      }
+     ]
+    },
+    {
+     "key": "pages/modules/m28-git-sync.md",
+     "change": {
+      "offset": 15,
+      "limit": 1,
+      "anchors": [
+       "u5vl07ch"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m28-git-sync.md",
+     "context": {
+      "offset": 1,
+      "limit": 4,
+      "anchors": [
+       "incf3qhp",
+       "dj6r1sam",
+       "snn15dck",
+       "eu1rffp6"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m28-git-sync.md",
+     "context": {
+      "offset": 9,
+      "limit": 1,
+      "anchors": [
+       "sw1u84nn"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m28-git-sync.md",
+     "context": {
+      "offset": 22,
+      "limit": 1,
+      "anchors": [
+       "xp80fcdo"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m28-git-sync.md",
+     "context": {
+      "offset": 26,
+      "limit": 2,
+      "anchors": [
+       "8i5qf0xx",
+       "u5vl07ch"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m25-release-push/m25-release-push.md",
+     "change": "all"
+    },
+    {
+     "key": "pages/modules/m25-release-push/m25-release-push.md",
+     "context": {
+      "offset": 1,
+      "limit": 1,
+      "anchors": [
+       "fl8fm071"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m25-release-push/m25-release-push.md",
+     "context": {
+      "offset": 4,
+      "limit": 1,
+      "anchors": [
+       "y63ffv9h"
+      ]
+     }
+    },
+    {
+     "key": "pages/modules/m25-release-push/m25-release-push.md",
+     "context": {
+      "offset": 7,
+      "limit": 3,
+      "anchors": [
+       "ik6al1p3",
+       "wosnh845",
+       "958m29j2"
+      ]
+     }
+    }
+   ],
+   "entities": [
+    {
+     "type": "dto",
+     "slugs": [
+      "release-push-response"
+     ]
+    },
+    {
+     "type": "ac",
+     "slugs": [
+      "ac-push-wydania-odrzucony-przez-remote-j",
+      "ac-okno-git-sync-recover-dla-recovery-ki",
+      "ac-gdy-gitsync-status-error-operacje"
+     ]
+    }
+   ]
+  }
+ },
+ "jobs": [],
+ "stateDir": "/Users/michael/Code/ctowiec/claude4spec/.worktrees/2-1-9-to-2-1-10-workflow/.c4s-impl",
+ "mode": "build",
+ "portion": {
+  "name": "u4-push-non-fast-forward-recovery/p1-l2-l5",
+  "layers": [
+   "L2",
+   "L4",
+   "L5"
+  ],
+  "packet": ".c4s-impl/packets/u4-push-non-fast-forward-recovery.md"
+ },
+ "only": [
+  {
+   "finding": "rev-0001"
+  }
+ ],
+ "reviewFile": ".c4s-impl/review/u4-push-non-fast-forward-recovery.json"
+}

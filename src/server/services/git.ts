@@ -853,7 +853,14 @@ export class GitService {
       }
       return { status: 'pushed', branch: targetBranch };
     } catch (err) {
-      return { status: 'error', message: errMessage(err), recovery: this.buildRecovery('push', err, status.rootPath) };
+      // 2.1.10 (M28 sw1u84nn): a non-fast-forward rejection is told apart from
+      // other push failures — the recovery window offers `sync()` for it.
+      const kind = isNonFastForwardRejection(err) ? 'non-fast-forward' : undefined;
+      return {
+        status: 'error',
+        message: errMessage(err),
+        recovery: this.buildRecovery('push', err, status.rootPath, kind),
+      };
     }
   }
 
@@ -951,8 +958,29 @@ export class GitService {
     rootPath: string,
     kind?: GitErrorRecovery['kind'],
   ): GitErrorRecovery {
-    const reason = errMessage(err);
     const gitStderr = rawStderr(err);
+    if (kind === 'non-fast-forward') {
+      // 2.1.10 (M28 u5vl07ch): the window offers Sync, not the agent; the
+      // prompt stays populated (the payload's contract) and says the same.
+      const intentPrompt = [
+        `claude4spec's git sync could not push to the remote, in the repository at ${rootPath}: ` +
+          'the remote has commits that the local branch does not have yet (non-fast-forward).',
+        '',
+        `Git error:\n${gitStderr || errMessage(err)}`,
+        '',
+        'Please bring the remote commits in safely (`git fetch`, then a fast-forward or a merge — never ' +
+          '`--force`, `reset --hard`, or a rebase of published commits), then push again. Report back ' +
+          'what you found and what you did.',
+      ].join('\n');
+      return {
+        operation,
+        reason: 'the remote rejected the push (non-fast-forward)',
+        gitStderr,
+        intentPrompt,
+        kind,
+      };
+    }
+    const reason = errMessage(err);
     const opLabel =
       operation === 'commit-on-release'
         ? 'committing the spec on release'
@@ -1837,6 +1865,17 @@ function errMessage(err: unknown): string {
   const stderr = rawStderr(err);
   if (stderr) return stderr;
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * 2.1.10 (M28 sw1u84nn): git refused the push because the remote branch is not
+ * an ancestor of the pushed one — `! [rejected] … (non-fast-forward)` when the
+ * remote commits are known locally, `(fetch first)` when they are not. A hook
+ * refusal (`[remote rejected]`) or a tag clash (`(already exists)`) is not one.
+ */
+function isNonFastForwardRejection(err: unknown): boolean {
+  const text = `${rawStderr(err)}\n${err instanceof Error ? err.message : ''}`;
+  return /!\s*\[rejected\][^\n]*\((?:non-fast-forward|fetch first)\)/.test(text);
 }
 
 /** Raw stderr from an `execFile` rejection, or `''` when the failure carries none. */

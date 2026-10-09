@@ -1,5 +1,5 @@
 {
- "iteration": 14,
+ "iteration": 20,
  "conventions": [
   {
    "label": "L4 (API) — implementor M49",
@@ -65,7 +65,7 @@
    "units": [
     "u4-push-non-fast-forward-recovery"
    ],
-   "startCommit": null
+   "startCommit": "ac93f72fc60ae4bd8dad45ac78741af877d53631"
   }
  ],
  "units": [
@@ -861,15 +861,37 @@
     }
    ],
    "wave": 4,
-   "status": "pending",
+   "status": "verified",
    "blockedBy": null,
-   "portions": [],
-   "startCommit": null,
-   "baseCommit": null,
+   "portions": [
+    {
+     "name": "u4-push-non-fast-forward-recovery/p1-l2-l5",
+     "layers": [
+      "L2",
+      "L4",
+      "L5"
+     ],
+     "slugs": [
+      "release-push-response",
+      "ac-push-wydania-odrzucony-przez-remote-j",
+      "ac-okno-git-sync-recover-dla-recovery-ki",
+      "ac-gdy-gitsync-status-error-operacje"
+     ],
+     "status": "implemented",
+     "rounds": 2,
+     "partial": 0,
+     "uncovered": [],
+     "only": []
+    }
+   ],
+   "startCommit": "90a89acc774aedc19d059fae1b6530814660502e",
+   "baseCommit": "ac93f72fc60ae4bd8dad45ac78741af877d53631",
    "rounds": {
     "review": 0,
-    "unit": 0
-   }
+    "unit": 2
+   },
+   "lastUncovered": 0,
+   "lastBlocking": 0
   }
  ],
  "entityTypes": [
