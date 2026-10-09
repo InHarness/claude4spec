@@ -187,6 +187,17 @@ export type WsEvent =
    * rebuild). The client refetches `GET /api/sidebar-accordions`.
    */
   | { kind: 'sidebar:accordions-changed'; rootId: string }
+  /**
+   * 2.1.10 (M49 `7xmafzkd`, M28) — after every M28 operation that changes refs
+   * or HEAD: release commit, "pull" commit, push, fetch, sync, checkout. `headChanged` = the current branch's HEAD
+   * moved or the branch switched (sync `fast-forwarded`/`merged`, checkout
+   * `switched`). The server emits the event first and THEN invalidates the
+   * project's `ProjectContext` (M31 reload contract), so `project:disposed` may
+   * follow it. The client refetches `GET /api/git/status`; on `headChanged`
+   * from another client's operation it reloads the project route
+   * (`src/client/lib/git-ws.ts`).
+   */
+  | { kind: 'git:status-changed'; headChanged: boolean }
   | { kind: 'release:created'; releaseId: number; name: string }
   | { kind: 'release:updated'; releaseId: number; name: string }
   // M21 Briefs / M02 frontmatter indexer

@@ -50,6 +50,10 @@ export interface ReleasePushResponse {
    * push-sync is off or no repo. Present ONLY on the synchronous
    * `POST /api/release-pushes` response — `GET /api/release-pushes/:id`
    * (audit replay) always returns `null` (this result is not persisted).
+   *
+   * 2.1.10: a push the remote rejected as non-fast-forward carries
+   * `recovery.kind: 'non-fast-forward'` — the `git-sync-recover` window then
+   * offers `Sync` instead of "Fix it with Agent".
    */
   gitSync?: GitSyncField<GitPushStatus>;
 }

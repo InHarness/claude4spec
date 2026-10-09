@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { WsEvent } from '../../shared/types.js';
 import { createInvalidationBatcher } from '../lib/wsBatcher.js';
+import { handleGitStatusChanged } from '../lib/git-ws.js';
 import { PROJECT_ID } from '../lib/api-core.js';
 import { useFileEventsStore } from '../state/fileEvents.js';
 import { isHtmlPreviewPath, useHtmlViewerStore } from '../state/htmlViewer.js';
@@ -146,6 +147,10 @@ export function useFileWatcher() {
              * sidebar indicator and the settings card all render off this one key.
              */
             batcher.queue(['index-status']);
+          } else if (data.kind === 'git:status-changed') {
+            // 2.1.10 (M28): the module's WS → query map — refetch the git
+            // status; a HEAD change from another client reloads the route.
+            handleGitStatusChanged(data, batcher);
           } else if (data.kind === 'plugin:reloaded') {
             // M33 phase 3: a plugin in the pool was installed/removed/edited.
             // Re-import its frontend (cache-bust), re-pin editor extensions +

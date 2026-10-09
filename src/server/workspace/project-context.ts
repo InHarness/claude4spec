@@ -104,6 +104,7 @@ import { ReactionBinder, type ReactionHandler } from '../fs/reactions.js';
 import { registerCoreReactions, type CoreReactionContext } from './core-reactions.js';
 import { mountRegistryRoots, bindRegistryReactions } from './root-registry-runtime.js';
 import { RootRegistry, rootDirAbs } from '../roots/registry.js';
+import { headChangeOriginMarker } from '../fs/head-change-origin.js';
 import { kindDeclaration, kindSelects, type RegistryRoot } from '../../shared/root-kinds.js';
 import { FileVersionCapture } from '../services/file-version-capture.js';
 import { EntityStore } from '../services/entity-store.js';
@@ -1096,7 +1097,23 @@ async function buildInner(
   // config.json. Reads config per-action.
   // 0.1.123: `checkout()` hard-blocks while a turn is live, so it shares the
   // same `activeAdapters` predicate as `ProjectContext.hasInFlightTurn` below.
-  const gitService = new GitService(cwd, pagesKindRootDirs, () => activeAdapters.size > 0);
+  // 2.1.10 (M49 7xmafzkd): `git:status-changed` goes to this project's room.
+  // 2.1.10 (M40 j37qjvvh): a HEAD change made from the app (checkout, sync)
+  // labels the paths it rewrites as caused by the server on THIS context
+  // instance's mounts (the registry roots), before HEAD moves.
+  const headChangeMounts = rootRegistry
+    .list()
+    .flatMap((root) => {
+      const source = sourceByRootId.get(root.id);
+      return source ? [{ source, dir: rootDirAbs(cwd, root) }] : [];
+    });
+  const gitService = new GitService(
+    cwd,
+    pagesKindRootDirs,
+    () => activeAdapters.size > 0,
+    ws,
+    headChangeOriginMarker(w, () => headChangeMounts),
+  );
   // 0.1.118: needed for the git-anchored getReleaseDiff branch.
   releaseService.setGitService(gitService);
   // M25 Release Push — coordinates M17 bundle build + M24 transport; owns release_push.
@@ -1531,7 +1548,9 @@ async function buildInner(
   router.use('/release-pushes', releasePushesRouter(releasePushService));
   // 0.1.123: on a successful checkout, reuse the same invalidate path as a
   // context-defining config change — no new M31 reload machinery needed.
-  router.use('/git', gitRouter(gitService, { onSwitched: onContextConfigChanged }));
+  // 2.1.10 (M31 ic35jwy6): the same reload after a sync that moved HEAD
+  // (`fast-forwarded`/`merged`); the rebuild re-reads config.json from disk.
+  router.use('/git', gitRouter(gitService, { onHeadChanged: onContextConfigChanged }));
   router.use('/briefs', briefsRouter(briefService, chatService));
   router.use(
     '/artifacts',

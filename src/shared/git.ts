@@ -8,8 +8,11 @@
 
 import { slugify } from './slug.js';
 
-/** Result of `gitService.detect()`, exposed by `GET /api/git/status`. */
-export interface GitStatusResponse {
+/**
+ * Result of `gitService.detect()` — the repository probe alone, without the
+ * upstream measurement. `GET /api/git/status` widens it to `GitStatusResponse`.
+ */
+export interface GitRepoInfo {
   /** `true` when a release-flag root is inside a git worktree and `git` is on PATH. */
   detected: boolean;
   /** Worktree root (`git rev-parse --show-toplevel`); `null` when not detected. */
@@ -20,18 +23,86 @@ export interface GitStatusResponse {
   branch: string | null;
   /** `true` when `git status --porcelain` is non-empty. */
   isDirty: boolean;
-  /**
-   * 0.1.119: commits ahead of upstream (from `gitService.statusAheadBehind()`,
-   * merged in by the `/api/git/status` route only — other `detect()` callers
-   * don't populate this). Absent/`null` when not detected, detached HEAD, or
-   * no upstream configured for the branch.
-   */
-  ahead?: number | null;
-  /** 0.1.119: commits behind upstream — see `ahead`. */
-  behind?: number | null;
 }
 
-/** `'committed'` = success; `'nothing-to-commit'` = nothing staged (not an error);
+/**
+ * `GET /api/git/status` (dto `git-status-response`). 2.1.10 (M28 m28aug01):
+ * the status ALWAYS carries ahead/behind vs. upstream and the last fetch time —
+ * no longer optional. Status is a local read: it goes stale after every M28
+ * operation (each emits `git:status-changed`) and after changes outside the
+ * app (caught by a refetch on window focus).
+ */
+export interface GitStatusResponse extends GitRepoInfo {
+  /** Local commits the upstream lacks, counted against the last fetched remote refs.
+   *  `null` without an upstream, on detached HEAD, or when not detected. */
+  ahead: number | null;
+  /** Upstream commits the current branch lacks — see `ahead`; current after a fetch. */
+  behind: number | null;
+  /** ISO 8601 time of the last fetch from a remote; `null` when the repository never fetched or not detected. */
+  lastFetchedAt: string | null;
+}
+
+/**
+ * 2.1.10 (M28 `fetch()`, dto `git-fetch-response`) — result of
+ * `POST /api/git/fetch`. Always a 200 body; every field is present.
+ * `fetched` — remote refs fetched; `skipped` — git off, no repo or no named
+ * branch (detached/unborn HEAD); `no-upstream` — the current branch has no
+ * upstream; `busy` — another git operation holds the repository lock;
+ * `error` — git failed (network, auth, timeout), its message in `message`.
+ */
+export type GitFetchStatus = 'fetched' | 'skipped' | 'no-upstream' | 'busy' | 'error';
+
+export interface GitFetchResponse {
+  status: GitFetchStatus;
+  /** Number only on `fetched`; `null` otherwise. */
+  ahead: number | null;
+  /** Number only on `fetched`; `null` otherwise. */
+  behind: number | null;
+  /** Git's message on `error`; `null` otherwise. */
+  message: string | null;
+}
+
+/**
+ * 2.1.10 (M28 `sync()`, dto `git-sync-response`) — result of
+ * `POST /api/git/sync`: pull the upstream's commits into HEAD by a fast-forward
+ * or a conflict-free merge commit, or change nothing and say why. Always a 200
+ * body; every field is present.
+ * `up-to-date` — the upstream has no new commits (also when the branch is ahead);
+ * `fast-forwarded` — HEAD moved to the upstream; `merged` — a merge commit was
+ * created; `dirty-blocked` — local changes block the operation, nothing changed
+ * (`paths`); `diverged` — a divergence sync does not merge, nothing changed
+ * (`reason`, `paths` on `conflicts`); `skipped` — git off, no repo or
+ * detached/unborn HEAD; `no-upstream` — the branch has no upstream; `busy` —
+ * another git operation or an agent turn mutating disk is running; `error` —
+ * git failed, its message in `message`.
+ * After `fast-forwarded`/`merged` the server runs the `ProjectContext` reload
+ * contract (M31), so the response carries no status snapshot.
+ */
+export type GitSyncStatus =
+  | 'up-to-date'
+  | 'fast-forwarded'
+  | 'merged'
+  | 'dirty-blocked'
+  | 'diverged'
+  | 'skipped'
+  | 'no-upstream'
+  | 'busy'
+  | 'error';
+
+export type GitSyncDivergedReason = 'conflicts' | 'releases-on-both-sides';
+
+export interface GitSyncResponse {
+  status: GitSyncStatus;
+  /** Blocking paths on `dirty-blocked`, conflicted files on `diverged`/`conflicts`
+   *  (repository-relative); `null` otherwise, also on `releases-on-both-sides`. */
+  paths: string[] | null;
+  /** Why on `diverged`; `null` for every other status. */
+  reason: GitSyncDivergedReason | null;
+  /** Git's message on `error`; `null` otherwise. */
+  message: string | null;
+}
+
+/** `'committed'` = success;`'nothing-to-commit'` = nothing staged (not an error);
  *  `'skipped'` = repo detected but commit could not run (e.g. detached HEAD);
  *  `'error'` = attempted and failed. */
 export type GitCommitStatus = 'committed' | 'nothing-to-commit' | 'skipped' | 'error';
@@ -60,8 +131,12 @@ export interface GitErrorRecovery {
    * git failures (e.g. a plain commit/push error) predating commit-target
    * support. All kinds still map onto `status: 'error'` — no new status
    * values were introduced.
+   *
+   * 2.1.10 (M28 eu1rffp6/sw1u84nn): `'non-fast-forward'` — operation `push`,
+   * the remote rejected the push because it has commits the local branch
+   * lacks. The `git-sync-recover` window offers `Sync` instead of the agent.
    */
-  kind?: 'branch-missing' | 'base-missing' | 'switch-failed' | 'switch-dirty';
+  kind?: 'branch-missing' | 'base-missing' | 'switch-failed' | 'switch-dirty' | 'non-fast-forward';
 }
 
 export interface GitCommitResult {
