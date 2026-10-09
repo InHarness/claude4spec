@@ -1,5 +1,5 @@
 {
- "iteration": 0,
+ "iteration": 6,
  "conventions": [
   {
    "label": "L4 (API) — implementor M49",
@@ -44,7 +44,7 @@
    "units": [
     "u1-git-fetch-and-status"
    ],
-   "startCommit": null
+   "startCommit": "d23236045f2aa0b09e37ccc75c512446067c4429"
   },
   {
    "n": 2,
@@ -209,15 +209,51 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "pending",
+   "status": "verified",
    "blockedBy": null,
-   "portions": [],
-   "startCommit": null,
-   "baseCommit": null,
+   "portions": [
+    {
+     "name": "u1-git-fetch-and-status/p1-l4-l4",
+     "layers": [
+      "L4"
+     ],
+     "slugs": [
+      "git-fetch-response",
+      "git-status-response",
+      "post-api-git-fetch",
+      "ac-po-pierwszym-post-api-git-fetch-z-wyn",
+      "ac-po-post-api-git-fetch-z-wynikiem-fetc",
+      "ac-po-post-api-git-fetch-z-wynikiem-fetc-2",
+      "ac-post-api-git-fetch-nie-zmienia-head",
+      "ac-post-api-git-fetch-nie-zmienia-plikow",
+      "ac-post-api-git-fetch-na-galezi-bez-upst",
+      "ac-post-api-git-fetch-przy-config-git-en",
+      "ac-post-api-git-fetch-w-detached-head-zw",
+      "ac-post-api-git-fetch-przy-nieosiagalnym",
+      "ac-post-api-git-fetch-do-remote-wymagaja",
+      "ac-post-api-git-fetch-przy-zmienionych-p",
+      "ac-post-api-git-fetch-w-trakcie-tury-age",
+      "ac-commit-wydania-uruchomiony-w-trakcie",
+      "ac-po-commicie-wydania-serwer-emituje-do",
+      "ac-gitservice-wystawia-resolvereleasecommit"
+     ],
+     "status": "implemented",
+     "rounds": 2,
+     "partial": 0,
+     "uncovered": [
+      "git-fetch-response"
+     ],
+     "only": []
+    }
+   ],
+   "startCommit": "909c2917f763e348e3759e768feb3336a6dd4d0a",
+   "baseCommit": "d23236045f2aa0b09e37ccc75c512446067c4429",
    "rounds": {
     "review": 0,
-    "unit": 0
-   }
+    "unit": 2
+   },
+   "lastUncovered": 0,
+   "lastBlocking": 0
   },
   {
    "id": "u2-git-sync-head-change",

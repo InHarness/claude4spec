@@ -51,7 +51,7 @@ describe('GitService — 0.1.118 read-only methods', () => {
   });
 
   describe('gated on config.git.enabled', () => {
-    it('resolveReleaseCommit/diffRefs/statusAheadBehind all return null when git.enabled is false', async () => {
+    it('[ac:ac-gitservice-wystawia-resolvereleasecommit] resolveReleaseCommit/diffRefs/statusAheadBehind all return null when git.enabled is false', async () => {
       await initRepo(dir);
       writeConfigJson(dir, { enabled: false });
       const svc = new GitService(dir, [dir]);

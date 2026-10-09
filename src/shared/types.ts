@@ -187,6 +187,13 @@ export type WsEvent =
    * rebuild). The client refetches `GET /api/sidebar-accordions`.
    */
   | { kind: 'sidebar:accordions-changed'; rootId: string }
+  /**
+   * 2.1.10 (M49 `7xmafzkd`, M28) — after every M28 operation that changes refs
+   * or HEAD: release commit, "pull" commit, push, fetch (sync and checkout:
+   * later). `headChanged` = the current branch's HEAD moved or the branch
+   * switched. The client refetches `GET /api/git/status`.
+   */
+  | { kind: 'git:status-changed'; headChanged: boolean }
   | { kind: 'release:created'; releaseId: number; name: string }
   | { kind: 'release:updated'; releaseId: number; name: string }
   // M21 Briefs / M02 frontmatter indexer

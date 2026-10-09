@@ -1096,7 +1096,8 @@ async function buildInner(
   // config.json. Reads config per-action.
   // 0.1.123: `checkout()` hard-blocks while a turn is live, so it shares the
   // same `activeAdapters` predicate as `ProjectContext.hasInFlightTurn` below.
-  const gitService = new GitService(cwd, pagesKindRootDirs, () => activeAdapters.size > 0);
+  // 2.1.10 (M49 7xmafzkd): `git:status-changed` goes to this project's room.
+  const gitService = new GitService(cwd, pagesKindRootDirs, () => activeAdapters.size > 0, ws);
   // 0.1.118: needed for the git-anchored getReleaseDiff branch.
   releaseService.setGitService(gitService);
   // M25 Release Push — coordinates M17 bundle build + M24 transport; owns release_push.

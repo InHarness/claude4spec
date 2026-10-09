@@ -32,13 +32,91 @@ import type {
   GitCheckoutResponse,
   GitCommitResult,
   GitErrorRecovery,
+  GitFetchResponse,
   GitPushResult,
   GitRefDiff,
-  GitStatusResponse,
+  GitRepoInfo,
 } from '../../shared/git.js';
 import { renderCommitTargetTemplate, localDateYYYYMMDD } from '../../shared/git.js';
+import type { WsEmitter } from '../ws/project-emitter.js';
 
 const pexec = promisify(execFile);
+
+/**
+ * 2.1.10 (M28 h8tvjbdd): limit for a network git operation (`fetch`, `push`;
+ * `sync` later) — missing credentials, a rejected auth or a hung remote end as
+ * `status: 'error'` instead of a request that never returns.
+ */
+export const GIT_NETWORK_TIMEOUT_MS = 60_000;
+
+/**
+ * 2.1.10 (M28 ezudoqef): ONE lock per repository over every operation of this
+ * module that writes to `.git` — release commit, "pull" commit, push, checkout,
+ * fetch (and sync later). Release-driven operations WAIT (`run`); sidebar
+ * operations (`checkout`, `fetch`) REFUSE with `busy` when it is taken
+ * (`tryRun`). Status reads never take it. The hand-off in `release()` keeps
+ * the lock held while a waiter exists, so a `tryRun` can never slip in between
+ * one holder and the next queued one.
+ */
+export class GitRepoLock {
+  private locked = false;
+  private readonly waiters: Array<() => void> = [];
+
+  get isHeld(): boolean {
+    return this.locked;
+  }
+
+  private acquire(): Promise<void> {
+    if (!this.locked) {
+      this.locked = true;
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => this.waiters.push(resolve));
+  }
+
+  private release(): void {
+    const next = this.waiters.shift();
+    if (next) next();
+    else this.locked = false;
+  }
+
+  /** Wait for the lock, run `fn`, release. */
+  async run<T>(fn: () => Promise<T>): Promise<T> {
+    await this.acquire();
+    try {
+      return await fn();
+    } finally {
+      this.release();
+    }
+  }
+
+  /** Run `fn` under the lock if it is free right now; `null` (no call) when it is taken. */
+  tryRun<T>(fn: () => Promise<T>): Promise<T> | null {
+    if (this.locked) return null;
+    this.locked = true;
+    return (async () => {
+      try {
+        return await fn();
+      } finally {
+        this.release();
+      }
+    })();
+  }
+}
+
+/** Locks keyed by repository (worktree root) — several projects in one repo share one. */
+const repoLocks = new Map<string, GitRepoLock>();
+
+function lockForKey(key: string): GitRepoLock {
+  let lock = repoLocks.get(key);
+  if (!lock) {
+    lock = new GitRepoLock();
+    repoLocks.set(key, lock);
+  }
+  return lock;
+}
+
+const BUSY_MESSAGE = 'A background task is running — try again in a moment.';
 
 /**
  * 0.1.125: is `name` a valid git ref (branch) name (`git check-ref-format
@@ -55,14 +133,12 @@ export async function isValidGitRefName(name: string): Promise<boolean> {
   }
 }
 
-const NOT_DETECTED: GitStatusResponse = {
+const NOT_DETECTED: GitRepoInfo = {
   detected: false,
   rootPath: null,
   remoteUrl: null,
   branch: null,
   isDirty: false,
-  ahead: null,
-  behind: null,
 };
 
 export class GitService {
@@ -80,11 +156,16 @@ export class GitService {
    *                           on this (a branch switch would race live writes).
    *                           Defaults to "never busy" so every existing
    *                           `new GitService(cwd, dirs)` call site keeps working.
+   * @param ws                 2.1.10 (M49 7xmafzkd): the project's room emitter —
+   *                           `git:status-changed` goes out through it after every
+   *                           operation that changed refs or HEAD. `null` = no
+   *                           emission (tests, tools without a room).
    */
   constructor(
     private cwd: string,
     pageRootDirs: string[],
     private hasInFlightTurn: () => boolean = () => false,
+    private ws: WsEmitter | null = null,
   ) {
     this.pageRootDirs = pageRootDirs.map((d) => path.resolve(cwd, d));
   }
@@ -99,8 +180,60 @@ export class GitService {
     args: string[],
     dir: string,
     env?: NodeJS.ProcessEnv,
+    timeoutMs?: number,
   ): Promise<{ stdout: string; stderr: string }> {
-    return pexec('git', args, { cwd: dir, ...(env ? { env } : {}) });
+    return pexec('git', args, { cwd: dir, ...(env ? { env } : {}), ...(timeoutMs ? { timeout: timeoutMs } : {}) });
+  }
+
+  /**
+   * 2.1.10 (M28 h8tvjbdd): run a NETWORK git command (`fetch`, `push`)
+   * non-interactively with a time limit — no terminal prompt
+   * (`GIT_TERMINAL_PROMPT=0`), no askpass helper (`GIT_ASKPASS`/`SSH_ASKPASS`
+   * empty), no interactive credential manager (`GCM_INTERACTIVE=never`), SSH in
+   * batch mode (`-o BatchMode=yes` appended to the user's own ssh command).
+   * Non-interactive credential helpers (keychain, store) keep working. A
+   * timeout rejects with a git-style message in `stderr`.
+   */
+  private async gitNetwork(args: string[], dir: string): Promise<{ stdout: string; stderr: string }> {
+    const configuredSsh = await this.git(['config', '--get', 'core.sshCommand'], dir)
+      .then((r) => r.stdout.trim())
+      .catch(() => '');
+    const sshBase = process.env.GIT_SSH_COMMAND || configuredSsh || 'ssh';
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      GIT_TERMINAL_PROMPT: '0',
+      GIT_ASKPASS: '',
+      SSH_ASKPASS: '',
+      SSH_ASKPASS_REQUIRE: 'never',
+      GCM_INTERACTIVE: 'never',
+      GIT_SSH_COMMAND: `${sshBase} -o BatchMode=yes`,
+    };
+    try {
+      return await this.git(args, dir, env, GIT_NETWORK_TIMEOUT_MS);
+    } catch (err) {
+      const e = err as { killed?: boolean; signal?: string | null; stderr?: string };
+      if (e && (e.killed || e.signal === 'SIGTERM')) {
+        const partial = (e.stderr ?? '').trim();
+        const timeoutMsg = `git ${args[0]} timed out after ${GIT_NETWORK_TIMEOUT_MS / 1000} s`;
+        throw Object.assign(new Error(timeoutMsg), { stderr: partial ? `${partial}\n${timeoutMsg}` : timeoutMsg });
+      }
+      throw err;
+    }
+  }
+
+  /** 2.1.10: the lock of the repository this service's page roots live in (keyed by worktree root). */
+  private async repoLock(): Promise<GitRepoLock> {
+    const root = await this.probeRoot();
+    return lockForKey(root ?? `cwd:${path.resolve(this.cwd)}`);
+  }
+
+  /** 2.1.10 (M49 7xmafzkd): `git:status-changed` to the project's room. */
+  private emitStatusChanged(headChanged: boolean): void {
+    try {
+      this.ws?.broadcast({ kind: 'git:status-changed', headChanged });
+    } catch (err) {
+      console.warn('[git] git:status-changed broadcast failed:', errMessage(err));
+    }
   }
 
   /**
@@ -167,7 +300,7 @@ export class GitService {
    * missing, no repo, or a root outside any worktree all map to
    * `detected: false`.
    */
-  async detect(): Promise<GitStatusResponse> {
+  async detect(): Promise<GitRepoInfo> {
     const rootPath = await this.probeRoot();
     if (!rootPath) return NOT_DETECTED;
 
@@ -178,7 +311,10 @@ export class GitService {
 
     const branch = await this.currentBranch(rootPath);
 
-    const isDirty = await this.git(['status', '--porcelain'], rootPath)
+    // 2.1.10 (M28 ezudoqef): a status read takes no lock and no OPTIONAL git
+    // lock either (`status` would otherwise refresh the index under index.lock)
+    // — a refetch on window focus must never collide with a running write.
+    const isDirty = await this.git(['--no-optional-locks', 'status', '--porcelain'], rootPath)
       .then((r) => r.stdout.trim().length > 0)
       .catch(() => false);
 
@@ -236,7 +372,7 @@ export class GitService {
    * staged, `'error'` (with `recovery`) on any git failure.
    */
   private async stageAndCommit(
-    status: GitStatusResponse,
+    status: GitRepoInfo,
     message: string,
     operation: GitErrorRecovery['operation'],
   ): Promise<GitCommitResult> {
@@ -297,7 +433,26 @@ export class GitService {
    * the switch didn't.
    */
   async commit(opts: { name: string; description: string }): Promise<GitCommitResult> {
-    const status = await this.detect();
+    // 2.1.10 (M28 ezudoqef): a release commit WAITS for the repository lock —
+    // a release never loses to a sidebar click.
+    const lock = await this.repoLock();
+    const { result, headBranch } = await lock.run(async () => {
+      const status = await this.detect();
+      return { result: await this.commitUnlocked(opts, status), headBranch: status.branch };
+    });
+    if (result.status === 'committed') {
+      // HEAD of the current branch moved: a 'current'-mode commit (no `branch`),
+      // a named target that IS the current branch, or a post-commit switch.
+      const headChanged = result.switched === true || !result.branch || result.branch === headBranch;
+      this.emitStatusChanged(headChanged);
+    }
+    return result;
+  }
+
+  private async commitUnlocked(
+    opts: { name: string; description: string },
+    status: GitRepoInfo,
+  ): Promise<GitCommitResult> {
     // ASSUMPTION:dev-0013 — no `Release ` prefix (pre-window message format kept).
     const message = opts.description ? `${opts.name}\n\n${opts.description}` : opts.name;
     const config = readConfig(this.cwd);
@@ -357,7 +512,7 @@ export class GitService {
    * resolve as a local branch.
    */
   private async commitToNamedBranch(
-    status: GitStatusResponse,
+    status: GitRepoInfo,
     message: string,
     branch: string,
   ): Promise<GitCommitResult> {
@@ -385,7 +540,7 @@ export class GitService {
    * `-3`, … suffix until one is free.
    */
   private async commitToNewBranch(
-    status: GitStatusResponse,
+    status: GitRepoInfo,
     message: string,
     target: { template: string; base: string | null; releaseName: string; date: string },
   ): Promise<GitCommitResult> {
@@ -636,7 +791,15 @@ export class GitService {
     if (!config.git.enabled) return { status: 'skipped' };
     const status = await this.detect();
     if (!status.detected || !status.branch) return { status: 'skipped' };
-    return this.stageAndCommit(status, `Pull to ${latest.name}`, 'pull');
+    // 2.1.10 (M28 ezudoqef): release-driven — waits for the repository lock.
+    const lock = await this.repoLock();
+    const result = await lock.run(async () => {
+      const fresh = await this.detect();
+      if (!fresh.detected || !fresh.branch) return { status: 'skipped' } as GitCommitResult;
+      return this.stageAndCommit(fresh, `Pull to ${latest.name}`, 'pull');
+    });
+    if (result.status === 'committed') this.emitStatusChanged(true);
+    return result;
   }
 
   /**
@@ -658,6 +821,15 @@ export class GitService {
    * reason.
    */
   async push(branch?: string): Promise<GitPushResult> {
+    // 2.1.10 (M28 ezudoqef): the push of a release push WAITS for the lock.
+    const lock = await this.repoLock();
+    const result = await lock.run(() => this.pushUnlocked(branch));
+    // A push moves only remote-tracking refs — never HEAD.
+    if (result.status === 'pushed') this.emitStatusChanged(false);
+    return result;
+  }
+
+  private async pushUnlocked(branch?: string): Promise<GitPushResult> {
     const status = await this.detect();
     if (!status.detected || !status.rootPath) return { status: 'skipped' };
 
@@ -667,7 +839,8 @@ export class GitService {
     const args = explicit ? ['push', 'origin', branch!] : ['push'];
 
     try {
-      const { stdout, stderr } = await this.git(args, status.rootPath);
+      // 2.1.10 (M28 h8tvjbdd): non-interactive, time-limited.
+      const { stdout, stderr } = await this.gitNetwork(args, status.rootPath);
       if (/Everything up-to-date/i.test(`${stdout}\n${stderr}`)) {
         return { status: 'nothing-to-push', branch: targetBranch };
       }
@@ -1057,7 +1230,7 @@ export class GitService {
   async showFile(
     sha: string,
     absPath: string,
-    precomputedStatus?: GitStatusResponse,
+    precomputedStatus?: GitRepoInfo,
   ): Promise<string | null> {
     let config: ReturnType<typeof readConfig>;
     try {
@@ -1095,7 +1268,7 @@ export class GitService {
    * (e.g. from the `/api/git/status` route, which now merges this in) so a
    * single request doesn't pay for two full `detect()` probe rounds.
    */
-  async statusAheadBehind(precomputedStatus?: GitStatusResponse): Promise<GitAheadBehindStatus | null> {
+  async statusAheadBehind(precomputedStatus?: GitRepoInfo): Promise<GitAheadBehindStatus | null> {
     let config: ReturnType<typeof readConfig>;
     try {
       config = readConfig(this.cwd);
@@ -1108,26 +1281,116 @@ export class GitService {
     if (!config.git.enabled) return null;
     const status = precomputedStatus ?? (await this.detect());
     if (!status.detected || !status.rootPath || !status.branch) return null;
+    const { ahead, behind } = await this.aheadBehindAt(status.rootPath, status.branch);
+    // `null`/`null` = no upstream configured (or another failure) — repo and
+    // branch are known, but no ahead/behind comparison is possible.
+    return { branch: status.branch, isDirty: status.isDirty, ahead, behind };
+  }
 
+  /**
+   * `git rev-list --left-right --count <branch>...@{upstream}` — counted
+   * locally against the last fetched remote refs. Both `null` without an
+   * upstream (or on any failure). Never throws.
+   */
+  private async aheadBehindAt(
+    rootPath: string,
+    branch: string,
+  ): Promise<{ ahead: number | null; behind: number | null }> {
     try {
       const { stdout } = await this.git(
-        ['rev-list', '--left-right', '--count', `${status.branch}...@{upstream}`],
-        status.rootPath,
+        ['rev-list', '--left-right', '--count', `${branch}...${branch}@{upstream}`],
+        rootPath,
       );
       const [aheadStr, behindStr] = stdout.trim().split(/\s+/);
       const ahead = aheadStr !== undefined ? Number(aheadStr) : NaN;
       const behind = behindStr !== undefined ? Number(behindStr) : NaN;
       return {
-        branch: status.branch,
-        isDirty: status.isDirty,
         ahead: Number.isFinite(ahead) ? ahead : null,
         behind: Number.isFinite(behind) ? behind : null,
       };
     } catch {
-      // No upstream configured (or another failure) — repo/branch are known,
-      // but no ahead/behind comparison is possible.
-      return { branch: status.branch, isDirty: status.isDirty, ahead: null, behind: null };
+      return { ahead: null, behind: null };
     }
+  }
+
+  /**
+   * 2.1.10 (M28 m28aug01, dto `git-status-response`): ISO time of the last
+   * fetch from a remote — the mtime of `FETCH_HEAD`, which git rewrites on
+   * every fetch (ours or one run outside the app). `null` when the repository
+   * never fetched or no repo is detected. A local read: no lock. Never throws.
+   */
+  async lastFetchedAt(precomputedStatus?: GitRepoInfo): Promise<string | null> {
+    const status = precomputedStatus ?? (await this.detect());
+    if (!status.detected || !status.rootPath) return null;
+    try {
+      const { stdout } = await this.git(['rev-parse', '--git-path', 'FETCH_HEAD'], status.rootPath);
+      const fetchHead = path.resolve(status.rootPath, stdout.trim());
+      return fs.statSync(fetchHead).mtime.toISOString();
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 2.1.10 (M28 5eyq89gb, endpoint `post-api-git-fetch`): fetch the refs of
+   * the remote the current branch tracks, without touching HEAD or the
+   * working tree. Guard chain, first match wins:
+   *   1. gate — `config.git.enabled`, a detected repo and a NAMED branch;
+   *      otherwise `skipped` (also detached/unborn HEAD).
+   *   2. `no-upstream` — the current branch has no upstream.
+   *   3. `busy` — the repository lock is taken by another git operation.
+   *   4. `git fetch <remote>` (non-interactive, time-limited) → `fetched` with
+   *      ahead/behind; a failure → `error` with git's message.
+   * An agent turn or modified files do NOT block it: a fetch changes neither
+   * HEAD nor the working tree, so it never triggers the reload contract. After
+   * `fetched`, `git:status-changed { headChanged: false }`. Never throws.
+   */
+  async fetch(): Promise<GitFetchResponse> {
+    const skipped: GitFetchResponse = { status: 'skipped', ahead: null, behind: null, message: null };
+    let config: ReturnType<typeof readConfig>;
+    try {
+      config = readConfig(this.cwd);
+    } catch {
+      return skipped;
+    }
+    if (!config.git.enabled) return skipped;
+    const root = await this.probeRoot();
+    if (!root) return skipped;
+    const branch = await this.currentBranch(root);
+    if (!branch) return skipped;
+
+    const remote = await this.upstreamRemote(root, branch);
+    if (!remote) return { status: 'no-upstream', ahead: null, behind: null, message: null };
+
+    const run = lockForKey(root).tryRun(async (): Promise<GitFetchResponse> => {
+      try {
+        await this.gitNetwork(['fetch', remote], root);
+      } catch (err) {
+        return { status: 'error', ahead: null, behind: null, message: errMessage(err) };
+      }
+      const { ahead, behind } = await this.aheadBehindAt(root, branch);
+      return { status: 'fetched', ahead, behind, message: null };
+    });
+    // dto git-fetch-response: `message` carries git's text on `error` only — `busy` is `null`.
+    if (!run) return { status: 'busy', ahead: null, behind: null, message: null };
+    const result = await run;
+    if (result.status === 'fetched') this.emitStatusChanged(false);
+    return result;
+  }
+
+  /**
+   * The remote the current branch tracks (`branch.<b>.remote`, with
+   * `branch.<b>.merge` set) — `null` when the branch has no upstream. Read from
+   * config rather than `@{upstream}`, which fails until the remote-tracking ref
+   * has been fetched once.
+   */
+  private async upstreamRemote(root: string, branch: string): Promise<string | null> {
+    const get = (key: string) =>
+      this.git(['config', '--get', key], root)
+        .then((r) => r.stdout.trim() || null)
+        .catch(() => null);
+    const [remote, merge] = await Promise.all([get(`branch.${branch}.remote`), get(`branch.${branch}.merge`)]);
+    return remote && merge ? remote : null;
   }
 
   /** Local branch names (`git branch --format=%(refname:short)`) at an already-detected `rootPath`. */
@@ -1193,12 +1456,21 @@ export class GitService {
     if (!root) return { status: 'skipped', branch: null, message: null };
 
     if (this.hasInFlightTurn()) {
-      return { status: 'busy', branch: null, message: 'A background task is running — try again in a moment.' };
+      return { status: 'busy', branch: null, message: BUSY_MESSAGE };
     }
 
+    // 2.1.10 (M28 ezudoqef): a sidebar operation REFUSES with `busy` while
+    // another git operation holds the repository lock — the second cause of
+    // `busy`, same result and same hint as an in-flight turn.
+    const locked = lockForKey(root).tryRun(() => this.checkoutLocked(root, branch));
+    if (!locked) return { status: 'busy', branch: null, message: BUSY_MESSAGE };
+    return locked;
+  }
+
+  private async checkoutLocked(root: string, branch: string): Promise<GitCheckoutResponse> {
     // Tracked modified/staged files only — `--untracked-files=no` excludes
     // bare `??` entries, so an untracked file alone never blocks the switch.
-    const dirty = await this.git(['status', '--porcelain', '--untracked-files=no'], root)
+    const dirty = await this.git(['--no-optional-locks', 'status', '--porcelain', '--untracked-files=no'], root)
       .then((r) => r.stdout.trim().length > 0)
       .catch(() => false);
     if (dirty) {
@@ -1218,7 +1490,7 @@ export class GitService {
     // not close) the TOCTOU window between the busy-check above and the actual
     // checkout — the guard chain is explicitly "first match wins", not a lock.
     if (this.hasInFlightTurn()) {
-      return { status: 'busy', branch: null, message: 'A background task is running — try again in a moment.' };
+      return { status: 'busy', branch: null, message: BUSY_MESSAGE };
     }
 
     try {
