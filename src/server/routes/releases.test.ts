@@ -21,7 +21,7 @@ import type { TagsService } from '../services/tags.js';
 import type { PagesService } from '../services/pages.js';
 
 // 0.1.122: this route never has real entity/page rows to diff — it only
-// exercises the `:to === 'current'` dispatch ahead of `decodeIdOrName`
+// exercises the `:to === 'current'` dispatch ahead of the name lookup
 // (release.ts's diffing algorithm itself is covered by
 // release-unreleased-diff.test.ts), so bare fakes suffice.
 // 0.2.11: `buildSnapshot` iterates `listEntities()`. This suite exercises the
@@ -336,5 +336,50 @@ describe('release routes — view=operation (2.1.11)', () => {
     const res = await request(app).patch('/api/releases/v7').send({ name });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('RELEASE_NAME_RESERVED');
+  });
+
+  // 2.1.11 — a release is addressed by its NAME alone; a segment is never an id.
+  it('GET /api/releases/team%2Fv1 addresses the release `team/v1`', async () => {
+    await request(app).post('/api/releases').send({ name: 'team/v1', description: 'slash' }).expect(201);
+    const res = await request(app).get('/api/releases/team%2Fv1');
+    expect(res.status).toBe(200);
+    expect(res.body.name).toBe('team/v1');
+  });
+
+  it('a digit segment is a name: GET /api/releases/12/snapshot answers the release NAMED 12', async () => {
+    // Ids 1..7 are v1..v7, so `3` names no release even though id 3 exists.
+    const missing = await request(app).get('/api/releases/3');
+    expect(missing.status).toBe(404);
+    expect(missing.body.error.code).toBe('RELEASE_NOT_FOUND');
+
+    await request(app).post('/api/releases').send({ name: '12', description: 'named twelve' }).expect(201);
+    const res = await request(app).get('/api/releases/12/snapshot');
+    expect(res.status).toBe(200);
+    expect(res.body.release.name).toBe('12');
+    const diff = await request(app).get('/api/releases/v1/diff/12');
+    expect(diff.status).toBe(200);
+    expect(diff.body.to.name).toBe('12');
+  });
+
+  it.each(['current', 'initial', 'null'])('a literal in the name position is 404 RELEASE_NOT_FOUND: %s', async (literal) => {
+    for (const req of [
+      request(app).get(`/api/releases/${literal}`),
+      request(app).get(`/api/releases/${literal}/snapshot`),
+      request(app).patch(`/api/releases/${literal}`).send({ description: 'x' }),
+      request(app).post(`/api/releases/${literal}/restore`).send({ scope: 'spec' }),
+    ]) {
+      const res = await req;
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe('RELEASE_NOT_FOUND');
+    }
+  });
+
+  it('PATCH on a missing name is 404 before RELEASE_FROZEN; on a frozen name it is 409', async () => {
+    const missing = await request(app).patch('/api/releases/nope').send({ description: 'x' });
+    expect(missing.status).toBe(404);
+    expect(missing.body.error.code).toBe('RELEASE_NOT_FOUND');
+    const frozen = await request(app).patch('/api/releases/v1').send({ description: 'x' });
+    expect(frozen.status).toBe(409);
+    expect(frozen.body.error.code).toBe('RELEASE_FROZEN');
   });
 });

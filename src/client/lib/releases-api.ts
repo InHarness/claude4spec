@@ -46,42 +46,43 @@ export const releasesApi = {
       }),
     );
   },
+  /** 2.1.11: every release route is addressed by NAME, percent-encoded in one segment. */
   async update(
-    idOrName: string | number,
+    name: string,
     input: { name?: string; description?: string; assignUnreleased?: boolean },
   ): Promise<UpdateReleaseResponse> {
     return handle<UpdateReleaseResponse>(
-      await apiFetch(`/api/releases/${encodeURIComponent(String(idOrName))}`, {
+      await apiFetch(`/api/releases/${encodeURIComponent(name)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(input),
       }),
     );
   },
-  async get(idOrName: string | number): Promise<ReleaseDetail> {
+  async get(name: string): Promise<ReleaseDetail> {
     return handle<ReleaseDetail>(
-      await apiFetch(`/api/releases/${encodeURIComponent(String(idOrName))}`),
+      await apiFetch(`/api/releases/${encodeURIComponent(name)}`),
     );
   },
-  async snapshot(idOrName: string | number): Promise<SpecSnapshot> {
+  async snapshot(name: string): Promise<SpecSnapshot> {
     return handle<SpecSnapshot>(
-      await apiFetch(`/api/releases/${encodeURIComponent(String(idOrName))}/snapshot`),
+      await apiFetch(`/api/releases/${encodeURIComponent(name)}/snapshot`),
     );
   },
-  async diff(from: string | number | null, to: string | number): Promise<RawDelta> {
-    const fromSegment = from === null ? 'initial' : encodeURIComponent(String(from));
+  async diff(from: string | null, to: string): Promise<RawDelta> {
+    const fromSegment = from === null ? 'initial' : encodeURIComponent(from);
     return handle<RawDelta>(
       await apiFetch(
-        `/api/releases/${fromSegment}/diff/${encodeURIComponent(String(to))}`,
+        `/api/releases/${fromSegment}/diff/${encodeURIComponent(to)}`,
       ),
     );
   },
   async restoreEntity(
-    releaseIdOrName: string | number,
+    releaseName: string,
     target: { type: string; slug: string },
   ): Promise<RestoreEntityResponse> {
     return handle<RestoreEntityResponse>(
-      await apiFetch(`/api/releases/${encodeURIComponent(String(releaseIdOrName))}/restore`, {
+      await apiFetch(`/api/releases/${encodeURIComponent(releaseName)}/restore`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scope: 'entity', target }),
@@ -89,20 +90,20 @@ export const releasesApi = {
     );
   },
   async restorePage(
-    releaseIdOrName: string | number,
+    releaseName: string,
     target: { path: string },
   ): Promise<RestorePageResponse> {
     return handle<RestorePageResponse>(
-      await apiFetch(`/api/releases/${encodeURIComponent(String(releaseIdOrName))}/restore`, {
+      await apiFetch(`/api/releases/${encodeURIComponent(releaseName)}/restore`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scope: 'page', target }),
       }),
     );
   },
-  async restoreSpec(releaseIdOrName: string | number): Promise<RestoreSpecResponse> {
+  async restoreSpec(releaseName: string): Promise<RestoreSpecResponse> {
     return handle<RestoreSpecResponse>(
-      await apiFetch(`/api/releases/${encodeURIComponent(String(releaseIdOrName))}/restore`, {
+      await apiFetch(`/api/releases/${encodeURIComponent(releaseName)}/restore`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scope: 'spec' }),

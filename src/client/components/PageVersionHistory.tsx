@@ -28,9 +28,12 @@ export function PageVersionHistory({ rootId, path, onBack }: Props) {
   const { data: detail } = usePageVersionDetail(rootId, path, selected);
 
   const onRestore = async (releaseId: number) => {
+    // 2.1.11: the restore route addresses the release by name.
+    const releaseName = releaseNameById.get(releaseId);
+    if (releaseName === undefined) return;
     setRestoring(releaseId);
     try {
-      await restorePage.mutateAsync({ releaseId, path });
+      await restorePage.mutateAsync({ releaseName, path });
     } catch (err) {
       alert((err as Error).message);
     } finally {

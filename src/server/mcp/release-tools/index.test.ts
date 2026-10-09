@@ -6,7 +6,7 @@ import type { WsEmitter } from '../../ws/project-emitter.js';
 import type { RawDelta, FileDiff, SpecSnapshot } from '../../../shared/entities.js';
 
 /**
- * `release_diff`'s SECOND ENGINE — `toIdOrName: "current"`.
+ * `release_diff`'s SECOND ENGINE — `toReleaseName: "current"`.
  *
  * What is asserted here is the wiring only the tool can get wrong. The delta
  * itself is L2's and is tested there; the projection is tested in
@@ -111,11 +111,14 @@ function harness() {
       calls.unreleasedOpts.push(opts);
       return UNRELEASED_DELTA;
     },
-    getReleaseSnapshot: (idOrName: unknown) => {
-      calls.getReleaseSnapshot.push(idOrName);
+    // 2.1.11: the operation resolves each name to an id before the id-taking
+    // readers run. The stand-in id IS the name, so the recorded calls read as names.
+    resolveReleaseId: (name: string) => name,
+    getReleaseSnapshot: (releaseId: unknown) => {
+      calls.getReleaseSnapshot.push(releaseId);
       // A DATABASE THAT ALREADY HOLDS a release called `current` — the shadowing
       // case the resolution order exists to rule out.
-      return idOrName === 'current'
+      return releaseId === 'current'
         ? { ...V1_SNAPSHOT, release: release(9, 'current') }
         : V1_SNAPSHOT;
     },
@@ -147,7 +150,7 @@ function harness() {
 describe('release_diff — the "current" branch', () => {
   it('routes to getUnreleasedDiff and never asks getReleaseDiff for the pair', async () => {
     const { calls, call } = harness();
-    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'current' });
+    const res = await call({ fromReleaseName: 'v1', toReleaseName: 'current' });
 
     expect(res.isError).toBe(false);
     expect(calls.getUnreleasedDiff).toEqual(['v1']);
@@ -162,7 +165,7 @@ describe('release_diff — the "current" branch', () => {
    */
   it('resolves the literal BEFORE the name lookup, so a real release named `current` cannot shadow it', async () => {
     const { calls, call } = harness();
-    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'current' });
+    const res = await call({ fromReleaseName: 'v1', toReleaseName: 'current' });
 
     expect(res.body.to).toEqual({ id: null, name: 'current' });
     // `from` is still resolved by name; `current` never is.
@@ -171,14 +174,14 @@ describe('release_diff — the "current" branch', () => {
 
   it('reports `to.id: null` — the only signal that the after side is not frozen', async () => {
     const { call } = harness();
-    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'current' });
+    const res = await call({ fromReleaseName: 'v1', toReleaseName: 'current' });
     expect(res.body.to).toEqual({ id: null, name: 'current' });
     expect(res.body.from).toEqual({ id: 1, name: 'v1' });
   });
 
   it('keeps a numeric `to.id` on the ordinary two-release branch', async () => {
     const { calls, call } = harness();
-    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2' });
+    const res = await call({ fromReleaseName: 'v1', toReleaseName: 'v2' });
     expect(res.body.to).toEqual({ id: 2, name: 'v2' });
     expect(calls.getUnreleasedDiff).toEqual([]);
     expect(calls.getReleaseDiff).toEqual([['v1', 'v2']]);
@@ -191,7 +194,7 @@ describe('release_diff — the "current" branch', () => {
    */
   it('surfaces op:delete for an entity removed since the release', async () => {
     const { call } = harness();
-    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'current', summaryOnly: true });
+    const res = await call({ fromReleaseName: 'v1', toReleaseName: 'current', summaryOnly: true });
     const entities = res.body.entities as Array<Record<string, unknown>>;
     expect(entities.find((e) => e.slug === 'dto-gone')).toMatchObject({ op: 'delete' });
     expect(res.body.pages).toContainEqual(expect.objectContaining({ rootId: 'pages', path: 'pages/gone.md', op: 'delete' }));
@@ -200,8 +203,8 @@ describe('release_diff — the "current" branch', () => {
   it('summaryOnly returns the FULL identity map on this branch too, ignoring limit', async () => {
     const { call } = harness();
     const res = await call({
-      fromIdOrName: 'v1',
-      toIdOrName: 'current',
+      fromReleaseName: 'v1',
+      toReleaseName: 'current',
       summaryOnly: true,
       limit: 1,
     });
@@ -212,7 +215,7 @@ describe('release_diff — the "current" branch', () => {
 
   it('passes `roots` through to the unreleased engine untouched', async () => {
     const { calls, call } = harness();
-    await call({ fromIdOrName: 'v1', toIdOrName: 'current', roots: ['pages'] });
+    await call({ fromReleaseName: 'v1', toReleaseName: 'current', roots: ['pages'] });
     expect(calls.getUnreleasedDiff).toEqual(['v1']);
     expect(calls.unreleasedOpts).toEqual([{ roots: ['pages'], paths: undefined }]);
   });
@@ -221,7 +224,7 @@ describe('release_diff — the "current" branch', () => {
 describe('release_diff — INVALID_DIFF_RANGE', () => {
   it('refuses `from: null` together with `to: "current"` — from nothing to the working tree', async () => {
     const { calls, call } = harness();
-    const res = await call({ fromIdOrName: null, toIdOrName: 'current' });
+    const res = await call({ fromReleaseName: null, toReleaseName: 'current' });
 
     expect(res.isError).toBe(true);
     expect(res.body.code).toBe('INVALID_DIFF_RANGE');
@@ -232,7 +235,7 @@ describe('release_diff — INVALID_DIFF_RANGE', () => {
 
   it('still allows `from: null` against a real release (the initial brief)', async () => {
     const { calls, call } = harness();
-    const res = await call({ fromIdOrName: null, toIdOrName: 'v2' });
+    const res = await call({ fromReleaseName: null, toReleaseName: 'v2' });
     expect(res.isError).toBe(false);
     expect(calls.getReleaseDiff).toEqual([[null, 'v2']]);
   });
@@ -240,7 +243,7 @@ describe('release_diff — INVALID_DIFF_RANGE', () => {
   /** Pagination is validated ahead of the branch — the 0.1.71 rule, unchanged. */
   it('reports INVALID_PAGINATION before it ever looks at the range', async () => {
     const { calls, call } = harness();
-    const res = await call({ fromIdOrName: null, toIdOrName: 'current', limit: -1 });
+    const res = await call({ fromReleaseName: null, toReleaseName: 'current', limit: -1 });
     expect(res.isError).toBe(true);
     expect(res.body.code).toBe('INVALID_PAGINATION');
     expect(calls.getUnreleasedDiff).toEqual([]);
@@ -257,9 +260,9 @@ describe('release_diff — what the tool tells an agent about the branch', () =>
       roots: () => ROOTS,
     });
     const tool = server.tools.find((t) => t.name === 'release_diff')!;
-    expect(tool.description).toContain('toIdOrName: "current"');
+    expect(tool.description).toContain('toReleaseName: "current"');
     expect(tool.description).toContain('does not reproduce later');
-    const to = (tool.inputSchema as Record<string, { description?: string }>).toIdOrName;
+    const to = (tool.inputSchema as Record<string, { description?: string }>).toReleaseName;
     expect(to?.description).toContain('resolved before the name lookup');
     expect(to?.description).toContain('INVALID_DIFF_RANGE');
   });
@@ -289,20 +292,20 @@ describe('release_diff — what the tool tells an agent about the branch', () =>
 describe('release_diff — `paths` / `roots` validation', () => {
   it('passes `paths` through to the release engine', async () => {
     const { calls, call } = harness();
-    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths: ['plugins/modules/x.md'] });
+    const res = await call({ fromReleaseName: 'v1', toReleaseName: 'v2', paths: ['plugins/modules/x.md'] });
     expect(res.isError).toBe(false);
     expect(calls.releaseOpts).toEqual([{ roots: undefined, paths: ['plugins/modules/x.md'] }]);
   });
 
   it('passes `paths` through to the unreleased engine too', async () => {
     const { calls, call } = harness();
-    await call({ fromIdOrName: 'v1', toIdOrName: 'current', paths: ['pages/a.md'] });
+    await call({ fromReleaseName: 'v1', toReleaseName: 'current', paths: ['pages/a.md'] });
     expect(calls.unreleasedOpts).toEqual([{ roots: undefined, paths: ['pages/a.md'] }]);
   });
 
   it('[ac:ac-release-diff-wywolany-z-paths-i-roots] `paths` together with `roots` is CONFLICTING_FILTERS', async () => {
     const { calls, call } = harness();
-    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths: ['pages/a.md'], roots: ['pages'] });
+    const res = await call({ fromReleaseName: 'v1', toReleaseName: 'v2', paths: ['pages/a.md'], roots: ['pages'] });
     expect(res.isError).toBe(true);
     expect(res.body.code).toBe('CONFLICTING_FILTERS');
     expect(calls.getReleaseDiff).toEqual([]);
@@ -310,14 +313,14 @@ describe('release_diff — `paths` / `roots` validation', () => {
 
   it("`paths` without 'pages' in include is CONFLICTING_FILTERS — the mirror of entityTypes without 'entities'", async () => {
     const { call } = harness();
-    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', include: ['entities'], paths: ['pages/a.md'] });
+    const res = await call({ fromReleaseName: 'v1', toReleaseName: 'v2', include: ['entities'], paths: ['pages/a.md'] });
     expect(res.body.code).toBe('CONFLICTING_FILTERS');
     expect(res.body.error).toContain("'pages'");
   });
 
   it('[ac:ac-release-diff-wywolany-z-roots-jest-od] `roots: []` is INVALID_ROOTS_FILTER', async () => {
     const { calls, call } = harness();
-    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', roots: [] });
+    const res = await call({ fromReleaseName: 'v1', toReleaseName: 'v2', roots: [] });
     expect(res.isError).toBe(true);
     expect(res.body.code).toBe('INVALID_ROOTS_FILTER');
     expect(calls.getReleaseDiff).toEqual([]);
@@ -332,7 +335,7 @@ describe('release_diff — `paths` / `roots` validation', () => {
     ['the releases system root', ['releases']],
   ])('`roots` with %s is INVALID_ROOTS_FILTER naming the page roots', async (_label, roots) => {
     const { calls, call } = harness();
-    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', roots });
+    const res = await call({ fromReleaseName: 'v1', toReleaseName: 'v2', roots });
     expect(res.body.code).toBe('INVALID_ROOTS_FILTER');
     expect(res.body.error).toContain(`roots: '${roots[0]}' is not a page root (page roots: [pages, plugins])`);
     expect(res.body.hint).toBe('page roots: [pages, plugins]');
@@ -341,7 +344,7 @@ describe('release_diff — `paths` / `roots` validation', () => {
 
   it("2.1.8: `release_diff({ roots: ['plans'] })` is INVALID_ROOTS_FILTER listing the page roots — a system root is not a page root", async () => {
     const { calls, call } = harness();
-    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'current', roots: ['plans'] });
+    const res = await call({ fromReleaseName: 'v1', toReleaseName: 'current', roots: ['plans'] });
     expect(res.isError).toBe(true);
     expect(res.body.code).toBe('INVALID_ROOTS_FILTER');
     expect(res.body.error).toBe("roots: 'plans' is not a page root (page roots: [pages, plugins])");
@@ -352,7 +355,7 @@ describe('release_diff — `paths` / `roots` validation', () => {
   it('[ac:ac-release-diff-z-elementem-paths-pozbaw] an element without a root prefix is INVALID_PATHS_FILTER', async () => {
     const { calls, call } = harness();
     for (const bad of ['a.md', '/a.md', 'pages/']) {
-      const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths: [bad] });
+      const res = await call({ fromReleaseName: 'v1', toReleaseName: 'v2', paths: [bad] });
       expect(res.isError).toBe(true);
       expect(res.body.code).toBe('INVALID_PATHS_FILTER');
     }
@@ -367,21 +370,21 @@ describe('release_diff — `paths` / `roots` validation', () => {
     ['the releases system root', ['releases/v1.json']],
   ])('`paths` with %s is INVALID_PATHS_FILTER', async (_label, paths) => {
     const { call } = harness();
-    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths });
+    const res = await call({ fromReleaseName: 'v1', toReleaseName: 'v2', paths });
     expect(res.body.code).toBe('INVALID_PATHS_FILTER');
     expect(res.body.error).toContain('page roots: [pages, plugins]');
   });
 
   it('checks pagination before the filters, and every single-filter refusal before conflicts (2.1.11)', async () => {
     const { call } = harness();
-    const paging = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', limit: -1, roots: [] });
+    const paging = await call({ fromReleaseName: 'v1', toReleaseName: 'v2', limit: -1, roots: [] });
     expect(paging.body.code).toBe('INVALID_PAGINATION');
-    const empty = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths: [], roots: ['pages'] });
+    const empty = await call({ fromReleaseName: 'v1', toReleaseName: 'v2', paths: [], roots: ['pages'] });
     expect(empty.body.code).toBe('INVALID_PATHS_FILTER');
     // An unknown root is a single-filter refusal, so it wins over the paths+roots conflict.
-    const unknown = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths: ['nope/a.md'], roots: ['nope'] });
+    const unknown = await call({ fromReleaseName: 'v1', toReleaseName: 'v2', paths: ['nope/a.md'], roots: ['nope'] });
     expect(unknown.body.code).toBe('INVALID_ROOTS_FILTER');
-    const conflict = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths: ['pages/a.md'], roots: ['pages'] });
+    const conflict = await call({ fromReleaseName: 'v1', toReleaseName: 'v2', paths: ['pages/a.md'], roots: ['pages'] });
     expect(conflict.body.code).toBe('CONFLICTING_FILTERS');
   });
 
@@ -408,7 +411,7 @@ describe('release_diff — the section window (2.1.5)', () => {
     ['two paths', { paths: ['pages/a.md', 'pages/b.md'], sectionLimit: 1 }],
   ])('[ac:ac-l3-mcp-release-diff-z-sectionoffset-a] a section window with %s is CONFLICTING_FILTERS', async (_label, extra) => {
     const { call } = harness();
-    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', ...extra });
+    const res = await call({ fromReleaseName: 'v1', toReleaseName: 'v2', ...extra });
     expect(res.isError).toBe(true);
     expect(res.body.code).toBe('CONFLICTING_FILTERS');
   });
@@ -416,14 +419,14 @@ describe('release_diff — the section window (2.1.5)', () => {
   it('a negative section window is INVALID_PAGINATION, checked before summaryOnly and the filters', async () => {
     const { call } = harness();
     for (const w of [{ sectionOffset: -1 }, { sectionLimit: -2 }]) {
-      const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', summaryOnly: true, roots: [], ...w });
+      const res = await call({ fromReleaseName: 'v1', toReleaseName: 'v2', summaryOnly: true, roots: [], ...w });
       expect(res.body.code).toBe('INVALID_PAGINATION');
     }
   });
 
   it('one path accepts the window and reports total.sections', async () => {
     const { call } = harness();
-    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', paths: ['pages/gone.md'], sectionOffset: 0, sectionLimit: 1 });
+    const res = await call({ fromReleaseName: 'v1', toReleaseName: 'v2', paths: ['pages/gone.md'], sectionOffset: 0, sectionLimit: 1 });
     expect(res.isError).toBeFalsy();
     expect(res.body.total).toHaveProperty('sections');
   });
@@ -453,7 +456,7 @@ describe('release_diff — 2.1.11 literal matrix', () => {
   it('[ac:release-diff-initial-equivalence] treats "initial", "null" and null as the same empty state', async () => {
     for (const from of [null, 'null', 'initial']) {
       const { calls, call } = harness();
-      const res = await call({ fromIdOrName: from, toIdOrName: 'v2' });
+      const res = await call({ fromReleaseName: from, toReleaseName: 'v2' });
       expect(res.isError).toBe(false);
       expect(calls.getReleaseDiff).toEqual([[null, 'v2']]);
       // No left snapshot is resolved for the empty state.
@@ -462,12 +465,12 @@ describe('release_diff — 2.1.11 literal matrix', () => {
   });
 
   it.each([
-    [{ fromIdOrName: null, toIdOrName: 'current' }],
-    [{ fromIdOrName: 'null', toIdOrName: 'current' }],
-    [{ fromIdOrName: 'initial', toIdOrName: 'current' }],
-    [{ fromIdOrName: 'current', toIdOrName: 'v2' }],
-    [{ fromIdOrName: 'v1', toIdOrName: 'initial' }],
-    [{ fromIdOrName: 'v1', toIdOrName: 'null' }],
+    [{ fromReleaseName: null, toReleaseName: 'current' }],
+    [{ fromReleaseName: 'null', toReleaseName: 'current' }],
+    [{ fromReleaseName: 'initial', toReleaseName: 'current' }],
+    [{ fromReleaseName: 'current', toReleaseName: 'v2' }],
+    [{ fromReleaseName: 'v1', toReleaseName: 'initial' }],
+    [{ fromReleaseName: 'v1', toReleaseName: 'null' }],
   ])('refuses %o with INVALID_DIFF_RANGE before any lookup', async (args) => {
     const { calls, call } = harness();
     const res = await call(args);
@@ -477,9 +480,9 @@ describe('release_diff — 2.1.11 literal matrix', () => {
     expect(calls.getReleaseSnapshot).toEqual([]);
   });
 
-  it('validates filters before the literals — CONFLICTING_FILTERS wins with toIdOrName: "current"', async () => {
+  it('validates filters before the literals — CONFLICTING_FILTERS wins with toReleaseName: "current"', async () => {
     const { call } = harness();
-    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'current', include: ['pages'], entityTypes: ['endpoint'] });
+    const res = await call({ fromReleaseName: 'v1', toReleaseName: 'current', include: ['pages'], entityTypes: ['endpoint'] });
     expect(res.body.code).toBe('CONFLICTING_FILTERS');
   });
 });
@@ -487,7 +490,7 @@ describe('release_diff — 2.1.11 literal matrix', () => {
 describe('release_diff — 2.1.11 `slugs` filter', () => {
   it('narrows entities[] to the named slug before `total` is counted', async () => {
     const { call } = harness();
-    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'current', entityTypes: ['endpoint'], slugs: ['ep-new'] });
+    const res = await call({ fromReleaseName: 'v1', toReleaseName: 'current', entityTypes: ['endpoint'], slugs: ['ep-new'] });
     expect(res.isError).toBe(false);
     expect(res.body.entities.map((e: { slug: string }) => e.slug)).toEqual(['ep-new']);
     expect(res.body.total.entities).toBe(1);
@@ -495,7 +498,7 @@ describe('release_diff — 2.1.11 `slugs` filter', () => {
 
   it('answers an unchanged or absent slug with an empty list, not an error', async () => {
     const { call } = harness();
-    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'current', entityTypes: ['endpoint'], slugs: ['nope'] });
+    const res = await call({ fromReleaseName: 'v1', toReleaseName: 'current', entityTypes: ['endpoint'], slugs: ['nope'] });
     expect(res.isError).toBe(false);
     expect(res.body.entities).toEqual([]);
     expect(res.body.total.entities).toBe(0);
@@ -504,8 +507,8 @@ describe('release_diff — 2.1.11 `slugs` filter', () => {
   it('narrows the light map too', async () => {
     const { call } = harness();
     const res = await call({
-      fromIdOrName: 'v1',
-      toIdOrName: 'current',
+      fromReleaseName: 'v1',
+      toReleaseName: 'current',
       entityTypes: ['endpoint'],
       slugs: ['ep-kept'],
       summaryOnly: true,
@@ -516,8 +519,8 @@ describe('release_diff — 2.1.11 `slugs` filter', () => {
   it('combines with `paths` — the pages dimension is untouched', async () => {
     const { call } = harness();
     const res = await call({
-      fromIdOrName: 'v1',
-      toIdOrName: 'current',
+      fromReleaseName: 'v1',
+      toReleaseName: 'current',
       entityTypes: ['endpoint'],
       slugs: ['ep-new'],
       paths: ['pages/new.md'],
@@ -535,7 +538,7 @@ describe('release_diff — 2.1.11 `slugs` filter', () => {
     [{ include: ['pages'], slugs: ['a'] }, 'CONFLICTING_FILTERS'],
   ])('refuses %o with %s', async (extra, code) => {
     const { call } = harness();
-    const res = await call({ fromIdOrName: 'v1', toIdOrName: 'v2', ...extra });
+    const res = await call({ fromReleaseName: 'v1', toReleaseName: 'v2', ...extra });
     expect(res.body.code).toBe(code);
   });
 });

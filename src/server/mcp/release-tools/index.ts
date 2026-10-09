@@ -12,7 +12,7 @@
  * `c4s release-*` commands return the same one; REST without `view` and the UI
  * keep consuming the raw L2 shape for render-time `line_diff`.
  *
- * 0.2.62: `release_diff` grew a second engine — `toIdOrName: "current"` diffs a
+ * 0.2.62: `release_diff` grew a second engine — `toReleaseName: "current"` diffs a
  * release against the live, unreleased state. It costs this server the property
  * that made its toolset safe to hand a subagent without thinking: "release-tools
  * are historical by definition" is no longer true of the WHOLE server, one branch
@@ -93,7 +93,11 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
     'release_create',
     'Create a named release (snapshot of current spec state). Assigns release_id to all unreleased entity_version + file_version rows in one transaction. Always manual — there are no auto-triggers (M17 decyzja 9). Both name (UNIQUE) and description (non-empty) are required.',
     {
-      name: z.string().describe('Release name, must be unique. e.g. "v1.0.0", "pre-launch"'),
+      name: z
+        .string()
+        .describe(
+          'Release name, must be unique. e.g. "v1.0.0", "pre-launch". The release is addressed by this name everywhere. `current`, `initial` and `null` are reserved (they name states, not releases) → 400 RELEASE_NAME_RESERVED.',
+        ),
       description: z
         .string()
         .describe(
@@ -119,7 +123,7 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
 
   const releaseList = mcpTool(
     'release_list',
-    'List releases newest-first (paginated). Returns `{ releases, total }` where `total` is the full count before limit/offset. Per release: id, name, description, createdBy, createdAt.',
+    'List releases newest-first (paginated). Returns `{ releases, total }` where `total` is the full count before limit/offset. Per release: id, name, description, createdBy, createdAt. The first entry is the newest release; address it (and any other) in the other release tools by its `name` — `id` is a technical key returned for reference only.',
     {
       limit: z
         .number()
@@ -143,9 +147,13 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
 
   const releaseShow = mcpTool(
     'release_show',
-    "Show a release's identification surface (release metadata + lists of entity slugs/page paths present at the release). Returns `MCPSpecSnapshot` — IDENTIFICATION only, not full entity/page data. To inspect the data, call `release_diff` (with this release as `to` and any earlier release — or `null` — as `from`). Accepts numeric id or release name. Filters: `include` (defaults to ['pages','entities']) trims the dimensions returned; `entityTypes` restricts entity types. Brief versions (`file_version.kind='brief'`) are excluded from `pages` (L2 invariant). RESPONSE BUDGET: a window cut short by the budget reports `truncationHint` naming the next `offset`; rows here are identity-only, so degradation is always a narrower window and never a poorer row.",
+    "Show a release's identification surface (release metadata + lists of entity slugs/page paths present at the release). Returns `MCPSpecSnapshot` — IDENTIFICATION only, not full entity/page data. To inspect the data, call `release_diff` (with this release as `to` and any earlier release — or `null` — as `from`). Addressed by release name only. Filters: `include` (defaults to ['pages','entities']) trims the dimensions returned; `entityTypes` restricts entity types. Brief versions (`file_version.kind='brief'`) are excluded from `pages` (L2 invariant). RESPONSE BUDGET: a window cut short by the budget reports `truncationHint` naming the next `offset`; rows here are identity-only, so degradation is always a narrower window and never a poorer row.",
     {
-      idOrName: z.union([z.string(), z.number()]).describe('Numeric id or release name'),
+      releaseName: z
+        .string()
+        .describe(
+          'Release name — the only input identifier (a digit string is a name, never an id). The literals `current` / `initial` / `null` name states, not releases → 404 RELEASE_NOT_FOUND.',
+        ),
       include: z
         .array(z.enum(INCLUDE_VALUES))
         .optional()
@@ -173,7 +181,7 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
       try {
         return ok(
           releaseShowOperation(deps, {
-            releaseName: args.idOrName as number | string,
+            releaseName: args.releaseName as string,
             include: args.include as IncludeFilter[] | undefined,
             entityTypes: args.entityTypes as EntityTypeFilter[] | undefined,
             limit: args.limit as number | undefined,
@@ -188,17 +196,17 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
 
   const releaseDiff = mcpTool(
     'release_diff',
-    "Compute a self-contained structured diff between two releases, or between a release and the current unreleased state. Heavy mode (default) carries, per changed entity, the FULL `before`/`after` snapshots frozen at each release, and per changed page section the section text with inline `<before_change>`/`<after_change>` markers; compare the snapshots yourself. The payload already carries historical state, so do not drill into current files or the live entity graph to explain a past change. `toIdOrName: \"current\"` diffs against the live, not-yet-released state (HEAD); that side is not frozen and does not reproduce later. Light mode (`summaryOnly: true`) returns a complete delta MAP, deletions included, windows ignored: `total` plus `{ type, slug, name, op }` per entity and `{ rootId, path, op, sections, size }` per page, where `size` is the length of the page's changed-section content in characters. With exactly one entry in `paths` it also returns that page's section map, with a `size` per section. Pattern: probe with `summaryOnly`, use `size` to partition into disjoint slices, then pull each slice by `entityTypes`, `paths` and the `limit`/`offset` page window. Read a large page with `paths` set to it and the `sectionOffset`/`sectionLimit` section window; `sectionLimit: 1` reads it section by section, by choice and not only after truncation. `limit` (default 5) and `offset` window entities and pages independently; `total` counts after filters, before the window, and with one path `total.sections` counts its changed sections. A window past the end returns an empty list with `total` present. `fromIdOrName: null` gives the initial diff (every entry `op: 'create'`); `from === to` gives an empty diff. Briefs and patches never appear. Read-only.",
+    "Compute a self-contained structured diff between two releases, or between a release and the current unreleased state. Heavy mode (default) carries, per changed entity, the FULL `before`/`after` snapshots frozen at each release, and per changed page section the section text with inline `<before_change>`/`<after_change>` markers; compare the snapshots yourself. The payload already carries historical state, so do not drill into current files or the live entity graph to explain a past change. `toReleaseName: \"current\"` diffs against the live, not-yet-released state (HEAD); that side is not frozen and does not reproduce later. Light mode (`summaryOnly: true`) returns a complete delta MAP, deletions included, windows ignored: `total` plus `{ type, slug, name, op }` per entity and `{ rootId, path, op, sections, size }` per page, where `size` is the length of the page's changed-section content in characters. With exactly one entry in `paths` it also returns that page's section map, with a `size` per section. Pattern: probe with `summaryOnly`, use `size` to partition into disjoint slices, then pull each slice by `entityTypes`, `paths` and the `limit`/`offset` page window. Read a large page with `paths` set to it and the `sectionOffset`/`sectionLimit` section window; `sectionLimit: 1` reads it section by section, by choice and not only after truncation. `limit` (default 5) and `offset` window entities and pages independently; `total` counts after filters, before the window, and with one path `total.sections` counts its changed sections. A window past the end returns an empty list with `total` present. `fromReleaseName: null` gives the initial diff (every entry `op: 'create'`); `from === to` gives an empty diff. Briefs and patches never appear. Read-only.",
     {
-      fromIdOrName: z
-        .union([z.string(), z.number(), z.null()])
+      fromReleaseName: z
+        .union([z.string(), z.null()])
         .describe(
-          'Earlier release id or name. `null`, `"null"` and `"initial"` are equivalent and name the empty state (initial diff — all entries become op:create). `"current"` is not legal here → 400 INVALID_DIFF_RANGE.',
+          'Earlier release name (a digit string is a name, never an id). `null`, `"null"` and `"initial"` are equivalent and name the empty state (initial diff — all entries become op:create). `"current"` is not legal here → 400 INVALID_DIFF_RANGE.',
         ),
-      toIdOrName: z
-        .union([z.string(), z.number()])
+      toReleaseName: z
+        .string()
         .describe(
-          'Later release id or name. The literal `"current"` compares against the live, not-yet-released state (HEAD) instead of a release; it is resolved before the name lookup and is a reserved release name, so it can never be shadowed by a real one. The empty state (`null` / `"null"` / `"initial"`) on the left together with `"current"` → 400 INVALID_DIFF_RANGE; `"initial"` / `"null"` here → 400 INVALID_DIFF_RANGE.',
+          'Later release name (a digit string is a name, never an id). The literal `"current"` compares against the live, not-yet-released state (HEAD) instead of a release; it is resolved before the name lookup and is a reserved release name, so it can never be shadowed by a real one. The empty state (`null` / `"null"` / `"initial"`) on the left together with `"current"` → 400 INVALID_DIFF_RANGE; `"initial"` / `"null"` here → 400 INVALID_DIFF_RANGE.',
         ),
       include: z
         .array(z.enum(INCLUDE_VALUES))
@@ -216,7 +224,7 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
         .array(z.string())
         .optional()
         .describe(
-          "Narrow the ENTITIES dimension to these bare slugs of ONE type — requires exactly one element in `entityTypes` and 'entities' in `include` (otherwise 400 CONFLICTING_FILTERS). Empty array or an empty element → 400 INVALID_SLUGS_FILTER. Narrows the response, not the computation; a slug unchanged (or absent) on both sides yields no entry and `total.entities: 0`, not an error. With `fromIdOrName: null` a present entity comes back as one `op: 'create'` entry whose `after` is its state in `to`. Does not touch the pages dimension, so it combines with `paths`.",
+          "Narrow the ENTITIES dimension to these bare slugs of ONE type — requires exactly one element in `entityTypes` and 'entities' in `include` (otherwise 400 CONFLICTING_FILTERS). Empty array or an empty element → 400 INVALID_SLUGS_FILTER. Narrows the response, not the computation; a slug unchanged (or absent) on both sides yields no entry and `total.entities: 0`, not an error. With `fromReleaseName: null` a present entity comes back as one `op: 'create'` entry whose `after` is its state in `to`. Does not touch the pages dimension, so it combines with `paths`.",
         ),
       summaryOnly: z
         .boolean()
@@ -265,8 +273,8 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
       try {
         return ok(
           (await releaseDiffOperation(deps, {
-            fromReleaseName: args.fromIdOrName as number | string | null,
-            toReleaseName: args.toIdOrName as number | string,
+            fromReleaseName: args.fromReleaseName as string | null,
+            toReleaseName: args.toReleaseName as string,
             include: args.include as IncludeFilter[] | undefined,
             entityTypes: args.entityTypes as EntityTypeFilter[] | undefined,
             slugs: args.slugs as string[] | undefined,
@@ -289,8 +297,17 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
     'release_update',
     `Update the LATEST release only — older releases are frozen. Mutates name/description in-place and optionally pulls all unreleased entity_version + file_version rows (release_id IS NULL) into this release. 409 RELEASE_FROZEN if the release is not the latest on the release axis (latest created_at, tie by id). 409 RELEASE_NAME_CONFLICT on rename collision. 400 RELEASE_DESCRIPTION_TOO_LONG / RELEASE_DESCRIPTION_REQUIRED when a given description is over ${MAX_RELEASE_DESCRIPTION_LENGTH} characters or empty.`,
     {
-      idOrName: z.union([z.string(), z.number()]).describe('Numeric id or release name'),
-      name: z.string().optional().describe('New name (must be unique). Omit to leave unchanged.'),
+      releaseName: z
+        .string()
+        .describe(
+          'Name of the release to update — the only input identifier. A literal (`current` / `initial` / `null`) or an unknown name → 404 RELEASE_NOT_FOUND, checked before RELEASE_FROZEN.',
+        ),
+      name: z
+        .string()
+        .optional()
+        .describe(
+          'New name (must be unique; `current`, `initial` and `null` are reserved → 400 RELEASE_NAME_RESERVED). Omit to leave unchanged.',
+        ),
       description: z
         .string()
         .optional()
@@ -307,7 +324,7 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpSer
     async (args) => {
       try {
         const release = await deps.releaseService.updateRelease({
-          idOrName: args.idOrName as number | string,
+          releaseName: args.releaseName as string,
           name: args.name as string | undefined,
           description: args.description as string | undefined,
           assignUnreleased: args.assignUnreleased as boolean | undefined,

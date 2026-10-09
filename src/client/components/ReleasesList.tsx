@@ -100,8 +100,8 @@ export function ReleasesList({ onCreateClick }: Props) {
           {releases.map((r) => (
             <Link
               key={r.id}
-              to="/releases/$idOrName"
-              params={{ idOrName: r.name }}
+              to="/releases/$name"
+              params={{ name: r.name }}
               className="flex items-start gap-3 px-4 py-3 rounded-md transition-colors"
               style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)' }}
             >

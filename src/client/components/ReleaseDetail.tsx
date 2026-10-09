@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, FileText, GitCommit, MoreHorizontal, Plus, RotateCcw } from 'lucide-react';
 import {
   useRelease,
@@ -8,6 +9,7 @@ import {
   useReleaseSnapshot,
   useRestoreSpec,
   useUpdateRelease,
+  forgetReleaseName,
 } from '../hooks/useReleases.js';
 import { useReleasePushes } from '../hooks/useReleasePushes.js';
 import { listReleaseActions } from '../lib/release-actions/registry.js';
@@ -22,11 +24,14 @@ import { MAX_RELEASE_DESCRIPTION_LENGTH, releaseDescriptionLength } from '../../
 import './release/push-to-remote-action.js';
 
 interface Props {
-  idOrName: string;
+  /** 2.1.11: the route's `:name` segment, already percent-decoded. */
+  name: string;
 }
 
-export function ReleaseDetail({ idOrName }: Props) {
-  const { data: release, isLoading } = useRelease(idOrName);
+export function ReleaseDetail({ name }: Props) {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { data: release, isLoading } = useRelease(name);
   const { data: allReleases = [] } = useReleaseList();
   const restoreSpec = useRestoreSpec();
 
@@ -102,7 +107,12 @@ export function ReleaseDetail({ idOrName }: Props) {
       return;
     }
     try {
-      await updateRelease.mutateAsync({ idOrName: release.id, name: next });
+      const updated = await updateRelease.mutateAsync({ releaseName: release.name, name: next });
+      // 2.1.11: the open route follows the rename — the old name is no longer an address.
+      if (updated.name !== name) {
+        await navigate({ to: '/releases/$name', params: { name: updated.name }, replace: true });
+        forgetReleaseName(queryClient, name);
+      }
     } catch (err) {
       alert((err as Error).message);
       setNameDraft(release.name);
@@ -125,7 +135,7 @@ export function ReleaseDetail({ idOrName }: Props) {
       return;
     }
     try {
-      await updateRelease.mutateAsync({ idOrName: release.id, description: next });
+      await updateRelease.mutateAsync({ releaseName: release.name, description: next });
     } catch (err) {
       alert((err as Error).message);
       setDescriptionDraft(release.description);
@@ -135,7 +145,7 @@ export function ReleaseDetail({ idOrName }: Props) {
   async function pullUnreleased() {
     if (!release || !isLatest) return;
     try {
-      const updated = await updateRelease.mutateAsync({ idOrName: release.id, assignUnreleased: true });
+      const updated = await updateRelease.mutateAsync({ releaseName: release.name, assignUnreleased: true });
       // M28: git commit-sync is best-effort — never blocks the pull itself.
       // 0.1.124: surfaced via GitErrorRecoveryModal (with a "Fix it with
       // Agent" action) rather than a toast.
@@ -230,7 +240,7 @@ export function ReleaseDetail({ idOrName }: Props) {
           )}
           <div className="text-[12px] mt-0.5 flex items-center gap-2" style={{ color: 'var(--c-subtle)' }}>
             <span>by {release.createdBy} · {formatDate(release.createdAt)}</span>
-            <PushedBadge releaseId={release.id} />
+            <PushedBadge releaseName={release.name} />
           </div>
           {isLatest ? (
             <textarea
@@ -397,7 +407,7 @@ export function ReleaseDetail({ idOrName }: Props) {
           )}
 
           {/* M25: push history for this release. */}
-          <ReleasePushesList releaseId={release.id} />
+          <ReleasePushesList releaseName={release.name} />
         </div>
       </div>
 
@@ -436,8 +446,8 @@ function formatDate(iso: string): string {
 }
 
 /** "Pushed" / "Pushed N×" badge next to the release name — counts successful pushes. */
-function PushedBadge({ releaseId }: { releaseId: number }) {
-  const { data: pushes = [] } = useReleasePushes(releaseId);
+function PushedBadge({ releaseName }: { releaseName: string }) {
+  const { data: pushes = [] } = useReleasePushes(releaseName);
   const n = pushes.filter((p) => p.status === 'success').length;
   if (n === 0) return null;
   return (

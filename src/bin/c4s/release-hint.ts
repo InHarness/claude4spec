@@ -15,10 +15,6 @@ const FLAG_EXCEPTIONS: Record<string, string> = {
   fromReleaseName: 'from',
   toReleaseName: 'to',
   releaseName: 'release',
-  // The MCP inputs still carry the pre-2.1.11 names; a hint naming them maps the same way.
-  fromIdOrName: 'from',
-  toIdOrName: 'to',
-  idOrName: 'release',
 };
 
 /** Every parameter of the three read operations. */

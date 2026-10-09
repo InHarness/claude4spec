@@ -56,7 +56,7 @@ ${checksProjection}
 
 Your delegation names the SCOPE — the addresses just edited. That scope, not the diff, is what you review.
 
-Fetch the diff to see what those edits did: \`release_diff\` with \`toIdOrName: "current"\` and the newest release as \`fromIdOrName\` (\`release_list\` names it). That \`after\` side is live, so read it once and judge what you read — a second call after further edits is a different change.
+Fetch the diff to see what those edits did: \`release_diff\` with \`toReleaseName: "current"\` and the newest release's name as \`fromReleaseName\` (\`release_list\` names it). That \`after\` side is live, so read it once and judge what you read — a second call after further edits is a different change.
 
 Releases are cut by hand and rarely, so that delta is almost never one edit: it holds everything saved since the last one. Intersect it with the scope you were handed and judge the intersection. What the delta shows OUTSIDE the scope was saved by an earlier turn and is not this change — it is pre-existing, and the rule below applies to it. If you were handed no scope at all, say so and review the whole delta, but open with the fact that you could not tell this change from its predecessors.
 

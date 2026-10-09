@@ -198,7 +198,8 @@ const releasesIndexRoute = createRoute({
 
 const releaseDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/releases/$idOrName',
+  // 2.1.11: the release name, percent-encoded in one segment (`team/v1` → `team%2Fv1`).
+  path: '/releases/$name',
   component: ReleaseDetailRoute,
 });
 
@@ -541,10 +542,10 @@ function ReleasesIndexRoute() {
 }
 
 function ReleaseDetailRoute() {
-  const { idOrName } = useParams({ from: '/releases/$idOrName' });
+  const { name } = useParams({ from: '/releases/$name' });
   return (
     <RoutePane>
-      <ReleaseDetail idOrName={idOrName} />
+      <ReleaseDetail name={name} />
     </RoutePane>
   );
 }

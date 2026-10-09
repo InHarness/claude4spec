@@ -207,7 +207,7 @@ describe('release tier across a root rename (0.2.101)', () => {
       op: 'update',
     });
 
-    const delta = await releases.getReleaseDiff('r1', 'r2');
+    const delta = await releases.getReleaseDiff(r1, r2);
     expect(delta.pages.map((p) => [p.path, p.op])).toEqual([['edited.md', 'modified']]);
   });
 

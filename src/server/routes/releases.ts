@@ -47,7 +47,7 @@ export function releasesRouter(
     }
   });
 
-  // Literal path — MUST be declared before the `/:idOrName` catch-all.
+  // Literal path — MUST be declared before the `/:name` catch-all.
   router.get('/unreleased-count', (_req, res, next) => {
     try {
       res.json({ count: releases.countUnreleased() });
@@ -74,16 +74,16 @@ export function releasesRouter(
     }
   });
 
-  router.get('/:idOrName', (req, res, next) => {
+  router.get('/:name', (req, res, next) => {
     try {
-      const release = releases.getRelease(decodeIdOrName(req.params.idOrName));
+      const release = releases.getRelease(releaseNameParam(req.params.name));
       res.json(release);
     } catch (err) {
       next(err);
     }
   });
 
-  router.patch('/:idOrName', async (req, res, next) => {
+  router.patch('/:name', async (req, res, next) => {
     try {
       const body = (req.body ?? {}) as {
         name?: string;
@@ -95,7 +95,7 @@ export function releasesRouter(
       // ReleaseService.updateRelease's doc comment); gitSync rides this
       // response the same way it does on `POST /api/releases`.
       const release = await releases.updateRelease({
-        idOrName: decodeIdOrName(req.params.idOrName),
+        releaseName: releaseNameParam(req.params.name),
         name: body.name,
         description: body.description,
         assignUnreleased: body.assignUnreleased,
@@ -113,11 +113,11 @@ export function releasesRouter(
    * entities. Nie jest portowalnym eksportem JSON-a — moduł linearizacji
    * (przyszły) doda swoje własne API.
    */
-  router.get('/:idOrName/snapshot', (req, res, next) => {
+  router.get('/:name/snapshot', (req, res, next) => {
     try {
       if (readView(req, SHOW_PARAMS)) {
         const data = releaseShowOperation(opDeps, {
-          releaseName: decodeIdOrName(req.params.idOrName),
+          releaseName: releaseNameParam(req.params.name),
           include: listParam(req, 'include') as IncludeFilter[] | undefined,
           entityTypes: listParam(req, 'entityTypes'),
           limit: intParam(req, 'limit'),
@@ -126,7 +126,7 @@ export function releasesRouter(
         res.json({ data });
         return;
       }
-      const snap = releases.getReleaseSnapshot(decodeIdOrName(req.params.idOrName));
+      const snap = releases.getReleaseSnapshot(releases.resolveReleaseId(releaseNameParam(req.params.name)));
       res.json(snap);
     } catch (err) {
       next(err);
@@ -142,8 +142,8 @@ export function releasesRouter(
       const toSeg = req.params.to;
       if (readView(req, DIFF_PARAMS)) {
         const data = await releaseDiffOperation(opDeps, {
-          fromReleaseName: decodeIdOrName(fromSeg),
-          toReleaseName: decodeIdOrName(toSeg),
+          fromReleaseName: releaseNameParam(fromSeg),
+          toReleaseName: releaseNameParam(toSeg),
           include: listParam(req, 'include') as IncludeFilter[] | undefined,
           entityTypes: listParam(req, 'entityTypes'),
           slugs: listParam(req, 'slugs'),
@@ -159,20 +159,20 @@ export function releasesRouter(
         return;
       }
       // The raw projection (the UI's coloured diff) exposes no filters.
-      const { from, to } = resolveDiffRange(decodeIdOrName(fromSeg), decodeIdOrName(toSeg));
-      if (to === CURRENT_RELEASE_NAME) {
-        res.json(await releases.getUnreleasedDiff(from));
-        return;
-      }
-      res.json(await releases.getReleaseDiff(from, to));
+      const { from, to } = resolveDiffRange(releaseNameParam(fromSeg), releaseNameParam(toSeg));
+      const toId = to === CURRENT_RELEASE_NAME ? null : releases.resolveReleaseId(to);
+      const fromId = from === null ? null : releases.resolveReleaseId(from);
+      res.json(toId === null ? await releases.getUnreleasedDiff(fromId) : await releases.getReleaseDiff(fromId, toId));
     } catch (err) {
       next(err);
     }
   });
 
-  router.post('/:idOrName/restore', async (req, res, next) => {
+  router.post('/:name/restore', async (req, res, next) => {
     try {
-      const releaseId = decodeIdOrName(req.params.idOrName);
+      // The name resolves to the technical id here; a literal or an unknown
+      // name is a 404 before any restore runs.
+      const releaseId = releases.resolveReleaseId(releaseNameParam(req.params.name));
       const body = (req.body ?? {}) as {
         scope?: 'entity' | 'page' | 'spec';
         target?: { type?: string; slug?: string; path?: string };
@@ -215,11 +215,13 @@ export function releasesRouter(
   return router;
 }
 
-function decodeIdOrName(value: string | undefined): number | string {
-  if (!value) throw new Error('missing release id or name');
-  // numeric string => id, otherwise name. Express has already percent-decoded
-  // the segment, so decoding again would corrupt a name carrying `%`.
-  if (/^\d+$/.test(value)) return Number(value);
+/**
+ * 2.1.11: a path segment is a release NAME, never an id — `12` is the release
+ * named `12`. Express has already percent-decoded the segment (`team%2Fv1` →
+ * `team/v1`), so decoding again would corrupt a name carrying `%`.
+ */
+function releaseNameParam(value: string | undefined): string {
+  if (!value) throw new DomainError('VALIDATION', 'missing release name');
   return value;
 }
 

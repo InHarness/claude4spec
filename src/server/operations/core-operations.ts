@@ -1780,10 +1780,10 @@ export function registerCoreOperations(): void {
   releaseOp('release_list', 'Releases newest-first, paginated. Answers `{ releases, total }` where `total` precedes limit/offset.', 'read', { ...paging }, ['none'], ['INVALID_PAGINATION']);
   releaseOp(
     'release_show',
-    'One release by numeric id or name: its identification surface (entity slugs and page paths present at the release), windowed per dimension.',
+    'One release by name (2.1.11: the only input identifier; a literal `current` / `initial` / `null` is RELEASE_NOT_FOUND): its identification surface (entity slugs and page paths present at the release), windowed per dimension.',
     'read',
     {
-      idOrName: z.union([z.string(), z.number()]),
+      releaseName: z.string(),
       include: z.array(z.enum(['pages', 'entities'])).optional(),
       entityTypes: z.array(z.string()).optional(),
       limit: z.number().optional(),
@@ -1806,11 +1806,11 @@ export function registerCoreOperations(): void {
    */
   releaseOp(
     'release_diff',
-    'What changed between two releases — or, with `toIdOrName: "current"`, between a release and the live not-yet-released state — per entity type and page root; a page entry carries `rootId` next to `path`. `paths` narrows the pages to single pages by full key `<rootId>/<relPath>`; with exactly one path, the sections of that page are addressed positionally by the section window `sectionOffset` / `sectionLimit`, not by anchor (a window without exactly one path is refused). The light map (`summaryOnly`) carries `sections` and `size` per page. An item cut by the response budget comes back `truncated: true` (an entity without `before`/`after`, a section with `content` cut as text) and the envelope carries `truncationHint`.',
+    'What changed between two releases — or, with `toReleaseName: "current"`, between a release and the live not-yet-released state — per entity type and page root; a page entry carries `rootId` next to `path`. `paths` narrows the pages to single pages by full key `<rootId>/<relPath>`; with exactly one path, the sections of that page are addressed positionally by the section window `sectionOffset` / `sectionLimit`, not by anchor (a window without exactly one path is refused). The light map (`summaryOnly`) carries `sections` and `size` per page. An item cut by the response budget comes back `truncated: true` (an entity without `before`/`after`, a section with `content` cut as text) and the envelope carries `truncationHint`.',
     'read',
     {
-      fromIdOrName: z.union([z.string(), z.number(), z.null()]),
-      toIdOrName: z.union([z.string(), z.number()]),
+      fromReleaseName: z.union([z.string(), z.null()]),
+      toReleaseName: z.string(),
       include: z.array(z.enum(['pages', 'entities'])).optional(),
       entityTypes: z.array(z.string()).optional(),
       slugs: z
@@ -1855,7 +1855,7 @@ export function registerCoreOperations(): void {
     'Rename or re-describe the LATEST release, optionally sweeping the unreleased queue into it. Older releases are frozen.',
     'write',
     {
-      idOrName: z.union([z.string(), z.number()]),
+      releaseName: z.string(),
       name: z.string().optional(),
       description: z.string().optional(),
       assignUnreleased: z.boolean().optional(),

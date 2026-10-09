@@ -14,7 +14,7 @@ export type EntitySnapshot = Record<string, unknown>;
 export interface MCPReleaseDiff {
   from: { id: number; name: string } | null;
   /**
-   * The `after` side. `id: null` — reachable only through `toIdOrName:
+   * The `after` side. `id: null` — reachable only through `toReleaseName:
    * "current"` — is the ONLY signal that this side is the live, not-yet-released
    * state rather than a frozen release, and therefore that the diff is a
    * function of the working tree and does not reproduce. A consumer that keys

@@ -46,7 +46,7 @@ export function CreateReleaseDialog({ onClose }: Props) {
         showGitErrorModal(release.gitSync.recovery);
       }
       onClose();
-      navigate({ to: '/releases/$idOrName', params: { idOrName: release.name } });
+      navigate({ to: '/releases/$name', params: { name: release.name } });
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.code === 'RELEASE_NAME_CONFLICT') {

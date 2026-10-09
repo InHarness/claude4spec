@@ -282,7 +282,7 @@ export type ModalMap = {
   };
   'page-reload': { props: { rootId: string; path: string }; result: 'reload' | 'keep' };
   'onboarding-skip': { props: NoProps; result: true };
-  'release-push': { props: { releaseId: number; projectName: string }; result: true };
+  'release-push': { props: { releaseName: string; projectName: string }; result: true };
   /** M33 — opened with `dismissible: false`: only its two buttons close it. */
   'project-plugins-trust': {
     props: { packages: Array<{ package: string; origin?: string; layer?: string }> };

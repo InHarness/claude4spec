@@ -6,8 +6,8 @@ import type { ReleasePushResponse } from '../../../shared/release-push.js';
  * attempt for this release (success and error), newest first. Hidden when the
  * release has never been pushed.
  */
-export function ReleasePushesList({ releaseId }: { releaseId: number }) {
-  const { data: pushes = [] } = useReleasePushes(releaseId);
+export function ReleasePushesList({ releaseName }: { releaseName: string }) {
+  const { data: pushes = [] } = useReleasePushes(releaseName);
   if (pushes.length === 0) return null;
 
   return (

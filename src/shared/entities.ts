@@ -329,7 +329,7 @@ export interface CreateReleaseResponse extends ReleaseDetail {
 }
 
 /**
- * 0.1.124: body of `PATCH /api/releases/:idOrName`. `ReleaseDetail` plus the
+ * 0.1.124: body of `PATCH /api/releases/:name`. `ReleaseDetail` plus the
  * best-effort `git commit` outcome of `commitPull()` — populated ONLY when
  * the request set `assignUnreleased: true` (the only update path that
  * triggers a git commit); a plain rename/description edit returns
@@ -469,7 +469,7 @@ export interface FileDiff {
  * The reserved release name standing for the live, not-yet-released state.
  *
  * It is a literal on THREE surfaces that must agree — the `:to` segment of `GET
- * /api/releases/:from/diff/:to`, the `toIdOrName` argument of the MCP tool
+ * /api/releases/:from/diff/:to`, the `toReleaseName` argument of the MCP tool
  * `release_diff`, and the `RawDelta.to.name` both unreleased engine paths stamp
  * — which is why it lives here rather than in any one of them, and why
  * `createRelease` refuses it: without the reservation the argument would carry
