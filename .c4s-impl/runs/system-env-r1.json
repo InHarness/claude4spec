@@ -1,0 +1,55 @@
+{
+  "role": "verifier-system",
+  "source": "env-runner npm test (impl-2-1-8-to-2-1-9-workflow-3 @4a952d5): 7 failed / 5121 passed",
+  "rows": [
+    {
+      "slug": "test:src/server/config.test.ts :: parseRootsArray requires exactly one builtin root, whatever its id",
+      "level": 2,
+      "status": "test-fails",
+      "evidence": "AssertionError: expected [Function] to throw error matching /exactly one root must have builtin: t…/ but got 'config.json: root id \\'skills\\' is re…'",
+      "unit": "u05-skills-root"
+    },
+    {
+      "slug": "test:plugins/c4s-plugin-writing-style-author/test/skill-contribution.test.ts :: carries the BODY of SKILL.md, with the frontmatter stripped",
+      "level": 2,
+      "status": "test-fails",
+      "evidence": "AssertionError: expected '# Writing Style Author\\n\\nYou are hel…' not to contain 'scope: contextual'",
+      "unit": "u12-writing-styles"
+    },
+    {
+      "slug": "test:src/client/tiptap/skillsRoot.editor.test.ts :: [ac:m20-rodzaj-bez-kotwic-at-proza] `@path.md` in a `skills` package file shows as text, not as a page chip",
+      "level": 2,
+      "status": "test-fails",
+      "evidence": "AssertionError: expected '<p>Read <page_ref data-page-ref=\"true…' to contain 'data-path=\"guides/intro.md\"'",
+      "unit": "u08-skills-sidebar-editor"
+    },
+    {
+      "slug": "test:src/server/services/project-rooted-skills.test.ts :: [ac:m52-invalid-package-loads-marked-invalid] load_skill_file on a package whose SKILL.md frontmatter is YAML that does not parse returns it marked invalid, with its raw content and hash",
+      "level": 2,
+      "status": "test-fails",
+      "evidence": "AssertionError: expected 'frontmatter \\'title\\' must be a non-e…' to match /frontmatter does not parse/",
+      "unit": "u05-skills-root"
+    },
+    {
+      "slug": "test:tests/integration/architecture/discovery-core.test.ts :: src/bin/c4s reads no directories — the walk belongs to the core",
+      "level": 2,
+      "status": "test-fails",
+      "evidence": "AssertionError: page/root iteration in the CLI: src/bin/c4s/commands/resolve.test.ts:41: for (const e of fs.readdirSync(dir, { withFileTypes: true })) {: expected [ Array(1) ] to deeply equal []",
+      "unit": "u06-c4s-resolve-ask"
+    },
+    {
+      "slug": "test:src/client/components/spec-skills/specSkillsSettings.test.ts :: ticking a row adds its name to skill.uses, unticking removes it — the draft, saved with the card",
+      "level": 2,
+      "status": "test-fails",
+      "evidence": "AssertionError: expected '<div class=\"flex flex-col gap-1.5\" da…' to match /data-skill-name=\"billing-rules\"[^>]*>…/",
+      "unit": "u11-exposed-projects"
+    },
+    {
+      "slug": "test:src/server/services/system-prompt/blocks/writing-style-templates.test.ts :: [ac:ac-przy-config-writingstyle-null-watek-b] the brief thread keeps the full domain rules of its type (identity, tool whitelist, self-containment invariant) but gets no genre methodology — no <project_writing_skill> block",
+      "level": 2,
+      "status": "test-fails",
+      "evidence": "AssertionError: expected '<interaction_context type=\"brief\">\\nY…' not to contain 'call load_skill_file('",
+      "unit": "u12-writing-styles"
+    }
+  ]
+}
