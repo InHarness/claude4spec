@@ -7,8 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.11] - 2026-10-09
+
+### Changed
+
+- **BREAKING (MCP, REST, UI): a release is addressed by its name only.** MCP release tools take `releaseName` / `fromReleaseName` / `toReleaseName` and refuse numbers; REST `/api/releases/:name` never parses the segment as an id, and restore works by name; `/api/release-pushes` takes `{ releaseName }` / `?releaseName=`; the UI routes to `/releases/$name`, and a rename re-keys the screen. The names `initial` and `null` are reserved; a missing release is `RELEASE_NOT_FOUND`.
+- **Release reads go through one core operation** shared by MCP, REST (`?view=operation` on list, snapshot and diff) and the new CLI commands `c4s release-list`, `c4s release-show` and `c4s release-diff`. `release_diff` gains a `slugs` filter (one entity type), a section window and a stepped `truncationHint`. Releases are ordered on the release axis by `created_at`, and briefs are listed on that axis.
+- **One root registry with kinds.** Pages, entities, releases, plans, briefs, patches and skills are root kinds; `config.json` holds only user roots, the agent's file scope and git sync follow the registry, and discovery addresses only `pages` roots.
+- **Page editing:** `get_page` returns a page as a collection of sections within a response budget under the MCP ceiling and refuses a stale range on every channel; literal `update_page` reports `ANCHOR_LOSS`; section batches (`update_sections`, `update_plan({edits})`) claim disjoint spans; unknown JSX regions are excluded in `.md` files too.
+- One XML markup registry (M51) shared by server, editor and chat.
+
 ### Added
 
+- **Spec skills (M52).** A system root `skills` (`.claude4spec/skills`) with a sidebar accordion and editor, an MCP server `spec-skill-tools` with `update_skill_file`, a `spec-skills` command source in the chat composer (`/skills`, `skill_ref` chips), a project exposed as one skill to mounted projects, and the built-in `c4s-plugin-skill-author` envelope. The slash framework takes registered command sources, and the skill registry collects entries from `SkillSource` sources.
+- **Git fetch and sync from the remote (M28).** Header Fetch/Sync actions with the last-fetched time and ahead/behind status (`POST /api/git/fetch`, `POST /api/git/sync`, `git:status-changed` WS event), one HEAD-change pipeline that reloads the project, and a non-fast-forward push rejection as its own recovery kind with Sync offered.
+- Patch thread tools `get_patch` and `mark_patch_applied`.
 - **Workflow brief — a second brief genre in the `layered-vertical-slices` style.** For a change too large for one implementation pass (an initial window, or a release that touches many modules), a brief thread can write a *plan of work units* instead of an inlined narrative. Each unit carries:
   - a goal — one or two sentences on what changes in the system once it is done;
   - a reading recipe — what to read at the release window, grouped rather than spelled out as commands: pages with per-read section ranges, entities by type and slug (criteria included, under their own type). The window and project identity are stated once and the skill builds the `c4s release-diff` commands, so the implementation stays on the window even after the specification moves on. A part a unit must not build yet is marked `not yet` → the later unit that `completes` it;
@@ -28,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A created entity whose embed failed is reported instead of silently dropped; host broken chips read `[broken: <slug|type>]` with the cause in the tooltip.
+- The event loop is no longer blocked by context-cache eviction thrash and release snapshot blob reads.
 - The `/` slash palette in the chat composer now opens above the caret when there is no room below it, like the `@` mention popup. Both popups share one placement function and re-measure as the listing changes height.
 - Agent turns on the default model no longer fail with `400 Claude Code 2.1.263 does not support this model`. `@anthropic-ai/claude-agent-sdk` is raised to `^0.3.280` (resolved 0.3.284), so the SDK's bundled Claude Code CLI is 2.1.284.
 
@@ -480,3 +495,5 @@ Initial public release.
 [1.0.23]: https://github.com/InHarness/claude4spec/compare/v1.0.22...v1.0.23
 
 [1.0.24]: https://github.com/InHarness/claude4spec/compare/v1.0.23...v1.0.24
+
+[2.1.11]: https://github.com/InHarness/claude4spec/compare/v2.1.0...v2.1.11
