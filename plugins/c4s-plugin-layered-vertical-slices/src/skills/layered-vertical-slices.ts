@@ -3,6 +3,7 @@ import type { WritingStyleContribution } from '@c4s/plugin-runtime';
 import skillMd from './layered-vertical-slices/SKILL.md?raw';
 import workflowBootstrap from './layered-vertical-slices/workflows/bootstrap.md?raw';
 import workflowBrief from './layered-vertical-slices/workflows/brief.md?raw';
+import workflowBriefWorkflow from './layered-vertical-slices/workflows/brief-workflow.md?raw';
 import workflowPatch from './layered-vertical-slices/workflows/patch.md?raw';
 import workflowRead from './layered-vertical-slices/workflows/read.md?raw';
 import workflowPlan from './layered-vertical-slices/workflows/plan.md?raw';
@@ -10,6 +11,7 @@ import workflowApply from './layered-vertical-slices/workflows/apply.md?raw';
 import templateIndex from './layered-vertical-slices/templates/index.md?raw';
 import templateLayer from './layered-vertical-slices/templates/layer.md?raw';
 import templateModule from './layered-vertical-slices/templates/module.md?raw';
+import templateBriefWorkflow from './layered-vertical-slices/templates/brief-workflow.md?raw';
 import partPlacement from './layered-vertical-slices/parts/placement.md?raw';
 import partAuthoring from './layered-vertical-slices/parts/authoring.md?raw';
 import partReadingSweep from './layered-vertical-slices/parts/reading-sweep.md?raw';
@@ -18,6 +20,7 @@ import partDomainTest from './layered-vertical-slices/parts/domain-test.md?raw';
 import partDomainForm from './layered-vertical-slices/parts/domain-form.md?raw';
 import partModuleVsLayer from './layered-vertical-slices/parts/module-vs-layer.md?raw';
 import partChoices from './layered-vertical-slices/parts/choices.md?raw';
+import partBriefSubstance from './layered-vertical-slices/parts/brief-substance.md?raw';
 
 /**
  * Drop the leading YAML frontmatter block.
@@ -68,6 +71,7 @@ const PARTS: Readonly<Record<string, string>> = {
   'parts/domain-form.md': partDomainForm,
   'parts/module-vs-layer.md': partModuleVsLayer,
   'parts/choices.md': partChoices,
+  'parts/brief-substance.md': partBriefSubstance,
 };
 
 /**
@@ -208,6 +212,7 @@ export const layeredVerticalSlicesStyle: WritingStyleContribution = {
   files: {
     'workflows/bootstrap.md': compose(workflowBootstrap),
     'workflows/brief.md': compose(workflowBrief),
+    'workflows/brief-workflow.md': compose(workflowBriefWorkflow),
     'workflows/patch.md': compose(workflowPatch),
     'workflows/read.md': compose(workflowRead),
     'workflows/plan.md': compose(workflowPlan),
@@ -215,5 +220,6 @@ export const layeredVerticalSlicesStyle: WritingStyleContribution = {
     'templates/index.md': compose(templateIndex),
     'templates/layer.md': compose(templateLayer),
     'templates/module.md': compose(templateModule),
+    'templates/brief-workflow.md': templateBriefWorkflow,
   },
 };

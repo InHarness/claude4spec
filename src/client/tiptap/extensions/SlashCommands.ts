@@ -3,6 +3,7 @@ import Suggestion, { type SuggestionOptions, type SuggestionProps } from '@tipta
 import { PluginKey } from '@tiptap/pm/state';
 import { ReactRenderer } from '@tiptap/react';
 import { setSuggestionPopupOpen } from '../suggestionState.js';
+import { positionSuggestionPopup } from '../suggestionPopupPosition.js';
 import { SlashMenu, type SlashMenuHandle, type SlashCommand } from './SlashMenu.js';
 import type { EditorContextId, RootEditorProps } from '../registry.js';
 import { createSlashSession, type SlashPaletteItem, type SlashSession } from '../slashPalette.js';
@@ -110,12 +111,14 @@ export const SlashCommands = Extension.create<SlashCommandsOptions>({
             reactRenderer.updateProps(lastProps);
             setSuggestionPopupOpen(editor.view, SLASH_POPUP, popup !== null && items.length > 0);
           };
+          let lastRect: DOMRect | null = null;
+          let resizeObs: ResizeObserver | null = null;
+          // Flips above the caret when there is no room below — the chat
+          // composer sits at the viewport bottom (same placement as `@`).
           const updatePos = (rect: DOMRect | null) => {
             if (!popup || !rect) return;
-            const top = rect.bottom + 6 + window.scrollY;
-            const left = rect.left + window.scrollX;
-            popup.style.top = `${top}px`;
-            popup.style.left = `${left}px`;
+            lastRect = rect;
+            positionSuggestionPopup(popup, rect);
           };
           return {
             onStart(props: SuggestionProps<SlashPaletteItem>) {
@@ -127,9 +130,14 @@ export const SlashCommands = Extension.create<SlashCommandsOptions>({
               popup = document.createElement('div');
               popup.style.position = 'absolute';
               popup.style.zIndex = '1000';
+              popup.style.top = '-9999px';
               popup.appendChild(reactRenderer.element);
               document.body.appendChild(popup);
               updatePos(props.clientRect?.() ?? null);
+              // The listing renders async and changes height as the query or a
+              // narrowed source re-lists it — re-measure so the flip stays right.
+              resizeObs = new ResizeObserver(() => updatePos(lastRect));
+              resizeObs.observe(popup);
               setSuggestionPopupOpen(props.editor.view, SLASH_POPUP, props.items.length > 0);
             },
             onUpdate(props: SuggestionProps<SlashPaletteItem>) {
@@ -140,6 +148,8 @@ export const SlashCommands = Extension.create<SlashCommandsOptions>({
             },
             onKeyDown(props) {
               if (props.event.key === 'Escape') {
+                resizeObs?.disconnect();
+                resizeObs = null;
                 popup?.remove();
                 popup = null;
                 setSuggestionPopupOpen(props.view, SLASH_POPUP, false);
@@ -150,6 +160,9 @@ export const SlashCommands = Extension.create<SlashCommandsOptions>({
             onExit(props: SuggestionProps<SlashPaletteItem>) {
               session = null;
               lastProps = null;
+              lastRect = null;
+              resizeObs?.disconnect();
+              resizeObs = null;
               popup?.remove();
               popup = null;
               reactRenderer?.destroy();

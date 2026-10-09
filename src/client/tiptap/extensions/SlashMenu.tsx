@@ -94,6 +94,9 @@ export const SlashMenu = forwardRef<SlashMenuHandle, SuggestionProps<SlashPalett
           background: 'var(--c-card)',
           border: '1px solid var(--c-hair-strong)',
           minWidth: 280,
+          // Plugin skills carry paragraph-long descriptions; without a cap the
+          // palette stretches across the whole window.
+          maxWidth: 'min(560px, calc(100vw - 16px))',
           maxHeight: 320,
           overflowY: 'auto',
           boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
@@ -116,7 +119,7 @@ export const SlashMenu = forwardRef<SlashMenuHandle, SuggestionProps<SlashPalett
                 color: 'var(--c-ink)',
               }}
             >
-              <span className="font-mono text-[12.5px]" style={{ minWidth: 110 }}>
+              <span className="shrink-0 whitespace-nowrap font-mono text-[12.5px]" style={{ minWidth: 110 }}>
                 {item.label}
                 {item.origin ? (
                   <span
@@ -128,15 +131,24 @@ export const SlashMenu = forwardRef<SlashMenuHandle, SuggestionProps<SlashPalett
                   </span>
                 ) : null}
               </span>
-              <span className="flex-1 text-[12px]" style={{ color: 'var(--c-muted)' }}>
+              <span
+                className="min-w-0 flex-1 truncate text-[12px]"
+                style={{ color: 'var(--c-muted)' }}
+                title={item.description}
+              >
                 {item.description}
               </span>
-              <span
-                className="text-[10.5px] font-mono"
-                style={{ color: 'var(--c-subtle)' }}
-              >
-                {item.hint}
-              </span>
+              {/* A source item's hint is its own trigger (`/skill-author` →
+                  `skill-author`) — repeating the label adds nothing. Only an
+                  argument hint (`/section` → `anchor`) is worth a column. */}
+              {item.hint && `/${item.hint}` !== item.label ? (
+                <span
+                  className="shrink-0 truncate text-[10.5px] font-mono"
+                  style={{ color: 'var(--c-subtle)', maxWidth: 120 }}
+                >
+                  {item.hint}
+                </span>
+              ) : null}
             </button>
           );
         })}

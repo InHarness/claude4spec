@@ -56,6 +56,7 @@
  */
 
 import { z } from 'zod';
+import { PATCH_KINDS } from '../../core/briefs/types.js';
 import { CATALOG, direct, na, via, type ContentInputMode, type OperationDeclaration } from './catalog.js';
 
 /**
@@ -621,7 +622,7 @@ export function registerCoreOperations(): void {
     inputSchema: {
       brief: z.string().describe('Brief path relative to the briefs root (.claude4spec/briefs). Must name a real file.'),
       desc: z.string().min(1).describe('Short description of the drift. Drives the file slug and the body heading.'),
-      patchKind: z.enum(['drift', 'missing', 'incorrect', 'clarification']).optional().describe('Default `drift`.'),
+      patchKind: z.enum(PATCH_KINDS).optional().describe('Default `drift`.'),
       body: z.string().describe('The patch body — what drifted and what the spec author should consider.'),
       createdBy: z.string().optional().describe('Reporter identity. Defaults to the calling channel.'),
     },

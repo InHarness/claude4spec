@@ -4,38 +4,7 @@ Use this when **the active context is a brief thread** and you have just been ca
 
 The posture of a brief thread is the host's, and it is already in your window as `<interaction_context type="brief">`: the two audiences, the self-containment invariant, inline-never-refer, describe the system rather than the spec edits, drop editorial noise, the tools mounted, and the map-then-fan-out delegation with its binding on what enters your context. This file adds only what that block cannot know, because it is about a specification written in **this** style: what counts as feature substance here, how to partition this style's delta map so that modules stay whole, and how the findings are ordered into a narrative.
 
-## A. Spec-format vs feature substance
-
-This is the most consequential filter in this workflow. In `layered-vertical-slices` the spec contains **two kinds of content** that look superficially similar in a delta map:
-
-1. **Feature substance** — what the *system* does, has, constrains. Lives mostly in `modules/MXX-*.md` per-layer sections, in entity records (DTO, Endpoint, Database Table, UI View), and in the `## Modules` row of `<index>` when a new module appears.
-2. **Spec-format conventions** — rules about *how to write the spec itself*. Lives in `layers/LX-*.md` files (`## Module slice schema` defines the *shape* a consumer module's section takes; `Implementor module:` slot names which module backs this layer; `## Role in the system` is orientational prose).
-
-A coding agent in another terminal cannot act on (2). Telling them "L3 API uses `<tagged_list type="endpoint" tags="MXX"/>` to embed live endpoint lists" is a rule for the *spec author*, not for the implementer. If a brief inlines such content as if it were a requirement, the implementer wastes effort matching the spec's authoring grammar instead of building the system.
-
-**Recognition table:**
-
-| Delta entry | Classification | Action in brief |
-| --- | --- | --- |
-| Diff inside `layers/LX-*.md` § `## Module slice schema` | spec-format | **Drop.** Exception: if the schema change implies new runtime behavior (e.g. a new required field that any module must now declare → the system must validate it somewhere), describe the *runtime consequence*, not the schema text. |
-| Diff inside `layers/LX-*.md` § `Implementor module:` slot | spec-format | **Drop.** This only renames who-implements-what in the spec; the system is unchanged. |
-| Diff inside `layers/LX-*.md` § `## Role in the system` | spec-format | **Drop.** Orientational prose for spec readers. |
-| New `layers/LX-*.md` file (whole file added) | mostly spec-format | Mention briefly that "the spec gained a new layer LX — \<name\> — which structures how modules describe \<topic\>" and stop. Do not transcribe the schema. The implementer cares only when modules start using this layer. |
-| Diff inside `modules/MXX-*.md` § per-layer (e.g. `## Database (L1)`, `## API (L3)`) | substantive | **Translate** to a system-level statement; inline the entities/fields/endpoints. |
-| Diff inside `modules/MXX-*.md` § `Cel` / `Edge cases` / `Acceptance criteria` | substantive | **Translate** to system behavior. |
-| Diff inside `modules/MXX-*.md` § `Domain` | substantive | **Translate** to system behavior, exactly as a `Cel` diff — it is the module's own substance (model, invariants, owned lifecycle, boundary), not a rule about writing the spec. |
-| Diff inside `modules/MXX-*.md` § `Zależności` | usually drop | A dependency record says what one module needs from another; it becomes brief material only when the *system* gained or lost a coupling an implementer must wire. |
-| New `modules/MXX-*.md` file | substantive | Open with the module's purpose in one sentence, then walk its per-layer sections. |
-| Entity changes (DTO/Endpoint/Database Table/UI View — create/update/delete) | substantive | **Inline with full content** — the field table, the method and path with its DTOs and status codes, the SQL fragment, the route and what it loads. |
-| Diff in `<index>` § `## Modules` table (new row) | substantive | New module appeared — name it, give purpose. |
-| Diff in `<index>` § `## Layers` table (new row) | mostly spec-format | Same as "new layer file" — one-line mention. |
-| Diff in `<index>` § `## Open questions` | usually drop | Open questions are workshop notes, not commitments. Include only if the user explicitly asks for "spec status" framing. |
-| Diff in `<index>` § `## Tech stack` | substantive | A real change to runtime/dependencies — translate to "the system now runs on \<X\>". |
-| Diff in `<index>` § `## Acceptance criteria` (project-level) | substantive | Translate to observable behavior. |
-
-**Heuristic in one question:** *"Could a coding agent in another repo, with only this brief, do something concrete in response to this?"* If no — drop it.
-
-If after filtering nothing substantive remains in a release, say so explicitly: *"This release contains only editorial cleanup of the specification — no system behaviour changes."* Do not pad.
+<!-- include: parts/brief-substance.md -->
 
 ## B. Partitioning the delta map so modules stay whole
 
@@ -50,6 +19,8 @@ A path that matches is a module's main file; a path under `modules/<dir>/` that 
 A module that is too large for one slice stays whole by being cut along its sections, not across modules: read the per-page `size` off the map, and for a page that alone outgrows a slice, take its `sectionMap` (`summaryOnly` with that one path) and hand out consecutive section windows (`sectionOffset` / `sectionLimit`) of that page, covering every position up to `total.sections`.
 
 Entities partition by their own type; a deleted entity travels in the same slice as its type. Every slug and path lands in exactly one slice — a slice never handed out is a silently incomplete brief, and nothing downstream catches it.
+
+**A map too large for one implementation pass.** This genre is the default, and it suits a change one implementer can carry in one pass. When the map, after the substance filter, touches **four or more modules**, or your partition needs **more than six slices**, write nothing yet: tell the user what the map holds (modules touched, entity count by type, the largest pages) and ask whether they want a **workflow brief** instead — a plan of work units implemented with the `c4s-workflow-implementer` skill, rather than an inlined narrative. Then end the turn. On "yes", load `workflows/brief-workflow.md` and follow it; on "no", continue here. A user who asked for a workflow brief in the first place never reaches this file.
 
 **The window shapes the framing.** A closed window (`from_release` and `to_release` both set) is authored from the diff. An open `to` has no second release to diff against: do not run a diff, author from what the thread gives you. A `from_release` of `(initial)` covers everything from the beginning — every entry is a creation, so the brief describes what the system *is*, not what changed; open with `# Initial brief: <to_release>`, which the system pre-fills.
 

@@ -23,7 +23,10 @@ export interface BriefReadResult {
   content: string;
 }
 
-export type PatchKind = 'drift' | 'missing' | 'incorrect' | 'clarification';
+/** The patch kinds `create-patch` accepts — also the `kind` enum of the workflow-implementer skill's deviation schema. */
+export const PATCH_KINDS = ['drift', 'missing', 'incorrect', 'clarification'] as const;
+
+export type PatchKind = (typeof PATCH_KINDS)[number];
 
 export type BriefFsErrorCode = 'INVALID_ARGS' | 'BRIEF_NOT_FOUND' | 'PATCH_WRITE_FAILED';
 

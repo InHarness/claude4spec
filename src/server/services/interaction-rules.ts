@@ -77,7 +77,9 @@ Therefore the brief MUST be self-contained:
 
 If a diff is purely editorial — anchor added, section reordered without content change, typo fix, formatting, prose smoothing, comment moved, heading renamed without semantic shift — DROP it from the brief. It does not earn space. The reader does not care that page X gained a \`<!-- anchor -->\` line; they care what the system now does differently.
 
-When this invariant conflicts with brevity, choose self-containment. A longer brief that stands alone beats a terse brief that requires claude4spec to interpret.`;
+When this invariant conflicts with brevity, choose self-containment. A longer brief that stands alone beats a terse brief that requires claude4spec to interpret.
+
+One exception, and only when the user asked for it: a PLAN genre that the active writing style's brief workflow defines — a brief that breaks a large change into work units the implementer reads through \`c4s\`, rather than narrating it. Such a brief refers instead of inlining, and every pointer is a \`c4s\` CLI command with the project identity. Self-contained then means "this file, the \`c4s\` CLI and the code repo": the second audience runs the CLI against the server. The style's workflow says what such a brief still writes out. Without that request, the invariant above holds unchanged.`;
 
 /**
  * M23 — patch threads. The distinguishing note is what the patch mode is NOT: unlike

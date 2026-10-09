@@ -7,8 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Workflow brief — a second brief genre in the `layered-vertical-slices` style.** For a change too large for one implementation pass (an initial window, or a release that touches many modules), a brief thread can write a *plan of work units* instead of an inlined narrative. Each unit carries:
+  - a goal — one or two sentences on what changes in the system once it is done;
+  - a reading recipe — what to read at the release window, grouped rather than spelled out as commands: pages with per-read section ranges, entities by type and slug (criteria included, under their own type). The window and project identity are stated once and the skill builds the `c4s release-diff` commands, so the implementation stays on the window even after the specification moves on. A part a unit must not build yet is marked `not yet` → the later unit that `completes` it;
+  - its blocking dependencies on earlier units.
+
+  Units are designed, not projected from modules: data before its consumers, stubs avoided by how units are cut, and a wave 0 only for an initial window. They are ordered in waves, with a stub ledger that is usually empty. The brief carries no loop protocol. It points at the `c4s-workflow-implementer` skill, and the delta brief stays the default. When the user asks for a workflow brief, the style routes there directly; when the map is large, `workflows/brief.md` offers it before writing anything. `BRIEF_RULES` gains the one exception this needs: a plan genre the user asked for refers through the `c4s` CLI instead of inlining.
+- **`c4s-workflow-implementer` skill (local, `.claude/skills/`)** — the loop that implements a workflow brief:
+  - set-up checks the connection to the specification, parses the brief once into `.c4s-impl/state.json`, and materializes one prompt per role;
+  - the skill names no entity type: set-up asks the project for its types (`c4s catalog`, `c4s describe`) and plans, per type the recipes read, its role (criteria, built, context), its counterpart in the repo and the test that proves its shape — shown to the user once, to correct;
+  - the brief's content is checked where each unit reads it: a read that does not hold blocks that unit with a deviation while the others go on; the only global check is a green suite before the first unit when resuming an existing repo;
+  - fresh implementer (with a split mode), verifier, reviewer and system-verifier runs;
+  - code review in the loop (`off | per-unit | per-wave`), where blocking findings reopen their portion;
+  - gates, and deviations shipped as `c4s create-patch`;
+  - user defaults in `defaults.md`, and adapters for a Claude Code session, Claude Code headless and Codex, with a reference driver (`driver-reference.mjs`, with `--dry-run` and a stub adapter).
+
+  `c4s-brief-implementer` hands a workflow brief over to this skill. The generated template stops and tells the user when the skill is not installed. `PATCH_KINDS` is now exported from `src/core/briefs`.
+
 ### Fixed
 
+- The `/` slash palette in the chat composer now opens above the caret when there is no room below it, like the `@` mention popup. Both popups share one placement function and re-measure as the listing changes height.
 - Agent turns on the default model no longer fail with `400 Claude Code 2.1.263 does not support this model`. `@anthropic-ai/claude-agent-sdk` is raised to `^0.3.280` (resolved 0.3.284), so the SDK's bundled Claude Code CLI is 2.1.284.
 
 ## [2.1.0] - 2026-09-29

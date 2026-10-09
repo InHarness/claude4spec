@@ -49,11 +49,13 @@ describe('c4s-plugin-layered-vertical-slices — the writing style it contribute
     // the style's own prose cross-references, so the map's shape is part of the
     // contribution rather than an implementation detail of it.
     expect(Object.keys(style.files ?? {}).sort()).toEqual([
+      'templates/brief-workflow.md',
       'templates/index.md',
       'templates/layer.md',
       'templates/module.md',
       'workflows/apply.md',
       'workflows/bootstrap.md',
+      'workflows/brief-workflow.md',
       'workflows/brief.md',
       'workflows/patch.md',
       'workflows/plan.md',
@@ -279,6 +281,86 @@ describe('c4s-plugin-layered-vertical-slices — the writing style it contribute
       const comment = section.indexOf('<!--');
       const body = comment === -1 ? section : section.slice(0, comment);
       expect({ file, checklist: /^- \[ \] /m.test(body) }).toEqual({ file, checklist: true });
+    }
+  });
+
+  /**
+   * TWO BRIEF GENRES, ONE ROUTE EACH.
+   *
+   * The delta brief stays the default; the workflow brief is reached when the
+   * user asks for it, or when `brief.md` offers it for a map too large for one
+   * pass. What can break: a route that no longer names the file, an offer that
+   * no longer points at it, or a workflow that no longer points at its template
+   * and at the skill that runs the plan.
+   */
+  it('routes a workflow brief to its own workflow, which hands the plan to the implementer skill', () => {
+    const brief = style.files?.['workflows/brief.md'] ?? '';
+    const workflow = style.files?.['workflows/brief-workflow.md'] ?? '';
+    expect(style.content).toContain('`workflows/brief-workflow.md` when the user asks for a workflow brief');
+    expect(brief).toContain('load `workflows/brief-workflow.md`');
+    expect(brief).toContain('`c4s-workflow-implementer` skill');
+    expect(workflow).toContain('`templates/brief-workflow.md`');
+    expect(workflow).toContain('`c4s-workflow-implementer`');
+    // The loop is the skill's: no handbook travels with the style any more.
+    expect(Object.keys(style.files ?? {}).filter((k) => k.startsWith('handbook/'))).toEqual([]);
+    // Both genres classify the same map with the same table, delivered from one part.
+    expect(includeUsage['parts/brief-substance.md']).toBe(2);
+    for (const doc of [brief, workflow]) expect(doc).toContain('## A. Spec-format vs feature substance');
+  });
+
+  /**
+   * The unit format is the brief → skill contract: the skill's set-up lifts it
+   * into its state once, by these labels. A template that drops one ships a
+   * plan the skill cannot read.
+   */
+  it('gives the workflow-brief template the plan sections and the fixed unit format', () => {
+    const template = style.files?.['templates/brief-workflow.md'] ?? '';
+    for (const heading of ['## Release', '## Conventions', '## Units', '## Order', '## How to run']) {
+      expect({ heading, present: template.includes(heading) }).toEqual({ heading, present: true });
+    }
+    for (const label of ['- Goal:', '- Depends on:', '- Read:']) {
+      expect({ label, present: template.includes(label) }).toEqual({ label, present: true });
+    }
+    // The recipe names what to read; the skill builds the commands. The window
+    // and the identity stand once in ## Release, never per unit.
+    const units = template.slice(template.indexOf('## Units'), template.indexOf('## Order'));
+    expect(units).not.toContain('c4s release-diff');
+    for (const line of ['  - page `<key>` — change:', '  - <entity-type>:', '    - not yet:']) {
+      expect({ line, present: units.includes(line) }).toEqual({ line, present: true });
+    }
+    expect(units).toContain('completes:');
+    // The skill asks the project for its entity types; the brief names no role alias.
+    expect(units).not.toContain('criteria:');
+  });
+
+  /**
+   * The plan is pinned to the brief's window. Every CLI reader of pages and
+   * entities reads the live state, which by implementation time has usually
+   * moved past the window's `to` end; `release-diff` is the only read at a
+   * release. A live reader in a recipe would point the loop at a
+   * specification the brief never described.
+   */
+  it('reads the specification only through release-diff, pinned to the window', () => {
+    const live = /\bc4s (?:get-sections|get-entities|list-entities|get-page-outline|get-page|list-pages|search-pages|search-entities)\b|`(?:get-sections|get-entities|list-entities|get-page-outline)`/;
+    const genre = Object.entries(style.files ?? {}).filter(
+      ([k]) => k === 'workflows/brief-workflow.md' || k === 'templates/brief-workflow.md',
+    );
+    expect(genre.length).toBe(2);
+    for (const [file, text] of genre) {
+      expect({ file, live: live.exec(text)?.[0] ?? null }).toEqual({ file, live: null });
+    }
+    expect(style.files?.['templates/brief-workflow.md']).toContain('c4s release-diff --from initial --to <to>');
+    // The window is the pin: the workflow no longer refuses a specification that moved on.
+    expect(style.files?.['workflows/brief-workflow.md']).not.toMatch(/toIdOrName: "current"/);
+  });
+
+  /**
+   * The prototype shipped deviations through `c4s file-patch`, a command that
+   * does not exist; the CLI's command is `create-patch`.
+   */
+  it('names no phantom CLI command', () => {
+    for (const [file, text] of Object.entries(style.files ?? {})) {
+      expect({ file, phantom: text.includes('file-patch') }).toEqual({ file, phantom: false });
     }
   });
 

@@ -3,6 +3,7 @@ import Suggestion, { type SuggestionOptions, type SuggestionProps } from '@tipta
 import { PluginKey } from '@tiptap/pm/state';
 import { ReactRenderer } from '@tiptap/react';
 import { setSuggestionPopupOpen } from '../suggestionState.js';
+import { positionSuggestionPopup } from '../suggestionPopupPosition.js';
 import {
   getRegisteredMentionSources,
   type EditorContextId,
@@ -79,23 +80,7 @@ function buildSuggestionPlugin(
       const updatePos = (rect: DOMRect | null) => {
         if (!popup || !rect) return;
         lastRect = rect;
-        const popupH = popup.offsetHeight || 0;
-        const popupW = popup.offsetWidth || 0;
-        const margin = 6;
-        const spaceBelow = window.innerHeight - rect.bottom;
-        const spaceAbove = rect.top;
-        // Flip above when there is not enough room below AND there is more room above.
-        // Typical trigger in chat composer at the viewport bottom.
-        const flipUp = popupH > 0 && spaceBelow < popupH + margin && spaceAbove > spaceBelow;
-        const top = flipUp
-          ? rect.top - margin - popupH + window.scrollY
-          : rect.bottom + margin + window.scrollY;
-        let left = rect.left + window.scrollX;
-        if (popupW > 0 && left + popupW > window.innerWidth - 8) {
-          left = Math.max(8, window.innerWidth - popupW - 8);
-        }
-        popup.style.top = `${top}px`;
-        popup.style.left = `${left}px`;
+        positionSuggestionPopup(popup, rect);
       };
 
       return {

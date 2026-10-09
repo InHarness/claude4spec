@@ -8,5 +8,5 @@ export type {
   PatchKind,
   BriefFsErrorCode,
 } from './types.js';
-export { BriefFsError } from './types.js';
+export { BriefFsError, PATCH_KINDS } from './types.js';
 export type { WritePatchOpts, WritePatchResult } from './create-patch.js';

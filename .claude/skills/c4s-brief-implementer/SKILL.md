@@ -45,6 +45,8 @@ c4s get-brief <brief-path> --project 'app-spec' --workspace 'default'
 
 The body contains everything you need — entity snapshots, section diffs, the narrative of what changes, and acceptance criteria. Read it and implement it; you do not need to understand how the brief was produced. **Do not read the main specification.**
 
+**A workflow brief is the exception.** When the brief's heading reads `# Workflow brief:` or `# Initial workflow brief:`, it is not a one-pass narrative but a **plan of work units**: each with a goal, a reading recipe of `c4s release-diff` commands pinned to the brief's window, and its dependencies, ordered in waves. Implement it with the **`c4s-workflow-implementer`** skill, not with the steps below: that skill sets up the loop (its own isolation, state in `.c4s-impl/`, fresh implementer, verifier and reviewer runs), reads the specification through the recipes, and ships deviations through `c4s create-patch`. If that skill is not installed in this repo, stop and tell the user — do not implement a plan brief as a narrative.
+
 If the brief is unclear — a missing detail, an ambiguous wording, a decision you'd otherwise have to guess — **never ask the user an open content question about it.** Check the spec first, always, whenever the channel below is available; the user only ever gets a non-blocking FYI notice after the fact, never a question to answer.
 
 **1. Check the spec (mandatory first attempt when available).** Ask the specification agent in the same terminal and continue once you have an answer. Two distinct commands, by what context you need.

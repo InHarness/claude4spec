@@ -27,7 +27,7 @@ from memory. The thread type is in `<interaction_context type="…">`.
 
 | The thread | Workflow |
 | --- | --- |
-| `type="brief"` | `workflows/brief.md` |
+| `type="brief"` | `workflows/brief-workflow.md` when the user asks for a workflow brief; otherwise `workflows/brief.md` |
 | `type="patch"` | `workflows/patch.md` |
 | no `<index>` yet | `workflows/bootstrap.md` |
 | anything else | `workflows/read.md` first, once per thread. A question ends there. Then `workflows/plan.md` when the turn must place a change — plan mode, an idea, a complaint — or `workflows/apply.md` when it changes the spec — an approved plan, an edit whose place is stated. |
