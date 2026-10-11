@@ -95,6 +95,17 @@ describe('patch-tools (thread-bound)', () => {
     expect(tools.find((t) => t.name === 'mark_patch_applied')?.annotations?.readOnlyHint).toBeUndefined();
   });
 
+  it('[section:bpejzx03] internal rendering: no isolation declared for patches, so `path` is in the schema and optional on both tools', async () => {
+    const { tools } = await client.listTools();
+    for (const name of PATCH_THREAD_TOOL_NAMES) {
+      const schema = tools.find((t) => t.name === name)?.inputSchema as { properties?: Record<string, unknown>; required?: string[] };
+      expect(schema.properties, name).toHaveProperty('path');
+      expect(schema.required ?? [], name).not.toContain('path');
+    }
+    // Omitting it addresses the thread's own patch (the binding matrix supplies it).
+    expect((await call('get_patch', {})).body.path).toBe('p.md');
+  });
+
   it('every patch operation with internal = direct has a tool here, and the counts match', () => {
     registerCoreOperations();
     const internalDirect = CATALOG.list()

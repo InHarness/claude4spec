@@ -32,3 +32,12 @@ Implementation-only decisions (no user-observable effect) and set-up choices.
 
 - `katalog-operacji-m10` (spreadsheet) — one part: `built`, items: every operation row, key: `nazwa`. Why: each row is an operation registered in the core operation catalog (channels, addressing, rules, error codes) — system structure.
 - `katalog-operacji-m21` (spreadsheet) — same classification, for the brief operations.
+- u1 split: 1 portion (packet 26 KB); no entities in recipe → criteria are the changed sections bpejzx03, m36bind01, jg79a7q4.
+
+## u1-izolacja-adresowania / p1-l3-l3 (implementer, round 1)
+
+- The `explicit-addressing` rule lives in `src/server/operations/addressing.ts` (M43 is the L3 rule owner): `addressingParamShape(channel, ownerDeclaresIsolation)` → `required` (cli/mcp/rest) | `optional` (internal, default) | `absent` (internal, isolation exception); `addressingParam(name, shape, schema)` renders it into a zod raw shape.
+- Owner isolation declarations are a separate table (`OWNER_THREAD_ISOLATION`, keyed by artifact kind, value = citation of the owner's declaration), NOT a field of the M36 `artifactRegistry` entry: M36's matrix only supplies the address (m36bind01), and the existing registry test pins entries to `binding` + `danglingPolicy`. Empty in u1 — u2 adds the M10 plan declaration and wires plan-tools.
+- M36 supplies the address through `bindingAddress(kind, thread)` in `artifact-registry.ts` (reads the kind's `binding.threadColumn` off a loaded thread).
+- `patch-tools` now renders its `path` through the rule (M23 declares no isolation → optional): no behaviour change. `plan-tools` / `brief-tools` are not wired in u1: plan-tools' internal shape (already no `path`) becomes the rule's `absent` once u2 declares plan isolation; brief-tools is dev-0001.
+- Criteria are the changed section anchors; tests are named `[section:<anchor>]` (addressing.test.ts, artifact-registry.test.ts, patch-tools.test.ts). No entities → no trace.md lines.

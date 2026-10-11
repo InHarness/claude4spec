@@ -117,6 +117,38 @@ export function artifactEntry(kind: ArtifactKind): ArtifactRegistryEntry {
 }
 
 /**
+ * 2.1.13 (m36bind01, jg79a7q4) — the binding matrix SUPPLIES the address; it
+ * does not shape the parameter.
+ *
+ * The `chat_thread` column says which artifact is pinned to the thread — i.e.
+ * where the `internal` rendering takes its address from — for all three kinds,
+ * from one source. Whether the operation's addressing parameter is required,
+ * optional or absent in a channel is NOT decided here: that is M43's
+ * `explicit-addressing` rule, including its isolation exception, switched on by
+ * the owner of the kind (`operations/addressing.ts`).
+ */
+export interface ThreadArtifactPointers {
+  briefPath: string | null;
+  patchPath: string | null;
+  planPath: string | null;
+}
+
+/** `binding.threadColumn` → the field of a loaded thread that holds it. */
+const THREAD_FIELD_OF_COLUMN: Readonly<Record<string, keyof ThreadArtifactPointers>> = {
+  brief_path: 'briefPath',
+  patch_path: 'patchPath',
+  plan_path: 'planPath',
+};
+
+/** The address the matrix supplies for this kind on this thread — `null` when nothing is pinned. */
+export function bindingAddress(kind: ArtifactKind, thread: ThreadArtifactPointers): string | null {
+  const field = THREAD_FIELD_OF_COLUMN[artifactEntry(kind).binding.threadColumn];
+  if (!field) throw new Error(`artifact kind '${kind}' binds an unknown chat_thread column`);
+  const value = thread[field];
+  return typeof value === 'string' && value !== '' ? value : null;
+}
+
+/**
  * 0.2.40 — the four positions of the artifact read family, per kind. Documentation
  * with a test behind it; nothing branches on these strings.
  */

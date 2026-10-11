@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { createMcpServer, mcpTool, type CapturedMcpServer } from '../plugin-runtime/index.js';
 import { toolFailure, toolSuccess } from '../operations/envelope.js';
 import type { PatchService } from '../services/patch.js';
+import { addressingParam, artifactAddressingShape } from '../operations/addressing.js';
 
 /**
  * M23 `patch-tools` — the patch thread's own artifact server (2.1.4).
@@ -12,8 +13,10 @@ import type { PatchService } from '../services/patch.js';
  * to the patch's content — the system prompt carries its address and
  * frontmatter, never its body or hash.
  *
- * The patch is addressed by `chat_thread.patch_path`, closed over here; `path`
- * is optional on both tools and defaults to it.
+ * The patch is addressed by `chat_thread.patch_path`, closed over here. The
+ * SHAPE of `path` is not decided here: M43's `explicit-addressing` rule renders
+ * it (2.1.13). M23 declares no thread isolation for patches, so in this
+ * `internal` rendering `path` is optional and defaults to the thread's patch.
  *
  * Invariant (catalog): every patch operation with `internal = direct` has a tool
  * here, and nothing else does — today `get_patch` and `mark_patch_applied`.
@@ -30,10 +33,11 @@ export interface PatchThreadToolsContext {
 /** Tool names this server mounts — read by the catalog invariant test. */
 export const PATCH_THREAD_TOOL_NAMES = ['get_patch', 'mark_patch_applied'] as const;
 
-const PATH_ARG = z
-  .string()
-  .optional()
-  .describe('Patch path relative to the patches directory. Omit to address the patch of the current thread.');
+const PATH_ARG = addressingParam(
+  'path',
+  artifactAddressingShape('patch', 'internal'),
+  z.string().describe('Patch path relative to the patches directory. Omit to address the patch of the current thread.'),
+);
 
 export function buildPatchToolsServer(
   ctx: PatchThreadToolsContext,
@@ -54,7 +58,7 @@ export function buildPatchToolsServer(
     'get_patch',
     "Read the patch this thread is anchored in — content, frontmatter and hash. This is the ONLY way to the patch's content: the system prompt carries the patch's path and frontmatter, never its body. `path` is optional here: omit it and the patch of the current thread is resolved for you; that is the normal call. For a long patch, or when a response comes back truncated, read it in windows with `range`.",
     {
-      path: PATH_ARG,
+      ...PATH_ARG,
       range: z
         .object({ start: z.number().int().positive(), end: z.number().int().positive() })
         .optional()
@@ -94,7 +98,7 @@ export function buildPatchToolsServer(
       applied: z
         .boolean()
         .describe('Only `true` is accepted from the agent channel. Passing `false` is refused — unset the flag in the UI instead.'),
-      path: PATH_ARG,
+      ...PATH_ARG,
     },
     async (args) => {
       try {
