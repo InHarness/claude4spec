@@ -84,14 +84,13 @@ describe.skipIf(!BASE)('workspace root & welcome routing', () => {
   });
 
   /**
-   * NOTE: this AC's text in the spec still ends with „nawigacja na / → strona
-   * »no projects«" — the pre-0.1.137 wording. Release 0.1.136→0.1.137 replaced
-   * that page with `/welcome` as the unconditional root target, so the case
-   * below asserts the BRIEF's behavior (the authority for this release) and the
-   * stale AC text is reported back to the spec author as a drift patch. The
-   * test is not bent to the code, and the code is not bent to a stale AC.
+   * The browser half of a removal that empties the workspace: the server's
+   * `/` → `/welcome` redirect actually followed. (The criterion
+   * `ac-purge-ostatniego-projektu-workspace-u` is proven without the app in
+   * DangerZoneElement.render.test.ts + workspace-projects.test.ts; this case
+   * detaches rather than purges, so it keeps the environment's data.)
    */
-  it('[ac:ac-po-udanym-usunieciu-projektu-detach-lub] detaching the last project lands the UI on /welcome', async () => {
+  it('detaching the last project lands the UI on /welcome', async () => {
     const project = await ensureProject();
     await completeOnboarding(project.id);
     page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
@@ -139,8 +138,8 @@ describe.skipIf(!BASE)('workspace root & welcome routing', () => {
 
     // The warning must state what is destroyed and what is left alone.
     const body = await page.locator('body').innerText();
-    expect(body).toMatch(/cannot be recovered/i);
-    expect(body).toMatch(/Nothing in the project directory is touched/i);
+    expect(body).toMatch(/will be lost permanently/i);
+    expect(body).toMatch(/in the project directory stay untouched/i);
 
     // Deliberately NOT clicking confirm — this case verifies the gate, and
     // purging would destroy the environment's project data.

@@ -1,5 +1,5 @@
 {
-  "iteration": 5,
+  "iteration": 9,
   "conventions": [
     {
       "label": "L5 (UI) — implementor nie jest wskazany na stronie warstwy",
@@ -328,14 +328,34 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "m31-remove-project-ui/p1-l5-l17",
+          "layers": [
+            "L5",
+            "L17"
+          ],
+          "slugs": [
+            "ac-dodanie-z-modala-sciezki-nieistniejac",
+            "ac-dodanie-z-modala-sciezki-nieistniejac-2",
+            "ac-purge-ostatniego-projektu-workspace-u",
+            "ac-po-udanym-usunieciu-projektu-detach-lub",
+            "welcome-page"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "1b46cf7cda7f5eb5b8aee6ae12dda3ecbc93714f",
+      "baseCommit": "1b46cf7cda7f5eb5b8aee6ae12dda3ecbc93714f",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       }
     }
   ],
