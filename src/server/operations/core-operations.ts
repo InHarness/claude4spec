@@ -1079,14 +1079,27 @@ export function registerCoreOperations(): void {
     channels: fullParity(),
   });
 
+  /**
+   * 2.1.13 — M10 thread isolation (`m10mcp00`): the plan operations' `path` is
+   * REQUIRED externally and ABSENT in `internal` (M43 `explicit-addressing`,
+   * isolation exception — `OWNER_THREAD_ISOLATION.plan`). The raw shape below is
+   * the superset; each rendering shapes it through `addressing.ts`. No thread
+   * default for an optional `path` exists any more. A thread with nothing pinned
+   * reads `plan: null`; PLAN_NOT_FOUND is the code of an unknown `path` only.
+   * Read, edit and the version axis have no `cli` command.
+   */
+  const PLAN_PATH_DESC = 'Plan path relative to the plans root (.claude4spec/plans). Required on every external channel; ABSENT in `internal`, where M10 declares thread isolation and the plan is the one pinned to the thread (`chat_thread.plan_path`).';
+  const PLAN_NO_CLI = 'no `c4s` command: the only real callers are the agent in a thread and the user in the UI, not a person at a terminal';
+
   CATALOG.register({
     name: 'get_plan',
-    summary: 'Read a plan: content, frontmatter and version number.',
+    summary:
+      "Read a plan: content, frontmatter, version number and hash, optionally through a 1-based inclusive line window (`range`). A thread with no plan pinned reads `plan: null`; an unknown `path` is PLAN_NOT_FOUND. A plan over the response budget comes back `truncated: true` with a `truncationHint` pointing at `range`.",
     scope: 'project',
     mediation: 'direct',
     opClass: 'plan',
     inputSchema: {
-      path: z.string().optional().describe('Plan path relative to the plans root (.claude4spec/plans). Defaulted from the thread only in the `internal` channel.'),
+      path: z.string().optional().describe(PLAN_PATH_DESC),
       range: z
         .object({ start: z.number().int().positive(), end: z.number().int().positive() })
         .optional()
@@ -1094,12 +1107,12 @@ export function registerCoreOperations(): void {
           '1-based inclusive line window. Unconditionally allowed — a plan never enters `section_index`. A `start` past the end of the file is INVALID_ARGUMENT stating the size.',
         ),
     },
-    errorCodes: ['NOT_FOUND', 'INVALID_ARGUMENT'],
+    errorCodes: ['PLAN_NOT_FOUND', 'INVALID_ARGUMENT'],
     sideEffects: ['none'],
     idempotent: true,
     channels: {
       internal: direct(),
-      cli: na('no `c4s get-plan` command: a plan is addressed by the thread that drafts it, and M10 has no CLI section'),
+      cli: na(PLAN_NO_CLI),
       mcp: direct(),
       rest: direct(),
     },
@@ -1113,7 +1126,7 @@ export function registerCoreOperations(): void {
     mediation: 'direct',
     opClass: 'plan',
     inputSchema: {
-      path: z.string().optional(),
+      path: z.string().optional().describe(PLAN_PATH_DESC),
       title: z.string().optional().describe('Required when the thread has no plan yet — this call creates it.'),
       /**
        * 0.2.43 — the top-level `action` is GONE, and so are `anchor` and
@@ -1151,21 +1164,23 @@ export function registerCoreOperations(): void {
       expectedHash: z.string().optional().describe('REQUIRED except on the call that creates the plan.'),
       changeSummary: z.string(),
     },
+    /**
+     * 2.1.13 — the row's nine codes (`katalog-operacji-m10`). `IMMUTABLE_FIELD`
+     * is the `rest` rendering's (the editor save, `PUT /api/artifacts/plan/<path>/content`
+     * → `updateContent`); `VALIDATION` / `NOT_FOUND` left: the internal mount has
+     * no `path` to validate and always runs in an existing thread, and a missing
+     * external `path` is INVALID_ARGUMENT.
+     */
     errorCodes: [
-      'PLAN_NOT_FOUND',
-      'MISSING_TITLE',
       'PLAN_CONFLICT',
-      'VALIDATION',
-      'INVALID_ARGUMENT',
+      'PLAN_NOT_FOUND',
       'SECTION_NOT_FOUND',
       'AMBIGUOUS_ANCHOR',
       'FIND_NOT_FOUND',
       'MATCH_COUNT_MISMATCH',
-      // The create branch attaches the new plan to the calling thread, and a
-      // thread that does not exist is this operation's own NOT_FOUND. Not
-      // IMMUTABLE_FIELD: that one is thrown by the editor's save route
-      // (`updateContent`), which is a different operation.
-      'NOT_FOUND',
+      'MISSING_TITLE',
+      'IMMUTABLE_FIELD',
+      'INVALID_ARGUMENT',
     ],
     sideEffects: ['file', 'db', 'ui-notify'],
     /**
@@ -1182,7 +1197,62 @@ export function registerCoreOperations(): void {
      * every channel's description rather than hidden behind a boolean.
      */
     idempotent: false,
-    channels: fullParity(),
+    channels: {
+      internal: direct(),
+      cli: na(PLAN_NO_CLI),
+      mcp: direct(),
+      rest: direct(),
+    },
+  });
+
+  /** 2.1.13 — the plan's version axis (`file_version`, rootId `plans`): metadata only, oldest first. */
+  CATALOG.register({
+    name: 'list_plan_versions',
+    summary:
+      "A plan's version history from `file_version` — metadata without content, oldest first (offset 0 is version 1), windowed by `limit` / `offset`. A thread with no plan pinned lists nothing; an unknown `path` is PLAN_NOT_FOUND.",
+    scope: 'project',
+    mediation: 'direct',
+    opClass: 'plan',
+    inputSchema: {
+      path: z.string().optional().describe(PLAN_PATH_DESC),
+      ...paging,
+    },
+    errorCodes: ['PLAN_NOT_FOUND', 'INVALID_ARGUMENT'],
+    sideEffects: ['none'],
+    idempotent: true,
+    channels: {
+      internal: direct(),
+      cli: na(PLAN_NO_CLI),
+      mcp: direct(),
+      // GET /api/artifacts/plan/<path>/versions — the plan adapter's `listVersions`
+      // (routes/artifacts.ts): PLAN_NOT_FOUND for an unknown path.
+      rest: direct(),
+    },
+  });
+
+  CATALOG.register({
+    name: 'get_plan_version',
+    summary:
+      'One version snapshot of a plan, with its content, addressed by `(path, version)`. An unknown `path` is PLAN_NOT_FOUND; a version off the plan\'s axis is INVALID_ARGUMENT.',
+    scope: 'project',
+    mediation: 'direct',
+    opClass: 'plan',
+    inputSchema: {
+      path: z.string().optional().describe(PLAN_PATH_DESC),
+      version: z.number().int().positive(),
+    },
+    errorCodes: ['PLAN_NOT_FOUND', 'INVALID_ARGUMENT'],
+    sideEffects: ['none'],
+    // A version snapshot is immutable.
+    idempotent: true,
+    channels: {
+      internal: direct(),
+      cli: na(PLAN_NO_CLI),
+      mcp: direct(),
+      // GET /api/artifacts/plan/<path>/versions/:version — the plan adapter's
+      // `getVersion`: PLAN_NOT_FOUND / INVALID_ARGUMENT, as on mcp.
+      rest: direct(),
+    },
   });
 
   /**
@@ -1203,7 +1273,7 @@ export function registerCoreOperations(): void {
     mediation: 'direct',
     opClass: 'plan',
     inputSchema: {
-      path: z.string().optional().describe('Plan path relative to the plans root (.claude4spec/plans). Defaulted from the thread only in the `internal` channel.'),
+      path: z.string().optional().describe(PLAN_PATH_DESC),
       applied: z.boolean().describe('Must be true from a non-user channel.'),
     },
     /**
@@ -1215,7 +1285,10 @@ export function registerCoreOperations(): void {
      * guard stays reachable through the generic REST frontmatter route, which
      * has its own row.
      */
-    errorCodes: ['NOT_FOUND', 'INVALID_ARGUMENT', 'VALIDATION'],
+    // 2.1.13 — the row's two codes: PLAN_NOT_FOUND for an unknown external
+    // `path`; INVALID_ARGUMENT for `applied: false` and for a thread with no plan
+    // pinned (ASSUMPTION:dev-0002).
+    errorCodes: ['PLAN_NOT_FOUND', 'INVALID_ARGUMENT'],
     // No `db`: a frontmatter-only plan write deliberately records no
     // `file_version` row, so the plan's version history is untouched.
     sideEffects: ['file', 'ui-notify'],
@@ -1224,13 +1297,45 @@ export function registerCoreOperations(): void {
     idempotent: true,
     channels: {
       internal: direct(),
-      // Deliberately no `c4s` command — M10 has no CLI section, and the flag is
-      // declared by the agent that ran the plan, which is never the terminal.
-      cli: na('no c4s command: the declarant is the in-thread agent, not a terminal'),
+      // Deliberately no `c4s` command — the flag is declared by the agent that
+      // ran the plan, which is never the terminal.
+      cli: na('no c4s command: the only real caller finishes executing the plan in a thread, not at a terminal'),
       mcp: direct(),
-      // Rendered by the generic artifact family rather than a route of its own:
-      // PATCH /api/artifacts/plan/:path/frontmatter with { applied }.
-      rest: via('update_artifact_frontmatter', 'generic artifact-family endpoint — M10 adds no dedicated route'),
+      // 2.1.13 — the row says `direct`: the rendering is
+      // PATCH /api/artifacts/plan/<path>/frontmatter with { applied }, which calls
+      // PlanService.updateFrontmatter — the same core function, not a proxy
+      // operation (`update_artifact_frontmatter` is not a catalog row).
+      rest: direct(),
+    },
+  });
+
+  /**
+   * 2.1.13 — `execute_plan`, sheet `katalog-operacji-m10` row 8: handing control
+   * back to the user is a decision, not the execution of someone else's, so the
+   * row is `human-mediated` and renders on `rest` only —
+   * `POST /api/plans/:planId/create-thread` (`attachThreadToPlan`): a new thread
+   * with the plan pinned, the execution prompt landing in the composer as an
+   * editable draft. No tool renders it, so no profile's reach changes.
+   */
+  CATALOG.register({
+    name: 'execute_plan',
+    summary:
+      'Open a new thread over a plan, with the plan pinned to it; the execution prompt lands in the composer as an editable draft. User-initiated. An unknown plan is PLAN_NOT_FOUND.',
+    scope: 'project',
+    mediation: 'human-mediated',
+    opClass: 'plan',
+    inputSchema: {
+      planId: z.string().describe('The plan the thread opens over (its path relative to the plans root).'),
+    },
+    errorCodes: ['PLAN_NOT_FOUND', 'INVALID_ARGUMENT'],
+    sideEffects: ['db', 'ui-notify'],
+    // Every trigger opens a new thread.
+    idempotent: false,
+    channels: {
+      internal: na('a user-initiated act; the review of this classification is open'),
+      cli: na('a user-initiated act; the review of this classification is open'),
+      mcp: na('a user-initiated act; the review of this classification is open'),
+      rest: direct(),
     },
   });
 
@@ -1288,7 +1393,13 @@ export function registerCoreOperations(): void {
         ),
       suffix: z.string().optional().describe('Appended to the generated file slug; settles a collision.'),
     },
-    errorCodes: ['VALIDATION', 'BRIEF_SAME_RELEASE', 'NOT_FOUND'],
+    /**
+     * 2.1.13 — the row's two codes. An end of the window naming no release is
+     * `VALIDATION` (`BriefService.requireWindowRelease`): the window is an input,
+     * not a resource the operation reads — it used to leak the release store's
+     * own code, undeclared here.
+     */
+    errorCodes: ['VALIDATION', 'BRIEF_SAME_RELEASE'],
     sideEffects: ['file', 'db', 'ui-notify'],
     /**
      * `literal`: the caller hands over finished text, exactly as `create_patch`
@@ -1319,9 +1430,15 @@ export function registerCoreOperations(): void {
    * item 23 moved `c4s list-briefs` onto its server route and the command had no
    * operation to name.
    *
-   * `internal` is `na`: the built-in agent working on a brief already has one,
-   * addressed by the thread. Listing the others is a navigation question a
-   * consultant asks, not something a brief-scoped turn needs.
+   * 2.1.13 — `internal` is `direct`, as the M21 row declares it, and it is a
+   * declaration WITHOUT a rendering: `brief-tools` does not render it, and M21
+   * says so in writing ("jej komórka `internal` jest dziś deklaracją bez
+   * pokrycia", `01ytpznn`) — it waits for the routing rule, like `create_brief`'s
+   * `mcp`. (Until 2.1.12 the code wrote `na` here, a value the row never had.)
+   *
+   * Paging is the row's: `limit` / `offset`, with `total` counted AFTER the
+   * `implemented` filter and before the window (`c4s list-briefs`; REST pages on
+   * `?limit` / `?offset` the same way).
    */
   CATALOG.register({
     name: 'list_briefs',
@@ -1334,12 +1451,13 @@ export function registerCoreOperations(): void {
         .boolean()
         .optional()
         .describe('Narrow to implemented (true) or pending (false). Omit for all.'),
+      ...paging,
     },
     errorCodes: ['VALIDATION'],
     sideEffects: ['none'],
     idempotent: true,
     channels: {
-      internal: na('a brief-scoped turn is already addressed at its brief; listing the others is a navigation question, not part of the work'),
+      internal: direct(),
       cli: direct(),
       mcp: direct(),
       rest: direct(),
@@ -1352,11 +1470,19 @@ export function registerCoreOperations(): void {
     scope: 'project',
     mediation: 'direct',
     opClass: 'brief',
-    // The `brief` profile makes this REQUIRED — see `profiles.ts`. An external
-    // connection has no ambient brief, and silently defaulting to "the" brief is
-    // how a patch gets filed against the wrong one.
+    /**
+     * 2.1.13 — addressing is `path` (+ the read window `range?`), under the
+     * `explicit-addressing` rule (M43, `addressing.ts`): the row no longer
+     * declares an `internal` default from `chat_thread.brief_path` — binding the
+     * brief through the thread is a rendering of the `internal` channel
+     * (`brief-tools`' thread mount), not a contract of the operation. Every
+     * external rendering requires `path` (the `brief` profile, `profiles.ts`).
+     *
+     * Codes: `BRIEF_NOT_FOUND` for an unknown path, `INVALID_ARGUMENT` for a
+     * window starting past the end of the file (stating its size) or malformed.
+     */
     inputSchema: {
-      path: z.string().optional().describe('Brief path relative to the briefs root (.claude4spec/briefs). Required on an external connection.'),
+      path: z.string().optional().describe('Brief path relative to the briefs root (.claude4spec/briefs). Required on every external channel.'),
       range: z
         .object({ start: z.number().int().positive(), end: z.number().int().positive() })
         .optional()
@@ -1364,7 +1490,7 @@ export function registerCoreOperations(): void {
           '0.2.40 — 1-based inclusive line window. Unconditionally allowed: an artifact never enters `section_index`, so there is no `sectionIndexed` gate and no second way to resume a large read. A `start` past the end of the file is INVALID_ARGUMENT stating the size.',
         ),
     },
-    errorCodes: ['NOT_FOUND', 'VALIDATION', 'INVALID_ARGUMENT'],
+    errorCodes: ['BRIEF_NOT_FOUND', 'INVALID_ARGUMENT'],
     sideEffects: ['none'],
     idempotent: true,
     channels: fullParity(),
@@ -1391,13 +1517,17 @@ export function registerCoreOperations(): void {
       changeSummary: z.string().optional(),
     },
     /**
-     * 0.2.86 — the codes the renderings actually raise. `BRIEF_NOT_FOUND` was
-     * declared and unreachable (the service throws `NOT_FOUND`; only the CLI
-     * renames it), and `IMMUTABLE_FIELD` / `MISSING_TARGET` / `AMBIGUOUS_HEADING`
-     * were raised and undeclared.
+     * 0.2.86 — the codes the renderings actually raise. 2.1.13 — the row's four
+     * (`BRIEF_NOT_FOUND`, `BRIEF_CONFLICT`, `IMMUTABLE_FIELD`, `VALIDATION`):
+     * the service now answers an unknown path with `BRIEF_NOT_FOUND` itself
+     * instead of the generic `NOT_FOUND` the CLI used to rename.
+     *
+     * ASSUMPTION:dev-0011 — plus the codes of the differential `textEdits` shape
+     * the rendering keeps beside the row's literal one (`INVALID_ARGUMENT`,
+     * `MISSING_TARGET`, `FIND_NOT_FOUND`, `MATCH_COUNT_MISMATCH`).
      */
     errorCodes: [
-      'NOT_FOUND',
+      'BRIEF_NOT_FOUND',
       'BRIEF_CONFLICT',
       'VALIDATION',
       'INVALID_ARGUMENT',
@@ -1416,6 +1546,43 @@ export function registerCoreOperations(): void {
     channels: fullParity(),
   });
 
+  /**
+   * 2.1.13 — `mark_brief_implemented`, the M21 row that had no catalog entry.
+   *
+   * Sets the one mutable frontmatter field, `implemented`. Addressing is `path`
+   * (`explicit-addressing`; the row no longer declares an `internal` default
+   * from the thread). Renderings: `c4s mark-brief-implemented` (cli, true only)
+   * and `PATCH /api/artifacts/brief/<path>/frontmatter { implemented }` (rest,
+   * the UI's two-way toggle). `internal` is `direct` with NO `brief-tools` tool:
+   * the `brief` context profile does not expose it (M21 `01ytpznn` — "zawężenie
+   * na poziomie profilu, a nie wartość komórki"; `implemented` is the
+   * implementer's or the human's fact, not the brief author's). `mcp` is a
+   * declaration ahead of its rendering, as `create_brief`'s is.
+   *
+   * Idempotent: a repeat at the value the file already holds writes nothing
+   * (`BriefService.updateFrontmatter`). Codes: `BRIEF_NOT_FOUND` for an unknown path,
+   * `IMMUTABLE_FIELD` for any other frontmatter key (the M36 family guard).
+   */
+  CATALOG.register({
+    name: 'mark_brief_implemented',
+    summary: "Set a brief's `implemented` frontmatter flag — the only mutable field of a brief. Answers the brief's path, frontmatter and hash.",
+    scope: 'project',
+    mediation: 'direct',
+    opClass: 'brief',
+    inputSchema: {
+      path: z.string().describe('Brief path relative to the briefs root (.claude4spec/briefs).'),
+      implemented: z
+        .boolean()
+        .optional()
+        .describe('The value to set. Omitted = true (the terminal implementer\'s "done"); the UI may set false.'),
+    },
+    errorCodes: ['BRIEF_NOT_FOUND', 'IMMUTABLE_FIELD'],
+    sideEffects: ['file', 'db', 'ui-notify'],
+    contentInput: 'n/a',
+    idempotent: true,
+    channels: fullParity(),
+  });
+
   CATALOG.register({
     name: 'list_brief_versions',
     summary: "A brief's version history (metadata only), oldest first.",
@@ -1426,11 +1593,15 @@ export function registerCoreOperations(): void {
       path: z.string().optional().describe('Brief path relative to the briefs root (.claude4spec/briefs). Required on an external connection.'),
       ...paging,
     },
-    errorCodes: ['NOT_FOUND', 'VALIDATION'],
+    // 2.1.13 — the row's one code: an unknown path is BRIEF_NOT_FOUND, never an
+    // empty list (`BriefService.listVersionsAddressed`, behind every rendering).
+    errorCodes: ['BRIEF_NOT_FOUND'],
     sideEffects: ['none'],
     idempotent: true,
     channels: {
       internal: direct(),
+      // ASSUMPTION:dev-0004 — the row's `cli` cell reads `direct`, while M21 L14
+      // (`xqksf67f`) names exactly four brief commands and no history command.
       cli: na('no `c4s` brief-history command: the terminal implementer reads the current brief, not its history'),
       mcp: direct(),
       rest: direct(),
@@ -1447,11 +1618,16 @@ export function registerCoreOperations(): void {
       path: z.string().optional().describe('Brief path relative to the briefs root (.claude4spec/briefs). Required on an external connection.'),
       version: z.number().int().positive(),
     },
-    errorCodes: ['NOT_FOUND', 'VERSION_NOT_FOUND', 'VALIDATION'],
+    // 2.1.13 — BRIEF_NOT_FOUND for an unknown path (the row's code).
+    // ASSUMPTION:dev-0003 — plus INVALID_ARGUMENT for a version off the history
+    // (stating 1..N), the "validation error" the mcp-tool entity names; it
+    // replaces the undeclared VERSION_NOT_FOUND / VALIDATION.
+    errorCodes: ['BRIEF_NOT_FOUND', 'INVALID_ARGUMENT'],
     sideEffects: ['none'],
     idempotent: true,
     channels: {
       internal: direct(),
+      // ASSUMPTION:dev-0004 — see `list_brief_versions`.
       cli: na('no `c4s` brief-history command: the terminal implementer reads the current brief, not its history'),
       mcp: direct(),
       rest: direct(),

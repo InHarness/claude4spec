@@ -379,7 +379,10 @@ export class TransagentDispatcher {
     try {
       await read();
     } catch (err) {
-      const missing = err instanceof DomainError ? err.code === 'NOT_FOUND' : isFileNotFound(err);
+      // 2.1.13: a brief read answers `BRIEF_NOT_FOUND` (its catalog rows' code);
+      // a patch read still answers the generic `NOT_FOUND`.
+      const missing =
+        err instanceof DomainError ? err.code === 'NOT_FOUND' || err.code === 'BRIEF_NOT_FOUND' : isFileNotFound(err);
       if (missing) {
         throw new DomainError('NOT_FOUND', `the banka's ${kind} '${path}' no longer exists`);
       }

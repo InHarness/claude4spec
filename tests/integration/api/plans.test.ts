@@ -146,6 +146,79 @@ describe('PATCH /api/artifacts/plan/:path/frontmatter', () => {
   });
 });
 
+// 2.1.13 (M10 thread isolation) — the REST renderings of the plan rows are
+// external channels: an unknown `path` is PLAN_NOT_FOUND, a version off the
+// plan's axis INVALID_ARGUMENT — the codes the catalog rows declare for `rest`.
+describe('plan rows — REST renderings answer with the rows\' codes', () => {
+  let t: TestApp;
+
+  beforeEach(async () => {
+    t = await createTestApp();
+  });
+  afterEach(() => t.cleanup());
+
+  it('[entity:katalog-operacji-m10#list_plan_versions] rest rendering: GET /api/artifacts/plan/<path>/versions lists a known plan, and an unknown path is 404 PLAN_NOT_FOUND (not an empty list)', async () => {
+    const relPath = await seedPlan(t, 'versioned-plan', 'Versioned plan', 'body');
+    const known = await request(t.app).get(`/api/artifacts/plan/${relPath}/versions`);
+    expect(known.status).toBe(200);
+    expect(known.body.data.map((v: { version: number }) => v.version)).toEqual([1]);
+
+    const unknown = await request(t.app).get('/api/artifacts/plan/no-such-plan.md/versions');
+    expect(unknown.status).toBe(404);
+    expect(unknown.body.error.code).toBe('PLAN_NOT_FOUND');
+    expect(unknown.body.error.hint).toContain(relPath);
+  });
+
+  it('[entity:katalog-operacji-m10#get_plan_version] rest rendering: GET /api/artifacts/plan/<path>/versions/:version reads a snapshot; an unknown path is PLAN_NOT_FOUND, a version off the axis INVALID_ARGUMENT (never VERSION_NOT_FOUND / VALIDATION)', async () => {
+    const relPath = await seedPlan(t, 'snapshot-plan', 'Snapshot plan', 'first body');
+    const v1 = await request(t.app).get(`/api/artifacts/plan/${relPath}/versions/1`);
+    expect(v1.status).toBe(200);
+    expect(v1.body.data.version).toBe(1);
+    expect(JSON.stringify(v1.body.data)).toContain('first body');
+
+    const unknown = await request(t.app).get('/api/artifacts/plan/no-such-plan.md/versions/1');
+    expect(unknown.status).toBe(404);
+    expect(unknown.body.error.code).toBe('PLAN_NOT_FOUND');
+
+    const past = await request(t.app).get(`/api/artifacts/plan/${relPath}/versions/7`);
+    expect(past.status).toBe(400);
+    expect(past.body.error.code).toBe('INVALID_ARGUMENT');
+
+    const notANumber = await request(t.app).get(`/api/artifacts/plan/${relPath}/versions/abc`);
+    expect(notANumber.status).toBe(400);
+    expect(notANumber.body.error.code).toBe('INVALID_ARGUMENT');
+  });
+
+  it('[entity:katalog-operacji-m10#mark_plan_applied] rest rendering: PATCH /api/artifacts/plan/<path>/frontmatter { applied } — an unknown path is PLAN_NOT_FOUND, a non-boolean applied INVALID_ARGUMENT', async () => {
+    const relPath = await seedPlan(t, 'flag-plan', 'Flag plan', 'body');
+    const unknown = await request(t.app)
+      .patch('/api/artifacts/plan/no-such-plan.md/frontmatter')
+      .send({ frontmatter: { applied: true } });
+    expect(unknown.status).toBe(404);
+    expect(unknown.body.error.code).toBe('PLAN_NOT_FOUND');
+
+    const bad = await request(t.app)
+      .patch(`/api/artifacts/plan/${relPath}/frontmatter`)
+      .send({ frontmatter: { applied: 'yes' } });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error.code).toBe('INVALID_ARGUMENT');
+
+    const ok = await request(t.app)
+      .patch(`/api/artifacts/plan/${relPath}/frontmatter`)
+      .send({ frontmatter: { applied: true } });
+    expect(ok.status).toBe(200);
+    expect(ok.body.data.frontmatter.applied).toBe(true);
+  });
+
+  it('[entity:katalog-operacji-m10#update_plan] rest rendering: PUT /api/artifacts/plan/<path>/content on an unknown path is PLAN_NOT_FOUND', async () => {
+    const res = await request(t.app)
+      .put('/api/artifacts/plan/no-such-plan.md/content')
+      .send({ content: '---\ntype: plan\ntitle: X\n---\nbody\n', expectedHash: 'whatever' });
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('PLAN_NOT_FOUND');
+  });
+});
+
 // 0.2.104 — the plan page's Save carries the hash its edit was based on; a
 // write that landed meanwhile (the agent's) must surface as a 409, not be
 // silently overwritten.

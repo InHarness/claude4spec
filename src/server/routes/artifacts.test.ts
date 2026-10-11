@@ -521,6 +521,104 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
       expect(res.status).toBe(404);
       expect(res.body.error.code).toBe('UNKNOWN_ARTIFACT_KIND');
     });
+
+    /**
+     * 2.1.13 — the `rest` renderings of `katalog-operacji-m21`, answering with
+     * their rows' codes (BRIEF_NOT_FOUND for an unknown path, never the generic
+     * NOT_FOUND nor an empty list; INVALID_ARGUMENT for a window or a version
+     * off the file).
+     */
+    describe('brief rows — REST renderings answer with the rows\' codes (2.1.13)', () => {
+      it('[entity:katalog-operacji-m21#get_brief] rest rendering: GET /api/artifacts/brief/<path> — an unknown path is 404 BRIEF_NOT_FOUND, a window past the end 400 INVALID_ARGUMENT', async () => {
+        const unknown = await request(app).get('/api/artifacts/brief/no-such-brief.md');
+        expect(unknown.status).toBe(404);
+        expect(unknown.body.error.code).toBe('BRIEF_NOT_FOUND');
+        const past = await request(app).get('/api/artifacts/brief/v1-to-v2.md?range=900:999');
+        expect(past.status).toBe(400);
+        expect(past.body.error.code).toBe('INVALID_ARGUMENT');
+        const ok = await request(app).get('/api/artifacts/brief/v1-to-v2.md?range=1:2');
+        expect(ok.status).toBe(200);
+        expect(ok.body.data.content.split('\n')).toHaveLength(2);
+      });
+
+      it('[entity:katalog-operacji-m21#list_briefs] rest rendering: GET /api/artifacts/brief pages with ?limit/?offset AFTER the implemented filter; a non-numeric one is VALIDATION', async () => {
+        const fm = (implemented: boolean) => ({
+          type: 'brief',
+          from_release: null,
+          to_release: null,
+          generated_at: '2026-01-01T00:00:00.000Z',
+          implemented,
+        });
+        await writeArtifact('brief', 'p1.md', fm(false), '# p1\n');
+        await writeArtifact('brief', 'p2.md', fm(true), '# p2\n');
+        await writeArtifact('brief', 'p3.md', fm(false), '# p3\n');
+        const pending = (await request(app).get('/api/artifacts/brief?implemented=false')).body.data.map(
+          (r: { path: string }) => r.path,
+        );
+        expect(pending).toHaveLength(3);
+        const page = await request(app).get('/api/artifacts/brief?implemented=false&limit=2&offset=1');
+        expect(page.status).toBe(200);
+        expect(page.body.data.map((r: { path: string }) => r.path)).toEqual(pending.slice(1, 3));
+        const bad = await request(app).get('/api/artifacts/brief?limit=nope');
+        expect(bad.status).toBe(400);
+        expect(bad.body.error.code).toBe('VALIDATION');
+      });
+
+      it('[entity:katalog-operacji-m21#update_brief] rest rendering: PUT /api/artifacts/brief/<path>/content on an unknown path is 404 BRIEF_NOT_FOUND', async () => {
+        const res = await request(app)
+          .put('/api/artifacts/brief/no-such-brief.md/content')
+          .send({ content: 'x', expectedHash: 'h' });
+        expect(res.status).toBe(404);
+        expect(res.body.error.code).toBe('BRIEF_NOT_FOUND');
+      });
+
+      it('[entity:katalog-operacji-m21#mark_brief_implemented] rest rendering: PATCH /api/artifacts/brief/<path>/frontmatter { implemented } — an unknown path is 404 BRIEF_NOT_FOUND, another key 400 IMMUTABLE_FIELD, a repeat is a no-op', async () => {
+        const unknown = await request(app)
+          .patch('/api/artifacts/brief/no-such-brief.md/frontmatter')
+          .send({ frontmatter: { implemented: true } });
+        expect(unknown.status).toBe(404);
+        expect(unknown.body.error.code).toBe('BRIEF_NOT_FOUND');
+        const immutable = await request(app)
+          .patch('/api/artifacts/brief/v1-to-v2.md/frontmatter')
+          .send({ frontmatter: { to_release: 'v3' } });
+        expect(immutable.status).toBe(400);
+        expect(immutable.body.error.code).toBe('IMMUTABLE_FIELD');
+        const first = await request(app)
+          .patch('/api/artifacts/brief/v1-to-v2.md/frontmatter')
+          .send({ frontmatter: { implemented: true } });
+        expect(first.body.data.frontmatter.implemented).toBe(true);
+        const versions = (await request(app).get('/api/artifacts/brief/v1-to-v2.md/versions')).body.data.length;
+        const again = await request(app)
+          .patch('/api/artifacts/brief/v1-to-v2.md/frontmatter')
+          .send({ frontmatter: { implemented: true } });
+        expect(again.status).toBe(200);
+        expect(again.body.data.hash).toBe(first.body.data.hash);
+        expect((await request(app).get('/api/artifacts/brief/v1-to-v2.md/versions')).body.data).toHaveLength(versions);
+      });
+
+      it('[entity:katalog-operacji-m21#list_brief_versions] rest rendering: GET /api/artifacts/brief/<path>/versions — an unknown path is 404 BRIEF_NOT_FOUND, not an empty list', async () => {
+        const res = await request(app).get('/api/artifacts/brief/no-such-brief.md/versions');
+        expect(res.status).toBe(404);
+        expect(res.body.error.code).toBe('BRIEF_NOT_FOUND');
+        const known = await request(app).get('/api/artifacts/brief/v1-to-v2.md/versions');
+        expect(known.status).toBe(200);
+        expect(known.body.data.map((v: { version: number }) => v.version)).toEqual([1]);
+      });
+
+      it('[entity:katalog-operacji-m21#get_brief_version] rest rendering: GET /api/artifacts/brief/<path>/versions/:version — an unknown path is BRIEF_NOT_FOUND, a version off the history INVALID_ARGUMENT (never VERSION_NOT_FOUND / VALIDATION)', async () => {
+        const ok = await request(app).get('/api/artifacts/brief/v1-to-v2.md/versions/1');
+        expect(ok.status).toBe(200);
+        expect(ok.body.data.version).toBe(1);
+        const unknown = await request(app).get('/api/artifacts/brief/no-such-brief.md/versions/1');
+        expect(unknown.status).toBe(404);
+        expect(unknown.body.error.code).toBe('BRIEF_NOT_FOUND');
+        for (const v of ['9', '0', 'abc']) {
+          const off = await request(app).get(`/api/artifacts/brief/v1-to-v2.md/versions/${v}`);
+          expect(off.status, v).toBe(400);
+          expect(off.body.error.code, v).toBe('INVALID_ARGUMENT');
+        }
+      });
+    });
   });
 
   describe('patch', () => {

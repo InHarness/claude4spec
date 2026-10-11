@@ -2,7 +2,7 @@ import { Router } from 'express';
 import type { BriefService } from '../services/brief.js';
 import type { PatchService } from '../services/patch.js';
 import type { PlanService } from '../services/plan.js';
-import type { FileVersionService } from '../services/file-version.js';
+import type { FileVersionService, FileVersionListItem, FileVersionDetail } from '../services/file-version.js';
 import type { ChatService, ArtifactThreadColumn } from '../services/chat.js';
 import { artifactEntry, artifactHeaderContract, artifactRootId, type ArtifactKind } from '../services/artifact-registry.js';
 import type {
@@ -44,6 +44,15 @@ interface ArtifactKindAdapter {
   updateContent(path: string, content: string, expectedHash: string): Promise<ArtifactWriteResponse>;
   updateFrontmatter(path: string, frontmatter: Record<string, unknown>): Promise<ArtifactWriteResponse>;
   createThread(path: string, name?: string | null): Promise<{ threadId: string }>;
+  /**
+   * 2.1.13 — a kind whose catalog rows give its version renderings their own
+   * codes (plan: `list_plan_versions` / `get_plan_version`, PLAN_NOT_FOUND +
+   * INVALID_ARGUMENT) answers them itself; a kind without these falls back to
+   * the generic `file_version` reads below (NOT_FOUND-free list,
+   * VERSION_NOT_FOUND / VALIDATION on a single version).
+   */
+  listVersions?(path: string): Promise<FileVersionListItem[]>;
+  getVersion?(path: string, rawVersion: string): Promise<FileVersionDetail>;
 }
 
 export interface ArtifactsRouterDeps {
@@ -85,12 +94,25 @@ function buildBriefAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
       // second frontmatter-indexer lookup or file_version query per row.
       // The ORDER is the owning module's (M21, release axis); this endpoint
       // declares none of its own, so it must never re-sort.
-      return briefs.listBriefs({ implemented }).map((item) => ({
+      const rows = briefs.listBriefs({ implemented }).map((item) => ({
         path: item.path,
         frontmatter: item.frontmatter,
         hash: item.hash,
         updatedAt: item.lastModifiedAt,
       }));
+      /*
+       * 2.1.13 — the `list_briefs` row pages with `limit` / `offset`, the window
+       * taken AFTER the `implemented` filter (so a page never comes back short
+       * because filtered rows were counted). Applied only when the caller asks:
+       * the unpaged list is what the UI and `c4s list-briefs` (which counts
+       * `total` over it) have always read.
+       */
+      if (query.limit === undefined && query.offset === undefined) return rows;
+      const { limit, offset } = parsePaging({
+        limit: query.limit ?? String(rows.length),
+        offset: query.offset,
+      });
+      return rows.slice(offset, offset + limit);
     },
     async get(path, range) {
       const b = await briefs.getBrief(path, { range });
@@ -113,6 +135,19 @@ function buildBriefAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
         typeof frontmatter.implemented === 'boolean' ? frontmatter.implemented : undefined;
       const b = await briefs.updateFrontmatter({ path, patch: { implemented }, changedBy: 'user' });
       return { path: b.path, frontmatter: b.frontmatter, hash: b.hash };
+    },
+    /**
+     * 2.1.13 — the rest renderings of `list_brief_versions` / `get_brief_version`
+     * answer with their rows' codes: an unknown path is `BRIEF_NOT_FOUND` (never
+     * an empty list), a version off the history `INVALID_ARGUMENT` stating 1..N
+     * (ASSUMPTION:dev-0003) — not the generic VERSION_NOT_FOUND / VALIDATION.
+     * The list keeps the family's newest-first order.
+     */
+    async listVersions(path) {
+      return briefs.listVersionsAddressed(path);
+    },
+    async getVersion(path, rawVersion) {
+      return briefs.getVersionAddressed(path, /^\d+$/.test(rawVersion) ? Number(rawVersion) : Number.NaN);
     },
     async createThread(path, name) {
       // Watek bez pliku briefu to sierota: `createThreadForBrief` wstawia wiersz
@@ -169,7 +204,14 @@ function buildPatchAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
 }
 
 function buildPlanAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
-  const { plan: plans } = deps;
+  const { plan: plans, pageVersions } = deps;
+  /**
+   * 2.1.13 (M10 thread isolation) — every REST rendering of a plan row is an
+   * EXTERNAL channel: the `path` is the caller's explicit address, and one
+   * nothing resolves to is `PLAN_NOT_FOUND` (with this project's plans), never
+   * the loader's generic NOT_FOUND nor a silently empty list.
+   */
+  const address = (path: string) => plans.assertAddressedPlan(path);
   return {
     list(query) {
       const search = typeof query.search === 'string' ? query.search : undefined;
@@ -184,7 +226,8 @@ function buildPlanAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
       }));
     },
     async get(path, range) {
-      const p = await plans.getByPath(path, { range });
+      // 2.1.13 — the rest rendering of `get_plan`: an unknown path is PLAN_NOT_FOUND.
+      const p = await plans.getByAddress(path, { range });
       return {
         path: p.path,
         frontmatter: p.frontmatter,
@@ -195,6 +238,7 @@ function buildPlanAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
       };
     },
     async updateContent(path, content, expectedHash) {
+      await address(path);
       await plans.updateContent({ path, content, expectedHash, changedBy: 'user' });
       const p = await plans.getByPath(path);
       return { path: p.path, frontmatter: p.frontmatter, hash: p.hash };
@@ -202,9 +246,12 @@ function buildPlanAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
     async updateFrontmatter(path, frontmatter) {
       const title = typeof frontmatter.title === 'string' ? frontmatter.title : undefined;
       const applied = typeof frontmatter.applied === 'boolean' ? frontmatter.applied : undefined;
+      // 2.1.13 — `mark_plan_applied`'s rest rendering: its row's codes are
+      // PLAN_NOT_FOUND and INVALID_ARGUMENT, so a bad value is INVALID_ARGUMENT.
       if (frontmatter.applied !== undefined && applied === undefined) {
-        throw new DomainError('VALIDATION', 'applied must be a boolean');
+        throw new DomainError('INVALID_ARGUMENT', 'applied must be a boolean');
       }
+      await address(path);
       /**
        * 0.2.15 — `threadId: null`, and deliberately not the plan's most recently
        * attached thread.
@@ -227,6 +274,32 @@ function buildPlanAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
     // route uses, so there's no behavior fork if a caller does reach this route.
     createThread(path) {
       return plans.attachThreadToPlan(path);
+    },
+    // 2.1.13 — `list_plan_versions`' rest rendering. The order stays the REST
+    // family's (newest first, what the version-history panel reads).
+    async listVersions(path) {
+      await address(path);
+      return pageVersions.listVersions(path, plans.rootId);
+    },
+    // 2.1.13 — `get_plan_version`'s rest rendering: an unknown path is
+    // PLAN_NOT_FOUND; a version off the plan's axis (not a positive integer, or
+    // past its last version) is INVALID_ARGUMENT, as on the MCP rendering.
+    async getVersion(path, rawVersion) {
+      const version = Number(rawVersion);
+      if (!Number.isInteger(version) || version <= 0) {
+        throw new DomainError('INVALID_ARGUMENT', `version must be a positive integer, got ${JSON.stringify(rawVersion)}`);
+      }
+      await address(path);
+      const detail = pageVersions.getVersion(path, version, plans.rootId);
+      if (!detail) {
+        const current = pageVersions.getLatestForPath(path, undefined, plans.rootId)?.version ?? 0;
+        throw new DomainError(
+          'INVALID_ARGUMENT',
+          `version ${version} of plan '${path}' does not exist — the plan has ${current} version(s)`,
+          current > 0 ? `pass a version from 1 to ${current}` : 'the plan has no versions yet',
+        );
+      }
+      return detail;
     },
   };
 }
@@ -321,11 +394,14 @@ export function artifactsRouter(deps: ArtifactsRouterDeps): Router {
   });
 
   // GET /api/artifacts/:kind/<path>/versions
-  router.get('/:kind/*/versions', (req, res, next) => {
+  router.get('/:kind/*/versions', async (req, res, next) => {
     try {
       const kind = req.params.kind as ArtifactKind;
       const path = extractPath(req.params);
-      const versions = deps.pageVersions.listVersions(path, artifactRootId(kind));
+      const adapter = adapters[kind];
+      const versions = adapter.listVersions
+        ? await adapter.listVersions(path)
+        : deps.pageVersions.listVersions(path, artifactRootId(kind));
       res.json({ data: versions });
     } catch (err) {
       next(err);
@@ -333,9 +409,14 @@ export function artifactsRouter(deps: ArtifactsRouterDeps): Router {
   });
 
   // GET /api/artifacts/:kind/<path>/versions/:version
-  router.get('/:kind/*/versions/:version', (req, res, next) => {
+  router.get('/:kind/*/versions/:version', async (req, res, next) => {
     try {
       const kind = req.params.kind as ArtifactKind;
+      const adapter = adapters[kind];
+      if (adapter.getVersion) {
+        res.json({ data: await adapter.getVersion(extractPath(req.params), String(req.params.version)) });
+        return;
+      }
       const version = Number(req.params.version);
       if (!Number.isInteger(version) || version <= 0) {
         throw new DomainError('VALIDATION', 'version must be a positive integer');

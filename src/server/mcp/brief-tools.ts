@@ -79,15 +79,35 @@ const EXPLICIT_BRIEF_ARG = {
  * resume a large read the way it is for a page. `range` is the only one, which
  * is exactly why it had to exist — before it, a brief past the response budget
  * simply could not be read through.
+ *
+ * 2.1.13 — the description is the `brief-tools-get-brief` entity's, verbatim.
  */
 const BRIEF_RANGE_ARG = {
   range: z
     .object({ start: z.number().int().positive(), end: z.number().int().positive() })
     .optional()
     .describe(
-      '1-based inclusive line window onto the brief. Always allowed. A `start` past the end of the file is INVALID_ARGUMENT stating the file size.',
+      'Line window { start, end }, 1-based and inclusive. Use it to read a long brief in parts or to fetch the rest after a truncated response. A start past the end of the file is refused with the file size.',
     ),
 };
+
+/**
+ * 2.1.13 — `get_brief`'s description on the thread mount: the
+ * `brief-tools-get-brief` entity's, verbatim, except for its `path` sentence.
+ *
+ * ASSUMPTION:dev-0001 — the entity says "`path` is optional here: omit it and
+ * the brief of the current thread is resolved for you". The thread mount carries
+ * no `path` at all (the brief is closed over from `chat_thread.brief_path`, and
+ * `<brief_tools_usage>` tells the agent so), so the sentence is replaced by the
+ * one that is true of this schema; M21 makes no isolation declaration, and the
+ * question whether it should is dev-0001.
+ */
+const THREAD_GET_BRIEF_DESCRIPTION =
+  "Read the brief this thread is anchored in — content, frontmatter and hash. This is the ONLY way to the brief's content: the system prompt carries the brief's path and frontmatter, never its body and never its hash. The brief of the current thread is resolved for you; there is no `path` to pass. For a long brief, or when a response comes back truncated, read it in windows with `range`. The returned `hash` is what arms `expectedHash` on the next `update_brief`, so this read is the entry point of every write. Call it before editing, and again after a system reminder says the file changed underneath you.";
+
+/** The same read on the threadless mount, where the caller names the brief. */
+const EXPLICIT_GET_BRIEF_DESCRIPTION =
+  'Read the brief named by `path` — content, frontmatter and hash. An unknown path is BRIEF_NOT_FOUND, with the real brief paths in the hint. For a long brief, or when a response comes back truncated, read it in windows with `range`; a window starting past the end of the file is INVALID_ARGUMENT stating the file size. The returned `hash` is the digest of the WHOLE file (also when `range` narrowed what came back) and is what arms `expectedHash` on the next `update_brief`, so this read is the entry point of every write.';
 
 const AGENT_ACTIONS = z.enum(['replace', 'append', 'insert_after_section']);
 
@@ -124,35 +144,31 @@ export function buildBriefToolsServer(
     if (!explicit) return ambientBriefPath!;
     const raw = typeof args.path === 'string' ? args.path.trim() : '';
     if (raw === '') {
+      /*
+       * 2.1.13 — `BRIEF_NOT_FOUND`, not `VALIDATION`: an empty path names no
+       * brief, and `BRIEF_NOT_FOUND` is the one code every brief row of the
+       * catalog declares for an address that resolves to nothing (`get_brief`,
+       * `list_brief_versions` and `get_brief_version` declare no `VALIDATION`).
+       */
       throw new DomainError(
-        'VALIDATION',
+        'BRIEF_NOT_FOUND',
         'path is required: this connection has no thread, so there is no default brief to fall back on',
+        'name the brief by its path relative to the briefs root (.claude4spec/briefs); `c4s list-briefs` lists them',
       );
     }
     return raw;
   };
 
+  /**
+   * 2.1.13 — `brief-tools-get-brief`: `range` + the budget contract (a brief over
+   * the budget read without `range` is `truncated: true` with a `truncationHint`
+   * pointing at `range` — `BriefService.getBrief`), `readOnlyHint`, and the
+   * row's two codes: an unknown path is `BRIEF_NOT_FOUND`, a window starting past
+   * the end (or a malformed one) `INVALID_ARGUMENT`.
+   */
   const getBrief = mcpTool(
     'get_brief',
-    [
-      explicit
-        ? 'Read the current state of the brief named by `path`.'
-        : 'Read the current state of the brief attached to this thread.',
-      'Returns { frontmatter, body, content, hash }. Use `hash` as `expectedHash`',
-      'in the next `update_brief` call to detect concurrent edits — it is always the',
-      'digest of the WHOLE file, including when `range` narrowed what came back.',
-      'Pass `range: { start, end }` to read a 1-based inclusive line window; it is',
-      'always allowed (a brief has no section index, so a window is the only way to',
-      'resume). A brief over the response budget read WITHOUT `range` comes back',
-      '`truncated: true` with a `truncationHint` naming the range to use.',
-      'Brief lives on disk in the briefs root (.claude4spec/briefs); you do NOT have filesystem access',
-      '(no Read/Write/Edit) — this tool is the only way to read brief content.',
-      ...(explicit
-        ? []
-        : [
-            "This is the ONLY way to the brief's content: the system prompt carries the brief's path and frontmatter, never its body and never its hash.",
-          ]),
-    ].join(' '),
+    explicit ? EXPLICIT_GET_BRIEF_DESCRIPTION : THREAD_GET_BRIEF_DESCRIPTION,
     explicit ? { ...EXPLICIT_BRIEF_ARG, ...BRIEF_RANGE_ARG } : { ...BRIEF_RANGE_ARG },
     async (args) => {
       try {
@@ -163,6 +179,7 @@ export function buildBriefToolsServer(
         return fail(err);
       }
     },
+    { readOnlyHint: true },
   );
 
   /**
@@ -373,9 +390,9 @@ export function buildBriefToolsServer(
     async (args) => {
       try {
         const briefPath = resolveBrief(args);
-        // Existence first, so an unknown path is NOT_FOUND with alternatives, not an empty list.
-        await briefService.getBrief(briefPath, { range: { start: 1, end: 1 } });
-        const all = [...briefService.listVersions(briefPath)].reverse();
+        // Existence first (inside the service), so an unknown path is
+        // BRIEF_NOT_FOUND with alternatives, not an empty list.
+        const all = [...(await briefService.listVersionsAddressed(briefPath))].reverse();
         const offset = typeof args.offset === 'number' ? args.offset : 0;
         const limit = typeof args.limit === 'number' ? args.limit : all.length;
         return ok({ versions: all.slice(offset, offset + limit), total: all.length }, 'list_brief_versions');
@@ -395,12 +412,12 @@ export function buildBriefToolsServer(
     async (args) => {
       try {
         const briefPath = resolveBrief(args);
-        // Existence first, for the same reason as `list_brief_versions`: a
-        // near-miss filename must be answered with the real paths, not with
-        // "version 1 not found" — which sends the caller looking for a version.
-        await briefService.getBrief(briefPath, { range: { start: 1, end: 1 } });
-        const v = briefService.getVersion(briefPath, Number(args.version));
-        if (!v) throw new DomainError('VERSION_NOT_FOUND', `version ${args.version} of brief '${briefPath}' not found`);
+        // Existence first (inside the service), for the same reason as
+        // `list_brief_versions`: a near-miss filename must be answered with the
+        // real paths (BRIEF_NOT_FOUND), not with "that version is missing" —
+        // which sends the caller looking for a version. A version off the
+        // history is INVALID_ARGUMENT stating 1..N (ASSUMPTION:dev-0003).
+        const v = await briefService.getVersionAddressed(briefPath, Number(args.version));
         return ok(v, 'get_brief_version');
       } catch (err) {
         return fail(err);

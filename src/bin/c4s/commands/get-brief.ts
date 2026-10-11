@@ -72,9 +72,10 @@ export async function runGetBrief(args: ParsedArgs): Promise<void> {
       args,
     );
   } catch (err) {
-    // The artifact route 404s as the generic NOT_FOUND. This command's entire
-    // domain is one brief path, so it answers with the brief-specific code —
-    // the same re-framing `mark-brief-implemented` has always done.
+    // 2.1.13: the artifact route answers BRIEF_NOT_FOUND itself (the row's
+    // code), which passes through below unchanged. A server from before that
+    // still 404s as the generic NOT_FOUND; this command's entire domain is one
+    // brief path, so it is re-framed to the brief-specific code.
     if ((err instanceof CliError || err instanceof AgentError) && err.code === 'NOT_FOUND') {
       throw new CliError('BRIEF_NOT_FOUND', err.message, err.hint);
     }

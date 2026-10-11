@@ -7,8 +7,11 @@ import {
   artifactHeaderContract,
   artifactRegistry,
   artifactRootId,
+  bindingAddress,
+  type ArtifactKind,
   type ArtifactRootKind,
 } from './artifact-registry.js';
+import { OWNER_THREAD_ISOLATION, artifactAddressingShape } from '../operations/addressing.js';
 import { KIND_DECLARATIONS, SYSTEM_ROOT_KINDS, headerContractOf } from '../../shared/root-kinds.js';
 
 /**
@@ -101,5 +104,55 @@ describe('M36 artifactRegistry — keyed by root kind (2.1.8)', () => {
     expect([...plan.mutable].sort()).toEqual(['applied', 'title']);
     expect([...plan.immutable]).toEqual(expect.arrayContaining(['type', 'created_at', 'created_by']));
     expect(plan.immutable).not.toContain('id');
+  });
+});
+
+/**
+ * 2.1.13 — M36 keeps the binding matrix but loses its own parameter-shape rule.
+ * The matrix supplies the address (which artifact is pinned to the thread); the
+ * shape of the addressing parameter belongs to M43 `explicit-addressing`.
+ */
+describe('M36 binding matrix supplies the address, M43 shapes the parameter (2.1.13)', () => {
+  const KINDS: ArtifactKind[] = ['brief', 'patch', 'plan'];
+  const thread = { briefPath: 'b.md', patchPath: 'p.md', planPath: 'plan.md' };
+
+  it('[section:m36bind01] the internal rendering takes each kind\'s address from its chat_thread column; nothing pinned → no address', () => {
+    expect(bindingAddress('brief', thread)).toBe('b.md');
+    expect(bindingAddress('patch', thread)).toBe('p.md');
+    expect(bindingAddress('plan', thread)).toBe('plan.md');
+    const empty = { briefPath: null, patchPath: null, planPath: null };
+    for (const kind of KINDS) expect(bindingAddress(kind, empty), kind).toBeNull();
+    expect(bindingAddress('plan', { ...empty, planPath: '' })).toBeNull();
+  });
+
+  it('[section:m36bind01] the matrix carries no parameter-shape rule: entries hold only binding (mode, contextType, threadColumn) and danglingPolicy, and the shape comes from explicit-addressing', () => {
+    for (const rootKind of ROOT_KINDS) {
+      const entry = artifactRegistry[rootKind] as unknown as Record<string, unknown>;
+      expect(Object.keys(entry).sort(), rootKind).toEqual(['binding', 'danglingPolicy']);
+      for (const k of Object.keys(entry.binding as object)) {
+        expect(['mode', 'contextType', 'threadColumn'], `${rootKind}.binding.${k}`).toContain(k);
+      }
+    }
+    // The shape follows the OWNER's declaration, not the matrix's anchor /
+    // attach mode: brief and patch (anchor, no declaration) keep the optional
+    // default, plan (attach) is absent only because M10 declares isolation.
+    expect(Object.keys(OWNER_THREAD_ISOLATION)).toEqual(['plan']);
+    expect(artifactAddressingShape('brief', 'internal')).toBe('optional');
+    expect(artifactAddressingShape('patch', 'internal')).toBe('optional');
+    expect(artifactAddressingShape('plan', 'internal')).toBe('absent');
+    expect(artifactAddressingShape('plan', 'internal', {})).toBe('optional');
+    for (const kind of KINDS) {
+      expect(artifactAddressingShape(kind, 'rest'), kind).toBe('required');
+    }
+  });
+
+  it('[section:jg79a7q4] one source of the address for all three kinds: each kind reads its own column of the same thread, never another kind\'s', () => {
+    const columns = KINDS.map((kind) => artifactEntry(kind).binding.threadColumn);
+    expect(new Set(columns).size).toBe(KINDS.length);
+    // A thread pinned to a brief and a plan at once (per-kind columns coexist):
+    const both = { briefPath: 'b.md', patchPath: null, planPath: 'plan.md' };
+    expect(bindingAddress('brief', both)).toBe('b.md');
+    expect(bindingAddress('plan', both)).toBe('plan.md');
+    expect(bindingAddress('patch', both)).toBeNull();
   });
 });

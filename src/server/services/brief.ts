@@ -209,24 +209,7 @@ export class BriefService {
    * budget is what keeps the envelope inside it anyway.
    */
   async getBrief(path: string, opts?: { range?: ArtifactRange; full?: boolean }): Promise<Brief> {
-    if (!(await this.deps.briefsPages.exists(path))) {
-      /**
-       * The hint is the repair path, and it used to exist.
-       *
-       * `assertBriefExists` — the filesystem reader `c4s get-brief` ran before
-       * item 23 — listed up to ten real brief filenames on every miss. Moving
-       * the command onto this service dropped that: the caller got a bare
-       * "brief 'x' not found", which is the least useful thing to say to
-       * someone who has just proved they do not know the filename. The usual
-       * miss is a nearly-right slug or a briefs-root-relative path written with
-       * a directory prefix, both of which the list answers instantly.
-       *
-       * It matters most for the agent that is not allowed to look. The
-       * brief-implementer skill forbids reading the spec repo by hand, so
-       * without alternatives its only correct move is to stop.
-       */
-      throw new DomainError('NOT_FOUND', `brief '${path}' not found`, this.availableBriefsHint());
-    }
+    await this.assertBriefExists(path);
     const abs = this.absPath(path);
     const content = await fs.readFile(abs, 'utf-8');
     const parsed = matter(content);
@@ -281,7 +264,34 @@ export class BriefService {
     };
   }
 
-  /** Up to ten real brief paths, for the `NOT_FOUND` repair hint. */
+  /**
+   * 2.1.13 — `BRIEF_NOT_FOUND`, the code every row of `katalog-operacji-m21`
+   * that addresses a brief declares for an unknown `path` (it was the generic
+   * `NOT_FOUND`, which no brief row declares; only the CLI renamed it). One
+   * refusal for reads and writes, on every channel: the MCP brief-tools, the
+   * REST artifact family (`error-codes.ts` maps it to 404) and the CLI.
+   *
+   * The hint is the repair path, and it used to exist.
+   *
+   * `assertBriefExists` — the filesystem reader `c4s get-brief` ran before
+   * item 23 — listed up to ten real brief filenames on every miss. Moving
+   * the command onto this service dropped that: the caller got a bare
+   * "brief 'x' not found", which is the least useful thing to say to
+   * someone who has just proved they do not know the filename. The usual
+   * miss is a nearly-right slug or a briefs-root-relative path written with
+   * a directory prefix, both of which the list answers instantly.
+   *
+   * It matters most for the agent that is not allowed to look. The
+   * brief-implementer skill forbids reading the spec repo by hand, so
+   * without alternatives its only correct move is to stop.
+   */
+  async assertBriefExists(path: string): Promise<void> {
+    if (!(await this.deps.briefsPages.exists(path))) {
+      throw new DomainError('BRIEF_NOT_FOUND', `brief '${path}' not found`, this.availableBriefsHint());
+    }
+  }
+
+  /** Up to ten real brief paths, for the `BRIEF_NOT_FOUND` repair hint. */
   private availableBriefsHint(): string {
     const paths = this.deps.frontmatterIndexer
       .findByFrontmatterType('brief', { rootId: this.rootId })
@@ -428,11 +438,12 @@ export class BriefService {
       if (fromName !== null && fromName === toName) {
         throw new DomainError('BRIEF_SAME_RELEASE', 'from_release must differ from to_release');
       }
-      this.deps.releaseService.getRelease(toName);
+      this.requireWindowRelease(toName);
     }
-    // Validate the start release exists (throws NOT_FOUND if missing). `fromName
-    // === null` ⇒ window open at the start, nothing to validate.
-    if (fromName !== null) this.deps.releaseService.getRelease(fromName);
+    // Validate the start release exists (VALIDATION if missing — see
+    // `requireWindowRelease`). `fromName === null` ⇒ window open at the start,
+    // nothing to validate.
+    if (fromName !== null) this.requireWindowRelease(fromName);
 
     // 0.1.96: normalize scope — empty array is whole-release (no `roots` key/segment).
     const scopeRoots = opts.roots && opts.roots.length > 0 ? opts.roots : undefined;
@@ -526,6 +537,46 @@ export class BriefService {
     return this.deps.pageVersions.getVersion(briefPath, version, this.rootId);
   }
 
+  /**
+   * 2.1.13 — `list_brief_versions` addressed by `path`, the one function behind
+   * every rendering (MCP brief-tools, REST `GET /api/artifacts/brief/<path>/versions`).
+   * An unknown path is `BRIEF_NOT_FOUND` with the real paths — never an empty
+   * list, which would send a caller with a near-miss filename looking through a
+   * history that does not exist. Newest first, as `file_version` answers; the
+   * MCP rendering reverses it to the oldest-first axis.
+   */
+  async listVersionsAddressed(briefPath: string) {
+    await this.assertBriefExists(briefPath);
+    return this.listVersions(briefPath);
+  }
+
+  /**
+   * 2.1.13 — `get_brief_version` addressed by `(path, version)`.
+   *
+   * ASSUMPTION:dev-0003 — the row declares only `BRIEF_NOT_FOUND`, while the
+   * `brief-tools-get-brief-version` entity says a version off the history is "a
+   * validation error with the range of available versions". That refusal is
+   * `INVALID_ARGUMENT` stating `1..N` — the shared artifact-family taxonomy (M36:
+   * an out-of-range window is `INVALID_ARGUMENT` with the size), the same choice
+   * the plan rows made (dev-0002). It replaces the undeclared `VERSION_NOT_FOUND`.
+   */
+  async getVersionAddressed(briefPath: string, version: number) {
+    await this.assertBriefExists(briefPath);
+    // Newest first: the head of the list is the last version on the axis.
+    const total = this.listVersions(briefPath)[0]?.version ?? 0;
+    const detail = Number.isInteger(version) && version >= 1 ? this.getVersion(briefPath, version) : null;
+    if (!detail) {
+      throw new DomainError(
+        'INVALID_ARGUMENT',
+        `version ${String(version)} is not in the history of brief '${briefPath}'`,
+        total > 0
+          ? `available versions: 1..${total} — list them with list_brief_versions`
+          : 'this brief has no recorded versions yet',
+      );
+    }
+    return detail;
+  }
+
   async updateContent(opts: BriefUpdateContentOpts): Promise<{ newHash: string }> {
     // `full`: the conflict payload hands the client the other writer's bytes to
     // diff against, so a window here would be a window in the dialog.
@@ -582,13 +633,22 @@ export class BriefService {
   }
 
   async updateFrontmatter(opts: BriefUpdateFrontmatterOpts): Promise<Brief> {
-    const current = await this.getBrief(opts.path);
+    // `full` — the writer's read (see `getBrief`): the file is re-stringified out
+    // of `current.body`, so a body cut to the response budget would DELETE the
+    // tail of a long brief on `mark_brief_implemented`.
+    const current = await this.getBrief(opts.path, { full: true });
     const next: BriefFrontmatter = { ...current.frontmatter };
     const summaries: string[] = [];
     if (opts.patch.implemented !== undefined && opts.patch.implemented !== current.frontmatter.implemented) {
       next.implemented = opts.patch.implemented;
       summaries.push(`set implemented=${opts.patch.implemented}`);
     }
+    /*
+     * 2.1.13 — `mark_brief_implemented` is idempotent by its row: a repeat at the
+     * value the file already holds is a no-op — no write, no `file_version` row,
+     * no event. It used to re-stringify the file and record an empty version.
+     */
+    if (summaries.length === 0) return this.getBrief(opts.path);
     const newContent = matter.stringify(current.body, next as Record<string, unknown>);
     await this.writeBytes(opts.path, newContent);
     await this.deps.pageVersions.recordVersion(
@@ -602,6 +662,32 @@ export class BriefService {
     );
     await this.deps.frontmatterIndexer.indexPage(this.rootId, opts.path);
     return this.getBrief(opts.path);
+  }
+
+  /**
+   * 2.1.13 — an end of the window naming a release that does not exist.
+   *
+   * The `create_brief` row declares `BRIEF_SAME_RELEASE` and `VALIDATION`, and
+   * nothing else: the window is an INPUT of the operation, so a release name
+   * that resolves to nothing is an invalid input, not a missing resource the
+   * operation was asked to read. The release store's own `RELEASE_NOT_FOUND`
+   * (a stubbed store's `NOT_FOUND` alike) is re-framed here; any other failure
+   * passes through.
+   */
+  private requireWindowRelease(name: string): void {
+    try {
+      this.deps.releaseService.getRelease(name);
+    } catch (err) {
+      const code = (err as { code?: unknown } | null)?.code;
+      if (code === 'RELEASE_NOT_FOUND' || code === 'NOT_FOUND') {
+        throw new DomainError(
+          'VALIDATION',
+          `release '${name}' does not exist — the window must name existing releases`,
+          err instanceof DomainError && err.hint ? err.hint : 'list the releases with `c4s release-list`',
+        );
+      }
+      throw err;
+    }
   }
 
   createThreadForBrief(opts: BriefThreadForBriefOpts): { threadId: string } {

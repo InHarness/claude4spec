@@ -410,8 +410,8 @@ describe('plan addressing on the threadless channel', () => {
   });
 
   it('the INTERNAL channel keeps its implicit, thread-bound plan', () => {
-    // The thread binding is the internal channel's default and stays one; adding
-    // `path` there would widen the surface and contradict §7.
+    // 2.1.13 — M10 declares thread isolation, so the internal `path` is absent
+    // (not optional): an agent reaches only the plan pinned to its thread.
     const internal = buildPlanToolsServer({
       threadId: 't-1',
       planService: {} as never,
@@ -432,7 +432,7 @@ describe('plan addressing on the threadless channel', () => {
      */
     const calls: string[] = [];
     const planService = {
-      getByPath: async (p: string) => {
+      getByAddress: async (p: string) => {
         calls.push(p);
         return { path: p, currentVersion: 2 };
       },
@@ -474,7 +474,7 @@ describe('plan addressing on the threadless channel', () => {
     // emptily — the hint the shared envelope now forwards.
     const bare = await call('list_plan_versions', {});
     expect(bare.isError).toBe(true);
-    expect(bare.data.code).toBe('VALIDATION');
+    expect(bare.data.code).toBe('INVALID_ARGUMENT');
     expect(bare.data.hint).toContain('list_plans');
   });
 });
@@ -529,6 +529,7 @@ describe('mark_plan_applied', () => {
     expect(res.isError).toBeFalsy();
     // The answer carries the path and the flag — no plan content, no version.
     expect(JSON.parse(res.content[0]!.text)).toEqual({ path: 'some-plan.md', applied: true });
-    expect(calls).toEqual([['t-1', { path: undefined, applied: true }]]);
+    // 2.1.13 — no `path` key at all on the internal mount: the pinned plan is the target.
+    expect(calls).toEqual([['t-1', { applied: true }]]);
   });
 });

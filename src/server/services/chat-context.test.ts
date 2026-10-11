@@ -1944,3 +1944,52 @@ describe('brief §9 acceptance (0.2.97)', () => {
     expect(out).not.toContain('<annotation_handling>');
   });
 });
+
+/**
+ * 2.1.13 (M10 `bu7efowe`) — `<current_plan>`: emitted iff a plan is pinned to the
+ * thread; the contribution is the plan's IDENTITY (address + version), never a
+ * copy of its content, in the literal shape of `szablon-current-plan`.
+ */
+describe('buildSystemPrompt — M10 <current_plan> (2.1.13)', () => {
+  const pinned = (over: Record<string, unknown> = {}) =>
+    ({
+      path: 'migracja-kontraktow-wire.md',
+      currentVersion: 4,
+      hash: 'plan-hash-85fa8219',
+      body: '# Migracja\n\nUNIQUE-PLAN-BODY-LINE\n',
+      content: '---\n---\n# Migracja\n\nUNIQUE-PLAN-BODY-LINE\n',
+      ...over,
+    }) as unknown as SystemPromptInput['currentPlan'];
+
+  it('[ac:bu7efowe] a pinned plan → the block in the template\'s shape: path and version attributes only, the get_plan sentence, no content and no hash', () => {
+    const out = build({ contextType: 'chat', currentPlan: pinned() });
+    const start = out.indexOf('<current_plan ');
+    const block = out.slice(start, out.indexOf('</current_plan>') + '</current_plan>'.length);
+    expect(block).toBe(
+      '<current_plan path="migracja-kontraktow-wire.md" version="4">\n' +
+        "The plan's content is NOT in this prompt — read it with get_plan.\n" +
+        '</current_plan>',
+    );
+    const keys = [...(/<current_plan\s([^>]*)>/.exec(block)?.[1] ?? '').matchAll(/([^\s=]+)="/g)].map(([, k]) => k);
+    expect(keys).toEqual(['path', 'version']);
+    expect(out).not.toContain('UNIQUE-PLAN-BODY-LINE');
+    expect(out).not.toContain('plan-hash-85fa8219');
+  });
+
+  it('[ac:bu7efowe] the version attribute is the plan\'s current version', () => {
+    expect(build({ currentPlan: pinned({ currentVersion: 11 }) })).toContain(
+      '<current_plan path="migracja-kontraktow-wire.md" version="11">',
+    );
+  });
+
+  it('[ac:bu7efowe] emission: pinned is the whole condition — an empty plan still gets the block; no pinned plan removes it entirely', () => {
+    const empty = build({ currentPlan: pinned({ body: '', content: '' }) });
+    expect(empty).toContain('<current_plan path="migracja-kontraktow-wire.md" version="4">');
+    const none = build({ currentPlan: null });
+    expect(none).not.toContain('<current_plan');
+    expect(none).not.toContain('</current_plan>');
+    expect(none).not.toContain("The plan's content is NOT in this prompt");
+    // Absent, not an empty marker: the prompt without a plan equals the one built without the field.
+    expect(none).toBe(build({}));
+  });
+});

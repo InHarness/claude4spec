@@ -3074,3 +3074,99 @@ describe('runAgentTurn — 0.2.114 turnStartedAt on turn_start', () => {
     expect(eventsAtSecond).toEqual([]);
   });
 });
+
+/**
+ * 2.1.13 (M05 turn runtime `zbqomxbo`, M10 `bu7efowe` / `i1nvq4ju`, M48 `da1d88do`)
+ * — the plan reaches the turn's prompt only as M10's `<current_plan>` (address and
+ * version, never the body), the turn runtime has no plan block of its own any more,
+ * and the `<tooling>` line of the plan server is derived from the REAL plan-tools
+ * registration: six tools, `create_plan` among them.
+ */
+describe('runAgentTurn — plan in the prompt (2.1.13)', () => {
+  const PINNED = {
+    path: 'migracja-kontraktow-wire.md',
+    frontmatter: { title: 'Migracja kontraktów wire', applied: false },
+    body: '# Migracja\n\nUNIQUE-PLAN-BODY-LINE\n',
+    content: '---\ntitle: Migracja kontraktów wire\n---\n# Migracja\n\nUNIQUE-PLAN-BODY-LINE\n',
+    hash: 'plan-hash-85fa8219',
+    currentVersion: 4,
+    createdAt: '2026-08-14T09:12:00Z',
+    updatedAt: '2026-08-19T12:35:00Z',
+  };
+
+  async function promptFor(opts: {
+    plan?: unknown;
+    contextType?: string;
+    planMode?: boolean;
+  }): Promise<{ prompt: string; askedFor: string[] }> {
+    hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    const askedFor: string[] = [];
+    (deps as unknown as { planService: { getByThread: (id: string) => Promise<unknown> } }).planService = {
+      getByThread: async (id: string) => {
+        askedFor.push(id);
+        return opts.plan ?? null;
+      },
+    };
+    const input = makeInput();
+    const thread = input.thread as unknown as { contextType: string; planMode: boolean };
+    thread.contextType = opts.contextType ?? 'chat';
+    thread.planMode = opts.planMode ?? false;
+    await runAgentTurn(deps, input);
+    return { prompt: String(hoisted.lastExecute?.systemPrompt), askedFor };
+  }
+
+  const SIX_TOOL_LINE =
+    '<mcp name="plan-tools">create_plan, get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied</mcp>';
+
+  it('[ac:zbqomxbo] a pinned plan reaches the prompt as M10\'s <current_plan> (path + version) — no "Current plan for this thread" block, no body, no hash; the content is left to get_plan', async () => {
+    const { prompt, askedFor } = await promptFor({ plan: PINNED });
+    // The turn asks the plan module for the thread's pinned plan…
+    expect(askedFor).toEqual(['t1']);
+    // …and hands it to the M10 block, whose shape is M10's.
+    expect(prompt).toContain(
+      '<current_plan path="migracja-kontraktow-wire.md" version="4">\n' +
+        "The plan's content is NOT in this prompt — read it with get_plan.\n" +
+        '</current_plan>',
+    );
+    expect(prompt.split('<current_plan ').length - 1).toBe(1);
+    // The runtime's own block of 2.1.12 is gone — its header and the content it carried.
+    expect(prompt).not.toContain('Current plan for this thread');
+    expect(prompt).not.toContain('UNIQUE-PLAN-BODY-LINE');
+    expect(prompt).not.toContain('plan-hash-85fa8219');
+    // The one way to the content is mounted in the same turn.
+    expect(Object.keys((hoisted.lastExecute?.mcpServers ?? {}) as Record<string, unknown>)).toContain('plan-tools');
+    expect(prompt).toMatch(/<mcp name="plan-tools">[^<]*\bget_plan\b[^<]*<\/mcp>/);
+  });
+
+  it('[ac:zbqomxbo] no plan pinned to the thread → the prompt carries no plan block at all', async () => {
+    const { prompt } = await promptFor({ plan: null });
+    expect(prompt).not.toContain('<current_plan');
+    expect(prompt).not.toContain('Current plan for this thread');
+  });
+
+  it('[ac:da1d88do#plan-tools-szesc-narzedzi] with plan-tools mounted, the <mcp name="plan-tools"> line names six tools — get_plan, update_plan, list_plan_versions, get_plan_version, mark_plan_applied and create_plan', async () => {
+    // ASSUMPTION:dev-0006 — six tools (the M48 rule), not the five of `szablon-tooling-plan-tools`.
+    const { prompt } = await promptFor({});
+    const line = prompt.split('\n').find((l) => l.includes('<mcp name="plan-tools">')) ?? '';
+    const named = /<mcp name="plan-tools">([^<]*)<\/mcp>/.exec(line)?.[1].split(', ') ?? [];
+    expect(named.sort()).toEqual(
+      ['get_plan', 'update_plan', 'list_plan_versions', 'get_plan_version', 'mark_plan_applied', 'create_plan'].sort(),
+    );
+    expect(line.trim()).toBe(SIX_TOOL_LINE);
+  });
+
+  it('[ac:i1nvq4ju] the plan-tools line stands in <tooling> iff the plan server is registered in the turn, and plan mode does not remove it', async () => {
+    const off = (await promptFor({ planMode: false })).prompt;
+    const on = (await promptFor({ planMode: true })).prompt;
+    expect(off).toContain(SIX_TOOL_LINE);
+    expect(on).toContain(SIX_TOOL_LINE);
+    // Inside the tooling block, not elsewhere.
+    const tooling = on.slice(on.indexOf('<tooling>'), on.indexOf('</tooling>'));
+    expect(tooling).toContain(SIX_TOOL_LINE);
+    // A turn whose profile registers no plan server (brief) carries no plan-tools line.
+    const brief = await promptFor({ contextType: 'brief' });
+    expect(Object.keys((hoisted.lastExecute?.mcpServers ?? {}) as Record<string, unknown>)).not.toContain('plan-tools');
+    expect(brief.prompt).not.toContain('<mcp name="plan-tools"');
+  });
+});
