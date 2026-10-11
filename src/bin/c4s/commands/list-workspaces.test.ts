@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { parseArgs } from '../args.js';
-import { CliError } from '../errors.js';
+import { CliError, codeToExit } from '../errors.js';
 import { listWorkspacesCommand, runListWorkspaces } from './list-workspaces.js';
 import type { WorkspacesFile } from '../../../server/workspace/types.js';
 
@@ -149,6 +149,73 @@ describe('c4s list-workspaces', () => {
     await expect(runListWorkspaces(parseArgs(['list-workspaces']))).rejects.toBeInstanceOf(CliError);
     // Half a registry would be a worse answer than none: nothing reaches stdout.
     expect(stdout).toBe('');
+  });
+
+  it('[ac:ac-c4s-list-workspaces-na-maszynie-bez-c] creates neither the registry file nor the registry directory on a machine without one', async () => {
+    // `home` itself exists (mkdtemp); the registry root C4S_HOME points at does
+    // not — the state of a machine where claude4spec never ran.
+    const fresh = path.join(home, 'never-ran', '.claude4spec');
+    process.env.C4S_HOME = fresh;
+    await runListWorkspaces(parseArgs(['list-workspaces']));
+    await runListWorkspaces(parseArgs(['list-workspaces', '--format', 'text']));
+    expect(fs.existsSync(path.join(fresh, 'workspaces.json'))).toBe(false);
+    expect(fs.existsSync(fresh)).toBe(false);
+    // Not even the parent is created on the way.
+    expect(fs.existsSync(path.join(home, 'never-ran'))).toBe(false);
+  });
+
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    '[ac:ac-plik-rejestru-bez-uprawnien-do-odczyt] answers REGISTRY_READ_FAILED with a non-zero exit when the registry file cannot be read',
+    async () => {
+      seedThree();
+      const file = path.join(home, 'workspaces.json');
+      fs.chmodSync(file, 0o000);
+      try {
+        const err = await runListWorkspaces(parseArgs(['list-workspaces'])).then(
+          () => null,
+          (e: unknown) => e,
+        );
+        expect(err).toBeInstanceOf(CliError);
+        expect((err as CliError).code).toBe('REGISTRY_READ_FAILED');
+        // The bin exits with `codeToExit(err.code)` for every CliError.
+        expect(codeToExit((err as CliError).code)).toBeGreaterThan(0);
+        // An unreadable file is a failure, never "no workspaces".
+        expect(stdout).toBe('');
+      } finally {
+        fs.chmodSync(file, 0o600);
+      }
+    },
+  );
+
+  it('[ac:ac-przy-uszkodzonym-rejestrze-c4s-list-w] prints no partial list of workspaces when the registry is damaged', async () => {
+    // The first workspace record is intact; the second is not a workspace at
+    // all. A reader that salvaged what it could would print `intact`.
+    fs.mkdirSync(home, { recursive: true });
+    fs.writeFileSync(
+      path.join(home, 'workspaces.json'),
+      JSON.stringify({
+        $schemaVersion: 2,
+        workspaces: [
+          { name: 'intact', mode: 'prod', defaultPort: 4500, projects: [] },
+          { name: 'broken', mode: 'prod', defaultPort: 'not-a-port', projects: 'nope' },
+        ],
+      }),
+      'utf8',
+    );
+    await expect(runListWorkspaces(parseArgs(['list-workspaces']))).rejects.toMatchObject({
+      code: 'REGISTRY_READ_FAILED',
+    });
+    // Truncated mid-record: the intact first workspace is still not printed.
+    fs.writeFileSync(
+      path.join(home, 'workspaces.json'),
+      '{ "$schemaVersion": 2, "workspaces": [ { "name": "intact", "mode": "prod", "defaultPort": 4500, "projects": [] }, { "name": "bro',
+      'utf8',
+    );
+    await expect(
+      runListWorkspaces(parseArgs(['list-workspaces', '--format', 'text'])),
+    ).rejects.toMatchObject({ code: 'REGISTRY_READ_FAILED' });
+    expect(stdout).toBe('');
+    expect(stdout).not.toContain('intact');
   });
 
   it('[ac:ac-zaden-ze-wspolnych-selektorow-projekt] ignores the shared project and workspace selectors — no resolver, no narrowing', async () => {

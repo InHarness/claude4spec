@@ -1,5 +1,5 @@
 {
-  "iteration": 0,
+  "iteration": 5,
   "conventions": [
     {
       "label": "L5 (UI) — implementor nie jest wskazany na stronie warstwy",
@@ -33,7 +33,7 @@
         "m31-registry-edge-cases",
         "m31-remove-project-ui"
       ],
-      "startCommit": null
+      "startCommit": "1a3c8f9fe8821d558e19136686d099d55c557f0c"
     }
   ],
   "units": [
@@ -190,14 +190,41 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
+      "status": "verified",
       "blockedBy": null,
-      "portions": [],
-      "startCommit": null,
-      "baseCommit": null,
+      "portions": [
+        {
+          "name": "m31-registry-edge-cases/p1-l5-l14",
+          "layers": [
+            "L5",
+            "L10",
+            "L14"
+          ],
+          "slugs": [
+            "ac-c4s-list-workspaces-na-maszynie-bez-c",
+            "ac-plik-rejestru-bez-uprawnien-do-odczyt",
+            "ac-przy-uszkodzonym-rejestrze-c4s-list-w",
+            "ac-gola-komenda-uruchomiona-w-katalogu-z",
+            "ac-po-edycji-pola-cwd-projektu-w-workspa-3",
+            "ac-po-migracji-rejestru-stara-zakladka-p",
+            "ac-po-migracji-rejestru-zewnetrzna-konfi",
+            "ac-projekt-bez-zgody-trustprojectplugins",
+            "ac-start-z-nasluchem-poza-loopbackiem-i",
+            "ac-tools-call-na-polaczeniu-mcp-projektu-2",
+            "moduly-feature"
+          ],
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "uncovered": [],
+          "only": []
+        }
+      ],
+      "startCommit": "1a3c8f9fe8821d558e19136686d099d55c557f0c",
+      "baseCommit": "1a3c8f9fe8821d558e19136686d099d55c557f0c",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       }
     },
     {

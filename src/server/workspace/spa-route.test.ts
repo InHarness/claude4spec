@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { WorkspaceRegistry } from './registry.js';
 import { resolveSpaRoute } from './spa-route.js';
+import { legacyHashId } from './project-id.js';
 
 /**
  * 0.1.137: the root `/` is an UNCONDITIONAL 302 to `/welcome`. These tests pin
@@ -69,5 +70,45 @@ describe('resolveSpaRoute — root always lands on /welcome', () => {
 
     expect(resolveSpaRoute(registry, fresh, '/welcome')).toEqual({ kind: 'welcome' });
     expect(resolveSpaRoute(registry, fresh, '/settings')).toEqual({ kind: 'redirect', to: '/' });
+  });
+
+  it('[ac:ac-po-migracji-rejestru-stara-zakladka-p] after the registry migration an old /p/<hash id>/ bookmark ends on /welcome', () => {
+    // A pre-2.1.0 registry: the project is stored under its hash id.
+    const cwd = path.join(dir, 'repos', 'app-spec');
+    const hash = legacyHashId(cwd);
+    fs.writeFileSync(
+      path.join(dir, 'workspaces.json'),
+      JSON.stringify({
+        $schemaVersion: 2,
+        workspaces: [
+          {
+            name: 'default',
+            mode: 'prod',
+            defaultPort: 4500,
+            projects: [{ cwd, id: hash, name: 'app-spec', addedAt: '2026-01-01T00:00:00.000Z' }],
+          },
+        ],
+      }),
+    );
+    const registry = new WorkspaceRegistry(dir);
+    expect(registry.migrateIfNeeded().map((r) => r.to)).toEqual(['app-spec']);
+    const ws = registry.getWorkspace('default')!;
+
+    // Follow the redirect chain the browser follows, from the old bookmark.
+    let url = `/p/${hash}/space/pages/index.md`;
+    const hops: string[] = [url];
+    let resolution = resolveSpaRoute(registry, ws, url);
+    while (resolution.kind === 'redirect' && hops.length < 5) {
+      url = resolution.to;
+      hops.push(url);
+      resolution = resolveSpaRoute(registry, ws, url);
+    }
+    expect(resolution).toEqual({ kind: 'welcome' });
+    expect(hops[hops.length - 1]).toBe('/welcome');
+    // The migrated id is the address that still opens the project.
+    expect(resolveSpaRoute(registry, ws, '/p/app-spec/')).toMatchObject({
+      kind: 'project',
+      project: { id: 'app-spec', cwd },
+    });
   });
 });

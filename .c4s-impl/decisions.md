@@ -31,3 +31,12 @@ Implementation-only decisions (no user-observable effect) and set-up choices.
 ## Entity parts
 
 - `moduly-feature` (spreadsheet) — one part: `context`, items: all. Why: a table of module scopes (spec documentation); the only change in the window is M31's layer list (L2 → L16), with no counterpart in code.
+
+## m31-registry-edge-cases / p1-l5-l14 (implementer, round 1)
+
+- `codeToExit` moved from `src/bin/c4s.ts` to `src/bin/c4s/errors.ts` (exported) so the exit status of `REGISTRY_READ_FAILED` is testable without running the bin's `main()`. Behaviour unchanged.
+- Launcher parsing carved out of `src/bin/claude4spec.ts` into `src/bin/launch.ts` (`parseLaunchArgs`, `workspaceOnlyLaunch`, `printStartWarnings`); the bin runs on import, so it could not be tested.
+- Registry read now rejects a damaged workspace RECORD (non-string name, non-number defaultPort, non-array projects, a project without string cwd) as a read failure, so `c4s list-workspaces` never prints a partial/garbage list.
+- New start warning `defaultPublicUrlWarning` (non-loopback listen + no publicUrl) — was missing in code although described in 2.1.11.
+- Partial-build cleanup now also releases the context's MCP server factories (`pluginHost.clearMcpFactories()`), matching `dispose` (unit goal: MCP servers live as long as the context instance).
+- `ac-projekt-bez-zgody-trustprojectplugins` and the unit goal's MCP-lifetime rule are proven on a REAL `buildProjectContext` (behind the real `ProjectContextCache` + `projectDispatchMiddleware`, `C4S_HOME` pointed at a temp dir) in `tests/integration/api/project-context-m31-edge-cases.test.ts` — the first test in the repo that builds a whole context; the committed fixture plugin writes a sentinel file on import, so "no plugin code ran" is observable.
