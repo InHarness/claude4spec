@@ -415,6 +415,10 @@ async function buildInner(
     { entities: bootConfig.entities },
     overlay,
   );
+  // 2.1.12 (M31 L10): the context's MCP servers live exactly as long as this
+  // context instance — released by `dispose`, and by the partial-build cleanup
+  // (reverse acquisition order) when the build fails after this point.
+  cleanup.push(() => pluginHost.clearMcpFactories());
   const hostState = pluginHost.partition();
   console.log(
     `[plugin-host] active: [${hostState.active.join(', ') || '∅'}]` +

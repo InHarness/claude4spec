@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { FolderPlus, Folder } from 'lucide-react';
 import { openModal } from '../../ui/events.js';
 import { Skeleton } from '../../ui/Skeleton.js';
+import { navigateDocument } from '../../lib/document-nav.js';
 
 interface WorkspaceProject {
   id: string;
@@ -100,7 +101,7 @@ export function WelcomePage() {
               type="button"
               onClick={() => {
                 // Full reload — module-load constants must re-initialize.
-                window.location.href = `/p/${p.id}/`;
+                navigateDocument(`/p/${p.id}/`);
               }}
               className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-left transition-colors"
               style={{ border: '1px solid var(--c-hair)', color: 'var(--c-ink)' }}

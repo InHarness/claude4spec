@@ -153,3 +153,157 @@ export function cliErrorFromDiscovery(err: unknown): CliError | null {
   // same way precisely so a caller scripting `c4s` sees one vocabulary.
   return new CliError(err.code as CliErrorCode, err.message, err.hint);
 }
+
+/**
+ * The process exit status for a CLI error code. Every code exits non-zero —
+ * the generic bucket is 1. Lives here (not in the bin) so a test can read the
+ * mapping without running the bin's top-level `main()`.
+ */
+export function codeToExit(code: string): number {
+  switch (code) {
+    case 'PROJECT_NOT_FOUND':
+      return 2;
+    case 'ENTITY_NOT_FOUND':
+    // 0.2.6 — an anchor that names nothing is the same outcome for a script as a
+    // slug that names nothing.
+    //
+    // 0.2.59 — and this row is now UNREACHABLE for sections. `SECTION_NOT_FOUND`
+    // had two emitters; the call-level one went with `list-sections --by anchor`,
+    // and the survivor is per-item inside a `get-sections` batch, where the exit
+    // code stays 0 because the other sections in that call are real answers. The
+    // case is kept because the code still exists in the catalog, not because a
+    // section command can still reach it.
+    case 'SECTION_NOT_FOUND':
+      return 3;
+    case 'INVALID_TYPE':
+    case 'INVALID_ARGS':
+    /**
+     * 0.2.13 — a `--root-id` that names nothing is the same CLASS of mistake as
+     * a bad `--type`: the caller asked for something the contract does not
+     * offer. It reached this table only after the read commands became
+     * server-delegating (the core used to answer `INVALID_ARGUMENT`, already in
+     * this group); unmapped, it fell to the `default: 1` bucket that also holds
+     * UNKNOWN_COMMAND, so a wrapper branching on exit 4 for "you typed the flags
+     * wrong" read a typo'd root id as an infrastructure failure.
+     */
+    case 'ROOT_NOT_FOUND':
+    // M39 — the core's refusal shares the "you asked for something the contract
+    // does not allow" exit, since a caller scripting c4s branches on the class
+    // of failure and these are the same class.
+    case 'INVALID_ARGUMENT':
+    /**
+     * 0.2.13 — `VALIDATION` joins the same class, because the migration to
+     * `server-delegating` started routing CLI argument refusals through it.
+     *
+     * `c4s create-patch --brief ../foo.md` throws `BriefFsError('INVALID_ARGS')`
+     * in the core writer; `routes/errors.ts` deliberately renames that to
+     * `VALIDATION` on the way out ("`INVALID_ARGS` is the core's name for what
+     * REST calls `VALIDATION`"), and the CLI propagates the server's code
+     * verbatim rather than translating it back. Without this case the same
+     * refusal that exited 4 before the migration exits 1 — the generic bucket
+     * that also holds `PROJECT_NOT_IN_WORKSPACE` and agent failures, so a
+     * wrapper branching on `[ $? -eq 4 ]` reads a typo as an infrastructure
+     * problem. Renaming it back at the transport was the alternative, and that
+     * is exactly the fourth error vocabulary this release exists to remove.
+     */
+    case 'VALIDATION':
+      return 4;
+    case 'FILE_NOT_FOUND':
+    // M39 — a page named by (rootId, path) that does not exist is the same
+    // outcome for a script as a file that does not exist.
+    case 'PAGE_NOT_FOUND':
+      return 5;
+    case 'SCHEMA_OUT_OF_DATE':
+      return 6;
+    case 'AMBIGUOUS_WORKSPACE':
+      return 7;
+    /**
+     * 0.2.13 item 24 — exit 8 changed hands.
+     *
+     * It used to be `INDEX_NOT_MATERIALIZED`: this process opened the db slot,
+     * so "the index has not been built" was a condition it could observe and the
+     * caller could act on. It no longer opens one, so it cannot observe that at
+     * all — and the condition an external caller now hits in its place is that
+     * nothing is listening. Reusing the number rather than adding one is
+     * deliberate: a script's `if [ $? -eq 8 ]` branch means "the specification is
+     * not readable yet, deal with the environment", and that is still exactly
+     * what it means. `INDEX_NOT_MATERIALIZED` survives only on internal paths.
+     */
+    // 2.1.0 — "something else answers at that address" is the same shell-level
+    // branch as "nothing answers": the environment, not the command, is wrong.
+    case 'SERVER_NOT_RECOGNIZED':
+    case 'SERVER_NOT_RUNNING':
+      return 8;
+    case 'HOST_API_INCOMPATIBLE':
+      return 9;
+    // 2.1.0 — `--project <id>` matches no registered id: the same exit status
+    // as every other "no such project" (PROJECT_NOT_IN_WORKSPACE falls to the
+    // generic 1 as well). The exit-10 slot of the retired PROJECT_SLUG_NOT_FOUND
+    // is not reused.
+    case 'PROJECT_ID_NOT_FOUND':
+      return 1;
+    // 2.1.0 — an ambiguous project id is resolved the same way as an ambiguous
+    // workspace (pass --workspace), so it shares its exit status.
+    case 'AMBIGUOUS_PROJECT':
+      return 7;
+    // 2.1.0 — a registry-writing command met a pre-2.1.0 registry (hash ids).
+    // The repair is to start the server once; nothing is wrong with the command.
+    case 'REGISTRY_MIGRATION_PENDING':
+      return 27;
+    // 0.2.6 — the core's two ambiguity codes. A caller that has to disambiguate
+    // must be able to see it from the exit status, the way it already can for
+    // the two workspace-level ambiguities above.
+    case 'AMBIGUOUS_ENTITY':
+      return 20;
+    case 'AMBIGUOUS_PAGE':
+      return 21;
+    // 0.2.65 M31 — the registry itself is unreadable. Its own status, not folded
+    // into the exit-4 "you typed it wrong" group: the caller typed nothing wrong,
+    // and the repair is to the machine's `~/.claude4spec/`, not to the command.
+    case 'REGISTRY_READ_FAILED':
+      return 22;
+    /**
+     * 0.2.95 M39 — the search ran out of time, and it gets its own status for
+     * the same reason it got its own code: a wrapper branching on exit 4 ("you
+     * typed it wrong") would retry with a different pattern, which is the one
+     * change that cannot help. The command was right; the scope was too wide.
+     */
+    case 'SEARCH_BUDGET_EXCEEDED':
+      return 23;
+    case 'BRIEF_NOT_FOUND':
+      return 12;
+    case 'PATCH_WRITE_FAILED':
+      return 13;
+    case 'SKILLS_WRITE_FAILED':
+      return 14;
+    // M38 `create-plugin` — INSTALL_FAILED is non-zero too, even though it is
+    // the one code that leaves the scaffolded files on disk.
+    case 'INVALID_TARGET':
+      return 15;
+    case 'TARGET_EXISTS':
+      return 16;
+    case 'TEMPLATE_FETCH_FAILED':
+      return 17;
+    case 'INSTALL_FAILED':
+      return 18;
+    case 'SCAFFOLD_WRITE_FAILED':
+      return 19;
+    // 0.2.98 M10 `create-plan` — the slug is taken. Its own status rather than
+    // exit 4: the arguments were well-formed; the repair is a different title
+    // (or editing the existing plan), not fixing a flag.
+    case 'PLAN_ALREADY_EXISTS':
+      return 24;
+    // 0.2.99 M37 `load-skill-file` — the address named nothing (unknown slug, or
+    // a file the package does not have): one status, since the repair is the same
+    // — re-read `c4s list-skills` / the manifest. NOT_TEXT is its own: the address
+    // was right, the channel just serves text only.
+    case 'SKILL_NOT_FOUND':
+    case 'SKILL_FILE_NOT_FOUND':
+      return 25;
+    case 'NOT_TEXT':
+      return 26;
+    // PROJECT_NOT_IN_WORKSPACE → 1 (ask-group, like other server-side ask errors)
+    default:
+      return 1;
+  }
+}

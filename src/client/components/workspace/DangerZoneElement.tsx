@@ -1,6 +1,7 @@
 import { PROJECT_ID } from '../../lib/api-core.js';
 import { useConfig } from '../../hooks/useConfig.js';
 import { confirmDestructive, toast } from '../../ui/events.js';
+import { navigateDocument } from '../../lib/document-nav.js';
 import type { SettingsContribution } from '../settings/registry.js';
 
 interface DeleteResponse {
@@ -51,7 +52,7 @@ export const WORKSPACE_SETTINGS: SettingsContribution = {
   ],
 };
 
-function DangerZoneElement() {
+export function DangerZoneElement() {
   const { data: config } = useConfig();
   const projectName = config?.name ?? '';
 
@@ -62,20 +63,24 @@ function DangerZoneElement() {
         `/api/workspace/projects/${PROJECT_ID}?purgeData=${purge}`,
         { method: 'DELETE' },
       );
-      if (res.status === 409) {
-        toast.error('Project busy — finish the in-flight turn first');
-        return false;
-      }
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as
-          | { error?: { message?: string } }
+          | { error?: { code?: string; message?: string } }
           | null;
-        toast.error(body?.error?.message ?? 'Failed to remove project');
+        // Purge refused by an in-flight turn: error toast, the dialog stays open
+        // and the db slot is untouched (M31 `h23797ko`).
+        if (body?.error?.code === 'PROJECT_BUSY') {
+          toast.error('Project is busy — finish the running turn first');
+        } else {
+          toast.error(body?.error?.message ?? 'Failed to remove project');
+        }
         return false;
       }
       const { redirectProjectId } = (await res.json()) as DeleteResponse;
       // A full load: every workspace and project list is fetched afresh there.
-      window.location.href = redirectProjectId ? `/p/${redirectProjectId}/` : '/';
+      // `null` = the last project was removed → `/`, which the server 302s to
+      // `/welcome` (M31 `eb95ery1`).
+      navigateDocument(redirectProjectId ? `/p/${redirectProjectId}/` : '/');
       return true;
     } catch {
       toast.error('Failed to remove project');
@@ -88,9 +93,8 @@ function DangerZoneElement() {
       action: () => remove(false),
       title: 'Detach project',
       body:
-        `Detach “${projectName}” from this workspace?\n\n` +
-        'Your c4s data (entity index, chats, plans, releases) stays on disk — ' +
-        're-registering the same directory restores it.',
+        `Detach ${projectName} from the workspace? c4s data (index, chats, plans, releases) ` +
+        'stays on disk — registering the same directory again restores it.',
       confirmLabel: 'Detach',
       danger: false,
     });
@@ -101,10 +105,9 @@ function DangerZoneElement() {
       action: () => remove(true),
       title: 'Delete project & c4s data',
       body:
-        `This permanently deletes “${projectName}”’s c4s data — the entity index, ` +
-        'chats, plans, releases, and sessions are gone for good and cannot be recovered.\n\n' +
-        'Nothing in the project directory is touched: config.json, pages, and entity ' +
-        'files stay.\n\nType the project name to confirm.',
+        'Chats, plans, releases and sessions of this project will be lost permanently. ' +
+        'config.json, pages (pages/) and entities in the project directory stay untouched — ' +
+        'registering it again recreates the project with an empty runtime and a fresh index.',
       requireText: projectName,
       confirmLabel: 'Delete data',
       danger: true,

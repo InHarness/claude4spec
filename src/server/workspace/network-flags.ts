@@ -1,5 +1,6 @@
 import {
   effectiveBindHost,
+  effectivePublicUrl,
   isLoopbackHost,
   validatePublicUrl,
   type WorkspaceNetwork,
@@ -57,4 +58,28 @@ export function noAuthWarning(ws: WorkspaceNetwork): string | null {
     'Restrict access at the network level (VPN, firewall, an authenticating reverse proxy) ' +
     'or restart with --host= to return to loopback.'
   );
+}
+
+/**
+ * 2.1.12 (M31 `3l4ge8xa`) — the second start warning: a listen address beyond
+ * loopback with NO explicit `publicUrl`. Every URL handed out (MCP connection
+ * snippets, generated skills, links) is built from the effective `publicUrl`,
+ * which then defaults to `http://localhost:<defaultPort>` — unreachable for the
+ * clients the non-loopback listen exists for. `null` on loopback, or when
+ * `publicUrl` is set.
+ */
+export function defaultPublicUrlWarning(ws: WorkspaceNetwork): string | null {
+  if (isLoopbackHost(effectiveBindHost(ws))) return null;
+  if (ws.publicUrl !== undefined && ws.publicUrl !== '') return null;
+  return (
+    `WARNING: claude4spec listens beyond loopback but no public URL is set — ` +
+    `addresses handed out to clients (MCP connection snippets, generated skills, links) ` +
+    `will point at ${effectivePublicUrl(ws)}, which clients outside this host cannot reach. ` +
+    'Restart with --public-url <origin> to set the address clients should use.'
+  );
+}
+
+/** Every warning a start prints for this workspace's network attributes, in order. */
+export function startWarnings(ws: WorkspaceNetwork): string[] {
+  return [noAuthWarning(ws), defaultPublicUrlWarning(ws)].filter((w): w is string => w !== null);
 }

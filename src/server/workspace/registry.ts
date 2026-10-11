@@ -454,6 +454,23 @@ export class WorkspaceRegistry {
     if (typeof data !== 'object' || data === null || !Array.isArray(data.workspaces)) {
       throw new Error(`${this.file}: expected { $schemaVersion, workspaces: [] }`);
     }
+    // 2.1.12 (M31 edge cases): a damaged RECORD is a damaged registry. Without
+    // this a workspace whose `projects` is not an array read through — a string
+    // answered `.length`, so `c4s list-workspaces` printed the intact records
+    // plus a garbage one instead of refusing: a partial answer is worse than none.
+    data.workspaces.forEach((w, i) => {
+      const rec = w as unknown as Record<string, unknown> | null;
+      const ok =
+        typeof rec === 'object' &&
+        rec !== null &&
+        typeof rec.name === 'string' &&
+        typeof rec.defaultPort === 'number' &&
+        Array.isArray(rec.projects) &&
+        (rec.projects as unknown[]).every(
+          (p) => typeof p === 'object' && p !== null && typeof (p as { cwd?: unknown }).cwd === 'string',
+        );
+      if (!ok) throw new Error(`${this.file}: workspaces[${i}] is not a workspace record`);
+    });
     if (typeof data.$schemaVersion === 'number' && data.$schemaVersion > WORKSPACES_SCHEMA_VERSION) {
       throw new Error(
         `${this.file}: schema version ${data.$schemaVersion} not supported by this claude4spec version`,

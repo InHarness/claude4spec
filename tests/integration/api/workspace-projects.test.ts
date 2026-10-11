@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import fs from 'node:fs';
@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { workspaceRouter } from '../../../src/server/workspace/routes.js';
 import { errorHandler } from '../../../src/server/routes/errors.js';
+import { resolveSpaRoute } from '../../../src/server/workspace/spa-route.js';
 import type { ProjectContextCache } from '../../../src/server/workspace/context-cache.js';
 import type { WorkspaceRegistry } from '../../../src/server/workspace/registry.js';
 import type { ProjectRecord, WorkspaceRecord } from '../../../src/server/workspace/types.js';
@@ -27,8 +28,10 @@ describe('workspace project registration routes', () => {
 
   const workspace = { name: 'default', projects: [] as ProjectRecord[] } as unknown as WorkspaceRecord;
 
+  let registry: WorkspaceRegistry;
+
   function app(): express.Express {
-    const registry = {
+    registry = {
       getWorkspace: () => workspace,
       getProject: (_ws: WorkspaceRecord, id: string) => workspace.projects.find((p) => p.id === id) ?? null,
       removeProject: (_ws: WorkspaceRecord, id: string) => {
@@ -63,6 +66,7 @@ describe('workspace project registration routes', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -137,5 +141,68 @@ describe('workspace project registration routes', () => {
     const res = await request(app()).delete('/api/workspace/projects/proj-1?purgeData=true');
     expect(res.status).toBe(500);
     expect(res.body.error.code).toBe('INTERNAL');
+  });
+  it('[ac:ac-dodanie-z-modala-sciezki-nieistniejac-2] a nonexistent path and a path without read/write permission are refused with 400 VALIDATION and leave the workspace registry unchanged', async () => {
+    const existing = { id: 'kept', cwd: path.join(tmp, 'kept'), name: 'kept' } as ProjectRecord;
+    workspace.projects = [existing];
+    // Activation is what registers a project (bootstrapProject) — a refused path must never reach it.
+    activate = async (cwd) => {
+      activated.push(cwd);
+      const p = { id: 'proj-new', cwd, name: path.basename(cwd) } as ProjectRecord;
+      workspace.projects = [...workspace.projects, p];
+      return p;
+    };
+    const locked = path.join(tmp, 'locked');
+    fs.mkdirSync(locked);
+    // Deterministic EACCES (a chmod is a no-op for a root test runner).
+    const realAccess = fs.accessSync;
+    vi.spyOn(fs, 'accessSync').mockImplementation((p, mode) => {
+      if (path.resolve(String(p)) === locked) {
+        throw Object.assign(new Error(`EACCES: permission denied, access '${locked}'`), { code: 'EACCES' });
+      }
+      return realAccess(p, mode);
+    });
+    const a = app();
+    const before = (await request(a).get('/api/workspace')).body.projects;
+
+    const missing = await request(a).post('/api/workspace/projects').send({ cwd: path.join(tmp, 'nope') });
+    expect(missing.status).toBe(400);
+    expect(missing.body.error.code).toBe('VALIDATION');
+    expect(missing.body.error.message).toMatch(/does not exist/);
+
+    const denied = await request(a).post('/api/workspace/projects').send({ cwd: locked });
+    expect(denied.status).toBe(400);
+    expect(denied.body.error.code).toBe('VALIDATION');
+    expect(denied.body.error.message).toMatch(/permission/);
+
+    expect(activated).toEqual([]);
+    expect(workspace.projects).toEqual([existing]);
+    expect((await request(a).get('/api/workspace')).body.projects).toEqual(before);
+  });
+
+  it('[ac:ac-purge-ostatniego-projektu-workspace-u] purging the last project answers redirectProjectId null, and the root the UI then loads resolves to /welcome', async () => {
+    const cwd = path.join(tmp, 'only');
+    fs.mkdirSync(path.join(tmp, 'slot'), { recursive: true });
+    workspace.projects = [{ id: 'only', cwd, name: 'only' } as ProjectRecord];
+    const a = app();
+
+    const res = await request(a).delete('/api/workspace/projects/only?purgeData=true');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ projects: [], redirectProjectId: null });
+
+    // `redirectProjectId: null` → the UI loads `/` (DangerZoneElement); follow the
+    // redirect chain the browser follows from there.
+    let url = '/';
+    const hops = [url];
+    let resolution = resolveSpaRoute(registry, workspace, url);
+    while (resolution.kind === 'redirect' && hops.length < 5) {
+      url = resolution.to;
+      hops.push(url);
+      resolution = resolveSpaRoute(registry, workspace, url);
+    }
+    expect(resolution).toEqual({ kind: 'welcome' });
+    expect(hops).toEqual(['/', '/welcome']);
+    // The purged project's route no longer opens anything — it chains back to /welcome.
+    expect(resolveSpaRoute(registry, workspace, '/p/only/')).toEqual({ kind: 'redirect', to: '/' });
   });
 });

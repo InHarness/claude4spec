@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { FolderPlus, Plus, X } from 'lucide-react';
 import { toast } from '../events.js';
+import { navigateDocument } from '../../lib/document-nav.js';
 import { DirectoryBrowser } from '../../host-ui-kit/overlay/DirectoryPickerModal.js';
 import type { ModalFormProps } from '../ModalHost.js';
 
@@ -42,7 +43,7 @@ export function ProjectCreate({ onClose: close }: ModalFormProps<'project-create
       }
       toast.success('Project added to workspace');
       // Full reload into the new project — module-load constants must re-init.
-      window.location.href = `/p/${body.projectId}/`;
+      navigateDocument(`/p/${body.projectId}/`);
     } catch {
       setError('Request failed — is the server still running?');
       setPending(false);

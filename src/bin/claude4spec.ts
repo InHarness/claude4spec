@@ -9,135 +9,10 @@ import { bootstrapProject } from '../server/workspace/bootstrap.js';
 import {
   applyNetworkFlags,
   InvalidPublicUrlError,
-  noAuthWarning,
 } from '../server/workspace/network-flags.js';
 import { effectiveBindHost, effectivePublicUrl } from '../core/workspace/network.js';
 import type { WorkspaceRecord } from '../server/workspace/types.js';
-
-interface CliArgs {
-  port?: number;
-  cwd: string;
-  pagesDir?: string;
-  mode?: 'dev' | 'prod';
-  name?: string;
-  /** M31: workspace selector (`--workspace <name>`); absent = port/default resolution. */
-  workspace?: string;
-  noOpen: boolean;
-  /** M27: `--clone <slug>` — bootstrap-time clone of a published remote project. */
-  clone?: string;
-  /**
-   * M01 (0.1.36): `--remote-url <url>` — sticky override of the remote
-   * claude4spec-API base. Maps to config `remoteApiUrl`; persisted on first
-   * bootstrap so later pushes/clones target the same remote.
-   */
-  remoteUrl?: string;
-  /**
-   * Decision #11 (0.1.57): `--create-project` — explicit opt-in to register the
-   * CWD as a workspace project. Non-sticky (never written to config.json).
-   * Implied by any per-project flag (`--cwd`/`--name`/`--pages`/`--clone`/
-   * `--remote-url`). Without it the bare command is a workspace-only start that
-   * writes nothing to the CWD and opens `/welcome`.
-   */
-  createProject: boolean;
-  /**
-   * 2.1.0: `--host <addr>` — the workspace's listen address (`bindHost`).
-   * Persisted in the registry; `''` (`--host=`) restores loopback. Not a selector.
-   */
-  host?: string;
-  /**
-   * 2.1.0: `--public-url <url>` — the origin clients see. Persisted in the
-   * registry; `''` restores `http://localhost:<port>`. Not a selector.
-   */
-  publicUrl?: string;
-}
-
-function parseArgs(argv: string[]): CliArgs {
-  const args: CliArgs = {
-    port: undefined,
-    cwd: process.cwd(),
-    pagesDir: undefined,
-    mode: undefined,
-    name: undefined,
-    workspace: undefined,
-    noOpen: false,
-    clone: undefined,
-    remoteUrl: undefined,
-    createProject: false,
-    host: undefined,
-    publicUrl: undefined,
-  };
-  // `cwd` always defaults to process.cwd(), so its value can't signal intent —
-  // track whether `--cwd` was passed explicitly to drive the create-project
-  // implication.
-  let cwdExplicit = false;
-  const resolveCwd = (raw: string) => path.resolve(process.cwd(), raw);
-  const parseMode = (raw: string): 'dev' | 'prod' => {
-    if (raw !== 'dev' && raw !== 'prod') throw new Error(`--mode must be 'dev' or 'prod', got '${raw}'`);
-    return raw;
-  };
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a === '--port' && argv[i + 1]) {
-      args.port = Number(argv[++i]);
-    } else if (a?.startsWith('--port=')) {
-      args.port = Number(a.split('=')[1]);
-    } else if (a === '--cwd' && argv[i + 1]) {
-      args.cwd = resolveCwd(argv[++i]!);
-      cwdExplicit = true;
-    } else if (a?.startsWith('--cwd=')) {
-      args.cwd = resolveCwd(a.split('=')[1]!);
-      cwdExplicit = true;
-    } else if (a === '--pages' && argv[i + 1]) {
-      args.pagesDir = argv[++i];
-    } else if (a?.startsWith('--pages=')) {
-      args.pagesDir = a.split('=')[1];
-    } else if (a === '--mode' && argv[i + 1]) {
-      args.mode = parseMode(argv[++i]!);
-    } else if (a?.startsWith('--mode=')) {
-      args.mode = parseMode(a.split('=')[1]!);
-    } else if (a === '--name' && argv[i + 1]) {
-      args.name = argv[++i];
-    } else if (a?.startsWith('--name=')) {
-      args.name = a.split('=')[1];
-    } else if (a === '--workspace' && argv[i + 1]) {
-      args.workspace = argv[++i];
-    } else if (a?.startsWith('--workspace=')) {
-      args.workspace = a.split('=')[1];
-    } else if (a === '--clone' && argv[i + 1]) {
-      args.clone = argv[++i];
-    } else if (a?.startsWith('--clone=')) {
-      args.clone = a.split('=')[1];
-    } else if (a === '--remote-url' && argv[i + 1]) {
-      args.remoteUrl = argv[++i];
-    } else if (a?.startsWith('--remote-url=')) {
-      args.remoteUrl = a.split('=')[1];
-    } else if (a === '--host' && argv[i + 1] !== undefined) {
-      args.host = argv[++i];
-    } else if (a?.startsWith('--host=')) {
-      args.host = a.slice('--host='.length);
-    } else if (a === '--public-url' && argv[i + 1] !== undefined) {
-      args.publicUrl = argv[++i];
-    } else if (a?.startsWith('--public-url=')) {
-      args.publicUrl = a.slice('--public-url='.length);
-    } else if (a === '--create-project') {
-      args.createProject = true;
-    } else if (a === '--no-open') {
-      args.noOpen = true;
-    }
-  }
-  // Decision #11: per-project flags imply `--create-project` — each acted on the
-  // CWD project in 0.1.56, so their use still registers it (eases migration).
-  if (
-    cwdExplicit ||
-    args.name != null ||
-    args.pagesDir != null ||
-    args.clone != null ||
-    args.remoteUrl != null
-  ) {
-    args.createProject = true;
-  }
-  return args;
-}
+import { parseLaunchArgs, printStartWarnings, workspaceOnlyLaunch } from './launch.js';
 
 /**
  * M27 clone guard (step 6a). The target must be empty — no non-dotfile entries
@@ -180,7 +55,7 @@ function openBrowser(url: string): void {
   }
 }
 
-const args = parseArgs(process.argv.slice(2));
+const args = parseLaunchArgs(process.argv.slice(2));
 const { port, cwd, pagesDir, mode, name, noOpen, clone, remoteUrl, createProject } = args;
 
 const registry = new WorkspaceRegistry();
@@ -207,8 +82,7 @@ function withNetwork(ws: WorkspaceRecord): WorkspaceRecord {
     }
     throw err;
   }
-  const warning = noAuthWarning({ ...next, defaultPort: port ?? next.defaultPort });
-  if (warning) console.warn(`\x1b[33m  ${warning}\x1b[0m`);
+  printStartWarnings({ ...next, defaultPort: port ?? next.defaultPort });
   return next;
 }
 
@@ -287,7 +161,7 @@ if (createProject) {
   // nothing is written to the CWD. Select the workspace from CLI signals only
   // and open `/welcome`. A project is registered later via /welcome or the
   // switcher (POST /api/workspace/projects).
-  const workspace = withNetwork(registry.selectOrCreate({ name: args.workspace, port, mode }));
+  const workspace = workspaceOnlyLaunch(registry, args, withNetwork);
   const effectivePort = port ?? workspace.defaultPort;
   const effectiveMode = mode ?? workspace.mode;
 
