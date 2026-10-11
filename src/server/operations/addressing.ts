@@ -57,7 +57,15 @@ export function addressingParamShape(channel: ChannelName, ownerDeclaresIsolatio
 // ASSUMPTION:dev-0001 — `brief-tools` (internal) still renders no `path` although
 // M21 makes no isolation declaration; it is not wired to this rule in 2.1.13 and
 // left as shipped, pending the specification's answer.
-export const OWNER_THREAD_ISOLATION: Readonly<Partial<Record<ArtifactKind, string>>> = {};
+export const OWNER_THREAD_ISOLATION: Readonly<Partial<Record<ArtifactKind, string>>> = {
+  /**
+   * 2.1.13 — M10 `m10mcp00`: "agent w wątku widzi wyłącznie plan przypięty do
+   * swojego wątku", and pinning is the user's act alone. With an optional
+   * `path` an agent could deliberately read or change another thread's plan, so
+   * the internal plan tools carry NO `path` at all (`plan-tools.ts`).
+   */
+  plan: 'M10 m10mcp00 — a thread sees only the plan pinned to it; pinning is the user\'s act alone',
+};
 
 /** Does the owner of this kind declare thread isolation? */
 export function ownerDeclaresThreadIsolation(

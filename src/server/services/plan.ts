@@ -47,6 +47,7 @@ import type { ChatService } from './chat.js';
 import type { PagesFrontmatterIndexer } from './pages-frontmatter-indexer.js';
 import { DomainError } from './tags.js';
 import { readArtifactWindow, windowBody, type ArtifactRange } from './artifact-read.js';
+import { bindingAddress } from './artifact-registry.js';
 import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
 import { ConflictError } from './brief.js';
 import { hashContent, toIso } from './artifact-content.js';
@@ -222,7 +223,11 @@ export interface PlanUpdateFrontmatterOpts {
 
 /** Input of {@link PlanService.setAppliedByThread} — the `mark_plan_applied` operation. */
 export interface PlanSetAppliedInput {
-  /** Plan path relative to the `plans` root. Defaulted from the thread in the `internal` channel. */
+  /**
+   * Plan path relative to the `plans` root — passed only by an EXTERNAL rendering
+   * (2.1.13, M10 `m10mcp00`). The internal rendering has no `path` at all and
+   * acts on the plan pinned to its thread; an unknown `path` is `PLAN_NOT_FOUND`.
+   */
   path?: string;
   /** Required. Only `true` passes through the agent channel — see the method. */
   applied: boolean;
@@ -315,6 +320,18 @@ export class PlanService {
   }
 
   /**
+   * 2.1.13 (M10 `m10mcp00`) — the read of an EXTERNALLY addressed plan: the same
+   * window and budget as {@link getByPath}, but a `path` nothing resolves to is
+   * `PLAN_NOT_FOUND` carrying this project's plans — the code M10 keeps for an
+   * unknown `path`, and only for that. A thread with nothing pinned is not an
+   * unknown address (see {@link getByThread}: `null`).
+   */
+  async getByAddress(planPath: string, opts?: { range?: ArtifactRange }): Promise<Plan> {
+    await this.assertAddressedPlan(planPath);
+    return this.getByPath(planPath, opts);
+  }
+
+  /**
    * 0.2.43 — the same plan, WHOLE: the read every write path takes.
    *
    * {@link getByPath} answers a reader, so it passes the file through
@@ -381,10 +398,25 @@ export class PlanService {
     return { raw, parsed, frontmatter };
   }
 
+  /**
+   * The plan pinned to a thread — the internal rendering's only address (2.1.13,
+   * M10 thread isolation: no `path` in `internal`). Nothing pinned is a state of
+   * the thread, not a wrong address, so it answers `null`, never PLAN_NOT_FOUND.
+   */
   async getByThread(threadId: string, opts?: { range?: ArtifactRange }): Promise<Plan | null> {
-    const planPath = this.deps.chatService.getThreadPlanPath(threadId);
+    const planPath = this.pinnedPlanPath(threadId);
     if (!planPath) return null;
     return this.getByPath(planPath, opts);
+  }
+
+  /**
+   * The address M36's binding matrix supplies for `plan` on this thread
+   * (`bindingAddress`, column `plan_path`) — `null` for an unknown thread or
+   * nothing pinned.
+   */
+  private pinnedPlanPath(threadId: string): string | null {
+    const thread = this.deps.chatService.getThreadMeta(threadId);
+    return thread ? bindingAddress('plan', thread) : null;
   }
 
   /**
@@ -466,7 +498,9 @@ export class PlanService {
     // (file watcher / boot-time indexAll()), so a plan written moments ago
     // (e.g. by the boot-time SQLite->filesystem backfill) can otherwise be
     // reported NOT_FOUND here even though it's fully readable on disk.
-    const plan = await this.getByPath(planPath);
+    // 2.1.13 — `execute_plan`'s rest rendering: an unknown plan is PLAN_NOT_FOUND
+    // (catalog row `katalog-operacji-m10#execute_plan`), not the generic NOT_FOUND.
+    const plan = await this.getByAddress(planPath);
     const title = typeof plan.frontmatter.title === 'string' ? plan.frontmatter.title : planPath;
     const newThread = this.deps.chatService.createThread(title);
     this.deps.chatService.attachPlanToThread(newThread.id, planPath);
@@ -813,6 +847,17 @@ export class PlanService {
    * meant.
    */
   private async requirePlan(planPath: string): Promise<Plan> {
+    await this.assertAddressedPlan(planPath);
+    return this.getByPath(planPath);
+  }
+
+  /**
+   * `PLAN_NOT_FOUND` for an explicitly addressed path nothing resolves to — one
+   * refusal for reads and writes, on every external rendering (MCP explicit
+   * mount, and the REST adapter in routes/artifacts.ts, which calls it before
+   * the versions / content / frontmatter renderings).
+   */
+  async assertAddressedPlan(planPath: string): Promise<void> {
     if (!(await this.deps.plansPages.exists(planPath))) {
       const known = this.listPlans().map((p) => p.path);
       throw new DomainError(
@@ -821,7 +866,6 @@ export class PlanService {
         known.length > 0 ? `this project's plans: ${known.join(', ')}` : 'this project has no plans yet',
       );
     }
-    return this.getByPath(planPath);
   }
 
 
@@ -962,12 +1006,22 @@ export class PlanService {
         'unset it in the UI — the toggle in the header of the plan page',
       );
     }
-    const planPath = input.path ?? this.deps.chatService.getThreadPlanPath(threadId);
+    /**
+     * 2.1.13 — two renderings, one function. An external rendering names the
+     * plan (`path`, PLAN_NOT_FOUND when unknown); the internal one has no `path`
+     * and acts on the plan pinned to its thread — never a "default" of an
+     * optional parameter (M10 thread isolation).
+     */
+    if (input.path !== undefined) await this.assertAddressedPlan(input.path);
+    const planPath = input.path ?? this.pinnedPlanPath(threadId);
     if (!planPath) {
+      // ASSUMPTION:dev-0002 — nothing pinned is a state of the thread, not an
+      // unknown path, so it is INVALID_ARGUMENT (PLAN_NOT_FOUND stays the code of
+      // an unknown external `path`).
       throw new DomainError(
-        'NOT_FOUND',
+        'INVALID_ARGUMENT',
         'this thread has no plan to mark applied',
-        'create one with update_plan (title required on the first call), or pass an explicit path',
+        'write the plan first with update_plan (title required on the first call)',
       );
     }
     const current = await this.getByPath(planPath);

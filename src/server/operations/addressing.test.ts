@@ -45,11 +45,14 @@ describe('M43 explicit-addressing — isolation exception (2.1.13)', () => {
     expect(artifactAddressingShape('brief', 'internal', declared)).toBe('optional');
     // An empty citation is not a declaration.
     expect(ownerDeclaresThreadIsolation('plan', { plan: '' })).toBe(false);
-    // No owner declares isolation in this release's process-wide table yet, so
-    // every kind renders the default there.
-    expect(OWNER_THREAD_ISOLATION).toEqual({});
+    // In this release's process-wide table only M10 declares isolation (plans,
+    // m10mcp00): the plan's internal address is absent, the other kinds keep the
+    // default.
+    expect(Object.keys(OWNER_THREAD_ISOLATION)).toEqual(['plan']);
+    expect(artifactAddressingShape('plan', 'internal')).toBe('absent');
+    expect(artifactAddressingShape('brief', 'internal')).toBe('optional');
+    expect(artifactAddressingShape('patch', 'internal')).toBe('optional');
     for (const kind of KINDS) {
-      expect(artifactAddressingShape(kind, 'internal'), kind).toBe('optional');
       for (const channel of EXTERNAL) expect(artifactAddressingShape(kind, channel), `${kind}/${channel}`).toBe('required');
     }
   });

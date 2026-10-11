@@ -713,13 +713,17 @@ describe('PlanService — the `applied` flag (0.2.14)', () => {
     }
   });
 
-  it('NOT_FOUND when the thread has no plan and no explicit path was given', async () => {
+  it('INVALID_ARGUMENT when the thread has no plan pinned and no explicit path was given; PLAN_NOT_FOUND for an unknown explicit path', async () => {
     const h = await setup();
     try {
       seedThread(h.db, 'thread-1');
+      // 2.1.13 — nothing pinned is a state of the thread, not an unknown address.
       await expect(h.service.setAppliedByThread('thread-1', { applied: true })).rejects.toMatchObject({
-        code: 'NOT_FOUND',
+        code: 'INVALID_ARGUMENT',
       });
+      await expect(
+        h.service.setAppliedByThread('thread-1', { path: 'no-such-plan.md', applied: true }),
+      ).rejects.toMatchObject({ code: 'PLAN_NOT_FOUND' });
     } finally {
       await teardown(h);
     }

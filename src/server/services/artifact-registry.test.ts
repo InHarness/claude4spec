@@ -133,11 +133,15 @@ describe('M36 binding matrix supplies the address, M43 shapes the parameter (2.1
         expect(['mode', 'contextType', 'threadColumn'], `${rootKind}.binding.${k}`).toContain(k);
       }
     }
-    // With no owner declaration, the shape is the rule's default — the anchor /
-    // attach mode of the matrix does not change it.
-    expect(OWNER_THREAD_ISOLATION).toEqual({});
+    // The shape follows the OWNER's declaration, not the matrix's anchor /
+    // attach mode: brief and patch (anchor, no declaration) keep the optional
+    // default, plan (attach) is absent only because M10 declares isolation.
+    expect(Object.keys(OWNER_THREAD_ISOLATION)).toEqual(['plan']);
+    expect(artifactAddressingShape('brief', 'internal')).toBe('optional');
+    expect(artifactAddressingShape('patch', 'internal')).toBe('optional');
+    expect(artifactAddressingShape('plan', 'internal')).toBe('absent');
+    expect(artifactAddressingShape('plan', 'internal', {})).toBe('optional');
     for (const kind of KINDS) {
-      expect(artifactAddressingShape(kind, 'internal'), kind).toBe('optional');
       expect(artifactAddressingShape(kind, 'rest'), kind).toBe('required');
     }
   });

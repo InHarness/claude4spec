@@ -1079,14 +1079,27 @@ export function registerCoreOperations(): void {
     channels: fullParity(),
   });
 
+  /**
+   * 2.1.13 — M10 thread isolation (`m10mcp00`): the plan operations' `path` is
+   * REQUIRED externally and ABSENT in `internal` (M43 `explicit-addressing`,
+   * isolation exception — `OWNER_THREAD_ISOLATION.plan`). The raw shape below is
+   * the superset; each rendering shapes it through `addressing.ts`. No thread
+   * default for an optional `path` exists any more. A thread with nothing pinned
+   * reads `plan: null`; PLAN_NOT_FOUND is the code of an unknown `path` only.
+   * Read, edit and the version axis have no `cli` command.
+   */
+  const PLAN_PATH_DESC = 'Plan path relative to the plans root (.claude4spec/plans). Required on every external channel; ABSENT in `internal`, where M10 declares thread isolation and the plan is the one pinned to the thread (`chat_thread.plan_path`).';
+  const PLAN_NO_CLI = 'no `c4s` command: the only real callers are the agent in a thread and the user in the UI, not a person at a terminal';
+
   CATALOG.register({
     name: 'get_plan',
-    summary: 'Read a plan: content, frontmatter and version number.',
+    summary:
+      "Read a plan: content, frontmatter, version number and hash, optionally through a 1-based inclusive line window (`range`). A thread with no plan pinned reads `plan: null`; an unknown `path` is PLAN_NOT_FOUND. A plan over the response budget comes back `truncated: true` with a `truncationHint` pointing at `range`.",
     scope: 'project',
     mediation: 'direct',
     opClass: 'plan',
     inputSchema: {
-      path: z.string().optional().describe('Plan path relative to the plans root (.claude4spec/plans). Defaulted from the thread only in the `internal` channel.'),
+      path: z.string().optional().describe(PLAN_PATH_DESC),
       range: z
         .object({ start: z.number().int().positive(), end: z.number().int().positive() })
         .optional()
@@ -1094,12 +1107,12 @@ export function registerCoreOperations(): void {
           '1-based inclusive line window. Unconditionally allowed — a plan never enters `section_index`. A `start` past the end of the file is INVALID_ARGUMENT stating the size.',
         ),
     },
-    errorCodes: ['NOT_FOUND', 'INVALID_ARGUMENT'],
+    errorCodes: ['PLAN_NOT_FOUND', 'INVALID_ARGUMENT'],
     sideEffects: ['none'],
     idempotent: true,
     channels: {
       internal: direct(),
-      cli: na('no `c4s get-plan` command: a plan is addressed by the thread that drafts it, and M10 has no CLI section'),
+      cli: na(PLAN_NO_CLI),
       mcp: direct(),
       rest: direct(),
     },
@@ -1113,7 +1126,7 @@ export function registerCoreOperations(): void {
     mediation: 'direct',
     opClass: 'plan',
     inputSchema: {
-      path: z.string().optional(),
+      path: z.string().optional().describe(PLAN_PATH_DESC),
       title: z.string().optional().describe('Required when the thread has no plan yet — this call creates it.'),
       /**
        * 0.2.43 — the top-level `action` is GONE, and so are `anchor` and
@@ -1151,21 +1164,23 @@ export function registerCoreOperations(): void {
       expectedHash: z.string().optional().describe('REQUIRED except on the call that creates the plan.'),
       changeSummary: z.string(),
     },
+    /**
+     * 2.1.13 — the row's nine codes (`katalog-operacji-m10`). `IMMUTABLE_FIELD`
+     * is the `rest` rendering's (the editor save, `PUT /api/artifacts/plan/<path>/content`
+     * → `updateContent`); `VALIDATION` / `NOT_FOUND` left: the internal mount has
+     * no `path` to validate and always runs in an existing thread, and a missing
+     * external `path` is INVALID_ARGUMENT.
+     */
     errorCodes: [
-      'PLAN_NOT_FOUND',
-      'MISSING_TITLE',
       'PLAN_CONFLICT',
-      'VALIDATION',
-      'INVALID_ARGUMENT',
+      'PLAN_NOT_FOUND',
       'SECTION_NOT_FOUND',
       'AMBIGUOUS_ANCHOR',
       'FIND_NOT_FOUND',
       'MATCH_COUNT_MISMATCH',
-      // The create branch attaches the new plan to the calling thread, and a
-      // thread that does not exist is this operation's own NOT_FOUND. Not
-      // IMMUTABLE_FIELD: that one is thrown by the editor's save route
-      // (`updateContent`), which is a different operation.
-      'NOT_FOUND',
+      'MISSING_TITLE',
+      'IMMUTABLE_FIELD',
+      'INVALID_ARGUMENT',
     ],
     sideEffects: ['file', 'db', 'ui-notify'],
     /**
@@ -1182,7 +1197,62 @@ export function registerCoreOperations(): void {
      * every channel's description rather than hidden behind a boolean.
      */
     idempotent: false,
-    channels: fullParity(),
+    channels: {
+      internal: direct(),
+      cli: na(PLAN_NO_CLI),
+      mcp: direct(),
+      rest: direct(),
+    },
+  });
+
+  /** 2.1.13 — the plan's version axis (`file_version`, rootId `plans`): metadata only, oldest first. */
+  CATALOG.register({
+    name: 'list_plan_versions',
+    summary:
+      "A plan's version history from `file_version` — metadata without content, oldest first (offset 0 is version 1), windowed by `limit` / `offset`. A thread with no plan pinned lists nothing; an unknown `path` is PLAN_NOT_FOUND.",
+    scope: 'project',
+    mediation: 'direct',
+    opClass: 'plan',
+    inputSchema: {
+      path: z.string().optional().describe(PLAN_PATH_DESC),
+      ...paging,
+    },
+    errorCodes: ['PLAN_NOT_FOUND', 'INVALID_ARGUMENT'],
+    sideEffects: ['none'],
+    idempotent: true,
+    channels: {
+      internal: direct(),
+      cli: na(PLAN_NO_CLI),
+      mcp: direct(),
+      // GET /api/artifacts/plan/<path>/versions — the plan adapter's `listVersions`
+      // (routes/artifacts.ts): PLAN_NOT_FOUND for an unknown path.
+      rest: direct(),
+    },
+  });
+
+  CATALOG.register({
+    name: 'get_plan_version',
+    summary:
+      'One version snapshot of a plan, with its content, addressed by `(path, version)`. An unknown `path` is PLAN_NOT_FOUND; a version off the plan\'s axis is INVALID_ARGUMENT.',
+    scope: 'project',
+    mediation: 'direct',
+    opClass: 'plan',
+    inputSchema: {
+      path: z.string().optional().describe(PLAN_PATH_DESC),
+      version: z.number().int().positive(),
+    },
+    errorCodes: ['PLAN_NOT_FOUND', 'INVALID_ARGUMENT'],
+    sideEffects: ['none'],
+    // A version snapshot is immutable.
+    idempotent: true,
+    channels: {
+      internal: direct(),
+      cli: na(PLAN_NO_CLI),
+      mcp: direct(),
+      // GET /api/artifacts/plan/<path>/versions/:version — the plan adapter's
+      // `getVersion`: PLAN_NOT_FOUND / INVALID_ARGUMENT, as on mcp.
+      rest: direct(),
+    },
   });
 
   /**
@@ -1203,7 +1273,7 @@ export function registerCoreOperations(): void {
     mediation: 'direct',
     opClass: 'plan',
     inputSchema: {
-      path: z.string().optional().describe('Plan path relative to the plans root (.claude4spec/plans). Defaulted from the thread only in the `internal` channel.'),
+      path: z.string().optional().describe(PLAN_PATH_DESC),
       applied: z.boolean().describe('Must be true from a non-user channel.'),
     },
     /**
@@ -1215,7 +1285,10 @@ export function registerCoreOperations(): void {
      * guard stays reachable through the generic REST frontmatter route, which
      * has its own row.
      */
-    errorCodes: ['NOT_FOUND', 'INVALID_ARGUMENT', 'VALIDATION'],
+    // 2.1.13 — the row's two codes: PLAN_NOT_FOUND for an unknown external
+    // `path`; INVALID_ARGUMENT for `applied: false` and for a thread with no plan
+    // pinned (ASSUMPTION:dev-0002).
+    errorCodes: ['PLAN_NOT_FOUND', 'INVALID_ARGUMENT'],
     // No `db`: a frontmatter-only plan write deliberately records no
     // `file_version` row, so the plan's version history is untouched.
     sideEffects: ['file', 'ui-notify'],
@@ -1224,13 +1297,45 @@ export function registerCoreOperations(): void {
     idempotent: true,
     channels: {
       internal: direct(),
-      // Deliberately no `c4s` command — M10 has no CLI section, and the flag is
-      // declared by the agent that ran the plan, which is never the terminal.
-      cli: na('no c4s command: the declarant is the in-thread agent, not a terminal'),
+      // Deliberately no `c4s` command — the flag is declared by the agent that
+      // ran the plan, which is never the terminal.
+      cli: na('no c4s command: the only real caller finishes executing the plan in a thread, not at a terminal'),
       mcp: direct(),
-      // Rendered by the generic artifact family rather than a route of its own:
-      // PATCH /api/artifacts/plan/:path/frontmatter with { applied }.
-      rest: via('update_artifact_frontmatter', 'generic artifact-family endpoint — M10 adds no dedicated route'),
+      // 2.1.13 — the row says `direct`: the rendering is
+      // PATCH /api/artifacts/plan/<path>/frontmatter with { applied }, which calls
+      // PlanService.updateFrontmatter — the same core function, not a proxy
+      // operation (`update_artifact_frontmatter` is not a catalog row).
+      rest: direct(),
+    },
+  });
+
+  /**
+   * 2.1.13 — `execute_plan`, sheet `katalog-operacji-m10` row 8: handing control
+   * back to the user is a decision, not the execution of someone else's, so the
+   * row is `human-mediated` and renders on `rest` only —
+   * `POST /api/plans/:planId/create-thread` (`attachThreadToPlan`): a new thread
+   * with the plan pinned, the execution prompt landing in the composer as an
+   * editable draft. No tool renders it, so no profile's reach changes.
+   */
+  CATALOG.register({
+    name: 'execute_plan',
+    summary:
+      'Open a new thread over a plan, with the plan pinned to it; the execution prompt lands in the composer as an editable draft. User-initiated. An unknown plan is PLAN_NOT_FOUND.',
+    scope: 'project',
+    mediation: 'human-mediated',
+    opClass: 'plan',
+    inputSchema: {
+      planId: z.string().describe('The plan the thread opens over (its path relative to the plans root).'),
+    },
+    errorCodes: ['PLAN_NOT_FOUND', 'INVALID_ARGUMENT'],
+    sideEffects: ['db', 'ui-notify'],
+    // Every trigger opens a new thread.
+    idempotent: false,
+    channels: {
+      internal: na('a user-initiated act; the review of this classification is open'),
+      cli: na('a user-initiated act; the review of this classification is open'),
+      mcp: na('a user-initiated act; the review of this classification is open'),
+      rest: direct(),
     },
   });
 

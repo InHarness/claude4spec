@@ -170,7 +170,8 @@ export const ARTIFACT_READ_FAMILY: Readonly<Record<ArtifactKind, ArtifactReadFam
   },
   plan: {
     list: 'list_plans (mcp) + GET /api/artifacts/plan (rest), filtered by frontmatter.applied',
-    getWithWindow: 'get_plan({ range? }) (mcp) + GET /api/artifacts/plan/<path> (rest) — the same range window',
+    getWithWindow:
+      "get_plan({ range? }) (internal — the thread's pinned plan, no path: M10 thread isolation) + get_plan({ path, range? }) (mcp) + GET /api/artifacts/plan/<path> (rest) — the same range window",
     search: 'n/a — no search operation exists for plans in any channel; same gap as brief.',
     responseBudget: 'truncated: true per item + truncationHint pointing unconditionally at range',
   },

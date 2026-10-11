@@ -6,11 +6,13 @@ import type { TextEdit } from '../services/text-edits.js';
 import type { FileVersionService } from '../services/file-version.js';
 import { toolFailure, toolSuccess } from '../operations/envelope.js';
 import { DomainError } from '../services/tags.js';
+import { addressingParam, artifactAddressingShape } from '../operations/addressing.js';
 
 export interface PlanToolsContext {
   /**
-   * The thread these tools address a plan through — the `internal` channel's
-   * default binding.
+   * The thread these tools address a plan through — on the `internal` mount the
+   * ONLY address (2.1.13, M10 thread isolation: no `path` parameter exists there,
+   * so the plan is always the one pinned to this thread).
    *
    * On a channel that HAS no thread, pass `target: 'explicit'` instead of
    * inventing an id. A synthetic `threadId` resolves to no plan, so every
@@ -45,10 +47,19 @@ export function buildPlanToolsServer(
 ): CapturedMcpServer {
   const { threadId, planService, pageVersions } = ctx;
   const explicit = ctx.target === 'explicit';
-  /** `path` is required exactly when there is no thread to default it from. */
-  const pathParam = explicit
-    ? { path: z.string().describe('Plan path relative to the plans root (.claude4spec/plans), from list_plans.') }
-    : {};
+  /**
+   * 2.1.13 — the plan's addressing parameter, shaped by M43's
+   * `explicit-addressing` rule and NOT decided here. The threadless mount is an
+   * external channel (`mcp`): `path` is required. The thread mount is `internal`,
+   * where M10 declares thread isolation (`OWNER_THREAD_ISOLATION.plan`): `path`
+   * is ABSENT, not optional — an agent sees and edits only the plan pinned to its
+   * own thread, and an optional `path` would let it reach another thread's plan.
+   */
+  const pathParam = addressingParam(
+    'path',
+    artifactAddressingShape('plan', explicit ? 'mcp' : 'internal'),
+    z.string().describe('Plan path relative to the plans root (.claude4spec/plans), from list_plans.'),
+  );
   /**
    * 0.2.40 — the artifact read family's window, identical in shape to
    * `get_brief`'s and to `get_page.range`, and — like `get_brief`'s —
@@ -59,13 +70,13 @@ export function buildPlanToolsServer(
       .object({ start: z.number().int().positive(), end: z.number().int().positive() })
       .optional()
       .describe(
-        '1-based inclusive line window onto the plan. Always allowed. A `start` past the end of the file is INVALID_ARGUMENT stating the file size.',
+        '1-based inclusive line window { start, end } onto the plan. Always allowed. A start past the end of the file is refused with the file size.',
       ),
   };
   const requirePath = (raw: unknown): string => {
     if (typeof raw === 'string' && raw !== '') return raw;
     throw new DomainError(
-      'VALIDATION',
+      'INVALID_ARGUMENT',
       'path is required on this connection — there is no thread to take the plan from',
       'list the plans with list_plans, then pass one of their paths',
     );
@@ -84,14 +95,17 @@ export function buildPlanToolsServer(
   const getPlan = mcpTool(
     'get_plan',
     explicit
-      ? 'Read a plan by path (latest content, version). Use list_plans to find one.'
-      : "Get the current plan attached to this thread (latest content, version). Returns { plan: null } if the thread has no plan yet. Use to inspect plan state before updating. This is the ONLY way to the plan's content: the system prompt carries the plan's path and version, never its body.",
+      ? 'Read a plan by path — latest content, version and hash. An unknown path is PLAN_NOT_FOUND; use list_plans to find one. The returned `hash` is what arms `expectedHash` on the next `update_plan`. For a long plan, or when a response comes back truncated, read it in windows with `range`.'
+      : "Get the current plan for this thread — latest content, version and hash. Returns null when the thread has no plan yet. This is the ONLY way to the plan's content: the system prompt carries the plan's path and version, never its body. Use it to inspect plan state before updating, especially when a system reminder notes the plan was edited in another thread. The returned `hash` is what arms `expectedHash` on the next `update_plan`, so this read is the entry point of every write. For a long plan, or when a response comes back truncated, read it in windows with `range`.",
     { ...pathParam, ...rangeParam },
     async (args) => {
       try {
         const range = args.range as { start: number; end: number } | undefined;
+        // Internal: the thread's pinned plan, or `plan: null` — nothing pinned is
+        // a state of the thread, not a wrong address. External: PLAN_NOT_FOUND
+        // for an unknown `path`, and only then.
         const plan = explicit
-          ? await planService.getByPath(requirePath(args.path), { range })
+          ? await planService.getByAddress(requirePath(args.path), { range })
           : await planService.getByThread(threadId, { range });
         if (!plan) return ok({ plan: null }, 'get_plan');
         return ok({
@@ -157,22 +171,29 @@ export function buildPlanToolsServer(
    * it is the one plan tool that does not address an existing plan, so it is
    * identical on the thread mount and the threadless one.
    */
+  /**
+   * 2.1.13 — a plan founded from a thread belongs to its CARRIER thread, not to
+   * the calling one: the caller cannot address it with any other plan tool (the
+   * internal mount has no `path`), and the returned address is for handing on,
+   * not for its own edit. On the threadless mount every plan tool takes `path`,
+   * so there the address is usable directly.
+   */
+  const createPlanDescription = explicit
+    ? 'Create a new plan file from a title and a ready body, and get its address back. Use it when you already know what the plan should say — you have read the code and hold the content, not a question. The plan is created together with a carrier thread that grounds its provenance; no turn is started in that thread, so run one yourself if you want the plan worked on. The new plan belongs to its carrier thread. To edit it afterwards, pass the returned path to update_plan; the returned hash arms its expectedHash.'
+    : 'Create a new plan file from a title and a ready body, and get its address back. Use it when you already know what the plan should say — you have read the code and hold the content, not a question. The plan is created together with a carrier thread that grounds its provenance; no turn is started in that thread, so run one yourself if you want the plan worked on. This is not how you edit a plan. The new plan belongs to its carrier thread, not to this one, so you cannot read or edit it from here — hand the returned path to whoever will work on it. To write the plan of this thread, use update_plan, with title on the first call.';
   const createPlan = mcpTool(
     'create_plan',
-    [
-      'Create a NEW plan from content you already hold, together with the thread that carries it. No turn is started.',
-      'Use it when you already know what the plan should say — you have read the code and hold the content, not a question. The plan gets its own new thread; it is not attached to this conversation.',
-      '`title` names the plan and fixes its path for good (slug = slugify(title), immutable). A title whose slug is taken fails PLAN_ALREADY_EXISTS — nothing is suffixed and nothing is written into the existing plan.',
-      '`content` is the full plan markdown, verbatim — it becomes the first version. Empty or whitespace-only fails INVALID_ARGUMENT and nothing is created.',
-      'This is not how you edit an existing plan: for that, address it with `update_plan` and the `path` returned here. The returned `hash` arms `expectedHash` on that first edit, so no read is needed in between.',
-      'Returns { path, hash, threads } — `threads` is exactly one id, the carrier thread. The content does not come back; you already have it.',
-    ].join('\n'),
+    createPlanDescription,
     {
-      title: z.string().describe('Plan title. Its slug becomes the plan path, immutable; a taken slug is refused, not suffixed.'),
+      title: z
+        .string()
+        .describe(
+          "Plan title. The plan's slug is derived from it once and is immutable afterwards, so renaming the title later does not move the plan. A title whose slug is already taken is refused rather than suffixed.",
+        ),
       content: z
         .string()
         .optional()
-        .describe('The complete plan markdown, verbatim — the first version. Empty or whitespace-only is refused.'),
+        .describe('Full markdown body of the plan, verbatim — this is the first version. Blank or whitespace-only is refused: nothing is created.'),
     },
     async (args) => {
       try {
@@ -329,7 +350,7 @@ export function buildPlanToolsServer(
    * half that answers confidently.
    */
   const resolvePlan = async (raw: unknown) =>
-    explicit ? planService.getByPath(requirePath(raw)) : planService.getByThread(threadId);
+    explicit ? planService.getByAddress(requirePath(raw)) : planService.getByThread(threadId);
 
   const listPlanVersions = mcpTool(
     'list_plan_versions',
@@ -369,15 +390,31 @@ export function buildPlanToolsServer(
     },
     async (args) => {
       try {
-        // Only reachable in `thread` mode: `getByPath` throws NOT_FOUND for an
-        // unknown path rather than answering null, which is the better refusal
-        // and already carries the path the caller got wrong.
+        // Only reachable in `thread` mode: `getByAddress` throws PLAN_NOT_FOUND
+        // for an unknown path rather than answering null.
         const plan = await resolvePlan(args.path);
+        // ASSUMPTION:dev-0002 — the row's codes are PLAN_NOT_FOUND (unknown
+        // external path only) and INVALID_ARGUMENT: a thread with nothing pinned
+        // and a version off the plan's axis are both INVALID_ARGUMENT.
         if (!plan) {
-          return fail(new DomainError('VERSION_NOT_FOUND', 'thread has no plan'));
+          return fail(
+            new DomainError(
+              'INVALID_ARGUMENT',
+              'this thread has no plan, so it has no versions',
+              'write the plan first with update_plan (title required on the first call)',
+            ),
+          );
         }
         const v = pageVersions.getVersion(plan.path, Number(args.version), planService.rootId);
-        if (!v) return fail(new DomainError('VERSION_NOT_FOUND', `version ${args.version} not found`));
+        if (!v) {
+          return fail(
+            new DomainError(
+              'INVALID_ARGUMENT',
+              `version ${args.version} of plan '${plan.path}' does not exist — the plan has ${plan.currentVersion} version(s)`,
+              plan.currentVersion > 0 ? `pass a version from 1 to ${plan.currentVersion}` : 'the plan has no versions yet',
+            ),
+          );
+        }
         return ok(v, 'get_plan_version');
       } catch (err) {
         return fail(err);
@@ -414,12 +451,15 @@ export function buildPlanToolsServer(
     },
     async (args) => {
       try {
-        const explicitPath = explicit ? requirePath(args.path) : (args.path as string | undefined);
+        // Internal: no `path` exists, so the thread's pinned plan is the only
+        // target — nothing read off `args` can redirect it.
         return ok(
-          await planService.setAppliedByThread(threadId, {
-            path: explicitPath,
-            applied: args.applied as boolean,
-          }),
+          await planService.setAppliedByThread(
+            threadId,
+            explicit
+              ? { path: requirePath(args.path), applied: args.applied as boolean }
+              : { applied: args.applied as boolean },
+          ),
           'mark_plan_applied',
         );
       } catch (err) {

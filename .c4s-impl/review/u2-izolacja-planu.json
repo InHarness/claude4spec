@@ -1,0 +1,22 @@
+{
+  "role": "reviewer",
+  "scope": { "kind": "unit", "id": "u2-izolacja-planu", "base": "9beb808c437dcab58632feb4bd7218d32b877e1b" },
+  "findings": [
+    {
+      "id": "rev-0002",
+      "file": "src/server/services/plan.ts",
+      "line": 618,
+      "blocking": false,
+      "reason": "Carried over from round 1. It was not addressed and decisions.md gives no reason for keeping it. update() and its lock keying still read the thread's plan address through chatService.getThreadPlanPath. getByThread and setAppliedByThread read it through pinnedPlanPath (bindingAddress over getThreadMeta). Both read the same column today, but the internal read and the internal write could drift if the M36 binding column changes.",
+      "portion": "u2-izolacja-planu/p1-l3-l14"
+    },
+    {
+      "id": "rev-0003",
+      "file": "src/server/routes/artifacts.ts",
+      "line": 262,
+      "blocking": false,
+      "reason": "In the plan adapter, input validation runs before the address check. getVersion checks rawVersion first, and updateFrontmatter checks the `applied` type first. So a request with an unknown path and a bad argument (e.g. GET /api/artifacts/plan/no-such.md/versions/abc) answers INVALID_ARGUMENT, not PLAN_NOT_FOUND. Both codes are on the rows, so this is a defensible order. It is noted only so the precedence is a deliberate choice.",
+      "portion": "u2-izolacja-planu/p1-l3-l14"
+    }
+  ]
+}

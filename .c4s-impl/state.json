@@ -1,5 +1,5 @@
 {
- "iteration": 4,
+ "iteration": 11,
  "systemVerified": false,
  "errors": 0,
  "conventions": [
@@ -36,7 +36,7 @@
     "u2-izolacja-planu",
     "u4-okno-odczytu-briefu"
    ],
-   "startCommit": null
+   "startCommit": "e617f8f7b59b415d754b5b14e24b7106a577ba4b"
   },
   {
    "n": 3,
@@ -241,16 +241,46 @@
     }
    ],
    "wave": 2,
-   "status": "pending",
+   "status": "verified",
    "blockedBy": null,
-   "startCommit": null,
-   "baseCommit": null,
-   "portions": [],
+   "startCommit": "9beb808c437dcab58632feb4bd7218d32b877e1b",
+   "baseCommit": "e617f8f7b59b415d754b5b14e24b7106a577ba4b",
+   "portions": [
+    {
+     "name": "u2-izolacja-planu/p1-l3-l14",
+     "layers": [
+      "L3",
+      "L14"
+     ],
+     "slugs": [
+      "plan-tools-get-plan",
+      "plan-tools-create-plan",
+      "katalog-operacji-m10#get_plan",
+      "katalog-operacji-m10#update_plan",
+      "katalog-operacji-m10#list_plan_versions",
+      "katalog-operacji-m10#get_plan_version",
+      "katalog-operacji-m10#mark_plan_applied",
+      "katalog-operacji-m10#create_plan",
+      "katalog-operacji-m10#execute_plan",
+      "ac-create-plan-z-content-pusta-po-trim-z",
+      "ac-create-plan-z-title-i-niepusta-conten",
+      "ac-create-plan-z-title-ktorego-slugify-t",
+      "ac-create-plan-zaklada-razem-z-plikiem-w",
+      "ac-watek-zalozony-przy-powolaniu-planu-s"
+     ],
+     "status": "implemented",
+     "rounds": 2,
+     "partial": 0,
+     "uncovered": [],
+     "only": []
+    }
+   ],
    "rounds": {
     "review": 0,
-    "unit": 0
+    "unit": 2
    },
-   "jobs": []
+   "jobs": [],
+   "lastBlocking": 0
   },
   {
    "id": "u4-okno-odczytu-briefu",
