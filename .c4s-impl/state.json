@@ -1,5 +1,5 @@
 {
-  "iteration": 9,
+  "iteration": 10,
   "conventions": [
     {
       "label": "L5 (UI) — implementor nie jest wskazany na stronie warstwy",
@@ -190,7 +190,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "verified",
+      "status": "in-progress",
       "blockedBy": null,
       "portions": [
         {
@@ -213,14 +213,20 @@
             "ac-tools-call-na-polaczeniu-mcp-projektu-2",
             "moduly-feature"
           ],
-          "status": "implemented",
+          "status": "pending",
           "rounds": 1,
           "partial": 0,
-          "uncovered": [],
-          "only": []
+          "uncovered": [
+            "release-0-2-13-contract (codeToExit moved to src/bin/c4s/errors.ts)"
+          ],
+          "only": [
+            {
+              "slug": "tests/integration/architecture/release-0-2-13-contract.test.ts"
+            }
+          ]
         }
       ],
-      "startCommit": "1a3c8f9fe8821d558e19136686d099d55c557f0c",
+      "startCommit": "165301e3f03e5c2eb10cdc9a412a91770df57812",
       "baseCommit": "1a3c8f9fe8821d558e19136686d099d55c557f0c",
       "rounds": {
         "review": 0,
