@@ -94,12 +94,25 @@ function buildBriefAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
       // second frontmatter-indexer lookup or file_version query per row.
       // The ORDER is the owning module's (M21, release axis); this endpoint
       // declares none of its own, so it must never re-sort.
-      return briefs.listBriefs({ implemented }).map((item) => ({
+      const rows = briefs.listBriefs({ implemented }).map((item) => ({
         path: item.path,
         frontmatter: item.frontmatter,
         hash: item.hash,
         updatedAt: item.lastModifiedAt,
       }));
+      /*
+       * 2.1.13 — the `list_briefs` row pages with `limit` / `offset`, the window
+       * taken AFTER the `implemented` filter (so a page never comes back short
+       * because filtered rows were counted). Applied only when the caller asks:
+       * the unpaged list is what the UI and `c4s list-briefs` (which counts
+       * `total` over it) have always read.
+       */
+      if (query.limit === undefined && query.offset === undefined) return rows;
+      const { limit, offset } = parsePaging({
+        limit: query.limit ?? String(rows.length),
+        offset: query.offset,
+      });
+      return rows.slice(offset, offset + limit);
     },
     async get(path, range) {
       const b = await briefs.getBrief(path, { range });
@@ -122,6 +135,19 @@ function buildBriefAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
         typeof frontmatter.implemented === 'boolean' ? frontmatter.implemented : undefined;
       const b = await briefs.updateFrontmatter({ path, patch: { implemented }, changedBy: 'user' });
       return { path: b.path, frontmatter: b.frontmatter, hash: b.hash };
+    },
+    /**
+     * 2.1.13 — the rest renderings of `list_brief_versions` / `get_brief_version`
+     * answer with their rows' codes: an unknown path is `BRIEF_NOT_FOUND` (never
+     * an empty list), a version off the history `INVALID_ARGUMENT` stating 1..N
+     * (ASSUMPTION:dev-0003) — not the generic VERSION_NOT_FOUND / VALIDATION.
+     * The list keeps the family's newest-first order.
+     */
+    async listVersions(path) {
+      return briefs.listVersionsAddressed(path);
+    },
+    async getVersion(path, rawVersion) {
+      return briefs.getVersionAddressed(path, /^\d+$/.test(rawVersion) ? Number(rawVersion) : Number.NaN);
     },
     async createThread(path, name) {
       // Watek bez pliku briefu to sierota: `createThreadForBrief` wstawia wiersz

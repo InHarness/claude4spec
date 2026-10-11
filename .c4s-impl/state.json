@@ -1,5 +1,5 @@
 {
- "iteration": 11,
+ "iteration": 15,
  "systemVerified": false,
  "errors": 0,
  "conventions": [
@@ -351,14 +351,40 @@
     }
    ],
    "wave": 2,
-   "status": "pending",
+   "status": "verified",
    "blockedBy": null,
-   "startCommit": null,
-   "baseCommit": null,
-   "portions": [],
+   "startCommit": "cf1d09365ecd065a41b18c4282744e393a662318",
+   "baseCommit": "cf1d09365ecd065a41b18c4282744e393a662318",
+   "portions": [
+    {
+     "name": "u4-okno-odczytu-briefu/p1-l3-l3",
+     "layers": [
+      "L3"
+     ],
+     "slugs": [
+      "brief-tools-get-brief",
+      "katalog-operacji-m21#get_brief",
+      "katalog-operacji-m21#list_briefs",
+      "katalog-operacji-m21#update_brief",
+      "katalog-operacji-m21#mark_brief_implemented",
+      "katalog-operacji-m21#list_brief_versions",
+      "katalog-operacji-m21#get_brief_version",
+      "katalog-operacji-m21#create_brief",
+      "ac-get-brief-ma-okno-odczytu-range-i-jaw",
+      "ac-kazda-operacja-briefu-renderowana-w-k",
+      "ac-w-trybie-editorial-nowy-watek-przeciw",
+      "ac-wpis-rejestru-kontekstow-dla-brief-ni"
+     ],
+     "status": "implemented",
+     "rounds": 1,
+     "partial": 0,
+     "uncovered": [],
+     "only": []
+    }
+   ],
    "rounds": {
     "review": 0,
-    "unit": 0
+    "unit": 1
    },
    "jobs": []
   },

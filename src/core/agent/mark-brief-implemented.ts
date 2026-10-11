@@ -31,9 +31,10 @@ export async function markBriefImplemented(params: {
       frontmatter: { implemented: true },
     });
   } catch (err) {
-    // The REST layer 404s as generic NOT_FOUND (`BriefService.getBrief`); this
-    // command's entire domain is "one brief path", so surface the CLI's
-    // brief-specific code instead of the generic one.
+    // 2.1.13: the REST layer answers BRIEF_NOT_FOUND itself
+    // (`BriefService.assertBriefExists`). A server from before that 404s as the
+    // generic NOT_FOUND; this command's entire domain is "one brief path", so
+    // that is re-framed to the brief-specific code.
     if (err instanceof AgentError && err.code === 'NOT_FOUND') {
       throw new AgentError('BRIEF_NOT_FOUND', err.message, err.hint);
     }

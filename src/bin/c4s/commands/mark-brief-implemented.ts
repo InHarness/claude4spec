@@ -43,7 +43,7 @@ export async function runMarkBriefImplemented(args: ParsedArgs): Promise<void> {
 
 export const markBriefImplementedCommand: CliCommandContribution = {
   name: 'mark-brief-implemented',
-  operation: 'update_brief',
+  operation: 'mark_brief_implemented',
   executionMode: 'server-delegating',
   errorCodes: [...SERVER_DELEGATING_CODES, 'INVALID_ARGS', 'BRIEF_NOT_FOUND', 'IMMUTABLE_FIELD'],
   handler: runMarkBriefImplemented,

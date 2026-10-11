@@ -1393,7 +1393,13 @@ export function registerCoreOperations(): void {
         ),
       suffix: z.string().optional().describe('Appended to the generated file slug; settles a collision.'),
     },
-    errorCodes: ['VALIDATION', 'BRIEF_SAME_RELEASE', 'NOT_FOUND'],
+    /**
+     * 2.1.13 — the row's two codes. An end of the window naming no release is
+     * `VALIDATION` (`BriefService.requireWindowRelease`): the window is an input,
+     * not a resource the operation reads — it used to leak the release store's
+     * own code, undeclared here.
+     */
+    errorCodes: ['VALIDATION', 'BRIEF_SAME_RELEASE'],
     sideEffects: ['file', 'db', 'ui-notify'],
     /**
      * `literal`: the caller hands over finished text, exactly as `create_patch`
@@ -1424,9 +1430,15 @@ export function registerCoreOperations(): void {
    * item 23 moved `c4s list-briefs` onto its server route and the command had no
    * operation to name.
    *
-   * `internal` is `na`: the built-in agent working on a brief already has one,
-   * addressed by the thread. Listing the others is a navigation question a
-   * consultant asks, not something a brief-scoped turn needs.
+   * 2.1.13 — `internal` is `direct`, as the M21 row declares it, and it is a
+   * declaration WITHOUT a rendering: `brief-tools` does not render it, and M21
+   * says so in writing ("jej komórka `internal` jest dziś deklaracją bez
+   * pokrycia", `01ytpznn`) — it waits for the routing rule, like `create_brief`'s
+   * `mcp`. (Until 2.1.12 the code wrote `na` here, a value the row never had.)
+   *
+   * Paging is the row's: `limit` / `offset`, with `total` counted AFTER the
+   * `implemented` filter and before the window (`c4s list-briefs`; REST pages on
+   * `?limit` / `?offset` the same way).
    */
   CATALOG.register({
     name: 'list_briefs',
@@ -1439,12 +1451,13 @@ export function registerCoreOperations(): void {
         .boolean()
         .optional()
         .describe('Narrow to implemented (true) or pending (false). Omit for all.'),
+      ...paging,
     },
     errorCodes: ['VALIDATION'],
     sideEffects: ['none'],
     idempotent: true,
     channels: {
-      internal: na('a brief-scoped turn is already addressed at its brief; listing the others is a navigation question, not part of the work'),
+      internal: direct(),
       cli: direct(),
       mcp: direct(),
       rest: direct(),
@@ -1457,11 +1470,19 @@ export function registerCoreOperations(): void {
     scope: 'project',
     mediation: 'direct',
     opClass: 'brief',
-    // The `brief` profile makes this REQUIRED — see `profiles.ts`. An external
-    // connection has no ambient brief, and silently defaulting to "the" brief is
-    // how a patch gets filed against the wrong one.
+    /**
+     * 2.1.13 — addressing is `path` (+ the read window `range?`), under the
+     * `explicit-addressing` rule (M43, `addressing.ts`): the row no longer
+     * declares an `internal` default from `chat_thread.brief_path` — binding the
+     * brief through the thread is a rendering of the `internal` channel
+     * (`brief-tools`' thread mount), not a contract of the operation. Every
+     * external rendering requires `path` (the `brief` profile, `profiles.ts`).
+     *
+     * Codes: `BRIEF_NOT_FOUND` for an unknown path, `INVALID_ARGUMENT` for a
+     * window starting past the end of the file (stating its size) or malformed.
+     */
     inputSchema: {
-      path: z.string().optional().describe('Brief path relative to the briefs root (.claude4spec/briefs). Required on an external connection.'),
+      path: z.string().optional().describe('Brief path relative to the briefs root (.claude4spec/briefs). Required on every external channel.'),
       range: z
         .object({ start: z.number().int().positive(), end: z.number().int().positive() })
         .optional()
@@ -1469,7 +1490,7 @@ export function registerCoreOperations(): void {
           '0.2.40 — 1-based inclusive line window. Unconditionally allowed: an artifact never enters `section_index`, so there is no `sectionIndexed` gate and no second way to resume a large read. A `start` past the end of the file is INVALID_ARGUMENT stating the size.',
         ),
     },
-    errorCodes: ['NOT_FOUND', 'VALIDATION', 'INVALID_ARGUMENT'],
+    errorCodes: ['BRIEF_NOT_FOUND', 'INVALID_ARGUMENT'],
     sideEffects: ['none'],
     idempotent: true,
     channels: fullParity(),
@@ -1496,13 +1517,17 @@ export function registerCoreOperations(): void {
       changeSummary: z.string().optional(),
     },
     /**
-     * 0.2.86 — the codes the renderings actually raise. `BRIEF_NOT_FOUND` was
-     * declared and unreachable (the service throws `NOT_FOUND`; only the CLI
-     * renames it), and `IMMUTABLE_FIELD` / `MISSING_TARGET` / `AMBIGUOUS_HEADING`
-     * were raised and undeclared.
+     * 0.2.86 — the codes the renderings actually raise. 2.1.13 — the row's four
+     * (`BRIEF_NOT_FOUND`, `BRIEF_CONFLICT`, `IMMUTABLE_FIELD`, `VALIDATION`):
+     * the service now answers an unknown path with `BRIEF_NOT_FOUND` itself
+     * instead of the generic `NOT_FOUND` the CLI used to rename.
+     *
+     * ASSUMPTION:dev-0011 — plus the codes of the differential `textEdits` shape
+     * the rendering keeps beside the row's literal one (`INVALID_ARGUMENT`,
+     * `MISSING_TARGET`, `FIND_NOT_FOUND`, `MATCH_COUNT_MISMATCH`).
      */
     errorCodes: [
-      'NOT_FOUND',
+      'BRIEF_NOT_FOUND',
       'BRIEF_CONFLICT',
       'VALIDATION',
       'INVALID_ARGUMENT',
@@ -1521,6 +1546,43 @@ export function registerCoreOperations(): void {
     channels: fullParity(),
   });
 
+  /**
+   * 2.1.13 — `mark_brief_implemented`, the M21 row that had no catalog entry.
+   *
+   * Sets the one mutable frontmatter field, `implemented`. Addressing is `path`
+   * (`explicit-addressing`; the row no longer declares an `internal` default
+   * from the thread). Renderings: `c4s mark-brief-implemented` (cli, true only)
+   * and `PATCH /api/artifacts/brief/<path>/frontmatter { implemented }` (rest,
+   * the UI's two-way toggle). `internal` is `direct` with NO `brief-tools` tool:
+   * the `brief` context profile does not expose it (M21 `01ytpznn` — "zawężenie
+   * na poziomie profilu, a nie wartość komórki"; `implemented` is the
+   * implementer's or the human's fact, not the brief author's). `mcp` is a
+   * declaration ahead of its rendering, as `create_brief`'s is.
+   *
+   * Idempotent: a repeat at the value the file already holds writes nothing
+   * (`BriefService.updateFrontmatter`). Codes: `BRIEF_NOT_FOUND` for an unknown path,
+   * `IMMUTABLE_FIELD` for any other frontmatter key (the M36 family guard).
+   */
+  CATALOG.register({
+    name: 'mark_brief_implemented',
+    summary: "Set a brief's `implemented` frontmatter flag — the only mutable field of a brief. Answers the brief's path, frontmatter and hash.",
+    scope: 'project',
+    mediation: 'direct',
+    opClass: 'brief',
+    inputSchema: {
+      path: z.string().describe('Brief path relative to the briefs root (.claude4spec/briefs).'),
+      implemented: z
+        .boolean()
+        .optional()
+        .describe('The value to set. Omitted = true (the terminal implementer\'s "done"); the UI may set false.'),
+    },
+    errorCodes: ['BRIEF_NOT_FOUND', 'IMMUTABLE_FIELD'],
+    sideEffects: ['file', 'db', 'ui-notify'],
+    contentInput: 'n/a',
+    idempotent: true,
+    channels: fullParity(),
+  });
+
   CATALOG.register({
     name: 'list_brief_versions',
     summary: "A brief's version history (metadata only), oldest first.",
@@ -1531,11 +1593,15 @@ export function registerCoreOperations(): void {
       path: z.string().optional().describe('Brief path relative to the briefs root (.claude4spec/briefs). Required on an external connection.'),
       ...paging,
     },
-    errorCodes: ['NOT_FOUND', 'VALIDATION'],
+    // 2.1.13 — the row's one code: an unknown path is BRIEF_NOT_FOUND, never an
+    // empty list (`BriefService.listVersionsAddressed`, behind every rendering).
+    errorCodes: ['BRIEF_NOT_FOUND'],
     sideEffects: ['none'],
     idempotent: true,
     channels: {
       internal: direct(),
+      // ASSUMPTION:dev-0004 — the row's `cli` cell reads `direct`, while M21 L14
+      // (`xqksf67f`) names exactly four brief commands and no history command.
       cli: na('no `c4s` brief-history command: the terminal implementer reads the current brief, not its history'),
       mcp: direct(),
       rest: direct(),
@@ -1552,11 +1618,16 @@ export function registerCoreOperations(): void {
       path: z.string().optional().describe('Brief path relative to the briefs root (.claude4spec/briefs). Required on an external connection.'),
       version: z.number().int().positive(),
     },
-    errorCodes: ['NOT_FOUND', 'VERSION_NOT_FOUND', 'VALIDATION'],
+    // 2.1.13 — BRIEF_NOT_FOUND for an unknown path (the row's code).
+    // ASSUMPTION:dev-0003 — plus INVALID_ARGUMENT for a version off the history
+    // (stating 1..N), the "validation error" the mcp-tool entity names; it
+    // replaces the undeclared VERSION_NOT_FOUND / VALIDATION.
+    errorCodes: ['BRIEF_NOT_FOUND', 'INVALID_ARGUMENT'],
     sideEffects: ['none'],
     idempotent: true,
     channels: {
       internal: direct(),
+      // ASSUMPTION:dev-0004 — see `list_brief_versions`.
       cli: na('no `c4s` brief-history command: the terminal implementer reads the current brief, not its history'),
       mcp: direct(),
       rest: direct(),
