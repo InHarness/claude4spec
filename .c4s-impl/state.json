@@ -1,0 +1,473 @@
+{
+ "iteration": 0,
+ "systemVerified": false,
+ "errors": 0,
+ "conventions": [
+  {
+   "label": "L3 (Spec Operations) — implementor M43",
+   "key": "pages/layers/L3-spec-operations.md",
+   "offset": 2,
+   "anchor": "l3slice0"
+  },
+  {
+   "label": "L3 (Spec Operations) — deklaracja rodziny odczytu artefaktu",
+   "key": "pages/layers/L3-spec-operations.md",
+   "offset": 9,
+   "anchor": "vdf5esgb"
+  },
+  {
+   "label": "L16 (System Prompt Contribution) — implementor M48",
+   "key": "pages/layers/L16-system-prompt-contribution.md",
+   "offset": 2,
+   "anchor": "6g3aicw4"
+  }
+ ],
+ "waves": [
+  {
+   "n": 1,
+   "units": [
+    "u1-izolacja-adresowania"
+   ],
+   "startCommit": null
+  },
+  {
+   "n": 2,
+   "units": [
+    "u2-izolacja-planu",
+    "u4-okno-odczytu-briefu"
+   ],
+   "startCommit": null
+  },
+  {
+   "n": 3,
+   "units": [
+    "u3-plan-w-prompcie"
+   ],
+   "startCommit": null
+  }
+ ],
+ "units": [
+  {
+   "id": "u1-izolacja-adresowania",
+   "goal": "Reguła jawnego adresowania artefaktu dostaje wyjątek izolacji. Gdy moduł-właściciel rodzaju artefaktu zadeklaruje, że wątek widzi tylko artefakt do niego przypięty, schemat operacji w kanale `internal` w ogóle nie ma parametru adresującego, a adres pochodzi z macierzy wiązania wątku z artefaktem. Bez takiej deklaracji parametr pozostaje opcjonalny. Kanały zewnętrzne zawsze wymagają adresu podanego wprost. Usunięcie: macierz wiązania (M36) przestaje mieć własną regułę „parametr opcjonalny, a nie nieobecny”. Teraz tylko dostarcza adres, a kształt parametru rozstrzyga reguła z M43.",
+   "recipe": {
+    "pages": [
+     {
+      "key": "pages/modules/m43-spec-operations-core.md",
+      "change": "all"
+     },
+     {
+      "key": "pages/modules/m43-spec-operations-core.md",
+      "context": {
+       "offset": 1,
+       "limit": 2,
+       "anchors": [
+        "zpvxirvp",
+        "gkugsry5"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m43-spec-operations-core.md",
+      "context": {
+       "offset": 5,
+       "limit": 1,
+       "anchors": [
+        "3s8b933r"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m43-spec-operations-core.md",
+      "context": {
+       "offset": 14,
+       "limit": 1,
+       "anchors": [
+        "l3chan00"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m43-spec-operations-core.md",
+      "context": {
+       "offset": 16,
+       "limit": 1,
+       "anchors": [
+        "l3axes00"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m36-chat-artifacts/m36-chat-artifacts.md",
+      "change": "all"
+     },
+     {
+      "key": "pages/modules/m36-chat-artifacts/m36-chat-artifacts.md",
+      "context": {
+       "offset": 1,
+       "limit": 3,
+       "anchors": [
+        "m36cel01",
+        "m36dep01",
+        "m36reg01"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m36-chat-artifacts/m36-chat-artifacts.md",
+      "context": {
+       "offset": 5,
+       "limit": 1,
+       "anchors": [
+        "m36wire01"
+       ]
+      }
+     }
+    ],
+    "entities": []
+   },
+   "dependsOn": [],
+   "wave": 1,
+   "status": "pending",
+   "blockedBy": null,
+   "startCommit": null,
+   "baseCommit": null,
+   "portions": [],
+   "rounds": {
+    "review": 0,
+    "unit": 0
+   },
+   "jobs": []
+  },
+  {
+   "id": "u2-izolacja-planu",
+   "goal": "Plany jako pierwsze korzystają z wyjątku izolacji, z czego wynika kilka zmian:\n- W kanale `internal` operacje planu nie mają parametru ścieżki. Agent widzi i edytuje wyłącznie plan przypięty do swojego wątku, a przypina go tylko użytkownik.\n- Odczyt planu w wątku bez przypiętego planu zwraca pusty plan zamiast błędu „nie znaleziono”. Ten błąd oznacza odtąd tylko nieznaną ścieżkę podaną w kanale zewnętrznym.\n- Odczyt planu ma okno linii i kontrakt obcięcia odpowiedzi ponad budżet, ze wskazówką, jakie okno pobrać dalej.\n- Plan założony z wątku należy do wątku nośnego, a nie do wątku wołającego. Wołający nie może go potem adresować, a zwrócony adres służy tylko do przekazania dalej.\n\nUsunięcia: domyślny adres planu brany z wątku jako wartość opcjonalnego parametru; komendy CLI dla odczytu, edycji, listy wersji i odczytu wersji planu; reguła jawnego adresowania w zakładaniu planu.",
+   "recipe": {
+    "pages": [
+     {
+      "key": "pages/modules/m10-plans.md",
+      "change": "all"
+     },
+     {
+      "key": "pages/modules/m10-plans.md",
+      "context": {
+       "offset": 1,
+       "limit": 2,
+       "anchors": [
+        "m10cel00",
+        "m10dep00"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m10-plans.md",
+      "context": {
+       "offset": 24,
+       "limit": 2,
+       "anchors": [
+        "m10mcp00",
+        "m10opappl"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m10-plans.md",
+      "context": {
+       "offset": 36,
+       "limit": 1,
+       "anchors": [
+        "ft1iz766"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m36-chat-artifacts/m36-chat-artifacts.md",
+      "context": {
+       "offset": 10,
+       "limit": 1,
+       "anchors": [
+        "9p8nltkf"
+       ]
+      }
+     }
+    ],
+    "entities": [
+     {
+      "type": "mcp-tool",
+      "slugs": [
+       "plan-tools-get-plan",
+       "plan-tools-create-plan"
+      ]
+     },
+     {
+      "type": "spreadsheet",
+      "slugs": [
+       "katalog-operacji-m10"
+      ]
+     },
+     {
+      "type": "ac",
+      "slugs": [
+       "ac-create-plan-z-content-pusta-po-trim-z",
+       "ac-create-plan-z-title-i-niepusta-conten",
+       "ac-create-plan-z-title-ktorego-slugify-t",
+       "ac-create-plan-zaklada-razem-z-plikiem-w",
+       "ac-watek-zalozony-przy-powolaniu-planu-s"
+      ]
+     }
+    ]
+   },
+   "dependsOn": [
+    {
+     "unit": "u1-izolacja-adresowania",
+     "why": "brak parametru ścieżki w kanale `internal` to zastosowanie wyjątku izolacji i źródła adresu z macierzy wiązania"
+    }
+   ],
+   "wave": 2,
+   "status": "pending",
+   "blockedBy": null,
+   "startCommit": null,
+   "baseCommit": null,
+   "portions": [],
+   "rounds": {
+    "review": 0,
+    "unit": 0
+   },
+   "jobs": []
+  },
+  {
+   "id": "u4-okno-odczytu-briefu",
+   "goal": "Odczyt briefu przyjmuje opcjonalne okno linii (od 1, obustronnie domknięte) i obcina odpowiedź ponad budżet, wskazując okno do dalszego czytania. Okno zaczynające się za końcem pliku albo błędne jest odrzucane błędem walidacji, który dochodzi do kodów błędów tej operacji. Usunięcie: katalog operacji briefów nie deklaruje już domyślnego adresu z wątku w kanale `internal` ani dla odczytu briefu, ani dla oznaczenia briefu jako wdrożonego.",
+   "recipe": {
+    "pages": [
+     {
+      "key": "pages/modules/m21-briefs.md",
+      "context": {
+       "offset": 1,
+       "limit": 3,
+       "anchors": [
+        "m21cel001",
+        "m21zal001",
+        "m21art36"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m21-briefs.md",
+      "context": {
+       "offset": 15,
+       "limit": 1,
+       "anchors": [
+        "01ytpznn"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m36-chat-artifacts/m36-chat-artifacts.md",
+      "context": {
+       "offset": 10,
+       "limit": 1,
+       "anchors": [
+        "9p8nltkf"
+       ]
+      }
+     }
+    ],
+    "entities": [
+     {
+      "type": "mcp-tool",
+      "slugs": [
+       "brief-tools-get-brief"
+      ]
+     },
+     {
+      "type": "spreadsheet",
+      "slugs": [
+       "katalog-operacji-m21"
+      ]
+     },
+     {
+      "type": "ac",
+      "slugs": [
+       "ac-get-brief-ma-okno-odczytu-range-i-jaw",
+       "ac-kazda-operacja-briefu-renderowana-w-k",
+       "ac-w-trybie-editorial-nowy-watek-przeciw",
+       "ac-wpis-rejestru-kontekstow-dla-brief-ni"
+      ]
+     }
+    ]
+   },
+   "dependsOn": [
+    {
+     "unit": "u1-izolacja-adresowania",
+     "why": "komórki adresowania w katalogu podlegają regule jawnego adresowania w nowym brzmieniu"
+    }
+   ],
+   "wave": 2,
+   "status": "pending",
+   "blockedBy": null,
+   "startCommit": null,
+   "baseCommit": null,
+   "portions": [],
+   "rounds": {
+    "review": 0,
+    "unit": 0
+   },
+   "jobs": []
+  },
+  {
+   "id": "u3-plan-w-prompcie",
+   "goal": "Prompt agenta czatu niesie blok bieżącego planu w kształcie i z warunkiem emisji określonymi przez moduł planów. Zastępuje to dotychczasowy własny blok runtime’u tury, który zawierał pełną treść planu i numer wersji. Treść planu agent czyta teraz wyłącznie narzędziem odczytu planu. Inwentarz narzędzi w prompcie wymienia sześć narzędzi serwera planów, w tym zakładanie planu. W kryteriach akceptacji M48 zmieniło się tylko to jedno kryterium.",
+   "recipe": {
+    "pages": [
+     {
+      "key": "pages/modules/m05-chat-agent/turn-runtime.md",
+      "change": "all"
+     },
+     {
+      "key": "pages/modules/m05-chat-agent/m05-chat-agent.md",
+      "context": {
+       "offset": 1,
+       "limit": 2,
+       "anchors": [
+        "iv1lmc33",
+        "t3fsdybv"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m05-chat-agent/m05-chat-agent.md",
+      "context": {
+       "offset": 20,
+       "limit": 1,
+       "anchors": [
+        "9ylxoi6v"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m05-chat-agent/m05-chat-agent.md",
+      "context": {
+       "offset": 26,
+       "limit": 1,
+       "anchors": [
+        "h2jwye5u"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m10-plans.md",
+      "context": {
+       "offset": 37,
+       "limit": 3,
+       "anchors": [
+        "rj64n1ce",
+        "bu7efowe",
+        "i1nvq4ju"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m48-system-prompt-composition.md",
+      "change": "all"
+     },
+     {
+      "key": "pages/modules/m48-system-prompt-composition.md",
+      "context": {
+       "offset": 1,
+       "limit": 2,
+       "anchors": [
+        "xdnw931t",
+        "603o6bq9"
+       ]
+      }
+     },
+     {
+      "key": "pages/modules/m48-system-prompt-composition.md",
+      "context": {
+       "offset": 8,
+       "limit": 1,
+       "anchors": [
+        "kaasgyj8"
+       ]
+      }
+     }
+    ],
+    "entities": []
+   },
+   "dependsOn": [
+    {
+     "unit": "u2-izolacja-planu",
+     "why": "blok i inwentarz opisują operacje planu w ich nowym kształcie: odczyt bez ścieżki oraz zakładanie planu na serwerze planów"
+    }
+   ],
+   "wave": 3,
+   "status": "pending",
+   "blockedBy": null,
+   "startCommit": null,
+   "baseCommit": null,
+   "portions": [],
+   "rounds": {
+    "review": 0,
+    "unit": 0
+   },
+   "jobs": []
+  }
+ ],
+ "entityTypes": [
+  {
+   "type": "ac",
+   "role": "criteria",
+   "checks": "verifies",
+   "links": [
+    "verifies"
+   ],
+   "observedIn": "unit",
+   "inactive": "status = deprecated",
+   "version": 3
+  },
+  {
+   "type": "mcp-tool",
+   "role": "built",
+   "inCode": "the tool registered on its MCP server (`server` field → src/server/mcp/<server>.ts, e.g. plan-tools.ts, brief-tools.ts) with the entity's `name`, `params` (name, type, required — per channel, as the operation catalog derives them), `description`, annotations (readOnly/destructive/idempotent/openWorld hints) and `logic`",
+   "verify": "a vitest test in src/server/mcp/<server>.test.ts (or surface.test.ts) named with [entity:<slug>] asserting the registered tool's name, input schema (params, required) and hints, and the behaviour its `logic` states",
+   "links": [],
+   "version": 1
+  },
+  {
+   "type": "spreadsheet",
+   "role": "per-entity",
+   "version": 3
+  }
+ ],
+ "entityParts": [
+  {
+   "slug": "katalog-operacji-m10",
+   "type": "spreadsheet",
+   "why": "Katalog operacji modułu planów: każdy wiersz to operacja rejestrowana w katalogu operacji rdzenia (kanały, adresowanie, reguły, kody błędów) — struktura systemu, nie dokumentacja.",
+   "parts": [
+    {
+     "role": "built",
+     "items": "every operation row (rows 2..n under the header row)",
+     "key": "nazwa (the operation name in backticks, e.g. `get_plan`)",
+     "inCode": "the plan operation descriptors in the core operation catalog (src/server/operations/core-operations.ts and profiles.ts) plus the channel renderings (MCP plan-tools, CLI commands, REST routes) the cells declare",
+     "verify": "a vitest test in src/server/operations/catalog.test.ts (or the module's *-tools.test.ts) named with [entity:katalog-operacji-m10#<operation>] asserting the row's channel cells (internal/cli/mcp/rest), addressing (params per channel), rules and error codes against the registered operation"
+    }
+   ]
+  },
+  {
+   "slug": "katalog-operacji-m21",
+   "type": "spreadsheet",
+   "why": "Katalog operacji modułu briefów: każdy wiersz to operacja rejestrowana w katalogu operacji rdzenia (kanały, adresowanie, reguły, kody błędów) — struktura systemu, nie dokumentacja.",
+   "parts": [
+    {
+     "role": "built",
+     "items": "every operation row (rows 2..n under the header row)",
+     "key": "nazwa (the operation name in backticks, e.g. `get_plan`)",
+     "inCode": "the brief operation descriptors in the core operation catalog (src/server/operations/core-operations.ts and profiles.ts) plus the channel renderings (MCP brief-tools, CLI commands, REST routes) the cells declare",
+     "verify": "a vitest test in src/server/operations/catalog.test.ts (or the module's *-tools.test.ts) named with [entity:katalog-operacji-m21#<operation>] asserting the row's channel cells (internal/cli/mcp/rest), addressing (params per channel), rules and error codes against the registered operation"
+    }
+   ]
+  }
+ ]
+}
