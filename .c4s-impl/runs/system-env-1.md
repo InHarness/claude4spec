@@ -11,3 +11,5 @@
 - release-0-2-13-contract at a456725: 38/38 passed.
 - envelope-entity-pages: passed solo on the branch.
 - Unit suite at 165301e: the only failures were the 3 contract tests (fixed). The rest is green.
+
+## System verifier (2026-10-11): 21/21 rows covered (16 ac, welcome-page, flagi-cli-m01, 2 goals, job:m31); stubs empty; no deviations.
