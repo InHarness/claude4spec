@@ -306,7 +306,9 @@ describe('the CLI holds no handle on the specification', () => {
   });
 
   it('[ac:ac-komenda-o-trybie-server-delegating-pr] exit 8 is SERVER_NOT_RUNNING, and INDEX_NOT_MATERIALIZED no longer claims it', () => {
-    const bin = read('src/bin/c4s.ts');
+    // `codeToExit` lives in `c4s/errors.ts`; the entry routes every exit through it.
+    expect(read('src/bin/c4s.ts')).toMatch(/import \{[^}]*\bcodeToExit\b[^}]*\} from '\.\/c4s\/errors\.js'/);
+    const bin = read('src/bin/c4s/errors.ts');
     const eight = /case '([A-Z_]+)':\s*\n\s*return 8;/.exec(bin);
     expect(eight?.[1]).toBe('SERVER_NOT_RUNNING');
     expect(bin).not.toMatch(/case 'INDEX_NOT_MATERIALIZED':/);
@@ -323,7 +325,7 @@ describe('the CLI holds no handle on the specification', () => {
      * infrastructure problem. All four spellings of "you asked for something the
      * contract does not allow" have to land on the same status.
      */
-    const bin = read('src/bin/c4s.ts');
+    const bin = read('src/bin/c4s/errors.ts');
     const four = /((?:\s*case '[A-Z_]+':(?:\s*(?:\/\/[^\n]*|\/\*[\s\S]*?\*\/))*)+\s*return 4;)/.exec(bin);
     expect(four, 'no exit-4 group found in codeToExit').toBeTruthy();
     const codes = [...four![1].matchAll(/case '([A-Z_]+)':/g)].map((m) => m[1]);
@@ -341,7 +343,7 @@ describe('the CLI holds no handle on the specification', () => {
      * a wrapper could not tell "your ~/.claude4spec is corrupt" from "the turn
      * errored". Exit > 0 is the observable half of the AC; the number is 22.
      */
-    const bin = read('src/bin/c4s.ts');
+    const bin = read('src/bin/c4s/errors.ts');
     const exit = /case 'REGISTRY_READ_FAILED':\s*(?:\n\s*case '[A-Z_]+':)*\s*\n\s*return (\d+);/.exec(bin);
     expect(exit, 'REGISTRY_READ_FAILED is not mapped in codeToExit').toBeTruthy();
     expect(Number(exit![1])).toBeGreaterThan(0);
