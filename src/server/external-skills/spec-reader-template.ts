@@ -60,13 +60,7 @@ c4s resolve some-page.md ${identity}                # writes markdown with tags 
 c4s resolve some-page.md --format json ${identity}   # writes { format, text, resolved: [...] } — the original text plus what each tag resolved to
 \`\`\`
 
-This is a RENDER convenience, and the only surface that still offers it. It
-takes a path to a markdown file **you already have** — a page in the repo you
-are working in, for instance. It is not how you read the specification's own
-pages, and there is no MCP equivalent: expanding a tag pastes the entity's
-payload over the reference, and the reference is the more useful half. To read a
-spec page, ask for it with \`get-page\` (tags stay unexpanded) and follow the embeds you care about by slug
-(\`c4s single_element --type <t> --slug <s>\`).
+This is a RENDER convenience, and the only surface that still offers it. It takes a path to a markdown file **you already have** — a page in the repo you are working in, for instance. It is not how you read the specification's own pages, and there is no MCP equivalent: expanding a tag pastes the entity's payload over the reference, and the reference is the more useful half. To read a spec page, ask for it with \`get-page\` (tags stay unexpanded) and follow the embeds you care about by slug (\`c4s single_element --type <t> --slug <s>\`).
 
 ## Navigating pages and sections
 
