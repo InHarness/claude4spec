@@ -1,5 +1,5 @@
 {
-  "iteration": 10,
+  "iteration": 12,
   "conventions": [
     {
       "label": "L5 (UI) — implementor M50 — App Shell",
@@ -588,7 +588,7 @@
       },
       "dependsOn": [],
       "wave": 1,
-      "status": "pending",
+      "status": "verified",
       "portions": [
         {
           "name": "u6-ac-plugin/p1-l11-l12",
@@ -600,18 +600,20 @@
             "section:fsu38c8q",
             "section:yrzqclyz"
           ],
-          "status": "pending",
-          "rounds": 0,
-          "partial": 0
+          "status": "implemented",
+          "rounds": 1,
+          "partial": 0,
+          "only": []
         }
       ],
-      "startCommit": null,
-      "baseCommit": null,
+      "startCommit": "77e57b44f155abad9cf2aaee30c54a57465594bb",
+      "baseCommit": "77e57b44f155abad9cf2aaee30c54a57465594bb",
       "rounds": {
         "review": 0,
-        "unit": 0
+        "unit": 1
       },
-      "jobs": []
+      "jobs": [],
+      "lastUncovered": 0
     },
     {
       "id": "u7-api-contracts",

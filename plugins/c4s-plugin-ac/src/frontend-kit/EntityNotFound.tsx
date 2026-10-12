@@ -1,6 +1,12 @@
 /**
  * The host's `EntityNotFound`, vendored.
  *
+ * DEBT (2.1.19, Host UI Kit slice of `c4s-plugin-ac`): fails the locality rule
+ * — the same copy stands in the `frontend-kit/` of two plugin packages
+ * (condition 1), and the missing-entity message is common to every entity type
+ * (condition 2). Its catalog replacement is `EmptyState`.
+ * Recorded, not fixed here.
+ *
  * The `ac` detail and history routes both declared it as their
  * `notFoundComponent` before the move, and dropping it would have been a silent
  * UX regression rather than a refactor: the route would fall through to the

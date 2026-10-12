@@ -227,6 +227,9 @@ export const acFrontendModule: FrontendModule = {
   renderRow: AcRow as FrontendModule['renderRow'],
   renderChip: AcChip as FrontendModule['renderChip'],
   renderCard: AcCard as FrontendModule['renderCard'],
+  // 2.1.19 (open question 59): the slot is checked for its SHAPE only — the host
+  // never renders it. The `/acs/$slug` route in `routes.tsx` renders `AcDetail`
+  // itself and hands it the props.
   detailPanel: AcDetail,
   routes: acRoutes,
   useGetBySlug: (slug) => useAc(slug) as ReturnType<FrontendModule['useGetBySlug']>,
