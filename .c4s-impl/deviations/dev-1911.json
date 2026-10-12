@@ -1,0 +1,15 @@
+{
+  "id": "dev-1911",
+  "kind": "drift",
+  "blocking": false,
+  "address": "u5-frontend-mockups/dsmanifest",
+  "slugs": [
+    "design-system-detail"
+  ],
+  "text": "The design-system manifest sketch (section dsmanifest of plugins/modules/c4s-plugin-frontend-mockups/design-system.md), at 2.1.19, gives displayOrder: 6 and sidebarTab.order: 6. The code has used 60 for both (DESIGN_SYSTEM_DISPLAY_ORDER in src/identity.ts, inherited from the host registration: ui-view 40, ac 50, design-system 60) since before this window, and the 2.1.18 to 2.1.19 change to that section only removes sidebarTab.emptyState. The value was not changed, because moving it to 6 would reorder the sidebar against the host-scale positions of the other tabs. Assumed: the spec's 6 is a stale value on a different scale; the spec should say 60, or say which scale sidebar orders use.",
+  "assumption": "ASSUMPTION:dev-1911 — design-system displayOrder / sidebarTab.order stay 60 (host scale), not the spec sketch's 6",
+  "unit": "u5-frontend-mockups",
+  "portion": "u5-frontend-mockups/p1-l5-l12",
+  "sent": true,
+  "patchPath": "2-1-18-to-2-1-19-u5-frontend-mockups-dsmanifest-design-system-displayorder-sidebartab-order-is-60.md"
+}

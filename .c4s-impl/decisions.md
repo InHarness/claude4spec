@@ -19,3 +19,6 @@
   - The same seed-precondition failures as on main for 2.1.15→2.1.16: artifact-threads-panel, entity-version-history, plan-footer, envelope-entity-pages x2 ("seed one first").
   - Plus `frontend-mockups-envelope` "/design-system is offered once" — a re-run of that file alone was ordered.
   - The static verifiers missed all 5 unit failures. The affected units get reopened.
+- u5 reopen (system round 1): design-system sidebarTab.order — the test asserted the spec sketch's 6, the code has had 60 (host scale) since before 2.1.19 and the window only drops emptyState; test now asserts DESIGN_SYSTEM_DISPLAY_ORDER, drift recorded as dev-1911 (non-blocking); the file's other assertions passed in the env run.
+- 2026-10-12 u7 reopen r1: DEBT headers in frontend-kit/EntityBreadcrumbBar.tsx and ButtonGroup.tsx wrapped 'Recorded, not fixed here' across a comment line (' * ' prefix broke the test regex); rewrapped so the phrase sits on one line — header text unchanged.
+- u1 reopen (system r1): useFileWatcher.entityDetail.test.ts failed because fake timers place React Query's notifyManager setTimeout(0) at now+1 when scheduled during a tick (batcher flush), so a 0 ms settle never delivered the refetched data; production code was correct (refetch ran, calls.detail=2) — test now advances past it via flushQueryNotifications(), assertions unchanged.

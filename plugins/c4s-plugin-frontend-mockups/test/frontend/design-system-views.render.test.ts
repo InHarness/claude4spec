@@ -165,6 +165,8 @@ import {
   deleteDesignSystemBody,
 } from '../../src/entity/design-system/frontend/detail-panel.js';
 import { ApiError } from '../../src/frontend-kit/api-core.js';
+import { DESIGN_SYSTEM_DISPLAY_ORDER, UI_VIEW_DISPLAY_ORDER } from '../../src/identity.js';
+import { Palette } from 'lucide-react';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -360,11 +362,17 @@ describe('[entity:design-system-detail] /design-systems/:slug', () => {
     expect(container.textContent).toContain('Failed to load: Internal error');
   });
 
-  it('[entity:design-system-detail] the sidebar tab is Palette / "Design Systems" / order 6 and carries no emptyState', () => {
+  it('[entity:design-system-detail] the sidebar tab is Palette / "Design Systems" at the type\'s display order and carries no emptyState', () => {
     const tab = designSystemFrontendModule.sidebarTab!;
     expect(tab).toBeDefined();
+    expect(tab.icon).toBe(Palette);
     expect(tab.label).toBe('Design Systems');
-    expect(tab.order).toBe(6);
+    // The spec's manifest sketch writes `order: 6`; the code keeps the host-scale
+    // position it inherited (60, after ui-view at 40 and ac at 50) — unchanged by
+    // 2.1.19, which only drops `emptyState`. See ASSUMPTION:dev-1911.
+    expect(tab.order).toBe(DESIGN_SYSTEM_DISPLAY_ORDER);
+    expect(tab.order).toBe(designSystemFrontendModule.displayOrder);
+    expect(tab.order).toBeGreaterThan(UI_VIEW_DISPLAY_ORDER);
     expect('emptyState' in tab).toBe(false);
   });
 });

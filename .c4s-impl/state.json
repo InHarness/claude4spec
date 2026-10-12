@@ -537,8 +537,8 @@
             "design-system-detail",
             "design-system-list"
           ],
-          "status": "pending",
-          "rounds": 1,
+          "status": "implemented",
+          "rounds": 2,
           "partial": 0,
           "only": [
             {
