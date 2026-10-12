@@ -1395,14 +1395,40 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "pending",
+   "status": "verified",
    "blockedBy": null,
-   "startCommit": null,
-   "baseCommit": null,
-   "portions": [],
+   "startCommit": "01d8d8fa73eba254d43b712577cf418e7ec2692e",
+   "baseCommit": "01d8d8fa73eba254d43b712577cf418e7ec2692e",
+   "portions": [
+    {
+     "name": "m22-skille/p1-l2-l2",
+     "layers": [
+      "L2"
+     ],
+     "slugs": [
+      "m22dserv",
+      "m22dread",
+      "sws0pnrn",
+      "h4vfz91m",
+      "zvd7wn4t",
+      "c4s-spec-reader/~preamble",
+      "coz7bila",
+      "t8xj5140",
+      "foj9tbk4",
+      "dw3xlkgn",
+      "wy9a0mdr",
+      "a28ukbcn"
+     ],
+     "status": "implemented",
+     "rounds": 1,
+     "partial": 0,
+     "uncovered": [],
+     "only": []
+    }
+   ],
    "rounds": {
     "review": 0,
-    "unit": 0
+    "unit": 1
    },
    "jobs": []
   },

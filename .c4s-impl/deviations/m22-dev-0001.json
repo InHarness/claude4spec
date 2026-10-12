@@ -1,0 +1,15 @@
+{
+  "id": "m22-dev-0001",
+  "kind": "incorrect",
+  "blocking": false,
+  "address": "m22-skille/L2",
+  "slugs": [
+    "foj9tbk4"
+  ],
+  "text": "At 2.1.14 the c4s-spec-reader page (section `foj9tbk4`, Expanding a whole page) comments the JSON form as `c4s resolve some-page.md --format json … # writes { content, resolved: [...] }`. The command does not print that shape: `c4s resolve --format json` prints the M19 core's json result as is — `{ format, text, resolved: [...] }` (the original text plus what each tag resolved to); `content` is the field of the request body the CLI posts to the server, not of the output. The renderer otherwise emits the page 1:1. Assumed: the rendered comment keeps the real output shape (`# writes { format, text, resolved: [...] } — the original text plus what each tag resolved to`), because a skill naming a key the output lacks sends the agent looking for it.",
+  "assumption": "ASSUMPTION:m22-dev-0001 — the spec-reader's resolve --format json comment names the real { format, text, resolved } shape.",
+  "unit": "m22-skille",
+  "portion": "m22-skille/p1-l2-l2",
+  "sent": true,
+  "patchPath": "2-1-13-to-2-1-14-workflow-m22-skille-l2-at-2.md"
+}
