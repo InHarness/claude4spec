@@ -26,3 +26,8 @@
 - e2e-1: 208 passed / 3 failed — seed preconditions (artifact-threads-panel, entity-version-history, plan-footer, envelope-entity-pages ×2) + frontend-mockups-envelope › "/uiview is offered once…" (slash menu, same test shape as the branch's ac-envelope "/ac is offered once…").
 - e2e-2: 215 passed / 3 failed — seed preconditions + mcp-tools-envelope › "renders the detail page with the contract separated from the logic" (the same test that failed on the branch in run 2).
 - Conclusion: every branch e2e failure has its counterpart on main: seed preconditions (identical set), mcp-tools-envelope detail page (fails on main too), the slash-menu "offered once" envelope test (flaky on main — /uiview there, /ac here; the envelope boot race), editor-l8 "root kind" (known pre-existing main flake). No e2e failure is attributable to the branch.
+
+# Run 4 / 5 (impl-2-1-14 @ deb82dd6 — after the 12 in-scope criteria were covered)
+
+- run 4 npm test: 447 files, 5432/5432 passed; exit 1 only from one vitest "EnvironmentTeardownError: Closing rpc while onUserConsoleLog was pending" attributed to tests/integration/api/project-context-m31-edge-cases.test.ts (file untouched by the branch).
+- run 5 npm test, same HEAD: 447 files, 5432/5432 passed, exit 0 — the teardown error was a flake.
