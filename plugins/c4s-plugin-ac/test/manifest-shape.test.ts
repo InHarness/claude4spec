@@ -79,4 +79,25 @@ describe('c4s-plugin-ac manifest', () => {
     expect(acEntity.payloadVersion).toBe(3);
     expect(acFrontendModule.payloadVersion).toBe(acEntity.payloadVersion);
   });
+
+  /**
+   * 2.1.14 — the agent's narrative block says WHEN `verifies` is filled: only
+   * when the criterion's subject is an entity; a criterion about behaviour
+   * described in prose leaves it empty (its title is the contract, its tags
+   * place it). The schema cannot say this, so the block must.
+   */
+  it('[section:fsu38c8q] [section:eoi2kf2k] narrative block: verifies only for an entity subject, empty for prose behaviour', () => {
+    const narrative = acEntity.systemPrompt?.narrativeBlock ?? '';
+    // filled only when the subject is an entity — named with the entity kinds
+    expect(narrative).toMatch(/Fill `verifies` only when the criterion's subject is a specific entity/);
+    for (const kind of ['endpoint', 'DTO', 'UI view', 'table', 'MCP tool']) {
+      expect(narrative).toContain(kind);
+    }
+    // prose behaviour → empty; title is the contract; tags place it
+    expect(narrative).toMatch(/behaviour described in a module's prose leaves `verifies` empty/);
+    expect(narrative).toMatch(/title is then the contract/);
+    expect(narrative).toMatch(/tags place it/);
+    // no project-specific tag tokens leak into a property of the type
+    expect(narrative).not.toMatch(/\b[mMlL]NN\b/);
+  });
 });

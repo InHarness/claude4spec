@@ -32,3 +32,6 @@ section:dw3xlkgn → src/server/external-skills/spec-reader-template.ts (Navigat
 section:wy9a0mdr → src/server/external-skills/spec-reader-template.ts (Discovery + CLI→operation table)
 section:a28ukbcn → src/server/external-skills/spec-reader-template.ts (Asking the spec agent)
 section:zvd7wn4t → src/server/external-skills/spec-reader-template.ts (Errors)
+section:fsu38c8q → plugins/c4s-plugin-ac/src/entity/ac/system-prompt.ts (acSystemPrompt.narrativeBlock — verifies only for an entity subject; ASSUMPTION:pkg-dev-0001; test plugins/c4s-plugin-ac/test/manifest-shape.test.ts)
+section:eoi2kf2k → plugins/c4s-plugin-ac/src/entity/ac/system-prompt.ts (empty verifies = valid state for a prose criterion; schema verifies stays optional in plugins/c4s-plugin-ac/src/entity/ac/schema.ts)
+section:x4imgq6m → plugins/c4s-plugin-layered-vertical-slices/src/skills/layered-vertical-slices/workflows/brief-workflow.md (Step 1 map from the window; Step 2 slug-without-module rule; Step 5 checklist item; rationale in RATIONALE.md; test tests/integration/architecture/brief-workflow-recipe-completeness.test.ts)

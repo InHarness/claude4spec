@@ -1634,14 +1634,32 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "pending",
+   "status": "verified",
    "blockedBy": null,
-   "startCommit": null,
-   "baseCommit": null,
-   "portions": [],
+   "startCommit": "51438eb45c799b50959fb919e266d8c1d913bacc",
+   "baseCommit": "51438eb45c799b50959fb919e266d8c1d913bacc",
+   "portions": [
+    {
+     "name": "pkg-lvs-ac/p1-l2-l11",
+     "layers": [
+      "L2",
+      "L11"
+     ],
+     "slugs": [
+      "ac-load-skill-file-layered-vertical-slic-18",
+      "ac-load-skill-file-layered-vertical-slic-19",
+      "ac-gdy-kryterium-albo-encji-z-okna-nie-p"
+     ],
+     "status": "implemented",
+     "rounds": 1,
+     "partial": 0,
+     "uncovered": [],
+     "only": []
+    }
+   ],
    "rounds": {
     "review": 0,
-    "unit": 0
+    "unit": 1
    },
    "jobs": []
   },
