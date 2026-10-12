@@ -355,10 +355,10 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "verified",
+   "status": "in-progress",
    "blockedBy": null,
-   "startCommit": "b5ef8d5daa47624b41c491cb828362920b4fdbbb",
-   "baseCommit": "b5ef8d5daa47624b41c491cb828362920b4fdbbb",
+   "startCommit": "b0a3e168337b6e370c0d03b176ef8cdda3042c9f",
+   "baseCommit": "b0a3e168337b6e370c0d03b176ef8cdda3042c9f",
    "portions": [
     {
      "name": "m28-bramki-git/p1-domain-l4",
@@ -388,11 +388,17 @@
       "ac-w-trybie-named-new-gdy-tree-po-stage-je",
       "ac-w-trybie-new-commitforrelease-tworzy-n"
      ],
-     "status": "implemented",
+     "status": "pending",
      "rounds": 3,
      "partial": 0,
-     "uncovered": [],
-     "only": []
+     "uncovered": [
+      "ac-gdy-pagesdir-le-y-w-worktree-git-get-a"
+     ],
+     "only": [
+      {
+       "slug": "ac-gdy-pagesdir-le-y-w-worktree-git-get-a"
+      }
+     ]
     }
    ],
    "rounds": {
@@ -497,10 +503,10 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "verified",
+   "status": "in-progress",
    "blockedBy": null,
-   "startCommit": "e673beeb7667ba3ad1f4b2b202a8479a062b0ddd",
-   "baseCommit": "e673beeb7667ba3ad1f4b2b202a8479a062b0ddd",
+   "startCommit": "b0a3e168337b6e370c0d03b176ef8cdda3042c9f",
+   "baseCommit": "b0a3e168337b6e370c0d03b176ef8cdda3042c9f",
    "portions": [
     {
      "name": "m02-update-page-body/p1-l3-l4",
@@ -520,11 +526,37 @@
       "ac-update-page-z-content-i-textedits-pod",
       "ac-zapis-strony-wprowadzajacy-nowy-naglo"
      ],
-     "status": "implemented",
+     "status": "pending",
      "rounds": 1,
      "partial": 0,
-     "uncovered": [],
-     "only": []
+     "uncovered": [
+      "ac-hash-zwrocony-przez-update-page-przec",
+      "ac-trasy-patch-i-put-pod-sciezka-strony",
+      "ac-put-api-pages-path-przyjmuje-opcjona",
+      "ac-put-api-pages-rootid-bez-pola-expecte",
+      "ac-powiadomienie-file-changed-o-zapisie",
+      "ac-zapis-z-tiptap-zachowuje-frontmatter-i-x"
+     ],
+     "only": [
+      {
+       "slug": "ac-hash-zwrocony-przez-update-page-przec"
+      },
+      {
+       "slug": "ac-trasy-patch-i-put-pod-sciezka-strony"
+      },
+      {
+       "slug": "ac-put-api-pages-path-przyjmuje-opcjona"
+      },
+      {
+       "slug": "ac-put-api-pages-rootid-bez-pola-expecte"
+      },
+      {
+       "slug": "ac-powiadomienie-file-changed-o-zapisie"
+      },
+      {
+       "slug": "ac-zapis-z-tiptap-zachowuje-frontmatter-i-x"
+      }
+     ]
     }
    ],
    "rounds": {
@@ -1303,10 +1335,10 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "verified",
+   "status": "in-progress",
    "blockedBy": null,
-   "startCommit": "41d4bb876716e156935c3217826a8b98bf94ce4b",
-   "baseCommit": "41d4bb876716e156935c3217826a8b98bf94ce4b",
+   "startCommit": "b0a3e168337b6e370c0d03b176ef8cdda3042c9f",
+   "baseCommit": "b0a3e168337b6e370c0d03b176ef8cdda3042c9f",
    "portions": [
     {
      "name": "m21-brief-tools/p1-l2-l14",
@@ -1331,11 +1363,17 @@
       "ac-brief-nie-jest-page-rootem-zyje-w-bri",
       "ac-wersjonowanie-briefu-reuse-uje-tabele"
      ],
-     "status": "implemented",
+     "status": "pending",
      "rounds": 1,
      "partial": 0,
-     "uncovered": [],
-     "only": []
+     "uncovered": [
+      "ac-rownoczesne-update-brief-z-wielu-watk"
+     ],
+     "only": [
+      {
+       "slug": "ac-rownoczesne-update-brief-z-wielu-watk"
+      }
+     ]
     }
    ],
    "rounds": {
@@ -1969,10 +2007,10 @@
     }
    ],
    "wave": 2,
-   "status": "verified",
+   "status": "in-progress",
    "blockedBy": null,
-   "startCommit": "e79cc8558462ec271484b9c68c90b3f100bec1f9",
-   "baseCommit": "e79cc8558462ec271484b9c68c90b3f100bec1f9",
+   "startCommit": "b0a3e168337b6e370c0d03b176ef8cdda3042c9f",
+   "baseCommit": "b0a3e168337b6e370c0d03b176ef8cdda3042c9f",
    "portions": [
     {
      "name": "m28-gitsync-konsumenci/p1-l2-l5",
@@ -1990,11 +2028,29 @@
       "ac-rest-patch-api-releases-nameorid-z-bod",
       "ac-wynik-gitsync-inny-niz-status-error-c"
      ],
-     "status": "implemented",
+     "status": "pending",
      "rounds": 1,
      "partial": 0,
-     "uncovered": [],
-     "only": []
+     "uncovered": [
+      "ac-przy-w-czonym-config-git-syncpushonpush",
+      "ac-releaseservice-createrelease-name-des",
+      "ac-wariant-error-gitcommitresult-gitpushres",
+      "ac-wiersz-release-push-powsta-y-z-first-p"
+     ],
+     "only": [
+      {
+       "slug": "ac-przy-w-czonym-config-git-syncpushonpush"
+      },
+      {
+       "slug": "ac-releaseservice-createrelease-name-des"
+      },
+      {
+       "slug": "ac-wariant-error-gitcommitresult-gitpushres"
+      },
+      {
+       "slug": "ac-wiersz-release-push-powsta-y-z-first-p"
+      }
+     ]
     }
    ],
    "rounds": {
