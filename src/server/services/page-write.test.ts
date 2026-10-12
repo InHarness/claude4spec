@@ -18,6 +18,9 @@ import {
 } from './page-write.js';
 import { DomainError } from './tags.js';
 import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
+import express from 'express';
+import request from 'supertest';
+import { pagesRouter } from '../routes/pages.js';
 
 /**
  * 0.2.15 — `expectedHash` is REQUIRED, including on the create-through-update
@@ -1977,6 +1980,49 @@ describe('update_sections — the anchor-loss guard', () => {
       expect(second).not.toBeInstanceOf(Error);
       expect((second as { hash: string }).hash).toBe(await hashOfPage('doc.md'));
       expect((await pages.read('doc.md')).body).toContain('TRAILING');
+    });
+
+    it('[ac:ac-hash-zwrocony-przez-update-page-przec] the hash update_page returns passes as the next expectedHash on the same page with no PAGE_CONFLICT — also when the write introduced a heading and the chain injected its anchor (over PUT /api/pages/:rootId/*)', async () => {
+      await index('doc.md', nested);
+      // The REST rendering of update_page's literal mode, on this rig's root.
+      const app = express();
+      app.use(express.json());
+      app.use(
+        '/api/pages/:rootId',
+        pagesRouter(
+          (id) => (id === 'pages' ? { root: { id: 'pages', name: 'Pages', dir: 'pages', builtin: true }, pages, writer: null, versions: null } : undefined),
+          null,
+          {} as DiscoveryCore,
+          () => ['pages'],
+        ),
+      );
+      const put = (body: string, expectedHash: string) =>
+        request(app).put('/api/pages/pages/doc.md').send({ body, expectedHash });
+
+      // 1. A write that introduces a heading with no anchor: the chain injects one.
+      const first = await put(`${nested}\n## Introduced\n\nINTRODUCED BODY\n`, await hashOfPage('doc.md'));
+      expect(first.status).toBe(200);
+      expect(await injectedAnchorAbove('Introduced')).toBeDefined();
+      expect(first.body.hash).toBe(await hashOfPage('doc.md'));
+
+      // 2. Its hash, passed straight back, is accepted — no PAGE_CONFLICT.
+      const second = await put((await pages.read('doc.md')).body + '\nSECOND\n', first.body.hash);
+      expect(second.status).toBe(200);
+      expect(second.body.error).toBeUndefined();
+      expect(second.body.hash).toBe(await hashOfPage('doc.md'));
+
+      // 3. And a plain write (no new heading) chains the same way.
+      const third = await put((await pages.read('doc.md')).body + '\nTHIRD\n', second.body.hash);
+      expect(third.status).toBe(200);
+      expect(third.body.hash).toBe(await hashOfPage('doc.md'));
+      const body = (await pages.read('doc.md')).body;
+      expect(body).toContain('SECOND');
+      expect(body).toContain('THIRD');
+
+      // The control: a hash from BEFORE the last write is what conflicts.
+      const stale = await put(body + '\nSTALE\n', second.body.hash);
+      expect(stale.status).toBe(409);
+      expect(stale.body.error.code).toBe('PAGE_CONFLICT');
     });
   });
 
