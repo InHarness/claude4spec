@@ -974,14 +974,32 @@
    },
    "dependsOn": [],
    "wave": 1,
-   "status": "pending",
+   "status": "verified",
    "blockedBy": null,
-   "startCommit": null,
-   "baseCommit": null,
-   "portions": [],
+   "startCommit": "24f081c5bc2230faddc05bc986ed6a1c502d14de",
+   "baseCommit": "24f081c5bc2230faddc05bc986ed6a1c502d14de",
+   "portions": [
+    {
+     "name": "m11-cli-root-not-found/p1-l4-l14",
+     "layers": [
+      "L4",
+      "L14"
+     ],
+     "slugs": [
+      "ac-c4s-get-page-root-id-id-path-p",
+      "ac-nieznany-root-id-podany-bez-towarzys",
+      "ac-list-pages-z-rootid-plans-konczy-sie"
+     ],
+     "status": "implemented",
+     "rounds": 1,
+     "partial": 0,
+     "uncovered": [],
+     "only": []
+    }
+   ],
    "rounds": {
     "review": 0,
-    "unit": 0
+    "unit": 1
    },
    "jobs": []
   },

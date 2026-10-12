@@ -573,6 +573,30 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
       expect(body.hint).toContain('pages');
     });
 
+    /**
+     * 2.1.14 — the criterion now verifies this tool. The system root is not a
+     * special refusal: over MCP it is the core's own answer for a typo, code,
+     * message shape and hint alike, and the list never names `plans`.
+     */
+    it('[ac:ac-list-pages-z-rootid-plans-konczy-sie] list_pages({ rootId: "plans" }) ends with the same error as an unknown rootId', async () => {
+      await pagesService.write('a.md', { body: '# A\n' });
+      const client = await connectClient(deps());
+
+      const plans = await call(client, 'list_pages', { rootId: 'plans' });
+      const nope = await call(client, 'list_pages', { rootId: 'nope' });
+
+      expect(plans.isError).toBe(true);
+      expect(nope.isError).toBe(true);
+      expect(plans.body.code).toBe('INVALID_ARGUMENT');
+      expect(plans.body.code).toBe(nope.body.code);
+      expect(plans.body.error).toContain("unknown rootId 'plans' (page roots in this project: pages)");
+      expect(String(plans.body.error).replace("'plans'", "'<id>'")).toBe(String(nope.body.error).replace("'nope'", "'<id>'"));
+      expect(plans.body.hint).toBe(nope.body.hint);
+      expect(plans.body.hint).not.toContain('plans');
+      // Nothing was listed for the system root.
+      expect(plans.body.items).toBeUndefined();
+    });
+
     it('list_tags keeps counts OFF by default and returns them when asked', async () => {
       db.prepare(`INSERT INTO tag (slug, name) VALUES ('auth', 'Auth')`).run();
       const client = await connectClient(deps());

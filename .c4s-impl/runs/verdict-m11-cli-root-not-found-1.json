@@ -1,0 +1,39 @@
+{
+  "role": "verifier",
+  "scope": { "kind": "unit", "id": "m11-cli-root-not-found" },
+  "release": "2.1.14",
+  "rows": [
+    {
+      "slug": "ac-c4s-get-page-root-id-id-path-p",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/bin/c4s/commands/discovery-commands.test.ts:683 — through the real pagesRouter + errorHandler: expect(plans.code).toBe('ROOT_NOT_FOUND'); expect(unknown.code).toBe('ROOT_NOT_FOUND'); expect(plans.message).toBe(\"root 'plans' not found\"); expect(plans.hint).toBe(unknown.hint); expect(plans.hint).toBe('roots in this project: pages'); not.toContain('plans'). Code: src/server/routes/pages.ts:120-157 (404 ROOT_NOT_FOUND, hint from rootIds()), src/bin/c4s/delegate.ts:123 asCliError passes code/message/hint untranslated. Static only (no tests run, per build); typecheck green."
+    },
+    {
+      "slug": "ac-nieznany-root-id-podany-bez-towarzys",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/bin/c4s/commands/discovery-commands.test.ts:704 — c4s list-pages --root-id nieistniejacy: expect(unknown.code).toBe('ROOT_NOT_FOUND'); expect(unknown.message).toBe(\"root 'nieistniejacy' not found\"); expect(unknown.hint).toBe('roots in this project: pages'); request reached '/pages/nieistniejacy/list'; contrast: get-page --root-id pages --path absent.md → expect(missingPage.code).toBe('PAGE_NOT_FOUND') via real coreGetPage (page-source.ts:185 pageNotFound) + errorHandler. Static only; typecheck green."
+    },
+    {
+      "slug": "ac-list-pages-z-rootid-plans-konczy-sie",
+      "type": "ac",
+      "level": 2,
+      "status": "covered",
+      "evidence": "src/server/mcp/reference-tools.test.ts:581 (verifies reference-tools-list-pages) — real discovery core: expect(plans.body.code).toBe(nope.body.code) ('INVALID_ARGUMENT'); expect(plans.body.error).toContain(\"unknown rootId 'plans' (page roots in this project: pages)\"); error messages equal modulo id; hint equal and not.toContain('plans'). Code: ops/pages.ts:36 roots.require → roots.ts:86 invalidArgument(`unknown rootId '${rootId}' (${pageRootsList()})`). Also src/server/discovery/discovery.test.ts:2383. Static only; typecheck green."
+    },
+    {
+      "slug": "goal:m11-cli-root-not-found",
+      "level": 2,
+      "status": "covered",
+      "evidence": "Local --range refusal before any request with INVALID_ARGS and hint get-page-outline → get-sections: src/bin/c4s/commands/get-page.ts:44-50 (args.flags.has('range') → CliError, delegateGet no longer forwards range), tests [section:m11dcmds] discovery-commands.test.ts (seen toEqual([]), hint order). Unknown and system root id → ROOT_NOT_FOUND with roots in hint: src/server/routes/pages.ts:120-157; passed on untranslated: src/bin/c4s/delegate.ts:123, documented src/bin/c4s/errors.ts:98-101. Removed old case (unknown root without path = INVALID_ARGUMENT on the CLI): no CLI code or test asserts it any more (ASSUMPTION:dev-0009 removed from routes/pages.ts; CLI test header rewritten). Non-blocking deviations m11r-dev-0001 (M39 vs M11 on CLI --range) and m11r-dev-0002 (hint lists facade roots incl. skills) recorded and sent."
+    }
+  ],
+  "suite": {
+    "command": "npm run typecheck",
+    "exitCode": 0,
+    "summary": "all workspace tsc --noEmit passes (last: @inharness-ai/c4s-plugin-skill-author typecheck). Tests not run per build rules; tests touching the diff read: discovery-commands.test.ts, reference-tools.test.ts, external-skills-service.test.ts (no --range in skill, unaffected) — none broken by the diff."
+  }
+}

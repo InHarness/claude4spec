@@ -136,8 +136,14 @@ export function pagesRouter(
        * `sidebar` is not `hidden`), for reads and writes alike, so a root
        * without one (`plans`, `briefs`, …) or outside the registry gets this
        * very refusal, and the list names only roots with a facade.
-       * ASSUMPTION:dev-0009 — REST/CLI keep ROOT_NOT_FOUND (list in `hint`) where
-       * M11 L14 names the core's INVALID_ARGUMENT (list in `message`).
+       *
+       * 2.1.14 — this is the REST rendering of the core's refusal, and the CLI
+       * passes it on untranslated (M11 L14 `m11dcmds`, M02 `l4rootseg`): an
+       * unknown root and a system root get the identical `ROOT_NOT_FOUND`,
+       * `message` "root '<id>' not found", the roots in `hint`. The core itself
+       * keeps `INVALID_ARGUMENT` (list in `message`) for MCP and in-process
+       * callers. ASSUMPTION:m11r-dev-0002 — the list is the facade roots M02
+       * resolves here (`skills` included), not only `kind: pages`.
        */
       const known = rootIds();
       res.status(404).json({
@@ -215,7 +221,8 @@ export function pagesRouter(
       const pagePath = typeof req.query.path === 'string' ? req.query.path : '';
       if (!pagePath) throw new DomainError('VALIDATION', 'path query param required');
       // 2.1.8: a leftover `?range=` is forwarded so the core refuses it — the
-      // same refusal MCP and in-process callers get (and `c4s get-page --range`).
+      // same refusal MCP and in-process callers get. (`c4s get-page --range` never
+      // gets here: the CLI refuses it locally, M11 L14 `m11dcmds`.)
       res.json(
         await discovery.getPage({
           rootId: rt.root.id,

@@ -2,6 +2,7 @@ import type { ParsedArgs } from '../args.js';
 import { requireString } from '../args.js';
 import { delegateGet } from '../delegate.js';
 import { writeOutput } from '../output.js';
+import { CliError } from '../errors.js';
 import { serializePageStructure } from '../../../shared/section-parser.js';
 import type { CliCommandContribution } from '../registry.js';
 
@@ -21,11 +22,13 @@ import type { CliCommandContribution } from '../registry.js';
  * `--range` is refused rather than ignored — ignoring it would hand back the
  * whole page to a caller who believes it asked for twenty lines.
  *
- * 2.1.14 — the refusal is the CORE's, not this rendering's: `--range` travels as
- * `?range=` to the route, which forwards it to `get_page`, and the core answers
- * `INVALID_ARGUMENT` with the repair path (get_page_outline, then get_sections).
- * A rendering that drops or pre-empts an unknown key leaves the core nothing to
- * refuse (M39 L2 `984v8437`).
+ * 2.1.14 — the command has no line window, as the operation has none, and
+ * `--range` is refused LOCALLY, before the server is called, with `INVALID_ARGS`
+ * and the repair path `get-page-outline` → `get-sections` — never silently
+ * dropped (M11 L14 `m11dcmds`, "`c4s get-page` — format wyjścia").
+ * ASSUMPTION:m11r-dev-0001 — M39 L2 `984v8437` says the core refuses and the
+ * rendering forwards the key; M11 L14 says this command refuses it itself. Both
+ * forbid the silent whole page; the CLI-owning slice decides the CLI's code.
  *
  * 0.2.13 — `server-delegating`, over `GET /api/pages/:rootId/get?path=`. The
  * path travels as a QUERY parameter: it contains slashes, and the operation's
@@ -34,14 +37,18 @@ import type { CliCommandContribution } from '../registry.js';
 export async function runGetPage(args: ParsedArgs): Promise<void> {
   const rootId = requireString(args, 'root-id');
   const pagePath = requireString(args, 'path');
-  // Forwarded, never dropped: the core refuses it (see above). A bare `--range`
-  // with no value still travels, so it is refused rather than read as absent.
-  const range = args.flags.get('range');
+  // Refused here, before any request: a script that passed `--range` believes
+  // it narrowed the read, and the whole page would prove it wrong silently. A
+  // bare `--range` with no value is refused the same way.
+  if (args.flags.has('range')) {
+    throw new CliError(
+      'INVALID_ARGS',
+      'c4s get-page has no line window: --range is not accepted',
+      'read the page structure with `c4s get-page-outline --root-id <id> --path <p>`, then fetch the anchors you need with `c4s get-sections --anchors <a,b>`',
+    );
+  }
 
-  const page = await delegateGet(args, `/pages/${encodeURIComponent(rootId)}/get`, {
-    path: pagePath,
-    ...(range !== undefined ? { range: String(range) } : {}),
-  });
+  const page = await delegateGet(args, `/pages/${encodeURIComponent(rootId)}/get`, { path: pagePath });
   if (args.format === 'text') {
     process.stdout.write(renderPageText(page as PageEnvelope));
     // The cut notice goes to stderr so stdout stays the page, pipeable as markdown.
